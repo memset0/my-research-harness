@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchLog } from '../lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from './ui'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
 
 const PAGE = 100
 /** Distance in pixels from the bottom that still counts as "at the bottom". */
@@ -144,20 +146,21 @@ export function LogViewer({ expPath }: { expPath: string }) {
         <div className="flex flex-wrap items-center gap-3">
           <CardTitle>Log: {logFile.replace(`${expPath}/`, '')}</CardTitle>
           <div className="ml-auto flex items-center gap-2 text-xs">
-            <input
+            <Input
               type="text"
               value={logFile}
               onChange={(e) => setLogFile(e.target.value)}
-              className="h-7 rounded border border-slate-300 px-2 font-mono text-xs"
-              size={60}
+              className="h-7 w-[28rem] font-mono text-xs"
             />
             {totalLines !== null && (
-              <span className="text-slate-500">{totalLines.toLocaleString()} lines</span>
+              <span className="text-muted-foreground">{totalLines.toLocaleString()} lines</span>
             )}
             <span
               className={
                 'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ' +
-                (follow ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600')
+                (follow
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                  : 'bg-muted text-muted-foreground')
               }
             >
               {follow ? 'follow' : 'paused'}
@@ -167,59 +170,52 @@ export function LogViewer({ expPath }: { expPath: string }) {
       </CardHeader>
       <CardContent>
         {error && (
-          <div className="mb-2 flex items-center justify-between rounded bg-red-50 p-2 text-xs text-red-700">
+          <div className="mb-2 flex items-center justify-between rounded-md bg-destructive/10 p-2 text-xs text-destructive">
             <span>{error}</span>
-            <button
-              type="button"
-              className="rounded border border-red-300 px-2 py-0.5 hover:bg-red-100"
-              onClick={loadInitial}
-            >
+            <Button size="sm" variant="outline" onClick={loadInitial}>
               retry
-            </button>
+            </Button>
           </div>
         )}
         <div className="mb-2 flex justify-between text-xs">
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="outline"
             disabled={lines.length === 0 || lines[0]!.lineNumber <= 1}
             onClick={onLoadEarlier}
-            className="rounded border border-slate-200 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             ↑ load 100 earlier
-          </button>
-          <button
-            type="button"
-            onClick={loadInitial}
-            disabled={loading}
-            className="rounded border border-slate-200 px-2 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
+          </Button>
+          <Button size="sm" variant="outline" onClick={loadInitial} disabled={loading}>
             {loading ? 'loading…' : 'reload'}
-          </button>
+          </Button>
         </div>
         <div className="relative">
           <div
             ref={containerRef}
             onScroll={onScroll}
-            className="max-h-[60vh] overflow-auto rounded border border-slate-200 bg-slate-950 p-2 font-mono text-xs leading-tight text-slate-100"
+            className="max-h-[60vh] overflow-auto rounded-md border bg-zinc-950 p-2 font-mono text-xs leading-tight text-zinc-100"
           >
             {lines.length === 0 && !loading && (
-              <div className="p-2 text-slate-500">no lines (file empty or missing)</div>
+              <div className="p-2 text-zinc-500">no lines (file empty or missing)</div>
             )}
             {lines.map((l) => (
               <div key={l.lineNumber} className="grid grid-cols-[6ch_1fr] gap-2">
-                <span className="select-none text-right text-slate-500">{l.lineNumber}</span>
+                <span className="select-none text-right text-zinc-500">{l.lineNumber}</span>
                 <span className="whitespace-pre-wrap break-all">{l.text}</span>
               </div>
             ))}
           </div>
           {pendingNew > 0 && !follow && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={jumpToTail}
-              className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-800 shadow-md hover:bg-slate-50"
+              className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full shadow-md"
             >
               {pendingNew} new line{pendingNew === 1 ? '' : 's'} ↓
-            </button>
+            </Button>
           )}
         </div>
       </CardContent>

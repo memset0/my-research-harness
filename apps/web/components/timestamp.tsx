@@ -13,13 +13,13 @@ export function TimestampLocal({
   // a timezone-sensitive value, then upgrade in useEffect.
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => setHydrated(true), [])
-  if (!value) return <span className="text-xs text-slate-400">—</span>
+  if (!value) return <span className="text-xs text-muted-foreground/60">—</span>
   if (!hydrated) {
-    return <span className="font-mono text-xs text-slate-500">{value}</span>
+    return <span className="font-mono text-xs text-muted-foreground">{value}</span>
   }
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) {
-    return <span className="font-mono text-xs text-slate-500">{value}</span>
+    return <span className="font-mono text-xs text-muted-foreground">{value}</span>
   }
   const formatted = variant === 'long'
     ? d.toLocaleString()
@@ -27,7 +27,7 @@ export function TimestampLocal({
       ' ' +
       d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
   return (
-    <span className="font-mono text-xs text-slate-700" title={value}>
+    <span className="font-mono text-xs text-foreground/80" title={value}>
       {formatted}
     </span>
   )

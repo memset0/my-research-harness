@@ -5,7 +5,24 @@ import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ApiError, fetchProjects, postExperiment } from '../lib/api'
-import { Button } from './ui'
+import { Button } from './ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
+import { Input } from './ui/input'
+import { Label } from './ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
 
 export function NewExperimentButton({ project }: { project: string }) {
   const [open, setOpen] = useState(false)
@@ -72,24 +89,26 @@ function NewExperimentModal({ project, onClose }: { project: string; onClose: ()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-xl">
-        <div className="border-b border-slate-100 p-3 text-sm font-semibold">New experiment</div>
-        <div className="space-y-3 p-4">
-          <div>
-            <label className="text-[10px] uppercase tracking-wide text-slate-500" htmlFor="exp-name">
-              Name
-            </label>
-            <input
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New experiment</DialogTitle>
+          <DialogDescription>
+            Scaffolds a directory + README + run.sh in the chosen project's logs path.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="exp-name">Name</Label>
+            <Input
               id="exp-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
               placeholder="e.g. attn-overlap"
-              className="mt-1 h-9 w-full rounded border border-slate-300 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Directory will be{' '}
               <code className="font-mono">
                 {name.trim() || '<name>'}-&lt;yymmdd&gt;-&lt;hhmmss&gt;
@@ -97,40 +116,37 @@ function NewExperimentModal({ project, onClose }: { project: string; onClose: ()
             </p>
           </div>
           {showProjectSelect && (
-            <div>
-              <label
-                className="text-[10px] uppercase tracking-wide text-slate-500"
-                htmlFor="exp-project"
-              >
-                Project
-              </label>
-              <select
-                id="exp-project"
-                value={chosenProject}
-                onChange={(e) => setChosenProject(e.target.value)}
-                className="mt-1 h-9 w-full rounded border border-slate-300 bg-white px-2 text-sm"
-              >
-                {projects.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-1.5">
+              <Label htmlFor="exp-project">Project</Label>
+              <Select value={chosenProject} onValueChange={setChosenProject}>
+                <SelectTrigger id="exp-project">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           {inlineError && (
-            <div className="rounded bg-red-50 p-2 text-xs text-red-700">{inlineError}</div>
+            <div className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+              {inlineError}
+            </div>
           )}
         </div>
-        <div className="flex justify-end gap-2 border-t border-slate-100 p-3">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => void onSubmit()} disabled={busy || !name.trim()}>
+          <Button onClick={() => void onSubmit()} disabled={busy || !name.trim()}>
             {busy ? 'Creating…' : 'Create'}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

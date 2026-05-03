@@ -19,7 +19,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
   })
 
   if (isLoading && !data) return <DetailSkeleton />
-  if (error) return <div className="p-4 text-sm text-red-600">error: {(error as Error).message}</div>
+  if (error) return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
   if (!data) return null
 
   const exp: FullExperiment = data
@@ -59,14 +59,19 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
           <Field label="entry" value={fm.entry || '—'} />
           <div className="col-span-2 md:col-span-4 break-all">
             <FieldLabel>command</FieldLabel>
-            <code className="block rounded bg-slate-50 px-2 py-1 font-mono text-xs">
+            <code className="block rounded bg-muted px-2 py-1 font-mono text-xs">
               {fm.command || '—'}
             </code>
           </div>
           {fm.wandb && (
             <div className="col-span-2 md:col-span-4">
               <FieldLabel>wandb</FieldLabel>
-              <a className="text-sm text-blue-700 underline" href={fm.wandb} target="_blank" rel="noopener noreferrer">
+              <a
+                className="text-sm text-primary underline-offset-4 hover:underline"
+                href={fm.wandb}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 {fm.wandb}
               </a>
             </div>
@@ -110,7 +115,9 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
           <CardTitle>Resources</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-slate-500 italic">not yet available — GPU/disk monitoring is a P1 feature</div>
+          <div className="text-sm text-muted-foreground italic">
+            not yet available — GPU/disk monitoring is a P1 feature
+          </div>
         </CardContent>
       </Card>
 
@@ -121,7 +128,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
 
 function SectionCard({ title, body, highlight }: { title: string; body: string | null; highlight?: boolean }) {
   return (
-    <Card className={highlight ? 'border-amber-300' : undefined}>
+    <Card className={highlight ? 'border-amber-400/60' : undefined}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
@@ -129,7 +136,7 @@ function SectionCard({ title, body, highlight }: { title: string; body: string |
         {body ? (
           <Markdown>{body}</Markdown>
         ) : (
-          <div className="text-sm italic text-slate-400">to fill</div>
+          <div className="text-sm italic text-muted-foreground/70">to fill</div>
         )}
       </CardContent>
     </Card>
@@ -153,10 +160,10 @@ function ArtifactsCard({
         <ul className="flex flex-col gap-1.5 text-sm">
           {artifacts.map((a) => (
             <li key={a.path} className="grid grid-cols-1 gap-x-3 md:grid-cols-2">
-              <code className="font-mono text-xs text-slate-700" title={`${expPath}/${a.path}`}>
+              <code className="font-mono text-xs text-foreground/80" title={`${expPath}/${a.path}`}>
                 {a.path}
               </code>
-              <span className="text-slate-600">{a.description}</span>
+              <span className="text-muted-foreground">{a.description}</span>
             </li>
           ))}
         </ul>
@@ -166,14 +173,16 @@ function ArtifactsCard({
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] uppercase tracking-wide text-slate-500">{children}</div>
+  return (
+    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
+  )
 }
 
 function Field({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <FieldLabel>{label}</FieldLabel>
-      {children ?? <div className="font-mono text-sm text-slate-800 truncate">{value}</div>}
+      {children ?? <div className="font-mono text-sm text-foreground truncate">{value}</div>}
     </div>
   )
 }

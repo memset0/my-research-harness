@@ -5,8 +5,15 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { fetchExperiments, type IndexedExperiment } from '../lib/api'
 import { Badge, Card, StatusPill } from './ui'
+import { Input } from './ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
 import { TimestampLocal } from './timestamp'
-import { NewExperimentButton } from './new-experiment-button'
 import { ListSkeleton } from './skeletons'
 
 const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
@@ -38,37 +45,37 @@ export function ExperimentList({ project }: { project: string }) {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <input
+        <Input
           type="search"
           placeholder="filter by id / name / tag / hypothesis…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-9 flex-1 min-w-[12rem] rounded-md border border-slate-300 bg-white px-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+          className="flex-1 min-w-[12rem]"
         />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
-        >
-          <option value="all">all status</option>
-          {STATUS_VALUES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-slate-500">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[10rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">all status</SelectItem>
+            {STATUS_VALUES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">
           {filtered.length} / {experiments.length}
         </span>
-        <div className="ml-auto">
-          <NewExperimentButton project={project} />
-        </div>
       </div>
 
       {isLoading && experiments.length === 0 && <ListSkeleton count={6} />}
-      {error && <div className="text-sm text-red-600">error: {(error as Error).message}</div>}
+      {error && (
+        <div className="text-sm text-destructive">error: {(error as Error).message}</div>
+      )}
 
-      <div className="hidden grid-cols-12 items-center gap-3 border-b border-slate-200 pb-2 text-xs uppercase tracking-wide text-slate-500 md:grid">
+      <div className="hidden grid-cols-12 items-center gap-3 border-b pb-2 text-xs uppercase tracking-wide text-muted-foreground md:grid">
         <div className="col-span-2">status</div>
         <div className="col-span-3">id</div>
         <div className="col-span-2">name</div>
@@ -81,7 +88,7 @@ export function ExperimentList({ project }: { project: string }) {
           <ExperimentRow key={e.id} project={project} exp={e} />
         ))}
         {filtered.length === 0 && !isLoading && (
-          <div className="rounded-md border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
             no experiments match
           </div>
         )}
@@ -99,8 +106,7 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperime
     >
       <Card
         className={
-          'transition hover:border-slate-400 ' +
-          (noReadme ? 'opacity-60' : '')
+          'transition hover:border-foreground/40 ' + (noReadme ? 'opacity-60' : '')
         }
       >
         <div className="grid grid-cols-1 gap-2 p-3 md:grid-cols-12 md:items-center md:gap-3">

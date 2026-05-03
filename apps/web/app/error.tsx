@@ -18,11 +18,11 @@ export default function GlobalError({
   return (
     <main className="mx-auto max-w-2xl p-8">
       <h1 className="text-xl font-semibold">Something went wrong</h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         memon hit an unexpected error while rendering this page. The detail is in your browser
         console; below is the message:
       </p>
-      <pre className="mt-3 max-h-60 overflow-auto rounded bg-slate-100 p-3 font-mono text-xs">
+      <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-muted p-3 font-mono text-xs">
         {error.message}
         {error.digest ? `\n\ndigest: ${error.digest}` : ''}
       </pre>

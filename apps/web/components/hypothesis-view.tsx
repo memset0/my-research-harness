@@ -16,14 +16,28 @@ const HYPOTHESIS_STATUS_EMOJI: Readonly<Record<string, string>> = {
   DEFERRED: '⚪',
 }
 
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
+  )
+}
+
 export function HypothesisView({ project }: { project: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['hypotheses', project],
     queryFn: () => fetchHypotheses(project),
   })
 
-  if (isLoading && !data) return <div className="p-4 md:p-6"><ListSkeleton count={4} /></div>
-  if (error) return <div className="p-4 text-sm text-red-600">error: {(error as Error).message}</div>
+  if (isLoading && !data)
+    return (
+      <div className="p-4 md:p-6">
+        <ListSkeleton count={4} />
+      </div>
+    )
+  if (error)
+    return (
+      <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
+    )
   if (!data) return null
 
   return (
@@ -40,7 +54,7 @@ export function HypothesisView({ project }: { project: string }) {
       )}
 
       {data.entries.length === 0 && (
-        <div className="rounded-md border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+        <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           no hypotheses (HYPOTHESES.md missing or empty)
         </div>
       )}
@@ -54,29 +68,29 @@ export function HypothesisView({ project }: { project: string }) {
                 {HYPOTHESIS_STATUS_EMOJI[h.status]}
               </span>
               <span className="text-sm font-semibold tracking-tight">{h.status}</span>
-              <CardTitle className="text-base font-medium text-slate-700">{h.slug}</CardTitle>
+              <CardTitle className="text-base font-medium text-foreground/80">{h.slug}</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">Statement</div>
+              <FieldLabel>Statement</FieldLabel>
               <div>{h.statement}</div>
             </div>
             {h.origin && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">Origin</div>
-                <div className="text-slate-700">{h.origin}</div>
+                <FieldLabel>Origin</FieldLabel>
+                <div className="text-foreground/80">{h.origin}</div>
               </div>
             )}
             {h.experiments.length > 0 && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">Experiments</div>
+                <FieldLabel>Experiments</FieldLabel>
                 <div className="flex flex-wrap gap-2">
                   {h.experiments.map((id) => (
                     <Link
                       key={id}
                       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(id)}`}
-                      className="font-mono text-xs text-blue-700 underline hover:no-underline"
+                      className="font-mono text-xs text-primary underline-offset-4 hover:underline"
                     >
                       {id}
                     </Link>
@@ -86,9 +100,10 @@ export function HypothesisView({ project }: { project: string }) {
             )}
             {h.evidence.length > 0 && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">Evidence</div>
+                <FieldLabel>Evidence</FieldLabel>
                 <ul className="ml-4 list-disc">
                   {h.evidence.map((e, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable order
                     <li key={i}>{e}</li>
                   ))}
                 </ul>
@@ -96,16 +111,19 @@ export function HypothesisView({ project }: { project: string }) {
             )}
             {h.caveats.length > 0 && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">Caveats</div>
+                <FieldLabel>Caveats</FieldLabel>
                 <ul className="ml-4 list-disc">
                   {h.caveats.map((c, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable order
                     <li key={i}>{c}</li>
                   ))}
                 </ul>
               </div>
             )}
             {h.lastVerified && (
-              <div className="text-xs text-slate-500">last verified: {h.lastVerified}</div>
+              <div className="text-xs text-muted-foreground">
+                last verified: {h.lastVerified}
+              </div>
             )}
           </CardContent>
         </Card>

@@ -21,14 +21,16 @@ export default async function Home() {
       <h1 className="text-xl font-semibold">memon</h1>
       {configError ? (
         <>
-          <p className="mt-2 text-sm text-red-700">Could not load configuration: {configError}</p>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-destructive">
+            Could not load configuration: {configError}
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
             Copy <code className="font-mono">config.example.yml</code> to{' '}
             <code className="font-mono">config.yml</code> and adjust the paths, then refresh.
           </p>
         </>
       ) : (
-        <p className="mt-2 text-sm text-slate-600">No projects configured.</p>
+        <p className="mt-2 text-sm text-muted-foreground">No projects configured.</p>
       )}
     </main>
   )

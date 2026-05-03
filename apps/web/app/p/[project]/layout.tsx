@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation'
-import { Header } from '../../../components/header'
+import { AppBar } from '../../../components/app-bar'
+import { AppSidebar } from '../../../components/app-sidebar'
+import { SidebarInset, SidebarProvider } from '../../../components/ui/sidebar'
 import { getRuntime } from '../../../lib/runtime'
 
 export default async function ProjectLayout({
@@ -12,21 +14,22 @@ export default async function ProjectLayout({
   const { project } = await params
   const decoded = decodeURIComponent(project)
 
-  // Validate project exists in config; otherwise render 404 instead of
-  // letting downstream API calls error out.
+  // Validate project exists in config; otherwise 404 instead of letting
+  // downstream API calls error.
   try {
     const rt = await getRuntime()
     if (!rt.config.projects.some((p) => p.name === decoded)) notFound()
   } catch {
-    // If the runtime itself can't initialize, let the home page handle the
-    // friendly error; here we just propagate as 404.
     notFound()
   }
 
   return (
-    <>
-      <Header project={decoded} />
-      {children}
-    </>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <AppBar project={decoded} />
+        <div className="flex-1">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

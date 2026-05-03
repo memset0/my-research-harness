@@ -5,16 +5,13 @@ import { cn } from '../lib/utils'
 
 function Block({ className }: { className?: string }) {
   return (
-    <div
-      className={cn('animate-pulse rounded bg-slate-200/80', className)}
-      aria-hidden
-    />
+    <div className={cn('animate-pulse rounded bg-muted', className)} aria-hidden />
   )
 }
 
 export function RowSkeleton() {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
+    <div className="rounded-lg border bg-card p-3">
       <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-center md:gap-3">
         <Block className="h-4 w-20 md:col-span-2" />
         <Block className="h-4 w-40 md:col-span-3" />
@@ -40,7 +37,7 @@ export function ListSkeleton({ count = 5 }: { count?: number }) {
 
 export function CardSkeleton() {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="rounded-lg border bg-card p-4">
       <Block className="mb-3 h-5 w-32" />
       <div className="space-y-2">
         <Block className="h-3 w-full" />
@@ -54,7 +51,7 @@ export function CardSkeleton() {
 export function DetailSkeleton() {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="rounded-lg border bg-card p-4">
         <div className="mb-3 flex items-center gap-2">
           <Block className="h-4 w-24" />
           <Block className="h-4 w-48" />

@@ -5,6 +5,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ApiError, patchExperimentStatus } from '../lib/api'
 import { StatusPill } from './ui'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
 
 const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
 type Status = (typeof STATUS_VALUES)[number]
@@ -23,7 +30,7 @@ export function StatusEdit({
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
 
-  const onChange = async (next: Status) => {
+  const onChange = async (next: string) => {
     if (next === status) return
     setBusy(true)
     try {
@@ -56,20 +63,19 @@ export function StatusEdit({
   return (
     <div className="inline-flex items-center gap-2">
       <StatusPill status={status} stale={stale} />
-      <select
-        value={status}
-        disabled={busy}
-        onChange={(e) => void onChange(e.target.value as Status)}
-        className="h-7 rounded border border-slate-300 bg-white px-2 text-xs disabled:opacity-50"
-        aria-label="Change status"
-      >
-        {STATUS_VALUES.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-      {busy && <span className="text-xs text-slate-500">saving…</span>}
+      <Select value={status} disabled={busy} onValueChange={(v) => void onChange(v)}>
+        <SelectTrigger size="sm" className="h-7 w-[8rem] text-xs" aria-label="Change status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {STATUS_VALUES.map((s) => (
+            <SelectItem key={s} value={s}>
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {busy && <span className="text-xs text-muted-foreground">saving…</span>}
     </div>
   )
 }

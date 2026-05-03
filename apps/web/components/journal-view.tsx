@@ -8,8 +8,19 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
 import { AddJournalEntryButton } from './add-journal-entry-button'
 import { TimestampLocal } from './timestamp'
 import { ListSkeleton } from './skeletons'
+import { Input } from './ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
 
-const TAG_COLORS: Record<string, 'default' | 'success' | 'warning' | 'destructive' | 'outline'> = {
+const TAG_COLORS: Record<
+  string,
+  'default' | 'success' | 'warning' | 'destructive' | 'outline'
+> = {
   CREATE: 'success',
   STATUS: 'default',
   NOTE: 'outline',
@@ -38,8 +49,16 @@ export function JournalView({ project }: { project: string }) {
 
   const allTags = useMemo(() => Array.from(new Set(events.map((e) => e.tag))).sort(), [events])
 
-  if (isLoading && !data) return <div className="p-4 md:p-6"><ListSkeleton count={6} /></div>
-  if (error) return <div className="p-4 text-sm text-red-600">error: {(error as Error).message}</div>
+  if (isLoading && !data)
+    return (
+      <div className="p-4 md:p-6">
+        <ListSkeleton count={6} />
+      </div>
+    )
+  if (error)
+    return (
+      <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
+    )
   if (!data) return null
 
   return (
@@ -49,7 +68,7 @@ export function JournalView({ project }: { project: string }) {
           <div className="flex flex-wrap items-center gap-3">
             <CardTitle>Journal</CardTitle>
             {data.lastDigestAt ? (
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 last digested at <TimestampLocal value={data.lastDigestAt} variant="long" />
               </span>
             ) : (
@@ -62,22 +81,27 @@ export function JournalView({ project }: { project: string }) {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} className="h-8 rounded border border-slate-300 bg-white px-2">
-              <option value="all">all tags</option>
-              {allTags.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            <input
+            <Select value={tagFilter} onValueChange={setTagFilter}>
+              <SelectTrigger className="h-8 w-[10rem]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">all tags</SelectItem>
+                {allTags.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
               type="search"
               placeholder="filter by experiment id…"
               value={expFilter}
               onChange={(e) => setExpFilter(e.target.value)}
-              className="h-8 flex-1 min-w-[12rem] rounded border border-slate-300 bg-white px-2"
+              className="h-8 flex-1 min-w-[12rem]"
             />
-            <span className="text-slate-500">
+            <span className="text-muted-foreground">
               {filtered.length} / {events.length}
             </span>
           </div>
@@ -86,23 +110,29 @@ export function JournalView({ project }: { project: string }) {
 
       <Card>
         <CardContent>
-          <ul className="flex flex-col divide-y divide-slate-100">
-            {filtered.length === 0 && <li className="py-4 text-sm text-slate-500">no events</li>}
+          <ul className="flex flex-col divide-y">
+            {filtered.length === 0 && (
+              <li className="py-4 text-sm text-muted-foreground">no events</li>
+            )}
             {filtered.map((e, i) => (
-              <li key={i} className="grid grid-cols-1 gap-2 py-2 md:grid-cols-[10rem_5rem_1fr]">
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: stable order
+                key={i}
+                className="grid grid-cols-1 gap-2 py-2 md:grid-cols-[10rem_5rem_1fr]"
+              >
                 <TimestampLocal value={e.timestamp} variant="long" />
                 <Badge variant={TAG_COLORS[e.tag] ?? 'outline'}>{e.tag}</Badge>
                 <div className="text-sm">
                   {e.experimentId ? (
                     <Link
                       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(e.experimentId)}`}
-                      className="font-mono text-blue-700 underline hover:no-underline"
+                      className="font-mono text-primary underline-offset-4 hover:underline"
                     >
                       {e.experimentId}
                     </Link>
                   ) : null}
                   {e.experimentId ? ' · ' : ''}
-                  <span className="text-slate-700">{e.body}</span>
+                  <span className="text-foreground/80">{e.body}</span>
                 </div>
               </li>
             ))}

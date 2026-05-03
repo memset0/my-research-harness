@@ -89,6 +89,17 @@ export async function fetchLog(
   return jsonFetch(`/api/log?${params.toString()}`)
 }
 
+export interface LogFileEntry {
+  name: string
+  path: string
+  size: number
+  mtime: number
+}
+
+export async function fetchLogFiles(expPath: string): Promise<{ files: LogFileEntry[] }> {
+  return jsonFetch(`/api/log-files?expPath=${encodeURIComponent(expPath)}`)
+}
+
 export async function appendJournalEvent(input: {
   project: string
   tag: string

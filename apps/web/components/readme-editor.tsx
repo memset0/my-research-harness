@@ -5,17 +5,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { fetchReadme, putReadme, type PutReadmeConflict } from '../lib/api'
-import { Button } from './ui'
+import { Button } from './ui/button'
+import { Dialog, DialogContent } from './ui/dialog'
 
 // @uiw/react-md-editor and react-diff-viewer-continued are client-only.
 const MDEditor = dynamic(() => import('@uiw/react-md-editor').then((m) => m.default), {
   ssr: false,
-  loading: () => <div className="p-6 text-sm text-slate-500">loading editor…</div>,
+  loading: () => <div className="p-6 text-sm text-muted-foreground">loading editor…</div>,
 })
 
 const DiffViewer = dynamic(
   () => import('react-diff-viewer-continued').then((m) => m.default),
-  { ssr: false, loading: () => <div className="p-6 text-sm text-slate-500">loading diff…</div> },
+  {
+    ssr: false,
+    loading: () => <div className="p-6 text-sm text-muted-foreground">loading diff…</div>,
+  },
 )
 
 const DRAFT_PREFIX = 'memon:draft:'
@@ -189,124 +193,120 @@ export function ReadmeEditor({
   }
 
   return (
-    <Modal onClose={onClose}>
-      {phase === 'loading' && (
-        <div className="p-8 text-center text-sm text-slate-500">loading…</div>
-      )}
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        className="!max-w-5xl p-0 gap-0 overflow-hidden"
+        showCloseButton={false}
+      >
+        {phase === 'loading' && (
+          <div className="p-8 text-center text-sm text-muted-foreground">loading…</div>
+        )}
 
-      {phase === 'load-error' && (
-        <div className="p-8 text-center text-sm">
-          <p className="text-red-700">Could not load README: {loadError}</p>
-          <Button className="mt-4" variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      )}
-
-      {phase === 'recovery-prompt' && draftContent && (
-        <div className="space-y-4 p-6">
-          <h2 className="text-lg font-semibold">Unsaved draft found</h2>
-          <p className="text-sm text-slate-600">
-            A draft from a previous session ({draftContent.length.toLocaleString()} characters)
-            is saved locally. The on-disk file has{' '}
-            <span className="font-mono">{diskContent.length.toLocaleString()}</span> characters.
-            What would you like to do?
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={restoreDraft}>Restore my draft</Button>
-            <Button variant="outline" onClick={discardDraftFromDisk}>
-              Discard draft, use disk
-            </Button>
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
+        {phase === 'load-error' && (
+          <div className="p-8 text-center text-sm">
+            <p className="text-destructive">Could not load README: {loadError}</p>
+            <Button className="mt-4" variant="outline" onClick={onClose}>
+              Close
             </Button>
           </div>
-        </div>
-      )}
+        )}
 
-      {(phase === 'editing' || phase === 'saving') && diskMtime !== null && (
-        <div className="flex h-full max-h-[85vh] flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 p-3">
-            <h2 className="text-sm font-semibold">
-              Edit README ·{' '}
-              <span className="font-mono text-xs text-slate-500">{path}</span>
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onClose} disabled={phase === 'saving'}>
+        {phase === 'recovery-prompt' && draftContent && (
+          <div className="space-y-4 p-6">
+            <h2 className="text-lg font-semibold">Unsaved draft found</h2>
+            <p className="text-sm text-muted-foreground">
+              A draft from a previous session ({draftContent.length.toLocaleString()} characters)
+              is saved locally. The on-disk file has{' '}
+              <span className="font-mono">{diskContent.length.toLocaleString()}</span> characters.
+              What would you like to do?
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={restoreDraft}>Restore my draft</Button>
+              <Button variant="outline" onClick={discardDraftFromDisk}>
+                Discard draft, use disk
+              </Button>
+              <Button variant="ghost" onClick={onClose}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={() => void handleSave()} disabled={phase === 'saving'}>
-                {phase === 'saving' ? 'Saving…' : 'Save'}
-              </Button>
             </div>
           </div>
-          <div className="flex-1 overflow-auto p-2 [&_.w-md-editor]:!h-[calc(85vh-3.5rem)]">
-            <MDEditor
-              value={content}
-              onChange={(v) => setContent(v ?? '')}
-              height={`calc(85vh - 4rem)` as unknown as number}
-              preview="live"
-              data-color-mode="light"
-            />
-          </div>
-        </div>
-      )}
+        )}
 
-      {phase === 'conflict' && conflict && (
-        <div className="flex h-full max-h-[85vh] flex-col">
-          <div className="flex items-center justify-between border-b border-slate-200 p-3">
-            <h2 className="text-sm font-semibold text-amber-800">
-              Conflict — disk changed since you opened the editor
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={handleCancelConflict}>
-                Back to editor
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleDiscardMine}>
-                Discard mine
-              </Button>
-              <Button size="sm" onClick={() => void handleKeepMine()}>
-                Keep mine (overwrite)
-              </Button>
+        {(phase === 'editing' || phase === 'saving') && diskMtime !== null && (
+          <div className="flex h-full max-h-[85vh] flex-col">
+            <div className="flex items-center justify-between border-b p-3">
+              <h2 className="text-sm font-semibold">
+                Edit README ·{' '}
+                <span className="font-mono text-xs text-muted-foreground">{path}</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onClose}
+                  disabled={phase === 'saving'}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => void handleSave()}
+                  disabled={phase === 'saving'}
+                >
+                  {phase === 'saving' ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-2 [&_.w-md-editor]:!h-[calc(85vh-3.5rem)]">
+              <MDEditor
+                value={content}
+                onChange={(v) => setContent(v ?? '')}
+                height={`calc(85vh - 4rem)` as unknown as number}
+                preview="live"
+                data-color-mode="light"
+              />
             </div>
           </div>
-          <div className="flex-1 overflow-auto p-2 text-xs">
-            <DiffViewer
-              oldValue={conflict.content}
-              newValue={content}
-              splitView
-              leftTitle="Disk (newer)"
-              rightTitle="Your draft"
-              styles={{
-                contentText: { fontFamily: 'ui-monospace, monospace', fontSize: 12 },
-              }}
-            />
+        )}
+
+        {phase === 'conflict' && conflict && (
+          <div className="flex h-full max-h-[85vh] flex-col">
+            <div className="flex items-center justify-between border-b p-3">
+              <h2 className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                Conflict — disk changed since you opened the editor
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={handleCancelConflict}>
+                  Back to editor
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDiscardMine}>
+                  Discard mine
+                </Button>
+                <Button size="sm" onClick={() => void handleKeepMine()}>
+                  Keep mine (overwrite)
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-2 text-xs">
+              <DiffViewer
+                oldValue={conflict.content}
+                newValue={content}
+                splitView
+                leftTitle="Disk (newer)"
+                rightTitle="Your draft"
+                styles={{
+                  contentText: { fontFamily: 'ui-monospace, monospace', fontSize: 12 },
+                }}
+              />
+            </div>
           </div>
-        </div>
-      )}
-    </Modal>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
 // ---------- helpers ----------
-
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-5xl rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden">
-        {children}
-      </div>
-    </div>
-  )
-}
 
 function readDraft(key: string): string | null {
   try {
