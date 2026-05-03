@@ -6,6 +6,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
 import { StatusEdit } from './status-edit'
 import { EditReadmeButton } from './edit-readme-button'
 import { AddNoteButton } from './add-note-button'
+import { AskClaudeCodeButton } from './ask-claude-code-button'
 import { DetailSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Markdown } from './markdown'
@@ -43,6 +44,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
               <Badge variant="warning">{exp.parseWarnings.length} warnings</Badge>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              <AskClaudeCodeButton experiment={exp} />
               <AddNoteButton project={fm.project} experimentId={exp.id} />
               {exp.hasReadme && <EditReadmeButton path={exp.path} experimentId={exp.id} />}
             </div>
