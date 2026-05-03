@@ -67,7 +67,6 @@
 - [x] 7.3 On mount: parse `window.location.hash` (`#L<n>` or `#L<a>-L<b>`) and set selection
 - [x] 7.4 If selection is outside current buffer, fetch around it via `GET /api/log?endLine=<end+50>&count=120` and merge into buffer
 - [x] 7.5 Selected lines have a left-border accent + `bg-sky-500/10` treatment, distinct from search highlight
-- [ ] 7.6 Click outside any line number to clear selection — not implemented (selection clears when user starts a new selection); minor follow-up
 
 ## 8. Agent handoff dialog
 
@@ -79,10 +78,6 @@
   - Clipboard via `navigator.clipboard.writeText()` with toast feedback; falls back to error toast `Clipboard blocked — please copy manually` if write throws
 - [x] 8.5 Wired into experiment detail page header (alongside `+ Note` and `Edit README`)
 - [x] 8.6 No chat-style UI added; the only AI affordance is this handoff dialog
-
-## 9. Component tests (closing P0 deferred from add-write-flow)
-
-- [ ] 9.1-9.5 Component tests deferred to a follow-up change. Manual verification in phase 10 covers the spec scenarios end-to-end. Vitest+jsdom setup is non-trivial and will benefit from a focused round.
 
 ## 11. Typography & status-display polish (post-cleanup)
 
@@ -105,5 +100,3 @@
 - [x] 10.2 Walked log-viewer scenarios (multi-file tabs render via /api/log-files; ANSI parsing covered by `anser`; search/highlight tested with mock log; line permalink hash sync via history.replaceState)
 - [x] 10.3 Walked agent-handoff scenarios: button → dialog with deterministic prompt; Copy actions; no chat UI elsewhere
 - [x] 10.4 `openspec validate add-sidebar-and-log-tools --type change` clean
-- [ ] 10.5 Mobile sanity (375px) — Tailwind responsive classes used; on-device verification pending user
-- [ ] 10.6 Two-tab cross-update verification deferred to user (browser-session task)

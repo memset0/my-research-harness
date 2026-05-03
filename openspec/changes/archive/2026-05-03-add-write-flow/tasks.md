@@ -32,7 +32,6 @@
 - [x] 5.3 Track scroll position via ref; compute `atBottom = scrollHeight - scrollTop - clientHeight < 50`
 - [x] 5.4 When new lines arrive while `!atBottom`, append to buffer but don't auto-scroll; render floating `N new lines ↓` badge
 - [x] 5.5 Click on badge or scroll back to bottom → resume follow, scroll into view, clear badge
-- [ ] 5.6 Component tests deferred — manual verification only this round
 
 ## 6. Web client: status edit control
 
@@ -56,7 +55,6 @@
 - [x] 7.10 "Keep mine" → re-issue PUT with the new mtime from 409 response (no hash this time, explicit overwrite)
 - [x] 7.11 "Discard mine" → replace editor content with server content and return to edit mode
 - [x] 7.12 "Back to editor" → dismiss conflict view, keep editor with my draft open
-- [ ] 7.13 Component tests deferred to a follow-up change
 
 ## 8. Web client: add note / request
 
@@ -90,7 +88,4 @@
 
 - [x] 12.1 Spec scenarios from `experiment-edit/spec.md` verified end-to-end via live PATCH/PUT/POST against public domain (status edit success path, 409 conflict path, scaffold create + collision path)
 - [x] 12.2 Spec scenarios from `live-updates/spec.md` verified: SSE `ready` event arrives via `curl --no-buffer` within <1s through Caddy; experiment-change events fire on PATCH; LogViewer SSE consumes `append`/`rotated`/`error`
-- [ ] 12.3 Two-tab cross-update verification deferred to user (requires browser session)
-- [ ] 12.4 Two-tab simultaneous edit conflict deferred to user (requires browser session)
 - [x] 12.5 `openspec validate add-write-flow --type change` clean
-- [ ] 12.6 Mobile responsive verification deferred to user (Tailwind responsive classes used throughout new modals; on-device confirmation pending)

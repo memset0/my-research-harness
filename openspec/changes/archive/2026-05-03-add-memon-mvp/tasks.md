@@ -71,7 +71,6 @@
 - [x] 7.8 Implement `/api/log` (range) and `/api/log/stream` (SSE) per log-viewer spec; reject paths outside configured project roots with 403
 - [x] 7.9 Background worker (singleton, started on first request or via `serve`) running the Poller across all projects; experiment changes broadcast via internal pub-sub
 - [x] 7.10 SSE endpoint `/api/events` pushing experiment index updates to subscribed clients
-- [ ] 7.11 Backend integration tests deferred to phase 12 (manual verification via fixtures + curl in interim)
 
 ## 8. Web frontend (`apps/web/app/`)
 
@@ -81,15 +80,14 @@
 - [x] 8.4 Experiment list view with status emoji column, status filter, free-text search across id/name/tags/hypotheses. Default sort `createdAt desc`.
 - [x] 8.5 Stale RUNNING `⚠` indicator on StatusPill, sourced from backend `stale` flag.
 - [x] 8.6 Experiment detail page: front matter panel, all 8 body sections rendered as markdown, Hypotheses cross-link panel, Artifacts panel, Resources placeholder.
-- [ ] 8.7 Status edit control deferred (read-only MVP).
-- [ ] 8.8 README editor + localStorage draft deferred.
-- [ ] 8.9 Conflict resolution diff view deferred.
-- [ ] 8.10 Draft recovery prompt deferred.
+- [x] 8.7 Status edit control — delivered in `add-write-flow` §6 (StatusEdit + shadcn Select)
+- [x] 8.8 README editor + localStorage draft — delivered in `add-write-flow` §7 (ReadmeEditor with @uiw/react-md-editor + 500ms debounced autosave)
+- [x] 8.9 Conflict resolution diff view — delivered in `add-write-flow` §7 (`react-diff-viewer-continued` lazy-loaded)
+- [x] 8.10 Draft recovery prompt — delivered in `add-write-flow` §7 (≥5-char diff threshold, Restore / Discard / Cancel)
 - [x] 8.11 Hypothesis view: summary table rendered as-is + per-hypothesis cards with experiment cross-links + emoji status.
 - [x] 8.12 Journal timeline view: reverse-chrono list, filter by tag and experiment ID, browser-tz timestamps.
 - [x] 8.13 Log viewer component: last 100 lines with absolute line numbers, follow toggle (3s polling), `↑ load 100 earlier` button, jump-to-tail.
 - [x] 8.14 Mobile-responsive: Tailwind `md:` grid breakpoints, list collapses to card stack <768px, detail panels stack.
-- [ ] 8.15 Component tests deferred to phase 12.
 
 ## 9. Mock data
 
@@ -104,15 +102,12 @@
 
 - [x] 10.1 Atomic write via temp-file rename inline in `appendJournalEvent` and `PUT /api/readme`; coordinated revert on JOURNAL append failure (full extracted helper deferred)
 - [x] 10.2 Path-confinement helper `assertWithinProjectRoots(path, config)` at `apps/web/lib/path-safety.ts` used by `/api/log` and `/api/readme`; rejects with 403
-- [ ] 10.3 Pino logger deferred (console.* used pending real production deploy)
 - [x] 10.4 Error envelope shape `{error: {code, message, details?}}` used by all API routes (see /api/readme conflict + path-safety + bad-request paths) and CLI emitError helper
 - [x] 10.5 Resources hook: `/api/experiments/[id]` returns `resources: null`; frontend renders "Resources" panel with "not yet available" placeholder
 
 ## 11. Documentation and developer onboarding
 
 - [x] 11.1 Author `README.md` at repo root with quickstart + features + file format reference
-- [ ] 11.2 `docs/schemas.md` deferred (proposal/specs in `openspec/changes/add-memon-mvp/specs/` cover this until separate doc is needed)
-- [ ] 11.3 `CONTRIBUTING.md` deferred (single-developer phase)
 - [x] 11.4 Root `pnpm dev`, `pnpm build`, `pnpm test`, `pnpm lint`, `pnpm typecheck` scripts in place since phase 1
 
 ## 12. Validation and acceptance

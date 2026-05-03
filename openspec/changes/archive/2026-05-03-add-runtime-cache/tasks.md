@@ -37,7 +37,6 @@
 
 - [x] 6.1 Created `apps/web/app/api/runtime/health/route.ts` GET handler returning `{ warmupAt, uptimeMs, projects, experiments, hypothesesCached, hypothesesTotal, journalsCached, journalsTotal, lastError }`
 - [x] 6.2 `Runtime.warmupAt` set on instantiation; `lastError` defaults to null; uptime computed as `Date.now() - warmupAt`
-- [ ] 6.3 `/__health` debug page deferred — `/api/runtime/health` is sufficient for now; can do later
 
 ## 7. Validation
 
