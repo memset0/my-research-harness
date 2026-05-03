@@ -2,7 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { fetchExperiment, type FullExperiment } from '../lib/api'
-import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
+import { Badge } from './ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { WarningBadge } from './colored-badge'
 import { StatusEdit } from './status-edit'
 import { EditReadmeButton } from './edit-readme-button'
@@ -70,7 +71,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
             <div className="col-span-2 md:col-span-4">
               <FieldLabel>wandb</FieldLabel>
               <a
-                className="text-sm text-primary underline-offset-4 hover:underline"
+                className="text-xs text-primary underline-offset-4 hover:underline"
                 href={fm.wandb}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -160,10 +161,10 @@ function ArtifactsCard({
         <CardTitle>Artifacts</CardTitle>
       </CardHeader>
       <CardContent>
-        <ul className="flex flex-col gap-1.5 text-sm">
+        <ul className="flex flex-col gap-1.5 text-xs">
           {artifacts.map((a) => (
             <li key={a.path} className="grid grid-cols-1 gap-x-3 md:grid-cols-2">
-              <code className="font-mono text-xs text-foreground/80" title={`${expPath}/${a.path}`}>
+              <code className="font-mono text-foreground/80" title={`${expPath}/${a.path}`}>
                 {a.path}
               </code>
               <span className="text-muted-foreground">{a.description}</span>
@@ -185,7 +186,7 @@ function Field({ label, value, children }: { label: string; value?: string; chil
   return (
     <div className="flex flex-col gap-1">
       <FieldLabel>{label}</FieldLabel>
-      {children ?? <div className="font-mono text-sm text-foreground truncate">{value}</div>}
+      {children ?? <div className="font-mono text-xs text-foreground truncate">{value}</div>}
     </div>
   )
 }

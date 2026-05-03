@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ApiError, patchExperimentStatus } from '../lib/api'
-import { StatusPill } from './ui'
+import { StatusPill } from './status-pill'
 import {
   Select,
   SelectContent,

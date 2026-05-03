@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { fetchExperiments, type IndexedExperiment } from '../lib/api'
-import { Badge, Card, StatusPill } from './ui'
+import { Badge } from './ui/badge'
+import { Card } from './ui/card'
+import { StatusPill } from './status-pill'
 import { WarningBadge } from './colored-badge'
 import { TimestampLocal } from './timestamp'
 import { ListSkeleton } from './skeletons'
@@ -114,8 +116,8 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperime
           <div className="md:col-span-2">
             <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
           </div>
-          <div className="font-mono text-sm md:col-span-3 truncate">{exp.id}</div>
-          <div className="text-sm md:col-span-2 truncate">{exp.frontMatter.name}</div>
+          <div className="font-mono text-xs md:col-span-3 truncate">{exp.id}</div>
+          <div className="text-xs md:col-span-2 truncate">{exp.frontMatter.name}</div>
           <div className="md:col-span-2">
             <TimestampLocal value={exp.frontMatter.createdAt} />
           </div>

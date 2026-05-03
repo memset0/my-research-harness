@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { fetchHypotheses } from '../lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from './ui'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Markdown } from './markdown'
 import { ListSkeleton } from './skeletons'
 

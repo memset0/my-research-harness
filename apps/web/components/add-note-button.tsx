@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from './ui'
+import { Button } from './ui/button'
 import { AddEventModal } from './add-event-modal'
 
 export function AddNoteButton({
