@@ -1,32 +1,32 @@
 ## 1. Repo bootstrap
 
-- [ ] 1.1 Initialize pnpm workspace at repo root (`package.json`, `pnpm-workspace.yaml` declaring `apps/*` and `packages/*`)
-- [ ] 1.2 Create base TypeScript config (`tsconfig.base.json`) and per-package `tsconfig.json` extending it
-- [ ] 1.3 Add Biome config (`biome.json`) for lint + format; add `format`/`lint` scripts at root
-- [ ] 1.4 Add `lefthook.yml` with pre-commit running Biome + tsc on changed packages
-- [ ] 1.5 Add `.gitignore` covering `node_modules/`, `.next/`, `dist/`, `config.yml`, `mock-runtime/`, `~/.cache/memon` patterns local to repo
-- [ ] 1.6 Scaffold `packages/core/`, `packages/cli/`, `apps/web/` with empty entry points and inter-package deps wired (`workspace:*`)
+- [x] 1.1 Initialize pnpm workspace at repo root (`package.json`, `pnpm-workspace.yaml` declaring `apps/*` and `packages/*`)
+- [x] 1.2 Create base TypeScript config (`tsconfig.base.json`) and per-package `tsconfig.json` extending it
+- [x] 1.3 Add Biome config (`biome.json`) for lint + format; add `format`/`lint` scripts at root
+- [x] 1.4 Add `lefthook.yml` with pre-commit running Biome + tsc on changed packages
+- [x] 1.5 Add `.gitignore` covering `node_modules/`, `.next/`, `dist/`, `config.yml`, `mock-runtime/`, `~/.cache/memon` patterns local to repo
+- [x] 1.6 Scaffold `packages/core/`, `packages/cli/`, `apps/web/` with empty entry points and inter-package deps wired (`workspace:*`)
 
 ## 2. Core schemas and parsers (`packages/core`)
 
-- [ ] 2.1 Define TypeScript types for `Experiment`, `Hypothesis`, `JournalEvent`, `Config`, `Status` (matching specs/experiment-readme/spec.md and specs/hypotheses/spec.md)
-- [ ] 2.2 Implement `parseReadme(content: string)` using `gray-matter` + zod; emit `{frontMatter, sections, parseErrors[], parseWarnings[]}`
-- [ ] 2.3 Implement `serializeReadme({frontMatter, body})` preserving section order Motivation/Setup/Method/Result/Conclusion/Caveats/Artifacts/(opt)New Hypotheses
-- [ ] 2.4 Implement `parseArtifacts(section)` extracting `{path, description}` pairs from list items
-- [ ] 2.5 Implement `parseHypotheses(content: string)` producing `{summaryTable, entries[]}` with each entry validated by zod
-- [ ] 2.6 Implement `parseJournal(content: string)` producing `{lastDigestAt, events[]}` with tag enum + per-tag body validators
-- [ ] 2.7 Implement `serializeJournal` and `appendJournalEvent(path, event)` (read → append-only line write → sync); reject any write touching frontmatter unless `digestMode: true`
-- [ ] 2.8 Status enum normalization: lowercase → uppercase with parse warning; unknown values → `UNKNOWN` with parse error
-- [ ] 2.9 Unit tests (vitest): valid/invalid README, invalid status, missing required fields, valid HYPOTHESES with various entries, JOURNAL frontmatter present/absent, all event tag formats
+- [x] 2.1 Define TypeScript types for `Experiment`, `Hypothesis`, `JournalEvent`, `Config`, `Status` (matching specs/experiment-readme/spec.md and specs/hypotheses/spec.md)
+- [x] 2.2 Implement `parseReadme(content: string)` using `gray-matter` + zod; emit `{frontMatter, sections, parseErrors[], parseWarnings[]}`
+- [x] 2.3 Implement `serializeReadme({frontMatter, body})` preserving section order Motivation/Setup/Method/Result/Conclusion/Caveats/Artifacts/(opt)New Hypotheses
+- [x] 2.4 Implement `parseArtifacts(section)` extracting `{path, description}` pairs from list items
+- [x] 2.5 Implement `parseHypotheses(content: string)` producing `{summaryTable, entries[]}` with each entry validated by zod
+- [x] 2.6 Implement `parseJournal(content: string)` producing `{lastDigestAt, events[]}` with tag enum + per-tag body validators
+- [x] 2.7 Implement `serializeJournal` and `appendJournalEvent(path, event)` (read → append-only line write → sync); reject any write touching frontmatter unless `digestMode: true`
+- [x] 2.8 Status enum normalization: lowercase → uppercase with parse warning; unknown values → `UNKNOWN` with parse error
+- [x] 2.9 Unit tests (vitest): valid/invalid README, invalid status, missing required fields, valid HYPOTHESES with various entries, JOURNAL frontmatter present/absent, all event tag formats
 
 ## 3. Discovery and indexing (`packages/core`)
 
-- [ ] 3.1 Implement `discoverExperiments(projectRoot, excludes)` using `fast-glob` to find directories matching `^.+-\d{6}-\d{6}$`, applying default + custom excludes
-- [ ] 3.2 Implement `ExperimentIndex` class: in-memory map of `{id → Experiment}`, methods `add/update/remove/get/list/search`
-- [ ] 3.3 Implement `Poller`: per-directory poll state (`{interval, lastMtime, nextRunAt}`); event-loop scheduler triggering callback on change; exponential backoff with `min/max/factor` from config
-- [ ] 3.4 `Poller.resetBackoff(path)` to be invoked on user attention events
-- [ ] 3.5 Stale-RUNNING detector: configurable threshold (default 1h); flag exposed on each index entry
-- [ ] 3.6 Unit tests: discovery with nested logs, exclude application, regex edge cases, backoff progression, reset, stale detection
+- [x] 3.1 Implement `discoverExperiments(projectRoot, excludes)` using `fast-glob` to find directories matching `^.+-\d{6}-\d{6}$`, applying default + custom excludes
+- [x] 3.2 Implement `ExperimentIndex` class: in-memory map of `{id → Experiment}`, methods `add/update/remove/get/list/search`
+- [x] 3.3 Implement `Poller`: per-directory poll state (`{interval, lastMtime, nextRunAt}`); event-loop scheduler triggering callback on change; exponential backoff with `min/max/factor` from config
+- [x] 3.4 `Poller.resetBackoff(path)` to be invoked on user attention events
+- [x] 3.5 Stale-RUNNING detector: configurable threshold (default 1h); flag exposed on each index entry
+- [x] 3.6 Unit tests: discovery with nested logs, exclude application, regex edge cases, backoff progression, reset, stale detection
 
 ## 4. LineIndex and log tail (`packages/core`)
 

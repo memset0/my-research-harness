@@ -1,0 +1,25 @@
+{
+  "name": "memon-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "memon — experiment monitoring & management for ML/systems research",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm --filter @memon/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm -r typecheck",
+    "memon": "pnpm --filter @memon/cli memon"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "lefthook": "^1.7.0",
+    "typescript": "^5.6.0"
+  }
+}
