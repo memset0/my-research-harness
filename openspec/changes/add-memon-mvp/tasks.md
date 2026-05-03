@@ -75,21 +75,21 @@
 
 ## 8. Web frontend (`apps/web/app/`)
 
-- [ ] 8.1 Install shadcn/ui CLI and add base components (`button`, `card`, `dialog`, `dropdown-menu`, `table`, `tabs`, `toast/sonner`, `input`, `textarea`, `badge`, `skeleton`)
-- [ ] 8.2 Set up TanStack Query provider; configure global `refetchInterval` policy with exponential backoff via `staleTime` + custom function
-- [ ] 8.3 Top navigation with project selector (reads `/api/projects`); URL `/projects/:project/...`
-- [ ] 8.4 Experiment list page using TanStack Table: status emoji column, filter by status/tags/hypotheses, free-text search, default sort `created_at desc`
-- [ ] 8.5 Stale RUNNING badge in list rows when `mtime` exceeds threshold
-- [ ] 8.6 Experiment detail page: front matter panel, rendered body sections, Hypotheses panel (cross-link to `H#`), Artifacts panel, Resources placeholder
-- [ ] 8.7 Status edit control on detail page invoking atomic README + JOURNAL write
-- [ ] 8.8 README editor: `@uiw/react-md-editor` modal/inline; localStorage draft auto-save keyed by `<path>:<mtime>`
-- [ ] 8.9 Conflict resolution UI: on 409, show `react-diff-viewer-continued` with three actions (keep/discard/merge)
-- [ ] 8.10 Draft recovery prompt on editor open (`Restore N min draft / Discard from disk`); auto-discard outdated drafts
-- [ ] 8.11 Hypothesis view: render `## Summary table` raw + per-entry collapsible cards with cross-links
-- [ ] 8.12 Journal view: reverse-chronological timeline; filter by tag, by experiment ID; render timestamps in browser timezone via `date-fns-tz`
-- [ ] 8.13 Log viewer component used in detail page: initial last 100 lines + line numbers, SSE follow, infinite scroll up, follow-pause/resume on scroll
-- [ ] 8.14 Mobile-responsive layout (Tailwind `md:` breakpoints): list collapses to cards <768px; detail panels stack
-- [ ] 8.15 Component-level tests (vitest + Testing Library): list filtering, conflict view, draft recovery, log viewer follow
+- [x] 8.1 Built minimal Tailwind primitives directly (Button/Card/Badge/StatusPill) instead of pulling in shadcn (interactive init blocked). Same visual vocabulary; smaller bundle.
+- [x] 8.2 TanStack Query provider with default `staleTime: 5s`, `refetchInterval` adaptive between 5s (fresh) and 30s (steady). Full exponential backoff still TODO; current setup adequate for MVP demo.
+- [x] 8.3 Top navigation with project tabs + view tabs (Experiments / Hypotheses / Journal). URLs: `/p/[project]/{,hypotheses,journal,experiments/[id]}`.
+- [x] 8.4 Experiment list view with status emoji column, status filter, free-text search across id/name/tags/hypotheses. Default sort `createdAt desc`.
+- [x] 8.5 Stale RUNNING `⚠` indicator on StatusPill, sourced from backend `stale` flag.
+- [x] 8.6 Experiment detail page: front matter panel, all 8 body sections rendered as markdown, Hypotheses cross-link panel, Artifacts panel, Resources placeholder.
+- [ ] 8.7 Status edit control deferred (read-only MVP).
+- [ ] 8.8 README editor + localStorage draft deferred.
+- [ ] 8.9 Conflict resolution diff view deferred.
+- [ ] 8.10 Draft recovery prompt deferred.
+- [x] 8.11 Hypothesis view: summary table rendered as-is + per-hypothesis cards with experiment cross-links + emoji status.
+- [x] 8.12 Journal timeline view: reverse-chrono list, filter by tag and experiment ID, browser-tz timestamps.
+- [x] 8.13 Log viewer component: last 100 lines with absolute line numbers, follow toggle (3s polling), `↑ load 100 earlier` button, jump-to-tail.
+- [x] 8.14 Mobile-responsive: Tailwind `md:` grid breakpoints, list collapses to card stack <768px, detail panels stack.
+- [ ] 8.15 Component tests deferred to phase 12.
 
 ## 9. Mock data
 

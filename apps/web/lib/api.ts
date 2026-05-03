@@ -1,0 +1,131 @@
+// Thin fetch wrappers for the /api/* routes. Used via TanStack Query.
+// We `import type` for everything so the @memon/core JS module never enters
+// the client bundle (it transitively pulls in fast-glob → fs).
+
+import type {
+  Experiment,
+  Hypothesis,
+  JournalEvent,
+  ParsedHypotheses,
+  ParsedJournal,
+} from '@memon/core'
+
+export interface ProjectSummary {
+  name: string
+  root: string
+  exclude: string[]
+}
+
+export interface IndexedExperiment
+  extends Pick<Experiment, 'id' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
+  stale: boolean
+}
+
+export interface FullExperiment
+  extends Pick<
+    Experiment,
+    'id' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
+  > {
+  stale: boolean
+  resources: null
+}
+
+async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init)
+  const text = await res.text()
+  let body: unknown
+  try {
+    body = text ? JSON.parse(text) : null
+  } catch {
+    body = text
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, (body as { error?: { message?: string } })?.error?.message ?? text)
+  }
+  return body as T
+}
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+export async function fetchProjects(): Promise<{ projects: ProjectSummary[] }> {
+  return jsonFetch('/api/projects')
+}
+
+export async function fetchExperiments(project?: string): Promise<{ experiments: IndexedExperiment[] }> {
+  const url = project ? `/api/experiments?project=${encodeURIComponent(project)}` : '/api/experiments'
+  return jsonFetch(url)
+}
+
+export async function fetchExperiment(id: string): Promise<FullExperiment> {
+  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}`)
+}
+
+export async function fetchHypotheses(project: string): Promise<{ path: string } & ParsedHypotheses> {
+  return jsonFetch(`/api/hypotheses?project=${encodeURIComponent(project)}`)
+}
+
+export async function fetchJournal(
+  project: string,
+  options: { limit?: number; before?: string } = {},
+): Promise<{ path: string } & ParsedJournal> {
+  const params = new URLSearchParams({ project })
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  if (options.before) params.set('before', options.before)
+  return jsonFetch(`/api/journal?${params.toString()}`)
+}
+
+export async function fetchLog(
+  path: string,
+  options: { endLine?: number; count?: number } = {},
+): Promise<{ totalLines: number; lines: { lineNumber: number; text: string }[] }> {
+  const params = new URLSearchParams({ path })
+  if (options.endLine !== undefined) params.set('endLine', String(options.endLine))
+  if (options.count !== undefined) params.set('count', String(options.count))
+  return jsonFetch(`/api/log?${params.toString()}`)
+}
+
+export async function appendJournalEvent(input: {
+  project: string
+  tag: string
+  body: string
+}): Promise<{ appended: { timestamp: string; tag: string; body: string } }> {
+  return jsonFetch('/api/journal/append', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export interface PutReadmeResponse {
+  mtime: number
+}
+export interface PutReadmeConflict {
+  error: { code: 'CONFLICT'; message: string }
+  mtime: number
+  content: string
+}
+
+export async function putReadme(input: {
+  path: string
+  content: string
+  expectedMtime: number
+  expectedHash?: string
+}): Promise<PutReadmeResponse | PutReadmeConflict> {
+  const res = await fetch('/api/readme', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PutReadmeResponse
+}
+
+// Re-exports for convenience
+export type { Experiment, Hypothesis, JournalEvent }
