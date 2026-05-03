@@ -2,10 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
 import { Separator } from './ui/separator'
 import { NewExperimentButton } from './new-experiment-button'
-import { cn } from '../lib/utils'
 
 export function AppBar({ project }: { project: string }) {
   const pathname = usePathname() ?? ''
@@ -30,27 +30,23 @@ export function AppBar({ project }: { project: string }) {
   ]
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-3 border-b bg-background px-3 md:px-4">
+    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 md:px-4">
       <SidebarTrigger className="md:hidden" />
       <Separator orientation="vertical" className="hidden h-5 md:block" />
       <nav className="flex items-center gap-1 overflow-x-auto" role="tablist">
         {tabs.map((t) => {
           const isActive = t.matches(pathname)
           return (
-            <Link
+            <Button
               key={t.href}
-              href={t.href}
-              role="tab"
-              aria-selected={isActive}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                isActive
-                  ? 'bg-foreground text-background'
-                  : 'text-foreground/70 hover:bg-accent hover:text-accent-foreground',
-              )}
+              asChild
+              size="sm"
+              variant={isActive ? 'default' : 'ghost'}
             >
-              {t.name}
-            </Link>
+              <Link href={t.href} role="tab" aria-selected={isActive}>
+                {t.name}
+              </Link>
+            </Button>
           )
         })}
       </nav>
