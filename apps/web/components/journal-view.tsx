@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { fetchJournal } from '../lib/api'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
+import { AddJournalEntryButton } from './add-journal-entry-button'
 import { TimestampLocal } from './timestamp'
+import { ListSkeleton } from './skeletons'
 
 const TAG_COLORS: Record<string, 'default' | 'success' | 'warning' | 'destructive' | 'outline'> = {
   CREATE: 'success',
@@ -36,7 +38,7 @@ export function JournalView({ project }: { project: string }) {
 
   const allTags = useMemo(() => Array.from(new Set(events.map((e) => e.tag))).sort(), [events])
 
-  if (isLoading) return <div className="p-4 text-sm text-slate-500">loading…</div>
+  if (isLoading && !data) return <div className="p-4 md:p-6"><ListSkeleton count={6} /></div>
   if (error) return <div className="p-4 text-sm text-red-600">error: {(error as Error).message}</div>
   if (!data) return null
 
@@ -53,6 +55,9 @@ export function JournalView({ project }: { project: string }) {
             ) : (
               <Badge variant="warning">no last_digest_at</Badge>
             )}
+            <div className="ml-auto">
+              <AddJournalEntryButton project={project} />
+            </div>
           </div>
         </CardHeader>
         <CardContent>

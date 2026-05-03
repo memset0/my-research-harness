@@ -6,6 +6,8 @@ import { useMemo, useState } from 'react'
 import { fetchExperiments, type IndexedExperiment } from '../lib/api'
 import { Badge, Card, StatusPill } from './ui'
 import { TimestampLocal } from './timestamp'
+import { NewExperimentButton } from './new-experiment-button'
+import { ListSkeleton } from './skeletons'
 
 const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
 
@@ -58,9 +60,12 @@ export function ExperimentList({ project }: { project: string }) {
         <span className="text-xs text-slate-500">
           {filtered.length} / {experiments.length}
         </span>
+        <div className="ml-auto">
+          <NewExperimentButton project={project} />
+        </div>
       </div>
 
-      {isLoading && <div className="text-sm text-slate-500">loading…</div>}
+      {isLoading && experiments.length === 0 && <ListSkeleton count={6} />}
       {error && <div className="text-sm text-red-600">error: {(error as Error).message}</div>}
 
       <div className="hidden grid-cols-12 items-center gap-3 border-b border-slate-200 pb-2 text-xs uppercase tracking-wide text-slate-500 md:grid">

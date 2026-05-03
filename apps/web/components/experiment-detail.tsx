@@ -2,7 +2,11 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { fetchExperiment, type FullExperiment } from '../lib/api'
-import { Badge, Card, CardContent, CardHeader, CardTitle, StatusPill } from './ui'
+import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
+import { StatusEdit } from './status-edit'
+import { EditReadmeButton } from './edit-readme-button'
+import { AddNoteButton } from './add-note-button'
+import { DetailSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Markdown } from './markdown'
 import { LogViewer } from './log-viewer'
@@ -14,7 +18,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
     queryFn: () => fetchExperiment(id),
   })
 
-  if (isLoading) return <div className="p-4 text-sm text-slate-500">loading…</div>
+  if (isLoading && !data) return <DetailSkeleton />
   if (error) return <div className="p-4 text-sm text-red-600">error: {(error as Error).message}</div>
   if (!data) return null
 
@@ -26,15 +30,22 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill status={fm.status} stale={exp.stale} />
+            {exp.hasReadme ? (
+              <StatusEdit id={exp.id} status={fm.status} stale={exp.stale} expectedMtime={exp.mtime} />
+            ) : (
+              <Badge variant="warning">no README — status edit unavailable</Badge>
+            )}
             <CardTitle className="font-mono">{exp.id}</CardTitle>
-            {!exp.hasReadme && <Badge variant="warning">no README</Badge>}
             {exp.parseErrors.length > 0 && (
               <Badge variant="destructive">{exp.parseErrors.length} parse errors</Badge>
             )}
             {exp.parseWarnings.length > 0 && (
               <Badge variant="warning">{exp.parseWarnings.length} warnings</Badge>
             )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <AddNoteButton project={fm.project} experimentId={exp.id} />
+              {exp.hasReadme && <EditReadmeButton path={exp.path} experimentId={exp.id} />}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">

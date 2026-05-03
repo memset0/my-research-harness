@@ -25,6 +25,38 @@ import { PathSafetyError, assertWithinProjectRoots } from '../../../lib/path-saf
 
 export const dynamic = 'force-dynamic'
 
+export async function GET(req: NextRequest) {
+  try {
+    const rt = await getRuntime()
+    const url = new URL(req.url)
+    const pathParam = url.searchParams.get('path')
+    if (!pathParam) {
+      return NextResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'path query parameter required' } },
+        { status: 400 },
+      )
+    }
+    let safePath: string
+    try {
+      safePath = assertWithinProjectRoots(pathParam, rt.config)
+    } catch (err) {
+      if (err instanceof PathSafetyError) {
+        return NextResponse.json(
+          { error: { code: 'FORBIDDEN', message: err.message } },
+          { status: 403 },
+        )
+      }
+      throw err
+    }
+    const stat = await fs.stat(safePath)
+    const content = await fs.readFile(safePath, 'utf8')
+    const hash = createHash('sha1').update(content).digest('hex')
+    return NextResponse.json({ path: safePath, content, mtime: stat.mtimeMs, hash })
+  } catch (err) {
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  }
+}
+
 interface PutBody {
   path: string
   content: string

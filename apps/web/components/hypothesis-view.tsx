@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { fetchHypotheses } from '../lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from './ui'
 import { Markdown } from './markdown'
+import { ListSkeleton } from './skeletons'
 
 // Inlined to avoid pulling Node-only @memon/core barrel into the client bundle.
 const HYPOTHESIS_STATUS_EMOJI: Readonly<Record<string, string>> = {
@@ -21,7 +22,7 @@ export function HypothesisView({ project }: { project: string }) {
     queryFn: () => fetchHypotheses(project),
   })
 
-  if (isLoading) return <div className="p-4 text-sm text-slate-500">loading…</div>
+  if (isLoading && !data) return <div className="p-4 md:p-6"><ListSkeleton count={4} /></div>
   if (error) return <div className="p-4 text-sm text-red-600">error: {(error as Error).message}</div>
   if (!data) return null
 

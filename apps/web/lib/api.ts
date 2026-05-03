@@ -110,6 +110,17 @@ export interface PutReadmeConflict {
   content: string
 }
 
+export interface FetchedReadme {
+  path: string
+  content: string
+  mtime: number
+  hash: string
+}
+
+export async function fetchReadme(path: string): Promise<FetchedReadme> {
+  return jsonFetch(`/api/readme?path=${encodeURIComponent(path)}`)
+}
+
 export async function putReadme(input: {
   path: string
   content: string
@@ -125,6 +136,49 @@ export async function putReadme(input: {
   if (res.status === 409) return body as PutReadmeConflict
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
   return body as PutReadmeResponse
+}
+
+export interface PatchStatusResponse {
+  mtime: number
+  prevStatus?: string
+  nextStatus?: string
+  unchanged?: boolean
+}
+
+export async function patchExperimentStatus(input: {
+  id: string
+  status: string
+  expectedMtime: number
+  expectedHash?: string
+}): Promise<PatchStatusResponse | PutReadmeConflict> {
+  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      status: input.status,
+      expectedMtime: input.expectedMtime,
+      expectedHash: input.expectedHash,
+    }),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PatchStatusResponse
+}
+
+export async function postExperiment(input: {
+  name: string
+  project?: string
+}): Promise<{ created: { id: string; path: string; project: string } } | PutReadmeConflict> {
+  const res = await fetch('/api/experiments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body
 }
 
 // Re-exports for convenience
