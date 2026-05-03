@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
-import { Separator } from './ui/separator'
 import { NewExperimentButton } from './new-experiment-button'
 
 export function AppBar({ project }: { project: string }) {
@@ -32,8 +31,13 @@ export function AppBar({ project }: { project: string }) {
   return (
     <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 md:px-4">
       <SidebarTrigger className="md:hidden" />
-      <Separator orientation="vertical" className="hidden h-5 md:block" />
-      <nav className="flex items-center gap-1 overflow-x-auto" role="tablist">
+      {/*
+        nav: do NOT add overflow-x-auto here. Per CSS spec, setting
+        overflow-x to a non-visible value makes overflow-y auto as well,
+        and shadcn Button's `active:translate-y-px` (1px nudge on click)
+        then makes content overflow vertically by 1px → stray scrollbar.
+      */}
+      <nav className="flex items-center gap-1" role="tablist">
         {tabs.map((t) => {
           const isActive = t.matches(pathname)
           return (
