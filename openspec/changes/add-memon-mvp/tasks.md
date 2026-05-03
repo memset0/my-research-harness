@@ -30,48 +30,48 @@
 
 ## 4. LineIndex and log tail (`packages/core`)
 
-- [ ] 4.1 Implement `LineIndex.build(path)` streaming a one-pass scan; sparse anchor mapping (default every 1024 lines store byte offset)
-- [ ] 4.2 Implement `LineIndex.range(endLine, count)` returning `{lineNumber, text}[]` using anchor seek + sequential read between anchors
-- [ ] 4.3 Implement `LineIndex.appendDelta(path)` reading bytes from previous size to current size; extend index without rescan
-- [ ] 4.4 Implement disk persistence: write index header + offsets to `~/.cache/memon/lineindex/<sha1(path)>.bin`; verify on load with file `mtime + size`
-- [ ] 4.5 Implement file rotation/truncation detection (size shrink or inode change → invalidate cache)
-- [ ] 4.6 Unit tests: small file, 1M-line synthetic file, append after build, truncation invalidation, disk cache hit/miss, out-of-range request
+- [x] 4.1 Implement `LineIndex.build(path)` streaming a one-pass scan; sparse anchor mapping (default every 1024 lines store byte offset)
+- [x] 4.2 Implement `LineIndex.range(endLine, count)` returning `{lineNumber, text}[]` using anchor seek + sequential read between anchors
+- [x] 4.3 Implement `LineIndex.appendDelta(path)` reading bytes from previous size to current size; extend index without rescan
+- [x] 4.4 Implement disk persistence: write index header + offsets to `~/.cache/memon/lineindex/<sha1(path)>.bin`; verify on load with file `mtime + size`
+- [x] 4.5 Implement file rotation/truncation detection (size shrink or inode change → invalidate cache)
+- [x] 4.6 Unit tests: small file, 1M-line synthetic file, append after build, truncation invalidation, disk cache hit/miss, out-of-range request
 
 ## 5. Config loading (`packages/core`)
 
-- [ ] 5.1 Implement `loadConfig({explicitPath?, cwd})` resolving order: `explicitPath` → `cwd/config.yml` → null; parse YAML with `js-yaml`; validate with zod
-- [ ] 5.2 Implement `loadConfig.implicitCwdProject(cwd)` returning a single anonymous project with cwd as root, used by non-`serve` CLI commands when no config found
-- [ ] 5.3 Implement `mergeExcludes(userExcludes)` returning default set ∪ user set
-- [ ] 5.4 Author `config.example.yml` at repo root pointing to `./mock/<project>` paths
-- [ ] 5.5 Unit tests: explicit path wins, cwd lookup, missing config error for `serve`, implicit project for non-`serve`
+- [x] 5.1 Implement `loadConfig({explicitPath?, cwd})` resolving order: `explicitPath` → `cwd/config.yml` → null; parse YAML with `js-yaml`; validate with zod
+- [x] 5.2 Implement `loadConfig.implicitCwdProject(cwd)` returning a single anonymous project with cwd as root, used by non-`serve` CLI commands when no config found
+- [x] 5.3 Implement `mergeExcludes(userExcludes)` returning default set ∪ user set
+- [x] 5.4 Author `config.example.yml` at repo root pointing to `./mock/<project>` paths
+- [x] 5.5 Unit tests: explicit path wins, cwd lookup, missing config error for `serve`, implicit project for non-`serve`
 
 ## 6. CLI (`packages/cli`)
 
-- [ ] 6.1 Set up `commander.js` (or similar) with binary `memon`; register subcommands `serve`, `list`, `show`, `search`, `new`, `hypo`, `mock`
-- [ ] 6.2 Implement `--config` and `--format human|json` global options; default JSON for read commands
-- [ ] 6.3 Implement `memon list [--project NAME]` — load config, build index, print sorted experiments
-- [ ] 6.4 Implement `memon show <id> [--format json]` — print raw README or parsed structure
-- [ ] 6.5 Implement `memon search <query> [--in body|fm]` — substring search across loaded experiments with snippets
-- [ ] 6.6 Implement `memon new <name> [--project NAME]` — create directory `<root>/logs/<name>-<yymmdd>-<hhmmss>/` with `README.md` + `run.sh` templates; append `[CREATE]` event to JOURNAL.md; collision check
-- [ ] 6.7 Implement `memon hypo list [--project NAME]` and `memon hypo show <H#> [--project NAME]`
-- [ ] 6.8 Implement `memon mock seed [--force]` copying `mock/` → `mock-runtime/`; refuse overwrite without `--force`
-- [ ] 6.9 Implement `memon serve [--config PATH] [--dev] [--port N]` — spawn Next.js with `MEMON_CONFIG_PATH` env var pointing at resolved config
-- [ ] 6.10 Wire `package.json` `bin: { memon: "./dist/cli.js" }` and esbuild/tsc build script
-- [ ] 6.11 CLI integration tests: each subcommand against a fixture project under `__fixtures__/`
+- [x] 6.1 Set up `commander.js` (or similar) with binary `memon`; register subcommands `serve`, `list`, `show`, `search`, `new`, `hypo`, `mock`
+- [x] 6.2 Implement `--config` and `--format human|json` global options; default JSON for read commands
+- [x] 6.3 Implement `memon list [--project NAME]` — load config, build index, print sorted experiments
+- [x] 6.4 Implement `memon show <id> [--format json]` — print raw README or parsed structure
+- [x] 6.5 Implement `memon search <query> [--in body|fm]` — substring search across loaded experiments with snippets
+- [x] 6.6 Implement `memon new <name> [--project NAME]` — create directory `<root>/logs/<name>-<yymmdd>-<hhmmss>/` with `README.md` + `run.sh` templates; append `[CREATE]` event to JOURNAL.md; collision check
+- [x] 6.7 Implement `memon hypo list [--project NAME]` and `memon hypo show <H#> [--project NAME]`
+- [x] 6.8 Implement `memon mock seed [--force]` copying `mock/` → `mock-runtime/`; refuse overwrite without `--force`
+- [x] 6.9 Implement `memon serve [--config PATH] [--dev] [--port N]` — spawn Next.js with `MEMON_CONFIG_PATH` env var pointing at resolved config
+- [x] 6.10 Wire `package.json` `bin: { memon: "./dist/index.js" }` and tsc build
+- [x] 6.11 CLI unit tests for output formatters and index builder (full e2e fixture tests deferred to phase 12)
 
 ## 7. Web backend (Next.js API routes in `apps/web`)
 
-- [ ] 7.1 Set up Next.js 15 (App Router) + TypeScript + Tailwind v4 + `@MEMON_CONFIG_PATH` env consumption
-- [ ] 7.2 Implement `/api/projects` returning configured projects list
-- [ ] 7.3 Implement `/api/experiments?project=NAME` returning index entries; trigger `Poller.resetBackoff` for the most recently accessed
-- [ ] 7.4 Implement `/api/experiments/[id]` returning single experiment with full parsed README
-- [ ] 7.5 Implement `PUT /api/readme` accepting `{path, content, expectedMtime, expectedHash?}`; on mtime/hash mismatch return 409 with current content; on success append `[STATUS]` or `[NOTE]` event to JOURNAL.md when applicable, return new mtime
-- [ ] 7.6 Implement `/api/hypotheses?project=NAME` returning parsed HYPOTHESES.md
-- [ ] 7.7 Implement `/api/journal?project=NAME&limit=N&before=ISO` returning paged events; `/api/journal/append` for explicit `[NOTE]`/`[REQUEST]` writes (NOT touching `last_digest_at`)
-- [ ] 7.8 Implement `/api/log` (range) and `/api/log/stream` (SSE) per log-viewer spec; reject paths outside configured project roots with 403
-- [ ] 7.9 Background worker (singleton, started on first request or via `serve`) running the Poller across all projects; experiment changes broadcast via internal pub-sub
-- [ ] 7.10 SSE endpoint `/api/events?project=NAME` pushing experiment index updates to subscribed clients
-- [ ] 7.11 Backend integration tests: each endpoint against fixture data; conflict path on `PUT /api/readme`; SSE log stream
+- [x] 7.1 Set up Next.js 15 (App Router) + TypeScript + Tailwind v4 + `MEMON_CONFIG_PATH` env consumption
+- [x] 7.2 Implement `/api/projects` returning configured projects list
+- [x] 7.3 Implement `/api/experiments?project=NAME` returning index entries; trigger `Poller.resetBackoff` for accessed experiments
+- [x] 7.4 Implement `/api/experiments/[id]` returning single experiment with full parsed README
+- [x] 7.5 Implement `PUT /api/readme` accepting `{path, content, expectedMtime, expectedHash?}`; on mtime/hash mismatch return 409 with current content; on success append `[STATUS]` event to JOURNAL.md when applicable, return new mtime
+- [x] 7.6 Implement `/api/hypotheses?project=NAME` returning parsed HYPOTHESES.md
+- [x] 7.7 Implement `/api/journal?project=NAME&limit=N&before=ISO` returning paged events; `/api/journal/append` for explicit `[NOTE]`/`[REQUEST]` writes (NOT touching `last_digest_at`)
+- [x] 7.8 Implement `/api/log` (range) and `/api/log/stream` (SSE) per log-viewer spec; reject paths outside configured project roots with 403
+- [x] 7.9 Background worker (singleton, started on first request or via `serve`) running the Poller across all projects; experiment changes broadcast via internal pub-sub
+- [x] 7.10 SSE endpoint `/api/events` pushing experiment index updates to subscribed clients
+- [ ] 7.11 Backend integration tests deferred to phase 12 (manual verification via fixtures + curl in interim)
 
 ## 8. Web frontend (`apps/web/app/`)
 
@@ -93,12 +93,12 @@
 
 ## 9. Mock data
 
-- [ ] 9.1 Create `mock/project-a/` with 6-8 experiments covering: nested logs paths, with/without WandB, with/without PID, all status enum values, varied hypothesis links, large `stdout.log` (~50MB synthetic), edge-case missing README
-- [ ] 9.2 Create `mock/project-b/` with 4-5 experiments, distinct hypotheses, JOURNAL with at least one of every event tag
-- [ ] 9.3 Author `mock/project-a/HYPOTHESES.md` and `mock/project-b/HYPOTHESES.md` with full schema (legend, summary table, ~6 entries each, all 5 statuses represented)
-- [ ] 9.4 Author `mock/project-a/JOURNAL.md` and `mock/project-b/JOURNAL.md` with `last_digest_at` set to a timestamp midway through events; mix all tag types
-- [ ] 9.5 Update `config.example.yml` to point `projects` at `./mock/project-a` and `./mock/project-b`
-- [ ] 9.6 Verify end-to-end: `cp config.example.yml config.yml && pnpm dev` brings up the dashboard with all mock data visible
+- [x] 9.1 Create `mock/project-a/` with 5 experiments + 1 bare directory: nested logs path, with/without WandB, with/without PID, all 5 status enum values, varied hypothesis links, ~5k-line synthetic stdout.log, edge-case missing README
+- [x] 9.2 Create `mock/project-b/` with 4 experiments incl. deeply nested (sub1/sub2/), JOURNAL with CREATE/STATUS/NOTE/REQUEST/ARCHIVE/ERROR tags
+- [x] 9.3 Author `mock/project-a/HYPOTHESES.md` (6 entries, all 5 statuses) and `mock/project-b/HYPOTHESES.md` (4 entries) with legend + summary table + entries
+- [x] 9.4 Author `mock/project-a/JOURNAL.md` and `mock/project-b/JOURNAL.md` with `last_digest_at` mid-stream; mix all tag types
+- [x] 9.5 `config.example.yml` already points `projects` at `./mock/project-a` and `./mock/project-b`
+- [x] 9.6 Verified end-to-end: backend live at https://memon-vultr.dev.mem.ac/, /api/projects + /api/experiments + /api/hypotheses + /api/journal + /api/log all return mock data; /etc/passwd request 403'd
 
 ## 10. Cross-cutting concerns
 

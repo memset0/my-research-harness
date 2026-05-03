@@ -1,0 +1,26 @@
+# memon configuration.
+#
+# Copy this file to `config.yml` (gitignored) and edit `projects` to point at
+# your real logs directories. Paths can be relative (resolved against this
+# config file's directory) or absolute.
+#
+# `memon serve` starts the dashboard at port 3737 by default. Caddy or a
+# similar reverse proxy can fan that out to a public domain.
+
+projects:
+  - name: project-a
+    root: ./mock/project-a
+    # Default excludes (.git, node_modules, __pycache__, .venv, venv, .cache)
+    # are always applied. Entries below ADD to that set.
+    exclude: []
+
+  - name: project-b
+    root: ./mock/project-b
+
+# Polling policy. Each watched directory has its own per-path interval that
+# doubles after each unchanged check, capped between min and max. Defaults
+# below match the spec.
+poll:
+  min_interval_ms: 1000
+  max_interval_ms: 300000
+  backoff_factor: 2

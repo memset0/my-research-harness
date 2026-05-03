@@ -29,5 +29,16 @@ export {
   staleAgeMs,
 } from './discovery/stale.js'
 export type { StaleCheckOptions } from './discovery/stale.js'
+export { DEFAULT_ANCHOR_EVERY, LineIndex } from './log/line-index.js'
+export type { AppendResult, LineIndexOptions, LineRange } from './log/line-index.js'
+export {
+  CACHE_VERSION,
+  defaultCacheDir,
+  loadCache,
+  saveCache,
+} from './log/cache.js'
+export type { CacheOptions, CacheRecord } from './log/cache.js'
+export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
+export type { LoadConfigOptions } from './config/load.js'
 
 export const VERSION = '0.0.0'
