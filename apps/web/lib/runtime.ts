@@ -1,10 +1,10 @@
-// Module-level singleton holding the live experiment index, poller, and event
-// bus shared across all API routes.
+// Module-level singleton holding the live experiment index, file caches,
+// poller, and event bus shared across all API routes.
 //
 // Lifecycle:
 //   - Initialized lazily on first request (so importing the module is cheap)
+//   - Eagerly warmed up via apps/web/instrumentation.ts on server start
 //   - Kept across requests in the Next.js dev server (module state persists)
-//   - Re-initialized only when this module is HMR'd; that's acceptable in dev
 //
 // Production model: `memon serve` spawns Next.js with MEMON_CONFIG_PATH set;
 // in dev `pnpm --filter @memon/web dev` we walk up to find the repo's
@@ -12,16 +12,21 @@
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { EventEmitter } from 'node:events'
 import {
   ExperimentIndex,
   Poller,
   discoverExperiments,
   loadConfig,
+  parseHypotheses,
+  parseJournal,
   readExperimentDir,
   type Config,
   type Experiment,
+  type ParsedHypotheses,
+  type ParsedJournal,
 } from '@memon/core'
-import { EventEmitter } from 'node:events'
+import { FileCache } from './runtime/file-cache'
 
 export interface ExperimentChangeEvent {
   type: 'set' | 'delete'
@@ -30,12 +35,19 @@ export interface ExperimentChangeEvent {
 }
 
 export class Runtime {
+  /** Set when init() resolves; used by /api/runtime/health */
+  public warmupAt: number = Date.now()
+  /** Most recent error during init or background refresh */
+  public lastError: string | null = null
+
   constructor(
     public readonly config: Config,
     public readonly configPath: string,
     public readonly index: ExperimentIndex,
     public readonly poller: Poller,
     public readonly events: EventEmitter,
+    public readonly hypothesesCache: FileCache<ParsedHypotheses>,
+    public readonly journalCache: FileCache<ParsedJournal>,
   ) {}
 
   /** Reset poll backoff for the experiment whose path matches `path`. */
@@ -56,6 +68,18 @@ export class Runtime {
       }
     }
     return null
+  }
+
+  /** Path to <project>/HYPOTHESES.md for the given project name (or null). */
+  hypothesesPath(project: string): string | null {
+    const p = this.config.projects.find((x) => x.name === project)
+    return p ? join(p.root, 'HYPOTHESES.md') : null
+  }
+
+  /** Path to <project>/JOURNAL.md for the given project name (or null). */
+  journalPath(project: string): string | null {
+    const p = this.config.projects.find((x) => x.name === project)
+    return p ? join(p.root, 'JOURNAL.md') : null
   }
 }
 
@@ -82,6 +106,22 @@ async function init(): Promise<Runtime> {
   const events = new EventEmitter()
   events.setMaxListeners(50)
 
+  // Per-project file caches for HYPOTHESES.md / JOURNAL.md
+  const hypothesesPaths = config.projects.map((p) => join(p.root, 'HYPOTHESES.md'))
+  const journalPaths = config.projects.map((p) => join(p.root, 'JOURNAL.md'))
+
+  const hypothesesCache = new FileCache<ParsedHypotheses>({
+    name: 'hypotheses',
+    paths: hypothesesPaths,
+    parse: parseHypotheses,
+  })
+  const journalCache = new FileCache<ParsedJournal>({
+    name: 'journal',
+    paths: journalPaths,
+    parse: parseJournal,
+  })
+
+  // Single Poller instance dispatched by path-membership to the right handler.
   const poller = new Poller(
     {
       minIntervalMs: config.poll.minIntervalMs,
@@ -89,7 +129,11 @@ async function init(): Promise<Runtime> {
       backoffFactor: config.poll.backoffFactor,
     },
     async (path) => {
-      // Find the owning project
+      // Try file caches first (cheap O(1) Set membership check each).
+      if (hypothesesCache.handlePollChange(path)) return
+      if (journalCache.handlePollChange(path)) return
+
+      // Otherwise this is an experiment directory.
       const projectMatch = config.projects.find(
         (p) => path === p.root || path.startsWith(`${p.root}/`),
       )
@@ -99,27 +143,60 @@ async function init(): Promise<Runtime> {
         index.set(exp)
         events.emit('experiment-change', { type: 'set', id: exp.id, experiment: exp })
       } catch {
-        // If directory disappeared, drop from index
-        // (mtime poller would otherwise keep firing for a missing path)
+        // If directory disappeared, drop from index silently
       }
     },
   )
 
-  // Initial scan + watch
-  for (const project of config.projects) {
-    const dirs = await discoverExperiments(project)
-    for (const dir of dirs) {
-      try {
-        const exp = await readExperimentDir(dir, project.name)
-        index.set(exp)
-        poller.watch(dir, exp.mtime)
-      } catch {
-        // Skip unreadable directories
+  // Initial scan + parse + watch — file caches and experiment scan in parallel.
+  const t0 = Date.now()
+  await Promise.all([
+    hypothesesCache.warmup(),
+    journalCache.warmup(),
+    (async () => {
+      for (const project of config.projects) {
+        const dirs = await discoverExperiments(project)
+        for (const dir of dirs) {
+          try {
+            const exp = await readExperimentDir(dir, project.name)
+            index.set(exp)
+            poller.watch(dir, exp.mtime)
+          } catch {
+            // Skip unreadable directories
+          }
+        }
       }
-    }
+    })(),
+  ])
+
+  // Register watch entries for the file caches with the mtimes observed during
+  // warmup. Must happen after warmup so the Poller's "lastSeen mtime" is
+  // accurate (else the very first tick would unnecessarily refire).
+  for (const p of hypothesesPaths) {
+    const entry = hypothesesCache.get(p)
+    poller.watch(p, entry?.mtime ?? 0)
+  }
+  for (const p of journalPaths) {
+    const entry = journalCache.get(p)
+    poller.watch(p, entry?.mtime ?? 0)
   }
 
-  return new Runtime(config, configPath, index, poller, events)
+  // eslint-disable-next-line no-console
+  console.log(
+    `memon: warmup complete in ${Date.now() - t0}ms — ${index.size()} experiments, ` +
+      `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
+      `${journalCache.populated()}/${journalPaths.length} journal files`,
+  )
+
+  return new Runtime(
+    config,
+    configPath,
+    index,
+    poller,
+    events,
+    hypothesesCache,
+    journalCache,
+  )
 }
 
 async function resolveConfigPath(): Promise<string | null> {

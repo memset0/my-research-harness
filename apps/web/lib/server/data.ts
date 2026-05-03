@@ -1,15 +1,15 @@
 // Server-side data fetchers used by SSR prefetch.
 //
 // These mirror the JSON shape returned by /api/* routes so that prefetched
-// data slot directly into the same TanStack Query keys used by the client
-// (`fetchProjects` / `fetchExperiments` / etc.). Reading from the runtime
-// in-memory index here is faster than a self-loopback HTTP call.
+// data slots directly into the same TanStack Query keys used by the client
+// (`fetchProjects` / `fetchExperiments` / etc.).
+//
+// As of `add-runtime-cache`, hypotheses + journal data come from the runtime
+// in-memory cache, not from disk. ExperimentIndex was already in-memory.
 
 import 'server-only'
 
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { isStaleRunning, parseHypotheses, parseJournal } from '@memon/core'
+import { isStaleRunning } from '@memon/core'
 import { getRuntime } from '../runtime'
 import type {
   FullExperiment,
@@ -68,38 +68,21 @@ export async function getExperimentData(id: string): Promise<FullExperiment | nu
   }
 }
 
+const EMPTY_HYPS = {
+  legendBlock: null,
+  summaryTableBlock: null,
+  entries: [],
+  parseErrors: [],
+  parseWarnings: [],
+} as const
+
 export async function getHypothesesData(project: string) {
   const rt = await getRuntime()
-  const projectCfg = rt.config.projects.find((p) => p.name === project)
-  if (!projectCfg) {
-    return {
-      path: '',
-      legendBlock: null,
-      summaryTableBlock: null,
-      entries: [],
-      parseErrors: [],
-      parseWarnings: [],
-    }
-  }
-  const path = join(projectCfg.root, 'HYPOTHESES.md')
-  let content: string
-  try {
-    content = await fs.readFile(path, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {
-        path,
-        legendBlock: null,
-        summaryTableBlock: null,
-        entries: [],
-        parseErrors: [],
-        parseWarnings: [],
-      }
-    }
-    throw err
-  }
-  const parsed = parseHypotheses(content)
-  return { path, ...parsed }
+  const path = rt.hypothesesPath(project)
+  if (!path) return { path: '', ...EMPTY_HYPS }
+  const entry = rt.hypothesesCache.get(path)
+  if (!entry || entry.value === null) return { path, ...EMPTY_HYPS }
+  return { path, ...entry.value }
 }
 
 export async function getJournalData(
@@ -107,21 +90,15 @@ export async function getJournalData(
   options: { limit?: number; before?: string } = {},
 ) {
   const rt = await getRuntime()
-  const projectCfg = rt.config.projects.find((p) => p.name === project)
-  if (!projectCfg) {
+  const path = rt.journalPath(project)
+  if (!path) {
     return { path: '', lastDigestAt: null, events: [], parseErrors: [], parseWarnings: [] }
   }
-  const path = join(projectCfg.root, 'JOURNAL.md')
-  let content: string
-  try {
-    content = await fs.readFile(path, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { path, lastDigestAt: null, events: [], parseErrors: [], parseWarnings: [] }
-    }
-    throw err
+  const entry = rt.journalCache.get(path)
+  if (!entry || entry.value === null) {
+    return { path, lastDigestAt: null, events: [], parseErrors: [], parseWarnings: [] }
   }
-  const parsed = parseJournal(content)
+  const parsed = entry.value
   let events = [...parsed.events].reverse()
   const before = options.before
   if (before) events = events.filter((e) => e.timestamp < before)

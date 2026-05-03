@@ -1,11 +1,9 @@
 // GET /api/journal?project=NAME[&limit=N&before=ISO]
 //
 // Returns parsed JOURNAL.md events newest-first, optionally limited.
+// Reads from the runtime's JournalCache (no fs.readFile in the hot path).
 
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
 import { type NextRequest, NextResponse } from 'next/server'
-import { parseJournal } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
@@ -24,27 +22,30 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       )
     }
-    const project = rt.config.projects.find((p) => p.name === projectName)
-    if (!project) {
+    const path = rt.journalPath(projectName)
+    if (!path) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `project "${projectName}" not configured` } },
         { status: 404 },
       )
     }
-    const path = join(project.root, 'JOURNAL.md')
-    let content: string
-    try {
-      content = await fs.readFile(path, 'utf8')
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        return NextResponse.json({ path, lastDigestAt: null, events: [] })
-      }
-      throw err
+
+    const entry = rt.journalCache.get(path)
+    if (!entry || entry.value === null) {
+      return NextResponse.json({
+        path,
+        lastDigestAt: null,
+        events: [],
+        parseErrors: [],
+        parseWarnings: [],
+      })
     }
-    const parsed = parseJournal(content)
+    const parsed = entry.value
     let events = [...parsed.events].reverse() // newest-first
     if (before) events = events.filter((e) => e.timestamp < before)
-    const limit = limitStr ? Math.max(0, Number.parseInt(limitStr, 10) || 0) : Number.POSITIVE_INFINITY
+    const limit = limitStr
+      ? Math.max(0, Number.parseInt(limitStr, 10) || 0)
+      : Number.POSITIVE_INFINITY
     if (Number.isFinite(limit)) events = events.slice(0, limit)
     return NextResponse.json({
       path,
