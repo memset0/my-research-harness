@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useMemonEvents } from './use-memon-events'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -9,20 +10,30 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
+            // SSE drives invalidation now. Background refetch is a fallback in
+            // case SSE drops or backend's poller misses something — set it slow
+            // to avoid load when SSE is healthy.
             staleTime: 5_000,
-            // Exponential-ish refetch: start at 5s, double on each successful
-            // refetch with no data change, cap at 5min. We approximate with
-            // a function-form refetchInterval that bumps based on previous
-            // query state via the query meta channel.
-            refetchInterval: (query) => {
-              const meta = query.state.data ? 30_000 : 5_000
-              return meta
-            },
+            refetchInterval: 60_000,
             refetchOnWindowFocus: true,
             retry: 1,
           },
         },
       }),
   )
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  return (
+    <QueryClientProvider client={client}>
+      <MemonEventsBridge />
+      {children}
+    </QueryClientProvider>
+  )
+}
+
+/**
+ * Tiny child component so `useMemonEvents()` runs INSIDE the QueryClientProvider.
+ * (Hooks called directly in <Providers> would not see the QueryClient context.)
+ */
+function MemonEventsBridge() {
+  useMemonEvents()
+  return null
 }
