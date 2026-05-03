@@ -5,6 +5,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { fetchExperiments, type IndexedExperiment } from '../lib/api'
 import { Badge, Card, StatusPill } from './ui'
+import { WarningBadge } from './colored-badge'
+import { TimestampLocal } from './timestamp'
+import { ListSkeleton } from './skeletons'
 import { Input } from './ui/input'
 import {
   Select,
@@ -13,8 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
-import { TimestampLocal } from './timestamp'
-import { ListSkeleton } from './skeletons'
 
 const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
 
@@ -129,7 +130,7 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperime
             {exp.frontMatter.hypotheses.map((h) => (
               <Badge key={h}>{h}</Badge>
             ))}
-            {noReadme && <Badge variant="warning">no README</Badge>}
+            {noReadme && <WarningBadge>no README</WarningBadge>}
           </div>
         </div>
       </Card>

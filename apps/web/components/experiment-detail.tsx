@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchExperiment, type FullExperiment } from '../lib/api'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
+import { WarningBadge } from './colored-badge'
 import { StatusEdit } from './status-edit'
 import { EditReadmeButton } from './edit-readme-button'
 import { AddNoteButton } from './add-note-button'
@@ -34,14 +35,14 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
             {exp.hasReadme ? (
               <StatusEdit id={exp.id} status={fm.status} stale={exp.stale} expectedMtime={exp.mtime} />
             ) : (
-              <Badge variant="warning">no README — status edit unavailable</Badge>
+              <WarningBadge>no README — status edit unavailable</WarningBadge>
             )}
             <CardTitle className="font-mono">{exp.id}</CardTitle>
             {exp.parseErrors.length > 0 && (
               <Badge variant="destructive">{exp.parseErrors.length} parse errors</Badge>
             )}
             {exp.parseWarnings.length > 0 && (
-              <Badge variant="warning">{exp.parseWarnings.length} warnings</Badge>
+              <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <AskClaudeCodeButton experiment={exp} />

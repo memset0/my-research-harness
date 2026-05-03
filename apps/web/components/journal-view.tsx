@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { fetchJournal } from '../lib/api'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from './ui'
+import { SuccessBadge, WarningBadge } from './colored-badge'
 import { AddJournalEntryButton } from './add-journal-entry-button'
 import { TimestampLocal } from './timestamp'
 import { ListSkeleton } from './skeletons'
@@ -17,16 +18,20 @@ import {
   SelectValue,
 } from './ui/select'
 
-const TAG_COLORS: Record<
-  string,
-  'default' | 'success' | 'warning' | 'destructive' | 'outline'
-> = {
-  CREATE: 'success',
-  STATUS: 'default',
-  NOTE: 'outline',
-  REQUEST: 'warning',
-  ARCHIVE: 'outline',
-  ERROR: 'destructive',
+function TagBadge({ tag }: { tag: string }) {
+  switch (tag) {
+    case 'CREATE':
+      return <SuccessBadge>{tag}</SuccessBadge>
+    case 'REQUEST':
+      return <WarningBadge>{tag}</WarningBadge>
+    case 'ERROR':
+      return <Badge variant="destructive">{tag}</Badge>
+    case 'STATUS':
+      return <Badge>{tag}</Badge>
+    default:
+      // NOTE / ARCHIVE / unknown
+      return <Badge variant="outline">{tag}</Badge>
+  }
 }
 
 export function JournalView({ project }: { project: string }) {
@@ -72,7 +77,7 @@ export function JournalView({ project }: { project: string }) {
                 last digested at <TimestampLocal value={data.lastDigestAt} variant="long" />
               </span>
             ) : (
-              <Badge variant="warning">no last_digest_at</Badge>
+              <WarningBadge>no last_digest_at</WarningBadge>
             )}
             <div className="ml-auto">
               <AddJournalEntryButton project={project} />
@@ -121,7 +126,7 @@ export function JournalView({ project }: { project: string }) {
                 className="grid grid-cols-1 gap-2 py-2 md:grid-cols-[10rem_5rem_1fr]"
               >
                 <TimestampLocal value={e.timestamp} variant="long" />
-                <Badge variant={TAG_COLORS[e.tag] ?? 'outline'}>{e.tag}</Badge>
+                <TagBadge tag={e.tag} />
                 <div className="text-sm">
                   {e.experimentId ? (
                     <Link
