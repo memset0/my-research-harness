@@ -8,21 +8,22 @@ finished_at: null
 host: null
 pid: null
 gpus: []
-entry: ./run.sh
-command: bash run.sh --rerun=baz-260503-080000 --skip-nan-step
+entry: ./train.sh
+command: bash train.sh --rerun=baz-260503-080000 --skip-nan-step --grad-clip=0.5
 wandb: null
 hypotheses: [H4]
-tags: [fsdp2, rerun]
+tags: [edm2, rerun]
 ---
 
 ## Motivation
 
-Clean rerun of baz-260503-080000 to confirm H4 refutation without the NaN
-crash that limited the prior measurement.
+Clean rerun of baz-260503-080000 to confirm H4 refutation without the
+NaN crash that limited the prior measurement. Also test whether tighter
+grad clipping (0.5 instead of 1.0) prevents the cross-attn NaN.
 
 ## Setup
 
-(TBD — same as baz-260503-080000 with NaN-skip patch applied)
+(TBD — same as baz-260503-080000 with NaN-skip patch and grad_clip=0.5)
 
 ## Method
 

@@ -9,43 +9,58 @@ host: bench-01
 pid: 9012
 gpus: [0]
 entry: ./run.sh
-command: bash run.sh --workload=concurrency_sweep
+command: bash run.sh --workload=cfg_sweep --cfg=4.5,7.5,10,12 --samples_per_prompt=4
 wandb: null
 hypotheses: [H2]
-tags: [tail-latency, sweep]
+tags: [cfg-sweep, lpips, diversity]
 ---
 
 ## Motivation
 
-Measure tail latency under increasing concurrency to test H2.
+Measure how sample diversity (pairwise LPIPS) decays with CFG scale (H2).
 
 ## Setup
 
-- single A100, concurrency ∈ {1, 8}
-- 1k iterations per concurrency point, 5 reruns
+- single A100, SD-1.5, DDIM-50 sampler
+- 1k prompts (PartiPrompts-1k subset)
+- 4 samples per prompt per CFG
+- CFG ∈ {4.5, 7.5, 10, 12}
+- different seed per (prompt, sample); same prompt set across CFG
 
 ## Method
 
-Run the workload at each concurrency level, capture full latency
-distribution including p99.
+For each prompt and CFG, compute pairwise LPIPS over the 4 samples
+(C(4,2)=6 pairs), then average. Report mean and p99 across prompts.
 
 ## Result
 
-- concurrency=1: mean=8ms, p99=18ms
-- concurrency=8: mean=14ms, p99=72ms (4× p99 for 8× concurrency)
+| CFG | mean LPIPS | p99 LPIPS | drop vs CFG=4.5 |
+| --- | ---------- | --------- | --------------- |
+| 4.5 | 0.41       | 0.62      | —               |
+| 7.5 | 0.38       | 0.59      | -7%             |
+| 10  | 0.31       | 0.51      | -24%            |
+| 12  | 0.26       | 0.43      | -37%            |
+
+- non-linearity is clear past CFG=7.5
+- p99 collapses faster than mean (tail of "stuck" prompts)
 
 ## Conclusion
 
-- H2 🟡 PARTIAL — clear non-linearity but only 2 sample points; need a
-  proper sweep at {2, 4, 16, 32} to confirm a curve shape.
+H2 🟡 PARTIAL. The non-linear drop is real but only 4 CFG points sampled;
+need to fill in {6, 8, 9, 11} to characterize the curve shape, and add
+a non-LPIPS diversity metric (FID-coverage) to cross-check.
 
 ## Caveats
 
-- only 2 concurrency points
-- bench-01 has noisy neighbor on its NUMA peer
+- only PartiPrompts-1k; LAION-art prompts may behave differently
+- bench-01 has noisy NUMA peer — wall time numbers per-CFG not strictly
+  comparable
 
 ## Artifacts
 
-- `./outputs/concurrency_1.csv` — full latency distribution at c=1
-- `./outputs/concurrency_8.csv` — full latency distribution at c=8
+- `./outputs/cfg_4_5.csv` — per-prompt LPIPS at CFG=4.5
+- `./outputs/cfg_7_5.csv`
+- `./outputs/cfg_10.csv`
+- `./outputs/cfg_12.csv`
+- `./outputs/lpips_curve.png`
 - `./logs/stdout.log` — run stdout

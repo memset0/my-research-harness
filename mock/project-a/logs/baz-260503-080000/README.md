@@ -5,59 +5,65 @@ project: project-a
 status: FAILED
 created_at: 2026-05-03T08:05:00+08:00
 finished_at: 2026-05-03T09:30:00+08:00
-host: m2.cluster
+host: gpu-node-07
 pid: 14123
 gpus: [0, 1, 2, 3]
-entry: ./run.sh
-command: bash run.sh --proto=delta_ag --baseline_compare
-wandb: https://wandb.ai/me/fsdp-comm/runs/baz-260503-080000
+entry: ./train.sh
+command: bash train.sh --precond=edm2 --baseline_compare --img=256 --steps=120000
+wandb: https://wandb.ai/me/imgflow/runs/baz-260503-080000
 hypotheses: [H4]
-tags: [fsdp2, comm, overlap]
+tags: [edm2, precond, fid]
 ---
 
 ## Motivation
 
-Empirically measure overlap regression of delta all-gather vs. baseline AG on
-FSDP2 (H4). Hypothesis predicts a categorical regression.
+Empirically measure FID gain of EDM2-style preconditioning over the original
+EDM preconditioning at 256² ImageNet (H4). Hypothesis predicts a ≥5% gain
+based on extrapolation from the EDM2 paper's 64²/128² results.
 
 ## Setup
 
 - 4× A100, NCCL pyt2.4
-- Llama-2-7B, bs=8, lr=1e-6
-- 32-step warmup, then 64 measured steps
-- Profile with nsight + torch profiler
+- DiT-B/2, bs=128, lr=2e-4, EMA 0.9999
+- 120k-step run, FID eval every 20k steps with 10k samples
+- two parallel runs sharing seed: EDM (baseline) vs EDM2 (variant)
+- only the precond / target-scaling changes; everything else identical
 
 ## Method
 
-1. Run baseline FSDP2 all-gather (overlap measured)
-2. Run delta-AG variant (additional cache + decompress kernel on critical path)
-3. Compare overlap ratio over the same 64 measured steps
+1. Run baseline EDM run for 120k steps, FID@{20, 40, 60, 80, 100, 120}k
+2. Run EDM2 variant for 120k steps, same FID schedule
+3. Compare best-EMA FID across the run
 
 ## Result
 
-- baseline overlap_ratio = 0.94
-- delta-AG overlap_ratio = 0.92
-- regression = 0.02 (NOT categorical, surprising)
+- baseline (EDM) best FID: 8.91 (at step 100k)
+- EDM2 best FID: 8.74 (at step 80k — crashed shortly after)
+- relative gain: 1.9% (well below the 5% threshold)
+- EDM2 *did* converge faster (best FID at step 80k vs 100k); convergence
+  speed is the real gain, not endpoint quality
 
-(Crashed on step 96 of delta-AG run with NaN — see Caveats.)
+(Crashed on step 84k of EDM2 run with NaN in cross-attn output — see Caveats.)
 
 ## Conclusion
 
-- H4 ❌ REFUTED in original strong form. Overlap regression exists but is
-  small (~2 points), not the catastrophic loss predicted.
-- The crash limits confidence — need a clean rerun.
+- H4 ❌ REFUTED in original strong form. EDM2 gives ~1.9% FID improvement,
+  not the ≥5% extrapolation predicted.
+- Convergence-speed advantage is real (~20% fewer steps to best FID) and
+  worth a separate hypothesis entry.
+- The crash limits confidence in the endpoint number — clean rerun needed.
 
 ## Caveats
 
-- run crashed on step 96 with NaN in attn weights (likely numerical, not
-  protocol-related; see logs/stderr.log)
-- single node only; multi-node delta-AG may behave differently
-- overlap measurement methodology may underestimate regression on
-  comm-bound shapes
+- run crashed on step 84k with NaN in cross-attn output (likely numerical,
+  not preconditioning-related; see logs/stderr.log)
+- only one preconditioning hyperparameter set tested (EDM2 defaults)
+- 120k may be too short for either run to fully converge — extrapolation
+  to 1M-step regime not warranted
 
 ## Artifacts
 
-- `./outputs/overlap_baseline.csv` — baseline timing
-- `./outputs/overlap_delta_ag.csv` — delta-AG timing (truncated at step 96)
+- `./outputs/fid_baseline.csv` — baseline FID timeseries
+- `./outputs/fid_edm2.csv` — EDM2 FID timeseries (truncated at step 80k)
 - `./logs/stdout.log` — training stdout
-- `./logs/stderr.log` — NaN traceback (last 200 lines)
+- `./logs/stderr.log` — NaN traceback (last ~200 lines)
