@@ -195,8 +195,12 @@ function ProjectExperiments({
               href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(exp.id)}`}
               title={exp.id}
             >
-              <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
-              <span className="ml-1 truncate font-mono text-xs">{exp.id}</span>
+              <span className="truncate font-mono text-xs">{exp.id}</span>
+              <StatusPill
+                status={exp.frontMatter.status}
+                stale={exp.stale}
+                className="ml-auto shrink-0"
+              />
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

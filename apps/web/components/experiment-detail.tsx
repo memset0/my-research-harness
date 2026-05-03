@@ -33,12 +33,12 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="font-mono">{exp.id}</CardTitle>
             {exp.hasReadme ? (
               <StatusEdit id={exp.id} status={fm.status} stale={exp.stale} expectedMtime={exp.mtime} />
             ) : (
               <WarningBadge>no README — status edit unavailable</WarningBadge>
             )}
-            <CardTitle className="font-mono">{exp.id}</CardTitle>
             {exp.parseErrors.length > 0 && (
               <Badge variant="destructive">{exp.parseErrors.length} parse errors</Badge>
             )}
@@ -103,18 +103,23 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
         </CardContent>
       </Card>
 
-      <SectionCard title="Motivation" body={exp.sections.motivation} />
-      <SectionCard title="Setup" body={exp.sections.setup} />
-      <SectionCard title="Method" body={exp.sections.method} />
-      <SectionCard title="Result" body={exp.sections.result} />
-      <SectionCard title="Conclusion" body={exp.sections.conclusion} />
-      <SectionCard title="Caveats" body={exp.sections.caveats} />
+      <SectionCard id="motivation" title="Motivation" body={exp.sections.motivation} />
+      <SectionCard id="setup" title="Setup" body={exp.sections.setup} />
+      <SectionCard id="method" title="Method" body={exp.sections.method} />
+      <SectionCard id="result" title="Result" body={exp.sections.result} />
+      <SectionCard id="conclusion" title="Conclusion" body={exp.sections.conclusion} />
+      <SectionCard id="caveats" title="Caveats" body={exp.sections.caveats} />
       <ArtifactsCard artifacts={exp.sections.artifacts} expPath={exp.path} />
       {exp.sections.newHypotheses && (
-        <SectionCard title="New Hypotheses" body={exp.sections.newHypotheses} highlight />
+        <SectionCard
+          id="new-hypotheses"
+          title="New Hypotheses"
+          body={exp.sections.newHypotheses}
+          highlight
+        />
       )}
 
-      <Card>
+      <Card id="resources">
         <CardHeader>
           <CardTitle>Resources</CardTitle>
         </CardHeader>
@@ -130,9 +135,19 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
   )
 }
 
-function SectionCard({ title, body, highlight }: { title: string; body: string | null; highlight?: boolean }) {
+function SectionCard({
+  id,
+  title,
+  body,
+  highlight,
+}: {
+  id: string
+  title: string
+  body: string | null
+  highlight?: boolean
+}) {
   return (
-    <Card className={highlight ? 'border-amber-400/60' : undefined}>
+    <Card id={id} className={highlight ? 'border-amber-400/60' : undefined}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
@@ -156,7 +171,7 @@ function ArtifactsCard({
 }) {
   if (artifacts.length === 0) return null
   return (
-    <Card>
+    <Card id="artifacts">
       <CardHeader>
         <CardTitle>Artifacts</CardTitle>
       </CardHeader>

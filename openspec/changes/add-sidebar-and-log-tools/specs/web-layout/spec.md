@@ -96,3 +96,104 @@ The repo SHALL adopt shadcn/ui versions of `Button`, `Card`, `Badge`, `Dialog`, 
 #### Scenario: Manual install (not interactive)
 - **WHEN** adding shadcn components to the repo
 - **THEN** component sources are committed directly under `apps/web/components/ui/*.tsx` (NOT installed via interactive `shadcn init` which has previously failed in this environment)
+
+### Requirement: Typography size convention
+
+Within content areas (cards, list rows, journal entries, log meta), all field **values** SHALL render at `text-xs` (~12px). Field **labels** (the small uppercase captions like `name`, `project`, `created`) SHALL render at `text-[10px] uppercase tracking-wide`. Card titles, page titles, and section headings keep their default shadcn sizes (`CardTitle` defaults, `text-base`, `text-lg`, `text-xl`).
+
+The intent is a stable visual hierarchy — tiny label → small value → medium-large title — that scans densely without looking uneven. The previous mix of `font-mono text-sm` for some Field values and `text-xs` for others (timestamps, command code, artifact paths) made fields visibly stair-step in the same row.
+
+#### Scenario: Experiment detail meta grid
+- **WHEN** rendering the experiment-detail meta card with name / project / created / finished / host / pid / gpus / entry / command / wandb / tags / hypotheses
+- **THEN** every value cell uses `text-xs`; labels use `text-[10px] uppercase tracking-wide text-muted-foreground`; visual hierarchy is uniform across rows
+
+#### Scenario: Experiment list row cells
+- **WHEN** rendering an experiment row in the list view (id / name / created / tags / hypotheses)
+- **THEN** all cell values use `text-xs`
+
+#### Scenario: Journal event row cells
+- **WHEN** rendering a journal event row (timestamp / tag / experiment-id + body)
+- **THEN** all cell values use `text-xs`
+
+### Requirement: Status display uses colored Badge with lucide icon
+
+Both experiment-run status (`PENDING` / `RUNNING` / `FINISHED` / `FAILED` / `UNKNOWN`) and hypothesis status (`CONFIRMED` / `REFUTED` / `PARTIAL` / `OPEN` / `DEFERRED`) SHALL render in the UI as a `<Badge variant="outline">` with a `lucide-react` icon plus the enum string. The on-disk JOURNAL.md / HYPOTHESES.md / README.md files continue to use the canonical emoji (📝 🟢 ✅ ❌ ❓ for runs, ✅ ❌ 🟡 🔵 ⚪ for hypotheses) per the parsing spec; the **emoji is never shown in the rendered UI**.
+
+Each status uses a distinct color family (composed via `cn()` over shadcn `Badge`, never by forking `badge.tsx`):
+- emerald — success / confirmed
+- red — failure / refuted
+- amber — partial
+- sky — running / open
+- slate / muted — pending / deferred / unknown
+
+Stale-RUNNING marker SHALL render as a `lucide-react AlertTriangle` icon next to (or inside) the badge — not the ⚠ emoji.
+
+#### Scenario: Run status pill
+- **WHEN** rendering an experiment with status RUNNING
+- **THEN** the pill shows a spinning `Loader2` icon + the text `RUNNING` on a sky-tinted Badge; the text `🟢` does not appear in the DOM
+
+#### Scenario: Stale-RUNNING marker
+- **WHEN** the experiment status is RUNNING and `stale` is true (no directory activity for >1h)
+- **THEN** an `AlertTriangle` lucide icon is rendered immediately adjacent to the badge in an amber color; the text `⚠` does not appear in the DOM
+
+#### Scenario: Hypothesis status pill
+- **WHEN** rendering a hypothesis card with status PARTIAL
+- **THEN** the pill shows a `CircleDot` icon + the text `PARTIAL` on an amber-tinted Badge; the text `🟡` does not appear in the DOM
+
+### Requirement: Hypothesis summary uses structured tags, not raw markdown
+
+The hypothesis summary table at the top of `/p/<project>/hypotheses` SHALL be rendered as a structured component (one row per parsed `HypothesisEntry`) with columns `id` / `status` / `statement` / `experiments`. The `status` cell SHALL use `<HypothesisStatusPill>` (not the raw emoji from disk). Each `experiment` cell SHALL render the experiment id as a Next.js `<Link>` to `/p/<project>/experiments/<id>`. The raw `summaryTableBlock` from `HYPOTHESES.md` is NOT rendered as markdown in the UI.
+
+#### Scenario: Summary row with multiple experiments
+- **WHEN** a hypothesis is associated with `foo-260501-100000` and `bar-260502-150000`
+- **THEN** the summary row shows both ids as Next.js `<Link>` elements; clicking either navigates client-side (no full page reload) to that experiment
+
+#### Scenario: Summary row with no experiments
+- **WHEN** a hypothesis has zero associated experiments (`OPEN` or `DEFERRED` typically)
+- **THEN** the experiments cell shows `—`
+
+### Requirement: SPA-style cross-page navigation between experiments and hypotheses
+
+All cross-resource links (experiment → hypothesis, hypothesis → experiment, summary table → experiment, in-page TOC) SHALL use Next.js `<Link>` so navigation occurs without a full browser reload. Hash-only navigation (`#H1`, `#motivation`) SHALL preserve the SPA boundary AND the browser SHALL scroll the target into view.
+
+#### Scenario: Click a hypothesis ref from experiment detail
+- **WHEN** an experiment's `hypotheses` field lists `H1` and the user clicks the `H1` badge
+- **THEN** the URL becomes `/p/<project>/hypotheses#H1`, the navigation is client-side (no white flash / full reload), and the page scrolls so `<Card id="H1">` is in view
+
+#### Scenario: Click an experiment ref from hypothesis summary
+- **WHEN** the summary row for `H1` shows `foo-260501-100000` and the user clicks it
+- **THEN** the URL becomes `/p/<project>/experiments/foo-260501-100000` via Next `<Link>` (no full reload)
+
+### Requirement: Anchor ids for deep linking into experiment sections
+
+Each section card on the experiment detail page (Motivation / Setup / Method / Result / Conclusion / Caveats / Artifacts / New Hypotheses / Resources) SHALL render with an `id` attribute matching the section name in lowercase kebab-case (`motivation`, `setup`, `method`, `result`, `conclusion`, `caveats`, `artifacts`, `new-hypotheses`, `resources`). This enables permalinks like `/p/<project>/experiments/<id>#method`.
+
+#### Scenario: Permalink to a section
+- **WHEN** the user pastes `/p/project-a/experiments/foo-260501-100000#method` into a new tab
+- **THEN** the page loads and scrolls so the `Method` card is in view
+
+#### Scenario: Permalink to a hypothesis card
+- **WHEN** the user pastes `/p/project-a/hypotheses#H3` into a new tab
+- **THEN** the page loads and scrolls so the `<Card id="H3">` for hypothesis H3 is in view
+
+### Requirement: Experiment list columns and density
+
+The experiment list table SHALL render the following columns in this order: `id` (col-span-3, truncating run-directory name) / `status` (col-span-2, `StatusPill`) / `created` (col-span-2, `TimestampLocal`) / `updated` (col-span-2, `TimestampLocal` of `exp.mtime`) / `tags` (col-span-1) / `hypotheses` (col-span-2). The `name` column from the previous design is dropped — the front-matter `name` is redundant with the run-directory `id` and added visual noise without value.
+
+Rows SHALL be visually compact — `px-3 py-1.5` on the inner grid (no nested `Card` padding), so a row at 12px text height occupies roughly 28–32px total height. Rows DO NOT use `<Card>` (which carries its own `py-4` padding); they use a plain bordered `<Link>` styled as `rounded-md border bg-card`.
+
+#### Scenario: Updated column reflects file mtime
+- **WHEN** an experiment's directory has `mtime` 2026-05-03 10:30
+- **THEN** the row's `updated` column renders `2026-05-03 10:30` (formatted by `TimestampLocal`)
+
+#### Scenario: Row density
+- **WHEN** the experiment list shows 10 rows on a 1080p viewport
+- **THEN** all 10 rows fit comfortably in the visible area without padding-induced wasted vertical space; an individual row is ≤ 36px tall
+
+### Requirement: Page background distinct from card background
+
+In the light theme, `--background` SHALL render slightly off-white (target lightness ≈ 0.97 in oklch) while `--card` remains pure white (lightness 1.0). The result: cards visually float on top of the page bg without needing a heavy shadow. In the dark theme, the existing `--background` (~0.148) and `--card` (~0.218) already provide adequate separation.
+
+#### Scenario: Light theme card pop
+- **WHEN** the dashboard is rendered in light mode
+- **THEN** a `<Card>` placed inside a `bg-background` page area is visibly distinct from its surroundings (its white surface contrasts with the off-white background)

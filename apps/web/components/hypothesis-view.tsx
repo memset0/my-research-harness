@@ -4,17 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { fetchHypotheses } from '../lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { Markdown } from './markdown'
 import { ListSkeleton } from './skeletons'
-
-// Inlined to avoid pulling Node-only @memon/core barrel into the client bundle.
-const HYPOTHESIS_STATUS_EMOJI: Readonly<Record<string, string>> = {
-  CONFIRMED: '✅',
-  REFUTED: '❌',
-  PARTIAL: '🟡',
-  OPEN: '🔵',
-  DEFERRED: '⚪',
-}
+import { HypothesisStatusPill } from './status-pill'
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -42,13 +33,52 @@ export function HypothesisView({ project }: { project: string }) {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
-      {data.summaryTableBlock && (
+      {data.entries.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Summary table</CardTitle>
+            <CardTitle>Summary</CardTitle>
           </CardHeader>
           <CardContent>
-            <Markdown>{data.summaryTableBlock}</Markdown>
+            <div className="hidden gap-3 border-b pb-2 text-[10px] uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[3.5rem_8rem_1fr_minmax(10rem,1.4fr)]">
+              <div>id</div>
+              <div>status</div>
+              <div>statement</div>
+              <div>experiments</div>
+            </div>
+            <ul className="flex flex-col divide-y">
+              {data.entries.map((h) => (
+                <li
+                  key={h.id}
+                  className="grid grid-cols-1 gap-2 py-2 text-xs md:grid-cols-[3.5rem_8rem_1fr_minmax(10rem,1.4fr)] md:items-center md:gap-3"
+                >
+                  <Link
+                    href={`#${h.id}`}
+                    className="font-mono text-primary underline-offset-4 hover:underline"
+                  >
+                    {h.id}
+                  </Link>
+                  <HypothesisStatusPill status={h.status} />
+                  <span className="truncate text-foreground/80" title={h.statement}>
+                    {h.statement}
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {h.experiments.length === 0 ? (
+                      <span className="text-muted-foreground/60">—</span>
+                    ) : (
+                      h.experiments.map((id) => (
+                        <Link
+                          key={id}
+                          href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(id)}`}
+                          className="truncate font-mono text-primary underline-offset-4 hover:underline"
+                        >
+                          {id}
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}
@@ -64,14 +94,11 @@ export function HypothesisView({ project }: { project: string }) {
           <CardHeader>
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-base font-semibold">{h.id}</span>
-              <span className="text-base" aria-hidden>
-                {HYPOTHESIS_STATUS_EMOJI[h.status]}
-              </span>
-              <span className="text-sm font-semibold tracking-tight">{h.status}</span>
               <CardTitle className="text-base font-medium text-foreground/80">{h.slug}</CardTitle>
+              <HypothesisStatusPill status={h.status} />
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
+          <CardContent className="flex flex-col gap-3 text-xs">
             <div>
               <FieldLabel>Statement</FieldLabel>
               <div>{h.statement}</div>
@@ -90,7 +117,7 @@ export function HypothesisView({ project }: { project: string }) {
                     <Link
                       key={id}
                       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(id)}`}
-                      className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+                      className="font-mono text-primary underline-offset-4 hover:underline"
                     >
                       {id}
                     </Link>

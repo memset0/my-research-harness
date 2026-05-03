@@ -118,7 +118,7 @@ export function JournalView({ project }: { project: string }) {
         <CardContent>
           <ul className="flex flex-col divide-y">
             {filtered.length === 0 && (
-              <li className="py-4 text-sm text-muted-foreground">no events</li>
+              <li className="py-4 text-xs text-muted-foreground">no events</li>
             )}
             {filtered.map((e, i) => (
               <li
@@ -128,7 +128,7 @@ export function JournalView({ project }: { project: string }) {
               >
                 <TimestampLocal value={e.timestamp} variant="long" />
                 <TagBadge tag={e.tag} />
-                <div className="text-sm">
+                <div className="text-xs">
                   {e.experimentId ? (
                     <Link
                       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(e.experimentId)}`}

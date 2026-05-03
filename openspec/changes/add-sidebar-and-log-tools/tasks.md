@@ -84,6 +84,21 @@
 
 - [ ] 9.1-9.5 Component tests deferred to a follow-up change. Manual verification in phase 10 covers the spec scenarios end-to-end. Vitest+jsdom setup is non-trivial and will benefit from a focused round.
 
+## 11. Typography & status-display polish (post-cleanup)
+
+- [x] 11.1 Drop `components/ui.tsx` re-export shim; switch all callsites to direct `./ui/<name>` imports
+- [x] 11.2 Replace `skeletons.tsx` `Block` with shadcn `Skeleton`
+- [x] 11.3 Rewrite `app-sidebar.tsx` using shadcn's documented `Collapsible → SidebarGroup → SidebarGroupLabel asChild → SidebarGroupContent` pattern; active project default-expands so SSR HTML already contains its experiment rows
+- [x] 11.4 Unify field-value font sizes to `text-xs` across experiment detail / list / journal table per the Typography requirement
+- [x] 11.5 Replace emoji-based StatusPill with shadcn `Badge variant="outline"` + lucide icon, color-coded per status; same for hypothesis status (was inline emoji + text in `hypothesis-view.tsx`)
+- [x] 11.6 Stale-RUNNING marker rendered as lucide `AlertTriangle` (not ⚠ emoji)
+- [x] 11.7 Replace raw `summaryTableBlock` markdown render with structured Summary card using `HypothesisStatusPill` + Next `<Link>` for experiment refs
+- [x] 11.8 Status pill follows the id (or hypothesis name) — never precedes it — in list rows / sidebar items / detail card header
+- [x] 11.9 Add anchor `id` attributes to each experiment-detail section card (motivation/setup/method/result/conclusion/caveats/artifacts/new-hypotheses/resources) for `#section` deep links
+- [x] 11.10 All cross-resource navigation uses Next `<Link>` (SPA, no browser reload); confirmed: experiment-detail hypothesis badges link to `/p/.../hypotheses#H1`, hypothesis summary experiment refs link to `/p/.../experiments/<id>`
+- [x] 11.11 Experiment list redesign: drop `name` col; columns are now id / status / created / updated / tags / hypotheses; use plain `<Link>` row (not `<Card>`) so vertical padding shrinks from `Card.py-4 + div.p-3` (~60px) to `div.py-1.5` (~28px)
+- [x] 11.12 Light theme `--background` token tweaked to off-white (`oklch(0.972 ...)`) so white-`--card` cards visually float above the page; dark mode already had adequate contrast and is unchanged
+
 ## 10. Validation
 
 - [x] 10.1 Walked Sidebar / AppBar scenarios (single connection per tab, expansion persistence, active highlight) — visible in live UI

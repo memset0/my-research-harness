@@ -5,12 +5,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { fetchExperiments, type IndexedExperiment } from '../lib/api'
 import { Badge } from './ui/badge'
-import { Card } from './ui/card'
 import { StatusPill } from './status-pill'
 import { WarningBadge } from './colored-badge'
 import { TimestampLocal } from './timestamp'
 import { ListSkeleton } from './skeletons'
 import { Input } from './ui/input'
+import { cn } from '../lib/utils'
 import {
   Select,
   SelectContent,
@@ -78,15 +78,15 @@ export function ExperimentList({ project }: { project: string }) {
         <div className="text-sm text-destructive">error: {(error as Error).message}</div>
       )}
 
-      <div className="hidden grid-cols-12 items-center gap-3 border-b pb-2 text-xs uppercase tracking-wide text-muted-foreground md:grid">
-        <div className="col-span-2">status</div>
+      <div className="hidden grid-cols-12 items-center gap-3 border-b pb-2 text-[10px] uppercase tracking-wide text-muted-foreground md:grid">
         <div className="col-span-3">id</div>
-        <div className="col-span-2">name</div>
+        <div className="col-span-2">status</div>
         <div className="col-span-2">created</div>
+        <div className="col-span-2">updated</div>
         <div className="col-span-1">tags</div>
         <div className="col-span-2">hypotheses</div>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         {filtered.map((e) => (
           <ExperimentRow key={e.id} project={project} exp={e} />
         ))}
@@ -105,37 +105,36 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperime
   return (
     <Link
       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(exp.id)}`}
-      className="block"
+      className={cn(
+        'block rounded-md border bg-card transition hover:border-foreground/40',
+        noReadme && 'opacity-60',
+      )}
     >
-      <Card
-        className={
-          'transition hover:border-foreground/40 ' + (noReadme ? 'opacity-60' : '')
-        }
-      >
-        <div className="grid grid-cols-1 gap-2 p-3 md:grid-cols-12 md:items-center md:gap-3">
-          <div className="md:col-span-2">
-            <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
-          </div>
-          <div className="font-mono text-xs md:col-span-3 truncate">{exp.id}</div>
-          <div className="text-xs md:col-span-2 truncate">{exp.frontMatter.name}</div>
-          <div className="md:col-span-2">
-            <TimestampLocal value={exp.frontMatter.createdAt} />
-          </div>
-          <div className="flex flex-wrap gap-1 md:col-span-1">
-            {exp.frontMatter.tags.map((t) => (
-              <Badge key={t} variant="outline">
-                {t}
-              </Badge>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1 md:col-span-2">
-            {exp.frontMatter.hypotheses.map((h) => (
-              <Badge key={h}>{h}</Badge>
-            ))}
-            {noReadme && <WarningBadge>no README</WarningBadge>}
-          </div>
+      <div className="grid grid-cols-1 gap-2 px-3 py-1.5 md:grid-cols-12 md:items-center md:gap-3">
+        <div className="truncate font-mono text-xs md:col-span-3">{exp.id}</div>
+        <div className="md:col-span-2">
+          <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
         </div>
-      </Card>
+        <div className="md:col-span-2">
+          <TimestampLocal value={exp.frontMatter.createdAt} />
+        </div>
+        <div className="md:col-span-2">
+          <TimestampLocal value={new Date(exp.mtime).toISOString()} />
+        </div>
+        <div className="flex flex-wrap gap-1 md:col-span-1">
+          {exp.frontMatter.tags.map((t) => (
+            <Badge key={t} variant="outline">
+              {t}
+            </Badge>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1 md:col-span-2">
+          {exp.frontMatter.hypotheses.map((h) => (
+            <Badge key={h}>{h}</Badge>
+          ))}
+          {noReadme && <WarningBadge>no README</WarningBadge>}
+        </div>
+      </div>
     </Link>
   )
 }
