@@ -1,0 +1,162 @@
+# memon
+
+Single-user, file-system-driven experiment monitor for ML/systems research.
+Live demo: <https://memon-vultr.dev.mem.ac/>.
+
+## Why
+
+Agent-driven experimentation produces dozens of experiment directories per
+project. `squeue + grep + ls` doesn't scale; you need a single place to see
+**what's running, what's done, what verified what hypothesis**, with edits
+that flow back into the same files an agent can read.
+
+`memon` is that single place. Everything lives as plain markdown on disk —
+delete the tool and your data is still there, fully readable.
+
+## 60-second quickstart
+
+```bash
+pnpm install
+cp config.example.yml config.yml      # gitignored — point at your real logs
+pnpm dev                               # http://localhost:3737
+```
+
+The `config.example.yml` ships pointing at `mock/project-a` and
+`mock/project-b` so a fresh clone shows real data immediately.
+
+## Stack
+
+- **Monorepo** with pnpm workspaces — `packages/core`, `packages/cli`, `apps/web`
+- **`@memon/core`** — schemas, parsers, polling, indexing, LineIndex
+- **`@memon/cli`** — `memon` CLI with JSON-by-default output for agents
+- **`apps/web`** — Next.js 15 App Router + Tailwind v4 + TanStack Query
+- **No DB**, **no fs watcher** (cluster inotify-friendly polling instead)
+
+## File formats memon expects
+
+memon discovers experiment directories by **base-name regex**
+`^.+-\d{6}-\d{6}$` (e.g. `foo-260503-082800` = May 3 2026 at 08:28:00 local).
+The parent directory name is irrelevant — `logs/`, `runs/`, anywhere works.
+
+### Per-experiment `README.md`
+
+```yaml
+---
+id: foo-260503-082800
+name: foo
+project: project-a
+status: PENDING | RUNNING | FINISHED | FAILED | UNKNOWN
+created_at: 2026-05-03T08:28:00+08:00
+finished_at: null
+host: m2.cluster
+pid: 12345
+gpus: [0, 1, 2, 3]
+entry: ./run.sh
+command: bash run.sh --bs=8        # full command actually invoked
+wandb: https://...                  # optional
+hypotheses: [H1, H3]                # related — no judgment
+tags: [moe, fsdp2]
+---
+
+## Motivation
+## Setup
+## Method
+## Result
+## Conclusion
+## Caveats
+## Artifacts
+- `./checkpoints/` — model checkpoints
+- `./outputs/loss.csv` — per-step loss
+## New Hypotheses                   # optional, signals digest agent
+```
+
+`status` enum is uppercase. Each value renders with an emoji in the UI:
+📝 `PENDING` / 🟢 `RUNNING` / ✅ `FINISHED` / ❌ `FAILED` / ❓ `UNKNOWN`.
+
+### Per-project `HYPOTHESES.md`
+
+Lives at the project root. Each hypothesis is an `## H<N>. <slug>` heading
+with labeled bullet items: `Statement`, `Origin`, `Status`, `Experiments`,
+`Evidence`, `Caveats`, `Last verified`. Status emojis: ✅ CONFIRMED / ❌
+REFUTED / 🟡 PARTIAL / 🔵 OPEN / ⚪ DEFERRED. Experiments are referenced
+by directory name (no E1/E2 ad-hoc IDs). See
+[`mock/project-a/HYPOTHESES.md`](mock/project-a/HYPOTHESES.md) for a full
+example.
+
+### Per-project `JOURNAL.md`
+
+```markdown
+---
+last_digest_at: 2026-05-03T10:00:00+08:00
+---
+
+- 2026-05-03T08:28:00+08:00 [CREATE]   `foo-260503-082800` PENDING
+- 2026-05-03T08:30:15+08:00 [STATUS]   `foo-260503-082800` PENDING → RUNNING
+- 2026-05-03T10:15:00+08:00 [NOTE]     `foo-260503-082800` converged faster than expected
+- 2026-05-03T11:00:00+08:00 [REQUEST]  please summarize experiments related to H7
+```
+
+Append-only. Tags: `CREATE` / `STATUS` / `NOTE` / `REQUEST` / `ARCHIVE` /
+`ERROR`. The `last_digest_at` field is **owned by the digest agent** —
+ordinary writes (`memon new`, status edits, notes) never touch it.
+
+## CLI
+
+```
+memon serve                  # start the web dashboard on port 3737
+memon list [--project NAME]  # JSON list of experiments
+memon show <id>              # full README content
+memon search <query>         # full-text search
+memon new <name>             # scaffold a new experiment dir + README
+memon hypo list              # list hypotheses
+memon hypo show <H#>         # show one hypothesis
+memon mock seed              # copy mock/ to mock-runtime/ (dev)
+```
+
+Default output is JSON (agent-friendly). `--format human` switches to
+tabular display for direct terminal use.
+
+## Web dashboard
+
+- **/p/[project]** — experiment list with status emoji, free-text search,
+  status filter, stale RUNNING ⚠ indicator
+- **/p/[project]/experiments/[id]** — full detail with all 8 README
+  sections rendered, hypothesis cross-links, artifact list, log viewer
+  (line-numbered tail, follow toggle, ↑ load earlier, infinite scroll up)
+- **/p/[project]/hypotheses** — summary table + per-entry cards with
+  experiment cross-links
+- **/p/[project]/journal** — reverse-chronological timeline, filter by tag
+  and experiment id, browser-tz timestamps
+
+## Architecture
+
+- **Polling, not fs watch**: each tracked directory has its own
+  exponentially-backed-off poll interval (1s → 5min × 2). User-attention
+  events (opening a detail page) reset to the minimum interval.
+- **mtime optimistic lock** on README writes: front-end carries
+  `expectedMtime`; backend returns 409 + current content on conflict.
+- **LineIndex** with sparse byte-offset anchors makes random-line access
+  in multi-GB log files O(log n) after a one-pass build, with optional
+  disk persistence at `~/.cache/memon/lineindex/`.
+- **No client bundle pollution**: `apps/web` client components import only
+  types from `@memon/core` (Node-only fast-glob never enters the browser).
+
+## Status
+
+MVP scope: **read-only** dashboard with all read paths plus mock data,
+end-to-end verified live at <https://memon-vultr.dev.mem.ac/>.
+
+Deferred for follow-up:
+- README inline editor with mtime-conflict diff resolution
+- localStorage draft recovery
+- Status edit control (atomic README + JOURNAL write — backend already
+  supports it)
+- Claude Skill packaging (`memon-propose`, `memon-summarize`,
+  `memon-update-journal`, `memon-digest-journal`)
+- GPU/disk monitoring under the existing `resources` hook
+- WandB iframe embed (only links for now)
+
+## Spec
+
+The full proposal, design, capability specs, and implementation tasks live
+at [`openspec/changes/add-memon-mvp/`](openspec/changes/add-memon-mvp/).
