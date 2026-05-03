@@ -12,6 +12,7 @@ import {
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -150,20 +151,28 @@ function ProjectGroup({
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle} className="group/collapsible">
       <SidebarMenuItem>
+        {/*
+          Project name and the expand-toggle are SEPARATE click targets to avoid
+          the invalid `<button><a></a></button>` nesting that browsers handle
+          inconsistently. SidebarMenuButton becomes an `<a>` via `asChild`, while
+          SidebarMenuAction (a small button next to it) drives the Collapsible.
+        */}
+        <SidebarMenuButton
+          asChild
+          isActive={isActive && !activeExperimentId}
+          className={cn('font-medium', isActive && 'text-sidebar-primary')}
+        >
+          <Link href={`/p/${encodeURIComponent(name)}`}>
+            <span className="truncate">{name}</span>
+          </Link>
+        </SidebarMenuButton>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton
-            isActive={isActive && !activeExperimentId}
-            className={cn('font-medium', isActive && 'text-sidebar-primary')}
+          <SidebarMenuAction
+            className="data-[state=open]:rotate-90 transition-transform"
+            aria-label={isOpen ? `Collapse ${name}` : `Expand ${name}`}
           >
-            <ChevronRight className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-            <Link
-              href={`/p/${encodeURIComponent(name)}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex-1 truncate"
-            >
-              {name}
-            </Link>
-          </SidebarMenuButton>
+            <ChevronRight />
+          </SidebarMenuAction>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub>
