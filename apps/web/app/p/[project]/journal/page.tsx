@@ -1,4 +1,7 @@
+import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { JournalView } from '../../../../components/journal-view'
+import { getQueryClient } from '../../../../lib/get-query-client'
+import { getJournalData } from '../../../../lib/server/data'
 
 export default async function JournalPage({
   params,
@@ -6,5 +9,17 @@ export default async function JournalPage({
   params: Promise<{ project: string }>
 }) {
   const { project } = await params
-  return <JournalView project={decodeURIComponent(project)} />
+  const decoded = decodeURIComponent(project)
+
+  const queryClient = getQueryClient()
+  await queryClient.prefetchQuery({
+    queryKey: ['journal', decoded],
+    queryFn: () => getJournalData(decoded, { limit: 200 }),
+  })
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <JournalView project={decoded} />
+    </HydrationBoundary>
+  )
 }

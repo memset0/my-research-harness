@@ -9,10 +9,24 @@ import { cn } from '../lib/utils'
 
 export function AppBar({ project }: { project: string }) {
   const pathname = usePathname() ?? ''
-  const tabs = [
-    { name: 'Experiments', href: `/p/${encodeURIComponent(project)}` },
-    { name: 'Hypotheses', href: `/p/${encodeURIComponent(project)}/hypotheses` },
-    { name: 'Journal', href: `/p/${encodeURIComponent(project)}/journal` },
+  const projectBase = `/p/${encodeURIComponent(project)}`
+  const tabs: { name: string; href: string; matches: (p: string) => boolean }[] = [
+    {
+      name: 'Experiments',
+      href: projectBase,
+      // Active for the list view AND any experiment detail page
+      matches: (p) => p === projectBase || p.startsWith(`${projectBase}/experiments`),
+    },
+    {
+      name: 'Hypotheses',
+      href: `${projectBase}/hypotheses`,
+      matches: (p) => p.startsWith(`${projectBase}/hypotheses`),
+    },
+    {
+      name: 'Journal',
+      href: `${projectBase}/journal`,
+      matches: (p) => p.startsWith(`${projectBase}/journal`),
+    },
   ]
 
   return (
@@ -21,7 +35,7 @@ export function AppBar({ project }: { project: string }) {
       <Separator orientation="vertical" className="hidden h-5 md:block" />
       <nav className="flex items-center gap-1 overflow-x-auto" role="tablist">
         {tabs.map((t) => {
-          const isActive = pathname === t.href
+          const isActive = t.matches(pathname)
           return (
             <Link
               key={t.href}
