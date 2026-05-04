@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
-import { NewExperimentButton } from './new-experiment-button'
 
 export function AppBar({ project }: { project: string }) {
   const pathname = usePathname() ?? ''
@@ -54,9 +53,6 @@ export function AppBar({ project }: { project: string }) {
           )
         })}
       </nav>
-      <div className="ml-auto flex items-center gap-2">
-        <NewExperimentButton project={project} />
-      </div>
     </header>
   )
 }

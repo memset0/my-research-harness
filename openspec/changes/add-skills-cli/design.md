@@ -72,7 +72,7 @@ memon-cli capability 早就规定了 "JOURNAL is append-only, frontmatter only w
 - `journal append` — **永远只追加事件行**;`--tag` 必须是合法的 5 个之一
 - `journal digest-mark --at ISO` — **唯一**会改 `last_digest_at` 的入口,内部调 `updateLastDigestAt`(已有 helper)
 
-skill 名字也对应:`memon-update-journal` 用前者,`memon-digest-journal` 用后者。CLI 命令隔离,意外混用难度 ↑。
+skill 名字也对应:`memon-append-journal` 用前者,`memon-digest-journal` 用后者。CLI 命令隔离,意外混用难度 ↑。
 
 ### D5. `scan` 命令:一次拿一份完整快照,降低 skill 的串行化成本
 
@@ -209,7 +209,7 @@ skill 用脚本 / Claude Skill 的 metadata 里要根据退出码做不同分支
 
 **为什么 script 头部只放一行**:用户明确表达过"单个 shell 脚本往往不能绑定到某个假说/实验目的上"。一行功能性描述足够 grep + 让人一眼看懂"这个脚本是做什么的",更详细的语义在 README。把 `# Motivation` / `# Method` 塞 shell 注释里反而是失焦。
 
-**`memon new` 默认 scaffold 的 `run.sh` 模板**(已存在于 `createExperimentScaffold`)在本 change 里会顺手加一行 `# TODO: one-line description of what this script does` 的占位注释,提示 write-script skill / 用户填上。
+**关于 `memon new`**:这个 CLI 子命令在本 change 里**被删除**,连同 `createExperimentScaffold` core helper 和 web 端的 `+ New experiment` 按钮 / `POST /api/experiments`。原来的设计是"先 scaffold 出 run dir + boilerplate 脚本",但 skill 流程演进后:launcher script 只做 `mkdir -p "$RUN_DIR"` + 3 行 `echo "[memon] PROJECT_ROOT/RUN_NAME/RUN_DIR=..."`,初始 README 由 `memon-run-experiment` 在脚本启动后由 agent 直接写入(`memon experiment readme write --expected-mtime 0` for fresh launch,或带现存 mtime for resume)。Scaffold 路径上没有剩余调用方,整条移除。
 
 ### D12. 关于被去掉的 `memon-summarize`
 

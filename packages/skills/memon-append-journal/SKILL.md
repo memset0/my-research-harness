@@ -1,16 +1,23 @@
 ---
-name: memon-update-journal
-description: Append a single event to a memon project's JOURNAL.md (NOTE / REQUEST / ERROR / ARCHIVE / CREATE). Use when an agent wants to record an observation or open a question without modifying any experiment's README.
+name: memon-append-journal
+description: Manual + thin wrapper for the `memon journal append` CLI — append a single event to a project's JOURNAL.md (NOTE / REQUEST / ERROR). Use when an agent wants to record an observation or open a question. For periodic organization / cleanup, use `memon-digest-journal` instead.
+argument-hint: <event tag and body, optionally with experiment id>
 license: MIT
 metadata:
-  author: memon
-  version: "0.1.0"
+  author: memset0
+  version: "0.2.0"
 ---
 
-# memon-update-journal
+# memon-append-journal
 
-Append exactly one event line to `<projectRoot>/JOURNAL.md`. Never modifies
-the file's frontmatter (only `memon-digest-journal` is allowed to do that).
+This skill is a manual for the `memon journal append` CLI subcommand —
+how to invoke it correctly to add a single event line to
+`<projectRoot>/JOURNAL.md`. Never modifies the file's frontmatter; only
+`memon-digest-journal` is allowed to do that.
+
+For organizing the journal (consolidating events, advancing
+`last_digest_at`, integrity sweep), use **`memon-digest-journal`**, not
+this one. This skill is just for "append one event right now".
 
 ## When to use
 
@@ -37,7 +44,7 @@ the file's frontmatter (only `memon-digest-journal` is allowed to do that).
 | `REQUEST` | something for the human to handle next |
 | `ERROR` | error or warning that should be visible in the timeline |
 | `ARCHIVE` | recorded automatically by `memon experiment archive` — don't emit manually |
-| `CREATE` | recorded automatically by `memon new` — don't emit manually |
+| `CREATE` | recorded automatically when an experiment dir first appears — don't emit manually |
 
 `STATUS` is **rejected** by `memon journal append` (CLI returns
 `BAD_REQUEST`, exit code 2). Use `memon experiment status set` instead.

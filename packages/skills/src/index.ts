@@ -15,10 +15,10 @@ export const SKILLS_DIR: string = resolve(here, '..', '..')
 export const SKILL_NAMES = [
   'memon-write-script',
   'memon-run-experiment',
-  'memon-update-journal',
+  'memon-append-journal',
   'memon-digest-journal',
+  'memon-write-report',
   'memon-propose',
-  'memon-doctor',
 ] as const
 
 export type SkillName = (typeof SKILL_NAMES)[number]

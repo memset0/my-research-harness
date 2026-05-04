@@ -6,7 +6,7 @@
 |---|---|
 | `memon-write-script` | 写实验用的 shell 脚本(主要是 `run.sh`),参考 [write-shell-script](https://github.com/MikaStars39/claude-templates/blob/main/commands/write-shell-script.md) 的 Style A / Style B 模板,但**目录命名走 memon 规范**(`<name>-yymmdd-hhmmss/`,匹配 `^.+-\d{6}-\d{6}$`,而不是上游的 `outputs/run_name_${TIMESTAMP}`)。每个 shell 脚本头部加一行简短注释说明该脚本做什么(功能性描述,不绑定假说/实验目的)。 |
 | `memon-run-experiment` | 起进程跑实验脚本,跑稳了写 README,跑挂了标 FAILED + 简短 Result + 可选 archive |
-| `memon-update-journal` | agent 把过程中的观察 / 决策追加到 JOURNAL |
+| `memon-append-journal` | agent 把过程中的观察 / 决策追加到 JOURNAL |
 | `memon-digest-journal` | 周期性消化 `last_digest_at` 之后的事件,出周报式摘要 |
 | `memon-propose` | 看 HYPOTHESES.md + 历史实验,提议下一个该跑的实验 |
 | `memon-doctor` | 扫描已 FINISHED 但缺 Result/Conclusion 的实验、stale RUNNING 等"残局",问用户怎么处理 |

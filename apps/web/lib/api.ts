@@ -177,21 +177,6 @@ export async function patchExperimentStatus(input: {
   return body as PatchStatusResponse
 }
 
-export async function postExperiment(input: {
-  name: string
-  project?: string
-}): Promise<{ created: { id: string; path: string; project: string } } | PutReadmeConflict> {
-  const res = await fetch('/api/experiments', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  const body = await res.json()
-  if (res.status === 409) return body as PutReadmeConflict
-  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
-  return body
-}
-
 // ---------- Browser terminal (ttyd + tmux) ----------
 
 export interface TerminalCheckResult {

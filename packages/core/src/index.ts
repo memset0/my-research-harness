@@ -47,8 +47,6 @@ export {
 export type { CacheOptions, CacheRecord } from './log/cache.js'
 export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
 export type { LoadConfigOptions } from './config/load.js'
-export { ExperimentExistsError, createExperimentScaffold } from './discovery/scaffold.js'
-export type { CreateScaffoldInput, CreateScaffoldResult } from './discovery/scaffold.js'
 export { formatExperimentStamp, formatIsoLocal } from './time.js'
 
 // CLI helpers (callable from the @memon/cli package and from skills written

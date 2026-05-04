@@ -209,6 +209,42 @@ Output shape:
 - **WHEN** the user runs `memon doctor --severity warn`
 - **THEN** issues with `severity: "info"` are filtered out of the output (but still counted in `summary.bySeverity`)
 
+### Requirement: `memon install-skills` synchronises bundled skills into a project
+
+`memon install-skills [--project-root <p>] [--target <path>] [--dry-run]` SHALL copy every `memon-*` subdirectory of the bundled `@memon/skills` source into the target directory. The command SHALL be a strict synchroniser of the `memon-*` namespace:
+
+- **Default target**: `<projectRoot>/.claude/skills/`. When `--project-root` is omitted, `cwd` is used. `--target <path>` overrides this entirely.
+- **Replacement scope**: every existing directory in the target whose name starts with `memon-` SHALL be removed before the fresh copy is written, **including names that no longer exist in the bundled source** (so a skill renamed or removed from a future memon release disappears cleanly).
+- **Non-namespaced skills are untouched**: directories not starting with `memon-` (third-party skills, the user's own, etc.) SHALL NOT be read, written, or deleted.
+- **Atomic-ish**: each `memon-*` is removed and re-copied as a unit; partial copies inside a single skill dir are fine since the next install re-runs anyway.
+- **Dry-run**: `--dry-run` SHALL output the same JSON `removed[]` / `installed[]` arrays a real run would produce, without touching any file.
+- **`--target` and `--project-root` are mutually exclusive**: combining them SHALL exit 2 with `BAD_REQUEST`.
+
+#### Scenario: Sync into a project root
+- **WHEN** `memon install-skills --project-root /repo` runs
+- **THEN** the target is `/repo/.claude/skills/`
+- **AND** every `memon-*` directory bundled with memon ends up there as a fresh copy
+- **AND** stdout JSON has `installed: [<6 skill names>]`
+
+#### Scenario: Stale memon-* dir is removed
+- **GIVEN** the target contained `memon-renamed-old/` (a name that no longer ships with memon)
+- **WHEN** install-skills runs
+- **THEN** `memon-renamed-old/` is deleted
+- **AND** stdout JSON includes it in `removed[]`
+
+#### Scenario: Non-namespaced skills are preserved byte-for-byte
+- **GIVEN** the target contained `openspec-propose/` and `my-custom-skill/` (neither starts with `memon-`)
+- **WHEN** install-skills runs
+- **THEN** both directories' contents are byte-identical before and after; their mtimes are unchanged
+
+#### Scenario: Default target = cwd's .claude/skills
+- **WHEN** `memon install-skills` runs without flags
+- **THEN** the target is `<cwd>/.claude/skills/`
+
+#### Scenario: --target overrides project-root derivation
+- **WHEN** `memon install-skills --target /opt/skills` runs
+- **THEN** the target is `/opt/skills` regardless of cwd or `--project-root`
+
 ### Requirement: `memon hypotheses read` mirrors the web API
 
 `memon hypotheses read --project-root <path>` SHALL output `{path, legendBlock, summaryTableBlock, entries, parseErrors, parseWarnings}` matching the web `/api/hypotheses` JSON exactly. (The existing `memon hypo list/show` commands continue to work for human use; this is the agent-shaped equivalent.)

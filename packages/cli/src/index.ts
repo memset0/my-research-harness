@@ -6,7 +6,6 @@ import { ConfigError } from '@memon/core'
 import { runList } from './commands/list.js'
 import { runShow } from './commands/show.js'
 import { runSearch } from './commands/search.js'
-import { runNew } from './commands/new.js'
 import { runHypoList, runHypoShow } from './commands/hypo.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
@@ -89,18 +88,6 @@ program
     const g = readGlobals()
     const scope = opts.in === 'body' ? 'body' : opts.in === 'fm' ? 'fm' : 'all'
     await runSearch({ ...g, query, scope })
-  })
-
-program
-  .command('new <name>')
-  .description('create a new experiment scaffold')
-  .option('--project <name>', 'target project (defaults to first)')
-  .action(async (name: string, opts: { project?: string }) => {
-    const g = readGlobals()
-    if (g.projectRoot && opts.project) {
-      emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
-    }
-    await runNew({ ...g, name, project: opts.project })
   })
 
 const hypo = program.command('hypo').description('hypothesis registry commands (human-friendly)')
@@ -286,16 +273,18 @@ program
 
 program
   .command('install-skills')
-  .description('copy bundled SKILL.md trees into ~/.claude/skills/ (or --target)')
-  .option('--target <path>', 'target directory (default: ~/.claude/skills)')
+  .description(
+    'sync bundled memon-* skills into <projectRoot>/.claude/skills/ (replaces all memon-* there)',
+  )
+  .option('--target <path>', 'override the target directory (default: <projectRoot>/.claude/skills)')
   .option('--dry-run', "don't copy, just report what would be done", false)
-  .option('--force', 'overwrite existing skill directories', false)
-  .action(async (opts: { target?: string; dryRun?: boolean; force?: boolean }) => {
+  .action(async (opts: { target?: string; dryRun?: boolean }) => {
     const g = readGlobals()
     await runInstallSkills({
+      projectRoot: g.projectRoot,
       target: opts.target,
+      cwd: g.cwd,
       dryRun: !!opts.dryRun,
-      force: !!opts.force,
       format: g.format,
     })
   })

@@ -1,9 +1,11 @@
 ---
 name: memon-propose
 description: Read a memon project's hypotheses + recent experiments and propose 1-3 next experiments to run, each tied to an open hypothesis. Read-only — does not scaffold or execute. Use when the user asks "what should I run next?".
+argument-hint: <optional theme, hypothesis id, or constraint to focus the proposals>
+disable-model-invocation: true
 license: MIT
 metadata:
-  author: memon
+  author: memset0
   version: "0.1.0"
 ---
 

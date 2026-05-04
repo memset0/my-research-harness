@@ -1,24 +1,25 @@
-// memon install-skills — copy bundled SKILL.md trees into ~/.claude/skills/.
+// memon install-skills — sync bundled SKILL.md trees into a project's
+// `<projectRoot>/.claude/skills/`. Replaces every `memon-*` directory in
+// the target so removed/renamed skills disappear cleanly. Skills not
+// starting with `memon-` are left untouched.
 
 import { existsSync as fsExistsSync, promises as fs } from 'node:fs'
-import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
 export interface InstallSkillsInput {
+  /** When set, target = `<projectRoot>/.claude/skills/`. Mutually exclusive with `target`. */
+  projectRoot?: string
+  /** Direct override; bypasses the projectRoot derivation entirely. */
   target?: string
+  cwd: string
   dryRun?: boolean
-  force?: boolean
   format: OutputFormat
 }
 
-/**
- * Locate the bundled skills directory. Resolution order:
- *   1. `@memon/skills` package's exported SKILLS_DIR (preferred)
- *   2. monorepo dev fallback: `<this-file>/../../../skills/` (i.e., packages/skills)
- */
+/** Resolve the bundled skills source dir. */
 async function resolveSkillsDir(): Promise<string> {
   // 1. Env var override (handy for local hacking)
   const envDir = process.env.MEMON_SKILLS_DIR
@@ -48,46 +49,56 @@ async function resolveSkillsDir(): Promise<string> {
   )
 }
 
-export async function runInstallSkills(input: InstallSkillsInput): Promise<void> {
-  const target = resolve(input.target ?? join(homedir(), '.claude', 'skills'))
-  const src = await resolveSkillsDir()
-  await fs.mkdir(target, { recursive: true })
+function resolveTarget(input: InstallSkillsInput): string {
+  if (input.target && input.projectRoot) {
+    emitErrorAndExit('BAD_REQUEST', '--target and --project-root cannot both be set')
+  }
+  if (input.target) return resolve(input.target)
+  const root = resolve(input.projectRoot ?? input.cwd)
+  return join(root, '.claude', 'skills')
+}
 
-  const skillNames = (await fs.readdir(src, { withFileTypes: true }))
+export async function runInstallSkills(input: InstallSkillsInput): Promise<void> {
+  const target = resolveTarget(input)
+  const src = await resolveSkillsDir()
+
+  const sourceSkills = (await fs.readdir(src, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name.startsWith('memon-'))
     .map((d) => d.name)
+    .sort()
 
-  const installed: string[] = []
-  const skipped: string[] = []
-  const conflicts: string[] = []
+  // Anything memon-* in the target that's NOT in src should also be removed
+  // (handles renamed / removed skills cleanly).
+  let existingMemonInTarget: string[] = []
+  if (await pathExists(target)) {
+    existingMemonInTarget = (await fs.readdir(target, { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && d.name.startsWith('memon-'))
+      .map((d) => d.name)
+      .sort()
+  }
 
-  for (const name of skillNames) {
-    const srcDir = join(src, name)
-    const dstDir = join(target, name)
-    if (await pathExists(dstDir)) {
-      if (!input.force) {
-        conflicts.push(name)
-        continue
-      }
-      if (!input.dryRun) await fs.rm(dstDir, { recursive: true, force: true })
+  const removed = existingMemonInTarget // every memon-* gets wiped before reinstall
+  const installed = sourceSkills
+
+  if (!input.dryRun) {
+    await fs.mkdir(target, { recursive: true })
+    // Remove all existing memon-* dirs (including any not in source — they
+    // belong to a removed/renamed skill from a previous version)
+    for (const name of removed) {
+      await fs.rm(join(target, name), { recursive: true, force: true })
     }
-    if (input.dryRun) {
-      skipped.push(name)
-      continue
+    // Copy fresh from source
+    for (const name of sourceSkills) {
+      await copyDir(join(src, name), join(target, name))
     }
-    await copyDir(srcDir, dstDir)
-    installed.push(name)
   }
 
   if (input.format === 'human') {
     const lines = [
       `source: ${src}`,
       `target: ${target}`,
-      installed.length > 0 ? `installed: ${installed.join(', ')}` : 'installed: (none)',
-      conflicts.length > 0
-        ? `conflicts (use --force to overwrite): ${conflicts.join(', ')}`
-        : '',
-      input.dryRun ? `(dry run — no files written)` : '',
+      `replaced ${removed.length} memon-* dir(s); installed ${installed.length}`,
+      input.dryRun ? '(dry run — no files written)' : '',
     ].filter(Boolean)
     process.stdout.write(`${lines.join('\n')}\n`)
   } else {
@@ -95,15 +106,10 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
       ok: true,
       source: src,
       target,
+      removed,
       installed,
-      skipped,
-      conflicts,
       dryRun: !!input.dryRun,
     })
-  }
-
-  if (conflicts.length > 0 && !input.force) {
-    process.exit(1)
   }
 }
 

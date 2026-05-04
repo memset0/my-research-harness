@@ -126,7 +126,7 @@ cat new.md | memon experiment readme write <id> --expected-mtime <ms>
 memon experiment archive <id>          # mark as archived (.archived sidecar)
 memon experiment unarchive <id>
 
-memon install-skills [--target ~/.claude/skills] [--dry-run] [--force]
+memon install-skills [--project-root <p>] [--target <path>] [--dry-run]
 ```
 
 Default output is JSON (agent-friendly). `--format human` switches to
@@ -164,23 +164,30 @@ unarchive each emit a JOURNAL audit entry (`[ARCHIVE]` / `[NOTE]`).
 ## Skills (`@memon/skills`)
 
 memon ships 6 Claude Code skills as bundled `SKILL.md` files at
-`packages/skills/memon-*/`. After installing memon, run **once**:
+`packages/skills/memon-*/`. From a project root, run:
 
 ```sh
-memon install-skills    # copies into ~/.claude/skills/
+memon install-skills                        # syncs into ./.claude/skills/
+memon install-skills --project-root /repo   # syncs into /repo/.claude/skills/
 ```
 
-Then in any project where you've created a `config.yml` (or just `cd`'d
-into the project root), invoke them via `/memon-<name>`:
+The command **only manages directories whose name starts with `memon-`**.
+Every existing `memon-*/` in the target is wiped and replaced with the
+bundled version (including dirs from removed/renamed skills — the goal is
+strict synchronisation). Non-`memon-*` skills (yours, third-party,
+openspec, anything else) are left untouched.
+
+Run after each `memon` upgrade. Then invoke skills in Claude Code via
+`/memon-<name>`:
 
 | Skill | What it does |
 |---|---|
-| `memon-write-script` | Author / edit `run.sh` for an experiment, following the run-dir regex + one-line header convention |
-| `memon-run-experiment` | Scaffold + launch a script + write README on success / mark FAILED on crash |
-| `memon-update-journal` | Append a single NOTE / REQUEST / ERROR event |
-| `memon-digest-journal` | Periodic weekly digest; the only skill allowed to update `last_digest_at` |
-| `memon-propose` | Read-only — suggest 1-3 next experiments tied to open hypotheses |
-| `memon-doctor` | Interactive cleanup of FINISHED-without-Result, stale RUNNING, parse errors, etc. |
+| `memon-write-script` | Author or edit a launcher script (`scripts/<area>/run_*.sh`) following memon's `RUN_NAME` / `RUN_DIR` / one-line-header conventions. Scripts only `mkdir` the run dir + tee the log; the README is the agent's job. |
+| `memon-run-experiment` | Launch an existing script (with optional env-var overrides), capture `code.diff`, write the initial RUNNING README + Motivation/Setup/Method, periodically check in (every ~120 min), finalize on terminal state, and iterate through fixes when the script doesn't run cleanly. |
+| `memon-append-journal` | Manual / thin wrapper for `memon journal append` — append a single NOTE / REQUEST / ERROR event to JOURNAL.md. (Organizing the journal is `memon-digest-journal`'s job.) |
+| `memon-digest-journal` | Run an integrity sweep (the former `memon-doctor` checks fold in here), produce a date-keyed digest at `docs/digests/D<N>-<YYYY-MM-DD>.md` covering everything since the last cursor, and advance `last_digest_at`. The only skill allowed to update the cursor; race-safe. |
+| `memon-write-report` | Author or update a theme-driven report at `docs/reports/R<N>-<slug>.md`. The report records its own selector (a re-runnable shell snippet) so re-running cheaply tells whether new events qualify. Doesn't touch the cursor. |
+| `memon-propose` | Read-only — suggest 1-3 next experiments tied to open hypotheses. |
 
 Each `SKILL.md` is plain markdown — `cat ~/.claude/skills/memon-*/SKILL.md`
 or read the source under `packages/skills/` to see the exact agent
@@ -302,7 +309,7 @@ Deferred for follow-up:
 - Status edit control (atomic README + JOURNAL write — backend already
   supports it)
 - Claude Skill packaging (`memon-propose`, `memon-summarize`,
-  `memon-update-journal`, `memon-digest-journal`)
+  `memon-append-journal`, `memon-digest-journal`)
 - GPU/disk monitoring under the existing `resources` hook
 - WandB iframe embed (only links for now)
 
