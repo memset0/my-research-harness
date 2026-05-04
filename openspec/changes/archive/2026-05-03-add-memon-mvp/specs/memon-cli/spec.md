@@ -107,7 +107,7 @@ All read subcommands (`list`, `show`, `search`, `hypo list`, `hypo show`) SHALL 
 - **THEN** stdout is JSON with the hypothesis records for that project
 
 #### Scenario: Show
-- **WHEN** the user runs `memon hypo show H3 --project fsdp-comm`
+- **WHEN** the user runs `memon hypo show H0003 --project fsdp-comm`
 - **THEN** stdout is JSON with the parsed hypothesis record (statement, status, experiments, evidence, etc.)
 
 ### Requirement: `memon mock seed` resets dev mock data

@@ -32,7 +32,7 @@ These status emojis SHALL NOT overlap with experiment status emojis (📝🟢✅
 
 ### Requirement: Per-hypothesis entry schema
 
-Each hypothesis SHALL be a top-level H2 section in `HYPOTHESES.md` titled `## H<N>. <slug>` where `N` is a positive integer unique within the project. The body SHALL contain the following labeled bullet items:
+Each hypothesis SHALL be a top-level H0002 section in `HYPOTHESES.md` titled `## H<NNNN>. <slug>` where `N` is a positive integer unique within the project. The body SHALL contain the following labeled bullet items:
 
 - `**Statement**`: one-paragraph claim
 - `**Origin**`: link or description of where the hypothesis originated
@@ -55,16 +55,16 @@ Each hypothesis SHALL be a top-level H2 section in `HYPOTHESES.md` titled `## H<
 Hypothesis entries' `Experiments` field SHALL reference experiments by their directory name (e.g. `foo-260503-082800`), NOT by ad-hoc identifiers like `E1`/`E2`.
 
 #### Scenario: Reverse-lookup from hypothesis to experiments
-- **WHEN** the frontend opens hypothesis `H1` and that entry's `Experiments` lists `foo-260501-100000` and `bar-260502-150000`
+- **WHEN** the frontend opens hypothesis `H0001` and that entry's `Experiments` lists `foo-260501-100000` and `bar-260502-150000`
 - **THEN** the frontend renders both as clickable links to those experiments' detail pages
 
 #### Scenario: Forward-lookup from experiment to hypotheses
-- **WHEN** an experiment's front matter `hypotheses: [H3]` and the project's `HYPOTHESES.md` contains an `H3` entry
-- **THEN** the experiment's detail page shows a "Hypotheses" panel listing `H3` with its current status emoji and statement
+- **WHEN** an experiment's front matter `hypotheses: [H0003]` and the project's `HYPOTHESES.md` contains an `H0003` entry
+- **THEN** the experiment's detail page shows a "Hypotheses" panel listing `H0003` with its current status emoji and statement
 
 ### Requirement: Summary table rendering
 
-The system SHALL render any `## Summary table` H2 section found in `HYPOTHESES.md` via the standard markdown renderer in the hypothesis overview page. Maintenance of the table content is a human/agent responsibility — `memon` MVP MUST NOT auto-generate or rewrite this section.
+The system SHALL render any `## Summary table` H0002 section found in `HYPOTHESES.md` via the standard markdown renderer in the hypothesis overview page. Maintenance of the table content is a human/agent responsibility — `memon` MVP MUST NOT auto-generate or rewrite this section.
 
 #### Scenario: Summary table rendered as-is
 - **WHEN** `HYPOTHESES.md` contains a `## Summary table` section
@@ -76,8 +76,8 @@ The system SHALL render any `## Summary table` H2 section found in `HYPOTHESES.m
 
 ### Requirement: Hypothesis ID uniqueness
 
-Hypothesis IDs SHALL be of the form `H<N>` where `N` is a positive integer monotonically assigned within the project. Reuse of an ID after deletion is allowed but discouraged.
+Hypothesis IDs SHALL be of the form `H<NNNN>` where `N` is a positive integer monotonically assigned within the project. Reuse of an ID after deletion is allowed but discouraged.
 
 #### Scenario: Duplicate IDs
-- **WHEN** `HYPOTHESES.md` contains two `## H3.` sections
+- **WHEN** `HYPOTHESES.md` contains two `## H0003.` sections
 - **THEN** the parser surfaces a warning naming the duplicate ID, and only the first occurrence is indexed

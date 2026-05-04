@@ -95,7 +95,7 @@ The detail page SHALL provide a `+ Note` button that opens a small modal with a 
 The journal page SHALL provide a `+ Add` control that opens a modal letting the user pick a tag (`NOTE` or `REQUEST`) and enter free-form body. Submission SHALL `POST /api/journal/append` with the chosen tag.
 
 #### Scenario: Append request
-- **WHEN** the user picks `REQUEST` and types `please summarize experiments related to H7`, then submits
+- **WHEN** the user picks `REQUEST` and types `please summarize experiments related to H0007`, then submits
 - **THEN** a new `[REQUEST]` event is appended to JOURNAL.md and the timeline view reflects it (after the next SSE event or query refetch)
 
 ### Requirement: Create experiment from web UI

@@ -81,7 +81,7 @@ gpus: [<int>, ...]          # optional
 entry: <relative path to launch script>
 command: <full command line>
 wandb: <url>                # optional
-hypotheses: [H1, H3, ...]   # related hypothesis IDs (no judgment)
+hypotheses: [H0001, H0003, ...]   # related hypothesis IDs (no judgment)
 tags: [<str>, ...]
 ---
 
@@ -118,9 +118,9 @@ tags: [<str>, ...]
 
 | ID  | Statement | Status | Experiments |
 | :-: | ---       | :-:    | ---         |
-| H1  | ...       | ✅     | foo-260501-100000, bar-260502-150000 |
+| H0001  | ...       | ✅     | foo-260501-100000, bar-260502-150000 |
 
-## H1. <slug>
+## H0001. <slug>
 - **Statement**: ...
 - **Origin**: ...
 - **Status**: ✅ CONFIRMED
@@ -143,7 +143,7 @@ last_digest_at: <ISO8601 + offset>
 - 2026-05-03T08:30:15+08:00 [STATUS]   `foo-260503-082800` PENDING → RUNNING
 - 2026-05-03T09:45:00+08:00 [STATUS]   `foo-260503-082800` RUNNING → FINISHED
 - 2026-05-03T10:15:00+08:00 [NOTE]     `foo-260503-082800` converged faster than expected
-- 2026-05-03T11:00:00+08:00 [REQUEST]  please summarize experiments related to H7
+- 2026-05-03T11:00:00+08:00 [REQUEST]  please summarize experiments related to H0007
 ```
 
 **事件 tag**(可扩展):`[CREATE]` / `[STATUS]` / `[NOTE]` / `[REQUEST]` / `[ARCHIVE]` / `[ERROR]`。

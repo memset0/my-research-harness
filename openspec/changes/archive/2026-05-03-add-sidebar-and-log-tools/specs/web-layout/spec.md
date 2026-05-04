@@ -154,14 +154,14 @@ The hypothesis summary table at the top of `/p/<project>/hypotheses` SHALL be re
 
 ### Requirement: SPA-style cross-page navigation between experiments and hypotheses
 
-All cross-resource links (experiment → hypothesis, hypothesis → experiment, summary table → experiment, in-page TOC) SHALL use Next.js `<Link>` so navigation occurs without a full browser reload. Hash-only navigation (`#H1`, `#motivation`) SHALL preserve the SPA boundary AND the browser SHALL scroll the target into view.
+All cross-resource links (experiment → hypothesis, hypothesis → experiment, summary table → experiment, in-page TOC) SHALL use Next.js `<Link>` so navigation occurs without a full browser reload. Hash-only navigation (`#H0001`, `#motivation`) SHALL preserve the SPA boundary AND the browser SHALL scroll the target into view.
 
 #### Scenario: Click a hypothesis ref from experiment detail
-- **WHEN** an experiment's `hypotheses` field lists `H1` and the user clicks the `H1` badge
-- **THEN** the URL becomes `/p/<project>/hypotheses#H1`, the navigation is client-side (no white flash / full reload), and the page scrolls so `<Card id="H1">` is in view
+- **WHEN** an experiment's `hypotheses` field lists `H0001` and the user clicks the `H0001` badge
+- **THEN** the URL becomes `/p/<project>/hypotheses#H0001`, the navigation is client-side (no white flash / full reload), and the page scrolls so `<Card id="H0001">` is in view
 
 #### Scenario: Click an experiment ref from hypothesis summary
-- **WHEN** the summary row for `H1` shows `foo-260501-100000` and the user clicks it
+- **WHEN** the summary row for `H0001` shows `foo-260501-100000` and the user clicks it
 - **THEN** the URL becomes `/p/<project>/experiments/foo-260501-100000` via Next `<Link>` (no full reload)
 
 ### Requirement: Anchor ids for deep linking into experiment sections
@@ -173,8 +173,8 @@ Each section card on the experiment detail page (Motivation / Setup / Method / R
 - **THEN** the page loads and scrolls so the `Method` card is in view
 
 #### Scenario: Permalink to a hypothesis card
-- **WHEN** the user pastes `/p/project-a/hypotheses#H3` into a new tab
-- **THEN** the page loads and scrolls so the `<Card id="H3">` for hypothesis H3 is in view
+- **WHEN** the user pastes `/p/project-a/hypotheses#H0003` into a new tab
+- **THEN** the page loads and scrolls so the `<Card id="H0003">` for hypothesis H0003 is in view
 
 ### Requirement: Experiment list columns and density
 

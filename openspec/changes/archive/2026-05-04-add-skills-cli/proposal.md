@@ -1,17 +1,25 @@
 ## Why
 
-接下来要给 agent 写 6 个 skill,组成完整的 "agent 创建 → 跑 → 维护 → 总结" 闭环。它们**都不应该依赖 memon 的 web 进程**(拉起整个 stack 才能让 agent 写一行 journal,反向耦合太重),也**不应该依赖 `config.yml`**(skill 跑在 agent 的 cwd 下,用户可能压根没装 config)。
+接下来要给 agent 写 6 个 skill,组成完整的 "propose → write → run → observe → digest → report" 闭环。它们**都不应该依赖 memon 的 web 进程**(拉起整个 stack 才能让 agent 写一行 journal,反向耦合太重),也**不应该依赖 `config.yml`**(skill 跑在 agent 的 cwd 下,用户可能压根没装 config)。
 
 | Skill | 职责 |
 |---|---|
 | `memon-write-script` | 写实验用的 shell 脚本(主要是 `run.sh`),参考 [write-shell-script](https://github.com/MikaStars39/claude-templates/blob/main/commands/write-shell-script.md) 的 Style A / Style B 模板,但**目录命名走 memon 规范**(`<name>-yymmdd-hhmmss/`,匹配 `^.+-\d{6}-\d{6}$`,而不是上游的 `outputs/run_name_${TIMESTAMP}`)。每个 shell 脚本头部加一行简短注释说明该脚本做什么(功能性描述,不绑定假说/实验目的)。 |
-| `memon-run-experiment` | 起进程跑实验脚本,跑稳了写 README,跑挂了标 FAILED + 简短 Result + 可选 archive |
-| `memon-append-journal` | agent 把过程中的观察 / 决策追加到 JOURNAL |
-| `memon-digest-journal` | 周期性消化 `last_digest_at` 之后的事件,出周报式摘要 |
-| `memon-propose` | 看 HYPOTHESES.md + 历史实验,提议下一个该跑的实验 |
-| `memon-doctor` | 扫描已 FINISHED 但缺 Result/Conclusion 的实验、stale RUNNING 等"残局",问用户怎么处理 |
+| `memon-run-experiment` | 起进程跑实验脚本,等 stable RUNNING 后写 README,跑挂了标 FAILED + 简短 Result。前置加 env+GPU sanity check;`code.diff` 走 allowlist(列表存项目 `CLAUDE.md`,首次运行交互式 seed) |
+| `memon-append-journal` | agent 把过程中的观察 / 决策追加到 JOURNAL(单事件,允许 model 自动调) |
+| `memon-digest-journal` | 周期性消化 `last_digest_at` 之后的事件,date-keyed `D<NNNN>-<YYYY-MM-DD>.md`;**整合 doctor 检查**:在 cursor advance 之前完成 integrity sweep + 交互式修复 |
+| `memon-write-report` | 主题驱动的自由形态报告(`R<NNNN>-<slug>.md`),frontmatter 携带可重跑 `selector` shell snippet;不动 cursor;允许时间窗重叠 |
+| `memon-propose` | 看 HYPOTHESES.md + 历史实验 + 最新 digest/report,先 brainstorm 5-8 candidates 再 converge 到 1-3 个,带 trade-off 说明 |
 
 > **去掉了原计划的 `memon-summarize`**:实验 README 由跑实验的 agent(`memon-run-experiment`)就地维护,不需要事后再有一个独立 skill 来总结。
+
+> **去掉了原计划的 `memon-doctor` 单独 skill**:检测逻辑保留为 `memon doctor` CLI 命令(被 digest skill 内部调用,也允许 ad-hoc 跑),但不再有单独的 skill 文件。"在 cursor advance 之前做整体 integrity sweep" 才是 doctor 检查的自然时机,跟 digest 合并避免了「跑完 doctor 但忘了 digest 收尾」的失败模式。
+
+> **`memon-update-journal` 改名为 `memon-append-journal`**:原名容易让人以为它做的是组织/整理,但其实只是 append 一条事件;组织属于 `memon-digest-journal`。
+
+> **数字 ID 全部 4 位 zero-pad**(`H0001`/`D0042`/`R0123`):见已归档的 `zero-pad-ids` change。本 change 里所有 `D<NNNN>` / `R<NNNN>` 引用都按那个约定走。
+
+> **Skill invocation policy**:重操作 skill(`memon-write-script` / `memon-run-experiment` / `memon-digest-journal` / `memon-write-report` / `memon-propose`)在 frontmatter 里带 `disable-model-invocation: true`,只能用户显式触发;轻量单事件的 `memon-append-journal` 不带,允许 model 自动调。
 
 > **`memon-write-script` 与 README 的分工**:每个 shell 脚本头部只放一行功能性 header(例:`# Sweep batch size 4/8/16 with fp16, log per-step loss to log/ subdir.`)。脚本不必绑定到具体假说,因此不需要像 README 那样写 Motivation/Method/Result。**实验级别**(目的、setup、结果、结论)的元信息由 `memon-run-experiment` 写到 README;**脚本级别**的元信息由 `memon-write-script` 写到脚本头。两个层级互不重复。
 
@@ -86,15 +94,34 @@ skill 拿到一坨 JSON 就能离线决策,不用再连续打多个命令。
 }
 ```
 
-`memon-doctor` skill 在这之上做交互:逐条把问题给用户,问"补 Result / 标 FAILED / archive / skip",再调 `experiment readme write` / `experiment status set` / `experiment archive` 落盘。
+CLI 命令本身**只检测,不写盘**。在 skill 层,`memon-digest-journal` 在 cursor advance 之前调它,然后逐条把问题给用户,问"补 Result / 标 FAILED / skip",再调 `experiment readme write` / `experiment status set` 落盘。整体 integrity sweep 跟 digest 合在一个交互闭环里 —— 不再有单独的 `memon-doctor` skill。
 
-### 4. 输出 / 退出码约定
+### 6. 数字 ID + 文件命名约定
+
+每个 namespace 的数字 ID 一律 4 位 zero-pad:
+
+- 假说:`H0001` ~ `H9999`(见已归档的 `zero-pad-ids` change)
+- Digest:`<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`,**date-keyed**;同一天再次跑就 append 到当天文件,新一天才递增 N
+- Report:`<projectRoot>/docs/reports/R<NNNN>-<slug>.md`,**主题驱动**,不带日期;允许多个 report 时间窗重叠
+
+Digest vs Report 的关键区别:digest 推 `last_digest_at` 游标(严格非交叠),report 不动游标(可任意覆盖事件)。两者放在不同目录,各自由对应的 skill 写。
+
+### 7. Skills 分发:`memon install-skills` + `@memon/skills` 包
+
+skill 文件本身要随 memon 一起分发,不能让用户手动 `cp -r`。引入:
+
+- `packages/skills/`:新 monorepo 包(private),目录布局 `memon-*/SKILL.md` 一个 skill 一个文件夹;`packages/skills/README.md` 是写给开发者的 INDEX(不进 install)
+- `memon install-skills [--project-root <p>] [--target <path>] [--dry-run]`:严格同步 `<projectRoot>/.claude/skills/` 下所有 `memon-*` 目录(全删全装)。**非 `memon-*` 目录绝不动**,用户自己装的第三方 skill 互不打架
+
+每次 memon 升级后,用户在项目根跑一次 `memon install-skills`,skill 文件就刷到最新。
+
+### 8. 输出 / 退出码约定
 
 - 默认 JSON,`--format human` 切人类可读(沿用现有约定)
 - 错误统一 `{"error":{"code":"...","message":"...","details":?}}` → stderr;code 字面值与 web API 对齐(`BAD_REQUEST` / `NOT_FOUND` / `CONFLICT` / `FORBIDDEN`)
 - exit code 约定:`0` 成功 / `1` 通用失败 / `2` usage 错 / `4` 资源不存在 / `9` mtime 冲突 / `13` 路径越界
 
-### 6. 跨 web/CLI 的扫描缓存(**v1 不实现,但 spec 落盘**)
+### 9. 跨 web/CLI 的扫描缓存(**v1 不实现,但 spec 落盘**)
 
 定义一个**可选** capability:`~/.cache/memon/scan/<sha1(absoluteProjectRoot)>/snapshot.json`,内容是上次扫描的产物 + 每个实验目录的 mtime 表。CLI 启动时若发现缓存且全部 mtime 仍匹配,直接复用,不再走 fast-glob;web backend 启动时同样走这个 cache,把 warmup 时间从 N 秒压到 ms 级。
 
@@ -104,21 +131,24 @@ skill 拿到一坨 JSON 就能离线决策,不用再连续打多个命令。
 
 ### New Capabilities
 
-(无 — 所有变更都是已有 capability 的扩展)
+- `memon-skills`:把 6 个 SKILL.md 散落的跨 skill 约定提炼成 SHALL 级 requirement,作为 invariants 兜底。包括:invocation policy split、`--project-root` 必显式、mtime 锁纪律、README 作者归属、JOURNAL frontmatter 写权、doctor 折叠进 digest、English skill / Chinese dialogue 语言约定、digest vs report 双 artifact、code.diff allowlist 走 CLAUDE.md、pre-launch sanity、4 位 zero-pad ID。SKILL.md 文件本身仍是 agent 的工作手册;新 spec 仅记录"任何 skill 改动都不能破坏的不变式"
 
 ### Modified Capabilities
 
-- `memon-cli`:加 `--project-root` 模式 + 新 write 命令 + `scan` bulk read + 错误码统一 + archive/doctor 命令
+- `memon-cli`:加 `--project-root` 模式 + 新 write 命令 + `scan` bulk read + 错误码统一 + archive/doctor 命令 + `install-skills` 命令
 - `experiment-discovery`:`discoverExperiments` 加 `includeArchived?: boolean` 选项;默认 false 时跳过含 `.archived` sidecar 的目录
 
 ## Impact
 
 - **新增依赖**:无(用 `commander.js` 现有 CLI 框架 + `@memon/core` 现有 helper)
+- **新增 monorepo 包**:`packages/skills/`(private,`@memon/skills`),内容是 6 个 `memon-*/SKILL.md` 加一个 INDEX `README.md`。无 TS 代码,只有 markdown + 一个 `index.ts` 导出 `SKILLS_DIR` 路径常量供 CLI 定位
 - **代码改动**:
-  - `packages/cli/src/commands/{scan,experiment,journal,hypotheses,doctor}.ts` 新增
-  - `packages/cli/src/commands/{list,show,search,new,hypo}.ts` 加 `--project-root` + `--include-archived` 分支
-  - `@memon/core` 加 `loadCliContext` + `scanProjectRoot` + `runDoctor` + 改 `discoverExperiments` 签名加可选 `includeArchived`
-- **不改变**:web 后端 API 形状、文件格式、状态枚举、JOURNAL append 协议、mtime 锁协议、README schema
+  - `packages/cli/src/commands/{scan,experiment,journal,hypotheses,doctor,install-skills}.ts` 新增
+  - `packages/cli/src/commands/{list,show,search,hypo}.ts` 加 `--project-root` + `--include-archived` 分支
+  - **删除**:`packages/cli/src/commands/new.ts`(连同 `createExperimentScaffold` core helper、web `+ New experiment` 按钮、`POST /api/experiments`)— 见 design D11
+  - `@memon/core` 加 `loadCliContext` + `scanProjectRoot` + `runDoctor` + `archiveExperiment`/`unarchiveExperiment` + 改 `discoverExperiments` 签名加可选 `includeArchived`
+- **项目级文件约定**:`memon-run-experiment` 第一次跑时会读项目根 `CLAUDE.md` 里的 `## code.diff allowlist` 段;不存在就交互式 seed 一份并 append 进去。约定本身在 SKILL.md 里描述,不需要 core / CLI 做事
+- **不改变**:web 后端 API 形状(除去删除的 `POST /api/experiments`)、文件格式、状态枚举、JOURNAL append 协议、mtime 锁协议、README schema
 - **行为变化(向后兼容)**:web 端 `/api/experiments` 默认 **不再列出含 `.archived` sidecar 的目录**(因为底层 `discoverExperiments` 默认行为变了)。但首次升级时,目录里还没有任何 `.archived` 文件,**实际可见列表与升级前完全相同**;只有用户主动 archive 后才看不到。
 - **测试**:每个新命令一个 e2e fixture-based 测试(用 `mock/project-a` 做 fixture,无需 mock node:fs)
 - **缓存层**:声明在 spec 但不实现(详见 spec 的 deferred Requirement)

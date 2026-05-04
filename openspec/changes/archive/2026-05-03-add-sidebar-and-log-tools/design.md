@@ -157,7 +157,7 @@ URL hash 格式:
 实验目录: <abs path>
 README: <abs path>/README.md
 状态: <STATUS>
-关联假说: H1, H3
+关联假说: H0001, H0003
 最近 JOURNAL 事件(本实验相关):
 - <timestamp> [STATUS] PENDING → RUNNING
 - <timestamp> [NOTE] ...

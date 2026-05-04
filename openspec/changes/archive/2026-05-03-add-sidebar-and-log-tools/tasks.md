@@ -90,7 +90,7 @@
 - [x] 11.7 Replace raw `summaryTableBlock` markdown render with structured Summary card using `HypothesisStatusPill` + Next `<Link>` for experiment refs
 - [x] 11.8 Status pill follows the id (or hypothesis name) — never precedes it — in list rows / sidebar items / detail card header
 - [x] 11.9 Add anchor `id` attributes to each experiment-detail section card (motivation/setup/method/result/conclusion/caveats/artifacts/new-hypotheses/resources) for `#section` deep links
-- [x] 11.10 All cross-resource navigation uses Next `<Link>` (SPA, no browser reload); confirmed: experiment-detail hypothesis badges link to `/p/.../hypotheses#H1`, hypothesis summary experiment refs link to `/p/.../experiments/<id>`
+- [x] 11.10 All cross-resource navigation uses Next `<Link>` (SPA, no browser reload); confirmed: experiment-detail hypothesis badges link to `/p/.../hypotheses#H0001`, hypothesis summary experiment refs link to `/p/.../experiments/<id>`
 - [x] 11.11 Experiment list redesign: drop `name` col; columns are now id / status / created / updated / tags / hypotheses; use plain `<Link>` row (not `<Card>`) so vertical padding shrinks from `Card.py-4 + div.p-3` (~60px) to `div.py-1.5` (~28px)
 - [x] 11.12 Light theme `--background` token tweaked to off-white (`oklch(0.972 ...)`) so white-`--card` cards visually float above the page; dark mode already had adequate contrast and is unchanged
 

@@ -175,7 +175,7 @@ skill 用脚本 / Claude Skill 的 metadata 里要根据退出码做不同分支
 
 **职责切分**:
 - CLI(`memon doctor`):**只检测,不动磁盘**。输出结构化 JSON 问题列表,退出码 = 问题严重性最高那一档(`error → 1`、`warn / info → 0`)
-- skill(`memon-doctor`):在 CLI 之上做交互。逐条把问题摆给用户,根据回答调对应的 write CLI(`experiment readme write` / `status set` / `archive`)落盘
+- skill(`memon-digest-journal`):在 CLI 之上做交互。逐条把问题摆给用户,根据回答调对应的 write CLI(`experiment readme write` / `status set`)落盘。Doctor 不再单列 skill — 见 D14
 
 **检测规则**(v1 锁定这一组,未来可扩展):
 
@@ -215,7 +215,7 @@ skill 用脚本 / Claude Skill 的 metadata 里要根据退出码做不同分支
 
 mvp proposal 时假设 "agent 跑完实验之后,memon-summarize 来统一收口写 Result / Conclusion"。后来设计走向:**写实验脚本 + 跑实验 + 维护 README** 都收敛到 `memon-run-experiment`,因为"跑"和"写报告"在时间和上下文上紧挨,分开两个 skill 反而割裂。
 
-`memon-doctor` 替代了 summarize 的 "检测谁还没写" 职责;`memon-run-experiment` 替代了 "跑完写 Result"。所以 summarize 不再单列。
+`memon-digest-journal` 替代了 summarize 的 "检测谁还没写" 职责(它整合了 doctor sweep);`memon-run-experiment` 替代了 "跑完写 Result"。所以 summarize 不再单列。
 
 ### D13. fixture-based 测试,不 mock fs
 
@@ -226,6 +226,64 @@ CLI e2e 测试用 `mock/project-a/` 做 fixture(已经在 git 里),每个测试 
 - 文件 mtime 变化(写命令)
 
 无 fs mock。这种风格在 `packages/core/src/discovery/*.test.ts` 已经用了,沿用即可。
+
+### D14. Doctor checks 折叠进 `memon-digest-journal`,不再有单独的 `memon-doctor` skill
+
+**选择**:`memon doctor` CLI 命令保留(职责见 D10),但**不再有同名 skill**。Integrity sweep 作为 `memon-digest-journal` 工作流第 3 步内嵌进去(snapshot window → read events → **doctor sweep + 交互修复** → 写 digest → race-check + cursor advance)。
+
+**为什么合并**:
+
+- 在 cursor advance 之前做整体性扫描是 doctor 检查的**自然时机** — 你正要把 "到此为止的所有事件都已总结" 这个不变式 commit 进 `last_digest_at`,这恰恰是发现 "FINISHED 没填 Result"、"stale RUNNING" 之类问题的最后一道关
+- 拆开两个 skill 的失败模式:跑了 `memon-doctor`、修了几条、忘了再跑 `memon-digest-journal` 收尾。合并后这种状态不可能存在
+- `memon doctor` CLI 命令仍然可以 ad-hoc 单独跑(纯检测,不动盘),用户随时可以 sanity check
+
+### D15. Skill invocation policy:重操作 user-invoked,轻量 model-callable
+
+**选择**:6 个 skill 的 `disable-model-invocation` frontmatter 字段按下表分布:
+
+| skill | disable-model-invocation | 理由 |
+|---|---|---|
+| `memon-write-script` | `true` | 写新文件,需要用户决定脚本去哪里、做什么 |
+| `memon-run-experiment` | `true` | 启动长时进程 + 写 README,要用户授权 |
+| `memon-digest-journal` | `true` | 推 cursor + 交互修复,有破坏性 |
+| `memon-write-report` | `true` | 写新文件 |
+| `memon-propose` | `true` | 用户的 brainstorm 入口,意图明确才触发 |
+| `memon-append-journal` | (未设置,允许 model 调) | 单事件,低风险,允许 agent 在跑实验过程中自动记录观察 |
+
+**理由**:agent 在长会话里见到 "可调的 skill" 容易冲动调用。单事件 append 可以放手;凡是涉及多步写盘 / 启动进程 / 推游标的,必须用户显式触发(slash-command 或对话里说出来)。
+
+### D16. Skills 包发布:bundle in `@memon/skills`,通过 `memon install-skills` 同步
+
+**选择**:skill 文件作为 monorepo 内的一个独立 package(`packages/skills/`)被 build 出来打进 `memon` CLI 的 `node_modules`,然后 `memon install-skills` 严格同步 `<projectRoot>/.claude/skills/memon-*/`。
+
+**职责切分**:
+- `packages/skills/` 是 skill **源**,内容即所装的内容(没有编译/打包)
+- `packages/skills/index.ts` 只导出一个 `SKILLS_DIR` 路径常量(绝对路径到 skills 目录),以便 `memon install-skills` 在任何安装位置都能定位源
+- `memon install-skills` **strict sync**:抹掉 target 下所有 `memon-*` 子目录 → 把源里的 `memon-*` 全部新装一份。不做 diff / merge / 询问,语义清晰
+- 非 `memon-*` 子目录(用户自己的 skill、第三方 skill)绝不动
+
+**为什么 strict sync 而不是 incremental**:
+
+- `memon install-skills` 是用户主动跑的(每次升级 memon 后),不是后台静默改文件,清空+重装的破坏面有限
+- 增量同步要处理 "上一版有但本版没了的 skill"(已经发生了一次:`memon-doctor` 删除)。strict sync 把这种 case 自然处理掉
+- 用户改了 SKILL.md 又跑 `install-skills`?那是用户手错 — 装好的 skill 不应该被改。要改就改 `packages/skills/`(repo 内)再 reinstall
+
+**INDEX**:`packages/skills/README.md` 是给开发者读的总览(选 skill 表、invocation policy、handoff 流程图)。`memon install-skills` 不会装它(只装 `memon-*` 子目录),因此不会污染用户项目。
+
+### D17. Pre-launch sanity + `code.diff` allowlist
+
+**Pre-launch sanity check**:`memon-run-experiment` 在调脚本之前,先跑一组 ~2 秒的检查 — `which python` + `python -V` + `torch.cuda.is_available()` + `nvidia-smi`(空闲 GPU + 驱动正常)。失败就 bail out,**不要启动**。
+
+最常见的实验失败模式不是 bug,而是 "跑了错的 conda env / 抢了别人占着的 GPU"。这两秒省后面几小时的 wandb run 浪费。
+
+**`code.diff` allowlist(per-project,存项目 `CLAUDE.md`)**:
+
+- `code.diff` 用 allowlist 而不是 blocklist 过滤(原本是一个超长的 30+ excludes 列表,易遗漏)
+- allowlist 内容**项目相关**:不同项目代码后缀不一样(纯 python 项目 vs 含 CUDA 的 vs 写 Rust 的),全局默认必然要么过宽要么过窄
+- 因此 allowlist 存在项目根 `CLAUDE.md` 下一节 `## code.diff allowlist`,每行一个 pathspec
+- skill 第一次跑时若发现这一节不存在,**交互式 seed**:`git ls-files | sed -n 's/.*\.//p' | sort | uniq -c | sort -rn | head -20` 看真实存在的后缀,跟用户确认后写入 CLAUDE.md。后续跑直接读
+
+约定本身在 SKILL.md 里详述,不需要 core / CLI 实现什么。
 
 ## Risks / Trade-offs
 

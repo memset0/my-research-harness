@@ -50,8 +50,8 @@ Clicking an experiment in the list SHALL open a detail page showing:
 - **THEN** the detail page renders that section under a "Method" heading
 
 #### Scenario: Hypotheses panel cross-link
-- **WHEN** the experiment's front matter has `hypotheses: [H3]` and `H3` exists in `HYPOTHESES.md`
-- **THEN** the panel shows H3 with its status emoji and a link to its hypothesis entry
+- **WHEN** the experiment's front matter has `hypotheses: [H0003]` and `H0003` exists in `HYPOTHESES.md`
+- **THEN** the panel shows H0003 with its status emoji and a link to its hypothesis entry
 
 ### Requirement: README inline editing with conflict-aware save
 
