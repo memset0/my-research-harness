@@ -11,22 +11,28 @@
 // config.yml (or config.example.yml as last-resort fallback).
 
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import {
+  DIGEST_FILENAME_REGEX,
   ExperimentIndex,
   Poller,
+  REPORT_FILENAME_REGEX,
   discoverExperiments,
+  extractTitle,
   loadConfig,
   parseHypotheses,
   parseJournal,
   readExperimentDir,
   type AuthConfig,
   type Config,
+  type DigestSummary,
   type Experiment,
   type ParsedHypotheses,
   type ParsedJournal,
+  type ReportSummary,
 } from '@memon/core'
+import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { ensureAuthInitialised } from './auth/first-run'
 
@@ -50,6 +56,8 @@ export class Runtime {
     public readonly events: EventEmitter,
     public readonly hypothesesCache: FileCache<ParsedHypotheses>,
     public readonly journalCache: FileCache<ParsedJournal>,
+    public readonly reportsCache: DirCache<ReportSummary>,
+    public readonly digestsCache: DirCache<DigestSummary>,
     public readonly auth: AuthConfig,
   ) {}
 
@@ -83,6 +91,18 @@ export class Runtime {
   journalPath(project: string): string | null {
     const p = this.config.projects.find((x) => x.name === project)
     return p ? join(p.root, 'JOURNAL.md') : null
+  }
+
+  /** Path to <project>/docs/reports/ for the given project (or null). */
+  reportsDir(project: string): string | null {
+    const p = this.config.projects.find((x) => x.name === project)
+    return p ? join(p.root, 'docs', 'reports') : null
+  }
+
+  /** Path to <project>/docs/digests/ for the given project (or null). */
+  digestsDir(project: string): string | null {
+    const p = this.config.projects.find((x) => x.name === project)
+    return p ? join(p.root, 'docs', 'digests') : null
   }
 }
 
@@ -129,6 +149,51 @@ async function init(): Promise<Runtime> {
     parse: parseJournal,
   })
 
+  // Per-project directory caches for docs/reports/ and docs/digests/.
+  const reportsDirs = config.projects.map((p) => join(p.root, 'docs', 'reports'))
+  const digestsDirs = config.projects.map((p) => join(p.root, 'docs', 'digests'))
+
+  const reportsCache = new DirCache<ReportSummary>({
+    name: 'reports',
+    dirs: reportsDirs,
+    fileNameRegex: REPORT_FILENAME_REGEX,
+    parseFile: (absPath, content, mtime) => {
+      const name = basename(absPath)
+      const m = REPORT_FILENAME_REGEX.exec(name)!
+      return {
+        id: `R${m[1]}`,
+        slug: m[2]!,
+        path: absPath,
+        mtime,
+        title: extractTitle(content),
+      }
+    },
+    onUpdate: (dir) => {
+      const project = projectForDir(config, dir)
+      if (project) events.emit('reports-change', { project })
+    },
+  })
+  const digestsCache = new DirCache<DigestSummary>({
+    name: 'digests',
+    dirs: digestsDirs,
+    fileNameRegex: DIGEST_FILENAME_REGEX,
+    parseFile: (absPath, content, mtime) => {
+      const name = basename(absPath)
+      const m = DIGEST_FILENAME_REGEX.exec(name)!
+      return {
+        id: `D${m[1]}`,
+        date: m[2]!,
+        path: absPath,
+        mtime,
+        title: extractTitle(content),
+      }
+    },
+    onUpdate: (dir) => {
+      const project = projectForDir(config, dir)
+      if (project) events.emit('digests-change', { project })
+    },
+  })
+
   // Single Poller instance dispatched by path-membership to the right handler.
   const poller = new Poller(
     {
@@ -140,6 +205,9 @@ async function init(): Promise<Runtime> {
       // Try file caches first (cheap O(1) Set membership check each).
       if (hypothesesCache.handlePollChange(path)) return
       if (journalCache.handlePollChange(path)) return
+      // Try directory caches (handles both dir-mtime and per-file changes).
+      if (reportsCache.handlePollChange(path, poller)) return
+      if (digestsCache.handlePollChange(path, poller)) return
 
       // Otherwise this is an experiment directory.
       const projectMatch = config.projects.find(
@@ -156,11 +224,14 @@ async function init(): Promise<Runtime> {
     },
   )
 
-  // Initial scan + parse + watch — file caches and experiment scan in parallel.
+  // Initial scan + parse + watch — file caches, dir caches and experiment
+  // scan in parallel.
   const t0 = Date.now()
   await Promise.all([
     hypothesesCache.warmup(),
     journalCache.warmup(),
+    reportsCache.warmup(),
+    digestsCache.warmup(),
     (async () => {
       for (const project of config.projects) {
         const dirs = await discoverExperiments(project)
@@ -189,11 +260,28 @@ async function init(): Promise<Runtime> {
     poller.watch(p, entry?.mtime ?? 0)
   }
 
+  // Register dir-level + per-file watch for reports/digests. Both the
+  // directory mtime (advances on add/remove) and each individual file
+  // (advances on edit) are watched.
+  for (const dir of reportsCache.dirs()) {
+    poller.watch(dir, await dirMtimeOrZero(dir))
+  }
+  for (const filePath of reportsCache.paths()) {
+    poller.watch(filePath, await fileMtimeOrZero(filePath))
+  }
+  for (const dir of digestsCache.dirs()) {
+    poller.watch(dir, await dirMtimeOrZero(dir))
+  }
+  for (const filePath of digestsCache.paths()) {
+    poller.watch(filePath, await fileMtimeOrZero(filePath))
+  }
+
   // eslint-disable-next-line no-console
   console.log(
     `memon: warmup complete in ${Date.now() - t0}ms — ${index.size()} experiments, ` +
       `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
-      `${journalCache.populated()}/${journalPaths.length} journal files`,
+      `${journalCache.populated()}/${journalPaths.length} journal files, ` +
+      `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests`,
   )
 
   return new Runtime(
@@ -204,8 +292,36 @@ async function init(): Promise<Runtime> {
     events,
     hypothesesCache,
     journalCache,
+    reportsCache,
+    digestsCache,
     auth,
   )
+}
+
+function projectForDir(config: Config, dir: string): string | null {
+  for (const p of config.projects) {
+    if (dir === join(p.root, 'docs', 'reports')) return p.name
+    if (dir === join(p.root, 'docs', 'digests')) return p.name
+  }
+  return null
+}
+
+async function dirMtimeOrZero(dir: string): Promise<number> {
+  try {
+    const stat = await fs.stat(dir)
+    return stat.mtimeMs
+  } catch {
+    return 0
+  }
+}
+
+async function fileMtimeOrZero(path: string): Promise<number> {
+  try {
+    const stat = await fs.stat(path)
+    return stat.mtimeMs
+  } catch {
+    return 0
+  }
 }
 
 async function resolveConfigPath(): Promise<string | null> {
