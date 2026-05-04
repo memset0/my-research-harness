@@ -4,24 +4,35 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
+import { TabBadge, type TabKind } from './tab-badge'
+
+interface TabSpec {
+  name: string
+  kind: TabKind
+  href: string
+  matches: (p: string) => boolean
+}
 
 export function AppBar({ project }: { project: string }) {
   const pathname = usePathname() ?? ''
   const projectBase = `/p/${encodeURIComponent(project)}`
-  const tabs: { name: string; href: string; matches: (p: string) => boolean }[] = [
+  const tabs: TabSpec[] = [
     {
       name: 'Experiments',
+      kind: 'experiments',
       href: projectBase,
       // Active for the list view AND any experiment detail page
       matches: (p) => p === projectBase || p.startsWith(`${projectBase}/experiments`),
     },
     {
       name: 'Hypotheses',
+      kind: 'hypotheses',
       href: `${projectBase}/hypotheses`,
       matches: (p) => p.startsWith(`${projectBase}/hypotheses`),
     },
     {
       name: 'Journal',
+      kind: 'journal',
       href: `${projectBase}/journal`,
       matches: (p) => p.startsWith(`${projectBase}/journal`),
     },
@@ -47,7 +58,8 @@ export function AppBar({ project }: { project: string }) {
               variant={isActive ? 'default' : 'ghost'}
             >
               <Link href={t.href} role="tab" aria-selected={isActive}>
-                {t.name}
+                <span>{t.name}</span>
+                <TabBadge kind={t.kind} project={project} active={isActive} />
               </Link>
             </Button>
           )

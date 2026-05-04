@@ -79,6 +79,13 @@ export async function fetchJournal(
   return jsonFetch(`/api/journal?${params.toString()}`)
 }
 
+/** Just the total event count for a project (used by the AppBar count badge). */
+export async function fetchJournalCount(
+  project: string,
+): Promise<{ totalEvents: number; lastDigestAt: string | null }> {
+  return jsonFetch(`/api/journal?project=${encodeURIComponent(project)}&countOnly=1`)
+}
+
 export async function fetchLog(
   path: string,
   options: { endLine?: number; count?: number } = {},
