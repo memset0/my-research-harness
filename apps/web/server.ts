@@ -7,10 +7,22 @@ import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import next from 'next'
 import { createMemonServer } from './lib/server-core'
+import { getRuntime } from './lib/runtime'
 
 const dev = process.env.NODE_ENV !== 'production'
 const port = Number(process.env.PORT ?? 3737)
 const hostname = process.env.HOST ?? 'localhost'
+
+// Warm the runtime BEFORE Next prepares. server.ts is loaded by tsx at the
+// process entry, so imports here are resolved by Node/tsx — never by Next's
+// bundler. That lets us directly `import { getRuntime }` without the
+// bundler-evading dance `instrumentation.ts` used to need. Stashing the
+// warmup timestamp on globalThis lets the instrumentation hook (which Next
+// runs from a bundled chunk) observe that warmup already happened and no-op.
+const warmupStartedAt = Date.now()
+await getRuntime()
+const globalAny = globalThis as unknown as { __memonWarmedAt?: number }
+globalAny.__memonWarmedAt = warmupStartedAt
 
 const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()
