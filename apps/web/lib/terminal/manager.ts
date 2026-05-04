@@ -120,11 +120,19 @@ export async function startSession(input: {
   registerExitHandlers()
 
   const sessionName = `${SESSION_PREFIX}${input.experimentId}`
+  // `-b` (base-path) tells ttyd it's mounted under this URL prefix so the
+  // index HTML + WebSocket URL it emits match what Caddy will route. Without
+  // it, ttyd emits asset URLs at `/static/*` which Caddy routes to Next.js
+  // (404). With it, all URLs are prefixed and stay inside the @terminal
+  // matcher.
+  const basePath = `/api/terminal/proxy/${sessionName}`
   const args = [
     '-p',
     String(PORT),
     '-i',
     '127.0.0.1',
+    '-b',
+    basePath,
     '--writable',
     'tmux',
     'new-session',

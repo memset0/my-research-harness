@@ -88,6 +88,8 @@ describe('startSession', () => {
       '7682',
       '-i',
       '127.0.0.1',
+      '-b',
+      '/api/terminal/proxy/memon-claude-foo-260501-100000',
       '--writable',
       'tmux',
       'new-session',
