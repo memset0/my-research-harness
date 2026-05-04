@@ -88,7 +88,28 @@ async function killChild(child: ChildProcess): Promise<void> {
   })
 }
 
+/**
+ * Serializer: every startSession call awaits the previous one before
+ * proceeding. Prevents two concurrent invocations (e.g. React strict mode
+ * double-mounting TerminalSheet's effect in dev) from racing on the single
+ * shared port 7682.
+ */
+const SERIALIZER_KEY = '__memonTerminalStartChain' as const
+type StartSlot = GlobalSlot & { [SERIALIZER_KEY]?: Promise<unknown> }
+const startSlot = globalThis as unknown as StartSlot
+
 export async function startSession(input: {
+  experimentId: string
+  projectName: string
+}): Promise<ActiveSession> {
+  const prev = startSlot[SERIALIZER_KEY] ?? Promise.resolve()
+  const mine = prev.catch(() => {}).then(() => doStartSession(input))
+  // Mark slot "done" even on rejection so the chain doesn't stall
+  startSlot[SERIALIZER_KEY] = mine.catch(() => {})
+  return mine
+}
+
+async function doStartSession(input: {
   experimentId: string
   projectName: string
 }): Promise<ActiveSession> {
@@ -100,6 +121,19 @@ export async function startSession(input: {
   }
   if (!input.projectName.trim()) {
     throw new TerminalManagerError('BAD_REQUEST', 'projectName is required')
+  }
+
+  const sessionName = `${SESSION_PREFIX}${input.experimentId}`
+
+  // Idempotent: same experiment + healthy ttyd → return existing
+  const existingSame = getCurrent()
+  if (
+    existingSame &&
+    existingSame.sessionName === sessionName &&
+    !existingSame.child.killed &&
+    existingSame.child.exitCode === null
+  ) {
+    return toPublic(existingSame)
   }
 
   const probe = await probeTtyd()
@@ -119,7 +153,6 @@ export async function startSession(input: {
 
   registerExitHandlers()
 
-  const sessionName = `${SESSION_PREFIX}${input.experimentId}`
   // `-b` (base-path) tells ttyd it's mounted under this URL prefix so the
   // index HTML + WebSocket URL it emits match what Caddy will route. Without
   // it, ttyd emits asset URLs at `/static/*` which Caddy routes to Next.js

@@ -172,3 +172,41 @@ describe('listSessions', () => {
     expect(listSessions()).toEqual([])
   })
 })
+
+describe('concurrent startSession (React strict mode etc.)', () => {
+  it('two parallel calls for the SAME experimentId resolve to the same session — no double spawn', async () => {
+    newSpawnReturnsHealthyChild()
+
+    const [a, b] = await Promise.all([
+      startSession({ experimentId: 'foo', projectName: 'a' }),
+      startSession({ experimentId: 'foo', projectName: 'a' }),
+    ])
+
+    // Only one ttyd was spawned (idempotent return for the duplicate)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    // Both callers got the same session info
+    expect(a.sessionName).toBe(b.sessionName)
+    expect(a.startedAt).toBe(b.startedAt)
+  })
+
+  it('two parallel calls for DIFFERENT experimentIds serialize cleanly — no port race', async () => {
+    const childA = new FakeChild()
+    const childB = new FakeChild()
+    spawnMock.mockReturnValueOnce(childA).mockReturnValueOnce(childB)
+
+    const [a, b] = await Promise.all([
+      startSession({ experimentId: 'foo', projectName: 'a' }),
+      startSession({ experimentId: 'bar', projectName: 'a' }),
+    ])
+
+    // Both spawns happened, but sequenced — second only ran after first
+    // finished, so the kill-then-respawn path was taken.
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+    expect(childA.signals).toContain('SIGTERM') // first child got killed
+    // The second one is the survivor
+    expect(listSessions()).toHaveLength(1)
+    expect(listSessions()[0]?.experimentId).toBe('bar')
+    expect(a.experimentId).toBe('foo')
+    expect(b.experimentId).toBe('bar')
+  })
+})
