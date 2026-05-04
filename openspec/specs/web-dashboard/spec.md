@@ -53,8 +53,8 @@ Clicking an experiment in the list SHALL open a detail page showing:
 - **THEN** the detail page renders that section under a "Method" heading
 
 #### Scenario: Hypotheses panel cross-link
-- **WHEN** the experiment's front matter has `hypotheses: [H3]` and `H3` exists in `HYPOTHESES.md`
-- **THEN** the panel shows H3 with its status emoji and a link to its hypothesis entry
+- **WHEN** the experiment's front matter has `hypotheses: [H0003]` and `H0003` exists in `HYPOTHESES.md`
+- **THEN** the panel shows H0003 with its status emoji and a link to its hypothesis entry
 
 ### Requirement: Section card typography hierarchy
 
@@ -70,15 +70,25 @@ Within every card on the experiment detail page, the body content SHALL render a
 
 ### Requirement: README inline editing with conflict-aware save
 
-The detail page SHALL provide an "Edit README" mode that opens a markdown editor (with WYSIWYG-light support) prefilled with the current README content. Saving SHALL go through `PUT /api/readme` carrying `expectedMtime`.
+The detail page SHALL provide an "Edit README" mode that opens a markdown editor prefilled with the current README content. The editor's container SHALL be responsive to viewport width:
 
-#### Scenario: Successful save
-- **WHEN** the user edits and saves and `expectedMtime` matches disk
-- **THEN** the editor closes, the rendered view updates, and a success toast is shown
+- **<1024px** (mobile + tablet): the editor opens inside a full-screen `<Dialog>` modal (preserving existing behavior).
+- **≥1024px** (desktop): the editor opens as a right-side resizable panel beside the detail page body, NOT as a `<Dialog>`. The detail body remains visible in the left column. (See `experiment-edit` spec for panel collapse/expand/resize semantics.)
+
+Saving SHALL go through `PUT /api/readme` carrying `expectedMtime` (and optional `expectedHash`) regardless of container.
+
+#### Scenario: Successful save (mobile/tablet)
+- **WHEN** the user is at viewport <1024px, edits, and saves; `expectedMtime` matches disk
+- **THEN** the `<Dialog>` closes, the rendered detail view updates, and a success toast is shown
+
+#### Scenario: Successful save (desktop)
+- **WHEN** the user is at viewport ≥1024px, edits in the side panel, and saves; `expectedMtime` matches disk
+- **THEN** the side panel remains open with cleared dirty state (does NOT auto-close — the user typically iterates), the rendered detail view updates, and a success toast is shown
 
 #### Scenario: Conflict on save
-- **WHEN** save returns 409
-- **THEN** the editor enters a conflict resolution view showing a diff between the user's draft and the current disk content, with three options: "Keep my changes (overwrite)", "Discard mine (use disk)", "Manual merge"
+- **WHEN** save returns 409 (in either container)
+- **THEN** the editor enters a conflict resolution view showing a diff between the user's draft and the current disk content, with three options: "Keep my changes (overwrite)", "Discard mine (use disk)", "Cancel" / "Manual merge"
+- **AND** the conflict view renders inside whichever container is active (Dialog on <1024px, side panel on ≥1024px)
 
 ### Requirement: localStorage draft and recovery prompt
 

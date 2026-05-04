@@ -5,15 +5,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { fetchReadme, putReadme, type PutReadmeConflict } from '../lib/api'
+import { readPlainPref, writePlainPref } from '../lib/readme-editor-prefs'
 import { Button } from './ui/button'
-import { Dialog, DialogContent } from './ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
+import { ReadmeEditorToolbar } from './readme-editor-toolbar'
+import { ReadmeMonaco } from './readme-monaco'
+import { ReadmePlain } from './readme-plain'
 
-// @uiw/react-md-editor and react-diff-viewer-continued are client-only.
-const MDEditor = dynamic(() => import('@uiw/react-md-editor').then((m) => m.default), {
-  ssr: false,
-  loading: () => <div className="p-6 text-sm text-muted-foreground">loading editor…</div>,
-})
-
+// react-diff-viewer-continued is client-only.
 const DiffViewer = dynamic(
   () => import('react-diff-viewer-continued').then((m) => m.default),
   {
@@ -34,15 +33,24 @@ interface DraftRecord {
 
 type Phase = 'loading' | 'recovery-prompt' | 'editing' | 'saving' | 'conflict' | 'load-error'
 
-export function ReadmeEditor({
-  path,
-  experimentId,
-  onClose,
-}: {
+export type ContainerKind = 'dialog' | 'panel'
+
+export interface ReadmeEditorBodyProps {
   path: string
   experimentId: string
   onClose: () => void
-}) {
+  containerKind: ContainerKind
+  /** Slot for the panel collapse / close buttons; rendered at the right end of the toolbar. */
+  toolbarTrailing?: React.ReactNode
+}
+
+export function ReadmeEditorBody({
+  path,
+  experimentId,
+  onClose,
+  containerKind,
+  toolbarTrailing,
+}: ReadmeEditorBodyProps) {
   const queryClient = useQueryClient()
   const [phase, setPhase] = useState<Phase>('loading')
   const [content, setContent] = useState('')
@@ -52,8 +60,18 @@ export function ReadmeEditor({
   const [draftContent, setDraftContent] = useState<string | null>(null)
   const [conflict, setConflict] = useState<PutReadmeConflict | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [plain, setPlainState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return readPlainPref()
+  })
+  const plainTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const draftKey = useCallback((mtime: number) => `${DRAFT_PREFIX}${path}:${mtime}`, [path])
+
+  const setPlain = useCallback((v: boolean) => {
+    setPlainState(v)
+    writePlainPref(v)
+  }, [])
 
   // Load + draft recovery on mount
   useEffect(() => {
@@ -129,7 +147,15 @@ export function ReadmeEditor({
         safeRemove(draftKey(diskMtime))
         queryClient.invalidateQueries({ queryKey: ['experiment', experimentId] })
         queryClient.invalidateQueries({ queryKey: ['experiments'] })
-        onClose()
+        // Refresh the in-memory baseline so dirty state clears.
+        setDiskContent(content)
+        setDiskMtime(res.mtime)
+        setDiskHash(null)
+        if (containerKind === 'dialog') {
+          onClose()
+        } else {
+          setPhase('editing')
+        }
       }
     } catch (err) {
       toast.error(`Save failed: ${(err as Error).message}`, {
@@ -146,8 +172,7 @@ export function ReadmeEditor({
       const res = await putReadme({
         path,
         content,
-        expectedMtime: conflict.mtime, // accept the new mtime
-        // skip hash check — user explicitly chose to overwrite
+        expectedMtime: conflict.mtime,
       })
       if ('error' in res && res.error?.code === 'CONFLICT') {
         setConflict(res)
@@ -157,7 +182,15 @@ export function ReadmeEditor({
         if (diskMtime !== null) safeRemove(draftKey(diskMtime))
         queryClient.invalidateQueries({ queryKey: ['experiment', experimentId] })
         queryClient.invalidateQueries({ queryKey: ['experiments'] })
-        onClose()
+        setDiskContent(content)
+        setDiskMtime(res.mtime)
+        setDiskHash(null)
+        setConflict(null)
+        if (containerKind === 'dialog') {
+          onClose()
+        } else {
+          setPhase('editing')
+        }
       }
     } catch (err) {
       toast.error(`Save failed: ${(err as Error).message}`)
@@ -192,115 +225,167 @@ export function ReadmeEditor({
     setPhase('editing')
   }
 
+  const handleCopy = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content)
+        toast.success('Copied · README markdown')
+        return
+      }
+      throw new Error('clipboard unavailable')
+    } catch {
+      // Fallback: select text in the plain textarea (only works in plain mode)
+      if (plain && plainTextareaRef.current) {
+        plainTextareaRef.current.select()
+      }
+      toast.error('Clipboard blocked — please copy manually')
+    }
+  }
+
+  const handleMonacoLoadError = useCallback(
+    (_err: unknown) => {
+      // Auto-fall back to plain. Do NOT persist the user's preference — this
+      // is a transient failure, the next session should still try Monaco.
+      setPlainState(true)
+      toast.error('Editor failed to load — using plain text fallback')
+    },
+    [],
+  )
+
+  const dirty = phase === 'editing' && content !== diskContent
+  const saving = phase === 'saving'
+
+  // ---------- render branches ----------
+
+  if (phase === 'loading') {
+    return <div className="p-8 text-center text-sm text-muted-foreground">loading…</div>
+  }
+
+  if (phase === 'load-error') {
+    return (
+      <div className="p-8 text-center text-sm">
+        <p className="text-destructive">Could not load README: {loadError}</p>
+        <Button className="mt-4" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    )
+  }
+
+  if (phase === 'recovery-prompt' && draftContent) {
+    return (
+      <div className="space-y-4 p-6">
+        <h2 className="text-lg font-semibold">Unsaved draft found</h2>
+        <p className="text-sm text-muted-foreground">
+          A draft from a previous session ({draftContent.length.toLocaleString()} characters)
+          is saved locally. The on-disk file has{' '}
+          <span className="font-mono">{diskContent.length.toLocaleString()}</span> characters.
+          What would you like to do?
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={restoreDraft}>Restore my draft</Button>
+          <Button variant="outline" onClick={discardDraftFromDisk}>
+            Discard draft, use disk
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (phase === 'conflict' && conflict) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
+          <h2 className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+            Conflict — disk changed since you opened the editor
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={handleCancelConflict}>
+              Back to editor
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDiscardMine}>
+              Discard mine
+            </Button>
+            <Button size="sm" onClick={() => void handleKeepMine()}>
+              Keep mine (overwrite)
+            </Button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-2 text-xs">
+          <DiffViewer
+            oldValue={conflict.content}
+            newValue={content}
+            splitView
+            leftTitle="Disk (newer)"
+            rightTitle="Your draft"
+            styles={{
+              contentText: { fontFamily: 'ui-monospace, monospace', fontSize: 12 },
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // editing | saving
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ReadmeEditorToolbar
+        path={path}
+        dirty={dirty}
+        saving={saving}
+        plain={plain}
+        onPlainChange={setPlain}
+        onCopy={() => void handleCopy()}
+        onSave={() => void handleSave()}
+        onCancel={onClose}
+        trailing={toolbarTrailing}
+        closeAs={containerKind === 'panel' ? 'close' : 'cancel'}
+      />
+      <div className="min-h-0 flex-1 overflow-hidden bg-white">
+        {plain ? (
+          <ReadmePlain ref={plainTextareaRef} value={content} onChange={setContent} />
+        ) : (
+          <ReadmeMonaco
+            value={content}
+            onChange={setContent}
+            onLoadError={handleMonacoLoadError}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Dialog-wrapped editor for mobile/tablet (and the legacy callsite). */
+export function ReadmeEditor({
+  path,
+  experimentId,
+  onClose,
+}: {
+  path: string
+  experimentId: string
+  onClose: () => void
+}) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="!max-w-5xl p-0 gap-0 overflow-hidden"
+        className="!max-w-5xl gap-0 overflow-hidden p-0"
         showCloseButton={false}
       >
-        {phase === 'loading' && (
-          <div className="p-8 text-center text-sm text-muted-foreground">loading…</div>
-        )}
-
-        {phase === 'load-error' && (
-          <div className="p-8 text-center text-sm">
-            <p className="text-destructive">Could not load README: {loadError}</p>
-            <Button className="mt-4" variant="outline" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        )}
-
-        {phase === 'recovery-prompt' && draftContent && (
-          <div className="space-y-4 p-6">
-            <h2 className="text-lg font-semibold">Unsaved draft found</h2>
-            <p className="text-sm text-muted-foreground">
-              A draft from a previous session ({draftContent.length.toLocaleString()} characters)
-              is saved locally. The on-disk file has{' '}
-              <span className="font-mono">{diskContent.length.toLocaleString()}</span> characters.
-              What would you like to do?
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={restoreDraft}>Restore my draft</Button>
-              <Button variant="outline" onClick={discardDraftFromDisk}>
-                Discard draft, use disk
-              </Button>
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {(phase === 'editing' || phase === 'saving') && diskMtime !== null && (
-          <div className="flex h-full max-h-[85vh] flex-col">
-            <div className="flex items-center justify-between border-b p-3">
-              <h2 className="text-sm font-semibold">
-                Edit README ·{' '}
-                <span className="font-mono text-xs text-muted-foreground">{path}</span>
-              </h2>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onClose}
-                  disabled={phase === 'saving'}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => void handleSave()}
-                  disabled={phase === 'saving'}
-                >
-                  {phase === 'saving' ? 'Saving…' : 'Save'}
-                </Button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto p-2 [&_.w-md-editor]:!h-[calc(85vh-3.5rem)]">
-              <MDEditor
-                value={content}
-                onChange={(v) => setContent(v ?? '')}
-                height={`calc(85vh - 4rem)` as unknown as number}
-                preview="live"
-                data-color-mode="light"
-              />
-            </div>
-          </div>
-        )}
-
-        {phase === 'conflict' && conflict && (
-          <div className="flex h-full max-h-[85vh] flex-col">
-            <div className="flex items-center justify-between border-b p-3">
-              <h2 className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                Conflict — disk changed since you opened the editor
-              </h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={handleCancelConflict}>
-                  Back to editor
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleDiscardMine}>
-                  Discard mine
-                </Button>
-                <Button size="sm" onClick={() => void handleKeepMine()}>
-                  Keep mine (overwrite)
-                </Button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto p-2 text-xs">
-              <DiffViewer
-                oldValue={conflict.content}
-                newValue={content}
-                splitView
-                leftTitle="Disk (newer)"
-                rightTitle="Your draft"
-                styles={{
-                  contentText: { fontFamily: 'ui-monospace, monospace', fontSize: 12 },
-                }}
-              />
-            </div>
-          </div>
-        )}
+        <DialogTitle className="sr-only">Edit README</DialogTitle>
+        <DialogDescription className="sr-only">{path}</DialogDescription>
+        <div className="flex h-[85vh] min-h-0 flex-col">
+          <ReadmeEditorBody
+            path={path}
+            experimentId={experimentId}
+            onClose={onClose}
+            containerKind="dialog"
+          />
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -343,7 +428,6 @@ function cleanupStaleDrafts(): void {
         toRemove.push(key)
       }
     } catch {
-      // Malformed entries are best treated as stale
       toRemove.push(key)
     }
   }

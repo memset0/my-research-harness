@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { useIsDesktop } from '@/hooks/use-is-desktop'
 import { fetchExperiment, type FullExperiment } from '../lib/api'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -14,6 +15,8 @@ import { DetailSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Markdown } from './markdown'
 import { LogViewer } from './log-viewer'
+import { ReadmeEditorProvider } from './readme-editor-context'
+import { ReadmeSidePanel } from './readme-side-panel'
 import Link from 'next/link'
 
 export function ExperimentDetail({ project, id }: { project: string; id: string }) {
@@ -27,10 +30,28 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
   if (!data) return null
 
   const exp: FullExperiment = data
+
+  return (
+    <ReadmeEditorProvider>
+      <ExperimentDetailLayout exp={exp} project={project} />
+    </ReadmeEditorProvider>
+  )
+}
+
+function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project: string }) {
+  const isDesktop = useIsDesktop()
   const fm = exp.frontMatter
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
+    // Pin the row to the viewport-minus-AppBar (h-12 = 3rem) and let each
+    // pane own its own scroll. Without this, scrolling the left content
+    // bleeds into the panel because the document is the only scroll container.
+    // Note: the scroll container is a plain block; the inner flex-column
+    // holds the actual cards. Putting `overflow-y-auto` directly on a
+    // `flex-col` container squashes flex children instead of overflowing.
+    <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-4 p-4 md:p-6">
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
@@ -133,6 +154,14 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
       </Card>
 
       {exp.hasReadme && <LogViewer expPath={exp.path} />}
+        </div>
+      </div>
+      {isDesktop && exp.hasReadme && (
+        <ReadmeSidePanel
+          path={`${exp.path}/README.md`}
+          experimentId={exp.id}
+        />
+      )}
     </div>
   )
 }
