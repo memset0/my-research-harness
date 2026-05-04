@@ -199,6 +199,40 @@ the user how to merge. After each action, re-run `memon doctor` to
 confirm the issue is gone (or explicitly track "skipped" for the digest
 body's integrity-sweep section).
 
+Helper for the README-rewrite fixes (most common path):
+
+```sh
+# fix_readme <id> <new-body-on-stdin> → echoes new mtime on success.
+# Exits 9 on CONFLICT (caller decides whether to retry); 1 on other failure.
+fix_readme() {
+  local id="$1" body
+  body=$(cat)
+  local mtime
+  mtime=$(memon show "$id" --project-root . --format json | jq -r .mtime)
+  local out rc
+  out=$(printf '%s' "$body" \
+        | memon experiment readme write "$id" --project-root . \
+            --expected-mtime "$mtime")
+  rc=$?
+  case "$rc" in
+    0) echo "$out" | jq -r .mtime ;;
+    9) echo "CONFLICT" >&2; return 9 ;;
+    *) echo "WRITE_FAILED rc=$rc" >&2; return 1 ;;
+  esac
+}
+
+# Usage:
+NEW_MTIME=$(fix_readme "$EXP_ID" <<EOF
+$NEW_README_BODY
+EOF
+)
+```
+
+For status-only fixes (e.g. downgrade FINISHED → FAILED), use
+`memon experiment status set --to <STATUS> --expected-mtime <mtime>`
+with the same fresh-mtime discipline; the helper above is for full
+README rewrites.
+
 ### 4. Determine the target file
 
 ```sh
@@ -231,9 +265,15 @@ the file.
 
 ### 6. Race check, then advance the watermark
 
+We only need the `last_digest_at` field of JOURNAL.md frontmatter — no
+need to call `memon journal read` (which would also re-parse all
+events) for that. Plain awk on the frontmatter is enough:
+
 ```sh
-JOURNAL_JSON_AFTER=$(memon journal read --project-root . --limit 1)
-CURRENT_LAST_DIGEST_AT=$(echo "$JOURNAL_JSON_AFTER" | jq -r .lastDigestAt)
+CURRENT_LAST_DIGEST_AT=$(awk '
+  /^---$/ { c++; next }
+  c == 1 && /^last_digest_at:/ { sub(/^last_digest_at:[ \t]*/, ""); print; exit }
+' JOURNAL.md)
 
 if [ "$CURRENT_LAST_DIGEST_AT" != "$OBSERVED_LAST_DIGEST_AT" ]; then
   # Another digest finished in parallel.

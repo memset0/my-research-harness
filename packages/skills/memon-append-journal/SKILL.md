@@ -51,7 +51,9 @@ this one. This skill is just for "append one event right now".
 
 ## Workflow
 
-1. Confirm `--project-root` (default cwd if unspecified).
+1. **Always pass `--project-root .` explicitly.** Project convention —
+   never rely on the CLI's implicit-cwd fallback. (Pass an absolute
+   path or `.`; never omit the flag.)
 2. Pick the tag (default `NOTE` unless the user said otherwise).
 3. (Optional) include `--experiment-id <id>` to associate the event with a
    specific run.
@@ -59,7 +61,7 @@ this one. This skill is just for "append one event right now".
 
 ```sh
 memon journal append \
-  --project-root "$PROJECT_ROOT" \
+  --project-root . \
   --tag NOTE \
   --experiment-id "foo-260504-141512" \
   --body "8B fp16 sweep converged faster than the bf16 reference; possible Adam-state cancellation effect"
@@ -78,6 +80,22 @@ Output (JSON to stdout):
 - If the observation is about a specific experiment, **always** pass
   `--experiment-id` — it lets the journal view filter cleanly later
 - Don't paste log excerpts (use the experiment's `## Caveats` section for those)
+
+### Tone — only when **you (the agent) are composing the body**
+
+If the user dictated the body verbatim (`--body "<their words>"`), pass
+it through as-is. The conventions below only apply when YOU choose the
+wording:
+
+- **NOTE** — declarative, past tense; what was observed.
+  - ✅ "8B fp16 sweep converged 1.3× faster than the bf16 reference."
+  - ❌ "I think bf16 might be slower somehow"
+- **REQUEST** — forward-looking, ends with an explicit ask.
+  - ✅ "Please verify H7 still aligns with the new SLURM quotas."
+  - ❌ "H7 quota thing"
+- **ERROR** — names the failure cleanly, mentions the host/run if scoped.
+  - ✅ "Wandb auth missing on host gpu-04; runs there bypass tracking."
+  - ❌ "Something's wrong with wandb"
 
 ## Errors
 

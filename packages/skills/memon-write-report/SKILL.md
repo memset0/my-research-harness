@@ -2,6 +2,7 @@
 name: memon-write-report
 description: Author or update a theme-driven report (`docs/reports/R<N>-<slug>.md`) drawn from the project's JOURNAL. The report records the shell selector used to assemble it, so re-running the selector cheaply tells whether new events have landed since the last update.
 argument-hint: <theme of the report; or existing R-id to update>
+disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
@@ -43,6 +44,7 @@ updated_at: 2026-05-04T14:30:00+08:00
 selector: |
   # Single shell snippet that selects this report's events from the JOURNAL.
   # Re-run this on demand to check whether new events qualify for inclusion.
+  # Run from <projectRoot> — the `.` in `--project-root .` resolves to it.
   memon journal read --project-root . --since 2026-04-15T00:00:00+08:00 --limit 1000 \
     | jq '.events[] | select((.experimentId // "") | startswith("bf16-"))'
 ---

@@ -117,29 +117,81 @@ Bail out (don't launch) if:
   process — surface in conversation, ask the user.
 - `python` can't be found at all and the script doesn't `conda activate`.
 
-**b. Capture `code.diff` + `code.head`.**
+**b. Capture `code.diff` + `code.head`** — diff is **allowlist-based**:
+include only source/code files, never data/binary/log artifacts.
+
+The allowlist is **project-specific** and lives in the project's
+`CLAUDE.md` under a section named `## code.diff allowlist` (one
+pathspec per line). Read it from there:
+
+```sh
+ALLOWLIST=$(awk '
+  /^## code\.diff allowlist/ { in_section = 1; next }
+  in_section && /^## / { exit }
+  in_section && /^[^#[:space:]]/ { print }
+' "$PROJECT_ROOT/CLAUDE.md")
+```
+
+Default allowlist (used **only as a starting point** when the project
+hasn't declared one yet — see "First-time setup" below):
+
+```
+*.py
+*.pyx
+*.pyi
+*.ipynb
+*.sh
+*.bash
+*.c
+*.cc
+*.cpp
+*.h
+*.hpp
+*.cu
+*.cuh
+*.go
+*.rs
+*.ts
+*.tsx
+*.toml
+*.yaml
+*.yml
+Makefile
+*.mk
+Dockerfile
+```
 
 ```sh
 TMP_DIFF=$(mktemp)
 TMP_HEAD=$(mktemp)
 git rev-parse HEAD > "$TMP_HEAD" 2>/dev/null || true
-git diff HEAD -- \
-    ':(exclude,glob)**/*.md'   ':(exclude,glob)**/*.log' \
-    ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.jsonl' \
-    ':(exclude,glob)**/*.txt'  ':(exclude,glob)**/*.csv' \
-    ':(exclude,glob)**/*.png'  ':(exclude,glob)**/*.jpg' \
-    ':(exclude,glob)**/*.jpeg' ':(exclude,glob)**/*.gif' \
-    ':(exclude,glob)**/*.pdf'  ':(exclude,glob)**/*.zip' \
-    ':(exclude,glob)**/*.tar'  ':(exclude,glob)**/*.gz' \
-    ':(exclude,glob)**/*.bin'  ':(exclude,glob)**/*.pt' \
-    ':(exclude,glob)**/*.pth'  ':(exclude,glob)**/*.ckpt' \
-    ':(exclude,glob)**/*.safetensors' \
-    ':(exclude,glob)**/*.npy'  ':(exclude,glob)**/*.npz' \
-    ':(exclude,glob)**/*.parquet' ':(exclude,glob)**/*.h5' \
-    ':(exclude,glob)**/*.hdf5' ':(exclude,glob)**/*.pkl' \
-    ':(exclude,glob)**/*.pickle' \
-    > "$TMP_DIFF" 2>/dev/null || true
+
+# Convert each allowlist entry into a pathspec arg.
+PATHSPEC=()
+while IFS= read -r pat; do
+  [ -z "$pat" ] && continue
+  PATHSPEC+=( ":(glob)**/$pat" )
+done <<< "$ALLOWLIST"
+
+git diff HEAD -- "${PATHSPEC[@]}" > "$TMP_DIFF" 2>/dev/null || true
 ```
+
+**First-time setup** — if the project's `CLAUDE.md` has no
+`## code.diff allowlist` section, this is a brand-new project and the
+allowlist needs to be seeded. Don't silently fall back to the default;
+do this once, interactively:
+
+1. Run `git ls-files "$PROJECT_ROOT" | sed -n 's/.*\.//p' | sort | uniq -c | sort -rn | head -20`
+   to see what file extensions actually exist.
+2. From that, propose an allowlist (intersect with the defaults above
+   plus any project-specific extensions you spot — `.lua`, `.cuh`,
+   `.proto`, etc.).
+3. Show it to the user, ask for confirmation / edits.
+4. **Append a `## code.diff allowlist` section to `CLAUDE.md`** with
+   the agreed list. Future runs read from it instead of re-asking.
+
+After the first run, every subsequent invocation just reads the
+section — no more prompts.
 
 **c. Wandb pre-flight.** If the script imports `wandb` (grep the script
 and any sibling `.py` it sources), the run is **wandb-tracked** and must
@@ -280,8 +332,8 @@ LINES=$(wc -l < "$RUN_LOG" 2>/dev/null || echo 0)
 ```
 
 If the script returned non-zero in sync mode (or the tmux session
-already exited), skip to §9 (Failed path) — and do NOT write a RUNNING
-README; the failure path writes a FAILED README directly.
+already exited), skip to §10 (Failed path) — and do NOT write a RUNNING
+README; the failure path will write a FAILED README from scratch.
 
 ### 6. Write the README (status: RUNNING)
 
@@ -445,23 +497,35 @@ Brief — 3-6 lines is plenty.
 
 ### 10. Terminal — failure path (FAILED)
 
-If `EXIT != 0` (or §7 inspection saw a crash):
+Branch on **whether §6 already wrote a README**:
 
-```sh
-memon experiment status set "$EXP_ID" --project-root . --to FAILED \
-  --expected-mtime "$MTIME"
-# Capture the new mtime returned by `status set` for the README write below.
-MTIME=$(memon show "$EXP_ID" --project-root . --format json | jq -r .mtime)
-```
+- **§6 ran** (failure happened mid-run, e.g. caught by §7 inspection,
+  or §5 saw a crash *after* `status: RUNNING` was on disk) — flip
+  status with the existing `$MTIME`, then optionally append a failure
+  reason.
+- **§6 never ran** (script crashed in §2 or §5 before stable, so the
+  run dir exists but `README.md` does not) — write a minimal FAILED
+  README from scratch with `--expected-mtime 0`.
 
-If we have a README from §6, this `status set` write is enough on its
-own — the README content already names the run; we only need to flip
-the status. If you also want to record the failure reason inline, write
-the README with the same fresh `$MTIME`:
+Always grep a one-line reason out of `run.log` first (used in either
+branch's body):
 
 ```sh
 REASON=$(tail -n 50 "$RUN_LOG" | grep -iE 'error|exception|traceback' | tail -1)
 ```
+
+#### 10a. If §6 already wrote a README (`$MTIME` defined)
+
+```sh
+memon experiment status set "$EXP_ID" --project-root . --to FAILED \
+  --expected-mtime "$MTIME"
+# Capture the new mtime returned by `status set` for the README append below.
+MTIME=$(memon show "$EXP_ID" --project-root . --format json | jq -r .mtime)
+```
+
+The `status set` alone is sometimes enough — the README from §6 already
+names the run. To also record the failure reason inline, write the
+README with the fresh `$MTIME`:
 
 ```sh
 cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . \
@@ -476,6 +540,50 @@ Failed: <one-line reason from run.log; e.g. "OOM at batch=16 with 80GB GPU">
 See \`./run.log\` for the full stack trace.
 EOF
 ```
+
+#### 10b. If §6 never ran (no README on disk)
+
+`status set` would fail — there's no README to update. Skip directly
+to writing a minimal FAILED README from scratch:
+
+```sh
+EXP_ID=$(basename "$RUN_DIR")
+cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . \
+  --expected-mtime 0
+---
+id: $EXP_ID
+name: <RUN_NAME the script chose>
+project: <project>
+status: FAILED
+created_at: $(date -Iseconds)
+finished_at: $(date -Iseconds)
+host: $(hostname)
+entry: <script-relative-path>
+command: bash <script-relative-path>
+hypotheses: [<HX if applicable>]
+tags: [...]
+---
+
+## Motivation
+<brief — why the run was attempted>
+
+## Result
+Failed before reaching stable RUNNING: $REASON
+
+See \`./run.log\` for the full stack trace.
+
+## Artifacts
+- \`./run.log\` — full stdout/stderr (may be partial)
+- \`./code.diff\` — uncommitted changes at launch
+- \`./code.head\` — git HEAD at launch
+EOF
+```
+
+`--expected-mtime 0` is the sentinel for "first write to a missing
+README"; the CLI will create the file. No prior `status: RUNNING` ever
+existed on disk, so the JOURNAL gets a single `[STATUS]` event going
+`UNKNOWN → FAILED` (or whatever the spec says for the missing-prior
+case — does NOT skip the journal entry).
 
 **Don't propose archiving the failed run.** The user reviews failed
 runs in the web UI and archives them there at their own pace. Your job
@@ -498,11 +606,14 @@ fixes within your ability**:
      to the user.
 3. Apply the fix. If it requires editing the script, hand off to
    `memon-write-script`.
-4. **Re-invoke the script.** A new timestamp = a fresh run dir
+4. **Mark the previous attempt as `FAILED`** via §10's flow — pick §10a
+   if §6 had already written a README for that attempt, §10b if it
+   hadn't (early crash). Do this **before** the re-invoke, so the
+   prior run dir gets a definitive terminal state instead of dangling
+   as PENDING/UNKNOWN. Don't archive — user does that on the web.
+5. **Re-invoke the script.** A new timestamp = a fresh run dir
    automatically. Loop back to §1 (capture fresh `code.diff` including
    your fix).
-5. Mark the previous attempt's status as `FAILED` via §10's flow (with
-   a one-line reason). Don't archive — user does that on the web.
 6. Repeat until you have a stably-RUNNING (or successfully FINISHED) run.
 
 **Keep a running mental log of every change** across these iterations —

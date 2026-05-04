@@ -61,9 +61,14 @@ SNAPSHOT=$(memon scan --project-root "$PROJECT_ROOT")
 
 The output has experiments + hypotheses + journal in one shot.
 
-If recent digests exist, also read the latest `docs/digests/D*-*.md`
-and any open `docs/reports/R*-*.md` — those are where the user (or a
-prior agent invocation) has been synthesizing across runs.
+If recent digests exist, read the latest one + any reports — that's
+where prior synthesis lives. Plain shell, no `memon` call needed:
+
+```sh
+LATEST_DIGEST=$(ls -t docs/digests/D*-*.md 2>/dev/null | head -1)
+[ -n "$LATEST_DIGEST" ] && cat "$LATEST_DIGEST"
+ls docs/reports/R*-*.md 2>/dev/null | xargs -r cat
+```
 
 ### 2. Filter to live hypotheses
 
@@ -133,7 +138,13 @@ of thinking, not implementation detail.
    the same config will tell us if H3 is reliable or a fluke.
 5. **negative-control-no-warmup** — drop LR warmup; if the sparsity
    pattern survives, warmup wasn't load-bearing for the H3 effect.
-6. ...
+6. **fp16-vs-bf16-direct** — same setup, swap dtype only; isolates the
+   numerics from the optimizer dynamics.
+7. **frozen-embeddings-ablation** — freeze the embedding layer; if H3
+   still holds, the sparsity isn't an artifact of embedding-table updates.
+
+(Aim for 5-8 total; show all of them in the brainstorm so the user can
+react against the full set.)
 ```
 
 ### 5. Converge — 1-3 strongest with rationale + trade-offs

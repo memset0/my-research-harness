@@ -2,6 +2,7 @@
 name: memon-write-script
 description: Write a shell script that launches an experiment in a memon project. The script lives in a stable scripts directory and, on each invocation, creates its own timestamped run directory under the project's logs path.
 argument-hint: <what the script should do, plus where it should live>
+disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
@@ -291,7 +292,7 @@ set -ex
 
 RUN_NAME="${RUN_NAME:-train_full}"
 LOGS_DIR="${LOGS_DIR:-logs}"
-PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"
+PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 RUN_DIR="${RUN_DIR:-${PROJECT_ROOT}/${LOGS_DIR}/${RUN_NAME}-$(date +%y%m%d-%H%M%S)}"
 mkdir -p "$RUN_DIR"
 echo "[memon] PROJECT_ROOT=$PROJECT_ROOT"
@@ -375,3 +376,15 @@ Tell the user:
 4. Where its run dirs will land
    (`<projectRoot>/${LOGS_DIR}/<RUN_NAME>-<TIMESTAMP>/`)
 5. Whether resume works (depends on the training program)
+6. **Ask whether to smoke-test now.** A throwaway `RUN_NAME=__smoke__`
+   invocation catches typos in the three `[memon]` echo lines and
+   verifies `RUN_DIR` is created where claimed — but it spends real
+   compute on the training step unless the script gates that. Don't
+   run it by default; just offer:
+
+   > 要现在跑一个 smoke-test 验证 `[memon]` 行 + `RUN_DIR` 正确吗?
+   > (会真的执行训练步骤,除非脚本里有 `${SMOKE:-0}` 这样的 gate)
+
+   If the user says yes, run the smoke-test (you can wrap heavy
+   sections of the script in `[ "${SMOKE:-0}" = "1" ] && exit 0` first
+   if the training step is too costly).
