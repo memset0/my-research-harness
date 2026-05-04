@@ -36,6 +36,18 @@ export function AppBar({ project }: { project: string }) {
       href: `${projectBase}/journal`,
       matches: (p) => p.startsWith(`${projectBase}/journal`),
     },
+    {
+      name: 'Reports',
+      kind: 'reports',
+      href: `${projectBase}/reports`,
+      matches: (p) => p.startsWith(`${projectBase}/reports`),
+    },
+    {
+      name: 'Digests',
+      kind: 'digests',
+      href: `${projectBase}/digests`,
+      matches: (p) => p.startsWith(`${projectBase}/digests`),
+    },
   ]
 
   return (

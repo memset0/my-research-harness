@@ -1,10 +1,16 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { fetchExperiments, fetchHypotheses, fetchJournalCount } from '../lib/api'
+import {
+  fetchDigests,
+  fetchExperiments,
+  fetchHypotheses,
+  fetchJournalCount,
+  fetchReports,
+} from '../lib/api'
 import { cn } from '../lib/utils'
 
-export type TabKind = 'experiments' | 'hypotheses' | 'journal'
+export type TabKind = 'experiments' | 'hypotheses' | 'journal' | 'reports' | 'digests'
 
 /**
  * Small count badge rendered next to AppBar tab labels. Reuses the same
@@ -69,6 +75,10 @@ function useTabCount(kind: TabKind, project: string): TabCountResult {
       return useHypothesesCount(project)
     case 'journal':
       return useJournalCount(project)
+    case 'reports':
+      return useReportsCount(project)
+    case 'digests':
+      return useDigestsCount(project)
   }
 }
 
@@ -97,4 +107,22 @@ function useJournalCount(project: string): TabCountResult {
     staleTime: 5_000,
   })
   return { value: q.data?.totalEvents, isLoading: q.isLoading }
+}
+
+function useReportsCount(project: string): TabCountResult {
+  const q = useQuery({
+    queryKey: ['reports', project],
+    queryFn: () => fetchReports(project),
+    staleTime: 5_000,
+  })
+  return { value: q.data?.reports.length, isLoading: q.isLoading }
+}
+
+function useDigestsCount(project: string): TabCountResult {
+  const q = useQuery({
+    queryKey: ['digests', project],
+    queryFn: () => fetchDigests(project),
+    staleTime: 5_000,
+  })
+  return { value: q.data?.digests.length, isLoading: q.isLoading }
 }
