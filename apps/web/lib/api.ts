@@ -3,11 +3,13 @@
 // the client bundle (it transitively pulls in fast-glob → fs).
 
 import type {
+  DigestSummary,
   Experiment,
   Hypothesis,
   JournalEvent,
   ParsedHypotheses,
   ParsedJournal,
+  ReportSummary,
 } from '@memon/core'
 
 export interface ProjectSummary {
@@ -84,6 +86,68 @@ export async function fetchJournalCount(
   project: string,
 ): Promise<{ totalEvents: number; lastDigestAt: string | null }> {
   return jsonFetch(`/api/journal?project=${encodeURIComponent(project)}&countOnly=1`)
+}
+
+// ---------- Reports ----------
+
+export interface FullReport {
+  id: string
+  slug: string
+  path: string
+  mtime: number
+  hash: string
+  content: string
+}
+
+export async function fetchReports(project: string): Promise<{ reports: ReportSummary[] }> {
+  return jsonFetch(`/api/reports?project=${encodeURIComponent(project)}`)
+}
+
+export async function fetchReport(project: string, id: string): Promise<FullReport> {
+  return jsonFetch(`/api/reports/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`)
+}
+
+export async function putReport(
+  project: string,
+  id: string,
+  payload: { content: string; expectedMtime: number; expectedHash: string },
+): Promise<{ ok: true; mtime: number; hash: string }> {
+  return jsonFetch(`/api/reports/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+// ---------- Digests ----------
+
+export interface FullDigest {
+  id: string
+  date: string
+  path: string
+  mtime: number
+  hash: string
+  content: string
+}
+
+export async function fetchDigests(project: string): Promise<{ digests: DigestSummary[] }> {
+  return jsonFetch(`/api/digests?project=${encodeURIComponent(project)}`)
+}
+
+export async function fetchDigest(project: string, id: string): Promise<FullDigest> {
+  return jsonFetch(`/api/digests/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`)
+}
+
+export async function putDigest(
+  project: string,
+  id: string,
+  payload: { content: string; expectedMtime: number; expectedHash: string },
+): Promise<{ ok: true; mtime: number; hash: string }> {
+  return jsonFetch(`/api/digests/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function fetchLog(
