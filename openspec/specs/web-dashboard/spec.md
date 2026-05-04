@@ -56,6 +56,18 @@ Clicking an experiment in the list SHALL open a detail page showing:
 - **WHEN** the experiment's front matter has `hypotheses: [H3]` and `H3` exists in `HYPOTHESES.md`
 - **THEN** the panel shows H3 with its status emoji and a link to its hypothesis entry
 
+### Requirement: Section card typography hierarchy
+
+Within every card on the experiment detail page, the body content SHALL render at a smaller font size than the card's title, so each card has an unambiguous title-vs-content visual hierarchy. Concretely, `CardTitle` continues at `text-sm` (14px) while body content — rendered markdown for the README sections (Motivation/Setup/Method/Result/Conclusion/Caveats/New Hypotheses), the "to fill" placeholder for empty sections, and the Resources placeholder — renders at `text-xs` (12px), matching the card's own `text-xs/relaxed` default and the existing Artifacts list density.
+
+#### Scenario: Markdown body smaller than section title
+- **WHEN** a section card renders its rendered-markdown body (e.g. the `Method` section)
+- **THEN** the body paragraphs render at `text-xs` (12px), visibly smaller than the `text-sm` (14px) `Method` heading
+
+#### Scenario: Empty section placeholder smaller than section title
+- **WHEN** a section card has no body content and shows the "to fill" placeholder, OR the Resources card shows its "not yet available" placeholder
+- **THEN** the placeholder text renders at `text-xs` (12px), matching body density rather than the card title
+
 ### Requirement: README inline editing with conflict-aware save
 
 The detail page SHALL provide an "Edit README" mode that opens a markdown editor (with WYSIWYG-light support) prefilled with the current README content. Saving SHALL go through `PUT /api/readme` carrying `expectedMtime`.
