@@ -37,7 +37,9 @@ function AgentHandoffDialog({
   experiment: FullExperiment
   onClose: () => void
 }) {
-  const projectName = experiment.frontMatter.project
+  // Membership project (from config), not the front-matter sub-project
+  // label — we need the workspace name to look up its root and journal.
+  const projectName = experiment.project
 
   const { data: projectsData } = useQuery({
     queryKey: ['projects'],

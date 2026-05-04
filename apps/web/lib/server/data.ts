@@ -36,6 +36,7 @@ export async function getExperimentsData(
   return {
     experiments: experiments.map((e) => ({
       id: e.id,
+      project: e.project,
       path: e.path,
       mtime: e.mtime,
       hasReadme: e.hasReadme,
@@ -55,6 +56,7 @@ export async function getExperimentData(id: string): Promise<FullExperiment | nu
   rt.pokeById(id)
   return {
     id: exp.id,
+    project: exp.project,
     path: exp.path,
     mtime: exp.mtime,
     hasReadme: exp.hasReadme,

@@ -68,16 +68,19 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
               <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <TerminalButton experimentId={exp.id} projectName={fm.project} />
+              <TerminalButton experimentId={exp.id} projectName={exp.project} />
               <AskClaudeCodeButton experiment={exp} />
-              <AddNoteButton project={fm.project} experimentId={exp.id} />
+              <AddNoteButton project={exp.project} experimentId={exp.id} />
               {exp.hasReadme && <EditReadmeButton path={exp.path} experimentId={exp.id} />}
             </div>
           </div>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
           <Field label="name" value={fm.name} />
-          <Field label="project" value={fm.project} />
+          <Field label="project" value={exp.project} />
+          {fm.project !== '' && fm.project !== exp.project && (
+            <Field label="sub-project" value={fm.project} />
+          )}
           <Field label="created"><TimestampLocal value={fm.createdAt} variant="long" /></Field>
           <Field label="finished"><TimestampLocal value={fm.finishedAt} variant="long" /></Field>
           <Field label="host" value={fm.host ?? '—'} />

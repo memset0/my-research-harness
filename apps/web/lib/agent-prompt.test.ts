@@ -5,6 +5,7 @@ import type { FullExperiment, JournalEvent } from './api'
 function makeExp(overrides: Partial<FullExperiment['frontMatter']> = {}): FullExperiment {
   return {
     id: 'foo-260501-100000',
+    project: 'a',
     path: '/p/a/logs/foo-260501-100000',
     mtime: 0,
     hasReadme: true,

@@ -17,14 +17,14 @@ export interface ProjectSummary {
 }
 
 export interface IndexedExperiment
-  extends Pick<Experiment, 'id' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
+  extends Pick<Experiment, 'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
   stale: boolean
 }
 
 export interface FullExperiment
   extends Pick<
     Experiment,
-    'id' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
+    'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
   > {
   stale: boolean
   resources: null

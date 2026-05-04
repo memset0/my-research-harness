@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       experiments: experiments.map((e) => ({
         id: e.id,
+        project: e.project,
         path: e.path,
         mtime: e.mtime,
         hasReadme: e.hasReadme,

@@ -38,6 +38,7 @@ export function ExperimentList({ project }: { project: string }) {
       const fields = [
         e.id,
         e.frontMatter.name,
+        e.frontMatter.project, // sub-project label
         ...e.frontMatter.tags,
         ...e.frontMatter.hypotheses,
       ]
@@ -102,6 +103,11 @@ export function ExperimentList({ project }: { project: string }) {
 
 function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperiment }) {
   const noReadme = !exp.hasReadme
+  // Show the front-matter `project:` value as a sub-project tag only when it
+  // adds information — i.e., non-empty AND distinct from the membership
+  // project (set from config.yml). Empty or equal: render nothing.
+  const subProject = exp.frontMatter.project
+  const showSubProject = subProject !== '' && subProject !== exp.project
   return (
     <Link
       href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(exp.id)}`}
@@ -111,7 +117,18 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperime
       )}
     >
       <div className="grid grid-cols-1 gap-2 px-3 py-1.5 md:grid-cols-12 md:items-center md:gap-3">
-        <div className="truncate font-mono text-xs md:col-span-3">{exp.id}</div>
+        <div className="flex min-w-0 items-center gap-2 md:col-span-3">
+          <span className="truncate font-mono text-xs">{exp.id}</span>
+          {showSubProject && (
+            <Badge
+              variant="secondary"
+              className="shrink-0 px-1.5 py-0 text-[10px] font-normal"
+              title={`sub-project: ${subProject}`}
+            >
+              {subProject}
+            </Badge>
+          )}
+        </div>
         <div className="md:col-span-2">
           <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
         </div>

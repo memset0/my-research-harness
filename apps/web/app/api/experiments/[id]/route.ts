@@ -21,6 +21,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
     return NextResponse.json({
       id: exp.id,
+      project: exp.project,
       path: exp.path,
       mtime: exp.mtime,
       hasReadme: exp.hasReadme,
