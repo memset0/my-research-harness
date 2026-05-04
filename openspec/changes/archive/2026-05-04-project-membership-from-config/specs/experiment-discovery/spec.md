@@ -31,6 +31,8 @@ The system SHALL maintain an in-memory index of all discovered experiments. Each
 - **WHEN** the index entry is consumed
 - **THEN** the top-level `project` field is `"sparse-fsdp"` AND the front-matter `project` field is empty/null (NOT silently filled in with `"sparse-fsdp"`)
 
+## ADDED Requirements
+
 ### Requirement: Free-text search includes membership project and sub-project
 
 The free-text search over experiments (used by CLI `memon search` and the web list-view's search box) SHALL match against BOTH the top-level `project` field AND the front-matter `project` (sub-project) field, in addition to the existing fields (id, name, command, tags, hypotheses, body when scope=all). Either match SHALL surface the experiment.
