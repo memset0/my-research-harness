@@ -20,6 +20,7 @@ export { parseReadme } from './readme/parse.js'
 export { reserializeReadme, serializeReadme } from './readme/serialize.js'
 export { parseArtifacts } from './readme/artifacts.js'
 export { splitH2Sections } from './readme/sections.js'
+export { extractTitle } from './readme/title.js'
 export { parseHypotheses } from './hypotheses/parse.js'
 export { parseJournal } from './journal/parse.js'
 export {
