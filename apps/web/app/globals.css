@@ -166,3 +166,13 @@
     @apply font-sans;
   }
 }
+
+/* nextjs-toploader: bind the bar to our --primary token; hide the peg/glow.
+   The library inlines its color via JS; this override wins via !important
+   and re-binds via the live CSS variable so light/dark themes track. */
+#nprogress .bar {
+  background: var(--primary) !important;
+}
+#nprogress .peg {
+  display: none !important;
+}

@@ -34,6 +34,7 @@
     "date-fns-tz": "^3.2.0",
     "lucide-react": "^1.14.0",
     "next": "^15.0.0",
+    "nextjs-toploader": "^3.9.17",
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",
     "react-diff-viewer-continued": "^4.2.2",

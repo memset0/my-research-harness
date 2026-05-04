@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Toaster } from 'sonner'
+import NextTopLoader from 'nextjs-toploader'
 import './globals.css'
 import { Providers } from '../components/providers'
 import { Inter } from "next/font/google";
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={cn("font-sans", inter.variable)}>
       <body className="bg-background text-foreground antialiased">
+        <NextTopLoader height={2} showSpinner={false} shadow={false} crawlSpeed={200} speed={200} />
         <Providers>
           <div className="min-h-screen">{children}</div>
           <Toaster richColors position="bottom-right" closeButton />
