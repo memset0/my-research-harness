@@ -37,5 +37,5 @@
     "_runtime": "live"
   },
   "tags": ["diffusion", "v-pred", "zero-snr", "dump"],
-  "hypotheses": ["H1", "H3"]
+  "hypotheses": ["H0001", "H0003"]
 }

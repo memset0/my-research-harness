@@ -10,5 +10,5 @@
     { "gamma": 7,  "fid": 8.88, "hf_band_ratio": 0.142, "low_band_ratio": 0.426, "verdict": "near-best" },
     { "gamma": 10, "fid": 8.95, "hf_band_ratio": 0.156, "low_band_ratio": 0.408, "verdict": "over-smoothed" }
   ],
-  "verdict": "H2 CONFIRMED at gamma=5"
+  "verdict": "H0002 CONFIRMED at gamma=5"
 }

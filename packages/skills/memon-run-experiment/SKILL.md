@@ -369,7 +369,7 @@ pid: <captured if available>
 gpus: [...]
 entry: <script-relative-path>
 command: bash <script-relative-path>
-hypotheses: [H3]
+hypotheses: [H0003]
 tags: [...]
 ---
 

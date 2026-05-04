@@ -8,7 +8,7 @@
 //   - 2026-05-03T08:28:00+08:00 [CREATE]   `foo-260503-082800` PENDING
 //   - 2026-05-03T08:30:15+08:00 [STATUS]   `foo-260503-082800` PENDING → RUNNING
 //   - 2026-05-03T10:15:00+08:00 [NOTE]     `foo-260503-082800` converged faster than expected
-//   - 2026-05-03T11:00:00+08:00 [REQUEST]  please summarize experiments related to H7
+//   - 2026-05-03T11:00:00+08:00 [REQUEST]  please summarize experiments related to H0007
 
 import matter from 'gray-matter'
 import type { JournalEvent, ParseIssue, ParsedJournal, Status } from '../types.js'

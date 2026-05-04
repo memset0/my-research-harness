@@ -92,4 +92,4 @@
 [2026-05-01T16:31:30 INFO] DDPM-1000 run 3/3 done: FID=12.560 wall=7790s
 [2026-05-01T17:20:00 INFO] DDIM-50 mean FID=12.48 ± 0.07 (10 reruns)
 [2026-05-01T17:20:01 INFO] DDPM-1000 mean FID=12.51 ± 0.05 (3 reruns)
-[2026-05-01T17:20:02 INFO] H1 confirmed: difference <= 0.1 FID, well within variance
+[2026-05-01T17:20:02 INFO] H0001 confirmed: difference <= 0.1 FID, well within variance

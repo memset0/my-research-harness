@@ -11,13 +11,13 @@ gpus: [0]
 entry: ./run.sh
 command: bash run.sh --rescale_cfg --phi=0.7 --cfg=12 --reference_cfg=4.5 --prompts=parti1k
 wandb: null
-hypotheses: [H4]
+hypotheses: [H0004]
 tags: [rescale-cfg, saturation, probe]
 ---
 
 ## Motivation
 
-Initial probe of rescale-CFG (Lin et al. 2024) for H4. Measure whether
+Initial probe of rescale-CFG (Lin et al. 2024) for H0004. Measure whether
 phi=0.7 brings high-CFG (scale=12) outputs back into the saturation
 envelope of low-CFG (scale=4.5) without losing prompt adherence.
 

@@ -37,5 +37,5 @@
       "wall_per_image_s": 27.95
     }
   ],
-  "verdict": "H1 CONFIRMED — DDIM-50 and DDPM-1000 within 0.04 FID; speedup ~20x"
+  "verdict": "H0001 CONFIRMED — DDIM-50 and DDPM-1000 within 0.04 FID; speedup ~20x"
 }

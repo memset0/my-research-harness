@@ -15,7 +15,7 @@ Required front matter fields:
 - `created_at` (ISO8601 string with timezone offset, e.g. `2026-05-03T08:28:00+08:00`)
 - `entry` (string) — relative path to the launch script
 - `command` (string) — full command line as actually invoked
-- `hypotheses` (array of strings) — related hypothesis IDs (e.g. `[H1, H3]`)
+- `hypotheses` (array of strings) — related hypothesis IDs in canonical 4-digit zero-padded form (e.g. `[H0001, H0003]`). Each element SHALL match `^H\d{4}$`. Elements that don't match SHALL be dropped from the parsed array with a structured per-element warning (`code: 'INVALID_HYPOTHESIS_REF'`, the offending value); the rest of the array stays.
 - `tags` (array of strings)
 
 Optional front matter fields:
@@ -32,6 +32,14 @@ Optional front matter fields:
 #### Scenario: Required field missing
 - **WHEN** a `README.md` is missing the `command` field in front matter
 - **THEN** the parser surfaces a structured warning naming the missing field, and the index entry still loads with `command: null`
+
+#### Scenario: Padded hypothesis ids
+- **WHEN** the front matter contains `hypotheses: [H0001, H0003]`
+- **THEN** the parser stores `["H0001", "H0003"]`
+
+#### Scenario: Mixed valid + invalid hypothesis ids
+- **WHEN** the front matter contains `hypotheses: [H0001, H3, H0042]`
+- **THEN** the parser surfaces an `INVALID_HYPOTHESIS_REF` warning for `H3`, drops it, and stores `["H0001", "H0042"]`
 
 ### Requirement: Status enum with uppercase canonical form
 
@@ -55,15 +63,15 @@ The `status` field SHALL be stored in uppercase canonical form (`PENDING`/`RUNNI
 
 ### Requirement: Hypotheses field carries no judgment
 
-The `hypotheses` front matter array SHALL only list related hypothesis IDs, MUST NOT encode whether each is verified, refuted, or partial. The truth value of each hypothesis lives only in `HYPOTHESES.md`.
+The `hypotheses` front matter array SHALL only list related hypothesis IDs in canonical 4-digit zero-padded form, MUST NOT encode whether each is verified, refuted, or partial. The truth value of each hypothesis lives only in `HYPOTHESES.md`.
 
 #### Scenario: Plain ID list
-- **WHEN** the front matter contains `hypotheses: [H1, H3]`
-- **THEN** the parser stores `["H1", "H3"]` and exposes no per-ID status
+- **WHEN** the front matter contains `hypotheses: [H0001, H0003]`
+- **THEN** the parser stores `["H0001", "H0003"]` and exposes no per-ID status
 
 ### Requirement: Standard markdown sections
 
-The `README.md` body SHALL contain the following H2 sections in this order: `Motivation`, `Setup`, `Method`, `Result`, `Conclusion`, `Caveats`, `Artifacts`. An optional `New Hypotheses` section MAY appear after `Artifacts`.
+The `README.md` body SHALL contain the following H0002 sections in this order: `Motivation`, `Setup`, `Method`, `Result`, `Conclusion`, `Caveats`, `Artifacts`. An optional `New Hypotheses` section MAY appear after `Artifacts`.
 
 #### Scenario: Section missing or empty
 - **WHEN** a section header is missing from `README.md`

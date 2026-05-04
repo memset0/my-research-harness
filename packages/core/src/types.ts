@@ -87,7 +87,11 @@ export interface ExperimentFrontMatter {
   entry: string
   command: string
   wandb: string | null
-  hypotheses: string[] // ['H1', 'H3']
+  /**
+   * Related hypothesis IDs in canonical 4-digit zero-padded form
+   * (e.g. `['H0001', 'H0003']`). See `packages/core/src/ids.ts`.
+   */
+  hypotheses: string[]
   tags: string[]
 }
 
@@ -141,7 +145,8 @@ export interface Experiment {
 // ---------- Hypothesis ----------
 
 export interface Hypothesis {
-  id: string // 'H1'
+  /** Canonical 4-digit zero-padded id, e.g. `'H0001'`. */
+  id: string
   slug: string // 'per-step-bf16-param-delta-is-sparse'
   statement: string
   origin: string

@@ -14,12 +14,12 @@ gpus: [0, 1, 2, 3]
 entry: ./run.sh
 command: bash run.sh --bs=8
 wandb: https://wandb.ai/u/p/runs/xxx
-hypotheses: [H1, H3]
+hypotheses: [H0001, H0003]
 tags: [moe, overlap]
 ---
 
 ## Motivation
-Verify hypothesis H1.
+Verify hypothesis H0001.
 
 ## Setup
 - 4x A100
@@ -31,7 +31,7 @@ Train for 1k steps.
 loss converges.
 
 ## Conclusion
-H1 confirmed.
+H0001 confirmed.
 
 ## Caveats
 small sample.
@@ -41,7 +41,7 @@ small sample.
 - \`./outputs/loss.csv\` — loss curve
 
 ## New Hypotheses
-H7: warmup matters.
+H0007: warmup matters.
 `
 
 describe('parseReadme', () => {
@@ -51,14 +51,28 @@ describe('parseReadme', () => {
     expect(parsed.frontMatter.id).toBe('foo-260503-082800')
     expect(parsed.frontMatter.status).toBe('RUNNING')
     expect(parsed.frontMatter.gpus).toEqual([0, 1, 2, 3])
-    expect(parsed.frontMatter.hypotheses).toEqual(['H1', 'H3'])
+    expect(parsed.frontMatter.hypotheses).toEqual(['H0001', 'H0003'])
     expect(parsed.frontMatter.pid).toBe(12345)
-    expect(parsed.sections.motivation).toBe('Verify hypothesis H1.')
+    expect(parsed.sections.motivation).toBe('Verify hypothesis H0001.')
     expect(parsed.sections.artifacts).toEqual([
       { path: './checkpoints/', description: 'model checkpoint' },
       { path: './outputs/loss.csv', description: 'loss curve' },
     ])
-    expect(parsed.sections.newHypotheses).toContain('H7')
+    expect(parsed.sections.newHypotheses).toContain('H0007')
+  })
+
+  it('drops invalid hypothesis refs from frontmatter array with per-element warning', () => {
+    const mixed = VALID_README.replace(
+      'hypotheses: [H0001, H0003]',
+      'hypotheses: [H0001, H3, H0042]',
+    )
+    const parsed = parseReadme(mixed)
+    expect(parsed.frontMatter.hypotheses).toEqual(['H0001', 'H0042'])
+    expect(
+      parsed.parseWarnings.some(
+        (w) => w.field === 'hypotheses' && /INVALID_HYPOTHESIS_REF.*H3/.test(w.message),
+      ),
+    ).toBe(true)
   })
 
   it('warns when status is lowercase', () => {

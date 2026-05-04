@@ -5,6 +5,17 @@
 
 export * from './types.js'
 export * from './status.js'
+export {
+  ID_MAX,
+  ID_MIN,
+  ID_PREFIXES,
+  ID_REGEX,
+  ID_WIDTH,
+  isId,
+  padId,
+  parseId,
+} from './ids.js'
+export type { IdPrefix, ParsedId } from './ids.js'
 export { parseReadme } from './readme/parse.js'
 export { reserializeReadme, serializeReadme } from './readme/serialize.js'
 export { parseArtifacts } from './readme/artifacts.js'

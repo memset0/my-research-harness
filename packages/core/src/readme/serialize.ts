@@ -16,6 +16,7 @@ import type {
   ExperimentSections,
   ParsedReadme,
 } from '../types.js'
+import { isId } from '../ids.js'
 
 const SECTION_ORDER: ReadonlyArray<keyof Omit<ExperimentSections, 'artifacts'> | 'artifacts'> = [
   'motivation',
@@ -97,6 +98,15 @@ function renderFrontMatter(fm: ExperimentFrontMatter): string {
   lines.push(`entry: ${quoteIfNeeded(fm.entry)}`)
   lines.push(`command: ${quoteIfNeeded(fm.command)}`)
   lines.push(`wandb: ${fm.wandb === null ? 'null' : quoteIfNeeded(fm.wandb)}`)
+  // Validate hypothesis refs at serialization time — fail loud rather
+  // than emit garbage. Every element must be canonical H<NNNN>.
+  for (const ref of fm.hypotheses) {
+    if (!isId(ref, 'H')) {
+      throw new Error(
+        `serializeReadme: hypotheses[] element "${ref}" is not canonical (expected H<NNNN>, e.g. H0003)`,
+      )
+    }
+  }
   lines.push(`hypotheses: ${renderStringArray(fm.hypotheses)}`)
   lines.push(`tags: ${renderStringArray(fm.tags)}`)
   return `${lines.join('\n')}\n`

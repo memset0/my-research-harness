@@ -16,6 +16,6 @@
     "v_pred_step_to_thresh": 3500,
     "eps_pred_step_to_thresh": 5100,
     "speedup_pct": 31.4,
-    "verdict": "H1 CONFIRMED"
+    "verdict": "H0001 CONFIRMED"
   }
 }

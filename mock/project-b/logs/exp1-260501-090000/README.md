@@ -11,13 +11,13 @@ gpus: [0]
 entry: ./run.sh
 command: bash run.sh --reruns=10 --sampler=ddim --steps=50 --ref-sampler=ddpm --ref-steps=1000
 wandb: null
-hypotheses: [H1]
+hypotheses: [H0001]
 tags: [baseline, reproducibility, ddim, ddpm]
 ---
 
 ## Motivation
 
-Establish the DDIM-50 ≈ DDPM-1000 baseline (H1) before exploring fewer-step
+Establish the DDIM-50 ≈ DDPM-1000 baseline (H0001) before exploring fewer-step
 samplers. Need to know the noise floor for FID comparisons.
 
 ## Setup
@@ -44,7 +44,7 @@ samplers. Need to know the noise floor for FID comparisons.
 
 ## Conclusion
 
-H1 ✅ CONFIRMED. DDIM-50 is the working baseline going forward; no need to
+H0001 ✅ CONFIRMED. DDIM-50 is the working baseline going forward; no need to
 run DDPM-1000 again unless we suspect SD-1.5 has been updated.
 
 ## Caveats

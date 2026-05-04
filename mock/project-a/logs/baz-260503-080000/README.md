@@ -11,14 +11,14 @@ gpus: [0, 1, 2, 3]
 entry: ./train.sh
 command: bash train.sh --precond=edm2 --baseline_compare --img=256 --steps=120000
 wandb: https://wandb.ai/me/imgflow/runs/baz-260503-080000
-hypotheses: [H4]
+hypotheses: [H0004]
 tags: [edm2, precond, fid]
 ---
 
 ## Motivation
 
 Empirically measure FID gain of EDM2-style preconditioning over the original
-EDM preconditioning at 256² ImageNet (H4). Hypothesis predicts a ≥5% gain
+EDM preconditioning at 256² ImageNet (H0004). Hypothesis predicts a ≥5% gain
 based on extrapolation from the EDM2 paper's 64²/128² results.
 
 ## Setup
@@ -47,7 +47,7 @@ based on extrapolation from the EDM2 paper's 64²/128² results.
 
 ## Conclusion
 
-- H4 ❌ REFUTED in original strong form. EDM2 gives ~1.9% FID improvement,
+- H0004 ❌ REFUTED in original strong form. EDM2 gives ~1.9% FID improvement,
   not the ≥5% extrapolation predicted.
 - Convergence-speed advantage is real (~20% fewer steps to best FID) and
   worth a separate hypothesis entry.

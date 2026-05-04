@@ -14,14 +14,14 @@
 
 | ID | Statement | Status | Experiments |
 | :-: | --- | :-: | --- |
-| H1 | v-prediction loss converges faster than ε-prediction in the low-noise regime | ✅ | foo-260501-100000, bar-260502-150000 |
-| H2 | SNR-weighted (min-SNR-γ) loss reduces high-frequency artifacts | ✅ | bar-260502-150000, snr-sweep-260430-160000 |
-| H3 | zero terminal-SNR schedule improves brightness fidelity but hurts compositional accuracy | 🟡 | foo-260501-100000, zero-snr-260502-110000 |
-| H4 | EDM2-style preconditioning yields ≥5% FID gain over Karras-EDM at 256² | ❌ | baz-260503-080000 |
-| H5 | bf16 flow matching loses convergence precision at σ < 0.02 | 🔵 | bf16-conv-260503-093000 |
-| H6 | optimal VAE latent scaling factor differs from SD's 0.18215 on non-LAION datasets | ⚪ | — |
+| H0001 | v-prediction loss converges faster than ε-prediction in the low-noise regime | ✅ | foo-260501-100000, bar-260502-150000 |
+| H0002 | SNR-weighted (min-SNR-γ) loss reduces high-frequency artifacts | ✅ | bar-260502-150000, snr-sweep-260430-160000 |
+| H0003 | zero terminal-SNR schedule improves brightness fidelity but hurts compositional accuracy | 🟡 | foo-260501-100000, zero-snr-260502-110000 |
+| H0004 | EDM2-style preconditioning yields ≥5% FID gain over Karras-EDM at 256² | ❌ | baz-260503-080000 |
+| H0005 | bf16 flow matching loses convergence precision at σ < 0.02 | 🔵 | bf16-conv-260503-093000 |
+| H0006 | optimal VAE latent scaling factor differs from SD's 0.18215 on non-LAION datasets | ⚪ | — |
 
-## H1. v-prediction-converges-faster-low-noise
+## H0001. v-prediction-converges-faster-low-noise
 
 - **Statement**: under v-prediction parameterization, validation loss reaches the same plateau ~30% faster than ε-prediction in the low-noise regime (σ ∈ [0.002, 0.5]); the advantage shrinks toward parity at high noise
 - **Origin**: Salimans & Ho 2022 observation, want to confirm on our internal dataset
@@ -36,7 +36,7 @@
   - both runs use the same EDM-style noise schedule; behavior on linear schedules unverified
 - **Last verified**: 2026-05-02
 
-## H2. snr-weighted-loss-reduces-hf-artifacts
+## H0002. snr-weighted-loss-reduces-hf-artifacts
 
 - **Statement**: min-SNR-γ loss weighting (γ=5) reduces high-frequency artifacts (measured by FFT high-band energy ratio) without hurting overall FID
 - **Origin**: derived from SNR analysis of v-pred run
@@ -51,7 +51,7 @@
   - small-batch runs (bs=32) show much weaker effect
 - **Last verified**: 2026-05-02
 
-## H3. zero-terminal-snr-tradeoff
+## H0003. zero-terminal-snr-tradeoff
 
 - **Statement**: enforcing zero terminal-SNR (Lin et al. 2024) corrects mean-brightness drift but reduces compositional accuracy on multi-object prompts (measured via T2I-CompBench)
 - **Origin**: derived from offset-noise / brightness-bias literature
@@ -66,7 +66,7 @@
   - only 500 prompts evaluated; need larger eval set
 - **Last verified**: 2026-05-02
 
-## H4. edm2-precond-beats-karras-edm
+## H0004. edm2-precond-beats-karras-edm
 
 - **Statement**: EDM2-style preconditioning (Karras et al. 2024) yields ≥5% FID gain over the original EDM preconditioning at 256² ImageNet-1k
 - **Origin**: extrapolation from EDM2 paper's 64²/128² numbers
@@ -81,7 +81,7 @@
   - only one preconditioning hyperparameter set tested
 - **Last verified**: 2026-05-03
 
-## H5. bf16-flow-matching-low-sigma
+## H0005. bf16-flow-matching-low-sigma
 
 - **Statement**: bf16 flow-matching training loses gradient precision at σ < 0.02, manifesting as oscillating val_loss with no improvement after step ~10k
 - **Origin**: numerical analysis discussion (bf16 ULP near zero)
@@ -94,7 +94,7 @@
   - σ binning of loss not yet computed
 - **Last verified**: —
 
-## H6. vae-scale-factor-dataset-dependent
+## H0006. vae-scale-factor-dataset-dependent
 
 - **Statement**: SD's hard-coded VAE latent scale 0.18215 is suboptimal for non-LAION pretraining datasets; per-dataset rescaling improves FID by ≥1 point
 - **Origin**: speculation from per-channel latent statistics
@@ -103,5 +103,5 @@
 - **Evidence**:
   - none yet
 - **Caveats**:
-  - low priority; deferred until H5 settles (bf16 stability is on the critical path)
+  - low priority; deferred until H0005 settles (bf16 stability is on the critical path)
 - **Last verified**: —

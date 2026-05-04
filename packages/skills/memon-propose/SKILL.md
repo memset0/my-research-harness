@@ -128,19 +128,19 @@ of thinking, not implementation detail.
 ```markdown
 ## Brainstorm candidates
 
-1. **bs-sweep-bf16** — H3 PARTIAL had only batch=8 evidence; sweep 4/8/16
+1. **bs-sweep-bf16** — H0003 PARTIAL had only batch=8 evidence; sweep 4/8/16
    to either confirm or expose a batch dependence.
-2. **lr-perturbation-fp32-control** — H3 evidence might be a bf16
+2. **lr-perturbation-fp32-control** — H0003 evidence might be a bf16
    artifact; rerun the strongest run in fp32 as a control.
-3. **smaller-model-replication** — does H3 hold at 350M params? If yes,
+3. **smaller-model-replication** — does H0003 hold at 350M params? If yes,
    it's a property of the optimization not the model — much stronger claim.
 4. **seed-spread** — `bar-260502` is a single-seed result; 3 seeds at
-   the same config will tell us if H3 is reliable or a fluke.
+   the same config will tell us if H0003 is reliable or a fluke.
 5. **negative-control-no-warmup** — drop LR warmup; if the sparsity
-   pattern survives, warmup wasn't load-bearing for the H3 effect.
+   pattern survives, warmup wasn't load-bearing for the H0003 effect.
 6. **fp16-vs-bf16-direct** — same setup, swap dtype only; isolates the
    numerics from the optimizer dynamics.
-7. **frozen-embeddings-ablation** — freeze the embedding layer; if H3
+7. **frozen-embeddings-ablation** — freeze the embedding layer; if H0003
    still holds, the sparsity isn't an artifact of embedding-table updates.
 
 (Aim for 5-8 total; show all of them in the brainstorm so the user can
@@ -156,18 +156,18 @@ researchers actually use.
 ````markdown
 ## Proposal 1: bs-sweep-bf16
 
-**Tests**: H3 (per-step bf16 param delta is sparse)
+**Tests**: H0003 (per-step bf16 param delta is sparse)
 
-**Motivation**: H3 is currently PARTIAL — `bar-260502-150000` showed
+**Motivation**: H0003 is currently PARTIAL — `bar-260502-150000` showed
 sparsity at bs=8 but didn't sweep. Current evidence is "1 data point at
 1 config", which is fragile. A 3-batch sweep at fixed lr will either
-upgrade H3 to CONFIRMED or expose a batch-size dependence we'd
+upgrade H0003 to CONFIRMED or expose a batch-size dependence we'd
 otherwise miss.
 
 **Why this over the brainstorm alternatives**:
 
 - Beats `lr-perturbation-fp32-control` (#2) because the bs-axis
-  variation is what the existing H3 evidence is most under-determined
+  variation is what the existing H0003 evidence is most under-determined
   on; we have *zero* batch-size variance, only zero dtype variance.
 - Beats `seed-spread` (#4) because seed variance is cheaper to add
   later and a batch sweep also implicitly probes seed-dependent noise

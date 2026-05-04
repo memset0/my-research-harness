@@ -11,13 +11,13 @@ gpus: [0, 1, 2, 3]
 entry: ./train.sh
 command: bash train.sh --param=v --formulation=flow_matching --dtype=bf16 --steps=50000
 wandb: https://wandb.ai/me/imgflow/runs/bf16-conv-260503-093000
-hypotheses: [H5]
+hypotheses: [H0005]
 tags: [diffusion, flow-matching, bf16, stability]
 ---
 
 ## Motivation
 
-Test H5 — whether bf16 flow-matching loses convergence precision at low
+Test H0005 — whether bf16 flow-matching loses convergence precision at low
 noise levels (σ < 0.02), manifesting as oscillating val_loss with no
 improvement past step ~10k.
 

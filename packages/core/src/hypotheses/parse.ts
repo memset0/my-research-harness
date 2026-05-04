@@ -7,7 +7,7 @@
 //   ## Summary table            ← informational, kept as raw block
 //   | ... |
 //
-//   ## H1. <slug>               ← entry (one per hypothesis)
+//   ## H0001. <slug>            ← entry (one per hypothesis)
 //   - **Statement**: ...
 //   - **Origin**: ...
 //   - **Status**: ✅ CONFIRMED
@@ -29,9 +29,15 @@
 
 import type { Hypothesis, HypothesisStatus, ParseIssue, ParsedHypotheses } from '../types.js'
 import { HYPOTHESIS_STATUS_EMOJI, HYPOTHESIS_STATUS_VALUES } from '../types.js'
+import { parseId } from '../ids.js'
 import { splitH2Sections } from '../readme/sections.js'
 
-const HYPOTHESIS_HEADING_REGEX = /^(H\d+)\.\s*(.*)$/
+// Canonical hypothesis heading: `H<NNNN>. <slug>` where NNNN is exactly
+// 4 digits. Any other H-prefixed heading is treated as malformed.
+const HYPOTHESIS_HEADING_REGEX = /^(H\d{4})\.\s*(.*)$/
+// Catches anything else that started with `H<digits>.` so we can warn
+// specifically about wrong-format ids.
+const HYPOTHESIS_HEADING_LOOSE_REGEX = /^H\d+\.\s*/
 const LABEL_LINE_REGEX = /^-\s+\*\*([\w\s]+)\*\*\s*:\s*(.*)$/
 const SUB_BULLET_REGEX = /^\s+-\s+(.*)$/
 const EXPERIMENT_ID_REGEX = /[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}/g
@@ -64,11 +70,20 @@ export function parseHypotheses(content: string): ParsedHypotheses {
     const m = HYPOTHESIS_HEADING_REGEX.exec(heading)
     if (m) {
       const id = m[1]!
+      // Tighten via parseId — also rules out H0000 (value-zero).
+      if (!parseId(id)) {
+        warnings.push({
+          field: heading,
+          message: `INVALID_HYPOTHESIS_ID: "${id}" must be canonical 4-digit form in [H0001, H9999]`,
+          severity: 'warning',
+        })
+        continue
+      }
       const slug = m[2]!.trim()
       if (seenIds.has(id)) {
         warnings.push({
           field: id,
-          message: `duplicate hypothesis ID "${id}"; only the first occurrence is indexed`,
+          message: `DUPLICATE_HYPOTHESIS_ID: "${id}"; only the first occurrence is indexed`,
           severity: 'warning',
         })
         continue
@@ -80,6 +95,16 @@ export function parseHypotheses(content: string): ParsedHypotheses {
         else warnings.push(issue)
       }
       entries.push(hypothesis)
+      continue
+    }
+    if (HYPOTHESIS_HEADING_LOOSE_REGEX.test(heading)) {
+      // Looks like a hypothesis heading but doesn't match the canonical
+      // 4-digit form — name it explicitly so users can fix.
+      warnings.push({
+        field: heading,
+        message: `INVALID_HYPOTHESIS_ID: heading "${heading}" must use 4-digit zero-padded form (e.g. "H0001. ${heading.replace(/^H\d+\.\s*/, '')}")`,
+        severity: 'warning',
+      })
       continue
     }
     warnings.push({

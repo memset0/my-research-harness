@@ -124,7 +124,7 @@ export function AddEventModal(props: AddEventModalProps) {
               autoFocus
               placeholder={
                 props.mode === 'request'
-                  ? 'e.g. please summarize experiments related to H7'
+                  ? 'e.g. please summarize experiments related to H0007'
                   : 'e.g. converged faster than expected'
               }
               className="resize-y"

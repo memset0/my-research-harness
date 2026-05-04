@@ -11,14 +11,14 @@ gpus: [0, 1]
 entry: ./train.sh
 command: bash train.sh --param=eps --loss_weight=min_snr --gamma_sweep=1,3,5,7,10
 wandb: https://wandb.ai/me/imgflow/runs/snr-sweep-260430-160000
-hypotheses: [H2]
+hypotheses: [H0002]
 tags: [diffusion, sweep, min-snr]
 ---
 
 ## Motivation
 
 Establish a baseline sweep of min-SNR-γ before the v-pred run (foo) starts,
-so we have an apples-to-apples ε-pred reference for H2's loss-weighting
+so we have an apples-to-apples ε-pred reference for H0002's loss-weighting
 analysis (later refined in bar).
 
 ## Setup
@@ -56,7 +56,7 @@ analysis (later refined in bar).
 
 - min-SNR-γ=5 is the working default for subsequent runs (used by foo and
   baz)
-- contributes to H2 ✅ along with bar's analysis
+- contributes to H0002 ✅ along with bar's analysis
 - reinforces the sweet-spot interpretation: γ ∈ [3, 7] all beat unweighted
 
 ## Caveats

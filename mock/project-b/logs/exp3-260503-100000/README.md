@@ -11,14 +11,14 @@ gpus: [0]
 entry: ./run.sh
 command: bash run.sh --workload=cfg_sweep --cfg=7.5 --profile=nsight --target=vae_decoder
 wandb: null
-hypotheses: [H3]
+hypotheses: [H0003]
 tags: [profile, nsight, vae]
 ---
 
 ## Motivation
 
 Capture an nsight profile of SD-1.5 inference at CFG=7.5 to look for the
-VAE-decoder tail predicted by H3.
+VAE-decoder tail predicted by H0003.
 
 ## Setup
 
@@ -39,7 +39,7 @@ Wrap the inference binary with nsight, run on 100 prompts, dump report.
 
 ## Conclusion
 
-- H3 still 🔵 OPEN — profile incomplete.
+- H0003 still 🔵 OPEN — profile incomplete.
 - Need a rerun, possibly without nsight (use torch.profiler instead) or
   with a different sampling rate.
 

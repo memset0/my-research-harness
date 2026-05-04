@@ -308,4 +308,4 @@
 [2026-05-02T14:11:40 EVAL] compbench/shape zero_snr=0.38 baseline=0.42 delta=-0.04
 [2026-05-02T14:15:00 EVAL] compbench/texture zero_snr=0.36 baseline=0.41 delta=-0.05
 [2026-05-02T14:18:20 EVAL] compbench/spatial zero_snr=0.41 baseline=0.46 delta=-0.05
-[2026-05-02T14:28:20 INFO] eval complete: H3 partial (brightness wins, composition loses)
+[2026-05-02T14:28:20 INFO] eval complete: H0003 partial (brightness wins, composition loses)

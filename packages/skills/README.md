@@ -17,7 +17,7 @@ work without a `config.yml`.
 | Run an existing script + drive it through terminal state | `memon-run-experiment` | User-invoked. Owns the README's full content (frontmatter + body). |
 | Drop a one-line observation / request / error in JOURNAL | `memon-append-journal` | **Model-invocable.** Cheap, single-event append. |
 | Daily integrity sweep + cursor-advancing digest | `memon-digest-journal` | User-invoked. Folds in the old `doctor` checks. |
-| Theme-driven, cursor-independent narrative report | `memon-write-report` | User-invoked. `R<N>-<slug>.md` with re-runnable selector. |
+| Theme-driven, cursor-independent narrative report | `memon-write-report` | User-invoked. `R<NNNN>-<slug>.md` with re-runnable selector. |
 | "What should I run next?" — brainstorm + converge | `memon-propose` | User-invoked. Read-only research collaborator. |
 
 ## Invocation policy
@@ -96,8 +96,8 @@ worth recording" can fire on its own.
 | `memon-write-script` | a `.sh` file under `scripts/` | run dirs, READMEs, JOURNAL frontmatter |
 | `memon-run-experiment` | `<run-dir>/README.md`, `code.diff`, `code.head` | scripts, digests, reports, JOURNAL frontmatter |
 | `memon-append-journal` | one event line in `JOURNAL.md` body | JOURNAL frontmatter, READMEs |
-| `memon-digest-journal` | `docs/digests/D<N>-<YYYY-MM-DD>.md`, `last_digest_at` cursor; may write READMEs *during* doctor fixes | reports |
-| `memon-write-report` | `docs/reports/R<N>-<slug>.md` | digests, READMEs, JOURNAL cursor |
+| `memon-digest-journal` | `docs/digests/D<NNNN>-<YYYY-MM-DD>.md`, `last_digest_at` cursor; may write READMEs *during* doctor fixes | reports |
+| `memon-write-report` | `docs/reports/R<NNNN>-<slug>.md` | digests, READMEs, JOURNAL cursor |
 | `memon-propose` | nothing — read-only | everything |
 
 ## Versioning

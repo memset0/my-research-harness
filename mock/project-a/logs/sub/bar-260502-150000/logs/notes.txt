@@ -38,5 +38,5 @@ Sample-level red flags worth surfacing in HYPOTHESES
 ----------------------------------------------------
 - 3 of 50 samples had a small color blob in upper-left corner that looks
   like residual noise from the zero-SNR endpoint; not catastrophic but a
-  consistent artifact pattern. Worth a note in H3 caveats if it persists
+  consistent artifact pattern. Worth a note in H0003 caveats if it persists
   in larger eval (currently only seen in 50 sample inspection)

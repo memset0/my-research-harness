@@ -24,7 +24,7 @@ this one. This skill is just for "append one event right now".
 - You observed something cross-cutting that doesn't belong in any single
   experiment's README ("memory leaks above 32B context length on this box")
 - You want to **request** something from the human user when they next
-  check in ("please verify H7 is still aligned with the new SLURM quotas")
+  check in ("please verify H0007 is still aligned with the new SLURM quotas")
 - You want to record an error or warning that needs human attention
 - The user asks you to "leave a note in the journal"
 
@@ -91,8 +91,8 @@ wording:
   - ✅ "8B fp16 sweep converged 1.3× faster than the bf16 reference."
   - ❌ "I think bf16 might be slower somehow"
 - **REQUEST** — forward-looking, ends with an explicit ask.
-  - ✅ "Please verify H7 still aligns with the new SLURM quotas."
-  - ❌ "H7 quota thing"
+  - ✅ "Please verify H0007 still aligns with the new SLURM quotas."
+  - ❌ "H0007 quota thing"
 - **ERROR** — names the failure cleanly, mentions the host/run if scoped.
   - ✅ "Wandb auth missing on host gpu-04; runs there bypass tracking."
   - ❌ "Something's wrong with wandb"

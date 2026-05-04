@@ -11,15 +11,15 @@ gpus: [0, 1, 2, 3]
 entry: ./train.sh
 command: bash train.sh --param=v --schedule=zero_snr --bs=128 --img=256
 wandb: https://wandb.ai/me/imgflow/runs/foo-260501-100000
-hypotheses: [H1, H3]
+hypotheses: [H0001, H0003]
 tags: [diffusion, v-pred, zero-snr, dump]
 ---
 
 ## Motivation
 
 Replicate the v-prediction convergence advantage on our internal 256² image
-dataset (H1) and quantify the brightness-vs-composition tradeoff of zero
-terminal-SNR (H3) in the same training run.
+dataset (H0001) and quantify the brightness-vs-composition tradeoff of zero
+terminal-SNR (H0003) in the same training run.
 
 ## Setup
 
@@ -45,7 +45,7 @@ v-pred lead in σ<0.5 buckets; full analysis in follow-up bar-260502-150000.)
 
 ## Conclusion
 
-(Pending — see bar-260502-150000 for the H1 / H2 analysis.)
+(Pending — see bar-260502-150000 for the H0001 / H0002 analysis.)
 
 ## Caveats
 

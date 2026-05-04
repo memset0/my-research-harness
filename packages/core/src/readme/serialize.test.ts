@@ -15,12 +15,12 @@ gpus: [0, 1]
 entry: ./run.sh
 command: bash run.sh
 wandb: null
-hypotheses: [H1]
+hypotheses: [H0001]
 tags: [moe]
 ---
 
 ## Motivation
-Verify H1.
+Verify H0001.
 
 ## Setup
 4x A100
@@ -73,9 +73,15 @@ describe('serializeReadme', () => {
 
   it('emits New Hypotheses when content present', () => {
     const parsed = parseReadme(SAMPLE)
-    parsed.sections.newHypotheses = 'H7: warmup matters.'
+    parsed.sections.newHypotheses = 'H0007: warmup matters.'
     const out = serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections })
     expect(out).toContain('## New Hypotheses')
-    expect(out).toContain('H7: warmup matters.')
+    expect(out).toContain('H0007: warmup matters.')
+  })
+
+  it('throws on non-canonical hypothesis ref in frontmatter', () => {
+    const parsed = parseReadme(SAMPLE)
+    parsed.frontMatter.hypotheses = ['H0001', 'H3']
+    expect(() => reserializeReadme(parsed)).toThrowError(/H3/)
   })
 })

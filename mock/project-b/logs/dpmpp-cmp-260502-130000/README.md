@@ -11,7 +11,7 @@ gpus: [0]
 entry: ./run.sh
 command: bash run.sh --samplers=ddim,dpmpp_2m_karras --steps=20,50 --reruns=5
 wandb: null
-hypotheses: [H1]
+hypotheses: [H0001]
 tags: [sampler-cmp, dpm++, ddim]
 ---
 
@@ -51,7 +51,7 @@ wall time per image.
 ## Conclusion
 
 - DPM++ 2M Karras-20 is a recommended replacement for DDIM-50 default
-- contributes to H1 ✅ (the broader claim that 50-step samplers match
+- contributes to H0001 ✅ (the broader claim that 50-step samplers match
   the high-step reference is robust across DDIM and DPM++)
 
 ## Caveats

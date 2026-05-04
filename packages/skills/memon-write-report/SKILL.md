@@ -1,6 +1,6 @@
 ---
 name: memon-write-report
-description: Author or update a theme-driven report (`docs/reports/R<N>-<slug>.md`) drawn from the project's JOURNAL. The report records the shell selector used to assemble it, so re-running the selector cheaply tells whether new events have landed since the last update.
+description: Author or update a theme-driven report (`docs/reports/R<NNNN>-<slug>.md`) drawn from the project's JOURNAL. The report records the shell selector used to assemble it, so re-running the selector cheaply tells whether new events have landed since the last update.
 argument-hint: <theme of the report; or existing R-id to update>
 disable-model-invocation: true
 license: MIT
@@ -22,22 +22,22 @@ co-exist with the daily-cadenced **digests** produced by
 | cadence | one per calendar date, automatic | on demand, theme-driven |
 | time scope | strict non-overlapping window between consecutive digests | arbitrary, possibly disjoint |
 | advances `last_digest_at` | yes | **no** |
-| filename | `D<N>-<YYYY-MM-DD>.md` | `R<N>-<slug>.md` |
-| typical use | "what happened since last digest + integrity sweep" | "everything I learned about H7 across the past 3 weeks" |
+| filename | `D<NNNN>-<YYYY-MM-DD>.md` | `R<NNNN>-<slug>.md` |
+| typical use | "what happened since last digest + integrity sweep" | "everything I learned about H0007 across the past 3 weeks" |
 
 ## File naming
 
-Reports live at `<projectRoot>/docs/reports/R<N>-<slug>.md`:
+Reports live at `<projectRoot>/docs/reports/R<NNNN>-<slug>.md`:
 
-- `R` capital prefix — the namespace marker (mirrors `H<n>` for hypotheses, `D<n>` for digests).
-- `<N>` decimal integer — next available across the whole `docs/reports/` directory. List existing `R*-*.md` and pick `max(N) + 1`.
-- `<slug>` lowercase kebab-case, ~3-6 words describing the theme. E.g. `R1-bf16-investigation`, `R2-h7-followup`, `R3-aug-debug-log`.
+- `R` capital prefix — the namespace marker (mirrors `H<NNNN>` for hypotheses, `D<NNNN>` for digests).
+- `<NNNN>` 4-digit zero-padded counter — next available across the whole `docs/reports/` directory. List existing `R*-*.md`, take the numeric max, `+1`, and `printf '%04d'`.
+- `<slug>` lowercase kebab-case, ~3-6 words describing the theme. E.g. `R0001-bf16-investigation`, `R0002-h0007-followup`, `R0003-aug-debug-log`.
 
 ## Frontmatter
 
 ```yaml
 ---
-id: R<N>
+id: R<NNNN>
 title: <human-readable title>
 created_at: 2026-05-04T14:30:00+08:00
 updated_at: 2026-05-04T14:30:00+08:00
@@ -67,9 +67,9 @@ Field rules:
   memon journal read --project-root . --limit 1000 \
     | jq '.events[] | select((.experimentId // "") | startswith("bf16-"))'
 
-  # all NOTE/REQUEST events mentioning "H7" in the body
+  # all NOTE/REQUEST events mentioning "H0007" in the body
   memon journal read --project-root . --tag NOTE --limit 1000 \
-    | jq '.events[] | select(.body | contains("H7"))'
+    | jq '.events[] | select(.body | contains("H0007"))'
 
   # everything between two specific dates, no other filter
   memon journal read --project-root . \
@@ -85,7 +85,7 @@ Field rules:
 ## Body shape
 
 ```markdown
-# R<N>: <title>
+# R<NNNN>: <title>
 
 <prose narrative, ~200-500 words, free-form; references experiment ids inline>
 
@@ -96,23 +96,25 @@ Field rules:
 
 ## Workflow — new report
 
-1. **Decide the theme** with the user (`H7 investigation`, `bf16 sweep
+1. **Decide the theme** with the user (`H0007 investigation`, `bf16 sweep
    recap`, `pre-may cleanup`, …) and pick a slug.
 2. **Construct the selector**. Write the bash snippet that filters
    JOURNAL down to the events the theme covers. Verify it returns
    non-empty by running it.
-3. **Pick the next R-id**:
+3. **Pick the next R-id** and pad to 4 digits:
    ```sh
    NEXT_N=$(ls "$PROJECT_ROOT/docs/reports/R"*-*.md 2>/dev/null \
      | sed -E 's|.*/R([0-9]+)-.*\.md|\1|' \
      | sort -n | tail -1)
    NEXT_N=$((${NEXT_N:-0} + 1))
+   FILENAME=$(printf 'R%04d-%s.md' "$NEXT_N" "$SLUG")
+   # → e.g. R0007-bf16-investigation.md
    ```
 4. **Draft the body** from the selector's output. Group events by
    category (CREATE / STATUS / NOTE / REQUEST / ERROR / ARCHIVE),
    reference experiment ids inline, ~200-500 words. Show the draft
    inline so the user can correct course before any write.
-5. **Write** `<projectRoot>/docs/reports/R<N>-<slug>.md` with the
+5. **Write** `<projectRoot>/docs/reports/R<NNNN>-<slug>.md` with the
    frontmatter (selector embedded verbatim) + body.
 
 ## Workflow — update an existing report

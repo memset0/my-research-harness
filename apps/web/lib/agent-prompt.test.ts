@@ -35,7 +35,7 @@ function makeExp(overrides: Partial<FullExperiment['frontMatter']> = {}): FullEx
       entry: '',
       command: '',
       tags: [],
-      hypotheses: ['H1', 'H3'],
+      hypotheses: ['H0001', 'H0003'],
       wandb: null,
       ...overrides,
     },
@@ -62,7 +62,7 @@ describe('buildAgentPrompt', () => {
     expect(out).toContain('foo-260501-100000')
     expect(out).toContain('/p/a/logs/foo-260501-100000/README.md')
     expect(out).toContain('FINISHED')
-    expect(out).toContain('H1, H3')
+    expect(out).toContain('H0001, H0003')
     expect(out).toContain('/repos/a/HYPOTHESES.md')
   })
 

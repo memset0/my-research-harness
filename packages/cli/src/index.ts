@@ -101,7 +101,7 @@ hypo
   })
 hypo
   .command('show <id>')
-  .description('show a single hypothesis by id (e.g. H3)')
+  .description('show a single hypothesis by id (e.g. H0003)')
   .option('--project <name>', 'restrict to a single project')
   .action(async (id: string, opts: { project?: string }) => {
     const g = readGlobals()

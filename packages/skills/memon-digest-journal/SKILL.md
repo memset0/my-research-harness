@@ -19,7 +19,7 @@ frontmatter. Each invocation:
 2. Runs the integrity sweep formerly known as `memon-doctor` (FINISHED
    w/ no Result, stale RUNNING, parse errors, orphan hypothesis refs,
    …) and walks the user through fixing each issue.
-3. Writes a digest into `<projectRoot>/docs/digests/D<N>-<YYYY-MM-DD>.md`
+3. Writes a digest into `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`
    covering that window — same date → same file (appended), new date →
    new file with the next global N.
 4. Advances `last_digest_at` to the snapshot point.
@@ -30,21 +30,22 @@ together avoids the "I ran doctor but forgot to digest after fixing"
 failure mode.
 
 For theme-driven, free-form narratives that DON'T touch the cursor (e.g.
-"everything I learned about H7 across the past three weeks"), use
+"everything I learned about H0007 across the past three weeks"), use
 `memon-write-report` instead — that's a separate, cursor-independent
-artifact at `docs/reports/R<N>-<slug>.md`.
+artifact at `docs/reports/R<NNNN>-<slug>.md`.
 
 ## File naming
 
-Digests live at `<projectRoot>/docs/digests/D<N>-<YYYY-MM-DD>.md`:
+Digests live at `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`:
 
 - `D` capital prefix.
-- `<N>` global decimal counter — `max(N) + 1` across the whole
-  `docs/digests/` directory. List existing `D*-*.md` to compute it.
+- `<NNNN>` 4-digit zero-padded global counter — `max(N) + 1` across the
+  whole `docs/digests/` directory. List existing `D*-*.md`, extract the
+  numeric portion, take the max, increment, and `printf '%04d'`.
 - `<YYYY-MM-DD>` is the local-time date of this invocation
   (`date +%Y-%m-%d`). Both informative and the dedup key:
   - if a `D*-${today}.md` already exists, **append** to it.
-  - otherwise **create** `D<N+1>-${today}.md`.
+  - otherwise **create** `D<NNNN>-${today}.md` (zero-padded).
 
 User does not pick a slug or pick the file — date and global N are both
 auto-assigned.
@@ -90,7 +91,7 @@ phase.
 
 ```yaml
 ---
-id: D<N>
+id: D<NNNN>
 date: 2026-05-04
 covers:
   from: 2026-05-02T20:00:00+08:00
@@ -111,7 +112,7 @@ updated_at: 2026-05-04T11:35:00+08:00
 ## Body shape
 
 ```markdown
-# D<N>: <YYYY-MM-DD>
+# D<NNNN>: <YYYY-MM-DD>
 
 <prose summary of this digest's window, ~300-500 words, grouped by:>
 
@@ -247,9 +248,11 @@ else
     | sed -E 's|.*/D([0-9]+)-.*\.md|\1|' \
     | sort -n | tail -1)
   NEXT_N=$((${NEXT_N:-0} + 1))
-  TARGET="docs/digests/D${NEXT_N}-${TODAY}.md"
+  TARGET=$(printf "docs/digests/D%04d-%s.md" "$NEXT_N" "$TODAY")
 fi
 ```
+
+Filename always uses 4-digit zero-padded `D<NNNN>` (e.g. `D0001-2026-05-04.md`).
 
 ### 5. Write the digest
 

@@ -11,14 +11,14 @@ gpus: [0]
 entry: ./analyze.sh
 command: bash analyze.sh --analyze=foo-260501-100000 --window=5000
 wandb: null
-hypotheses: [H1, H2]
+hypotheses: [H0001, H0002]
 tags: [analysis, fft, snr]
 ---
 
 ## Motivation
 
 Analyze the per-step val loss + sample dump from foo-260501-100000 to test
-H1 (v-pred convergence speed) and H2 (SNR-weighted loss reduces high-frequency
+H0001 (v-pred convergence speed) and H0002 (SNR-weighted loss reduces high-frequency
 artifacts).
 
 ## Setup
@@ -30,16 +30,16 @@ artifacts).
 
 ## Method
 
-1. For H1: compare v-pred vs ε-pred val_loss curves per σ bucket; report
+1. For H0001: compare v-pred vs ε-pred val_loss curves per σ bucket; report
    step at which each crosses val_loss=0.072
-2. For H2: re-weight the cached training-loss tensor with min-SNR-γ; train
+2. For H0002: re-weight the cached training-loss tensor with min-SNR-γ; train
    a tiny LoRA head with reweighted loss for 2k steps, sample 500 images,
    compute FFT high-band (>0.25 cycles/pixel) energy ratio against baseline
 
 ## Result
 
 - v-pred reaches val_loss=0.072 at step 3500
-- ε-pred reaches val_loss=0.072 at step 5100 (~31% slower; H1 ✅)
+- ε-pred reaches val_loss=0.072 at step 5100 (~31% slower; H0001 ✅)
 - per-bucket gap (steps to threshold):
   - σ ∈ [0.002, 0.5]: v-pred 35-40% faster
   - σ ∈ [0.5, 5.0]: v-pred 12-18% faster
@@ -47,23 +47,23 @@ artifacts).
 - min-SNR-γ FFT high-band ratio:
   - baseline 0.184
   - γ=3: 0.151
-  - γ=5: 0.139 (best — H2 ✅)
+  - γ=5: 0.139 (best — H0002 ✅)
   - γ=7: 0.142
   - γ=10: 0.156 (over-smooth: low-band shifts up too)
 - FID@256 with γ=5: 8.87 (vs baseline 8.92 — within noise)
 
 ## Conclusion
 
-- H1 ✅ CONFIRMED — v-pred converges ~31% faster, advantage concentrated in
+- H0001 ✅ CONFIRMED — v-pred converges ~31% faster, advantage concentrated in
   low-noise buckets as predicted
-- H2 ✅ CONFIRMED — min-SNR-γ=5 reduces HF artifacts by 24% with no FID cost
+- H0002 ✅ CONFIRMED — min-SNR-γ=5 reduces HF artifacts by 24% with no FID cost
 - Suggest defaulting future runs to v-pred + min-SNR-γ=5
 
 ## Caveats
 
 - LoRA-head reweighting is a proxy for full training; full retrain may differ
 - "high-frequency artifact" metric is FFT-band energy, not perceptual
-- bs=32 control runs (not in this analysis) showed weaker H2 effect — small
+- bs=32 control runs (not in this analysis) showed weaker H0002 effect — small
   batch may not benefit
 
 ## Artifacts
@@ -75,6 +75,6 @@ artifacts).
 
 ## New Hypotheses
 
-- **(candidate H7)** min-SNR-γ benefit collapses below batch size 64 — worth a
+- **(candidate H0007)** min-SNR-γ benefit collapses below batch size 64 — worth a
   separate hypothesis entry; suggests effective-batch tuning matters more than
   the loss-weighting form for small-batch training

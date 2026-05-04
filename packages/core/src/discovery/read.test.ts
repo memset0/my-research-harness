@@ -27,12 +27,12 @@ gpus: [0, 1]
 entry: ./run.sh
 command: bash run.sh
 wandb: null
-hypotheses: [H1]
+hypotheses: [H0001]
 tags: [moe]
 ---
 
 ## Motivation
-verify H1
+verify H0001
 `
 
 describe('readExperimentDir', () => {

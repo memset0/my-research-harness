@@ -1,37 +1,4 @@
-# hypotheses Specification
-
-## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
-## Requirements
-### Requirement: HYPOTHESES.md location
-
-Each project SHALL have at most one `HYPOTHESES.md` file located at the project's `root` directory (as configured in `config.yml`). The file is the single source of truth for hypothesis state in that project.
-
-#### Scenario: File at project root
-- **WHEN** a project's root is `/mnt/p` and `/mnt/p/HYPOTHESES.md` exists
-- **THEN** the system loads it as the hypothesis registry for that project
-
-#### Scenario: File missing
-- **WHEN** no `HYPOTHESES.md` exists at the project root
-- **THEN** the project's hypothesis registry is empty; the frontend hypothesis view shows an "empty" state with a button to create the file
-
-### Requirement: Hypothesis status legend with 5 states
-
-The hypothesis status enum SHALL have exactly 5 values, each mapped to a fixed emoji symbol:
-
-| Emoji | Status      |
-|:-----:|-------------|
-| ✅    | `CONFIRMED` |
-| ❌    | `REFUTED`   |
-| 🟡    | `PARTIAL`   |
-| 🔵    | `OPEN`      |
-| ⚪    | `DEFERRED`  |
-
-These status emojis SHALL NOT overlap with experiment status emojis (📝🟢✅❌❓), so the only emoji collision is intentional (`✅`/`❌` carry the same semantic across both domains: success/failure).
-
-#### Scenario: Render in summary table
-- **WHEN** the frontend renders the hypothesis summary table
-- **THEN** each row's Status column displays the emoji corresponding to the hypothesis's `Status` value
+## MODIFIED Requirements
 
 ### Requirement: Per-hypothesis entry schema
 
@@ -75,18 +42,6 @@ Hypothesis entries' `Experiments` field SHALL reference experiments by their dir
 - **WHEN** an experiment's front matter `hypotheses: [H0003]` and the project's `HYPOTHESES.md` contains an `H0003` entry
 - **THEN** the experiment's detail page shows a "Hypotheses" panel listing `H0003` with its current status emoji and statement
 
-### Requirement: Summary table rendering
-
-The system SHALL render any `## Summary table` H0002 section found in `HYPOTHESES.md` via the standard markdown renderer in the hypothesis overview page. Maintenance of the table content is a human/agent responsibility — `memon` MVP MUST NOT auto-generate or rewrite this section.
-
-#### Scenario: Summary table rendered as-is
-- **WHEN** `HYPOTHESES.md` contains a `## Summary table` section
-- **THEN** the frontend renders it via the standard markdown renderer in the hypothesis overview page
-
-#### Scenario: No auto-generation
-- **WHEN** `HYPOTHESES.md` has no `## Summary table` section
-- **THEN** the frontend hypothesis overview displays the per-hypothesis entries without inserting any auto-generated table
-
 ### Requirement: Hypothesis ID uniqueness
 
 Hypothesis IDs SHALL be of the canonical form `H<NNNN>` where `<NNNN>` is a 4-digit zero-padded positive integer in `0001`–`9999`, monotonically assigned within the project. Reuse of an ID after deletion is allowed but discouraged.
@@ -98,4 +53,3 @@ Hypothesis IDs SHALL be of the canonical form `H<NNNN>` where `<NNNN>` is a 4-di
 #### Scenario: ID outside [0001, 9999]
 - **WHEN** `HYPOTHESES.md` contains `## H0000. <slug>` or `## H10000. <slug>`
 - **THEN** the parser surfaces an `INVALID_HYPOTHESIS_ID` warning and skips the entry
-

@@ -16,5 +16,5 @@
     "spatial": { "zero_snr": 0.41, "baseline": 0.46, "delta": -0.05 }
   },
   "mean": { "zero_snr": 0.41, "baseline": 0.46, "delta_pct": -10.9 },
-  "verdict": "H3 PARTIAL — composition consistently drops ~10% across subscores"
+  "verdict": "H0003 PARTIAL — composition consistently drops ~10% across subscores"
 }

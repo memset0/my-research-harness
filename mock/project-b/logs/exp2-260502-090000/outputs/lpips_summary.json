@@ -10,5 +10,5 @@
     { "cfg": 10,  "mean_lpips": 0.31, "p99_lpips": 0.51, "drop_vs_baseline_pct": -24.4 },
     { "cfg": 12,  "mean_lpips": 0.26, "p99_lpips": 0.43, "drop_vs_baseline_pct": -36.6 }
   ],
-  "verdict": "H2 PARTIAL — non-linear past CFG=7.5; need finer sweep"
+  "verdict": "H0002 PARTIAL — non-linear past CFG=7.5; need finer sweep"
 }

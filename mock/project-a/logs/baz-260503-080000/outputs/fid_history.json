@@ -42,6 +42,6 @@
   "comparison": {
     "relative_fid_gain_pct": 1.9,
     "predicted_threshold_pct": 5.0,
-    "verdict": "H4 REFUTED"
+    "verdict": "H0004 REFUTED"
   }
 }

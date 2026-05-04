@@ -11,13 +11,13 @@ gpus: [0]
 entry: ./run.sh
 command: bash run.sh --workload=cfg_sweep --cfg=4.5,7.5,10,12 --samples_per_prompt=4
 wandb: null
-hypotheses: [H2]
+hypotheses: [H0002]
 tags: [cfg-sweep, lpips, diversity]
 ---
 
 ## Motivation
 
-Measure how sample diversity (pairwise LPIPS) decays with CFG scale (H2).
+Measure how sample diversity (pairwise LPIPS) decays with CFG scale (H0002).
 
 ## Setup
 
@@ -46,7 +46,7 @@ For each prompt and CFG, compute pairwise LPIPS over the 4 samples
 
 ## Conclusion
 
-H2 🟡 PARTIAL. The non-linear drop is real but only 4 CFG points sampled;
+H0002 🟡 PARTIAL. The non-linear drop is real but only 4 CFG points sampled;
 need to fill in {6, 8, 9, 11} to characterize the curve shape, and add
 a non-LPIPS diversity metric (FID-coverage) to cross-check.
 

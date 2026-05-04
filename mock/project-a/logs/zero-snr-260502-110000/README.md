@@ -11,13 +11,13 @@ gpus: [0, 1]
 entry: ./eval.sh
 command: bash eval.sh --eval=foo-260501-100000@step=4500 --bench=t2i-compbench --cfg_sweep=4.5,7.5,10
 wandb: null
-hypotheses: [H3]
+hypotheses: [H0003]
 tags: [eval, zero-snr, compbench, brightness]
 ---
 
 ## Motivation
 
-Quantify the brightness-vs-composition tradeoff predicted by H3, using the
+Quantify the brightness-vs-composition tradeoff predicted by H0003, using the
 foo-260501-100000 checkpoint (zero terminal-SNR variant) against an ε-pred
 reference checkpoint trained without zero-SNR (snr-sweep γ=5 @ 30k).
 
@@ -64,9 +64,9 @@ T2I-CompBench composition score (higher better, CFG=7.5):
 
 ## Conclusion
 
-- H3 🟡 PARTIAL — both halves of the predicted tradeoff are real:
+- H0003 🟡 PARTIAL — both halves of the predicted tradeoff are real:
   brightness fix is large; composition drop is consistent and not noise
-- recommend keeping zero-SNR but exploring rescale-CFG (samplebench H4) as
+- recommend keeping zero-SNR but exploring rescale-CFG (samplebench H0004) as
   a potential mitigation for the composition loss
 
 ## Caveats

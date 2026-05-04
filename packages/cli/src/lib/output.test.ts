@@ -21,7 +21,7 @@ function makeExp(overrides: Partial<Experiment['frontMatter']> = {}): Experiment
       entry: '',
       command: '',
       wandb: null,
-      hypotheses: ['H1'],
+      hypotheses: ['H0001'],
       tags: ['t'],
       ...overrides,
     },
@@ -55,7 +55,7 @@ describe('formatExperimentTable', () => {
 
 describe('formatHypothesisTable', () => {
   const h: Hypothesis = {
-    id: 'H1',
+    id: 'H0001',
     slug: 'foo',
     statement: 'something is true',
     origin: '',
@@ -70,7 +70,7 @@ describe('formatHypothesisTable', () => {
   })
   it('renders header + row', () => {
     const out = formatHypothesisTable([h])
-    expect(out).toContain('H1')
+    expect(out).toContain('H0001')
     expect(out).toContain('CONFIRMED')
     expect(out).toContain('something is true')
   })

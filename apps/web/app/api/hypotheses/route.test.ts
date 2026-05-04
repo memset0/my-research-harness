@@ -21,7 +21,7 @@ function fakeRuntime(overrides: Partial<{ hypothesesPath: (n: string) => string 
           summaryTableBlock: null,
           entries: [
             {
-              id: 'H1',
+              id: 'H0001',
               slug: 'sparse-deltas',
               statement: 'param delta is sparse',
               status: 'CONFIRMED',
@@ -72,6 +72,6 @@ describe('GET /api/hypotheses', () => {
     const body = await res.json()
     expect(body.path).toBe('/p/a/HYPOTHESES.md')
     expect(body.entries).toHaveLength(1)
-    expect(body.entries[0]).toMatchObject({ id: 'H1', status: 'CONFIRMED' })
+    expect(body.entries[0]).toMatchObject({ id: 'H0001', status: 'CONFIRMED' })
   })
 })

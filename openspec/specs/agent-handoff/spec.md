@@ -33,8 +33,8 @@ The generated prompt SHALL include, at minimum:
 The prompt SHALL be deterministic given the experiment state at the moment the dialog was opened (re-opening produces identical text unless the experiment changed in between).
 
 #### Scenario: Includes experiment context
-- **WHEN** the prompt is generated for `foo-260501-100000` with `status: RUNNING`, hypotheses `[H1, H3]`, and 3 recent JOURNAL events
-- **THEN** the prompt text contains the literal id `foo-260501-100000`, the absolute experiment path, the words `H1` and `H3`, and the bodies of those 3 JOURNAL events
+- **WHEN** the prompt is generated for `foo-260501-100000` with `status: RUNNING`, hypotheses `[H0001, H0003]`, and 3 recent JOURNAL events
+- **THEN** the prompt text contains the literal id `foo-260501-100000`, the absolute experiment path, the words `H0001` and `H0003`, and the bodies of those 3 JOURNAL events
 
 #### Scenario: Bounded prompt size
 - **WHEN** the experiment has 100+ JOURNAL events

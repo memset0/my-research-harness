@@ -3,7 +3,7 @@
 
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { parseHypotheses, type Hypothesis } from '@memon/core'
+import { isId, parseHypotheses, type Hypothesis } from '@memon/core'
 import { resolveConfig } from '../lib/resolver.js'
 import { emitError, emitJson, emitHuman, formatHypothesisTable, type OutputFormat } from '../lib/output.js'
 
@@ -30,6 +30,14 @@ export async function runHypoList(opts: HypoListOptions): Promise<void> {
 }
 
 export async function runHypoShow(opts: HypoShowOptions): Promise<void> {
+  if (!isId(opts.id, 'H')) {
+    const message = `hypothesis id must be canonical 4-digit form (e.g. H0003); got "${opts.id}"`
+    if (opts.format === 'json') {
+      emitJson({ error: { code: 'BAD_REQUEST', message } })
+      process.exit(2)
+    }
+    emitError(message, 2)
+  }
   const all = await collectHypotheses(opts)
   const match = all.find((e) => e.hypothesis.id === opts.id)
   if (!match) {
