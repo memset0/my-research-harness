@@ -60,10 +60,13 @@ export function ReadmeEditorBody({
   const [draftContent, setDraftContent] = useState<string | null>(null)
   const [conflict, setConflict] = useState<PutReadmeConflict | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [plain, setPlainState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    return readPlainPref()
-  })
+  // Initial render must match between SSR and client hydration: read the
+  // localStorage pref AFTER mount, not in the useState initializer (which
+  // runs once on each side and would diverge when localStorage is set).
+  const [plain, setPlainState] = useState<boolean>(false)
+  useEffect(() => {
+    setPlainState(readPlainPref())
+  }, [])
   const plainTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   const draftKey = useCallback((mtime: number) => `${DRAFT_PREFIX}${path}:${mtime}`, [path])
