@@ -5,6 +5,7 @@ import { formatExperimentTable, formatHypothesisTable } from './output.js'
 function makeExp(overrides: Partial<Experiment['frontMatter']> = {}): Experiment {
   return {
     id: 'foo-260501-100000',
+    project: 'p',
     path: '/x',
     mtime: 0,
     hasReadme: true,

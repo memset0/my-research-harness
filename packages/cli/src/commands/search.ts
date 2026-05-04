@@ -33,7 +33,15 @@ export async function runSearch(opts: SearchOptions): Promise<void> {
     scope: opts.scope,
     matches: matches.map((e) => ({
       id: e.id,
-      project: e.frontMatter.project,
+      // Membership project (config-derived) — what `memon list --project X`
+      // and the web /api/experiments?project=X filter on.
+      project: e.project,
+      // Optional sub-project label from front matter; null when absent or
+      // identical to the membership project.
+      subProject:
+        e.frontMatter.project !== '' && e.frontMatter.project !== e.project
+          ? e.frontMatter.project
+          : null,
       status: e.frontMatter.status,
       name: e.frontMatter.name,
       snippet: snippet(e.body, opts.query),
