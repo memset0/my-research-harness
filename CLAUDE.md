@@ -70,10 +70,19 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 
 ### Reference docs to consult before changing UI
 
-- shadcn skills (AI-targeted rules): https://ui.shadcn.com/docs/skills
-- shadcn theming: https://ui.shadcn.com/docs/theming
-- shadcn llms.txt: https://ui.shadcn.com/llms.txt
-- Component-specific: https://ui.shadcn.com/docs/components/<name>
+**First stop — always: <https://ui.shadcn.com/llms.txt>**
+
+This is the LLM-targeted distillation of shadcn's docs. Before any
+non-trivial frontend change (new component install, theming, semantic
+class change, primitive composition pattern), `WebFetch` this URL and
+re-anchor on it. It's the single source of truth for "the shadcn way";
+treating it as authoritative will avoid F2 / F3 / F4 above.
+
+Other references (read on demand):
+
+- shadcn skills (AI-targeted rules): <https://ui.shadcn.com/docs/skills>
+- shadcn theming: <https://ui.shadcn.com/docs/theming>
+- Component-specific: <https://ui.shadcn.com/docs/components/<name>>
 
 ## Verification protocol for UI changes
 
