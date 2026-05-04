@@ -56,9 +56,17 @@ export const PollConfigRawSchema = z
   })
   .optional()
 
+export const AuthConfigRawSchema = z
+  .object({
+    username: z.string().min(1).optional(),
+    password: z.string().min(1),
+  })
+  .optional()
+
 export const ConfigRawSchema = z.object({
   projects: z.array(ProjectConfigRawSchema).min(1),
   poll: PollConfigRawSchema,
+  auth: AuthConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

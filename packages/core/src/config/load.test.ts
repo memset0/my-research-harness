@@ -99,6 +99,67 @@ poll:
   })
 })
 
+describe('loadConfig auth block', () => {
+  it('parses a complete auth block to camelCase', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+auth:
+  username: alice
+  password: secret123
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.auth).toEqual({
+      username: 'alice',
+      password: 'secret123',
+    })
+  })
+
+  it('defaults username to "admin" when omitted', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+auth:
+  password: secret123
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.auth).toEqual({
+      username: 'admin',
+      password: 'secret123',
+    })
+  })
+
+  it('returns auth: undefined when block is absent', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.auth).toBeUndefined()
+  })
+
+  it('throws ConfigError when password is the wrong type', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+auth:
+  password: 12345
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('throws ConfigError when password is empty string', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+auth:
+  password: ""
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+})
+
 describe('implicitCwdProject', () => {
   it('synthesizes single-project config rooted at cwd', () => {
     const cfg = implicitCwdProject('/some/where')

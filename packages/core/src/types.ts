@@ -197,9 +197,17 @@ export interface PollConfig {
   backoffFactor: number
 }
 
+export interface AuthConfig {
+  username: string
+  /** Plaintext. Stored in config.yml — see openspec/specs/auth-system. */
+  password: string
+}
+
 export interface Config {
   projects: ProjectConfig[]
   poll: PollConfig
+  /** Present iff config.yml has a complete `auth` block; absent triggers first-run init in the HTTP server. */
+  auth?: AuthConfig
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [

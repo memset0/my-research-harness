@@ -21,12 +21,14 @@ import {
   parseHypotheses,
   parseJournal,
   readExperimentDir,
+  type AuthConfig,
   type Config,
   type Experiment,
   type ParsedHypotheses,
   type ParsedJournal,
 } from '@memon/core'
 import { FileCache } from './runtime/file-cache'
+import { ensureAuthInitialised } from './auth/first-run'
 
 export interface ExperimentChangeEvent {
   type: 'set' | 'delete'
@@ -48,6 +50,7 @@ export class Runtime {
     public readonly events: EventEmitter,
     public readonly hypothesesCache: FileCache<ParsedHypotheses>,
     public readonly journalCache: FileCache<ParsedJournal>,
+    public readonly auth: AuthConfig,
   ) {}
 
   /** Reset poll backoff for the experiment whose path matches `path`. */
@@ -101,6 +104,11 @@ async function init(): Promise<Runtime> {
   if (!config) {
     throw new Error(`memon: failed to load config at ${configPath}`)
   }
+
+  // First-run init: if config.yml has no auth.password_hash, generate one,
+  // write the hash back, print the plaintext once. Idempotent on subsequent
+  // boots.
+  const auth = await ensureAuthInitialised(configPath, config)
 
   const index = new ExperimentIndex()
   const events = new EventEmitter()
@@ -196,6 +204,7 @@ async function init(): Promise<Runtime> {
     events,
     hypothesesCache,
     journalCache,
+    auth,
   )
 }
 

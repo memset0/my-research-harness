@@ -247,21 +247,15 @@ tmux attach -t memon-claude-<expid>
    somewhere on `PATH`, memon's probe will pick it up automatically — the
    install step is only for hosts where ttyd is completely absent.)
    - macOS has no upstream prebuilt → fall back to `brew install ttyd`.
-3. **Caddy snippet.** The reverse proxy must forward `/api/terminal/proxy/*`
-   to `localhost:7682` with WebSocket support. Add this to your Caddyfile
-   **before** the main memon `reverse_proxy` block, then `caddy reload`:
+3. **Caddy snippet.** See [Production deployment](#production-deployment)
+   below for the full site block — it handles both the ttyd proxy AND the
+   `forward_auth` directive that gates anonymous WebSocket upgrades.
 
-   ```caddyfile
-   @terminal path /api/terminal/proxy/*
-   reverse_proxy @terminal localhost:7682 {
-       flush_interval -1
-   }
-   ```
-
-   In dev (`pnpm dev`, no Caddy in front), open the terminal directly at
-   `http://localhost:7682/` to skip the proxy. memon's placeholder route at
-   `/api/terminal/proxy/*` returns 503 with this snippet if Caddy isn't
-   configured — so the failure mode is loud, not a silent 404.
+   In dev (`pnpm dev`, no Caddy in front), the basic-auth dialog appears
+   automatically when you open `http://localhost:3737`. memon's placeholder
+   route at `/api/terminal/proxy/*` returns 503 with the Caddy snippet if
+   the reverse proxy isn't configured — so the failure mode is loud, not a
+   silent 404.
 
 ### Self-check
 
@@ -284,6 +278,119 @@ Returns one of three shapes:
 
 The button reflects each state and offers one-click install when
 `downloadable: true`.
+
+## Production deployment
+
+memon's HTTP server is single-user and protected by HTTP Basic auth. There is
+**no signup flow, no /login page** — the browser's native basic-auth dialog
+collects credentials, which means the browser caches them per-origin and the
+in-page ttyd iframe inherits them automatically. Three independent gates
+protect the writable terminal: (1) ttyd binds loopback only, (2) Caddy
+`basic_auth` validates the bcrypt of the same plaintext on every request
+(including WebSocket upgrades), (3) Next.js middleware re-validates the same
+`Authorization` header against the plaintext in `config.yml`.
+
+### First run
+
+Drop a `config.yml` next to `config.example.yml` (no `auth:` block needed),
+then `memon serve`. The first boot generates a random 144-bit password and
+persists it **plaintext** in `config.yml` under `auth.password`, then prints
+it to stdout once. Plaintext on disk is intentional — the threat model is
+"single user, host fs trust = auth trust" (same as `~/.ssh/id_*`), and the
+single canonical source means dev agents and curl-based automation can read
+the password from one place without a separate secret store.
+
+```text
+*** memon: generated initial password ***
+  username: admin
+  password: <24-char base64url>
+Persisted in /path/to/config.yml as plaintext (auth.password).
+```
+
+To rotate later: edit `auth.password` in `config.yml` to any new value and
+restart `memon serve`. To regenerate: delete the `auth` block entirely.
+
+### Caddyfile
+
+Replace your `<host>` site block with the following (substituting your real
+hostname and bcrypt hash). Caddy's native `basic_auth` directive gates every
+request **including the WebSocket upgrade to ttyd**. We deliberately do NOT
+use `forward_auth` here: that directive's WebSocket handling is broken (the
+auth probe is implemented as a reverse_proxy that consumes the Upgrade
+headers, so the subsequent ttyd reverse_proxy never sees the WS context and
+the handshake hangs — browser-side this manifests as "press enter to
+reconnect").
+
+```caddyfile
+<host> {
+    # bcrypt of the SAME plaintext stored in config.yml's auth.password.
+    # See rotation steps below.
+    basic_auth {
+        admin <bcrypt-hash>
+    }
+
+    # SSE: disable Caddy's response buffering so /api/events and
+    # /api/log/stream* stream in real time.
+    @sse path /api/events /api/log/stream*
+    reverse_proxy @sse 127.0.0.1:3737 {
+        flush_interval -1
+    }
+
+    # Browser terminal: bypass Next.js so the WebSocket upgrade reaches ttyd
+    # directly. basic_auth above already authenticated.
+    @terminal path /api/terminal/proxy/*
+    reverse_proxy @terminal 127.0.0.1:7682 {
+        flush_interval -1
+    }
+
+    reverse_proxy 127.0.0.1:3737
+}
+```
+
+Compute the bcrypt for the password persisted in `config.yml`:
+
+```bash
+caddy hash-password --plaintext "$(grep -E '^\s*password:' config.yml \
+  | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)"
+```
+
+Paste the `$2a$14$...` output into the Caddyfile, then:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+**To rotate the password**:
+
+1. Edit `config.yml`'s `auth.password` to the new plaintext.
+2. Re-run the `caddy hash-password` snippet to get a fresh bcrypt.
+3. Replace the hash in the Caddyfile.
+4. `systemctl reload caddy` and restart memon (it re-reads `config.yml`
+   on next start).
+
+Two-source-of-truth (plaintext in `config.yml`, bcrypt in Caddyfile) is the
+trade-off for using HTTP Basic auth that handles WebSocket upgrades cleanly.
+
+### Verification
+
+From a different machine:
+
+```bash
+# Anonymous → 401 with WWW-Authenticate
+curl -i https://<host>/
+
+# Authenticated → 200
+curl -i -u admin:<password> https://<host>/
+
+# Anonymous shell access (the prior root-shell vector) → 401
+curl -i -X POST https://<host>/api/terminal/start \
+  -H 'content-type: application/json' \
+  -d '{"experimentId":"x","projectName":"y"}'
+```
+
+If the first request returns 200 you've forgotten the `basic_auth` block —
+fix the Caddyfile and reload before going further.
 
 ## Architecture
 

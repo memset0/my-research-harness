@@ -14,7 +14,13 @@ import { promises as fs } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
-import { DEFAULT_POLL, type Config, type PollConfig, type ProjectConfig } from '../types.js'
+import {
+  DEFAULT_POLL,
+  type AuthConfig,
+  type Config,
+  type PollConfig,
+  type ProjectConfig,
+} from '../types.js'
 
 export class ConfigError extends Error {
   constructor(
@@ -101,7 +107,11 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  return { projects, poll }
+  const auth: AuthConfig | undefined = cfg.auth
+    ? { username: cfg.auth.username ?? 'admin', password: cfg.auth.password }
+    : undefined
+
+  return { projects, poll, auth }
 }
 
 /**

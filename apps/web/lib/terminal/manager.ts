@@ -1,9 +1,24 @@
 // ttyd subprocess orchestration. v1: at most one ttyd process at a time
 // (single port), bound to a tmux session named `memon-claude-<expid>`.
 //
+// Security model — three independent gates protect the writable terminal:
+//   1. Loopback bind: ttyd listens on 127.0.0.1:7682 only. External hosts
+//      cannot reach it directly.
+//   2. Caddy `forward_auth`: the production Caddyfile gates the entire
+//      memon site (including `/api/terminal/proxy/*`) on a probe to
+//      `/api/auth/check`. Anonymous WebSocket upgrades are rejected before
+//      they reach ttyd. See README "Production deployment".
+//   3. Next.js middleware: `apps/web/middleware.ts` re-verifies HTTP Basic
+//      on every request as defense in depth.
+//
+// We deliberately do NOT pass `-c user:pass` to ttyd. Coupling ttyd's basic-
+// auth to memon's `config.yml` hash would require a Caddy reload on every
+// password rotation, and the three gates above already cover the threat
+// model. See `openspec/changes/add-system-auth/design.md` D5/D7.
+//
 // Lifecycle:
 //   - startSession kills any prior ttyd, then spawns a new one whose argv is
-//     `<ttyd> -p 7682 -i 127.0.0.1 --writable tmux new-session -A -s <name> claude`
+//     `<ttyd> -p 7682 -i 127.0.0.1 -b <basePath> --writable tmux new-session -A -s <name> claude`
 //   - stopSession kills the ttyd child but NOT the tmux session — that's the
 //     whole point of using tmux: user ssh's in later and `tmux attach -t <name>`
 //   - process exit handlers (SIGINT/SIGTERM/beforeExit) kill the child;

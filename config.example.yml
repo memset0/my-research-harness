@@ -24,3 +24,22 @@ poll:
   min_interval_ms: 1000
   max_interval_ms: 300000
   backoff_factor: 2
+
+# Authentication for the HTTP dashboard. Leave this block COMMENTED on a
+# fresh install — `memon serve` will generate a random 144-bit password on
+# first run, persist it (PLAINTEXT) here, and print it to stdout once.
+#
+# Plaintext is intentional: the threat model is "single user, host fs trust =
+# auth trust", same as having an SSH key in $HOME. Storing plaintext means
+# dev agents and curl-based automation can read the password from one
+# canonical source (this file) without managing a separate secret store.
+#
+# To rotate: edit `password` below to a new value and restart `memon serve`.
+# To regenerate: delete the auth block entirely.
+#
+# CLI commands (`memon list`, `memon scan`, …) do not require auth; only the
+# HTTP server does.
+#
+# auth:
+#   username: admin
+#   password: <plaintext>     # set on first run, edit to rotate

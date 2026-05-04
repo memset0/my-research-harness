@@ -84,21 +84,59 @@ Other references (read on demand):
 - shadcn theming: <https://ui.shadcn.com/docs/theming>
 - Component-specific: <https://ui.shadcn.com/docs/components/<name>>
 
+## Dev: HTTP API auth — curl with credentials from `config.yml`
+
+The dashboard is gated by HTTP Basic auth (see `openspec/specs/auth-system/`).
+**Every** curl/wget against `http://localhost:3737/*` (and the public site)
+needs `Authorization: Basic` except for static assets and `/api/auth/check`.
+Plaintext credentials live at `config.yml` under `auth.username` /
+`auth.password`. Read them at the start of any session that needs to hit the
+HTTP API:
+
+```bash
+MEMON_USER=$(grep -E '^\s*username:' config.yml | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)
+MEMON_PASS=$(grep -E '^\s*password:' config.yml | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)
+# now use:
+curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/api/projects
+```
+
+If `auth.password` isn't in `config.yml` yet, `memon serve` hasn't been run
+once — start it (`cd apps/web && pnpm dev`) and the first request triggers
+first-run, which writes a random plaintext password into `config.yml` and
+prints it to stdout once. After that, the password persists in `config.yml`
+forever (until you rotate it by editing the file).
+
+**Anti-patterns**:
+
+- Don't read from `~/.cache/memon/initial-password.txt` — that path was
+  removed; the canonical source is `config.yml`.
+- Don't omit `-u` and treat 401 as "the server is down" — first read the
+  config and add credentials.
+- Don't paste the password into commit messages, PR descriptions, slash
+  commands, or anywhere outside the local shell. It's plaintext on disk by
+  design (single-user threat model), but that doesn't make it OK to leak.
+
 ## Verification protocol for UI changes
 
 Run these in order before claiming done:
 
 ```bash
+# 0. Read credentials once per session.
+MEMON_USER=$(grep -E '^\s*username:' config.yml | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)
+MEMON_PASS=$(grep -E '^\s*password:' config.yml | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)
+
 # 1. typecheck
 pnpm --filter @memon/web typecheck
 
 # 2. dev server is up (else start it: cd apps/web && pnpm dev)
-curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 http://localhost:3737/
+curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/
 
 # 3. Fetch a real page and grep for the markup I just added
-curl -sS http://localhost:3737/p/project-a | grep -oE '<class names | data-slot patterns | text I expect>'
+curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/p/project-a \
+  | grep -oE '<class names | data-slot patterns | text I expect>'
 
-# 4. Fetch the compiled CSS and confirm the tokens I rely on are defined
+# 4. Fetch the compiled CSS and confirm the tokens I rely on are defined.
+#    Static assets bypass auth, so no -u needed here.
 curl -sS "http://localhost:3737/_next/static/css/app/layout.css?v=$(date +%s)" \
   | grep -E "^  --background:|^  --foreground:|^  --card:|^  --muted:|^  --primary:"
 # Each grep must match a single line with an oklch() value.
