@@ -9,6 +9,7 @@ import { StatusEdit } from './status-edit'
 import { EditReadmeButton } from './edit-readme-button'
 import { AddNoteButton } from './add-note-button'
 import { AskClaudeCodeButton } from './ask-claude-code-button'
+import { TerminalButton } from './terminal-button'
 import { DetailSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Markdown } from './markdown'
@@ -46,6 +47,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
               <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              <TerminalButton experimentId={exp.id} projectName={fm.project} />
               <AskClaudeCodeButton experiment={exp} />
               <AddNoteButton project={fm.project} experimentId={exp.id} />
               {exp.hasReadme && <EditReadmeButton path={exp.path} experimentId={exp.id} />}

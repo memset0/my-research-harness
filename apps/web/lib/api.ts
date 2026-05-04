@@ -192,5 +192,88 @@ export async function postExperiment(input: {
   return body
 }
 
+// ---------- Browser terminal (ttyd + tmux) ----------
+
+export interface TerminalCheckResult {
+  available: boolean
+  version?: string
+  source?: 'cached' | 'path'
+  path?: string
+  downloadable?: boolean
+  suggestion?: string
+}
+
+export interface TerminalInstallResult {
+  ok: true
+  version: string
+  path: string
+  alreadyPresent?: boolean
+  durationMs: number
+}
+
+export interface TerminalSession {
+  sessionName: string
+  port: number
+  startedAt: string
+  experimentId: string
+  projectName: string
+  warnings: string[]
+}
+
+export interface TerminalStartResponse {
+  sessionName: string
+  url: string
+  port: number
+  startedAt: string
+  warnings: string[]
+}
+
+export async function checkTerminal(): Promise<TerminalCheckResult> {
+  const res = await fetch('/api/terminal/check')
+  return jsonOrThrow<TerminalCheckResult>(res)
+}
+
+export async function installTerminal(): Promise<TerminalInstallResult> {
+  const res = await fetch('/api/terminal/install', { method: 'POST' })
+  return jsonOrThrow<TerminalInstallResult>(res)
+}
+
+export async function startTerminal(input: {
+  experimentId: string
+  projectName: string
+}): Promise<TerminalStartResponse> {
+  const res = await fetch('/api/terminal/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow<TerminalStartResponse>(res)
+}
+
+export async function stopTerminal(sessionName: string): Promise<{ stopped: boolean }> {
+  const res = await fetch('/api/terminal/stop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionName }),
+  })
+  return jsonOrThrow<{ stopped: boolean }>(res)
+}
+
+export async function listTerminals(): Promise<{ sessions: TerminalSession[] }> {
+  const res = await fetch('/api/terminal/list')
+  return jsonOrThrow<{ sessions: TerminalSession[] }>(res)
+}
+
+async function jsonOrThrow<T>(res: Response): Promise<T> {
+  const body = await res.json()
+  if (!res.ok) {
+    const msg =
+      (body as { error?: { message?: string } })?.error?.message ??
+      `HTTP ${res.status}`
+    throw new ApiError(res.status, msg)
+  }
+  return body as T
+}
+
 // Re-exports for convenience
 export type { Experiment, Hypothesis, JournalEvent }

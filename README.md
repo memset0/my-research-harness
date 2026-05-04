@@ -128,6 +128,72 @@ tabular display for direct terminal use.
 - **/p/[project]/journal** — reverse-chronological timeline, filter by tag
   and experiment id, browser-tz timestamps
 
+## Browser terminal (in-page Claude Code)
+
+The experiment detail page has an **Open in browser** button that opens a
+right-side `<Sheet>` containing a live terminal running
+
+```
+tmux new-session -A -s memon-claude-<expid> claude
+```
+
+The terminal is served by [`ttyd`](https://github.com/tsl0922/ttyd) bound to
+`127.0.0.1:7682`, reverse-proxied by Caddy at `/api/terminal/proxy/*`.
+Closing the sheet kills `ttyd` but **leaves the tmux session detached** — so
+you can pick up the same agent conversation from a real terminal:
+
+```bash
+tmux attach -t memon-claude-<expid>
+```
+
+### One-time setup
+
+1. **`tmux` is the only system dependency.** Most clusters already have it.
+2. **`ttyd` is auto-managed** — no `apt`, no `brew`, no root. memon downloads
+   the upstream prebuilt static binary on first use into
+   `~/.cache/memon/bin/`. Click `Install ttyd (~5MB)` on the experiment
+   detail page once and you're done. (If you already have your own `ttyd`
+   somewhere on `PATH`, memon's probe will pick it up automatically — the
+   install step is only for hosts where ttyd is completely absent.)
+   - macOS has no upstream prebuilt → fall back to `brew install ttyd`.
+3. **Caddy snippet.** The reverse proxy must forward `/api/terminal/proxy/*`
+   to `localhost:7682` with WebSocket support. Add this to your Caddyfile
+   **before** the main memon `reverse_proxy` block, then `caddy reload`:
+
+   ```caddyfile
+   @terminal path /api/terminal/proxy/*
+   reverse_proxy @terminal localhost:7682 {
+       flush_interval -1
+   }
+   ```
+
+   In dev (`pnpm dev`, no Caddy in front), open the terminal directly at
+   `http://localhost:7682/` to skip the proxy. memon's placeholder route at
+   `/api/terminal/proxy/*` returns 503 with this snippet if Caddy isn't
+   configured — so the failure mode is loud, not a silent 404.
+
+### Self-check
+
+```bash
+curl http://localhost:3737/api/terminal/check
+```
+
+Returns one of three shapes:
+
+```jsonc
+// ttyd cached, ready
+{"available":true,"version":"1.7.7","source":"cached","path":"~/.cache/memon/bin/ttyd-1.7.7-x86_64"}
+
+// ttyd not yet installed but auto-fetchable (linux x64/arm64/...)
+{"available":false,"downloadable":true,"suggestion":"POST /api/terminal/install"}
+
+// macOS or unsupported arch
+{"available":false,"downloadable":false,"suggestion":"brew install ttyd"}
+```
+
+The button reflects each state and offers one-click install when
+`downloadable: true`.
+
 ## Architecture
 
 - **Polling, not fs watch**: each tracked directory has its own
