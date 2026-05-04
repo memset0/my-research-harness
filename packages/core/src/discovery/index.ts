@@ -1,7 +1,10 @@
 // In-memory ExperimentIndex used by both CLI commands and the web backend.
 //
 // Keyed by experiment id (= directory base name). Multiple projects share one
-// index; the project field on each Experiment partitions queries.
+// index; the top-level `project` field on each Experiment (set by discovery
+// from the matching `config.yml` project's `name`) partitions queries.
+// `frontMatter.project` is a separate sub-project label and is NOT used for
+// membership filtering — only as a search haystack.
 //
 // Operations are intentionally synchronous — discovery / parsing happens
 // elsewhere and produces ready-to-insert Experiment values.
@@ -48,7 +51,7 @@ export class ExperimentIndex {
   list(filter: ListFilter = {}): Experiment[] {
     const all = Array.from(this.byId.values())
     const filtered = filter.project
-      ? all.filter((e) => e.frontMatter.project === filter.project)
+      ? all.filter((e) => e.project === filter.project)
       : all
     return filtered.sort(byCreatedAtDesc)
   }
@@ -77,6 +80,9 @@ function matchesQuery(exp: Experiment, needle: string, scope: SearchScope): bool
   if (scope === 'all' || scope === 'fm') {
     if (haystackContains(exp.frontMatter.id, needle)) return true
     if (haystackContains(exp.frontMatter.name, needle)) return true
+    // Match BOTH the membership project (top-level) and the front-matter
+    // sub-project label, so searches surface experiments by either sense.
+    if (haystackContains(exp.project, needle)) return true
     if (haystackContains(exp.frontMatter.project, needle)) return true
     if (haystackContains(exp.frontMatter.command, needle)) return true
     for (const t of exp.frontMatter.tags) if (haystackContains(t, needle)) return true

@@ -41,12 +41,15 @@ export async function readExperimentDir(
     }
   }
 
-  // Backfill id and project from filesystem if front matter omitted them
+  // Backfill id from the directory name when front matter omits it. Do NOT
+  // backfill `project`: the top-level `project` field on Experiment carries
+  // membership (set from the projectName arg below), so frontMatter.project
+  // is now an OPTIONAL sub-project label that we preserve verbatim.
   if (parsed.frontMatter.id === '') parsed.frontMatter.id = id
-  if (parsed.frontMatter.project === '') parsed.frontMatter.project = projectName
 
   return {
     id: parsed.frontMatter.id || id,
+    project: projectName,
     path: dirPath,
     mtime,
     hasReadme,
@@ -62,7 +65,7 @@ export async function readExperimentDir(
  * Build a minimal ParsedReadme out of the directory name when README.md is
  * absent. Caller still treats the resulting Experiment as `hasReadme: false`.
  */
-function synthesizeFromDirname(id: string, projectName: string): ParsedReadme {
+function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
   const tail = /^(?<name>.+)-(?<yy>\d{2})(?<mm>\d{2})(?<dd>\d{2})-(?<hh>\d{2})(?<mi>\d{2})(?<ss>\d{2})$/.exec(
     id,
   )
@@ -82,7 +85,10 @@ function synthesizeFromDirname(id: string, projectName: string): ParsedReadme {
     frontMatter: {
       id,
       name,
-      project: projectName,
+      // Sub-project label is intentionally empty when README is absent. The
+      // membership project is set on the Experiment's top-level `project`
+      // field by the caller from the projectName arg.
+      project: '',
       status: 'UNKNOWN',
       createdAt,
       finishedAt: null,

@@ -44,28 +44,46 @@ describe('readExperimentDir', () => {
     const exp = await readExperimentDir(dir, 'fsdp-comm')
     expect(exp.hasReadme).toBe(true)
     expect(exp.id).toBe('foo-260503-082800')
+    expect(exp.project).toBe('fsdp-comm')
     expect(exp.frontMatter.status).toBe('RUNNING')
     expect(exp.path).toBe(dir)
     expect(exp.mtime).toBeGreaterThan(0)
   })
 
-  it('synthesizes Experiment when README is missing', async () => {
+  it('top-level project equals the projectName arg even when frontMatter.project differs', async () => {
+    // sparse-fsdp-style scenario: README declares a sub-project that isn't
+    // the enclosing config project's name. Membership must come from the
+    // arg, not from the frontmatter.
+    const dir = join(root, 'foo-260503-082800')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      join(dir, 'README.md'),
+      FULL_README.replace('project: fsdp-comm', 'project: predictive-skip-validation'),
+    )
+
+    const exp = await readExperimentDir(dir, 'sparse-fsdp')
+    expect(exp.project).toBe('sparse-fsdp')
+    expect(exp.frontMatter.project).toBe('predictive-skip-validation')
+  })
+
+  it('synthesizes Experiment when README is missing; sub-project is empty (no backfill)', async () => {
     const dir = join(root, 'foo-260503-082800')
     await fs.mkdir(dir, { recursive: true })
 
     const exp = await readExperimentDir(dir, 'fsdp-comm')
     expect(exp.hasReadme).toBe(false)
     expect(exp.id).toBe('foo-260503-082800')
+    expect(exp.project).toBe('fsdp-comm') // top-level membership set from arg
     expect(exp.frontMatter.id).toBe('foo-260503-082800')
     expect(exp.frontMatter.name).toBe('foo')
-    expect(exp.frontMatter.project).toBe('fsdp-comm')
+    expect(exp.frontMatter.project).toBe('') // sub-project label NOT backfilled
     expect(exp.frontMatter.status).toBe('UNKNOWN')
     expect(exp.frontMatter.createdAt).toMatch(/^2026-05-03T08:28:00[+-]\d{2}:\d{2}$/)
     expect(exp.parseErrors).toEqual([])
     expect(exp.parseWarnings).toHaveLength(1)
   })
 
-  it('backfills id and project when front matter has empty strings', async () => {
+  it('id backfills from directory; sub-project preserved verbatim (empty stays empty)', async () => {
     const dir = join(root, 'noid-260503-082800')
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(
@@ -77,8 +95,8 @@ describe('readExperimentDir', () => {
     )
 
     const exp = await readExperimentDir(dir, 'fallback-project')
-    // id backfills from directory; project from arg
     expect(exp.id).toBe('noid-260503-082800')
-    expect(exp.frontMatter.project).toBe('fallback-project')
+    expect(exp.project).toBe('fallback-project') // membership from arg
+    expect(exp.frontMatter.project).toBe('') // sub-project preserved verbatim, no backfill
   })
 })

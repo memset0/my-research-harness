@@ -5,6 +5,7 @@ import { isStaleRunning, staleAgeMs } from './stale.js'
 function makeExp(overrides: Partial<Experiment> = {}): Experiment {
   return {
     id: 'foo-260501-100000',
+    project: 'p',
     path: '/tmp/foo',
     mtime: 0,
     hasReadme: true,

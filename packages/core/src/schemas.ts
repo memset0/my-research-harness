@@ -15,7 +15,10 @@ import { z } from 'zod'
 export const ExperimentFrontMatterRawSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  project: z.string().min(1),
+  // `project:` is now an OPTIONAL sub-project label. Membership is carried
+  // by the Experiment's top-level `project` field, set from config.yml at
+  // discovery time. Empty/missing here is fine and produces no warning.
+  project: z.string().optional(),
   status: z.unknown(), // checked by normalizeStatus
   created_at: z.string().min(1),
   finished_at: z.union([z.string(), z.null()]).optional(),

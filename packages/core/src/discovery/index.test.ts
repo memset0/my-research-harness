@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { Experiment, ExperimentFrontMatter, ExperimentSections } from '../types.js'
 import { ExperimentIndex } from './index.js'
 
-function makeExp(overrides: Partial<ExperimentFrontMatter> = {}): Experiment {
+function makeExp(
+  fmOverrides: Partial<ExperimentFrontMatter> = {},
+  topOverrides: Partial<Omit<Experiment, 'frontMatter' | 'sections'>> = {},
+): Experiment {
   const fm: ExperimentFrontMatter = {
     id: 'foo-260503-082800',
     name: 'foo',
@@ -18,7 +21,7 @@ function makeExp(overrides: Partial<ExperimentFrontMatter> = {}): Experiment {
     wandb: null,
     hypotheses: [],
     tags: [],
-    ...overrides,
+    ...fmOverrides,
   }
   const sections: ExperimentSections = {
     motivation: null,
@@ -32,6 +35,7 @@ function makeExp(overrides: Partial<ExperimentFrontMatter> = {}): Experiment {
   }
   return {
     id: fm.id,
+    project: 'p',
     path: `/tmp/${fm.id}`,
     mtime: 0,
     hasReadme: true,
@@ -40,6 +44,7 @@ function makeExp(overrides: Partial<ExperimentFrontMatter> = {}): Experiment {
     body: '',
     parseErrors: [],
     parseWarnings: [],
+    ...topOverrides,
   }
 }
 
@@ -68,11 +73,28 @@ describe('ExperimentIndex', () => {
     ])
   })
 
-  it('list filters by project', () => {
+  it('list filters by top-level project (membership)', () => {
     const idx = new ExperimentIndex()
-    idx.set(makeExp({ id: 'a-260501-100000', project: 'alpha' }))
-    idx.set(makeExp({ id: 'b-260502-100000', project: 'beta' }))
+    idx.set(makeExp({ id: 'a-260501-100000' }, { project: 'alpha' }))
+    idx.set(makeExp({ id: 'b-260502-100000' }, { project: 'beta' }))
     expect(idx.list({ project: 'alpha' }).map((e) => e.id)).toEqual(['a-260501-100000'])
+    expect(idx.list({ project: 'beta' }).map((e) => e.id)).toEqual(['b-260502-100000'])
+  })
+
+  it('list filter ignores frontMatter.project (sub-project label)', () => {
+    // Membership is decided by the top-level `project` field (set by
+    // discovery from config.yml), NOT by frontMatter.project (which is now
+    // a free-form sub-project label). This is the regression-guard for the
+    // sparse-fsdp scenario described in proposal.md.
+    const idx = new ExperimentIndex()
+    idx.set(
+      makeExp(
+        { id: 'a-260501-100000', project: 'recipe-x' /* sub-project */ },
+        { project: 'workspace' /* membership */ },
+      ),
+    )
+    expect(idx.list({ project: 'workspace' }).map((e) => e.id)).toEqual(['a-260501-100000'])
+    expect(idx.list({ project: 'recipe-x' })).toEqual([])
   })
 
   it('search matches across name, tags, and hypotheses by default', () => {
@@ -82,6 +104,20 @@ describe('ExperimentIndex', () => {
 
     expect(idx.search('moe').map((e) => e.id)).toEqual(['a-260501-100000'])
     expect(idx.search('H0007').map((e) => e.id)).toEqual(['b-260502-100000'])
+  })
+
+  it('search hits both top-level project and frontMatter sub-project', () => {
+    const idx = new ExperimentIndex()
+    idx.set(
+      makeExp(
+        { id: 'a-260501-100000', project: 'predictive-skip-validation' },
+        { project: 'sparse-fsdp' },
+      ),
+    )
+    // Match by membership project
+    expect(idx.search('sparse-fsdp').map((e) => e.id)).toEqual(['a-260501-100000'])
+    // Match by sub-project (frontMatter.project)
+    expect(idx.search('predictive-skip').map((e) => e.id)).toEqual(['a-260501-100000'])
   })
 
   it('search scope=body searches body only', () => {

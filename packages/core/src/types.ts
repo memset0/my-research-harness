@@ -130,6 +130,14 @@ export interface ParsedReadme {
 export interface Experiment {
   /** Directory base name (matches EXPERIMENT_DIR_REGEX) */
   id: string
+  /**
+   * Membership project — the `name` of the `config.yml` project whose
+   * `discoverExperiments` call surfaced this directory. Always non-empty.
+   * This is the source of truth for "which project does this experiment
+   * belong to?"; the `frontMatter.project` field is a separate, optional
+   * sub-project label and is NOT consulted for membership.
+   */
+  project: string
   /** Absolute path to experiment directory */
   path: string
   /** Latest known mtime in epoch milliseconds (max of dir mtime, README mtime) */
