@@ -17,7 +17,14 @@ export {
   serializeJournal,
 } from './journal/serialize.js'
 export { appendJournalEvent, updateLastDigestAt } from './journal/append.js'
-export { discoverExperiments, mergeExcludes } from './discovery/discover.js'
+export {
+  ARCHIVED_SIDECAR,
+  discoverExperiments,
+  isArchived,
+  mergeExcludes,
+} from './discovery/discover.js'
+export { archiveExperiment, unarchiveExperiment } from './discovery/archive.js'
+export type { ArchiveResult } from './discovery/archive.js'
 export { readExperimentDir } from './discovery/read.js'
 export { ExperimentIndex } from './discovery/index.js'
 export type { ListFilter, SearchScope } from './discovery/index.js'
@@ -43,5 +50,20 @@ export type { LoadConfigOptions } from './config/load.js'
 export { ExperimentExistsError, createExperimentScaffold } from './discovery/scaffold.js'
 export type { CreateScaffoldInput, CreateScaffoldResult } from './discovery/scaffold.js'
 export { formatExperimentStamp, formatIsoLocal } from './time.js'
+
+// CLI helpers (callable from the @memon/cli package and from skills written
+// in TypeScript that link directly against @memon/core).
+export { CliContextError, loadCliContext } from './cli/context.js'
+export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'
+export { ScanError, scanProjectRoot } from './cli/scan.js'
+export type { IndexedExperiment, ProjectSnapshot, ScanOptions } from './cli/scan.js'
+export { runDoctor } from './cli/doctor.js'
+export type {
+  DoctorIssue,
+  DoctorOptions,
+  DoctorReport,
+  IssueCode,
+  IssueSeverity,
+} from './cli/doctor.js'
 
 export const VERSION = '0.0.0'

@@ -43,6 +43,7 @@ export interface CreateScaffoldResult {
 }
 
 const RUN_SH_TEMPLATE = (id: string) => `#!/usr/bin/env bash
+# TODO: one-line description of what this script does
 # memon experiment ${id}
 set -euo pipefail
 

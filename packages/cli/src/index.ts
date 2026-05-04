@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 // @memon/cli — `memon` command-line tool entry point.
-//
-// Subcommands: serve / list / show / search / new / hypo / mock.
-// Globals: --config <path>, --format <json|human>.
 
 import { Command } from 'commander'
 import { ConfigError } from '@memon/core'
@@ -13,6 +10,24 @@ import { runNew } from './commands/new.js'
 import { runHypoList, runHypoShow } from './commands/hypo.js'
 import { runMockSeed } from './commands/mock.js'
 import { runServe } from './commands/serve.js'
+import { runScan } from './commands/scan.js'
+import {
+  runJournalAppend,
+  runJournalDigestMark,
+  runJournalRead,
+} from './commands/journal.js'
+import {
+  readStdin,
+  runArchive,
+  runReadmeWrite,
+  runStatusSet,
+  runUnarchive,
+} from './commands/experiment.js'
+import { runHypothesesRead } from './commands/hypotheses.js'
+import { runDoctorCmd } from './commands/doctor.js'
+import { runInstallSkills } from './commands/install-skills.js'
+import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
+import { EXIT } from './lib/exit-codes.js'
 
 const program = new Command()
 program
@@ -20,13 +35,31 @@ program
   .description('experiment monitoring and management')
   .version('0.0.0')
   .option('--config <path>', 'path to config.yml (defaults to <cwd>/config.yml)')
+  .option('--project-root <path>', 'use <path> as the only project (bypasses config.yml)')
   .option('--format <fmt>', 'output format: json | human', 'json')
 
-function readGlobals() {
-  const opts = program.opts<{ config?: string; format?: string }>()
-  const format = opts.format === 'human' ? 'human' : 'json'
-  return { configPath: opts.config, format: format as 'json' | 'human', cwd: process.cwd() }
+interface Globals {
+  configPath?: string
+  projectRoot?: string
+  format: 'json' | 'human'
+  cwd: string
 }
+
+function readGlobals(): Globals {
+  const opts = program.opts<{ config?: string; projectRoot?: string; format?: string }>()
+  const format = opts.format === 'human' ? 'human' : 'json'
+  if (opts.projectRoot && opts.config) {
+    emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --config')
+  }
+  return {
+    configPath: opts.config,
+    projectRoot: opts.projectRoot,
+    format,
+    cwd: process.cwd(),
+  }
+}
+
+// ---------- read commands (existing) ----------
 
 program
   .command('list')
@@ -34,6 +67,9 @@ program
   .option('--project <name>', 'restrict to a single project')
   .action(async (opts: { project?: string }) => {
     const g = readGlobals()
+    if (g.projectRoot && opts.project) {
+      emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
+    }
     await runList({ ...g, project: opts.project })
   })
 
@@ -61,10 +97,13 @@ program
   .option('--project <name>', 'target project (defaults to first)')
   .action(async (name: string, opts: { project?: string }) => {
     const g = readGlobals()
+    if (g.projectRoot && opts.project) {
+      emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
+    }
     await runNew({ ...g, name, project: opts.project })
   })
 
-const hypo = program.command('hypo').description('hypothesis registry commands')
+const hypo = program.command('hypo').description('hypothesis registry commands (human-friendly)')
 hypo
   .command('list')
   .description('list hypotheses across projects')
@@ -99,6 +138,12 @@ program
   .option('-p, --port <port>', 'port to bind (default 3737)', '3737')
   .action(async (opts: { dev?: boolean; port?: string }) => {
     const g = readGlobals()
+    if (g.projectRoot) {
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        '--project-root is not supported by `memon serve`; use config.yml',
+      )
+    }
     await runServe({
       configPath: g.configPath,
       cwd: g.cwd,
@@ -107,16 +152,163 @@ program
     })
   })
 
+// ---------- new agent-shaped read commands ----------
+
+program
+  .command('scan [project-root]')
+  .description('bulk-read a project root: experiments + hypotheses + journal')
+  .option('--include-archived', 'include archived runs in the result', false)
+  .option('--archived-only', 'return ONLY archived runs', false)
+  .action(async (positionalRoot: string | undefined, opts: { includeArchived?: boolean; archivedOnly?: boolean }) => {
+    const g = readGlobals()
+    if (opts.includeArchived && opts.archivedOnly) {
+      emitErrorAndExit('BAD_REQUEST', '--include-archived and --archived-only are mutually exclusive')
+    }
+    const root = positionalRoot ?? g.projectRoot ?? g.cwd
+    await runScan({
+      projectRoot: root,
+      includeArchived: !!opts.includeArchived,
+      archivedOnly: !!opts.archivedOnly,
+      format: g.format,
+    })
+  })
+
+const journal = program.command('journal').description('JOURNAL.md commands')
+journal
+  .command('read')
+  .description('read parsed events from JOURNAL.md (JSON)')
+  .option('--since <iso>', 'filter events with timestamp >= this ISO string')
+  .option('--tag <tag>', 'filter by tag (NOTE / REQUEST / STATUS / CREATE / ARCHIVE / ERROR)')
+  .option('--experiment-id <id>', 'filter to events touching this experiment id')
+  .option('--limit <n>', 'cap returned events (default 200, max 1000)', (v) => parseInt(v, 10), 200)
+  .action(async (opts: { since?: string; tag?: string; experimentId?: string; limit?: number }) => {
+    const g = readGlobals()
+    await runJournalRead({ ...g, ...opts })
+  })
+journal
+  .command('append')
+  .description('append a single [NOTE]/[REQUEST]/[ERROR]/[ARCHIVE]/[CREATE] event (no STATUS)')
+  .requiredOption('--tag <tag>', 'event tag')
+  .requiredOption('--body <body>', 'event body text')
+  .option('--experiment-id <id>', 'optional id to prefix in the body')
+  .option('--at <iso>', 'override the event timestamp (default: now)')
+  .action(async (opts: { tag: string; body: string; experimentId?: string; at?: string }) => {
+    const g = readGlobals()
+    await runJournalAppend({ ...g, ...opts })
+  })
+journal
+  .command('digest-mark')
+  .description('update last_digest_at in JOURNAL.md frontmatter (digest skill only)')
+  .requiredOption('--at <iso>', 'ISO8601 timestamp with offset')
+  .action(async (opts: { at: string }) => {
+    const g = readGlobals()
+    await runJournalDigestMark({ ...g, at: opts.at })
+  })
+
+program
+  .command('hypotheses')
+  .description('hypotheses commands (agent-shaped JSON output)')
+  .addCommand(
+    new Command('read')
+      .description('read parsed HYPOTHESES.md (JSON)')
+      .action(async () => {
+        const g = readGlobals()
+        await runHypothesesRead(g)
+      }),
+  )
+
+const experiment = program.command('experiment').description('experiment write commands')
+const status = experiment.command('status').description('status field operations')
+status
+  .command('set <id>')
+  .description('atomically write README + append [STATUS] event')
+  .requiredOption('--to <status>', 'PENDING|RUNNING|FINISHED|FAILED|UNKNOWN')
+  .requiredOption(
+    '--expected-mtime <ms>',
+    "expected README mtime (epoch ms; get from 'memon show')",
+    (v) => Number(v),
+  )
+  .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
+    const g = readGlobals()
+    await runStatusSet({ ...g, experimentId: id, to: opts.to, expectedMtime: opts.expectedMtime })
+  })
+
+const readme = experiment.command('readme').description('README.md operations')
+readme
+  .command('write <id>')
+  .description('overwrite README.md (content from stdin) with mtime/hash lock')
+  .requiredOption('--expected-mtime <ms>', 'expected README mtime', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 check')
+  .action(async (id: string, opts: { expectedMtime: number; expectedHash?: string }) => {
+    const g = readGlobals()
+    const stdinContent = await readStdin()
+    if (!stdinContent) {
+      emitErrorAndExit('BAD_REQUEST', 'expected README content on stdin (e.g. cat new.md | memon experiment readme write ...)')
+    }
+    await runReadmeWrite({
+      ...g,
+      experimentId: id,
+      expectedMtime: opts.expectedMtime,
+      expectedHash: opts.expectedHash,
+      stdinContent,
+    })
+  })
+
+experiment
+  .command('archive <id>')
+  .description('mark a run as archived (.archived sidecar)')
+  .action(async (id: string) => {
+    const g = readGlobals()
+    await runArchive({ ...g, experimentId: id })
+  })
+experiment
+  .command('unarchive <id>')
+  .description('unmark archived')
+  .action(async (id: string) => {
+    const g = readGlobals()
+    await runUnarchive({ ...g, experimentId: id })
+  })
+
+program
+  .command('doctor')
+  .description('scan a project root for issues (FINISHED w/ no Result, stale RUNNING, etc.)')
+  .option('--include-archived', 'include archived runs', false)
+  .option('--severity <level>', 'min severity to report: info | warn | error', 'info')
+  .action(async (opts: { includeArchived?: boolean; severity?: string }) => {
+    const g = readGlobals()
+    const sev = opts.severity === 'warn' ? 'warn' : opts.severity === 'error' ? 'error' : 'info'
+    await runDoctorCmd({
+      ...g,
+      includeArchived: !!opts.includeArchived,
+      severity: sev as 'info' | 'warn' | 'error',
+    })
+  })
+
+program
+  .command('install-skills')
+  .description('copy bundled SKILL.md trees into ~/.claude/skills/ (or --target)')
+  .option('--target <path>', 'target directory (default: ~/.claude/skills)')
+  .option('--dry-run', "don't copy, just report what would be done", false)
+  .option('--force', 'overwrite existing skill directories', false)
+  .action(async (opts: { target?: string; dryRun?: boolean; force?: boolean }) => {
+    const g = readGlobals()
+    await runInstallSkills({
+      target: opts.target,
+      dryRun: !!opts.dryRun,
+      force: !!opts.force,
+      format: g.format,
+    })
+  })
+
 async function main() {
   try {
     await program.parseAsync(process.argv)
   } catch (err) {
     if (err instanceof ConfigError) {
-      process.stderr.write(`memon: ${err.message}\n`)
-      process.exit(1)
+      process.stderr.write(`${JSON.stringify({ error: { message: err.message } })}\n`)
+      process.exit(EXIT.GENERIC)
     }
-    process.stderr.write(`memon: ${(err as Error).message}\n`)
-    process.exit(1)
+    emitGenericAndExit(err)
   }
 }
 

@@ -103,18 +103,102 @@ ordinary writes (`memon new`, status edits, notes) never touch it.
 ## CLI
 
 ```
-memon serve                  # start the web dashboard on port 3737
-memon list [--project NAME]  # JSON list of experiments
-memon show <id>              # full README content
-memon search <query>         # full-text search
-memon new <name>             # scaffold a new experiment dir + README
-memon hypo list              # list hypotheses
-memon hypo show <H#>         # show one hypothesis
-memon mock seed              # copy mock/ to mock-runtime/ (dev)
+memon serve                            # start the web dashboard on port 3737
+memon list [--project NAME]            # JSON list of experiments (default: hide archived)
+memon show <id>                        # full README content
+memon search <query>                   # full-text search
+memon new <name>                       # scaffold a new experiment dir + README
+memon hypo list                        # list hypotheses
+memon hypo show <H#>                   # show one hypothesis
+memon mock seed                        # copy mock/ to mock-runtime/ (dev)
+
+# agent-shaped read commands (config-free)
+memon scan [<project-root>]            # bulk read: experiments + hypotheses + journal
+memon journal read [filters...]        # parsed JOURNAL events (--since / --tag / --experiment-id)
+memon hypotheses read                  # parsed HYPOTHESES.md (mirrors /api/hypotheses)
+memon doctor                           # scan for issues (FINISHED w/o Result, stale RUNNING, ...)
+
+# agent-shaped write commands
+memon journal append --tag NOTE --body "..." [--experiment-id ID]
+memon journal digest-mark --at <ISO>   # only path that updates last_digest_at
+memon experiment status set <id> --to FINISHED --expected-mtime <ms>
+cat new.md | memon experiment readme write <id> --expected-mtime <ms>
+memon experiment archive <id>          # mark as archived (.archived sidecar)
+memon experiment unarchive <id>
+
+memon install-skills [--target ~/.claude/skills] [--dry-run] [--force]
 ```
 
 Default output is JSON (agent-friendly). `--format human` switches to
 tabular display for direct terminal use.
+
+### Skill mode: `--project-root`
+
+Skills (and any config-free agent invocation) pass `--project-root <path>`
+on every command. This **bypasses `config.yml` entirely** — the path is
+treated as a single anonymous project root. Mutually exclusive with
+`--config` and `--project NAME`.
+
+### Exit codes (stable contract for skill branch logic)
+
+| code | meaning |
+|---|---|
+| `0` | success |
+| `1` | generic / unclassified failure |
+| `2` | usage / flag error (incl. `BAD_REQUEST`) |
+| `4` | `NOT_FOUND` (experiment / project root missing) |
+| `9` | `CONFLICT` — mtime / hash lock failed; skill SHOULD refresh and retry |
+| `13` | `FORBIDDEN` (path safety violation) |
+
+### Archive
+
+`memon experiment archive <id>` writes a 0-byte `.archived` sidecar inside
+the run directory. README.md is **never** modified, so its mtime stays
+stable and downstream caches (web index, LineIndex) keep working.
+
+By default `list` / `scan` / `show` / `search` / `journal read` /
+`hypotheses read` / `doctor` skip archived runs. Pass `--include-archived`
+(or `--archived-only` for exclusively archived) to opt in. Archive /
+unarchive each emit a JOURNAL audit entry (`[ARCHIVE]` / `[NOTE]`).
+
+## Skills (`@memon/skills`)
+
+memon ships 6 Claude Code skills as bundled `SKILL.md` files at
+`packages/skills/memon-*/`. After installing memon, run **once**:
+
+```sh
+memon install-skills    # copies into ~/.claude/skills/
+```
+
+Then in any project where you've created a `config.yml` (or just `cd`'d
+into the project root), invoke them via `/memon-<name>`:
+
+| Skill | What it does |
+|---|---|
+| `memon-write-script` | Author / edit `run.sh` for an experiment, following the run-dir regex + one-line header convention |
+| `memon-run-experiment` | Scaffold + launch a script + write README on success / mark FAILED on crash |
+| `memon-update-journal` | Append a single NOTE / REQUEST / ERROR event |
+| `memon-digest-journal` | Periodic weekly digest; the only skill allowed to update `last_digest_at` |
+| `memon-propose` | Read-only — suggest 1-3 next experiments tied to open hypotheses |
+| `memon-doctor` | Interactive cleanup of FINISHED-without-Result, stale RUNNING, parse errors, etc. |
+
+Each `SKILL.md` is plain markdown — `cat ~/.claude/skills/memon-*/SKILL.md`
+or read the source under `packages/skills/` to see the exact agent
+playbooks.
+
+### Shell-script header convention
+
+Every shell script in a run directory starts with a single-line functional
+description right after the shebang (no multi-paragraph block):
+
+```bash
+#!/usr/bin/env bash
+# Sweep batch size 4/8/16 with bf16, log per-step loss to log/.
+set -euo pipefail
+```
+
+The script's purpose lives here; the experiment's motivation /
+hypothesis-binding lives in `README.md`. Two layers, no duplication.
 
 ## Web dashboard
 

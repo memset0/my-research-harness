@@ -126,7 +126,7 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
           <CardTitle>Resources</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground italic">
+          <div className="text-xs text-muted-foreground italic">
             not yet available — GPU/disk monitoring is a P1 feature
           </div>
         </CardContent>
@@ -155,9 +155,9 @@ function SectionCard({
       </CardHeader>
       <CardContent>
         {body ? (
-          <Markdown>{body}</Markdown>
+          <Markdown className="text-xs">{body}</Markdown>
         ) : (
-          <div className="text-sm italic text-muted-foreground/70">to fill</div>
+          <div className="text-xs italic text-muted-foreground/70">to fill</div>
         )}
       </CardContent>
     </Card>

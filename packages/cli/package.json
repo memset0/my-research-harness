@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@memon/core": "workspace:*",
+    "@memon/skills": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {
