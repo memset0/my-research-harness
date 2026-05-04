@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3737",
+    "dev": "tsx server.ts",
     "build": "next build",
-    "start": "next start -p 3737",
+    "start": "NODE_ENV=production tsx server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -32,6 +32,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
+    "http-proxy-3": "^1.23.2",
     "lucide-react": "^1.14.0",
     "next": "^15.0.0",
     "nextjs-toploader": "^3.9.17",
@@ -59,6 +60,7 @@
     "@vitest/ui": "^2.1.9",
     "jsdom": "^25.0.1",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
   }

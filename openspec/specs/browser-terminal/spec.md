@@ -120,28 +120,6 @@ The web backend SHALL expose `GET /api/terminal/list` returning `{ sessions: [{ 
 - **WHEN** ttyd is running for experiment foo-260501-100000
 - **THEN** `GET /api/terminal/list` returns `{ sessions: [{ sessionName: "memon-claude-foo-260501-100000", port: 7682, startedAt: "<iso>", experimentId: "foo-260501-100000", projectName: "..." }] }`
 
-### Requirement: Caddy passthrough for ttyd proxy path
-
-The deployment SHALL configure the reverse proxy (Caddy) to (1) gate the entire memon site (including `/api/terminal/proxy/*`) behind Caddy's native `basic_auth` directive (with a bcrypt of the plaintext stored in `config.yml`'s `auth.password`) so the WebSocket upgrade is rejected for unauthenticated clients before reaching ttyd, AND (2) route `/api/terminal/proxy/*` directly to `localhost:7682` with WebSocket upgrade enabled and `flush_interval -1` once auth passes. The Next.js layer SHALL NOT see the proxied WebSocket frames. The README SHALL document the exact Caddy snippet (defined in the `auth-system` capability).
-
-The deployment SHALL NOT use Caddy's `forward_auth` directive for this site — `forward_auth`'s auth probe is implemented internally as a `reverse_proxy` that consumes the original request's `Upgrade` and `Connection` headers, so the subsequent ttyd `reverse_proxy` never sees the WS context and the handshake hangs (browser-side ttyd shows "press enter to reconnect"). `basic_auth` gates the request inline without reverse-proxying it first, so WS upgrades pass through transparently.
-
-#### Scenario: Anonymous WebSocket upgrade is rejected by basic_auth
-- **WHEN** an anonymous browser opens `wss://<host>/api/terminal/proxy/<sess>/ws`
-- **THEN** Caddy's `basic_auth` directive returns 401 with `WWW-Authenticate: Basic realm="..."`
-- **AND** ttyd receives no upgrade request
-
-#### Scenario: WebSocket upgrade succeeds end-to-end with valid credentials
-- **WHEN** the browser opens the iframe at `/api/terminal/proxy/memon-claude-<id>/` with cached `Authorization: Basic` credentials from the dashboard origin
-- **THEN** Caddy's `basic_auth` directive validates the bcrypt against the supplied plaintext and accepts the request
-- **AND** the request is forwarded to ttyd at `127.0.0.1:7682`
-- **AND** the response is `HTTP/1.1 101 Switching Protocols` and bidirectional terminal IO works with <100ms typing latency
-
-#### Scenario: Direct ttyd port from a localhost shell still works (loopback bypass for debugging)
-- **WHEN** an operator on the host runs `curl -i http://127.0.0.1:7682/api/terminal/proxy/<sess>/`
-- **THEN** ttyd serves its index page (no auth — `-c` is intentionally unused; loopback bind is the gate at this layer per `auth-system` rationale)
-- **AND** this is acceptable because the host's shell perimeter is the same as the auth perimeter (single-user system)
-
 ### Requirement: Frontend "Open in browser" button beside Ask Claude Code
 
 The experiment detail header SHALL render a new button labeled "Open in browser" adjacent to the existing "Ask Claude Code" button. Clicking it SHALL open a shadcn `<Sheet>` (or `<Dialog>` full-screen on small viewports) containing an `<iframe>` whose `src` is the `url` returned from `POST /api/terminal/start`. Closing the sheet SHALL POST `/api/terminal/stop` (best-effort; ignore failure).
@@ -170,4 +148,43 @@ When the memon Node process receives SIGINT / SIGTERM, the terminal manager SHAL
 - **WHEN** the user presses Ctrl+C on memon
 - **THEN** the ttyd child is sent SIGTERM
 - **AND** the tmux session for memon-claude-* is still attachable from another shell
+
+### Requirement: Next.js custom server proxies ttyd HTTP and WebSocket traffic
+
+A custom Node entrypoint (`apps/web/server.ts`) SHALL replace the default `next start` / `next dev` runners as memon's process boot path. It SHALL wrap `next()` and attach two interceptors to its underlying `http.Server`:
+
+1. On the `request` event, when `req.url` begins with `/api/terminal/proxy/`, the entry SHALL verify HTTP Basic credentials against the same shared `verifyBasic`/`runtime.auth` path used by `apps/web/middleware.ts`, then proxy the HTTP request and response stream to `127.0.0.1:7682` (ttyd) preserving headers, status, and body. For all other paths, the entry SHALL delegate to Next's request handler unchanged.
+
+2. On the `upgrade` event, when `req.url` begins with `/api/terminal/proxy/`, the entry SHALL likewise verify HTTP Basic on the upgrade request and, if valid, forward the WebSocket upgrade to `127.0.0.1:7682`. For non-prefixed upgrades (e.g. Next dev's HMR socket), the entry SHALL delegate to Next's own upgrade dispatcher.
+
+The proxy SHALL NOT alter ttyd's URL scheme — `/api/terminal/proxy/<sessionName>/...` continues to resolve, ttyd is still launched with `-b /api/terminal/proxy/<sessionName>`, and the `start` endpoint's response shape is unchanged.
+
+#### Scenario: HTTP request to ttyd index streams through
+- **WHEN** an authenticated client sends `GET /api/terminal/proxy/memon-claude-foo-260501-100000/`
+- **THEN** the custom server forwards the request to `127.0.0.1:7682/api/terminal/proxy/memon-claude-foo-260501-100000/`
+- **AND** ttyd's index HTML body is streamed back to the client with the original status and content-type
+- **AND** Next.js's request handler is NOT invoked
+
+#### Scenario: WebSocket upgrade to ttyd succeeds
+- **WHEN** an authenticated client opens `ws://<host>/api/terminal/proxy/memon-claude-foo-260501-100000/ws`
+- **THEN** the custom server's `upgrade` listener verifies HTTP Basic, forwards the upgrade to `127.0.0.1:7682`, and the response is `HTTP/1.1 101 Switching Protocols`
+- **AND** typing in the in-browser xterm produces output with <100 ms round-trip latency
+
+#### Scenario: Anonymous WebSocket upgrade is rejected before reaching ttyd
+- **WHEN** an anonymous client opens `ws://<host>/api/terminal/proxy/<sess>/ws` (no `Authorization` header)
+- **THEN** the custom server responds with `HTTP/1.1 401 Unauthorized` + `WWW-Authenticate: Basic realm="memon"` and closes the socket
+- **AND** ttyd receives no upgrade request
+
+#### Scenario: Non-proxy path falls through to Next
+- **WHEN** any request whose path does NOT begin with `/api/terminal/proxy/` arrives
+- **THEN** the custom server delegates the request to Next's standard request handler (or, for upgrade events, Next's own upgrade dispatcher) without inspecting the body or headers
+
+#### Scenario: ttyd not reachable
+- **WHEN** the proxy attempts to forward to `127.0.0.1:7682` and ttyd is not running (or has crashed)
+- **THEN** the custom server returns `502 Bad Gateway` with a one-line message; the WebSocket case ends with the socket being destroyed cleanly
+
+#### Scenario: Caddy is now a single-purpose reverse proxy
+- **WHEN** an operator deploys memon publicly behind Caddy
+- **THEN** the Caddyfile site block requires only one directive — `reverse_proxy localhost:3737` — to route both ordinary dashboard traffic AND `/api/terminal/proxy/*` HTTP+WebSocket traffic
+- **AND** the operator does NOT need a `@terminal` matcher, a separate ttyd upstream, or any auth-related Caddy directive for the terminal to work
 

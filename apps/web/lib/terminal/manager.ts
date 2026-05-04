@@ -4,17 +4,19 @@
 // Security model — three independent gates protect the writable terminal:
 //   1. Loopback bind: ttyd listens on 127.0.0.1:7682 only. External hosts
 //      cannot reach it directly.
-//   2. Caddy `forward_auth`: the production Caddyfile gates the entire
-//      memon site (including `/api/terminal/proxy/*`) on a probe to
-//      `/api/auth/check`. Anonymous WebSocket upgrades are rejected before
-//      they reach ttyd. See README "Production deployment".
-//   3. Next.js middleware: `apps/web/middleware.ts` re-verifies HTTP Basic
-//      on every request as defense in depth.
+//   2. Custom-server HTTP Basic on /api/terminal/proxy/* (HTTP + WebSocket
+//      upgrade): `apps/web/server.ts` verifies credentials against
+//      `runtime.auth` for every request and every upgrade on this prefix
+//      before forwarding to ttyd. Anonymous WebSocket upgrades are
+//      rejected with 401 at the entry, never reach ttyd.
+//   3. Next.js middleware HTTP Basic on every other dashboard route as
+//      defense-in-depth (`apps/web/middleware.ts`); `/api/terminal/proxy/`
+//      is bypassed there since gate (2) already covers it.
 //
 // We deliberately do NOT pass `-c user:pass` to ttyd. Coupling ttyd's basic-
-// auth to memon's `config.yml` hash would require a Caddy reload on every
-// password rotation, and the three gates above already cover the threat
-// model. See `openspec/changes/add-system-auth/design.md` D5/D7.
+// auth to memon's `config.yml` plaintext would require a redundant ttyd
+// restart in addition to the memon restart that already covers password
+// rotation, and the three gates above cover the threat model.
 //
 // Lifecycle:
 //   - startSession kills any prior ttyd, then spawns a new one whose argv is

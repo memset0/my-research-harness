@@ -76,14 +76,20 @@ export function classify(method: string, pathname: string): RouteClass {
 }
 
 /**
- * Paths that bypass auth entirely. The list is intentionally narrow:
- *   - `/api/auth/check` does its own validation and returns the proper status
- *     to Caddy `forward_auth`, so middleware MUST NOT short-circuit it.
+ * Paths that bypass Next middleware entirely. The list is intentionally narrow:
+ *   - `/api/auth/check` does its own validation (it is the auth-validation
+ *     ping endpoint), so middleware MUST NOT short-circuit it.
+ *   - `/api/terminal/proxy/*` is auth-gated at the custom-server entry
+ *     (`apps/web/server.ts`) before the request ever reaches Next; in
+ *     practice the request never reaches Next either (the custom server
+ *     proxies it directly to ttyd), but listing it here is defense-in-depth
+ *     against future routing changes.
  *   - Next.js asset paths and the favicon are public by necessity (the
- *     basic-auth dialog itself can't load a CSS without these).
+ *     basic-auth dialog itself can't load CSS without these).
  */
 export function isAuthBypass(pathname: string): boolean {
   if (pathname === '/api/auth/check') return true
+  if (pathname.startsWith('/api/terminal/proxy/')) return true
   if (pathname.startsWith('/_next/static/')) return true
   if (pathname === '/_next/image' || pathname.startsWith('/_next/image?')) return true
   if (pathname === '/favicon.ico') return true

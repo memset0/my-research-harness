@@ -1,8 +1,12 @@
 // Auth middleware (Node runtime).
 //
 // Gates every request behind HTTP Basic auth, except for:
-//   - /api/auth/check (does its own check; this is what Caddy `forward_auth`
-//     calls — middleware MUST NOT short-circuit it)
+//   - /api/auth/check (does its own check — it's the validation ping
+//     endpoint; middleware MUST NOT short-circuit it)
+//   - /api/terminal/proxy/* (auth-gated at the custom-server entry in
+//     `apps/web/server.ts`, which also is what answers the request — it
+//     never reaches Next when running via `tsx server.ts`. The bypass
+//     here is defense-in-depth.)
 //   - Next.js static asset paths (the basic-auth dialog itself can't load
 //     CSS without these)
 //   - The favicon
@@ -10,9 +14,10 @@
 // Uses node-runtime middleware (Next 15.2+) so it can run scrypt directly.
 // See next.config.mjs `experimental.nodeMiddleware`.
 //
-// Rate-limiting: a process-global token-bucket limiter (5 capacity, 10/60s
-// refill, keyed on client IP from X-Forwarded-For) gates BOTH this middleware
-// and /api/auth/check. Brute-force across either path is bounded.
+// Rate-limiting: a process-global token-bucket limiter (60 capacity, 60/60s
+// refill, keyed on client IP from X-Forwarded-For) gates this middleware,
+// /api/auth/check, AND the custom server's WebSocket-upgrade auth. Brute-
+// force across any of those paths is counted in one bucket per IP.
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { getRuntime } from './lib/runtime'
