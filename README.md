@@ -134,10 +134,14 @@ tabular display for direct terminal use.
 
 ### Skill mode: `--project-root`
 
-Skills (and any config-free agent invocation) pass `--project-root <path>`
-on every command. This **bypasses `config.yml` entirely** — the path is
-treated as a single anonymous project root. Mutually exclusive with
-`--config` and `--project NAME`.
+Skills (and any agent invocation) pass `--project-root <path>` on every
+command. The path is treated as a single anonymous project root.
+Mutually exclusive with `--project NAME`. When `--project-root` is
+omitted, the CLI defaults to `process.cwd()` as the single project.
+
+Non-`serve` CLI subcommands do **not** read `config.yml` at all. The
+flag `--config <path>` exists only on `memon serve`, where it points
+the spawned web stack at a multi-project config file.
 
 ### Exit codes (stable contract for skill branch logic)
 
