@@ -149,3 +149,38 @@ Only after all 5 steps pass do I report "done". `200 OK` is necessary but not su
 ## OpenSpec workflow
 
 Changes are tracked under `openspec/changes/<name>/` with proposal.md / design.md / specs/ / tasks.md. Use the `/opsx:propose` and `/opsx:apply` slash commands. `openspec validate <name> --type change` must be clean before committing the proposal.
+
+### Keep spec in sync during `apply`
+
+After running `/opsx:apply`, if the user requests new functionality or
+modifications mid-implementation, **update the change artifacts (proposal.md
+/ design.md / specs/ / tasks.md) to reflect the new requirements before or
+alongside the code edits**. Don't just patch the code and move on — that
+leaves the spec stale and the eventual archive will silently bake the
+mismatch into the canonical `openspec/specs/`.
+
+Rule of thumb: if a change is significant enough to mention in a commit
+message, it's significant enough to land in the spec. Tick / re-open tasks
+in tasks.md as scope shifts.
+
+### Archive → commit → push
+
+When the user asks to archive a change and `/opsx:archive` (or the archive
+skill) reports success, **default to creating a git commit and pushing to
+`origin` immediately afterward** — no extra confirmation needed for the
+commit/push step itself once archive succeeded.
+
+Critical: **only stage the files that belong to this change.** Multiple
+agents may be editing the working tree concurrently in parallel sessions,
+so `git add -A` / `git add .` will sweep up unrelated work and contaminate
+the commit. Stage explicitly:
+
+- the change folder being archived (`openspec/changes/<name>/` → moved into
+  `openspec/changes/archive/`)
+- the synced canonical spec files under `openspec/specs/...`
+- the code/test/doc files this change actually touched (cross-check against
+  tasks.md and the diff, not against `git status`)
+
+If `git status` shows unrelated modified files from another session, leave
+them alone — don't stash, don't reset, don't add. Just stage the precise
+paths for this archive and commit.
