@@ -31,7 +31,7 @@ interface ResolveExpResult {
 }
 
 async function resolveExperiment(
-  ctx: { projectRoot?: string; configPath?: string; cwd: string },
+  ctx: { projectRoot?: string; cwd: string },
   experimentId: string,
 ): Promise<ResolveExpResult> {
   const r = await resolveContext(ctx)
@@ -50,7 +50,6 @@ async function resolveExperiment(
 
 export interface StatusSetInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   experimentId: string
   to: string
@@ -122,7 +121,6 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
 
 export interface ReadmeWriteInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   experimentId: string
   expectedMtime: number
@@ -202,7 +200,6 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
 
 export interface ArchiveInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   experimentId: string
 }

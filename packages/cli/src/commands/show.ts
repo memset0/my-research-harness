@@ -11,15 +11,14 @@ import { emitError, emitJson, emitHuman, type OutputFormat } from '../lib/output
 export interface ShowOptions {
   id: string
   format: OutputFormat
-  configPath?: string
+  projectRoot?: string
   cwd: string
 }
 
 export async function runShow(opts: ShowOptions): Promise<void> {
   const config = await resolveConfig({
-    configPath: opts.configPath,
+    projectRoot: opts.projectRoot,
     cwd: opts.cwd,
-    requireExplicit: false,
   })
   const idx = await buildIndex(config)
   const exp = idx.get(opts.id)

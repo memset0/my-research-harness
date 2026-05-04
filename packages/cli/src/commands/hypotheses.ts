@@ -8,7 +8,6 @@ import { emitJson } from '../lib/output.js'
 
 export interface HypothesesReadInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
 }
 

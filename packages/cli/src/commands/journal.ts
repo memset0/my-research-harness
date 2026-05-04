@@ -22,7 +22,6 @@ const VALID_TAGS_FOR_APPEND: JournalEventTag[] = [
 
 export interface JournalReadInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   format: OutputFormat
   since?: string
@@ -34,7 +33,6 @@ export interface JournalReadInput {
 export async function runJournalRead(input: JournalReadInput): Promise<void> {
   const ctx = await resolveContext({
     projectRoot: input.projectRoot,
-    configPath: input.configPath,
     cwd: input.cwd,
   })
   const root = singleProjectRoot(ctx)
@@ -74,7 +72,6 @@ export async function runJournalRead(input: JournalReadInput): Promise<void> {
 
 export interface JournalAppendInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   tag: string
   body: string
@@ -101,7 +98,6 @@ export async function runJournalAppend(input: JournalAppendInput): Promise<void>
 
   const ctx = await resolveContext({
     projectRoot: input.projectRoot,
-    configPath: input.configPath,
     cwd: input.cwd,
   })
   const root = singleProjectRoot(ctx)
@@ -119,7 +115,6 @@ export async function runJournalAppend(input: JournalAppendInput): Promise<void>
 
 export interface JournalDigestMarkInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   at: string
 }
@@ -130,7 +125,6 @@ export async function runJournalDigestMark(input: JournalDigestMarkInput): Promi
   }
   const ctx = await resolveContext({
     projectRoot: input.projectRoot,
-    configPath: input.configPath,
     cwd: input.cwd,
   })
   const root = singleProjectRoot(ctx)

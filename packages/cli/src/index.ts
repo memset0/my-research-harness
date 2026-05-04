@@ -33,25 +33,19 @@ program
   .name('memon')
   .description('experiment monitoring and management')
   .version('0.0.0')
-  .option('--config <path>', 'path to config.yml (defaults to <cwd>/config.yml)')
-  .option('--project-root <path>', 'use <path> as the only project (bypasses config.yml)')
+  .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
   .option('--format <fmt>', 'output format: json | human', 'json')
 
 interface Globals {
-  configPath?: string
   projectRoot?: string
   format: 'json' | 'human'
   cwd: string
 }
 
 function readGlobals(): Globals {
-  const opts = program.opts<{ config?: string; projectRoot?: string; format?: string }>()
+  const opts = program.opts<{ projectRoot?: string; format?: string }>()
   const format = opts.format === 'human' ? 'human' : 'json'
-  if (opts.projectRoot && opts.config) {
-    emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --config')
-  }
   return {
-    configPath: opts.config,
     projectRoot: opts.projectRoot,
     format,
     cwd: process.cwd(),
@@ -121,9 +115,10 @@ mock
 program
   .command('serve')
   .description('run the web dashboard (Next.js) on the configured port')
+  .option('--config <path>', 'path to config.yml (default: <cwd>/config.yml or <repo-root>/config.yml)')
   .option('--dev', 'run Next.js in dev mode', false)
   .option('-p, --port <port>', 'port to bind (default 3737)', '3737')
-  .action(async (opts: { dev?: boolean; port?: string }) => {
+  .action(async (opts: { config?: string; dev?: boolean; port?: string }) => {
     const g = readGlobals()
     if (g.projectRoot) {
       emitErrorAndExit(
@@ -132,7 +127,7 @@ program
       )
     }
     await runServe({
-      configPath: g.configPath,
+      configPath: opts.config,
       cwd: g.cwd,
       dev: !!opts.dev,
       port: Number(opts.port) || 3737,

@@ -229,9 +229,12 @@ tmux new-session -A -s memon-claude-<expid> claude
 ```
 
 The terminal is served by [`ttyd`](https://github.com/tsl0922/ttyd) bound to
-`127.0.0.1:7682`, reverse-proxied by Caddy at `/api/terminal/proxy/*`.
-Closing the sheet kills `ttyd` but **leaves the tmux session detached** — so
-you can pick up the same agent conversation from a real terminal:
+`127.0.0.1:7682`. memon's process owns `/api/terminal/proxy/*` directly —
+HTTP requests and the WebSocket upgrade are auth-gated and proxied to ttyd
+inside the Next.js Node entry (`apps/web/server.ts`), so deployments only
+need a single port forward and no special Caddy configuration. Closing the
+sheet kills `ttyd` but **leaves the tmux session detached** — so you can
+pick up the same agent conversation from a real terminal:
 
 ```bash
 tmux attach -t memon-claude-<expid>
@@ -248,14 +251,13 @@ tmux attach -t memon-claude-<expid>
    install step is only for hosts where ttyd is completely absent.)
    - macOS has no upstream prebuilt → fall back to `brew install ttyd`.
 3. **Caddy snippet.** See [Production deployment](#production-deployment)
-   below for the full site block — it handles both the ttyd proxy AND the
-   `forward_auth` directive that gates anonymous WebSocket upgrades.
+   below — the site block is a single `reverse_proxy localhost:3737`. memon
+   owns the auth gate (HTTP + WebSocket) and the ttyd proxy in process, so
+   no `basic_auth`, no `forward_auth`, and no extra path matchers are
+   required.
 
    In dev (`pnpm dev`, no Caddy in front), the basic-auth dialog appears
-   automatically when you open `http://localhost:3737`. memon's placeholder
-   route at `/api/terminal/proxy/*` returns 503 with the Caddy snippet if
-   the reverse proxy isn't configured — so the failure mode is loud, not a
-   silent 404.
+   automatically when you open `http://localhost:3737`.
 
 ### Self-check
 
@@ -285,10 +287,12 @@ memon's HTTP server is single-user and protected by HTTP Basic auth. There is
 **no signup flow, no /login page** — the browser's native basic-auth dialog
 collects credentials, which means the browser caches them per-origin and the
 in-page ttyd iframe inherits them automatically. Three independent gates
-protect the writable terminal: (1) ttyd binds loopback only, (2) Caddy
-`basic_auth` validates the bcrypt of the same plaintext on every request
-(including WebSocket upgrades), (3) Next.js middleware re-validates the same
-`Authorization` header against the plaintext in `config.yml`.
+protect the writable terminal: (1) ttyd binds loopback only, (2) memon's
+custom Node entry (`apps/web/server.ts`) verifies HTTP Basic on every
+`/api/terminal/proxy/*` request **and** WebSocket upgrade before forwarding
+to ttyd, (3) Next.js middleware verifies HTTP Basic on every other dashboard
+route. Caddy is only a TLS-terminating port forwarder — it does **not**
+participate in auth.
 
 ### First run
 
@@ -309,52 +313,31 @@ Persisted in /path/to/config.yml as plaintext (auth.password).
 
 To rotate later: edit `auth.password` in `config.yml` to any new value and
 restart `memon serve`. To regenerate: delete the `auth` block entirely.
+**No Caddy reload is needed for password changes** — memon owns the only
+copy of the credential.
 
 ### Caddyfile
 
 Replace your `<host>` site block with the following (substituting your real
-hostname and bcrypt hash). Caddy's native `basic_auth` directive gates every
-request **including the WebSocket upgrade to ttyd**. We deliberately do NOT
-use `forward_auth` here: that directive's WebSocket handling is broken (the
-auth probe is implemented as a reverse_proxy that consumes the Upgrade
-headers, so the subsequent ttyd reverse_proxy never sees the WS context and
-the handshake hangs — browser-side this manifests as "press enter to
-reconnect").
+hostname). Auth and the ttyd WebSocket proxy both live inside memon, so
+Caddy is just a single-port forwarder with TLS:
 
 ```caddyfile
 <host> {
-    # bcrypt of the SAME plaintext stored in config.yml's auth.password.
-    # See rotation steps below.
-    basic_auth {
-        admin <bcrypt-hash>
-    }
-
-    # SSE: disable Caddy's response buffering so /api/events and
-    # /api/log/stream* stream in real time.
-    @sse path /api/events /api/log/stream*
-    reverse_proxy @sse 127.0.0.1:3737 {
+    reverse_proxy localhost:3737 {
         flush_interval -1
     }
-
-    # Browser terminal: bypass Next.js so the WebSocket upgrade reaches ttyd
-    # directly. basic_auth above already authenticated.
-    @terminal path /api/terminal/proxy/*
-    reverse_proxy @terminal 127.0.0.1:7682 {
-        flush_interval -1
-    }
-
-    reverse_proxy 127.0.0.1:3737
 }
 ```
 
-Compute the bcrypt for the password persisted in `config.yml`:
+That's the whole site block. No `basic_auth`, no `@terminal` matcher, no
+`@sse` matcher, no `forward_auth`. The `reverse_proxy` above forwards
+ordinary HTTP, SSE (`/api/events`, `/api/log/stream*`), and the WebSocket
+upgrade for `/api/terminal/proxy/*/ws` — Caddy does not need to know which
+is which. `flush_interval -1` disables Caddy's response-body buffering so
+SSE events arrive in real time (harmless for everything else).
 
-```bash
-caddy hash-password --plaintext "$(grep -E '^\s*password:' config.yml \
-  | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)"
-```
-
-Paste the `$2a$14$...` output into the Caddyfile, then:
+Apply with the usual:
 
 ```bash
 sudo caddy validate --config /etc/caddy/Caddyfile
@@ -363,14 +346,14 @@ sudo systemctl reload caddy
 
 **To rotate the password**:
 
-1. Edit `config.yml`'s `auth.password` to the new plaintext.
-2. Re-run the `caddy hash-password` snippet to get a fresh bcrypt.
-3. Replace the hash in the Caddyfile.
-4. `systemctl reload caddy` and restart memon (it re-reads `config.yml`
-   on next start).
+1. Edit `config.yml`'s `auth.password` to any new plaintext value.
+2. Restart memon. (Caddy is not part of the rotation flow.)
 
-Two-source-of-truth (plaintext in `config.yml`, bcrypt in Caddyfile) is the
-trade-off for using HTTP Basic auth that handles WebSocket upgrades cleanly.
+> ℹ️ **Upgrading from the older Caddyfile.** If your existing site block
+> contains `basic_auth { ... }` and an `@terminal path /api/terminal/proxy/*`
+> matcher, it will keep working — memon now also gates those paths in
+> process. After confirming the upgrade, you can trim back to the
+> single-line snippet above; `caddy hash-password` is no longer needed.
 
 ### Verification
 
@@ -389,8 +372,9 @@ curl -i -X POST https://<host>/api/terminal/start \
   -d '{"experimentId":"x","projectName":"y"}'
 ```
 
-If the first request returns 200 you've forgotten the `basic_auth` block —
-fix the Caddyfile and reload before going further.
+If the first request returns 200 something is misconfigured (memon should
+return 401 anonymously). Confirm `auth.password` is set in `config.yml`
+and that `reverse_proxy localhost:3737` actually points at memon.
 
 ## Architecture
 

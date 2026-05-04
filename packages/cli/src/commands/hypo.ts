@@ -10,7 +10,7 @@ import { emitError, emitJson, emitHuman, formatHypothesisTable, type OutputForma
 export interface HypoListOptions {
   project?: string
   format: OutputFormat
-  configPath?: string
+  projectRoot?: string
   cwd: string
 }
 
@@ -61,9 +61,8 @@ interface CollectedEntry {
 
 async function collectHypotheses(opts: HypoListOptions): Promise<CollectedEntry[]> {
   const config = await resolveConfig({
-    configPath: opts.configPath,
+    projectRoot: opts.projectRoot,
     cwd: opts.cwd,
-    requireExplicit: false,
   })
   const out: CollectedEntry[] = []
   for (const project of config.projects) {

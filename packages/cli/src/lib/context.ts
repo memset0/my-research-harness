@@ -1,7 +1,7 @@
 // Resolve a CLI invocation's project context from common flag set.
 //
-// Skills always pass `--project-root .`. Existing memon users may rely on
-// `--config` or implicit cwd config.yml — those still work.
+// Skills always pass `--project-root .`. With config.yml support removed
+// from the CLI, the only other path is implicit cwd.
 
 import {
   CliContextError,
@@ -13,7 +13,6 @@ import { emitErrorAndExit } from './emit-error.js'
 
 export interface CliFlags {
   projectRoot?: string
-  configPath?: string
   cwd: string
   /** Optional `--project NAME` (only meaningful when not using --project-root). */
   project?: string
@@ -22,21 +21,20 @@ export interface CliFlags {
 export async function resolveContext(
   flags: CliFlags,
 ): Promise<LoadCliContextResult> {
-  if (flags.projectRoot && (flags.configPath || flags.project)) {
+  if (flags.projectRoot && flags.project) {
     emitErrorAndExit(
       'BAD_REQUEST',
-      '--project-root cannot be combined with --config or --project',
+      '--project-root cannot be combined with --project',
     )
   }
   try {
     return await loadCliContext({
       projectRoot: flags.projectRoot,
-      configPath: flags.configPath,
       cwd: flags.cwd,
     })
   } catch (err) {
     if (err instanceof CliContextError) {
-      emitErrorAndExit(err.code === 'CONFIG_ERROR' ? 'BAD_REQUEST' : err.code, err.message)
+      emitErrorAndExit(err.code, err.message)
     }
     throw err
   }

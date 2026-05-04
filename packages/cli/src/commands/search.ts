@@ -11,15 +11,14 @@ export interface SearchOptions {
   query: string
   scope: 'all' | 'body' | 'fm'
   format: OutputFormat
-  configPath?: string
+  projectRoot?: string
   cwd: string
 }
 
 export async function runSearch(opts: SearchOptions): Promise<void> {
   const config = await resolveConfig({
-    configPath: opts.configPath,
+    projectRoot: opts.projectRoot,
     cwd: opts.cwd,
-    requireExplicit: false,
   })
   const idx = await buildIndex(config)
   const matches = idx.search(opts.query, opts.scope)

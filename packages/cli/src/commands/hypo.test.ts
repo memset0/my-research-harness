@@ -73,7 +73,7 @@ describe('memon hypo show — strict id validation', () => {
         id: 'H3',
         format: 'json',
         cwd: root,
-        configPath: undefined,
+        projectRoot: undefined,
       })
     } catch (err) {
       if (err instanceof ExitCalled) thrown = err
@@ -91,7 +91,7 @@ describe('memon hypo show — strict id validation', () => {
       id: 'H0003',
       format: 'json',
       cwd: root,
-      configPath: undefined,
+      projectRoot: undefined,
     })
     const out = stdoutLines.join('')
     expect(out).toContain('"id": "H0003"')
@@ -105,7 +105,7 @@ describe('memon hypo show — strict id validation', () => {
         id: 'H10000',
         format: 'json',
         cwd: root,
-        configPath: undefined,
+        projectRoot: undefined,
       })
     } catch (err) {
       if (err instanceof ExitCalled) thrown = err

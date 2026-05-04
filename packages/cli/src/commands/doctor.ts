@@ -6,7 +6,6 @@ import { emitJson, type OutputFormat } from '../lib/output.js'
 
 export interface DoctorInput {
   projectRoot?: string
-  configPath?: string
   cwd: string
   format: OutputFormat
   includeArchived?: boolean

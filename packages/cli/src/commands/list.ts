@@ -7,15 +7,14 @@ import { emitJson, emitHuman, formatExperimentTable, type OutputFormat } from '.
 export interface ListOptions {
   project?: string
   format: OutputFormat
-  configPath?: string
+  projectRoot?: string
   cwd: string
 }
 
 export async function runList(opts: ListOptions): Promise<void> {
   const config = await resolveConfig({
-    configPath: opts.configPath,
+    projectRoot: opts.projectRoot,
     cwd: opts.cwd,
-    requireExplicit: false,
   })
   const idx = await buildIndex(config, { project: opts.project })
   const experiments = idx.list({ project: opts.project })
