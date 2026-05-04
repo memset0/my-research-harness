@@ -1,32 +1,55 @@
 ---
 name: memon-propose
-description: Read a memon project's hypotheses + recent experiments and propose 1-3 next experiments to run, each tied to an open hypothesis. Read-only — does not scaffold or execute. Use when the user asks "what should I run next?".
+description: Brainstorm next experiments for a memon project — diverge into 5-8 candidates grounded in HYPOTHESES + recent experiments + open JOURNAL requests, then converge to the 1-3 strongest. Read-only research collaborator; does not scaffold or execute.
 argument-hint: <optional theme, hypothesis id, or constraint to focus the proposals>
 disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # memon-propose
 
-Read-only advisor. Looks at:
+Read-only **research collaborator**. The job is not "pick the safest
+next ticket" — it's to be a useful brainstorming partner for an ML/
+systems researcher. Diverge first (lots of candidates, including
+unconventional ones), then converge to the strongest 1-3 with
+rationale + trade-offs.
 
-1. `HYPOTHESES.md` — open / partial hypotheses
-2. Recent experiments — what was tried, what failed, what's pending
-3. Recent JOURNAL events — open REQUESTs, recent NOTEs
+Looks at:
 
-Then proposes 1-3 next experiments, each with:
+1. `HYPOTHESES.md` — open / partial / refuted hypotheses (refuted ones
+   may suggest *adjacent* experiments, not just be discarded)
+2. Recent experiments — what was tried, what worked, what failed, what
+   the FAILED ones almost-but-didn't-quite show
+3. Recent JOURNAL events — open REQUESTs from the user, NOTEs flagging
+   surprising observations
+4. Recent digests / reports if any (`docs/digests/`, `docs/reports/`)
+   for the synthesized narrative the user has been building
 
-- A short name (kebab-case, < 30 chars, will become part of the run dir)
-- The hypothesis it tests (must be an existing `H<n>`)
-- Motivation — why this is the highest-value next move
-- A sketch of the script (handed off to `memon-write-script` for actual authoring)
+Then runs a **two-phase** proposal:
 
-**This skill never writes anything to disk.** The user copies the proposal
-and either runs `memon-write-script` + `memon-run-experiment` themselves or
-asks them to chain.
+- **Diverge**: 5-8 candidate experiments, each one paragraph. Don't
+  filter early — include "obvious" candidates AND a couple of weirder
+  ones (orthogonal axes, ablations, negative-result probes,
+  what-would-falsify-this-cheaply ideas). Variance in a brainstorm is
+  a feature.
+- **Converge**: 1-3 strongest proposals, each with full motivation +
+  sketch + trade-offs vs. the alternatives.
+
+**This skill never writes anything to disk.** The user reads the
+proposals and decides which (if any) to pursue.
+
+## Why brainstorm at all
+
+Single-best-pick recommendations from an LLM are usually
+boringly safe — pick the obvious next ablation, miss the experiment
+that would actually change someone's mind. Researchers benefit more
+from a *menu* of ideas to react against than from a single
+recommendation handed down with false confidence. Show them the
+losing candidates too — knowing which alternatives were considered
+and why they were dropped is signal.
 
 ## Workflow
 
@@ -38,69 +61,154 @@ SNAPSHOT=$(memon scan --project-root "$PROJECT_ROOT")
 
 The output has experiments + hypotheses + journal in one shot.
 
-### 2. Filter to open hypotheses
+If recent digests exist, also read the latest `docs/digests/D*-*.md`
+and any open `docs/reports/R*-*.md` — those are where the user (or a
+prior agent invocation) has been synthesizing across runs.
+
+### 2. Filter to live hypotheses
 
 ```sh
-echo "$SNAPSHOT" | jq '.hypotheses.entries[] | select(.status == "OPEN" or .status == "PARTIAL")'
+echo "$SNAPSHOT" \
+  | jq '.hypotheses.entries[]
+        | select(.status == "OPEN" or .status == "PARTIAL")'
 ```
 
-For each open hypothesis, check:
+For each, check:
 
-- Is anyone currently testing it? (any RUNNING experiment with this id in `frontMatter.hypotheses`)
-- What did past experiments find? (look at FINISHED ones with this id)
-- Are there obvious gaps? (e.g. PARTIAL means some evidence, but a clean test wasn't run)
+- Is anyone currently testing it? (any RUNNING experiment with this id
+  in `frontMatter.hypotheses`)
+- What did past experiments find? (look at FINISHED + FAILED with this id)
+- Are there obvious gaps? PARTIAL means some evidence; a clean test
+  wasn't run, OR the evidence has a confound we should isolate.
+
+Don't *only* look at OPEN/PARTIAL. A REFUTED hypothesis sometimes
+suggests an adjacent re-formulation worth proposing.
 
 ### 3. Filter recent journal for context
 
 ```sh
-echo "$SNAPSHOT" | jq '.journal.events[] | select(.tag == "REQUEST" or .tag == "NOTE")' | head -20
+echo "$SNAPSHOT" \
+  | jq '.journal.events[]
+        | select(.tag == "REQUEST" or .tag == "NOTE" or .tag == "ERROR")' \
+  | head -30
 ```
 
 Open REQUESTs from the human are strong signals about what to prioritize.
+NOTEs sometimes contain a "huh, that's weird" observation that's worth
+a probe-experiment.
 
-### 4. Compose proposals
+### 4. Diverge — 5-8 candidates (one paragraph each)
 
-For each proposal, output (in markdown so the user can paste into a chat):
+Cast a wide net. Mix of:
+
+- **Confirmation-style** — direct probes of OPEN / PARTIAL hypotheses
+- **Falsification-style** — what experiment would refute the leading
+  hypothesis cheapest?
+- **Adjacent / orthogonal** — same setup, change a variable nobody's
+  swept yet (model size, dtype, seed, dataset slice)
+- **Ablation** — remove one component of a working setup to see what
+  was actually load-bearing
+- **Replication / robustness** — a single data point on a key claim is
+  fragile; a cheap re-run with a different seed / GPU is often very
+  high-value
+- **Negative-result probes** — propose the experiment whose null
+  result would be informative (not just the one whose positive result
+  would be exciting)
+- **One unconventional / "what if"** — at least one idea that's a
+  stretch but scientifically motivated
+
+Output as a tight list. Don't sketch scripts yet — the goal is breadth
+of thinking, not implementation detail.
 
 ```markdown
-## Proposal 1: bf16-sweep-batch-effect
+## Brainstorm candidates
+
+1. **bs-sweep-bf16** — H3 PARTIAL had only batch=8 evidence; sweep 4/8/16
+   to either confirm or expose a batch dependence.
+2. **lr-perturbation-fp32-control** — H3 evidence might be a bf16
+   artifact; rerun the strongest run in fp32 as a control.
+3. **smaller-model-replication** — does H3 hold at 350M params? If yes,
+   it's a property of the optimization not the model — much stronger claim.
+4. **seed-spread** — `bar-260502` is a single-seed result; 3 seeds at
+   the same config will tell us if H3 is reliable or a fluke.
+5. **negative-control-no-warmup** — drop LR warmup; if the sparsity
+   pattern survives, warmup wasn't load-bearing for the H3 effect.
+6. ...
+```
+
+### 5. Converge — 1-3 strongest with rationale + trade-offs
+
+For each picked proposal, write the full case (markdown the user can
+paste). Include **why this and not the others** — that's the part
+researchers actually use.
+
+````markdown
+## Proposal 1: bs-sweep-bf16
 
 **Tests**: H3 (per-step bf16 param delta is sparse)
 
-**Motivation**: H3 is currently PARTIAL — `bar-260502-150000` showed sparsity
-at batch=8 but didn't sweep. Current evidence is "1 data point at 1
-config", which is fragile. A 3-batch sweep at fixed lr would either
-upgrade H3 to CONFIRMED or expose a batch-size dependence we missed.
+**Motivation**: H3 is currently PARTIAL — `bar-260502-150000` showed
+sparsity at bs=8 but didn't sweep. Current evidence is "1 data point at
+1 config", which is fragile. A 3-batch sweep at fixed lr will either
+upgrade H3 to CONFIRMED or expose a batch-size dependence we'd
+otherwise miss.
+
+**Why this over the brainstorm alternatives**:
+
+- Beats `lr-perturbation-fp32-control` (#2) because the bs-axis
+  variation is what the existing H3 evidence is most under-determined
+  on; we have *zero* batch-size variance, only zero dtype variance.
+- Beats `seed-spread` (#4) because seed variance is cheaper to add
+  later and a batch sweep also implicitly probes seed-dependent noise
+  per-config.
+- Risk: 3 runs at bs=16 may OOM on the dev GPU; size-down the model
+  if so or queue overnight.
 
 **Sketch**:
+
 ```bash
 # Sweep batch size 4/8/16 with bf16, log per-step Δparam histograms.
 for bs in 4 8 16; do
-  python -m measure_delta --bs "$bs" --steps 100 --dtype bf16 \
-    --out "$RUN_DIR/bs_$bs"
+  RUN_NAME="bs$bs" BS="$bs" bash scripts/erdos/run.sh
 done
 ```
 
-**Hand off to**: `memon-write-script`, then `memon-run-experiment`.
-```
+**Cost estimate**: ~3× a single bs=8 run (~6h on 1 H100).
 
-### 5. Stop
+**Hand off to**: `memon-write-script` (if `run.sh` doesn't exist), then
+`memon-run-experiment` per setting.
+````
+
+### 6. Stop
 
 Don't scaffold, don't write README, don't append to JOURNAL. The user
-chooses one (or none) and pipes it into the next skill.
+chooses one (or none) and pipes it into the next skill, or asks for a
+deeper riff on one of the brainstorm items you didn't promote.
 
 ## Heuristics
 
-- **Prefer hypotheses with status `OPEN` or `PARTIAL`** — confirmed/refuted
-  ones are settled
-- **Avoid suggesting experiments that look like already-failed ones** —
-  check the FAILED experiments' Result section
+- **Prefer hypotheses with status `OPEN` or `PARTIAL`** for the
+  *converged* proposals; brainstorm freely across all statuses.
+- **Avoid re-running already-failed setups verbatim** — check the
+  FAILED experiments' Result section. But "the failed run hinted at X
+  so let's try Y instead" is fair game.
 - **Stale RUNNING experiments are red flags**, not next steps — surface
-  them as observations, suggest the user check on them via `memon-doctor`
+  them as observations, suggest the user run `memon-digest-journal`
+  (which folds in doctor checks).
 - **Open REQUESTs in JOURNAL trump everything** — those are the human's
-  explicit asks; address one of those before suggesting net-new work
+  explicit asks; address one of those before suggesting net-new work,
+  unless brainstorming reveals something the user clearly hasn't
+  considered.
+- **Don't be afraid to propose negative results / replications** —
+  they're often the highest-EV move in research, and the LLM bias is
+  to propose flashy positives.
 
 ## Output volume
 
-1-3 proposals. If you can't justify 1 strongly-grounded proposal, say so
-and ask the user for direction instead of inventing weak ones.
+- Brainstorm: 5-8 candidates (one paragraph each).
+- Converged: 1-3 full proposals.
+
+If you can't justify even 1 strongly-grounded converged proposal, say
+so and ask the user for direction instead of inventing weak ones. The
+brainstorm list is still useful in that case — show it, label it as
+"low-confidence", and let the user pick.

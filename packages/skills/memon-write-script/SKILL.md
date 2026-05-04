@@ -32,8 +32,8 @@ There is **no single "right" file layout**. All of these are fine:
 # B. One core + several thin wrappers that set env vars
 <projectRoot>/scripts/erdos/
 ├── run.sh           # core launcher
-├── run_smoke.sh     # `EXP_NAME=smoke ... bash run.sh`
-└── run_bs8.sh       # `BS=8 ... bash run.sh`
+├── run_smoke.sh     # `RUN_NAME=smoke ... bash run.sh`
+└── run_bs8.sh       # `RUN_NAME=bs8 BS=8 ... bash run.sh`
 
 # C. One file that's both — runnable directly AND callable from a wrapper
 <projectRoot>/scripts/erdos/
@@ -53,12 +53,17 @@ correctly create `RUN_DIR` (and emit the three `[memon]` output lines —
 see Convention #5). Whether that script is a standalone, a core, a thin
 wrapper, or some hybrid is up to whatever fits the experiment.
 
-## The two variables you'll see in every script
+## The variables you'll see in every script
 
-| variable   | role                                                                                                               | when to override                                            |
-| ---------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `RUN_NAME` | short slug WITHOUT timestamp (`baseline`, `bs16`, `smoke`, `lr1e4`). Becomes the prefix of the run dir's basename. | Sweeps — set per iteration so each gets a distinct run dir. |
-| `RUN_DIR`  | absolute path to the actual run directory. **Don't pass this in normally**; the script computes it.                | **Only** for resuming into a specific existing run dir.     |
+Two **caller-tunable** vars (`RUN_NAME`, `RUN_DIR`) plus two
+**environment-derived** vars (`PROJECT_ROOT`, `LOGS_DIR`):
+
+| variable       | role                                                                                                               | when to override                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `RUN_NAME`     | short slug WITHOUT timestamp (`baseline`, `bs16`, `smoke`, `lr1e4`). Becomes the prefix of the run dir's basename. | Sweeps — set per iteration so each gets a distinct run dir. |
+| `RUN_DIR`      | absolute path to the actual run directory. **Don't pass this in normally**; the script computes it.                | **Only** for resuming into a specific existing run dir.     |
+| `PROJECT_ROOT` | absolute path to the repo root. Defaults to `git rev-parse --show-toplevel`.                                       | Rarely — when running outside a git checkout.               |
+| `LOGS_DIR`     | logs directory **relative to** `PROJECT_ROOT` (default `logs`).                                                    | Per-project — match the project's existing convention.      |
 
 Default derivation:
 
@@ -136,11 +141,53 @@ checkpoints, all output files — lives inside `RUN_DIR`.
    memon uninstalled. (The `[memon] RUN_DIR=...` echo above is just a
    string — not a memon dep.)
 
-10. **Path portability**: derive `PROJECT_ROOT` from `git rev-parse
---show-toplevel` (with a fallback) at the top — never hard-code
-    `/home/...` or `/Users/...`.
+10. **Path portability**: derive `PROJECT_ROOT` from
+    `git rev-parse --show-toplevel` (with a fallback) at the top —
+    never hard-code `/home/...` or `/Users/...`.
 
-## Workflow
+## Optional: in-script env activation
+
+The script MAY embed `conda activate <env>` (or `source
+<venv>/bin/activate`) right after `set -euo pipefail` so it doesn't
+silently inherit whatever env the calling shell happened to have
+active. This avoids the classic "ran with the wrong python" failure
+that costs hours to diagnose because everything looks fine until
+imports fail mid-run.
+
+```bash
+#!/usr/bin/env bash
+# <one-line purpose>
+set -euo pipefail
+
+# Activate the project's env so we don't inherit the caller's shell.
+# shellcheck disable=SC1091
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate erdos
+```
+
+(For `venv` / `uv`: `source .venv/bin/activate` instead.)
+
+**When to do this:**
+
+- The project has a single canonical env (look for `environment.yml`,
+  `pyproject.toml`, sibling scripts that already activate one).
+- Different sub-projects of the repo have different envs and the
+  caller often forgets which one applies.
+- The user has been bitten by env mismatches before in this project.
+
+**When to skip it:**
+
+- The caller (e.g. `memon-run-experiment`) is expected to activate the
+  env outside the script.
+- The repo has no Python env convention yet — don't invent one.
+
+**How to pick the right env name**: read sibling scripts in the same
+`scripts/<area>/` dir (or `make` targets, CI configs, README) for the
+project's existing `conda activate` / `source .venv` line. If there's
+no precedent, **ask the user**:
+
+> "我看到 scripts 目录下没有现成的环境激活规范,这个脚本要不要 inline
+> `conda activate <env>` ?如果要,环境叫什么?"
 
 1. **Identify where the script should live.** Ask if not clear; default
    `<projectRoot>/scripts/<area>/`. If a sibling `run.sh` already exists
@@ -150,11 +197,15 @@ checkpoints, all output files — lives inside `RUN_DIR`.
 2. **Identify `LOGS_DIR`** for this project (default `logs`, but check
    for an existing convention in `CLAUDE.md` or sibling scripts).
 
-3. **Decide standalone vs variant-of-existing-core**:
-   - **Standalone**: a single `run_xxx.sh` that does everything itself.
-   - **Variant**: when a core `run.sh` exists in the same dir, the new
-     variant just sets a few env vars and `bash`-execs the core. See
-     "Composability" below.
+3. **Decide layout** (matches Mental Model A / B / C above):
+   - **Standalone (A)**: a single `run_xxx.sh` that does everything itself.
+   - **Variant of an existing core (B)**: when a core `run.sh` exists in
+     the same dir, the new variant just sets env vars and `bash`-execs
+     the core. See "Composability" below.
+   - **Hybrid single-file (C)**: one `run.sh` that's both directly
+     runnable AND callable from a thin wrapper that sets env vars. Use
+     when there's only ever one runner today but you want to leave the
+     door open for sweeps without splitting the file yet.
 
 4. **Pick Style A or Style B** based on complexity:
    - **Style A (flat)** — minimal params, single command. Default.
@@ -162,7 +213,8 @@ checkpoints, all output files — lives inside `RUN_DIR`.
 
 5. **Add the one-line header**.
 
-6. **Tee the log** to `"$RUN_DIR/run.log"`.
+6. **`tee -a` the log** to `"$RUN_DIR/run.log"` (append, never truncate
+   — Convention #8 / Resume contract).
 
 ## Style A (default, standalone)
 
@@ -183,8 +235,9 @@ echo "[memon] RUN_DIR=$RUN_DIR"
 
 cd "$PROJECT_ROOT"
 python -m my_module \
-   --out "$RUN_DIR" \
-   2>&1 | tee -a "$RUN_DIR/run.log"
+    --out "$RUN_DIR" \
+    2>&1 \
+  | tee -a "$RUN_DIR/run.log"
 ```
 
 ## Composability — optional core + variants pattern
@@ -221,9 +274,9 @@ done
 ```
 
 Variants stay tiny — they only set env vars + delegate. The core owns
-the actual logic, the run-dir derivation, and the README convention.
-`RUN_DIR` should NOT be set by the wrapper — let the core compute a
-fresh one per iteration so each setting gets its own dir.
+the actual logic and the run-dir derivation. `RUN_DIR` should NOT be set
+by the wrapper — let the core compute a fresh one per iteration so each
+setting gets its own dir.
 
 **No naming convention is enforced** for variant filenames — pick what
 matches the variant's purpose (`run_smoke.sh`, `run_resume.sh`,

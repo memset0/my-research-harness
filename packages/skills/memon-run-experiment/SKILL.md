@@ -1,6 +1,6 @@
 ---
 name: memon-run-experiment
-description: Run an existing launcher script (optionally with hyperparameter env-var overrides), watch it through stable RUNNING, then finalize the run's README on terminal state. The script handles its own run dir + initial README; this skill drives the lifecycle around it and iterates through fixes when the script doesn't run cleanly.
+description: Run an existing launcher script (optionally with hyperparameter env-var overrides), watch it through stable RUNNING, then write + finalize the run's README. The script handles its own run dir; this skill writes the README and drives the lifecycle around it, iterating through fixes when the script doesn't run cleanly.
 argument-hint: <script path + optional env vars; or experiment description>
 disable-model-invocation: true
 license: MIT
@@ -26,27 +26,31 @@ equivalent (e.g. `AGENTS.md`, `docs/setup.md`).
 Drive an **already-written** launcher script from "click go" to
 "finalized README":
 
-1. Capture `code.diff` (uncommitted changes vs HEAD, filtered).
-2. Wandb pre-flight if applicable.
-3. Launch the script (sync or in `tmux`). The script handles its own
-   `RUN_DIR` derivation, run-dir creation, initial-README write, and
-   log piping — those concerns belong to the script, not this skill.
-4. Detect the run dir from the script's early output, deposit
-   `code.diff` + `code.head` into it.
-5. Wait for stable RUNNING (~60s of growing log, no immediate crash).
-6. Update the README with full Motivation / Setup / Method (still
-   `status: RUNNING`).
-7. Periodic check every ~120 min until terminal state.
-8. On `FINISHED` → final README write with Result / Conclusion + brief
+1. Pre-launch sanity check — `which python` + `python -V`, `torch.cuda.is_available()`,
+   `nvidia-smi` for free / healthy GPUs. Bail out before launch if the
+   env is wrong or every GPU is busy.
+2. Capture `code.diff` (uncommitted changes vs HEAD, filtered).
+3. Wandb pre-flight if applicable.
+4. Launch the script (sync or in `tmux`). The script handles its own
+   `RUN_DIR` derivation, run-dir creation, and log piping. It does NOT
+   write `README.md` — that's this skill's job.
+5. Detect the run dir from the script's early `[memon] ...` output and
+   deposit `code.diff` + `code.head` into it.
+6. Wait for stable RUNNING (~60s of growing log, no immediate crash).
+7. Write the README with full Motivation / Setup / Method
+   (`status: RUNNING`).
+8. Periodic check every ~120 min until terminal state.
+9. On `FINISHED` → final README write with Result / Conclusion + brief
    Chinese walkthrough in conversation.
-9. On `FAILED` → minimal README with 1-line failure note in Result.
-10. Recovery: when the script doesn't launch cleanly, **iterate inside
+10. On `FAILED` → minimal README with 1-line failure note in Result.
+11. Recovery: when the script doesn't launch cleanly, **iterate inside
     the agent's ability** — read the error log, apply fixes, re-launch
     — until it runs. Document every change in the final README's
     Method section.
 
-You are the **agent that owns the README's full content** for this run.
-The script writes only the frontmatter; sections come from this skill.
+You are the **agent that owns the README** for this run. The script
+doesn't write README at all — frontmatter and all body sections come
+from this skill.
 
 ## Inputs the user can give you
 
@@ -69,7 +73,51 @@ The script writes only the frontmatter; sections come from this skill.
 
 ## Workflow
 
-### 1. Pre-launch — capture `code.diff` + wandb pre-flight
+### 1. Pre-launch — env + GPU sanity check, then capture `code.diff` + wandb pre-flight
+
+**a. Env / GPU sanity check.** Before launching, verify the environment
+the script is about to run in. Cheap, ~2 seconds, catches the most
+common "ran the wrong python / no free GPU" failure modes:
+
+```sh
+# 1) Which python? Right env active?
+which python && python -V
+# If the script `conda activate`s, this still helps you catch mismatches
+# in the OUTER shell vs what the script will activate.
+python -c 'import torch, sys; print("torch", torch.__version__,
+  "cuda", torch.version.cuda, "available", torch.cuda.is_available(),
+  "ndev", torch.cuda.device_count())' 2>/dev/null || \
+  echo "WARN: torch import failed in current env (script's `conda activate` may fix this)"
+
+# 2) GPUs healthy and free?
+nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu \
+           --format=csv,noheader
+```
+
+What to look for:
+
+- `python -V` matches what the script expects (3.10 vs 3.11, etc.).
+- `torch.cuda.is_available()` is `True`. If `False` and the script is
+  GPU-bound → stop, surface to the user.
+- All requested GPUs idle (memory.used ≈ 0, utilization ≈ 0). If
+  another process is hogging them → stop, ask the user before clobbering.
+- Driver / CUDA pair sane (no "driver too old" warning from `nvidia-smi`).
+
+If the script handles its own env via `conda activate <env>`, this
+outer check is informational — the in-script activation is what
+ultimately decides. But mismatches between the outer shell and the
+script's expected env are still worth flagging in conversation.
+
+If the user passed `CUDA_VISIBLE_DEVICES=...`, scope the
+`nvidia-smi` check to those device indices.
+
+Bail out (don't launch) if:
+- `nvidia-smi` itself fails (driver missing).
+- A GPU you intend to use is already at >5% memory in use by another
+  process — surface in conversation, ask the user.
+- `python` can't be found at all and the script doesn't `conda activate`.
+
+**b. Capture `code.diff` + `code.head`.**
 
 ```sh
 TMP_DIFF=$(mktemp)
@@ -93,8 +141,8 @@ git diff HEAD -- \
     > "$TMP_DIFF" 2>/dev/null || true
 ```
 
-**Wandb pre-flight**: if the script imports `wandb` (grep the script and
-any sibling `.py` it sources), the run is **wandb-tracked** and must
+**c. Wandb pre-flight.** If the script imports `wandb` (grep the script
+and any sibling `.py` it sources), the run is **wandb-tracked** and must
 succeed online:
 
 1. Confirm `WANDB_API_KEY` (or `~/.netrc`) is configured. If absent →
@@ -128,11 +176,13 @@ tmux new-session -d -s "$SESSION" "ENV_VARS bash <script>"
 Two cases to distinguish before launching:
 
 - **Fresh run** (the default): just run the script. It computes a new
-  `RUN_DIR` with a fresh timestamp, creates it, and writes a new
-  `run.log` + `README.md`.
+  `RUN_DIR` with a fresh timestamp, creates the dir, and starts piping
+  to a new `run.log`. README will be written by this skill in §6.
 - **Resume** (the user pointed at a specific existing run dir, OR a
   previous run crashed and we want to continue rather than start over):
-  pre-set `RUN_DIR` so the script reuses that dir.
+  pre-set `RUN_DIR` so the script reuses that dir. The script's
+  `tee -a` appends to the existing `run.log`; an existing `README.md`
+  from the prior run is preserved and updated by this skill in §6.
 
 ```sh
 RUN_DIR=<projectRoot>/<LOGS_DIR>/<RUN_NAME>-<TIMESTAMP> ENV_VARS bash <script>
@@ -148,7 +198,7 @@ itself only honors `RUN_DIR`):
 2. **Read the existing `README.md`** for context — its `MTIME`, current
    `status`, anything in `## Result` / `## Caveats` from the prior run.
    Carry `MTIME` forward; you'll need it to update the README without
-   triggering a CONFLICT in §4.
+   triggering a CONFLICT in §6.
 3. **Confirm with the user** that resume is the right call (vs. a fresh
    run). If the prior run failed because of a config bug you've now
    fixed, a fresh run dir is usually cleaner — resume is for runs that
@@ -201,30 +251,59 @@ ask the user to update the script (handoff to `memon-write-script`) or
 to identify the run dir manually. Don't try to recover by grepping
 filesystem — the contract is "the script tells you where it ran".
 
-### 4. Drop in code snapshots + write (or update) the README
+### 4. Drop in code snapshots
 
-The script only `mkdir`s `$RUN_DIR` — it does NOT write `README.md`.
-That's this skill's job. Move the snapshots in, then write the README
-with full Motivation / Setup / Method (status: RUNNING).
+The script only `mkdir`s `$RUN_DIR` and tees `run.log`. It does NOT
+write `README.md` — that's this skill's job, and it happens AFTER the
+stable check (§6), not now. For now, just deposit the code snapshots:
 
-**Fresh launch**: README doesn't exist yet. Use `--expected-mtime 0`
-(the CLI treats `0` as a sentinel for "first write to a missing
-README"). Code snapshots go in as plain `code.diff` + `code.head`.
+**Fresh launch**: snapshots go in as plain `code.diff` + `code.head`.
 
-**Resume**: README probably already exists from the prior run. Read its
-current `mtime` and content first; merge your new Motivation/Setup/Method
-context with whatever's already there (or just re-set status to RUNNING
-if the prior README is fine), then write back with that mtime as
-`--expected-mtime`. Code snapshots go in as `code.diff.<resume-iso>` +
+**Resume**: snapshots go in as `code.diff.<resume-iso>` +
 `code.head.<resume-iso>` so prior snapshots are preserved.
 
 ```sh
 mv "$TMP_DIFF" "$RUN_DIR/code.diff"        # or code.diff.<resume-ts> on resume
 mv "$TMP_HEAD" "$RUN_DIR/code.head"        # or code.head.<resume-ts> on resume
+```
 
+### 5. Wait for stable RUNNING
+
+`tail` the log briefly; the script must be growing it without an
+immediate crash:
+
+```sh
+RUN_LOG="$RUN_DIR/run.log"
+sleep 60
+LINES=$(wc -l < "$RUN_LOG" 2>/dev/null || echo 0)
+[ "$LINES" -lt 5 ] && echo "WARN: run.log only $LINES lines after 60s; possible silent stall"
+```
+
+If the script returned non-zero in sync mode (or the tmux session
+already exited), skip to §9 (Failed path) — and do NOT write a RUNNING
+README; the failure path writes a FAILED README directly.
+
+### 6. Write the README (status: RUNNING)
+
+Only after §5 confirms the run is alive. This ordering is deliberate:
+writing a RUNNING README before the script proves it can survive the
+first 60 seconds means orphan READMEs claiming to be RUNNING for
+processes that already died.
+
+**Fresh launch**: README doesn't exist yet. Use `--expected-mtime 0`
+(the CLI treats `0` as a sentinel for "first write to a missing
+README").
+
+**Resume**: README probably already exists from the prior run. Read its
+current `mtime` and content first (`memon show $EXP_ID --format json`),
+merge your new Motivation / Setup / Method context with whatever's
+already there (or just re-set status to RUNNING if the prior README is
+fine), then write back with that mtime as `--expected-mtime`.
+
+```sh
 EXP_ID=$(basename "$RUN_DIR")
 # Fresh: --expected-mtime 0
-# Resume: --expected-mtime "$EXISTING_MTIME"  (read via `memon show $EXP_ID --format json`)
+# Resume: --expected-mtime "$EXISTING_MTIME"
 cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . --expected-mtime "$MTIME"
 ---
 id: $EXP_ID
@@ -271,22 +350,7 @@ EOF
 Capture the new `mtime` from the response — that's `$MTIME` for any
 subsequent README write (terminal-state finalization, etc.).
 
-### 5. Wait for stable RUNNING
-
-`tail` the log briefly; the script must be growing it without an
-immediate crash:
-
-```sh
-RUN_LOG="$RUN_DIR/run.log"
-sleep 60
-LINES=$(wc -l < "$RUN_LOG" 2>/dev/null || echo 0)
-[ "$LINES" -lt 5 ] && echo "WARN: run.log only $LINES lines after 60s; possible silent stall"
-```
-
-If the script returned non-zero in sync mode (or the tmux session
-already exited), skip to §9 (Failed path).
-
-### 6. Periodic check (every ~120 min)
+### 7. Periodic check (every ~120 min)
 
 Once stably RUNNING, the agent's job isn't done — long jobs need
 check-ins until terminal.
@@ -303,7 +367,7 @@ ScheduleWakeup(
 )
 ```
 
-Each inspection (use shell commands liberally — see §7 below for
+Each inspection (use shell commands liberally — see §8 below for
 log-reading idioms):
 
 1. `tail -n 50 "$RUN_LOG"` and skim for new errors / slowdowns.
@@ -314,20 +378,20 @@ log-reading idioms):
    GPU-bound) signals trouble:
    - **Early stage** (before the first training step completes) —
      strongly consider killing and restarting via the recovery loop in
-     §10. Most early-stage low-GPU is dataloader hangs, OOM-then-CPU
+     §11. Most early-stage low-GPU is dataloader hangs, OOM-then-CPU
      fallback, or wrong device placement.
    - **Mid-run** — drop a NOTE flagging it; surface to the user. Don't
      auto-kill; some workloads are legitimately bursty.
 4. If healthy and unchanged → no noise; skip the NOTE unless there's
    something the user would want to see.
-5. If crashed / stalled → §9.
-6. If FINISHED → §8.
+5. If crashed / stalled → §10.
+6. If FINISHED → §9.
 
 When NOT invoked via `/loop`, you can't self-pace. Tell the user:
 "the run is RUNNING; ping me again or invoke `/loop /memon-run-experiment <id>`
 if you want me to check in every ~2h automatically."
 
-### 7. Reading `run.log` — useful shell idioms
+### 8. Reading `run.log` — useful shell idioms
 
 Don't just dump the entire log. Use targeted reads:
 
@@ -355,12 +419,12 @@ When a run crashes, the right diagnostic call is usually:
 `tail -n 200 "$RUN_LOG" | grep -B2 -A20 -i 'traceback\|error'`
 to pull the failure context with surrounding lines.
 
-### 8. Terminal — success path (FINISHED)
+### 9. Terminal — success path (FINISHED)
 
 Read fresh `MTIME`. Write the final README updating `status: FINISHED`
-and filling Result + Conclusion. Same write pattern as §4.
+and filling Result + Conclusion. Same write pattern as §6.
 
-If the recovery loop (§10) was triggered, the `## Method` section MUST
+If the recovery loop (§11) was triggered, the `## Method` section MUST
 include a `**Got it running by**:` paragraph listing every change that
 made the script work. Don't gloss it as "fixed some bugs"; list each
 meaningful change. If a change has implications for how the result
@@ -379,17 +443,21 @@ the user gets the gist without re-reading it. Cover:
 
 Brief — 3-6 lines is plenty.
 
-### 9. Terminal — failure path (FAILED)
+### 10. Terminal — failure path (FAILED)
 
-If `EXIT != 0` (or §6 inspection saw a crash):
+If `EXIT != 0` (or §7 inspection saw a crash):
 
 ```sh
 memon experiment status set "$EXP_ID" --project-root . --to FAILED \
   --expected-mtime "$MTIME"
+# Capture the new mtime returned by `status set` for the README write below.
+MTIME=$(memon show "$EXP_ID" --project-root . --format json | jq -r .mtime)
 ```
 
-Capture the new mtime, then write a minimal README. Use the shell
-idioms in §7 to extract a one-line failure reason from `run.log`:
+If we have a README from §6, this `status set` write is enough on its
+own — the README content already names the run; we only need to flip
+the status. If you also want to record the failure reason inline, write
+the README with the same fresh `$MTIME`:
 
 ```sh
 REASON=$(tail -n 50 "$RUN_LOG" | grep -iE 'error|exception|traceback' | tail -1)
@@ -397,7 +465,7 @@ REASON=$(tail -n 50 "$RUN_LOG" | grep -iE 'error|exception|traceback' | tail -1)
 
 ```sh
 cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . \
-  --expected-mtime "$NEW_MTIME"
+  --expected-mtime "$MTIME"
 ---
 ... (preserved frontmatter, status: FAILED, finished_at: now)
 ---
@@ -413,13 +481,13 @@ EOF
 runs in the web UI and archives them there at their own pace. Your job
 is to mark FAILED + leave a one-line reason; not to clean up the list.
 
-### 10. Recovery loop — make it run
+### 11. Recovery loop — make it run
 
 When the script fails early (OOM, missing dep, traceback in the first
 30s, etc.), don't give up. **Read the error log and try the obvious
 fixes within your ability**:
 
-1. Use the §7 idioms to extract the failure reason from `run.log`.
+1. Use the §8 idioms to extract the failure reason from `run.log`.
 2. Diagnose:
    - OOM → reduce `BS`, gradient accumulation steps, fp16/bf16, etc.
    - Missing dep → check `pip list`, propose install (ask user before
@@ -433,12 +501,12 @@ fixes within your ability**:
 4. **Re-invoke the script.** A new timestamp = a fresh run dir
    automatically. Loop back to §1 (capture fresh `code.diff` including
    your fix).
-5. Mark the previous attempt's status as `FAILED` via §9's flow (with
+5. Mark the previous attempt's status as `FAILED` via §10's flow (with
    a one-line reason). Don't archive — user does that on the web.
 6. Repeat until you have a stably-RUNNING (or successfully FINISHED) run.
 
 **Keep a running mental log of every change** across these iterations —
-it's required input for §8's `**Got it running by**:` paragraph.
+it's required input for §9's `**Got it running by**:` paragraph.
 
 If a fix attempt is **outside your ability** (algorithmic bug,
 multi-day environment change, GPU not available, …), stop iterating
