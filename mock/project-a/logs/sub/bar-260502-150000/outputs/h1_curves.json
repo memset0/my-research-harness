@@ -1,0 +1,21 @@
+{
+  "schema": "h1-curves/v1",
+  "experiment": "bar-260502-150000",
+  "input": "foo-260501-100000",
+  "threshold": 0.072,
+  "buckets": [
+    { "sigma_lo": 0.002, "sigma_hi": 0.05, "v_pred_step_to_thresh": 3120, "eps_pred_step_to_thresh": 5240, "speedup_pct": 40.5 },
+    { "sigma_lo": 0.05,  "sigma_hi": 0.5,  "v_pred_step_to_thresh": 3380, "eps_pred_step_to_thresh": 5180, "speedup_pct": 34.7 },
+    { "sigma_lo": 0.5,   "sigma_hi": 1.0,  "v_pred_step_to_thresh": 3650, "eps_pred_step_to_thresh": 4310, "speedup_pct": 15.3 },
+    { "sigma_lo": 1.0,   "sigma_hi": 5.0,  "v_pred_step_to_thresh": 3870, "eps_pred_step_to_thresh": 4520, "speedup_pct": 14.4 },
+    { "sigma_lo": 5.0,   "sigma_hi": 10.0, "v_pred_step_to_thresh": 4120, "eps_pred_step_to_thresh": 4180, "speedup_pct": 1.4 },
+    { "sigma_lo": 10.0,  "sigma_hi": 20.0, "v_pred_step_to_thresh": 4250, "eps_pred_step_to_thresh": 4290, "speedup_pct": 0.9 },
+    { "sigma_lo": 20.0,  "sigma_hi": 80.0, "v_pred_step_to_thresh": 4310, "eps_pred_step_to_thresh": 4280, "speedup_pct": -0.7 }
+  ],
+  "global": {
+    "v_pred_step_to_thresh": 3500,
+    "eps_pred_step_to_thresh": 5100,
+    "speedup_pct": 31.4,
+    "verdict": "H1 CONFIRMED"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schema": "sampler-cmp/v1",
+  "experiment": "dpmpp-cmp-260502-130000",
+  "model": "stable-diffusion-1.5",
+  "ref_dataset": "coco-2017-val (5000 captions)",
+  "cfg": 7.5,
+  "configs": [
+    { "sampler": "ddim",            "steps": 20, "fid_mean": 13.91, "fid_std": 0.09, "wall_per_image_s": 0.58 },
+    { "sampler": "ddim",            "steps": 50, "fid_mean": 12.49, "fid_std": 0.08, "wall_per_image_s": 1.41 },
+    { "sampler": "dpmpp_2m_karras", "steps": 20, "fid_mean": 12.61, "fid_std": 0.06, "wall_per_image_s": 0.61 },
+    { "sampler": "dpmpp_2m_karras", "steps": 50, "fid_mean": 12.45, "fid_std": 0.05, "wall_per_image_s": 1.45 }
+  ],
+  "verdict": "DPM++ 2M Karras-20 nearly matches DDIM-50 (gap=0.12, within 2σ); ~2.4x faster",
+  "recommendation": "switch default to dpmpp_2m_karras-20"
+}

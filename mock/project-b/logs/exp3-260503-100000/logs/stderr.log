@@ -1,0 +1,25 @@
+[SIGSEGV in worker pid=14987 at minute 3 of 5]
+Fatal Python error: Segmentation fault
+
+Thread 0x00007f8e4c8b9700 (most recent call first):
+  File "/opt/conda/lib/python3.11/site-packages/diffusers/models/vae.py", line 234 in decode
+  File "/opt/conda/lib/python3.11/site-packages/diffusers/pipelines/sd/pipeline.py", line 612 in __call__
+  File "/opt/imgflow/bench/profile_runner.py", line 88 in profile_one
+  File "/opt/imgflow/bench/profile_runner.py", line 134 in main
+  File "/opt/imgflow/bench/profile_runner.py", line 168 in <module>
+
+Stack (most recent call first):
+  vae_decode_fused_groupnorm_kernel<__half> + 0x1a4
+  triton::decode_kernel_launcher + 0x88
+  diffusers::vae::DecoderImpl::decode + 0x312
+  pybind11::cpp_function::dispatcher + 0x1c4
+  /opt/conda/bin/python(_PyEval_EvalFrameDefault+0x71fa) [0x55b3c5d1a51a]
+
+NSight reports:
+  fault address: 0x7f8d1234abcd  (inside kernel scratch buffer for layer vae.decoder.up_blocks.3)
+  cause: out-of-bounds shared-memory access; nsight's pointer-alignment checks mutated the launch
+         configuration in a way that exposed a latent UB in the fused groupnorm path.
+
+Hint: rerun without nsight wrapper to confirm CFG=7.5 baseline still works
+      (REQUEST queued in JOURNAL.md). If baseline reproduces, switch to
+      torch.profiler with sampling_interval >= 5ms.

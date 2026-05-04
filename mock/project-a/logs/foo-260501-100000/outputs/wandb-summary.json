@@ -1,0 +1,41 @@
+{
+  "run_id": "foo-260501-100000",
+  "project": "imgflow",
+  "config": {
+    "model": "DiT-B/2",
+    "resolution": 256,
+    "batch_size": 128,
+    "lr": 2e-4,
+    "optimizer": "adamw",
+    "weight_decay": 0.0,
+    "ema_decay": 0.9999,
+    "parameterization": "v",
+    "noise_schedule": "edm_zero_snr",
+    "text_encoder": "openai/clip-vit-large-patch14",
+    "text_encoder_frozen": true,
+    "max_steps": 200000,
+    "eval_every": 5000,
+    "seed": 42,
+    "dtype": "bf16",
+    "grad_clip": 1.0
+  },
+  "system": {
+    "host": "gpu-node-07",
+    "world_size": 4,
+    "gpu_model": "NVIDIA A100-SXM4-80GB",
+    "torch_version": "2.4.1+cu121",
+    "cuda_version": "12.1",
+    "python_version": "3.11.9"
+  },
+  "summary": {
+    "step": 5200,
+    "train_loss": 0.0827,
+    "val_loss": 0.0921,
+    "throughput_img_s": 3100,
+    "wall_time_s": 10398,
+    "ema_warmed_up": false,
+    "_runtime": "live"
+  },
+  "tags": ["diffusion", "v-pred", "zero-snr", "dump"],
+  "hypotheses": ["H1", "H3"]
+}

@@ -1,0 +1,12 @@
+{
+  "schema": "brightness-bias/v1",
+  "experiment": "zero-snr-260502-110000",
+  "ref_dataset": "coco-2017-val (100 prompts)",
+  "metric": "abs(mean_luminance(generated) - mean_luminance(ground_truth))",
+  "rows": [
+    { "cfg": 4.5, "zero_snr_bias": 0.009, "baseline_bias": 0.061, "improvement": 0.052 },
+    { "cfg": 7.5, "zero_snr_bias": 0.011, "baseline_bias": 0.087, "improvement": 0.076 },
+    { "cfg": 10,  "zero_snr_bias": 0.018, "baseline_bias": 0.114, "improvement": 0.096 }
+  ],
+  "verdict": "brightness fix is large (7-9x reduction across all CFG scales)"
+}

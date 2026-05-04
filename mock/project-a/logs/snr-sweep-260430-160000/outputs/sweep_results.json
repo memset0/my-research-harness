@@ -1,0 +1,17 @@
+{
+  "schema": "snr-sweep-results/v1",
+  "experiment": "snr-sweep-260430-160000",
+  "model": "DiT-S/2",
+  "steps_per_run": 30000,
+  "samples_for_fid": 2000,
+  "ref": "coco-2017-val",
+  "rows": [
+    { "gamma": 1,  "val_loss_30k": 0.083, "fid": 9.41, "hf_band_ratio": 0.187 },
+    { "gamma": 3,  "val_loss_30k": 0.080, "fid": 9.22, "hf_band_ratio": 0.155 },
+    { "gamma": 5,  "val_loss_30k": 0.079, "fid": 9.18, "hf_band_ratio": 0.144 },
+    { "gamma": 7,  "val_loss_30k": 0.080, "fid": 9.21, "hf_band_ratio": 0.149 },
+    { "gamma": 10, "val_loss_30k": 0.083, "fid": 9.36, "hf_band_ratio": 0.161 }
+  ],
+  "best": { "gamma": 5, "fid": 9.18, "hf_band_ratio": 0.144 },
+  "notes": "monotone within [1,5], reverses past 7"
+}

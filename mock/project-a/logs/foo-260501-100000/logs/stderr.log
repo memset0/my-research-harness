@@ -1,0 +1,11 @@
+[2026-05-01T10:00:01 WARN ] torch.amp.GradScaler: detected fp16 but bf16 dtype configured; promoting to bf16 scaler (no-op)
+[2026-05-01T10:00:01 WARN ] xformers not available, falling back to torch sdp; install xformers for ~8% speedup
+[2026-05-01T10:00:02 WARN ] EMA decay 0.9999 with bs=128 will take ~10000 steps to warm up
+[2026-05-01T10:00:08 WARN ] torch.utils.data: num_workers=0, this will block the GPU on data loading
+[2026-05-01T10:00:08 WARN ] auto-tuning num_workers to 8
+[2026-05-01T10:01:14 WARN ] flash_attn 2.5.x detected: head_dim=64 path is suboptimal, consider head_dim=80
+[2026-05-01T10:14:32 WARN ] sample images at step 1000 contain NaN-pixel ratio 0.0008%, clipping to [0,1]
+[2026-05-01T11:02:18 WARN ] sample images at step 2500 contain NaN-pixel ratio 0.0003%, clipping to [0,1]
+[2026-05-01T11:51:03 WARN ] sample images at step 4000 contain NaN-pixel ratio 0.0001%, clipping to [0,1]
+[2026-05-01T12:20:55 WARN ] long-tail batch detected at step 4500 (max seq=237, avg=128), padding cost ~12% extra FLOPs
+[2026-05-01T12:53:20 INFO ] checkpointing at step 5200 -> ./checkpoints/step-5200/

@@ -1,0 +1,47 @@
+{
+  "schema": "fid-history/v1",
+  "experiment": "baz-260503-080000",
+  "samples_per_eval": 10000,
+  "ref_dataset": "imagenet-1k-train-256",
+  "runs": [
+    {
+      "name": "edm_baseline",
+      "history": [
+        { "step": 20000,  "fid": 9.42 },
+        { "step": 40000,  "fid": 9.18 },
+        { "step": 60000,  "fid": 9.02 },
+        { "step": 80000,  "fid": 8.95 },
+        { "step": 100000, "fid": 8.91 },
+        { "step": 120000, "fid": 8.93 }
+      ],
+      "best_fid": 8.91,
+      "best_step": 100000,
+      "wall_time_s": 28800,
+      "status": "FINISHED"
+    },
+    {
+      "name": "edm2_variant",
+      "history": [
+        { "step": 20000, "fid": 9.20 },
+        { "step": 40000, "fid": 8.96 },
+        { "step": 60000, "fid": 8.81 },
+        { "step": 80000, "fid": 8.74 }
+      ],
+      "best_fid": 8.74,
+      "best_step": 80000,
+      "wall_time_s": 19500,
+      "status": "FAILED",
+      "failure": {
+        "step": 84000,
+        "type": "NaN",
+        "where": "block_18.cross_attn.out",
+        "see": "logs/stderr.log"
+      }
+    }
+  ],
+  "comparison": {
+    "relative_fid_gain_pct": 1.9,
+    "predicted_threshold_pct": 5.0,
+    "verdict": "H4 REFUTED"
+  }
+}

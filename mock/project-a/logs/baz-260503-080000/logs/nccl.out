@@ -1,0 +1,45 @@
+# NCCL bootstrap log (ANSI color escapes for level/source)
+[2026-05-03T08:04:30] [32m[NCCL INFO][0m Bootstrap : Using eth0:10.0.4.7<0>
+[2026-05-03T08:04:31] [32m[NCCL INFO][0m NET/Plugin : Loaded net plugin NCCL RDMA Plugin v8 (v8.0.0)
+[2026-05-03T08:04:31] [36m[NCCL DBG ][0m comm 0x55a8c0001000 rank 0 nranks 4 cudaDev 0
+[2026-05-03T08:04:31] [36m[NCCL DBG ][0m comm 0x55a8c0001000 rank 1 nranks 4 cudaDev 1
+[2026-05-03T08:04:31] [36m[NCCL DBG ][0m comm 0x55a8c0001000 rank 2 nranks 4 cudaDev 2
+[2026-05-03T08:04:31] [36m[NCCL DBG ][0m comm 0x55a8c0001000 rank 3 nranks 4 cudaDev 3
+[2026-05-03T08:04:32] [32m[NCCL INFO][0m [1mUsing network IB[0m (HCA mlx5_0:1, port 1)
+[2026-05-03T08:04:32] [32m[NCCL INFO][0m Channel 00/02 : 0 1 2 3
+[2026-05-03T08:04:32] [32m[NCCL INFO][0m Channel 01/02 : 0 2 1 3
+[2026-05-03T08:04:33] [33m[NCCL WARN][0m [1mP2P performance[0m between rank 0 and rank 2 may be degraded (PCIe traversal)
+[2026-05-03T08:04:33] [32m[NCCL INFO][0m ring 0 : 0 -> 1 -> 2 -> 3 -> 0 (NVL)
+[2026-05-03T08:04:33] [32m[NCCL INFO][0m ring 1 : 0 -> 2 -> 1 -> 3 -> 0 (PCIe x16)
+[2026-05-03T08:04:35] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.62ms (eff 39.2GB/s)
+[2026-05-03T08:04:36] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.73ms (eff 40.2GB/s)
+[2026-05-03T08:04:37] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.81ms (eff 40.8GB/s)
+[2026-05-03T08:04:38] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.87ms (eff 41.0GB/s)
+[2026-05-03T08:04:39] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.90ms (eff 40.7GB/s)
+[2026-05-03T08:04:40] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.89ms (eff 40.0GB/s)
+[2026-05-03T08:04:41] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.85ms (eff 39.0GB/s)
+[2026-05-03T08:04:42] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.77ms (eff 37.8GB/s)
+[2026-05-03T08:04:43] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.67ms (eff 36.7GB/s)
+[2026-05-03T08:04:44] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.56ms (eff 35.7GB/s)
+[2026-05-03T08:04:45] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.44ms (eff 35.1GB/s)
+[2026-05-03T08:04:46] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.32ms (eff 35.0GB/s)
+[2026-05-03T08:04:47] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.22ms (eff 35.3GB/s)
+[2026-05-03T08:04:48] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.15ms (eff 36.1GB/s)
+[2026-05-03T08:04:49] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.11ms (eff 37.2GB/s)
+[2026-05-03T08:04:50] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.10ms (eff 38.3GB/s)
+[2026-05-03T08:04:51] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.13ms (eff 39.5GB/s)
+[2026-05-03T08:04:52] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.19ms (eff 40.4GB/s)
+[2026-05-03T08:04:53] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.28ms (eff 40.9GB/s)
+[2026-05-03T08:04:54] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.39ms (eff 41.0GB/s)
+[2026-05-03T08:04:55] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.51ms (eff 40.6GB/s)
+[2026-05-03T08:04:56] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.62ms (eff 39.8GB/s)
+[2026-05-03T08:04:57] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.73ms (eff 38.7GB/s)
+[2026-05-03T08:04:58] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.82ms (eff 37.5GB/s)
+[2026-05-03T08:04:59] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.88ms (eff 36.4GB/s)
+[2026-05-03T08:05:00] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.90ms (eff 35.5GB/s)
+[2026-05-03T08:05:01] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.89ms (eff 35.1GB/s)
+[2026-05-03T08:05:02] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.84ms (eff 35.1GB/s)
+[2026-05-03T08:05:03] [2m[NCCL DBG ][0m ring 1 AllReduce sz=256MB took 6.77ms (eff 35.5GB/s)
+[2026-05-03T08:05:04] [2m[NCCL DBG ][0m ring 0 AllReduce sz=256MB took 6.66ms (eff 36.4GB/s)
+[2026-05-03T08:05:05] [31m[1m[NCCL ERR ][0m collective on rank 1 hit [31mNCCL_ERR_INTERNAL_ERROR[0m — see [35mstderr.log[0m for traceback
+[2026-05-03T08:05:06] [31m[NCCL ERR ][0m aborting comm 0x55a8c0001000

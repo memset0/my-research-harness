@@ -1,0 +1,18 @@
+[NaN at step 84000 in cross_attn.out (edm2 branch)] Traceback (most recent call last):
+  File "train.py", line 412, in <module>
+    main(cfg)
+  File "train.py", line 268, in main
+    trainer.fit(model, datamodule)
+  File "/opt/imgflow/trainer/loop.py", line 134, in fit
+    loss = self._step(batch, step_idx)
+  File "/opt/imgflow/trainer/loop.py", line 187, in _step
+    out = self.model(x_noisy, t, cond=cond)
+  File "/opt/imgflow/dit/dit.py", line 221, in forward
+    h = block(h, t_emb, cond_emb)
+  File "/opt/imgflow/dit/blocks.py", line 96, in forward
+    h = h + self.cross_attn(self.norm2(h), cond_kv)
+  File "/opt/imgflow/dit/attn.py", line 154, in forward
+    out = scaled_dot_product_attention(q, k, v, scale=self.scale)
+RuntimeError: NaN encountered in attention output (32 of 32768 entries are NaN).
+  context: layer=block_18.cross_attn step=84000
+  hint: try reducing grad_clip below 1.0 or rerunning with --skip-nan-step

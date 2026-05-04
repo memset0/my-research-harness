@@ -1,0 +1,13 @@
+[2026-05-03T11:00:00 INFO] smoke test: SD-1.5, DDIM-50, CFG=7.5, 100 prompts
+[2026-05-03T11:02:50 INFO] prompt 10/100 wall=1.452s
+[2026-05-03T11:05:40 INFO] prompt 20/100 wall=1.455s
+[2026-05-03T11:08:30 INFO] prompt 30/100 wall=1.417s
+[2026-05-03T11:11:20 INFO] prompt 40/100 wall=1.372s
+[2026-05-03T11:14:10 INFO] prompt 50/100 wall=1.362s
+[2026-05-03T11:17:00 INFO] prompt 60/100 wall=1.396s
+[2026-05-03T11:19:50 INFO] prompt 70/100 wall=1.443s
+[2026-05-03T11:22:40 INFO] prompt 80/100 wall=1.459s
+[2026-05-03T11:25:30 INFO] prompt 90/100 wall=1.431s
+[2026-05-03T11:28:20 INFO] prompt 100/100 wall=1.383s
+[2026-05-03T11:29:10 INFO] smoke complete: mean wall=1.41s, p99=1.62s — within historical envelope
+[2026-05-03T11:29:11 INFO] bench-01 health: OK

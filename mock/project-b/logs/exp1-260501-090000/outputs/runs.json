@@ -1,0 +1,41 @@
+{
+  "schema": "ddim-vs-ddpm-runs/v1",
+  "experiment": "exp1-260501-090000",
+  "model": "stable-diffusion-1.5",
+  "ref_dataset": "coco-2017-val (5000 captions)",
+  "cfg": 7.5,
+  "samplers": [
+    {
+      "name": "ddim",
+      "steps": 50,
+      "reruns": [
+        { "seed": 42, "fid": 12.41, "wall_s": 350.2 },
+        { "seed": 43, "fid": 12.49, "wall_s": 349.8 },
+        { "seed": 44, "fid": 12.55, "wall_s": 350.5 },
+        { "seed": 45, "fid": 12.43, "wall_s": 350.1 },
+        { "seed": 46, "fid": 12.52, "wall_s": 349.9 },
+        { "seed": 47, "fid": 12.46, "wall_s": 350.3 },
+        { "seed": 48, "fid": 12.51, "wall_s": 350.0 },
+        { "seed": 49, "fid": 12.39, "wall_s": 349.7 },
+        { "seed": 50, "fid": 12.53, "wall_s": 350.4 },
+        { "seed": 51, "fid": 12.48, "wall_s": 350.2 }
+      ],
+      "fid_mean": 12.477,
+      "fid_std": 0.052,
+      "wall_per_image_s": 1.40
+    },
+    {
+      "name": "ddpm",
+      "steps": 1000,
+      "reruns": [
+        { "seed": 42, "fid": 12.49, "wall_s": 7790 },
+        { "seed": 43, "fid": 12.56, "wall_s": 7795 },
+        { "seed": 44, "fid": 12.48, "wall_s": 7788 }
+      ],
+      "fid_mean": 12.510,
+      "fid_std": 0.043,
+      "wall_per_image_s": 27.95
+    }
+  ],
+  "verdict": "H1 CONFIRMED — DDIM-50 and DDPM-1000 within 0.04 FID; speedup ~20x"
+}

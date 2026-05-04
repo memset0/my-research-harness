@@ -1,0 +1,311 @@
+[2026-05-02T11:05:00 INFO] starting eval: foo @ 4500 (zero-SNR) vs snr-sweep g=5 @ 30000 (baseline)
+[2026-05-02T11:05:01 INFO] CFG sweep: [4.5, 7.5, 10] x 2 ckpts x 500 prompts x 4 samples = 12000 images
+[2026-05-02T11:05:35 INFO] cfg=4.5 prompt=1 sampling 4 images per ckpt
+[2026-05-02T11:06:10 INFO] cfg=4.5 prompt=2 sampling 4 images per ckpt
+[2026-05-02T11:06:45 INFO] cfg=4.5 prompt=3 sampling 4 images per ckpt
+[2026-05-02T11:07:20 INFO] cfg=4.5 prompt=4 sampling 4 images per ckpt
+[2026-05-02T11:07:55 INFO] cfg=4.5 prompt=5 sampling 4 images per ckpt
+[2026-05-02T11:08:30 INFO] cfg=4.5 prompt=6 sampling 4 images per ckpt
+[2026-05-02T11:09:05 INFO] cfg=4.5 prompt=7 sampling 4 images per ckpt
+[2026-05-02T11:09:40 INFO] cfg=4.5 prompt=8 sampling 4 images per ckpt
+[2026-05-02T11:10:15 INFO] cfg=4.5 prompt=9 sampling 4 images per ckpt
+[2026-05-02T11:10:50 EVAL] cfg=4.5 prompt=10 brightness_zero_snr=0.0174 brightness_baseline=0.1042 delta=0.0868
+[2026-05-02T11:11:25 INFO] cfg=4.5 prompt=11 sampling 4 images per ckpt
+[2026-05-02T11:12:00 INFO] cfg=4.5 prompt=12 sampling 4 images per ckpt
+[2026-05-02T11:12:35 INFO] cfg=4.5 prompt=13 sampling 4 images per ckpt
+[2026-05-02T11:13:10 INFO] cfg=4.5 prompt=14 sampling 4 images per ckpt
+[2026-05-02T11:13:45 INFO] cfg=4.5 prompt=15 sampling 4 images per ckpt
+[2026-05-02T11:14:20 INFO] cfg=4.5 prompt=16 sampling 4 images per ckpt
+[2026-05-02T11:14:55 INFO] cfg=4.5 prompt=17 sampling 4 images per ckpt
+[2026-05-02T11:15:30 INFO] cfg=4.5 prompt=18 sampling 4 images per ckpt
+[2026-05-02T11:16:05 INFO] cfg=4.5 prompt=19 sampling 4 images per ckpt
+[2026-05-02T11:16:40 EVAL] cfg=4.5 prompt=20 brightness_zero_snr=0.0176 brightness_baseline=0.1069 delta=0.0892
+[2026-05-02T11:17:15 INFO] cfg=4.5 prompt=21 sampling 4 images per ckpt
+[2026-05-02T11:17:50 INFO] cfg=4.5 prompt=22 sampling 4 images per ckpt
+[2026-05-02T11:18:25 INFO] cfg=4.5 prompt=23 sampling 4 images per ckpt
+[2026-05-02T11:19:00 INFO] cfg=4.5 prompt=24 sampling 4 images per ckpt
+[2026-05-02T11:19:35 INFO] cfg=4.5 prompt=25 sampling 4 images per ckpt
+[2026-05-02T11:20:10 INFO] cfg=4.5 prompt=26 sampling 4 images per ckpt
+[2026-05-02T11:20:45 INFO] cfg=4.5 prompt=27 sampling 4 images per ckpt
+[2026-05-02T11:21:20 INFO] cfg=4.5 prompt=28 sampling 4 images per ckpt
+[2026-05-02T11:21:55 INFO] cfg=4.5 prompt=29 sampling 4 images per ckpt
+[2026-05-02T11:22:30 EVAL] cfg=4.5 prompt=30 brightness_zero_snr=0.0146 brightness_baseline=0.1059 delta=0.0913
+[2026-05-02T11:23:05 INFO] cfg=4.5 prompt=31 sampling 4 images per ckpt
+[2026-05-02T11:23:40 INFO] cfg=4.5 prompt=32 sampling 4 images per ckpt
+[2026-05-02T11:24:15 INFO] cfg=4.5 prompt=33 sampling 4 images per ckpt
+[2026-05-02T11:24:50 INFO] cfg=4.5 prompt=34 sampling 4 images per ckpt
+[2026-05-02T11:25:25 INFO] cfg=4.5 prompt=35 sampling 4 images per ckpt
+[2026-05-02T11:26:00 INFO] cfg=4.5 prompt=36 sampling 4 images per ckpt
+[2026-05-02T11:26:35 INFO] cfg=4.5 prompt=37 sampling 4 images per ckpt
+[2026-05-02T11:27:10 INFO] cfg=4.5 prompt=38 sampling 4 images per ckpt
+[2026-05-02T11:27:45 INFO] cfg=4.5 prompt=39 sampling 4 images per ckpt
+[2026-05-02T11:28:20 EVAL] cfg=4.5 prompt=40 brightness_zero_snr=0.0110 brightness_baseline=0.1017 delta=0.0907
+[2026-05-02T11:28:55 INFO] cfg=4.5 prompt=41 sampling 4 images per ckpt
+[2026-05-02T11:29:30 INFO] cfg=4.5 prompt=42 sampling 4 images per ckpt
+[2026-05-02T11:30:05 INFO] cfg=4.5 prompt=43 sampling 4 images per ckpt
+[2026-05-02T11:30:40 INFO] cfg=4.5 prompt=44 sampling 4 images per ckpt
+[2026-05-02T11:31:15 INFO] cfg=4.5 prompt=45 sampling 4 images per ckpt
+[2026-05-02T11:31:50 INFO] cfg=4.5 prompt=46 sampling 4 images per ckpt
+[2026-05-02T11:32:25 INFO] cfg=4.5 prompt=47 sampling 4 images per ckpt
+[2026-05-02T11:33:00 INFO] cfg=4.5 prompt=48 sampling 4 images per ckpt
+[2026-05-02T11:33:35 INFO] cfg=4.5 prompt=49 sampling 4 images per ckpt
+[2026-05-02T11:34:10 EVAL] cfg=4.5 prompt=50 brightness_zero_snr=0.0102 brightness_baseline=0.0962 delta=0.0860
+[2026-05-02T11:34:45 INFO] cfg=4.5 prompt=51 sampling 4 images per ckpt
+[2026-05-02T11:35:20 INFO] cfg=4.5 prompt=52 sampling 4 images per ckpt
+[2026-05-02T11:35:55 INFO] cfg=4.5 prompt=53 sampling 4 images per ckpt
+[2026-05-02T11:36:30 INFO] cfg=4.5 prompt=54 sampling 4 images per ckpt
+[2026-05-02T11:37:05 INFO] cfg=4.5 prompt=55 sampling 4 images per ckpt
+[2026-05-02T11:37:40 INFO] cfg=4.5 prompt=56 sampling 4 images per ckpt
+[2026-05-02T11:38:15 INFO] cfg=4.5 prompt=57 sampling 4 images per ckpt
+[2026-05-02T11:38:50 INFO] cfg=4.5 prompt=58 sampling 4 images per ckpt
+[2026-05-02T11:39:25 INFO] cfg=4.5 prompt=59 sampling 4 images per ckpt
+[2026-05-02T11:40:00 EVAL] cfg=4.5 prompt=60 brightness_zero_snr=0.0129 brightness_baseline=0.0920 delta=0.0791
+[2026-05-02T11:40:35 INFO] cfg=4.5 prompt=61 sampling 4 images per ckpt
+[2026-05-02T11:41:10 INFO] cfg=4.5 prompt=62 sampling 4 images per ckpt
+[2026-05-02T11:41:45 INFO] cfg=4.5 prompt=63 sampling 4 images per ckpt
+[2026-05-02T11:42:20 INFO] cfg=4.5 prompt=64 sampling 4 images per ckpt
+[2026-05-02T11:42:55 INFO] cfg=4.5 prompt=65 sampling 4 images per ckpt
+[2026-05-02T11:43:30 INFO] cfg=4.5 prompt=66 sampling 4 images per ckpt
+[2026-05-02T11:44:05 INFO] cfg=4.5 prompt=67 sampling 4 images per ckpt
+[2026-05-02T11:44:40 INFO] cfg=4.5 prompt=68 sampling 4 images per ckpt
+[2026-05-02T11:45:15 INFO] cfg=4.5 prompt=69 sampling 4 images per ckpt
+[2026-05-02T11:45:50 EVAL] cfg=4.5 prompt=70 brightness_zero_snr=0.0166 brightness_baseline=0.0911 delta=0.0745
+[2026-05-02T11:46:25 INFO] cfg=4.5 prompt=71 sampling 4 images per ckpt
+[2026-05-02T11:47:00 INFO] cfg=4.5 prompt=72 sampling 4 images per ckpt
+[2026-05-02T11:47:35 INFO] cfg=4.5 prompt=73 sampling 4 images per ckpt
+[2026-05-02T11:48:10 INFO] cfg=4.5 prompt=74 sampling 4 images per ckpt
+[2026-05-02T11:48:45 INFO] cfg=4.5 prompt=75 sampling 4 images per ckpt
+[2026-05-02T11:49:20 INFO] cfg=4.5 prompt=76 sampling 4 images per ckpt
+[2026-05-02T11:49:55 INFO] cfg=4.5 prompt=77 sampling 4 images per ckpt
+[2026-05-02T11:50:30 INFO] cfg=4.5 prompt=78 sampling 4 images per ckpt
+[2026-05-02T11:51:05 INFO] cfg=4.5 prompt=79 sampling 4 images per ckpt
+[2026-05-02T11:51:40 EVAL] cfg=4.5 prompt=80 brightness_zero_snr=0.0180 brightness_baseline=0.0939 delta=0.0760
+[2026-05-02T11:52:15 INFO] cfg=4.5 prompt=81 sampling 4 images per ckpt
+[2026-05-02T11:52:50 INFO] cfg=4.5 prompt=82 sampling 4 images per ckpt
+[2026-05-02T11:53:25 INFO] cfg=4.5 prompt=83 sampling 4 images per ckpt
+[2026-05-02T11:54:00 INFO] cfg=4.5 prompt=84 sampling 4 images per ckpt
+[2026-05-02T11:54:35 INFO] cfg=4.5 prompt=85 sampling 4 images per ckpt
+[2026-05-02T11:55:10 INFO] cfg=4.5 prompt=86 sampling 4 images per ckpt
+[2026-05-02T11:55:45 INFO] cfg=4.5 prompt=87 sampling 4 images per ckpt
+[2026-05-02T11:56:20 INFO] cfg=4.5 prompt=88 sampling 4 images per ckpt
+[2026-05-02T11:56:55 INFO] cfg=4.5 prompt=89 sampling 4 images per ckpt
+[2026-05-02T11:57:30 EVAL] cfg=4.5 prompt=90 brightness_zero_snr=0.0156 brightness_baseline=0.0991 delta=0.0835
+[2026-05-02T11:58:05 INFO] cfg=4.5 prompt=91 sampling 4 images per ckpt
+[2026-05-02T11:58:40 INFO] cfg=4.5 prompt=92 sampling 4 images per ckpt
+[2026-05-02T11:59:15 INFO] cfg=4.5 prompt=93 sampling 4 images per ckpt
+[2026-05-02T11:59:50 INFO] cfg=4.5 prompt=94 sampling 4 images per ckpt
+[2026-05-02T12:00:25 INFO] cfg=4.5 prompt=95 sampling 4 images per ckpt
+[2026-05-02T12:01:00 INFO] cfg=4.5 prompt=96 sampling 4 images per ckpt
+[2026-05-02T12:01:35 INFO] cfg=4.5 prompt=97 sampling 4 images per ckpt
+[2026-05-02T12:02:10 INFO] cfg=4.5 prompt=98 sampling 4 images per ckpt
+[2026-05-02T12:02:45 INFO] cfg=4.5 prompt=99 sampling 4 images per ckpt
+[2026-05-02T12:03:20 EVAL] cfg=4.5 prompt=100 brightness_zero_snr=0.0118 brightness_baseline=0.1043 delta=0.0924
+[2026-05-02T12:03:19 INFO] cfg=4.5 done
+[2026-05-02T12:03:55 INFO] cfg=7.5 prompt=1 sampling 4 images per ckpt
+[2026-05-02T12:04:30 INFO] cfg=7.5 prompt=2 sampling 4 images per ckpt
+[2026-05-02T12:05:05 INFO] cfg=7.5 prompt=3 sampling 4 images per ckpt
+[2026-05-02T12:05:40 INFO] cfg=7.5 prompt=4 sampling 4 images per ckpt
+[2026-05-02T12:06:15 INFO] cfg=7.5 prompt=5 sampling 4 images per ckpt
+[2026-05-02T12:06:50 INFO] cfg=7.5 prompt=6 sampling 4 images per ckpt
+[2026-05-02T12:07:25 INFO] cfg=7.5 prompt=7 sampling 4 images per ckpt
+[2026-05-02T12:08:00 INFO] cfg=7.5 prompt=8 sampling 4 images per ckpt
+[2026-05-02T12:08:35 INFO] cfg=7.5 prompt=9 sampling 4 images per ckpt
+[2026-05-02T12:09:10 EVAL] cfg=7.5 prompt=10 brightness_zero_snr=0.0160 brightness_baseline=0.1013 delta=0.0853
+[2026-05-02T12:09:45 INFO] cfg=7.5 prompt=11 sampling 4 images per ckpt
+[2026-05-02T12:10:20 INFO] cfg=7.5 prompt=12 sampling 4 images per ckpt
+[2026-05-02T12:10:55 INFO] cfg=7.5 prompt=13 sampling 4 images per ckpt
+[2026-05-02T12:11:30 INFO] cfg=7.5 prompt=14 sampling 4 images per ckpt
+[2026-05-02T12:12:05 INFO] cfg=7.5 prompt=15 sampling 4 images per ckpt
+[2026-05-02T12:12:40 INFO] cfg=7.5 prompt=16 sampling 4 images per ckpt
+[2026-05-02T12:13:15 INFO] cfg=7.5 prompt=17 sampling 4 images per ckpt
+[2026-05-02T12:13:50 INFO] cfg=7.5 prompt=18 sampling 4 images per ckpt
+[2026-05-02T12:14:25 INFO] cfg=7.5 prompt=19 sampling 4 images per ckpt
+[2026-05-02T12:15:00 EVAL] cfg=7.5 prompt=20 brightness_zero_snr=0.0163 brightness_baseline=0.1041 delta=0.0878
+[2026-05-02T12:15:35 INFO] cfg=7.5 prompt=21 sampling 4 images per ckpt
+[2026-05-02T12:16:10 INFO] cfg=7.5 prompt=22 sampling 4 images per ckpt
+[2026-05-02T12:16:45 INFO] cfg=7.5 prompt=23 sampling 4 images per ckpt
+[2026-05-02T12:17:20 INFO] cfg=7.5 prompt=24 sampling 4 images per ckpt
+[2026-05-02T12:17:55 INFO] cfg=7.5 prompt=25 sampling 4 images per ckpt
+[2026-05-02T12:18:30 INFO] cfg=7.5 prompt=26 sampling 4 images per ckpt
+[2026-05-02T12:19:05 INFO] cfg=7.5 prompt=27 sampling 4 images per ckpt
+[2026-05-02T12:19:40 INFO] cfg=7.5 prompt=28 sampling 4 images per ckpt
+[2026-05-02T12:20:15 INFO] cfg=7.5 prompt=29 sampling 4 images per ckpt
+[2026-05-02T12:20:50 EVAL] cfg=7.5 prompt=30 brightness_zero_snr=0.0132 brightness_baseline=0.1031 delta=0.0899
+[2026-05-02T12:21:25 INFO] cfg=7.5 prompt=31 sampling 4 images per ckpt
+[2026-05-02T12:22:00 INFO] cfg=7.5 prompt=32 sampling 4 images per ckpt
+[2026-05-02T12:22:35 INFO] cfg=7.5 prompt=33 sampling 4 images per ckpt
+[2026-05-02T12:23:10 INFO] cfg=7.5 prompt=34 sampling 4 images per ckpt
+[2026-05-02T12:23:45 INFO] cfg=7.5 prompt=35 sampling 4 images per ckpt
+[2026-05-02T12:24:20 INFO] cfg=7.5 prompt=36 sampling 4 images per ckpt
+[2026-05-02T12:24:55 INFO] cfg=7.5 prompt=37 sampling 4 images per ckpt
+[2026-05-02T12:25:30 INFO] cfg=7.5 prompt=38 sampling 4 images per ckpt
+[2026-05-02T12:26:05 INFO] cfg=7.5 prompt=39 sampling 4 images per ckpt
+[2026-05-02T12:26:40 EVAL] cfg=7.5 prompt=40 brightness_zero_snr=0.0096 brightness_baseline=0.0989 delta=0.0893
+[2026-05-02T12:27:15 INFO] cfg=7.5 prompt=41 sampling 4 images per ckpt
+[2026-05-02T12:27:50 INFO] cfg=7.5 prompt=42 sampling 4 images per ckpt
+[2026-05-02T12:28:25 INFO] cfg=7.5 prompt=43 sampling 4 images per ckpt
+[2026-05-02T12:29:00 INFO] cfg=7.5 prompt=44 sampling 4 images per ckpt
+[2026-05-02T12:29:35 INFO] cfg=7.5 prompt=45 sampling 4 images per ckpt
+[2026-05-02T12:30:10 INFO] cfg=7.5 prompt=46 sampling 4 images per ckpt
+[2026-05-02T12:30:45 INFO] cfg=7.5 prompt=47 sampling 4 images per ckpt
+[2026-05-02T12:31:20 INFO] cfg=7.5 prompt=48 sampling 4 images per ckpt
+[2026-05-02T12:31:55 INFO] cfg=7.5 prompt=49 sampling 4 images per ckpt
+[2026-05-02T12:32:30 EVAL] cfg=7.5 prompt=50 brightness_zero_snr=0.0088 brightness_baseline=0.0934 delta=0.0846
+[2026-05-02T12:33:05 INFO] cfg=7.5 prompt=51 sampling 4 images per ckpt
+[2026-05-02T12:33:40 INFO] cfg=7.5 prompt=52 sampling 4 images per ckpt
+[2026-05-02T12:34:15 INFO] cfg=7.5 prompt=53 sampling 4 images per ckpt
+[2026-05-02T12:34:50 INFO] cfg=7.5 prompt=54 sampling 4 images per ckpt
+[2026-05-02T12:35:25 INFO] cfg=7.5 prompt=55 sampling 4 images per ckpt
+[2026-05-02T12:36:00 INFO] cfg=7.5 prompt=56 sampling 4 images per ckpt
+[2026-05-02T12:36:35 INFO] cfg=7.5 prompt=57 sampling 4 images per ckpt
+[2026-05-02T12:37:10 INFO] cfg=7.5 prompt=58 sampling 4 images per ckpt
+[2026-05-02T12:37:45 INFO] cfg=7.5 prompt=59 sampling 4 images per ckpt
+[2026-05-02T12:38:20 EVAL] cfg=7.5 prompt=60 brightness_zero_snr=0.0115 brightness_baseline=0.0892 delta=0.0777
+[2026-05-02T12:38:55 INFO] cfg=7.5 prompt=61 sampling 4 images per ckpt
+[2026-05-02T12:39:30 INFO] cfg=7.5 prompt=62 sampling 4 images per ckpt
+[2026-05-02T12:40:05 INFO] cfg=7.5 prompt=63 sampling 4 images per ckpt
+[2026-05-02T12:40:40 INFO] cfg=7.5 prompt=64 sampling 4 images per ckpt
+[2026-05-02T12:41:15 INFO] cfg=7.5 prompt=65 sampling 4 images per ckpt
+[2026-05-02T12:41:50 INFO] cfg=7.5 prompt=66 sampling 4 images per ckpt
+[2026-05-02T12:42:25 INFO] cfg=7.5 prompt=67 sampling 4 images per ckpt
+[2026-05-02T12:43:00 INFO] cfg=7.5 prompt=68 sampling 4 images per ckpt
+[2026-05-02T12:43:35 INFO] cfg=7.5 prompt=69 sampling 4 images per ckpt
+[2026-05-02T12:44:10 EVAL] cfg=7.5 prompt=70 brightness_zero_snr=0.0152 brightness_baseline=0.0883 delta=0.0731
+[2026-05-02T12:44:45 INFO] cfg=7.5 prompt=71 sampling 4 images per ckpt
+[2026-05-02T12:45:20 INFO] cfg=7.5 prompt=72 sampling 4 images per ckpt
+[2026-05-02T12:45:55 INFO] cfg=7.5 prompt=73 sampling 4 images per ckpt
+[2026-05-02T12:46:30 INFO] cfg=7.5 prompt=74 sampling 4 images per ckpt
+[2026-05-02T12:47:05 INFO] cfg=7.5 prompt=75 sampling 4 images per ckpt
+[2026-05-02T12:47:40 INFO] cfg=7.5 prompt=76 sampling 4 images per ckpt
+[2026-05-02T12:48:15 INFO] cfg=7.5 prompt=77 sampling 4 images per ckpt
+[2026-05-02T12:48:50 INFO] cfg=7.5 prompt=78 sampling 4 images per ckpt
+[2026-05-02T12:49:25 INFO] cfg=7.5 prompt=79 sampling 4 images per ckpt
+[2026-05-02T12:50:00 EVAL] cfg=7.5 prompt=80 brightness_zero_snr=0.0166 brightness_baseline=0.0911 delta=0.0745
+[2026-05-02T12:50:35 INFO] cfg=7.5 prompt=81 sampling 4 images per ckpt
+[2026-05-02T12:51:10 INFO] cfg=7.5 prompt=82 sampling 4 images per ckpt
+[2026-05-02T12:51:45 INFO] cfg=7.5 prompt=83 sampling 4 images per ckpt
+[2026-05-02T12:52:20 INFO] cfg=7.5 prompt=84 sampling 4 images per ckpt
+[2026-05-02T12:52:55 INFO] cfg=7.5 prompt=85 sampling 4 images per ckpt
+[2026-05-02T12:53:30 INFO] cfg=7.5 prompt=86 sampling 4 images per ckpt
+[2026-05-02T12:54:05 INFO] cfg=7.5 prompt=87 sampling 4 images per ckpt
+[2026-05-02T12:54:40 INFO] cfg=7.5 prompt=88 sampling 4 images per ckpt
+[2026-05-02T12:55:15 INFO] cfg=7.5 prompt=89 sampling 4 images per ckpt
+[2026-05-02T12:55:50 EVAL] cfg=7.5 prompt=90 brightness_zero_snr=0.0143 brightness_baseline=0.0963 delta=0.0820
+[2026-05-02T12:56:25 INFO] cfg=7.5 prompt=91 sampling 4 images per ckpt
+[2026-05-02T12:57:00 INFO] cfg=7.5 prompt=92 sampling 4 images per ckpt
+[2026-05-02T12:57:35 INFO] cfg=7.5 prompt=93 sampling 4 images per ckpt
+[2026-05-02T12:58:10 INFO] cfg=7.5 prompt=94 sampling 4 images per ckpt
+[2026-05-02T12:58:45 INFO] cfg=7.5 prompt=95 sampling 4 images per ckpt
+[2026-05-02T12:59:20 INFO] cfg=7.5 prompt=96 sampling 4 images per ckpt
+[2026-05-02T12:59:55 INFO] cfg=7.5 prompt=97 sampling 4 images per ckpt
+[2026-05-02T13:00:30 INFO] cfg=7.5 prompt=98 sampling 4 images per ckpt
+[2026-05-02T13:01:05 INFO] cfg=7.5 prompt=99 sampling 4 images per ckpt
+[2026-05-02T13:01:40 EVAL] cfg=7.5 prompt=100 brightness_zero_snr=0.0104 brightness_baseline=0.1014 delta=0.0910
+[2026-05-02T13:01:39 INFO] cfg=7.5 done
+[2026-05-02T13:02:15 INFO] cfg=10.0 prompt=1 sampling 4 images per ckpt
+[2026-05-02T13:02:50 INFO] cfg=10.0 prompt=2 sampling 4 images per ckpt
+[2026-05-02T13:03:25 INFO] cfg=10.0 prompt=3 sampling 4 images per ckpt
+[2026-05-02T13:04:00 INFO] cfg=10.0 prompt=4 sampling 4 images per ckpt
+[2026-05-02T13:04:35 INFO] cfg=10.0 prompt=5 sampling 4 images per ckpt
+[2026-05-02T13:05:10 INFO] cfg=10.0 prompt=6 sampling 4 images per ckpt
+[2026-05-02T13:05:45 INFO] cfg=10.0 prompt=7 sampling 4 images per ckpt
+[2026-05-02T13:06:20 INFO] cfg=10.0 prompt=8 sampling 4 images per ckpt
+[2026-05-02T13:06:55 INFO] cfg=10.0 prompt=9 sampling 4 images per ckpt
+[2026-05-02T13:07:30 EVAL] cfg=10.0 prompt=10 brightness_zero_snr=0.0131 brightness_baseline=0.0942 delta=0.0811
+[2026-05-02T13:08:05 INFO] cfg=10.0 prompt=11 sampling 4 images per ckpt
+[2026-05-02T13:08:40 INFO] cfg=10.0 prompt=12 sampling 4 images per ckpt
+[2026-05-02T13:09:15 INFO] cfg=10.0 prompt=13 sampling 4 images per ckpt
+[2026-05-02T13:09:50 INFO] cfg=10.0 prompt=14 sampling 4 images per ckpt
+[2026-05-02T13:10:25 INFO] cfg=10.0 prompt=15 sampling 4 images per ckpt
+[2026-05-02T13:11:00 INFO] cfg=10.0 prompt=16 sampling 4 images per ckpt
+[2026-05-02T13:11:35 INFO] cfg=10.0 prompt=17 sampling 4 images per ckpt
+[2026-05-02T13:12:10 INFO] cfg=10.0 prompt=18 sampling 4 images per ckpt
+[2026-05-02T13:12:45 INFO] cfg=10.0 prompt=19 sampling 4 images per ckpt
+[2026-05-02T13:13:20 EVAL] cfg=10.0 prompt=20 brightness_zero_snr=0.0134 brightness_baseline=0.0969 delta=0.0835
+[2026-05-02T13:13:55 INFO] cfg=10.0 prompt=21 sampling 4 images per ckpt
+[2026-05-02T13:14:30 INFO] cfg=10.0 prompt=22 sampling 4 images per ckpt
+[2026-05-02T13:15:05 INFO] cfg=10.0 prompt=23 sampling 4 images per ckpt
+[2026-05-02T13:15:40 INFO] cfg=10.0 prompt=24 sampling 4 images per ckpt
+[2026-05-02T13:16:15 INFO] cfg=10.0 prompt=25 sampling 4 images per ckpt
+[2026-05-02T13:16:50 INFO] cfg=10.0 prompt=26 sampling 4 images per ckpt
+[2026-05-02T13:17:25 INFO] cfg=10.0 prompt=27 sampling 4 images per ckpt
+[2026-05-02T13:18:00 INFO] cfg=10.0 prompt=28 sampling 4 images per ckpt
+[2026-05-02T13:18:35 INFO] cfg=10.0 prompt=29 sampling 4 images per ckpt
+[2026-05-02T13:19:10 EVAL] cfg=10.0 prompt=30 brightness_zero_snr=0.0103 brightness_baseline=0.0959 delta=0.0856
+[2026-05-02T13:19:45 INFO] cfg=10.0 prompt=31 sampling 4 images per ckpt
+[2026-05-02T13:20:20 INFO] cfg=10.0 prompt=32 sampling 4 images per ckpt
+[2026-05-02T13:20:55 INFO] cfg=10.0 prompt=33 sampling 4 images per ckpt
+[2026-05-02T13:21:30 INFO] cfg=10.0 prompt=34 sampling 4 images per ckpt
+[2026-05-02T13:22:05 INFO] cfg=10.0 prompt=35 sampling 4 images per ckpt
+[2026-05-02T13:22:40 INFO] cfg=10.0 prompt=36 sampling 4 images per ckpt
+[2026-05-02T13:23:15 INFO] cfg=10.0 prompt=37 sampling 4 images per ckpt
+[2026-05-02T13:23:50 INFO] cfg=10.0 prompt=38 sampling 4 images per ckpt
+[2026-05-02T13:24:25 INFO] cfg=10.0 prompt=39 sampling 4 images per ckpt
+[2026-05-02T13:25:00 EVAL] cfg=10.0 prompt=40 brightness_zero_snr=0.0067 brightness_baseline=0.0917 delta=0.0850
+[2026-05-02T13:25:35 INFO] cfg=10.0 prompt=41 sampling 4 images per ckpt
+[2026-05-02T13:26:10 INFO] cfg=10.0 prompt=42 sampling 4 images per ckpt
+[2026-05-02T13:26:45 INFO] cfg=10.0 prompt=43 sampling 4 images per ckpt
+[2026-05-02T13:27:20 INFO] cfg=10.0 prompt=44 sampling 4 images per ckpt
+[2026-05-02T13:27:55 INFO] cfg=10.0 prompt=45 sampling 4 images per ckpt
+[2026-05-02T13:28:30 INFO] cfg=10.0 prompt=46 sampling 4 images per ckpt
+[2026-05-02T13:29:05 INFO] cfg=10.0 prompt=47 sampling 4 images per ckpt
+[2026-05-02T13:29:40 INFO] cfg=10.0 prompt=48 sampling 4 images per ckpt
+[2026-05-02T13:30:15 INFO] cfg=10.0 prompt=49 sampling 4 images per ckpt
+[2026-05-02T13:30:50 EVAL] cfg=10.0 prompt=50 brightness_zero_snr=0.0059 brightness_baseline=0.0862 delta=0.0803
+[2026-05-02T13:31:25 INFO] cfg=10.0 prompt=51 sampling 4 images per ckpt
+[2026-05-02T13:32:00 INFO] cfg=10.0 prompt=52 sampling 4 images per ckpt
+[2026-05-02T13:32:35 INFO] cfg=10.0 prompt=53 sampling 4 images per ckpt
+[2026-05-02T13:33:10 INFO] cfg=10.0 prompt=54 sampling 4 images per ckpt
+[2026-05-02T13:33:45 INFO] cfg=10.0 prompt=55 sampling 4 images per ckpt
+[2026-05-02T13:34:20 INFO] cfg=10.0 prompt=56 sampling 4 images per ckpt
+[2026-05-02T13:34:55 INFO] cfg=10.0 prompt=57 sampling 4 images per ckpt
+[2026-05-02T13:35:30 INFO] cfg=10.0 prompt=58 sampling 4 images per ckpt
+[2026-05-02T13:36:05 INFO] cfg=10.0 prompt=59 sampling 4 images per ckpt
+[2026-05-02T13:36:40 EVAL] cfg=10.0 prompt=60 brightness_zero_snr=0.0086 brightness_baseline=0.0821 delta=0.0734
+[2026-05-02T13:37:15 INFO] cfg=10.0 prompt=61 sampling 4 images per ckpt
+[2026-05-02T13:37:50 INFO] cfg=10.0 prompt=62 sampling 4 images per ckpt
+[2026-05-02T13:38:25 INFO] cfg=10.0 prompt=63 sampling 4 images per ckpt
+[2026-05-02T13:39:00 INFO] cfg=10.0 prompt=64 sampling 4 images per ckpt
+[2026-05-02T13:39:35 INFO] cfg=10.0 prompt=65 sampling 4 images per ckpt
+[2026-05-02T13:40:10 INFO] cfg=10.0 prompt=66 sampling 4 images per ckpt
+[2026-05-02T13:40:45 INFO] cfg=10.0 prompt=67 sampling 4 images per ckpt
+[2026-05-02T13:41:20 INFO] cfg=10.0 prompt=68 sampling 4 images per ckpt
+[2026-05-02T13:41:55 INFO] cfg=10.0 prompt=69 sampling 4 images per ckpt
+[2026-05-02T13:42:30 EVAL] cfg=10.0 prompt=70 brightness_zero_snr=0.0124 brightness_baseline=0.0812 delta=0.0688
+[2026-05-02T13:43:05 INFO] cfg=10.0 prompt=71 sampling 4 images per ckpt
+[2026-05-02T13:43:40 INFO] cfg=10.0 prompt=72 sampling 4 images per ckpt
+[2026-05-02T13:44:15 INFO] cfg=10.0 prompt=73 sampling 4 images per ckpt
+[2026-05-02T13:44:50 INFO] cfg=10.0 prompt=74 sampling 4 images per ckpt
+[2026-05-02T13:45:25 INFO] cfg=10.0 prompt=75 sampling 4 images per ckpt
+[2026-05-02T13:46:00 INFO] cfg=10.0 prompt=76 sampling 4 images per ckpt
+[2026-05-02T13:46:35 INFO] cfg=10.0 prompt=77 sampling 4 images per ckpt
+[2026-05-02T13:47:10 INFO] cfg=10.0 prompt=78 sampling 4 images per ckpt
+[2026-05-02T13:47:45 INFO] cfg=10.0 prompt=79 sampling 4 images per ckpt
+[2026-05-02T13:48:20 EVAL] cfg=10.0 prompt=80 brightness_zero_snr=0.0137 brightness_baseline=0.0840 delta=0.0703
+[2026-05-02T13:48:55 INFO] cfg=10.0 prompt=81 sampling 4 images per ckpt
+[2026-05-02T13:49:30 INFO] cfg=10.0 prompt=82 sampling 4 images per ckpt
+[2026-05-02T13:50:05 INFO] cfg=10.0 prompt=83 sampling 4 images per ckpt
+[2026-05-02T13:50:40 INFO] cfg=10.0 prompt=84 sampling 4 images per ckpt
+[2026-05-02T13:51:15 INFO] cfg=10.0 prompt=85 sampling 4 images per ckpt
+[2026-05-02T13:51:50 INFO] cfg=10.0 prompt=86 sampling 4 images per ckpt
+[2026-05-02T13:52:25 INFO] cfg=10.0 prompt=87 sampling 4 images per ckpt
+[2026-05-02T13:53:00 INFO] cfg=10.0 prompt=88 sampling 4 images per ckpt
+[2026-05-02T13:53:35 INFO] cfg=10.0 prompt=89 sampling 4 images per ckpt
+[2026-05-02T13:54:10 EVAL] cfg=10.0 prompt=90 brightness_zero_snr=0.0114 brightness_baseline=0.0892 delta=0.0778
+[2026-05-02T13:54:45 INFO] cfg=10.0 prompt=91 sampling 4 images per ckpt
+[2026-05-02T13:55:20 INFO] cfg=10.0 prompt=92 sampling 4 images per ckpt
+[2026-05-02T13:55:55 INFO] cfg=10.0 prompt=93 sampling 4 images per ckpt
+[2026-05-02T13:56:30 INFO] cfg=10.0 prompt=94 sampling 4 images per ckpt
+[2026-05-02T13:57:05 INFO] cfg=10.0 prompt=95 sampling 4 images per ckpt
+[2026-05-02T13:57:40 INFO] cfg=10.0 prompt=96 sampling 4 images per ckpt
+[2026-05-02T13:58:15 INFO] cfg=10.0 prompt=97 sampling 4 images per ckpt
+[2026-05-02T13:58:50 INFO] cfg=10.0 prompt=98 sampling 4 images per ckpt
+[2026-05-02T13:59:25 INFO] cfg=10.0 prompt=99 sampling 4 images per ckpt
+[2026-05-02T14:00:00 EVAL] cfg=10.0 prompt=100 brightness_zero_snr=0.0076 brightness_baseline=0.0943 delta=0.0867
+[2026-05-02T13:59:59 INFO] cfg=10 done
+[2026-05-02T14:08:20 INFO] running T2I-CompBench evaluator (BLIP + UniDet)
+[2026-05-02T14:08:20 EVAL] compbench/color zero_snr=0.49 baseline=0.54 delta=-0.05
+[2026-05-02T14:11:40 EVAL] compbench/shape zero_snr=0.38 baseline=0.42 delta=-0.04
+[2026-05-02T14:15:00 EVAL] compbench/texture zero_snr=0.36 baseline=0.41 delta=-0.05
+[2026-05-02T14:18:20 EVAL] compbench/spatial zero_snr=0.41 baseline=0.46 delta=-0.05
+[2026-05-02T14:28:20 INFO] eval complete: H3 partial (brightness wins, composition loses)

@@ -1,0 +1,42 @@
+Qualitative observations from manual sample inspection
+======================================================
+
+Setup
+-----
+- compared 50 random samples from foo @ step 4500 (v-pred + zero-SNR) against
+  50 from snr-sweep γ=5 @ step 30000 (eps-pred, no zero-SNR), same prompts,
+  same seeds within each prompt
+- viewed at 256x256 native, also 4x bicubic-upscaled for fine-detail check
+
+Things that improved with the v-pred / zero-SNR run
+---------------------------------------------------
+- mean brightness much closer to reference (matches numerical brightness_bias)
+- "blue cast" on outdoor / sky scenes is gone (this was the big visible win)
+- low-frequency color blocking (e.g. uniform fields) is more saturated and
+  more accurate to the prompt's mood words ("vibrant", "moody", etc.)
+- skin tones in portrait prompts are noticeably more natural
+
+Things that got worse or stayed roughly the same
+------------------------------------------------
+- multi-object spatial relationships ("a cat to the LEFT of a dog") are
+  noticeably more often wrong; cat and dog appear but spatial token is
+  ignored ~30% of the time vs. ~18% baseline
+- shape-bound prompts ("a star-shaped cookie") are slightly worse — boundary
+  fidelity drops on the high-frequency edge
+- text rendering inside images is unchanged (still bad in both)
+
+Open questions for follow-up
+----------------------------
+- does rescale-CFG (Lin et al.) recover composition without giving up the
+  brightness fix? -> see project-b/cfg-rescale-260503-130000
+- is the composition loss a function of zero-SNR specifically, or just of
+  the reduced effective CFG dynamic range that zero-SNR creates? -> would
+  need a control with non-zero terminal SNR + matched dynamic range
+- does this reproduce at 512x512 or only at 256? -> need more compute to test
+
+Sample-level red flags worth surfacing in HYPOTHESES
+----------------------------------------------------
+- 3 of 50 samples had a small color blob in upper-left corner that looks
+  like residual noise from the zero-SNR endpoint; not catastrophic but a
+  consistent artifact pattern. Worth a note in H3 caveats if it persists
+  in larger eval (currently only seen in 50 sample inspection)

@@ -1,0 +1,14 @@
+# eval log: per-5k-step FID + brightness against COCO-2017-val
+# columns: ts step fid brightness_bias t2i_compbench_mean
+[2026-05-01T10:30:00 EVAL] step=500 fid=26.852 brightness_bias=0.1687 t2i_compbench_mean=0.320
+[2026-05-01T10:58:20 EVAL] step=1000 fid=25.473 brightness_bias=0.1499 t2i_compbench_mean=0.338
+[2026-05-01T11:26:40 EVAL] step=1500 fid=23.842 brightness_bias=0.1331 t2i_compbench_mean=0.355
+[2026-05-01T11:55:00 EVAL] step=2000 fid=22.173 brightness_bias=0.1207 t2i_compbench_mean=0.369
+[2026-05-01T12:23:20 EVAL] step=2500 fid=20.712 brightness_bias=0.1114 t2i_compbench_mean=0.381
+[2026-05-01T12:51:40 EVAL] step=3000 fid=19.516 brightness_bias=0.1008 t2i_compbench_mean=0.391
+[2026-05-01T13:20:00 EVAL] step=3500 fid=18.397 brightness_bias=0.0858 t2i_compbench_mean=0.401
+[2026-05-01T13:48:20 EVAL] step=4000 fid=17.097 brightness_bias=0.0673 t2i_compbench_mean=0.412
+[2026-05-01T14:16:40 EVAL] step=4500 fid=15.524 brightness_bias=0.0494 t2i_compbench_mean=0.425
+[2026-05-01T14:45:00 EVAL] step=5000 fid=13.837 brightness_bias=0.0358 t2i_compbench_mean=0.440
+[2026-05-01T15:13:20 EVAL] step=5500 fid=12.300 brightness_bias=0.0260 t2i_compbench_mean=0.458
+[2026-05-01T15:41:40 EVAL] step=6000 fid=11.039 brightness_bias=0.0162 t2i_compbench_mean=0.477
