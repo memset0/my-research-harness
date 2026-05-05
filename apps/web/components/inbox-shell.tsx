@@ -26,6 +26,8 @@ import type { DigestSummary, ReportSummary } from '@memon/core'
 import { Button } from './ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
 import { Markdown } from './markdown'
+import { FrontmatterPanel } from './frontmatter-panel'
+import { splitFrontmatter } from '../lib/frontmatter'
 import { ReadmeMonaco } from './readme-monaco'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
@@ -290,7 +292,7 @@ function SelectedItemPane({
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
         <div className={cn('overflow-y-auto', editing ? 'min-w-0 flex-1' : 'min-w-0 flex-1')}>
           <div className="p-4 md:p-6">
-            <Markdown>{data.content}</Markdown>
+            <RenderedItem content={data.content} />
           </div>
         </div>
         {editing && (
@@ -322,6 +324,16 @@ function SelectedItemPane({
         </Sheet>
       )}
     </div>
+  )
+}
+
+function RenderedItem({ content }: { content: string }) {
+  const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
+  return (
+    <>
+      {frontmatter && <FrontmatterPanel data={frontmatter} />}
+      <Markdown>{body}</Markdown>
+    </>
   )
 }
 

@@ -13,7 +13,7 @@ import {
   UNAUTHORIZED_HEADERS,
   TOO_MANY_HEADERS,
 } from '../../../../lib/auth/basic-auth'
-import { clientIpFromHeaders, consume } from '../../../../lib/auth/rate-limit'
+import { clientIpFromHeaders, consume, refund } from '../../../../lib/auth/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +33,8 @@ export async function GET(req: NextRequest) {
   if (!ok) {
     return new NextResponse('Unauthorized', { status: 401, headers: UNAUTHORIZED_HEADERS })
   }
+  // Refund: legitimate authenticated probes do not drain the bucket.
+  refund(ip)
   return NextResponse.json(
     { ok: true, username: runtime.auth.username },
     { headers: { 'Cache-Control': 'no-store' } },

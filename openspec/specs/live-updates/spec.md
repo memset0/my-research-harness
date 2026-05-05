@@ -115,3 +115,47 @@ Rendered markdown bodies (experiment sections, hypothesis statements, journal re
 - **WHEN** an experiment's `## Method` section contains markdown with code blocks, lists, and inline links
 - **THEN** the rendered output has visible heading sizes, code blocks with `bg-slate-100` shading, list bullets with proper indentation, and links underlined in blue (no plain unstyled `<h2>` / `<pre>` etc.)
 
+### Requirement: SSR-prefetched queries do not refetch on hydration
+
+The web app SHALL prefetch React Query data on the server (via `getQueryClient()` + `prefetchQuery()`) and hydrate that data on the client (via `<HydrationBoundary>`) WITHOUT triggering an immediate refetch of every prefetched key on mount. The client-side default `staleTime` SHALL be greater than or equal to the server-side prefetch `staleTime` (today: 60 seconds), so server-fresh data remains fresh on the client until either an SSE invalidation event arrives or the per-query background `refetchInterval` (default 60 s) fires.
+
+Per-query overrides SHALL be allowed: a `useQuery({ staleTime: <smaller> })` call may opt into shorter freshness if the data semantics demand it.
+
+#### Scenario: Page open does not double-fetch prefetched queries
+- **GIVEN** a project page whose server component prefetches `['experiments', project]`, `['hypotheses', project]`, `['journal', project, …countOnly]`, `['reports', project]`, `['digests', project]`
+- **WHEN** the user opens that page (cold or warm) and the client mounts the `<HydrationBoundary>`
+- **THEN** none of the prefetched query keys SHALL fire a network request on mount (the dev server log SHALL NOT show a duplicate GET for any of them within 1 second of the page-level GET)
+
+#### Scenario: Per-query opt-in to shorter freshness still works
+- **GIVEN** a `useQuery({ queryKey: [...], staleTime: 5_000 })` call in a component
+- **WHEN** the query has been in cache for 6 s
+- **THEN** the next render of that component refetches that specific query (the per-query override beats the default)
+
+#### Scenario: SSE invalidation still drives updates
+- **WHEN** an SSE `experiment-change` event arrives for a query already in cache
+- **THEN** the affected `queryKey` is invalidated and refetched as before — the alignment of `staleTime` does NOT delay live updates
+
+### Requirement: Server-side prefetch is a no-op in dev
+
+In dev (`process.env.NODE_ENV !== 'production'`), the server-side `QueryClient` returned by `getQueryClient()` SHALL have its `prefetchQuery` method replaced with a resolved no-op. Page modules SHALL continue to call `await queryClient.prefetchQuery(...)` and `<HydrationBoundary state={dehydrate(queryClient)}>` exactly as in production — no per-page conditionals, no helper at the call site. The dehydrated state in dev SHALL therefore be empty, and the client React Query SHALL fetch each query on mount.
+
+This relaxation only applies to the server branch of `getQueryClient()`. The browser singleton path is unaffected. In production (`NODE_ENV === 'production'`) `prefetchQuery` SHALL behave as default and the requirement "SSR-prefetched queries do not refetch on hydration" SHALL hold as written.
+
+#### Scenario: Dev page render does not block on prefetch
+- **GIVEN** a project page whose module body calls `await queryClient.prefetchQuery({ queryKey, queryFn })`
+- **WHEN** the dev server (`pnpm dev`, `NODE_ENV !== 'production'`) renders that page
+- **THEN** the `prefetchQuery` call resolves immediately without invoking `queryFn`
+- **AND** no entry for `queryKey` is present in the dehydrated state delivered to the client
+
+#### Scenario: Dev client refetches missing keys on mount
+- **GIVEN** a dev-rendered page whose dehydrated state is empty
+- **WHEN** the client mounts and the React Query hook for one of those keys runs
+- **THEN** the client fetches that key over the HTTP API exactly once
+- **AND** the page transitions from skeleton/empty to data once the fetch resolves
+
+#### Scenario: Production prefetch is unaffected
+- **GIVEN** the server is running with `NODE_ENV=production`
+- **WHEN** a page module calls `await queryClient.prefetchQuery({ queryKey, queryFn })`
+- **THEN** `queryFn` runs on the server and the dehydrated state contains the prefetched key
+- **AND** the client does NOT refetch that key on mount (per the existing "SSR-prefetched queries do not refetch on hydration" requirement)
+

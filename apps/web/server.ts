@@ -8,6 +8,7 @@ import type { Duplex } from 'node:stream'
 import next from 'next'
 import { createMemonServer } from './lib/server-core'
 import { getRuntime } from './lib/runtime'
+import { prewarmRoutes } from './lib/route-prewarm'
 
 const dev = process.env.NODE_ENV !== 'production'
 const port = Number(process.env.PORT ?? 3737)
@@ -20,7 +21,7 @@ const hostname = process.env.HOST ?? 'localhost'
 // warmup timestamp on globalThis lets the instrumentation hook (which Next
 // runs from a bundled chunk) observe that warmup already happened and no-op.
 const warmupStartedAt = Date.now()
-await getRuntime()
+const runtime = await getRuntime()
 const globalAny = globalThis as unknown as { __memonWarmedAt?: number }
 globalAny.__memonWarmedAt = warmupStartedAt
 
@@ -42,4 +43,14 @@ const server = createMemonServer({
 
 server.listen(port, () => {
   console.log(`> memon ready on http://${hostname}:${port} (mode: ${dev ? 'dev' : 'prod'})`)
+  if (dev) {
+    // Fire-and-forget: pay each route's cold compile during boot instead of
+    // at the user's first click. See openspec/specs/dev-route-prewarm/.
+    void prewarmRoutes({
+      host: hostname,
+      port,
+      projects: runtime.config.projects,
+      auth: runtime.auth,
+    })
+  }
 })

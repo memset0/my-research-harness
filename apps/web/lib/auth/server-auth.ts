@@ -17,7 +17,7 @@ import {
   UNAUTHORIZED_HEADERS,
   TOO_MANY_HEADERS,
 } from './basic-auth'
-import { consume } from './rate-limit'
+import { consume, refund } from './rate-limit'
 
 export interface AuthOutcome {
   ok: boolean
@@ -76,5 +76,8 @@ export async function authenticateNodeRequest(req: IncomingMessage): Promise<Aut
   if (!ok) {
     return { ok: false, status: 401, headers: { ...UNAUTHORIZED_HEADERS } }
   }
+  // Refund the consumed token: legitimate authenticated upgrades do not
+  // drain the brute-force bucket. Failed auth (above) intentionally does not.
+  refund(ip)
   return { ok: true }
 }

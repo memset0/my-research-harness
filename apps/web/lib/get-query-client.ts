@@ -34,7 +34,16 @@ export function getQueryClient(): QueryClient {
     // Always make a new client on the server — sharing across requests would
     // leak data between users (even though we're single-user, this is the
     // hard rule).
-    return makeQueryClient()
+    const qc = makeQueryClient()
+    if (process.env.NODE_ENV !== 'production') {
+      // Dev-only: skip server-side prefetch. Page modules call prefetchQuery
+      // unconditionally, but in dev the cost (compile + data-layer hops on
+      // a cold route) shows up as TTFB. Returning a resolved no-op leaves the
+      // dehydrated cache empty; the client refetches on mount, which is fast
+      // and doesn't block first paint. Production behaviour is unchanged.
+      qc.prefetchQuery = (async () => {}) as typeof qc.prefetchQuery
+    }
+    return qc
   }
   if (!browserQueryClient) browserQueryClient = makeQueryClient()
   return browserQueryClient

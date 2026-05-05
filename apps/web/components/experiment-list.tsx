@@ -80,8 +80,8 @@ export function ExperimentList({ project }: { project: string }) {
       )}
 
       <div className="hidden grid-cols-12 items-center gap-3 border-b pb-2 text-[10px] uppercase tracking-wide text-muted-foreground md:grid">
-        <div className="col-span-2">status</div>
         <div className="col-span-5">id</div>
+        <div className="col-span-2">sub-project</div>
         <div className="col-span-2">created</div>
         <div className="col-span-3">updated</div>
       </div>
@@ -117,17 +117,17 @@ function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperime
       )}
     >
       <div className="px-3 py-1.5">
-        {/* Top stripe: status | id | created | updated */}
+        {/* Top stripe: id (with status pill inline) | sub-project | created | updated */}
         <div className="grid grid-cols-1 gap-2 md:grid-cols-12 md:items-center md:gap-3">
-          <div className="md:col-span-2">
-            <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
-          </div>
           <div className="flex min-w-0 items-center gap-2 md:col-span-5">
             <span className="truncate font-mono text-xs">{exp.id}</span>
+            <StatusPill status={exp.frontMatter.status} stale={exp.stale} />
+          </div>
+          <div className="min-w-0 md:col-span-2">
             {showSubProject && (
               <Badge
                 variant="secondary"
-                className="shrink-0 px-1.5 py-0 text-[10px] font-normal"
+                className="max-w-full truncate px-1.5 py-0 text-[10px] font-normal"
                 title={`sub-project: ${subProject}`}
               >
                 {subProject}

@@ -81,6 +81,20 @@ describe('GET /api/auth/check', () => {
     },
   )
 
+  it(
+    'successful checks do not drain the bucket (refund-on-success)',
+    { timeout: 30_000 },
+    async () => {
+      const ip = '203.0.113.150'
+      for (let i = 0; i < __limits.CAPACITY * 2; i += 1) {
+        const res = await GET(
+          reqWith({ authorization: basic('admin', 'correct'), 'x-forwarded-for': ip }),
+        )
+        expect(res.status).toBe(200)
+      }
+    },
+  )
+
   it('different IPs have independent buckets', { timeout: 30_000 }, async () => {
     for (let i = 0; i < __limits.CAPACITY; i += 1) {
       await GET(reqWith({ authorization: basic('admin', 'WRONG'), 'x-forwarded-for': '203.0.113.50' }))

@@ -23,7 +23,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getRuntime } from './lib/runtime'
 import { parseBasicAuth, verifyBasic, UNAUTHORIZED_HEADERS, TOO_MANY_HEADERS } from './lib/auth/basic-auth'
 import { isAuthBypass } from './lib/auth/route-classes'
-import { clientIpFromHeaders, consume } from './lib/auth/rate-limit'
+import { clientIpFromHeaders, consume, refund } from './lib/auth/rate-limit'
 
 export const config = {
   runtime: 'nodejs',
@@ -55,5 +55,9 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   if (!ok) {
     return new NextResponse('Unauthorized', { status: 401, headers: UNAUTHORIZED_HEADERS })
   }
+  // Refund the token consumed above: legitimate authenticated traffic should
+  // not drain the brute-force bucket. Failed auth (above) intentionally does
+  // not refund — that is the throttle.
+  refund(ip)
   return NextResponse.next()
 }

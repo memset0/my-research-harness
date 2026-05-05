@@ -96,6 +96,24 @@ export function clientIpFromHeaders(headers: Headers, socketAddr?: string | null
   return socketAddr ?? 'unknown'
 }
 
+/**
+ * Refund one token to `key`'s bucket (capped at capacity). Intended to be
+ * called after a successful auth verification so legitimate, authenticated
+ * traffic does not drain the brute-force bucket. Failed verifications must
+ * NOT refund — that is the throttle.
+ */
+export function refund(key: string, now: number = Date.now()): void {
+  const map = buckets()
+  let b = map.get(key)
+  if (!b) {
+    b = { tokens: CAPACITY, lastRefillMs: now }
+    map.set(key, b)
+    return
+  }
+  refill(b, now)
+  b.tokens = Math.min(CAPACITY, b.tokens + 1)
+}
+
 /** Test-only: clear all buckets. */
 export function __resetForTests(): void {
   buckets().clear()

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { __limits, __resetForTests, clientIpFromHeaders, consume } from './rate-limit'
+import {
+  __limits,
+  __resetForTests,
+  clientIpFromHeaders,
+  consume,
+  refund,
+} from './rate-limit'
 
 beforeEach(() => __resetForTests())
 afterEach(() => __resetForTests())
@@ -49,6 +55,41 @@ describe('consume', () => {
       expect(consume('y', muchLater + i).ok).toBe(true)
     }
     expect(consume('y', muchLater + __limits.CAPACITY).ok).toBe(false)
+  })
+})
+
+describe('refund', () => {
+  it('returns one token to a partially-drained bucket', () => {
+    const now = 1_700_000_000_000
+    consume('r', now)
+    consume('r', now)
+    refund('r', now)
+    // Drain CAPACITY-1 more (one was net-consumed); the next one still passes.
+    for (let i = 0; i < __limits.CAPACITY - 1; i += 1) consume('r', now)
+    // Bucket should now be empty exactly — one more consume should 429.
+    expect(consume('r', now).ok).toBe(false)
+  })
+
+  it('caps at CAPACITY (refunding a full bucket is a no-op)', () => {
+    const now = 1_700_000_000_000
+    refund('s', now) // creates bucket at CAPACITY, then no-ops cap
+    refund('s', now)
+    refund('s', now)
+    for (let i = 0; i < __limits.CAPACITY; i += 1) {
+      expect(consume('s', now + i).ok).toBe(true)
+    }
+    expect(consume('s', now + __limits.CAPACITY).ok).toBe(false)
+  })
+
+  it('lets unlimited successful auth through (consume + refund cycle)', () => {
+    const now = 1_700_000_000_000
+    // Simulate 10× CAPACITY successful verifications. Each pair must be
+    // net-zero so we never hit 429.
+    for (let i = 0; i < 10 * __limits.CAPACITY; i += 1) {
+      const t = now + i
+      expect(consume('t', t).ok).toBe(true)
+      refund('t', t)
+    }
   })
 })
 

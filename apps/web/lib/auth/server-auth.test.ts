@@ -66,6 +66,16 @@ describe('authenticateNodeRequest', () => {
     expect(r.status).toBeUndefined()
   })
 
+  it('successful authentications do not drain the bucket (refund-on-success)', async () => {
+    const ip = '203.0.113.200'
+    for (let i = 0; i < __limits.CAPACITY * 2; i++) {
+      const r = await authenticateNodeRequest(
+        fakeReq({ authorization: basic('admin', 'correct'), 'x-forwarded-for': ip }, '127.0.0.1'),
+      )
+      expect(r.ok).toBe(true)
+    }
+  })
+
   it('uses the last X-Forwarded-For hop as the rate-limit key', async () => {
     // Two requests from the same trusted-hop IP should share a bucket
     // regardless of the socket peer (which is Caddy, not the client).

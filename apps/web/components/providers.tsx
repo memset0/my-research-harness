@@ -12,8 +12,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
           queries: {
             // SSE drives invalidation now. Background refetch is a fallback in
             // case SSE drops or backend's poller misses something — set it slow
-            // to avoid load when SSE is healthy.
-            staleTime: 5_000,
+            // to avoid load when SSE is healthy. Aligned with the server-side
+            // prefetch staleTime (lib/get-query-client.ts) so SSR-hydrated data
+            // is not refetched on mount.
+            staleTime: 60_000,
             refetchInterval: 60_000,
             refetchOnWindowFocus: true,
             retry: 1,

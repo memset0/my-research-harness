@@ -90,6 +90,52 @@ describe('middleware', () => {
     expect(r.headers.get('retry-after')).toMatch(/^\d+$/)
   })
 
+  it(
+    'successful authentications do not drain the bucket (refund-on-success)',
+    { timeout: 30_000 },
+    async () => {
+      const ip = '203.0.113.50'
+      // Far more than CAPACITY successful requests should all pass.
+      for (let i = 0; i < __limits.CAPACITY * 2; i += 1) {
+        const r = await middleware(
+          req('http://localhost/p/x', {
+            authorization: basic('admin', 'correct'),
+            'x-forwarded-for': ip,
+          }),
+        )
+        expect(r.headers.get('x-middleware-next')).toBe('1')
+      }
+    },
+  )
+
+  it(
+    'mixed wrong-then-right credentials: wrongs drain, rights net-zero',
+    { timeout: 30_000 },
+    async () => {
+      const ip = '203.0.113.51'
+      // 30 wrong → bucket goes from CAPACITY to CAPACITY-30
+      for (let i = 0; i < 30; i += 1) {
+        const r = await middleware(
+          req('http://localhost/p/x', {
+            authorization: basic('admin', 'WRONG'),
+            'x-forwarded-for': ip,
+          }),
+        )
+        expect(r.status).toBe(401)
+      }
+      // CAPACITY successful requests must all pass (each refunds its consume).
+      for (let i = 0; i < __limits.CAPACITY; i += 1) {
+        const r = await middleware(
+          req('http://localhost/p/x', {
+            authorization: basic('admin', 'correct'),
+            'x-forwarded-for': ip,
+          }),
+        )
+        expect(r.headers.get('x-middleware-next')).toBe('1')
+      }
+    },
+  )
+
   it('shares the rate-limit bucket with /api/auth/check (same key, in-process)', { timeout: 30_000 }, async () => {
     const { GET } = await import('./app/api/auth/check/route')
     const ip = '203.0.113.222'
