@@ -24,7 +24,7 @@ import {
 } from './commands/experiment.js'
 import { runHypothesesRead } from './commands/hypotheses.js'
 import { runDoctorCmd } from './commands/doctor.js'
-import { runInstallSkills } from './commands/install-skills.js'
+import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
 
@@ -269,15 +269,24 @@ program
 program
   .command('install-skills')
   .description(
-    'sync bundled memon-* skills into <projectRoot>/.claude/skills/ (replaces all memon-* there)',
+    'sync bundled memon-* skills into per-agent skills dirs under <projectRoot> (replaces all memon-* there)',
   )
-  .option('--target <path>', 'override the target directory (default: <projectRoot>/.claude/skills)')
+  .option(
+    '--agent <list>',
+    'comma-separated subset of claude,codex,opencode (or "all"); default: all three',
+  )
+  .option('--target <path>', 'override the target directory (mutually exclusive with --agent)')
   .option('--dry-run', "don't copy, just report what would be done", false)
-  .action(async (opts: { target?: string; dryRun?: boolean }) => {
+  .action(async (opts: { target?: string; agent?: string; dryRun?: boolean }) => {
     const g = readGlobals()
+    if (opts.target && opts.agent !== undefined) {
+      emitErrorAndExit('BAD_REQUEST', '--target and --agent cannot both be set')
+    }
+    const agents = opts.agent !== undefined ? parseAgentList(opts.agent) : undefined
     await runInstallSkills({
       projectRoot: g.projectRoot,
       target: opts.target,
+      agents,
       cwd: g.cwd,
       dryRun: !!opts.dryRun,
       format: g.format,

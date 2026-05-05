@@ -126,7 +126,7 @@ cat new.md | memon experiment readme write <id> --expected-mtime <ms>
 memon experiment archive <id>          # mark as archived (.archived sidecar)
 memon experiment unarchive <id>
 
-memon install-skills [--project-root <p>] [--target <path>] [--dry-run]
+memon install-skills [--project-root <p>] [--target <path>] [--agent <list>] [--dry-run]
 ```
 
 Default output is JSON (agent-friendly). `--format human` switches to
@@ -167,22 +167,36 @@ unarchive each emit a JOURNAL audit entry (`[ARCHIVE]` / `[NOTE]`).
 
 ## Skills (`@memon/skills`)
 
-memon ships 6 Claude Code skills as bundled `SKILL.md` files at
-`packages/skills/memon-*/`. From a project root, run:
+memon ships 6 agent skills as bundled `SKILL.md` files at
+`packages/skills/memon-*/`. The same skill content works under Claude Code,
+Codex, and opencode — each agent just reads from a different directory.
+From a project root, run:
 
 ```sh
-memon install-skills                        # syncs into ./.claude/skills/
-memon install-skills --project-root /repo   # syncs into /repo/.claude/skills/
+memon install-skills                              # syncs into all of:
+                                                  #   ./.claude/skills/
+                                                  #   ./.codex/skills/
+                                                  #   ./.opencode/skills/
+memon install-skills --agent claude               # only ./.claude/skills/
+memon install-skills --agent claude,opencode      # subset
+memon install-skills --project-root /repo         # same defaults under /repo
+memon install-skills --target /custom/path        # one specific dir (no --agent)
 ```
 
-The command **only manages directories whose name starts with `memon-`**.
-Every existing `memon-*/` in the target is wiped and replaced with the
-bundled version (including dirs from removed/renamed skills — the goal is
-strict synchronisation). Non-`memon-*` skills (yours, third-party,
-openspec, anything else) are left untouched.
+The command **only manages directories whose name starts with `memon-`**
+inside each target. Every existing `memon-*/` in a target is wiped and
+replaced with the bundled version (including dirs from removed/renamed
+skills — the goal is strict synchronisation). Non-`memon-*` skills (yours,
+third-party, openspec, anything else) are left untouched.
 
-Run after each `memon` upgrade. Then invoke skills in Claude Code via
-`/memon-<name>`:
+After a successful (non-dry-run) install, if `<projectRoot>/CLAUDE.md`
+exists but `<projectRoot>/AGENTS.md` does not, the command prompts you
+(interactive TTY only — never under `--format json`, `--dry-run`, or a
+non-TTY stdin) to symlink `AGENTS.md → CLAUDE.md` so non-Claude agents
+pick up the same project guidance. The symlink is relative.
+
+Run after each `memon` upgrade. Then invoke skills in your agent CLI of
+choice via `/memon-<name>`:
 
 | Skill | What it does |
 |---|---|

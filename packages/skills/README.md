@@ -1,9 +1,11 @@
 # memon skills — index
 
-Six Claude Code skills that compose into the **author → run → observe →
+Six agent skills that compose into the **author → run → observe →
 synthesize → propose** loop for an ML experiment project. Bundled and
-synced into `<projectRoot>/.claude/skills/` by
-`memon install-skills --project-root <path>`.
+synced into `<projectRoot>/.claude/skills/`, `.codex/skills/`, and
+`.opencode/skills/` by `memon install-skills --project-root <path>`
+(opt out of any agent dir with `--agent claude` / `--agent claude,opencode`
+/ etc).
 
 All skills are zero-runtime-dependency on the memon web stack — they
 only call the `memon` CLI with `--project-root <path>` (or `.`) so they
