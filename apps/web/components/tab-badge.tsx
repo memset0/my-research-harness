@@ -25,6 +25,11 @@ export type TabKind = 'experiments' | 'hypotheses' | 'journal' | 'reports' | 'di
  * Adjacent `<span data-slot="warnings">` is a reserved hook for the future
  * warnings-system change. Empty today; a later change can fill it without
  * relayout.
+ *
+ * Returns a Fragment — both spans become direct flex children of the parent
+ * Link (which inherits Button's `inline-flex items-center` layout). Wrapping
+ * them in another `inline-flex` here would create a nested flex context whose
+ * baseline drifts from the label's, breaking vertical alignment.
  */
 export function TabBadge({
   kind,
@@ -38,7 +43,7 @@ export function TabBadge({
   const count = useTabCount(kind, project)
 
   return (
-    <span className="ml-1.5 inline-flex items-center gap-1">
+    <>
       {count.isLoading && count.value === undefined ? (
         <span
           className="inline-block h-3 w-4 animate-pulse rounded bg-muted/60"
@@ -49,7 +54,7 @@ export function TabBadge({
         <span
           data-slot="count"
           className={cn(
-            'text-[10px] tabular-nums',
+            'text-[10px] leading-none tabular-nums',
             active ? 'text-primary-foreground/75' : 'text-muted-foreground',
           )}
         >
@@ -57,8 +62,8 @@ export function TabBadge({
         </span>
       )}
       {/* Reserved for a future warnings-system change. Intentionally empty. */}
-      <span data-slot="warnings" className="inline-flex" />
-    </span>
+      <span data-slot="warnings" />
+    </>
   )
 }
 
