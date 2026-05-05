@@ -511,15 +511,19 @@ meaningful change. If a change has implications for how the result
 should be read (e.g. batch size halved → effective LR halved too), also
 add a line to `## Caveats`.
 
-After the README write succeeds, **walk through its contents in Chinese
-in the conversation** — keeps the README authoritative-and-English while
-the user gets the gist without re-reading it. Cover:
+After the README write succeeds, run **§12 (post-run anomaly review)** —
+inspect the run for things the human should adjudicate and append
+`[OPEN]` warnings via `memon experiment warning add`. Then **walk
+through the run's contents in Chinese in the conversation** — keeps the
+README authoritative-and-English while the user gets the gist without
+re-reading it. Cover:
 
 - 改动了什么(对应 `**Got it running by**:`,如果有)
 - 主要结果是什么(对应 `## Result`)
 - 结论是什么 / 怎么影响关联的假说(对应 `## Conclusion`)
 - 有什么坑 / 解读时需要注意的限制(对应 `## Caveats`)
 - 实现思路或想让用户注意的细节,如果 README 里没合适的位置写
+- 添加的警告(if §12 added any),让用户知道有哪几条需要他们裁决
 
 Brief — 3-6 lines is plenty.
 
@@ -617,6 +621,11 @@ case — does NOT skip the journal entry).
 runs in the web UI and archives them there at their own pace. Your job
 is to mark FAILED + leave a one-line reason; not to clean up the list.
 
+After the FAILED README is on disk, run **§12 (post-run anomaly
+review)** as well — failures often reveal anomalies (config drift, an
+infra blip that explains the crash) that the human should adjudicate
+even though the run didn't reach `## Result`.
+
 ### 11. Recovery loop — make it run
 
 When the script fails early (OOM, missing dep, traceback in the first
@@ -651,6 +660,87 @@ If a fix attempt is **outside your ability** (algorithmic bug,
 multi-day environment change, GPU not available, …), stop iterating
 and surface to the user with: a) the failure reason, b) what you tried,
 c) what you'd need from them.
+
+### 12. Post-run anomaly review — propose `[OPEN]` warnings
+
+After the terminal-state README is written (success path §9 or failure
+path §10), and **before** you walk the user through the run in Chinese,
+inspect the run for anomalies that need a human to look at. These are
+written into the README's `## Warnings` section as new `[OPEN]` rows.
+
+The Warnings section is the canonical surface for "I noticed something
+the human should adjudicate". It is NOT for facts you already wrote
+into `## Result`, hypotheses you yourself can confirm, or items the
+user already named in `## Caveats`.
+
+#### What qualifies as a warning
+
+Append a warning when, while reviewing `run.log`, wandb, loss curves,
+or any artifact the run produced, you observe one of:
+
+- **methodology** — possible flaw in the experimental method (no seed
+  was set, evaluation is on the train split, etc.)
+- **result** — anomalous metric (loss spike, NaN gradient, accuracy
+  far above/below the baseline with no obvious reason)
+- **config** — config drifts from the paper / baseline / referenced
+  hypothesis in a way that affects interpretation
+- **data** — dataset / preprocessing concern (suspected leakage,
+  unbalanced split, surprising token counts)
+- **repro** — reproducibility risk (jit cache reused, version pinning
+  missing, code.diff included unrelated edits)
+- **compare** — baseline comparison drift (baseline ran 50 epochs,
+  this only ran 30; or the baseline used a different eval suite)
+- **infra** — hardware / environment noise (a GPU blipped mid-run,
+  the host changed, OOM caused a partial restart)
+- **other** — escape hatch when none of the above fits
+
+Each finding goes in as **one row, one sentence**. Use the closed enum
+above as `--category`. The message must be concrete (cite step / metric
+/ artifact) so the human can reproduce the observation.
+
+#### Anti-patterns — don't flag these as warnings
+
+- ❌ Things you already wrote into `## Result` or `## Conclusion` —
+  the user reads those.
+- ❌ Anything the user already named in `## Caveats` — that's
+  intentional limitation, not an anomaly.
+- ❌ Restating the failure reason on a FAILED run — `## Result`
+  already has it.
+- ❌ "Every minor info note" — if the observation could go in
+  `JOURNAL.md` as a `[NOTE]` event, do that instead.
+- ❌ Anything that's purely an implementation detail (typo fixed in
+  the recovery loop, wandb logged a deprecation warning).
+
+#### Workflow
+
+For each finding:
+
+```sh
+memon experiment warning add "$EXP_ID" --project-root . \
+  --category result \
+  --message "loss curve at step 1500 has a 3x spike — possible gradient explosion not seen in baseline runs"
+```
+
+The CLI returns `{ok, rowId, mtime, hash}`. **Capture the new mtime**
+and use it as `--expected-mtime` for any subsequent README write in
+this terminal step (warning add / status set / readme write all share
+the same lock against `<runDir>/README.md`).
+
+On exit 9 `CONFLICT`, refresh mtime via `memon show --format json`,
+re-apply, retry once; on the second conflict surface to the user.
+
+When you walk the user through the run in Chinese (§9), include a
+short bullet for each warning you appended:
+> 警告:loss 在 step 1500 突然飙到 3 倍,需要你看一下是不是梯度爆炸
+
+#### What you MUST NOT do
+
+You may **only** call `memon experiment warning add`. You SHALL NOT
+call `memon experiment warning resolve`, `... reopen`, or
+`... delete` under any circumstance — those are human-only acts. Even
+if the user says in conversation "this warning is resolved", point them
+at the web UI (or have them type the CLI themselves); don't run the
+state change yourself.
 
 ## Conflict-handling protocol (mtime locking)
 
@@ -708,3 +798,10 @@ Right behaviour:
 - ❌ Skipping `code.diff` capture. Reproducibility-after-the-fact lives
   or dies on this pre-launch snapshot.
 - ❌ Falling back to `WANDB_MODE=offline` to dodge a network/auth issue.
+- ❌ Calling `memon experiment warning resolve|reopen|delete`. Those
+  are **human-only acts**. This skill may only call
+  `memon experiment warning add` (post-run review §12). State changes
+  and deletion happen via the web UI or a human-typed CLI call.
+- ❌ Skipping §12. A successful run with no warnings is fine — but the
+  agent SHOULD have looked. "I noticed nothing worth flagging" is a
+  valid §12 outcome; "I never reviewed" is not.

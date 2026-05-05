@@ -1,6 +1,6 @@
 # memon skills — index
 
-Six agent skills that compose into the **author → run → observe →
+Seven agent skills that compose into the **author → run → observe →
 synthesize → propose** loop for an ML experiment project. Bundled and
 synced into `<projectRoot>/.claude/skills/`, `.codex/skills/`, and
 `.opencode/skills/` by `memon install-skills --project-root <path>`
@@ -18,6 +18,7 @@ work without a `config.yml`.
 | Author a launcher script (`run.sh`, sweep wrapper, …) | `memon-write-script` | User-invoked. Stable script in `scripts/<area>/`; each run gets a fresh dir. |
 | Run an existing script + drive it through terminal state | `memon-run-experiment` | User-invoked. Owns the README's full content (frontmatter + body). |
 | Drop a one-line observation / request / error in JOURNAL | `memon-append-journal` | **Model-invocable.** Cheap, single-event append. |
+| Flag one anomaly on an existing run for human adjudication | `memon-append-warning` | **Model-invocable.** Single OPEN row in the README's `## Warnings` table. NEVER resolves / reopens / deletes. |
 | Daily integrity sweep + cursor-advancing digest | `memon-digest-journal` | User-invoked. Folds in the old `doctor` checks. |
 | Theme-driven, cursor-independent narrative report | `memon-write-report` | User-invoked. `R<NNNN>-<slug>.md` with re-runnable selector. |
 | "What should I run next?" — brainstorm + converge | `memon-propose` | User-invoked. Read-only research collaborator. |
@@ -31,7 +32,8 @@ work without a `config.yml`.
   `memon-propose`.
 - **`disable-model-invocation` absent / false** — model may invoke
   autonomously. Reserved for low-stakes, single-event actions:
-  `memon-append-journal`. The model can drop a NOTE without asking.
+  `memon-append-journal` and `memon-append-warning`. The model can
+  drop a NOTE or flag a single OPEN warning without asking.
 
 The intent: heavy work needs a human in the loop; "I noticed something
 worth recording" can fire on its own.
@@ -98,6 +100,7 @@ worth recording" can fire on its own.
 | `memon-write-script` | a `.sh` file under `scripts/` | run dirs, READMEs, JOURNAL frontmatter |
 | `memon-run-experiment` | `<run-dir>/README.md`, `code.diff`, `code.head` | scripts, digests, reports, JOURNAL frontmatter |
 | `memon-append-journal` | one event line in `JOURNAL.md` body | JOURNAL frontmatter, READMEs |
+| `memon-append-warning` | one OPEN row in `<run>/README.md` `## Warnings`; one `[WARNING]` event in `JOURNAL.md` body | other README sections, JOURNAL frontmatter; never calls `warning resolve|reopen|delete` |
 | `memon-digest-journal` | `docs/digests/D<NNNN>-<YYYY-MM-DD>.md`, `last_digest_at` cursor; may write READMEs *during* doctor fixes | reports |
 | `memon-write-report` | `docs/reports/R<NNNN>-<slug>.md` | digests, READMEs, JOURNAL cursor |
 | `memon-propose` | nothing — read-only | everything |

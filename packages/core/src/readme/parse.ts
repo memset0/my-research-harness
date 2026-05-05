@@ -22,6 +22,7 @@ import { normalizeStatus } from '../status.js'
 import { matterOptions } from '../yaml-engine.js'
 import { parseArtifacts } from './artifacts.js'
 import { splitH2Sections } from './sections.js'
+import { parseWarningsBody } from './warnings.js'
 
 const STANDARD_SECTIONS = [
   'Motivation',
@@ -30,6 +31,7 @@ const STANDARD_SECTIONS = [
   'Result',
   'Conclusion',
   'Caveats',
+  'Warnings',
   'Artifacts',
   'New Hypotheses',
 ] as const
@@ -119,7 +121,14 @@ export function parseReadme(content: string): ParsedReadme {
     newHypotheses: getSection(split.sections, 'New Hypotheses'),
   }
 
-  // Warn on unknown sections
+  // Parse Warnings section (optional). Out-of-table content is preserved
+  // as warningsRaw and the parser surfaces a structured warning so the
+  // CLI can refuse to mutate non-conforming sections.
+  const warningsSection = getSection(split.sections, 'Warnings') ?? ''
+  const warningsParse = parseWarningsBody(warningsSection)
+  for (const w of warningsParse.parseWarnings) warnings.push(w)
+
+  // Warn on unknown sections (Warnings is now in STANDARD_SECTIONS)
   for (const heading of split.order) {
     if (!STANDARD_SECTIONS.includes(heading as (typeof STANDARD_SECTIONS)[number])) {
       warnings.push({
@@ -133,6 +142,8 @@ export function parseReadme(content: string): ParsedReadme {
   return {
     frontMatter,
     sections,
+    warnings: warningsParse.warnings,
+    warningsRaw: warningsParse.raw,
     body,
     parseErrors: errors,
     parseWarnings: warnings,
@@ -169,6 +180,8 @@ function emptyResult(errors: ParseIssue[], warnings: ParseIssue[], body: string)
       artifacts: [],
       newHypotheses: null,
     },
+    warnings: [],
+    warningsRaw: null,
     body,
     parseErrors: errors,
     parseWarnings: warnings,

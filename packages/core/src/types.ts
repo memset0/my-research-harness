@@ -40,7 +40,14 @@ export const HYPOTHESIS_STATUS_EMOJI: Readonly<Record<HypothesisStatus, string>>
   DEFERRED: '⚪',
 }
 
-export type JournalEventTag = 'CREATE' | 'STATUS' | 'NOTE' | 'REQUEST' | 'ARCHIVE' | 'ERROR'
+export type JournalEventTag =
+  | 'CREATE'
+  | 'STATUS'
+  | 'NOTE'
+  | 'REQUEST'
+  | 'ARCHIVE'
+  | 'ERROR'
+  | 'WARNING'
 
 export const JOURNAL_TAG_VALUES: readonly JournalEventTag[] = [
   'CREATE',
@@ -49,6 +56,7 @@ export const JOURNAL_TAG_VALUES: readonly JournalEventTag[] = [
   'REQUEST',
   'ARCHIVE',
   'ERROR',
+  'WARNING',
 ] as const
 
 // ---------- Parse issues ----------
@@ -123,9 +131,25 @@ export interface ExperimentSections {
   newHypotheses: string | null
 }
 
+export interface WarningRecord {
+  rowId: string
+  status: 'OPEN' | 'RESOLVED'
+  /** ISO8601 with timezone offset, set at append time, never edited. */
+  created: string
+  /** Closed enum in `WARNING_CATEGORIES`; out-of-enum values preserved. */
+  category: string
+  message: string
+  resolved: string | null
+  note: string | null
+}
+
 export interface ParsedReadme {
   frontMatter: ExperimentFrontMatter
   sections: ExperimentSections
+  /** Parsed `## Warnings` table rows, or [] when the section is absent / empty. */
+  warnings: WarningRecord[]
+  /** Raw bytes of the warnings section when its body is non-conforming; null otherwise. */
+  warningsRaw: string | null
   body: string // body without front matter, raw
   parseErrors: ParseIssue[]
   parseWarnings: ParseIssue[]
@@ -157,6 +181,8 @@ export interface Experiment {
   hasReadme: boolean
   frontMatter: ExperimentFrontMatter
   sections: ExperimentSections
+  warnings: WarningRecord[]
+  warningsRaw: string | null
   body: string
   parseErrors: ParseIssue[]
   parseWarnings: ParseIssue[]

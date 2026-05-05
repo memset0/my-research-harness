@@ -41,6 +41,8 @@ function makeExp(
     hasReadme: true,
     frontMatter: fm,
     sections,
+    warnings: [],
+    warningsRaw: null,
     body: '',
     parseErrors: [],
     parseWarnings: [],

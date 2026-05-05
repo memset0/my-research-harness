@@ -35,6 +35,8 @@ function makeExp(overrides: Partial<Experiment> = {}): Experiment {
       artifacts: [],
       newHypotheses: null,
     },
+    warnings: [],
+    warningsRaw: null,
     body: '',
     parseErrors: [],
     parseWarnings: [],

@@ -55,6 +55,8 @@ export async function readExperimentDir(
     hasReadme,
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
+    warnings: parsed.warnings,
+    warningsRaw: parsed.warningsRaw,
     body: parsed.body,
     parseErrors: parsed.parseErrors,
     parseWarnings: parsed.parseWarnings,
@@ -111,6 +113,8 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
       artifacts: [],
       newHypotheses: null,
     },
+    warnings: [],
+    warningsRaw: null,
     body: '',
     parseErrors: [],
     parseWarnings: [

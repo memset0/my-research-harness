@@ -14,6 +14,7 @@ export type IssueCode =
   | 'PARSE_ERROR'
   | 'PARSE_WARNING'
   | 'ORPHAN_HYPOTHESIS_REF'
+  | 'WARN_UNRESOLVED'
 
 export interface DoctorIssue {
   experimentId: string
@@ -21,6 +22,8 @@ export interface DoctorIssue {
   severity: IssueSeverity
   message: string
   suggestedAction: string
+  /** Optional structured payload (e.g. `count` for WARN_UNRESOLVED). */
+  data?: Record<string, unknown>
 }
 
 export interface DoctorReport {
@@ -153,6 +156,21 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
         suggestedAction: 'fix the hypothesis id, or add the hypothesis to HYPOTHESES.md',
       })
     }
+  }
+
+  // Open warnings — informational, never blocks. The doctor sweep skill
+  // surfaces these to the human; a project with no open warnings is silent
+  // here. The `count` field lets the consumer order or filter by noise.
+  const openWarnings = exp.warnings.filter((w) => w.status === 'OPEN')
+  if (openWarnings.length > 0) {
+    out.push({
+      experimentId: exp.id,
+      code: 'WARN_UNRESOLVED',
+      severity: 'info',
+      message: `${openWarnings.length} unresolved warning${openWarnings.length === 1 ? '' : 's'}`,
+      suggestedAction: 'review and resolve via the web UI or `memon experiment warning resolve`',
+      data: { count: openWarnings.length },
+    })
   }
 
   return out

@@ -17,6 +17,7 @@ import { Markdown } from './markdown'
 import { LogViewer } from './log-viewer'
 import { ReadmeEditorProvider } from './readme-editor-context'
 import { ReadmeSidePanel } from './readme-side-panel'
+import { WarningsCard } from './warnings-card'
 import Link from 'next/link'
 
 export function ExperimentDetail({ project, id }: { project: string; id: string }) {
@@ -135,6 +136,14 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
       <SectionCard id="result" title="Result" body={exp.sections.result} />
       <SectionCard id="conclusion" title="Conclusion" body={exp.sections.conclusion} />
       <SectionCard id="caveats" title="Caveats" body={exp.sections.caveats} />
+      {exp.hasReadme && (
+        <WarningsCard
+          experimentId={exp.id}
+          readmePath={`${exp.path}/README.md`}
+          initialWarnings={exp.warnings}
+          initialMtime={exp.mtime}
+        />
+      )}
       <ArtifactsCard artifacts={exp.sections.artifacts} expPath={exp.path} />
       {exp.sections.newHypotheses && (
         <SectionCard

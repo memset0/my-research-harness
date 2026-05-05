@@ -64,11 +64,23 @@ tags: [moe, fsdp2]
 ## Result
 ## Conclusion
 ## Caveats
+## Warnings                         # optional, agent-flagged anomalies awaiting human adjudication
 ## Artifacts
 - `./checkpoints/` — model checkpoints
 - `./outputs/loss.csv` — per-step loss
 ## New Hypotheses                   # optional, signals digest agent
 ```
+
+**Warnings** is a structured, human-clearable surface where the agent
+can flag anomalies that need a human to look at — loss spikes, config
+drift from a paper, baseline mismatch, hardware blips. Each row is one
+GFM table line (Status / Created / Category / Message / Resolved / Note)
+addressed by a stable `rowId`. Agents may only APPEND `[OPEN]` rows
+(via `memon experiment warning add` or the web UI's Add form);
+state changes (resolve / reopen) and deletion are **human-only acts**
+exposed through the same CLI or the web UI's per-row controls.
+The doctor sweep (`memon doctor`) reports a `WARN_UNRESOLVED` info
+finding for each run with at least one open warning.
 
 `status` enum is uppercase. Each value renders with an emoji in the UI:
 📝 `PENDING` / 🟢 `RUNNING` / ✅ `FINISHED` / ❌ `FAILED` / ❓ `UNKNOWN`.

@@ -27,6 +27,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       hasReadme: exp.hasReadme,
       frontMatter: exp.frontMatter,
       sections: exp.sections,
+      warnings: exp.warnings,
+      warningsRaw: exp.warningsRaw,
       body: exp.body,
       parseErrors: exp.parseErrors,
       parseWarnings: exp.parseWarnings,

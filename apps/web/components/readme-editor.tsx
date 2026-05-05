@@ -415,13 +415,20 @@ function safeRemove(key: string): void {
   }
 }
 
+// All localStorage prefixes that participate in the 7-day stale-draft sweep.
+// `memon:draft:` is the canonical README editor draft; the `memon:warning-*-draft:`
+// families belong to the Warnings card (Note edits + Add-warning form drafts).
+// Any future draft type should be added here so it shares the cleanup cadence.
+const STALE_DRAFT_PREFIXES = ['memon:draft:', 'memon:warning-note-draft:', 'memon:warning-add-draft:']
+
 function cleanupStaleDrafts(): void {
   if (typeof localStorage === 'undefined') return
   const cutoff = Date.now() - STALE_DRAFT_MS
   const toRemove: string[] = []
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
-    if (!key || !key.startsWith(DRAFT_PREFIX)) continue
+    if (!key) continue
+    if (!STALE_DRAFT_PREFIXES.some((p) => key.startsWith(p))) continue
     try {
       const raw = localStorage.getItem(key)
       if (!raw) continue

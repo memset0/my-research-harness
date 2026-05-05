@@ -36,6 +36,8 @@ function makeExp(overrides: Partial<Experiment['frontMatter']> = {}): Experiment
       artifacts: [],
       newHypotheses: null,
     },
+    warnings: [],
+    warningsRaw: null,
     body: '',
     parseErrors: [],
     parseWarnings: [],

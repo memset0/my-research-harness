@@ -163,6 +163,29 @@ Rule of thumb: if a change is significant enough to mention in a commit
 message, it's significant enough to land in the spec. Tick / re-open tasks
 in tasks.md as scope shifts.
 
+### tasks.md scope: implementation work only
+
+`tasks.md` is the apply-phase checklist. It SHALL contain only the
+implementation work the agent (or a human pairing with the agent) actually
+does during `/opsx:apply` — code edits, tests, docs, verification commands.
+
+It SHALL NOT contain user-triggered actions or downstream workflow steps.
+The most common mistake to avoid:
+
+- ❌ A `- [ ] Run /opsx:archive <name>` task. Archive is a separate
+  user-triggered phase, not part of apply. The apply phase ends when the
+  change is implemented and verified; the human decides when (and whether)
+  to archive.
+- ❌ A `- [ ] Commit + push` task. That happens automatically as the
+  post-archive convention (see "Archive → commit → push" below). It is
+  not a tracked apply-phase deliverable.
+- ❌ A `- [ ] Open a PR` task. Same reason.
+
+If `apply` finishes and the last item in tasks.md was a user-triggered
+action, that's a sign the proposer or applier got the boundary wrong —
+fix the tasks.md, don't leave the box unchecked as a fake "remaining work"
+signal.
+
 ### Archive → commit → push
 
 When the user asks to archive a change and `/opsx:archive` (or the archive

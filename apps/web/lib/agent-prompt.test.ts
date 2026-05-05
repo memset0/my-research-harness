@@ -22,6 +22,8 @@ function makeExp(overrides: Partial<FullExperiment['frontMatter']> = {}): FullEx
       artifacts: [],
       newHypotheses: null,
     },
+    warnings: [],
+    warningsRaw: null,
     body: '',
     resources: null,
     frontMatter: {

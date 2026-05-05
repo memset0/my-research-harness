@@ -208,6 +208,7 @@ message / suggestedAction`. Codes (v1):
 | `PARSE_ERROR` | error | inspect README, fix structure, save via `readme write` |
 | `PARSE_WARNING` | warn | inspect, decide |
 | `ORPHAN_HYPOTHESIS_REF` | warn | edit README to fix the H-id, or add the hypothesis to HYPOTHESES.md |
+| `WARN_UNRESOLVED` | info | surface the open warnings to the user; offer to add new ones, but DO NOT resolve / reopen / delete |
 
 (Note: archive is not in this list — the user reviews failed runs in the
 web UI and archives there. Don't propose `archive` from this skill.)
@@ -261,6 +262,72 @@ For status-only fixes (e.g. downgrade FINISHED → FAILED), use
 `memon experiment status set --to <STATUS> --expected-mtime <mtime>`
 with the same fresh-mtime discipline; the helper above is for full
 README rewrites.
+
+#### 3a. Per-experiment Warnings review (append-only)
+
+After the doctor pass above is clean (or after the user explicitly
+skips remaining items), walk a per-experiment Warnings review for the
+following scope:
+
+- **(a)** every experiment whose `README.md` mtime falls inside the
+  digest window OR whose status changed in the journal events being
+  digested, AND
+- **(b)** every experiment that currently has at least one warning
+  with `Status=OPEN` (regardless of mtime) — these are the
+  `WARN_UNRESOLVED` items the doctor pass already flagged.
+
+For each experiment in the union of (a) ∪ (b):
+
+1. Fetch the current state:
+   ```sh
+   memon experiment warning list "$EXP_ID" --project-root . --format json
+   ```
+2. Look at the run with **full current context** — the latest journal
+   events from this digest window, baselines or comparison runs that
+   landed during the window, any new evidence on referenced
+   hypotheses. Ask:
+   - Should a new warning be appended? (config drift surfaced by a
+     comparison that didn't exist before, methodology issue noticed
+     in light of a new paper, baseline mismatch from a new ref run)
+   - Are existing OPEN warnings still relevant? (a 14-day-old open
+     warning the user keeps deferring — surface it, don't resolve it)
+3. Surface findings to the user as a list **and wait for explicit
+   confirmation per proposal** before writing anything:
+
+```
+For experiment <id>:
+  Existing OPEN warnings: 2
+    - [result] loss spike at step 1500 (12 days open)
+    - [config] bs=256 vs paper 512 (3 days open)
+  Proposed new warnings:
+    1. [compare] this run is now 0.4 acc points below the freshly
+       added baseline `cmp-260512-...`
+  → which to append? (1 / all / none)
+```
+
+4. **Append only what the user confirmed** via:
+
+```sh
+memon experiment warning add "$EXP_ID" --project-root . \
+  --category compare \
+  --message "this run is now 0.4 acc points below the freshly added baseline cmp-260512-..."
+```
+
+5. The Warnings review's outcome (per experiment: existing OPEN
+   counts, newly appended warnings, anything the user explicitly
+   declined) goes into the digest body's `## Integrity sweep`
+   section so the audit trail survives.
+
+#### Hard rule — append-only
+
+You SHALL NOT call `memon experiment warning resolve`,
+`memon experiment warning reopen`, or `memon experiment warning delete`
+during the doctor sweep or anywhere else in this skill. Even if a
+`WARN_UNRESOLVED` warning is obviously stale, even if the user says in
+conversation "this one is fine, mark it resolved" — point the user at
+the web UI or have them type the CLI command themselves. State changes
+on warnings are **human-only acts** by design; the digest skill's job
+is to surface them, not to clear them.
 
 ### 4. Determine the target file
 

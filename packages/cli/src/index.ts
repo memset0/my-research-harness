@@ -22,6 +22,13 @@ import {
   runStatusSet,
   runUnarchive,
 } from './commands/experiment.js'
+import {
+  runWarningAdd,
+  runWarningDelete,
+  runWarningList,
+  runWarningReopen,
+  runWarningResolve,
+} from './commands/warning.js'
 import { runHypothesesRead } from './commands/hypotheses.js'
 import { runDoctorCmd } from './commands/doctor.js'
 import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
@@ -234,6 +241,93 @@ readme
       expectedMtime: opts.expectedMtime,
       expectedHash: opts.expectedHash,
       stdinContent,
+    })
+  })
+
+const warning = experiment.command('warning').description('Warnings table operations on README.md')
+warning
+  .command('add <id>')
+  .description('append a new OPEN warning row')
+  .requiredOption('--category <cat>', 'methodology|result|config|data|repro|compare|infra|other')
+  .requiredOption('--message <text>', 'free-text description of the warning')
+  .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 lock')
+  .action(
+    async (
+      id: string,
+      opts: { category: string; message: string; expectedMtime?: number; expectedHash?: string },
+    ) => {
+      const g = readGlobals()
+      await runWarningAdd({
+        ...g,
+        experimentId: id,
+        category: opts.category,
+        message: opts.message,
+        expectedMtime: opts.expectedMtime,
+        expectedHash: opts.expectedHash,
+      })
+    },
+  )
+warning
+  .command('list <id>')
+  .description('list warnings on a run')
+  .option('--status <s>', 'open | resolved | all (default all)', 'all')
+  .action(async (id: string, opts: { status?: string }) => {
+    const g = readGlobals()
+    const status = opts.status === 'open' ? 'open' : opts.status === 'resolved' ? 'resolved' : 'all'
+    await runWarningList({ ...g, experimentId: id, status })
+  })
+warning
+  .command('resolve <id> <rowId>')
+  .description('mark a warning resolved with a required note')
+  .requiredOption('--note <text>', 'how it was resolved (required)')
+  .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 lock')
+  .action(
+    async (
+      id: string,
+      rowId: string,
+      opts: { note: string; expectedMtime?: number; expectedHash?: string },
+    ) => {
+      const g = readGlobals()
+      await runWarningResolve({
+        ...g,
+        experimentId: id,
+        rowId,
+        note: opts.note,
+        expectedMtime: opts.expectedMtime,
+        expectedHash: opts.expectedHash,
+      })
+    },
+  )
+warning
+  .command('reopen <id> <rowId>')
+  .description('flip a RESOLVED warning back to OPEN')
+  .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 lock')
+  .action(async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
+    const g = readGlobals()
+    await runWarningReopen({
+      ...g,
+      experimentId: id,
+      rowId,
+      expectedMtime: opts.expectedMtime,
+      expectedHash: opts.expectedHash,
+    })
+  })
+warning
+  .command('delete <id> <rowId>')
+  .description('remove a warning row (audit kept in JOURNAL)')
+  .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 lock')
+  .action(async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
+    const g = readGlobals()
+    await runWarningDelete({
+      ...g,
+      experimentId: id,
+      rowId,
+      expectedMtime: opts.expectedMtime,
+      expectedHash: opts.expectedHash,
     })
   })
 

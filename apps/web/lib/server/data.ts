@@ -64,6 +64,8 @@ export async function getExperimentData(id: string): Promise<FullExperiment | nu
     hasReadme: exp.hasReadme,
     frontMatter: exp.frontMatter,
     sections: exp.sections,
+    warnings: exp.warnings,
+    warningsRaw: exp.warningsRaw,
     body: exp.body,
     parseErrors: exp.parseErrors,
     parseWarnings: exp.parseWarnings,

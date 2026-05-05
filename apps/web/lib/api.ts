@@ -10,6 +10,7 @@ import type {
   ParsedHypotheses,
   ParsedJournal,
   ReportSummary,
+  WarningRecord,
 } from '@memon/core'
 
 export interface ProjectSummary {
@@ -30,6 +31,8 @@ export interface FullExperiment
   > {
   stale: boolean
   resources: null
+  warnings: WarningRecord[]
+  warningsRaw: string | null
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -331,5 +334,86 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   return body as T
 }
 
+// ---------- Warnings ----------
+
+export interface WarningsListResponse {
+  ok: true
+  warnings: WarningRecord[]
+  mtime: number
+  hash: string
+}
+
+export interface WarningsOpResponse {
+  ok: true
+  rowId?: string
+  warnings: WarningRecord[]
+  mtime: number
+  hash: string
+}
+
+export interface WarningsConflict {
+  error: { code: 'CONFLICT' | 'WARNINGS_SECTION_NOT_TABLE'; message: string }
+  mtime?: number
+  hash?: string
+  content?: string
+}
+
+export async function fetchWarnings(id: string): Promise<WarningsListResponse> {
+  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}/warnings`)
+}
+
+export async function postWarning(
+  id: string,
+  input: { category: string; message: string; expectedMtime?: number; expectedHash?: string },
+): Promise<WarningsOpResponse | WarningsConflict> {
+  const res = await fetch(`/api/experiments/${encodeURIComponent(id)}/warnings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as WarningsConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as WarningsOpResponse
+}
+
+export async function patchWarningApi(
+  id: string,
+  rowId: string,
+  input: { op: 'resolve' | 'reopen'; note?: string; expectedMtime?: number; expectedHash?: string },
+): Promise<WarningsOpResponse | WarningsConflict> {
+  const res = await fetch(
+    `/api/experiments/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+  const body = await res.json()
+  if (res.status === 409) return body as WarningsConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as WarningsOpResponse
+}
+
+export async function deleteWarningApi(
+  id: string,
+  rowId: string,
+  input: { expectedMtime?: number; expectedHash?: string },
+): Promise<WarningsOpResponse | WarningsConflict> {
+  const res = await fetch(
+    `/api/experiments/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+  const body = await res.json()
+  if (res.status === 409) return body as WarningsConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as WarningsOpResponse
+}
+
 // Re-exports for convenience
-export type { Experiment, Hypothesis, JournalEvent }
+export type { Experiment, Hypothesis, JournalEvent, WarningRecord }
