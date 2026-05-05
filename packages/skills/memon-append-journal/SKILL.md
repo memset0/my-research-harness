@@ -19,6 +19,34 @@ For organizing the journal (consolidating events, advancing
 `last_digest_at`, integrity sweep), use **`memon-digest-journal`**, not
 this one. This skill is just for "append one event right now".
 
+## Preflight — FS convention version
+
+Before doing anything else, confirm the project root's on-disk schema
+matches what this skill expects. Run:
+
+```sh
+memon fs-version check --project-root . --format json
+```
+
+Branch on the `status` field:
+
+- `match` → proceed with the rest of the skill.
+- `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
+  current memon expects v<available>. Please run the `memon-migrate-fs`
+  skill to upgrade before continuing." Do NOT read or write any spec file
+  (`README.md`, `HYPOTHESES.md`, `JOURNAL.md`, `docs/digests/*`,
+  `docs/reports/*`).
+- `uninitialised` → STOP. Tell the user: "This project root has not had
+  memon installed yet. Run `memon install-skills --project-root .` first."
+  Do NOT read or write any spec file.
+- `ahead` → the CLI already exited 11 (`MEMON_TOO_OLD`). Forward the
+  error: "Project FS convention is at v<current>; this memon supports up
+  to v<available>. Upgrade memon to a release that supports v<current> or
+  later." Do NOT proceed.
+
+(`memon-migrate-fs` itself is exempt from this preflight; it IS the
+migration runtime and reads `.memon/version.json` directly.)
+
 ## When to use
 
 - You observed something cross-cutting that doesn't belong in any single

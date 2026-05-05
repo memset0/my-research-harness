@@ -1,0 +1,6 @@
+export { readFsVersion } from './read.js'
+export { writeFsVersion } from './write.js'
+export { validateFsVersionRecord, FsVersionSchemaError } from './schema.js'
+export { resolveVersionFilePath } from './paths.js'
+export { computeFsVersionStatus } from './status.js'
+export type { FsVersionRecord, FsVersionStatus } from './types.js'

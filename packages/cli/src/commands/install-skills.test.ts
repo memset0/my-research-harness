@@ -353,6 +353,111 @@ describe('maybeOfferAgentsLink', () => {
   })
 })
 
+// ----- runInstallSkills: fs-version marker integration -----
+
+describe('runInstallSkills — fsVersion marker', () => {
+  let projectRoot: string
+
+  beforeEach(async () => {
+    projectRoot = await fs.mkdtemp(join(tmpdir(), 'memon-fs-version-install-'))
+  })
+  afterEach(async () => {
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  async function runJson(opts: {
+    agents?: AgentName[]
+    target?: string
+    dryRun?: boolean
+  } = {}) {
+    return runCapturing(async () => {
+      await runInstallSkills({
+        projectRoot: opts.target ? undefined : projectRoot,
+        cwd: projectRoot,
+        format: 'json',
+        agents: opts.agents,
+        target: opts.target,
+        dryRun: opts.dryRun,
+      })
+    })
+  }
+
+  it('first install creates marker with current version + null last_migrated_at + ISO8601 installed_at', async () => {
+    const r = await runJson()
+    expect(r.exitCode).toBeNull()
+    const json = JSON.parse(r.stdout)
+    expect(json.fsVersion.status).toBe('uninitialised')
+    expect(json.fsVersion.current).toBeNull()
+    expect(json.fsVersion.available).toBeGreaterThanOrEqual(1)
+    expect(json.fsVersion.upgradeRequired).toBe(false)
+    expect(typeof json.fsVersion.writtenAt).toBe('string')
+    // ISO8601 with offset
+    expect(json.fsVersion.writtenAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)$/,
+    )
+
+    const onDisk = JSON.parse(
+      await fs.readFile(join(projectRoot, '.memon/version.json'), 'utf8'),
+    )
+    expect(onDisk.fs_convention_version).toBe(json.fsVersion.available)
+    expect(onDisk.last_migrated_at).toBeNull()
+    expect(typeof onDisk.installed_at).toBe('string')
+  })
+
+  it('re-install on matching version preserves bytes (mtime unchanged)', async () => {
+    await runJson()
+    const markerPath = join(projectRoot, '.memon/version.json')
+    const before = await fs.stat(markerPath)
+    const beforeContent = await fs.readFile(markerPath, 'utf8')
+    // wait briefly so a re-write would change mtime
+    await new Promise((r) => setTimeout(r, 10))
+    const r = await runJson()
+    const after = await fs.stat(markerPath)
+    const afterContent = await fs.readFile(markerPath, 'utf8')
+    expect(afterContent).toBe(beforeContent)
+    expect(after.mtimeMs).toBe(before.mtimeMs)
+    const json = JSON.parse(r.stdout)
+    expect(json.fsVersion.status).toBe('match')
+    expect(json.fsVersion.writtenAt).toBeNull()
+  })
+
+  it('ahead version exits 11 (MEMON_TOO_OLD) and does NOT write skill files', async () => {
+    // Pre-seed an "ahead" marker.
+    await fs.mkdir(join(projectRoot, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(projectRoot, '.memon/version.json'),
+      JSON.stringify({
+        fs_convention_version: 9999,
+        installed_at: '2026-05-04T10:00:00+08:00',
+        last_migrated_at: null,
+      }),
+    )
+    const r = await runJson()
+    expect(r.exitCode).toBe(11)
+    expect(r.stderr).toContain('MEMON_TOO_OLD')
+    // No skill files should have been written to the agent dirs.
+    for (const sub of Object.values(AGENT_TARGETS)) {
+      expect(await dirExists(join(projectRoot, sub))).toBe(false)
+    }
+  })
+
+  it('--target path emits fsVersion: null and creates no .memon/ dir', async () => {
+    const explicit = join(projectRoot, 'custom', 'skills')
+    const r = await runJson({ target: explicit })
+    const json = JSON.parse(r.stdout)
+    expect(json.fsVersion).toBeNull()
+    expect(await dirExists(join(projectRoot, '.memon'))).toBe(false)
+  })
+
+  it('dry-run does not write the marker even on first install', async () => {
+    const r = await runJson({ dryRun: true })
+    const json = JSON.parse(r.stdout)
+    expect(json.fsVersion.status).toBe('uninitialised')
+    expect(json.fsVersion.writtenAt).toBeNull()
+    expect(await dirExists(join(projectRoot, '.memon'))).toBe(false)
+  })
+})
+
 // ----- helpers -----
 
 async function dirExists(p: string): Promise<boolean> {

@@ -184,3 +184,20 @@ the commit. Stage explicitly:
 If `git status` shows unrelated modified files from another session, leave
 them alone — don't stash, don't reset, don't add. Just stage the precise
 paths for this archive and commit.
+
+### Authoring an FS-convention migration guide
+
+When a future change introduces a breaking on-disk schema change and bumps
+`FS_CONVENTION_VERSION`, **before writing the migration guide at**
+`packages/core/migrations/v<N>-to-v<N+1>.md`, read
+`openspec/specs/fs-migration-guide-authoring/spec.md`. That meta-spec
+defines the required seven-section structure, verification command
+standards, the fixed commit-message format
+(`chore(memon): migrate FS convention v<N> -> v<N+1>`, ASCII arrow), and
+the four canonical edge cases every guide must address.
+
+Do NOT improvise the structure. Past iterations of "ad-hoc structure for
+agent-targeted markdown" in this repo (see F2 / F3 above) showed how
+quickly improvised conventions silently break agent execution. The guide
+is the only contract the migrate-fs runtime has — get it wrong and the
+migration runs incorrectly without warning.

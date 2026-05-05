@@ -25,6 +25,7 @@ import {
 import { runHypothesesRead } from './commands/hypotheses.js'
 import { runDoctorCmd } from './commands/doctor.js'
 import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
+import { runFsVersionCheck } from './commands/fs-version-check.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
 
@@ -291,6 +292,17 @@ program
       dryRun: !!opts.dryRun,
       format: g.format,
     })
+  })
+
+const fsVersion = program
+  .command('fs-version')
+  .description('FS convention version commands (per-project marker .memon/version.json)')
+fsVersion
+  .command('check')
+  .description("report a project root's FS convention version vs the bundled tool version")
+  .action(async () => {
+    const g = readGlobals()
+    await runFsVersionCheck({ projectRoot: g.projectRoot, cwd: g.cwd, format: g.format })
   })
 
 async function main() {

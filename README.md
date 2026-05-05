@@ -127,6 +127,9 @@ memon experiment archive <id>          # mark as archived (.archived sidecar)
 memon experiment unarchive <id>
 
 memon install-skills [--project-root <p>] [--target <path>] [--agent <list>] [--dry-run]
+
+# FS convention version
+memon fs-version check                 # report the project's .memon/version.json status
 ```
 
 Default output is JSON (agent-friendly). `--format human` switches to
@@ -152,6 +155,7 @@ the spawned web stack at a multi-project config file.
 | `2` | usage / flag error (incl. `BAD_REQUEST`) |
 | `4` | `NOT_FOUND` (experiment / project root missing) |
 | `9` | `CONFLICT` — mtime / hash lock failed; skill SHOULD refresh and retry |
+| `11` | `MEMON_TOO_OLD` — project's recorded FS convention version is newer than this memon supports; upgrade memon |
 | `13` | `FORBIDDEN` (path safety violation) |
 
 ### Archive
@@ -167,7 +171,7 @@ unarchive each emit a JOURNAL audit entry (`[ARCHIVE]` / `[NOTE]`).
 
 ## Skills (`@memon/skills`)
 
-memon ships 6 agent skills as bundled `SKILL.md` files at
+memon ships 7 agent skills as bundled `SKILL.md` files at
 `packages/skills/memon-*/`. The same skill content works under Claude Code,
 Codex, and opencode — each agent just reads from a different directory.
 From a project root, run:
@@ -189,6 +193,39 @@ replaced with the bundled version (including dirs from removed/renamed
 skills — the goal is strict synchronisation). Non-`memon-*` skills (yours,
 third-party, openspec, anything else) are left untouched.
 
+### FS convention version (`.memon/version.json`)
+
+`memon install-skills` also stamps a per-project marker at
+`<projectRoot>/.memon/version.json` recording the FS convention version
+the project root was installed at:
+
+```json
+{
+  "fs_convention_version": 1,
+  "installed_at": "2026-05-04T10:00:00+08:00",
+  "last_migrated_at": null
+}
+```
+
+The version is an integer, **independent from package semver**. It bumps
+only when memon ships a breaking change to the on-disk schema (renamed
+file, removed required field, restructured directory). When you upgrade
+memon and re-run `install-skills`, three things can happen:
+
+- **match** — your project is up to date; nothing to do.
+- **behind** — your project is at an older convention version; the install
+  output prints a banner asking you to run the `memon-migrate-fs` skill.
+  The skill reads `packages/core/migrations/v<N>-to-v<N+1>.md` guides and
+  upgrades the on-disk layout step-by-step (one git commit per step, or a
+  backup tarball if the root isn't a git repo).
+- **ahead** — your project was installed by a newer memon; this older
+  memon refuses to operate on it (exit 11, `MEMON_TOO_OLD`). Upgrade
+  memon to a release that supports the project's version.
+
+The marker is **machine-managed** — don't edit it by hand. Use
+`memon fs-version check --project-root .` to inspect the state without
+modifying anything.
+
 After a successful (non-dry-run) install, if `<projectRoot>/CLAUDE.md`
 exists but `<projectRoot>/AGENTS.md` does not, the command prompts you
 (interactive TTY only — never under `--format json`, `--dry-run`, or a
@@ -206,6 +243,7 @@ choice via `/memon-<name>`:
 | `memon-digest-journal` | Run an integrity sweep (the former `memon-doctor` checks fold in here), produce a date-keyed digest at `docs/digests/D<N>-<YYYY-MM-DD>.md` covering everything since the last cursor, and advance `last_digest_at`. The only skill allowed to update the cursor; race-safe. |
 | `memon-write-report` | Author or update a theme-driven report at `docs/reports/R<N>-<slug>.md`. The report records its own selector (a re-runnable shell snippet) so re-running cheaply tells whether new events qualify. Doesn't touch the cursor. |
 | `memon-propose` | Read-only — suggest 1-3 next experiments tied to open hypotheses. |
+| `memon-migrate-fs` | Upgrade a project root's on-disk schema across `FS_CONVENTION_VERSION` bumps by reading the natural-language guides at `packages/core/migrations/v<N>-to-v<N+1>.md` and applying them step-by-step (one git commit per step; backup tarball if the root isn't a git repo). User-invoked only; never auto-fires. |
 
 Each `SKILL.md` is plain markdown — `cat ~/.claude/skills/memon-*/SKILL.md`
 or read the source under `packages/skills/` to see the exact agent

@@ -12,6 +12,14 @@
 import { existsSync as fsExistsSync, promises as fs } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  FS_CONVENTION_VERSION,
+  computeFsVersionStatus,
+  formatIsoLocal,
+  readFsVersion,
+  writeFsVersion,
+  type FsVersionStatus,
+} from '@memon/core'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
@@ -42,6 +50,15 @@ export interface InstalledTarget {
   path: string
   removed: string[]
   installed: string[]
+}
+
+export interface FsVersionReport {
+  current: number | null
+  available: number
+  status: FsVersionStatus
+  upgradeRequired: boolean
+  /** ISO8601 with offset; non-null iff this run wrote the marker (first install). */
+  writtenAt: string | null
 }
 
 type AgentsLinkAction =
@@ -188,6 +205,16 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
   const resolved = resolveTargets(input)
   const src = await resolveSkillsDir()
 
+  // FS version preflight + first-install marker write. Use --target → null
+  // (the user opted out of project-root semantics).
+  // Run BEFORE skill copy so an "ahead" project (newer than this memon)
+  // aborts cleanly without touching skill files.
+  const usesProjectRoot = !input.target
+  let fsVersion: FsVersionReport | null = null
+  if (usesProjectRoot) {
+    fsVersion = await preflightAndMaybeWriteMarker(resolved.projectRootForLink, !!input.dryRun)
+  }
+
   const sourceSkills = (await fs.readdir(src, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name.startsWith('memon-'))
     .map((d) => d.name)
@@ -212,6 +239,13 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
       lines.push(`  replaced ${t.removed.length} memon-* dir(s); installed ${t.installed.length}`)
     }
     lines.push(formatAgentsLinkLine(agentsLink, resolved.projectRootForLink))
+    if (fsVersion) lines.push(formatFsVersionLine(fsVersion))
+    if (fsVersion?.status === 'behind') {
+      // The banner goes to stderr (non-JSON, interactive flag) so JSON output stays clean.
+      process.stderr.write(
+        `WARNING: Project FS convention is at v${fsVersion.current}; current memon expects v${fsVersion.available}. Run the memon-migrate-fs skill to upgrade.\n`,
+      )
+    }
     if (input.dryRun) lines.push('(dry run — no files written)')
     process.stdout.write(`${lines.join('\n')}\n`)
   } else {
@@ -220,8 +254,74 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
       source: src,
       targets: installed,
       agentsLink,
+      fsVersion,
       dryRun: !!input.dryRun,
     })
+  }
+}
+
+/**
+ * Inspect `<projectRoot>/.memon/version.json` and either:
+ *  - First install: write a fresh marker, return `writtenAt`. (Skipped on dry-run.)
+ *  - Match: report only, no write.
+ *  - Behind: report only, no write. Caller surfaces the upgrade banner.
+ *  - Ahead: emit MEMON_TOO_OLD error and exit 11. The full install is aborted
+ *    (no skill copy yet at this point in the flow).
+ */
+async function preflightAndMaybeWriteMarker(
+  projectRoot: string,
+  dryRun: boolean,
+): Promise<FsVersionReport> {
+  const record = await readFsVersion(projectRoot)
+  const current = record?.fs_convention_version ?? null
+  const available = FS_CONVENTION_VERSION
+  const status = computeFsVersionStatus(current, available)
+
+  if (status === 'ahead') {
+    emitErrorAndExit(
+      'MEMON_TOO_OLD',
+      `project FS convention is v${current}; this memon supports up to v${available}. Upgrade memon to a release that supports v${current} or later.`,
+    )
+  }
+
+  if (status === 'uninitialised' && !dryRun) {
+    const installedAt = formatIsoLocal(new Date())
+    await writeFsVersion(projectRoot, {
+      fs_convention_version: available,
+      installed_at: installedAt,
+      last_migrated_at: null,
+    })
+    return {
+      current: null,
+      available,
+      status,
+      upgradeRequired: false,
+      writtenAt: installedAt,
+    }
+  }
+
+  return {
+    current,
+    available,
+    status,
+    upgradeRequired: status === 'behind',
+    writtenAt: null,
+  }
+}
+
+function formatFsVersionLine(r: FsVersionReport): string {
+  switch (r.status) {
+    case 'match':
+      return `fs-version: v${r.current} (match)`
+    case 'behind':
+      return `fs-version: v${r.current} → v${r.available} available (run memon-migrate-fs to upgrade)`
+    case 'uninitialised':
+      return r.writtenAt
+        ? `fs-version: initialised at v${r.available} (.memon/version.json written)`
+        : `fs-version: would initialise at v${r.available} (dry run)`
+    case 'ahead':
+      // Unreachable — preflightAndMaybeWriteMarker exits earlier.
+      return `fs-version: v${r.current} ahead of tool v${r.available}`
   }
 }
 

@@ -60,6 +60,16 @@ export type { CacheOptions, CacheRecord } from './log/cache.js'
 export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
 export type { LoadConfigOptions } from './config/load.js'
 export { formatExperimentStamp, formatIsoLocal } from './time.js'
+export { FS_CONVENTION_VERSION } from './version.js'
+export {
+  computeFsVersionStatus,
+  FsVersionSchemaError,
+  readFsVersion,
+  resolveVersionFilePath,
+  validateFsVersionRecord,
+  writeFsVersion,
+} from './fs-version/index.js'
+export type { FsVersionRecord, FsVersionStatus } from './fs-version/index.js'
 
 // CLI helpers (callable from the @memon/cli package and from skills written
 // in TypeScript that link directly against @memon/core).
