@@ -56,19 +56,10 @@ rules as v2.
   no `WARNINGS_TABLE_HEADER_MISMATCH` is surfaced; the section-bound
   writer is permitted (it will emit 7-column on the next write)
 
-## REMOVED Requirements
+<!-- Note: the original `WARNINGS_TABLE_HEADER_MISMATCH` rejection lived
+as a scenario inside the "Warnings table with Run column" requirement,
+not as its own requirement. The MODIFIED block above replaces that
+requirement's body + scenarios entirely (the rejection scenario is
+gone, replaced by the v2 6-col back-compat scenario), so no separate
+REMOVED block is needed. -->
 
-### Requirement: WARNINGS_TABLE_HEADER_MISMATCH for v2-shape tables
-
-**Reason**: replaced by the back-compat parse path described in the
-modified "Warnings table with Run column" requirement above. The strict
-rejection broke the read flow for projects that hadn't yet migrated to
-v3; lossless back-compat parse + write-time upgrade is a strictly
-better UX with no on-disk data loss.
-
-**Migration**: any reader code that branched on the parser surfacing
-`WARNINGS_TABLE_HEADER_MISMATCH` SHALL be updated to look at row count
-+ `run !== null` density to detect "this section was last touched in
-v2 form" if it cares for telemetry purposes. No callers in the current
-codebase branch on the code, so this is a code-level rather than
-behaviour-level migration.

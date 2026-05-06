@@ -19,25 +19,25 @@ The dashboard SHALL open exactly one `EventSource` connection to `/api/events` f
 
 The `useMemonEvents()` hook SHALL invalidate TanStack Query caches when
 events arrive on the three v3 topics. The mapping is described in the
-ADDED requirement above; the v2 single-topic mapping is replaced by the
-multi-topic mapping.
+"Experiment-doc and anomaly SSE topics" requirement; the v2 single-topic
+mapping is replaced by the multi-topic mapping.
 
-The legacy `experiment-change` topic name continues to exist for
-backward compatibility within this change's window — the backend emits
-both the v2 `experiment-change` (for run edits, mirroring v2 behavior)
-and the new `run-change` topic during a transition window. Frontend
-code SHALL prefer subscribing to `run-change` going forward and treat
-the legacy topic as a deprecated alias.
+The v3 wiring drops the legacy `experiment-change` deprecated alias for
+run edits — `experiment-change` events on the SSE wire mean
+exp-doc events ONLY. Frontend code that previously listened to
+`experiment-change` for run edits SHALL migrate to `run-change`. There
+is no transition window beyond the v3 cutover.
 
 #### Scenario: Run edit propagates to relevant queries
 - **WHEN** an underlying run README is edited (locally or remotely)
 - **THEN** within ~1 second, the run's parent experiment detail page
-  (if open) and any list view refresh; the `['run', id]` query and the
-  `['experiment', parentId]` query are both invalidated
+  (if open) and any list view refresh; the `['run', id]` query is
+  invalidated AND, when the run carries an `experiment` parent id, the
+  `['experiment', parentId]` query is also invalidated
 
-#### Scenario: Toast on remote experiment create
+#### Scenario: Toast on remote experiment-doc create
 - **WHEN** an `experiment-change` event with `op: 'set'` is received
-  for an experiment id NOT previously in the local cache
+  for an experiment doc id NOT previously in the local cache
 - **THEN** a `toast.info('New experiment: <id>')` appears for ~3
   seconds with a `View` action that navigates to the exp detail page
 
@@ -173,46 +173,55 @@ This relaxation only applies to the server branch of `getQueryClient()`. The bro
 
 ### Requirement: Experiment-doc and anomaly SSE topics
 
-The system SHALL extend the live-updates SSE channel with two new event
-topics in v3 and rename the existing one. The `useMemonEvents()` hook
-(and the underlying `/api/events` SSE stream) SHALL fan out three
-event topics in v3:
-- `run-change` (replaces v2's `experiment-change` for run-doc edits)
-- `experiment-change` (NEW: experiment-doc edits, creates, deletes,
-  binds)
+The system SHALL extend the live-updates SSE channel with three v3
+event topics. The `useMemonEvents()` hook (and the underlying
+`/api/events` SSE stream) SHALL fan out exactly three topics:
+
+- `run-change` (NEW name; replaces v2's `experiment-change` for run-doc
+  edits — no alias retained)
+- `experiment-change` (NEW semantics: experiment-doc edits, creates,
+  deletes, binds — repurposed from the v2 run-edit topic)
 - `anomaly` (NEW: per `experiment-membership-anomalies`)
 
 The `experiment-change` event payload SHALL include `{ id, op,
 projectName }` where `op` is one of `set` (create or edit), `delete`,
-or `bind` (link/unlink). The `anomaly` event payload SHALL include
-`{ op: "add" | "remove", record }` where `record` is the anomaly
-object.
+or `bind` (link/unlink).
+
+The `anomaly` event payload SHALL include `{ project: string, count:
+number }` where `count` is the anomaly count for the project AFTER
+the recompute that triggered the event. Per-anomaly granularity
+(`{ op, record }`) is explicitly NOT supported — clients receive the
+coarse signal and refetch `/api/anomalies?project=…` for the diff.
+Rationale: implementation simplicity (no need to diff anomaly sets
+across recomputes); the anomaly list is small enough that a refetch
+is cheap (<50ms locally).
 
 The `useMemonEvents()` hook SHALL invalidate the matching TanStack
 Query caches on each topic:
 - `run-change` → `['runs']`, `['run', evt.id]`,
   `['experiment', evt.parentExperimentId]` (when known)
 - `experiment-change` → `['experiments']`, `['experiment', evt.id]`
-- `anomaly` → `['anomalies', evt.record.project]`
+- `anomaly` → `['anomalies', evt.project]`
 
-#### Scenario: Experiment edit propagates within ~1s
+#### Scenario: Experiment-doc edit propagates within ~1s
 - **GIVEN** the user has an exp detail page open in tab A
 - **WHEN** the same exp doc is saved from tab B (or a CLI command)
 - **THEN** within ~1 second, tab A's exp page re-renders with the new
   body content, no manual refresh required
 
-#### Scenario: Anomaly add pushes a banner update
+#### Scenario: Anomaly recompute pushes a banner refetch
 - **GIVEN** the user is on a project list page with the anomaly banner
-  empty
-- **WHEN** an external process creates an orphan run in that project
-- **THEN** the indexer detects the orphan, an SSE `anomaly` event with
-  `op: "add"` is pushed, and the banner card appears at the top of
-  the grid within ~1 second
+  showing N records
+- **WHEN** the indexer's `recomputeAnomalies(project)` runs (e.g.
+  triggered by a poll-detected exp-doc edit)
+- **THEN** an `anomaly` event with `{ project, count }` is pushed; the
+  banner invalidates `['anomalies', project]` and refetches the list;
+  the banner re-renders with the updated record set within ~1 second
 
-#### Scenario: Anomaly resolve pushes a banner update
-- **GIVEN** the banner shows 1 `MISMATCH_EXPERIMENT_REF` anomaly
-- **WHEN** the user runs `memon experiment link` to reconcile
-- **THEN** the indexer re-evaluates, an `anomaly` event with
-  `op: "remove"` is pushed, and the banner card disappears (since
-  count drops to 0)
+#### Scenario: Run edit carries parent experiment id when bound
+- **GIVEN** a run with `frontMatter.experiment = "E0001-foo"`
+- **WHEN** the run README is edited
+- **THEN** the SSE `run-change` event payload SHALL include
+  `parentExperimentId: "E0001-foo"`; the hook invalidates BOTH
+  `['run', id]` AND `['experiment', "E0001-foo"]`
 

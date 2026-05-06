@@ -66,8 +66,12 @@ The CLI SHALL expose `memon run rename <run-id-or-dir> <new-slug>
 2. Validate `<new-slug>` is `[a-z0-9-]+` and contains no timestamp suffix.
 3. Compute the new dir name as `<new-slug>-<YYMMDD>-<HHMMSS>` reusing the
    run's existing timestamp.
-4. Check that no other run in the project has the new slug
-   (`DUPLICATE_RUN_SLUG` collision).
+4. Check that no other run in the project ALREADY HAS THE SAME DIR NAME
+   (which can only happen if some other run has both this slug AND this
+   exact timestamp suffix). On collision, exit with the `DUPLICATE_RUN_DIR`
+   error code. Run slugs themselves MAY repeat across different
+   timestamps — the timestamp suffix already disambiguates the dir
+   name, so a slug-only check would reject legitimate reruns.
 5. If the run has a parent experiment (`experiment:` field set), update
    that experiment's `runs[]` array atomically — replace the old dir name
    with the new dir name. If the run claims experiment `E_a` but `E_a`'s
@@ -94,11 +98,19 @@ stderr; exit code 0.
   `E0001-foo.runs` is `["foo-baseline-260501-100000"]`, and a `[RENAME]`
   event is appended to JOURNAL
 
-#### Scenario: Slug collision rejected
+#### Scenario: Dir-name collision rejected
+- **GIVEN** runs `foo-260501-100000` and `bar-260501-100000` exist
+  (same timestamp, different slug)
+- **WHEN** the user runs `memon run rename bar-260501-100000 foo`
+- **THEN** the command exits with `DUPLICATE_RUN_DIR`, no filesystem
+  changes occur
+
+#### Scenario: Slug repeat across timestamps is OK
 - **GIVEN** runs `foo-260501-100000` and `bar-260502-100000` exist
 - **WHEN** the user runs `memon run rename bar-260502-100000 foo`
-- **THEN** the command exits with `DUPLICATE_RUN_SLUG`, no filesystem
-  changes occur
+- **THEN** the command succeeds and the dir is now
+  `foo-260502-100000` — the slug "foo" now appears twice in the
+  project at distinct timestamps, which is allowed
 
 #### Scenario: Anomaly state blocks rename
 - **GIVEN** a run claims `experiment: E0001-foo` but `E0001-foo.runs[]`
@@ -107,15 +119,6 @@ stderr; exit code 0.
 - **THEN** the command exits with `BAD_STATE` and stderr names the
   anomaly; the user must reconcile via `memon experiment link/unlink`
   first
-
-#### Scenario: Soft prefix violation warns but proceeds
-- **GIVEN** a run `foo-260501-100000` whose parent experiment is
-  `E0001-zero-snr-fix` (slug `zero-snr-fix`)
-- **WHEN** the user runs `memon run rename foo-260501-100000
-  cfg-rescale-baseline`
-- **THEN** the rename proceeds (exit 0); stderr contains a non-blocking
-  warning that `cfg-rescale-baseline` does not start with the experiment
-  slug `zero-snr-fix`
 
 ### Requirement: Run-side warnings do not exist in v3
 

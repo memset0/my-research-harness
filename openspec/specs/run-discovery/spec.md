@@ -103,20 +103,6 @@ Membership filters (`memon list --project <name>`,
   `project` field is preserved (it cannot drift on edit since the
   frontmatter `project:` field is gone in v3)
 
-### Requirement: Run slug uniqueness within a project
-
-Run slugs SHALL be unique within a project. The slug part of a run's
-directory name (the part before `-<YYMMDD>-<HHMMSS>`) SHALL be unique
-across the project's run set. The indexer SHALL detect collisions and
-surface a `DUPLICATE_RUN_SLUG` parse warning naming both colliding
-paths.
-
-#### Scenario: Duplicate slug surfaces warning
-- **GIVEN** two run dirs `foo-260501-100000` and `foo-260502-130000`
-- **WHEN** the indexer finishes a project scan
-- **THEN** the parse-warning list contains a `DUPLICATE_RUN_SLUG` entry
-  naming both run paths; both runs are still in the index
-
 ### Requirement: Archived runs are skipped by default
 
 The discovery layer SHALL treat the presence of an empty file `.archived`
