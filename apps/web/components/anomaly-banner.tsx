@@ -1,13 +1,17 @@
 'use client'
 
-// Yellow card pinned at the top of the project list page when at least one
-// anomaly exists. `Copy all` writes a plain-text report to the clipboard so
-// the user can paste it into a Claude Code session for resolution.
+// Pinned card at the top of the project list page when at least one
+// anomaly exists. Uses shadcn `Card` + `Button` primitives so it visually
+// fits the rest of the dashboard. `Copy all` writes a plain-text report
+// to the clipboard so the user can paste it into a Claude Code session
+// for resolution.
 
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { AlertTriangle, Copy, EyeOff } from 'lucide-react'
 import { fetchAnomalies, type AnomalyRecord } from '../lib/api'
-import { cn } from '../lib/utils'
+import { Button } from './ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 
 const HIDE_KEY_PREFIX = 'memon:anomaly-banner-hidden:'
 
@@ -27,44 +31,56 @@ export function AnomalyBanner({ project }: { project: string }) {
   if (anomalies.length === 0 || hidden) return null
 
   return (
-    <div className={cn('rounded-md border-2 border-yellow-400 bg-yellow-50 p-3')}>
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-semibold text-sm">⚠ {anomalies.length} issue{anomalies.length === 1 ? '' : 's'} need resolution</h3>
+    <Card className="border-amber-400/70">
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 py-3">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <AlertTriangle className="size-4 text-amber-600" aria-hidden />
+          <span>
+            {anomalies.length} issue{anomalies.length === 1 ? '' : 's'} need resolution
+          </span>
+        </CardTitle>
         <div className="flex gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => {
               const text = formatForCopy(project, anomalies)
-              navigator.clipboard
-                .writeText(text)
-                .catch(() => {
-                  /* clipboard blocked — silently no-op for now */
-                })
+              navigator.clipboard.writeText(text).catch(() => {
+                /* clipboard blocked — silently no-op for now */
+              })
             }}
-            className="rounded border border-yellow-600 bg-yellow-100 px-2 py-0.5 text-xs hover:bg-yellow-200"
           >
+            <Copy className="size-3" aria-hidden />
             Copy all
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => {
               sessionStorage.setItem(hideKey, '1')
               setHidden(true)
             }}
-            className="rounded border border-yellow-600 bg-yellow-100 px-2 py-0.5 text-xs hover:bg-yellow-200"
           >
+            <EyeOff className="size-3" aria-hidden />
             Hide
-          </button>
+          </Button>
         </div>
-      </div>
-      <ul className="mt-2 max-h-[40vh] space-y-1 overflow-y-auto text-xs">
-        {anomalies.map((a, i) => (
-          <li key={i} className="font-mono">
-            <span className="font-semibold">{a.code}</span>: {a.message}
-          </li>
-        ))}
-      </ul>
-    </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <ul className="max-h-[40vh] space-y-1 overflow-y-auto text-xs">
+          {anomalies.map((a, i) => (
+            <li key={i} className="font-mono">
+              <span className="font-semibold">{a.code}</span>
+              {a.runId ? <span className="text-muted-foreground"> · run={a.runId}</span> : null}
+              {a.experimentId ? <span className="text-muted-foreground"> · exp={a.experimentId}</span> : null}
+              <span className="text-muted-foreground"> — {a.message}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -3,6 +3,13 @@
 // v3 experiment-doc detail page (`/p/<project>/e/<E-id>`). Renders the
 // exp doc's body sections + a Runs section with one collapsible panel per
 // member run. The `?run=<dir>` query param auto-expands that panel.
+//
+// Page layout (top to bottom):
+//   1. Header (id + title + tags + hypotheses)
+//   2. Runs section (collapsible panels — default folded)
+//   3. Motivation / Method / Conclusion / Caveats (each in a Card)
+//   4. Warnings (raw markdown for now)
+//   5. Artifacts (aggregated from member runs, grouped by run)
 
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
@@ -11,10 +18,10 @@ import {
   fetchExperiment,
   fetchExperimentDoc,
   fetchRunFiles,
-  type ExperimentDocDetail,
-  type FullExperiment,
+  type MemberRunSummary,
 } from '../lib/api'
 import { Badge } from './ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { StatusPill } from './status-pill'
 import { Markdown } from './markdown'
 
@@ -35,10 +42,14 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
     return <div className="p-6 text-sm text-destructive">Failed to load experiment {experimentId}</div>
   }
 
+  const aggregatedArtifacts = exp.memberRuns.flatMap((r) =>
+    r.artifacts.map((a) => ({ runId: r.id, path: a.path, description: a.description })),
+  )
+
   return (
-    <div className="flex flex-col gap-6 p-4 md:p-6">
+    <div className="flex flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-col gap-2">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline flex-wrap gap-2">
           <span className="font-mono text-sm text-muted-foreground">{exp.id}</span>
           {exp.frontMatter.tags.map((t) => (
             <Badge key={t} variant="outline" className="text-xs">
@@ -48,7 +59,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         </div>
         <h1 className="text-xl font-semibold">{exp.frontMatter.title}</h1>
         {exp.frontMatter.hypotheses.length > 0 && (
-          <div className="flex gap-1 text-xs">
+          <div className="flex flex-wrap gap-1 text-xs">
             <span className="text-muted-foreground">Hypotheses:</span>
             {exp.frontMatter.hypotheses.map((h) => (
               <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses`} className="underline">
@@ -59,55 +70,92 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         )}
       </header>
 
-      <Section heading="Motivation" body={exp.sections.motivation} />
-      <Section heading="Method" body={exp.sections.method} />
-      <Section heading="Conclusion" body={exp.sections.conclusion} />
-      <Section heading="Caveats" body={exp.sections.caveats} />
-      {exp.warningsRaw && (
-        <section>
-          <h2 className="mb-2 text-sm font-semibold">Warnings</h2>
-          <div className="prose prose-sm max-w-none">
-            <Markdown>{exp.warningsRaw}</Markdown>
-          </div>
-        </section>
-      )}
-
-      <section>
-        <h2 className="mb-2 text-sm font-semibold">
-          Runs <span className="font-normal text-muted-foreground">({exp.memberRuns.length})</span>
-        </h2>
-        <div className="flex flex-col gap-2">
+      {/* Runs first — it's the most actionable info for the user opening
+          this page. Default folded so the long-form prose below is
+          immediately visible too. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Runs <span className="font-normal text-sm text-muted-foreground">({exp.memberRuns.length})</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
           {exp.memberRuns.map((mr) => (
             <RunPanel
               key={mr.id}
               project={project}
               experimentId={exp.id}
               runId={mr.id}
-              initiallyOpen={initialOpenRun === mr.id || exp.memberRuns.length === 1}
+              initialOpenRun={initialOpenRun}
               summary={mr}
             />
           ))}
-        </div>
-        {exp.memberRuns.length === 0 && (
-          <div className="text-xs text-muted-foreground">(no runs bound yet)</div>
-        )}
-      </section>
+          {exp.memberRuns.length === 0 && (
+            <div className="text-xs text-muted-foreground">(no runs bound yet)</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <SectionCard heading="Motivation" body={exp.sections.motivation} />
+      <SectionCard heading="Method" body={exp.sections.method} />
+      <SectionCard heading="Conclusion" body={exp.sections.conclusion} />
+      <SectionCard heading="Caveats" body={exp.sections.caveats} />
+
+      {exp.warningsRaw && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Warnings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm max-w-none text-xs/relaxed">
+              <Markdown>{exp.warningsRaw}</Markdown>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Artifacts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {aggregatedArtifacts.length === 0 ? (
+            <div className="text-xs italic text-muted-foreground">
+              none described — runs may still produce files; check the run panel's file listing
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-1 text-xs">
+              {aggregatedArtifacts.map((a, i) => (
+                <li key={i} className="flex flex-wrap items-baseline gap-1">
+                  <span className="font-mono text-muted-foreground">{a.runId}</span>
+                  <code className="font-mono">{a.path}</code>
+                  <span className="text-muted-foreground">— {a.description}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
-function Section({ heading, body }: { heading: string; body: string | null }) {
+function SectionCard({ heading, body }: { heading: string; body: string | null }) {
   return (
-    <section>
-      <h2 className="mb-2 text-sm font-semibold">{heading}</h2>
-      {body ? (
-        <div className="prose prose-sm max-w-none">
-          <Markdown>{body}</Markdown>
-        </div>
-      ) : (
-        <div className="text-xs italic text-muted-foreground">to fill</div>
-      )}
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle>{heading}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {body ? (
+          <div className="prose prose-sm max-w-none text-xs/relaxed">
+            <Markdown>{body}</Markdown>
+          </div>
+        ) : (
+          <div className="text-xs italic text-muted-foreground">to fill</div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -115,24 +163,29 @@ function RunPanel({
   project,
   experimentId,
   runId,
-  initiallyOpen,
+  initialOpenRun,
   summary,
 }: {
   project: string
   experimentId: string
   runId: string
-  initiallyOpen: boolean
-  summary: ExperimentDocDetail['memberRuns'][number]
+  initialOpenRun: string | null
+  summary: MemberRunSummary
 }) {
-  const [open, setOpen] = useState(initiallyOpen)
-
-  // Persist toggle state in localStorage per experiment id.
+  // Default folded; localStorage remembers per-(exp, run) toggle state.
+  // Exception: if URL ?run=<this-run> matches, force open on first paint.
   const storageKey = `memon:exp-page:${experimentId}:${runId}:open`
+  const [open, setOpen] = useState<boolean>(initialOpenRun === runId)
+
   useEffect(() => {
+    if (initialOpenRun === runId) {
+      setOpen(true)
+      return
+    }
     const stored = localStorage.getItem(storageKey)
     if (stored === '1') setOpen(true)
     if (stored === '0') setOpen(false)
-  }, [storageKey])
+  }, [storageKey, initialOpenRun, runId])
 
   function setOpenAndPersist(v: boolean) {
     setOpen(v)
@@ -178,20 +231,8 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
         <span className="text-muted-foreground">command:</span>{' '}
         <code className="rounded bg-muted px-1 font-mono">{run.frontMatter.command}</code>
       </div>
-      <Section heading="Setup" body={run.sections.setup ?? null} />
-      <Section heading="Result" body={run.sections.result ?? null} />
-      {run.sections.artifacts.length > 0 && (
-        <section>
-          <h3 className="mb-1 text-xs font-semibold">Artifacts (described)</h3>
-          <ul className="text-xs">
-            {run.sections.artifacts.map((a, i) => (
-              <li key={i}>
-                <code className="font-mono">{a.path}</code> — {a.description}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <RunSection heading="Setup" body={run.sections.setup ?? null} />
+      <RunSection heading="Result" body={run.sections.result ?? null} />
       {files && files.tree.children && files.tree.children.length > 0 && (
         <section>
           <h3 className="mb-1 text-xs font-semibold">
@@ -209,9 +250,23 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
           Open run page (legacy)
         </Link>
       </div>
-      {/* exp scope id is consumed by callers; we don't render it in body */}
       <span className="hidden">{experimentId}</span>
     </div>
+  )
+}
+
+function RunSection({ heading, body }: { heading: string; body: string | null }) {
+  return (
+    <section>
+      <h3 className="mb-1 text-xs font-semibold">{heading}</h3>
+      {body ? (
+        <div className="prose prose-sm max-w-none text-xs/relaxed">
+          <Markdown>{body}</Markdown>
+        </div>
+      ) : (
+        <div className="text-xs italic text-muted-foreground">to fill</div>
+      )}
+    </section>
   )
 }
 
@@ -242,3 +297,4 @@ function FileTree({ node, depth = 0 }: { node: TreeNodeShape; depth?: number }) 
     </ul>
   )
 }
+

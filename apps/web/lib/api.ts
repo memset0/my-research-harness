@@ -426,6 +426,8 @@ export interface MemberRunSummary {
   host: string | null
   gpus: number[]
   path?: string
+  /** The run README's manually-described Artifacts (path + description). */
+  artifacts: { path: string; description: string }[]
 }
 
 export interface ExperimentDocSummary {

@@ -316,9 +316,14 @@ async function init(): Promise<Runtime> {
     poller.watch(filePath, await fileMtimeOrZero(filePath))
   }
 
+  const expDocCount = Array.from(experimentsByProject.values()).reduce(
+    (n, list) => n + list.length,
+    0,
+  )
   // eslint-disable-next-line no-console
   console.log(
-    `memon: warmup complete in ${Date.now() - t0}ms — ${index.size()} experiments, ` +
+    `memon: warmup complete in ${Date.now() - t0}ms — ${index.size()} runs, ` +
+      `${expDocCount} experiments, ` +
       `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
       `${journalCache.populated()}/${journalPaths.length} journal files, ` +
       `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests`,

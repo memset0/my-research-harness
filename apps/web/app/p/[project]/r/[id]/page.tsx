@@ -15,17 +15,21 @@ export default async function LegacyRunRedirect({
   const decodedProject = decodeURIComponent(project)
   const decodedId = decodeURIComponent(id)
 
+  // CAUTION: `permanentRedirect` throws a Next.js redirect error to perform
+  // the redirect; do NOT call it inside a try/catch, otherwise the throw is
+  // swallowed and the function falls through to the orphan path.
+  let expId: string | null = null
   try {
     const rt = await getRuntime()
     const run = rt.index.get(decodedId)
-    const expId = run?.frontMatter.experiment ?? null
-    if (expId) {
-      permanentRedirect(
-        `/p/${encodeURIComponent(decodedProject)}/e/${encodeURIComponent(expId)}?run=${encodeURIComponent(decodedId)}`,
-      )
-    }
+    expId = run?.frontMatter.experiment ?? null
   } catch {
-    // fall through to project list
+    // runtime init failed → fall through to project list
+  }
+  if (expId) {
+    permanentRedirect(
+      `/p/${encodeURIComponent(decodedProject)}/e/${encodeURIComponent(expId)}?run=${encodeURIComponent(decodedId)}`,
+    )
   }
   permanentRedirect(`/p/${encodeURIComponent(decodedProject)}`)
 }

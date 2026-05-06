@@ -1,18 +1,17 @@
 'use client'
 
-// v3 list page — a responsive grid of experiment cards (one per
+// v3 list page — a vertical stack of full-width experiment cards (one per
 // docs/experiments/E<NNNN>-<slug>.md). Each card embeds its member runs
-// as a compact table. Orphan runs render as separate grey-bordered cards
-// so the user can navigate to them and bind them to an experiment.
+// as a compact table. Orphan runs do NOT render in the grid — they appear
+// only in the AnomalyBanner above (avoids duplicate surfacing).
 
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
+import { CalendarDays, Pencil } from 'lucide-react'
 import {
   fetchAnomalies,
-  fetchExperiments,
   fetchExperimentDocs,
   type ExperimentDocSummary,
-  type IndexedRun,
 } from '../lib/api'
 import { AnomalyBanner } from './anomaly-banner'
 import { Badge } from './ui/badge'
@@ -23,30 +22,16 @@ export function ExperimentCardGrid({ project }: { project: string }) {
     queryKey: ['experiments-v3', project],
     queryFn: () => fetchExperimentDocs(project),
   })
-  const { data: runData, isLoading: runLoading } = useQuery({
-    queryKey: ['runs', project],
-    queryFn: () => fetchExperiments(project),
-  })
   const { data: anomalyData } = useQuery({
     queryKey: ['anomalies', project],
     queryFn: () => fetchAnomalies(project),
   })
 
-  if (expLoading || runLoading) {
+  if (expLoading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   }
 
   const experiments = expData?.experiments ?? []
-  const runs = runData?.experiments ?? []
-
-  // Compute which runs are confirmed members of some experiment so we can
-  // surface the rest as orphans. A confirmed member appears in some
-  // exp.memberRuns[].id list.
-  const confirmedRunIds = new Set<string>()
-  for (const exp of experiments) {
-    for (const r of exp.memberRuns) confirmedRunIds.add(r.id)
-  }
-  const orphanRuns = runs.filter((r) => !confirmedRunIds.has(r.id))
 
   // Sort exps by effectiveUpdatedAt descending.
   const sortedExps = experiments
@@ -59,15 +44,12 @@ export function ExperimentCardGrid({ project }: { project: string }) {
       <h2 className="text-lg font-semibold">
         Experiments <span className="font-normal text-sm text-muted-foreground">({sortedExps.length})</span>
       </h2>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-col gap-3">
         {sortedExps.map((exp) => (
           <ExperimentCard key={exp.id} project={project} exp={exp} />
         ))}
-        {orphanRuns.map((r) => (
-          <OrphanCard key={r.id} project={project} run={r} />
-        ))}
       </div>
-      {sortedExps.length === 0 && orphanRuns.length === 0 && (
+      {sortedExps.length === 0 && (
         <div className="text-sm text-muted-foreground">(no experiments yet)</div>
       )}
       {anomalyData?.anomalies.length === 0 && experiments.length > 0 && (
@@ -91,7 +73,7 @@ function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocS
         <div className="flex flex-col gap-0.5 min-w-0">
           <Link
             href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}`}
-            className="truncate font-mono text-sm font-semibold hover:underline"
+            className="truncate font-mono text-xs text-muted-foreground hover:underline"
           >
             {exp.id}
           </Link>
@@ -139,30 +121,29 @@ function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocS
             </Badge>
           ))}
         </div>
-        <div className="ml-auto flex shrink-0 gap-3">
-          <span>📅 {exp.effectiveCreatedAt.slice(0, 10)}</span>
-          <span>✎ {exp.effectiveUpdatedAt.slice(0, 10)}</span>
+        <div className="ml-auto flex shrink-0 gap-3 font-mono">
+          <span className="flex items-center gap-1" title="Effective created (min over member runs)">
+            <CalendarDays className="size-3" aria-hidden />
+            {formatTimestamp(exp.effectiveCreatedAt)}
+          </span>
+          <span className="flex items-center gap-1" title="Effective updated (max over member runs)">
+            <Pencil className="size-3" aria-hidden />
+            {formatTimestamp(exp.effectiveUpdatedAt)}
+          </span>
         </div>
       </footer>
     </article>
   )
 }
 
-function OrphanCard({ project, run }: { project: string; run: IndexedRun }) {
-  return (
-    <article className="flex flex-col gap-2 rounded-md border-2 border-dashed border-muted bg-muted/20 p-3">
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">⚠ Unassigned</span>
-          <span className="truncate font-mono text-sm">{run.id}</span>
-        </div>
-        <StatusPill status={run.frontMatter.status} />
-      </header>
-      <div className="text-xs text-muted-foreground">
-        Bind this run to an experiment via{' '}
-        <code className="rounded bg-muted px-1 font-mono">memon experiment link</code> or
-        create one via <code className="rounded bg-muted px-1 font-mono">memon experiment create … --from-run {run.id}</code>.
-      </div>
-    </article>
-  )
+/**
+ * Format an ISO8601 string to `YYYY-MM-DD HH:MM:SS` (drop the timezone
+ * offset for readability — the value on disk is always with-offset, the
+ * displayed-without-offset is fine since memon is single-user).
+ */
+function formatTimestamp(iso: string): string {
+  if (!iso) return '—'
+  // ISO shape: 2026-05-04T10:00:00+08:00
+  // Take first 19 chars (YYYY-MM-DDTHH:MM:SS), replace T with space.
+  return iso.slice(0, 19).replace('T', ' ')
 }
