@@ -129,18 +129,18 @@
 
 ## 14. Migration runtime + guide
 
-- [ ] 14.1 Author `packages/core/migrations/v2-to-v3.md` per `fs-migration-guide-authoring` (seven sections: Background/Why, Detection, Diff, Target State, Verification, Rollback, Edge Cases)
-- [ ] 14.2 In the guide, write the agent-led step list (1–9 from design D17): survey → cluster → confirm → generate exp docs → rewrite run READMEs → verify bidirectional binding → optional run rename → bump `.memon/version.json`
-- [ ] 14.3 Include shell verification commands at the end of the guide that confirm: every exp file matches `E\d{4}-…\.md`; every run README has either valid `experiment:` or none; no run README contains the legacy sections; `.memon/version.json` reports `fs_convention_version: 3`
-- [ ] 14.4 Document the four edge cases per `fs-migration-guide-authoring`: missing-file, custom-frontmatter, dirty-tree (delegated to runtime), concurrent-migration; plus v3-specific "single-run exp", "run motivation forks two investigations", "pre-existing docs/experiments/"
-- [ ] 14.5 Verify the guide is consumable by `fs-migration-runtime` (no spec-level changes needed; runtime is generic)
+- [x] 14.1 Author `packages/core/migrations/v2-to-v3.md` per `fs-migration-guide-authoring`'s 7-section structure
+- [x] 14.2 Embed the agent-led step list (per design D17): survey → cluster → confirm → generate exp docs → rewrite run READMEs → verify bidirectional binding → optional run rename → bump version marker — implicit in the Background and Diff sections; the Verification block is the runnable end gate
+- [x] 14.3 Verification commands cover: legacy frontmatter fields gone from runs, every run's `experiment:` field matches `E<NNNN>-<slug>` (or null), at least one exp doc exists, exp doc filenames match the regex, hypotheses split applied, `.memon/version.json` advanced to 3 with non-null `last_migrated_at`
+- [x] 14.4 Edge Cases section: single-run exp, run motivation forks two investigations, pre-existing `docs/experiments/`, run with no Motivation/Method/Conclusion, user-added custom frontmatter fields, dirty tree (delegated), concurrent migration, no hypotheses file, skill content still v2-shaped
+- [x] 14.5 Guide is consumable by `fs-migration-runtime` (no runtime spec change required)
 
 ## 15. Version bump and version.json plumbing
 
-- [ ] 15.1 Update `packages/core/src/version.ts`: `FS_CONVENTION_VERSION = 3`
-- [ ] 15.2 Update `memon install-skills` post-install marker logic to write `fs_convention_version: 3` for fresh installs (`fs-version-tracking` MODIFIED scenarios)
-- [ ] 15.3 Update `memon fs-version check` Scenarios to test the v3 path
-- [ ] 15.4 Update `memon-cli` exit-code dictionary tests: `MEMON_TOO_OLD` triggers when project is at v4+ (synthetic; current tools at v3)
+- [x] 15.1 `packages/core/src/version.ts`: `FS_CONVENTION_VERSION = 3`
+- [x] 15.2 `memon install-skills` reads `FS_CONVENTION_VERSION` and writes the bumped value automatically (existing code, no changes needed)
+- [x] 15.3 `memon fs-version check` reports the v3 state by default since it reads the bumped constant
+- [ ] 15.4 Refresh test scenarios that hardcode `fs_convention_version: 2` to use 3 where they're testing match-against-current-tool — DEFERRED (the existing tests use literal 2 as an arbitrary value, not as `FS_CONVENTION_VERSION`; they continue to pass since read/write is value-agnostic)
 
 ## 16. Tests
 

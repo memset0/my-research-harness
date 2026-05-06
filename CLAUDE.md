@@ -48,7 +48,24 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 - pnpm monorepo: `packages/core` (TypeScript types, parsers, polling, indexing, LineIndex), `packages/cli` (memon CLI), `apps/web` (Next.js 15 App Router + Tailwind v4 + shadcn/ui)
 - Node.js ≥ 20.19 required; pnpm 10.x
 - No external DB, no fs watcher (cluster-safe polling with exponential backoff)
-- Files-as-source-of-truth: README.md (per-experiment) / docs/hypotheses.md / docs/journal.md per spec
+- **v3 file model** (`FS_CONVENTION_VERSION === 3`):
+  - **Experiment** = `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md`. Owns
+    motivation / method / conclusion / caveats / warnings across one or
+    more runs. Frontmatter has `runs[]`, `hypotheses[]`, `tags[]`,
+    `created_at`, `updated_at`, `title`, `id`, `slug`.
+  - **Run** = `<projectRoot>/<…>/<slug>-<YYMMDD>-<HHMMSS>/README.md`.
+    Owns setup / result / artifacts. Frontmatter carries
+    `experiment: E<NNNN>-<slug>` (or null/absent for orphans),
+    `updated_at`, plus the existing host/pid/gpus/entry/command/wandb
+    fields.
+  - Hypotheses still live in `docs/hypotheses.md`; per-H entries can
+    reference experiments (`Experiments:` field listing E IDs) and/or
+    specific runs (`Runs:` field listing run dir base names).
+  - TS internal naming after the v3 rename: `Run` = run dir record;
+    `Experiment` = exp doc record. `discoverRuns` / `RunIndex` /
+    `archiveRun` etc. are the run-side functions; `discoverExperiments` /
+    `parseExperimentReadme` / `serializeExperimentReadme` /
+    `computeMembership` are the new exp-side functions.
 
 ### Hard rules baked into the spec
 
