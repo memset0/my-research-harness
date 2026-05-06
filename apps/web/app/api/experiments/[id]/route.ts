@@ -1,45 +1,46 @@
-import { NextResponse } from 'next/server'
-import { isStaleRunning } from '@memon/core'
+// GET /api/experiments/:id — v3 experiment-doc detail.
+
+import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
     const rt = await getRuntime()
-    const { id } = await ctx.params
-    const exp = rt.index.get(id)
+    const exp = rt.experiments.get(id)
     if (!exp) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
         { status: 404 },
       )
     }
-
-    // User attention — reset backoff so subsequent polls are immediate
-    rt.pokeById(id)
-
+    const memberRuns = exp.frontMatter.runs
+      .map((r) => rt.index.get(r))
+      .filter((r): r is NonNullable<typeof r> => Boolean(r))
     return NextResponse.json({
       id: exp.id,
       project: exp.project,
       path: exp.path,
       mtime: exp.mtime,
-      hasReadme: exp.hasReadme,
       frontMatter: exp.frontMatter,
       sections: exp.sections,
-      warnings: exp.warnings,
       warningsRaw: exp.warningsRaw,
-      body: exp.body,
       parseErrors: exp.parseErrors,
       parseWarnings: exp.parseWarnings,
-      stale: isStaleRunning(exp),
-      // Resources hook: returns null in MVP, slot for future GPU/disk monitor
-      resources: null,
+      memberRuns: memberRuns.map((r) => ({
+        id: r.id,
+        status: r.frontMatter.status,
+        createdAt: r.frontMatter.createdAt,
+        updatedAt: r.frontMatter.updatedAt,
+        finishedAt: r.frontMatter.finishedAt,
+        host: r.frontMatter.host,
+        gpus: r.frontMatter.gpus,
+        path: r.path,
+      })),
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

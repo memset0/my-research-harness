@@ -92,7 +92,7 @@ function makeCtx<T extends Record<string, string>>(params: T): { params: Promise
   return { params: Promise.resolve(params) }
 }
 
-describe('GET /api/experiments/:id/warnings', () => {
+describe('GET /api/runs/:id/warnings', () => {
   it('returns empty warnings + mtime + hash when no warnings exist', async () => {
     const res = await GET(new NextRequest('http://x/'), makeCtx({ id: ID }))
     expect(res.status).toBe(200)
@@ -109,7 +109,7 @@ describe('GET /api/experiments/:id/warnings', () => {
   })
 })
 
-describe('POST /api/experiments/:id/warnings', () => {
+describe('POST /api/runs/:id/warnings', () => {
   it('appends a warning, returns rowId + new mtime + hash', async () => {
     const req = new NextRequest('http://x/', {
       method: 'POST',
@@ -150,7 +150,7 @@ describe('POST /api/experiments/:id/warnings', () => {
   })
 })
 
-describe('PATCH/DELETE /api/experiments/:id/warnings/:rowId', () => {
+describe('PATCH/DELETE /api/runs/:id/warnings/:rowId', () => {
   async function addOne(): Promise<string> {
     const req = new NextRequest('http://x/', {
       method: 'POST',

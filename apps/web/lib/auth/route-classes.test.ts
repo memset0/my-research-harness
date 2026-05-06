@@ -15,8 +15,8 @@ describe('classify', () => {
 
   it('classifies known GET /api/* read endpoints as read', () => {
     expect(classify('GET', '/api/projects')).toBe('read')
-    expect(classify('GET', '/api/experiments')).toBe('read')
-    expect(classify('GET', '/api/experiments/foo-260501-100000')).toBe('read')
+    expect(classify('GET', '/api/runs')).toBe('read')
+    expect(classify('GET', '/api/runs/foo-260501-100000')).toBe('read')
     expect(classify('GET', '/api/log/foo')).toBe('read')
     expect(classify('GET', '/api/log/stream/foo')).toBe('read')
     expect(classify('GET', '/api/events')).toBe('read')
@@ -31,8 +31,8 @@ describe('classify', () => {
   })
 
   it('classifies non-GET on read paths as mutating (default fail-closed)', () => {
-    expect(classify('PUT', '/api/experiments/foo/readme')).toBe('mutating')
-    expect(classify('POST', '/api/experiments/foo/journal')).toBe('mutating')
+    expect(classify('PUT', '/api/runs/foo/readme')).toBe('mutating')
+    expect(classify('POST', '/api/runs/foo/journal')).toBe('mutating')
     expect(classify('PATCH', '/api/projects')).toBe('mutating')
     expect(classify('DELETE', '/api/runtime/cache')).toBe('mutating')
   })

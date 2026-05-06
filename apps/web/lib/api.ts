@@ -62,12 +62,12 @@ export async function fetchProjects(): Promise<{ projects: ProjectSummary[] }> {
 }
 
 export async function fetchExperiments(project?: string): Promise<{ experiments: IndexedRun[] }> {
-  const url = project ? `/api/experiments?project=${encodeURIComponent(project)}` : '/api/experiments'
+  const url = project ? `/api/runs?project=${encodeURIComponent(project)}` : '/api/runs'
   return jsonFetch(url)
 }
 
 export async function fetchExperiment(id: string): Promise<FullExperiment> {
-  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}`)
+  return jsonFetch(`/api/runs/${encodeURIComponent(id)}`)
 }
 
 export async function fetchHypotheses(project: string): Promise<{ path: string } & ParsedHypotheses> {
@@ -236,7 +236,7 @@ export async function patchExperimentStatus(input: {
   expectedMtime: number
   expectedHash?: string
 }): Promise<PatchStatusResponse | PutReadmeConflict> {
-  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/status`, {
+  const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -359,14 +359,14 @@ export interface WarningsConflict {
 }
 
 export async function fetchWarnings(id: string): Promise<WarningsListResponse> {
-  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}/warnings`)
+  return jsonFetch(`/api/runs/${encodeURIComponent(id)}/warnings`)
 }
 
 export async function postWarning(
   id: string,
   input: { category: string; message: string; expectedMtime?: number; expectedHash?: string },
 ): Promise<WarningsOpResponse | WarningsConflict> {
-  const res = await fetch(`/api/experiments/${encodeURIComponent(id)}/warnings`, {
+  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/warnings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -383,7 +383,7 @@ export async function patchWarningApi(
   input: { op: 'resolve' | 'reopen'; note?: string; expectedMtime?: number; expectedHash?: string },
 ): Promise<WarningsOpResponse | WarningsConflict> {
   const res = await fetch(
-    `/api/experiments/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+    `/api/runs/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -402,7 +402,7 @@ export async function deleteWarningApi(
   input: { expectedMtime?: number; expectedHash?: string },
 ): Promise<WarningsOpResponse | WarningsConflict> {
   const res = await fetch(
-    `/api/experiments/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+    `/api/runs/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
     {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },

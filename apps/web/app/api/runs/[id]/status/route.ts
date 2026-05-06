@@ -1,4 +1,4 @@
-// PATCH /api/experiments/[id]/status — update status atomically.
+// PATCH /api/runs/[id]/status — update status atomically.
 //
 // Body: { status: Status, expectedMtime: number, expectedHash?: string }
 //

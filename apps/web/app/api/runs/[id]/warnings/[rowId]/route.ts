@@ -1,5 +1,5 @@
-// PATCH  /api/experiments/:id/warnings/:rowId  — { op: 'resolve' | 'reopen', note?, expectedMtime, expectedHash }
-// DELETE /api/experiments/:id/warnings/:rowId  — { expectedMtime, expectedHash }
+// PATCH  /api/runs/:id/warnings/:rowId  — { op: 'resolve' | 'reopen', note?, expectedMtime, expectedHash }
+// DELETE /api/runs/:id/warnings/:rowId  — { expectedMtime, expectedHash }
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { getRuntime } from '../../../../../../lib/runtime'

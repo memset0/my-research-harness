@@ -1,5 +1,5 @@
-// GET  /api/experiments/:id/warnings        — list parsed warnings + mtime + hash
-// POST /api/experiments/:id/warnings        — append a new OPEN row
+// GET  /api/runs/:id/warnings        — list parsed warnings + mtime + hash
+// POST /api/runs/:id/warnings        — append a new OPEN row
 //
 // Both go through `assertWithinProjectRoots()` (inside the warnings helper)
 // before any filesystem access. POST appends a `[WARNING]` JOURNAL event

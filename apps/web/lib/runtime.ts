@@ -14,23 +14,27 @@ import { promises as fs } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import {
+  computeMembership,
   DIGEST_FILENAME_REGEX,
-  RunIndex,
-  Poller,
-  REPORT_FILENAME_REGEX,
+  discoverExperiments,
   discoverRuns,
   extractTitle,
   loadConfig,
   parseHypotheses,
   parseJournal,
+  Poller,
   readRunDir,
+  REPORT_FILENAME_REGEX,
+  RunIndex,
   type AuthConfig,
   type Config,
   type DigestSummary,
-  type Run,
+  type Experiment,
+  type ExperimentMembershipAnomaly,
   type ParsedHypotheses,
   type ParsedJournal,
   type ReportSummary,
+  type Run,
 } from '@memon/core'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
@@ -48,6 +52,19 @@ export class Runtime {
   /** Most recent error during init or background refresh */
   public lastError: string | null = null
 
+  /**
+   * v3 experiment-doc index. Keyed by experiment id (`E<NNNN>-<slug>`).
+   * Populated at warmup; not currently polled (Slice E will wire poll
+   * tracking for `docs/experiments/` per task 5.6).
+   */
+  public readonly experiments: Map<string, Experiment> = new Map()
+
+  /**
+   * v3 anomaly snapshot per project name. Recomputed lazily by
+   * recomputeAnomalies(); stored here so /api/anomalies can read in O(1).
+   */
+  public readonly anomaliesByProject: Map<string, ExperimentMembershipAnomaly[]> = new Map()
+
   constructor(
     public readonly config: Config,
     public readonly configPath: string,
@@ -60,6 +77,22 @@ export class Runtime {
     public readonly digestsCache: DirCache<DigestSummary>,
     public readonly auth: AuthConfig,
   ) {}
+
+  /**
+   * Recompute the membership join + anomaly set for a single project.
+   * Called from init() and (eventually) from poll callbacks when either
+   * side of the binding changes.
+   */
+  recomputeAnomalies(projectName: string): void {
+    const experiments = Array.from(this.experiments.values()).filter(
+      (e) => e.project === projectName,
+    )
+    const runs = this.index
+      .list({ project: projectName })
+      .filter((r) => r.hasReadme || true) // include all; orphan detection wants empties too
+    const result = computeMembership({ experiments, runs, project: projectName })
+    this.anomaliesByProject.set(projectName, result.anomalies)
+  }
 
   /** Reset poll backoff for the experiment whose path matches `path`. */
   pokeByPath(path: string): void {
@@ -224,9 +257,10 @@ async function init(): Promise<Runtime> {
     },
   )
 
-  // Initial scan + parse + watch — file caches, dir caches and experiment
-  // scan in parallel.
+  // Initial scan + parse + watch — file caches, dir caches, run scan, and
+  // experiment-doc scan in parallel.
   const t0 = Date.now()
+  const experimentsByProject = new Map<string, Experiment[]>()
   await Promise.all([
     hypothesesCache.warmup(),
     journalCache.warmup(),
@@ -244,6 +278,12 @@ async function init(): Promise<Runtime> {
             // Skip unreadable directories
           }
         }
+      }
+    })(),
+    (async () => {
+      for (const project of config.projects) {
+        const { experiments: docs } = await discoverExperiments(project.root, project.name)
+        experimentsByProject.set(project.name, docs)
       }
     })(),
   ])
@@ -284,7 +324,7 @@ async function init(): Promise<Runtime> {
       `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests`,
   )
 
-  return new Runtime(
+  const runtime = new Runtime(
     config,
     configPath,
     index,
@@ -296,6 +336,14 @@ async function init(): Promise<Runtime> {
     digestsCache,
     auth,
   )
+
+  // Seed v3 experiment-doc state into the runtime + compute initial anomalies.
+  for (const [projectName, docs] of experimentsByProject) {
+    for (const doc of docs) runtime.experiments.set(doc.id, doc)
+    runtime.recomputeAnomalies(projectName)
+  }
+
+  return runtime
 }
 
 function projectForDir(config: Config, dir: string): string | null {

@@ -34,7 +34,7 @@ const SAMPLE_EXP = {
   parseWarnings: [],
 }
 
-describe('GET /api/experiments', () => {
+describe('GET /api/runs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -43,7 +43,7 @@ describe('GET /api/experiments', () => {
     const list = vi.fn(() => [SAMPLE_EXP])
     vi.mocked(getRuntime).mockResolvedValue({ index: { list } } as never)
 
-    const res = await GET(new NextRequest('http://localhost/api/experiments'))
+    const res = await GET(new NextRequest('http://localhost/api/runs'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.experiments).toHaveLength(1)
@@ -59,7 +59,7 @@ describe('GET /api/experiments', () => {
     const list = vi.fn(() => [])
     vi.mocked(getRuntime).mockResolvedValue({ index: { list } } as never)
 
-    await GET(new NextRequest('http://localhost/api/experiments?project=project-a'))
+    await GET(new NextRequest('http://localhost/api/runs?project=project-a'))
     expect(list).toHaveBeenCalledWith({ project: 'project-a' })
   })
 })

@@ -39,7 +39,7 @@ const RULES: RouteRule[] = [
       ['GET'],
       startsWithAny([
         '/api/projects',
-        '/api/experiments',
+        '/api/runs',
         '/api/log',
         '/api/log-files',
         '/api/events',
