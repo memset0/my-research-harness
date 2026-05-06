@@ -23,6 +23,15 @@ import {
   runUnarchive,
 } from './commands/experiment.js'
 import {
+  runExperimentCreate,
+  runExperimentDelete,
+  runExperimentLink,
+  runExperimentLs,
+  runExperimentShow,
+  runExperimentUnlink,
+} from './commands/experiment-doc.js'
+import { runRunRename } from './commands/run-rename.js'
+import {
   runWarningAdd,
   runWarningDelete,
   runWarningList,
@@ -207,8 +216,83 @@ program
       }),
   )
 
-const experiment = program.command('experiment').description('experiment write commands')
-const status = experiment.command('status').description('status field operations')
+const experiment = program
+  .command('experiment')
+  .description('experiment-doc commands (v3 docs/experiments/E<NNNN>-<slug>.md)')
+
+experiment
+  .command('ls')
+  .description('list experiment docs in the project')
+  .action(async () => {
+    const g = readGlobals()
+    await runExperimentLs(g)
+  })
+
+experiment
+  .command('show <id-or-slug>')
+  .description('show a single experiment doc by id or slug')
+  .action(async (idOrSlug: string) => {
+    const g = readGlobals()
+    await runExperimentShow({ ...g, idOrSlug })
+  })
+
+experiment
+  .command('create <slug>')
+  .description('allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>.md')
+  .option('--title <text>', 'human-readable title')
+  .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
+  .option('--from-run <run-dir>', 'bind an existing run as the first member')
+  .action(
+    async (
+      slug: string,
+      opts: { title?: string; hypotheses?: string; fromRun?: string },
+    ) => {
+      const g = readGlobals()
+      const hyps = opts.hypotheses
+        ? opts.hypotheses.split(',').map((s) => s.trim()).filter(Boolean)
+        : []
+      await runExperimentCreate({
+        ...g,
+        slug,
+        title: opts.title,
+        hypotheses: hyps,
+        fromRun: opts.fromRun,
+      })
+    },
+  )
+
+experiment
+  .command('link <id-or-slug> <run-dir-or-id>')
+  .description('bidirectionally bind a run to an experiment')
+  .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
+    const g = readGlobals()
+    await runExperimentLink({ ...g, experimentIdOrSlug, runIdOrDir })
+  })
+
+experiment
+  .command('unlink <id-or-slug> <run-dir-or-id>')
+  .description('clear the binding on both sides')
+  .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
+    const g = readGlobals()
+    await runExperimentUnlink({ ...g, experimentIdOrSlug, runIdOrDir })
+  })
+
+experiment
+  .command('delete <id-or-slug>')
+  .description("delete an experiment doc; cascade-unlinks runs (requires --force when bound runs exist)")
+  .option('--force', 'cascade-unlink without prompting', false)
+  .action(async (experimentIdOrSlug: string, opts: { force?: boolean }) => {
+    const g = readGlobals()
+    await runExperimentDelete({
+      ...g,
+      experimentIdOrSlug,
+      force: !!opts.force,
+    })
+  })
+
+const status = experiment
+  .command('status')
+  .description('status field operations (run-level; v2 alias of `memon run status`)')
 status
   .command('set <id>')
   .description('atomically write README + append [STATUS] event')
@@ -333,17 +417,79 @@ warning
 
 experiment
   .command('archive <id>')
-  .description('mark a run as archived (.archived sidecar)')
+  .description('mark a run as archived (run-level; v2 alias of `memon run archive`)')
   .action(async (id: string) => {
     const g = readGlobals()
     await runArchive({ ...g, runId: id })
   })
 experiment
   .command('unarchive <id>')
+  .description('unmark archived (run-level; v2 alias of `memon run unarchive`)')
+  .action(async (id: string) => {
+    const g = readGlobals()
+    await runUnarchive({ ...g, runId: id })
+  })
+
+const run = program
+  .command('run')
+  .description('run-dir commands (v3 logs/<slug>-<YYMMDD>-<HHMMSS>/)')
+
+run
+  .command('rename <id-or-dir> <new-slug>')
+  .description("rename a run's slug (timestamp suffix preserved); updates parent exp's runs[]")
+  .action(async (runIdOrDir: string, newSlug: string) => {
+    const g = readGlobals()
+    await runRunRename({ ...g, runIdOrDir, newSlug })
+  })
+
+run
+  .command('archive <id>')
+  .description('mark a run as archived (.archived sidecar)')
+  .action(async (id: string) => {
+    const g = readGlobals()
+    await runArchive({ ...g, runId: id })
+  })
+run
+  .command('unarchive <id>')
   .description('unmark archived')
   .action(async (id: string) => {
     const g = readGlobals()
     await runUnarchive({ ...g, runId: id })
+  })
+
+const runStatus = run.command('status').description('run status field operations')
+runStatus
+  .command('set <id>')
+  .description('atomically write README + append [STATUS] event')
+  .requiredOption('--to <status>', 'PENDING|RUNNING|FINISHED|FAILED|UNKNOWN')
+  .requiredOption('--expected-mtime <ms>', 'expected README mtime', (v) => Number(v))
+  .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
+    const g = readGlobals()
+    await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
+  })
+
+const runReadme = run.command('readme').description('run README.md operations')
+runReadme
+  .command('write <id>')
+  .description('overwrite README.md (content from stdin) with mtime/hash lock')
+  .requiredOption('--expected-mtime <ms>', 'expected README mtime', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 check')
+  .action(async (id: string, opts: { expectedMtime: number; expectedHash?: string }) => {
+    const g = readGlobals()
+    const stdinContent = await readStdin()
+    if (!stdinContent) {
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        'expected README content on stdin (e.g. cat new.md | memon run readme write ...)',
+      )
+    }
+    await runReadmeWrite({
+      ...g,
+      runId: id,
+      expectedMtime: opts.expectedMtime,
+      expectedHash: opts.expectedHash,
+      stdinContent,
+    })
   })
 
 program

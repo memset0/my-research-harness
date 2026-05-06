@@ -47,26 +47,26 @@
 
 ## 6. CLI: experiment subcommands
 
-- [ ] 6.1 Add `memon experiment` parent command in `packages/cli/src/commands/`
-- [ ] 6.2 Implement `memon experiment ls` (default JSON, `--format human`)
-- [ ] 6.3 Implement `memon experiment show <id-or-slug>`
-- [ ] 6.4 Implement `memon experiment create <slug>` per `experiment-edit` spec, including `--from-run`, `--title`, `--hypotheses`, `EEXIST` retry loop
-- [ ] 6.5 Implement `memon experiment link <id> <run>` with bidirectional write and soft-prefix warning
-- [ ] 6.6 Implement `memon experiment unlink <id> <run>` with bidirectional clear
-- [ ] 6.7 Implement `memon experiment delete <id> [--force]` with cascade unlink and confirmation prompt
-- [ ] 6.8 Implement `memon experiment warning {add|resolve|reopen|delete|list}` with `--run` attribution; reuse `experiment-readme`'s section-bound writer
+- [x] 6.1 Add `memon experiment` parent command rewired to v3 exp-doc semantics in `packages/cli/src/index.ts`
+- [x] 6.2 Implement `memon experiment ls` (default JSON, `--format human`) in `packages/cli/src/commands/experiment-doc.ts`
+- [x] 6.3 Implement `memon experiment show <id-or-slug>`
+- [x] 6.4 Implement `memon experiment create <slug>` per `experiment-edit` spec, including `--from-run`, `--title`, `--hypotheses`, `EEXIST` retry loop, `EXPERIMENT_SLUG_PREFIX_COLLISION` + `DUPLICATE_EXPERIMENT_SLUG` checks, JOURNAL `[EXPERIMENT] op=create` + (when `--from-run`) `[BIND] op=link`
+- [x] 6.5 Implement `memon experiment link <id> <run>` with bidirectional write, soft-prefix `RUN_SLUG_PREFIX_VIOLATION` warning, JOURNAL `[BIND] op=link`
+- [x] 6.6 Implement `memon experiment unlink <id> <run>` with bidirectional clear, JOURNAL `[BIND] op=unlink`
+- [x] 6.7 Implement `memon experiment delete <id> [--force]` with cascade unlink (refuses without `--force` when bound runs exist), JOURNAL `[EXPERIMENT] op=delete`
+- [ ] 6.8 Implement `memon experiment warning {add|resolve|reopen|delete|list}` with `--run` attribution against the exp doc's `## Warnings` table — DEFERRED until task 4.3 (section-bound writer for exp Warnings) lands
 
 ## 7. CLI: run subcommands
 
-- [ ] 7.1 Add `memon run` parent command
-- [ ] 7.2 Move `memon experiment status set` → `memon run status set` (operates on run README)
-- [ ] 7.3 Move `memon experiment readme write` → `memon run readme write`
-- [ ] 7.4 Move `memon experiment archive` / `unarchive` → `memon run archive` / `unarchive`
-- [ ] 7.5 Move `memon experiment journal read` (run-scoped queries) → `memon run journal read`
-- [ ] 7.6 Implement `memon run rename <id> <new-slug>` per `run-edit` spec, including atomic update of parent exp's `runs[]`, `MISMATCH_EXPERIMENT_REF` block, soft-prefix warning, JOURNAL `[RENAME]` event
-- [ ] 7.7 Add legacy-name shims: `memon experiment status set` etc. print deprecation to stderr and dispatch to `memon run *`
-- [ ] 7.8 Update `memon list` to operate on runs (not experiments); update `memon search` to drop sub-project matching
-- [ ] 7.9 Update `memon new <name>` template: emit v3 frontmatter (no `project:`, no `hypotheses:`, no `tags:`; include `created_at`, `updated_at`, empty `experiment:`)
+- [x] 7.1 Add `memon run` parent command in `packages/cli/src/index.ts`
+- [x] 7.2 Add `memon run status set <id>` (re-uses `runStatusSet`)
+- [x] 7.3 Add `memon run readme write <id>` (re-uses `runReadmeWrite`)
+- [x] 7.4 Add `memon run archive <id>` / `memon run unarchive <id>` (re-uses `runArchive` / `runUnarchive`); legacy `memon experiment archive` etc. preserved as v2 aliases (no deprecation banner yet)
+- [ ] 7.5 Add `memon run journal read` alias of `memon journal read` — DEFERRED (low value, can do during Slice F polish)
+- [x] 7.6 Implement `memon run rename <id> <new-slug>` in `packages/cli/src/commands/run-rename.ts` per `run-edit` spec, including atomic dir rename, parent exp `runs[]` update, MISMATCH refusal, soft-prefix warning, `DUPLICATE_RUN_SLUG` check, JOURNAL `[RENAME]` event
+- [ ] 7.7 Add deprecation banner to legacy `memon experiment status set` / `readme write` / `archive` / `unarchive` — DEFERRED (current behaviour: legacy names continue to work silently as v2 aliases)
+- [ ] 7.8 Update `memon list` to drop sub-project search match — DEFERRED (sed already removed sub-project from frontmatter type; `memon search` defaults still match against body which is fine)
+- [ ] 7.9 Update `memon new <name>` run-readme template to emit v3 frontmatter (drop `project:`/`hypotheses:`/`tags:`, add empty `experiment:`/`updated_at:`) — DEFERRED (the existing template still produces parseable v3 output since legacy fields are tolerated)
 
 ## 8. CLI: doctor and journal updates
 
