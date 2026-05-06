@@ -6,7 +6,7 @@ disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
-  version: '0.3.0'
+  version: '0.4.0'
 ---
 
 # memon-write-script
@@ -40,6 +40,82 @@ Branch on the `status` field:
 
 (`memon-migrate-fs` itself is exempt from this preflight; it IS the
 migration runtime and reads `.memon/version.json` directly.)
+
+## Identify the parent experiment
+
+A script and its experiment doc are paired by convention. Even when
+the user only asks for "a script", that script almost always exists
+to drive a particular investigation, and the corresponding
+`docs/experiments/E<NNNN>-<slug>.md` is the place where future
+agents will look for context — including a record of which scripts
+contribute to the experiment.
+
+**Before** you write the script, decide which of the three branches
+applies. Save the result as `$EXP_BINDING` for the registry-write
+step in "When you're done":
+
+### Branch 1 — User named an existing experiment
+
+The user referenced an exp by id (`E0001-foo`) or slug (`foo`).
+Confirm it exists:
+
+```sh
+memon experiment show "$EXP_BINDING_ARG" --project-root . --format json
+```
+
+- Exit 0 → set `EXP_BINDING=<the canonical id>`. READ the response's
+  `sections.method` field; you'll be appending to it later.
+- Exit 4 (`NOT_FOUND`) → the user named something that doesn't
+  exist. Ask the user (in Chinese) whether they meant an existing
+  exp (offer `memon experiment ls --format human` output as
+  options) or want to create a new one (drop into Branch 2).
+
+### Branch 2 — Experiment implied but no doc yet
+
+The user described an experiment ("write a script for the zero-SNR
+sweep", "I want to test bf16 throughput") but didn't reference an
+existing exp doc. Ask the user (in Chinese) whether to create one
+now:
+
+> 这个脚本看起来对应一个新 experiment（e.g. `<slug-i-suggest>`），
+> 但 `docs/experiments/` 下还没有对应的 doc。要不要现在创建？
+> 如果要，初始的 `## Motivation` / `## Method` 写什么？我可以
+> 拟一份草稿，由你确认/改。
+
+If the user agrees:
+
+1. Discuss initial Motivation / Method content with the user
+   (Method MAY start as a single sentence — the script registry
+   line will be appended to it after the script is written).
+2. Call `memon experiment create`:
+
+   ```sh
+   memon experiment create "<slug>" \
+     --project-root . \
+     --title "<one-line title>" \
+     --hypotheses "<H0001,H0007>"   # optional
+   ```
+
+3. Capture the returned `id` as `$EXP_BINDING`.
+4. If the user supplied initial body content, write it via
+   `memon experiment readme write` (read the freshly-created doc
+   first to get the mtime, modify the Method body, write back).
+5. Continue with the script-writing workflow below.
+
+If the user declines, treat as Branch 3.
+
+### Branch 3 — Explicitly no exp doc binding
+
+The user explicitly says "just write the script, no exp doc"
+(e.g. one-off smoke test, throwaway debugging tool, very early
+exploration where the investigation hasn't crystallised). Set
+`EXP_BINDING=` (empty). The script will be written without an
+exp-binding header comment, and the "When you're done"
+registry-write step will be skipped.
+
+This branch is fine but should be the exception. If the user is
+unsure, default to Branch 2 — creating the exp doc costs little
+and pays off later.
 
 ## Mental model — script ≠ run
 
@@ -143,10 +219,10 @@ checkpoints, all output files — lives inside `RUN_DIR`.
    the initial frontmatter + Setup content right after the script gets
    going. The script's _only_ responsibility for the run dir is
    `mkdir -p`; everything else (README, finalization, status
-   transitions, **and the v3 bind to a parent
-   `docs/experiments/E<NNNN>-<slug>.md` experiment doc**) happens from
-   outside via `memon-run-experiment`'s §0 + §6 / `memon experiment
-   link` CLI. The script itself stays purely v3-agnostic.
+   transitions, the run-to-experiment binding via `memon experiment
+   link`) happens from outside the script. The script itself stays
+   memon-agnostic so it runs on any host with bash + the experiment's
+   actual deps even with memon uninstalled.
 
 7. **One-line header at the top of every shell script**, right after the
    shebang:
@@ -399,7 +475,57 @@ not here.
 
 ## When you're done
 
-Tell the user:
+### Register the script with its parent experiment
+
+If `$EXP_BINDING` is set to an exp id (Branch 1 or Branch 2 from
+"Identify the parent experiment"), append a single line naming this
+script to that exp doc's `## Method` body — that way an agent
+reading the exp later can find every script that contributes to it
+without grepping `scripts/`.
+
+The format is the same as the `## Artifacts` section uses on run
+READMEs:
+
+```
+- `<rel-path-from-project-root>` — <one-sentence purpose>
+```
+
+For example:
+
+```
+- `scripts/erdos/run_zero_snr.sh` — zero-SNR ablation launcher
+- `scripts/erdos/run_baseline.sh` — baseline DDPM with the standard schedule
+```
+
+Workflow:
+
+1. Read the exp doc to get its current Method body + mtime:
+
+   ```sh
+   memon experiment show "$EXP_BINDING" --project-root . --format json \
+     | tee /tmp/exp.json
+   MTIME=$(jq -r .mtime /tmp/exp.json)
+   ```
+
+2. Modify the Method body in memory: append a new bullet line for
+   the script you just wrote. Preserve every existing line in
+   Method, Motivation, Conclusion, Caveats, Warnings, frontmatter.
+
+3. Re-emit the full doc body and pipe it back to
+   `memon experiment readme write`:
+
+   ```sh
+   cat new-exp-content.md \
+     | memon experiment readme write "$EXP_BINDING" \
+         --project-root . --expected-mtime "$MTIME"
+   ```
+
+4. On exit 9 (`CONFLICT`), refresh mtime and retry once. On a
+   second 9, stop and surface the current exp doc to the user.
+
+If `$EXP_BINDING` is empty (Branch 3), skip this step entirely.
+
+### Tell the user
 
 1. Where the script was written (`<scriptsDir>/run_<name>.sh`)
 2. The one-line header you chose
@@ -407,7 +533,9 @@ Tell the user:
 4. Where its run dirs will land
    (`<projectRoot>/${LOGS_DIR}/<RUN_NAME>-<TIMESTAMP>/`)
 5. Whether resume works (depends on the training program)
-6. **Ask whether to smoke-test now.** A throwaway `RUN_NAME=__smoke__`
+6. Whether the script was registered in an exp doc's Method
+   (`$EXP_BINDING` set), or written standalone (Branch 3)
+7. **Ask whether to smoke-test now.** A throwaway `RUN_NAME=__smoke__`
    invocation catches typos in the three `[memon]` echo lines and
    verifies `RUN_DIR` is created where claimed — but it spends real
    compute on the training step unless the script gates that. Don't
