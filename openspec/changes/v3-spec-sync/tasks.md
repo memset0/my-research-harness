@@ -52,21 +52,23 @@ state where listeners and invalidators disagree.
 
 ### D3 — anomaly payload spec update only
 
-- [ ] 1.10 `lib/runtime.ts` `recomputeAnomalies(project)` continues to
-      emit `{ project, count }`. Confirm the spec delta in
-      `specs/live-updates/spec.md` matches what the code emits — no
+- [x] 1.10 Verified `lib/runtime.ts:230` emits
+      `{ project: projectName, count: result.anomalies.length }`,
+      matching the spec delta in `specs/live-updates/spec.md`. No
       code change needed.
 
 ### D4 — v2 6-col warnings: spec update only
 
-- [ ] 1.11 `packages/core/src/readme/warnings.ts` already supports
-      6-col back-compat parse. Confirm the spec delta in
-      `specs/experiment-readme/spec.md` matches; no code change needed.
-- [ ] 1.12 (optional sanity) Add a unit test in
-      `packages/core/src/readme/warnings.test.ts` proving that a
-      section-bound write upgrades a 6-col table to 7-col (i.e. the
-      output table after `applyWarningOp` always has the v3 header
-      regardless of input).
+- [x] 1.11 Verified `packages/core/src/readme/warnings.ts` parses
+      both shapes (`v2-6col` / `v3-7col` switch in `parseWarningRow`,
+      shape detected at line 162); 6-col rows default `run: null`.
+      Matches the spec delta in `specs/experiment-readme/spec.md`.
+- [x] 1.12 Added 2 sanity tests under
+      `describe('section-bound writer always emits the v3 7-col header')`
+      in `packages/core/src/readme/warnings.test.ts`: any `applyWarningOp`
+      (add / resolve) on a v2 6-col table upgrades the output to v3
+      7-col with `Run` column (em-dash for pre-existing rows that
+      carry no run attribution).
 
 ## 2. Tests (16.2 + 16.3 + 16.4)
 

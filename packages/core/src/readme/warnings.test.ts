@@ -351,3 +351,78 @@ describe('WARNING_CATEGORIES', () => {
     expect(WARNING_CATEGORIES.length).toBe(8)
   })
 })
+
+describe('section-bound writer always emits the v3 7-col header', () => {
+  // v3-spec-sync task 1.12 — confirms that even when the input table
+  // is in legacy v2 6-col form (no `Run` column), applying any
+  // section-bound write upgrades the on-disk table to v3 7-col. This
+  // is the contract the experiment-readme spec delta promises: 6-col
+  // is read-tolerated, but writes always emit 7-col.
+  const V2_6COL_README = `---
+id: foo-260501-100000
+name: foo
+project: ''
+status: RUNNING
+created_at: '2026-05-01T10:00:00+08:00'
+finished_at: null
+host: null
+pid: null
+gpus: []
+entry: ./run.sh
+command: ./run.sh
+wandb: null
+hypotheses: []
+tags: []
+---
+
+## Setup
+s
+
+## Warnings
+
+| Status | Created | Category | Message | Resolved | Note |
+|--------|---------|----------|---------|----------|------|
+| OPEN | 2026-05-01T10:00:00+08:00 | result | spike at step 1500 | — | — | <!-- id:w_2026-05-01T10-00-00+08-00_a3f1 -->
+
+## Result
+r
+`
+
+  it('upgrades a 6-col table to 7-col on add', () => {
+    const result = applyWarningOp(V2_6COL_README, {
+      op: 'add',
+      category: 'config',
+      message: 'a new row',
+      created: '2026-05-02T10:00:00+08:00',
+      rowId: 'w_2026-05-02T10-00-00+08-00_b4f2',
+      run: null,
+    })
+    expect(result.content).toContain(
+      '| Status | Created | Run | Category | Message | Resolved | Note |',
+    )
+    expect(result.content).not.toContain(
+      '| Status | Created | Category | Message | Resolved | Note |',
+    )
+    // Both rows now have 7 cells. The pre-existing row's Run column
+    // back-fills as `—` (em dash) since v2 carried no per-row run
+    // attribution.
+    const lines = result.content.split('\n').filter((l) => l.startsWith('| OPEN ') || l.startsWith('| RESOLVED '))
+    expect(lines.length).toBe(2)
+    for (const l of lines) {
+      // Count pipe separators — 7 cells means 8 pipes.
+      expect((l.match(/\|/g) ?? []).length).toBeGreaterThanOrEqual(8)
+    }
+  })
+
+  it('upgrades a 6-col table to 7-col on resolve', () => {
+    const result = applyWarningOp(V2_6COL_README, {
+      op: 'resolve',
+      rowId: 'w_2026-05-01T10-00-00+08-00_a3f1',
+      resolved: '2026-05-02T11:00:00+08:00',
+      note: 'fixed by config sweep',
+    })
+    expect(result.content).toContain(
+      '| Status | Created | Run | Category | Message | Resolved | Note |',
+    )
+  })
+})
