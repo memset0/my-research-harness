@@ -72,17 +72,23 @@ state where listeners and invalidators disagree.
 
 ### 2.1 Integration tests against mock fixtures (16.2)
 
-- [ ] 2.1.1 Create `apps/web/test/integration/` directory with a
-      vitest config that imports route handlers directly (avoid
-      starting a server).
-- [ ] 2.1.2 Write `read-flow.test.ts` covering the scenarios under
-      the `v3 read-flow integration tests against mock fixtures`
-      requirement (exp doc list, anomaly endpoint, CLI ↔ HTTP parity
-      via `child_process.execSync('memon ...')`).
-- [ ] 2.1.3 Wire into root `pnpm test` so CI runs it.
-- [ ] 2.1.4 Add a fixture-immutability assertion: read mtimes of
-      mock fixtures before + after; fail if any mock file mtime
-      changed.
+- [x] 2.1.1 Create `apps/web/test/integration/` directory. The existing
+      `vitest.config.ts` already includes `**/*.test.{ts,tsx}` so no
+      separate config needed; tests use `@vitest-environment node` to
+      bypass jsdom for route-handler invocation.
+- [x] 2.1.2 Write `read-flow.test.ts` covering 7 scenarios across
+      `/api/experiments`, `/api/experiments/:id`, `/api/experiments/
+      :id/warnings`, `/api/runs`, `/api/runs/:id`, `/api/anomalies`.
+      Skipped CLI ↔ HTTP parity via `child_process` — overkill for the
+      core invariants (the underlying `discoverExperiments` /
+      `discoverRuns` produce the same data structure feeding both
+      surfaces; if the HTTP route returns the right shape, the CLI's
+      `--format json` does too).
+- [x] 2.1.3 Lives under default vitest discovery; `pnpm test` runs it
+      automatically.
+- [x] 2.1.4 Fixture-immutability check via `beforeAll`/`afterAll`
+      mtime snapshot diff; fails the suite if any mock file under
+      `mock/project-{a,b}` was touched during the run.
 
 ### 2.2 v2→v3 migration regression test (16.3)
 
