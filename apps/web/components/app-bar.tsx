@@ -21,8 +21,18 @@ export function AppBar({ project }: { project: string }) {
       name: 'Experiments',
       kind: 'experiments',
       href: projectBase,
-      // Active for the list view AND any experiment detail page
-      matches: (p) => p === projectBase || p.startsWith(`${projectBase}/experiments`),
+      // Active for the project root, v3 exp-doc detail (`/e/<id>`), the
+      // legacy v2 detail (`/experiments/<id>`), and the legacy run URL
+      // (`/r/<id>`) which permanent-redirects to `/e/<id>` — including
+      // it here keeps the highlight stable across the redirect. Each
+      // sub-segment match uses a trailing `/` so a hypothetical sibling
+      // segment (`/eats`, `/reports`) cannot false-positive.
+      matches: (p) =>
+        p === projectBase ||
+        p.startsWith(`${projectBase}/e/`) ||
+        p.startsWith(`${projectBase}/r/`) ||
+        p.startsWith(`${projectBase}/experiments/`) ||
+        p === `${projectBase}/experiments`,
     },
     {
       name: 'Hypotheses',

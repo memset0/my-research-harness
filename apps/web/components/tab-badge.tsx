@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   fetchDigests,
-  fetchExperiments,
+  fetchExperimentDocs,
   fetchHypotheses,
   fetchJournalCount,
   fetchReports,
@@ -88,9 +88,12 @@ function useTabCount(kind: TabKind, project: string): TabCountResult {
 }
 
 function useExperimentsCount(project: string): TabCountResult {
+  // The Experiments tab is for v3 exp docs, NOT runs. Use the v3 endpoint
+  // and the canonical v3 query key so this badge shares cache + SSE
+  // invalidations with the project list / detail views.
   const q = useQuery({
-    queryKey: ['runs', project],
-    queryFn: () => fetchExperiments(project),
+    queryKey: ['experiments', project],
+    queryFn: () => fetchExperimentDocs(project),
     staleTime: 5_000,
   })
   return { value: q.data?.experiments.length, isLoading: q.isLoading }
