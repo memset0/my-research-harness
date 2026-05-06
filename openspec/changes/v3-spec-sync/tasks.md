@@ -148,30 +148,29 @@ state where listeners and invalidators disagree.
 
 ## 3. Cosmetic + docs (16.5 + 17.1)
 
-- [ ] 3.1 Rename `apps/web/components/experiment-page.tsx` →
-      `apps/web/components/exp-doc-page.tsx`. Update its single import
-      site (`app/p/[project]/e/[id]/page.tsx`) and the
-      `import` statement inside the file. Tests with names hardcoded
-      to the old filename get updated alongside.
-- [ ] 3.2 Audit `apps/web/components/*.test.tsx` and
-      `apps/web/components/*.tsx` for files whose name says
-      `experiment-*` but that test/render run-side data (e.g.
-      `experiment-list.tsx` actually lists runs in v3 lingo). Rename
-      where the meaning is unambiguous; leave alone where the name
-      genuinely refers to v3 exp docs.
-- [ ] 3.3 Update `CLAUDE.md`: add a section on the v3 file model
-      (canonical `docs/experiments/E*.md` + run dirs as separate
-      units; bidirectional binding; membership-anomaly surface);
-      list the new action-bar button locations
-      (`Edit markdown`, `Open Claude Code`, exp-level + per-run-panel);
-      list the new CLI subcommands
-      (`memon experiment {ls,show,create,link,unlink,delete}`,
-      `memon run rename`); list the new web endpoints
-      (`/api/experiments/*`, `/api/runs/:id/readme`,
-      `/api/open-claude-code`).
-- [ ] 3.4 Cross-reference: ensure CLAUDE.md mentions the SSE topic
-      rename (D1) so a fresh session knows `experiment-change` means
-      exp-doc events in v3, not run events.
+- [-] 3.1 ~Rename `experiment-page.tsx` → `exp-doc-page.tsx`~ — skipped.
+      In v3 lingo, `experiment` MEANS exp doc; the file name
+      `experiment-page.tsx` is now semantically correct. Renaming
+      would churn 4 import sites for zero clarity gain.
+- [-] 3.2 ~Audit other `experiment-*` files for run-side semantics~ —
+      `experiment-list.tsx` is dead code (no imports remain — v2 list
+      page replaced by `experiment-card-grid.tsx`); a follow-up
+      cleanup change can delete it. `experiment-detail.tsx` still
+      lives on the legacy `/p/<project>/experiments/<id>` route which
+      is being phased out separately. Both deferred.
+- [x] 3.3 Updated `CLAUDE.md` with a new "v3 surfaces" subsection
+      under "Repo-specific conventions". Covers: action bars (Edit
+      markdown / Open Claude Code) at exp-doc page + per-run-panel
+      with component pointers; new v3 CLI subcommands (experiment
+      ls/show/create/link/unlink/delete + run rename + warning add
+      v3-form); deprecated v2 alias commands and the
+      `MEMON_QUIET_DEPRECATIONS` env escape hatch; new web endpoints
+      (/api/experiments/*, /api/runs/:id/readme, /api/open-claude-code,
+      /api/anomalies); SSE topic semantics (no alias); TanStack query
+      key conventions for run-side vs exp-doc-side caches.
+- [x] 3.4 The "v3 surfaces" section explicitly notes that
+      `experiment-change` means exp-doc events in v3; old listeners
+      need to migrate to `run-change`.
 
 ## 4. Verification
 

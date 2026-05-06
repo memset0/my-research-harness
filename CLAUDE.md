@@ -67,6 +67,75 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
     `parseExperimentReadme` / `serializeExperimentReadme` /
     `computeMembership` are the new exp-side functions.
 
+### v3 surfaces (post `v3-spec-sync`)
+
+The dashboard, CLI, and SSE wire surfaces all changed when v3 landed.
+A fresh session shouldn't have to git-blame these — they're listed here
+so you can wire up new code without re-discovering the layout.
+
+**Web action bars** (rendered at the top of every exp-doc detail page,
+plus inline at the top of each expanded run panel):
+- `Edit markdown` — opens `ReadmeEditor` in a Dialog with a v3
+  id-addressed `target = { kind: 'exp', id }` (or `'run'`). The
+  underlying call hits `PUT /api/experiments/:id/readme` or
+  `PUT /api/runs/:id/readme`. Component: `EditMarkdownButton` in
+  `apps/web/components/edit-markdown-button.tsx`.
+- `Open Claude Code` — calls `POST /api/open-claude-code` and copies
+  the suggested `cd <dir> && claude` command to clipboard. Component:
+  `OpenClaudeCodeButton` in `apps/web/components/open-claude-code-button.tsx`.
+  Distinct from the existing `TerminalButton` (which spawns ttyd+tmux+
+  claude in the browser via `/api/terminal/start`).
+
+**v3 CLI subcommands** (in addition to the v2 surface):
+- `memon experiment ls` — list exp docs in the project
+- `memon experiment show <id-or-slug>` — print one exp doc
+- `memon experiment create <slug> [--title T] [--from-run <run-dir>]` —
+  allocate next E<NNNN> and write `docs/experiments/E<NNNN>-<slug>.md`
+- `memon experiment link|unlink <exp> <run>` — bidirectional bind
+- `memon experiment delete <exp> [--force]` — cascade-unlink + delete
+- `memon experiment warning add <exp-id-or-run-dir> [--run <r>] --category C --message M` —
+  v3 form writes to the exp doc's `## Warnings`; v2 form (run-dir id)
+  writes to the run README, no `--run` allowed
+- `memon run rename <run> <new-slug>` — rename preserving timestamp suffix
+- `memon experiment {status set,readme write,archive,unarchive}` —
+  legacy v2 aliases. Each emits a one-line `[deprecation]` banner to
+  stderr. Use `memon run {status set,readme write,archive,unarchive}`
+  in new code. Set `MEMON_QUIET_DEPRECATIONS=1` to silence the banner.
+
+**v3 web endpoints**:
+- `GET /api/experiments[?project=…]` — exp doc list with effective times
+- `GET /api/experiments/:id` — exp doc detail incl. `memberRuns[]` and
+  `effectiveCreatedAt` / `effectiveUpdatedAt`
+- `POST /api/experiments` — create (web equivalent of CLI create)
+- `DELETE /api/experiments/:id[?force=true]` — cascade-unlink + delete
+- `POST /api/experiments/:id/link` / `:id/unlink` — bind / release
+- `PUT /api/experiments/:id/readme` — write exp doc body with mtime+hash lock
+- `GET|POST|PATCH|DELETE /api/experiments/:id/warnings[/:rowId]` — v3
+  Warnings table (with `Run` column and per-row `run` attribution)
+- `PUT /api/runs/:id/readme` — id-addressed v3 replacement for legacy
+  `/api/readme` (which took an absolute path). Both routes bump
+  `updated_at` server-side and return `finalContent` so the editor
+  re-baselines its buffer.
+- `POST /api/open-claude-code` — `{kind: 'exp'|'run', id, projectName}`
+  → `{command, cwd, hint}`. Returns a copy-paste command, does NOT spawn.
+- `GET /api/anomalies?project=…` — membership anomalies (orphan runs,
+  phantom refs, mismatch refs, slug-uniqueness violations).
+
+**SSE wire topics** (post v3-spec-sync rename — no aliases anymore):
+- `run-change` — fires on RUN edits (frontmatter / body / status). Payload
+  carries `parentExperimentId` when the run is bound, so the client can
+  invalidate the parent exp's detail cache too.
+- `experiment-change` — fires on EXP-DOC edits/creates/deletes/binds.
+  In v3 this topic name MEANS exp-doc events; the v2 alias for run
+  edits has been removed. Old listeners that still subscribe to
+  `experiment-change` expecting run events SHOULD migrate to `run-change`.
+- `anomaly` — `{project, count}` after `recomputeAnomalies(project)`.
+
+**TanStack query keys** (matched to SSE topics for invalidation):
+- Run-side: `['runs', project]`, `['run', id]`
+- Exp-doc-side: `['experiments', project]`, `['experiment', id]`
+- Anomalies: `['anomalies', project]`, `['anomalies']`
+
 ### Hard rules baked into the spec
 
 - **No `fs.watch` / `chokidar` / inotify-based watchers** anywhere. Polling with exponential backoff (default 1s → 5min, factor 2). The user runs on shared clusters with hard inotify limits.
