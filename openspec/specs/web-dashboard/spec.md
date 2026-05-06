@@ -67,7 +67,7 @@ experiment-card grid whenever the project has at least one anomaly
 - Header: `⚠ <count> issues need resolution` on the left; a single
   `Copy all` action button anchored to the top-right via shadcn's
   `CardAction` slot.
-- Body: scrollable list of anomaly messages (`max-h-[40vh]
+- Body: scrollable list of anomaly messages (`max-h-[20vh]
   overflow-y-auto`), one line per anomaly with the code, IDs, and
   message.
 - `Copy all`: copies a text block with project name, ISO timestamp,
@@ -103,6 +103,12 @@ When the project has zero anomalies, the banner does not render.
   `pt-0` override class
 - **AND** the `Copy all` button carries `data-slot="card-action"` so
   the shadcn header grid lays it out in the top-right column
+
+#### Scenario: Scroll-area max-height
+- **GIVEN** a project with enough anomalies to overflow the banner
+- **WHEN** the banner renders
+- **THEN** the scrollable list `<ul>` carries the class
+  `max-h-[20vh]` (NOT `max-h-[40vh]` — the historic value)
 
 ### Requirement: Orphan run cards in the grid
 
@@ -233,4 +239,31 @@ SHALL scroll to the orphan card for that run.
 - **WHEN** the user navigates to `/p/<project>/r/solo-260501-100000`
 - **THEN** the URL is rewritten to `/p/<project>` and the page scrolls
   to the orphan card
+
+### Requirement: List-page section ordering
+
+The project list page SHALL render its top-level sections in this
+fixed top-to-bottom order:
+
+1. The page heading (`<h2>Experiments (<count>)</h2>`).
+2. The anomaly banner (when at least one anomaly exists; otherwise
+   absent).
+3. The experiment-card grid (or its empty-state message).
+
+The heading text and level SHALL NOT change based on whether
+anomalies are present — it always reads `Experiments (<count>)` and
+always sits at the top.
+
+#### Scenario: Heading sits above the banner
+- **GIVEN** a project with at least one anomaly
+- **WHEN** the user opens `/p/<project>`
+- **THEN** the rendered DOM order under the page wrapper is:
+  `<h2>Experiments (N)</h2>` first, then the anomaly banner card,
+  then the grid
+
+#### Scenario: Heading still on top when no anomalies
+- **GIVEN** a project with zero anomalies
+- **WHEN** the user opens `/p/<project>`
+- **THEN** the page heading is the first child of the page wrapper
+  (the anomaly banner returns null and is not in the DOM at all)
 

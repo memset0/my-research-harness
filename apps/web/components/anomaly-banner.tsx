@@ -48,7 +48,7 @@ export function AnomalyBanner({ project }: { project: string }) {
         </CardAction>
       </CardHeader>
       <CardContent>
-        <ul className="max-h-[40vh] space-y-1 overflow-y-auto text-xs">
+        <ul className="max-h-[20vh] space-y-1 overflow-y-auto text-xs">
           {anomalies.map((a, i) => (
             <li key={i} className="font-mono">
               <span className="font-semibold">{a.code}</span>

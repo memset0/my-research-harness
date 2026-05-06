@@ -40,10 +40,10 @@ export function ExperimentCardGrid({ project }: { project: string }) {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
-      <AnomalyBanner project={project} />
       <h2 className="text-lg font-semibold">
         Experiments <span className="font-normal text-sm text-muted-foreground">({sortedExps.length})</span>
       </h2>
+      <AnomalyBanner project={project} />
       <div className="flex flex-col gap-3">
         {sortedExps.map((exp) => (
           <ExperimentCard key={exp.id} project={project} exp={exp} />

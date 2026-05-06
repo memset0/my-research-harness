@@ -137,7 +137,7 @@ The web list page SHALL render a yellow-bordered card pinned at the top
 of the experiment-card grid whenever the project has at least one
 anomaly. The card:
 - Shows a count summary in its header (`⚠ 3 issues need resolution`)
-- Lists each anomaly's message in a scrollable body (`max-h-[40vh]
+- Lists each anomaly's message in a scrollable body (`max-h-[20vh]
   overflow-y-auto`)
 - Provides a `Copy all` action button anchored to the top-right of the
   card header (via shadcn's `CardAction` slot) that copies the
