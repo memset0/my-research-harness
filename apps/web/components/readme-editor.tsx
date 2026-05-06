@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import {
   fetchExpDocReadme,
   fetchReadme,
+  fetchRunReadme,
   putExpDocReadme,
   putReadme,
   putRunReadme,
@@ -105,7 +106,8 @@ export function ReadmeEditorBody({
 
   const loadFromDisk = useCallback(async () => {
     if (target?.kind === 'exp') return fetchExpDocReadme(target.id)
-    // Legacy path-based load for run + v2 callers.
+    if (target?.kind === 'run') return fetchRunReadme(target.id)
+    // Legacy path-based load for v2 callers (no v3 target supplied).
     return fetchReadme(path)
   }, [path, target])
 

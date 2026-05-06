@@ -214,6 +214,20 @@ export async function fetchReadme(path: string): Promise<FetchedReadme> {
 }
 
 /**
+ * Fetch a v3 run README by id. Mirrors `fetchExpDocReadme`: looks up the
+ * run dir via the detail endpoint, joins `/README.md`, then reads via
+ * the legacy `/api/readme` endpoint. Needed because `Run.path` is the
+ * run DIRECTORY (not the README file) — passing the dir to
+ * `/api/readme?path=…` triggers `EISDIR` server-side.
+ */
+export async function fetchRunReadme(id: string): Promise<FetchedReadme> {
+  const detail = await jsonFetch<{ path: string; mtime: number }>(
+    `/api/runs/${encodeURIComponent(id)}`,
+  )
+  return fetchReadme(`${detail.path}/README.md`)
+}
+
+/**
  * Fetch a v3 experiment doc README by id. Returned shape matches
  * `FetchedReadme` so the editor's load handler stays uniform across modes.
  */
