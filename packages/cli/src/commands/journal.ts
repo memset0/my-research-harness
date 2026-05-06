@@ -36,7 +36,7 @@ export async function runJournalRead(input: JournalReadInput): Promise<void> {
     cwd: input.cwd,
   })
   const root = singleProjectRoot(ctx)
-  const journalPath = join(root, 'JOURNAL.md')
+  const journalPath = join(root, 'docs', 'journal.md')
 
   let parsed
   try {
@@ -101,7 +101,7 @@ export async function runJournalAppend(input: JournalAppendInput): Promise<void>
     cwd: input.cwd,
   })
   const root = singleProjectRoot(ctx)
-  const journalPath = join(root, 'JOURNAL.md')
+  const journalPath = join(root, 'docs', 'journal.md')
 
   const timestamp = input.at ?? nowIso()
   const expPart = input.experimentId ? `\`${input.experimentId}\` ` : ''
@@ -128,7 +128,7 @@ export async function runJournalDigestMark(input: JournalDigestMarkInput): Promi
     cwd: input.cwd,
   })
   const root = singleProjectRoot(ctx)
-  const journalPath = join(root, 'JOURNAL.md')
+  const journalPath = join(root, 'docs', 'journal.md')
 
   // Seed with empty event list if missing — needed for the regex anchor
   try {

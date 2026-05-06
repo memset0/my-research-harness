@@ -3,7 +3,7 @@
 // here are watched alongside experiment directories under the same backoff
 // rules (1s → 5min, factor 2 by default).
 //
-// Used for HYPOTHESES.md and JOURNAL.md per project (see ../runtime.ts), but
+// Used for docs/hypotheses.md and docs/journal.md per project (see ../runtime.ts), but
 // the class is generic so other file-shaped sources of truth can plug in
 // later without churn.
 //

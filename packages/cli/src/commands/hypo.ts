@@ -67,7 +67,7 @@ async function collectHypotheses(opts: HypoListOptions): Promise<CollectedEntry[
   const out: CollectedEntry[] = []
   for (const project of config.projects) {
     if (opts.project && project.name !== opts.project) continue
-    const path = join(project.root, 'HYPOTHESES.md')
+    const path = join(project.root, 'docs', 'hypotheses.md')
     let content: string
     try {
       content = await fs.readFile(path, 'utf8')

@@ -163,10 +163,10 @@ program
     })
   })
 
-const journal = program.command('journal').description('JOURNAL.md commands')
+const journal = program.command('journal').description('docs/journal.md commands')
 journal
   .command('read')
-  .description('read parsed events from JOURNAL.md (JSON)')
+  .description('read parsed events from docs/journal.md (JSON)')
   .option('--since <iso>', 'filter events with timestamp >= this ISO string')
   .option('--tag <tag>', 'filter by tag (NOTE / REQUEST / STATUS / CREATE / ARCHIVE / ERROR)')
   .option('--experiment-id <id>', 'filter to events touching this experiment id')
@@ -188,7 +188,7 @@ journal
   })
 journal
   .command('digest-mark')
-  .description('update last_digest_at in JOURNAL.md frontmatter (digest skill only)')
+  .description('update last_digest_at in docs/journal.md frontmatter (digest skill only)')
   .requiredOption('--at <iso>', 'ISO8601 timestamp with offset')
   .action(async (opts: { at: string }) => {
     const g = readGlobals()
@@ -200,7 +200,7 @@ program
   .description('hypotheses commands (agent-shaped JSON output)')
   .addCommand(
     new Command('read')
-      .description('read parsed HYPOTHESES.md (JSON)')
+      .description('read parsed docs/hypotheses.md (JSON)')
       .action(async () => {
         const g = readGlobals()
         await runHypothesesRead(g)

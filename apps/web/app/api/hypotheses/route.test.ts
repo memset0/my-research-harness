@@ -13,7 +13,7 @@ function fakeRuntime(overrides: Partial<{ hypothesesPath: (n: string) => string 
   return {
     hypothesesPath:
       overrides.hypothesesPath ??
-      ((n: string) => (n === 'project-a' ? '/p/a/HYPOTHESES.md' : null)),
+      ((n: string) => (n === 'project-a' ? '/p/a/docs/hypotheses.md' : null)),
     hypothesesCache: {
       get: () => ({
         value: overrides.cacheValue ?? {
@@ -70,7 +70,7 @@ describe('GET /api/hypotheses', () => {
     )
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.path).toBe('/p/a/HYPOTHESES.md')
+    expect(body.path).toBe('/p/a/docs/hypotheses.md')
     expect(body.entries).toHaveLength(1)
     expect(body.entries[0]).toMatchObject({ id: 'H0001', status: 'CONFIRMED' })
   })

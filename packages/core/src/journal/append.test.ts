@@ -17,7 +17,7 @@ afterEach(async () => {
 
 describe('appendJournalEvent', () => {
   it('seeds a new file with frontmatter when missing', async () => {
-    const path = join(dir, 'JOURNAL.md')
+    const path = join(dir, 'journal.md')
     await appendJournalEvent({
       path,
       event: {
@@ -33,7 +33,7 @@ describe('appendJournalEvent', () => {
   })
 
   it('appends to an existing file without modifying frontmatter', async () => {
-    const path = join(dir, 'JOURNAL.md')
+    const path = join(dir, 'journal.md')
     const initial = `---
 last_digest_at: 2026-05-03T10:00:00+08:00
 ---
@@ -58,7 +58,7 @@ last_digest_at: 2026-05-03T10:00:00+08:00
 
 describe('updateLastDigestAt', () => {
   it('replaces the existing value preserving body', async () => {
-    const path = join(dir, 'JOURNAL.md')
+    const path = join(dir, 'journal.md')
     const initial = `---
 last_digest_at: 2026-05-03T10:00:00+08:00
 ---
@@ -74,7 +74,7 @@ last_digest_at: 2026-05-03T10:00:00+08:00
   })
 
   it('throws when no frontmatter present', async () => {
-    const path = join(dir, 'JOURNAL.md')
+    const path = join(dir, 'journal.md')
     await fs.writeFile(path, '- 2026-05-03T08:00:00+08:00 [NOTE] `x` y\n', 'utf8')
     await expect(updateLastDigestAt(path, '2026-05-03T12:00:00+08:00')).rejects.toThrow()
   })

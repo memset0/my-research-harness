@@ -1,4 +1,4 @@
-// appendJournalEvent — append a new event line to JOURNAL.md without ever
+// appendJournalEvent — append a new event line to docs/journal.md without ever
 // modifying the frontmatter (which only the digest agent may touch).
 //
 // Strategy:
@@ -17,7 +17,7 @@ import type { JournalEvent, JournalEventTag } from '../types.js'
 import { formatJournalEvent } from './serialize.js'
 
 export interface AppendJournalInput {
-  /** Absolute path to the project's JOURNAL.md */
+  /** Absolute path to the project's docs/journal.md */
   path: string
   /** Event to append */
   event: Pick<JournalEvent, 'timestamp' | 'tag' | 'body'> & { tag: JournalEventTag | string }
@@ -101,6 +101,10 @@ function replaceLastDigestAt(content: string, isoTimestamp: string): string {
 
 async function atomicWrite(path: string, content: string): Promise<void> {
   const dir = dirname(path)
+  // v2 path is `<root>/docs/journal.md`; the `docs/` parent may not exist yet
+  // for a brand-new project (or a fresh test fixture). Idempotent mkdir -p
+  // so the first append succeeds without forcing every caller to pre-create.
+  await fs.mkdir(dir, { recursive: true })
   const tmp = join(dir, `.${Date.now()}-${Math.random().toString(36).slice(2)}.journal.tmp`)
   await fs.writeFile(tmp, content, 'utf8')
   await fs.rename(tmp, path)

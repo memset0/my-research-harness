@@ -14,7 +14,7 @@ export interface HypothesesReadInput {
 export async function runHypothesesRead(input: HypothesesReadInput): Promise<void> {
   const ctx = await resolveContext(input)
   const root = singleProjectRoot(ctx)
-  const hypPath = join(root, 'HYPOTHESES.md')
+  const hypPath = join(root, 'docs', 'hypotheses.md')
 
   try {
     const content = await fs.readFile(hypPath, 'utf8')

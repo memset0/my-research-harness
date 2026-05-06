@@ -62,7 +62,7 @@ const EMPTY_COPY = {
   digests: {
     rail: 'no digests yet',
     body:
-      'No digests yet. Digests are written by `memon-digest-journal` and snapshot a date range from JOURNAL.md.',
+      'No digests yet. Digests are written by `memon-digest-journal` and snapshot a date range from docs/journal.md.',
   },
 } as const
 

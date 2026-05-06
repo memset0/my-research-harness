@@ -128,7 +128,7 @@ The intent is a stable visual hierarchy — tiny label → small value → mediu
 
 ### Requirement: Status display uses colored Badge with lucide icon
 
-Both experiment-run status (`PENDING` / `RUNNING` / `FINISHED` / `FAILED` / `UNKNOWN`) and hypothesis status (`CONFIRMED` / `REFUTED` / `PARTIAL` / `OPEN` / `DEFERRED`) SHALL render in the UI as a `<Badge variant="outline">` with a `lucide-react` icon plus the enum string. The on-disk JOURNAL.md / HYPOTHESES.md / README.md files continue to use the canonical emoji (📝 🟢 ✅ ❌ ❓ for runs, ✅ ❌ 🟡 🔵 ⚪ for hypotheses) per the parsing spec; the **emoji is never shown in the rendered UI**.
+Both experiment-run status (`PENDING` / `RUNNING` / `FINISHED` / `FAILED` / `UNKNOWN`) and hypothesis status (`CONFIRMED` / `REFUTED` / `PARTIAL` / `OPEN` / `DEFERRED`) SHALL render in the UI as a `<Badge variant="outline">` with a `lucide-react` icon plus the enum string. The on-disk `docs/journal.md` / `docs/hypotheses.md` / `README.md` files continue to use the canonical emoji (📝 🟢 ✅ ❌ ❓ for runs, ✅ ❌ 🟡 🔵 ⚪ for hypotheses) per the parsing spec; the **emoji is never shown in the rendered UI**.
 
 Each status uses a distinct color family (composed via `cn()` over shadcn `Badge`, never by forking `badge.tsx`):
 - emerald — success / confirmed
@@ -153,15 +153,11 @@ Stale-RUNNING marker SHALL render as a `lucide-react AlertTriangle` icon next to
 
 ### Requirement: Hypothesis summary uses structured tags, not raw markdown
 
-The hypothesis summary table at the top of `/p/<project>/hypotheses` SHALL be rendered as a structured component (one row per parsed `HypothesisEntry`) with columns `id` / `status` / `statement` / `experiments`. The `status` cell SHALL use `<HypothesisStatusPill>` (not the raw emoji from disk). Each `experiment` cell SHALL render the experiment id as a Next.js `<Link>` to `/p/<project>/experiments/<id>`. The raw `summaryTableBlock` from `HYPOTHESES.md` is NOT rendered as markdown in the UI.
+The hypothesis summary table at the top of `/p/<project>/hypotheses` SHALL be rendered as a structured component (one row per parsed `HypothesisEntry`) with columns `id` / `status` / `statement` / `experiments`. The `status` cell SHALL use `<HypothesisStatusPill>` (not the raw emoji from disk). Each `experiment` cell SHALL render the experiment id as a Next.js `<Link>` to `/p/<project>/experiments/<id>`. The raw `summaryTableBlock` from `docs/hypotheses.md` is NOT rendered as markdown in the UI.
 
 #### Scenario: Summary row with multiple experiments
 - **WHEN** a hypothesis is associated with `foo-260501-100000` and `bar-260502-150000`
 - **THEN** the summary row shows both ids as Next.js `<Link>` elements; clicking either navigates client-side (no full page reload) to that experiment
-
-#### Scenario: Summary row with no experiments
-- **WHEN** a hypothesis has zero associated experiments (`OPEN` or `DEFERRED` typically)
-- **THEN** the experiments cell shows `—`
 
 ### Requirement: SPA-style cross-page navigation between experiments and hypotheses
 

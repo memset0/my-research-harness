@@ -11,7 +11,7 @@ metadata:
 
 # memon-digest-journal
 
-The **only** skill that updates `last_digest_at` in JOURNAL.md
+The **only** skill that updates `last_digest_at` in docs/journal.md
 frontmatter. Each invocation:
 
 1. Snapshots a single non-overlapping time window since the previous
@@ -49,7 +49,7 @@ Branch on the `status` field:
 - `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
   current memon expects v<available>. Please run the `memon-migrate-fs`
   skill to upgrade before continuing." Do NOT read or write any spec file
-  (`README.md`, `HYPOTHESES.md`, `JOURNAL.md`, `docs/digests/*`,
+  (`README.md`, `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`,
   `docs/reports/*`).
 - `uninitialised` → STOP. Tell the user: "This project root has not had
   memon installed yet. Run `memon install-skills --project-root .` first."
@@ -207,7 +207,7 @@ message / suggestedAction`. Codes (v1):
 | `STALE_RUNNING` | info | check process; `status set FAILED` if dead, skip if still alive |
 | `PARSE_ERROR` | error | inspect README, fix structure, save via `readme write` |
 | `PARSE_WARNING` | warn | inspect, decide |
-| `ORPHAN_HYPOTHESIS_REF` | warn | edit README to fix the H-id, or add the hypothesis to HYPOTHESES.md |
+| `ORPHAN_HYPOTHESIS_REF` | warn | edit README to fix the H-id, or add the hypothesis to docs/hypotheses.md |
 | `WARN_UNRESOLVED` | info | surface the open warnings to the user; offer to add new ones, but DO NOT resolve / reopen / delete |
 
 (Note: archive is not in this list — the user reviews failed runs in the
@@ -363,7 +363,7 @@ the file.
 
 ### 6. Race check, then advance the watermark
 
-We only need the `last_digest_at` field of JOURNAL.md frontmatter — no
+We only need the `last_digest_at` field of docs/journal.md frontmatter — no
 need to call `memon journal read` (which would also re-parse all
 events) for that. Plain awk on the frontmatter is enough:
 
@@ -371,7 +371,7 @@ events) for that. Plain awk on the frontmatter is enough:
 CURRENT_LAST_DIGEST_AT=$(awk '
   /^---$/ { c++; next }
   c == 1 && /^last_digest_at:/ { sub(/^last_digest_at:[ \t]*/, ""); print; exit }
-' JOURNAL.md)
+' docs/journal.md)
 
 if [ "$CURRENT_LAST_DIGEST_AT" != "$OBSERVED_LAST_DIGEST_AT" ]; then
   # Another digest finished in parallel.

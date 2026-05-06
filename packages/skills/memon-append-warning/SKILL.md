@@ -40,7 +40,7 @@ Branch on the `status` field:
 - `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
   current memon expects v<available>. Please run the `memon-migrate-fs`
   skill to upgrade before continuing." Do NOT read or write any spec file
-  (`README.md`, `HYPOTHESES.md`, `JOURNAL.md`, `docs/digests/*`,
+  (`README.md`, `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`,
   `docs/reports/*`).
 - `uninitialised` → STOP. Tell the user: "This project root has not had
   memon installed yet. Run `memon install-skills --project-root .` first."
@@ -106,7 +106,7 @@ Output (JSON to stdout):
 { "ok": true, "rowId": "w_2026-05-05T14-32-00+08-00_a3f1", "mtime": 1777944643000, "hash": "..." }
 ```
 
-The CLI also appends a single `[WARNING]` event to `JOURNAL.md` for the
+The CLI also appends a single `[WARNING]` event to `docs/journal.md` for the
 audit trail.
 
 5. **On exit 9 (CONFLICT)**: another writer touched the README between

@@ -26,7 +26,7 @@ Branch on the `status` field:
 - `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
   current memon expects v<available>. Please run the `memon-migrate-fs`
   skill to upgrade before continuing." Do NOT read or write any spec file
-  (`README.md`, `HYPOTHESES.md`, `JOURNAL.md`, `docs/digests/*`,
+  (`README.md`, `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`,
   `docs/reports/*`).
 - `uninitialised` → STOP. Tell the user: "This project root has not had
   memon installed yet. Run `memon install-skills --project-root .` first."
@@ -707,7 +707,7 @@ above as `--category`. The message must be concrete (cite step / metric
 - ❌ Restating the failure reason on a FAILED run — `## Result`
   already has it.
 - ❌ "Every minor info note" — if the observation could go in
-  `JOURNAL.md` as a `[NOTE]` event, do that instead.
+  `docs/journal.md` as a `[NOTE]` event, do that instead.
 - ❌ Anything that's purely an implementation detail (typo fixed in
   the recovery loop, wandb logged a deprecation warning).
 

@@ -85,7 +85,7 @@ export function HypothesisView({ project }: { project: string }) {
 
       {data.entries.length === 0 && (
         <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          no hypotheses (HYPOTHESES.md missing or empty)
+          no hypotheses (docs/hypotheses.md missing or empty)
         </div>
       )}
 

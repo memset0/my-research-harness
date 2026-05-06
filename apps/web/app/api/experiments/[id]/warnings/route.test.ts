@@ -221,7 +221,7 @@ describe('PATCH/DELETE /api/experiments/:id/warnings/:rowId', () => {
     expect(res.status).toBe(200)
     const md = await fs.readFile(readmePath, 'utf8')
     expect(md).not.toContain(rowId)
-    const journal = await fs.readFile(join(root, 'JOURNAL.md'), 'utf8')
+    const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
     expect(journal).toContain('[WARNING]')
     expect(journal).toContain('op=delete')
     expect(journal).toContain('first')

@@ -160,7 +160,7 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
   const newStat = await fs.stat(readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
-    path: join(projectRoot, 'JOURNAL.md'),
+    path: join(projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: created,
       tag: 'WARNING',
@@ -231,7 +231,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
   const newStat = await fs.stat(readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
-    path: join(projectRoot, 'JOURNAL.md'),
+    path: join(projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: resolved,
       tag: 'WARNING',
@@ -266,7 +266,7 @@ export async function runWarningReopen(input: WarningReopenInput): Promise<void>
   const newStat = await fs.stat(readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
-    path: join(projectRoot, 'JOURNAL.md'),
+    path: join(projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: nowIso(),
       tag: 'WARNING',
@@ -302,7 +302,7 @@ export async function runWarningDelete(input: WarningDeleteInput): Promise<void>
   const newHash = createHash('sha1').update(result.content).digest('hex')
   const deleted = result.deleted!
   await appendJournalEvent({
-    path: join(projectRoot, 'JOURNAL.md'),
+    path: join(projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: nowIso(),
       tag: 'WARNING',

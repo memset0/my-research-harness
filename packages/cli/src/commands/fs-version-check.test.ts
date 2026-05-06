@@ -78,21 +78,22 @@ describe('inspectFsVersion (pure read)', () => {
   })
 
   it('returns behind when marker version < FS_CONVENTION_VERSION', async () => {
+    // Skip cleanly when there is no legal lower version (i.e. the current
+    // FS_CONVENTION_VERSION is the minimum allowed value of 1).
+    if (FS_CONVENTION_VERSION <= 1) {
+      const r = await inspectFsVersion(projectRoot)
+      expect(['match', 'behind']).toContain(r.status)
+      return
+    }
     await writeFsVersion(projectRoot, {
-      fs_convention_version: 0 + (FS_CONVENTION_VERSION === 1 ? 1 : 0),
+      fs_convention_version: FS_CONVENTION_VERSION - 1,
       installed_at: '2026-05-04T10:00:00+08:00',
       last_migrated_at: null,
     })
-    // We can only really test this branch when FS_CONVENTION_VERSION >= 2.
-    // For v1 (current state), simulate by writing a synthetic v0... but
-    // the schema rejects 0. Instead, write a junk marker with a separate
-    // higher available, by overriding only one side. Skip when version is 1.
-    if (FS_CONVENTION_VERSION === 1) {
-      // No legal "behind" exists at v1 (lowest valid version). Just confirm
-      // the current path is sane.
-      const r = await inspectFsVersion(projectRoot)
-      expect(['match', 'behind']).toContain(r.status)
-    }
+    const r = await inspectFsVersion(projectRoot)
+    expect(r.status).toBe('behind')
+    expect(r.current).toBe(FS_CONVENTION_VERSION - 1)
+    expect(r.available).toBe(FS_CONVENTION_VERSION)
   })
 
   it('returns ahead when marker version > FS_CONVENTION_VERSION', async () => {

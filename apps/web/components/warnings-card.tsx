@@ -415,7 +415,7 @@ function DeleteConfirm({
         <DialogTitle>Delete this warning?</DialogTitle>
         <DialogDescription>
           You're about to delete a <span className="font-mono">{category}</span> warning. The full row
-          content is recorded in JOURNAL.md as a `[WARNING]` event with `op=delete`, but the row will
+          content is recorded in docs/journal.md as a `[WARNING]` event with `op=delete`, but the row will
           be removed from the README's Warnings section.
         </DialogDescription>
         <div className="rounded border bg-muted/30 px-3 py-2 text-xs">{message}</div>

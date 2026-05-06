@@ -1,6 +1,6 @@
 // GET /api/journal?project=NAME[&limit=N&before=ISO]
 //
-// Returns parsed JOURNAL.md events newest-first, optionally limited.
+// Returns parsed docs/journal.md events newest-first, optionally limited.
 // Reads from the runtime's JournalCache (no fs.readFile in the hot path).
 //
 // Special-case: `?countOnly=1` short-circuits and returns just the total

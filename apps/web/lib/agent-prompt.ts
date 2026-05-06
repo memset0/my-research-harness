@@ -33,7 +33,7 @@ export function buildAgentPrompt(input: {
 README:   ${exp.path}/README.md
 状态: ${fm.status}
 关联假说: ${hypothesisLine}
-HYPOTHESES.md: ${input.projectRoot}/HYPOTHESES.md
+hypotheses: ${input.projectRoot}/docs/hypotheses.md
 
 最近的 JOURNAL 事件(本实验相关,最多 ${MAX_EVENTS} 条):
 ${eventLines}
@@ -42,7 +42,7 @@ ${eventLines}
 1. 用 1-2 句话讲清这个实验在测什么(motivation)
 2. 列出 result 中最关键的 2-3 个数字 / 观察
 3. 判断关联假说当前应该是 ✅ CONFIRMED / ❌ REFUTED / 🟡 PARTIAL,以及理由
-4. 如果发现新假说,提议加到 HYPOTHESES.md 的格式
+4. 如果发现新假说,提议加到 docs/hypotheses.md 的格式
 
 请用中文回答。`
 }

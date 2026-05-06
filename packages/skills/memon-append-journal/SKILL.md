@@ -1,6 +1,6 @@
 ---
 name: memon-append-journal
-description: Manual + thin wrapper for the `memon journal append` CLI — append a single event to a project's JOURNAL.md (NOTE / REQUEST / ERROR). Use when an agent wants to record an observation or open a question. For periodic organization / cleanup, use `memon-digest-journal` instead.
+description: Manual + thin wrapper for the `memon journal append` CLI — append a single event to a project's docs/journal.md (NOTE / REQUEST / ERROR). Use when an agent wants to record an observation or open a question. For periodic organization / cleanup, use `memon-digest-journal` instead.
 argument-hint: <event tag and body, optionally with experiment id>
 license: MIT
 metadata:
@@ -12,7 +12,7 @@ metadata:
 
 This skill is a manual for the `memon journal append` CLI subcommand —
 how to invoke it correctly to add a single event line to
-`<projectRoot>/JOURNAL.md`. Never modifies the file's frontmatter; only
+`<projectRoot>/docs/journal.md`. Never modifies the file's frontmatter; only
 `memon-digest-journal` is allowed to do that.
 
 For organizing the journal (consolidating events, advancing
@@ -34,7 +34,7 @@ Branch on the `status` field:
 - `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
   current memon expects v<available>. Please run the `memon-migrate-fs`
   skill to upgrade before continuing." Do NOT read or write any spec file
-  (`README.md`, `HYPOTHESES.md`, `JOURNAL.md`, `docs/digests/*`,
+  (`README.md`, `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`,
   `docs/reports/*`).
 - `uninitialised` → STOP. Tell the user: "This project root has not had
   memon installed yet. Run `memon install-skills --project-root .` first."
@@ -98,7 +98,7 @@ memon journal append \
 Output (JSON to stdout):
 
 ```json
-{ "ok": true, "appended": 1, "timestamp": "2026-05-04T14:18:00+08:00", "path": "/abs/JOURNAL.md" }
+{ "ok": true, "appended": 1, "timestamp": "2026-05-04T14:18:00+08:00", "path": "/abs/docs/journal.md" }
 ```
 
 ## Composing the body

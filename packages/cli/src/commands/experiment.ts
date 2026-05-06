@@ -97,7 +97,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
   let journalAppended = false
   if (prevStatus !== nextStatus) {
     await appendJournalEvent({
-      path: join(projectRoot, 'JOURNAL.md'),
+      path: join(projectRoot, 'docs', 'journal.md'),
       event: {
         timestamp: nowIso(),
         tag: 'STATUS',
@@ -183,7 +183,7 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
   let journalAppended = false
   if (prevStatus !== nextStatus) {
     await appendJournalEvent({
-      path: join(projectRoot, 'JOURNAL.md'),
+      path: join(projectRoot, 'docs', 'journal.md'),
       event: {
         timestamp: nowIso(),
         tag: 'STATUS',
@@ -209,7 +209,7 @@ export async function runArchive(input: ArchiveInput): Promise<void> {
   const result = await archiveExperiment(runDir)
   if (!result.noop) {
     await appendJournalEvent({
-      path: join(projectRoot, 'JOURNAL.md'),
+      path: join(projectRoot, 'docs', 'journal.md'),
       event: {
         timestamp: nowIso(),
         tag: 'ARCHIVE',
@@ -225,7 +225,7 @@ export async function runUnarchive(input: ArchiveInput): Promise<void> {
   const result = await unarchiveExperiment(runDir)
   if (!result.noop) {
     await appendJournalEvent({
-      path: join(projectRoot, 'JOURNAL.md'),
+      path: join(projectRoot, 'docs', 'journal.md'),
       event: {
         timestamp: nowIso(),
         tag: 'NOTE',

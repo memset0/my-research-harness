@@ -99,8 +99,8 @@ worth recording" can fire on its own.
 |---|---|---|
 | `memon-write-script` | a `.sh` file under `scripts/` | run dirs, READMEs, JOURNAL frontmatter |
 | `memon-run-experiment` | `<run-dir>/README.md`, `code.diff`, `code.head` | scripts, digests, reports, JOURNAL frontmatter |
-| `memon-append-journal` | one event line in `JOURNAL.md` body | JOURNAL frontmatter, READMEs |
-| `memon-append-warning` | one OPEN row in `<run>/README.md` `## Warnings`; one `[WARNING]` event in `JOURNAL.md` body | other README sections, JOURNAL frontmatter; never calls `warning resolve|reopen|delete` |
+| `memon-append-journal` | one event line in `docs/journal.md` body | JOURNAL frontmatter, READMEs |
+| `memon-append-warning` | one OPEN row in `<run>/README.md` `## Warnings`; one `[WARNING]` event in `docs/journal.md` body | other README sections, JOURNAL frontmatter; never calls `warning resolve|reopen|delete` |
 | `memon-digest-journal` | `docs/digests/D<NNNN>-<YYYY-MM-DD>.md`, `last_digest_at` cursor; may write READMEs *during* doctor fixes | reports |
 | `memon-write-report` | `docs/reports/R<NNNN>-<slug>.md` | digests, READMEs, JOURNAL cursor |
 | `memon-propose` | nothing — read-only | everything |

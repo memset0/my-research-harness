@@ -1,4 +1,4 @@
-// parseJournal — turn a JOURNAL.md body into structured events.
+// parseJournal — turn a docs/journal.md body into structured events.
 //
 // Format (per spec):
 //   ---
@@ -41,7 +41,7 @@ export function parseJournal(content: string): ParsedJournal {
   if (Object.keys(parsed.data).length === 0 && parsed.content === content) {
     // No frontmatter block at all
     warnings.push({
-      message: 'JOURNAL.md has no frontmatter; lastDigestAt treated as null',
+      message: 'docs/journal.md has no frontmatter; lastDigestAt treated as null',
       severity: 'warning',
     })
   } else {

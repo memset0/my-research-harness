@@ -19,7 +19,7 @@ rationale + trade-offs.
 
 Looks at:
 
-1. `HYPOTHESES.md` — open / partial / refuted hypotheses (refuted ones
+1. `docs/hypotheses.md` — open / partial / refuted hypotheses (refuted ones
    may suggest *adjacent* experiments, not just be discarded)
 2. Recent experiments — what was tried, what worked, what failed, what
    the FAILED ones almost-but-didn't-quite show
@@ -56,7 +56,7 @@ Branch on the `status` field:
 - `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
   current memon expects v<available>. Please run the `memon-migrate-fs`
   skill to upgrade before continuing." Do NOT read or write any spec file
-  (`README.md`, `HYPOTHESES.md`, `JOURNAL.md`, `docs/digests/*`,
+  (`README.md`, `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`,
   `docs/reports/*`).
 - `uninitialised` → STOP. Tell the user: "This project root has not had
   memon installed yet. Run `memon install-skills --project-root .` first."

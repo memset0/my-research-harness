@@ -68,11 +68,11 @@ This separation keeps the script callable on a memon-less host and makes README 
 
 ### Requirement: JOURNAL frontmatter is writable only via digest-mark
 
-Skills SHALL update `JOURNAL.md` frontmatter (specifically `last_digest_at`) only via `memon journal digest-mark`. No other skill SHALL touch the frontmatter. Skills MAY only `memon journal append` event lines to the body.
+Skills SHALL update `docs/journal.md` frontmatter (specifically `last_digest_at`) only via `memon journal digest-mark`. No other skill SHALL touch the frontmatter. Skills MAY only `memon journal append` event lines to the body.
 
 #### Scenario: append-journal does not touch frontmatter
 - **WHEN** reviewing `packages/skills/memon-append-journal/SKILL.md`
-- **THEN** the document states explicitly that the skill never modifies JOURNAL frontmatter, only appends event lines
+- **THEN** the document states explicitly that the skill never modifies `docs/journal.md` frontmatter, only appends event lines
 
 #### Scenario: digest-journal is the only cursor-advancer
 - **WHEN** reviewing `packages/skills/memon-digest-journal/SKILL.md`
@@ -170,7 +170,7 @@ All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, digest `D<NNNN>
 
 ### Requirement: Spec-mutating skills SHALL preflight-check the FS convention version
 
-Every memon skill that reads or writes spec files (the project root's `README.md`, `HYPOTHESES.md`, `JOURNAL.md`, or any file under `<projectRoot>/docs/digests/` or `<projectRoot>/docs/reports/`) SHALL invoke `memon fs-version check --project-root <p> --format json` as the first executable step in its workflow body, parse the result, and branch as follows:
+Every memon skill that reads or writes spec files (the per-experiment `<runDir>/README.md`, the project's `<projectRoot>/docs/hypotheses.md`, `<projectRoot>/docs/journal.md`, or any file under `<projectRoot>/docs/digests/` or `<projectRoot>/docs/reports/`) SHALL invoke `memon fs-version check --project-root <p> --format json` as the first executable step in its workflow body, parse the result, and branch as follows:
 
 - `status === "match"`: proceed with the rest of the skill.
 - `status === "behind"`: surface the gap to the user (current version, expected version), recommend invoking `memon-migrate-fs`, and stop. The skill SHALL NOT proceed to read or write any spec file.
@@ -182,10 +182,10 @@ This preflight section SHALL appear in the skill body using consistent language 
 The following skills are subject to this requirement (matching the user-invoked skill set plus the model-invocable append-* skills):
 - `memon-write-script` — writes launcher scripts (does not directly mutate spec files, but is part of the run-experiment workflow that does).
 - `memon-run-experiment` — writes `<runDir>/README.md`.
-- `memon-digest-journal` — reads JOURNAL, writes digests, advances cursor.
+- `memon-digest-journal` — reads `docs/journal.md`, writes digests, advances cursor.
 - `memon-write-report` — writes report files under `docs/reports/`.
 - `memon-propose` — writes proposal artifacts.
-- `memon-append-journal` — appends event lines to `JOURNAL.md`.
+- `memon-append-journal` — appends event lines to `docs/journal.md`.
 - `memon-append-warning` — appends warning rows to `<runDir>/README.md`.
 - `memon-migrate-fs` itself is exempt from preflight (it IS the migration entry; it reads `.memon/version.json` directly as part of its own protocol).
 
@@ -193,25 +193,6 @@ The following skills are subject to this requirement (matching the user-invoked 
 - **WHEN** a reader inspects the workflow body of any of the six listed skills
 - **THEN** the very first numbered step (or a section labelled "Preflight") executes `memon fs-version check --project-root <p> --format json`
 - **AND** the step explicitly enumerates branches for `match` (proceed), `behind` (stop with migrate-fs recommendation), `uninitialised` (stop with install-skills recommendation), and `ahead` (stop with MEMON_TOO_OLD message)
-
-#### Scenario: Behind status halts spec mutation
-- **GIVEN** `<root>/.memon/version.json` has `fs_convention_version: 1` and the bundled `FS_CONVENTION_VERSION === 2`
-- **WHEN** `memon-run-experiment` is invoked against `<root>`
-- **THEN** the skill's preflight reports `status: "behind"`
-- **AND** the skill stops without writing `<runDir>/README.md` or any other spec file
-- **AND** the user is told to run `memon-migrate-fs` first
-
-#### Scenario: Uninitialised status halts and points to install-skills
-- **GIVEN** `<root>` has no `.memon/version.json`
-- **WHEN** `memon-append-journal` is invoked against `<root>`
-- **THEN** the skill's preflight reports `status: "uninitialised"`
-- **AND** the skill stops without appending to `JOURNAL.md`
-- **AND** the user is told to run `memon install-skills` first
-
-#### Scenario: migrate-fs is exempt from preflight
-- **WHEN** a reader inspects `packages/skills/memon-migrate-fs/SKILL.md`
-- **THEN** the body does NOT call `memon fs-version check`
-- **AND** the body reads `<root>/.memon/version.json` directly as part of its own state-determination step
 
 ### Requirement: `memon-migrate-fs` is the seventh bundled skill
 

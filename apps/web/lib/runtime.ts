@@ -81,16 +81,16 @@ export class Runtime {
     return null
   }
 
-  /** Path to <project>/HYPOTHESES.md for the given project name (or null). */
+  /** Path to <project>/docs/hypotheses.md for the given project name (or null). */
   hypothesesPath(project: string): string | null {
     const p = this.config.projects.find((x) => x.name === project)
-    return p ? join(p.root, 'HYPOTHESES.md') : null
+    return p ? join(p.root, 'docs', 'hypotheses.md') : null
   }
 
-  /** Path to <project>/JOURNAL.md for the given project name (or null). */
+  /** Path to <project>/docs/journal.md for the given project name (or null). */
   journalPath(project: string): string | null {
     const p = this.config.projects.find((x) => x.name === project)
-    return p ? join(p.root, 'JOURNAL.md') : null
+    return p ? join(p.root, 'docs', 'journal.md') : null
   }
 
   /** Path to <project>/docs/reports/ for the given project (or null). */
@@ -134,9 +134,9 @@ async function init(): Promise<Runtime> {
   const events = new EventEmitter()
   events.setMaxListeners(50)
 
-  // Per-project file caches for HYPOTHESES.md / JOURNAL.md
-  const hypothesesPaths = config.projects.map((p) => join(p.root, 'HYPOTHESES.md'))
-  const journalPaths = config.projects.map((p) => join(p.root, 'JOURNAL.md'))
+  // Per-project file caches for docs/hypotheses.md / docs/journal.md
+  const hypothesesPaths = config.projects.map((p) => join(p.root, 'docs', 'hypotheses.md'))
+  const journalPaths = config.projects.map((p) => join(p.root, 'docs', 'journal.md'))
 
   const hypothesesCache = new FileCache<ParsedHypotheses>({
     name: 'hypotheses',

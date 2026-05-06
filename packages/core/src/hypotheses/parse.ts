@@ -1,4 +1,4 @@
-// parseHypotheses — turn a HYPOTHESES.md body into structured entries.
+// parseHypotheses — turn a docs/hypotheses.md body into structured entries.
 //
 // Document layout (per spec):
 //   ## Status legend            ← informational, kept as raw block
@@ -109,7 +109,7 @@ export function parseHypotheses(content: string): ParsedHypotheses {
     }
     warnings.push({
       field: heading,
-      message: `unrecognized heading "${heading}" in HYPOTHESES.md (skipped)`,
+      message: `unrecognized heading "${heading}" in docs/hypotheses.md (skipped)`,
       severity: 'warning',
     })
   }

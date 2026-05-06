@@ -3,7 +3,7 @@
 // Body: { path: string, content: string, expectedMtime: number, expectedHash?: string }
 //
 // Behavior:
-//   - 200 + { mtime } on success; appends a [STATUS] event to JOURNAL.md if
+//   - 200 + { mtime } on success; appends a [STATUS] event to docs/journal.md if
 //     the front matter `status` field changed
 //   - 409 + { mtime, content } when on-disk mtime ≠ expectedMtime
 //   - 409 also if mtime matches but content hash differs (defends against
@@ -144,7 +144,7 @@ export async function PUT(req: NextRequest) {
       if (prevStatus !== nextStatus) {
         const expId = parseReadme(body.content).frontMatter.id
         await appendJournalEvent({
-          path: join(owningProject.root, 'JOURNAL.md'),
+          path: join(owningProject.root, 'docs', 'journal.md'),
           event: {
             timestamp: nowIso(),
             tag: 'STATUS',

@@ -152,8 +152,8 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
         experimentId: exp.id,
         code: 'ORPHAN_HYPOTHESIS_REF',
         severity: 'warn',
-        message: `references hypothesis "${h}" which is not in HYPOTHESES.md`,
-        suggestedAction: 'fix the hypothesis id, or add the hypothesis to HYPOTHESES.md',
+        message: `references hypothesis "${h}" which is not in docs/hypotheses.md`,
+        suggestedAction: 'fix the hypothesis id, or add the hypothesis to docs/hypotheses.md',
       })
     }
   }

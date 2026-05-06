@@ -82,10 +82,10 @@ export async function scanProjectRoot(
     String(b.frontMatter.createdAt).localeCompare(String(a.frontMatter.createdAt)),
   )
 
-  const hypothesesPath = join(abs, 'HYPOTHESES.md')
+  const hypothesesPath = join(abs, 'docs', 'hypotheses.md')
   const hypotheses = await tryParseHypotheses(hypothesesPath)
 
-  const journalPath = join(abs, 'JOURNAL.md')
+  const journalPath = join(abs, 'docs', 'journal.md')
   const journal = await tryParseJournal(journalPath)
 
   return {

@@ -85,17 +85,17 @@ finding for each run with at least one open warning.
 `status` enum is uppercase. Each value renders with an emoji in the UI:
 📝 `PENDING` / 🟢 `RUNNING` / ✅ `FINISHED` / ❌ `FAILED` / ❓ `UNKNOWN`.
 
-### Per-project `HYPOTHESES.md`
+### Per-project `docs/hypotheses.md`
 
-Lives at the project root. Each hypothesis is an `## H<N>. <slug>` heading
-with labeled bullet items: `Statement`, `Origin`, `Status`, `Experiments`,
-`Evidence`, `Caveats`, `Last verified`. Status emojis: ✅ CONFIRMED / ❌
-REFUTED / 🟡 PARTIAL / 🔵 OPEN / ⚪ DEFERRED. Experiments are referenced
-by directory name (no E1/E2 ad-hoc IDs). See
-[`mock/project-a/HYPOTHESES.md`](mock/project-a/HYPOTHESES.md) for a full
-example.
+Lives at `<projectRoot>/docs/hypotheses.md`. Each hypothesis is an
+`## H<N>. <slug>` heading with labeled bullet items: `Statement`, `Origin`,
+`Status`, `Experiments`, `Evidence`, `Caveats`, `Last verified`. Status
+emojis: ✅ CONFIRMED / ❌ REFUTED / 🟡 PARTIAL / 🔵 OPEN / ⚪ DEFERRED.
+Experiments are referenced by directory name (no E1/E2 ad-hoc IDs). See
+[`mock/project-a/docs/hypotheses.md`](mock/project-a/docs/hypotheses.md)
+for a full example.
 
-### Per-project `JOURNAL.md`
+### Per-project `docs/journal.md`
 
 ```markdown
 ---
@@ -127,7 +127,7 @@ memon mock seed                        # copy mock/ to mock-runtime/ (dev)
 # agent-shaped read commands (config-free)
 memon scan [<project-root>]            # bulk read: experiments + hypotheses + journal
 memon journal read [filters...]        # parsed JOURNAL events (--since / --tag / --experiment-id)
-memon hypotheses read                  # parsed HYPOTHESES.md (mirrors /api/hypotheses)
+memon hypotheses read                  # parsed docs/hypotheses.md (mirrors /api/hypotheses)
 memon doctor                           # scan for issues (FINISHED w/o Result, stale RUNNING, ...)
 
 # agent-shaped write commands
@@ -251,7 +251,7 @@ choice via `/memon-<name>`:
 |---|---|
 | `memon-write-script` | Author or edit a launcher script (`scripts/<area>/run_*.sh`) following memon's `RUN_NAME` / `RUN_DIR` / one-line-header conventions. Scripts only `mkdir` the run dir + tee the log; the README is the agent's job. |
 | `memon-run-experiment` | Launch an existing script (with optional env-var overrides), capture `code.diff`, write the initial RUNNING README + Motivation/Setup/Method, periodically check in (every ~120 min), finalize on terminal state, and iterate through fixes when the script doesn't run cleanly. |
-| `memon-append-journal` | Manual / thin wrapper for `memon journal append` — append a single NOTE / REQUEST / ERROR event to JOURNAL.md. (Organizing the journal is `memon-digest-journal`'s job.) |
+| `memon-append-journal` | Manual / thin wrapper for `memon journal append` — append a single NOTE / REQUEST / ERROR event to docs/journal.md. (Organizing the journal is `memon-digest-journal`'s job.) |
 | `memon-digest-journal` | Run an integrity sweep (the former `memon-doctor` checks fold in here), produce a date-keyed digest at `docs/digests/D<N>-<YYYY-MM-DD>.md` covering everything since the last cursor, and advance `last_digest_at`. The only skill allowed to update the cursor; race-safe. |
 | `memon-write-report` | Author or update a theme-driven report at `docs/reports/R<N>-<slug>.md`. The report records its own selector (a re-runnable shell snippet) so re-running cheaply tells whether new events qualify. Doesn't touch the cursor. |
 | `memon-propose` | Read-only — suggest 1-3 next experiments tied to open hypotheses. |

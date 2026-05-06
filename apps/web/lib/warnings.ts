@@ -220,7 +220,7 @@ export async function addWarning(rt: Runtime, id: string, input: AddInput): Prom
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
-    path: join(r.projectRoot, 'JOURNAL.md'),
+    path: join(r.projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: created,
       tag: 'WARNING',
@@ -272,7 +272,7 @@ export async function patchWarning(
       ? `\`${r.exp.id}\` op=resolve rowId=${rowId} note=${quoteForJournal(input.note!)}`
       : `\`${r.exp.id}\` op=reopen rowId=${rowId}`
   await appendJournalEvent({
-    path: join(r.projectRoot, 'JOURNAL.md'),
+    path: join(r.projectRoot, 'docs', 'journal.md'),
     event: { timestamp: ts, tag: 'WARNING', body },
   })
   await refreshIndex(rt, r.exp.path, r.projectName)
@@ -300,7 +300,7 @@ export async function deleteWarning(
   const hash = createHash('sha1').update(result.content).digest('hex')
   const deleted = result.deleted!
   await appendJournalEvent({
-    path: join(r.projectRoot, 'JOURNAL.md'),
+    path: join(r.projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: nowIso(),
       tag: 'WARNING',

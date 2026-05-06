@@ -66,7 +66,7 @@ describe('buildAgentPrompt', () => {
     expect(out).toContain('/p/a/logs/foo-260501-100000/README.md')
     expect(out).toContain('FINISHED')
     expect(out).toContain('H0001, H0003')
-    expect(out).toContain('/repos/a/HYPOTHESES.md')
+    expect(out).toContain('/repos/a/docs/hypotheses.md')
   })
 
   it('"(none linked)" when no hypotheses', () => {

@@ -4,7 +4,7 @@
 //
 // Server reads the current README, swaps just the front-matter `status` field,
 // and writes back via the same mtime-locked atomic path as PUT /api/readme.
-// The accompanying [STATUS] event in JOURNAL.md is paired (rollback on failure).
+// The accompanying [STATUS] event in docs/journal.md is paired (rollback on failure).
 //
 // Why this lives separately from PUT /api/readme: the client only sends a tiny
 // payload (`{status, expectedMtime}`) and doesn't need to reconstruct the full
@@ -137,11 +137,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     await fs.rename(tmpPath, readmePath)
     const newStat = await fs.stat(readmePath)
 
-    // Pair: append [STATUS] to JOURNAL.md. If it fails, roll back the README.
+    // Pair: append [STATUS] to docs/journal.md. If it fails, roll back the README.
     const timestamp = formatIsoLocal(new Date())
     try {
       await appendJournalEvent({
-        path: join(project.root, 'JOURNAL.md'),
+        path: join(project.root, 'docs', 'journal.md'),
         event: {
           timestamp,
           tag: 'STATUS',

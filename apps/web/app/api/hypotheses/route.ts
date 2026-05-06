@@ -1,6 +1,6 @@
 // GET /api/hypotheses?project=NAME
 //
-// Returns the parsed HYPOTHESES.md for the given project. Reads exclusively
+// Returns the parsed docs/hypotheses.md for the given project. Reads exclusively
 // from the runtime's HypothesesCache (populated at warmup; refreshed on
 // mtime change via the shared Poller). No fs.readFile in the hot path.
 

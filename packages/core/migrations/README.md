@@ -52,6 +52,7 @@ canonical edge cases every guide must address.
 
 ## Status
 
-Currently empty (`FS_CONVENTION_VERSION = 1`; nothing to migrate from).
-The first guide will land alongside the first breaking change to the
-on-disk schema.
+Current: `FS_CONVENTION_VERSION = 2`. Guides present:
+
+- `v1-to-v2.md` — relocates `JOURNAL.md` → `docs/journal.md` and
+  `HYPOTHESES.md` → `docs/hypotheses.md` (lowercase + moved under `docs/`).

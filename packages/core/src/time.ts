@@ -1,6 +1,6 @@
 // Local-time formatting helpers.
 //
-// All disk artifacts (README.md front matter, JOURNAL.md events, experiment
+// All disk artifacts (README.md front matter, docs/journal.md events, experiment
 // directory names) use the writer's local timezone with an explicit offset.
 // We never write UTC-converted timestamps because that loses the writer's
 // real-world clock context.

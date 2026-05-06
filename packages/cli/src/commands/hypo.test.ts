@@ -46,7 +46,8 @@ const HYPOTHESES_MD = `# H
 
 beforeEach(async () => {
   root = await fs.mkdtemp(join(tmpdir(), 'memon-hypo-'))
-  await fs.writeFile(join(root, 'HYPOTHESES.md'), HYPOTHESES_MD)
+  await fs.mkdir(join(root, 'docs'), { recursive: true })
+  await fs.writeFile(join(root, 'docs', 'hypotheses.md'), HYPOTHESES_MD)
   exitSpy = spyExit()
   stdoutLines = []
   const realWrite = process.stdout.write.bind(process.stdout)

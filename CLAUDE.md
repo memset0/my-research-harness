@@ -48,7 +48,7 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 - pnpm monorepo: `packages/core` (TypeScript types, parsers, polling, indexing, LineIndex), `packages/cli` (memon CLI), `apps/web` (Next.js 15 App Router + Tailwind v4 + shadcn/ui)
 - Node.js ≥ 20.19 required; pnpm 10.x
 - No external DB, no fs watcher (cluster-safe polling with exponential backoff)
-- Files-as-source-of-truth: README.md / HYPOTHESES.md / JOURNAL.md per spec
+- Files-as-source-of-truth: README.md (per-experiment) / docs/hypotheses.md / docs/journal.md per spec
 
 ### Hard rules baked into the spec
 
