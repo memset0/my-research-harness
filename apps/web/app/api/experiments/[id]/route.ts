@@ -1,7 +1,11 @@
-// GET /api/experiments/:id — v3 experiment-doc detail.
+// GET    /api/experiments/:id  — v3 experiment-doc detail.
+// DELETE /api/experiments/:id  — delete the exp doc; cascade-unlinks any
+//                                member runs. Pass `?force=true` to allow
+//                                deletion of an exp with members.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
+import { deleteExperiment, ExperimentHttpError } from '../../../../lib/experiments'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,6 +48,25 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       })),
     })
   } catch (err) {
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    const rt = await getRuntime()
+    const url = new URL(req.url)
+    const force = url.searchParams.get('force') === 'true'
+    const out = await deleteExperiment(rt, id, force)
+    return NextResponse.json({ ok: true, ...out })
+  } catch (err) {
+    if (err instanceof ExperimentHttpError) {
+      const payload = err.payload
+        ? { error: { code: err.code, message: err.message }, ...err.payload }
+        : { error: { code: err.code, message: err.message } }
+      return NextResponse.json(payload, { status: err.status })
+    }
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }
