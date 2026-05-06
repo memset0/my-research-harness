@@ -90,8 +90,13 @@ export function InboxShell({
         </div>
       </aside>
 
-      {/* Right pane — rendered markdown + edit toggle */}
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      {/* Right pane — rendered markdown + edit toggle.
+          overflow-x-hidden alongside overflow-y-auto is needed to defeat
+          the CSS Overflow Module 3 "auto-x trap" (overflow-y: auto with
+          overflow-x: visible computes overflow-x to auto, producing a
+          stray horizontal scrollbar when content has any unbreakable
+          wide element). */}
+      <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {selectedId === null ? (
           <EmptyState bodyMarkdown={empty.body} />
         ) : (
@@ -290,7 +295,7 @@ function SelectedItemPane({
         </Button>
       </div>
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
-        <div className={cn('overflow-y-auto', editing ? 'min-w-0 flex-1' : 'min-w-0 flex-1')}>
+        <div className={cn('overflow-y-auto overflow-x-hidden', editing ? 'min-w-0 flex-1' : 'min-w-0 flex-1')}>
           <div className="p-4 md:p-6">
             <RenderedItem content={data.content} />
           </div>
