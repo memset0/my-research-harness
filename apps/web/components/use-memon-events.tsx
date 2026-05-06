@@ -8,14 +8,15 @@ import type { IndexedRun } from '../lib/api'
 
 /**
  * Subscribes to /api/events SSE and invalidates the relevant TanStack Query
- * caches when v3 events arrive. Toasts when a previously unknown experiment
- * (run or exp doc) shows up.
+ * caches when v3 events arrive. Toasts when a previously unknown run or
+ * exp doc shows up.
  *
- * Topic → invalidations:
- *   - run-change             → ['experiments'], ['experiment', id]
- *   - experiment-doc-change  → ['experiment-docs'], ['experiments', project],
- *                              ['experiment-doc', id]
- *   - anomaly                → ['anomalies', project]
+ * Topic → invalidations (v3, post v3-spec-sync):
+ *   - run-change         → ['runs'], ['run', id], ['experiment', parentExperimentId]
+ *                          (parent invalidation only when the run is bound)
+ *   - experiment-change  → ['experiments'], ['experiments', project],
+ *                          ['experiment', id]
+ *   - anomaly            → ['anomalies', project]
  *
  * Mount this hook ONCE at the top of the React tree (e.g. inside Providers).
  */
@@ -28,7 +29,7 @@ export function useMemonEvents() {
 
     // Pre-populate from any list cache that's already loaded
     const initialRuns = queryClient.getQueryData<{ experiments: IndexedRun[] }>([
-      'experiments',
+      'runs',
     ])
     if (initialRuns?.experiments) {
       for (const e of initialRuns.experiments) seenRunIds.add(e.id)
@@ -38,9 +39,13 @@ export function useMemonEvents() {
       switch (evt.topic) {
         case 'run-change': {
           if (!evt.id) return
-          queryClient.invalidateQueries({ queryKey: ['experiments'] })
-          queryClient.invalidateQueries({ queryKey: ['experiment', evt.id] })
+          queryClient.invalidateQueries({ queryKey: ['runs'] })
           queryClient.invalidateQueries({ queryKey: ['run', evt.id] })
+          if (evt.parentExperimentId) {
+            queryClient.invalidateQueries({
+              queryKey: ['experiment', evt.parentExperimentId],
+            })
+          }
           if (evt.type === 'set' && !seenRunIds.has(evt.id)) {
             seenRunIds.add(evt.id)
             toast.info(`New run: ${evt.id}`, {
@@ -49,14 +54,14 @@ export function useMemonEvents() {
           }
           return
         }
-        case 'experiment-doc-change': {
+        case 'experiment-change': {
           // Coarse 'rediscover' signal carries no id — invalidate the lists.
-          queryClient.invalidateQueries({ queryKey: ['experiment-docs'] })
+          queryClient.invalidateQueries({ queryKey: ['experiments'] })
           if (evt.project) {
-            queryClient.invalidateQueries({ queryKey: ['experiment-docs', evt.project] })
+            queryClient.invalidateQueries({ queryKey: ['experiments', evt.project] })
           }
           if (evt.id) {
-            queryClient.invalidateQueries({ queryKey: ['experiment-doc', evt.id] })
+            queryClient.invalidateQueries({ queryKey: ['experiment', evt.id] })
             if (evt.type === 'set' && !seenExpIds.has(evt.id)) {
               seenExpIds.add(evt.id)
               toast.info(`New experiment: ${evt.id}`, {

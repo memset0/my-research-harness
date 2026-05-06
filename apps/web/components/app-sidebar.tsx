@@ -187,7 +187,7 @@ function ProjectExperimentDocs({
   enabled: boolean
 }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['experiment-docs', project],
+    queryKey: ['experiments', project],
     queryFn: () => fetchExperimentDocs(project),
     enabled,
     staleTime: 5_000,
@@ -251,7 +251,7 @@ function ProjectExperiments({
   enabled: boolean
 }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['experiments', project],
+    queryKey: ['runs', project],
     queryFn: () => fetchExperiments(project),
     enabled,
     staleTime: 5_000,

@@ -140,10 +140,11 @@ export async function PUT(req: NextRequest) {
       try {
         const updatedExp = await readRunDir(expDir, owningProject.name)
         rt.index.set(updatedExp)
-        rt.events.emit('experiment-change', {
+        rt.events.emit('run-change', {
           type: 'set',
           id: updatedExp.id,
           experiment: updatedExp,
+          parentExperimentId: updatedExp.frontMatter.experiment ?? null,
         })
       } catch {
         // index update is best-effort; the write itself succeeded

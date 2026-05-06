@@ -44,13 +44,13 @@ export function StatusEdit({
           description: 'Reload to see the latest content, then try again.',
           action: {
             label: 'Reload',
-            onClick: () => queryClient.invalidateQueries({ queryKey: ['experiment', id] }),
+            onClick: () => queryClient.invalidateQueries({ queryKey: ['run', id] }),
           },
         })
       } else if ('mtime' in res) {
         toast.success(`Status: ${status} → ${next}`)
-        queryClient.invalidateQueries({ queryKey: ['experiment', id] })
-        queryClient.invalidateQueries({ queryKey: ['experiments'] })
+        queryClient.invalidateQueries({ queryKey: ['run', id] })
+        queryClient.invalidateQueries({ queryKey: ['runs'] })
       }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message

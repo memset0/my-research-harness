@@ -123,7 +123,7 @@ export function WarningsCard({
       setWarnings(out.warnings)
       setMtime(out.mtime)
       setHash(out.hash)
-      qc.invalidateQueries({ queryKey: ['experiment', runId] })
+      qc.invalidateQueries({ queryKey: ['run', runId] })
     },
     [runId, qc],
   )
@@ -131,7 +131,7 @@ export function WarningsCard({
   const handleConflict = useCallback(async () => {
     toast.error('Warnings: someone else changed this README — refreshing')
     await refetch()
-    qc.invalidateQueries({ queryKey: ['experiment', runId] })
+    qc.invalidateQueries({ queryKey: ['run', runId] })
   }, [runId, qc, refetch])
 
   const openCount = warnings.filter((w) => w.status === 'OPEN').length

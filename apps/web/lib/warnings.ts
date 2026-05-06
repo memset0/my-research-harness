@@ -179,7 +179,12 @@ async function refreshIndex(rt: Runtime, expDir: string, projectName: string): P
   try {
     const updated = await readRunDir(expDir, projectName)
     rt.index.set(updated)
-    rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
+    rt.events.emit('run-change', {
+      type: 'set',
+      id: updated.id,
+      experiment: updated,
+      parentExperimentId: updated.frontMatter.experiment ?? null,
+    })
   } catch {
     // Best-effort; the write itself succeeded.
   }
@@ -196,7 +201,7 @@ async function refreshExpDocIndex(
     if (updated) {
       rt.experiments.set(expId, updated)
       rt.recomputeAnomalies(projectName)
-      rt.events.emit('experiment-doc-change', { type: 'set', id: expId, experiment: updated })
+      rt.events.emit('experiment-change', { type: 'set', id: expId, experiment: updated })
     }
   } catch {
     // Best-effort; the write itself succeeded.

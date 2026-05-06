@@ -35,7 +35,7 @@ interface Props {
 
 export function ExperimentPage({ project, experimentId, initialOpenRun }: Props) {
   const { data: exp, isLoading, error } = useQuery({
-    queryKey: ['experiment-doc', experimentId],
+    queryKey: ['experiment', experimentId],
     queryFn: () => fetchExperimentDoc(experimentId),
   })
 

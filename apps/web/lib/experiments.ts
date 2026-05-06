@@ -172,7 +172,7 @@ export async function writeExperimentReadme(
     if (updated) {
       rt.experiments.set(expId, updated)
       rt.recomputeAnomalies(owning.name)
-      rt.events.emit('experiment-doc-change', { type: 'set', id: expId, experiment: updated })
+      rt.events.emit('experiment-change', { type: 'set', id: expId, experiment: updated })
     }
   } catch {
     // The write succeeded; we just couldn't refresh the index.
@@ -221,7 +221,12 @@ export async function writeRunReadme(
   try {
     const updated = await readRunDir(safeDir, owning.name)
     rt.index.set(updated)
-    rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
+    rt.events.emit('run-change', {
+      type: 'set',
+      id: updated.id,
+      experiment: updated,
+      parentExperimentId: updated.frontMatter.experiment ?? null,
+    })
   } catch {
     // The write succeeded; we just couldn't refresh the index.
   }
@@ -367,7 +372,7 @@ export async function createExperiment(
       if (updated) {
         rt.experiments.set(fullId, updated)
         rt.recomputeAnomalies(project.name)
-        rt.events.emit('experiment-doc-change', { type: 'set', id: fullId, experiment: updated })
+        rt.events.emit('experiment-change', { type: 'set', id: fullId, experiment: updated })
       }
     } catch {
       // Best-effort.
@@ -513,7 +518,7 @@ export async function deleteExperiment(
   // Drop from in-memory index + recompute anomalies.
   rt.experiments.delete(expId)
   rt.recomputeAnomalies(owning.name)
-  rt.events.emit('experiment-doc-change', { type: 'delete', id: expId })
+  rt.events.emit('experiment-change', { type: 'delete', id: expId })
   // Refresh affected runs.
   for (const runDir of memberRuns) {
     const run = rt.index.get(runDir)
@@ -521,7 +526,12 @@ export async function deleteExperiment(
       try {
         const updated = await readRunDir(run.path, owning.name)
         rt.index.set(updated)
-        rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
+        rt.events.emit('run-change', {
+          type: 'set',
+          id: updated.id,
+          experiment: updated,
+          parentExperimentId: updated.frontMatter.experiment ?? null,
+        })
       } catch {
         // best-effort
       }
@@ -571,7 +581,7 @@ async function refreshBoth(
     const updatedExp = await readExperimentDoc(owning.root, owning.name, expId)
     if (updatedExp) {
       rt.experiments.set(expId, updatedExp)
-      rt.events.emit('experiment-doc-change', {
+      rt.events.emit('experiment-change', {
         type: 'set',
         id: expId,
         experiment: updatedExp,
@@ -585,10 +595,11 @@ async function refreshBoth(
     try {
       const updatedRun = await readRunDir(run.path, owning.name)
       rt.index.set(updatedRun)
-      rt.events.emit('experiment-change', {
+      rt.events.emit('run-change', {
         type: 'set',
         id: updatedRun.id,
         experiment: updatedRun,
+        parentExperimentId: updatedRun.frontMatter.experiment ?? null,
       })
     } catch {
       // best-effort

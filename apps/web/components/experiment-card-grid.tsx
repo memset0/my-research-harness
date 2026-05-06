@@ -19,7 +19,7 @@ import { StatusPill } from './status-pill'
 
 export function ExperimentCardGrid({ project }: { project: string }) {
   const { data: expData, isLoading: expLoading } = useQuery({
-    queryKey: ['experiments-v3', project],
+    queryKey: ['experiments', project],
     queryFn: () => fetchExperimentDocs(project),
   })
   const { data: anomalyData } = useQuery({

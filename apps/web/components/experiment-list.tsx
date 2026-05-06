@@ -23,7 +23,7 @@ const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as
 
 export function ExperimentList({ project }: { project: string }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['experiments', project],
+    queryKey: ['runs', project],
     queryFn: () => fetchExperiments(project),
   })
   const [search, setSearch] = useState('')

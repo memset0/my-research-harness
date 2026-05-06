@@ -9,20 +9,31 @@ import type { ExperimentDocSummary, IndexedRun } from './api'
 
 /**
  * Run-edit event — fires when a run README / status / archive flag changes.
- * Carried on both the new `run-change` topic AND the legacy
- * `experiment-change` topic (deprecated alias kept by the SSE encoder for
- * back-compat with v2 clients during the migration window).
+ * v3: lives on the `run-change` SSE topic only. The v2 `experiment-change`
+ * alias for run edits has been removed.
  */
 export interface RunChangeEvent {
   type: 'set' | 'delete'
   id: string
   experiment?: IndexedRun
+  /**
+   * Parent exp-doc id when the run is bound, else null. Lets the
+   * `useMemonEvents()` hook also invalidate `['experiment', parentId]`
+   * so an open exp detail page refreshes when one of its member runs
+   * changes.
+   */
+  parentExperimentId?: string | null
 }
 
 /**
  * v3 experiment-doc event — fires when `<projectRoot>/docs/experiments/E*-…md`
  * is created, edited, or deleted. `type: 'rediscover'` is a coarse signal
  * that the project's exp-doc set was rescanned (no per-id payload).
+ *
+ * v3: lives on the `experiment-change` SSE topic. The pre-cutover code
+ * used `experiment-doc-change` to disambiguate from the legacy run alias;
+ * after `v3-spec-sync` shipped the alias is gone, so the topic name is
+ * unambiguous.
  */
 export interface ExperimentDocChangeEvent {
   type: 'set' | 'delete' | 'rediscover'
@@ -44,15 +55,15 @@ export interface AnomalyEvent {
  */
 export type MemonEvent =
   | ({ topic: 'run-change' } & RunChangeEvent)
-  | ({ topic: 'experiment-doc-change' } & ExperimentDocChangeEvent)
+  | ({ topic: 'experiment-change' } & ExperimentDocChangeEvent)
   | ({ topic: 'anomaly' } & AnomalyEvent)
 
 /**
- * @deprecated v2 alias. New code should consume {@link MemonEvent} via
- * {@link subscribeMemonEvents} and switch on `evt.topic`. The legacy alias
- * is preserved so existing imports of `ExperimentChangeEvent` keep
- * compiling during the v3 migration window — payload shape is identical
- * to {@link RunChangeEvent}.
+ * @deprecated Pre-v3 code used `ExperimentChangeEvent` to mean a run edit.
+ * Use {@link RunChangeEvent} instead. The alias survives at type level
+ * so import sites keep compiling during the rename, but it now resolves
+ * to the run-edit shape (same as before) — there is no run-event payload
+ * carried on the SSE `experiment-change` topic anymore.
  */
 export type ExperimentChangeEvent = RunChangeEvent
 
@@ -86,18 +97,11 @@ function parseAndDispatch<T extends MemonEvent['topic']>(
 function ensureConnected() {
   if (source || typeof window === 'undefined') return
   source = new EventSource('/api/events')
-  // New v3 topic; preferred path.
   source.addEventListener('run-change', (e) => {
     parseAndDispatch('run-change', (e as MessageEvent).data)
   })
-  // Legacy alias for `run-change`. Kept so the existing v2 listeners on
-  // this single subscription point still work; once all callers consume
-  // `run-change` we can drop this.
   source.addEventListener('experiment-change', (e) => {
-    parseAndDispatch('run-change', (e as MessageEvent).data)
-  })
-  source.addEventListener('experiment-doc-change', (e) => {
-    parseAndDispatch('experiment-doc-change', (e as MessageEvent).data)
+    parseAndDispatch('experiment-change', (e as MessageEvent).data)
   })
   source.addEventListener('anomaly', (e) => {
     parseAndDispatch('anomaly', (e as MessageEvent).data)

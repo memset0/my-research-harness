@@ -163,7 +163,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     try {
       const updated = await readRunDir(exp.path, project.name)
       rt.index.set(updated)
-      rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
+      rt.events.emit('run-change', {
+        type: 'set',
+        id: updated.id,
+        experiment: updated,
+        parentExperimentId: updated.frontMatter.experiment ?? null,
+      })
     } catch {
       // best-effort
     }

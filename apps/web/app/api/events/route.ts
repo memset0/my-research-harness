@@ -4,25 +4,26 @@
 // poller + writer hooks). Frontend uses this to invalidate its TanStack
 // Query caches without polling every endpoint manually.
 //
-// Topics (v3, task 9.13):
-//   - experiment-change       : v2-legacy, fires on RUN edits. Deprecated
-//                               alias for `run-change`. Will be removed in
-//                               a future release; new clients MUST migrate
-//                               to `run-change`.
-//   - run-change              : fires on RUN edits (same payload as the
-//                               legacy `experiment-change`).
-//   - experiment-doc-change   : fires on v3 EXPERIMENT DOC edits/creates/
-//                               deletes (`docs/experiments/E*-<slug>.md`).
-//   - anomaly                 : fires after the runtime recomputes the
-//                               membership anomaly set for a project.
-//                               Payload: { project: string }.
+// v3 topics (task 9.13 + v3-spec-sync):
+//   - run-change         : fires on RUN edits (frontmatter / body / status /
+//                          link change). Payload includes `parentExperimentId`
+//                          when the run is bound, so the client can invalidate
+//                          the parent exp's detail cache too.
+//   - experiment-change  : fires on EXPERIMENT-DOC edits/creates/deletes/binds
+//                          (`docs/experiments/E*-<slug>.md`).
+//   - anomaly            : fires after the runtime recomputes the membership
+//                          anomaly set for a project. Payload: `{project,count}`.
+//
+// The v2 alias `experiment-change` for run edits has been removed — the topic
+// name now means exp-doc events ONLY. Clients still on the legacy semantics
+// MUST migrate to `run-change`. See live-updates spec.
 
 import type { NextRequest } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
 
-const TOPICS = ['experiment-change', 'experiment-doc-change', 'anomaly'] as const
+const TOPICS = ['run-change', 'experiment-change', 'anomaly'] as const
 type Topic = (typeof TOPICS)[number]
 
 export async function GET(_req: NextRequest) {
@@ -41,24 +42,11 @@ export async function GET(_req: NextRequest) {
           // controller closed — listener will be removed by cancel()
         }
       }
-      // experiment-change is emitted internally for run edits. Forward to
-      // both the legacy topic name AND the new `run-change` so v3-aware
-      // clients can subscribe to the canonical name without breaking the
-      // v2 listeners that still use `experiment-change`.
-      const onRun = (evt: unknown) => {
-        send('experiment-change', evt)
-        send('run-change', evt)
+      for (const topic of TOPICS) {
+        const h = (evt: unknown) => send(topic, evt)
+        handlers.set(topic, h)
+        rt.events.on(topic, h)
       }
-      handlers.set('experiment-change', onRun)
-      rt.events.on('experiment-change', onRun)
-
-      const onExpDoc = (evt: unknown) => send('experiment-doc-change', evt)
-      handlers.set('experiment-doc-change', onExpDoc)
-      rt.events.on('experiment-doc-change', onExpDoc)
-
-      const onAnomaly = (evt: unknown) => send('anomaly', evt)
-      handlers.set('anomaly', onAnomaly)
-      rt.events.on('anomaly', onAnomaly)
     },
     cancel() {
       for (const [topic, h] of handlers) rt.events.off(topic, h)

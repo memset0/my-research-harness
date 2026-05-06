@@ -34,7 +34,7 @@ export default async function ProjectLayout({
   await Promise.all([
     queryClient.prefetchQuery({ queryKey: ['projects'], queryFn: getProjectsData }),
     queryClient.prefetchQuery({
-      queryKey: ['experiments', decoded],
+      queryKey: ['runs', decoded],
       queryFn: () => getExperimentsData(decoded),
     }),
   ])

@@ -209,8 +209,8 @@ export function ReadmeEditorBody({
         const ok = res as PutReadmeResponse
         toast.success(`Saved · mtime ${new Date(ok.mtime).toLocaleTimeString()}`)
         safeRemove(draftKey(diskMtime))
-        queryClient.invalidateQueries({ queryKey: ['experiment', runId] })
-        queryClient.invalidateQueries({ queryKey: ['experiments'] })
+        queryClient.invalidateQueries({ queryKey: ['run', runId] })
+        queryClient.invalidateQueries({ queryKey: ['runs'] })
         // Server returns the canonical `finalContent` (post-bump,
         // post-pretty-print). Adopt it as both buffer + baseline so the
         // editor's notion of "disk" matches what's actually on disk.
@@ -245,8 +245,8 @@ export function ReadmeEditorBody({
         const ok = res as PutReadmeResponse
         toast.success('Saved (overwrote conflicting changes)')
         if (diskMtime !== null) safeRemove(draftKey(diskMtime))
-        queryClient.invalidateQueries({ queryKey: ['experiment', runId] })
-        queryClient.invalidateQueries({ queryKey: ['experiments'] })
+        queryClient.invalidateQueries({ queryKey: ['run', runId] })
+        queryClient.invalidateQueries({ queryKey: ['runs'] })
         const newContent = ok.finalContent ?? content
         setContent(newContent)
         setDiskContent(newContent)

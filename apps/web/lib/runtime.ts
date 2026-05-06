@@ -269,7 +269,7 @@ async function init(): Promise<Runtime> {
           }
           for (const e of discovered) sharedExperiments.set(e.id, e)
           recomputeAnomalies(expDirMatch.name)
-          events.emit('experiment-doc-change', { type: 'rediscover', project: expDirMatch.name })
+          events.emit('experiment-change', { type: 'rediscover', project: expDirMatch.name })
         } catch {
           // Best-effort — keep existing state on transient errors.
         }
@@ -294,7 +294,7 @@ async function init(): Promise<Runtime> {
               sharedExperiments.delete(expId)
             }
             recomputeAnomalies(expFileMatch.name)
-            events.emit('experiment-doc-change', {
+            events.emit('experiment-change', {
               type: updated ? 'set' : 'delete',
               id: expId,
               experiment: updated ?? undefined,
@@ -314,7 +314,12 @@ async function init(): Promise<Runtime> {
       try {
         const exp = await readRunDir(path, projectMatch.name)
         index.set(exp)
-        events.emit('experiment-change', { type: 'set', id: exp.id, experiment: exp })
+        events.emit('run-change', {
+          type: 'set',
+          id: exp.id,
+          experiment: exp,
+          parentExperimentId: exp.frontMatter.experiment ?? null,
+        })
       } catch {
         // If directory disappeared, drop from index silently
       }

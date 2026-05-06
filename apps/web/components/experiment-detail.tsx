@@ -22,7 +22,7 @@ import Link from 'next/link'
 
 export function ExperimentDetail({ project, id }: { project: string; id: string }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['experiment', id],
+    queryKey: ['run', id],
     queryFn: () => fetchExperiment(id),
   })
 

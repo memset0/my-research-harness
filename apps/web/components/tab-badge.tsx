@@ -89,7 +89,7 @@ function useTabCount(kind: TabKind, project: string): TabCountResult {
 
 function useExperimentsCount(project: string): TabCountResult {
   const q = useQuery({
-    queryKey: ['experiments', project],
+    queryKey: ['runs', project],
     queryFn: () => fetchExperiments(project),
     staleTime: 5_000,
   })

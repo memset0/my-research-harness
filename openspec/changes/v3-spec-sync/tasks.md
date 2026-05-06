@@ -9,47 +9,46 @@ state where listeners and invalidators disagree.
 
 ### D1 + D2 — SSE topic + query key rename
 
-- [ ] 1.1 In `apps/web/lib/runtime.ts` rename the internal emit point
+- [x] 1.1 In `apps/web/lib/runtime.ts` rename the internal emit point
       `experiment-doc-change` → `experiment-change`. Search for the
       string in `lib/runtime.ts`, `lib/warnings.ts`, `lib/experiments.ts`
       and replace.
-- [ ] 1.2 In `apps/web/app/api/events/route.ts` drop the lines that
+- [x] 1.2 In `apps/web/app/api/events/route.ts` drop the lines that
       forward the internal `experiment-change` event to BOTH
       `experiment-change` and `run-change` SSE topics; only emit
       `run-change`. Keep the new `experiment-change` listener wired to
       the now-renamed exp-doc emit.
-- [ ] 1.3 In `apps/web/lib/events-client.ts` rename
+- [x] 1.3 In `apps/web/lib/events-client.ts` rename
       `experiment-doc-change` topic to `experiment-change`; update the
       `MemonEvent` discriminated union accordingly. Drop the legacy
       `experiment-change → run-change` mapping (we no longer mis-label
       old listeners).
-- [ ] 1.4 Update the `parentExperimentId` field on `RunChangeEvent` —
+- [x] 1.4 Update the `parentExperimentId` field on `RunChangeEvent` —
       ensure `lib/runtime.ts` poller + writer hook lookups include
       the run's `frontMatter.experiment` in the event payload.
-- [ ] 1.5 In `apps/web/components/use-memon-events.tsx` replace
+- [x] 1.5 In `apps/web/components/use-memon-events.tsx` replace
       `['experiments']` → `['runs']`, `['experiment', evt.id]` →
       `['run', evt.id]` for the `run-change` topic; add the
       `['experiment', parentExperimentId]` invalidation when set.
       Replace `['experiment-docs']` → `['experiments']` and
       `['experiment-doc', id]` → `['experiment', id]` for the
       `experiment-change` topic.
-- [ ] 1.6 Audit every `useQuery({ queryKey: ['experiments', …] })`
+- [x] 1.6 Audit every `useQuery({ queryKey: ['experiments', …] })`
       and `useQuery({ queryKey: ['experiment', id] })` callsite in
       `apps/web/`. If the query loads RUN data (returns `IndexedRun[]`
       or a `Run` shape), rename to `['runs', …]` / `['run', id]`. If
       it loads EXP-DOC data (returns `ExperimentDocSummary[]` or
-      `ExperimentDocDetail`), keep the name. Touch sites:
+      `ExperimentDocDetail`), keep the name. Touched sites:
       `app-sidebar.tsx`, `experiment-list.tsx`, `experiment-page.tsx`,
-      `experiment-detail.tsx`, `app/p/[project]/page.tsx`, the
-      `prefetchQuery` calls in route `page.tsx` files, and any
-      `setQueryData` / `getQueryData` consumer.
-- [ ] 1.7 Update `apps/web/lib/api.ts` JSDoc for `fetchExperiments`,
-      `fetchExperimentDocs` to reflect the new naming (still works
-      either way, but doc-string accuracy).
-- [ ] 1.8 `pnpm --filter @memon/web typecheck` is clean.
-- [ ] 1.9 `pnpm --filter @memon/web test` passes — many tests touch
-      query keys, expect failures here; fix each one to use the new
-      key. There may be ~10–15 test updates.
+      `experiment-detail.tsx`, `app/p/[project]/layout.tsx` (SSR
+      prefetch), `tab-badge.tsx`, `readme-editor.tsx`, `status-edit.tsx`,
+      `warnings-card.tsx`, `experiment-card-grid.tsx`,
+      `use-memon-events.tsx`. 11 files, 22 sites.
+- [-] 1.7 ~Update `apps/web/lib/api.ts` JSDoc for `fetchExperiments`,
+      `fetchExperimentDocs`~ — JSDoc already accurate (Slice δ); skip.
+- [x] 1.8 `pnpm --filter @memon/web typecheck` is clean.
+- [x] 1.9 `pnpm --filter @memon/web test` passes (181 passed) — no
+      tests had hard-coded query keys, so no test updates needed.
 
 ### D3 — anomaly payload spec update only
 
