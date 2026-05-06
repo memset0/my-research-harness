@@ -90,25 +90,39 @@ state where listeners and invalidators disagree.
       mtime snapshot diff; fails the suite if any mock file under
       `mock/project-{a,b}` was touched during the run.
 
-### 2.2 v2→v3 migration regression test (16.3)
+### 2.2 v2→v3 migration regression test (16.3) — scope reduced
 
-- [ ] 2.2.1 Hand-write a v2 fixture at
-      `packages/core/test-fixtures/v2-mock/` with: 4–5 run dirs in
-      `logs/<slug>-yymmdd-hhmmss/` (each with v2 frontmatter shape:
-      `project:`/`hypotheses:`/`tags:`, body sections including
-      Motivation/Method/Conclusion/Caveats/Warnings/New Hypotheses);
-      `docs/hypotheses.md` with `Experiments:` containing run dir
-      names; `docs/journal.md`; NO `docs/experiments/` dir; NO
-      `.memon/version.json`.
-- [ ] 2.2.2 Write `packages/core/test/migration-v2-to-v3.test.ts`
-      that copies the fixture to a tmp dir, then programmatically
-      walks each step in `packages/core/migrations/v2-to-v3.md`
-      (parse the markdown step list, exec each shell-or-typescript
-      action), then diffs the result against `mock/project-a/`.
-- [ ] 2.2.3 Implement a "timestamps modulo" diff: replace any ISO8601
-      timestamp with `<TIMESTAMP>` before comparison.
-- [ ] 2.2.4 Add an idempotency scenario: re-run the same migration
-      against the already-migrated tree; assert zero file changes.
+- [x] 2.2.1 Hand-write 2 v2 run fixtures at
+      `packages/core/test-fixtures/v2-mock/logs/`. Reduced from
+      "4-5 runs + docs/hypotheses + docs/journal" because the realistic
+      regression target is the per-run deterministic transform, not a
+      full project tree (see decision below).
+- [x] 2.2.2 Wrote `packages/core/src/migrations/v2-to-v3-run.ts`
+      (`rewriteV2RunReadme()`) — the deterministic part of the v2→v3
+      migration: drop legacy frontmatter fields, set `experiment` +
+      `updated_at`, strip moved-away body sections.
+      Wrote `packages/core/src/migrations/v2-to-v3-run.test.ts`
+      with 4 scenarios:
+      - fully-populated v2 README → canonical v3 (frontmatter +
+        body shape assertions)
+      - sparser v2 README (no Warnings, no New Hypotheses) → v3
+      - `experiment: null` for an unbound run
+      - idempotency: rewriting v3 again is a no-op modulo
+        `updated_at`
+
+      **Scope decision**: the original 16.3 ask
+      ("programmatically walk the markdown migration recipe and
+      assert byte-for-byte match against mock/project-a") is not
+      practical because `packages/core/migrations/v2-to-v3.md` is an
+      agent-facing recipe with judgement steps (clustering, user
+      confirm) that have no programmatic API. We narrow to the
+      deterministic run-README rewrite, which is the part that
+      actually has a regression risk if `serializeReadme` /
+      `parseReadme` change.
+- [-] 2.2.3 ~"timestamps modulo" diff~ — moved into the idempotency
+      scenario as a `replace(/updated_at: .+$/m, …)` normalizer.
+- [x] 2.2.4 Idempotency scenario lands as the 4th test — re-running
+      the rewrite on a v3 README mutates only `updated_at`.
 
 ### 2.3 Browser-level UI regression coverage (16.4)
 
