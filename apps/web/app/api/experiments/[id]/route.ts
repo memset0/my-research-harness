@@ -23,6 +23,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const memberRuns = exp.frontMatter.runs
       .map((r) => rt.index.get(r))
       .filter((r): r is NonNullable<typeof r> => Boolean(r))
+    // Compute effective times (task 5.4): the experiment's logical
+    // creation/update window expands to cover all member runs, so the UI
+    // can sort exp docs by activity rather than by exp-doc-edit time.
+    const effective = computeEffective(exp.frontMatter.createdAt, exp.frontMatter.updatedAt, memberRuns)
     return NextResponse.json({
       id: exp.id,
       project: exp.project,
@@ -33,6 +37,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       warningsRaw: exp.warningsRaw,
       parseErrors: exp.parseErrors,
       parseWarnings: exp.parseWarnings,
+      effectiveCreatedAt: effective.createdAt,
+      effectiveUpdatedAt: effective.updatedAt,
       memberRuns: memberRuns.map((r) => ({
         id: r.id,
         status: r.frontMatter.status,
@@ -49,6 +55,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  }
+}
+
+function computeEffective(
+  expCreatedAt: string,
+  expUpdatedAt: string,
+  members: Array<{ frontMatter: { createdAt: string; updatedAt: string } }>,
+): { createdAt: string; updatedAt: string } {
+  if (members.length === 0) {
+    return { createdAt: expCreatedAt, updatedAt: expUpdatedAt }
+  }
+  const created = [expCreatedAt, ...members.map((m) => m.frontMatter.createdAt)].filter(Boolean).sort()
+  const updated = [expUpdatedAt, ...members.map((m) => m.frontMatter.updatedAt)].filter(Boolean).sort()
+  return {
+    createdAt: created[0] ?? expCreatedAt,
+    updatedAt: updated[updated.length - 1] ?? expUpdatedAt,
   }
 }
 

@@ -5,7 +5,13 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
-import { fetchExperiments, fetchProjects, type IndexedRun } from '../lib/api'
+import {
+  fetchExperimentDocs,
+  fetchExperiments,
+  fetchProjects,
+  type ExperimentDocSummary,
+  type IndexedRun,
+} from '../lib/api'
 import {
   Sidebar,
   SidebarContent,
@@ -33,6 +39,11 @@ export function AppSidebar() {
   const activeProject = decodeURIComponent(pathname.match(/^\/p\/([^/]+)/)?.[1] ?? '')
   const activeExperimentId = decodeURIComponent(
     pathname.match(/\/experiments\/([^/]+)/)?.[1] ?? '',
+  )
+  // v3 exp-doc detail URLs: `/p/<project>/e/<E-id>` (and the alias
+  // `/p/<project>/r/<run-id>` already redirects to the same exp page).
+  const activeExpDocId = decodeURIComponent(
+    pathname.match(/\/e\/([^/]+)/)?.[1] ?? '',
   )
 
   const { data: projectsData } = useQuery({
@@ -101,6 +112,7 @@ export function AppSidebar() {
             isActive={p.name === activeProject}
             isOpen={expanded.has(p.name)}
             activeExperimentId={activeExperimentId}
+            activeExpDocId={activeExpDocId}
             onOpenChange={(open) => onToggle(p.name, open)}
           />
         ))}
@@ -117,18 +129,23 @@ export function AppSidebar() {
 }
 
 /** One collapsible project group, following shadcn's
- *  Collapsible → SidebarGroup → GroupLabel(trigger) → GroupContent pattern. */
+ *  Collapsible → SidebarGroup → GroupLabel(trigger) → GroupContent pattern.
+ *
+ *  v3 layout: shows two sub-sections — Experiments (v3 docs) on top and
+ *  Runs (v2 dirs) below. Both lists fetch lazily when the group opens. */
 function ProjectGroup({
   name,
   isActive,
   isOpen,
   activeExperimentId,
+  activeExpDocId,
   onOpenChange,
 }: {
   name: string
   isActive: boolean
   isOpen: boolean
   activeExperimentId: string
+  activeExpDocId: string
   onOpenChange: (open: boolean) => void
 }) {
   return (
@@ -148,11 +165,79 @@ function ProjectGroup({
         </SidebarGroupLabel>
         <CollapsibleContent>
           <SidebarGroupContent>
+            <ProjectExperimentDocs project={name} activeId={activeExpDocId} enabled={isOpen} />
             <ProjectExperiments project={name} activeId={activeExperimentId} enabled={isOpen} />
           </SidebarGroupContent>
         </CollapsibleContent>
       </SidebarGroup>
     </Collapsible>
+  )
+}
+
+/** v3 experiment-doc list ((task 13.2), one entry per
+ *  `<projectRoot>/docs/experiments/E*-<slug>.md`). Sits above the legacy
+ *  Runs list — exp docs are the canonical user-facing unit in v3. */
+function ProjectExperimentDocs({
+  project,
+  activeId,
+  enabled,
+}: {
+  project: string
+  activeId: string
+  enabled: boolean
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['experiment-docs', project],
+    queryFn: () => fetchExperimentDocs(project),
+    enabled,
+    staleTime: 5_000,
+  })
+  const docs: ExperimentDocSummary[] = data?.experiments ?? []
+  const [showAll, setShowAll] = useState(false)
+  const visible = useMemo(
+    () => (showAll ? docs : docs.slice(0, DEFAULT_VISIBLE)),
+    [docs, showAll],
+  )
+  const hasMore = docs.length > DEFAULT_VISIBLE
+  if (!enabled) return null
+  if (docs.length === 0 && !isLoading) {
+    // Quiet — old projects with no v3 exp docs yet should not look broken.
+    return null
+  }
+  return (
+    <>
+      <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-sidebar-foreground/40">
+        Experiments
+      </div>
+      <SidebarMenu>
+        {visible.map((exp) => (
+          <SidebarMenuItem key={exp.id}>
+            <SidebarMenuButton asChild isActive={exp.id === activeId} size="sm">
+              <Link
+                href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}`}
+                title={exp.frontMatter.title}
+              >
+                <span className="truncate font-mono text-xs">{exp.id}</span>
+                <span className="ml-auto shrink-0 text-[10px] text-sidebar-foreground/40">
+                  {exp.frontMatter.runs.length}
+                </span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ))}
+        {hasMore && (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="sm"
+              onClick={() => setShowAll((v) => !v)}
+              className="text-sidebar-foreground/60"
+            >
+              {showAll ? 'Show fewer' : `View more (${docs.length - DEFAULT_VISIBLE})`}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
+      </SidebarMenu>
+    </>
   )
 }
 
@@ -183,10 +268,14 @@ function ProjectExperiments({
     return <div className="px-2 py-1 text-xs text-sidebar-foreground/50">loading…</div>
   }
   if (experiments.length === 0) {
-    return <div className="px-2 py-1 text-xs text-sidebar-foreground/50">no experiments</div>
+    return <div className="px-2 py-1 text-xs text-sidebar-foreground/50">no runs</div>
   }
 
   return (
+    <>
+      <div className="px-2 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-sidebar-foreground/40">
+        Runs
+      </div>
     <SidebarMenu>
       {visible.map((exp) => (
         <SidebarMenuItem key={exp.id}>
@@ -217,5 +306,6 @@ function ProjectExperiments({
         </SidebarMenuItem>
       )}
     </SidebarMenu>
+    </>
   )
 }

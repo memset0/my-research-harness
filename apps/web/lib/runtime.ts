@@ -18,11 +18,13 @@ import {
   DIGEST_FILENAME_REGEX,
   discoverExperiments,
   discoverRuns,
+  EXPERIMENT_FILENAME_REGEX,
   extractTitle,
   loadConfig,
   parseHypotheses,
   parseJournal,
   Poller,
+  readExperimentDoc,
   readRunDir,
   REPORT_FILENAME_REGEX,
   RunIndex,
@@ -52,19 +54,6 @@ export class Runtime {
   /** Most recent error during init or background refresh */
   public lastError: string | null = null
 
-  /**
-   * v3 experiment-doc index. Keyed by experiment id (`E<NNNN>-<slug>`).
-   * Populated at warmup; not currently polled (Slice E will wire poll
-   * tracking for `docs/experiments/` per task 5.6).
-   */
-  public readonly experiments: Map<string, Experiment> = new Map()
-
-  /**
-   * v3 anomaly snapshot per project name. Recomputed lazily by
-   * recomputeAnomalies(); stored here so /api/anomalies can read in O(1).
-   */
-  public readonly anomaliesByProject: Map<string, ExperimentMembershipAnomaly[]> = new Map()
-
   constructor(
     public readonly config: Config,
     public readonly configPath: string,
@@ -76,23 +65,24 @@ export class Runtime {
     public readonly reportsCache: DirCache<ReportSummary>,
     public readonly digestsCache: DirCache<DigestSummary>,
     public readonly auth: AuthConfig,
+    /**
+     * v3 experiment-doc index, keyed by `E<NNNN>-<slug>`. Shared by reference
+     * with the poller closure so poll-driven mutations and API reads see the
+     * same Map.
+     */
+    public readonly experiments: Map<string, Experiment>,
+    /**
+     * v3 anomaly snapshot per project name. Mutated by recomputeAnomalies();
+     * /api/anomalies reads in O(1).
+     */
+    public readonly anomaliesByProject: Map<string, ExperimentMembershipAnomaly[]>,
+    /**
+     * Recompute closure shared with the poller (so both reference the same
+     * `experiments` / `anomaliesByProject` maps and emit the same SSE
+     * `anomaly` topic on each recompute).
+     */
+    public readonly recomputeAnomalies: (projectName: string) => void,
   ) {}
-
-  /**
-   * Recompute the membership join + anomaly set for a single project.
-   * Called from init() and (eventually) from poll callbacks when either
-   * side of the binding changes.
-   */
-  recomputeAnomalies(projectName: string): void {
-    const experiments = Array.from(this.experiments.values()).filter(
-      (e) => e.project === projectName,
-    )
-    const runs = this.index
-      .list({ project: projectName })
-      .filter((r) => r.hasReadme || true) // include all; orphan detection wants empties too
-    const result = computeMembership({ experiments, runs, project: projectName })
-    this.anomaliesByProject.set(projectName, result.anomalies)
-  }
 
   /** Reset poll backoff for the experiment whose path matches `path`. */
   pokeByPath(path: string): void {
@@ -227,6 +217,19 @@ async function init(): Promise<Runtime> {
     },
   })
 
+  // Shared, mutable state captured by both the Poller closure and the
+  // Runtime instance. The Runtime constructor takes these by reference so
+  // poll-driven mutations and API-route reads see the same Map.
+  const sharedExperiments: Map<string, Experiment> = new Map()
+  const sharedAnomalies: Map<string, ExperimentMembershipAnomaly[]> = new Map()
+  const recomputeAnomalies = (projectName: string) => {
+    const exps = Array.from(sharedExperiments.values()).filter((e) => e.project === projectName)
+    const runs = index.list({ project: projectName })
+    const result = computeMembership({ experiments: exps, runs, project: projectName })
+    sharedAnomalies.set(projectName, result.anomalies)
+    events.emit('anomaly', { project: projectName, count: result.anomalies.length })
+  }
+
   // Single Poller instance dispatched by path-membership to the right handler.
   const poller = new Poller(
     {
@@ -242,7 +245,68 @@ async function init(): Promise<Runtime> {
       if (reportsCache.handlePollChange(path, poller)) return
       if (digestsCache.handlePollChange(path, poller)) return
 
-      // Otherwise this is an experiment directory.
+      // v3: docs/experiments/ directory mtime advance → rediscover the
+      // exp-doc set for the owning project. Individual file changes are
+      // handled below (they also fall through to here).
+      const expDirMatch = config.projects.find((p) => path === join(p.root, 'docs', 'experiments'))
+      if (expDirMatch) {
+        try {
+          const { experiments: discovered } = await discoverExperiments(
+            expDirMatch.root,
+            expDirMatch.name,
+          )
+          const seen = new Set<string>()
+          for (const e of discovered) {
+            seen.add(e.id)
+            // Register per-file watch so individual edits also get caught.
+            poller.watch(e.path, e.mtime)
+          }
+          // Replace the project's slice of the experiments map.
+          for (const id of Array.from(sharedExperiments.keys())) {
+            const cur = sharedExperiments.get(id)!
+            if (cur.project !== expDirMatch.name) continue
+            if (!seen.has(id)) sharedExperiments.delete(id)
+          }
+          for (const e of discovered) sharedExperiments.set(e.id, e)
+          recomputeAnomalies(expDirMatch.name)
+          events.emit('experiment-doc-change', { type: 'rediscover', project: expDirMatch.name })
+        } catch {
+          // Best-effort — keep existing state on transient errors.
+        }
+        return
+      }
+
+      // v3: individual exp doc file change.
+      const expFileMatch = config.projects.find(
+        (p) =>
+          path.startsWith(join(p.root, 'docs', 'experiments') + '/') && path.endsWith('.md'),
+      )
+      if (expFileMatch) {
+        const filename = basename(path)
+        const m = EXPERIMENT_FILENAME_REGEX.exec(filename)
+        if (m) {
+          const expId = filename.replace(/\.md$/, '')
+          try {
+            const updated = await readExperimentDoc(expFileMatch.root, expFileMatch.name, expId)
+            if (updated) {
+              sharedExperiments.set(expId, updated)
+            } else {
+              sharedExperiments.delete(expId)
+            }
+            recomputeAnomalies(expFileMatch.name)
+            events.emit('experiment-doc-change', {
+              type: updated ? 'set' : 'delete',
+              id: expId,
+              experiment: updated ?? undefined,
+            })
+          } catch {
+            // best-effort
+          }
+        }
+        return
+      }
+
+      // Otherwise this is a run directory.
       const projectMatch = config.projects.find(
         (p) => path === p.root || path.startsWith(`${p.root}/`),
       )
@@ -284,6 +348,13 @@ async function init(): Promise<Runtime> {
       for (const project of config.projects) {
         const { experiments: docs } = await discoverExperiments(project.root, project.name)
         experimentsByProject.set(project.name, docs)
+        // Register the docs/experiments/ dir for poll tracking + each
+        // discovered file for individual-mtime watch (task 5.6).
+        const expDir = join(project.root, 'docs', 'experiments')
+        poller.watch(expDir, await dirMtimeOrZero(expDir))
+        for (const doc of docs) {
+          poller.watch(doc.path, doc.mtime)
+        }
       }
     })(),
   ])
@@ -329,6 +400,12 @@ async function init(): Promise<Runtime> {
       `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests`,
   )
 
+  // Seed shared maps (used by both the poller closure and the Runtime
+  // instance, by reference) before constructing the Runtime.
+  for (const [, docs] of experimentsByProject) {
+    for (const doc of docs) sharedExperiments.set(doc.id, doc)
+  }
+
   const runtime = new Runtime(
     config,
     configPath,
@@ -340,12 +417,12 @@ async function init(): Promise<Runtime> {
     reportsCache,
     digestsCache,
     auth,
+    sharedExperiments,
+    sharedAnomalies,
+    recomputeAnomalies,
   )
-
-  // Seed v3 experiment-doc state into the runtime + compute initial anomalies.
-  for (const [projectName, docs] of experimentsByProject) {
-    for (const doc of docs) runtime.experiments.set(doc.id, doc)
-    runtime.recomputeAnomalies(projectName)
+  for (const [projectName] of experimentsByProject) {
+    recomputeAnomalies(projectName)
   }
 
   return runtime

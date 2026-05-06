@@ -552,7 +552,13 @@ export interface ExperimentDocSummary {
   memberRuns: MemberRunSummary[]
 }
 
-export interface ExperimentDocDetail extends Omit<ExperimentDocSummary, 'effectiveCreatedAt' | 'effectiveUpdatedAt'> {}
+/**
+ * v3 detail (`/api/experiments/:id`). Mirrors the summary plus a per-run
+ * artifact aggregate. As of Slice δ (task 5.4) the detail endpoint also
+ * returns `effectiveCreatedAt` / `effectiveUpdatedAt` so this type now
+ * extends the summary directly.
+ */
+export interface ExperimentDocDetail extends ExperimentDocSummary {}
 
 export interface AnomalyRecord {
   code: 'ORPHAN_RUN' | 'PHANTOM_RUN_REF' | 'MISMATCH_EXPERIMENT_REF'
