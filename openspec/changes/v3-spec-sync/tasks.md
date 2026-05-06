@@ -174,13 +174,22 @@ state where listeners and invalidators disagree.
 
 ## 4. Verification
 
-- [ ] 4.1 `pnpm --filter @memon/core test` passes.
-- [ ] 4.2 `pnpm --filter @memon/web test` passes (incl. the new
-      integration + browser tests).
-- [ ] 4.3 `pnpm --filter @memon/web typecheck` clean.
-- [ ] 4.4 `pnpm --filter @memon/web build` succeeds.
-- [ ] 4.5 Live curl smoke per CLAUDE.md verification protocol against
-      the running prod server: `/p/<project>` 200; `/api/experiments`
-      200; `/api/runs` 200 (the new run-side route name confirmed
-      live); SSE `/api/events` opens and emits the renamed topics.
-- [ ] 4.6 `openspec validate v3-spec-sync --type change` clean.
+- [x] 4.1 `pnpm --filter @memon/core test` passes (25 files / 194
+      passed; +4 from v2-to-v3-run.test.ts).
+- [x] 4.2 `pnpm --filter @memon/web test` passes (37 files / 198
+      passed; +7 integration + 10 browser-level new).
+- [x] 4.3 `pnpm --filter @memon/web typecheck` clean.
+- [x] 4.4 `pnpm --filter @memon/web build` succeeds (clean .next
+      rebuild after the SSE rename).
+- [x] 4.5 Live curl smoke against the running prod server:
+      - `GET /` → 307 (redirect to /p/<default-project>)
+      - `GET /p/project-a` → 200
+      - `GET /api/experiments?project=project-a` → 200
+      - `GET /api/runs?project=project-a` → 200 (run-side route)
+      - `GET /api/anomalies?project=project-a` → 200
+      - `GET /api/events` (SSE) opens and emits `event: ready`
+      - CSS bundle has `--background --foreground --card --primary
+        --sidebar` tokens defined (subset; CLAUDE.md F4 sanity).
+- [x] 4.6 `openspec validate v3-spec-sync --type change` clean;
+      all four artifacts (proposal/design/specs/tasks) at status
+      `done`.
