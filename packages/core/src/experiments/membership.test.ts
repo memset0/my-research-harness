@@ -80,7 +80,7 @@ describe('computeMembership — confirmed bindings', () => {
     const r = run('fsdp-260501-100000', 'E0001-fsdp')
     const result = computeMembership({ experiments: [e], runs: [r], project: 'p' })
     expect(result.confirmedMembers.get('E0001-fsdp')).toEqual(['fsdp-260501-100000'])
-    expect(result.anomalies.filter((a) => a.code !== 'RUN_SLUG_PREFIX_VIOLATION' && a.code !== 'DUPLICATE_RUN_SLUG')).toEqual([])
+    expect(result.anomalies.filter((a) => a.code !== 'RUN_SLUG_PREFIX_VIOLATION')).toEqual([])
   })
 })
 
@@ -137,12 +137,17 @@ describe('computeMembership — v3 task 5.5 slug-uniqueness anomalies', () => {
     expect(prefixes.map((p) => p.experimentId)).toContain('E0002-fsdp-collective')
   })
 
-  it('reports DUPLICATE_RUN_SLUG when two run dirs share the slug portion', () => {
+  it('does NOT flag DUPLICATE_RUN_SLUG — run slugs may repeat across timestamps', () => {
     const r1 = run('foo-260501-100000', null)
     const r2 = run('foo-260601-200000', null)
     const { anomalies } = computeMembership({ experiments: [], runs: [r1, r2], project: 'p' })
-    const dups = anomalies.filter((x) => x.code === 'DUPLICATE_RUN_SLUG')
-    expect(dups.map((d) => d.runId).sort()).toEqual(['foo-260501-100000', 'foo-260601-200000'])
+    // Two runs sharing the slug "foo" at different timestamps are
+    // independent attempts; no DUPLICATE_RUN_SLUG anomaly should fire.
+    // The code was removed from `ExperimentMembershipAnomalyCode`; we
+    // assert the surrogate property — the only anomalies emitted are
+    // ORPHAN_RUN (both runs have no experiment binding).
+    expect(anomalies.every((x) => x.code === 'ORPHAN_RUN')).toBe(true)
+    expect(anomalies.length).toBe(2)
   })
 
   it('reports RUN_SLUG_PREFIX_VIOLATION when a member run does not start with the exp slug', () => {

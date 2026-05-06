@@ -62,7 +62,7 @@ const SAMPLE_EXP = {
       host: 'gpu-04',
       gpus: [0],
       path: `/p/a/logs/${RUN_ID}`,
-      artifacts: [],
+      artifacts: [] as Array<{ path: string; description: string }>,
     },
   ],
 }
@@ -106,6 +106,8 @@ const SAMPLE_RUN = {
   body: '',
   parseErrors: [],
   parseWarnings: [],
+  stale: false,
+  resources: null,
 }
 
 describe('ExperimentPage — run panel expand persists across reload', () => {

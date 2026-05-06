@@ -52,6 +52,7 @@ const SAMPLE_DOCS = {
           finishedAt: '2026-05-01T11:30:00+08:00',
           host: 'gpu-04',
           gpus: [0, 1, 2, 3],
+          artifacts: [] as Array<{ path: string; description: string }>,
         },
         {
           id: 'fsdp-260502-150000',
@@ -61,6 +62,7 @@ const SAMPLE_DOCS = {
           finishedAt: null,
           host: 'gpu-04',
           gpus: [0],
+          artifacts: [] as Array<{ path: string; description: string }>,
         },
       ],
     },

@@ -172,6 +172,41 @@ state where listeners and invalidators disagree.
       `experiment-change` means exp-doc events in v3; old listeners
       need to migrate to `run-change`.
 
+## 3.5 DUPLICATE_RUN_SLUG correction (post-review)
+
+The user flagged that run slug uniqueness is wrong: only EXPERIMENT
+slugs need to be unique. Run slugs MAY repeat across timestamps. This
+removes the false-positive anomaly from membership + doctor and
+renames the rename-collision error code.
+
+- [x] 3.5.1 `packages/core/src/types.ts`: drop `DUPLICATE_RUN_SLUG`
+      from `ExperimentMembershipAnomalyCode` enum.
+- [x] 3.5.2 `packages/core/src/experiments/membership.ts`: drop the
+      `runSlugBuckets` loop that emitted the false-positive
+      `DUPLICATE_RUN_SLUG` anomaly. The `runDirRe` regex stays
+      because it's still used by the `RUN_SLUG_PREFIX_VIOLATION`
+      check below.
+- [x] 3.5.3 `packages/core/src/experiments/membership.test.ts`:
+      replaced the "reports DUPLICATE_RUN_SLUG" test with a positive
+      assertion that two runs sharing a slug at different timestamps
+      produce ONLY `ORPHAN_RUN` anomalies (no slug-related codes).
+- [x] 3.5.4 `packages/core/src/cli/doctor.ts`: drop
+      `DUPLICATE_RUN_SLUG` from `IssueCode` and the suggested-action
+      switch.
+- [x] 3.5.5 `packages/cli/src/commands/run-rename.ts`: rename the
+      collision error code `DUPLICATE_RUN_SLUG` →
+      `DUPLICATE_RUN_DIR` (the check still rejects a true dir-name
+      clash; only the label changes). Comment clarifies that slug
+      reuse across timestamps is allowed.
+- [x] 3.5.6 New delta `specs/run-discovery/spec.md`: REMOVED
+      Requirement "Run slug uniqueness within a project" with
+      Reason + Migration paragraphs.
+- [x] 3.5.7 New delta `specs/run-edit/spec.md`: MODIFIED Requirement
+      `memon run rename only changes the slug` — step 4 now checks
+      dir-name not slug, error code is `DUPLICATE_RUN_DIR`. New
+      scenario "Slug repeat across timestamps is OK" makes the new
+      contract explicit.
+
 ## 4. Verification
 
 - [x] 4.1 `pnpm --filter @memon/core test` passes (25 files / 194

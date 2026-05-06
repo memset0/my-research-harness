@@ -95,6 +95,14 @@ adds the missing test layers, and updates the agent-facing docs.
 - `experiment-readme` — permit back-compat parse of v2 6-col warnings
   tables as `run: null`; drop the `WARNINGS_TABLE_HEADER_MISMATCH`
   rejection scenario.
+- `run-discovery` — REMOVE the "run slug uniqueness within a project"
+  requirement. Run slugs MAY repeat across timestamps; only
+  EXPERIMENT slugs need to be unique. The timestamp suffix already
+  disambiguates run dir names.
+- `run-edit` — rename the rename-collision error code in
+  `memon run rename` from `DUPLICATE_RUN_SLUG` to `DUPLICATE_RUN_DIR`.
+  The check still rejects a name clash (only possible when same slug +
+  same timestamp), but the name now reflects what's actually checked.
 - `test-suite` — add integration / migration regression / browser
   scenarios per 16.2 / 16.3 / 16.4.
 

@@ -27,7 +27,6 @@ export type IssueCode =
   | 'RUN_SLUG_PREFIX_VIOLATION'
   | 'DUPLICATE_EXPERIMENT_SLUG'
   | 'EXPERIMENT_SLUG_PREFIX_COLLISION'
-  | 'DUPLICATE_RUN_SLUG'
 
 export interface DoctorIssue {
   runId: string
@@ -113,9 +112,7 @@ export async function runDoctor(
                   : a.code === 'DUPLICATE_EXPERIMENT_SLUG' ||
                       a.code === 'EXPERIMENT_SLUG_PREFIX_COLLISION'
                     ? 'rename or merge one of the colliding experiment docs'
-                    : a.code === 'DUPLICATE_RUN_SLUG'
-                      ? '(harmless) two run dirs share the same slug; rename one to disambiguate'
-                      : 'see message',
+                    : 'see message',
       })
     }
   } catch {

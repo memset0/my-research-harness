@@ -94,13 +94,15 @@ export function computeMembership(input: MembershipInput): MembershipResult {
   //   - EXPERIMENT_SLUG_PREFIX_COLLISION: one exp slug is a prefix of
   //     another (e.g. `fsdp` and `fsdp-collective`) — ambiguous when
   //     resolving run ids by prefix to their parent exp.
-  //   - DUPLICATE_RUN_SLUG: two run dirs share the same `<slug>` portion
-  //     (the part before `-yymmdd-hhmmss`); harmless but worth surfacing
-  //     since it can confuse search.
   //   - RUN_SLUG_PREFIX_VIOLATION: a confirmed-member run's slug doesn't
   //     start with its parent exp's slug. The CLI emits this as a soft
   //     warning at link-time; here we surface it for already-bound runs
   //     too so doctor can see the full set.
+  //
+  // Run slugs MAY repeat across different timestamps within a project
+  // (two attempts of the same investigation share a slug); the
+  // timestamp suffix already disambiguates the dir name, so we DO NOT
+  // emit a `DUPLICATE_RUN_SLUG` anomaly.
   const expSlugBuckets = new Map<string, Experiment[]>()
   for (const exp of input.experiments) {
     const slug = exp.frontMatter.slug
@@ -146,32 +148,7 @@ export function computeMembership(input: MembershipInput): MembershipResult {
     }
   }
 
-  const runSlugBuckets = new Map<string, Run[]>()
   const runDirRe = /^(?<slug>[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*)-\d{6}-\d{6}$/
-  for (const run of input.runs) {
-    const m = runDirRe.exec(run.id)
-    if (!m?.groups) continue
-    const slug = m.groups.slug!
-    const arr = runSlugBuckets.get(slug) ?? []
-    arr.push(run)
-    runSlugBuckets.set(slug, arr)
-  }
-  for (const [slug, arr] of runSlugBuckets) {
-    if (arr.length <= 1) continue
-    for (const run of arr) {
-      anomalies.push({
-        code: 'DUPLICATE_RUN_SLUG',
-        project,
-        experimentId: null,
-        runId: run.id,
-        message: `run "${run.id}" shares slug "${slug}" with ${arr
-          .filter((r) => r.id !== run.id)
-          .map((r) => r.id)
-          .join(', ')}`,
-        detectedAt,
-      })
-    }
-  }
   for (const exp of input.experiments) {
     for (const runDir of exp.frontMatter.runs) {
       const run = runByDir.get(runDir)

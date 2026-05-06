@@ -293,13 +293,17 @@ export type ExperimentMembershipAnomalyCode =
   | 'ORPHAN_RUN'
   | 'PHANTOM_RUN_REF'
   | 'MISMATCH_EXPERIMENT_REF'
-  // v3 task 5.5 — slug-uniqueness anomalies surfaced at the project-join
-  // level (not per-doc parse errors). Codes match what `memon experiment
+  // v3 — slug-uniqueness anomalies surfaced at the project-join level
+  // (not per-doc parse errors). Codes match what `memon experiment
   // create` emits as BAD_REQUEST so users see the same string in both
   // places.
+  //
+  // Note: only EXPERIMENT slugs need to be unique (one canonical
+  // doc per investigation). RUN slugs MAY repeat — two run dirs
+  // sharing a slug at different timestamps are independent attempts
+  // and the timestamp suffix already disambiguates the dir name.
   | 'DUPLICATE_EXPERIMENT_SLUG'
   | 'EXPERIMENT_SLUG_PREFIX_COLLISION'
-  | 'DUPLICATE_RUN_SLUG'
   | 'RUN_SLUG_PREFIX_VIOLATION'
 
 export interface ExperimentMembershipAnomaly {

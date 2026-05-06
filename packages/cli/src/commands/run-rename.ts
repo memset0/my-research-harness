@@ -71,12 +71,15 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
     return
   }
 
-  // Slug-uniqueness within project.
+  // Run-dir-name collision check. The same slug at different timestamps
+  // is FINE (run slugs MAY repeat across attempts) — what we reject is
+  // a full dir-name clash, which can only happen if another run already
+  // happens to have both this slug AND this exact timestamp suffix.
   const collide = snap.experiments.find((e) => e.id !== oldId && e.id === newId)
   if (collide) {
     emitErrorAndExit(
       'BAD_REQUEST',
-      `DUPLICATE_RUN_SLUG: another run already has dir name "${newId}"`,
+      `DUPLICATE_RUN_DIR: another run already has dir name "${newId}"`,
     )
   }
 
