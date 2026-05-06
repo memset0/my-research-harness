@@ -19,14 +19,21 @@ import {
   fetchExperiment,
   fetchExperimentDoc,
   fetchRunFiles,
+  type FullExperiment,
   type MemberRunSummary,
 } from '../lib/api'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { StatusPill } from './status-pill'
+import { StatusEdit } from './status-edit'
 import { Markdown } from './markdown'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { OpenClaudeCodeButton } from './open-claude-code-button'
+import { TerminalButton } from './terminal-button'
+import { AddNoteButton } from './add-note-button'
+import { WarningsCard } from './warnings-card'
+import { LogViewer } from './log-viewer'
+import { TimestampLocal } from './timestamp'
 import { cn } from '../lib/utils'
 
 interface Props {
@@ -235,16 +242,25 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
 
   return (
     <div className="flex flex-col gap-3 border-t p-3">
+      <RunFrontmatterCard run={run} project={project} />
       <div className="flex flex-wrap gap-2">
+        <TerminalButton runId={runId} projectName={project} />
+        <AddNoteButton project={project} runId={runId} />
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
         <OpenClaudeCodeButton kind="run" id={runId} projectName={project} />
       </div>
-      <div className="text-xs">
-        <span className="text-muted-foreground">command:</span>{' '}
-        <code className="rounded bg-muted px-1 font-mono">{run.frontMatter.command}</code>
-      </div>
       <RunSection heading="Setup" body={run.sections.setup ?? null} />
       <RunSection heading="Result" body={run.sections.result ?? null} />
+      {run.hasReadme && (
+        <WarningsCard
+          runId={runId}
+          readmePath={`${run.path}/README.md`}
+          initialWarnings={run.warnings}
+          initialMtime={run.mtime}
+        />
+      )}
+      <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
+      {run.hasReadme && <LogViewer expPath={run.path} />}
       {files && files.tree.children && files.tree.children.length > 0 && (
         <section>
           <h3 className="mb-1 text-xs font-semibold">
@@ -254,16 +270,141 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
           <FileTree node={files.tree} />
         </section>
       )}
-      <div className="flex gap-2 text-xs">
-        <Link
-          href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(runId)}`}
-          className="rounded border px-2 py-1 hover:bg-muted"
-        >
-          Open run page (legacy)
-        </Link>
-      </div>
       <span className="hidden">{experimentId}</span>
     </div>
+  )
+}
+
+function RunFrontmatterCard({ run, project }: { run: FullExperiment; project: string }) {
+  const fm = run.frontMatter
+  return (
+    <div className="rounded-md border bg-card/40 p-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs">{run.id}</span>
+        {run.hasReadme ? (
+          <StatusEdit
+            id={run.id}
+            status={fm.status}
+            stale={run.stale}
+            expectedMtime={run.mtime}
+          />
+        ) : (
+          <Badge variant="outline" className="text-[10px]">no README</Badge>
+        )}
+        {run.parseErrors.length > 0 && (
+          <Badge variant="destructive" className="text-[10px]">
+            {run.parseErrors.length} parse errors
+          </Badge>
+        )}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs md:grid-cols-4">
+        <FmField label="name" value={fm.name} />
+        {fm.project && fm.project !== project && (
+          <FmField label="sub-project" value={fm.project} />
+        )}
+        <FmField label="created">
+          <TimestampLocal value={fm.createdAt} variant="long" />
+        </FmField>
+        <FmField label="finished">
+          <TimestampLocal value={fm.finishedAt} variant="long" />
+        </FmField>
+        <FmField label="host" value={fm.host ?? '—'} />
+        <FmField label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
+        <FmField label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />
+        <FmField label="entry" value={fm.entry || '—'} />
+        <div className="col-span-2 break-all md:col-span-4">
+          <FmLabel>command</FmLabel>
+          <code className="block rounded bg-muted px-2 py-1 font-mono text-[11px]">
+            {fm.command || '—'}
+          </code>
+        </div>
+        {fm.wandb && (
+          <div className="col-span-2 md:col-span-4">
+            <FmLabel>wandb</FmLabel>
+            <a
+              className="text-[11px] text-primary underline-offset-4 hover:underline"
+              href={fm.wandb}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {fm.wandb}
+            </a>
+          </div>
+        )}
+        {fm.tags.length > 0 && (
+          <div className="col-span-2 md:col-span-4">
+            <FmLabel>tags</FmLabel>
+            <div className="flex flex-wrap gap-1">
+              {fm.tags.map((t) => (
+                <Badge key={t} variant="outline" className="text-[10px]">
+                  #{t}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        {fm.hypotheses.length > 0 && (
+          <div className="col-span-2 md:col-span-4">
+            <FmLabel>hypotheses</FmLabel>
+            <div className="flex flex-wrap gap-1">
+              {fm.hypotheses.map((h) => (
+                <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
+                  <Badge className="text-[10px]">{h}</Badge>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </dl>
+    </div>
+  )
+}
+
+function FmLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      {children}
+    </div>
+  )
+}
+
+function FmField({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value?: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <FmLabel>{label}</FmLabel>
+      {children ?? (
+        <div className="truncate font-mono text-[11px] text-foreground">{value}</div>
+      )}
+    </div>
+  )
+}
+
+function RunArtifactsBlock({
+  artifacts,
+}: {
+  artifacts: { path: string; description: string }[]
+}) {
+  if (artifacts.length === 0) return null
+  return (
+    <section>
+      <h3 className="mb-1 text-xs font-semibold">Artifacts</h3>
+      <ul className="flex flex-col gap-0.5 text-xs">
+        {artifacts.map((a, i) => (
+          <li key={i} className="grid grid-cols-1 gap-x-3 md:grid-cols-2">
+            <code className="font-mono text-foreground/80">{a.path}</code>
+            <span className="text-muted-foreground">{a.description}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
