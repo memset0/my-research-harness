@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { parseReadme } from './parse.js'
 import { reserializeReadme, serializeReadme } from './serialize.js'
 
+// v3 shape: drops legacy `project` / `hypotheses` / `tags` fields and adds
+// `experiment` / `updated_at`. The serializer no longer emits the legacy
+// fields, so the round-trip below would otherwise see a difference.
 const SAMPLE = `---
 id: foo-260503-082800
 name: foo
-project: fsdp-comm
 status: RUNNING
+experiment: E0001-fsdp-coll
 created_at: 2026-05-03T08:28:00+08:00
+updated_at: 2026-05-03T08:28:00+08:00
 finished_at: null
 host: m2.cluster
 pid: 12345
@@ -15,8 +19,6 @@ gpus: [0, 1]
 entry: ./run.sh
 command: bash run.sh
 wandb: null
-hypotheses: [H0001]
-tags: [moe]
 ---
 
 ## Motivation
@@ -83,5 +85,39 @@ describe('serializeReadme', () => {
     const parsed = parseReadme(SAMPLE)
     parsed.frontMatter.hypotheses = ['H0001', 'H3']
     expect(() => reserializeReadme(parsed)).toThrowError(/H3/)
+  })
+
+  it('v3 task 4.2: legacy v2 fields (project / hypotheses / tags) are dropped from new writes', () => {
+    // Feed a v2-shaped SAMPLE through parse then serialize — the output
+    // should contain `experiment:` + `updated_at:` and NOT contain the
+    // dropped fields. This ensures the writer pretty-prints to the v3
+    // canonical shape regardless of input shape.
+    const v2Sample = `---
+id: legacy-260101-000000
+name: legacy
+project: old-sub-project
+status: FINISHED
+created_at: 2026-01-01T00:00:00+08:00
+finished_at: 2026-01-01T01:00:00+08:00
+host: null
+pid: null
+gpus: []
+entry: ''
+command: ''
+wandb: null
+hypotheses: [H0001, H0002]
+tags: [old, legacy]
+---
+
+## Motivation
+Old run.
+`
+    const parsed = parseReadme(v2Sample)
+    const out = reserializeReadme(parsed)
+    expect(out).toContain('experiment:')
+    expect(out).toContain('updated_at:')
+    expect(out).not.toContain('project:')
+    expect(out).not.toContain('hypotheses:')
+    expect(out).not.toContain('tags:')
   })
 })

@@ -303,6 +303,7 @@ status
     (v) => Number(v),
   )
   .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
+    emitV2DeprecationBanner('experiment status set', 'run status set')
     const g = readGlobals()
     await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
   })
@@ -319,6 +320,7 @@ readme
     if (!stdinContent) {
       emitErrorAndExit('BAD_REQUEST', 'expected README content on stdin (e.g. cat new.md | memon experiment readme write ...)')
     }
+    emitV2DeprecationBanner('experiment readme write', 'run readme write')
     await runReadmeWrite({
       ...g,
       runId: id,
@@ -432,6 +434,7 @@ experiment
   .command('archive <id>')
   .description('mark a run as archived (run-level; v2 alias of `memon run archive`)')
   .action(async (id: string) => {
+    emitV2DeprecationBanner('experiment archive', 'run archive')
     const g = readGlobals()
     await runArchive({ ...g, runId: id })
   })
@@ -439,9 +442,23 @@ experiment
   .command('unarchive <id>')
   .description('unmark archived (run-level; v2 alias of `memon run unarchive`)')
   .action(async (id: string) => {
+    emitV2DeprecationBanner('experiment unarchive', 'run unarchive')
     const g = readGlobals()
     await runUnarchive({ ...g, runId: id })
   })
+
+/**
+ * v3 task 7.7: emit a one-line deprecation banner to stderr when a legacy
+ * v2-alias subcommand is invoked. Stays out of stdout so JSON consumers
+ * don't see it. Suppressed when MEMON_QUIET_DEPRECATIONS is set so
+ * scripted callers can opt out.
+ */
+function emitV2DeprecationBanner(legacy: string, replacement: string): void {
+  if (process.env.MEMON_QUIET_DEPRECATIONS) return
+  process.stderr.write(
+    `[deprecation] \`memon ${legacy}\` is a v2 alias and will be removed in a future release; use \`memon ${replacement}\` instead.\n`,
+  )
+}
 
 const run = program
   .command('run')

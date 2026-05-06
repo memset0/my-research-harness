@@ -12,13 +12,24 @@ import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
+// v3 task 8.2: append-allowed tags. STATUS is excluded by design — it's
+// only emitted by `memon experiment status set` / `memon run status set`,
+// which atomically write the README + journal entry. WARNING is also
+// excluded since `memon experiment warning {add,resolve,reopen,delete}`
+// owns those events; allowing manual append would split the audit trail.
+// The new v3 tags (EXPERIMENT, BIND, RENAME) ARE allowed because they're
+// emitted by `memon experiment {create,delete,link,unlink}` and
+// `memon run rename` — manual append from skills is OK as a back-up.
 const VALID_TAGS_FOR_APPEND: JournalEventTag[] = [
   'NOTE',
   'REQUEST',
   'ERROR',
   'ARCHIVE',
   'CREATE',
-] as const // STATUS is excluded by design
+  'EXPERIMENT',
+  'BIND',
+  'RENAME',
+] as const
 
 export interface JournalReadInput {
   projectRoot?: string

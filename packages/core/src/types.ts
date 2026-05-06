@@ -293,6 +293,14 @@ export type ExperimentMembershipAnomalyCode =
   | 'ORPHAN_RUN'
   | 'PHANTOM_RUN_REF'
   | 'MISMATCH_EXPERIMENT_REF'
+  // v3 task 5.5 — slug-uniqueness anomalies surfaced at the project-join
+  // level (not per-doc parse errors). Codes match what `memon experiment
+  // create` emits as BAD_REQUEST so users see the same string in both
+  // places.
+  | 'DUPLICATE_EXPERIMENT_SLUG'
+  | 'EXPERIMENT_SLUG_PREFIX_COLLISION'
+  | 'DUPLICATE_RUN_SLUG'
+  | 'RUN_SLUG_PREFIX_VIOLATION'
 
 export interface ExperimentMembershipAnomaly {
   code: ExperimentMembershipAnomalyCode
@@ -351,7 +359,14 @@ export interface Hypothesis {
   statement: string
   origin: string
   status: HypothesisStatus
-  experiments: string[] // experiment directory names
+  /**
+   * v3 experiment doc ids (e.g. `E0001-foo`). Tokens that look like run
+   * directory names get split into the parallel `runs` field below; the
+   * parser emits `MIGRATE_HYPOTHESIS_REFS` for back-compat.
+   */
+  experiments: string[]
+  /** v3-added: run dir names referenced from `Runs:` or back-compat split. */
+  runs: string[]
   evidence: string[]
   caveats: string[]
   lastVerified: string | null // YYYY-MM-DD

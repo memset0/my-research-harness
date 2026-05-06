@@ -12,6 +12,7 @@
 import { promises as fs } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parseReadme } from '../readme/parse.js'
+import { parseTimestampFromRunDir } from '../time.js'
 import type { Run, ParsedReadme } from '../types.js'
 
 export async function readRunDir(
@@ -46,6 +47,22 @@ export async function readRunDir(
   // membership (set from the projectName arg below), so frontMatter.project
   // is now an OPTIONAL sub-project label that we preserve verbatim.
   if (parsed.frontMatter.id === '') parsed.frontMatter.id = id
+
+  // v3 task 3.3: when the README is present but `created_at` is missing or
+  // empty, derive it from the run dir name's `yymmdd-hhmmss` tail (same
+  // logic the README-absent branch uses). `updated_at` falls back to
+  // `created_at` per the parser's existing default. This handles the case
+  // where a v2-era README was hand-written without front-matter timestamps —
+  // synthesizeFromDirname only fired when the file was missing entirely.
+  if (hasReadme && parsed.frontMatter.createdAt === '') {
+    const derived = parseTimestampFromRunDir(id)
+    if (derived) {
+      parsed.frontMatter.createdAt = derived
+      if (parsed.frontMatter.updatedAt === '') {
+        parsed.frontMatter.updatedAt = derived
+      }
+    }
+  }
 
   return {
     id: parsed.frontMatter.id || id,

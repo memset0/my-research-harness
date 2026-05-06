@@ -41,7 +41,7 @@ const SAMPLE = `# Hypotheses
 `
 
 describe('parseHypotheses', () => {
-  it('parses entries, statuses, evidence, and experiment IDs', () => {
+  it('parses entries, statuses, evidence, and (v3) splits Experiments refs into experiments[] vs runs[]', () => {
     const parsed = parseHypotheses(SAMPLE)
     expect(parsed.parseErrors).toEqual([])
     expect(parsed.entries).toHaveLength(2)
@@ -49,7 +49,15 @@ describe('parseHypotheses', () => {
     expect(h1.id).toBe('H0001')
     expect(h1.slug).toBe('per-step-bf16-param-delta-is-sparse')
     expect(h1.status).toBe('CONFIRMED')
-    expect(h1.experiments).toEqual(['foo-260501-100000', 'bar-260502-150000'])
+    // v3 task 3.5+3.6: legacy run-dir names under `Experiments:` get
+    // moved to runs[] and a MIGRATE_HYPOTHESIS_REFS warning is emitted.
+    expect(h1.experiments).toEqual([])
+    expect(h1.runs).toEqual(['foo-260501-100000', 'bar-260502-150000'])
+    expect(
+      parsed.parseWarnings.some(
+        (w) => w.field === 'H0001.Experiments' && /MIGRATE_HYPOTHESIS_REFS/.test(w.message),
+      ),
+    ).toBe(true)
     expect(h1.evidence).toContain('1-step bit_equal = 99.89%')
     expect(h1.caveats).toContain('强绑定 lr=1e-6')
     expect(h1.lastVerified).toBe('2026-04-11')
@@ -58,7 +66,46 @@ describe('parseHypotheses', () => {
     expect(h2.id).toBe('H0002')
     expect(h2.status).toBe('OPEN')
     expect(h2.experiments).toEqual([])
+    expect(h2.runs).toEqual([])
     expect(h2.lastVerified).toBeNull()
+  })
+
+  it('v3: parses Runs: field and merges with Experiments: split (no warning when shapes are correct)', () => {
+    const v3Sample = `## H0003. v3-form
+
+- **Statement**: v3 references
+- **Origin**: derived
+- **Status**: 🔵 OPEN
+- **Experiments**: E0001-fsdp-collective E0002-attention-cache
+- **Runs**: foo-260501-100000 bar-260502-150000
+- **Evidence**:
+- **Caveats**:
+- **Last verified**: —
+`
+    const parsed = parseHypotheses(v3Sample)
+    expect(parsed.entries).toHaveLength(1)
+    const h = parsed.entries[0]!
+    expect(h.experiments).toEqual(['E0001-fsdp-collective', 'E0002-attention-cache'])
+    expect(h.runs).toEqual(['foo-260501-100000', 'bar-260502-150000'])
+    expect(parsed.parseWarnings.some((w) => /MIGRATE_HYPOTHESIS_REFS/.test(w.message))).toBe(false)
+  })
+
+  it('v3: warns when Runs: field contains an experiment id', () => {
+    const swapped = `## H0004. swapped
+
+- **Statement**: x
+- **Origin**: y
+- **Status**: 🔵 OPEN
+- **Experiments**: —
+- **Runs**: E0001-misplaced
+- **Evidence**:
+- **Caveats**:
+- **Last verified**: —
+`
+    const parsed = parseHypotheses(swapped)
+    expect(parsed.parseWarnings.some(
+      (w) => w.field === 'H0004.Runs' && /MIGRATE_HYPOTHESIS_REFS/.test(w.message),
+    )).toBe(true)
   })
 
   it('captures legend and summary table blocks', () => {

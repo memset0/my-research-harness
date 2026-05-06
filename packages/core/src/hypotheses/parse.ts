@@ -40,7 +40,51 @@ const HYPOTHESIS_HEADING_REGEX = /^(H\d{4})\.\s*(.*)$/
 const HYPOTHESIS_HEADING_LOOSE_REGEX = /^H\d+\.\s*/
 const LABEL_LINE_REGEX = /^-\s+\*\*([\w\s]+)\*\*\s*:\s*(.*)$/
 const SUB_BULLET_REGEX = /^\s+-\s+(.*)$/
-const EXPERIMENT_ID_REGEX = /[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}/g
+// Run dir basename pattern: `<slug>-yymmdd-hhmmss`.
+const RUN_ID_REGEX = /[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}/g
+// v3 experiment doc id: `E<NNNN>-<slug>` where slug starts with a-z0-9.
+const EXPERIMENT_DOC_ID_REGEX = /E\d{4}-[a-z0-9][a-z0-9-]*[a-z0-9]/g
+// Canonical exact-match check for a single token (used by helper below).
+const EXPERIMENT_DOC_ID_EXACT = /^E\d{4}-[a-z0-9][a-z0-9-]*[a-z0-9]$/
+const RUN_ID_EXACT = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
+
+/**
+ * v3 task 3.5: split a free-form references field into v3 experiment doc
+ * ids vs legacy run dir names.
+ *
+ * Tokens are pulled out of the prose by the two id regexes (so it's safe
+ * to feed `Experiments: foo-260501-100000 (data) → bar-260502-150000 (analysis)`
+ * verbatim — surrounding prose is ignored). Each extracted token is then
+ * classified by exact-match shape:
+ *   - `E\d{4}-…`             → experiments[]
+ *   - `<slug>-yymmdd-hhmmss` → runs[]
+ *   - anything else          → dropped (won't happen given the regexes)
+ *
+ * Caller decides how to react to `runs[]` being non-empty under an
+ * `Experiments:` field (e.g. emit `MIGRATE_HYPOTHESIS_REFS` to nudge the
+ * user toward the new `Runs:` field).
+ */
+export function parseExperimentRefList(text: string): {
+  experiments: string[]
+  runs: string[]
+} {
+  const seen = new Set<string>()
+  const experiments: string[] = []
+  const runs: string[] = []
+  // Pull exp doc ids first so a later run-id match for the same prefix
+  // (impossible given the digit anchor, but defensive) wouldn't double-add.
+  for (const m of text.matchAll(EXPERIMENT_DOC_ID_REGEX)) {
+    if (seen.has(m[0])) continue
+    seen.add(m[0])
+    if (EXPERIMENT_DOC_ID_EXACT.test(m[0])) experiments.push(m[0])
+  }
+  for (const m of text.matchAll(RUN_ID_REGEX)) {
+    if (seen.has(m[0])) continue
+    seen.add(m[0])
+    if (RUN_ID_EXACT.test(m[0])) runs.push(m[0])
+  }
+  return { experiments, runs }
+}
 const EMOJI_TO_STATUS: Record<string, HypothesisStatus> = Object.fromEntries(
   Object.entries(HYPOTHESIS_STATUS_EMOJI).map(([status, emoji]) => [emoji, status as HypothesisStatus]),
 )
@@ -135,6 +179,7 @@ function parseEntry(
   const originLines = fields.get('Origin') ?? []
   const statusLines = fields.get('Status') ?? []
   const experimentsLines = fields.get('Experiments') ?? []
+  const runsLines = fields.get('Runs') ?? []
   const evidenceLines = fields.get('Evidence') ?? []
   const caveatsLines = fields.get('Caveats') ?? []
   const lastVerifiedLines = fields.get('Last verified') ?? []
@@ -148,8 +193,34 @@ function parseEntry(
     })
   }
 
-  const experimentsRaw = experimentsLines.join(' ')
-  const experiments = Array.from(experimentsRaw.matchAll(EXPERIMENT_ID_REGEX), (m) => m[0])
+  // v3 task 3.5+3.6: the `Experiments:` field can carry a mix of v3 exp
+  // doc ids (E0001-foo) and legacy run dir names (foo-260501-100000).
+  // Split via the ref-list helper; surface MIGRATE_HYPOTHESIS_REFS so the
+  // user knows to move run-dir names to the new `Runs:` field. The new
+  // `Runs:` field is parsed in addition to (and merged with) the migration
+  // results.
+  const { experiments: expsFromExperimentsField, runs: runsFromExperimentsField } =
+    parseExperimentRefList(experimentsLines.join(' '))
+  if (runsFromExperimentsField.length > 0) {
+    issues.push({
+      field: `${id}.Experiments`,
+      message: `MIGRATE_HYPOTHESIS_REFS: ${runsFromExperimentsField.length} run-dir reference(s) found under Experiments — move them to a Runs: field. Run ids: ${runsFromExperimentsField.join(', ')}`,
+      severity: 'warning',
+    })
+  }
+  const { experiments: expsFromRunsField, runs: runsFromRunsField } = parseExperimentRefList(
+    runsLines.join(' '),
+  )
+  if (expsFromRunsField.length > 0) {
+    issues.push({
+      field: `${id}.Runs`,
+      message: `MIGRATE_HYPOTHESIS_REFS: ${expsFromRunsField.length} experiment id(s) found under Runs — move them to the Experiments: field. Exp ids: ${expsFromRunsField.join(', ')}`,
+      severity: 'warning',
+    })
+  }
+  // Merge + de-duplicate while preserving discovery order.
+  const experiments = mergeUnique(expsFromExperimentsField, expsFromRunsField)
+  const runs = mergeUnique(runsFromExperimentsField, runsFromRunsField)
 
   const lastVerifiedRaw = lastVerifiedLines.join(' ').trim()
   const lastVerified = lastVerifiedRaw === '' || lastVerifiedRaw === '—' ? null : lastVerifiedRaw
@@ -162,12 +233,25 @@ function parseEntry(
       origin: originLines.join(' ').trim(),
       status: status ?? 'OPEN',
       experiments,
+      runs,
       evidence: evidenceLines,
       caveats: caveatsLines,
       lastVerified,
     },
     issues,
   }
+}
+
+function mergeUnique(a: string[], b: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const x of [...a, ...b]) {
+    if (!seen.has(x)) {
+      seen.add(x)
+      out.push(x)
+    }
+  }
+  return out
 }
 
 /**

@@ -87,9 +87,13 @@ function renderFrontMatter(fm: RunFrontMatter): string {
   // Required scalars
   lines.push(`id: ${quoteIfNeeded(fm.id)}`)
   lines.push(`name: ${quoteIfNeeded(fm.name)}`)
-  lines.push(`project: ${quoteIfNeeded(fm.project)}`)
   lines.push(`status: ${fm.status}`)
+  // v3 task 4.2: parent experiment doc id (null when unbound). Always emit.
+  lines.push(`experiment: ${fm.experiment === null ? 'null' : quoteIfNeeded(fm.experiment)}`)
   lines.push(`created_at: ${quoteIfNeeded(fm.createdAt)}`)
+  // v3 task 4.2: updated_at is bumped by writers; always emit (defaults to
+  // createdAt when never edited). Old readers tolerate the new field.
+  lines.push(`updated_at: ${quoteIfNeeded(fm.updatedAt)}`)
   lines.push(`finished_at: ${fm.finishedAt === null ? 'null' : quoteIfNeeded(fm.finishedAt)}`)
   // Optional scalars (always emit, null when absent — explicit > implicit)
   lines.push(`host: ${fm.host === null ? 'null' : quoteIfNeeded(fm.host)}`)
@@ -98,8 +102,14 @@ function renderFrontMatter(fm: RunFrontMatter): string {
   lines.push(`entry: ${quoteIfNeeded(fm.entry)}`)
   lines.push(`command: ${quoteIfNeeded(fm.command)}`)
   lines.push(`wandb: ${fm.wandb === null ? 'null' : quoteIfNeeded(fm.wandb)}`)
-  // Validate hypothesis refs at serialization time — fail loud rather
-  // than emit garbage. Every element must be canonical H<NNNN>.
+  // v3 task 4.2: legacy v2 fields (`project`, `hypotheses`, `tags`) are
+  // dropped from new writes. We still parse them on read for back-compat,
+  // but a fresh serialize emits the canonical v3 shape only. The
+  // motivation is that these now belong on the parent experiment doc;
+  // duplicating them per run drifts (see openspec spec rationale §F1).
+  // Validate any caller-supplied hypothesis refs would be canonical, so
+  // existing tooling that still passes them in detects malformed values
+  // even though we no longer emit the line.
   for (const ref of fm.hypotheses) {
     if (!isId(ref, 'H')) {
       throw new Error(
@@ -107,8 +117,6 @@ function renderFrontMatter(fm: RunFrontMatter): string {
       )
     }
   }
-  lines.push(`hypotheses: ${renderStringArray(fm.hypotheses)}`)
-  lines.push(`tags: ${renderStringArray(fm.tags)}`)
   return `${lines.join('\n')}\n`
 }
 

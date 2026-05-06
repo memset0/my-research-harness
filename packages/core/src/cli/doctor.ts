@@ -2,6 +2,8 @@
 // Never writes to disk; the CLI command surfaces issues, the skill drives
 // interactive fixes through the existing write commands.
 
+import { discoverExperiments } from '../experiments/discover.js'
+import { computeMembership } from '../experiments/membership.js'
 import { scanProjectRoot, type IndexedRun } from './scan.js'
 
 export type IssueSeverity = 'info' | 'warn' | 'error'
@@ -15,6 +17,17 @@ export type IssueCode =
   | 'PARSE_WARNING'
   | 'ORPHAN_HYPOTHESIS_REF'
   | 'WARN_UNRESOLVED'
+  // v3 task 8.1 — exp ↔ run binding rules. Codes mirror the
+  // `ExperimentMembershipAnomalyCode` set so doctor output is the same
+  // string the web /api/anomalies endpoint emits, and the same string a
+  // human sees in `memon experiment create` failure paths.
+  | 'ORPHAN_RUN'
+  | 'PHANTOM_RUN_REF'
+  | 'MISMATCH_EXPERIMENT_REF'
+  | 'RUN_SLUG_PREFIX_VIOLATION'
+  | 'DUPLICATE_EXPERIMENT_SLUG'
+  | 'EXPERIMENT_SLUG_PREFIX_COLLISION'
+  | 'DUPLICATE_RUN_SLUG'
 
 export interface DoctorIssue {
   runId: string
@@ -61,6 +74,53 @@ export async function runDoctor(
 
   for (const exp of snapshot.experiments) {
     issues.push(...inspect(exp, knownHypIds))
+  }
+
+  // v3 task 8.1: surface exp-doc binding anomalies. Discover exp docs +
+  // compute membership against the same run set the legacy rules saw, so
+  // a single `memon doctor` pass shows v2 + v3 issues together. The
+  // project label is best-effort — scan doesn't know the configured name,
+  // so use the run dir's project label or "(scan)" for synthetic snapshots.
+  try {
+    const projectName = snapshot.experiments[0]?.project ?? '(scan)'
+    const { experiments: expDocs } = await discoverExperiments(snapshot.projectRoot, projectName)
+    const { anomalies } = computeMembership({
+      experiments: expDocs,
+      runs: snapshot.experiments,
+      project: projectName,
+    })
+    for (const a of anomalies) {
+      const severity: IssueSeverity =
+        a.code === 'MISMATCH_EXPERIMENT_REF' || a.code === 'EXPERIMENT_SLUG_PREFIX_COLLISION'
+          ? 'error'
+          : a.code === 'RUN_SLUG_PREFIX_VIOLATION'
+            ? 'info'
+            : 'warn'
+      issues.push({
+        runId: a.runId ?? a.experimentId ?? '(?)',
+        code: a.code,
+        severity,
+        message: a.message,
+        suggestedAction:
+          a.code === 'ORPHAN_RUN'
+            ? 'bind the run via `memon experiment link <exp> <run>` or set its `experiment:` field'
+            : a.code === 'PHANTOM_RUN_REF'
+              ? 'remove the stale entry from the experiment doc\'s `runs:` field, or restore the missing run dir'
+              : a.code === 'MISMATCH_EXPERIMENT_REF'
+                ? 'unlink + re-link to bring both sides into agreement'
+                : a.code === 'RUN_SLUG_PREFIX_VIOLATION'
+                  ? 'rename the run via `memon run rename` so its slug starts with the experiment slug'
+                  : a.code === 'DUPLICATE_EXPERIMENT_SLUG' ||
+                      a.code === 'EXPERIMENT_SLUG_PREFIX_COLLISION'
+                    ? 'rename or merge one of the colliding experiment docs'
+                    : a.code === 'DUPLICATE_RUN_SLUG'
+                      ? '(harmless) two run dirs share the same slug; rename one to disambiguate'
+                      : 'see message',
+      })
+    }
+  } catch {
+    // Best-effort — never block doctor on v3 discovery failure (e.g. no
+    // docs/experiments/ dir at all on a v2-only project).
   }
 
   const filtered = issues.filter((i) => SEVERITY_ORDER[i.severity] >= minLevel)

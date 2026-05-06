@@ -41,7 +41,7 @@ export type {
   WarningOp,
   WarningStatus,
 } from './readme/warnings.js'
-export { parseHypotheses } from './hypotheses/parse.js'
+export { parseHypotheses, parseExperimentRefList } from './hypotheses/parse.js'
 export { parseJournal } from './journal/parse.js'
 export {
   formatJournalEvent,
