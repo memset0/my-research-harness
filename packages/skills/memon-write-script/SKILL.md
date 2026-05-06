@@ -6,7 +6,7 @@ disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
-  version: '0.2.0'
+  version: '0.3.0'
 ---
 
 # memon-write-script
@@ -140,10 +140,13 @@ checkpoints, all output files — lives inside `RUN_DIR`.
 
 6. **Don't write `README.md` from the script.** That's
    `memon-run-experiment`'s job — the agent running that skill writes
-   the initial frontmatter + Motivation/Setup/Method content right after
-   the script gets going. The script's _only_ responsibility for the run
-   dir is `mkdir -p`; everything else (README, finalization, status
-   transitions) happens from outside.
+   the initial frontmatter + Setup content right after the script gets
+   going. The script's _only_ responsibility for the run dir is
+   `mkdir -p`; everything else (README, finalization, status
+   transitions, **and the v3 bind to a parent
+   `docs/experiments/E<NNNN>-<slug>.md` experiment doc**) happens from
+   outside via `memon-run-experiment`'s §0 + §6 / `memon experiment
+   link` CLI. The script itself stays purely v3-agnostic.
 
 7. **One-line header at the top of every shell script**, right after the
    shebang:

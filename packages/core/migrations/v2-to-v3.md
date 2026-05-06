@@ -29,6 +29,76 @@ Unlike v1→v2 (which was a deterministic file move), v2→v3 requires
 same experiment? The agent walks through the survey → cluster → confirm
 loop with the user before any disk write happens.
 
+### Procedure (agent-facing step list)
+
+`memon-migrate-fs` invokes this guide with the per-step protocol from
+its §5. For v2→v3 specifically, the work inside the step is non-trivial;
+the agent SHALL execute these in order, pausing for the user-confirm
+gate in step 3 before any filesystem write:
+
+1. **Survey** — list every v2 run README under each `<projectRoot>/<…>/<slug>-<YYMMDD>-<HHMMSS>/README.md`. For each, parse and extract:
+   - frontmatter `project` / `hypotheses` / `tags` / `name` / `created_at`
+   - body sections: `Motivation`, `Method`, `Conclusion`, `Caveats`, `Warnings` (with row content), `New Hypotheses`
+   - keep this in memory; do NOT write anything yet.
+
+2. **Cluster** — group runs by qualitative similarity of motivation +
+   method. Most natural clusters fall out of the existing
+   `frontMatter.hypotheses` overlap + reading the motivation prose for
+   each run. Allocate `E<NNNN>` IDs monotonically starting from `E0001`.
+   For each cluster, propose a `<slug>` and `<title>`. Single-run
+   experiments are valid (per the Edge Cases section).
+
+3. **Confirm with the user** — present the proposed grouping in
+   plain text in the chat (NO disk write yet). Format:
+
+   > 我建议拆成 N 个 experiment：
+   > - E0001-`<slug>` (`<title>`) 包含: foo-260501-100000, bar-260502-150000
+   > - E0002-`<slug>` (`<title>`) 包含: baz-260503-080000
+   > - …
+   > 是否确认？(y / 提建议修改)
+
+   Loop until the user says yes. **No filesystem writes happen before
+   user approval.**
+
+4. **Generate experiment docs** — for each approved cluster, write
+   `docs/experiments/E<NNNN>-<slug>.md` per the Diff section's
+   "File 3" template. Merge motivation/method/conclusion/caveats from
+   the cluster's member runs (deduplicate). The Warnings table — if
+   any member run had warnings — preserves rowIds and gains a `Run`
+   column populated with the source run dir.
+
+5. **Rewrite run READMEs** — for each migrated run, apply the Diff
+   section's "File 1" + "File 2" template:
+   - frontmatter: drop `project` / `hypotheses` / `tags`; add
+     `experiment: E<NNNN>-<slug>` and `updated_at: <migration-time-ISO>`
+   - body: keep only `## Setup` / `## Result` / `## Artifacts`; strip
+     Motivation / Method / Conclusion / Caveats / Warnings / New
+     Hypotheses
+
+6. **Verify bidirectional binding** — for every E doc, every entry in
+   `runs[]` must exist on disk and have matching `experiment:`
+   back-reference; for every run with `experiment:` set, the named exp's
+   `runs[]` must contain the run's dir base name. Run the verification
+   commands from `## Verification` below; abort on any mismatch.
+
+7. **Optional batch run rename** — ask the user (in Chinese):
+
+   > 是否把每个 run 的 slug 改成对应 experiment slug 的前缀，方便日后
+   > 一眼看出归属？例如 foo-260501-100000 → vpred-convergence-foo-260501-100000。
+   > 不改也没问题，只是软约定的视觉提示。(y/N)
+
+   On `y`, run `memon run rename` for each. On any other answer, skip
+   this step (the soft-prefix violation is non-blocking).
+
+8. **Update `docs/hypotheses.md`** — see the Diff section's "File 4".
+   Each per-H entry's `Experiments:` field now lists `E<NNNN>-<slug>`
+   IDs; the new `Runs:` field captures specific runs. Also update the
+   Summary table at the top of the file.
+
+9. **Bump the marker** — see the Diff section's "File 5". Per the
+   migrate-fs runtime protocol, this happens together with the commit
+   in `memon-migrate-fs`'s §5 (after verification).
+
 ## Detection
 
 Run each of the following from `<projectRoot>`. ALL of these conditions

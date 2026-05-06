@@ -6,7 +6,7 @@ disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # memon-run-experiment
@@ -100,6 +100,52 @@ from this skill.
   script's output (see §3 below).
 
 ## Workflow
+
+### 0. Identify (or create) the parent experiment doc
+
+In v3 every run dir SHOULD be bound to a `docs/experiments/E<NNNN>-<slug>.md`
+file that owns motivation / method / conclusion / caveats / warnings across
+the run set. The run README itself only carries setup / result / artifacts.
+Decide which experiment this run belongs to **before** launching, so the
+binding can land atomically right after the README is written in §6.
+
+```sh
+# List existing experiments in this project.
+memon experiment ls --project-root . --format human
+```
+
+Branch:
+
+- **An existing experiment fits** (the user's described work matches one of
+  the listed experiments' motivation/method) → ask the user to confirm the
+  pick. Capture its id as `$PARENT_EXP_ID` (e.g. `E0001-vpred-convergence`).
+- **No existing experiment fits** → propose creating a new one. In Chinese:
+
+  > 这个 run 看起来不属于任何已有 experiment。我建议新建一个：
+  > slug=`<slug>` title=`<title>`，hypotheses=[…]。可以吗？
+
+  On user confirmation:
+
+  ```sh
+  memon experiment create "<slug>" --project-root . \
+    --title "<one-line title>" \
+    --hypotheses H0003,H0007        # comma-separated; omit if none
+  ```
+
+  Capture the returned id (`E<NNNN>-<slug>`) as `$PARENT_EXP_ID`. The CLI
+  writes the exp doc with empty section stubs that you (or the user) fill
+  in afterwards — typically while writing the run's README in §6 the agent
+  also writes Motivation/Method into the exp doc on the user's behalf.
+
+- **The user explicitly wants this run to be orphan** (e.g. a one-off
+  smoke test that doesn't deserve an experiment doc) → set
+  `$PARENT_EXP_ID=""` and skip the link step in §6. This is rare; default
+  is "always have an exp doc".
+
+The actual bidirectional binding (writing `experiment:` to the run
+frontmatter + appending the run dir name to the exp's `runs[]`) happens
+in §6 after the run README is written. The atomicity guarantee comes from
+running `memon experiment link` once both files exist — see §6.
 
 ### 1. Pre-launch — env + GPU sanity check, then capture `code.diff` + wandb pre-flight
 
@@ -381,54 +427,77 @@ already there (or just re-set status to RUNNING if the prior README is
 fine), then write back with that mtime as `--expected-mtime`.
 
 ```sh
-EXP_ID=$(basename "$RUN_DIR")
+RUN_ID=$(basename "$RUN_DIR")
+NOW=$(date +%Y-%m-%dT%H:%M:%S%:z)
 # Fresh: --expected-mtime 0
 # Resume: --expected-mtime "$EXISTING_MTIME"
-cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . --expected-mtime "$MTIME"
+cat <<EOF | memon run readme write "$RUN_ID" --project-root . --expected-mtime "$MTIME"
 ---
-id: $EXP_ID
+id: $RUN_ID
 name: <RUN_NAME or whatever the script defaulted to>
-project: <project>
 status: RUNNING
-created_at: $(date -Iseconds)
+created_at: $NOW
+updated_at: $NOW
+experiment: $PARENT_EXP_ID    # from §0; empty/omit if intentional orphan
 finished_at: null
 host: $(hostname)
 pid: <captured if available>
 gpus: [...]
 entry: <script-relative-path>
 command: bash <script-relative-path>
-hypotheses: [H0003]
-tags: [...]
+wandb: <wandb-url-or-null>
 ---
 
-## Motivation
-<why this run mattered, from the user's description>
-
 ## Setup
-<env, hardware, hyperparams>
-
-## Method
-<what the script does in 1-2 paragraphs; reference the script's one-line header>
+<env, hardware, hyperparams; per-run inputs (ckpt paths, dataset slice,
+sweep param values). If the recovery loop in §11 changed anything, also
+note it here so the run is reproducible.>
 
 ## Result
 (pending — written when the run reaches a terminal state)
 
-## Conclusion
-(pending)
-
-## Caveats
-<known limitations going in; will be augmented post-run if needed>
-
 ## Artifacts
-- `./run.log` — full stdout/stderr
-- `./code.diff` — uncommitted changes at launch (code only)
-- `./code.head` — git HEAD at launch
-- `./checkpoints/` — model weights (if produced)
+- \`./run.log\` — full stdout/stderr
+- \`./code.diff\` — uncommitted changes at launch (code only)
+- \`./code.head\` — git HEAD at launch
+- \`./checkpoints/\` — model weights (if produced)
 EOF
 ```
 
+**Key v3 differences from the v2 schema you may remember:**
+
+- Frontmatter no longer has `project:` / `hypotheses:` / `tags:` — those
+  legacy fields belong to the parent experiment doc now (or are dropped
+  outright in the case of `project:`).
+- Frontmatter gains `experiment:` (parent E-id) and `updated_at:`.
+- Body sections shrink to `Setup / Result / Artifacts`. The cross-run
+  story (`Motivation`, `Method`, `Conclusion`, `Caveats`, `Warnings`)
+  lives on the parent experiment doc — write or update those there in
+  §0/§9, not here.
+- The legacy `## New Hypotheses` section is gone entirely; new
+  hypotheses are added to `docs/hypotheses.md` directly.
+
 Capture the new `mtime` from the response — that's `$MTIME` for any
 subsequent README write (terminal-state finalization, etc.).
+
+**Then bind the run to its parent experiment** (skip when
+`$PARENT_EXP_ID` is empty / orphan-by-choice):
+
+```sh
+memon experiment link "$PARENT_EXP_ID" "$RUN_ID" --project-root .
+```
+
+This is the atomic bidirectional bind: it ensures `<run>.experiment`
+and `<exp>.runs[]` stay in sync. The `experiment:` field already
+written by the README above is consistent (no rewrite happens), but
+the exp doc's `runs[]` gets the new entry appended. Capture the new
+exp-doc mtime if the conversation later edits motivation/method.
+
+If the script was a re-run that came after recovery iterations, the
+**Got it running by:** breakdown goes in this run's `## Setup` section
+(under a `**Got it running by:**` paragraph). The parent experiment's
+Method section gets updated separately in §9 if the recovery insight
+generalizes across runs.
 
 ### 7. Periodic check (every ~120 min)
 
@@ -501,28 +570,43 @@ to pull the failure context with surrounding lines.
 
 ### 9. Terminal — success path (FINISHED)
 
-Read fresh `MTIME`. Write the final README updating `status: FINISHED`
-and filling Result + Conclusion. Same write pattern as §6.
+Read fresh `MTIME`. Write the final run README updating
+`status: FINISHED`, filling `## Result`, and bumping `updated_at`. Same
+write pattern as §6 (the run README in v3 has only Setup/Result/
+Artifacts).
 
-If the recovery loop (§11) was triggered, the `## Method` section MUST
-include a `**Got it running by**:` paragraph listing every change that
-made the script work. Don't gloss it as "fixed some bugs"; list each
-meaningful change. If a change has implications for how the result
-should be read (e.g. batch size halved → effective LR halved too), also
-add a line to `## Caveats`.
+The cross-run story (`Conclusion`, updates to `Caveats`, possible
+`Warnings`) lives on the parent experiment doc at
+`<projectRoot>/docs/experiments/$PARENT_EXP_ID.md`. Update that file too
+if this run's result changes the conclusion drawn across the experiment:
+
+```sh
+# Read current exp doc (mtime + content), edit, write back. The CLI for
+# experiment-doc edits is `memon experiment readme write` (parallel to
+# `memon run readme write`). For ad-hoc agent-driven edits, prefer the
+# web markdown editor or stdin-piped CLI write — same mtime-lock contract.
+```
+
+If the recovery loop (§11) was triggered, the **`Got it running by:`**
+breakdown belongs **inside this run's `## Setup` section** (next to the
+hyperparam block — it's a per-run mechanical note). Don't gloss it as
+"fixed some bugs"; list each meaningful change. If a change has
+implications for how the result should be read (e.g. batch size halved →
+effective LR halved too), also add a line to the parent experiment's
+`## Caveats` so the next reader sees it across the run set.
 
 After the README write succeeds, run **§12 (post-run anomaly review)** —
 inspect the run for things the human should adjudicate and append
-`[OPEN]` warnings via `memon experiment warning add`. Then **walk
-through the run's contents in Chinese in the conversation** — keeps the
-README authoritative-and-English while the user gets the gist without
-re-reading it. Cover:
+`[OPEN]` warnings (see §12 for the v3-vs-legacy invocation). Then
+**walk through the run's contents in Chinese in the conversation** —
+keeps the run README authoritative-and-English while the user gets the
+gist without re-reading it. Cover:
 
-- 改动了什么(对应 `**Got it running by**:`,如果有)
-- 主要结果是什么(对应 `## Result`)
-- 结论是什么 / 怎么影响关联的假说(对应 `## Conclusion`)
-- 有什么坑 / 解读时需要注意的限制(对应 `## Caveats`)
-- 实现思路或想让用户注意的细节,如果 README 里没合适的位置写
+- 改动了什么(对应 `**Got it running by**:`,如果有,在这个 run 的 Setup 里)
+- 主要结果是什么(对应 run 的 `## Result`)
+- 结论是什么 / 怎么影响关联的假说(对应 exp doc 的 `## Conclusion` 更新)
+- 有什么坑 / 解读时需要注意的限制(对应 exp doc 的 `## Caveats`)
+- 实现思路或想让用户注意的细节,如果两边都没合适的位置写
 - 添加的警告(if §12 added any),让用户知道有哪几条需要他们裁决
 
 Brief — 3-6 lines is plenty.
@@ -549,10 +633,10 @@ REASON=$(tail -n 50 "$RUN_LOG" | grep -iE 'error|exception|traceback' | tail -1)
 #### 10a. If §6 already wrote a README (`$MTIME` defined)
 
 ```sh
-memon experiment status set "$EXP_ID" --project-root . --to FAILED \
+memon run status set "$RUN_ID" --project-root . --to FAILED \
   --expected-mtime "$MTIME"
 # Capture the new mtime returned by `status set` for the README append below.
-MTIME=$(memon show "$EXP_ID" --project-root . --format json | jq -r .mtime)
+MTIME=$(memon show "$RUN_ID" --project-root . --format json | jq -r .mtime)
 ```
 
 The `status set` alone is sometimes enough — the README from §6 already
@@ -560,16 +644,23 @@ names the run. To also record the failure reason inline, write the
 README with the fresh `$MTIME`:
 
 ```sh
-cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . \
+cat <<EOF | memon run readme write "$RUN_ID" --project-root . \
   --expected-mtime "$MTIME"
 ---
-... (preserved frontmatter, status: FAILED, finished_at: now)
+... (preserved frontmatter, status: FAILED, finished_at: now,
+     updated_at: now, experiment: $PARENT_EXP_ID)
 ---
+
+## Setup
+<preserved from §6>
 
 ## Result
 Failed: <one-line reason from run.log; e.g. "OOM at batch=16 with 80GB GPU">
 
 See \`./run.log\` for the full stack trace.
+
+## Artifacts
+<preserved from §6>
 EOF
 ```
 
@@ -579,25 +670,26 @@ EOF
 to writing a minimal FAILED README from scratch:
 
 ```sh
-EXP_ID=$(basename "$RUN_DIR")
-cat <<EOF | memon experiment readme write "$EXP_ID" --project-root . \
+RUN_ID=$(basename "$RUN_DIR")
+NOW=$(date +%Y-%m-%dT%H:%M:%S%:z)
+cat <<EOF | memon run readme write "$RUN_ID" --project-root . \
   --expected-mtime 0
 ---
-id: $EXP_ID
+id: $RUN_ID
 name: <RUN_NAME the script chose>
-project: <project>
 status: FAILED
-created_at: $(date -Iseconds)
-finished_at: $(date -Iseconds)
+created_at: $NOW
+updated_at: $NOW
+experiment: $PARENT_EXP_ID    # from §0; empty if intentional orphan
+finished_at: $NOW
 host: $(hostname)
 entry: <script-relative-path>
 command: bash <script-relative-path>
-hypotheses: [<HX if applicable>]
-tags: [...]
+wandb: null
 ---
 
-## Motivation
-<brief — why the run was attempted>
+## Setup
+<env, hardware, hyperparams that were attempted before the early crash>
 
 ## Result
 Failed before reaching stable RUNNING: $REASON
@@ -609,6 +701,13 @@ See \`./run.log\` for the full stack trace.
 - \`./code.diff\` — uncommitted changes at launch
 - \`./code.head\` — git HEAD at launch
 EOF
+```
+
+After the README is written and the run dir is registered, also bind
+to the parent experiment (skip when orphan by choice):
+
+```sh
+memon experiment link "$PARENT_EXP_ID" "$RUN_ID" --project-root .
 ```
 
 `--expected-mtime 0` is the sentinel for "first write to a missing
@@ -666,12 +765,30 @@ c) what you'd need from them.
 After the terminal-state README is written (success path §9 or failure
 path §10), and **before** you walk the user through the run in Chinese,
 inspect the run for anomalies that need a human to look at. These are
-written into the README's `## Warnings` section as new `[OPEN]` rows.
+written into the **parent experiment doc's** `## Warnings` table as new
+`[OPEN]` rows, with the `Run` column attributing each row to this run.
+
+> **v3 backend status:** the v3 7-column warnings table on the
+> experiment doc + `memon experiment warning add <expId> --run <runDir>`
+> CLI form are implemented in spec but pending implementation (deferred
+> tasks 4.3 + 6.8 from the new-experiment-system change). Until those
+> ship, the CLI invocation below uses the legacy v2 form (run id
+> directly), which writes to `<runDir>/README.md`'s warnings section
+> via the v2 alias path. The future invocation will be:
+>
+> ```sh
+> memon experiment warning add "$PARENT_EXP_ID" --project-root . \
+>   --run "$RUN_ID" \
+>   --category result \
+>   --message "..."
+> ```
+>
+> Same rules below apply to either form.
 
 The Warnings section is the canonical surface for "I noticed something
 the human should adjudicate". It is NOT for facts you already wrote
 into `## Result`, hypotheses you yourself can confirm, or items the
-user already named in `## Caveats`.
+user already named in the parent experiment's `## Caveats`.
 
 #### What qualifies as a warning
 
@@ -713,10 +830,10 @@ above as `--category`. The message must be concrete (cite step / metric
 
 #### Workflow
 
-For each finding:
+For each finding (legacy v2 form — see the v3-backend-status note above):
 
 ```sh
-memon experiment warning add "$EXP_ID" --project-root . \
+memon experiment warning add "$RUN_ID" --project-root . \
   --category result \
   --message "loss curve at step 1500 has a 3x spike — possible gradient explosion not seen in baseline runs"
 ```

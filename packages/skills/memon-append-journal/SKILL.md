@@ -5,7 +5,7 @@ argument-hint: <event tag and body, optionally with experiment id>
 license: MIT
 metadata:
   author: memset0
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # memon-append-journal
@@ -71,11 +71,18 @@ migration runtime and reads `.memon/version.json` directly.)
 | `NOTE` | freeform observation |
 | `REQUEST` | something for the human to handle next |
 | `ERROR` | error or warning that should be visible in the timeline |
-| `ARCHIVE` | recorded automatically by `memon experiment archive` — don't emit manually |
+| `ARCHIVE` | recorded automatically by `memon run archive` (or the v2 `memon experiment archive` alias) — don't emit manually |
 | `CREATE` | recorded automatically when an experiment dir first appears — don't emit manually |
+| `STATUS` | recorded automatically by `memon run status set` — REJECTED by `memon journal append` (exit 2 BAD_REQUEST); never emit manually |
+| `WARNING` | recorded automatically by `memon experiment warning {add,resolve,reopen,delete}` — don't emit manually |
+| `EXPERIMENT` | v3: emitted by `memon experiment {create,edit,delete}`. Don't emit manually. |
+| `BIND` | v3: emitted by `memon experiment {link,unlink}` when a run is bound / unbound. Don't emit manually. |
+| `RENAME` | v3: emitted by `memon run rename` (op=run-rename old=… new=…). Don't emit manually. |
 
-`STATUS` is **rejected** by `memon journal append` (CLI returns
-`BAD_REQUEST`, exit code 2). Use `memon experiment status set` instead.
+Only `NOTE` / `REQUEST` / `ERROR` are intended for manual append from
+this skill. The other tags are reserved for the CLI commands listed
+above; emitting them by hand from `memon journal append` would
+duplicate / interfere with the audit trail those commands maintain.
 
 ## Workflow
 

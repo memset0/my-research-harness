@@ -5,7 +5,7 @@ argument-hint: <experiment id, category, message>
 license: MIT
 metadata:
   author: memset0
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # memon-append-warning
@@ -58,6 +58,26 @@ Branch on the `status` field:
 - You want to flag a finding without triggering the full
   `memon-run-experiment` flow
 - The user asks you to "leave a warning on run X"
+
+> **v3 backend status (`FS_CONVENTION_VERSION === 3`):** the canonical
+> v3 home for warnings is the parent experiment doc's `## Warnings`
+> table (with a `Run` column attributing each row to the originating
+> run). The v3 CLI form is:
+>
+> ```sh
+> memon experiment warning add "$EXP_ID" --project-root . \
+>   --run "$RUN_ID" \
+>   --category <cat> --message "<text>"
+> ```
+>
+> However, the v3 backend (section-bound writer for the exp doc's
+> Warnings table + the `--run` flag plumbing) is pending implementation
+> — see deferred tasks 4.3 + 6.8 of `2026-05-06-new-experiment-system`.
+> Until those ship, the CLI's `memon experiment warning add` continues
+> to take a **run id** as its first arg and writes to that run's own
+> `README.md ## Warnings` section (v2 behavior preserved as the alias
+> path). Use the v2 form below; switching invocations is mechanical
+> once the v3 backend lands.
 
 ## When NOT to use
 
