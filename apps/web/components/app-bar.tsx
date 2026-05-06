@@ -61,15 +61,21 @@ export function AppBar({ project }: { project: string }) {
   ]
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 md:px-4">
+    <header className="sticky top-0 z-20 flex min-h-12 shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5 md:px-4">
       <SidebarTrigger className="md:hidden" />
       {/*
         nav: do NOT add overflow-x-auto here. Per CSS spec, setting
         overflow-x to a non-visible value makes overflow-y auto as well,
         and shadcn Button's `active:translate-y-px` (1px nudge on click)
         then makes content overflow vertically by 1px → stray scrollbar.
+
+        flex-1 + min-w-0 lets the nav constrain to the row's remaining
+        width (after the SidebarTrigger) so flex-wrap can actually
+        kick in when the tab list is wider than that — without
+        min-w-0, flex's default min-width:auto keeps the nav at
+        intrinsic content width and overflow goes back to the page.
       */}
-      <nav className="flex items-center gap-1" role="tablist">
+      <nav className="flex flex-1 flex-wrap items-center gap-1 min-w-0" role="tablist">
         {tabs.map((t) => {
           const isActive = t.matches(pathname)
           return (
