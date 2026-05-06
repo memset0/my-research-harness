@@ -1,15 +1,15 @@
-// In-memory ExperimentIndex used by both CLI commands and the web backend.
+// In-memory RunIndex used by both CLI commands and the web backend.
 //
 // Keyed by experiment id (= directory base name). Multiple projects share one
-// index; the top-level `project` field on each Experiment (set by discovery
+// index; the top-level `project` field on each Run (set by discovery
 // from the matching `config.yml` project's `name`) partitions queries.
 // `frontMatter.project` is a separate sub-project label and is NOT used for
 // membership filtering — only as a search haystack.
 //
 // Operations are intentionally synchronous — discovery / parsing happens
-// elsewhere and produces ready-to-insert Experiment values.
+// elsewhere and produces ready-to-insert Run values.
 
-import type { Experiment } from '../types.js'
+import type { Run } from '../types.js'
 
 export type SearchScope = 'all' | 'body' | 'fm'
 
@@ -17,10 +17,10 @@ export interface ListFilter {
   project?: string
 }
 
-export class ExperimentIndex {
-  private byId = new Map<string, Experiment>()
+export class RunIndex {
+  private byId = new Map<string, Run>()
 
-  set(experiment: Experiment): void {
+  set(experiment: Run): void {
     this.byId.set(experiment.id, experiment)
   }
 
@@ -28,7 +28,7 @@ export class ExperimentIndex {
     return this.byId.delete(id)
   }
 
-  get(id: string): Experiment | undefined {
+  get(id: string): Run | undefined {
     return this.byId.get(id)
   }
 
@@ -48,7 +48,7 @@ export class ExperimentIndex {
    * List experiments. Default sort: createdAt desc (most recent first).
    * Empty createdAt sorts to the end.
    */
-  list(filter: ListFilter = {}): Experiment[] {
+  list(filter: ListFilter = {}): Run[] {
     const all = Array.from(this.byId.values())
     const filtered = filter.project
       ? all.filter((e) => e.project === filter.project)
@@ -56,7 +56,7 @@ export class ExperimentIndex {
     return filtered.sort(byCreatedAtDesc)
   }
 
-  search(query: string, scope: SearchScope = 'all'): Experiment[] {
+  search(query: string, scope: SearchScope = 'all'): Run[] {
     if (query === '') return this.list()
     const needle = query.toLowerCase()
     return this.list().filter((exp) => matchesQuery(exp, needle, scope))
@@ -65,7 +65,7 @@ export class ExperimentIndex {
 
 // ---------- helpers ----------
 
-function byCreatedAtDesc(a: Experiment, b: Experiment): number {
+function byCreatedAtDesc(a: Run, b: Run): number {
   const at = a.frontMatter.createdAt
   const bt = b.frontMatter.createdAt
   if (at === '' && bt === '') return 0
@@ -76,7 +76,7 @@ function byCreatedAtDesc(a: Experiment, b: Experiment): number {
   return 0
 }
 
-function matchesQuery(exp: Experiment, needle: string, scope: SearchScope): boolean {
+function matchesQuery(exp: Run, needle: string, scope: SearchScope): boolean {
   if (scope === 'all' || scope === 'fm') {
     if (haystackContains(exp.frontMatter.id, needle)) return true
     if (haystackContains(exp.frontMatter.name, needle)) return true

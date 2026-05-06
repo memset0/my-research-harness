@@ -89,7 +89,7 @@ function clearDraft(key: string): void {
 }
 
 export interface WarningsCardProps {
-  experimentId: string
+  runId: string
   readmePath: string
   /** Initial warnings + mtime + hash from the SSR fetch. */
   initialWarnings: WarningRecord[]
@@ -97,7 +97,7 @@ export interface WarningsCardProps {
 }
 
 export function WarningsCard({
-  experimentId,
+  runId,
   readmePath,
   initialWarnings,
   initialMtime,
@@ -109,30 +109,30 @@ export function WarningsCard({
 
   const refetch = useCallback(async () => {
     try {
-      const r = await fetchWarnings(experimentId)
+      const r = await fetchWarnings(runId)
       setWarnings(r.warnings)
       setMtime(r.mtime)
       setHash(r.hash)
     } catch {
       /* swallow — invalidating the experiment query below will trigger a refresh */
     }
-  }, [experimentId])
+  }, [runId])
 
   const onMutated = useCallback(
     (out: WarningsOpResponse) => {
       setWarnings(out.warnings)
       setMtime(out.mtime)
       setHash(out.hash)
-      qc.invalidateQueries({ queryKey: ['experiment', experimentId] })
+      qc.invalidateQueries({ queryKey: ['experiment', runId] })
     },
-    [experimentId, qc],
+    [runId, qc],
   )
 
   const handleConflict = useCallback(async () => {
     toast.error('Warnings: someone else changed this README — refreshing')
     await refetch()
-    qc.invalidateQueries({ queryKey: ['experiment', experimentId] })
-  }, [experimentId, qc, refetch])
+    qc.invalidateQueries({ queryKey: ['experiment', runId] })
+  }, [runId, qc, refetch])
 
   const openCount = warnings.filter((w) => w.status === 'OPEN').length
   const resolvedCount = warnings.length - openCount
@@ -174,7 +174,7 @@ export function WarningsCard({
                   <WarningRow
                     key={w.rowId}
                     w={w}
-                    experimentId={experimentId}
+                    runId={runId}
                     readmePath={readmePath}
                     mtime={mtime}
                     hash={hash}
@@ -187,7 +187,7 @@ export function WarningsCard({
           </div>
         )}
         <AddWarningForm
-          experimentId={experimentId}
+          runId={runId}
           readmePath={readmePath}
           mtime={mtime}
           hash={hash}
@@ -201,7 +201,7 @@ export function WarningsCard({
 
 interface RowProps {
   w: WarningRecord
-  experimentId: string
+  runId: string
   readmePath: string
   mtime: number
   hash: string | undefined
@@ -209,7 +209,7 @@ interface RowProps {
   onConflict: () => Promise<void>
 }
 
-function WarningRow({ w, experimentId, readmePath, mtime, hash, onMutated, onConflict }: RowProps) {
+function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }: RowProps) {
   const [editingNote, setEditingNote] = useState(false)
   const draftKey = `${NOTE_DRAFT_PREFIX}${readmePath}:${w.rowId}:${mtime}`
   const [note, setNote] = useState<string>(() => loadDraft<string>(draftKey) ?? w.note ?? '')
@@ -235,7 +235,7 @@ function WarningRow({ w, experimentId, readmePath, mtime, hash, onMutated, onCon
       }
       setSaving(true)
       try {
-        const out = await patchWarningApi(experimentId, w.rowId, {
+        const out = await patchWarningApi(runId, w.rowId, {
           op: 'resolve',
           note: text,
           expectedMtime: mtime,
@@ -255,13 +255,13 @@ function WarningRow({ w, experimentId, readmePath, mtime, hash, onMutated, onCon
         setSaving(false)
       }
     },
-    [draftKey, experimentId, hash, mtime, onConflict, onMutated, w.rowId],
+    [draftKey, runId, hash, mtime, onConflict, onMutated, w.rowId],
   )
 
   const submitReopen = useCallback(async () => {
     setSaving(true)
     try {
-      const out = await patchWarningApi(experimentId, w.rowId, {
+      const out = await patchWarningApi(runId, w.rowId, {
         op: 'reopen',
         expectedMtime: mtime,
         expectedHash: hash,
@@ -277,12 +277,12 @@ function WarningRow({ w, experimentId, readmePath, mtime, hash, onMutated, onCon
     } finally {
       setSaving(false)
     }
-  }, [experimentId, hash, mtime, onConflict, onMutated, w.rowId])
+  }, [runId, hash, mtime, onConflict, onMutated, w.rowId])
 
   const submitDelete = useCallback(async () => {
     setSaving(true)
     try {
-      const out = await deleteWarningApi(experimentId, w.rowId, {
+      const out = await deleteWarningApi(runId, w.rowId, {
         expectedMtime: mtime,
         expectedHash: hash,
       })
@@ -298,7 +298,7 @@ function WarningRow({ w, experimentId, readmePath, mtime, hash, onMutated, onCon
       setSaving(false)
       setConfirmDelete(false)
     }
-  }, [experimentId, hash, mtime, onConflict, onMutated, w.rowId])
+  }, [runId, hash, mtime, onConflict, onMutated, w.rowId])
 
   return (
     <tr className={cn('align-top border-b last:border-b-0', w.status === 'RESOLVED' && 'opacity-70')}>
@@ -433,7 +433,7 @@ function DeleteConfirm({
 }
 
 interface AddFormProps {
-  experimentId: string
+  runId: string
   readmePath: string
   mtime: number
   hash: string | undefined
@@ -446,7 +446,7 @@ interface AddDraft {
   message: string
 }
 
-function AddWarningForm({ experimentId, readmePath, mtime, hash, onMutated, onConflict }: AddFormProps) {
+function AddWarningForm({ runId, readmePath, mtime, hash, onMutated, onConflict }: AddFormProps) {
   const draftKey = `${ADD_DRAFT_PREFIX}${readmePath}:${mtime}`
   const initial = loadDraft<AddDraft>(draftKey)
   const [open, setOpen] = useState(initial !== null)
@@ -468,7 +468,7 @@ function AddWarningForm({ experimentId, readmePath, mtime, hash, onMutated, onCo
     if (!message.trim()) return
     setSubmitting(true)
     try {
-      const out = await postWarning(experimentId, {
+      const out = await postWarning(runId, {
         category,
         message,
         expectedMtime: mtime,
@@ -489,7 +489,7 @@ function AddWarningForm({ experimentId, readmePath, mtime, hash, onMutated, onCo
     } finally {
       setSubmitting(false)
     }
-  }, [category, draftKey, experimentId, hash, message, mtime, onConflict, onMutated])
+  }, [category, draftKey, runId, hash, message, mtime, onConflict, onMutated])
 
   if (!open) {
     return (

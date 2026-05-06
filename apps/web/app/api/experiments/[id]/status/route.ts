@@ -19,7 +19,7 @@ import {
   appendJournalEvent,
   formatIsoLocal,
   parseReadme,
-  readExperimentDir,
+  readRunDir,
   reserializeReadme,
   type Status,
 } from '@memon/core'
@@ -161,7 +161,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     // Update in-memory index immediately and broadcast
     try {
-      const updated = await readExperimentDir(exp.path, project.name)
+      const updated = await readRunDir(exp.path, project.name)
       rt.index.set(updated)
       rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
     } catch {

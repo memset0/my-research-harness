@@ -12,7 +12,7 @@ import {
   applyWarningOp,
   generateRowId,
   parseReadme,
-  readExperimentDir,
+  readRunDir,
   WARNING_CATEGORIES,
   WarningOpError,
   type Warning,
@@ -139,7 +139,7 @@ function mapOpError(err: WarningOpError): never {
 
 async function refreshIndex(rt: Runtime, expDir: string, projectName: string): Promise<void> {
   try {
-    const updated = await readExperimentDir(expDir, projectName)
+    const updated = await readRunDir(expDir, projectName)
     rt.index.set(updated)
     rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
   } catch {

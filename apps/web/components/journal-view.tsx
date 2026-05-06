@@ -48,7 +48,7 @@ export function JournalView({ project }: { project: string }) {
   const filtered = useMemo(() => {
     return events.filter((e) => {
       if (tagFilter !== 'all' && e.tag !== tagFilter) return false
-      if (expFilter && (!e.experimentId || !e.experimentId.includes(expFilter))) return false
+      if (expFilter && (!e.runId || !e.runId.includes(expFilter))) return false
       return true
     })
   }, [events, tagFilter, expFilter])
@@ -129,15 +129,15 @@ export function JournalView({ project }: { project: string }) {
                 <TimestampLocal value={e.timestamp} variant="long" />
                 <TagBadge tag={e.tag} />
                 <div className="text-xs">
-                  {e.experimentId ? (
+                  {e.runId ? (
                     <Link
-                      href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(e.experimentId)}`}
+                      href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(e.runId)}`}
                       className="font-mono text-primary underline-offset-4 hover:underline"
                     >
-                      {e.experimentId}
+                      {e.runId}
                     </Link>
                   ) : null}
-                  {e.experimentId ? ' · ' : ''}
+                  {e.runId ? ' · ' : ''}
                   <span className="text-foreground/80">{e.body}</span>
                 </div>
               </li>

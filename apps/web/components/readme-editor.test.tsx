@@ -63,7 +63,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
     const onClose = vi.fn()
 
     renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={onClose} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={onClose} />,
     )
 
     const editor = await screen.findByTestId('monaco-editor')
@@ -96,7 +96,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
     } as never)
 
     renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
     )
 
     const editor = await screen.findByTestId('monaco-editor')
@@ -122,7 +122,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
     )
 
     renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
     )
 
     expect(
@@ -137,7 +137,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
 describe('ReadmeEditor toolbar — plain toggle', () => {
   it('toggles to plain mode and persists preference', async () => {
     const { unmount } = renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
     )
     await screen.findByTestId('monaco-editor')
 
@@ -151,7 +151,7 @@ describe('ReadmeEditor toolbar — plain toggle', () => {
     // Re-render: should default to plain now
     unmount()
     renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
     )
     expect(await screen.findByTestId('readme-plain-textarea')).toBeInTheDocument()
     expect(screen.queryByTestId('monaco-editor')).not.toBeInTheDocument()
@@ -167,7 +167,7 @@ describe('ReadmeEditor toolbar — copy markdown', () => {
     })
 
     renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
     )
 
     const editor = await screen.findByTestId('monaco-editor')
@@ -188,7 +188,7 @@ describe('ReadmeEditor toolbar — copy markdown', () => {
     })
 
     renderWithQuery(
-      <ReadmeEditor path={PATH} experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
     )
 
     await screen.findByTestId('monaco-editor')
@@ -221,7 +221,7 @@ describe('ReadmeEditorBody — panel containerKind does not auto-close on save',
       <BodyHarness>
         <ReadmeEditorBody
           path={PATH}
-          experimentId="exp"
+          runId="exp"
           onClose={onClose}
           containerKind="panel"
         />

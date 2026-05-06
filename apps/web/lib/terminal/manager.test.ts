@@ -62,12 +62,12 @@ function newSpawnReturnsHealthyChild(): FakeChild {
 }
 
 describe('startSession', () => {
-  it('rejects malformed experimentId', async () => {
+  it('rejects malformed runId', async () => {
     await expect(
-      startSession({ experimentId: 'has space!', projectName: 'a' }),
+      startSession({ runId: 'has space!', projectName: 'a' }),
     ).rejects.toBeInstanceOf(TerminalManagerError)
     await expect(
-      startSession({ experimentId: 'has space!', projectName: 'a' }),
+      startSession({ runId: 'has space!', projectName: 'a' }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     expect(spawnMock).not.toHaveBeenCalled()
   })
@@ -76,7 +76,7 @@ describe('startSession', () => {
     newSpawnReturnsHealthyChild()
 
     const session = await startSession({
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       projectName: 'project-a',
     })
 
@@ -104,17 +104,17 @@ describe('startSession', () => {
 
   it('kills any existing ttyd before starting a new one', async () => {
     const first = newSpawnReturnsHealthyChild()
-    await startSession({ experimentId: 'foo', projectName: 'a' })
+    await startSession({ runId: 'foo', projectName: 'a' })
 
     newSpawnReturnsHealthyChild()
-    await startSession({ experimentId: 'bar', projectName: 'a' })
+    await startSession({ runId: 'bar', projectName: 'a' })
 
     expect(first.signals).toContain('SIGTERM')
     expect(spawnMock).toHaveBeenCalledTimes(2)
     // List should reflect the new (second) session
     const sessions = listSessions()
     expect(sessions).toHaveLength(1)
-    expect(sessions[0]?.experimentId).toBe('bar')
+    expect(sessions[0]?.runId).toBe('bar')
   })
 
   it('throws TTYD_UNAVAILABLE when probe says unavailable', async () => {
@@ -126,7 +126,7 @@ describe('startSession', () => {
     })
 
     await expect(
-      startSession({ experimentId: 'foo', projectName: 'a' }),
+      startSession({ runId: 'foo', projectName: 'a' }),
     ).rejects.toMatchObject({ code: 'TTYD_UNAVAILABLE' })
     expect(spawnMock).not.toHaveBeenCalled()
   })
@@ -142,7 +142,7 @@ describe('startSession', () => {
     }, 50)
 
     await expect(
-      startSession({ experimentId: 'foo', projectName: 'a' }),
+      startSession({ runId: 'foo', projectName: 'a' }),
     ).rejects.toMatchObject({ code: 'TTYD_UNAVAILABLE' })
   })
 })
@@ -150,7 +150,7 @@ describe('startSession', () => {
 describe('stopSession', () => {
   it('kills ttyd but does not invoke any tmux commands', async () => {
     const child = newSpawnReturnsHealthyChild()
-    await startSession({ experimentId: 'foo-260501-100000', projectName: 'a' })
+    await startSession({ runId: 'foo-260501-100000', projectName: 'a' })
 
     const before = spawnMock.mock.calls.length
     const result = await stopSession('memon-claude-foo-260501-100000')
@@ -174,12 +174,12 @@ describe('listSessions', () => {
 })
 
 describe('concurrent startSession (React strict mode etc.)', () => {
-  it('two parallel calls for the SAME experimentId resolve to the same session — no double spawn', async () => {
+  it('two parallel calls for the SAME runId resolve to the same session — no double spawn', async () => {
     newSpawnReturnsHealthyChild()
 
     const [a, b] = await Promise.all([
-      startSession({ experimentId: 'foo', projectName: 'a' }),
-      startSession({ experimentId: 'foo', projectName: 'a' }),
+      startSession({ runId: 'foo', projectName: 'a' }),
+      startSession({ runId: 'foo', projectName: 'a' }),
     ])
 
     // Only one ttyd was spawned (idempotent return for the duplicate)
@@ -195,8 +195,8 @@ describe('concurrent startSession (React strict mode etc.)', () => {
     spawnMock.mockReturnValueOnce(childA).mockReturnValueOnce(childB)
 
     const [a, b] = await Promise.all([
-      startSession({ experimentId: 'foo', projectName: 'a' }),
-      startSession({ experimentId: 'bar', projectName: 'a' }),
+      startSession({ runId: 'foo', projectName: 'a' }),
+      startSession({ runId: 'bar', projectName: 'a' }),
     ])
 
     // Both spawns happened, but sequenced — second only ran after first
@@ -205,8 +205,8 @@ describe('concurrent startSession (React strict mode etc.)', () => {
     expect(childA.signals).toContain('SIGTERM') // first child got killed
     // The second one is the survivor
     expect(listSessions()).toHaveLength(1)
-    expect(listSessions()[0]?.experimentId).toBe('bar')
-    expect(a.experimentId).toBe('foo')
-    expect(b.experimentId).toBe('bar')
+    expect(listSessions()[0]?.runId).toBe('bar')
+    expect(a.runId).toBe('foo')
+    expect(b.runId).toBe('bar')
   })
 })

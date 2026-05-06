@@ -48,7 +48,7 @@ function ContextSnoop({ onCtx }: { onCtx: (v: ReturnType<typeof useReadmeEditor>
 describe('EditReadmeButton', () => {
   it('mobile/tablet: clicking opens a Dialog (no context required)', async () => {
     renderWithQuery(
-      <EditReadmeButton path="/x" experimentId="e" />,
+      <EditReadmeButton path="/x" runId="e" />,
     )
     await userEvent.click(screen.getByRole('button', { name: /edit readme/i }))
     // Dialog renders the Monaco editor inside.
@@ -61,7 +61,7 @@ describe('EditReadmeButton', () => {
     renderWithQuery(
       <ReadmeEditorProvider>
         <ContextSnoop onCtx={(v) => { snooped.current = v }} />
-        <EditReadmeButton path="/x" experimentId="e" />
+        <EditReadmeButton path="/x" runId="e" />
       </ReadmeEditorProvider>,
     )
     expect(snooped.current?.open).toBe(false)
@@ -81,7 +81,7 @@ describe('EditReadmeButton', () => {
     renderWithQuery(
       <ReadmeEditorProvider>
         <Setup />
-        <EditReadmeButton path="/x" experimentId="e" />
+        <EditReadmeButton path="/x" runId="e" />
       </ReadmeEditorProvider>,
     )
     expect(await screen.findByRole('button', { name: /hide editor/i })).toBeInTheDocument()

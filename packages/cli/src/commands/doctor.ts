@@ -42,7 +42,7 @@ function humanReport(r: Awaited<ReturnType<typeof runDoctor>>): string {
   )
   lines.push('')
   for (const i of r.issues) {
-    lines.push(`[${i.severity.toUpperCase()}] ${i.experimentId}  ${i.code}`)
+    lines.push(`[${i.severity.toUpperCase()}] ${i.runId}  ${i.code}`)
     lines.push(`    ${i.message}`)
     lines.push(`    → ${i.suggestedAction}`)
     lines.push('')

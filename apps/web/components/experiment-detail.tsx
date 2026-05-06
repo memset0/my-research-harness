@@ -69,10 +69,10 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
               <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <TerminalButton experimentId={exp.id} projectName={exp.project} />
+              <TerminalButton runId={exp.id} projectName={exp.project} />
               <AskClaudeCodeButton experiment={exp} />
-              <AddNoteButton project={exp.project} experimentId={exp.id} />
-              {exp.hasReadme && <EditReadmeButton path={exp.path} experimentId={exp.id} />}
+              <AddNoteButton project={exp.project} runId={exp.id} />
+              {exp.hasReadme && <EditReadmeButton path={exp.path} runId={exp.id} />}
             </div>
           </div>
         </CardHeader>
@@ -138,7 +138,7 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
       <SectionCard id="caveats" title="Caveats" body={exp.sections.caveats} />
       {exp.hasReadme && (
         <WarningsCard
-          experimentId={exp.id}
+          runId={exp.id}
           readmePath={`${exp.path}/README.md`}
           initialWarnings={exp.warnings}
           initialMtime={exp.mtime}
@@ -171,7 +171,7 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
       {isDesktop && exp.hasReadme && (
         <ReadmeSidePanel
           path={`${exp.path}/README.md`}
-          experimentId={exp.id}
+          runId={exp.id}
         />
       )}
     </div>

@@ -63,12 +63,12 @@ beforeEach(() => {
 
 describe('ReadmeSidePanel — render states', () => {
   it('renders nothing when context.open=false', () => {
-    renderWithQuery(withProvider(<ReadmeSidePanel path="/x/README.md" experimentId="e" />))
+    renderWithQuery(withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />))
     expect(screen.queryByTestId('readme-side-panel')).not.toBeInTheDocument()
   })
 
   it('renders expanded state with data-state="expanded" when open', async () => {
-    renderWithQuery(withProvider(<ReadmeSidePanel path="/x/README.md" experimentId="e" />, { open: true }))
+    renderWithQuery(withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />, { open: true }))
     const panel = await screen.findByTestId('readme-side-panel')
     expect(panel).toHaveAttribute('data-state', 'expanded')
     expect(screen.getByTestId('readme-side-panel-drag-handle')).toBeInTheDocument()
@@ -76,7 +76,7 @@ describe('ReadmeSidePanel — render states', () => {
 
   it('renders collapsed state with handle when collapsed=true', async () => {
     renderWithQuery(
-      withProvider(<ReadmeSidePanel path="/x/README.md" experimentId="e" />, {
+      withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />, {
         open: true,
         collapsed: true,
       }),
@@ -90,7 +90,7 @@ describe('ReadmeSidePanel — render states', () => {
 
   it('toggles between collapsed and expanded via the handle button', async () => {
     renderWithQuery(
-      withProvider(<ReadmeSidePanel path="/x/README.md" experimentId="e" />, {
+      withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />, {
         open: true,
         collapsed: true,
       }),
@@ -107,7 +107,7 @@ describe('ReadmeSidePanel — render states', () => {
 describe('ReadmeSidePanel — drag to resize', () => {
   it('persists new width to localStorage on mouseup', async () => {
     renderWithQuery(
-      withProvider(<ReadmeSidePanel path="/x/README.md" experimentId="e" />, { open: true }),
+      withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />, { open: true }),
     )
     const handle = await screen.findByTestId('readme-side-panel-drag-handle')
 

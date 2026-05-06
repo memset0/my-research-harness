@@ -6,10 +6,10 @@ import { AddEventModal } from './add-event-modal'
 
 export function AddNoteButton({
   project,
-  experimentId,
+  runId,
 }: {
   project: string
-  experimentId: string
+  runId: string
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -20,7 +20,7 @@ export function AddNoteButton({
       <AddEventModal
         mode="note"
         project={project}
-        experimentId={experimentId}
+        runId={runId}
         open={open}
         onClose={() => setOpen(false)}
       />

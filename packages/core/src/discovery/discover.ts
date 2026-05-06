@@ -1,6 +1,6 @@
-// discoverExperiments — locate experiment directories under a project root.
+// discoverRuns — locate experiment directories under a project root.
 //
-// The directory base name must match EXPERIMENT_DIR_REGEX. Parent directory
+// The directory base name must match RUN_DIR_REGEX. Parent directory
 // name is irrelevant — we don't depend on `logs/` or `runs/` segments since
 // the user's actual filesystem layout varies.
 
@@ -8,7 +8,7 @@ import fg from 'fast-glob'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ProjectConfig } from '../types.js'
-import { DEFAULT_EXCLUDES, EXPERIMENT_DIR_REGEX } from '../types.js'
+import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
 
 /** Sidecar file name that marks a run directory as archived. */
 export const ARCHIVED_SIDECAR = '.archived'
@@ -32,11 +32,11 @@ export interface DiscoverOptions {
  * default, runs marked archived (i.e., contain a `.archived` sidecar file)
  * are filtered out.
  */
-export async function discoverExperiments(
+export async function discoverRuns(
   project: ProjectConfig,
   options: DiscoverOptions = {},
 ): Promise<string[]> {
-  const regex = options.regex ?? EXPERIMENT_DIR_REGEX
+  const regex = options.regex ?? RUN_DIR_REGEX
   const includeArchived = options.includeArchived ?? false
   const include = project.include.length > 0 ? project.include : ['**/*']
   const excludes = mergeExcludes(project.exclude)

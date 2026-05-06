@@ -17,7 +17,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import {
   appendJournalEvent,
   parseReadme,
-  readExperimentDir,
+  readRunDir,
   type Status,
 } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
@@ -129,7 +129,7 @@ export async function PUT(req: NextRequest) {
     const owningProject = rt.projectFor(expDir)
     if (owningProject) {
       try {
-        const updatedExp = await readExperimentDir(expDir, owningProject.name)
+        const updatedExp = await readRunDir(expDir, owningProject.name)
         rt.index.set(updatedExp)
         rt.events.emit('experiment-change', {
           type: 'set',

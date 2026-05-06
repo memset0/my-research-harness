@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import type { Experiment, ExperimentFrontMatter, ExperimentSections } from '../types.js'
-import { ExperimentIndex } from './index.js'
+import type { Run, RunFrontMatter, RunSections } from '../types.js'
+import { RunIndex } from './index.js'
 
 function makeExp(
-  fmOverrides: Partial<ExperimentFrontMatter> = {},
-  topOverrides: Partial<Omit<Experiment, 'frontMatter' | 'sections'>> = {},
-): Experiment {
-  const fm: ExperimentFrontMatter = {
+  fmOverrides: Partial<RunFrontMatter> = {},
+  topOverrides: Partial<Omit<Run, 'frontMatter' | 'sections'>> = {},
+): Run {
+  const fm: RunFrontMatter = {
     id: 'foo-260503-082800',
     name: 'foo',
     project: 'p',
     status: 'RUNNING',
     createdAt: '2026-05-03T08:28:00+08:00',
+    experiment: null,
+    updatedAt: '2026-05-03T08:28:00+08:00',
     finishedAt: null,
     host: null,
     pid: null,
@@ -23,7 +25,7 @@ function makeExp(
     tags: [],
     ...fmOverrides,
   }
-  const sections: ExperimentSections = {
+  const sections: RunSections = {
     motivation: null,
     setup: null,
     method: null,
@@ -50,9 +52,9 @@ function makeExp(
   }
 }
 
-describe('ExperimentIndex', () => {
+describe('RunIndex', () => {
   it('set/get/delete/size', () => {
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     expect(idx.size()).toBe(0)
     const a = makeExp({ id: 'a-260501-100000' })
     idx.set(a)
@@ -64,7 +66,7 @@ describe('ExperimentIndex', () => {
   })
 
   it('list sorts by createdAt desc', () => {
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     idx.set(makeExp({ id: 'a-260501-100000', createdAt: '2026-05-01T10:00:00+08:00' }))
     idx.set(makeExp({ id: 'b-260503-100000', createdAt: '2026-05-03T10:00:00+08:00' }))
     idx.set(makeExp({ id: 'c-260502-100000', createdAt: '2026-05-02T10:00:00+08:00' }))
@@ -76,7 +78,7 @@ describe('ExperimentIndex', () => {
   })
 
   it('list filters by top-level project (membership)', () => {
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     idx.set(makeExp({ id: 'a-260501-100000' }, { project: 'alpha' }))
     idx.set(makeExp({ id: 'b-260502-100000' }, { project: 'beta' }))
     expect(idx.list({ project: 'alpha' }).map((e) => e.id)).toEqual(['a-260501-100000'])
@@ -88,7 +90,7 @@ describe('ExperimentIndex', () => {
     // discovery from config.yml), NOT by frontMatter.project (which is now
     // a free-form sub-project label). This is the regression-guard for the
     // sparse-fsdp scenario described in proposal.md.
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     idx.set(
       makeExp(
         { id: 'a-260501-100000', project: 'recipe-x' /* sub-project */ },
@@ -100,7 +102,7 @@ describe('ExperimentIndex', () => {
   })
 
   it('search matches across name, tags, and hypotheses by default', () => {
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     idx.set(makeExp({ id: 'a-260501-100000', name: 'overlap-test', tags: ['moe'] }))
     idx.set(makeExp({ id: 'b-260502-100000', name: 'rt-bench', hypotheses: ['H0007'] }))
 
@@ -109,7 +111,7 @@ describe('ExperimentIndex', () => {
   })
 
   it('search hits both top-level project and frontMatter sub-project', () => {
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     idx.set(
       makeExp(
         { id: 'a-260501-100000', project: 'predictive-skip-validation' },
@@ -123,7 +125,7 @@ describe('ExperimentIndex', () => {
   })
 
   it('search scope=body searches body only', () => {
-    const idx = new ExperimentIndex()
+    const idx = new RunIndex()
     const e = makeExp({ id: 'a-260501-100000', name: 'foo' })
     e.body = 'mentions overlap explicitly'
     idx.set(e)

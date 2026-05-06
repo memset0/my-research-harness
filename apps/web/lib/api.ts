@@ -4,7 +4,7 @@
 
 import type {
   DigestSummary,
-  Experiment,
+  Run,
   Hypothesis,
   JournalEvent,
   ParsedHypotheses,
@@ -19,14 +19,14 @@ export interface ProjectSummary {
   exclude: string[]
 }
 
-export interface IndexedExperiment
-  extends Pick<Experiment, 'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
+export interface IndexedRun
+  extends Pick<Run, 'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
   stale: boolean
 }
 
 export interface FullExperiment
   extends Pick<
-    Experiment,
+    Run,
     'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
   > {
   stale: boolean
@@ -61,7 +61,7 @@ export async function fetchProjects(): Promise<{ projects: ProjectSummary[] }> {
   return jsonFetch('/api/projects')
 }
 
-export async function fetchExperiments(project?: string): Promise<{ experiments: IndexedExperiment[] }> {
+export async function fetchExperiments(project?: string): Promise<{ experiments: IndexedRun[] }> {
   const url = project ? `/api/experiments?project=${encodeURIComponent(project)}` : '/api/experiments'
   return jsonFetch(url)
 }
@@ -274,7 +274,7 @@ export interface TerminalSession {
   sessionName: string
   port: number
   startedAt: string
-  experimentId: string
+  runId: string
   projectName: string
   warnings: string[]
 }
@@ -298,7 +298,7 @@ export async function installTerminal(): Promise<TerminalInstallResult> {
 }
 
 export async function startTerminal(input: {
-  experimentId: string
+  runId: string
   projectName: string
 }): Promise<TerminalStartResponse> {
   const res = await fetch('/api/terminal/start', {
@@ -416,4 +416,4 @@ export async function deleteWarningApi(
 }
 
 // Re-exports for convenience
-export type { Experiment, Hypothesis, JournalEvent, WarningRecord }
+export type { Run, Hypothesis, JournalEvent, WarningRecord }

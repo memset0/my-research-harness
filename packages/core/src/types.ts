@@ -48,6 +48,9 @@ export type JournalEventTag =
   | 'ARCHIVE'
   | 'ERROR'
   | 'WARNING'
+  | 'EXPERIMENT'
+  | 'BIND'
+  | 'RENAME'
 
 export const JOURNAL_TAG_VALUES: readonly JournalEventTag[] = [
   'CREATE',
@@ -57,6 +60,9 @@ export const JOURNAL_TAG_VALUES: readonly JournalEventTag[] = [
   'ARCHIVE',
   'ERROR',
   'WARNING',
+  'EXPERIMENT',
+  'BIND',
+  'RENAME',
 ] as const
 
 // ---------- Parse issues ----------
@@ -71,7 +77,7 @@ export interface ParseIssue {
  * Regex matching experiment directory base names: `<name>-yymmdd-hhmmss`.
  * Per spec experiment-discovery, parent directory name is irrelevant.
  */
-export const EXPERIMENT_DIR_REGEX = /^.+-\d{6}-\d{6}$/
+export const RUN_DIR_REGEX = /^.+-\d{6}-\d{6}$/
 
 /**
  * Regex matching report file basenames under `<projectRoot>/docs/reports/`:
@@ -85,18 +91,25 @@ export const REPORT_FILENAME_REGEX = /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
  */
 export const DIGEST_FILENAME_REGEX = /^D(\d{4})-(\d{4}-\d{2}-\d{2})\.md$/
 
-// ---------- Experiment README ----------
+// ---------- Run README front matter ----------
 
 /**
- * Front matter as represented in TypeScript (camelCase).
+ * Front matter as represented in TypeScript (camelCase). Sed phase A in
+ * the v3 rename change turned this from `RunFrontMatter` (v2) into
+ * `RunFrontMatter` — naming aligns with user-facing terminology.
  *
  * Optional fields are explicitly nullable rather than `undefined` so that
  * downstream serialization can decide whether to omit them based on null vs
  * presence.
  */
-export interface ExperimentFrontMatter {
+export interface RunFrontMatter {
   id: string
   name: string
+  /**
+   * Legacy v2 sub-project label. The v3 parser ignores this field; existing
+   * v2 READMEs may still carry it but it does not affect indexing or
+   * search. Kept on the type for back-compat with code that still reads it.
+   */
   project: string
   status: Status
   createdAt: string // ISO8601 with offset
@@ -108,11 +121,26 @@ export interface ExperimentFrontMatter {
   command: string
   wandb: string | null
   /**
-   * Related hypothesis IDs in canonical 4-digit zero-padded form
-   * (e.g. `['H0001', 'H0003']`). See `packages/core/src/ids.ts`.
+   * Related hypothesis IDs in canonical 4-digit zero-padded form. Legacy
+   * v2 field; the v3 parser leaves it `[]` by default and steers users
+   * toward the parent experiment doc's `hypotheses[]`.
    */
   hypotheses: string[]
+  /**
+   * Legacy v2 tags. v3 carries tags on the experiment doc, not the run.
+   * The parser leaves it `[]` by default in v3.
+   */
   tags: string[]
+  /**
+   * v3-added: the parent experiment's id (`E<NNNN>-<slug>`), or null when
+   * the run is unbound (an `ORPHAN_RUN` candidate).
+   */
+  experiment: string | null
+  /**
+   * v3-added: ISO8601 with offset; bumped on every web/CLI edit. Defaults
+   * to `createdAt` when missing from the file.
+   */
+  updatedAt: string
 }
 
 export interface ArtifactEntry {
@@ -120,7 +148,7 @@ export interface ArtifactEntry {
   description: string
 }
 
-export interface ExperimentSections {
+export interface RunSections {
   motivation: string | null
   setup: string | null
   method: string | null
@@ -144,8 +172,8 @@ export interface WarningRecord {
 }
 
 export interface ParsedReadme {
-  frontMatter: ExperimentFrontMatter
-  sections: ExperimentSections
+  frontMatter: RunFrontMatter
+  sections: RunSections
   /** Parsed `## Warnings` table rows, or [] when the section is absent / empty. */
   warnings: WarningRecord[]
   /** Raw bytes of the warnings section when its body is non-conforming; null otherwise. */
@@ -163,15 +191,14 @@ export interface ParsedReadme {
  * required fields empty strings or `null`. Consumers should check
  * `hasReadme` before relying on `command` / `entry` content.
  */
-export interface Experiment {
-  /** Directory base name (matches EXPERIMENT_DIR_REGEX) */
+export interface Run {
+  /** Directory base name (matches RUN_DIR_REGEX) */
   id: string
   /**
    * Membership project — the `name` of the `config.yml` project whose
-   * `discoverExperiments` call surfaced this directory. Always non-empty.
-   * This is the source of truth for "which project does this experiment
-   * belong to?"; the `frontMatter.project` field is a separate, optional
-   * sub-project label and is NOT consulted for membership.
+   * `discoverRuns` call surfaced this directory. Always non-empty.
+   * The v2 sub-project label (frontmatter `project:`) is no longer
+   * consulted for membership in v3.
    */
   project: string
   /** Absolute path to experiment directory */
@@ -179,13 +206,99 @@ export interface Experiment {
   /** Latest known mtime in epoch milliseconds (max of dir mtime, README mtime) */
   mtime: number
   hasReadme: boolean
-  frontMatter: ExperimentFrontMatter
-  sections: ExperimentSections
+  frontMatter: RunFrontMatter
+  sections: RunSections
   warnings: WarningRecord[]
   warningsRaw: string | null
   body: string
   parseErrors: ParseIssue[]
   parseWarnings: ParseIssue[]
+}
+
+// ---------- Run Doc (v3 — `docs/experiments/E<NNNN>-<slug>.md`) ----------
+
+/**
+ * Regex matching experiment doc file basenames under
+ * `<projectRoot>/docs/experiments/`: `E<NNNN>-<slug>.md` where slug is
+ * kebab-case alphanumeric (`[a-z0-9][a-z0-9-]*`).
+ */
+export const EXPERIMENT_FILENAME_REGEX = /^E(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
+
+export interface ExperimentFrontMatter {
+  /** Canonical id, e.g. `E0001-zero-snr-fix`. Must equal the file basename's `E<NNNN>-<slug>` portion. */
+  id: string
+  /** The slug portion (e.g. `zero-snr-fix`). Must equal the filename slug. */
+  slug: string
+  title: string
+  /** Run dir base names that this experiment claims as members. */
+  runs: string[]
+  /** Hypothesis IDs in canonical 4-digit padded form (`H0001`, `H0003`, ...). */
+  hypotheses: string[]
+  tags: string[]
+  /** ISO8601 with offset; when the doc was first created. */
+  createdAt: string
+  /** ISO8601 with offset; bumped on every web/CLI edit. */
+  updatedAt: string
+}
+
+export interface ExperimentSections {
+  motivation: string | null
+  method: string | null
+  conclusion: string | null
+  caveats: string | null
+}
+
+/** Warning row attributed to a specific run, or null for exp-scoped warnings. */
+export interface ExperimentWarningRecord extends WarningRecord {
+  /** Run dir base name from the `Run` column, or null when the column is `—`. */
+  run: string | null
+}
+
+export interface Experiment {
+  /** `E<NNNN>-<slug>` */
+  id: string
+  /** Membership project (config.yml's project name). */
+  project: string
+  /** Absolute path to the doc file. */
+  path: string
+  mtime: number
+  frontMatter: ExperimentFrontMatter
+  sections: ExperimentSections
+  warnings: ExperimentWarningRecord[]
+  warningsRaw: string | null
+  body: string
+  parseErrors: ParseIssue[]
+  parseWarnings: ParseIssue[]
+}
+
+/**
+ * Effective times computed at API serialization by joining the doc's stored
+ * `created_at` / `updated_at` with the corresponding fields of every
+ * confirmed member run. Surfaced alongside the stored times; never written
+ * back to disk.
+ */
+export interface ExperimentEffectiveTimes {
+  effectiveCreatedAt: string
+  effectiveUpdatedAt: string
+}
+
+// ---------- Experiment ↔ Run binding anomalies ----------
+
+export type ExperimentMembershipAnomalyCode =
+  | 'ORPHAN_RUN'
+  | 'PHANTOM_RUN_REF'
+  | 'MISMATCH_EXPERIMENT_REF'
+
+export interface ExperimentMembershipAnomaly {
+  code: ExperimentMembershipAnomalyCode
+  project: string
+  /** Set when the anomaly involves a run (run dir base name). */
+  runId: string | null
+  /** Set when the anomaly involves an experiment doc (`E<NNNN>-<slug>`). */
+  experimentId: string | null
+  message: string
+  /** ISO8601 with offset. */
+  detectedAt: string
 }
 
 // ---------- Reports + Digests ----------
@@ -254,7 +367,7 @@ export interface JournalEvent {
   tag: JournalEventTag | string // unknown tags accepted for forward-compat
   body: string // raw remainder of the line after the tag
   /** Extracted experiment id (from `<id>` backticks), if present in body */
-  experimentId: string | null
+  runId: string | null
   /** For [STATUS] events */
   statusFrom: Status | null
   statusTo: Status | null

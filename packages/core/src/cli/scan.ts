@@ -7,13 +7,13 @@ import { promises as fs } from 'node:fs'
 import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { isStaleRunning } from '../discovery/stale.js'
-import { discoverExperiments, isArchived } from '../discovery/discover.js'
-import { readExperimentDir } from '../discovery/read.js'
+import { discoverRuns, isArchived } from '../discovery/discover.js'
+import { readRunDir } from '../discovery/read.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
 import { parseJournal } from '../journal/parse.js'
-import type { Experiment, ParsedHypotheses, ParsedJournal } from '../types.js'
+import type { Run, ParsedHypotheses, ParsedJournal } from '../types.js'
 
-export interface IndexedExperiment extends Experiment {
+export interface IndexedRun extends Run {
   /** True iff `<runDir>/.archived` exists. Always set on scan output. */
   archived: boolean
   /** Mirrors backend's stale-RUNNING flag. */
@@ -23,7 +23,7 @@ export interface IndexedExperiment extends Experiment {
 export interface ProjectSnapshot {
   projectRoot: string
   scannedAt: string
-  experiments: IndexedExperiment[]
+  experiments: IndexedRun[]
   hypotheses: { path: string | null } & ParsedHypotheses
   journal: { path: string | null } & ParsedJournal
 }
@@ -66,10 +66,10 @@ export async function scanProjectRoot(
     exclude: [],
   }
 
-  const dirs = await discoverExperiments(project, { includeArchived })
-  const experiments: IndexedExperiment[] = []
+  const dirs = await discoverRuns(project, { includeArchived })
+  const experiments: IndexedRun[] = []
   for (const d of dirs) {
-    const exp = await readExperimentDir(d, projectName)
+    const exp = await readRunDir(d, projectName)
     experiments.push({
       ...exp,
       archived: isArchived(d),

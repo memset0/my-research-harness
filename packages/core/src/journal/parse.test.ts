@@ -26,14 +26,14 @@ describe('parseJournal', () => {
     const parsed = parseJournal(SAMPLE)
     const status = parsed.events.find((e) => e.tag === 'STATUS' && e.statusFrom === 'PENDING')
     expect(status).toBeTruthy()
-    expect(status!.experimentId).toBe('foo-260503-082800')
+    expect(status!.runId).toBe('foo-260503-082800')
     expect(status!.statusTo).toBe('RUNNING')
   })
 
   it('extracts experiment id for [NOTE]', () => {
     const parsed = parseJournal(SAMPLE)
     const note = parsed.events.find((e) => e.tag === 'NOTE')
-    expect(note?.experimentId).toBe('foo-260503-082800')
+    expect(note?.runId).toBe('foo-260503-082800')
   })
 
   it('handles missing frontmatter gracefully', () => {

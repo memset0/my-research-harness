@@ -10,7 +10,7 @@ const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: 'memon',
-  description: 'Experiment monitoring & management',
+  description: 'Run monitoring & management',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

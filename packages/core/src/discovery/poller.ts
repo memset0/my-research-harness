@@ -10,7 +10,7 @@
 //
 // We poll based on `mtime` of a single target path (the directory or a file).
 // Higher-level callers track per-experiment `mtime = max(dir, README)` and
-// translate changes into ExperimentIndex updates.
+// translate changes into RunIndex updates.
 
 import { promises as fs } from 'node:fs'
 

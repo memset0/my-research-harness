@@ -16,7 +16,7 @@ export function buildAgentPrompt(input: {
   const exp = input.experiment
   const fm = exp.frontMatter
   const events = input.recentJournalEvents
-    .filter((e) => e.experimentId === exp.id)
+    .filter((e) => e.runId === exp.id)
     .slice(0, MAX_EVENTS)
 
   const hypothesisLine =

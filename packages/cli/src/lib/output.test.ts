@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Experiment, Hypothesis } from '@memon/core'
+import type { Run, Hypothesis } from '@memon/core'
 import { formatExperimentTable, formatHypothesisTable } from './output.js'
 
-function makeExp(overrides: Partial<Experiment['frontMatter']> = {}): Experiment {
+function makeExp(overrides: Partial<Run['frontMatter']> = {}): Run {
   return {
     id: 'foo-260501-100000',
     project: 'p',
@@ -15,6 +15,8 @@ function makeExp(overrides: Partial<Experiment['frontMatter']> = {}): Experiment
       project: 'p',
       status: 'RUNNING',
       createdAt: '2026-05-01T10:00:00+08:00',
+      experiment: null,
+      updatedAt: '2026-05-01T10:00:00+08:00',
       finishedAt: null,
       host: null,
       pid: null,

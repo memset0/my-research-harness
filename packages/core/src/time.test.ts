@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { formatExperimentStamp, formatIsoLocal } from './time.js'
+import { formatRunStamp, formatIsoLocal } from './time.js'
 
-describe('formatExperimentStamp', () => {
+describe('formatRunStamp', () => {
   it('produces yymmdd-hhmmss', () => {
     const d = new Date(2026, 4, 3, 8, 28, 0) // May = month 4 (0-indexed)
-    expect(formatExperimentStamp(d)).toBe('260503-082800')
+    expect(formatRunStamp(d)).toBe('260503-082800')
   })
 
   it('zero-pads single-digit fields', () => {
     const d = new Date(2026, 0, 1, 0, 5, 9)
-    expect(formatExperimentStamp(d)).toBe('260101-000509')
+    expect(formatRunStamp(d)).toBe('260101-000509')
   })
 })
 

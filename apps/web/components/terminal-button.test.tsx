@@ -29,7 +29,7 @@ describe('TerminalButton', () => {
       version: '1.7.7',
       source: 'cached',
     })
-    renderWithQuery(<TerminalButton experimentId="foo" projectName="a" />)
+    renderWithQuery(<TerminalButton runId="foo" projectName="a" />)
     await waitFor(() => {
       const btn = screen.getByRole('button', { name: /open in browser/i })
       expect(btn).not.toBeDisabled()
@@ -49,7 +49,7 @@ describe('TerminalButton', () => {
       durationMs: 800,
     })
 
-    renderWithQuery(<TerminalButton experimentId="foo" projectName="a" />)
+    renderWithQuery(<TerminalButton runId="foo" projectName="a" />)
     const btn = await screen.findByRole('button', { name: /install ttyd/i })
     await userEvent.click(btn)
     await waitFor(() => expect(installTerminal).toHaveBeenCalled())
@@ -61,7 +61,7 @@ describe('TerminalButton', () => {
       downloadable: false,
       suggestion: 'brew install ttyd',
     })
-    renderWithQuery(<TerminalButton experimentId="foo" projectName="a" />)
+    renderWithQuery(<TerminalButton runId="foo" projectName="a" />)
     await waitFor(() => {
       const btn = screen.getByRole('button', { name: /open in browser/i })
       expect(btn).toBeDisabled()

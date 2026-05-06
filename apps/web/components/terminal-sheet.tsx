@@ -14,12 +14,12 @@ import {
 export function TerminalSheet({
   open,
   onOpenChange,
-  experimentId,
+  runId,
   projectName,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  experimentId: string
+  runId: string
   projectName: string
 }) {
   const [phase, setPhase] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle')
@@ -50,7 +50,7 @@ export function TerminalSheet({
     let cancelled = false
     setPhase('starting')
     setError(null)
-    void startTerminal({ experimentId, projectName })
+    void startTerminal({ runId, projectName })
       .then((res) => {
         if (cancelled) {
           // Closed before we got a response; ensure we still tear it down
@@ -73,7 +73,7 @@ export function TerminalSheet({
     return () => {
       cancelled = true
     }
-  }, [open, experimentId, projectName])
+  }, [open, runId, projectName])
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -83,13 +83,13 @@ export function TerminalSheet({
       >
         <SheetHeader className="border-b p-3 pb-2">
           <SheetTitle className="font-mono text-xs">
-            claude · {sessionName ?? `memon-claude-${experimentId}`}
+            claude · {sessionName ?? `memon-claude-${runId}`}
           </SheetTitle>
           <SheetDescription className="text-[11px]">
             Terminal runs inside tmux. Closing this panel leaves the session
             detached — re-attach with{' '}
             <code className="font-mono">
-              tmux attach -t memon-claude-{experimentId}
+              tmux attach -t memon-claude-{runId}
             </code>
             .
           </SheetDescription>

@@ -13,7 +13,7 @@ export interface ArchiveResult {
 }
 
 /** Mark a run as archived. No-op if already archived. */
-export async function archiveExperiment(runDir: string): Promise<ArchiveResult> {
+export async function archiveRun(runDir: string): Promise<ArchiveResult> {
   const sidecar = join(runDir, ARCHIVED_SIDECAR)
   if (isArchived(runDir)) {
     return { archived: true, noop: true }
@@ -23,7 +23,7 @@ export async function archiveExperiment(runDir: string): Promise<ArchiveResult> 
 }
 
 /** Remove the archive marker. No-op if not archived. */
-export async function unarchiveExperiment(runDir: string): Promise<ArchiveResult> {
+export async function unarchiveRun(runDir: string): Promise<ArchiveResult> {
   const sidecar = join(runDir, ARCHIVED_SIDECAR)
   if (!isArchived(runDir)) {
     return { archived: false, noop: true }

@@ -1,10 +1,12 @@
-// Strict canonical IDs for hypotheses (H), digests (D), and reports (R).
+// Strict canonical IDs for hypotheses (H), digests (D), reports (R), and
+// experiments (E).
 //
 // The canonical form is `<P><NNNN>` where <P> is the prefix letter and
 // <NNNN> is a 4-digit zero-padded integer in [0001, 9999]. Examples:
 //   H0001  — first hypothesis
 //   D0042  — digest #42
 //   R0123  — report #123
+//   E0007  — experiment doc #7 at docs/experiments/E0007-<slug>.md
 //
 // Anything else (unpadded `H1`, overlong `H10000`, wrong prefix `Z0001`)
 // is rejected by parseId. Use padId(prefix, n) to format.
@@ -13,11 +15,11 @@ export const ID_WIDTH = 4
 export const ID_MIN = 1
 export const ID_MAX = 9999
 
-export const ID_PREFIXES = ['H', 'D', 'R'] as const
+export const ID_PREFIXES = ['H', 'D', 'R', 'E'] as const
 export type IdPrefix = (typeof ID_PREFIXES)[number]
 
 /** Strict regex for the canonical form. Group 1 = prefix, group 2 = digits. */
-export const ID_REGEX = /^([HDR])(\d{4})$/
+export const ID_REGEX = /^([HDRE])(\d{4})$/
 
 export interface ParsedId {
   prefix: IdPrefix

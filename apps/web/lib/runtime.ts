@@ -15,19 +15,19 @@ import { basename, dirname, join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import {
   DIGEST_FILENAME_REGEX,
-  ExperimentIndex,
+  RunIndex,
   Poller,
   REPORT_FILENAME_REGEX,
-  discoverExperiments,
+  discoverRuns,
   extractTitle,
   loadConfig,
   parseHypotheses,
   parseJournal,
-  readExperimentDir,
+  readRunDir,
   type AuthConfig,
   type Config,
   type DigestSummary,
-  type Experiment,
+  type Run,
   type ParsedHypotheses,
   type ParsedJournal,
   type ReportSummary,
@@ -38,7 +38,7 @@ import { ensureAuthInitialised } from './auth/first-run'
 
 export interface ExperimentChangeEvent {
   type: 'set' | 'delete'
-  experiment?: Experiment
+  experiment?: Run
   id: string
 }
 
@@ -51,7 +51,7 @@ export class Runtime {
   constructor(
     public readonly config: Config,
     public readonly configPath: string,
-    public readonly index: ExperimentIndex,
+    public readonly index: RunIndex,
     public readonly poller: Poller,
     public readonly events: EventEmitter,
     public readonly hypothesesCache: FileCache<ParsedHypotheses>,
@@ -130,7 +130,7 @@ async function init(): Promise<Runtime> {
   // boots.
   const auth = await ensureAuthInitialised(configPath, config)
 
-  const index = new ExperimentIndex()
+  const index = new RunIndex()
   const events = new EventEmitter()
   events.setMaxListeners(50)
 
@@ -215,7 +215,7 @@ async function init(): Promise<Runtime> {
       )
       if (!projectMatch) return
       try {
-        const exp = await readExperimentDir(path, projectMatch.name)
+        const exp = await readRunDir(path, projectMatch.name)
         index.set(exp)
         events.emit('experiment-change', { type: 'set', id: exp.id, experiment: exp })
       } catch {
@@ -234,10 +234,10 @@ async function init(): Promise<Runtime> {
     digestsCache.warmup(),
     (async () => {
       for (const project of config.projects) {
-        const dirs = await discoverExperiments(project)
+        const dirs = await discoverRuns(project)
         for (const dir of dirs) {
           try {
-            const exp = await readExperimentDir(dir, project.name)
+            const exp = await readRunDir(dir, project.name)
             index.set(exp)
             poller.watch(dir, exp.mtime)
           } catch {

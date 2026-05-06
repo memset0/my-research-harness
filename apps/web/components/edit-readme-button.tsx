@@ -8,10 +8,10 @@ import { useReadmeEditorOptional } from './readme-editor-context'
 
 export function EditReadmeButton({
   path,
-  experimentId,
+  runId,
 }: {
   path: string
-  experimentId: string
+  runId: string
 }) {
   const isDesktop = useIsDesktop()
   const ctx = useReadmeEditorOptional()
@@ -42,7 +42,7 @@ export function EditReadmeButton({
       {openDialog && (
         <ReadmeEditor
           path={`${path}/README.md`}
-          experimentId={experimentId}
+          runId={runId}
           onClose={() => setOpenDialog(false)}
         />
       )}

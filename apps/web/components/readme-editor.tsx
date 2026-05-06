@@ -37,7 +37,7 @@ export type ContainerKind = 'dialog' | 'panel'
 
 export interface ReadmeEditorBodyProps {
   path: string
-  experimentId: string
+  runId: string
   onClose: () => void
   containerKind: ContainerKind
   /** Slot for the panel collapse / close buttons; rendered at the right end of the toolbar. */
@@ -46,7 +46,7 @@ export interface ReadmeEditorBodyProps {
 
 export function ReadmeEditorBody({
   path,
-  experimentId,
+  runId,
   onClose,
   containerKind,
   toolbarTrailing,
@@ -148,7 +148,7 @@ export function ReadmeEditorBody({
       } else if ('mtime' in res) {
         toast.success(`Saved · mtime ${new Date(res.mtime).toLocaleTimeString()}`)
         safeRemove(draftKey(diskMtime))
-        queryClient.invalidateQueries({ queryKey: ['experiment', experimentId] })
+        queryClient.invalidateQueries({ queryKey: ['experiment', runId] })
         queryClient.invalidateQueries({ queryKey: ['experiments'] })
         // Refresh the in-memory baseline so dirty state clears.
         setDiskContent(content)
@@ -183,7 +183,7 @@ export function ReadmeEditorBody({
       } else if ('mtime' in res) {
         toast.success('Saved (overwrote conflicting changes)')
         if (diskMtime !== null) safeRemove(draftKey(diskMtime))
-        queryClient.invalidateQueries({ queryKey: ['experiment', experimentId] })
+        queryClient.invalidateQueries({ queryKey: ['experiment', runId] })
         queryClient.invalidateQueries({ queryKey: ['experiments'] })
         setDiskContent(content)
         setDiskMtime(res.mtime)
@@ -366,11 +366,11 @@ export function ReadmeEditorBody({
 /** Dialog-wrapped editor for mobile/tablet (and the legacy callsite). */
 export function ReadmeEditor({
   path,
-  experimentId,
+  runId,
   onClose,
 }: {
   path: string
-  experimentId: string
+  runId: string
   onClose: () => void
 }) {
   return (
@@ -384,7 +384,7 @@ export function ReadmeEditor({
         <div className="flex h-[85vh] min-h-0 flex-col">
           <ReadmeEditorBody
             path={path}
-            experimentId={experimentId}
+            runId={runId}
             onClose={onClose}
             containerKind="dialog"
           />

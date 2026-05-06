@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Experiment } from '../types.js'
+import type { Run } from '../types.js'
 import { isStaleRunning, staleAgeMs } from './stale.js'
 
-function makeExp(overrides: Partial<Experiment> = {}): Experiment {
+function makeExp(overrides: Partial<Run> = {}): Run {
   return {
     id: 'foo-260501-100000',
     project: 'p',
@@ -15,6 +15,8 @@ function makeExp(overrides: Partial<Experiment> = {}): Experiment {
       project: 'p',
       status: 'RUNNING',
       createdAt: '',
+      experiment: null,
+      updatedAt: '',
       finishedAt: null,
       host: null,
       pid: null,

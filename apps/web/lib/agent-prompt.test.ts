@@ -49,7 +49,7 @@ function makeEvent(o: Partial<JournalEvent> = {}): JournalEvent {
   return {
     timestamp: '2026-05-01T11:00:00+08:00',
     tag: 'NOTE',
-    experimentId: 'foo-260501-100000',
+    runId: 'foo-260501-100000',
     body: 'first observation',
     ...o,
   } as JournalEvent
@@ -81,7 +81,7 @@ describe('buildAgentPrompt', () => {
   it('"(no related events)" when no journal events for this experiment', () => {
     const out = buildAgentPrompt({
       experiment: makeExp(),
-      recentJournalEvents: [makeEvent({ experimentId: 'other-id' })],
+      recentJournalEvents: [makeEvent({ runId: 'other-id' })],
       projectRoot: '/r',
     })
     expect(out).toContain('(no related events)')
@@ -103,12 +103,12 @@ describe('buildAgentPrompt', () => {
     expect(out).not.toContain('msg-14')
   })
 
-  it('filters events by experimentId match', () => {
+  it('filters events by runId match', () => {
     const out = buildAgentPrompt({
       experiment: makeExp(),
       recentJournalEvents: [
-        makeEvent({ body: 'mine', experimentId: 'foo-260501-100000' }),
-        makeEvent({ body: 'theirs', experimentId: 'bar-260502-150000' }),
+        makeEvent({ body: 'mine', runId: 'foo-260501-100000' }),
+        makeEvent({ body: 'theirs', runId: 'bar-260502-150000' }),
       ],
       projectRoot: '/r',
     })

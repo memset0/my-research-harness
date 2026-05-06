@@ -15,7 +15,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 const BodySchema = z.object({
-  experimentId: z.string().min(1),
+  runId: z.string().min(1),
   projectName: z.string().min(1),
 })
 

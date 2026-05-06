@@ -1,4 +1,4 @@
-// readExperimentDir — combine filesystem metadata with a parsed README.md.
+// readRunDir — combine filesystem metadata with a parsed README.md.
 //
 // When README.md is absent, we synthesize sensible defaults:
 //   - id, name from the directory base name
@@ -12,12 +12,12 @@
 import { promises as fs } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parseReadme } from '../readme/parse.js'
-import type { Experiment, ParsedReadme } from '../types.js'
+import type { Run, ParsedReadme } from '../types.js'
 
-export async function readExperimentDir(
+export async function readRunDir(
   dirPath: string,
   projectName: string,
-): Promise<Experiment> {
+): Promise<Run> {
   const id = basename(dirPath)
   const readmePath = join(dirPath, 'README.md')
 
@@ -42,7 +42,7 @@ export async function readExperimentDir(
   }
 
   // Backfill id from the directory name when front matter omits it. Do NOT
-  // backfill `project`: the top-level `project` field on Experiment carries
+  // backfill `project`: the top-level `project` field on Run carries
   // membership (set from the projectName arg below), so frontMatter.project
   // is now an OPTIONAL sub-project label that we preserve verbatim.
   if (parsed.frontMatter.id === '') parsed.frontMatter.id = id
@@ -65,7 +65,7 @@ export async function readExperimentDir(
 
 /**
  * Build a minimal ParsedReadme out of the directory name when README.md is
- * absent. Caller still treats the resulting Experiment as `hasReadme: false`.
+ * absent. Caller still treats the resulting Run as `hasReadme: false`.
  */
 function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
   const tail = /^(?<name>.+)-(?<yy>\d{2})(?<mm>\d{2})(?<dd>\d{2})-(?<hh>\d{2})(?<mi>\d{2})(?<ss>\d{2})$/.exec(
@@ -87,12 +87,14 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
     frontMatter: {
       id,
       name,
-      // Sub-project label is intentionally empty when README is absent. The
-      // membership project is set on the Experiment's top-level `project`
-      // field by the caller from the projectName arg.
+      // Legacy v2 sub-project label is intentionally empty when README is
+      // absent. v3 ignores this field entirely.
       project: '',
       status: 'UNKNOWN',
       createdAt,
+      // No README means no parent experiment binding and no edit history.
+      experiment: null,
+      updatedAt: createdAt,
       finishedAt: null,
       host: null,
       pid: null,

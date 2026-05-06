@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { fetchExperiments, type IndexedExperiment } from '../lib/api'
+import { fetchExperiments, type IndexedRun } from '../lib/api'
 import { Badge } from './ui/badge'
 import { StatusPill } from './status-pill'
 import { WarningBadge } from './colored-badge'
@@ -29,7 +29,7 @@ export function ExperimentList({ project }: { project: string }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  const experiments: IndexedExperiment[] = data?.experiments ?? []
+  const experiments: IndexedRun[] = data?.experiments ?? []
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return experiments.filter((e) => {
@@ -99,7 +99,7 @@ export function ExperimentList({ project }: { project: string }) {
   )
 }
 
-function ExperimentRow({ project, exp }: { project: string; exp: IndexedExperiment }) {
+function ExperimentRow({ project, exp }: { project: string; exp: IndexedRun }) {
   const noReadme = !exp.hasReadme
   // Show the front-matter `project:` value as a sub-project tag only when it
   // adds information — i.e., non-empty AND distinct from the membership

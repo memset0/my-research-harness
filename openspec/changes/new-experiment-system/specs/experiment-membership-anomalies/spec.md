@@ -1,0 +1,147 @@
+## ADDED Requirements
+
+### Requirement: Three anomaly classes
+
+The system SHALL detect three classes of inconsistency between the
+experiment side and the run side of the bidirectional binding. Each
+anomaly is an in-memory record produced by the indexer:
+
+| Code | Trigger |
+|---|---|
+| `ORPHAN_RUN` | a run dir exists, has empty/no `experiment:` field, and is in no exp's `runs[]` |
+| `PHANTOM_RUN_REF` | an exp's `runs[]` lists a name that is not a discovered run dir, or the named dir has no README |
+| `MISMATCH_EXPERIMENT_REF` | a run says `experiment: E_a` but `E_a.runs[]` doesn't contain it; OR `E.runs[]` contains a run whose `experiment:` field names a different exp |
+
+Each anomaly record SHALL carry:
+- `code` (one of the three above)
+- `project` (top-level project name)
+- `runId` (when the anomaly involves a run)
+- `experimentId` (when the anomaly involves an experiment)
+- `message` (human-readable single-sentence description)
+- `detectedAt` (ISO8601 with offset)
+
+#### Scenario: ORPHAN_RUN detected
+- **GIVEN** run `foo-260501-100000` with no `experiment:` field, and no
+  experiment doc lists it in `runs[]`
+- **WHEN** the indexer evaluates anomalies
+- **THEN** the anomaly set contains a `ORPHAN_RUN` record naming
+  `foo-260501-100000`
+
+#### Scenario: PHANTOM_RUN_REF detected
+- **GIVEN** an experiment `E0001-foo` with `runs: ["bar-260502-100000"]`
+  but `bar-260502-100000` does not exist on disk
+- **WHEN** the indexer evaluates anomalies
+- **THEN** the anomaly set contains a `PHANTOM_RUN_REF` record naming the
+  exp and the missing run
+
+#### Scenario: MISMATCH_EXPERIMENT_REF detected
+- **GIVEN** run `qux-260503-100000` with `experiment: E0003-baz`, and
+  `E0003-baz.runs[]` does NOT contain `qux-260503-100000`
+- **WHEN** the indexer evaluates anomalies
+- **THEN** the anomaly set contains a `MISMATCH_EXPERIMENT_REF` record
+  naming both sides
+
+### Requirement: Membership is the intersection
+
+A run SHALL be considered a member of experiment `E` only when BOTH the
+run's `experiment:` field equals `E.id` AND `E.runs[]` contains the run's
+dir base name. Single-sided claims do NOT count as membership and instead
+surface as anomalies.
+
+API responses for an experiment SHALL list only confirmed members in
+`runs[]`; phantom entries SHALL NOT appear in this list (they appear in
+the anomaly stream instead).
+
+#### Scenario: Confirmed binding
+- **GIVEN** run `r1` with `experiment: E0001` and `E0001.runs: ["r1"]`
+- **WHEN** the API returns `E0001`'s detail
+- **THEN** `runs[]` includes `r1`
+
+#### Scenario: One-sided claim does not count
+- **GIVEN** run `r2` with `experiment: E0001` but `E0001.runs[]` does
+  NOT contain `r2`
+- **WHEN** the API returns `E0001`'s detail
+- **THEN** `runs[]` does NOT include `r2`, AND `/api/anomalies` lists a
+  `MISMATCH_EXPERIMENT_REF` for the pair
+
+### Requirement: Anomaly recompute on mtime change
+
+The system SHALL re-evaluate anomaly state on every observed mtime
+advance to either an experiment doc or a run README. The recompute
+SHALL cover every experiment that is referenced by either side of the
+change:
+- For an experiment doc edit: re-evaluate the named experiment.
+- For a run README edit: re-evaluate (a) the experiment named in the run's
+  pre-edit `experiment:` field, and (b) the experiment named in the run's
+  post-edit `experiment:` field, if different.
+
+#### Scenario: Run is rebound to a different experiment
+- **GIVEN** a run with `experiment: E0001`, both sides agreeing
+- **WHEN** the user edits the run to `experiment: E0002` (and `E0001.runs`
+  still lists it)
+- **THEN** the next index pass produces a `MISMATCH_EXPERIMENT_REF` for
+  both `(run, E0001)` and `(run, E0002)`; manual cleanup is expected
+
+### Requirement: Anomaly stream API
+
+The system SHALL expose:
+- `GET /api/anomalies?project=<name>` — list of all current anomalies for
+  the named project, ordered by `detectedAt` descending.
+- `GET /api/experiments/:id/anomalies` — list of anomalies that touch the
+  named experiment.
+- SSE / live update channel: an `anomaly` event topic that broadcasts
+  added/removed anomaly records.
+
+The endpoints SHALL pass the `project` and `id` parameters through
+`assertWithinProjectRoots()` before any filesystem access.
+
+#### Scenario: Anomaly list snapshot
+- **WHEN** a client GETs `/api/anomalies?project=foo` and the indexer has
+  detected three anomalies
+- **THEN** the response is a JSON array of three records, ordered by
+  `detectedAt` descending
+
+#### Scenario: SSE pushes anomaly add
+- **GIVEN** a client subscribed to the anomaly SSE channel
+- **WHEN** the indexer detects a new `ORPHAN_RUN`
+- **THEN** the client receives an `anomaly` event with body
+  `{op: "add", record: {...}}`
+
+#### Scenario: SSE pushes anomaly remove on resolution
+- **GIVEN** a client subscribed and a `PHANTOM_RUN_REF` is in flight
+- **WHEN** the named run dir comes into existence (e.g., the user pulls
+  fresh changes) and the indexer re-evaluates
+- **THEN** the client receives an `anomaly` event with body
+  `{op: "remove", recordId}`
+
+### Requirement: Web banner for anomalies
+
+The web list page SHALL render a yellow-bordered card pinned at the top
+of the experiment-card grid whenever the project has at least one
+anomaly. The card:
+- Shows a count summary in its header (`⚠ 3 issues need resolution`)
+- Lists each anomaly's message in a scrollable body (`max-h-[40vh]
+  overflow-y-auto`)
+- Provides a `Copy all` button that copies the anomalies as plain text
+  formatted for paste into an agent prompt
+- Provides a `Hide` button that hides the card for the current
+  `sessionStorage` lifetime (returns on page reload)
+
+When the project has zero anomalies, the card SHALL NOT render.
+
+#### Scenario: Empty anomaly state hides banner
+- **WHEN** `/api/anomalies?project=foo` returns `[]`
+- **THEN** the banner card is not rendered
+
+#### Scenario: Copy all formats anomalies for agent paste
+- **WHEN** the user clicks Copy all on a banner showing 2 anomalies
+- **THEN** the system clipboard contains a single text block listing
+  each anomaly with `code`, the relevant ID(s), and `message`, prefixed
+  by a header naming the project and timestamp
+
+#### Scenario: Hide is per-session
+- **GIVEN** the banner shows 1 anomaly and the user clicks Hide
+- **WHEN** the user reloads the page in the same browser tab
+- **THEN** the banner is hidden
+- **AND** when the user opens the project in a new tab
+- **THEN** the banner is visible again

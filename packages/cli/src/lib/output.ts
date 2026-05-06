@@ -6,7 +6,7 @@
 // We intentionally avoid pretty-printing by default — agents pipe the output
 // to `jq` or parse it directly, and noise / colors break that.
 
-import { STATUS_EMOJI, type Experiment, type Hypothesis } from '@memon/core'
+import { STATUS_EMOJI, type Run, type Hypothesis } from '@memon/core'
 
 export type OutputFormat = 'json' | 'human'
 
@@ -25,7 +25,7 @@ export function emitError(message: string, code = 1): never {
 
 // ---------- formatters for `human` mode ----------
 
-export function formatExperimentRow(exp: Experiment): string {
+export function formatExperimentRow(exp: Run): string {
   const emoji = STATUS_EMOJI[exp.frontMatter.status]
   const created = exp.frontMatter.createdAt || '?'
   const tags = exp.frontMatter.tags.join(',') || '-'
@@ -33,7 +33,7 @@ export function formatExperimentRow(exp: Experiment): string {
   return `${emoji} ${exp.frontMatter.status.padEnd(8)} ${exp.id.padEnd(40)} ${created.padEnd(28)} ${tags.padEnd(20)} ${hypotheses}`
 }
 
-export function formatExperimentTable(exps: Experiment[]): string {
+export function formatExperimentTable(exps: Run[]): string {
   if (exps.length === 0) return '(no experiments)'
   const header = `   ${'STATUS'.padEnd(8)} ${'ID'.padEnd(40)} ${'CREATED'.padEnd(28)} ${'TAGS'.padEnd(20)} HYPOTHESES`
   return [header, ...exps.map(formatExperimentRow)].join('\n')

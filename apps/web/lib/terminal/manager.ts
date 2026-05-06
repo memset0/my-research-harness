@@ -38,7 +38,7 @@ export interface ActiveSession {
   sessionName: string
   port: number
   startedAt: string
-  experimentId: string
+  runId: string
   projectName: string
   warnings: string[]
 }
@@ -116,7 +116,7 @@ type StartSlot = GlobalSlot & { [SERIALIZER_KEY]?: Promise<unknown> }
 const startSlot = globalThis as unknown as StartSlot
 
 export async function startSession(input: {
-  experimentId: string
+  runId: string
   projectName: string
 }): Promise<ActiveSession> {
   const prev = startSlot[SERIALIZER_KEY] ?? Promise.resolve()
@@ -127,20 +127,20 @@ export async function startSession(input: {
 }
 
 async function doStartSession(input: {
-  experimentId: string
+  runId: string
   projectName: string
 }): Promise<ActiveSession> {
-  if (!EXP_ID_RE.test(input.experimentId)) {
+  if (!EXP_ID_RE.test(input.runId)) {
     throw new TerminalManagerError(
       'BAD_REQUEST',
-      `experimentId must match ${EXP_ID_RE} (got ${JSON.stringify(input.experimentId)})`,
+      `runId must match ${EXP_ID_RE} (got ${JSON.stringify(input.runId)})`,
     )
   }
   if (!input.projectName.trim()) {
     throw new TerminalManagerError('BAD_REQUEST', 'projectName is required')
   }
 
-  const sessionName = `${SESSION_PREFIX}${input.experimentId}`
+  const sessionName = `${SESSION_PREFIX}${input.runId}`
 
   // Idempotent: same experiment + healthy ttyd → return existing
   const existingSame = getCurrent()
@@ -233,7 +233,7 @@ async function doStartSession(input: {
     sessionName,
     port: PORT,
     startedAt: new Date().toISOString(),
-    experimentId: input.experimentId,
+    runId: input.runId,
     projectName: input.projectName,
     warnings,
   }
@@ -263,7 +263,7 @@ function toPublic(c: CurrentEntry): ActiveSession {
     sessionName: c.sessionName,
     port: c.port,
     startedAt: c.startedAt,
-    experimentId: c.experimentId,
+    runId: c.runId,
     projectName: c.projectName,
     warnings: [...c.warnings],
   }

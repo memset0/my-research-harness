@@ -171,7 +171,7 @@ journal
   .option('--tag <tag>', 'filter by tag (NOTE / REQUEST / STATUS / CREATE / ARCHIVE / ERROR)')
   .option('--experiment-id <id>', 'filter to events touching this experiment id')
   .option('--limit <n>', 'cap returned events (default 200, max 1000)', (v) => parseInt(v, 10), 200)
-  .action(async (opts: { since?: string; tag?: string; experimentId?: string; limit?: number }) => {
+  .action(async (opts: { since?: string; tag?: string; runId?: string; limit?: number }) => {
     const g = readGlobals()
     await runJournalRead({ ...g, ...opts })
   })
@@ -182,7 +182,7 @@ journal
   .requiredOption('--body <body>', 'event body text')
   .option('--experiment-id <id>', 'optional id to prefix in the body')
   .option('--at <iso>', 'override the event timestamp (default: now)')
-  .action(async (opts: { tag: string; body: string; experimentId?: string; at?: string }) => {
+  .action(async (opts: { tag: string; body: string; runId?: string; at?: string }) => {
     const g = readGlobals()
     await runJournalAppend({ ...g, ...opts })
   })
@@ -220,7 +220,7 @@ status
   )
   .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
     const g = readGlobals()
-    await runStatusSet({ ...g, experimentId: id, to: opts.to, expectedMtime: opts.expectedMtime })
+    await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
   })
 
 const readme = experiment.command('readme').description('README.md operations')
@@ -237,7 +237,7 @@ readme
     }
     await runReadmeWrite({
       ...g,
-      experimentId: id,
+      runId: id,
       expectedMtime: opts.expectedMtime,
       expectedHash: opts.expectedHash,
       stdinContent,
@@ -260,7 +260,7 @@ warning
       const g = readGlobals()
       await runWarningAdd({
         ...g,
-        experimentId: id,
+        runId: id,
         category: opts.category,
         message: opts.message,
         expectedMtime: opts.expectedMtime,
@@ -275,7 +275,7 @@ warning
   .action(async (id: string, opts: { status?: string }) => {
     const g = readGlobals()
     const status = opts.status === 'open' ? 'open' : opts.status === 'resolved' ? 'resolved' : 'all'
-    await runWarningList({ ...g, experimentId: id, status })
+    await runWarningList({ ...g, runId: id, status })
   })
 warning
   .command('resolve <id> <rowId>')
@@ -292,7 +292,7 @@ warning
       const g = readGlobals()
       await runWarningResolve({
         ...g,
-        experimentId: id,
+        runId: id,
         rowId,
         note: opts.note,
         expectedMtime: opts.expectedMtime,
@@ -309,7 +309,7 @@ warning
     const g = readGlobals()
     await runWarningReopen({
       ...g,
-      experimentId: id,
+      runId: id,
       rowId,
       expectedMtime: opts.expectedMtime,
       expectedHash: opts.expectedHash,
@@ -324,7 +324,7 @@ warning
     const g = readGlobals()
     await runWarningDelete({
       ...g,
-      experimentId: id,
+      runId: id,
       rowId,
       expectedMtime: opts.expectedMtime,
       expectedHash: opts.expectedHash,
@@ -336,14 +336,14 @@ experiment
   .description('mark a run as archived (.archived sidecar)')
   .action(async (id: string) => {
     const g = readGlobals()
-    await runArchive({ ...g, experimentId: id })
+    await runArchive({ ...g, runId: id })
   })
 experiment
   .command('unarchive <id>')
   .description('unmark archived')
   .action(async (id: string) => {
     const g = readGlobals()
-    await runUnarchive({ ...g, experimentId: id })
+    await runUnarchive({ ...g, runId: id })
   })
 
 program

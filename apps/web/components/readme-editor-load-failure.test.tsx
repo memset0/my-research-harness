@@ -37,7 +37,7 @@ beforeEach(() => {
 describe('ReadmeEditor — Monaco load failure auto-fallback', () => {
   it('falls back to plain textarea and shows a toast', async () => {
     renderWithQuery(
-      <ReadmeEditor path="/x/README.md" experimentId="exp" onClose={vi.fn()} />,
+      <ReadmeEditor path="/x/README.md" runId="exp" onClose={vi.fn()} />,
     )
 
     expect(await screen.findByTestId('readme-plain-textarea')).toBeInTheDocument()

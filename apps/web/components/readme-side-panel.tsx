@@ -11,7 +11,7 @@ const COLLAPSED_WIDTH = 32
 
 export interface ReadmeSidePanelProps {
   path: string
-  experimentId: string
+  runId: string
 }
 
 /**
@@ -19,7 +19,7 @@ export interface ReadmeSidePanelProps {
  * Mount inside a flex-row layout; the panel sticks to the viewport top via
  * `sticky` so it stays visible while the detail page scrolls.
  */
-export function ReadmeSidePanel({ path, experimentId }: ReadmeSidePanelProps) {
+export function ReadmeSidePanel({ path, runId }: ReadmeSidePanelProps) {
   const { open, collapsed, width, setOpen, toggleCollapsed, setWidth } = useReadmeEditor()
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const asideRef = useRef<HTMLDivElement | null>(null)
@@ -137,7 +137,7 @@ export function ReadmeSidePanel({ path, experimentId }: ReadmeSidePanelProps) {
       <div className="flex min-h-0 flex-1 flex-col">
         <ReadmeEditorBody
           path={path}
-          experimentId={experimentId}
+          runId={runId}
           onClose={() => setOpen(false)}
           containerKind="panel"
           toolbarTrailing={

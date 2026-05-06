@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { subscribeMemonEvents } from '../lib/events-client'
-import type { IndexedExperiment } from '../lib/api'
+import type { IndexedRun } from '../lib/api'
 
 /**
  * Subscribes to /api/events SSE and invalidates TanStack Query caches when
@@ -20,7 +20,7 @@ export function useMemonEvents() {
     const seenIds = new Set<string>()
 
     // Pre-populate from any list cache that's already loaded
-    const initial = queryClient.getQueryData<{ experiments: IndexedExperiment[] }>([
+    const initial = queryClient.getQueryData<{ experiments: IndexedRun[] }>([
       'experiments',
     ])
     if (initial?.experiments) {

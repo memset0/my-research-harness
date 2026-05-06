@@ -85,7 +85,7 @@ export function parseJournal(content: string): ParsedJournal {
       })
     }
     const expMatch = EXPERIMENT_BACKTICK_REGEX.exec(body)
-    const experimentId = expMatch ? expMatch[1]! : null
+    const runId = expMatch ? expMatch[1]! : null
 
     let statusFrom: Status | null = null
     let statusTo: Status | null = null
@@ -103,7 +103,7 @@ export function parseJournal(content: string): ParsedJournal {
       timestamp,
       tag,
       body: body.trim(),
-      experimentId,
+      runId,
       statusFrom,
       statusTo,
       raw: line,

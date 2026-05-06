@@ -51,14 +51,14 @@ export {
 export { appendJournalEvent, updateLastDigestAt } from './journal/append.js'
 export {
   ARCHIVED_SIDECAR,
-  discoverExperiments,
+  discoverRuns,
   isArchived,
   mergeExcludes,
 } from './discovery/discover.js'
-export { archiveExperiment, unarchiveExperiment } from './discovery/archive.js'
+export { archiveRun, unarchiveRun } from './discovery/archive.js'
 export type { ArchiveResult } from './discovery/archive.js'
-export { readExperimentDir } from './discovery/read.js'
-export { ExperimentIndex } from './discovery/index.js'
+export { readRunDir } from './discovery/read.js'
+export { RunIndex } from './discovery/index.js'
 export type { ListFilter, SearchScope } from './discovery/index.js'
 export { Poller } from './discovery/poller.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
@@ -79,8 +79,39 @@ export {
 export type { CacheOptions, CacheRecord } from './log/cache.js'
 export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
 export type { LoadConfigOptions } from './config/load.js'
-export { formatExperimentStamp, formatIsoLocal } from './time.js'
+export {
+  formatRunStamp,
+  formatIsoLocal,
+  parseSlugFromRunDir,
+  parseTimestampFromRunDir,
+} from './time.js'
 export { FS_CONVENTION_VERSION } from './version.js'
+export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
+
+// v3 experiment doc types (sed-renamed from Experiment* during rename pass)
+export type {
+  Experiment,
+  ExperimentEffectiveTimes,
+  ExperimentFrontMatter,
+  ExperimentSections,
+  ExperimentWarningRecord,
+  ExperimentMembershipAnomaly,
+  ExperimentMembershipAnomalyCode,
+} from './types.js'
+export { EXPERIMENT_FILENAME_REGEX } from './types.js'
+export { ExperimentFrontMatterRawSchema } from './schemas.js'
+export type { ExperimentFrontMatterRaw } from './schemas.js'
+
+// v3 experiment-doc parser / serializer / discovery / membership
+export { parseExperimentReadme, buildExperimentRecord } from './experiments/parse.js'
+export type { ParsedExperiment } from './experiments/parse.js'
+export { serializeExperimentReadme } from './experiments/serialize.js'
+export type { SerializeExperimentInput } from './experiments/serialize.js'
+export { discoverExperiments, readExperimentDoc } from './experiments/discover.js'
+export type { DiscoverExperimentsResult } from './experiments/discover.js'
+export { computeMembership } from './experiments/membership.js'
+export type { MembershipInput, MembershipResult } from './experiments/membership.js'
+
 export {
   computeFsVersionStatus,
   FsVersionSchemaError,
@@ -96,7 +127,7 @@ export type { FsVersionRecord, FsVersionStatus } from './fs-version/index.js'
 export { CliContextError, loadCliContext } from './cli/context.js'
 export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'
 export { ScanError, scanProjectRoot } from './cli/scan.js'
-export type { IndexedExperiment, ProjectSnapshot, ScanOptions } from './cli/scan.js'
+export type { IndexedRun, ProjectSnapshot, ScanOptions } from './cli/scan.js'
 export { runDoctor } from './cli/doctor.js'
 export type {
   DoctorIssue,

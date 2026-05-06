@@ -5,12 +5,12 @@
 // connection auto-opens when the first listener subscribes and auto-closes
 // when the last one leaves.
 
-import type { IndexedExperiment } from './api'
+import type { IndexedRun } from './api'
 
 export interface ExperimentChangeEvent {
   type: 'set' | 'delete'
   id: string
-  experiment?: IndexedExperiment
+  experiment?: IndexedRun
 }
 
 type Listener = (evt: ExperimentChangeEvent) => void

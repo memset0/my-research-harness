@@ -30,14 +30,14 @@ interface BaseProps {
 }
 
 interface AddNoteProps extends BaseProps {
-  /** When set, the note body is auto-prefixed with `\`<experimentId>\`` */
-  experimentId: string
+  /** When set, the note body is auto-prefixed with `\`<runId>\`` */
+  runId: string
   mode: 'note'
 }
 
 interface AddJournalEntryProps extends BaseProps {
   /** Optional pre-fill for experiment id (free choice, not enforced) */
-  experimentId?: string
+  runId?: string
   mode: 'note' | 'request'
   /** When set, user picks the tag in the modal */
   allowTagSelect?: boolean
@@ -63,7 +63,7 @@ export function AddEventModal(props: AddEventModalProps) {
     if (!body) return
     setBusy(true)
     try {
-      const expId = 'experimentId' in props ? props.experimentId : undefined
+      const expId = 'runId' in props ? props.runId : undefined
       const finalBody = expId ? `\`${expId}\` ${body}` : body
       await appendJournalEvent({ project: props.project, tag, body: finalBody })
       toast.success(`Appended [${tag}] event`)
@@ -90,9 +90,9 @@ export function AddEventModal(props: AddEventModalProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {'experimentId' in props && props.experimentId && (
+          {'runId' in props && props.runId && (
             <DialogDescription>
-              Will be appended as <code className="font-mono text-xs">[{tag}] `{props.experimentId}` …</code>
+              Will be appended as <code className="font-mono text-xs">[{tag}] `{props.runId}` …</code>
             </DialogDescription>
           )}
         </DialogHeader>

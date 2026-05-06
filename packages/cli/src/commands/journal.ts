@@ -26,7 +26,7 @@ export interface JournalReadInput {
   format: OutputFormat
   since?: string
   tag?: string
-  experimentId?: string
+  runId?: string
   limit?: number
 }
 
@@ -57,8 +57,8 @@ export async function runJournalRead(input: JournalReadInput): Promise<void> {
   if (input.tag) {
     events = events.filter((e) => e.tag === input.tag)
   }
-  if (input.experimentId) {
-    events = events.filter((e) => e.experimentId === input.experimentId)
+  if (input.runId) {
+    events = events.filter((e) => e.runId === input.runId)
   }
   const limit = Math.max(1, Math.min(input.limit ?? 200, 1000))
   events = events.slice(0, limit)
@@ -75,7 +75,7 @@ export interface JournalAppendInput {
   cwd: string
   tag: string
   body: string
-  experimentId?: string
+  runId?: string
   at?: string
 }
 
@@ -104,7 +104,7 @@ export async function runJournalAppend(input: JournalAppendInput): Promise<void>
   const journalPath = join(root, 'docs', 'journal.md')
 
   const timestamp = input.at ?? nowIso()
-  const expPart = input.experimentId ? `\`${input.experimentId}\` ` : ''
+  const expPart = input.runId ? `\`${input.runId}\` ` : ''
   await appendJournalEvent({
     path: journalPath,
     event: { timestamp, tag: input.tag as JournalEventTag, body: `${expPart}${input.body}` },

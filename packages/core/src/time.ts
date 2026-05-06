@@ -7,9 +7,9 @@
 
 /**
  * Format a Date as `yymmdd-hhmmss` in local time, suitable for use as the
- * tail of an experiment directory name (matching EXPERIMENT_DIR_REGEX).
+ * tail of an experiment directory name (matching RUN_DIR_REGEX).
  */
-export function formatExperimentStamp(d: Date): string {
+export function formatRunStamp(d: Date): string {
   const yy = String(d.getFullYear()).slice(-2)
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
@@ -38,4 +38,41 @@ export function formatIsoLocal(d: Date): string {
   const oh = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0')
   const om = String(Math.abs(offsetMin) % 60).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}${sign}${oh}:${om}`
+}
+
+/**
+ * Extract the slug portion of a run dir name.
+ *
+ * A run dir matches `<slug>-<YYMMDD>-<HHMMSS>`. The slug is everything
+ * before the last `-<6digits>-<6digits>`. Returns null if the input
+ * doesn't look like a run dir.
+ */
+export function parseSlugFromRunDir(dirName: string): string | null {
+  const m = dirName.match(/^(.+)-\d{6}-\d{6}$/)
+  return m ? (m[1] ?? null) : null
+}
+
+/**
+ * Parse the `<YYMMDD>-<HHMMSS>` tail of a run dir into an ISO8601 timestamp
+ * with the machine's current local timezone offset. Returns null when the
+ * input doesn't end with the expected timestamp shape.
+ *
+ * Used as the fallback for `created_at` when a run README is missing the
+ * field (per `run-readme` capability).
+ */
+export function parseTimestampFromRunDir(dirName: string): string | null {
+  const m = dirName.match(/-(\d{2})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/)
+  if (!m) return null
+  const yy = Number(m[1])
+  const mo = Number(m[2])
+  const da = Number(m[3])
+  const hh = Number(m[4])
+  const mi = Number(m[5])
+  const ss = Number(m[6])
+  // 2-digit year heuristic: 00-69 => 2000s+, 70-99 => 1900s. memon was
+  // created post-2024 so this is safe within the tool's lifetime.
+  const yyyy = yy < 70 ? 2000 + yy : 1900 + yy
+  const d = new Date(yyyy, mo - 1, da, hh, mi, ss)
+  if (Number.isNaN(d.getTime())) return null
+  return formatIsoLocal(d)
 }

@@ -29,14 +29,14 @@ interface ResolveExpResult {
 
 async function resolveExperiment(
   ctx: { projectRoot?: string; cwd: string },
-  experimentId: string,
+  runId: string,
 ): Promise<ResolveExpResult> {
   const r = await resolveContext(ctx)
   const projectRoot = singleProjectRoot(r)
   const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const exp = snap.experiments.find((e) => e.id === experimentId)
+  const exp = snap.experiments.find((e) => e.id === runId)
   if (!exp) {
-    emitErrorAndExit('NOT_FOUND', `experiment "${experimentId}" not found in ${projectRoot}`)
+    emitErrorAndExit('NOT_FOUND', `experiment "${runId}" not found in ${projectRoot}`)
   }
   return { runDir: exp.path, readmePath: join(exp.path, 'README.md'), projectRoot }
 }
@@ -122,7 +122,7 @@ function mapWarningOpError(err: WarningOpError): never {
 export interface WarningAddInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   category: string
   message: string
   expectedMtime?: number
@@ -139,7 +139,7 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
   if (!input.message || input.message.trim() === '') {
     emitErrorAndExit('BAD_REQUEST', '--message is required and must be non-empty')
   }
-  const { readmePath, projectRoot } = await resolveExperiment(input, input.experimentId)
+  const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
   const lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
   const created = nowIso()
   const rowId = generateRowId(created)
@@ -164,7 +164,7 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
     event: {
       timestamp: created,
       tag: 'WARNING',
-      body: `\`${input.experimentId}\` op=add rowId=${rowId} category=${input.category} message=${quoteForJournal(input.message)}`,
+      body: `\`${input.runId}\` op=add rowId=${rowId} category=${input.category} message=${quoteForJournal(input.message)}`,
     },
   })
   emitJson({ ok: true, rowId, mtime: newStat.mtimeMs, hash: newHash })
@@ -175,12 +175,12 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
 export interface WarningListInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   status?: 'open' | 'resolved' | 'all'
 }
 
 export async function runWarningList(input: WarningListInput): Promise<void> {
-  const { readmePath } = await resolveExperiment(input, input.experimentId)
+  const { readmePath } = await resolveExperiment(input, input.runId)
   let stat
   try {
     stat = await fs.stat(readmePath)
@@ -201,7 +201,7 @@ export async function runWarningList(input: WarningListInput): Promise<void> {
 export interface WarningResolveInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   rowId: string
   note: string
   expectedMtime?: number
@@ -212,7 +212,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
   if (!input.note || input.note.trim() === '') {
     emitErrorAndExit('BAD_REQUEST', '--note is required for resolve and must be non-empty')
   }
-  const { readmePath, projectRoot } = await resolveExperiment(input, input.experimentId)
+  const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
   const lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
   const resolved = nowIso()
   let result
@@ -235,7 +235,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
     event: {
       timestamp: resolved,
       tag: 'WARNING',
-      body: `\`${input.experimentId}\` op=resolve rowId=${input.rowId} note=${quoteForJournal(input.note)}`,
+      body: `\`${input.runId}\` op=resolve rowId=${input.rowId} note=${quoteForJournal(input.note)}`,
     },
   })
   emitJson({ ok: true, mtime: newStat.mtimeMs, hash: newHash })
@@ -246,14 +246,14 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
 export interface WarningReopenInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   rowId: string
   expectedMtime?: number
   expectedHash?: string
 }
 
 export async function runWarningReopen(input: WarningReopenInput): Promise<void> {
-  const { readmePath, projectRoot } = await resolveExperiment(input, input.experimentId)
+  const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
   const lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
   let result
   try {
@@ -270,7 +270,7 @@ export async function runWarningReopen(input: WarningReopenInput): Promise<void>
     event: {
       timestamp: nowIso(),
       tag: 'WARNING',
-      body: `\`${input.experimentId}\` op=reopen rowId=${input.rowId}`,
+      body: `\`${input.runId}\` op=reopen rowId=${input.rowId}`,
     },
   })
   emitJson({ ok: true, mtime: newStat.mtimeMs, hash: newHash })
@@ -281,14 +281,14 @@ export async function runWarningReopen(input: WarningReopenInput): Promise<void>
 export interface WarningDeleteInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   rowId: string
   expectedMtime?: number
   expectedHash?: string
 }
 
 export async function runWarningDelete(input: WarningDeleteInput): Promise<void> {
-  const { readmePath, projectRoot } = await resolveExperiment(input, input.experimentId)
+  const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
   const lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
   let result
   try {
@@ -306,7 +306,7 @@ export async function runWarningDelete(input: WarningDeleteInput): Promise<void>
     event: {
       timestamp: nowIso(),
       tag: 'WARNING',
-      body: `\`${input.experimentId}\` op=delete rowId=${input.rowId} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
+      body: `\`${input.runId}\` op=delete rowId=${input.rowId} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },
   })
   emitJson({ ok: true, mtime: newStat.mtimeMs, hash: newHash })

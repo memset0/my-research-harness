@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
-import { fetchExperiments, fetchProjects, type IndexedExperiment } from '../lib/api'
+import { fetchExperiments, fetchProjects, type IndexedRun } from '../lib/api'
 import {
   Sidebar,
   SidebarContent,
@@ -171,7 +171,7 @@ function ProjectExperiments({
     enabled,
     staleTime: 5_000,
   })
-  const experiments: IndexedExperiment[] = data?.experiments ?? []
+  const experiments: IndexedRun[] = data?.experiments ?? []
   const [showAll, setShowAll] = useState(false)
   const visible = useMemo(
     () => (showAll ? experiments : experiments.slice(0, DEFAULT_VISIBLE)),

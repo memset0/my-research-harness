@@ -145,7 +145,7 @@ describe('memon experiment warning add', () => {
     await runWarningAdd({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       category: 'result',
       message: 'loss spike at step 1500',
     })
@@ -169,7 +169,7 @@ describe('memon experiment warning add', () => {
       await runWarningAdd({
         cwd: root,
         projectRoot: root,
-        experimentId: 'foo-260501-100000',
+        runId: 'foo-260501-100000',
         category: 'aesthetic',
         message: 'bad',
       })
@@ -189,7 +189,7 @@ describe('memon experiment warning add', () => {
       await runWarningAdd({
         cwd: root,
         projectRoot: root,
-        experimentId: 'foo-260501-100000',
+        runId: 'foo-260501-100000',
         category: 'result',
         message: '   ',
       })
@@ -206,7 +206,7 @@ describe('memon experiment warning add', () => {
       await runWarningAdd({
         cwd: root,
         projectRoot: root,
-        experimentId: 'foo-260501-100000',
+        runId: 'foo-260501-100000',
         category: 'result',
         message: 'x',
         expectedMtime: 1, // wrong
@@ -226,7 +226,7 @@ describe('memon experiment warning list', () => {
     await runWarningAdd({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       category: 'result',
       message: 'first',
     })
@@ -234,7 +234,7 @@ describe('memon experiment warning list', () => {
     await runWarningList({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       status: 'all',
     })
     const out = lastJsonStdout()
@@ -245,7 +245,7 @@ describe('memon experiment warning list', () => {
     await runWarningAdd({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       category: 'result',
       message: 'a',
     })
@@ -253,7 +253,7 @@ describe('memon experiment warning list', () => {
     await runWarningList({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       status: 'resolved',
     })
     const out = lastJsonStdout()
@@ -267,7 +267,7 @@ describe('memon experiment warning resolve / reopen / delete', () => {
     await runWarningAdd({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       category: 'result',
       message: 'first',
     })
@@ -281,7 +281,7 @@ describe('memon experiment warning resolve / reopen / delete', () => {
       await runWarningResolve({
         cwd: root,
         projectRoot: root,
-        experimentId: 'foo-260501-100000',
+        runId: 'foo-260501-100000',
         rowId,
         note: '',
       })
@@ -296,7 +296,7 @@ describe('memon experiment warning resolve / reopen / delete', () => {
     await runWarningResolve({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       rowId,
       note: 'fine',
     })
@@ -310,14 +310,14 @@ describe('memon experiment warning resolve / reopen / delete', () => {
     await runWarningResolve({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       rowId,
       note: 'fine',
     })
     await runWarningReopen({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       rowId,
     })
     const md = await fs.readFile(readmePath, 'utf8')
@@ -330,7 +330,7 @@ describe('memon experiment warning resolve / reopen / delete', () => {
     await runWarningDelete({
       cwd: root,
       projectRoot: root,
-      experimentId: 'foo-260501-100000',
+      runId: 'foo-260501-100000',
       rowId,
     })
     const md = await fs.readFile(readmePath, 'utf8')
@@ -347,7 +347,7 @@ describe('memon experiment warning resolve / reopen / delete', () => {
       await runWarningDelete({
         cwd: root,
         projectRoot: root,
-        experimentId: 'foo-260501-100000',
+        runId: 'foo-260501-100000',
         rowId: 'w_does_not_exist',
       })
     } catch (e) {

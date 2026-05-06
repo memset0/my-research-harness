@@ -5,7 +5,7 @@
 // (`fetchProjects` / `fetchExperiments` / etc.).
 //
 // As of `add-runtime-cache`, hypotheses + journal data come from the runtime
-// in-memory cache, not from disk. ExperimentIndex was already in-memory.
+// in-memory cache, not from disk. RunIndex was already in-memory.
 
 import 'server-only'
 
@@ -15,7 +15,7 @@ import type {
   FullDigest,
   FullExperiment,
   FullReport,
-  IndexedExperiment,
+  IndexedRun,
   ProjectSummary,
 } from '../api'
 
@@ -32,7 +32,7 @@ export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }>
 
 export async function getExperimentsData(
   project?: string,
-): Promise<{ experiments: IndexedExperiment[] }> {
+): Promise<{ experiments: IndexedRun[] }> {
   const rt = await getRuntime()
   const experiments = rt.index.list({ project })
   return {

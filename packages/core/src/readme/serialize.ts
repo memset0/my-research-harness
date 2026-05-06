@@ -12,13 +12,13 @@
 
 import type {
   ArtifactEntry,
-  ExperimentFrontMatter,
-  ExperimentSections,
+  RunFrontMatter,
+  RunSections,
   ParsedReadme,
 } from '../types.js'
 import { isId } from '../ids.js'
 
-const SECTION_ORDER: ReadonlyArray<keyof Omit<ExperimentSections, 'artifacts'> | 'artifacts'> = [
+const SECTION_ORDER: ReadonlyArray<keyof Omit<RunSections, 'artifacts'> | 'artifacts'> = [
   'motivation',
   'setup',
   'method',
@@ -41,8 +41,8 @@ const HEADING_FOR: Record<(typeof SECTION_ORDER)[number], string> = {
 }
 
 export interface SerializeReadmeInput {
-  frontMatter: ExperimentFrontMatter
-  sections: ExperimentSections
+  frontMatter: RunFrontMatter
+  sections: RunSections
   /**
    * If true, emit the optional `New Hypotheses` heading even when its body is
    * empty/null. Default: false (omit when empty).
@@ -82,7 +82,7 @@ export function reserializeReadme(parsed: ParsedReadme): string {
 
 // ---------- helpers ----------
 
-function renderFrontMatter(fm: ExperimentFrontMatter): string {
+function renderFrontMatter(fm: RunFrontMatter): string {
   const lines: string[] = []
   // Required scalars
   lines.push(`id: ${quoteIfNeeded(fm.id)}`)

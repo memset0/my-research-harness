@@ -1,0 +1,74 @@
+// Run-doc id allocation.
+//
+// IDs are `E<NNNN>-<slug>` where `<NNNN>` is 4-digit zero-padded, monotonically
+// assigned per project. Allocation is lock-free; callers retry on EEXIST.
+
+import { promises as fs } from 'node:fs'
+import * as path from 'node:path'
+
+import { padId, parseId } from '../ids.js'
+import { EXPERIMENT_FILENAME_REGEX } from '../types.js'
+
+const EXPERIMENTS_SUBDIR = 'docs/experiments'
+
+/**
+ * Scan `<projectRoot>/docs/experiments/` for existing `E<NNNN>-<slug>.md`
+ * files and return `padId('E', max+1)`. When the directory does not exist,
+ * returns `'E0001'`.
+ *
+ * Throws when the next id would exceed `E9999`.
+ */
+export async function nextExperimentId(projectRoot: string): Promise<string> {
+  const dir = path.join(projectRoot, EXPERIMENTS_SUBDIR)
+  let entries: string[]
+  try {
+    entries = await fs.readdir(dir)
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'ENOENT') return padId('E', 1)
+    throw err
+  }
+  let max = 0
+  for (const entry of entries) {
+    const m = entry.match(EXPERIMENT_FILENAME_REGEX)
+    if (!m) continue
+    const id = `E${m[1]}`
+    const parsed = parseId(id)
+    if (parsed && parsed.n > max) max = parsed.n
+  }
+  return padId('E', max + 1)
+}
+
+/**
+ * Resolve a slug-or-id to a full canonical id by scanning existing files.
+ * Returns null when no match. Used by CLI commands that accept `<id-or-slug>`.
+ */
+export async function resolveExperimentId(
+  projectRoot: string,
+  needle: string,
+): Promise<string | null> {
+  const dir = path.join(projectRoot, EXPERIMENTS_SUBDIR)
+  let entries: string[]
+  try {
+    entries = await fs.readdir(dir)
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'ENOENT') return null
+    throw err
+  }
+  // Direct id match: needle starts with E\d{4}-
+  if (/^E\d{4}-/.test(needle)) {
+    const filename = `${needle}.md`
+    return entries.includes(filename) ? needle : null
+  }
+  // Slug lookup: needle could be the slug part alone
+  const matches: string[] = []
+  for (const entry of entries) {
+    const m = entry.match(EXPERIMENT_FILENAME_REGEX)
+    if (!m) continue
+    const slug = m[2]
+    if (slug === needle) matches.push(`E${m[1]}-${slug}`)
+  }
+  if (matches.length === 1) return matches[0] ?? null
+  return null
+}

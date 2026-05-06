@@ -2,7 +2,7 @@
 // Never writes to disk; the CLI command surfaces issues, the skill drives
 // interactive fixes through the existing write commands.
 
-import { scanProjectRoot, type IndexedExperiment } from './scan.js'
+import { scanProjectRoot, type IndexedRun } from './scan.js'
 
 export type IssueSeverity = 'info' | 'warn' | 'error'
 
@@ -17,7 +17,7 @@ export type IssueCode =
   | 'WARN_UNRESOLVED'
 
 export interface DoctorIssue {
-  experimentId: string
+  runId: string
   code: IssueCode
   severity: IssueSeverity
   message: string
@@ -81,7 +81,7 @@ export async function runDoctor(
 }
 
 /** Per-experiment rule pass. */
-function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[] {
+function inspect(exp: IndexedRun, knownHypIds: Set<string>): DoctorIssue[] {
   const out: DoctorIssue[] = []
   const fm = exp.frontMatter
   const sec = exp.sections
@@ -89,7 +89,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
   if (fm.status === 'FINISHED') {
     if (isBlank(sec.result)) {
       out.push({
-        experimentId: exp.id,
+        runId: exp.id,
         code: 'MISSING_RESULT',
         severity: 'warn',
         message: 'FINISHED experiment has no Result section',
@@ -98,7 +98,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
     }
     if (isBlank(sec.conclusion)) {
       out.push({
-        experimentId: exp.id,
+        runId: exp.id,
         code: 'MISSING_CONCLUSION',
         severity: 'warn',
         message: 'FINISHED experiment has no Conclusion section',
@@ -109,7 +109,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
 
   if (fm.status === 'FAILED' && isBlank(sec.result)) {
     out.push({
-      experimentId: exp.id,
+      runId: exp.id,
       code: 'FAILED_NO_NOTE',
       severity: 'info',
       message: 'FAILED experiment has no failure note in Result',
@@ -119,7 +119,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
 
   if (exp.stale) {
     out.push({
-      experimentId: exp.id,
+      runId: exp.id,
       code: 'STALE_RUNNING',
       severity: 'info',
       message: 'RUNNING for >1h with no recent fs activity',
@@ -129,7 +129,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
 
   if (exp.parseErrors.length > 0) {
     out.push({
-      experimentId: exp.id,
+      runId: exp.id,
       code: 'PARSE_ERROR',
       severity: 'error',
       message: `parseReadme reported ${exp.parseErrors.length} error(s): ${exp.parseErrors.map((e) => e.message).join('; ')}`,
@@ -138,7 +138,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
   }
   if (exp.parseWarnings.length > 0) {
     out.push({
-      experimentId: exp.id,
+      runId: exp.id,
       code: 'PARSE_WARNING',
       severity: 'warn',
       message: `parseReadme reported ${exp.parseWarnings.length} warning(s): ${exp.parseWarnings.map((w) => w.message).join('; ')}`,
@@ -149,7 +149,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
   for (const h of fm.hypotheses) {
     if (!knownHypIds.has(h)) {
       out.push({
-        experimentId: exp.id,
+        runId: exp.id,
         code: 'ORPHAN_HYPOTHESIS_REF',
         severity: 'warn',
         message: `references hypothesis "${h}" which is not in docs/hypotheses.md`,
@@ -164,7 +164,7 @@ function inspect(exp: IndexedExperiment, knownHypIds: Set<string>): DoctorIssue[
   const openWarnings = exp.warnings.filter((w) => w.status === 'OPEN')
   if (openWarnings.length > 0) {
     out.push({
-      experimentId: exp.id,
+      runId: exp.id,
       code: 'WARN_UNRESOLVED',
       severity: 'info',
       message: `${openWarnings.length} unresolved warning${openWarnings.length === 1 ? '' : 's'}`,

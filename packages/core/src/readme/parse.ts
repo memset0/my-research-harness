@@ -11,12 +11,12 @@
 import matter from 'gray-matter'
 import { ZodError } from 'zod'
 import type {
-  ExperimentFrontMatter,
-  ExperimentSections,
+  RunFrontMatter,
+  RunSections,
   ParseIssue,
   ParsedReadme,
 } from '../types.js'
-import { ExperimentFrontMatterRawSchema } from '../schemas.js'
+import { RunFrontMatterRawSchema } from '../schemas.js'
 import { isId } from '../ids.js'
 import { normalizeStatus } from '../status.js'
 import { matterOptions } from '../yaml-engine.js'
@@ -54,9 +54,9 @@ export function parseReadme(content: string): ParsedReadme {
   const rawData = parsed.data
   const body = parsed.content
 
-  let validated: ReturnType<typeof ExperimentFrontMatterRawSchema.safeParse>
+  let validated: ReturnType<typeof RunFrontMatterRawSchema.safeParse>
   try {
-    validated = ExperimentFrontMatterRawSchema.safeParse(rawData)
+    validated = RunFrontMatterRawSchema.safeParse(rawData)
   } catch (err) {
     errors.push({
       message: `front matter validation crashed: ${(err as Error).message}`,
@@ -91,12 +91,17 @@ export function parseReadme(content: string): ParsedReadme {
     }
   }
 
-  const frontMatter: ExperimentFrontMatter = {
+  const createdAt = stringOr(raw.created_at, '')
+  const frontMatter: RunFrontMatter = {
     id: stringOr(raw.id, ''),
     name: stringOr(raw.name, ''),
     project: stringOr(raw.project, ''),
     status: statusResult.value,
-    createdAt: stringOr(raw.created_at, ''),
+    createdAt,
+    // v3-added: parent experiment (`E<NNNN>-<slug>`); null when absent / unbound.
+    experiment: nullableString(raw.experiment),
+    // v3-added: defaults to createdAt when the field is absent.
+    updatedAt: stringOr(raw.updated_at, createdAt),
     finishedAt: nullableString(raw.finished_at),
     host: nullableString(raw.host),
     pid: nullableNumber(raw.pid),
@@ -110,7 +115,7 @@ export function parseReadme(content: string): ParsedReadme {
 
   // Split body into sections
   const split = splitH2Sections(body)
-  const sections: ExperimentSections = {
+  const sections: RunSections = {
     motivation: getSection(split.sections, 'Motivation'),
     setup: getSection(split.sections, 'Setup'),
     method: getSection(split.sections, 'Method'),
@@ -160,6 +165,8 @@ function emptyResult(errors: ParseIssue[], warnings: ParseIssue[], body: string)
       project: '',
       status: 'UNKNOWN',
       createdAt: '',
+      experiment: null,
+      updatedAt: '',
       finishedAt: null,
       host: null,
       pid: null,

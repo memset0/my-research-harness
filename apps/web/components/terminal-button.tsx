@@ -15,10 +15,10 @@ import {
 import { TerminalSheet } from './terminal-sheet'
 
 export function TerminalButton({
-  experimentId,
+  runId,
   projectName,
 }: {
-  experimentId: string
+  runId: string
   projectName: string
 }) {
   const qc = useQueryClient()
@@ -53,7 +53,7 @@ export function TerminalButton({
         <TerminalSheet
           open={sheetOpen}
           onOpenChange={setSheetOpen}
-          experimentId={experimentId}
+          runId={runId}
           projectName={projectName}
         />
       </>

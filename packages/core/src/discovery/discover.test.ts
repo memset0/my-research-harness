@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { discoverExperiments, mergeExcludes } from './discover.js'
+import { discoverRuns, mergeExcludes } from './discover.js'
 
 let root: string
 
@@ -18,13 +18,13 @@ async function mkdir(rel: string) {
   await fs.mkdir(join(root, rel), { recursive: true })
 }
 
-describe('discoverExperiments', () => {
+describe('discoverRuns', () => {
   it('finds experiment dirs at variable depths', async () => {
     await mkdir('logs/foo-260501-100000')
     await mkdir('sub/logs/bar-260502-150000')
     await mkdir('runs/baz-260503-080000')
 
-    const dirs = await discoverExperiments({
+    const dirs = await discoverRuns({
       name: 'p',
       root,
       include: [],
@@ -41,7 +41,7 @@ describe('discoverExperiments', () => {
     await mkdir('logs/foo-2026-05-01-100000') // 4-digit year
     await mkdir('logs/valid-260501-100000')
 
-    const dirs = await discoverExperiments({ name: 'p', root, include: [], exclude: [] })
+    const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
     expect(dirs).toHaveLength(1)
     expect(dirs[0]!.endsWith('valid-260501-100000')).toBe(true)
   })
@@ -52,7 +52,7 @@ describe('discoverExperiments', () => {
     await mkdir('__pycache__/baz-260503-100000')
     await mkdir('logs/keep-260504-100000')
 
-    const dirs = await discoverExperiments({ name: 'p', root, include: [], exclude: [] })
+    const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
     expect(dirs).toHaveLength(1)
     expect(dirs[0]!.endsWith('keep-260504-100000')).toBe(true)
   })
@@ -61,7 +61,7 @@ describe('discoverExperiments', () => {
     await mkdir('logs/keep-260501-100000')
     await mkdir('dist/skip-260502-100000')
 
-    const dirs = await discoverExperiments({
+    const dirs = await discoverRuns({
       name: 'p',
       root,
       include: [],
@@ -72,7 +72,7 @@ describe('discoverExperiments', () => {
   })
 
   it('returns empty for empty root', async () => {
-    const dirs = await discoverExperiments({ name: 'p', root, include: [], exclude: [] })
+    const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
     expect(dirs).toEqual([])
   })
 })

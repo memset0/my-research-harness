@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-import { ExperimentIndex, readExperimentDir, type Experiment } from '@memon/core'
+import { RunIndex, readRunDir, type Run } from '@memon/core'
 import { EventEmitter } from 'node:events'
 
 vi.mock('../../../../../lib/runtime', () => ({
@@ -51,7 +51,7 @@ let readmePath: string
 
 interface FakeRuntime {
   config: { projects: { name: string; root: string; include: string[]; exclude: string[] }[] }
-  index: ExperimentIndex
+  index: RunIndex
   events: EventEmitter
   projectFor: (p: string) => { name: string; root: string } | null
   pokeById: (id: string) => void
@@ -63,9 +63,9 @@ async function setupRuntime(): Promise<FakeRuntime> {
   await fs.mkdir(runDir)
   readmePath = join(runDir, 'README.md')
   await fs.writeFile(readmePath, README_BASE)
-  const exp = await readExperimentDir(runDir, 'p')
-  const index = new ExperimentIndex()
-  index.set(exp as unknown as Experiment)
+  const exp = await readRunDir(runDir, 'p')
+  const index = new RunIndex()
+  index.set(exp as unknown as Run)
   const projects = [{ name: 'p', root, include: [], exclude: [] }]
   return {
     config: { projects },

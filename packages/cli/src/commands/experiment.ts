@@ -5,11 +5,11 @@ import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import {
   appendJournalEvent,
-  archiveExperiment,
+  archiveRun,
   parseReadme,
   reserializeReadme,
   scanProjectRoot,
-  unarchiveExperiment,
+  unarchiveRun,
   type Status,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -32,16 +32,16 @@ interface ResolveExpResult {
 
 async function resolveExperiment(
   ctx: { projectRoot?: string; cwd: string },
-  experimentId: string,
+  runId: string,
 ): Promise<ResolveExpResult> {
   const r = await resolveContext(ctx)
   const projectRoot = singleProjectRoot(r)
   // Find run dir by id (must include archived too — user may want to operate
   // on archived runs through `unarchive`, etc.)
   const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const exp = snap.experiments.find((e) => e.id === experimentId)
+  const exp = snap.experiments.find((e) => e.id === runId)
   if (!exp) {
-    emitErrorAndExit('NOT_FOUND', `experiment "${experimentId}" not found in ${projectRoot}`)
+    emitErrorAndExit('NOT_FOUND', `experiment "${runId}" not found in ${projectRoot}`)
   }
   return { runDir: exp.path, readmePath: join(exp.path, 'README.md'), projectRoot }
 }
@@ -51,7 +51,7 @@ async function resolveExperiment(
 export interface StatusSetInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   to: string
   expectedMtime: number
 }
@@ -63,7 +63,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
       `--to must be one of: ${STATUS_VALUES.join(', ')}`,
     )
   }
-  const { runDir, readmePath, projectRoot } = await resolveExperiment(input, input.experimentId)
+  const { runDir, readmePath, projectRoot } = await resolveExperiment(input, input.runId)
 
   let stat
   try {
@@ -101,7 +101,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
       event: {
         timestamp: nowIso(),
         tag: 'STATUS',
-        body: `\`${input.experimentId}\` ${prevStatus} → ${nextStatus}`,
+        body: `\`${input.runId}\` ${prevStatus} → ${nextStatus}`,
       },
     })
     journalAppended = true
@@ -122,7 +122,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
 export interface ReadmeWriteInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
   expectedMtime: number
   expectedHash?: string
   /** Reads stdin until EOF. */
@@ -130,7 +130,7 @@ export interface ReadmeWriteInput {
 }
 
 export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
-  const { readmePath, projectRoot } = await resolveExperiment(input, input.experimentId)
+  const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
 
   let stat
   try {
@@ -187,7 +187,7 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
       event: {
         timestamp: nowIso(),
         tag: 'STATUS',
-        body: `\`${input.experimentId}\` ${prevStatus} → ${nextStatus}`,
+        body: `\`${input.runId}\` ${prevStatus} → ${nextStatus}`,
       },
     })
     journalAppended = true
@@ -201,19 +201,19 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
 export interface ArchiveInput {
   projectRoot?: string
   cwd: string
-  experimentId: string
+  runId: string
 }
 
 export async function runArchive(input: ArchiveInput): Promise<void> {
-  const { runDir, projectRoot } = await resolveExperiment(input, input.experimentId)
-  const result = await archiveExperiment(runDir)
+  const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
+  const result = await archiveRun(runDir)
   if (!result.noop) {
     await appendJournalEvent({
       path: join(projectRoot, 'docs', 'journal.md'),
       event: {
         timestamp: nowIso(),
         tag: 'ARCHIVE',
-        body: `\`${input.experimentId}\` archived`,
+        body: `\`${input.runId}\` archived`,
       },
     })
   }
@@ -221,15 +221,15 @@ export async function runArchive(input: ArchiveInput): Promise<void> {
 }
 
 export async function runUnarchive(input: ArchiveInput): Promise<void> {
-  const { runDir, projectRoot } = await resolveExperiment(input, input.experimentId)
-  const result = await unarchiveExperiment(runDir)
+  const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
+  const result = await unarchiveRun(runDir)
   if (!result.noop) {
     await appendJournalEvent({
       path: join(projectRoot, 'docs', 'journal.md'),
       event: {
         timestamp: nowIso(),
         tag: 'NOTE',
-        body: `\`${input.experimentId}\` unarchived`,
+        body: `\`${input.runId}\` unarchived`,
       },
     })
   }
