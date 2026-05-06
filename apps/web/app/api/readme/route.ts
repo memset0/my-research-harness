@@ -18,6 +18,7 @@ import {
   appendJournalEvent,
   parseReadme,
   readRunDir,
+  reserializeReadme,
   type Status,
 } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
@@ -116,13 +117,21 @@ export async function PUT(req: NextRequest) {
     // Compare prev vs new status to know whether to emit a JOURNAL event
     const prevContent = await fs.readFile(safePath, 'utf8')
     const prevStatus = parseReadme(prevContent).frontMatter.status
-    const nextStatus = parseReadme(body.content).frontMatter.status
+    const nextParsed = parseReadme(body.content)
+    const nextStatus = nextParsed.frontMatter.status
+    // Server bumps updated_at and re-serializes for canonical format,
+    // matching the new /api/runs/:id/readme + /api/experiments/:id/readme
+    // contract (task 12.1+12.2). Clients consume `finalContent` from the
+    // response to re-baseline the editor buffer.
+    nextParsed.frontMatter.updatedAt = nowIso()
+    const finalContent = reserializeReadme(nextParsed)
 
     // Atomic write: temp file → rename
     const tmpPath = join(dirname(safePath), `.${Date.now()}.${Math.random().toString(36).slice(2)}.readme.tmp`)
-    await fs.writeFile(tmpPath, body.content, 'utf8')
+    await fs.writeFile(tmpPath, finalContent, 'utf8')
     await fs.rename(tmpPath, safePath)
     const newStat = await fs.stat(safePath)
+    const finalHash = sha1(finalContent)
 
     // Update index in-memory
     const expDir = dirname(safePath)
@@ -142,7 +151,7 @@ export async function PUT(req: NextRequest) {
 
       // Emit [STATUS] event when status changed
       if (prevStatus !== nextStatus) {
-        const expId = parseReadme(body.content).frontMatter.id
+        const expId = nextParsed.frontMatter.id
         await appendJournalEvent({
           path: join(owningProject.root, 'docs', 'journal.md'),
           event: {
@@ -154,7 +163,7 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ mtime: newStat.mtimeMs })
+    return NextResponse.json({ mtime: newStat.mtimeMs, hash: finalHash, finalContent })
   } catch (err) {
     return NextResponse.json(
       { error: { message: (err as Error).message } },

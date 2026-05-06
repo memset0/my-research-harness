@@ -14,6 +14,7 @@ import {
   discoverExperiments,
   EXPERIMENT_FILENAME_REGEX,
   nextExperimentId,
+  parseExperimentReadme,
   parseReadme,
   readExperimentDoc,
   readRunDir,
@@ -123,6 +124,14 @@ export interface WriteReadmeInput {
 export interface WriteReadmeResult {
   mtime: number
   hash: string
+  /**
+   * The actual on-disk content after the write. May differ from the request
+   * `content` because the server bumps `updated_at` to `now` (and re-serializes
+   * via the canonical pretty-printer) before persisting. Clients should use
+   * this as the new editor baseline so the buffer matches disk exactly and
+   * dirty-state clears.
+   */
+  finalContent: string
 }
 
 export async function writeExperimentReadme(
@@ -137,9 +146,19 @@ export async function writeExperimentReadme(
   const owning = projectFromExp(rt, exp)
   const safePath = safe(exp.path, rt)
   await readWithLock(safePath, input.expectedMtime, input.expectedHash)
-  await atomicWrite(safePath, input.content)
+  // Server bumps updated_at and re-serializes through the canonical
+  // pretty-printer so on-disk format is invariant of the client buffer
+  // formatting. parseExperimentReadme is tolerant of formatting drift.
+  const parsed = parseExperimentReadme(input.content, expId)
+  parsed.frontMatter.updatedAt = nowIso()
+  const finalContent = serializeExperimentReadme({
+    frontMatter: parsed.frontMatter,
+    sections: parsed.sections,
+    warningsRaw: parsed.warningsRaw,
+  })
+  await atomicWrite(safePath, finalContent)
   const stat = await fs.stat(safePath)
-  const hash = createHash('sha1').update(input.content).digest('hex')
+  const hash = createHash('sha1').update(finalContent).digest('hex')
   await appendJournalEvent({
     path: join(owning.root, 'docs', 'journal.md'),
     event: {
@@ -148,7 +167,6 @@ export async function writeExperimentReadme(
       body: `\`${expId}\` op=edit`,
     },
   })
-  // Best-effort index refresh (the doc on disk has changed).
   try {
     const updated = await readExperimentDoc(owning.root, owning.name, expId)
     if (updated) {
@@ -159,7 +177,7 @@ export async function writeExperimentReadme(
   } catch {
     // The write succeeded; we just couldn't refresh the index.
   }
-  return { mtime: stat.mtimeMs, hash }
+  return { mtime: stat.mtimeMs, hash, finalContent }
 }
 
 // ---------- 9.6: PUT run readme ----------
@@ -184,9 +202,12 @@ export async function writeRunReadme(
   const prevStatus = parseReadme(lock.content).frontMatter.status
   const nextParsed = parseReadme(input.content)
   const nextStatus = nextParsed.frontMatter.status
-  await atomicWrite(readmePath, input.content)
+  // Server bumps updated_at + re-serializes for canonical on-disk format.
+  nextParsed.frontMatter.updatedAt = nowIso()
+  const finalContent = reserializeReadme(nextParsed)
+  await atomicWrite(readmePath, finalContent)
   const stat = await fs.stat(readmePath)
-  const hash = createHash('sha1').update(input.content).digest('hex')
+  const hash = createHash('sha1').update(finalContent).digest('hex')
   if (prevStatus !== nextStatus) {
     await appendJournalEvent({
       path: join(owning.root, 'docs', 'journal.md'),
@@ -197,7 +218,6 @@ export async function writeRunReadme(
       },
     })
   }
-  // Best-effort index refresh.
   try {
     const updated = await readRunDir(safeDir, owning.name)
     rt.index.set(updated)
@@ -205,7 +225,7 @@ export async function writeRunReadme(
   } catch {
     // The write succeeded; we just couldn't refresh the index.
   }
-  return { mtime: stat.mtimeMs, hash }
+  return { mtime: stat.mtimeMs, hash, finalContent }
 }
 
 // ---------- 9.8: POST /api/experiments ----------

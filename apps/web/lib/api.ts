@@ -188,6 +188,13 @@ export async function appendJournalEvent(input: {
 
 export interface PutReadmeResponse {
   mtime: number
+  hash?: string
+  /**
+   * The canonical on-disk content after the server bumped `updated_at`
+   * and re-serialized via the pretty-printer. Editors should rebaseline
+   * their buffer to this exact string so dirty-state clears.
+   */
+  finalContent?: string
 }
 export interface PutReadmeConflict {
   error: { code: 'CONFLICT'; message: string }
@@ -204,6 +211,92 @@ export interface FetchedReadme {
 
 export async function fetchReadme(path: string): Promise<FetchedReadme> {
   return jsonFetch(`/api/readme?path=${encodeURIComponent(path)}`)
+}
+
+/**
+ * Fetch a v3 experiment doc README by id. Returned shape matches
+ * `FetchedReadme` so the editor's load handler stays uniform across modes.
+ */
+export async function fetchExpDocReadme(id: string): Promise<FetchedReadme> {
+  // The exp-doc detail endpoint (`/api/experiments/:id`) returns parsed
+  // sections + frontMatter; we want the raw markdown for editing. The
+  // simplest server-side route for raw read is GET /api/readme?path=…,
+  // and we can derive the absolute path from the detail response. To
+  // avoid the round-trip, the GET on /api/experiments/:id/readme could
+  // be added later; for now reuse the detail endpoint to learn the path
+  // and then GET /api/readme.
+  const detail = await jsonFetch<{ path: string; mtime: number }>(
+    `/api/experiments/${encodeURIComponent(id)}`,
+  )
+  return fetchReadme(detail.path)
+}
+
+export async function putExpDocReadme(input: {
+  id: string
+  content: string
+  expectedMtime: number
+  expectedHash?: string
+}): Promise<PutReadmeResponse | PutReadmeConflict> {
+  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/readme`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: input.content,
+      expectedMtime: input.expectedMtime,
+      expectedHash: input.expectedHash,
+    }),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PutReadmeResponse
+}
+
+export async function putRunReadme(input: {
+  id: string
+  content: string
+  expectedMtime: number
+  expectedHash?: string
+}): Promise<PutReadmeResponse | PutReadmeConflict> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/readme`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: input.content,
+      expectedMtime: input.expectedMtime,
+      expectedHash: input.expectedHash,
+    }),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PutReadmeResponse
+}
+
+export interface OpenClaudeCodeResult {
+  command: string
+  cwd: string
+  hint: string
+}
+
+/**
+ * Returns a copy-paste command that opens Claude Code in the given target's
+ * working directory. The web layer does NOT spawn a process — it returns
+ * what the user should run locally (mirrors the `AskClaudeCode` pattern).
+ *
+ * For `kind: 'exp'`, cwd defaults to the project root. For `kind: 'run'`,
+ * cwd is the run directory.
+ */
+export async function openClaudeCode(input: {
+  kind: 'exp' | 'run'
+  id: string
+  projectName: string
+}): Promise<OpenClaudeCodeResult> {
+  return jsonFetch('/api/open-claude-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
 }
 
 export async function putReadme(input: {

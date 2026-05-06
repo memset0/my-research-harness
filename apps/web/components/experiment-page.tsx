@@ -24,6 +24,8 @@ import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { StatusPill } from './status-pill'
 import { Markdown } from './markdown'
+import { EditMarkdownButton } from './edit-markdown-button'
+import { OpenClaudeCodeButton } from './open-claude-code-button'
 
 interface Props {
   project: string
@@ -68,6 +70,10 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             ))}
           </div>
         )}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
+          <OpenClaudeCodeButton kind="exp" id={exp.id} projectName={project} />
+        </div>
       </header>
 
       {/* Runs first — it's the most actionable info for the user opening
@@ -227,6 +233,10 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
 
   return (
     <div className="flex flex-col gap-3 border-t p-3">
+      <div className="flex flex-wrap gap-2">
+        <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
+        <OpenClaudeCodeButton kind="run" id={runId} projectName={project} />
+      </div>
       <div className="text-xs">
         <span className="text-muted-foreground">command:</span>{' '}
         <code className="rounded bg-muted px-1 font-mono">{run.frontMatter.command}</code>

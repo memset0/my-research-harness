@@ -4,7 +4,15 @@ import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { fetchReadme, putReadme, type PutReadmeConflict } from '../lib/api'
+import {
+  fetchExpDocReadme,
+  fetchReadme,
+  putExpDocReadme,
+  putReadme,
+  putRunReadme,
+  type PutReadmeConflict,
+  type PutReadmeResponse,
+} from '../lib/api'
 import { readPlainPref, writePlainPref } from '../lib/readme-editor-prefs'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
@@ -35,6 +43,18 @@ type Phase = 'loading' | 'recovery-prompt' | 'editing' | 'saving' | 'conflict' |
 
 export type ContainerKind = 'dialog' | 'panel'
 
+/**
+ * v3 id-addressed target. When present, the editor calls the new
+ * `/api/{experiments,runs}/:id/readme` endpoints (which take ids, not raw
+ * paths) and uses kind-prefixed draft keys (`memon:draft:exp:<id>:<mtime>`)
+ * to avoid collisions with the legacy path-based draft store. When absent,
+ * the editor falls back to the legacy `path`-addressed flow against
+ * `/api/readme` (for back-compat with the v2 callsites and existing tests).
+ */
+export type EditorTarget =
+  | { kind: 'exp'; id: string }
+  | { kind: 'run'; id: string }
+
 export interface ReadmeEditorBodyProps {
   path: string
   runId: string
@@ -42,6 +62,8 @@ export interface ReadmeEditorBodyProps {
   containerKind: ContainerKind
   /** Slot for the panel collapse / close buttons; rendered at the right end of the toolbar. */
   toolbarTrailing?: React.ReactNode
+  /** v3 id-addressed target; see EditorTarget docs. Optional for back-compat. */
+  target?: EditorTarget
 }
 
 export function ReadmeEditorBody({
@@ -50,6 +72,7 @@ export function ReadmeEditorBody({
   onClose,
   containerKind,
   toolbarTrailing,
+  target,
 }: ReadmeEditorBodyProps) {
   const queryClient = useQueryClient()
   const [phase, setPhase] = useState<Phase>('loading')
@@ -69,7 +92,49 @@ export function ReadmeEditorBody({
   }, [])
   const plainTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
-  const draftKey = useCallback((mtime: number) => `${DRAFT_PREFIX}${path}:${mtime}`, [path])
+  // Disambiguated draft key when the caller provided a v3 target — keeps
+  // exp-doc and run-README drafts in separate localStorage namespaces even
+  // when the underlying file path collides (e.g. `/abs/.../README.md`).
+  const draftKey = useCallback(
+    (mtime: number) =>
+      target
+        ? `${DRAFT_PREFIX}${target.kind}:${target.id}:${mtime}`
+        : `${DRAFT_PREFIX}${path}:${mtime}`,
+    [path, target],
+  )
+
+  const loadFromDisk = useCallback(async () => {
+    if (target?.kind === 'exp') return fetchExpDocReadme(target.id)
+    // Legacy path-based load for run + v2 callers.
+    return fetchReadme(path)
+  }, [path, target])
+
+  const saveToDisk = useCallback(
+    async (
+      currentContent: string,
+      expectedMtime: number,
+      expectedHash?: string,
+    ) => {
+      if (target?.kind === 'exp') {
+        return putExpDocReadme({
+          id: target.id,
+          content: currentContent,
+          expectedMtime,
+          expectedHash,
+        })
+      }
+      if (target?.kind === 'run') {
+        return putRunReadme({
+          id: target.id,
+          content: currentContent,
+          expectedMtime,
+          expectedHash,
+        })
+      }
+      return putReadme({ path, content: currentContent, expectedMtime, expectedHash })
+    },
+    [path, target],
+  )
 
   const setPlain = useCallback((v: boolean) => {
     setPlainState(v)
@@ -82,12 +147,12 @@ export function ReadmeEditorBody({
     async function load() {
       cleanupStaleDrafts()
       try {
-        const r = await fetchReadme(path)
+        const r = await loadFromDisk()
         if (cancelled) return
         setDiskContent(r.content)
         setDiskMtime(r.mtime)
         setDiskHash(r.hash)
-        const key = `${DRAFT_PREFIX}${path}:${r.mtime}`
+        const key = draftKey(r.mtime)
         const draft = readDraft(key)
         if (
           draft &&
@@ -111,7 +176,7 @@ export function ReadmeEditorBody({
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [loadFromDisk, draftKey])
 
   // Debounced autosave
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -136,24 +201,24 @@ export function ReadmeEditorBody({
     if (diskMtime === null) return
     setPhase('saving')
     try {
-      const res = await putReadme({
-        path,
-        content,
-        expectedMtime: diskMtime,
-        expectedHash: diskHash ?? undefined,
-      })
+      const res = await saveToDisk(content, diskMtime, diskHash ?? undefined)
       if ('error' in res && res.error?.code === 'CONFLICT') {
         setConflict(res)
         setPhase('conflict')
       } else if ('mtime' in res) {
-        toast.success(`Saved · mtime ${new Date(res.mtime).toLocaleTimeString()}`)
+        const ok = res as PutReadmeResponse
+        toast.success(`Saved · mtime ${new Date(ok.mtime).toLocaleTimeString()}`)
         safeRemove(draftKey(diskMtime))
         queryClient.invalidateQueries({ queryKey: ['experiment', runId] })
         queryClient.invalidateQueries({ queryKey: ['experiments'] })
-        // Refresh the in-memory baseline so dirty state clears.
-        setDiskContent(content)
-        setDiskMtime(res.mtime)
-        setDiskHash(null)
+        // Server returns the canonical `finalContent` (post-bump,
+        // post-pretty-print). Adopt it as both buffer + baseline so the
+        // editor's notion of "disk" matches what's actually on disk.
+        const newContent = ok.finalContent ?? content
+        setContent(newContent)
+        setDiskContent(newContent)
+        setDiskMtime(ok.mtime)
+        setDiskHash(ok.hash ?? null)
         if (containerKind === 'dialog') {
           onClose()
         } else {
@@ -172,22 +237,21 @@ export function ReadmeEditorBody({
     if (!conflict) return
     setPhase('saving')
     try {
-      const res = await putReadme({
-        path,
-        content,
-        expectedMtime: conflict.mtime,
-      })
+      const res = await saveToDisk(content, conflict.mtime)
       if ('error' in res && res.error?.code === 'CONFLICT') {
         setConflict(res)
         setPhase('conflict')
       } else if ('mtime' in res) {
+        const ok = res as PutReadmeResponse
         toast.success('Saved (overwrote conflicting changes)')
         if (diskMtime !== null) safeRemove(draftKey(diskMtime))
         queryClient.invalidateQueries({ queryKey: ['experiment', runId] })
         queryClient.invalidateQueries({ queryKey: ['experiments'] })
-        setDiskContent(content)
-        setDiskMtime(res.mtime)
-        setDiskHash(null)
+        const newContent = ok.finalContent ?? content
+        setContent(newContent)
+        setDiskContent(newContent)
+        setDiskMtime(ok.mtime)
+        setDiskHash(ok.hash ?? null)
         setConflict(null)
         if (containerKind === 'dialog') {
           onClose()
@@ -368,10 +432,12 @@ export function ReadmeEditor({
   path,
   runId,
   onClose,
+  target,
 }: {
   path: string
   runId: string
   onClose: () => void
+  target?: EditorTarget
 }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -387,6 +453,7 @@ export function ReadmeEditor({
             runId={runId}
             onClose={onClose}
             containerKind="dialog"
+            target={target}
           />
         </div>
       </DialogContent>
