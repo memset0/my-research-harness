@@ -14,17 +14,18 @@
 
 | ID | Statement | Status | Experiments |
 | :-: | --- | :-: | --- |
-| H0001 | DDIM @ 50 steps matches DDPM @ 1000 steps on FID for SD-1.5 | ✅ | exp1-260501-090000 |
-| H0002 | CFG scale > 7.5 reduces sample diversity (LPIPS) non-linearly | 🟡 | exp2-260502-090000 |
-| H0003 | nsight profile shows VAE decoder dominates inference tail | 🔵 | exp3-260503-100000 |
-| H0004 | rescale-CFG (Lin et al.) eliminates over-saturation at scale ≥ 12 | ⚪ | cfg-rescale-260503-130000 |
+| H0001 | DDIM @ 50 steps matches DDPM @ 1000 steps on FID for SD-1.5 | ✅ | E0001-sampler-equivalence |
+| H0002 | CFG scale > 7.5 reduces sample diversity (LPIPS) non-linearly | 🟡 | E0002-cfg-diversity-decay |
+| H0003 | nsight profile shows VAE decoder dominates inference tail | 🔵 | E0004-vae-decoder-profile |
+| H0004 | rescale-CFG (Lin et al.) eliminates over-saturation at scale ≥ 12 | ⚪ | E0003-rescale-cfg |
 
 ## H0001. ddim-50-matches-ddpm-1000
 
 - **Statement**: DDIM with 50 sampling steps reaches the same FID as DDPM with 1000 sampling steps on SD-1.5 (within ±0.1 FID), at the same CFG scale
 - **Origin**: methodology baseline; needed as a reference before exploring fewer-step samplers
 - **Status**: ✅ CONFIRMED
-- **Experiments**: exp1-260501-090000
+- **Experiments**: E0001-sampler-equivalence
+- **Runs**: sampler-equivalence-baseline-260501-090000, sampler-equivalence-dpmpp-260502-130000
 - **Evidence**:
   - DDIM-50 FID = 12.48 ± 0.07 (10 reruns)
   - DDPM-1000 FID = 12.51 ± 0.05 (3 reruns; DDPM is expensive)
@@ -39,7 +40,8 @@
 - **Statement**: pairwise LPIPS distance over 4 samples per prompt drops faster than linearly as CFG scale exceeds 7.5
 - **Origin**: anecdotal observation that high-CFG outputs look "samey"
 - **Status**: 🟡 PARTIAL
-- **Experiments**: exp2-260502-090000
+- **Experiments**: E0002-cfg-diversity-decay
+- **Runs**: cfg-diversity-decay-260502-090000
 - **Evidence**:
   - mean pairwise LPIPS at CFG=4.5: 0.41
   - mean pairwise LPIPS at CFG=7.5: 0.38 (-7%)
@@ -55,7 +57,8 @@
 - **Statement**: in single-image SD-1.5 inference, the VAE decoder accounts for ≥ 40% of wall time at p99 (and is the dominant contributor to the tail)
 - **Origin**: derived from H0002's tail-latency observations
 - **Status**: 🔵 OPEN
-- **Experiments**: exp3-260503-100000
+- **Experiments**: E0004-vae-decoder-profile
+- **Runs**: vae-decoder-profile-260503-100000
 - **Evidence**:
   - profile run failed (SIGSEGV under nsight); no trace captured yet
 - **Caveats**:
@@ -68,9 +71,10 @@
 - **Statement**: rescale-CFG (Lin et al. 2024) with phi=0.7 brings high-CFG (scale=12) outputs back into the saturation envelope of low-CFG (scale=4.5) without losing prompt adherence
 - **Statement**: CLIP-T similarity preserved within 1%; saturation metric (V-channel mean of HSV) drops back to baseline range
 - **Origin**: design proposal motivated by H0002's diversity finding and the
-  composition-loss observation in project-a (zero-snr-260502-110000)
+  composition-loss observation in project-a (zero-snr-eval-260502-110000)
 - **Status**: ⚪ DEFERRED
-- **Experiments**: cfg-rescale-260503-130000 (in flight, treated as a probe rather than a confirmation run)
+- **Experiments**: E0003-rescale-cfg
+- **Runs**: cfg-rescale-260503-130000
 - **Evidence**:
   - none yet from this project; project-a context suggests it may help
 - **Caveats**:

@@ -1,9 +1,10 @@
 ---
-id: exp2-260502-090000
-name: exp2
-project: project-b
+id: cfg-diversity-decay-260502-090000
+name: cfg-diversity-decay
+experiment: E0002-cfg-diversity-decay
 status: FINISHED
 created_at: 2026-05-02T09:00:00+08:00
+updated_at: 2026-05-02T09:00:00+08:00
 finished_at: 2026-05-02T17:00:00+08:00
 host: bench-01
 pid: 9012
@@ -11,13 +12,7 @@ gpus: [0]
 entry: ./run.sh
 command: bash run.sh --workload=cfg_sweep --cfg=4.5,7.5,10,12 --samples_per_prompt=4
 wandb: null
-hypotheses: [H0002]
-tags: [cfg-sweep, lpips, diversity]
 ---
-
-## Motivation
-
-Measure how sample diversity (pairwise LPIPS) decays with CFG scale (H0002).
 
 ## Setup
 
@@ -26,11 +21,6 @@ Measure how sample diversity (pairwise LPIPS) decays with CFG scale (H0002).
 - 4 samples per prompt per CFG
 - CFG ∈ {4.5, 7.5, 10, 12}
 - different seed per (prompt, sample); same prompt set across CFG
-
-## Method
-
-For each prompt and CFG, compute pairwise LPIPS over the 4 samples
-(C(4,2)=6 pairs), then average. Report mean and p99 across prompts.
 
 ## Result
 
@@ -43,18 +33,6 @@ For each prompt and CFG, compute pairwise LPIPS over the 4 samples
 
 - non-linearity is clear past CFG=7.5
 - p99 collapses faster than mean (tail of "stuck" prompts)
-
-## Conclusion
-
-H0002 🟡 PARTIAL. The non-linear drop is real but only 4 CFG points sampled;
-need to fill in {6, 8, 9, 11} to characterize the curve shape, and add
-a non-LPIPS diversity metric (FID-coverage) to cross-check.
-
-## Caveats
-
-- only PartiPrompts-1k; LAION-art prompts may behave differently
-- bench-01 has noisy NUMA peer — wall time numbers per-CFG not strictly
-  comparable
 
 ## Artifacts
 
