@@ -80,16 +80,18 @@ into one command.
   [--note <n>] [--expected-mtime <ms>] [--expected-hash <sha1>]`** —
   convenience that resolves the run's parent exp doc id and
   dispatches to `memon experiment warning add <exp> --run <run> ...`.
-  Refuses with `BAD_STATE` (exit 9) when the run is orphan
-  (`frontMatter.experiment` is null/empty), prompting the user to
-  bind it via `memon experiment link` first. Same exit codes /
-  output shape as the underlying `experiment warning add`.
+  Refuses with error code `BAD_STATE` (exit 1, matching
+  `memon run rename`'s precedent for consistency-broken state)
+  when the run is orphan (`frontMatter.experiment` is null/empty),
+  prompting the user to bind it via `memon experiment link`
+  first. Output shape on success is identical to the underlying
+  `experiment warning add`.
 
 - **`memon run resolve-exp <run-dir-or-id>`** — prints the parent
   exp doc id to stdout (one line, no JSON). Exits 0 when bound; 4
-  (`NOT_FOUND`) when the run dir doesn't exist; 9 (`ORPHAN_RUN`)
-  when the run is unbound. Lets shell scripts do `EXP=$(memon run
-  resolve-exp $RUN)` cleanly.
+  (`NOT_FOUND`) when the run dir doesn't exist; 1 (`BAD_STATE`,
+  with stderr-prefixed `ORPHAN_RUN`) when the run is unbound.
+  Lets shell scripts do `EXP=$(memon run resolve-exp $RUN)` cleanly.
 
 - **No** `memon experiment script add` — per the user's design
   decision, scripts live in the exp doc's `## Method` body, not in

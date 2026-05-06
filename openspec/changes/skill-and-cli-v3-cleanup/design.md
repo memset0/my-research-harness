@@ -98,10 +98,11 @@ has to make.
 
 ### D2 — `memon run warning add` refuses on orphan runs
 
-**Decision** (per user pick): a `BAD_STATE` (exit 9) when the run's
-`frontMatter.experiment` is null/empty/absent. Stderr explains:
-"run is orphan; bind it to an experiment via `memon experiment
-link` first, then retry."
+**Decision** (per user pick): error code `BAD_STATE` (exit 1,
+matching `memon run rename`'s precedent for consistency-broken
+state) when the run's `frontMatter.experiment` is null/empty/absent.
+Stderr explains: "ORPHAN_RUN: run is orphan; bind it to an
+experiment via `memon experiment link` first, then retry."
 
 **Rationale**: warnings are fundamentally exp-level — they're about
 "what does the user need to adjudicate about THIS investigation."

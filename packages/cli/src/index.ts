@@ -31,6 +31,8 @@ import {
   runExperimentUnlink,
 } from './commands/experiment-doc.js'
 import { runRunRename } from './commands/run-rename.js'
+import { runResolveExp } from './commands/run-resolve-exp.js'
+import { runRunWarningAdd } from './commands/run-warning.js'
 import {
   runWarningAdd,
   runWarningDelete,
@@ -471,6 +473,48 @@ run
     const g = readGlobals()
     await runRunRename({ ...g, runIdOrDir, newSlug })
   })
+
+run
+  .command('resolve-exp <id-or-dir>')
+  .description(
+    "print the parent exp doc id for a run; exit 1 (BAD_STATE) on orphan, exit 4 (NOT_FOUND) on unknown",
+  )
+  .action(async (runIdOrDir: string) => {
+    const g = readGlobals()
+    await runResolveExp({ ...g, runIdOrDir })
+  })
+
+const runWarning = run.command('warning').description('run-side warning operations')
+runWarning
+  .command('add <id-or-dir>')
+  .description(
+    'resolve the run\'s parent exp + dispatch to `experiment warning add <exp> --run <run>`; refuses orphan runs',
+  )
+  .requiredOption('--category <cat>', 'methodology|result|config|data|repro|compare|infra|other')
+  .requiredOption('--message <text>', 'free-text description of the warning')
+  .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
+  .option('--expected-hash <sha1>', 'optional content sha1 lock')
+  .action(
+    async (
+      runIdOrDir: string,
+      opts: {
+        category: string
+        message: string
+        expectedMtime?: number
+        expectedHash?: string
+      },
+    ) => {
+      const g = readGlobals()
+      await runRunWarningAdd({
+        ...g,
+        runIdOrDir,
+        category: opts.category,
+        message: opts.message,
+        expectedMtime: opts.expectedMtime,
+        expectedHash: opts.expectedHash,
+      })
+    },
+  )
 
 run
   .command('archive <id>')

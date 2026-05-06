@@ -11,9 +11,11 @@ The CLI SHALL expose `memon run warning add <run-dir-or-id>
    run dir basename or the `id` field; same resolution as other
    run-side commands).
 2. Read the run's `frontMatter.experiment` field.
-3. If the field is null/empty, exit `BAD_STATE` (exit 9) with
-   stderr message naming `memon experiment link` as the unblock
-   command.
+3. If the field is null/empty, exit with error code `BAD_STATE`
+   (resolves to exit 1 — `BAD_STATE` is the same code
+   `memon run rename` uses for its own consistency-broken paths)
+   and stderr message naming `memon experiment link` as the
+   unblock command.
 4. Otherwise dispatch internally to the same code path as
    `memon experiment warning add <exp> --run <run-dir>
    --category ... --message ...`. The output (stdout JSON +
@@ -39,9 +41,9 @@ orphan run cannot host one.
 - **GIVEN** a run `bar-260501-100000` with no `experiment:` field
 - **WHEN** the user runs `memon run warning add bar-260501-100000
   --project-root . --category result --message "..."`
-- **THEN** the command exits 9 (`BAD_STATE`), no filesystem write
-  happens, and stderr names `memon experiment link` as the
-  unblock command
+- **THEN** the command exits with error code `BAD_STATE` (exit
+  status 1), no filesystem write happens, and stderr names
+  `memon experiment link` as the unblock command
 
 #### Scenario: Unknown run id is rejected
 - **WHEN** the user runs `memon run warning add nonexistent
@@ -56,8 +58,10 @@ exp doc id to stdout as a single line (no JSON wrapper, no
 trailing whitespace beyond a final newline). The command SHALL:
 
 - Exit 0 with the exp id on stdout when the run is bound.
-- Exit 9 (`ORPHAN_RUN`) with no stdout output and a stderr
-  message when the run exists but has no `experiment:` field.
+- Exit with `BAD_STATE` error code (exit status 1) and no stdout
+  when the run exists but has no `experiment:` field; stderr
+  carries the `ORPHAN_RUN`-prefixed message naming
+  `memon experiment link` as the unblock command.
 - Exit 4 (`NOT_FOUND`) with no stdout output and a stderr
   message when the run dir does not exist under the project
   root.
@@ -72,12 +76,13 @@ default JSON) so shell scripts can use the result inline:
   --project-root .`
 - **THEN** stdout is exactly `E0001-foo\n`; exit code 0
 
-#### Scenario: Orphan run exits 9 with empty stdout
+#### Scenario: Orphan run exits BAD_STATE with empty stdout
 - **GIVEN** a run `bar-260501-100000` with no `experiment:` field
 - **WHEN** the user runs `memon run resolve-exp bar-260501-100000
   --project-root .`
-- **THEN** stdout is empty; stderr names the orphan condition;
-  exit code is 9
+- **THEN** stdout is empty; stderr names the orphan condition with
+  `ORPHAN_RUN` and references `memon experiment link`; exit code
+  is 1 (`BAD_STATE`)
 
 #### Scenario: Unknown run exits 4
 - **WHEN** the user runs `memon run resolve-exp nonexistent

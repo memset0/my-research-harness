@@ -66,6 +66,7 @@ describe('formatHypothesisTable', () => {
     origin: '',
     status: 'CONFIRMED',
     experiments: [],
+    runs: [],
     evidence: [],
     caveats: [],
     lastVerified: null,

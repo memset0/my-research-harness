@@ -5,29 +5,29 @@ CLI changes should land before the skill rewrites that consume them.
 
 ## 1. CLI shortcuts (memon-cli additions)
 
-- [ ] 1.1 Create `packages/cli/src/commands/run-resolve-exp.ts`
+- [x] 1.1 Created `packages/cli/src/commands/run-resolve-exp.ts`
       exporting `runResolveExp(input: { projectRoot?, cwd, runIdOrDir })`
       that calls `scanProjectRoot` to locate the run, returns exit
-      4 if not found, exit 9 + stderr if `frontMatter.experiment`
+      4 if not found, exit 1 (BAD_STATE) + stderr if `frontMatter.experiment`
       is null/empty, otherwise prints the exp id + newline to
       stdout, exit 0.
-- [ ] 1.2 Create `packages/cli/src/commands/run-warning.ts` exporting
+- [x] 1.2 Created `packages/cli/src/commands/run-warning.ts` exporting
       `runWarningAddViaRun(input: { projectRoot?, cwd, runIdOrDir,
       category, message, note?, expectedMtime?, expectedHash? })`
-      that resolves the run, returns exit 9 (`BAD_STATE`) on orphan
+      that resolves the run, returns exit 1 (BAD_STATE) (`BAD_STATE`) on orphan
       with the link-instruction stderr message, otherwise dispatches
       to the existing `runWarningAdd` from `commands/warning.ts`
       with `runId = exp_id` and `run = run_dir_basename`. Output JSON
       + journal event SHALL be byte-identical to the long-form call.
-- [ ] 1.3 Wire into `packages/cli/src/index.ts` under the existing
+- [x] 1.3 Wired into `packages/cli/src/index.ts` under the existing
       `run` subcommand group (`run.command('warning add ...')` and
       `run.command('resolve-exp ...')`).
-- [ ] 1.4 Add `packages/cli/src/commands/run-resolve-exp.test.ts`
+- [x] 1.4 Added `packages/cli/src/commands/run-resolve-exp.test.ts`
       with three scenarios (bound run prints exp id; orphan exits
       9; unknown exits 4).
-- [ ] 1.5 Add `packages/cli/src/commands/run-warning.test.ts` with
+- [x] 1.5 Added `packages/cli/src/commands/run-warning.test.ts` with
       three scenarios mirroring the spec.
-- [ ] 1.6 Verify: `pnpm --filter @memon/cli test` clean.
+- [x] 1.6 Verified: `pnpm --filter @memon/cli test` 8 files / 62 passed.
 
 ## 2. Skill rewrites
 
@@ -91,6 +91,6 @@ CLI changes should land before the skill rewrites that consume them.
       matches if the skill has no legacy guidance).
 - [ ] 3.5 Live CLI smoke: `memon run resolve-exp <bound-run>
       --project-root mock/project-a` returns exp id; same on a
-      known orphan returns exit 9.
+      known orphan returns exit 1 (BAD_STATE).
 - [ ] 3.6 `openspec validate skill-and-cli-v3-cleanup --type change`
       clean.
