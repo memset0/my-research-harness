@@ -34,19 +34,53 @@ The `config.example.yml` ships pointing at `mock/project-a` and
 
 ## File formats memon expects
 
-memon discovers experiment directories by **base-name regex**
-`^.+-\d{6}-\d{6}$` (e.g. `foo-260503-082800` = May 3 2026 at 08:28:00 local).
-The parent directory name is irrelevant — `logs/`, `runs/`, anywhere works.
+As of `FS_CONVENTION_VERSION === 3`, memon distinguishes two units:
 
-### Per-experiment `README.md`
+- **Experiment** (canonical): `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md`
+  — the long-lived motivation / method / conclusion / caveats / warnings
+  doc. One per investigation; can have many member runs.
+- **Run**: a directory matching base-name regex `^.+-\d{6}-\d{6}$` (e.g.
+  `foo-260503-082800`). Owns the per-attempt setup / result / artifacts.
+  The parent directory name is irrelevant — `logs/`, `runs/`, anywhere works.
+
+The two are bidirectionally bound: each run's frontmatter has
+`experiment: E<NNNN>-<slug>` (or `null` when unbound), and each experiment
+doc has a `runs: []` list. The membership-join algorithm surfaces three
+anomaly classes (ORPHAN_RUN, PHANTOM_RUN_REF, MISMATCH_EXPERIMENT_REF)
+plus four slug-uniqueness anomalies in `memon doctor` and the web
+`/api/anomalies` endpoint when the two sides disagree.
+
+### Per-experiment doc `docs/experiments/E<NNNN>-<slug>.md`
+
+```yaml
+---
+id: E0001-fsdp-collective
+slug: fsdp-collective
+title: FSDP collective overlap study
+runs: [fsdp-collective-260503-082800, fsdp-collective-260504-141200]
+hypotheses: [H0007, H0012]
+tags: [moe, fsdp2]
+created_at: 2026-05-03T08:28:00+08:00
+updated_at: 2026-05-04T14:12:00+08:00
+---
+
+## Motivation
+## Method
+## Conclusion
+## Caveats
+## Warnings    # optional, agent-flagged anomalies awaiting human adjudication
+```
+
+### Per-run `README.md`
 
 ```yaml
 ---
 id: foo-260503-082800
 name: foo
-project: project-a
 status: PENDING | RUNNING | FINISHED | FAILED | UNKNOWN
+experiment: E0001-fsdp-collective   # parent exp doc id, or null when unbound
 created_at: 2026-05-03T08:28:00+08:00
+updated_at: 2026-05-03T08:28:00+08:00
 finished_at: null
 host: m2.cluster
 pid: 12345
@@ -54,22 +88,22 @@ gpus: [0, 1, 2, 3]
 entry: ./run.sh
 command: bash run.sh --bs=8        # full command actually invoked
 wandb: https://...                  # optional
-hypotheses: [H1, H3]                # related — no judgment
-tags: [moe, fsdp2]
 ---
 
-## Motivation
 ## Setup
-## Method
 ## Result
-## Conclusion
 ## Caveats
-## Warnings                         # optional, agent-flagged anomalies awaiting human adjudication
+## Warnings                         # optional; in v3, the canonical home is the parent exp doc
 ## Artifacts
 - `./checkpoints/` — model checkpoints
 - `./outputs/loss.csv` — per-step loss
-## New Hypotheses                   # optional, signals digest agent
 ```
+
+> **v2 → v3 note**: legacy `project:`, `hypotheses:`, `tags:` fields are
+> still parsed on read for back-compat (and `motivation`/`method`/
+> `conclusion`/`new_hypotheses` sections are still tolerated), but new
+> writes by memon never emit them — those properties live on the parent
+> experiment doc instead. See `packages/core/migrations/v2-to-v3.md`.
 
 **Warnings** is a structured, human-clearable surface where the agent
 can flag anomalies that need a human to look at — loss spikes, config
@@ -116,13 +150,22 @@ ordinary writes (`memon new`, status edits, notes) never touch it.
 
 ```
 memon serve                            # start the web dashboard on port 3737
-memon list [--project NAME]            # JSON list of experiments (default: hide archived)
+memon list [--project NAME]            # JSON list of runs (default: hide archived)
 memon show <id>                        # full README content
 memon search <query>                   # full-text search
-memon new <name>                       # scaffold a new experiment dir + README
+memon new <name>                       # scaffold a new run dir + README
 memon hypo list                        # list hypotheses
 memon hypo show <H#>                   # show one hypothesis
 memon mock seed                        # copy mock/ to mock-runtime/ (dev)
+
+# v3 experiment-doc commands (docs/experiments/E<NNNN>-<slug>.md)
+memon experiment ls                    # list exp docs
+memon experiment show <id-or-slug>     # show one exp doc
+memon experiment create <slug> [--title TXT] [--from-run <run-dir>]
+memon experiment link <exp> <run>      # bind a run to an exp (writes both sides)
+memon experiment unlink <exp> <run>    # release a run
+memon experiment delete <exp> [--force]  # cascade-unlink + delete
+memon run rename <run> <new-slug>      # rename a run (preserves timestamp suffix)
 
 # agent-shaped read commands (config-free)
 memon scan [<project-root>]            # bulk read: experiments + hypotheses + journal
