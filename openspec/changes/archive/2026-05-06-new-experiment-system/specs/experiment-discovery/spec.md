@@ -99,7 +99,7 @@ removed `project` (sub-project) field is NOT a search target in v3.
 
 ## REMOVED Requirements
 
-### Requirement: Recursive scan from configured project roots (v2)
+### Requirement: Recursive scan from configured project roots
 
 **Reason**: V2's discovery scanned the project root for "experiment
 directories" (what v3 calls runs). That run-side discovery moves to the
@@ -108,14 +108,14 @@ now describes how the **experiment doc layer** is discovered.
 
 **Migration**: No user action; the indexer code now scans both surfaces.
 
-### Requirement: Experiment directory identification by name regex (v2)
+### Requirement: Experiment directory identification by name regex
 
 **Reason**: That regex (`^.+-\d{6}-\d{6}$`) identifies runs in v3 and
 moves to `run-discovery`.
 
 **Migration**: No user action.
 
-### Requirement: Polling with exponential backoff (v2 — for run dirs)
+### Requirement: Polling with exponential backoff
 
 **Reason**: The polling schedule for run dirs moves to `run-discovery`.
 The above `### Requirement: Polling with exponential backoff for
@@ -123,7 +123,7 @@ experiment docs` is the v3 analogue for the new layer.
 
 **Migration**: No user action.
 
-### Requirement: Active-attention reset (v2 — for run dirs)
+### Requirement: Active-attention reset
 
 **Reason**: Active-attention reset for run dirs moves to
 `run-discovery`. The above `### Requirement: Active-attention reset for
@@ -131,7 +131,7 @@ experiments` is the v3 exp-side analogue.
 
 **Migration**: No user action.
 
-### Requirement: In-memory index with front-matter projection (v2)
+### Requirement: In-memory index with front-matter projection
 
 **Reason**: The in-memory index for runs moves to `run-discovery`. The
 v3 experiment index is a parallel structure; the join between them is
@@ -140,14 +140,14 @@ and run indices` above.
 
 **Migration**: No user action.
 
-### Requirement: Archived runs are skipped by default (v2)
+### Requirement: Archived runs are skipped by default
 
 **Reason**: This is a run-side concern and moves to `run-discovery`.
 Experiment docs do not have an archive concept in v3.
 
 **Migration**: No user action.
 
-### Requirement: Free-text search includes membership project and sub-project (v2)
+### Requirement: Free-text search includes membership project and sub-project
 
 **Reason**: The sub-project search target is removed entirely in v3 (the
 sub-project field on runs is gone). Search of run records still matches

@@ -158,7 +158,7 @@ For listing experiments, users SHALL use `memon experiment ls`.
   is removed in v3); the user is steered toward `tags` on the parent
   experiment doc as the v3 grouping mechanism
 
-### Requirement: `memon new <name>` creates a run scaffold
+### Requirement: `memon new <name>` creates an experiment scaffold
 
 `memon new <name>` SHALL create a new **run** directory at
 `<projectRoot>/logs/<name>-<yymmdd>-<hhmmss>/` (using current local time)
@@ -182,7 +182,7 @@ The template SHALL NOT include `project:` (sub-project) or run-level
   `hypotheses:`, no `tags:`), `run.sh` is written, and a `[CREATE]`
   event is appended to JOURNAL.md
 
-### Requirement: `memon experiment warning` subcommands (v3 form)
+### Requirement: `memon experiment warning` subcommands
 
 The CLI SHALL expose `memon experiment warning` operating on the
 **experiment doc**'s `## Warnings` section (the warnings table is now

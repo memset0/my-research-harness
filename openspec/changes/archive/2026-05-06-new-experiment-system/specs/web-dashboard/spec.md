@@ -109,7 +109,7 @@ Orphan cards SHALL be sortable by the same controls as exp cards
 - **THEN** the grid contains 5 cards total — 4 with the exp header
   style, 1 with the orphan grey-bordered header style
 
-### Requirement: Experiment detail page
+### Requirement: Experiment-doc detail page (v3)
 
 The route `/p/<project>/e/<E-id-slug>` SHALL render an experiment detail
 page with this layout:
@@ -216,7 +216,7 @@ SHALL scroll to the orphan card for that run.
 
 ## REMOVED Requirements
 
-### Requirement: Experiment list view (v2)
+### Requirement: Experiment list view
 
 **Reason**: V2's list view rendered a card-stack of run-shaped
 "experiments" with a top stripe (id + status + sub-project + created +
@@ -228,7 +228,7 @@ list level (hypothesis chips are at the exp detail page).
 **Migration**: Users will see a different visual layout. The same data
 fields are surfaced (status, times, tags) at the appropriate level.
 
-### Requirement: Stale RUNNING badge (v2)
+### Requirement: Stale RUNNING badge
 
 **Reason**: The stale-RUNNING heuristic continues to apply at the run
 level (a single member run with `status: RUNNING` whose mtime is stale).
@@ -238,7 +238,7 @@ exp card, not on the exp card header.
 **Migration**: User-visible behavior is approximately the same; the
 badge moves location but still appears.
 
-### Requirement: Experiment detail page (v2)
+### Requirement: Experiment detail page
 
 **Reason**: V2's detail page was per-run. V3 is per-experiment with run
 panels. The new contract is the `### Requirement: Experiment detail
@@ -247,7 +247,7 @@ page` above. Per-run rendering happens inside run panels.
 **Migration**: Old `/p/<project>/experiments/<run-dir>` URLs redirect
 per the new `### Requirement: URL redirects from legacy run paths`.
 
-### Requirement: Section card typography hierarchy (v2)
+### Requirement: Section card typography hierarchy
 
 **Reason**: The typography rules continue verbatim and apply to both
 the exp page's body sections and each run panel's expanded body
@@ -255,7 +255,7 @@ sections. We do not re-spec them.
 
 **Migration**: No user action.
 
-### Requirement: README inline editing with conflict-aware save (v2)
+### Requirement: README inline editing with conflict-aware save
 
 **Reason**: Replaced by the per-surface editor contracts in
 `experiment-edit` and `run-edit`. The conflict-aware save flow itself
@@ -263,14 +263,14 @@ sections. We do not re-spec them.
 
 **Migration**: No user action.
 
-### Requirement: localStorage draft and recovery prompt (v2)
+### Requirement: localStorage draft and recovery prompt
 
 **Reason**: Continues unchanged with key patterns extended to cover
 both surfaces. Implementation detail.
 
 **Migration**: No user action.
 
-### Requirement: Status edit from the detail page (v2)
+### Requirement: Status edit from the detail page
 
 **Reason**: The exp doc has no status field of its own; status is
 aggregate. Per-run status edits happen via the run panel's action bar
@@ -280,7 +280,7 @@ expose a status control.
 **Migration**: Users who relied on hand-editing experiment status
 should now edit the relevant run.
 
-### Requirement: Warnings card on the experiment detail page (v2)
+### Requirement: Warnings card on the experiment detail page
 
 **Reason**: The Warnings section is now part of the exp doc body itself
 (rendered inline as the `## Warnings` markdown table) rather than as a
@@ -289,14 +289,14 @@ delete, add) are layered on top of the inline table.
 
 **Migration**: Users see the same data; the layout is more compact.
 
-### Requirement: Interactive warning row controls (v2)
+### Requirement: Interactive warning row controls
 
 **Reason**: The interactive controls continue verbatim, layered onto
 the inline `## Warnings` table on the exp page. We do not re-spec them.
 
 **Migration**: No user action.
 
-### Requirement: Warning HTTP endpoints (v2)
+### Requirement: Warning HTTP endpoints
 
 **Reason**: Endpoints move from `/api/experiments/:id/warnings` (where
 `:id` was a run dir) to `/api/experiments/:id/warnings` (where `:id` is
@@ -306,7 +306,7 @@ the optional `run` field on POST. Spec is owned by `experiment-edit`.
 **Migration**: External clients of the v2 endpoint would break. There
 are none.
 
-### Requirement: Hypothesis view (v2)
+### Requirement: Hypothesis view
 
 **Reason**: The hypothesis page continues unchanged in scope, but cross-
 links now resolve to exp ids OR run dirs per the `hypotheses` spec
@@ -314,13 +314,13 @@ delta in this change.
 
 **Migration**: No user action.
 
-### Requirement: Journal timeline view (v2)
+### Requirement: Journal timeline view
 
 **Reason**: Continues unchanged.
 
 **Migration**: No user action.
 
-### Requirement: Log viewer integrated into experiment detail (v2)
+### Requirement: Log viewer integrated into experiment detail
 
 **Reason**: Continues unchanged but now lives inside each run panel on
 the exp page (instead of on the per-run page). User-visible behavior
@@ -328,19 +328,19 @@ is the same.
 
 **Migration**: No user action.
 
-### Requirement: Mobile-responsive layout (v2)
+### Requirement: Mobile-responsive layout
 
 **Reason**: Continues to apply.
 
 **Migration**: No user action.
 
-### Requirement: Time rendering in browser timezone (v2)
+### Requirement: Time rendering in browser timezone
 
 **Reason**: Continues to apply unchanged.
 
 **Migration**: No user action.
 
-### Requirement: Sub-project tag in experiment list (v2)
+### Requirement: Sub-project tag in experiment list
 
 **Reason**: Sub-project field is removed entirely in v3 (per
 `run-discovery` REMOVED). No badge to render.
@@ -350,19 +350,19 @@ grouping should now use experiment slugs (the exp's slug becomes the
 prefix of every member run's slug, by soft convention) and tags on
 the exp doc.
 
-### Requirement: AppBar tabs for Reports and Digests (v2)
+### Requirement: AppBar tabs for Reports and Digests
 
 **Reason**: Continues unchanged.
 
 **Migration**: No user action.
 
-### Requirement: Reports route serves the inbox shell (v2)
+### Requirement: Reports route serves the inbox shell
 
 **Reason**: Continues unchanged.
 
 **Migration**: No user action.
 
-### Requirement: Digests route serves the inbox shell with `kind="digests"` (v2)
+### Requirement: Digests route serves the inbox shell with `kind="digests"`
 
 **Reason**: Continues unchanged.
 

@@ -11,338 +11,217 @@ The dashboard SHALL display a project selector in the top navigation showing all
 - **WHEN** the user clicks a different project in the selector
 - **THEN** the URL updates with the project identifier and the views re-fetch data scoped to the new project (including the now-existing Reports and Digests views)
 
-### Requirement: Experiment list view
-
-The experiment list view SHALL render a card-stack of all experiments in the current project. Each row SHALL be a single card with two visual sections:
-
-1. **Top stripe** (a horizontal row): in left-to-right order, `ID` (monospace, with the colored status pill rendered inline immediately after the id text within the same cell), `Sub-project` (a dedicated column rendering the front-matter `project:` value as a `<Badge variant="secondary">` ONLY when that value is non-empty AND distinct from the membership project; otherwise the cell SHALL render empty so the surrounding grid columns stay aligned across rows), `Created` (timestamp, locale-rendered after hydration), and `Updated` (mtime, same rendering rule). On the `md` breakpoint or wider the columns SHALL use a 12-column grid with the allocation `id+status: 5`, `sub-project: 2`, `created: 2`, `updated: 3`.
-
-2. **Chip line** below the top stripe (rendered only when at least one chip is present): a flex-wrap row containing — in this order — every hypothesis ID as a clickable badge, then every tag as an outline badge, then a `no README` warning badge if `hasReadme` is false. The line SHALL be omitted entirely when there are no hypotheses, no tags, and `hasReadme` is true.
-
-The list SHALL support client-side sort and filter on every top-stripe column (including the new sub-project column), plus a free-text search box matching against name + tags + hypotheses + sub-project label.
-
-#### Scenario: Sort by created descending (default)
-- **WHEN** the user opens the experiment list
-- **THEN** experiments are listed by `created_at` descending by default
-
-#### Scenario: Status pill is inline with the id
-- **WHEN** the user looks at any row
-- **THEN** the experiment id is the leftmost element in the top stripe and the colored status pill renders immediately after it within the same grid cell (no separate status column)
-
-#### Scenario: Sub-project column renders divergent project as a badge
-- **GIVEN** an experiment whose `frontMatter.project` is `"sparse-fsdp"` and whose membership project is `"project-a"`
-- **WHEN** the row renders
-- **THEN** the sub-project column shows a secondary badge with `"sparse-fsdp"`
-
-#### Scenario: Sub-project column collapses for matching project
-- **GIVEN** an experiment whose `frontMatter.project` equals the membership project (or is empty)
-- **WHEN** the row renders
-- **THEN** the sub-project column is empty for that row but reserves its grid width so adjacent columns stay aligned with rows that do show a badge
-
-#### Scenario: Header row mirrors body columns
-- **WHEN** the experiment list header row renders at desktop width
-- **THEN** the column labels read, in order, `id`, `sub-project`, `created`, `updated` (no separate `status` label)
-
-#### Scenario: Chip line shows hypotheses before tags
-- **GIVEN** an experiment with `hypotheses: [H0001, H0007]` and `tags: [diffusion, zero-snr]`
-- **WHEN** the row renders
-- **THEN** in the chip line, the badges appear in the order `H0001, H0007, diffusion, zero-snr`
-
-#### Scenario: Empty chip line collapses
-- **GIVEN** an experiment with no tags, no hypotheses, and `hasReadme: true`
-- **WHEN** the row renders
-- **THEN** the row is one line tall — only the top stripe is visible, no empty chip-line element below
-
-#### Scenario: Warning chip appears at the end
-- **GIVEN** an experiment with hypotheses, tags, AND `hasReadme: false`
-- **WHEN** the row renders
-- **THEN** the chip line shows hypotheses first, then tags, then the `no README` warning badge as the right-most chip
-
-#### Scenario: Many chips wrap to additional lines
-- **GIVEN** an experiment with 12 hypothesis refs and 6 tags (sparse-fsdp-like)
-- **WHEN** the row renders at desktop width
-- **THEN** the chip line wraps into multiple lines using the full row width (no longer constrained to a `col-span-2` cell), and the top stripe (id+status / sub-project / created / updated) stays on one line above
-
-### Requirement: Stale RUNNING badge
-
-For each experiment with `status: RUNNING` whose directory `mtime` has not advanced for longer than a configurable threshold (default 1 hour), the list view SHALL display a `⚠` badge alongside the running emoji. Clicking the badge SHALL surface a tooltip with the elapsed time.
-
-#### Scenario: Stale badge shown
-- **WHEN** an experiment has `status: RUNNING` and its directory mtime is 2 hours old
-- **THEN** the row shows `🟢 ⚠` and tooltip "RUNNING but no activity for 2h 3m"
-
-#### Scenario: Recent activity removes badge
-- **WHEN** the directory mtime advances within the threshold
-- **THEN** the badge is removed on next poll
-
-### Requirement: Experiment detail page
-
-Clicking an experiment in the list SHALL open a detail page showing:
-- Front matter as a structured panel. The membership project (top-level `project`, set from `config.yml`) SHALL appear as a labeled row (e.g. "Project: sparse-fsdp"). When the front-matter `project:` is non-empty AND differs from the membership project, it SHALL appear as an additional row labeled "Sub-project: <value>"; when blank or equal, the sub-project row SHALL be omitted.
-- Other front-matter rows: id, name, status, host, pid, gpus, created/finished, command, entry, wandb link.
-- Body sections (Motivation/Setup/Method/Result/Conclusion/Caveats/Artifacts/(opt) New Hypotheses) as rendered markdown
-- A "Hypotheses" panel listing related hypotheses with their current status emoji
-- An "Artifacts" panel listing the parsed Artifacts section entries with clickable paths
-- A "Resources" placeholder panel labeled "not yet available" (hook for future GPU/disk monitoring)
-
-#### Scenario: Detail page shows sub-project when divergent
-- **GIVEN** an experiment under memon project `sparse-fsdp` whose `frontMatter.project` is `predictive-skip-validation`
-- **WHEN** the user opens its detail page
-- **THEN** the front-matter panel shows both "Project: sparse-fsdp" and "Sub-project: predictive-skip-validation" as separate rows
-
-#### Scenario: Detail page omits sub-project when equal
-- **GIVEN** an experiment under memon project `project-a` whose `frontMatter.project` is `project-a`
-- **WHEN** the user opens its detail page
-- **THEN** the front-matter panel shows only "Project: project-a" (no separate sub-project row)
-
-#### Scenario: Detail page labels project-only when sub-project absent
-- **GIVEN** an experiment under memon project `project-a` whose `frontMatter.project` is empty/absent
-- **WHEN** the user opens its detail page
-- **THEN** the front-matter panel shows "Project: project-a" with no sub-project row
-
-### Requirement: Section card typography hierarchy
-
-Within every card on the experiment detail page, the body content SHALL render at a smaller font size than the card's title, so each card has an unambiguous title-vs-content visual hierarchy. Concretely, `CardTitle` continues at `text-sm` (14px) while body content — rendered markdown for the README sections (Motivation/Setup/Method/Result/Conclusion/Caveats/New Hypotheses), the "to fill" placeholder for empty sections, and the Resources placeholder — renders at `text-xs` (12px), matching the card's own `text-xs/relaxed` default and the existing Artifacts list density.
-
-#### Scenario: Markdown body smaller than section title
-- **WHEN** a section card renders its rendered-markdown body (e.g. the `Method` section)
-- **THEN** the body paragraphs render at `text-xs` (12px), visibly smaller than the `text-sm` (14px) `Method` heading
-
-#### Scenario: Empty section placeholder smaller than section title
-- **WHEN** a section card has no body content and shows the "to fill" placeholder, OR the Resources card shows its "not yet available" placeholder
-- **THEN** the placeholder text renders at `text-xs` (12px), matching body density rather than the card title
-
-### Requirement: README inline editing with conflict-aware save
-
-The detail page SHALL provide an "Edit README" mode that opens a markdown editor prefilled with the current README content. The editor's container SHALL be responsive to viewport width:
-
-- **<1024px** (mobile + tablet): the editor opens inside a full-screen `<Dialog>` modal (preserving existing behavior).
-- **≥1024px** (desktop): the editor opens as a right-side resizable panel beside the detail page body, NOT as a `<Dialog>`. The detail body remains visible in the left column. (See `experiment-edit` spec for panel collapse/expand/resize semantics.)
-
-Saving SHALL go through `PUT /api/readme` carrying `expectedMtime` (and optional `expectedHash`) regardless of container.
-
-#### Scenario: Successful save (mobile/tablet)
-- **WHEN** the user is at viewport <1024px, edits, and saves; `expectedMtime` matches disk
-- **THEN** the `<Dialog>` closes, the rendered detail view updates, and a success toast is shown
-
-#### Scenario: Successful save (desktop)
-- **WHEN** the user is at viewport ≥1024px, edits in the side panel, and saves; `expectedMtime` matches disk
-- **THEN** the side panel remains open with cleared dirty state (does NOT auto-close — the user typically iterates), the rendered detail view updates, and a success toast is shown
-
-#### Scenario: Conflict on save
-- **WHEN** save returns 409 (in either container)
-- **THEN** the editor enters a conflict resolution view showing a diff between the user's draft and the current disk content, with three options: "Keep my changes (overwrite)", "Discard mine (use disk)", "Cancel" / "Manual merge"
-- **AND** the conflict view renders inside whichever container is active (Dialog on <1024px, side panel on ≥1024px)
-
-### Requirement: localStorage draft and recovery prompt
-
-While the editor is open, content SHALL be auto-saved to `localStorage` keyed by `<file path>:<mtime opened>`. When the user re-opens the editor for the same file:
-- If a draft exists for the still-current `mtime` → show a prompt "You have an unsaved draft from N minutes ago — Restore / Discard from disk"
-- If a draft exists but `mtime` has advanced → silently discard the draft and inform the user that disk has changed
-
-#### Scenario: Restore draft
-- **WHEN** the user clicks "Restore" on the draft prompt
-- **THEN** the editor opens with the draft content and the `expectedMtime` of when the draft was started
-
-#### Scenario: Discard outdated draft
-- **WHEN** disk mtime is newer than the draft's stored mtime
-- **THEN** no prompt is shown, the editor opens with current disk content, and the stale draft is removed
-
-### Requirement: Status edit from the detail page
-
-The detail page SHALL allow the user to change `status` directly via a control (dropdown or button group of the 5 enum values). Confirming the change SHALL invoke the same atomic README + JOURNAL write path defined in the journal spec.
-
-#### Scenario: Mark stale RUNNING as FAILED
-- **WHEN** the user opens an experiment with stale RUNNING and selects `FAILED` from the status control
-- **THEN** the README front matter `status` becomes `FAILED`, a `[STATUS]` event with `RUNNING → FAILED` is appended to JOURNAL.md, and the badge is cleared
-
-### Requirement: Warnings card on the experiment detail page
-
-The experiment detail page SHALL render a `Warnings` card after the `Caveats` card and before the `Artifacts` card. The card SHALL list every warning row from the experiment's `## Warnings` section as an interactive table, one row per warning, with columns matching the on-disk schema: status badge, created timestamp (rendered in browser timezone), category badge, message, resolved timestamp, and note.
-
-When the experiment has zero warnings (no `## Warnings` section, or the section parses but is empty), the card SHALL render an empty-state message "No warnings — add one if you noticed something the human should review" plus an "Add warning" affordance.
-
-The card SHALL surface a per-experiment count badge (e.g. "3 open / 1 resolved") in the card header, mirroring the badge pattern used elsewhere.
-
-#### Scenario: Card placement between Caveats and Artifacts
-- **WHEN** the user opens the detail page of an experiment whose README has a populated Warnings section
-- **THEN** the rendered DOM order is: Caveats card → Warnings card → Artifacts card
-
-#### Scenario: Empty state rendered when no warnings
-- **GIVEN** an experiment whose README has no `## Warnings` section
-- **WHEN** the user opens the detail page
-- **THEN** the Warnings card renders an empty-state message and an "Add warning" button; no table rows are rendered
-
-#### Scenario: Header count badge reflects status split
-- **GIVEN** an experiment with 3 OPEN and 1 RESOLVED warning rows
-- **WHEN** the user opens the detail page
-- **THEN** the Warnings card header shows a count badge with the text "3 open / 1 resolved" (or equivalent), and the open count uses a warning-styled badge while the resolved count uses a success-styled badge
-
-### Requirement: Interactive warning row controls
-
-The Warnings card SHALL provide per-row interactive controls:
-
-- **Resolve**: a button on each `OPEN` row that opens an inline note input; submitting calls `PATCH /api/experiments/:id/warnings/:rowId` with `{op: "resolve", note}`.
-- **Reopen**: a button on each `RESOLVED` row that calls `PATCH /api/experiments/:id/warnings/:rowId` with `{op: "reopen"}`. The note prompt is optional.
-- **Edit Note**: an inline-edit affordance on the Note cell of `RESOLVED` rows. Edits persist via `PATCH` with `{op: "resolve", note: <new>}` (resolve is idempotent).
-- **Delete**: a destructive control behind a confirm dialog (shadcn `<AlertDialog>`) calling `DELETE /api/experiments/:id/warnings/:rowId`.
-- **Add warning**: a form at the bottom of the card with fields for category (shadcn `<Select>` populated with the closed enum) and message (shadcn `<Textarea>`); submit calls `POST /api/experiments/:id/warnings`.
-
-All write paths SHALL flow through the existing conflict-aware save flow used by the README editor: requests carry the current `mtime` + content `hash`, and on `409` the client refetches and surfaces the conflict to the user. Per-row submits SHALL NOT block other rows; concurrent edits are serialised per row.
-
-The form SHALL use shadcn primitives (`Select`, `Textarea`, `Button`, `Dialog`, `AlertDialog`) — never native form controls — per the project's Web app conventions.
-
-#### Scenario: Resolve flow records the note
-- **GIVEN** an OPEN warning row
-- **WHEN** the user clicks Resolve, types a note, and submits
-- **THEN** the row updates in place to `RESOLVED` with the note rendered, the request returned a new `mtime`, and the local card state reflects the new mtime for subsequent operations
-
-#### Scenario: Add warning form validates category against enum
-- **WHEN** the user opens the Add warning form
-- **THEN** the category select's options are exactly the 8 enum values from the experiment-readme spec, the message field is required, and submitting without a message disables the submit button
-
-#### Scenario: Delete shows AlertDialog confirm
-- **WHEN** the user clicks Delete on any row
-- **THEN** an AlertDialog opens describing what will be deleted, and the row is removed only after explicit confirmation
-
-#### Scenario: Concurrent edit triggers conflict dialog
-- **GIVEN** the user has the Warnings card open, mtime M0
-- **WHEN** another process resolves a different row, bringing the file to mtime M1, and the user then clicks Resolve on yet another row
-- **THEN** the request returns 409, the existing conflict-resolution dialog opens with the latest server state, and the user's pending edit is preserved as a draft to retry
-
-### Requirement: Warning HTTP endpoints
-
-The web backend SHALL expose REST endpoints under `/api/experiments/:id/warnings`:
-
-- `GET /api/experiments/:id/warnings` returns `{warnings: Warning[], mtime, hash}` for the experiment.
-- `POST /api/experiments/:id/warnings` body `{category, message, expectedMtime, expectedHash}` appends a new OPEN row; returns `{rowId, mtime, hash}`.
-- `PATCH /api/experiments/:id/warnings/:rowId` body `{op: "resolve" | "reopen", note?, expectedMtime, expectedHash}` mutates the row.
-- `DELETE /api/experiments/:id/warnings/:rowId` body `{expectedMtime, expectedHash}` removes the row.
-
-All endpoints SHALL pass the experiment id through `assertWithinProjectRoots()` before touching the filesystem. All write endpoints SHALL invoke the section-bound writer defined in the `experiment-readme` capability and SHALL append a `[WARNING]` event to JOURNAL.md per write. On a section-bound writer CONFLICT, the endpoint SHALL respond `409` with the current file's content + mtime + hash so the client can rebase.
-
-#### Scenario: GET returns parsed warnings with mtime
-- **WHEN** a client GETs `/api/experiments/foo-260501/warnings`
-- **THEN** the response is JSON with `warnings: Warning[]`, `mtime: <number>`, `hash: <sha1>`; the warnings array reflects the on-disk table; status 200
-
-#### Scenario: POST appends and returns rowId
-- **WHEN** a client POSTs a valid `{category, message, expectedMtime, expectedHash}`
-- **THEN** the response is `{rowId, mtime, hash}` with status 200, the README's `## Warnings` section contains the new row, and a `[WARNING]` add event is appended to JOURNAL
-
-#### Scenario: PATCH on missing rowId returns 404
-- **WHEN** a client PATCHes `/api/experiments/foo-260501/warnings/w_does_not_exist`
-- **THEN** the response is status 404 and the README is not modified
-
-#### Scenario: Path safety on the id parameter
-- **WHEN** a client requests `/api/experiments/..%2Fother-project%2Frun/warnings`
-- **THEN** the request is rejected by `assertWithinProjectRoots()` before any filesystem access; the response is 400 or 403 (matching existing path-safety behaviour)
-
-#### Scenario: 409 on stale expectedMtime
-- **WHEN** a write request carries `expectedMtime` older than the on-disk mtime AND the warnings section was edited in between
-- **THEN** the response is 409 with body `{warnings, mtime, hash}` reflecting the current state; the file is not modified
-
-### Requirement: Hypothesis view
-
-The dashboard SHALL include a Hypothesis view per project showing:
-- The `## Summary table` rendered as-is
-- A list of all hypothesis entries with their statement, status, and a collapsible body
-- Cross-links from each entry's `Experiments` field to the corresponding experiment detail pages
-
-#### Scenario: Click experiment cross-link
-- **WHEN** the user clicks an experiment ID in a hypothesis entry's `Experiments` field
-- **THEN** the user navigates to that experiment's detail page
-
-### Requirement: Journal timeline view
-
-The dashboard SHALL include a Journal view per project rendering `JOURNAL.md` as a reverse-chronological timeline with each event row showing timestamp (rendered in browser timezone), tag, and body. The view SHALL support filtering by tag and by experiment ID.
-
-#### Scenario: Filter by tag
-- **WHEN** the user filters tag to `[STATUS]`
-- **THEN** only `[STATUS]` events are shown
-
-#### Scenario: Filter by experiment ID
-- **WHEN** the user filters by `foo-260503-082800`
-- **THEN** only events whose body references that experiment ID are shown
-
-### Requirement: Log viewer integrated into experiment detail
-
-The detail page SHALL list the experiment directory's `*.log`, `*.txt`, `*.out` files. Selecting one SHALL open the log viewer (per the log-viewer spec) inline or in a side panel.
-
-#### Scenario: Open primary log
-- **WHEN** the user clicks `stdout.log` in the detail page's log file list
-- **THEN** the log viewer opens with the last 100 lines and follow mode enabled
-
-### Requirement: Mobile-responsive layout
-
-The dashboard SHALL be usable on mobile viewports (≥360px width) without horizontal scroll on primary views (list, detail, hypothesis). Layout SHALL adapt via Tailwind responsive utilities; no separate mobile codebase.
-
-#### Scenario: List on narrow viewport
-- **WHEN** the experiment list is rendered at 375px width
-- **THEN** the table collapses to a card list with status emoji, name, and timestamp visible without horizontal scroll
-
-#### Scenario: Detail on narrow viewport
-- **WHEN** the experiment detail page is rendered at 375px width
-- **THEN** panels stack vertically and the markdown body remains fully readable
-
-### Requirement: Time rendering in browser timezone
-
-All timestamps in front matter, journal events, and hypothesis `Last verified` dates SHALL be rendered to the user's browser timezone (via `date-fns-tz`), with both relative time ("3 hours ago") and absolute time on hover. The on-disk timestamps remain ISO8601 with the writer's offset and are never rewritten.
-
-#### Scenario: Cross-timezone view
-- **WHEN** an experiment's `created_at` is `2026-05-03T08:00:00+08:00` and the browser timezone is `America/Los_Angeles`
-- **THEN** the displayed time is `2026-05-02 17:00:00 PDT` with relative "yesterday" or similar
-
-### Requirement: Sub-project tag in experiment list
-
-The experiment list SHALL display a small sub-project badge/tag for each row whose front-matter `project:` value is non-empty AND differs from the enclosing memon project's name. Rows whose front-matter `project:` is empty OR equal to the enclosing project's name SHALL render no badge (avoids visual noise on the common case).
-
-The badge content SHALL be the front-matter `project:` value verbatim. The badge SHALL be visually subordinate to the experiment id and status (smaller text, muted background) so it acts as a grouping hint, not a primary identifier.
-
-#### Scenario: sparse-fsdp list shows recipe badges
-- **GIVEN** memon project `sparse-fsdp` containing experiments with `frontMatter.project` values from the set `{predictive-skip-validation, justrl-with-verl, justrl-with-trl-fsdp2, slime-test}`
-- **WHEN** the user opens `/p/sparse-fsdp`
-- **THEN** each row shows a badge with its respective sub-project label, allowing visual grouping
-
-#### Scenario: project-a list shows no sub-project badges
-- **GIVEN** memon project `project-a` whose experiments all declare `frontMatter.project: project-a` (matching the enclosing project)
-- **WHEN** the user opens `/p/project-a`
-- **THEN** no rows render a sub-project badge (the values match, so the badge would be redundant)
-
-#### Scenario: Mixed list — only divergent rows show badges
-- **GIVEN** a memon project `mixed` with two experiments: one declares `frontMatter.project: mixed`, the other declares `frontMatter.project: foo`
-- **WHEN** the user opens the list
-- **THEN** only the second row renders the `foo` badge; the first renders no badge
-
-### Requirement: AppBar tabs for Reports and Digests
-
-The per-project AppBar SHALL include two new tabs in addition to the existing Experiments / Hypotheses / Journal: `Reports` (active for paths under `/p/<proj>/reports/...`) and `Digests` (active for paths under `/p/<proj>/digests/...`). The tab order SHALL be Experiments / Hypotheses / Journal / Reports / Digests, left to right.
-
-#### Scenario: Reports tab active on its routes
-- **WHEN** the user is on `/p/sparse-fsdp/reports` or `/p/sparse-fsdp/reports/R0001`
-- **THEN** the Reports tab in the AppBar is rendered active
-
-#### Scenario: Switching tabs preserves project context
-- **WHEN** the user clicks Digests while viewing a project
-- **THEN** they navigate to `/p/<project>/digests` and the project context (sidebar selection, project layout's prefetched data) stays
-
-### Requirement: Reports route serves the inbox shell
-
-Routes `/p/[project]/reports` and `/p/[project]/reports/[id]` SHALL render the same shared inbox shell, parameterized with `kind="reports"`. The list-only URL SHALL show an empty right pane with the reports empty-state copy when no item is selected (or the directory is empty); the `[id]`-bearing URL SHALL highlight that item in the rail and render its content in the right pane.
-
-#### Scenario: Direct deep link
-- **WHEN** the user navigates to `/p/sparse-fsdp/reports/R0001`
-- **THEN** the page renders the inbox shell with `R0001-predictive-skip-p3` highlighted in the rail and its content rendered
-
-#### Scenario: List-only URL with no selection
-- **WHEN** the user navigates to `/p/sparse-fsdp/reports`
-- **THEN** the page renders the inbox shell with no item highlighted; the right pane shows the reports empty-state-when-none-selected copy
-
-### Requirement: Digests route serves the inbox shell with `kind="digests"`
-
-Routes `/p/[project]/digests` and `/p/[project]/digests/[id]` SHALL render the same shared inbox shell as Reports, parameterized with `kind="digests"`. The id pattern in the URL SHALL be the canonical 4-digit `D<NNNN>` form (the date suffix is part of the on-disk filename but not the URL).
-
-#### Scenario: Digest URL contains canonical id only
-- **GIVEN** a digest file `D0001-2026-05-04.md` on disk
-- **WHEN** the rail renders its link
-- **THEN** the link target is `/p/<proj>/digests/D0001` (NOT `/p/<proj>/digests/D0001-2026-05-04`)
+### Requirement: Experiment-card grid as the project list page
+
+The list page at `/p/<project>` SHALL render a responsive grid of
+experiment cards (one card per experiment). Each card SHALL contain:
+
+1. **Header row**: experiment status pill (computed aggregate of member
+   runs), exp id + slug in monospace, and a `<finished>/<total>` runs
+   counter badge.
+2. **Title line**: the exp's `title` field rendered in a slightly
+   larger weight.
+3. **Embedded runs table**: one row per confirmed member run, columns
+   `status emoji | run dir name | created_at HH:MM | duration-or-status
+   | files-count`. Clicking a row navigates to
+   `/p/<project>/e/<exp-id>?run=<run-dir>` with that run panel
+   auto-expanded.
+4. **Footer left**: tags as outline badges (the exp's frontmatter
+   `tags[]`).
+5. **Footer right (desktop)**: 📅 `effective_created_at` and ✎
+   `effective_updated_at`, each preceded by a small icon.
+6. **Footer (mobile)**: tags and times stack vertically.
+
+Cards SHALL be sorted by `effective_updated_at` descending by default;
+the sort/filter controls from the v2 list view (a flexible header) are
+re-used to control sort key and search across exp title / slug / tags /
+member-run names.
+
+There SHALL NOT be a sub-project badge on cards (the sub-project field
+is gone in v3).
+
+#### Scenario: Card header shows aggregate status
+- **GIVEN** an experiment with 3 confirmed runs whose statuses are
+  RUNNING, FINISHED, FINISHED
+- **WHEN** the card renders
+- **THEN** the header status pill is `🟢` (any RUNNING dominates) and
+  the counter badge reads `2 / 3 runs`
+
+#### Scenario: Embedded runs table row click navigates with auto-expand
+- **WHEN** the user clicks a row inside an experiment card
+- **THEN** the URL becomes `/p/<project>/e/<exp-id>?run=<run-dir>` and
+  the corresponding run panel is expanded on the destination page
+
+#### Scenario: Empty experiment renders an empty runs table
+- **GIVEN** an experiment with `runs: []` (zero member runs)
+- **WHEN** the card renders
+- **THEN** the runs table area shows an empty-state message ("No runs
+  yet — open Claude Code to scaffold one") and tag/time footers still
+  render normally
+
+### Requirement: Anomaly banner pinned at the top of the grid
+
+The list page SHALL render a yellow-bordered card pinned **above** the
+experiment-card grid whenever the project has at least one anomaly
+(per `experiment-membership-anomalies`). The banner card:
+- Header: `⚠ <count> issues need resolution` plus action buttons
+  `Copy all` and `Hide`
+- Body: scrollable list of anomaly messages (`max-h-[40vh]
+  overflow-y-auto`), one line per anomaly with the code, IDs, and
+  message.
+- `Copy all`: copies a text block with project name, ISO timestamp,
+  and one line per anomaly formatted for paste into an agent.
+- `Hide`: hides the card for the current `sessionStorage` lifetime
+  (returns on browser tab reload).
+
+When the project has zero anomalies, the banner does not render.
+
+#### Scenario: Banner appears with count
+- **GIVEN** the project has 3 anomalies (1 ORPHAN_RUN, 1 PHANTOM_RUN_REF,
+  1 MISMATCH_EXPERIMENT_REF)
+- **WHEN** the user opens `/p/<project>`
+- **THEN** the banner card is rendered above the grid with header text
+  `⚠ 3 issues need resolution` and three lines in its body
+
+#### Scenario: Copy all clipboard format
+- **WHEN** the user clicks `Copy all` on the banner
+- **THEN** the system clipboard contains text starting with `Anomalies
+  from project <project> at <ISO time>:` followed by one bullet line
+  per anomaly: `- <CODE>: <ids> — <message>`
+
+#### Scenario: Hide is per-session
+- **WHEN** the user clicks `Hide` then reloads the tab
+- **THEN** the banner is hidden after reload
+- **AND** when the user opens the project in a new tab
+- **THEN** the banner is visible
+
+### Requirement: Orphan run cards in the grid
+
+The list page SHALL render orphan runs as special grey-bordered cards
+mixed into the experiment grid. Orphan runs (those with no parent
+experiment, per `experiment-membership-anomalies`) SHALL be
+distinguishable from experiment cards by header style:
+
+- Header reads `⚠ Unassigned: <run-dir-name>` instead of an exp id +
+  status counter.
+- The card body shows a single-row table for the orphan run (status,
+  created_at, files-count) — no embedded multi-row table.
+- The card has no tag/time footer.
+- Action button `Link to experiment...` opens a modal listing the
+  project's experiments to bind to.
+
+Orphan cards SHALL be sortable by the same controls as exp cards
+(orphan card's "effective times" are the run's own `created_at` /
+`updated_at`).
+
+#### Scenario: Orphan card rendered next to exp cards
+- **GIVEN** the project has 4 experiments and 1 orphan run
+- **WHEN** the user opens the list page
+- **THEN** the grid contains 5 cards total — 4 with the exp header
+  style, 1 with the orphan grey-bordered header style
+
+### Requirement: Experiment-doc detail page (v3)
+
+The route `/p/<project>/e/<E-id-slug>` SHALL render an experiment detail
+page with this layout:
+- **Header bar**: title, aggregate status pill, effective times, tags,
+  hypothesis-ref chips
+- **Action bar**: `Edit markdown` (opens the editor on the exp doc),
+  `Open Claude Code` (opens project root with exp-scoped preset prompt
+  per `experiment-edit`)
+- **Body markdown**: rendered `Motivation` / `Method` / `Conclusion` /
+  `Caveats` / `Warnings` (the warnings table renders inline with the
+  Run column)
+- **Runs section header**: `Runs (<count>)`
+- **Run panels**: one expandable panel per confirmed member run
+
+Run panels SHALL be expanded by default (per the design discussion's
+Q13 decision). The set of expanded panels SHALL be persisted in URL
+hash and `localStorage` (key `memon:exp-page:<exp-id>:expanded`) so a
+reload preserves the user's most-recent toggle state.
+
+When the URL has `?run=<run-dir>`, that run's panel SHALL be expanded
+on initial render and the page SHALL scroll to it.
+
+#### Scenario: All run panels open by default on first visit
+- **GIVEN** an experiment with 3 confirmed runs and no prior
+  `localStorage` toggle state
+- **WHEN** the user opens the exp detail page
+- **THEN** all 3 run panels are rendered expanded
+
+#### Scenario: ?run= query param expands and scrolls
+- **GIVEN** the same experiment
+- **WHEN** the URL is `/p/<project>/e/<exp-id>?run=run-2`
+- **THEN** all 3 panels are expanded; the page scrolls to `run-2`'s
+  panel
+
+#### Scenario: Toggled-collapse persists across reload
+- **GIVEN** the user collapsed the panel for `run-1`
+- **WHEN** the user reloads the page
+- **THEN** `run-1` is still collapsed; the others are still expanded
+
+### Requirement: Run panel content with lazy detail loading
+
+Each run panel SHALL render two phases:
+1. **Eager phase** (data from `/api/experiments/:id`): summary row with
+   status, run dir name, created_at HH:MM, duration-or-status,
+   files-count.
+2. **Lazy phase** (per-run fetch from `/api/runs/:run-id`): full
+   frontmatter table, `Setup` rendered markdown, `Result` rendered
+   markdown, manual `Artifacts` list, automatic file listing under the
+   run dir, log tail viewer, and the panel-level action bar.
+
+Until the lazy fetch resolves, the panel SHALL render skeleton UI for
+the lazy content. Multiple panels MAY fire requests concurrently.
+
+#### Scenario: Page renders before lazy details resolve
+- **GIVEN** an exp page with 5 member runs
+- **WHEN** the page first paints
+- **THEN** the eager-phase summary rows render immediately for all 5
+  runs, the lazy-phase content shows a skeleton in each panel
+
+#### Scenario: Lazy fetch failure surfaces inline
+- **WHEN** `/api/runs/<id>` returns 500 for one of the panels
+- **THEN** that panel's lazy area shows an error banner with a Retry
+  button; the other panels are unaffected
+
+### Requirement: Per-run-panel action bar
+
+Each expanded run panel SHALL render three action buttons inside the
+panel body (positioned at the top or bottom of the run-detail content,
+implementer's choice):
+- `Edit markdown (run)` — opens the editor on the run's README
+- `Open Claude Code (run)` — opens at the project root with a preset
+  prompt naming the run dir and parent exp doc
+- `Archive` — writes `<run-dir>/.archived` and removes the run from
+  the page's expanded set
+
+#### Scenario: Edit markdown (run) targets the run README
+- **WHEN** the user clicks `Edit markdown (run)` inside the panel for
+  `bar-260501-100000`
+- **THEN** the editor opens with the content of
+  `<projectRoot>/<…>/bar-260501-100000/README.md` (NOT the exp doc),
+  and Save POSTs to `/api/runs/bar-260501-100000/readme`
+
+### Requirement: URL redirects from legacy run paths
+
+Legacy run-detail URLs SHALL redirect to the new exp-detail URL with a
+`?run=` query param. The route `/p/<project>/r/<run-dir>` (and its v2
+form `/p/<project>/experiments/<run-dir>`) SHALL respond with a 308
+(or client-side replace) to `/p/<project>/e/<E-id-of-parent>?run=<run-dir>`
+when the run has a confirmed parent experiment. When the run has no
+parent (orphan), the redirect SHALL go to `/p/<project>` and the page
+SHALL scroll to the orphan card for that run.
+
+#### Scenario: Bound run redirects with run param
+- **GIVEN** a run `bar-260501-100000` bound to `E0001-foo`
+- **WHEN** the user navigates to `/p/<project>/r/bar-260501-100000`
+- **THEN** the URL is rewritten to
+  `/p/<project>/e/E0001-foo?run=bar-260501-100000`
+
+#### Scenario: Orphan run redirects to project list
+- **GIVEN** an orphan run `solo-260501-100000`
+- **WHEN** the user navigates to `/p/<project>/r/solo-260501-100000`
+- **THEN** the URL is rewritten to `/p/<project>` and the page scrolls
+  to the orphan card
 

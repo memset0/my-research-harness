@@ -204,7 +204,7 @@ range. The writer SHALL:
   (API), the file is not modified, and the response includes current
   mtime + content for retry
 
-### Requirement: Warning row identity and audit trail
+### Requirement: Warning row identity with run attribution and audit trail
 
 Every warning operation (`add`, `resolve`, `reopen`, `delete`) SHALL
 append a single `[WARNING]` event to JOURNAL.md carrying
@@ -255,7 +255,7 @@ the exp's `runs[]` AND clear the run's `experiment:` field atomically.
 
 ## REMOVED Requirements
 
-### Requirement: README.md front matter schema (v2 — run-shaped)
+### Requirement: README.md front matter schema
 
 **Reason**: The v2 spec described what we now call run frontmatter. That
 content is moved to the new `run-readme` capability. The
@@ -267,7 +267,7 @@ layer.
 new exp doc + a new run README, applying the appropriate schemas to
 each.
 
-### Requirement: Standard markdown sections (v2)
+### Requirement: Standard markdown sections
 
 **Reason**: V2's section list (Motivation/Setup/Method/Result/
 Conclusion/Caveats/Artifacts) is split between the two new layers. The
@@ -275,7 +275,7 @@ exp doc's section list is Motivation/Method/Conclusion/Caveats/Warnings.
 
 **Migration**: Same migration guide.
 
-### Requirement: Hypotheses field carries no judgment (v2)
+### Requirement: Hypotheses field carries no judgment
 
 **Reason**: This requirement applied to run frontmatter in v2; the
 hypotheses array is now exp-only and the rule continues to apply at the
@@ -284,7 +284,7 @@ new location (per the new front matter schema requirement above).
 **Migration**: Migration guide moves the union of member-runs'
 hypothesis arrays onto the new exp doc's frontmatter.
 
-### Requirement: Warnings section table format (v2)
+### Requirement: Warnings section table format
 
 **Reason**: The warnings table now carries an additional `Run` column.
 The new `### Requirement: Warnings table with Run column` above is the
@@ -294,7 +294,7 @@ v3 contract.
 the `Run` cell for each migrated row with the run dir name from which
 the warning originated.
 
-### Requirement: Section-bound writes for the Warnings section (v2)
+### Requirement: Section-bound writes for the Warnings section
 
 **Reason**: The new section-bound writer targets the experiment doc, not
 the run README. The new `### Requirement: Section-bound writes for the
@@ -302,7 +302,7 @@ experiment Warnings section` above is the v3 contract.
 
 **Migration**: Same migration guide.
 
-### Requirement: Warning row identity and audit trail (v2)
+### Requirement: Warning row identity and audit trail
 
 **Reason**: Journal `[WARNING]` events now include a `run` field for run
 attribution. The new requirement of the same name above is the v3
@@ -312,7 +312,7 @@ contract.
 backfilled with the `run` field; new events written under v3 always
 include it.
 
-### Requirement: README write with optimistic mtime lock (v2)
+### Requirement: README write with optimistic mtime lock
 
 **Reason**: `PUT /api/readme` is replaced by two endpoints in v3:
 `PUT /api/experiments/:id/readme` (exp doc) and
@@ -322,7 +322,7 @@ continues at each new path; see `experiment-edit` and `run-edit`.
 **Migration**: Update any direct API consumers to the new paths. There
 are none outside the web app.
 
-### Requirement: Graceful degradation on parse failure (v2)
+### Requirement: Graceful degradation on parse failure
 
 **Reason**: This requirement still applies to both layers in v3; the
 behavior is captured under the new `run-readme` capability for the run

@@ -149,7 +149,7 @@ legacy front-matter sub-project search match is removed in v3.
 
 ## REMOVED Requirements
 
-### Requirement: Front-matter project preservation (v2)
+### Requirement: Front-matter project preservation
 
 **Reason**: V3 removes the run frontmatter `project:` field entirely. The
 parser ignores it; the index entry no longer projects it; search no longer

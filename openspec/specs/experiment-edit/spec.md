@@ -3,278 +3,231 @@
 ## Purpose
 TBD - created by archiving change add-write-flow. Update Purpose after archive.
 ## Requirements
-### Requirement: Status edit control on the detail page
+### Requirement: Experiment doc write with optimistic mtime + content hash
 
-The experiment detail page SHALL provide a control (dropdown or button group) listing all 5 status enum values. Selecting a different value SHALL invoke the same atomic write protocol defined for `PUT /api/readme` and `[STATUS]` event append.
+The system SHALL accept experiment doc writes via
+`PUT /api/experiments/:id/readme` carrying `expectedMtime` (and optional
+`expectedHash`). The backend SHALL compare both against on-disk state
+before writing.
 
-#### Scenario: Successful status change
-- **WHEN** the user selects `FAILED` for an experiment whose current `status` is `RUNNING`, with a fresh `expectedMtime`
-- **THEN** the page issues `PUT /api/readme` with the updated front matter, the backend writes the README and appends `[STATUS] \`<id>\` RUNNING → FAILED` to JOURNAL.md atomically, the page re-fetches the experiment, and a success toast `Saved · status FAILED` is shown for ~1s
+The endpoint SHALL pass the `id` parameter through
+`assertWithinProjectRoots()` before any filesystem access.
 
-#### Scenario: Status change race
-- **WHEN** the on-disk README has changed between the page load and the status submit
-- **THEN** the backend returns 409 with current content and the conflict modal opens (see "Conflict resolution dialog")
+#### Scenario: Successful write
+- **WHEN** `expectedMtime` and `expectedHash` match the on-disk values
+- **THEN** the backend writes the new content, returns 200 with the new
+  `mtime` + `hash`, and appends a `[EXPERIMENT]` event with `op=edit` to
+  JOURNAL.md
 
-### Requirement: README inline editor
+#### Scenario: Conflict on mtime
+- **WHEN** the on-disk mtime differs from `expectedMtime`
+- **THEN** the backend returns 409 with the current on-disk content,
+  `mtime`, and `hash`
 
-The detail page SHALL provide an `Edit README` action that mounts a Monaco-based markdown editor (via `@monaco-editor/react`) prefilled with the current README content (front matter + body). The editor SHALL render with `language: 'markdown'`, word-wrap enabled, **line numbers visible** (gutter on the left), and a **white editor canvas** (`editor.background: #ffffff`) regardless of the surrounding theme tokens — the panel chrome is grey but the writing surface itself is plain white so it reads as a sheet of paper.
+### Requirement: Frontend save handshake bumps `updated_at` for exp docs
 
-The editor module (Monaco core + worker) SHALL NOT be in the initial JS bundle; it SHALL be dynamically imported the first time the user activates `Edit README`.
+When the web markdown editor saves an experiment doc, the frontend SHALL
+follow the same handshake described for runs (`run-edit`):
+1. Capture `now()` ISO8601 with the user's local offset.
+2. Rewrite the YAML frontmatter `updated_at` field in the editor buffer
+   to that timestamp.
+3. POST `{ content, expectedMtime, expectedHash }`.
+4. On 200, replace the editor buffer with `finalContent` and store the
+   new `mtime`/`hash`.
+5. On 409, restore the editor's prior `updated_at` value visually before
+   showing the conflict-resolution UI.
 
-The editor surface SHALL include a top toolbar laid out in **two rows**, separated by a horizontal border:
-- **Row 1 (controls)**: the title `Edit README` (with an unsaved-changes dot when dirty) on the left, and on the right the action cluster — Plain/Monaco toggle, Copy markdown, Cancel/Close, Save (and panel-specific Collapse/Close buttons via `toolbarTrailing`).
-- **Row 2 (path)**: the full file path on its own line, rendered with a smaller monospace font (~10px) in muted color and `truncate` overflow. This row has no buttons, so its vertical padding SHALL be smaller than row 1.
+#### Scenario: Save bumps updated_at and persists
+- **GIVEN** an exp doc with `updated_at: 2026-05-04T10:00:00+08:00`
+  open in the editor at `expectedMtime: M0`
+- **WHEN** the user clicks Save at `2026-05-04T11:30:00+08:00`
+- **THEN** the POST body's frontmatter has `updated_at:
+  2026-05-04T11:30:00+08:00`; the response is 200 and the editor stores
+  the returned new mtime
 
-The path SHALL NOT share row 1 with the action cluster — that arrangement does not fit when the path is long.
+### Requirement: `memon experiment create` allocates next E ID
 
-The toolbar's controls SHALL include at least:
-1. A **"Plain editor"** toggle that switches the surface from Monaco to a native `<textarea>` with monospace font and no syntax highlighting. The user's preference SHALL persist in `localStorage` under key `memon:readme-editor:plain`.
-2. A **"Copy markdown"** button that copies the current editor content to the system clipboard via `navigator.clipboard.writeText`. On clipboard failure, the editor SHALL select all text in the underlying surface and show a "Clipboard blocked — please copy manually" toast.
+The CLI SHALL expose `memon experiment create <slug> [--title <text>]
+[--hypotheses H0001,H0003] [--from-run <run-dir>] [--project-root <p>]`.
 
-If the dynamic Monaco import rejects (network failure, runtime error), the editor SHALL automatically fall back to plain mode and show an "Editor failed to load — using plain text fallback" toast.
+The command SHALL:
+1. Validate `<slug>` matches `^[a-z0-9][a-z0-9-]*[a-z0-9]$`.
+2. Scan `docs/experiments/E*.md` to find the highest existing `NNNN`;
+   compute the next id as `padId('E', max+1)`.
+3. Refuse if any existing exp doc's slug equals the new slug or is a
+   prefix of (or has as prefix) the new slug.
+4. Write `docs/experiments/E<NNNN>-<slug>.md` with frontmatter populated
+   (`id`, `slug`, `title`, `hypotheses`, `tags=[]`, `runs` initially `[]`
+   or seeded from `--from-run`, `created_at=now`, `updated_at=now`) and
+   empty body sections (`Motivation`, `Method`, `Conclusion`, `Caveats`,
+   `Warnings` with the v3 header row).
+5. If `--from-run <run-dir>` is given, validate the run exists, write
+   `experiment: <new-id>` into the run's frontmatter, and add the run dir
+   name to the new exp's `runs[]`. The run SHALL NOT already have a
+   different `experiment:` value (would surface a `BAD_STATE` error).
+6. Append a `[EXPERIMENT]` event with `op=create` to JOURNAL.
 
-#### Scenario: Open and save (Monaco)
-- **WHEN** the user clicks `Edit README`, makes changes in the Monaco surface, and clicks `Save`
-- **THEN** the page issues `PUT /api/readme` with `{path, content, expectedMtime, expectedHash}`; on 200 the editor closes (or, on desktop, stays open with cleared dirty state — see web-dashboard spec for the layout-specific close semantics), the rendered detail view updates from the new content, and a success toast appears
+The command SHALL be retried up to 5 times if step 4's file creation
+hits `EEXIST` (race against concurrent allocations); after 5 failures,
+exit with `BAD_STATE`.
 
-#### Scenario: Lazy-loaded editor
-- **WHEN** the user is on a list/detail page but has not opened any editor yet
-- **THEN** Monaco core, its language workers, and `@monaco-editor/react` are NOT in the initial JS bundle (they are dynamically imported only when an editor surface mounts)
+#### Scenario: Successful create
+- **WHEN** the user runs `memon experiment create zero-snr-fix --title
+  "Zero-SNR brightness study"`
+- **THEN** `docs/experiments/E0001-zero-snr-fix.md` exists with valid
+  frontmatter, body sections present, and JOURNAL has an `op=create`
+  event
 
-#### Scenario: Line numbers and white canvas
-- **WHEN** the editor mounts with the Monaco surface
-- **THEN** a left gutter with line numbers is visible
-- **AND** the editor's drawing canvas background is `#ffffff` (verified by Monaco's `editor.background` theme color), even when the surrounding panel uses `bg-card` (grey)
+#### Scenario: --from-run binds existing run
+- **WHEN** the user runs `memon experiment create foo --from-run
+  bar-260501-100000`
+- **THEN** the new exp's `runs[]` contains `bar-260501-100000`, and the
+  run's `experiment:` field equals the new exp's id
 
-#### Scenario: Toggle to plain editor
-- **WHEN** the user clicks the "Plain editor" toolbar toggle
-- **THEN** the Monaco surface unmounts and a native `<textarea>` (monospace font, no syntax highlighting) renders in its place, prefilled with the same content
-- **AND** `localStorage['memon:readme-editor:plain']` is set to `'1'`
-- **AND** subsequent opens of the editor (in this browser) default to the plain surface until the toggle is flipped back
+#### Scenario: Slug prefix collision rejected
+- **GIVEN** `E0001-foo` already exists
+- **WHEN** the user runs `memon experiment create foo-bar`
+- **THEN** the command exits with `EXPERIMENT_SLUG_PREFIX_COLLISION` and
+  no file is written
 
-#### Scenario: Copy markdown succeeds
-- **WHEN** the user clicks the "Copy markdown" button and `navigator.clipboard.writeText` resolves
-- **THEN** the current editor content is on the clipboard
-- **AND** a success toast `Copied · README markdown` is shown
+### Requirement: `memon experiment link` and `unlink`
 
-#### Scenario: Copy markdown fallback when clipboard blocked
-- **WHEN** the user clicks "Copy markdown" and `navigator.clipboard.writeText` rejects (insecure context, permission denied, etc.)
-- **THEN** the editor selects all text in the active surface (Monaco `select all` action or `<textarea>.select()`)
-- **AND** a `Clipboard blocked — please copy manually` toast is shown
+`memon experiment link <id> <run-dir-or-id> [--project-root <p>]` SHALL:
+1. Validate the experiment doc exists.
+2. Validate the run exists.
+3. Refuse if the run already has a different `experiment:` field
+   (`BAD_STATE`); print the conflicting exp id.
+4. Append the run dir name to the exp's `runs[]` (if not already
+   present).
+5. Set the run's `experiment:` field to the exp id.
+6. Append a `[BIND]` event with `op=link` to JOURNAL.
+7. Print a non-blocking warning (stderr) if the run slug does NOT have
+   the experiment slug as a prefix.
 
-#### Scenario: Monaco import failure auto-fallback
-- **WHEN** the dynamic import of `@monaco-editor/react` rejects (e.g., chunk fetch fails)
-- **THEN** the editor surface falls back to the plain `<textarea>`
-- **AND** a `Editor failed to load — using plain text fallback` toast is shown
-- **AND** `localStorage['memon:readme-editor:plain']` is NOT modified (the user's preference is preserved for the next session)
+`memon experiment unlink <id> <run-dir-or-id>` SHALL undo the binding:
+remove the run dir name from `exp.runs[]`, clear the run's
+`experiment:` field, append a `[BIND]` event with `op=unlink`.
 
-### Requirement: Desktop side-panel layout for the README editor
+#### Scenario: Link respects soft prefix rule
+- **GIVEN** `E0001-zero-snr-fix` and an unbound run `cfg-rescale-260502-...`
+- **WHEN** the user runs `memon experiment link E0001-zero-snr-fix
+  cfg-rescale-260502-...`
+- **THEN** the link succeeds (exit 0); stderr contains a
+  `RUN_SLUG_PREFIX_VIOLATION` warning
 
-On viewports with `min-width: 1024px` (the `lg` Tailwind breakpoint), the README editor SHALL render as a right-side resizable panel of the experiment detail page rather than a `<Dialog>` modal. The detail page body SHALL flow in the remaining left column. The panel SHALL be controlled via a React Context (`ReadmeEditorContext`) shared with the `Edit README` button.
+#### Scenario: Link rejected when run already bound elsewhere
+- **GIVEN** a run with `experiment: E0002-bar`
+- **WHEN** the user runs `memon experiment link E0001-foo <that-run>`
+- **THEN** the command exits with `BAD_STATE` and stderr names the
+  conflicting exp id `E0002-bar`; the user must `unlink` first
 
-The `Edit README` button on desktop SHALL toggle the panel's visibility (open ↔ close) rather than opening a modal. Closing the panel via its close button SHALL also flip the button back to its closed state via the same context.
+### Requirement: `memon experiment delete` cascades unlinks
 
-The two-pane layout SHALL have **isolated vertical scroll**: scrolling the left content column SHALL NOT scroll the panel, and vice versa. There is no page-level (window) scroll on the experiment detail route when the panel is open — instead, the row is pinned to the available viewport height (viewport minus AppBar) and each pane has its own internal `overflow-y: auto`. Sticky-positioning the panel against the document scroll is explicitly NOT acceptable: that approach causes the panel toolbar to slide under the AppBar and creates the appearance of the top row "scrolling away" when the user scrolls the left content.
+`memon experiment delete <id> [--force] [--project-root <p>]` SHALL:
+1. Read the exp doc.
+2. For each run in `exp.runs[]`, clear the run's `experiment:` field.
+3. Delete the exp doc file.
+4. Append a `[EXPERIMENT]` event with `op=delete` and the deleted
+   `runs[]` payload to JOURNAL.
+
+Without `--force`, the command SHALL prompt for confirmation listing
+the cascade impact (the runs that will be unbound). With `--force`, no
+prompt is shown.
+
+#### Scenario: Delete cascades and prompts
+- **GIVEN** an exp `E0001-foo` with three confirmed runs
+- **WHEN** the user runs `memon experiment delete E0001-foo` (no
+  --force)
+- **THEN** the CLI prompts "This will unbind 3 runs. Continue? [y/N]";
+  on `y` the file is deleted, the three runs have their `experiment:`
+  cleared, and JOURNAL has a `[EXPERIMENT] op=delete` event
+
+#### Scenario: --force skips prompt
+- **WHEN** the same command runs with `--force`
+- **THEN** no prompt appears and the cascade applies immediately
+
+### Requirement: Section-bound writes for the experiment Warnings section in the web UI
+
+The web UI SHALL provide warning add/resolve/reopen/delete via REST
+endpoints:
+- `GET /api/experiments/:id/warnings`
+- `POST /api/experiments/:id/warnings` body `{run, category, message,
+  expectedMtime, expectedHash}` (the `run` field is optional; absent
+  means the warning is exp-scoped)
+- `PATCH /api/experiments/:id/warnings/:rowId` body `{op:
+  "resolve"|"reopen", note?, expectedMtime, expectedHash}`
+- `DELETE /api/experiments/:id/warnings/:rowId`
+
+All endpoints SHALL pass `id` through `assertWithinProjectRoots()` and
+invoke the section-bound writer defined in `experiment-readme`.
+
+#### Scenario: POST attaches run attribution
+- **WHEN** a client POSTs `{run: "bar-260501-100000", category:
+  "result", message: "loss spike", expectedMtime, expectedHash}`
+- **THEN** the new row's Run cell is `bar-260501-100000`, and the
+  `[WARNING] op=add` JOURNAL event has `run: "bar-260501-100000"`
+
+#### Scenario: POST without run attribution
+- **WHEN** a client POSTs the same body without `run`
+- **THEN** the new row's Run cell is `—`, and the JOURNAL event has
+  `run: null`
+
+### Requirement: Web editor side-panel layout and lazy-loaded Monaco
+
+The exp detail page's `Edit markdown` action SHALL open a markdown editor
+following the same responsive container rules as the v2 README editor:
+- `<1024px`: full-screen `<Dialog>`
+- `≥1024px`: right-side resizable panel beside the page body, NOT a
+  Dialog
+
+The editor module (Monaco core + worker + `@monaco-editor/react`) SHALL
+NOT be in the initial JS bundle; it SHALL be dynamically imported on
+first activation. On import failure, fall back to `<textarea>` with a
+"Editor failed to load" toast.
+
+The same toolbar layout from v2 applies: a controls row (title +
+Plain/Monaco toggle + Copy markdown + Cancel/Save) above a path row
+(rendered with smaller monospace font, truncate-on-overflow). The
+white-canvas + line-numbers requirements continue to apply.
 
 #### Scenario: Open editor on desktop
-- **WHEN** the user is on `/p/<project>/<experimentId>` at viewport width ≥1024px and clicks `Edit README`
-- **THEN** a right-side panel slides in (no `<Dialog>` is mounted), occupying `clamp(320px, persistedWidth ?? 50vw, 50vw)` of the viewport width
-- **AND** the detail page body remains visible in the left column
+- **WHEN** the user is on `/p/<project>/e/<E-id>` at viewport ≥1024px and
+  clicks `Edit markdown`
+- **THEN** a right-side panel slides in (no Dialog), the page body stays
+  in the left column, and the panel is resizable from its left edge
 
-#### Scenario: Open editor on tablet
-- **WHEN** the user is on the detail page at viewport width 768–1023px and clicks `Edit README`
-- **THEN** a full-screen `<Dialog>` opens containing the editor (the side panel is NOT used)
+#### Scenario: Lazy-loaded Monaco
+- **WHEN** the user is on the exp detail page but has not opened the
+  editor yet
+- **THEN** Monaco core, language workers, and `@monaco-editor/react` are
+  not in the initial JS bundle
 
-#### Scenario: Open editor on mobile
-- **WHEN** the user is on the detail page at viewport width <768px and clicks `Edit README`
-- **THEN** a full-screen `<Dialog>` opens containing the editor (same as tablet)
+### Requirement: Run-panel actions inside the exp detail page
 
-#### Scenario: Switching from desktop to mobile mid-edit
-- **WHEN** the editor is open as a desktop side panel and the viewport is resized below 1024px (e.g., DevTools, window shrink)
-- **THEN** the side panel unmounts and the editor re-mounts inside a `<Dialog>`, preserving the current `content` state and dirty status (no draft data lost)
+Each expanded run panel inside the exp detail page SHALL provide three
+actions:
+- `Edit markdown (run)` — opens the markdown editor on the run's README
+  (uses `run-edit`'s save handshake)
+- `Open Claude Code (run)` — opens at the project root with a hardcoded
+  preset prompt naming the run dir and parent exp doc paths
+- `Archive` — writes `<run-dir>/.archived` and removes the run from the
+  expanded panel set
 
-#### Scenario: Scroll isolation between panes
-- **WHEN** the panel is open and the user scrolls the left content column (e.g., past the section cards)
-- **THEN** the panel's vertical scroll position SHALL NOT change
-- **AND** the panel's toolbar (top row) SHALL remain fully visible at the top of the panel, NOT pushed under the global AppBar
+The exp-level action bar at the top of the page SHALL provide:
+- `Edit markdown` — opens the editor on the exp doc
+- `Open Claude Code` — opens at the project root with a preset prompt
+  naming the exp doc path and the list of member run dirs
 
-#### Scenario: No window scrollbar when panel is open on desktop
-- **WHEN** the panel is open at viewport ≥1024px and the detail page content overflows
-- **THEN** the document/window itself SHALL NOT have a vertical scrollbar
-- **AND** the overflow scrollbar appears on the left content column (its own internal `overflow-y: auto`)
+#### Scenario: Run-panel Edit operates on run README
+- **WHEN** the user clicks `Edit markdown (run)` inside the panel for
+  `bar-260501-100000`
+- **THEN** the editor opens with the content of
+  `<projectRoot>/<...>/bar-260501-100000/README.md`, and Save POSTs to
+  `/api/runs/bar-260501-100000/readme`
 
-### Requirement: Desktop side panel collapse, expand, and resize
-
-The desktop side panel SHALL support three layout states:
-
-1. **Expanded**: full panel with editor, toolbar, and a left-edge drag handle for resizing.
-2. **Collapsed**: panel collapses to a 32px-wide vertical handle showing a vertical "Edit README" label; clicking the handle re-expands the panel.
-3. **Closed**: panel is fully unmounted (the `Edit README` button reopens it from scratch).
-
-The expanded width SHALL be drag-resizable from the left edge of the panel. The drag handle SHALL be at least 8px wide (so it is grabbable from either side of the visible panel border) and SHALL provide a clear visible affordance on hover/active — a colored vertical bar (e.g., the `--primary` token) that fades in on `hover` and stays visible while the user is actively dragging. The handle's host element (the `<aside>`) MUST establish a positioning context (`position: relative`) so the handle's `absolute` positioning resolves to the panel itself, not an unrelated ancestor.
-
-The width (px) SHALL persist to `localStorage` under key `memon:readme-editor:width`. On open, the panel SHALL read this key and clamp to `[320, 0.5 * window.innerWidth]`. The collapsed/expanded state SHALL persist in the same `ReadmeEditorContext` for the lifetime of the page.
-
-#### Scenario: Collapse the panel
-- **WHEN** the user clicks the collapse button (≫) in the panel toolbar on desktop
-- **THEN** the panel animates to 32px width
-- **AND** a vertical "Edit README" label and an expand affordance (≪) remain clickable on the collapsed handle
-
-#### Scenario: Expand from collapsed
-- **WHEN** the user clicks anywhere on the collapsed handle
-- **THEN** the panel animates back to its previous expanded width (or `clamp(320px, persistedWidth, 50vw)` if no previous width)
-
-#### Scenario: Resize by dragging
-- **WHEN** the user mousedowns on the panel's left-edge drag handle, drags horizontally, and releases
-- **THEN** the panel width updates live during the drag
-- **AND** on mouseup the new width (clamped to `[320, 0.5 * window.innerWidth]`) is written to `localStorage['memon:readme-editor:width']`
-- **AND** during the drag, the document body has `cursor: col-resize` and `user-select: none` applied to prevent accidental text selection
-
-#### Scenario: Drag handle has a discoverable hover affordance
-- **WHEN** the user hovers over the panel's left-edge drag handle
-- **THEN** a colored vertical bar (using the `--primary` color token) becomes visible along the panel's border line
-- **AND** the bar remains visible throughout an active drag, then fades back to invisible on mouseup or pointer-leave
-- **AND** the cursor is `col-resize` whenever the pointer is within ~4px of the panel border (the 8px-wide handle straddles the border)
-
-#### Scenario: Restore width on next open
-- **WHEN** the panel was previously resized to 480px and the user closes and re-opens it
-- **THEN** the new panel mounts at 480px (clamped to viewport)
-
-#### Scenario: Width clamps to viewport on small windows
-- **WHEN** `localStorage['memon:readme-editor:width']` is `900` and `window.innerWidth` is `1280`
-- **THEN** the panel renders at `min(900, 0.5 * 1280) = 640px`
-
-### Requirement: Conflict resolution dialog
-
-When `PUT /api/readme` returns 409, the editor modal SHALL transition into a conflict view rendering the user's draft on the left and the server's current content on the right, using `react-diff-viewer-continued`. The user SHALL have three options: `Keep my changes (overwrite)`, `Discard mine (use disk)`, `Cancel`.
-
-#### Scenario: Keep my changes
-- **WHEN** the user clicks `Keep my changes`
-- **THEN** the page re-issues `PUT /api/readme` carrying the **current on-disk mtime** (received in the 409 body) and the user's draft content; on success, the modal closes
-
-#### Scenario: Discard mine
-- **WHEN** the user clicks `Discard mine`
-- **THEN** the editor's content is replaced with the server's current content, the conflict view is dismissed, and the editor returns to the normal edit mode (so the user can keep editing on top of the latest disk state)
-
-#### Scenario: Cancel
-- **WHEN** the user clicks `Cancel`
-- **THEN** the conflict view is dismissed but the editor remains open with the user's draft intact (no save attempted, no toast)
-
-### Requirement: localStorage draft autosave
-
-While the editor modal is open, the editor content SHALL be persisted to `localStorage` with key pattern `memon:draft:<absolute file path>:<mtime opened>`. Persistence SHALL debounce keystrokes by ~500ms.
-
-#### Scenario: Continuous edits persist
-- **WHEN** the user types in the editor for 5 seconds, then closes the browser tab without saving
-- **THEN** the latest content (typed > 500ms before tab close) is in localStorage under the matching key
-
-#### Scenario: Storage quota errors
-- **WHEN** the localStorage write throws `QuotaExceededError`
-- **THEN** the page shows a `toast.error('Draft autosave failed (storage full)')` and continues to function (in-memory state still intact)
-
-### Requirement: Draft recovery prompt on editor open
-
-When the user opens the editor for a path that already has a localStorage draft, the editor SHALL check the on-disk mtime against the draft's key:
-- If they match (no external write occurred): SHOW a prompt `You have an unsaved draft from N minutes ago — Restore / Discard from disk`
-- If the on-disk mtime is newer (external write occurred): silently discard the draft and inform via inline banner `Disk content has changed since your last edit`
-
-#### Scenario: Restore draft
-- **WHEN** the user clicks `Restore`
-- **THEN** the editor opens with the draft content, and `expectedMtime` is set to the draft's key mtime (so save attempts will trigger the conflict view if disk has since changed)
-
-#### Scenario: Discard from disk
-- **WHEN** the user clicks `Discard from disk`
-- **THEN** the editor opens with the current on-disk content, and the matching localStorage key is deleted
-
-#### Scenario: Skip recovery for tiny drafts
-- **WHEN** a draft exists but its content differs from disk by fewer than 5 characters (essentially noise)
-- **THEN** the recovery prompt is NOT shown and the draft is silently deleted
-
-### Requirement: 7-day stale draft cleanup
-
-On editor open, the page SHALL scan all `memon:draft:*` keys and delete entries whose `savedAt` is older than 7 days.
-
-#### Scenario: Old draft cleaned
-- **WHEN** the user opens any editor and `localStorage` contains a draft with `savedAt = 8 days ago`
-- **THEN** that key is deleted before the recovery prompt logic runs
-
-### Requirement: Warnings card draft autosave parity
-
-The Warnings card's per-row Note edits and the in-progress Add-warning form contents SHALL be persisted to `localStorage` under key patterns parallel to the README editor's draft scheme:
-
-- Pending row Note edits: `memon:warning-note-draft:<absolute README path>:<rowId>:<mtime opened>` storing the current textarea value, debounced ~500ms.
-- Pending Add-warning form: `memon:warning-add-draft:<absolute README path>:<mtime opened>` storing `{category, message}`, debounced ~500ms.
-
-Both key families SHALL participate in the existing 7-day stale draft cleanup (`memon:draft:*` glob is extended or paralleled to also match `memon:warning-*-draft:*`). On Warnings card open, drafts SHALL be restored if they correspond to the current `mtime`; otherwise they SHALL be silently discarded.
-
-#### Scenario: Note edit autosaves while typing
-- **WHEN** the user starts editing a Note cell on a RESOLVED row, types for 5 seconds, then closes the tab without submitting
-- **THEN** the latest content (typed > 500ms before close) is in localStorage under `memon:warning-note-draft:<path>:<rowId>:<mtime>`
-
-#### Scenario: Add-warning form autosaves
-- **WHEN** the user opens the Add-warning form, picks a category, types a message, and closes the tab without submitting
-- **THEN** the partial `{category, message}` is in localStorage under `memon:warning-add-draft:<path>:<mtime>`
-
-#### Scenario: Stale warning drafts cleaned with the existing sweep
-- **WHEN** the user opens any editor or Warnings card and `localStorage` contains a `memon:warning-*-draft:*` key with `savedAt > 7 days ago`
-- **THEN** that key is deleted as part of the same 7-day cleanup sweep that handles README drafts
-
-### Requirement: Warnings card uses the conflict-resolution dialog
-
-When a Warnings card write returns `409 CONFLICT`, the existing README conflict-resolution dialog SHALL be reused (or a parallel dialog with identical UX). The dialog SHALL show the user's pending change (the row they were resolving / the form they were submitting) alongside the current server state, and SHALL offer the same "discard mine / replay mine on top of server's" choices.
-
-The dialog SHALL preserve the pending edit as a draft (under the localStorage keys above) until the user explicitly discards it.
-
-#### Scenario: Resolve hits CONFLICT, dialog opens, user replays
-- **GIVEN** an OPEN warning row with the user mid-resolve at mtime M0
-- **WHEN** the resolve PATCH returns 409 because mtime advanced to M1 (with an unrelated note edit on a different row)
-- **THEN** the conflict dialog opens, shows both states, and on "replay mine" the resolve is re-attempted with `expectedMtime=M1` and the user's note text intact
-
-### Requirement: Add NOTE event from detail page
-
-The detail page SHALL provide a `+ Note` button that opens a small modal with a textarea and a `Submit` button. Submission SHALL `POST /api/journal/append` with `{ project, tag: 'NOTE', body: \`\\\`<id>\\\` <user input>\` }`.
-
-#### Scenario: Append note
-- **WHEN** the user types `converged faster than expected` in the modal and clicks `Submit`
-- **THEN** the JOURNAL.md gains a new `[NOTE]` event line with the experiment's id backticked and the user's text appended, and a success toast appears
-
-#### Scenario: Cancel note
-- **WHEN** the user closes the modal without submitting
-- **THEN** no network request is made and no event is appended
-
-### Requirement: Add NOTE / REQUEST from journal page
-
-The journal page SHALL provide a `+ Add` control that opens a modal letting the user pick a tag (`NOTE` or `REQUEST`) and enter free-form body. Submission SHALL `POST /api/journal/append` with the chosen tag.
-
-#### Scenario: Append request
-- **WHEN** the user picks `REQUEST` and types `please summarize experiments related to H0007`, then submits
-- **THEN** a new `[REQUEST]` event is appended to JOURNAL.md and the timeline view reflects it (after the next SSE event or query refetch)
-
-### Requirement: Create experiment from web UI
-
-The list page SHALL provide a `+ New experiment` button that opens a modal with `name` (required) and `project` (defaulting to current; selectable when multiple projects are configured) inputs. Submission SHALL `POST /api/experiments` with `{ name, project }`. The backend SHALL run the same scaffolding logic as `memon new` (create directory, write README + run.sh templates, append `[CREATE]` event), then return `{ id, path, project }`.
-
-#### Scenario: Create and navigate
-- **WHEN** the user enters `attn-overlap` for project `project-a` and clicks `Create`
-- **THEN** a new directory `<project-a-root>/logs/attn-overlap-<yymmdd>-<hhmmss>/` is created with README.md + run.sh, a `[CREATE]` event is appended to JOURNAL.md, and the user is navigated to the new experiment's detail page
-
-#### Scenario: Name collision in same second
-- **WHEN** the same name is submitted within a one-second window producing a directory that already exists
-- **THEN** the backend returns 409 and the modal shows an inline error `An experiment with that name already exists this second; try again`
-
-### Requirement: POST /api/experiments backend route
-
-The backend SHALL expose `POST /api/experiments` accepting `{ name: string, project?: string }`. Implementation SHALL share core scaffolding logic with the CLI's `memon new` command (extracted to `@memon/core`).
-
-#### Scenario: Successful creation
-- **WHEN** a valid request is received
-- **THEN** the response is 200 with `{ created: { id, path, project } }` and the runtime ExperimentIndex is updated immediately (so the next `/api/experiments` GET reflects the new row)
-
-#### Scenario: Unknown project
-- **WHEN** the body specifies a `project` that is not in the resolved config
-- **THEN** the response is 404 with `{ error: { code: 'NOT_FOUND', message: 'project "..." not configured' } }`
-
-#### Scenario: Default project resolution
-- **WHEN** the body omits `project`
-- **THEN** the backend defaults to the first project in the resolved config
+#### Scenario: Open Claude Code preset prompts differ
+- **WHEN** the user clicks the run-panel `Open Claude Code` button
+- **THEN** the preset prompt names the run dir path and the exp doc
+  path, distinct from the exp-level button's prompt which names the exp
+  doc path and the run list
 

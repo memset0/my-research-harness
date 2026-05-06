@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Per-project collapsed-by-default with on-demand experiment list
+### Requirement: Per-project collapsed-by-default with on-demand run list
 
 Each project group in the sidebar SHALL be collapsed by default. Clicking
 the project's header SHALL toggle expansion. When expanded, the group
@@ -31,7 +31,7 @@ The per-project counter badge in the sidebar SHALL show the number of
 - **WHEN** the sidebar renders
 - **THEN** the project's counter badge shows `12` (not `47`)
 
-### Requirement: "View more" temporary expansion past 5 experiments
+### Requirement: "View more" temporary expansion past 5 runs
 
 The sidebar SHALL provide a non-persistent "View more" affordance for
 projects with more than 5 experiments. When a project has more than 5
@@ -66,7 +66,7 @@ The sidebar SHALL visually highlight:
   treatment AND, if `project-a` is expanded, the `E0001-foo` row has
   the "active row" treatment
 
-### Requirement: Existing routes continue working unchanged or via redirect
+### Requirement: Existing routes continue working unchanged
 
 The pre-existing v2 URL routes SHALL be preserved or redirected. The URL
 structure `/p/[project]`, `/p/[project]/hypotheses`,
@@ -89,21 +89,8 @@ with a redirect to `/p/[project]/e/<E-id-of-parent>?run=<run-dir>` per
 - **THEN** the URL is rewritten to
   `/p/project-a/e/<exp-of-bar>?run=bar-260501-100000`
 
-## REMOVED Requirements
+<!-- The v2 requirements `Per-project collapsed-by-default with on-demand
+run list` and `"View more" temporary expansion past 5 runs` are NOT
+removed; they are MODIFIED in-place above to switch from "5 runs" to
+"5 experiments" navigation semantics. -->
 
-### Requirement: Per-project collapsed-by-default with on-demand run list (v2)
-
-**Reason**: V2's "run list" in the sidebar is replaced by an
-"experiment list". Runs are no longer the primary navigation unit. The
-v3 contract is the MODIFIED `### Requirement: Per-project collapsed-by-
-default with on-demand experiment list` above.
-
-**Migration**: Users will see experiment names in the sidebar instead
-of run dir names. Drilling into an experiment shows its runs.
-
-### Requirement: "View more" temporary expansion past 5 runs (v2)
-
-**Reason**: V2 said "5 runs"; v3 says "5 experiments". Same mechanism,
-different items. Replaced by the MODIFIED requirement above.
-
-**Migration**: No user action.

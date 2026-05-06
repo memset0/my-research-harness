@@ -230,7 +230,7 @@ The exp-level action bar at the top of the page SHALL provide:
 
 ## REMOVED Requirements
 
-### Requirement: Status edit control on the detail page (v2)
+### Requirement: Status edit control on the detail page
 
 **Reason**: The exp doc does not have a status field of its own — the
 exp's status pill in the UI is computed from the aggregate of member
@@ -242,7 +242,7 @@ control.
 edit the relevant run's `status` field. The aggregate exp status
 recomputes automatically.
 
-### Requirement: README inline editor (v2)
+### Requirement: README inline editor
 
 **Reason**: V2's editor was the canonical README editor for the
 single-file experiment model. In v3 there are two surfaces — the exp
@@ -255,14 +255,14 @@ the same rules per `run-edit`.
 **Migration**: Users see two `Edit markdown` buttons (exp + run) instead
 of one.
 
-### Requirement: Desktop side-panel layout for the README editor (v2)
+### Requirement: Desktop side-panel layout for the README editor
 
 **Reason**: Replaced by the new `### Requirement: Web editor side-panel
 layout and lazy-loaded Monaco` above, which applies to both surfaces.
 
 **Migration**: No user action.
 
-### Requirement: Desktop side panel collapse, expand, and resize (v2)
+### Requirement: Desktop side panel collapse, expand, and resize
 
 **Reason**: The collapse/expand/resize behavior is preserved verbatim in
 the v3 editor; we omit re-stating those scenarios here. The implementer
@@ -271,14 +271,14 @@ handle, persistence keys, and clamp boundaries.
 
 **Migration**: No user action; behavior unchanged.
 
-### Requirement: Conflict resolution dialog (v2)
+### Requirement: Conflict resolution dialog
 
 **Reason**: The conflict-resolution dialog continues unchanged; it is
 re-used from the v2 implementation for both exp and run editors.
 
 **Migration**: No user action.
 
-### Requirement: localStorage draft autosave (v2)
+### Requirement: localStorage draft autosave
 
 **Reason**: localStorage draft autosave continues unchanged with key
 patterns extended to cover both surfaces (`memon:draft:<exp-doc-path>:
@@ -289,19 +289,19 @@ work (the path is unchanged); drafts under v2 keys for what is now an
 exp doc would not match the new file path and would be silently
 discarded by the existing 7-day cleanup.
 
-### Requirement: Draft recovery prompt on editor open (v2)
+### Requirement: Draft recovery prompt on editor open
 
 **Reason**: Continues unchanged for both surfaces.
 
 **Migration**: No user action.
 
-### Requirement: 7-day stale draft cleanup (v2)
+### Requirement: 7-day stale draft cleanup
 
 **Reason**: Continues unchanged.
 
 **Migration**: No user action.
 
-### Requirement: Warnings card draft autosave parity (v2)
+### Requirement: Warnings card draft autosave parity
 
 **Reason**: Continues unchanged; the path in the localStorage key is
 the exp doc path under v3 (was the run README path under v2 because
@@ -310,14 +310,14 @@ warnings lived on runs).
 **Migration**: Pre-existing v2 warning-edit drafts keyed under run paths
 expire via the existing 7-day cleanup.
 
-### Requirement: Warnings card uses the conflict-resolution dialog (v2)
+### Requirement: Warnings card uses the conflict-resolution dialog
 
 **Reason**: Continues unchanged in v3 (now operates on exp doc instead
 of run README).
 
 **Migration**: No user action.
 
-### Requirement: Add NOTE event from detail page (v2)
+### Requirement: Add NOTE event from detail page
 
 **Reason**: The exp detail page provides the same `+ Note` action; the
 target id sent to `/api/journal/append` is now the experiment id
@@ -328,13 +328,13 @@ should send the new exp id format. Run-attributed notes are still
 supported via the run-panel actions (the notes UI on the run panel POSTs
 the run dir name).
 
-### Requirement: Add NOTE / REQUEST from journal page (v2)
+### Requirement: Add NOTE / REQUEST from journal page
 
 **Reason**: Unchanged; tag set still includes `NOTE` / `REQUEST`.
 
 **Migration**: No user action.
 
-### Requirement: Create experiment from web UI (v2)
+### Requirement: Create experiment from web UI
 
 **Reason**: V2's "create experiment" created what we now call a run.
 That action is reframed in v3: the web UI's `+ New experiment` button
@@ -346,7 +346,7 @@ choice that the run-creation flow lives in the write-script skill).
 either the exp page or the project root; the agent walks the user
 through scaffolding the run dir.
 
-### Requirement: POST /api/experiments backend route (v2)
+### Requirement: POST /api/experiments backend route
 
 **Reason**: The route's semantics flip in v3 to operate on the exp doc
 layer (was: run scaffolding). The new contract is on the implementation

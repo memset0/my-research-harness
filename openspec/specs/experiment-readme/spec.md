@@ -3,53 +3,6 @@
 ## Purpose
 TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
 ## Requirements
-### Requirement: README.md front matter schema
-
-The README front matter SHALL define the experiment's metadata with the field set described below. Each experiment SHALL be described by a `README.md` at the experiment directory root. The file SHALL begin with a YAML front matter block bounded by `---` lines.
-
-Required front matter fields:
-- `id` (string) — must equal the directory base name
-- `name` (string) — human-readable name
-- `status` (enum) — one of `PENDING`, `RUNNING`, `FINISHED`, `FAILED`, `UNKNOWN` (uppercase)
-- `created_at` (ISO8601 string with timezone offset, e.g. `2026-05-03T08:28:00+08:00`)
-- `entry` (string) — relative path to the launch script
-- `command` (string) — full command line as actually invoked
-- `hypotheses` (array of strings) — related hypothesis IDs in canonical 4-digit zero-padded form (e.g. `[H0001, H0003]`). Each element SHALL match `^H\d{4}$`. Elements that don't match SHALL be dropped from the parsed array with a structured per-element warning (`code: 'INVALID_HYPOTHESIS_REF'`, the offending value); the rest of the array stays.
-- `tags` (array of strings)
-
-Optional front matter fields:
-- `project` (string) — **sub-project label**, free-form. NOT the source of truth for which `config.yml` project the experiment belongs to (that is determined structurally by which configured project root contains the directory). Used by the UI as a small badge/tag and by free-text search; absent or empty means "no sub-project label." When the parser observes this field, it preserves it verbatim — there is no fallback or backfill from the project name in `config.yml`.
-- `finished_at` (ISO8601 with offset, or null)
-- `host` (string)
-- `pid` (integer)
-- `gpus` (array of integers)
-- `wandb` (URL string)
-
-#### Scenario: Valid front matter parses
-- **WHEN** a `README.md` contains all required fields with valid values
-- **THEN** the parser produces a fully populated experiment record with no warnings
-
-#### Scenario: Required field missing
-- **WHEN** a `README.md` is missing the `command` field in front matter
-- **THEN** the parser surfaces a structured warning naming the missing field, and the index entry still loads with `command: null`
-
-#### Scenario: Padded hypothesis ids
-- **WHEN** the front matter contains `hypotheses: [H0001, H0003]`
-- **THEN** the parser stores `["H0001", "H0003"]`
-
-#### Scenario: Mixed valid + invalid hypothesis ids
-- **WHEN** the front matter contains `hypotheses: [H0001, H3, H0042]`
-- **THEN** the parser surfaces an `INVALID_HYPOTHESIS_REF` warning for `H3`, drops it, and stores `["H0001", "H0042"]`
-
-#### Scenario: Project field is OPTIONAL — no warning when absent
-- **WHEN** a `README.md` omits the `project:` line entirely
-- **THEN** the parser does NOT surface a missing-required-field warning for `project`, and the indexed entry's `frontMatter.project` is the empty string
-
-#### Scenario: Project field preserved when present and differs from enclosing project
-- **GIVEN** a `README.md` under `config.yml` project `sparse-fsdp` whose front matter contains `project: predictive-skip-validation`
-- **WHEN** the parser produces the experiment record
-- **THEN** the record's `frontMatter.project` is exactly `"predictive-skip-validation"` (NOT silently replaced by `"sparse-fsdp"`), AND the record's top-level `project` (set by discovery) is `"sparse-fsdp"`
-
 ### Requirement: Status enum with uppercase canonical form
 
 The `status` field SHALL be stored in uppercase canonical form (`PENDING`/`RUNNING`/`FINISHED`/`FAILED`/`UNKNOWN`). The frontend SHALL render each status with a fixed emoji prefix:
@@ -70,148 +23,256 @@ The `status` field SHALL be stored in uppercase canonical form (`PENDING`/`RUNNI
 - **WHEN** a `README.md` has `status: completed` (not in the enum)
 - **THEN** the parser produces a structured error and the index entry uses `status: UNKNOWN`
 
-### Requirement: Hypotheses field carries no judgment
+### Requirement: Experiment doc location and front matter schema
 
-The `hypotheses` front matter array SHALL only list related hypothesis IDs in canonical 4-digit zero-padded form, MUST NOT encode whether each is verified, refuted, or partial. The truth value of each hypothesis lives only in `HYPOTHESES.md`.
+Each experiment SHALL be described by a single markdown file at
+`<projectRoot>/docs/experiments/E<NNNN>-<slug>.md` where `<NNNN>` is a
+4-digit zero-padded integer in `0001..9999` and `<slug>` is a kebab-case
+string `[a-z0-9][a-z0-9-]*[a-z0-9]`. The file SHALL begin with a YAML
+front matter block bounded by `---` lines.
 
-#### Scenario: Plain ID list
-- **WHEN** the front matter contains `hypotheses: [H0001, H0003]`
-- **THEN** the parser stores `["H0001", "H0003"]` and exposes no per-ID status
+Required front matter fields:
+- `id` (string) — must equal the file's `E<NNNN>-<slug>` portion
+- `slug` (string) — must equal the slug portion of the filename (the part
+  after `E<NNNN>-`)
+- `title` (string) — human-readable name
+- `created_at` (ISO8601 with timezone offset) — when the doc was first
+  written
+- `updated_at` (ISO8601 with timezone offset) — bumped on every web/CLI
+  edit; SHALL NOT be auto-rewritten by the parser
 
-### Requirement: Standard markdown sections
+Optional front matter fields:
+- `runs` (array of strings) — run dir base names (e.g.
+  `["zero-snr-260502-110000"]`). Each element SHALL match the run dir
+  regex `^.+-\d{6}-\d{6}$`. Elements that don't match SHALL be dropped
+  from the parsed array with a structured warning
+  `code: 'INVALID_RUN_REF'`.
+- `hypotheses` (array of strings) — `H<NNNN>` IDs (4-digit zero-padded);
+  invalid elements surface `INVALID_HYPOTHESIS_REF` and are dropped, the
+  rest of the array stays.
+- `tags` (array of strings)
 
-The `README.md` body SHALL contain the following H2 sections in this order: `Motivation`, `Setup`, `Method`, `Result`, `Conclusion`, `Caveats`, `Artifacts`. An optional `New Hypotheses` section MAY appear after `Artifacts`. An optional `Warnings` section MAY appear between `Caveats` and `Artifacts`.
+Removed/disallowed fields: `project` is NOT a frontmatter field on
+experiment docs (project membership is derived structurally from
+`config.yml`'s project roots, the same as runs).
 
-The parser SHALL tolerate additional non-canonical H2 sections appearing anywhere in the body (e.g., user-added free-form headings) without erroring; such sections SHALL be preserved verbatim by any writer that does not target them.
+#### Scenario: Valid front matter parses
+- **WHEN** an exp doc contains all required fields
+- **THEN** the parser produces a fully populated experiment record with no
+  warnings
+
+#### Scenario: id mismatch with filename
+- **WHEN** the file is named `E0001-foo.md` but the front matter says
+  `id: E0002-foo`
+- **THEN** the parser surfaces an `ID_FILENAME_MISMATCH` error and the
+  index entry uses the filename-derived id
+
+#### Scenario: Invalid run reference dropped
+- **WHEN** `runs: [zero-snr-260502-110000, totally-invalid-name]`
+- **THEN** the parser stores `["zero-snr-260502-110000"]` and surfaces an
+  `INVALID_RUN_REF` warning naming the dropped element
+
+### Requirement: Experiment slug uniqueness and prefix rules
+
+The system SHALL enforce three slug rules per project. Within a single
+project:
+- Two experiment docs SHALL NOT have the same `slug`. Collisions surface a
+  `DUPLICATE_EXPERIMENT_SLUG` parse warning naming both files.
+- An experiment slug SHALL NOT be a prefix of another experiment slug.
+  Violations surface a `EXPERIMENT_SLUG_PREFIX_COLLISION` parse warning
+  naming both files.
+- An experiment slug SHOULD be a prefix of every member run's slug. This
+  is a soft convention; violations surface a non-blocking
+  `RUN_SLUG_PREFIX_VIOLATION` warning per offending run, and `memon
+  doctor` reports them.
+
+#### Scenario: Slug collision
+- **GIVEN** `E0001-foo.md` and `E0002-foo.md` in the same project
+- **WHEN** the indexer scans
+- **THEN** `DUPLICATE_EXPERIMENT_SLUG` is emitted naming both files
+
+#### Scenario: Prefix collision
+- **GIVEN** `E0001-foo.md` (slug `foo`) and `E0002-foo-bar.md` (slug
+  `foo-bar`)
+- **WHEN** the indexer scans
+- **THEN** `EXPERIMENT_SLUG_PREFIX_COLLISION` is emitted naming both
+  files
+
+#### Scenario: Soft prefix violation surfaces a non-blocking warning
+- **GIVEN** experiment `E0001-foo` whose `runs[]` contains `bar-260501-…`
+- **WHEN** the indexer scans
+- **THEN** a `RUN_SLUG_PREFIX_VIOLATION` warning is emitted for that run;
+  the run is still considered a member if both sides agree
+
+### Requirement: Effective times computed by the API
+
+The API serving an experiment SHALL augment the on-disk record with two
+computed fields:
+- `effective_created_at = min(experiment.created_at, ...member_runs.created_at)`
+- `effective_updated_at = max(experiment.updated_at, ...member_runs.updated_at)`
+
+The on-disk `created_at` / `updated_at` SHALL NOT be modified by the
+backend on read. The frontend SHALL display the `effective_*` values for
+the dashboard's 📅 / ✎ icons.
+
+When the experiment has zero member runs, `effective_*` equal the
+on-disk values.
+
+#### Scenario: Effective times min/max over members
+- **GIVEN** an experiment with `created_at: 2026-05-04T...` and member
+  runs whose earliest `created_at` is `2026-05-02T...` and latest
+  `updated_at` is `2026-05-05T...`
+- **WHEN** the API returns the experiment record
+- **THEN** the response carries
+  `effective_created_at: 2026-05-02T...`,
+  `effective_updated_at: 2026-05-05T...`
+
+### Requirement: Experiment doc body sections
+
+The experiment doc body SHALL contain the following H2 sections in this
+order: `Motivation`, `Method`, `Conclusion`, `Caveats`, `Warnings`. The
+parser SHALL tolerate additional non-canonical H2 sections appearing
+anywhere (preserved verbatim by writers that don't target them).
+
+The `## New Hypotheses` section SHALL NOT exist in the experiment doc.
+Hypothesis-related discussion (testing existing hypotheses or proposing
+new ones) lives inline in `Motivation` and `Conclusion`. The structured
+record of hypotheses lives in `docs/hypotheses.md` and the
+`hypotheses[]` frontmatter array.
 
 #### Scenario: Section missing or empty
-- **WHEN** a section header is missing from `README.md`
-- **THEN** the parser records the absence on the experiment record but does not error; the frontend renders the section as a placeholder labeled "to fill"
+- **WHEN** an experiment doc is missing `## Method`
+- **THEN** the parser records the absence on the experiment record but
+  does not error; the frontend renders the section as a placeholder
+  labeled "to fill"
 
-#### Scenario: Artifacts section format
-- **WHEN** the `Artifacts` section contains entries of the form `- \`./path/\` — description`
-- **THEN** the parser extracts a list of `{path, description}` pairs that are surfaced to the frontend artifacts view
+#### Scenario: New Hypotheses section flagged
+- **WHEN** an experiment doc contains a `## New Hypotheses` section (e.g.
+  carried over from a v2 run)
+- **THEN** the parser surfaces a `LEGACY_NEW_HYPOTHESES_SECTION` warning,
+  preserves the body verbatim, and steers the user to relocate the
+  content into `Motivation` / `Conclusion` / `docs/hypotheses.md`
 
-#### Scenario: Warnings section is OPTIONAL
-- **WHEN** a `README.md` omits the `## Warnings` heading entirely
-- **THEN** the parser does NOT surface a missing-section warning, the experiment record's `warnings` field is the empty array `[]`, and the README remains valid
+### Requirement: Warnings table with Run column
 
-#### Scenario: Non-canonical H2 sections are preserved
-- **GIVEN** a `README.md` that contains a user-added `## Discussion` section after `## Conclusion`
-- **WHEN** the parser indexes the experiment, AND any subsequent section-bound write (e.g., a warning append) is applied
-- **THEN** the `## Discussion` section's contents are unchanged byte-for-byte after the write, and the parser does not error on its presence
+When present, the experiment doc's `## Warnings` H2 section body SHALL
+contain exactly one GFM table with the column header row `| Status |
+Created | Run | Category | Message | Resolved | Note |` (in that order).
+Each subsequent row SHALL represent one warning. The table MAY be
+preceded by a single descriptive paragraph but SHALL NOT contain other
+prose between rows.
 
-### Requirement: Warnings section table format
-
-When present, the `## Warnings` H2 section body SHALL contain exactly one GFM table with the column header row `| Status | Created | Category | Message | Resolved | Note |` (in that order; column header text is case-insensitive but the order is fixed). Each subsequent row SHALL represent one warning. The table MAY be preceded by a single optional descriptive paragraph but SHALL NOT contain other prose between rows. Rows SHALL terminate each line; pipes (`|`) inside cell content SHALL be backslash-escaped (`\|`); literal newlines inside cell content SHALL be encoded as `<br>`.
-
-Each row SHALL carry a stable opaque row identifier (`rowId`) embedded as an HTML comment at the end of the row line, of the form `<!-- id:w_<isoCreatedColonsToHyphens>_<4hex> -->`. Writers SHALL emit the comment; readers SHALL treat the comment as authoritative and SHALL NOT use array index as identity.
+The `Run` column value SHALL be either:
+- the run dir base name of the run that the warning applies to (e.g.
+  `zero-snr-260502-110000`), OR
+- `—` (em dash, or empty) when the warning applies to the experiment as
+  a whole and is not attributable to a specific run.
 
 Each warning row SHALL have:
 - `Status` ∈ {`OPEN`, `RESOLVED`} (uppercase canonical form)
-- `Created` (ISO8601 with timezone offset, set at append time, never edited thereafter)
-- `Category` (one of the closed enum below; out-of-enum values surface a parse warning but the row is preserved)
+- `Created` (ISO8601 with timezone offset, set at append time)
+- `Run` (run dir name or em-dash, see above)
+- `Category` ∈ {`methodology`, `result`, `config`, `data`, `repro`,
+  `compare`, `infra`, `other`}
 - `Message` (free-text, escaped)
-- `Resolved` (ISO8601 with offset when `Status === RESOLVED`; empty / `—` otherwise)
-- `Note` (free-text, escaped; populated when status transitions to RESOLVED, optional otherwise)
+- `Resolved` (ISO8601 with offset when status is RESOLVED, else `—`)
+- `Note` (free-text, escaped, populated on resolve)
 
-The `Category` enum is: `methodology`, `result`, `config`, `data`, `repro`, `compare`, `infra`, `other`.
+Each row SHALL carry a stable opaque row identifier embedded as
+`<!-- id:w_<isoCreatedColonsToHyphens>_<4hex> -->` at the end of the row
+line. Pipe escapes (`\|`) and newline encoding (`<br>`) follow the same
+rules as v2.
 
 #### Scenario: Valid warnings table parses to typed array
-- **GIVEN** a `## Warnings` section containing a header row plus two rows: one with `Status: OPEN, Category: result` and one with `Status: RESOLVED, Category: config, Resolved: 2026-05-04T11:00+08:00, Note: "intentional, A100 OOM at 512"`
+- **GIVEN** a `## Warnings` section containing a header row plus two
+  rows: one with `Run: zero-snr-260502-110000, Status: OPEN, Category:
+  result` and one with `Run: —, Status: RESOLVED, Category: config,
+  Resolved: 2026-05-04T11:00+08:00`
 - **WHEN** the parser indexes the experiment
-- **THEN** `experiment.warnings` is an array of two `Warning` objects with the exact field values, both carrying their `rowId` from the trailing HTML comment
+- **THEN** `experiment.warnings` is an array of two objects, the first
+  with `run: "zero-snr-260502-110000"`, the second with `run: null`
 
-#### Scenario: Pipe escape in cell content round-trips
-- **GIVEN** a warning whose Message is `loss = a|b at step 1500`
-- **WHEN** the writer emits the row and the parser reads it back
-- **THEN** the on-disk row contains `loss = a\|b at step 1500` and the parsed `Message` field equals exactly `loss = a|b at step 1500`
+#### Scenario: Run column missing fails the parse
+- **WHEN** the table header row omits the `Run` column
+- **THEN** the parser surfaces `WARNINGS_TABLE_HEADER_MISMATCH` and
+  treats the section as the legacy v2 form (preserved as
+  `warningsRaw`); section-bound writes refuse the section
 
-#### Scenario: Out-of-enum category preserved with parse warning
-- **WHEN** a row has `Category: aesthetic` (not in the enum)
-- **THEN** the parser surfaces an `UNKNOWN_WARNING_CATEGORY` warning naming the value, AND the row is still included in `experiment.warnings` with `category: "aesthetic"` (the parser does not silently drop user data)
+### Requirement: Section-bound writes for the experiment Warnings section
 
-#### Scenario: Status normalised to uppercase
-- **WHEN** a row has `Status: open` (lowercase)
-- **THEN** the parser produces a parse warning AND normalises the in-memory value to `OPEN`
-
-#### Scenario: Non-conforming Warnings section is preserved as raw
-- **GIVEN** a `## Warnings` section that contains prose / a list / no table
-- **WHEN** the parser indexes the experiment
-- **THEN** `experiment.warnings` is `[]`, `experiment.warningsRaw` contains the section bytes, and the parser surfaces a `WARNINGS_SECTION_NOT_TABLE` warning. Section-bound writers SHALL refuse to mutate this section and SHALL surface a diagnostic to the user.
-
-### Requirement: Section-bound writes for the Warnings section
-
-The system SHALL provide a section-bound write path for the `## Warnings` section that mutates only lines inside that section's H2 range. The writer SHALL:
-
-1. Locate the section by an anchored heading match (`^## Warnings\s*$`) and capture the line range from the heading to the line before the next H2 (or EOF).
-2. If the section is absent, insert it at the canonical position: after `## Caveats` and before `## Artifacts`. If `## Caveats` is missing, insert before `## Artifacts`. If both anchors are missing, append at EOF (immediately before `## New Hypotheses` if that section exists).
-3. Apply the row mutation only inside the captured (or newly created) range.
-4. Before flushing to disk, diff the proposed file against the on-disk file and assert that no line outside the captured range differs. If the assertion fails, abort the write and surface an internal error.
-5. Use `expectedMtime` + `expectedHash` against the whole file for optimistic locking. On a concurrent edit that did NOT touch the Warnings section's pre-image, the writer MAY rebase its row mutation onto the latest content and retry once. If the Warnings section's pre-image changed, the writer SHALL surface a CONFLICT to the caller.
+The system SHALL provide a section-bound write path for the exp doc's
+`## Warnings` section that mutates only lines inside the section's H2
+range. The writer SHALL:
+1. Locate the section by an anchored heading match (`^## Warnings\s*$`).
+2. If the section is absent, insert it at the canonical position: after
+   `## Caveats` (or at EOF if `## Caveats` is missing).
+3. Apply row mutations only inside the captured (or newly created) range.
+4. Before flushing, diff the proposed file against on-disk and assert no
+   line outside the captured range differs.
+5. Use `expectedMtime` + `expectedHash` for optimistic locking.
 
 #### Scenario: Append warning preserves a parallel Method edit
-- **GIVEN** a README at mtime M0; a section-bound writer is preparing to append a warning row; meanwhile another process replaces the `## Method` section's body and the file is now at mtime M1 (Warnings section bytes unchanged)
+- **GIVEN** an exp doc at mtime M0; a section-bound writer is preparing
+  to append a warning row; another process replaces `## Method` and the
+  file is now at mtime M1 (Warnings section bytes unchanged)
 - **WHEN** the section-bound writer commits its append
-- **THEN** the resulting file contains BOTH the new warning row AND the new Method section body; the writer's pre-flush diff assertion passes; the response carries the new mtime
+- **THEN** the result contains BOTH the new warning row AND the new
+  Method body; the diff assertion passes; the response carries M2
 
 #### Scenario: Concurrent edit to Warnings section forces CONFLICT
-- **GIVEN** a section-bound writer is preparing to append a warning row at mtime M0; before it commits, another process adds a different warning row at mtime M1
+- **GIVEN** a section-bound writer prepared at M0; another process adds
+  a different warning row at M1 before the first writer commits
 - **WHEN** the writer attempts to commit
-- **THEN** the operation exits with code 9 `CONFLICT` (CLI) or HTTP 409 (API), the file is not modified, and the response includes the current mtime + content for retry
+- **THEN** the operation exits with code 9 `CONFLICT` (CLI) or HTTP 409
+  (API), the file is not modified, and the response includes current
+  mtime + content for retry
 
-#### Scenario: Diff assertion catches accidental clobber
-- **GIVEN** a buggy implementation that accidentally rewrites a line in `## Method` while appending a warning row
-- **WHEN** the writer performs its pre-flush diff assertion
-- **THEN** the write aborts before flushing to disk, an internal error is surfaced, and the file on disk is unchanged
+### Requirement: Warning row identity with run attribution and audit trail
 
-#### Scenario: Section creation when missing
-- **GIVEN** a README that has `## Caveats` and `## Artifacts` but no `## Warnings`
-- **WHEN** the writer appends the first warning
-- **THEN** the resulting file contains a new `## Warnings` H2 between the two anchors, the table header row, and the new warning row; the rest of the file is byte-identical aside from the inserted block
+Every warning operation (`add`, `resolve`, `reopen`, `delete`) SHALL
+append a single `[WARNING]` event to JOURNAL.md carrying
+`{op, rowId, experimentId, run, category, message?}` so warning history
+is reconstructible even if a row is later deleted from the doc. The
+`run` field SHALL be the run dir name attribution from the `Run` column,
+or `null` when the warning is exp-scoped.
 
-### Requirement: Warning row identity and audit trail
-
-Every warning operation (`add`, `resolve`, `reopen`, `delete`) SHALL append a single `[WARNING]` event to `JOURNAL.md` carrying `{op, rowId, category, message?}` so that warning history is reconstructible even if a row is later deleted from the README.
-
-#### Scenario: Add appends WARNING add event
-- **WHEN** `memon experiment warning add` succeeds
-- **THEN** `JOURNAL.md` has one new event line tagged `[WARNING]` with body containing `op=add`, the new `rowId`, the `category`, and the `message`
-
-#### Scenario: Delete appends WARNING delete event preserving content
-- **WHEN** `memon experiment warning delete` succeeds
-- **THEN** the journal event line includes the deleted row's full content (status, category, message, resolved, note) so the row can be reconstructed if needed
+#### Scenario: Add appends WARNING add event with run attribution
+- **WHEN** `memon experiment warning add E0001-foo --run
+  bar-260501-100000 --category result --message "..."` succeeds
+- **THEN** JOURNAL.md gains one new event line tagged `[WARNING]` with
+  body containing `op=add`, the new `rowId`, `experimentId=E0001-foo`,
+  `run=bar-260501-100000`, `category=result`, and the message
 
 #### Scenario: Reopen clears Resolved and Note
-- **GIVEN** a row with status `RESOLVED`, `Resolved: 2026-05-04T11:00+08:00`, `Note: "intentional"`
-- **WHEN** `memon experiment warning reopen <id> <rowId>` is called
-- **THEN** the row's status flips to `OPEN`, the `Resolved` and `Note` cells are emptied (rendered as `—` or blank), `Created` is preserved, and a `[WARNING]` reopen event is appended to JOURNAL
+- **GIVEN** a row with status `RESOLVED`, `Resolved: 2026-05-04T...`,
+  `Note: "..."`
+- **WHEN** `memon experiment warning reopen E0001-foo <rowId>` is called
+- **THEN** the row's status flips to `OPEN`, `Resolved` and `Note` are
+  cleared (`—` or blank), `Created` and `Run` are preserved, and a
+  `[WARNING]` reopen event is appended
 
-### Requirement: README write with optimistic mtime lock
+### Requirement: Bidirectional binding via `runs[]` frontmatter
 
-The system SHALL accept README writes via `PUT /api/readme` carrying `expectedMtime`. The backend SHALL compare `expectedMtime` against the disk's current `mtime` before writing.
+The experiment frontmatter `runs[]` array SHALL list run dir base names.
+Each entry that names a discovered run with a matching `experiment:`
+back-reference is a confirmed member. Entries that do not match either
+side surface as anomalies (see `experiment-membership-anomalies`).
 
-#### Scenario: Successful write
-- **WHEN** `expectedMtime` matches the on-disk `mtime`
-- **THEN** the backend writes the new content, returns 200 with the new `mtime`, and appends an event to `JOURNAL.md`
+`memon experiment link <id> <run>` SHALL update both the exp's `runs[]`
+and the run's `experiment:` field atomically.
 
-#### Scenario: Conflict
-- **WHEN** the on-disk `mtime` differs from `expectedMtime`
-- **THEN** the backend returns 409 with the current on-disk content and `mtime` in the response body
+`memon experiment unlink <id> <run>` SHALL remove the run dir name from
+the exp's `runs[]` AND clear the run's `experiment:` field atomically.
 
-#### Scenario: mtime equal but content differs
-- **WHEN** the `mtime` values are equal but a content-hash check shows the on-disk content differs
-- **THEN** the backend treats this as a conflict and returns 409 (defending against low-resolution mtime on NFS)
+#### Scenario: Link is bidirectional
+- **GIVEN** an exp `E0001-foo` and an unbound run `bar-260501-100000`
+- **WHEN** the user runs `memon experiment link E0001-foo bar-260501-100000`
+- **THEN** `E0001-foo.runs[]` contains `"bar-260501-100000"` AND the
+  run's `experiment:` field is `E0001-foo`
 
-### Requirement: Graceful degradation on parse failure
-
-When `README.md` is absent, malformed, or missing required fields, the system SHALL still index the experiment directory (so it appears in lists) and surface the parse status to the frontend.
-
-#### Scenario: README missing
-- **WHEN** an experiment directory has no `README.md` at all
-- **THEN** the index entry exists with `hasReadme: false`, derived `id`/`name`/`created_at` from the directory name, `status: UNKNOWN`, and the frontend list view shows it as a greyed-out card
-
-#### Scenario: Front matter unparseable
-- **WHEN** `README.md` exists but front matter is invalid YAML
-- **THEN** the index entry has `parseError: <message>`, the body is still rendered, and the frontend shows a warning banner offering to open the raw file
+#### Scenario: Unlink clears both sides
+- **GIVEN** a confirmed binding
+- **WHEN** the user runs `memon experiment unlink E0001-foo bar-260501-100000`
+- **THEN** `E0001-foo.runs[]` no longer contains `bar-260501-100000` AND
+  the run's `experiment:` field is empty/absent
 

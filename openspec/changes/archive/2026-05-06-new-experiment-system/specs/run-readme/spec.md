@@ -162,7 +162,7 @@ in lists) and SHALL surface the parse status to the frontend.
 
 ## REMOVED Requirements
 
-### Requirement: README.md front matter schema (v2 form)
+### Requirement: README.md front matter schema
 
 **Reason**: The v2 schema defined the run frontmatter with `project:`
 sub-project label, run-level `hypotheses:`, and run-level `tags:` — all of
@@ -174,7 +174,7 @@ which are removed in v3. The replacement contract lives in the new
 the legacy fields and adds the new `experiment:` and `updated_at` fields
 where applicable.
 
-### Requirement: Standard markdown sections (v2 form)
+### Requirement: Standard markdown sections
 
 **Reason**: V2 required `Motivation`, `Setup`, `Method`, `Result`,
 `Conclusion`, `Caveats`, `Artifacts`, with optional `New Hypotheses` and
@@ -184,7 +184,7 @@ only `Setup` / `Result` / `Artifacts` remain.
 **Migration**: Same migration guide. Sections that move are extracted into
 the parent experiment's `docs/experiments/E<NNNN>-<slug>.md`.
 
-### Requirement: Hypotheses field carries no judgment (v2 form)
+### Requirement: Hypotheses field carries no judgment
 
 **Reason**: The `hypotheses` array moves to experiment frontmatter. Run
 frontmatter no longer carries it.
