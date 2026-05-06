@@ -103,6 +103,22 @@ adds the missing test layers, and updates the agent-facing docs.
   `memon run rename` from `DUPLICATE_RUN_SLUG` to `DUPLICATE_RUN_DIR`.
   The check still rejects a name clash (only possible when same slug +
   same timestamp), but the name now reflects what's actually checked.
+- `experiment-membership-anomalies` — add three v3 slug-uniqueness
+  anomaly codes (`DUPLICATE_EXPERIMENT_SLUG`,
+  `EXPERIMENT_SLUG_PREFIX_COLLISION`, `RUN_SLUG_PREFIX_VIOLATION`)
+  that the indexer + doctor + `/api/anomalies` already emit; modify
+  the `Three anomaly classes` requirement note to acknowledge the
+  expanded code set; rewrite the `Anomaly stream API` requirement's
+  SSE payload from `{op, record}` to `{project, count}` (matching
+  the live-updates delta in this change).
+- `experiment-edit` — add the `POST /api/open-claude-code` endpoint
+  contract that the existing "Run-panel actions inside the exp
+  detail page" requirement's `Open Claude Code` button consumes;
+  document the response shape `{command, cwd, hint}` and the
+  fallback when `navigator.clipboard.writeText` is blocked.
+- `memon-cli` — document the `[deprecation]` banner format on
+  stderr and the `MEMON_QUIET_DEPRECATIONS` env-var suppression for
+  scripted callers.
 - `test-suite` — add integration / migration regression / browser
   scenarios per 16.2 / 16.3 / 16.4.
 

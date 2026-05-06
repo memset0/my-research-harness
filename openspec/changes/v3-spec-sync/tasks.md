@@ -209,6 +209,33 @@ renames the rename-collision error code.
       scenario "Slug repeat across timestamps is OK" makes the new
       contract explicit.
 
+## 3.6 Spec coverage gaps (post-review)
+
+User flagged three gaps where shipped code lacked corresponding spec.
+These are spec-only updates — no behavior change.
+
+- [x] 3.6.1 New delta `specs/experiment-membership-anomalies/spec.md`:
+      ADDED requirement "Slug-uniqueness anomalies" enumerating
+      `DUPLICATE_EXPERIMENT_SLUG` / `EXPERIMENT_SLUG_PREFIX_COLLISION`
+      / `RUN_SLUG_PREFIX_VIOLATION` with severity + per-code
+      scenarios. MODIFIED "Three anomaly classes" carries a note that
+      the on-the-wire union is now six codes. MODIFIED "Anomaly
+      stream API" replaces `{op, record}` SSE payload with
+      `{project, count}` matching the live-updates delta + adds a
+      "banner refetches on anomaly event" scenario.
+- [x] 3.6.2 New delta `specs/experiment-edit/spec.md`: ADDED
+      requirement "POST /api/open-claude-code resolves a target's
+      working directory" defining the body / response shape / errors
+      / 4 scenarios. ADDED requirement "Open Claude Code button
+      consumes the resolve endpoint" pinning the button → endpoint
+      flow + clipboard-fallback scenario.
+- [x] 3.6.3 New delta `specs/memon-cli/spec.md`: MODIFIED "Single
+      binary memon with subcommands" — preserved title + body, added
+      the `[deprecation]` line-format paragraph + new scenario
+      "MEMON_QUIET_DEPRECATIONS suppresses the banner" + new
+      scenario "Deprecation banner format" pinning the literal
+      `[deprecation]` token.
+
 ## 4. Verification
 
 - [x] 4.1 `pnpm --filter @memon/core test` passes (25 files / 194
