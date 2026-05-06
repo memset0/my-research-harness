@@ -60,6 +60,7 @@ const SAMPLE_WARNING_OPEN: Warning = {
   rowId: 'w_2026-05-05T14-32-00+0800_a3f1',
   status: 'OPEN',
   created: '2026-05-05T14:32:00+08:00',
+  run: null,
   category: 'result',
   message: 'loss spike at step 1500',
   resolved: null,
@@ -132,7 +133,8 @@ describe('parseWarningsBody', () => {
     }
     const row = serializeWarningRow(w)
     expect(row).toContain('a\\|b')
-    const body = `| Status | Created | Category | Message | Resolved | Note |\n|--------|---------|----------|---------|----------|------|\n${row}`
+    // Writer always emits the v3 7-col header; parser handles either shape.
+    const body = `| Status | Created | Run | Category | Message | Resolved | Note |\n|--------|---------|-----|----------|---------|----------|------|\n${row}`
     const parsed = parseWarningsBody(body)
     expect(parsed.warnings[0]!.message).toBe('loss = a|b at step 1500')
   })
@@ -145,9 +147,35 @@ describe('parseWarningsBody', () => {
     }
     const row = serializeWarningRow(w)
     expect(row).toContain('line one<br>line two')
-    const body = `| Status | Created | Category | Message | Resolved | Note |\n|--------|---------|----------|---------|----------|------|\n${row}`
+    const body = `| Status | Created | Run | Category | Message | Resolved | Note |\n|--------|---------|-----|----------|---------|----------|------|\n${row}`
     const parsed = parseWarningsBody(body)
     expect(parsed.warnings[0]!.message).toBe('line one\nline two')
+  })
+
+  it('parses a v3 7-col table with Run column populated and null', () => {
+    const body = [
+      '| Status | Created | Run | Category | Message | Resolved | Note |',
+      '|--------|---------|-----|----------|---------|----------|------|',
+      '| OPEN | 2026-05-05T14:32:00+08:00 | foo-260501-100000 | result | spike | — | — | <!-- id:w_a -->',
+      '| RESOLVED | 2026-05-04T09:15:00+08:00 | — | config | drift | 2026-05-04T11:00:00+08:00 | done | <!-- id:w_b -->',
+    ].join('\n')
+    const r = parseWarningsBody(body)
+    expect(r.warnings).toHaveLength(2)
+    expect(r.warnings[0]!.run).toBe('foo-260501-100000')
+    expect(r.warnings[1]!.run).toBeNull()
+    expect(r.parseWarnings).toEqual([])
+  })
+
+  it('legacy v2 6-col table back-compat: run defaults to null', () => {
+    const body = [
+      '| Status | Created | Category | Message | Resolved | Note |',
+      '|--------|---------|----------|---------|----------|------|',
+      '| OPEN | 2026-05-05T14:32:00+08:00 | result | foo | — | — | <!-- id:w_legacy -->',
+    ].join('\n')
+    const r = parseWarningsBody(body)
+    expect(r.warnings).toHaveLength(1)
+    expect(r.warnings[0]!.run).toBeNull()
+    expect(r.parseWarnings).toEqual([])
   })
 })
 

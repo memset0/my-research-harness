@@ -69,6 +69,44 @@ function resolveExp(rt: Runtime, id: string): ResolveExpResult {
   }
 }
 
+interface ResolveExpDocResult {
+  /** v3 experiment doc id, e.g. `E0001-foo`. */
+  id: string
+  readmePath: string
+  projectName: string
+  projectRoot: string
+}
+
+/**
+ * Resolve a v3 experiment doc id to its file path. Looks up the runtime's
+ * exp-doc map; rejects when not found / not under a configured project root.
+ */
+function resolveExpDoc(rt: Runtime, expId: string): ResolveExpDocResult {
+  const exp = rt.experiments.get(expId)
+  if (!exp) {
+    throw new WarningHttpError(404, 'NOT_FOUND', `experiment doc "${expId}" not found`)
+  }
+  let safePath: string
+  try {
+    safePath = assertWithinProjectRoots(exp.path, rt.config)
+  } catch (err) {
+    if (err instanceof PathSafetyError) {
+      throw new WarningHttpError(403, 'FORBIDDEN', err.message)
+    }
+    throw err
+  }
+  const owning = rt.projectFor(safePath)
+  if (!owning) {
+    throw new WarningHttpError(403, 'FORBIDDEN', `experiment doc path not under any project root`)
+  }
+  return {
+    id: expId,
+    readmePath: safePath,
+    projectName: owning.name,
+    projectRoot: owning.root,
+  }
+}
+
 interface LockState {
   content: string
   mtime: number
@@ -142,6 +180,24 @@ async function refreshIndex(rt: Runtime, expDir: string, projectName: string): P
     const updated = await readRunDir(expDir, projectName)
     rt.index.set(updated)
     rt.events.emit('experiment-change', { type: 'set', id: updated.id, experiment: updated })
+  } catch {
+    // Best-effort; the write itself succeeded.
+  }
+}
+
+async function refreshExpDocIndex(
+  rt: Runtime,
+  expId: string,
+  projectName: string,
+): Promise<void> {
+  try {
+    const { readExperimentDoc } = await import('@memon/core')
+    const updated = await readExperimentDoc(rt.config.projects.find((p) => p.name === projectName)!.root, projectName, expId)
+    if (updated) {
+      rt.experiments.set(expId, updated)
+      rt.recomputeAnomalies(projectName)
+      rt.events.emit('experiment-doc-change', { type: 'set', id: expId, experiment: updated })
+    }
   } catch {
     // Best-effort; the write itself succeeded.
   }
@@ -304,10 +360,171 @@ export async function deleteWarning(
     event: {
       timestamp: nowIso(),
       tag: 'WARNING',
-      body: `\`${r.exp.id}\` op=delete rowId=${rowId} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
+      body: `\`${r.exp.id}\` op=delete rowId=${rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },
   })
   await refreshIndex(rt, r.exp.path, r.projectName)
   const parsed = parseReadme(result.content)
   return { mtime: stat.mtimeMs, hash, warnings: parsed.warnings as Warning[] }
+}
+
+// ---------- v3 exp-doc operations ----------
+//
+// Parallel surface to the run-README operations above, but targeting the
+// experiment doc at `docs/experiments/<expId>.md`. The Warning row's `run`
+// field carries the optional run attribution.
+
+export async function listExpDocWarnings(rt: Runtime, expId: string): Promise<ListResult> {
+  const r = resolveExpDoc(rt, expId)
+  let stat
+  try {
+    stat = await fs.stat(r.readmePath)
+  } catch {
+    throw new WarningHttpError(404, 'NOT_FOUND', `${r.readmePath} does not exist`)
+  }
+  const content = await fs.readFile(r.readmePath, 'utf8')
+  const { parseWarningsBody, splitH2Sections } = await import('@memon/core')
+  const split = splitH2Sections(content.split(/^---\n[\s\S]*?\n---\n/m).slice(-1)[0]!)
+  const body = split.sections.get('Warnings') ?? ''
+  const parsed = parseWarningsBody(body)
+  const hash = createHash('sha1').update(content).digest('hex')
+  return { warnings: parsed.warnings, mtime: stat.mtimeMs, hash }
+}
+
+export interface AddExpDocInput extends AddInput {
+  /** Optional run dir attribution; null/undefined means experiment-scoped. */
+  run?: string | null
+}
+
+export async function addExpDocWarning(
+  rt: Runtime,
+  expId: string,
+  input: AddExpDocInput,
+): Promise<OpResult> {
+  if (!(WARNING_CATEGORIES as readonly string[]).includes(input.category)) {
+    throw new WarningHttpError(
+      400,
+      'BAD_REQUEST',
+      `category must be one of: ${WARNING_CATEGORIES.join(', ')}`,
+    )
+  }
+  if (!input.message || input.message.trim() === '') {
+    throw new WarningHttpError(400, 'BAD_REQUEST', 'message is required and must be non-empty')
+  }
+  const r = resolveExpDoc(rt, expId)
+  const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
+  const created = nowIso()
+  const rowId = generateRowId(created)
+  const op: WarningOp = {
+    op: 'add',
+    category: input.category as WarningCategory,
+    message: input.message,
+    created,
+    rowId,
+    run: input.run ?? null,
+  }
+  let result
+  try {
+    result = applyWarningOp(lock.content, op)
+  } catch (err) {
+    if (err instanceof WarningOpError) mapOpError(err)
+    throw err
+  }
+  await atomicWrite(r.readmePath, result.content)
+  const stat = await fs.stat(r.readmePath)
+  const hash = createHash('sha1').update(result.content).digest('hex')
+  await appendJournalEvent({
+    path: join(r.projectRoot, 'docs', 'journal.md'),
+    event: {
+      timestamp: created,
+      tag: 'WARNING',
+      body: `\`${expId}\` op=add rowId=${rowId} run=${input.run ?? 'null'} category=${input.category} message=${quoteForJournal(input.message)}`,
+    },
+  })
+  await refreshExpDocIndex(rt, expId, r.projectName)
+  const { parseWarningsBody, splitH2Sections } = await import('@memon/core')
+  const split = splitH2Sections(result.content.split(/^---\n[\s\S]*?\n---\n/m).slice(-1)[0]!)
+  const wbody = split.sections.get('Warnings') ?? ''
+  const warnings = parseWarningsBody(wbody).warnings
+  return { rowId, mtime: stat.mtimeMs, hash, warnings }
+}
+
+export async function patchExpDocWarning(
+  rt: Runtime,
+  expId: string,
+  rowId: string,
+  input: PatchInput,
+): Promise<OpResult> {
+  if (input.op === 'resolve') {
+    if (!input.note || input.note.trim() === '') {
+      throw new WarningHttpError(400, 'BAD_REQUEST', 'note is required for resolve and must be non-empty')
+    }
+  }
+  const r = resolveExpDoc(rt, expId)
+  const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
+  const ts = nowIso()
+  const op: WarningOp =
+    input.op === 'resolve'
+      ? { op: 'resolve', rowId, resolved: ts, note: input.note! }
+      : { op: 'reopen', rowId }
+  let result
+  try {
+    result = applyWarningOp(lock.content, op)
+  } catch (err) {
+    if (err instanceof WarningOpError) mapOpError(err)
+    throw err
+  }
+  await atomicWrite(r.readmePath, result.content)
+  const stat = await fs.stat(r.readmePath)
+  const hash = createHash('sha1').update(result.content).digest('hex')
+  const after = result.after!
+  const body =
+    input.op === 'resolve'
+      ? `\`${expId}\` op=resolve rowId=${rowId} run=${after.run ?? 'null'} note=${quoteForJournal(input.note!)}`
+      : `\`${expId}\` op=reopen rowId=${rowId} run=${after.run ?? 'null'}`
+  await appendJournalEvent({
+    path: join(r.projectRoot, 'docs', 'journal.md'),
+    event: { timestamp: ts, tag: 'WARNING', body },
+  })
+  await refreshExpDocIndex(rt, expId, r.projectName)
+  const { parseWarningsBody, splitH2Sections } = await import('@memon/core')
+  const split = splitH2Sections(result.content.split(/^---\n[\s\S]*?\n---\n/m).slice(-1)[0]!)
+  const wbody = split.sections.get('Warnings') ?? ''
+  const warnings = parseWarningsBody(wbody).warnings
+  return { mtime: stat.mtimeMs, hash, warnings }
+}
+
+export async function deleteExpDocWarning(
+  rt: Runtime,
+  expId: string,
+  rowId: string,
+  input: { expectedMtime?: number; expectedHash?: string },
+): Promise<OpResult> {
+  const r = resolveExpDoc(rt, expId)
+  const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
+  let result
+  try {
+    result = applyWarningOp(lock.content, { op: 'delete', rowId })
+  } catch (err) {
+    if (err instanceof WarningOpError) mapOpError(err)
+    throw err
+  }
+  await atomicWrite(r.readmePath, result.content)
+  const stat = await fs.stat(r.readmePath)
+  const hash = createHash('sha1').update(result.content).digest('hex')
+  const deleted = result.deleted!
+  await appendJournalEvent({
+    path: join(r.projectRoot, 'docs', 'journal.md'),
+    event: {
+      timestamp: nowIso(),
+      tag: 'WARNING',
+      body: `\`${expId}\` op=delete rowId=${rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
+    },
+  })
+  await refreshExpDocIndex(rt, expId, r.projectName)
+  const { parseWarningsBody, splitH2Sections } = await import('@memon/core')
+  const split = splitH2Sections(result.content.split(/^---\n[\s\S]*?\n---\n/m).slice(-1)[0]!)
+  const wbody = split.sections.get('Warnings') ?? ''
+  const warnings = parseWarningsBody(wbody).warnings
+  return { mtime: stat.mtimeMs, hash, warnings }
 }

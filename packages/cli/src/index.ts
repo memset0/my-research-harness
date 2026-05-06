@@ -331,15 +331,27 @@ readme
 const warning = experiment.command('warning').description('Warnings table operations on README.md')
 warning
   .command('add <id>')
-  .description('append a new OPEN warning row')
+  .description(
+    'append a new OPEN warning row (id may be a v3 experiment doc id `E<NNNN>-<slug>` or a legacy run dir name)',
+  )
   .requiredOption('--category <cat>', 'methodology|result|config|data|repro|compare|infra|other')
   .requiredOption('--message <text>', 'free-text description of the warning')
+  .option(
+    '--run <runDir>',
+    'attribute the warning to a specific run (v3 exp doc form only; rejected with run-dir id)',
+  )
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .option('--expected-hash <sha1>', 'optional content sha1 lock')
   .action(
     async (
       id: string,
-      opts: { category: string; message: string; expectedMtime?: number; expectedHash?: string },
+      opts: {
+        category: string
+        message: string
+        run?: string
+        expectedMtime?: number
+        expectedHash?: string
+      },
     ) => {
       const g = readGlobals()
       await runWarningAdd({
@@ -347,6 +359,7 @@ warning
         runId: id,
         category: opts.category,
         message: opts.message,
+        run: opts.run,
         expectedMtime: opts.expectedMtime,
         expectedHash: opts.expectedHash,
       })

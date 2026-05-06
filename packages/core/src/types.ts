@@ -164,6 +164,11 @@ export interface WarningRecord {
   status: 'OPEN' | 'RESOLVED'
   /** ISO8601 with timezone offset, set at append time, never edited. */
   created: string
+  /**
+   * v3-added: run dir base name attribution; null for exp-scoped warnings
+   * or v2 6-col tables that predate the column.
+   */
+  run: string | null
   /** Closed enum in `WARNING_CATEGORIES`; out-of-enum values preserved. */
   category: string
   message: string

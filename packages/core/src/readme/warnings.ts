@@ -48,6 +48,13 @@ export interface Warning {
   status: WarningStatus
   /** ISO8601 with timezone offset, set at append time, never edited. */
   created: string
+  /**
+   * v3-added: run dir base name when the warning is attributable to a
+   * specific run (e.g. on an experiment doc's `## Warnings` table); null
+   * when the warning is exp-scoped or this is a v2 6-col table that
+   * predates the column. Serialised as `—` in the table cell.
+   */
+  run: string | null
   /** Out-of-enum values are preserved as-is (parser surfaces a warning). */
   category: WarningCategory | string
   message: string
@@ -150,11 +157,17 @@ export function parseWarningsBody(body: string): ParsedWarnings {
   }
 
   const header = parseTableRow(lines[headerIdx]!).map((s) => s.trim().toLowerCase())
-  const expected = ['status', 'created', 'category', 'message', 'resolved', 'note']
-  if (header.length !== expected.length || !expected.every((c, i) => header[i] === c)) {
+  const v2Expected = ['status', 'created', 'category', 'message', 'resolved', 'note']
+  const v3Expected = ['status', 'created', 'run', 'category', 'message', 'resolved', 'note']
+  let shape: 'v2-6col' | 'v3-7col'
+  if (header.length === v3Expected.length && v3Expected.every((c, i) => header[i] === c)) {
+    shape = 'v3-7col'
+  } else if (header.length === v2Expected.length && v2Expected.every((c, i) => header[i] === c)) {
+    shape = 'v2-6col'
+  } else {
     issues.push({
       field: 'warnings',
-      message: `WARNINGS_SECTION_NOT_TABLE: header row must be exactly | Status | Created | Category | Message | Resolved | Note | (got ${JSON.stringify(header)})`,
+      message: `WARNINGS_SECTION_NOT_TABLE: header row must be either v3 7-col | Status | Created | Run | Category | Message | Resolved | Note | or v2 6-col | Status | Created | Category | Message | Resolved | Note | (got ${JSON.stringify(header)})`,
       severity: 'warning',
     })
     return { warnings: [], raw: body, parseWarnings: issues }
@@ -175,7 +188,7 @@ export function parseWarningsBody(body: string): ParsedWarnings {
       })
       return { warnings: [], raw: body, parseWarnings: issues }
     }
-    const parsed = parseWarningRow(raw, issues)
+    const parsed = parseWarningRow(raw, issues, shape)
     if (parsed) warnings.push(parsed)
   }
   return { warnings, raw: null, parseWarnings: issues }
@@ -183,7 +196,11 @@ export function parseWarningsBody(body: string): ParsedWarnings {
 
 const ROWID_COMMENT_RE = /<!--\s*id:(w_[^\s>]+)\s*-->\s*$/
 
-function parseWarningRow(line: string, issues: ParseIssue[]): Warning | null {
+function parseWarningRow(
+  line: string,
+  issues: ParseIssue[],
+  shape: 'v2-6col' | 'v3-7col',
+): Warning | null {
   // Extract trailing rowId comment first; without it we can't address the row.
   let body = line
   let rowId: string | null = null
@@ -194,17 +211,56 @@ function parseWarningRow(line: string, issues: ParseIssue[]): Warning | null {
   }
 
   const cells = parseTableRow(body)
-  if (cells.length < 6) {
+  const expectedCells = shape === 'v3-7col' ? 7 : 6
+  if (cells.length < expectedCells) {
     issues.push({
       field: 'warnings',
-      message: `WARNINGS_SECTION_NOT_TABLE: row has ${cells.length} cells, expected 6`,
+      message: `WARNINGS_SECTION_NOT_TABLE: row has ${cells.length} cells, expected ${expectedCells} for ${shape}`,
       severity: 'warning',
     })
     return null
   }
-  const [statusRaw, createdRaw, categoryRaw, messageRaw, resolvedRaw, noteRaw] = cells.map(
-    (c) => c.trim(),
-  ) as [string, string, string, string, string, string]
+  let statusRaw: string
+  let createdRaw: string
+  let runRaw: string | null
+  let categoryRaw: string
+  let messageRaw: string
+  let resolvedRaw: string
+  let noteRaw: string
+  if (shape === 'v3-7col') {
+    const [s, cr, r, ca, msg, rs, nt] = cells.map((c) => c.trim()) as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ]
+    statusRaw = s
+    createdRaw = cr
+    runRaw = r
+    categoryRaw = ca
+    messageRaw = msg
+    resolvedRaw = rs
+    noteRaw = nt
+  } else {
+    const [s, cr, ca, msg, rs, nt] = cells.map((c) => c.trim()) as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ]
+    statusRaw = s
+    createdRaw = cr
+    runRaw = null
+    categoryRaw = ca
+    messageRaw = msg
+    resolvedRaw = rs
+    noteRaw = nt
+  }
 
   // Status normalisation.
   let status: WarningStatus
@@ -247,6 +303,7 @@ function parseWarningRow(line: string, issues: ParseIssue[]): Warning | null {
   }
 
   const created = createdRaw
+  const run = runRaw === null || runRaw === '' || runRaw === '—' ? null : runRaw
   const message = unescapeCell(messageRaw)
   const resolved = resolvedRaw === '' || resolvedRaw === '—' ? null : resolvedRaw
   const note = noteRaw === '' || noteRaw === '—' ? null : unescapeCell(noteRaw)
@@ -262,7 +319,7 @@ function parseWarningRow(line: string, issues: ParseIssue[]): Warning | null {
     })
   }
 
-  return { rowId, status, created, category, message, resolved, note }
+  return { rowId, status, created, run, category, message, resolved, note }
 }
 
 function parseTableRow(line: string): string[] {
@@ -304,19 +361,25 @@ function synthesiseRowIdForLegacy(created: string): string {
 }
 
 // ---------- Serialisation ----------
+//
+// All serialised tables use the v3 7-column shape (`Run` between `Created`
+// and `Category`). v2 6-col tables encountered on disk are auto-upgraded
+// on the next write — the parser accepts both shapes (back-compat), the
+// writer always emits 7-col (forward-only).
 
-const TABLE_HEADER = '| Status | Created | Category | Message | Resolved | Note |'
-const TABLE_SEPARATOR = '|--------|---------|----------|---------|----------|------|'
+const TABLE_HEADER = '| Status | Created | Run | Category | Message | Resolved | Note |'
+const TABLE_SEPARATOR = '|--------|---------|-----|----------|---------|----------|------|'
 
 /** Serialise one warning to a single table row line (no trailing newline). */
 export function serializeWarningRow(w: Warning): string {
   const status = w.status
   const created = w.created
+  const run = w.run === null || w.run === '' ? '—' : w.run
   const category = w.category
   const message = escapeCell(w.message)
   const resolved = w.resolved ?? '—'
   const note = w.note === null || w.note === '' ? '—' : escapeCell(w.note)
-  return `| ${status} | ${created} | ${category} | ${message} | ${resolved} | ${note} | <!-- id:${w.rowId} -->`
+  return `| ${status} | ${created} | ${run} | ${category} | ${message} | ${resolved} | ${note} | <!-- id:${w.rowId} -->`
 }
 
 /** Render the body lines of a `## Warnings` section from a list of warnings. */
@@ -330,7 +393,15 @@ export function renderWarningsBody(warnings: Warning[]): string[] {
 // ---------- Section-bound writer ----------
 
 export type WarningOp =
-  | { op: 'add'; category: WarningCategory | string; message: string; created: string; rowId: string }
+  | {
+      op: 'add'
+      category: WarningCategory | string
+      message: string
+      created: string
+      rowId: string
+      /** v3-added: optional run-dir attribution (null for exp-scoped). */
+      run?: string | null
+    }
   | { op: 'resolve'; rowId: string; resolved: string; note: string }
   | { op: 'reopen'; rowId: string }
   | { op: 'delete'; rowId: string }
@@ -389,6 +460,7 @@ export function applyWarningOp(content: string, op: WarningOp): ApplyWarningOpRe
       rowId,
       status: 'OPEN',
       created,
+      run: op.run ?? null,
       category: op.category,
       message: op.message,
       resolved: null,
