@@ -13,7 +13,8 @@
 
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
 import {
   fetchExperiment,
   fetchExperimentDoc,
@@ -26,6 +27,7 @@ import { StatusPill } from './status-pill'
 import { Markdown } from './markdown'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { OpenClaudeCodeButton } from './open-claude-code-button'
+import { cn } from '../lib/utils'
 
 interface Props {
   project: string
@@ -288,23 +290,106 @@ interface TreeNodeShape {
   children?: TreeNodeShape[]
 }
 
-function FileTree({ node, depth = 0 }: { node: TreeNodeShape; depth?: number }) {
-  if (node.type === 'file') {
-    return (
-      <li className="font-mono text-xs">
-        <span style={{ paddingLeft: depth * 8 }}>📄 {node.path}</span>
-      </li>
-    )
+const COLLAPSE_THRESHOLD = 10
+const INDENT_PX = 16
+
+function basename(path: string): string {
+  const seg = path.split('/').pop()
+  return seg && seg.length > 0 ? seg : path
+}
+
+function countDescendants(node: TreeNodeShape): number {
+  if (node.type === 'file' || !node.children) return 0
+  let n = 0
+  for (const c of node.children) {
+    n += 1
+    n += countDescendants(c)
+  }
+  return n
+}
+
+function FileTree({ node }: { node: TreeNodeShape }) {
+  // Per-folder explicit override of the default expand state. Keys are
+  // tree-node paths (relative to run dir root). Absent key = use default.
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({})
+  const toggle = (path: string, defaultExpanded: boolean) => {
+    setOverrides((prev) => {
+      const current = prev[path] ?? defaultExpanded
+      return { ...prev, [path]: !current }
+    })
   }
   return (
     <ul className="text-xs">
-      <li style={{ paddingLeft: depth * 8 }} className="font-semibold">
-        📁 {node.path === '.' ? '(run dir)' : node.path}
-      </li>
-      {(node.children ?? []).map((c, i) => (
-        <FileTree key={i} node={c} depth={depth + 1} />
-      ))}
+      <FileTreeRow
+        node={node}
+        depth={0}
+        overrides={overrides}
+        onToggle={toggle}
+      />
     </ul>
+  )
+}
+
+function FileTreeRow({
+  node,
+  depth,
+  overrides,
+  onToggle,
+}: {
+  node: TreeNodeShape
+  depth: number
+  overrides: Record<string, boolean>
+  onToggle: (path: string, defaultExpanded: boolean) => void
+}) {
+  // Hooks must be called unconditionally at the top of the component;
+  // putting useMemo after the file early-return would violate Rules of
+  // Hooks if a position swapped between file and dir on a re-render.
+  const childCount = useMemo(() => countDescendants(node), [node])
+  const isRoot = node.path === '.'
+  const label = isRoot ? '(run dir)' : basename(node.path)
+  if (node.type === 'file') {
+    return (
+      <li
+        className="flex items-center gap-1.5 font-mono"
+        style={{ paddingLeft: depth * INDENT_PX }}
+      >
+        <File className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="truncate">{label}</span>
+      </li>
+    )
+  }
+  const defaultExpanded = isRoot || childCount <= COLLAPSE_THRESHOLD
+  const expanded = isRoot ? true : (overrides[node.path] ?? defaultExpanded)
+  const Chevron = expanded ? ChevronDown : ChevronRight
+  const FolderIcon = expanded ? FolderOpen : Folder
+  return (
+    <>
+      <li
+        className={cn(
+          'flex items-center gap-1.5 font-mono',
+          !isRoot && 'cursor-pointer select-none hover:bg-muted/40 rounded',
+        )}
+        style={{ paddingLeft: depth * INDENT_PX }}
+        onClick={isRoot ? undefined : () => onToggle(node.path, defaultExpanded)}
+      >
+        {!isRoot && <Chevron className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
+        <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="truncate font-semibold">{label}</span>
+        {!isRoot && (
+          <span className="text-muted-foreground tabular-nums">({childCount})</span>
+        )}
+      </li>
+      {expanded &&
+        (node.children ?? []).map((c, i) => (
+          <FileTreeRow
+            key={i}
+            node={c}
+            depth={depth + 1}
+            overrides={overrides}
+            onToggle={onToggle}
+          />
+        ))}
+    </>
   )
 }
 
