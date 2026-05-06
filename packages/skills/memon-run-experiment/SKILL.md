@@ -6,7 +6,7 @@ disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # memon-run-experiment
@@ -103,7 +103,7 @@ from this skill.
 
 ### 0. Identify (or create) the parent experiment doc
 
-In v3 every run dir SHOULD be bound to a `docs/experiments/E<NNNN>-<slug>.md`
+Every run dir SHOULD be bound to a `docs/experiments/E<NNNN>-<slug>.md`
 file that owns motivation / method / conclusion / caveats / warnings across
 the run set. The run README itself only carries setup / result / artifacts.
 Decide which experiment this run belongs to **before** launching, so the
@@ -464,17 +464,17 @@ note it here so the run is reproducible.>
 EOF
 ```
 
-**Key v3 differences from the v2 schema you may remember:**
+**Run README schema reminders:**
 
-- Frontmatter no longer has `project:` / `hypotheses:` / `tags:` — those
-  legacy fields belong to the parent experiment doc now (or are dropped
-  outright in the case of `project:`).
-- Frontmatter gains `experiment:` (parent E-id) and `updated_at:`.
-- Body sections shrink to `Setup / Result / Artifacts`. The cross-run
+- Frontmatter does NOT carry `project:` / `hypotheses:` / `tags:` —
+  those concerns live on the parent experiment doc.
+- Frontmatter MUST carry `experiment:` (parent E-id, or `null` when
+  intentionally orphan) and `updated_at:`.
+- Body sections are `Setup / Result / Artifacts` only. The cross-run
   story (`Motivation`, `Method`, `Conclusion`, `Caveats`, `Warnings`)
   lives on the parent experiment doc — write or update those there in
   §0/§9, not here.
-- The legacy `## New Hypotheses` section is gone entirely; new
+- There is no `## New Hypotheses` section on the run README; new
   hypotheses are added to `docs/hypotheses.md` directly.
 
 Capture the new `mtime` from the response — that's `$MTIME` for any
@@ -572,8 +572,7 @@ to pull the failure context with surrounding lines.
 
 Read fresh `MTIME`. Write the final run README updating
 `status: FINISHED`, filling `## Result`, and bumping `updated_at`. Same
-write pattern as §6 (the run README in v3 has only Setup/Result/
-Artifacts).
+write pattern as §6 (the run README has only Setup/Result/Artifacts).
 
 The cross-run story (`Conclusion`, updates to `Caveats`, possible
 `Warnings`) lives on the parent experiment doc at
@@ -597,7 +596,7 @@ effective LR halved too), also add a line to the parent experiment's
 
 After the README write succeeds, run **§12 (post-run anomaly review)** —
 inspect the run for things the human should adjudicate and append
-`[OPEN]` warnings (see §12 for the v3-vs-legacy invocation). Then
+`[OPEN]` warnings to the parent exp doc's `## Warnings` table. Then
 **walk through the run's contents in Chinese in the conversation** —
 keeps the run README authoritative-and-English while the user gets the
 gist without re-reading it. Cover:
@@ -605,9 +604,14 @@ gist without re-reading it. Cover:
 - 改动了什么(对应 `**Got it running by**:`,如果有,在这个 run 的 Setup 里)
 - 主要结果是什么(对应 run 的 `## Result`)
 - 结论是什么 / 怎么影响关联的假说(对应 exp doc 的 `## Conclusion` 更新)
-- 有什么坑 / 解读时需要注意的限制(对应 exp doc 的 `## Caveats`)
-- 实现思路或想让用户注意的细节,如果两边都没合适的位置写
+- 实现思路 / 设计 rationale(对应 exp doc 的 `## Method` 追加)
+- 让用户注意的细节 / 解读限制(对应 exp doc 的 `## Caveats` 追加)
 - 添加的警告(if §12 added any),让用户知道有哪几条需要他们裁决
+
+Every cross-run insight has a deterministic home — there is no
+"if neither side fits" loose path. If a thought genuinely doesn't
+fit either Method or Caveats (rare), it probably belongs in
+`docs/journal.md` as a `[NOTE]` event, not in any README.
 
 Brief — 3-6 lines is plenty.
 
@@ -768,23 +772,6 @@ inspect the run for anomalies that need a human to look at. These are
 written into the **parent experiment doc's** `## Warnings` table as new
 `[OPEN]` rows, with the `Run` column attributing each row to this run.
 
-> **v3 backend status:** the v3 7-column warnings table on the
-> experiment doc + `memon experiment warning add <expId> --run <runDir>`
-> CLI form are implemented in spec but pending implementation (deferred
-> tasks 4.3 + 6.8 from the new-experiment-system change). Until those
-> ship, the CLI invocation below uses the legacy v2 form (run id
-> directly), which writes to `<runDir>/README.md`'s warnings section
-> via the v2 alias path. The future invocation will be:
->
-> ```sh
-> memon experiment warning add "$PARENT_EXP_ID" --project-root . \
->   --run "$RUN_ID" \
->   --category result \
->   --message "..."
-> ```
->
-> Same rules below apply to either form.
-
 The Warnings section is the canonical surface for "I noticed something
 the human should adjudicate". It is NOT for facts you already wrote
 into `## Result`, hypotheses you yourself can confirm, or items the
@@ -830,13 +817,26 @@ above as `--category`. The message must be concrete (cite step / metric
 
 #### Workflow
 
-For each finding (legacy v2 form — see the v3-backend-status note above):
+For each finding, use the convenience CLI which auto-resolves the
+parent experiment from the run dir (refuses with `BAD_STATE` if the
+run is orphan — but at this point the run is bound, set in §0/§6):
 
 ```sh
-memon experiment warning add "$RUN_ID" --project-root . \
+memon run warning add "$RUN_ID" --project-root . \
   --category result \
   --message "loss curve at step 1500 has a 3x spike — possible gradient explosion not seen in baseline runs"
 ```
+
+Equivalent long form when you have `$PARENT_EXP_ID` already in scope:
+
+```sh
+memon experiment warning add "$PARENT_EXP_ID" --project-root . \
+  --run "$RUN_ID" \
+  --category result \
+  --message "..."
+```
+
+Both produce byte-identical stdout JSON + journal events.
 
 The CLI returns `{ok, rowId, mtime, hash}`. **Capture the new mtime**
 and use it as `--expected-mtime` for any subsequent README write in
@@ -922,3 +922,82 @@ Right behaviour:
 - ❌ Skipping §12. A successful run with no warnings is fine — but the
   agent SHOULD have looked. "I noticed nothing worth flagging" is a
   valid §12 outcome; "I never reviewed" is not.
+
+## Migration helpers (legacy projects only)
+
+The body of this skill assumes the project's on-disk schema matches
+what the current memon expects. The preflight (§"Preflight — FS
+convention version") catches projects that don't and routes the
+agent here.
+
+### When the preflight reports `behind`
+
+The project root was installed at an older convention version than
+the running memon supports. Concretely on disk this means missing
+the `docs/experiments/` directory, run READMEs still carrying
+legacy `project:` / `hypotheses:` / `tags:` frontmatter fields,
+hypotheses with `Experiments:` listing run dir names instead of
+exp ids, etc.
+
+**Do NOT try to drive `memon-run-experiment` on a `behind` project.**
+The §0 step (Identify or create the parent experiment doc) assumes
+`docs/experiments/` exists; the §6 README write assumes the v3
+frontmatter shape; §12 assumes `## Warnings` lives on the exp doc.
+Each of those will fail or write malformed output if the migration
+hasn't run.
+
+Instead, **stop and ask the user (in Chinese)** something like:
+
+> 这个项目还在旧版本的 memon FS convention（`memon fs-version
+> check` 报 `behind`）。要先跑一次 `memon-migrate-fs` skill 才
+>能走完整的 run-experiment 流程。要不要现在就开始迁移？
+>
+> （如果用户同意）我会调用 `memon-migrate-fs`，按照
+> `packages/core/migrations/v<N>-to-v<N+1>.md` 的步骤
+> 一步步迁，每一步都会等你确认。需要的话我可以先把当前
+> 项目状态告诉你（多少 run、多少 hypotheses、有没有
+> `docs/experiments/`），让你判断要不要这个时机做。
+
+If the user agrees, hand off to `memon-migrate-fs` (the migration
+guide is human-readable; the skill walks the steps with the user
+confirming clusters / final-shape decisions). When the migration
+finishes (preflight reports `match`), come back to
+`memon-run-experiment` and start at §0.
+
+If the user declines (e.g. "later, just record this run somewhere
+quick"), you have two choices and BOTH require the user's explicit
+buy-in:
+
+- Drop the formal flow and use `memon-append-journal --tag NOTE
+  --body "<observation>"` to record the result without producing
+  any structured run README.
+- Walk the user through a manual one-off README write that adheres
+  to the v2 shape they already have. Tell them this is a one-off,
+  the next time we run an experiment we will need to migrate.
+
+### When the preflight reports `uninitialised`
+
+The project root has never had memon installed. Run
+`memon install-skills --project-root .` first (or ask the user to);
+that creates `.memon/version.json` at the current convention
+version. Then come back to §0.
+
+### When the preflight reports `ahead`
+
+This memon binary is older than the project's on-disk shape. The
+preflight already exited 11 (`MEMON_TOO_OLD`); forward the message
+to the user and tell them to upgrade the memon CLI before retrying.
+
+### Anti-patterns specific to migration
+
+- ❌ Patching individual files by hand to "look like v3" without
+  running the migration skill. The migration touches every run
+  README + hypotheses doc + journal in lockstep; partial migration
+  by hand leaves dangling references.
+- ❌ Migrating without telling the user. Migrations are
+  irreversible-without-git-revert and involve clustering decisions
+  only the user can answer (which runs share an investigation).
+  Always ask before starting.
+- ❌ Migrating then immediately starting a new run in the same
+  session. Let the user verify the migrated layout first; the
+  follow-up run is a separate decision.
