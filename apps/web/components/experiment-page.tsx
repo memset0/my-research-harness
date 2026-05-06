@@ -24,6 +24,7 @@ import {
 } from '../lib/api'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { StatusPill } from './status-pill'
 import { StatusEdit } from './status-edit'
 import { Markdown } from './markdown'
@@ -208,21 +209,31 @@ function RunPanel({
   }
 
   return (
-    <details
+    <Collapsible
       open={open}
-      onToggle={(e) => setOpenAndPersist((e.target as HTMLDetailsElement).open)}
+      onOpenChange={setOpenAndPersist}
       className="rounded-md border bg-card"
     >
-      <summary className="flex cursor-pointer items-center gap-2 p-2">
-        <StatusPill status={summary.status as never} />
-        <span className="font-mono text-sm">{runId}</span>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {summary.createdAt.slice(0, 16).replace('T', ' ')}
-          {summary.host ? ` • ${summary.host}` : ''}
-        </span>
-      </summary>
-      {open && <RunBody project={project} experimentId={experimentId} runId={runId} />}
-    </details>
+      <CollapsibleTrigger asChild>
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex cursor-pointer items-center gap-2 p-2"
+        >
+          <StatusPill status={summary.status as never} />
+          <span className="font-mono text-sm">{runId}</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {summary.createdAt.slice(0, 16).replace('T', ' ')}
+            {summary.host ? ` • ${summary.host}` : ''}
+          </span>
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent
+        className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up"
+      >
+        <RunBody project={project} experimentId={experimentId} runId={runId} />
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
