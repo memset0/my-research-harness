@@ -101,6 +101,55 @@ Other references (read on demand):
 - shadcn theming: <https://ui.shadcn.com/docs/theming>
 - Component-specific: <https://ui.shadcn.com/docs/components/<name>>
 
+## Dev: prefer prod build for the dashboard
+
+For everyday use of the dashboard (looking at runs/experiments, hitting the
+API), **prefer the production build over `pnpm dev`**. Reason: Next.js dev
+mode lazy-compiles each route on first request — every route the user
+visits or that gets hit programmatically takes 22–60s to compile (each route
+pulls in ~2200 modules). The user clicks around, sees pages stuck on
+"Loading…", and assumes things are broken. With a prod build the same
+routes return in 5–70 ms first-hit.
+
+```bash
+# One-off prod start (≈70s build, then long-running):
+pnpm --filter @memon/core build              # if @memon/core changed
+pnpm --filter @memon/web build               # ~70s
+cd apps/web && pnpm start > /tmp/memon-prod.log 2>&1 &
+# Same port (3737), same auth, same caddy reverse-proxy URL.
+```
+
+Trade-off: any source change in `apps/web/**` or `packages/core/**` requires
+rebuild + restart (no HMR). For active UI iteration, dev mode is still
+correct; for "user is poking the dashboard to see results", prod is
+strictly better.
+
+When the user says "重启一下 dev server" or similar, default to **rebuild +
+prod start** unless they explicitly say "dev mode" or are mid-iteration on
+UI code. Tell them the build is happening and roughly how long it takes
+(~70s).
+
+Hard rule when restarting: kill the OLD process **before** clearing
+`.next/`. Deleting `.next/` while a server is running silently corrupts the
+build manifest of the running process — subsequent requests then fail with
+`ENOENT: build-manifest.json` or `routes-manifest.json` and you'll spend
+10 minutes wondering why every API returns 500. Sequence:
+
+```bash
+PID=$(ss -ltnp 2>/dev/null | grep 3737 | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+[ -n "$PID" ] && kill "$PID"
+sleep 2  # wait for socket to free
+ss -ltnp 2>/dev/null | grep 3737 || echo "port free"
+# (only now safe to)
+rm -rf apps/web/.next  # if a clean rebuild is needed; otherwise skip
+pnpm --filter @memon/web build
+cd apps/web && pnpm start > /tmp/memon-prod.log 2>&1 &
+```
+
+Note: `pkill -f "tsx server.ts"` does NOT match the actual server process,
+because it runs as `node --require tsx/preflight server.ts` after tsx forks
+its loader. Match by listening port (`ss -ltnp | grep 3737`) instead.
+
 ## Dev: HTTP API auth — curl with credentials from `config.yml`
 
 The dashboard is gated by HTTP Basic auth (see `openspec/specs/auth-system/`).
