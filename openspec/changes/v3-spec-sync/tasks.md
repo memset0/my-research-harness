@@ -126,22 +126,25 @@ state where listeners and invalidators disagree.
 
 ### 2.3 Browser-level UI regression coverage (16.4)
 
-- [ ] 2.3.1 Decide per scenario: vitest + RTL (purely state-driven)
-      or Playwright (genuine browser/network flow). Document the
-      decision in a header comment of each test file.
-- [ ] 2.3.2 If Playwright: add as a dev dependency, scaffold
-      `apps/web/playwright.config.ts`, add a `pnpm test:e2e` script
-      that builds prod + starts server + runs Playwright. Otherwise
-      reuse the existing vitest harness.
-- [ ] 2.3.3 Implement `list-grid.test.tsx` (or `.spec.ts`) for the
-      "Project list grid renders v3 exp docs" scenario.
-- [ ] 2.3.4 Implement `anomaly-banner-copy-all.test.tsx` for the
-      copy-to-clipboard scenario.
-- [ ] 2.3.5 Implement `run-panel-persist.test.tsx` for the localStorage
-      persistence scenario.
-- [ ] 2.3.6 Implement `run-redirect.test.ts` (likely Playwright since
-      it tests an actual HTTP redirect) for the `/r/<run>` →
-      `/e/<exp>?run=<run>` redirect.
+- [x] 2.3.1 All four scenarios are state-driven enough that vitest +
+      RTL covers them; Playwright not needed. The redirect test uses
+      `@vitest-environment node` since it exercises a server component.
+      Decisions documented in each test-file header comment.
+- [-] 2.3.2 ~Playwright dev dep~ — skipped per 2.3.1 decision.
+      No `pnpm test:e2e` script needed.
+- [x] 2.3.3 `apps/web/test/browser/list-grid.test.tsx` (2 scenarios:
+      one card per exp doc; zero-runs exp doesn't crash UI).
+- [x] 2.3.4 `apps/web/test/browser/anomaly-banner-copy-all.test.tsx`
+      (2 scenarios: copy-all writes structured payload incl. project
+      / codes / run ids; zero anomalies = banner hidden).
+- [x] 2.3.5 `apps/web/test/browser/run-panel-persist.test.tsx`
+      (2 scenarios: expand writes localStorage[memon:exp-page:…:open]=1;
+      remount with that key set auto-opens panel + renders RunBody).
+- [x] 2.3.6 `apps/web/test/browser/run-redirect.test.tsx` (4 scenarios:
+      bound run → /e/<exp>?run=<run>; orphan → project list; unknown
+      → project list; URL-encoded path components). Uses node env +
+      mocked `permanentRedirect` (which throws NEXT_REDIRECT in real
+      life — the mock matches that contract).
 
 ## 3. Cosmetic + docs (16.5 + 17.1)
 
