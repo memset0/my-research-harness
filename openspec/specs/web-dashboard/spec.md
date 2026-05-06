@@ -64,15 +64,22 @@ is gone in v3).
 The list page SHALL render a yellow-bordered card pinned **above** the
 experiment-card grid whenever the project has at least one anomaly
 (per `experiment-membership-anomalies`). The banner card:
-- Header: `⚠ <count> issues need resolution` plus action buttons
-  `Copy all` and `Hide`
+- Header: `⚠ <count> issues need resolution` on the left; a single
+  `Copy all` action button anchored to the top-right via shadcn's
+  `CardAction` slot.
 - Body: scrollable list of anomaly messages (`max-h-[40vh]
   overflow-y-auto`), one line per anomaly with the code, IDs, and
   message.
 - `Copy all`: copies a text block with project name, ISO timestamp,
   and one line per anomaly formatted for paste into an agent.
-- `Hide`: hides the card for the current `sessionStorage` lifetime
-  (returns on browser tab reload).
+
+The banner SHALL use the default shadcn Card and CardHeader rhythm —
+no custom `py-*` overrides on the header and no `pt-0` on the
+content. This keeps its vertical spacing consistent with every other
+card on the project list page.
+
+The banner SHALL NOT provide a `Hide` button. There is no
+per-session dismissal of anomalies.
 
 When the project has zero anomalies, the banner does not render.
 
@@ -89,11 +96,13 @@ When the project has zero anomalies, the banner does not render.
   from project <project> at <ISO time>:` followed by one bullet line
   per anomaly: `- <CODE>: <ids> — <message>`
 
-#### Scenario: Hide is per-session
-- **WHEN** the user clicks `Hide` then reloads the tab
-- **THEN** the banner is hidden after reload
-- **AND** when the user opens the project in a new tab
-- **THEN** the banner is visible
+#### Scenario: Default rhythm and right-anchored action
+- **WHEN** the banner renders
+- **THEN** its `CardHeader` does NOT carry a `py-3`, `flex-row`, or
+  `space-y-0` override class, and its `CardContent` does NOT carry a
+  `pt-0` override class
+- **AND** the `Copy all` button carries `data-slot="card-action"` so
+  the shadcn header grid lays it out in the top-right column
 
 ### Requirement: Orphan run cards in the grid
 

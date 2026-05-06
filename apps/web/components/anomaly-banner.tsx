@@ -6,14 +6,11 @@
 // to the clipboard so the user can paste it into a Claude Code session
 // for resolution.
 
-import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Copy, EyeOff } from 'lucide-react'
+import { AlertTriangle, Copy } from 'lucide-react'
 import { fetchAnomalies, type AnomalyRecord } from '../lib/api'
 import { Button } from './ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-
-const HIDE_KEY_PREFIX = 'memon:anomaly-banner-hidden:'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from './ui/card'
 
 export function AnomalyBanner({ project }: { project: string }) {
   const { data } = useQuery({
@@ -21,25 +18,19 @@ export function AnomalyBanner({ project }: { project: string }) {
     queryFn: () => fetchAnomalies(project),
   })
   const anomalies = data?.anomalies ?? []
-  const hideKey = `${HIDE_KEY_PREFIX}${project}`
 
-  const [hidden, setHidden] = useState(false)
-  useEffect(() => {
-    setHidden(sessionStorage.getItem(hideKey) === '1')
-  }, [hideKey])
-
-  if (anomalies.length === 0 || hidden) return null
+  if (anomalies.length === 0) return null
 
   return (
     <Card className="border-amber-400/70">
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 py-3">
+      <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <AlertTriangle className="size-4 text-amber-600" aria-hidden />
           <span>
             {anomalies.length} issue{anomalies.length === 1 ? '' : 's'} need resolution
           </span>
         </CardTitle>
-        <div className="flex gap-2">
+        <CardAction>
           <Button
             type="button"
             variant="outline"
@@ -54,21 +45,9 @@ export function AnomalyBanner({ project }: { project: string }) {
             <Copy className="size-3" aria-hidden />
             Copy all
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              sessionStorage.setItem(hideKey, '1')
-              setHidden(true)
-            }}
-          >
-            <EyeOff className="size-3" aria-hidden />
-            Hide
-          </Button>
-        </div>
+        </CardAction>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent>
         <ul className="max-h-[40vh] space-y-1 overflow-y-auto text-xs">
           {anomalies.map((a, i) => (
             <li key={i} className="font-mono">

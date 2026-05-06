@@ -139,10 +139,13 @@ anomaly. The card:
 - Shows a count summary in its header (`⚠ 3 issues need resolution`)
 - Lists each anomaly's message in a scrollable body (`max-h-[40vh]
   overflow-y-auto`)
-- Provides a `Copy all` button that copies the anomalies as plain text
-  formatted for paste into an agent prompt
-- Provides a `Hide` button that hides the card for the current
-  `sessionStorage` lifetime (returns on page reload)
+- Provides a `Copy all` action button anchored to the top-right of the
+  card header (via shadcn's `CardAction` slot) that copies the
+  anomalies as plain text formatted for paste into an agent prompt
+
+The banner SHALL NOT provide a `Hide` button or any per-session
+dismissal affordance. Users resolve anomalies by acting on them (CLI,
+linking the run to an exp, etc.), not by hiding the banner.
 
 When the project has zero anomalies, the card SHALL NOT render.
 
@@ -156,12 +159,11 @@ When the project has zero anomalies, the card SHALL NOT render.
   each anomaly with `code`, the relevant ID(s), and `message`, prefixed
   by a header naming the project and timestamp
 
-#### Scenario: Hide is per-session
-- **GIVEN** the banner shows 1 anomaly and the user clicks Hide
-- **WHEN** the user reloads the page in the same browser tab
-- **THEN** the banner is hidden
-- **AND** when the user opens the project in a new tab
-- **THEN** the banner is visible again
+#### Scenario: Copy all is the only header action
+- **WHEN** the banner renders
+- **THEN** the only action button in the card header is `Copy all`,
+  rendered with the shadcn `data-slot="card-action"` attribute so it
+  occupies the header's right column
 
 ### Requirement: Slug-uniqueness anomalies
 
