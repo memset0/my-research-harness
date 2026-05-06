@@ -1,10 +1,10 @@
-import { ExperimentList } from '../../../components/experiment-list'
+import { ExperimentCardGrid } from '../../../components/experiment-card-grid'
 
-export default async function ProjectExperimentsPage({
+export default async function ProjectListPage({
   params,
 }: {
   params: Promise<{ project: string }>
 }) {
   const { project } = await params
-  return <ExperimentList project={decodeURIComponent(project)} />
+  return <ExperimentCardGrid project={decodeURIComponent(project)} />
 }

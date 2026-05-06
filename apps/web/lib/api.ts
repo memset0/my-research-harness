@@ -415,5 +415,89 @@ export async function deleteWarningApi(
   return body as WarningsOpResponse
 }
 
+// ---------- v3 experiment-doc + anomalies ----------
+
+export interface MemberRunSummary {
+  id: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  finishedAt: string | null
+  host: string | null
+  gpus: number[]
+  path?: string
+}
+
+export interface ExperimentDocSummary {
+  id: string
+  project: string
+  path: string
+  mtime: number
+  frontMatter: {
+    id: string
+    slug: string
+    title: string
+    runs: string[]
+    hypotheses: string[]
+    tags: string[]
+    createdAt: string
+    updatedAt: string
+  }
+  sections: {
+    motivation: string | null
+    method: string | null
+    conclusion: string | null
+    caveats: string | null
+  }
+  warningsRaw: string | null
+  parseErrors: { message: string }[]
+  parseWarnings: { message: string }[]
+  effectiveCreatedAt: string
+  effectiveUpdatedAt: string
+  memberRuns: MemberRunSummary[]
+}
+
+export interface ExperimentDocDetail extends Omit<ExperimentDocSummary, 'effectiveCreatedAt' | 'effectiveUpdatedAt'> {}
+
+export interface AnomalyRecord {
+  code: 'ORPHAN_RUN' | 'PHANTOM_RUN_REF' | 'MISMATCH_EXPERIMENT_REF'
+  project: string
+  runId: string | null
+  experimentId: string | null
+  message: string
+  detectedAt: string
+}
+
+export async function fetchExperimentDocs(
+  project?: string,
+): Promise<{ experiments: ExperimentDocSummary[] }> {
+  const url = project ? `/api/experiments?project=${encodeURIComponent(project)}` : '/api/experiments'
+  return jsonFetch(url)
+}
+
+export async function fetchExperimentDoc(id: string): Promise<ExperimentDocDetail> {
+  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}`)
+}
+
+export async function fetchAnomalies(project?: string): Promise<{ anomalies: AnomalyRecord[] }> {
+  const url = project ? `/api/anomalies?project=${encodeURIComponent(project)}` : '/api/anomalies'
+  return jsonFetch(url)
+}
+
+export interface RunFileTreeNode {
+  type: 'file' | 'dir'
+  path: string
+  size?: number
+  mtime?: number
+  children?: RunFileTreeNode[]
+}
+
+export async function fetchRunFiles(
+  id: string,
+  depth = 3,
+): Promise<{ runId: string; runPath: string; depth: number; truncated: boolean; entries: number; tree: RunFileTreeNode }> {
+  return jsonFetch(`/api/runs/${encodeURIComponent(id)}/files?depth=${depth}`)
+}
+
 // Re-exports for convenience
 export type { Run, Hypothesis, JournalEvent, WarningRecord }

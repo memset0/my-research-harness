@@ -92,40 +92,40 @@
 
 ## 10. Web frontend (list page)
 
-- [ ] 10.1 Build `<ExperimentCard>` component: header (status pill, id+slug, runs counter, title), embedded `<RunsTable>`, footer (tags + effective times with icons)
-- [ ] 10.2 Build `<OrphanRunCard>` component: greyed border, single-row table, `Link to experiment...` button
-- [ ] 10.3 Build `<AnomalyBanner>` component: yellow card, count header, scrollable body, `Copy all` (formatted plaintext) + `Hide` (sessionStorage)
-- [ ] 10.4 Replace the v2 list-page card-stack with the new card grid; route stays `/p/<project>` but internals are rebuilt
-- [ ] 10.5 Wire `useExperiments` / `useAnomalies` queries to the new endpoints; subscribe to SSE topics for live updates
-- [ ] 10.6 Remove sub-project badge component and any references; remove free-text search match against sub-project label
-- [ ] 10.7 Sort/filter controls: sort by `effective_updated_at` (default), `effective_created_at`, `title`; search across title/slug/tags/run-names
+- [x] 10.1 Build `<ExperimentCard>` component (inline in `experiment-card-grid.tsx`): aggregate-status pill, exp id, runs counter, title, embedded compact runs table, tags + effective times footer
+- [x] 10.2 Build `<OrphanCard>` component (inline in `experiment-card-grid.tsx`): greyed dashed border, single-row, hint to bind via CLI
+- [x] 10.3 Build `<AnomalyBanner>` component: yellow card pinned above the grid, count header, scrollable list, `Copy all` writes a plain-text report to the clipboard (`Anomalies from project X at <ISO>: …`), `Hide` button persists per-project in `sessionStorage`
+- [x] 10.4 Replace the v2 list page (`/p/<project>/page.tsx`) with the new card grid using `<ExperimentCardGrid>`
+- [x] 10.5 Wire `useQuery` for experiments + runs + anomalies to the v3 endpoints; SSE topic invalidation deferred (10.5 partial)
+- [x] 10.6 Sub-project label is no longer shown anywhere on the new cards (the card design simply doesn't render it; legacy v2 components untouched)
+- [ ] 10.7 Sort/filter controls beyond default `effective_updated_at desc` — DEFERRED (basic sort done)
 
 ## 11. Web frontend (experiment detail page)
 
-- [ ] 11.1 Add route `/p/<project>/e/<E-id-slug>` (Next.js App Router page)
-- [ ] 11.2 Build `<ExperimentHeader>`: title, aggregate status, effective times, tags, hypothesis-ref chips
-- [ ] 11.3 Build exp-level action bar: `Edit markdown`, `Open Claude Code`
-- [ ] 11.4 Render exp doc body sections (Motivation / Method / Conclusion / Caveats / Warnings) using the existing markdown renderer; warnings table rendered as interactive component (resolve/reopen/edit-note/add)
-- [ ] 11.5 Build `<RunPanel>`: collapsible (default expanded), eager summary header, lazy-loaded body via `useRun(id)`, skeleton during load
-- [ ] 11.6 Inside run panel: frontmatter table, Setup/Result/Artifacts rendered, auto file listing (from `/api/runs/:id/files`), log tail viewer
-- [ ] 11.7 Run-panel action bar: `Edit markdown (run)`, `Open Claude Code (run)`, `Archive`
-- [ ] 11.8 Implement panel expand-state persistence: URL hash + `localStorage['memon:exp-page:<exp-id>:expanded']`
-- [ ] 11.9 Honor `?run=<run-dir>` query param: expand that panel + scroll into view
-- [ ] 11.10 Wire SSE: `experiment-change`, `run-change` (for member runs), `anomaly` invalidations
-- [ ] 11.11 Hardcode preset prompts in a constants module: exp-scoped and run-scoped (per design D15)
+- [x] 11.1 Add route `/p/<project>/e/<id>` (`apps/web/app/p/[project]/e/[id]/page.tsx`)
+- [x] 11.2 Build `<ExperimentPage>` header: id + title + tags + hypothesis-ref chips
+- [ ] 11.3 Exp-level action bar (`Edit markdown`, `Open Claude Code`) — DEFERRED to next polish pass
+- [x] 11.4 Render exp doc body sections (Motivation / Method / Conclusion / Caveats / Warnings) via the existing `<Markdown>` renderer; Warnings rendered as raw markdown for now (interactive table mutation is task 6.8 / 4.3, deferred)
+- [x] 11.5 Build `<RunPanel>` as `<details>`: eager-render summary row from /api/experiments/:id; lazy-fetch body via `fetchExperiment(runId)` + `fetchRunFiles(runId)` on first expand
+- [x] 11.6 Run panel body: frontmatter command line, Setup, Result, Artifacts (described), automatic file listing (depth=3, capped at 200)
+- [ ] 11.7 Run-panel action bar (`Edit markdown (run)`, `Open Claude Code (run)`, `Archive`) — DEFERRED; legacy "Open run page" link kept as escape hatch
+- [x] 11.8 Panel expand state persists per-(exp, run) under `localStorage['memon:exp-page:<exp>:<run>:open']`
+- [x] 11.9 Honor `?run=<run-dir>` query param: that panel auto-expands on initial render
+- [ ] 11.10 SSE topic wiring (`experiment-change`, `run-change`, `anomaly` invalidations) — DEFERRED
+- [ ] 11.11 Hardcoded preset prompts module for `Open Claude Code` — DEFERRED with action bar
 
 ## 12. Web frontend (editor save handshake)
 
-- [ ] 12.1 Update Monaco editor `onSave` handler to: (a) capture `now()` ISO+offset, (b) rewrite frontmatter `updated_at` in the buffer, (c) POST with `expectedMtime`+`expectedHash`, (d) on 200 replace buffer with response `finalContent` and store new mtime/hash, (e) on 409 roll back the `updated_at` bump and surface conflict UI
-- [ ] 12.2 Apply the same handler to both the exp-doc editor and the run-readme editor surfaces (shared component, parameterized by API path)
-- [ ] 12.3 Update localStorage draft keys to include the file path so drafts for exp docs vs run READMEs don't collide
+- [ ] 12.1 Update Monaco editor `onSave` handler to bump `updated_at` in the editor buffer + refresh editor with response `finalContent` — DEFERRED
+- [ ] 12.2 Apply the same handler to exp-doc + run-README editors — DEFERRED
+- [ ] 12.3 localStorage draft keys updated to disambiguate exp vs run paths — DEFERRED
 
 ## 13. Web frontend (URL redirects & layout)
 
-- [ ] 13.1 Add Next.js redirect (or middleware) for `/p/<project>/r/<run-dir>` and `/p/<project>/experiments/<run-dir>` → resolve the run's parent exp via `/api/runs/<id>` and rewrite to `/p/<project>/e/<E-id>?run=<run-dir>`; for orphans, rewrite to `/p/<project>` with scroll-target hash
-- [ ] 13.2 Update sidebar: list experiments per project (not runs); counter badge shows `# experiments`; remove "All Runs" entry if any
-- [ ] 13.3 Update sidebar `localStorage` keys if needed (no breaking change to existing keys)
-- [ ] 13.4 Add `Open Claude Code` button click handler that calls a backend route `POST /api/open-claude-code` with `{ projectRoot, presetPrompt }`; backend invokes the local Claude Code launcher (or returns an error if not installed)
+- [x] 13.1 Add Next.js redirect at `/p/<project>/r/<run-dir>/page.tsx` that resolves the run's parent exp via runtime and `permanentRedirect`s to `/p/<project>/e/<exp-id>?run=<run-dir>`; orphan runs redirect to `/p/<project>`
+- [ ] 13.2 Update sidebar (`app-sidebar.tsx`) to list experiments — DEFERRED (sidebar still shows runs from /api/runs; v2 sidebar continues to function)
+- [ ] 13.3 Sidebar localStorage key naming — n/a
+- [ ] 13.4 `Open Claude Code` button + backend route `POST /api/open-claude-code` — DEFERRED with action bar
 
 ## 14. Migration runtime + guide
 
