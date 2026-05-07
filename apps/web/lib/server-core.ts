@@ -2,6 +2,11 @@
 // owns `/api/terminal/proxy/*` (HTTP + WebSocket upgrade) and delegates
 // everything else to the supplied `handle` / `upgradeHandler`.
 //
+// Per-sessionName routing (post tmux-session-rework): the proxy extracts
+// `<sessionName>` from `/api/terminal/proxy/<sessionName>/...` and looks up
+// the corresponding ttyd port from the terminal manager. Different sessions
+// route to different ports; an unknown sessionName returns 502.
+//
 // Factored out of the entry script (`apps/web/server.ts`) so it can be
 // constructed in tests without booting Next.
 
@@ -9,9 +14,14 @@ import { createServer as createHttpServer, type IncomingMessage, type Server, ty
 import type { Duplex } from 'node:stream'
 import { createProxyServer } from 'http-proxy-3'
 import { authenticateNodeRequest } from './auth/server-auth'
+import {
+  lookupSession,
+  noteHttpActivity,
+  noteWsConnect,
+  noteWsDisconnect,
+} from './terminal/manager'
 
 const PROXY_PREFIX = '/api/terminal/proxy/'
-const DEFAULT_TTYD_TARGET = 'http://127.0.0.1:7682'
 
 export interface MemonServerDeps {
   /** Next's request handler — invoked for any path NOT under PROXY_PREFIX. */
@@ -22,15 +32,29 @@ export interface MemonServerDeps {
    * destroyed cleanly (acceptable in prod where there's no HMR socket).
    */
   upgradeHandler?: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
-  /** Override for tests; defaults to the loopback ttyd port. */
+  /**
+   * Test override: if provided, every proxy request goes to this static
+   * target instead of the per-sessionName manager lookup. In production this
+   * SHALL be omitted so the manager's `Map<sessionName, port>` drives
+   * routing.
+   */
   proxyTarget?: string
   /** Hook for tests that want to observe proxy errors. */
   onProxyError?: (err: Error) => void
 }
 
+function extractSessionName(reqUrl: string): string | null {
+  const m = reqUrl.match(/^\/api\/terminal\/proxy\/([^/]+)/)
+  if (!m) return null
+  try {
+    return decodeURIComponent(m[1]!)
+  } catch {
+    return null
+  }
+}
+
 export function createMemonServer(deps: MemonServerDeps): Server {
-  const target = deps.proxyTarget ?? DEFAULT_TTYD_TARGET
-  const proxy = createProxyServer({ target, ws: true, changeOrigin: false })
+  const proxy = createProxyServer({ ws: true, changeOrigin: false })
 
   proxy.on('error', (err, _req, res) => {
     const e = err instanceof Error ? err : new Error(String(err))
@@ -46,6 +70,14 @@ export function createMemonServer(deps: MemonServerDeps): Server {
     }
   })
 
+  function resolveTarget(reqUrl: string): string | null {
+    if (deps.proxyTarget) return deps.proxyTarget
+    const name = extractSessionName(reqUrl)
+    if (!name) return null
+    const entry = lookupSession(name)
+    return entry ? `http://127.0.0.1:${entry.port}` : null
+  }
+
   const server = createHttpServer(async (req, res) => {
     if (req.url?.startsWith(PROXY_PREFIX)) {
       try {
@@ -54,7 +86,15 @@ export function createMemonServer(deps: MemonServerDeps): Server {
           rejectHttp(res, r.status ?? 401, r.headers ?? {})
           return
         }
-        proxy.web(req, res)
+        const target = resolveTarget(req.url)
+        if (!target) {
+          rejectHttp(res, 502, { 'Content-Type': 'text/plain' })
+          res.end('Bad Gateway: unknown session')
+          return
+        }
+        const name = extractSessionName(req.url)
+        if (name) noteHttpActivity(name)
+        proxy.web(req, res, { target })
       } catch (e) {
         deps.onProxyError?.(e instanceof Error ? e : new Error(String(e)))
         rejectHttp(res, 500, { 'Content-Type': 'text/plain' })
@@ -72,7 +112,17 @@ export function createMemonServer(deps: MemonServerDeps): Server {
           rejectUpgrade(socket, r.status ?? 401, r.headers ?? {})
           return
         }
-        proxy.ws(req, socket, head)
+        const target = resolveTarget(req.url)
+        if (!target) {
+          rejectUpgrade(socket, 502, { 'Content-Type': 'text/plain' })
+          return
+        }
+        const name = extractSessionName(req.url)
+        if (name) {
+          noteWsConnect(name)
+          socket.once('close', () => noteWsDisconnect(name))
+        }
+        proxy.ws(req, socket, head, { target })
       } catch (e) {
         deps.onProxyError?.(e instanceof Error ? e : new Error(String(e)))
         socket.destroy()
@@ -98,6 +148,7 @@ function rejectUpgrade(socket: Duplex, status: number, headers: Record<string, s
   const reason =
     status === 401 ? 'Unauthorized'
     : status === 429 ? 'Too Many Requests'
+    : status === 502 ? 'Bad Gateway'
     : 'Forbidden'
   const headerLines = Object.entries(headers)
     .map(([k, v]) => `${k}: ${v}`)

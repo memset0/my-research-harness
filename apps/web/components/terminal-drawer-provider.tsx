@@ -1,40 +1,54 @@
 'use client'
 
-// Layout-scoped state holder for the single browser-terminal drawer.
+// Root-mounted state holder for the single browser-terminal drawer.
 //
-// Design rationale (see openspec/changes/run-action-bar-rework/):
-// - Old model: every <TerminalButton> owned its own React state and the
-//   drawer's onClose called /api/terminal/stop, killing the ttyd child
-//   so a reopen had to bootstrap from scratch.
-// - New model: drawer state lives here, mounted once in the project layout.
-//   Closing the drawer hides it but keeps the ttyd + tmux session alive.
-//   Tear-down happens on (a) explicit "Close + stop session", (b) route
-//   change, or (c) a different `Open with` invocation that needs a
-//   different sessionName (the existing single-port constraint).
+// Design (post tmux-session-rework):
+// - Mounted at root layout (in `Providers`), so the drawer is reachable
+//   from every page including `/manage/tmux`.
+// - Drawer state persists across pathname changes — navigation alone
+//   neither closes the drawer nor kills the underlying ttyd / tmux.
+// - `X` close (or escape / outside-click) hides the drawer; ttyd + tmux
+//   stay alive (LRU + Idle TTL handle ttyd cleanup; tmux is only killed
+//   via the management page or by the user exiting the agent / shell from
+//   inside ttyd).
+// - `Pop out` opens the same `(agent, project, scope, slug)` in a popup
+//   window AND closes the drawer. Both views share the same ttyd thanks
+//   to the manager's sessionName dedup.
 
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from './ui/sheet'
 import { Button } from './ui/button'
-import { Power } from 'lucide-react'
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { usePathname } from 'next/navigation'
-import { stopTerminal, type TerminalAgentKind } from '../lib/api'
+import { ExternalLink } from 'lucide-react'
+import { createContext, useCallback, useContext, useState } from 'react'
+import type { TerminalAgentKind } from '../lib/api'
 import { TerminalView } from './terminal-view'
 
+export type TerminalScopeKind = 'exp' | 'run'
+
 interface DrawerState {
-  runId: string
-  projectName: string
+  project: string
+  scope: TerminalScopeKind
+  slug: string
   agent: TerminalAgentKind
   /** Populated once TerminalView reports the sessionName (post-start). */
   sessionName: string | null
 }
 
+export interface DrawerOpenInput {
+  project: string
+  scope: TerminalScopeKind
+  slug: string
+  agent: TerminalAgentKind
+}
+
 interface DrawerApi {
-  /** Open the drawer for a given run + agent. */
-  open: (input: Omit<DrawerState, 'sessionName'>) => void
-  /** Hide the drawer without killing the session (X / outside-click). */
+  open: (input: DrawerOpenInput) => void
   close: () => void
-  /** Hide the drawer AND kill the session (explicit user action / route change). */
-  closeAndStop: () => void
 }
 
 const TerminalDrawerContext = createContext<DrawerApi | null>(null)
@@ -42,13 +56,12 @@ const TerminalDrawerContext = createContext<DrawerApi | null>(null)
 const NOOP_API: DrawerApi = {
   open: () => {},
   close: () => {},
-  closeAndStop: () => {},
 }
 
 /**
  * Returns the drawer API. If the caller is rendered outside a
  * <TerminalDrawerProvider>, returns a no-op API and leaves a console
- * warning. (Tests that mount sub-components without the layout get a
+ * warning. (Tests that mount sub-components without the provider get a
  * silent no-op rather than an exception.)
  */
 export function useTerminalDrawer(): DrawerApi {
@@ -67,35 +80,14 @@ export function useTerminalDrawer(): DrawerApi {
 
 export function TerminalDrawerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DrawerState | null>(null)
-  const pathname = usePathname()
-  const lastPathnameRef = useRef(pathname)
 
-  const open = useCallback((input: Omit<DrawerState, 'sessionName'>) => {
+  const open = useCallback((input: DrawerOpenInput) => {
     setState({ ...input, sessionName: null })
   }, [])
 
   const close = useCallback(() => {
     setState(null)
   }, [])
-
-  const closeAndStop = useCallback(() => {
-    setState((prev) => {
-      if (prev?.sessionName) {
-        void stopTerminal(prev.sessionName).catch(() => {
-          /* swallow — best-effort */
-        })
-      }
-      return null
-    })
-  }, [])
-
-  // Tear down on route change.
-  useEffect(() => {
-    if (lastPathnameRef.current !== pathname) {
-      lastPathnameRef.current = pathname
-      closeAndStop()
-    }
-  }, [pathname, closeAndStop])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -108,8 +100,24 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
     setState((prev) => (prev ? { ...prev, sessionName } : prev))
   }, [])
 
+  const handlePopOut = useCallback(() => {
+    setState((cur) => {
+      if (!cur) return cur
+      const target = cur.sessionName
+        ? `memon-popup-${cur.sessionName}`
+        : `memon-popup-${cur.agent}-${cur.project}-${cur.scope}-${cur.slug}`
+      const url =
+        `/terminal-popup?project=${encodeURIComponent(cur.project)}` +
+        `&scope=${encodeURIComponent(cur.scope)}` +
+        `&slug=${encodeURIComponent(cur.slug)}` +
+        `&agent=${encodeURIComponent(cur.agent)}`
+      window.open(url, target, 'popup,width=1200,height=800')
+      return null
+    })
+  }, [])
+
   return (
-    <TerminalDrawerContext.Provider value={{ open, close, closeAndStop }}>
+    <TerminalDrawerContext.Provider value={{ open, close }}>
       {children}
       <Sheet open={state !== null} onOpenChange={handleOpenChange}>
         <SheetContent
@@ -123,35 +131,37 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
                   <div className="min-w-0">
                     <SheetTitle className="font-mono text-xs">
                       {state.agent} ·{' '}
-                      {state.sessionName ?? `memon-${state.agent === 'none' ? 'term' : state.agent}-${state.runId}`}
+                      {state.sessionName ??
+                        `memon-${state.agent === 'none' ? 'terminal' : state.agent}-${state.project}--${state.scope}--${state.slug}`}
                     </SheetTitle>
                     <SheetDescription className="text-[11px]">
-                      Closing this panel leaves the tmux session attached. It
-                      stops on route change or by the button on the right.
+                      Closing this panel keeps ttyd and the tmux session alive.
+                      Sessions persist across server restarts; manage them at{' '}
+                      <code className="rounded bg-muted px-1">/manage/tmux</code>.
                     </SheetDescription>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={closeAndStop}
+                    onClick={handlePopOut}
                     className="shrink-0"
                   >
-                    <Power className="size-3" />
-                    Close + stop
+                    <ExternalLink className="size-3" />
+                    Pop out
                   </Button>
                 </div>
               </SheetHeader>
               <div className="min-h-0 flex-1 overflow-hidden">
                 <TerminalView
-                  runId={state.runId}
-                  projectName={state.projectName}
+                  project={state.project}
+                  scope={state.scope}
+                  slug={state.slug}
                   agent={state.agent}
                   onSessionReady={handleSessionReady}
                 />
               </div>
             </>
           ) : (
-            // Nothing to render when state is null. The Sheet is closed.
             <SheetTitle className="sr-only">terminal</SheetTitle>
           )}
         </SheetContent>

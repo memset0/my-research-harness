@@ -14,6 +14,7 @@ import {
   checkTerminal,
   installTerminal,
   type TerminalAgentKind,
+  type TerminalScopeKind,
 } from '../lib/api'
 import { Button } from './ui/button'
 import {
@@ -58,25 +59,37 @@ function writeDefaultAgent(agent: TerminalAgentKind): void {
   }
 }
 
-function sessionNameFor(agent: TerminalAgentKind, runId: string): string {
-  switch (agent) {
-    case 'none':
-      return `memon-term-${runId}`
-    case 'claude':
-      return `memon-claude-${runId}`
-    case 'codex':
-      return `memon-codex-${runId}`
-    case 'opencode':
-      return `memon-opencode-${runId}`
-  }
+function popupTarget(input: {
+  agent: TerminalAgentKind
+  project: string
+  scope: TerminalScopeKind
+  slug: string
+}): string {
+  const agentSeg = input.agent === 'none' ? 'terminal' : input.agent
+  return `memon-popup-memon-${agentSeg}-${input.project}--${input.scope}--${input.slug}`
+}
+
+function popupUrl(input: {
+  agent: TerminalAgentKind
+  project: string
+  scope: TerminalScopeKind
+  slug: string
+}): string {
+  return (
+    `/terminal-popup?project=${encodeURIComponent(input.project)}` +
+    `&scope=${encodeURIComponent(input.scope)}` +
+    `&slug=${encodeURIComponent(input.slug)}` +
+    `&agent=${encodeURIComponent(input.agent)}`
+  )
 }
 
 export interface OpenWithButtonProps {
-  runId: string
-  projectName: string
+  project: string
+  scope: TerminalScopeKind
+  slug: string
 }
 
-export function OpenWithButton({ runId, projectName }: OpenWithButtonProps) {
+export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   const drawer = useTerminalDrawer()
   const qc = useQueryClient()
   const [defaultAgent, setDefaultAgentState] = useState<TerminalAgentKind>(DEFAULT_AGENT)
@@ -138,14 +151,16 @@ export function OpenWithButton({ runId, projectName }: OpenWithButtonProps) {
 
   const launchInDrawer = (agent: TerminalAgentKind) => {
     setDefaultAgent(agent)
-    drawer.open({ runId, projectName, agent })
+    drawer.open({ project, scope, slug, agent })
   }
 
   const launchInPopup = (agent: TerminalAgentKind) => {
     setDefaultAgent(agent)
-    const target = `memon-terminal-${sessionNameFor(agent, runId)}`
-    const url = `/terminal-popup?runId=${encodeURIComponent(runId)}&projectName=${encodeURIComponent(projectName)}&agent=${encodeURIComponent(agent)}`
-    window.open(url, target, 'popup,width=1200,height=800')
+    window.open(
+      popupUrl({ agent, project, scope, slug }),
+      popupTarget({ agent, project, scope, slug }),
+      'popup,width=1200,height=800',
+    )
   }
 
   return (

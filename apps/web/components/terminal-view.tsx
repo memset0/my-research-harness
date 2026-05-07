@@ -1,19 +1,26 @@
 'use client'
 
 // Shared terminal-iframe view used by both the side drawer
-// (terminal-sheet.tsx) and the popup-window route (app/terminal-popup/page.tsx).
-// Owns the start-session lifecycle + the iframe + the loading/error/ready
-// phases. Does NOT own outer chrome (header, close button, sheet/window
-// scaffolding) — callers wrap as appropriate.
+// (terminal-drawer-provider.tsx) and the popup-window route
+// (app/terminal-popup/page.tsx). Owns the start-session lifecycle + the
+// iframe + the loading/error/ready phases. Does NOT own outer chrome
+// (header, close button, sheet/window scaffolding) — callers wrap as
+// appropriate.
 
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
-import { ApiError, startTerminal, type TerminalAgentKind } from '../lib/api'
+import {
+  ApiError,
+  startTerminal,
+  type TerminalAgentKind,
+  type TerminalScopeKind,
+} from '../lib/api'
 import { cn } from '../lib/utils'
 
 export interface TerminalViewProps {
-  runId: string
-  projectName: string
+  project: string
+  scope: TerminalScopeKind
+  slug: string
   agent: TerminalAgentKind
   /** When true, the view occupies 100vw x 100svh (popup-window mode). */
   fullscreen?: boolean
@@ -22,8 +29,9 @@ export interface TerminalViewProps {
 }
 
 export function TerminalView({
-  runId,
-  projectName,
+  project,
+  scope,
+  slug,
   agent,
   fullscreen,
   onSessionReady,
@@ -40,7 +48,7 @@ export function TerminalView({
     setError(null)
     setIframeUrl(null)
     setWarnings([])
-    void startTerminal({ runId, projectName, agent })
+    void startTerminal({ project, scope, slug, agent })
       .then((res) => {
         if (cancelled) return
         setIframeUrl(res.url)
@@ -60,7 +68,7 @@ export function TerminalView({
     return () => {
       cancelled = true
     }
-  }, [runId, projectName, agent, onSessionReady])
+  }, [project, scope, slug, agent, onSessionReady])
 
   return (
     <div

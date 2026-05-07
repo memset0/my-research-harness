@@ -1,67 +1,69 @@
-// ttyd subprocess orchestration. v1: at most one ttyd process at a time
-// (single port), bound to a tmux session named `memon-claude-<expid>`.
+// ttyd subprocess orchestration with per-sessionName multi-port management.
+//
+// Each (agent, project, scope, slug) tuple gets its own tmux session AND its
+// own ttyd process bound to a dynamically allocated loopback port. The
+// manager maintains `Map<sessionName, Entry>` keyed by the canonical session
+// name `memon-<agent>-<project>--<scope>--<slug>`. Concurrent sessions are
+// allowed; LRU eviction at `terminal.ttyd_max_concurrent` (config) keeps the
+// active count bounded, and an Idle TTL killer reaps ttyd processes whose
+// WebSocket has been idle for `terminal.ttyd_idle_ttl_minutes` minutes.
+//
+// Lifecycle invariant: tmux session is durable. Neither LRU eviction, idle
+// TTL, nor `memon serve` restart kills tmux. Tmux sessions end only on (a)
+// explicit `tmux kill-session` (e.g. via the management page) or (b) the
+// user exiting the agent / shell from inside a connected ttyd (default tmux
+// behavior).
 //
 // Security model — three independent gates protect the writable terminal:
-//   1. Loopback bind: ttyd listens on 127.0.0.1:7682 only. External hosts
-//      cannot reach it directly.
+//   1. Loopback bind: each ttyd listens on 127.0.0.1:<port> only.
 //   2. Custom-server HTTP Basic on /api/terminal/proxy/* (HTTP + WebSocket
 //      upgrade): `apps/web/server.ts` verifies credentials against
 //      `runtime.auth` for every request and every upgrade on this prefix
-//      before forwarding to ttyd. Anonymous WebSocket upgrades are
-//      rejected with 401 at the entry, never reach ttyd.
+//      before forwarding to the per-sessionName ttyd port.
 //   3. Next.js middleware HTTP Basic on every other dashboard route as
-//      defense-in-depth (`apps/web/middleware.ts`); `/api/terminal/proxy/`
-//      is bypassed there since gate (2) already covers it.
-//
-// We deliberately do NOT pass `-c user:pass` to ttyd. Coupling ttyd's basic-
-// auth to memon's `config.yml` plaintext would require a redundant ttyd
-// restart in addition to the memon restart that already covers password
-// rotation, and the three gates above cover the threat model.
-//
-// Lifecycle:
-//   - startSession kills any prior ttyd, then spawns a new one whose argv is
-//     `<ttyd> -p 7682 -i 127.0.0.1 -b <basePath> --writable tmux new-session -A -s <name> claude`
-//   - stopSession kills the ttyd child but NOT the tmux session — that's the
-//     whole point of using tmux: user ssh's in later and `tmux attach -t <name>`
-//   - process exit handlers (SIGINT/SIGTERM/beforeExit) kill the child;
-//     tmux is independent of memon's process group
+//      defense-in-depth (`apps/web/middleware.ts`).
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:net'
+import { promises as fs } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { probeTtyd } from './binary'
 
-const PORT = 7682
+const PORT_BASE = 7682
+const PORT_SCAN_LIMIT = 256
+const IDLE_TIMER_INTERVAL_MS = 60_000
 
 export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
 export type AgentKind = (typeof AGENT_KINDS)[number]
 
-/**
- * Map an agent to its tmux session-name prefix. Different agents on the
- * same run get distinct tmux sessions instead of colliding on the
- * historical `memon-claude-` prefix.
- */
-function sessionPrefixFor(agent: AgentKind): string {
-  switch (agent) {
-    case 'none':
-      return 'memon-term-'
-    case 'claude':
-      return 'memon-claude-'
-    case 'codex':
-      return 'memon-codex-'
-    case 'opencode':
-      return 'memon-opencode-'
-  }
+export const SCOPE_KINDS = ['exp', 'run'] as const
+export type ScopeKind = (typeof SCOPE_KINDS)[number]
+
+/** Visible in tmux session names. `none` is rendered as `terminal`. */
+function agentToNameSegment(agent: AgentKind): string {
+  return agent === 'none' ? 'terminal' : agent
 }
 
-/** Anything more permissive risks tmux command injection via session name. */
-const EXP_ID_RE = /^[a-zA-Z0-9._-]+$/
+const AGENT_PREFIX_TO_KIND: Record<string, AgentKind> = {
+  terminal: 'none',
+  claude: 'claude',
+  codex: 'codex',
+  opencode: 'opencode',
+}
+
+const PROJECT_RE = /^[A-Za-z0-9-]+$/
+const SLUG_RE = /^[A-Za-z0-9._-]+$/
 
 export interface ActiveSession {
   sessionName: string
   port: number
   startedAt: string
-  runId: string
-  projectName: string
+  lastActiveAt: string
   agent: AgentKind
+  project: string
+  scope: ScopeKind
+  slug: string
   warnings: string[]
 }
 
@@ -75,42 +77,248 @@ export class TerminalManagerError extends Error {
   }
 }
 
-interface CurrentEntry extends ActiveSession {
+interface Entry {
   child: ChildProcess
+  port: number
+  sessionName: string
+  agent: AgentKind
+  project: string
+  scope: ScopeKind
+  slug: string
+  startedAt: string
+  /** Wall-clock millis. Bumped on HTTP request, WS connect, WS disconnect. */
+  lastActiveAtMs: number
+  /** Number of currently-connected ttyd WebSocket clients. */
+  wsConnections: number
+  warnings: string[]
 }
 
 // In Next.js dev mode, HMR can reload this module on edits to unrelated
-// files. Module-local `let current` would lose the running child reference,
-// orphaning the ttyd process. Pin to `globalThis` so the singleton survives
-// module re-imports.
-const GLOBAL_KEY = '__memonTerminalCurrent' as const
-const GLOBAL_HANDLERS_KEY = '__memonTerminalExitRegistered' as const
-type GlobalSlot = {
-  [GLOBAL_KEY]?: CurrentEntry | null
-  [GLOBAL_HANDLERS_KEY]?: boolean
+// files. Module-local state would lose the running children, orphaning
+// ttyd processes. Pin to globalThis so the singletons survive module
+// re-imports.
+const GLOBAL_KEY = '__memonTerminalState' as const
+interface GlobalState {
+  sessions: Map<string, Entry>
+  startChains: Map<string, Promise<unknown>>
+  exitHandlersRegistered: boolean
+  idleTimer: NodeJS.Timeout | null
+  idleTimerCfgMinutes: number
 }
-const slot = globalThis as unknown as GlobalSlot
-
-function getCurrent(): CurrentEntry | null {
-  return slot[GLOBAL_KEY] ?? null
-}
-function setCurrent(v: CurrentEntry | null): void {
-  slot[GLOBAL_KEY] = v
-}
-
-function registerExitHandlers(): void {
-  if (slot[GLOBAL_HANDLERS_KEY]) return
-  slot[GLOBAL_HANDLERS_KEY] = true
-  const cleanup = () => {
-    const cur = getCurrent()
-    if (cur?.child && !cur.child.killed) {
-      cur.child.kill('SIGTERM')
+function getState(): GlobalState {
+  const slot = globalThis as unknown as { [GLOBAL_KEY]?: GlobalState }
+  if (!slot[GLOBAL_KEY]) {
+    slot[GLOBAL_KEY] = {
+      sessions: new Map(),
+      startChains: new Map(),
+      exitHandlersRegistered: false,
+      idleTimer: null,
+      idleTimerCfgMinutes: -1,
     }
   }
-  process.on('SIGINT', cleanup)
-  process.on('SIGTERM', cleanup)
-  process.on('beforeExit', cleanup)
+  return slot[GLOBAL_KEY]!
 }
+
+// ---------- Session-name format ----------
+
+export function buildSessionName(input: {
+  agent: AgentKind
+  project: string
+  scope: ScopeKind
+  slug: string
+}): string {
+  if (!PROJECT_RE.test(input.project)) {
+    throw new TerminalManagerError(
+      'BAD_REQUEST',
+      `project must match ${PROJECT_RE} (got ${JSON.stringify(input.project)})`,
+    )
+  }
+  if (!SLUG_RE.test(input.slug)) {
+    throw new TerminalManagerError(
+      'BAD_REQUEST',
+      `slug must match ${SLUG_RE} (got ${JSON.stringify(input.slug)})`,
+    )
+  }
+  if (input.slug.includes('--')) {
+    throw new TerminalManagerError(
+      'BAD_REQUEST',
+      `slug must not contain '--' (the scope delimiter; got ${JSON.stringify(input.slug)})`,
+    )
+  }
+  return `memon-${agentToNameSegment(input.agent)}-${input.project}--${input.scope}--${input.slug}`
+}
+
+export interface ParsedSessionName {
+  raw: string
+  agent: AgentKind | null
+  project: string | null
+  scope: ScopeKind | null
+  slug: string | null
+  legacy: boolean
+}
+
+export function parseSessionName(name: string): ParsedSessionName {
+  const empty = (legacy: boolean): ParsedSessionName => ({
+    raw: name,
+    agent: null,
+    project: null,
+    scope: null,
+    slug: null,
+    legacy,
+  })
+  if (!name.startsWith('memon-')) return empty(false)
+  const tail = name.slice('memon-'.length)
+  const dashDash = name.indexOf('--')
+
+  // Legacy: `memon-<agent>-<runId>` (no '--')
+  if (dashDash === -1) {
+    for (const seg of Object.keys(AGENT_PREFIX_TO_KIND)) {
+      if (tail.startsWith(seg + '-')) {
+        return {
+          raw: name,
+          agent: AGENT_PREFIX_TO_KIND[seg]!,
+          project: null,
+          scope: null,
+          slug: null,
+          legacy: true,
+        }
+      }
+    }
+    return empty(false)
+  }
+
+  // New format: split exactly on `--` -> [<memon-agent-project>, <scope>, <slug>]
+  const parts = name.split('--')
+  if (parts.length !== 3) return empty(false)
+  const [first, scopeStr, slug] = parts as [string, string, string]
+  if (!first.startsWith('memon-')) return empty(false)
+  const after = first.slice('memon-'.length)
+
+  let agent: AgentKind | null = null
+  let project: string | null = null
+  for (const seg of Object.keys(AGENT_PREFIX_TO_KIND)) {
+    if (after.startsWith(seg + '-')) {
+      agent = AGENT_PREFIX_TO_KIND[seg]!
+      project = after.slice(seg.length + 1)
+      break
+    }
+  }
+  if (!agent || !project || !PROJECT_RE.test(project)) return empty(false)
+  if (scopeStr !== 'exp' && scopeStr !== 'run') return empty(false)
+  if (!SLUG_RE.test(slug) || slug.length === 0) return empty(false)
+
+  return { raw: name, agent, project, scope: scopeStr, slug, legacy: false }
+}
+
+// ---------- Port allocator ----------
+
+async function probePortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer()
+    let resolved = false
+    server.once('error', () => {
+      if (!resolved) {
+        resolved = true
+        resolve(false)
+      }
+    })
+    server.once('listening', () => {
+      server.close(() => {
+        if (!resolved) {
+          resolved = true
+          resolve(true)
+        }
+      })
+    })
+    server.listen(port, '127.0.0.1')
+  })
+}
+
+async function allocatePort(state: GlobalState): Promise<number> {
+  const used = new Set<number>(Array.from(state.sessions.values()).map((e) => e.port))
+  for (let i = 0; i < PORT_SCAN_LIMIT; i++) {
+    const candidate = PORT_BASE + i
+    if (used.has(candidate)) continue
+    if (await probePortAvailable(candidate)) return candidate
+  }
+  throw new TerminalManagerError(
+    'TTYD_UNAVAILABLE',
+    `no free port in ${PORT_BASE}..${PORT_BASE + PORT_SCAN_LIMIT - 1}`,
+  )
+}
+
+// ---------- LRU eviction ----------
+
+async function evictOnce(state: GlobalState): Promise<void> {
+  let victim: Entry | null = null
+  let connectedFallback: Entry | null = null
+  for (const e of state.sessions.values()) {
+    if (e.wsConnections === 0) {
+      if (!victim || e.lastActiveAtMs < victim.lastActiveAtMs) victim = e
+    } else if (!connectedFallback || e.lastActiveAtMs < connectedFallback.lastActiveAtMs) {
+      connectedFallback = e
+    }
+  }
+  const target = victim ?? connectedFallback
+  if (!target) return
+  state.sessions.delete(target.sessionName)
+  await killChild(target.child)
+}
+
+// ---------- Idle TTL killer ----------
+
+function ensureIdleTimer(state: GlobalState, ttlMinutes: number): void {
+  if (state.idleTimerCfgMinutes === ttlMinutes) return
+  if (state.idleTimer) {
+    clearInterval(state.idleTimer)
+    state.idleTimer = null
+  }
+  state.idleTimerCfgMinutes = ttlMinutes
+  if (ttlMinutes <= 0) return
+
+  const ttlMs = ttlMinutes * 60_000
+  state.idleTimer = setInterval(() => {
+    const now = Date.now()
+    for (const [name, e] of state.sessions) {
+      if (e.wsConnections > 0) continue
+      if (now - e.lastActiveAtMs > ttlMs) {
+        state.sessions.delete(name)
+        void killChild(e.child).catch(() => {
+          /* best-effort */
+        })
+      }
+    }
+  }, IDLE_TIMER_INTERVAL_MS)
+  state.idleTimer.unref?.()
+}
+
+// ---------- Conversation resume probe ----------
+
+async function probeResumeArgvTail(input: {
+  agent: AgentKind
+  cwd: string
+}): Promise<string[]> {
+  if (input.agent === 'none') return []
+  try {
+    if (input.agent === 'claude') {
+      // Claude code stores conversation transcripts under
+      // `~/.claude/projects/<encoded-cwd>/*.jsonl`. The encoding replaces
+      // path separators with hyphens; see `claude --help` `-c/--continue`.
+      // Detection: directory exists and contains at least one .jsonl file.
+      const encoded = input.cwd.replace(/\//g, '-')
+      const dir = join(homedir(), '.claude', 'projects', encoded)
+      const items = await fs.readdir(dir)
+      if (items.some((n) => n.endsWith('.jsonl'))) return ['--continue']
+    }
+    // codex / opencode resume mechanics are deferred — fresh start is the
+    // safe default until the storage probe is researched per-CLI.
+  } catch {
+    /* best-effort: any fs error → no resume */
+  }
+  return []
+}
+
+// ---------- Lifecycle helpers ----------
 
 async function killChild(child: ChildProcess): Promise<void> {
   if (child.killed || child.exitCode !== null) return
@@ -127,54 +335,92 @@ async function killChild(child: ChildProcess): Promise<void> {
   })
 }
 
-/**
- * Serializer: every startSession call awaits the previous one before
- * proceeding. Prevents two concurrent invocations (e.g. React strict mode
- * double-mounting TerminalSheet's effect in dev) from racing on the single
- * shared port 7682.
- */
-const SERIALIZER_KEY = '__memonTerminalStartChain' as const
-type StartSlot = GlobalSlot & { [SERIALIZER_KEY]?: Promise<unknown> }
-const startSlot = globalThis as unknown as StartSlot
+function registerExitHandlers(state: GlobalState): void {
+  if (state.exitHandlersRegistered) return
+  state.exitHandlersRegistered = true
+  const cleanup = () => {
+    if (state.idleTimer) {
+      clearInterval(state.idleTimer)
+      state.idleTimer = null
+    }
+    for (const e of state.sessions.values()) {
+      if (e.child && !e.child.killed) e.child.kill('SIGTERM')
+    }
+  }
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
+  process.on('beforeExit', cleanup)
+}
+
+function toPublic(e: Entry): ActiveSession {
+  return {
+    sessionName: e.sessionName,
+    port: e.port,
+    startedAt: e.startedAt,
+    lastActiveAt: new Date(e.lastActiveAtMs).toISOString(),
+    agent: e.agent,
+    project: e.project,
+    scope: e.scope,
+    slug: e.slug,
+    warnings: [...e.warnings],
+  }
+}
+
+// ---------- Public API ----------
 
 export interface StartSessionInput {
-  runId: string
-  projectName: string
-  /** Default 'claude' to preserve back-compat with existing callers. */
+  project: string
+  scope: ScopeKind
+  slug: string
   agent?: AgentKind
+  /** Absolute path passed to tmux as `-c <cwd>`. The agent's cwd. */
+  cwd: string
+  /** From `runtime.config.terminal`. */
+  maxConcurrent: number
+  /** From `runtime.config.terminal`. `0` disables the killer. */
+  idleTtlMinutes: number
 }
 
 export async function startSession(input: StartSessionInput): Promise<ActiveSession> {
-  const prev = startSlot[SERIALIZER_KEY] ?? Promise.resolve()
-  const mine = prev.catch(() => {}).then(() => doStartSession(input))
-  // Mark slot "done" even on rejection so the chain doesn't stall
-  startSlot[SERIALIZER_KEY] = mine.catch(() => {})
+  const agent: AgentKind = input.agent ?? 'claude'
+  const sessionName = buildSessionName({
+    agent,
+    project: input.project,
+    scope: input.scope,
+    slug: input.slug,
+  })
+  const state = getState()
+  ensureIdleTimer(state, input.idleTtlMinutes)
+
+  // Per-sessionName serializer: prevents two concurrent startSession calls
+  // with the same sessionName from spawning duplicate ttyds. Different
+  // sessionNames proceed in parallel (no global serialization).
+  const prev = state.startChains.get(sessionName) ?? Promise.resolve()
+  const mine = prev.catch(() => {}).then(() => doStartSession(state, input, agent, sessionName))
+  state.startChains.set(
+    sessionName,
+    mine.catch(() => {}),
+  )
   return mine
 }
 
-async function doStartSession(input: StartSessionInput): Promise<ActiveSession> {
-  if (!EXP_ID_RE.test(input.runId)) {
-    throw new TerminalManagerError(
-      'BAD_REQUEST',
-      `runId must match ${EXP_ID_RE} (got ${JSON.stringify(input.runId)})`,
-    )
+async function doStartSession(
+  state: GlobalState,
+  input: StartSessionInput,
+  agent: AgentKind,
+  sessionName: string,
+): Promise<ActiveSession> {
+  // Idempotent return: same sessionName + healthy ttyd → reuse, just bump.
+  const existing = state.sessions.get(sessionName)
+  if (existing && !existing.child.killed && existing.child.exitCode === null) {
+    existing.lastActiveAtMs = Date.now()
+    return toPublic(existing)
   }
-  if (!input.projectName.trim()) {
-    throw new TerminalManagerError('BAD_REQUEST', 'projectName is required')
-  }
+  if (existing) state.sessions.delete(sessionName)
 
-  const agent: AgentKind = input.agent ?? 'claude'
-  const sessionName = `${sessionPrefixFor(agent)}${input.runId}`
-
-  // Idempotent: same experiment + healthy ttyd → return existing
-  const existingSame = getCurrent()
-  if (
-    existingSame &&
-    existingSame.sessionName === sessionName &&
-    !existingSame.child.killed &&
-    existingSame.child.exitCode === null
-  ) {
-    return toPublic(existingSame)
+  // LRU eviction at cap (kills ttyd; tmux preserved).
+  while (state.sessions.size >= input.maxConcurrent) {
+    await evictOnce(state)
   }
 
   const probe = await probeTtyd()
@@ -185,31 +431,25 @@ async function doStartSession(input: StartSessionInput): Promise<ActiveSession> 
     )
   }
 
-  // Tear down any existing ttyd before starting the new one
-  const existing = getCurrent()
-  if (existing) {
-    await killChild(existing.child)
-    setCurrent(null)
-  }
+  const port = await allocatePort(state)
+  const resumeTail = await probeResumeArgvTail({ agent, cwd: input.cwd })
 
-  registerExitHandlers()
-
-  // `-b` (base-path) tells ttyd it's mounted under this URL prefix so the
-  // index HTML + WebSocket URL it emits match what Caddy will route. Without
-  // it, ttyd emits asset URLs at `/static/*` which Caddy routes to Next.js
-  // (404). With it, all URLs are prefixed and stay inside the @terminal
-  // matcher.
   const basePath = `/api/terminal/proxy/${sessionName}`
-  // Build the tmux argv tail per-agent: `none` runs just a shell (no
-  // trailing command); the others run their CLI binary as the
-  // tmux session's first command.
-  const tmuxTail =
-    agent === 'none'
-      ? ['tmux', 'new-session', '-A', '-s', sessionName]
-      : ['tmux', 'new-session', '-A', '-s', sessionName, agent]
+  const tmuxTail: string[] = [
+    'tmux',
+    'new-session',
+    '-A',
+    '-s',
+    sessionName,
+    '-c',
+    input.cwd,
+  ]
+  if (agent !== 'none') {
+    tmuxTail.push(agent, ...resumeTail)
+  }
   const args = [
     '-p',
-    String(PORT),
+    String(port),
     '-i',
     '127.0.0.1',
     '-b',
@@ -223,29 +463,25 @@ async function doStartSession(input: StartSessionInput): Promise<ActiveSession> 
     detached: false,
   })
 
-  // Capture early stderr (e.g. "claude: command not found") as a warning
   const warnings: string[] = []
   let stderrBuf = ''
   const onStderr = (b: Buffer) => {
     stderrBuf += b.toString('utf8')
-    if (stderrBuf.length > 200) {
-      child.stderr?.off('data', onStderr)
-    }
+    if (stderrBuf.length > 200) child.stderr?.off('data', onStderr)
   }
   child.stderr?.on('data', onStderr)
 
-  // Surface a warning if the process dies in <500ms (likely command failure)
   let earlyExit = false
   child.once('exit', (code, signal) => {
     earlyExit = true
-    if (getCurrent()?.child === child) setCurrent(null)
+    const cur = state.sessions.get(sessionName)
+    if (cur && cur.child === child) state.sessions.delete(sessionName)
     if (code !== 0 && stderrBuf) {
       warnings.push(`ttyd exited early (${code ?? signal}): ${stderrBuf.slice(0, 200)}`)
     }
   })
 
-  // Wait briefly for early exit; if survived, treat as started
-  await new Promise<void>((resolve) => setTimeout(resolve, 500))
+  await new Promise<void>((r) => setTimeout(r, 500))
 
   if (earlyExit) {
     throw new TerminalManagerError(
@@ -254,58 +490,84 @@ async function doStartSession(input: StartSessionInput): Promise<ActiveSession> 
     )
   }
 
-  const session: CurrentEntry = {
+  registerExitHandlers(state)
+
+  const entry: Entry = {
     child,
+    port,
     sessionName,
-    port: PORT,
-    startedAt: new Date().toISOString(),
-    runId: input.runId,
-    projectName: input.projectName,
     agent,
+    project: input.project,
+    scope: input.scope,
+    slug: input.slug,
+    startedAt: new Date().toISOString(),
+    lastActiveAtMs: Date.now(),
+    wsConnections: 0,
     warnings,
   }
-  setCurrent(session)
-
-  return toPublic(session)
+  state.sessions.set(sessionName, entry)
+  return toPublic(entry)
 }
 
 export async function stopSession(sessionName: string): Promise<{ stopped: boolean }> {
-  const cur = getCurrent()
-  if (!cur || cur.sessionName !== sessionName) {
-    return { stopped: false }
-  }
-  await killChild(cur.child)
-  setCurrent(null)
+  const state = getState()
+  const e = state.sessions.get(sessionName)
+  if (!e) return { stopped: false }
+  state.sessions.delete(sessionName)
+  await killChild(e.child)
   return { stopped: true }
 }
 
 export function listSessions(): ActiveSession[] {
-  const cur = getCurrent()
-  return cur ? [toPublic(cur)] : []
+  return Array.from(getState().sessions.values()).map(toPublic)
 }
 
-function toPublic(c: CurrentEntry): ActiveSession {
-  // strip the ChildProcess reference from the public shape
-  return {
-    sessionName: c.sessionName,
-    port: c.port,
-    startedAt: c.startedAt,
-    runId: c.runId,
-    projectName: c.projectName,
-    agent: c.agent,
-    warnings: [...c.warnings],
+export function lookupSession(
+  sessionName: string,
+): { port: number; lastActiveAt: string } | null {
+  const e = getState().sessions.get(sessionName)
+  return e
+    ? { port: e.port, lastActiveAt: new Date(e.lastActiveAtMs).toISOString() }
+    : null
+}
+
+/** Bump activity time on any HTTP hit; used by the proxy. */
+export function noteHttpActivity(sessionName: string): void {
+  const e = getState().sessions.get(sessionName)
+  if (e) e.lastActiveAtMs = Date.now()
+}
+
+export function noteWsConnect(sessionName: string): void {
+  const e = getState().sessions.get(sessionName)
+  if (e) {
+    e.wsConnections++
+    e.lastActiveAtMs = Date.now()
+  }
+}
+
+export function noteWsDisconnect(sessionName: string): void {
+  const e = getState().sessions.get(sessionName)
+  if (e) {
+    if (e.wsConnections > 0) e.wsConnections--
+    e.lastActiveAtMs = Date.now()
   }
 }
 
 /** Test-only: reset internal state between unit tests. */
 export function __resetForTests(): void {
-  const cur = getCurrent()
-  if (cur) {
+  const state = getState()
+  for (const e of state.sessions.values()) {
     try {
-      cur.child.kill('SIGKILL')
+      e.child.kill('SIGKILL')
     } catch {
       /* ignore */
     }
   }
-  setCurrent(null)
+  state.sessions.clear()
+  state.startChains.clear()
+  if (state.idleTimer) {
+    clearInterval(state.idleTimer)
+    state.idleTimer = null
+  }
+  state.idleTimerCfgMinutes = -1
 }

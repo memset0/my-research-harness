@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useMemonEvents } from './use-memon-events'
+import { TerminalDrawerProvider } from './terminal-drawer-provider'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -26,7 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <MemonEventsBridge />
-      {children}
+      <TerminalDrawerProvider>{children}</TerminalDrawerProvider>
     </QueryClientProvider>
   )
 }

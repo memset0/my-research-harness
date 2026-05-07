@@ -50,7 +50,10 @@ export function TerminalSheet({
     let cancelled = false
     setPhase('starting')
     setError(null)
-    void startTerminal({ runId, projectName })
+    // Legacy v2 shim: TerminalSheet's caller (TerminalButton via the v2
+    // experiment-detail page) only knows {runId, projectName}; map to the
+    // new (project, scope, slug, agent) shape.
+    void startTerminal({ project: projectName, scope: 'run', slug: runId, agent: 'claude' })
       .then((res) => {
         if (cancelled) {
           // Closed before we got a response; ensure we still tear it down

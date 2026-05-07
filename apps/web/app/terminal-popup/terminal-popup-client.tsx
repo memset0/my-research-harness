@@ -1,21 +1,24 @@
 'use client'
 
 import { TerminalView } from '../../components/terminal-view'
-import type { TerminalAgentKind } from '../../lib/api'
+import type { TerminalAgentKind, TerminalScopeKind } from '../../lib/api'
 
 export function TerminalPopupClient({
-  runId,
-  projectName,
+  project,
+  scope,
+  slug,
   agent,
 }: {
-  runId: string
-  projectName: string
+  project: string
+  scope: TerminalScopeKind
+  slug: string
   agent: TerminalAgentKind
 }) {
   return (
     <TerminalView
-      runId={runId}
-      projectName={projectName}
+      project={project}
+      scope={scope}
+      slug={slug}
       agent={agent}
       fullscreen
     />

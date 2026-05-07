@@ -52,6 +52,7 @@ describe('buildIndex', () => {
         { name: 'b', root: projectB, include: [], exclude: [] },
       ],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
+      terminal: { ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
     }
 
     const idx = await buildIndex(config)
@@ -72,6 +73,7 @@ describe('buildIndex', () => {
         { name: 'b', root: projectB, include: [], exclude: [] },
       ],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
+      terminal: { ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
     }
 
     const idx = await buildIndex(config, { project: 'a' })

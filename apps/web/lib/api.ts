@@ -378,14 +378,17 @@ export interface TerminalInstallResult {
 }
 
 export type TerminalAgentKind = 'none' | 'claude' | 'codex' | 'opencode'
+export type TerminalScopeKind = 'exp' | 'run'
 
 export interface TerminalSession {
   sessionName: string
   port: number
   startedAt: string
-  runId: string
-  projectName: string
+  lastActiveAt: string
   agent: TerminalAgentKind
+  project: string
+  scope: TerminalScopeKind
+  slug: string
   warnings: string[]
 }
 
@@ -395,6 +398,23 @@ export interface TerminalStartResponse {
   port: number
   startedAt: string
   warnings: string[]
+}
+
+export interface TmuxSessionRow {
+  sessionName: string
+  parsed: {
+    raw: string
+    agent: TerminalAgentKind | null
+    project: string | null
+    scope: TerminalScopeKind | null
+    slug: string | null
+    legacy: boolean
+  }
+  liveEntry: { port: number; lastActiveAt: string } | null
+  tmuxCreatedAt: string
+  tmuxLastActivity: string
+  matchable: boolean
+  staleReason: 'unknown-project' | 'unknown-target' | 'old-format' | 'unparseable' | null
 }
 
 export async function checkTerminal(): Promise<TerminalCheckResult> {
@@ -408,8 +428,9 @@ export async function installTerminal(): Promise<TerminalInstallResult> {
 }
 
 export async function startTerminal(input: {
-  runId: string
-  projectName: string
+  project: string
+  scope: TerminalScopeKind
+  slug: string
   agent?: TerminalAgentKind
 }): Promise<TerminalStartResponse> {
   const res = await fetch('/api/terminal/start', {
@@ -432,6 +453,18 @@ export async function stopTerminal(sessionName: string): Promise<{ stopped: bool
 export async function listTerminals(): Promise<{ sessions: TerminalSession[] }> {
   const res = await fetch('/api/terminal/list')
   return jsonOrThrow<{ sessions: TerminalSession[] }>(res)
+}
+
+export async function listTmuxSessions(): Promise<{ sessions: TmuxSessionRow[] }> {
+  const res = await fetch('/api/tmux-sessions')
+  return jsonOrThrow<{ sessions: TmuxSessionRow[] }>(res)
+}
+
+export async function killTmuxSession(name: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/tmux-sessions/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  return jsonOrThrow<{ ok: true }>(res)
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {

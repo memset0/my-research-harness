@@ -74,7 +74,13 @@ export type JournalFrontMatterRaw = z.infer<typeof JournalFrontMatterSchema>
 // ---------- Config (camelCase keys after YAML parse normalize) ----------
 
 export const ProjectConfigRawSchema = z.object({
-  name: z.string().min(1),
+  // Project names appear in tmux session names (per browser-terminal /
+  // tmux-session-rework) and in URL paths. Restrict to letters, digits,
+  // and hyphens.
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[A-Za-z0-9-]+$/, 'must match [A-Za-z0-9-]+'),
   root: z.string().min(1),
   include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),
@@ -95,10 +101,18 @@ export const AuthConfigRawSchema = z
   })
   .optional()
 
+export const TerminalConfigRawSchema = z
+  .object({
+    ttyd_max_concurrent: z.number().int().min(1).optional(),
+    ttyd_idle_ttl_minutes: z.number().int().min(0).optional(),
+  })
+  .optional()
+
 export const ConfigRawSchema = z.object({
   projects: z.array(ProjectConfigRawSchema).min(1),
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
+  terminal: TerminalConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

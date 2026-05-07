@@ -255,7 +255,7 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
-        <OpenWithButton runId={runId} projectName={project} />
+        <OpenWithButton project={project} scope="run" slug={runId} />
         <AddNoteButton project={project} runId={runId} />
         {run.hasReadme ? (
           <StatusEdit

@@ -12,8 +12,13 @@ vi.mock('../../../../lib/terminal/manager', async () => {
   }
 })
 
+vi.mock('../../../../lib/runtime', () => ({
+  getRuntime: vi.fn(),
+}))
+
 import { POST } from './route'
 import { TerminalManagerError, startSession } from '../../../../lib/terminal/manager'
+import { getRuntime } from '../../../../lib/runtime'
 
 function postReq(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/terminal/start', {
@@ -23,35 +28,180 @@ function postReq(body: unknown): NextRequest {
   })
 }
 
-describe('POST /api/terminal/start', () => {
+interface FakeRuntimeOpts {
+  projects?: { name: string; root: string }[]
+  runs?: { id: string; project: string; path: string }[]
+  experiments?: { id: string; project: string }[]
+  ttydMaxConcurrent?: number
+  ttydIdleTtlMinutes?: number
+}
+
+function fakeRuntime(opts: FakeRuntimeOpts = {}) {
+  const runs = opts.runs ?? []
+  const experiments = opts.experiments ?? []
+  return {
+    config: {
+      projects: opts.projects ?? [{ name: 'project-a', root: '/repo/project-a' }],
+      terminal: {
+        ttydMaxConcurrent: opts.ttydMaxConcurrent ?? 16,
+        ttydIdleTtlMinutes: opts.ttydIdleTtlMinutes ?? 30,
+      },
+    },
+    index: {
+      list: ({ project }: { project: string }) => runs.filter((r) => r.project === project),
+    },
+    experiments: new Map(experiments.map((e) => [e.id, e])),
+    // biome-ignore lint/suspicious/noExplicitAny: shrunken Runtime stub
+  } as any
+}
+
+describe('POST /api/terminal/start (tmux-session-rework)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('200 returns sessionName + url + port', async () => {
+  it('200 with new sessionName format on a matched run', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+        runs: [{ id: 'foo-260507-103000', project: 'project-a', path: '/repo/project-a/runs/foo-260507-103000' }],
+      }),
+    )
     vi.mocked(startSession).mockResolvedValue({
-      sessionName: 'memon-claude-foo',
-      port: 7682,
-      startedAt: '2026-05-04T10:00:00+08:00',
-      runId: 'foo',
-      projectName: 'a',
+      sessionName: 'memon-claude-project-a--run--foo-260507-103000',
+      port: 7683,
+      startedAt: '2026-05-07T10:00:00+08:00',
+      lastActiveAt: '2026-05-07T10:00:00+08:00',
       agent: 'claude',
+      project: 'project-a',
+      scope: 'run',
+      slug: 'foo-260507-103000',
       warnings: [],
     })
-    const res = await POST(postReq({ runId: 'foo', projectName: 'a' }))
+    const res = await POST(
+      postReq({ project: 'project-a', scope: 'run', slug: 'foo-260507-103000', agent: 'claude' }),
+    )
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body).toMatchObject({
-      sessionName: 'memon-claude-foo',
-      url: '/api/terminal/proxy/memon-claude-foo/',
-      port: 7682,
+      sessionName: 'memon-claude-project-a--run--foo-260507-103000',
+      url: '/api/terminal/proxy/memon-claude-project-a--run--foo-260507-103000/',
+      port: 7683,
+      warnings: [],
     })
+    // The startSession call carries the resolved cwd of the run dir.
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/repo/project-a/runs/foo-260507-103000' }),
+    )
   })
 
-  it('400 BAD_REQUEST on missing fields', async () => {
-    const res = await POST(postReq({ runId: 'foo' }))
+  it('exp scope passes project root as cwd', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+        experiments: [{ id: 'E0042-bar', project: 'project-a' }],
+      }),
+    )
+    vi.mocked(startSession).mockResolvedValue({
+      sessionName: 'memon-claude-project-a--exp--E0042-bar',
+      port: 7684,
+      startedAt: 't',
+      lastActiveAt: 't',
+      agent: 'claude',
+      project: 'project-a',
+      scope: 'exp',
+      slug: 'E0042-bar',
+      warnings: [],
+    })
+    const res = await POST(
+      postReq({ project: 'project-a', scope: 'exp', slug: 'E0042-bar', agent: 'claude' }),
+    )
+    expect(res.status).toBe(200)
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/repo/project-a', scope: 'exp' }),
+    )
+  })
+
+  it('warns when run slug not found, falls back to project root', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+        runs: [],
+      }),
+    )
+    vi.mocked(startSession).mockResolvedValue({
+      sessionName: 'memon-claude-project-a--run--missing',
+      port: 7685,
+      startedAt: 't',
+      lastActiveAt: 't',
+      agent: 'claude',
+      project: 'project-a',
+      scope: 'run',
+      slug: 'missing',
+      warnings: [],
+    })
+    const res = await POST(
+      postReq({ project: 'project-a', scope: 'run', slug: 'missing', agent: 'claude' }),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.warnings.some((w: string) => w.includes('not found'))).toBe(true)
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/repo/project-a' }),
+    )
+  })
+
+  it('warns when project not in config, falls back to HOME', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+      }),
+    )
+    vi.mocked(startSession).mockResolvedValue({
+      sessionName: 'memon-claude-fakeproj--run--anything',
+      port: 7686,
+      startedAt: 't',
+      lastActiveAt: 't',
+      agent: 'claude',
+      project: 'fakeproj',
+      scope: 'run',
+      slug: 'anything',
+      warnings: [],
+    })
+    const res = await POST(
+      postReq({ project: 'fakeproj', scope: 'run', slug: 'anything', agent: 'claude' }),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.warnings.some((w: string) => w.includes('not in config'))).toBe(true)
+  })
+
+  it('400 BAD_REQUEST when slug contains --', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
+    const res = await POST(
+      postReq({ project: 'project-a', scope: 'run', slug: 'foo--bar' }),
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('BAD_REQUEST')
+    expect(body.error.message).toMatch(/--/)
+    expect(startSession).not.toHaveBeenCalled()
+  })
+
+  it('400 BAD_REQUEST when project has disallowed character', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
+    const res = await POST(
+      postReq({ project: 'bad name', scope: 'run', slug: 'foo' }),
+    )
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('BAD_REQUEST')
+    expect(startSession).not.toHaveBeenCalled()
+  })
+
+  it('400 BAD_REQUEST when scope is invalid', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
+    const res = await POST(postReq({ project: 'project-a', scope: 'invalid', slug: 'foo' }))
+    expect(res.status).toBe(400)
     expect(startSession).not.toHaveBeenCalled()
   })
 
@@ -65,21 +215,22 @@ describe('POST /api/terminal/start', () => {
     expect(res.status).toBe(400)
   })
 
-  it('400 BAD_REQUEST when manager rejects runId', async () => {
-    vi.mocked(startSession).mockRejectedValue(
-      new TerminalManagerError('BAD_REQUEST', 'runId malformed'),
-    )
-    const res = await POST(postReq({ runId: 'bad space', projectName: 'a' }))
-    expect(res.status).toBe(400)
-    expect((await res.json()).error.code).toBe('BAD_REQUEST')
-  })
-
-  it('503 TTYD_UNAVAILABLE when ttyd missing', async () => {
+  it('503 TTYD_UNAVAILABLE bubbles from manager', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
     vi.mocked(startSession).mockRejectedValue(
       new TerminalManagerError('TTYD_UNAVAILABLE', 'POST /api/terminal/install first'),
     )
-    const res = await POST(postReq({ runId: 'foo', projectName: 'a' }))
+    const res = await POST(postReq({ project: 'project-a', scope: 'run', slug: 'foo' }))
     expect(res.status).toBe(503)
     expect((await res.json()).error.code).toBe('TTYD_UNAVAILABLE')
+  })
+
+  it('400 when manager rejects on its own (e.g., slug contains --)', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
+    vi.mocked(startSession).mockRejectedValue(
+      new TerminalManagerError('BAD_REQUEST', "slug must not contain '--'"),
+    )
+    const res = await POST(postReq({ project: 'project-a', scope: 'run', slug: 'foo' }))
+    expect(res.status).toBe(400)
   })
 })

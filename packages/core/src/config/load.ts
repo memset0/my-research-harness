@@ -16,10 +16,12 @@ import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
 import {
   DEFAULT_POLL,
+  DEFAULT_TERMINAL,
   type AuthConfig,
   type Config,
   type PollConfig,
   type ProjectConfig,
+  type TerminalConfig,
 } from '../types.js'
 
 export class ConfigError extends Error {
@@ -111,7 +113,12 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     ? { username: cfg.auth.username ?? 'admin', password: cfg.auth.password }
     : undefined
 
-  return { projects, poll, auth }
+  const terminal: TerminalConfig = {
+    ttydMaxConcurrent: cfg.terminal?.ttyd_max_concurrent ?? DEFAULT_TERMINAL.ttydMaxConcurrent,
+    ttydIdleTtlMinutes: cfg.terminal?.ttyd_idle_ttl_minutes ?? DEFAULT_TERMINAL.ttydIdleTtlMinutes,
+  }
+
+  return { projects, poll, auth, terminal }
 }
 
 /**
@@ -119,6 +126,10 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
  * project root. Used by non-`serve` CLI commands when no config file is found.
  */
 export function implicitCwdProject(cwd: string, name = '(cwd)'): Config {
+  // The default name '(cwd)' contains parentheses and intentionally does not
+  // match the [A-Za-z0-9-]+ project-name format enforced at config-load
+  // time — implicitCwdProject is for CLI display when no config file is
+  // present; it bypasses the schema by construction.
   return {
     projects: [
       {
@@ -129,5 +140,6 @@ export function implicitCwdProject(cwd: string, name = '(cwd)'): Config {
       },
     ],
     poll: { ...DEFAULT_POLL },
+    terminal: { ...DEFAULT_TERMINAL },
   }
 }

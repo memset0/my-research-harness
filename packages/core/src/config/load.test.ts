@@ -167,5 +167,118 @@ describe('implicitCwdProject', () => {
     expect(cfg.projects[0]!.root).toBe('/some/where')
     expect(cfg.projects[0]!.name).toBe('(cwd)')
     expect(cfg.poll.minIntervalMs).toBe(1000)
+    expect(cfg.terminal.ttydMaxConcurrent).toBe(16)
+    expect(cfg.terminal.ttydIdleTtlMinutes).toBe(30)
+  })
+})
+
+describe('loadConfig project-name regex', () => {
+  it('accepts letters, digits, and hyphens', async () => {
+    const yaml = `
+projects:
+  - { name: project-a, root: ./a }
+  - { name: SparseFsdp2, root: ./b }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects.map((p) => p.name)).toEqual(['project-a', 'SparseFsdp2'])
+  })
+
+  it('rejects project name with a space', async () => {
+    const yaml = `
+projects:
+  - { name: bad name, root: ./a }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('projects.0.name'),
+    })
+  })
+
+  it('rejects project name with a dot', async () => {
+    const yaml = `
+projects:
+  - { name: v1.0, root: ./a }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects project name with a slash', async () => {
+    const yaml = `
+projects:
+  - { name: my/project, root: ./a }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+})
+
+describe('loadConfig terminal block', () => {
+  it('applies defaults when block is absent', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal).toEqual({ ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 })
+  })
+
+  it('partial config fills missing defaults', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  ttyd_max_concurrent: 8
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal).toEqual({ ttydMaxConcurrent: 8, ttydIdleTtlMinutes: 30 })
+  })
+
+  it('idle_ttl_minutes 0 is allowed (disables killer)', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  ttyd_idle_ttl_minutes: 0
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal.ttydIdleTtlMinutes).toBe(0)
+  })
+
+  it('rejects negative ttyd_max_concurrent', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  ttyd_max_concurrent: -1
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects negative ttyd_idle_ttl_minutes', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  ttyd_idle_ttl_minutes: -5
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects ttyd_max_concurrent of 0', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  ttyd_max_concurrent: 0
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 })

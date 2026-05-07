@@ -1,66 +1,4 @@
-# browser-terminal Specification
-
-## Purpose
-
-In-browser xterm terminal backed by `ttyd` + `tmux`, so the user can launch a Claude Code session straight from an experiment detail page and later re-attach to the same `tmux` session from SSH (browser close / crash / offline continuation are all non-destructive). The ttyd binary is self-fetched from upstream releases (no root, no system package manager required); only `tmux` is assumed on PATH.
-## Requirements
-### Requirement: Detect ttyd availability via cache + PATH probe
-
-`GET /api/terminal/check` SHALL probe ttyd in this order: (1) check `~/.cache/memon/bin/ttyd-<version>-<arch>` is present, executable, and `--version` matches the pinned `TTYD_VERSION`; (2) fall back to `which ttyd` (user may have installed it themselves). The response shape SHALL be `{ available: boolean, version?: string, source?: 'cached' | 'path', downloadable?: boolean, suggestion?: string }`.
-
-When `available: false`, the response SHALL include `downloadable: true` on Linux architectures with a published prebuilt binary (x86_64, aarch64, armhf, i686, mips, mipsel) so the UI can offer one-click install via `POST /api/terminal/install`. On other platforms (notably macOS) it SHALL include `downloadable: false` with `suggestion` set to a manual install hint (e.g. `brew install ttyd`).
-
-#### Scenario: ttyd is in cache
-- **WHEN** `~/.cache/memon/bin/ttyd-1.7.7-x86_64` exists, is executable, and runs `--version`
-- **THEN** `GET /api/terminal/check` returns `{ available: true, version: "1.7.7", source: "cached" }`
-
-#### Scenario: ttyd is on PATH but not in cache
-- **WHEN** the cache file is missing but `which ttyd` resolves
-- **THEN** `GET /api/terminal/check` returns `{ available: true, version: "<whatever>", source: "path" }`
-
-#### Scenario: ttyd is missing on a downloadable Linux arch
-- **WHEN** neither cache nor PATH has ttyd, and `process.platform === 'linux'` with `process.arch in {x64, arm64, arm, ia32, mips, mipsel}`
-- **THEN** `GET /api/terminal/check` returns `{ available: false, downloadable: true, suggestion: "POST /api/terminal/install" }`
-
-#### Scenario: ttyd is missing on macOS
-- **WHEN** neither cache nor PATH has ttyd and `process.platform === 'darwin'`
-- **THEN** `GET /api/terminal/check` returns `{ available: false, downloadable: false, suggestion: "brew install ttyd" }`
-
-### Requirement: Self-fetch ttyd from upstream releases without root
-
-`POST /api/terminal/install` SHALL download the pinned ttyd version's prebuilt static binary for the current architecture from `https://github.com/tsl0922/ttyd/releases/download/<version>/ttyd.<arch>`, verify its sha256 (when published) against the matching `.sha256` file from the same release, write to `~/.cache/memon/bin/ttyd-<version>-<arch>` via temp-file + rename, and `chmod +x` it. The endpoint SHALL NOT require root or any system package manager.
-
-The pinned version SHALL be a string constant in source (e.g. `TTYD_VERSION = '1.7.7'`); upgrading is a code change.
-
-#### Scenario: First install on linux x86_64
-- **WHEN** ttyd is missing and the user POSTs `/api/terminal/install` on a host where `process.arch === 'x64'`
-- **THEN** memon downloads `https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64`
-- **AND** verifies sha256 against `ttyd.x86_64.sha256` from the same release
-- **AND** writes the binary to `~/.cache/memon/bin/ttyd-1.7.7-x86_64` with mode 0755
-- **AND** `--version` on that file outputs `ttyd version 1.7.7…`
-- **AND** the response is `{ ok: true, version: "1.7.7", path: "<cache>/ttyd-1.7.7-x86_64", durationMs: <int> }`
-
-#### Scenario: Concurrent install calls
-- **WHEN** two install requests fire simultaneously
-- **THEN** memon serializes them (in-process mutex) so only one network download happens; the second returns `{ ok: true, alreadyPresent: true }` after the first completes
-- **AND** the on-disk file is never observed in a partial state (atomic rename)
-
-#### Scenario: Network failure during download
-- **WHEN** the GitHub release URL is unreachable (404, 5xx, or network error)
-- **THEN** the response is 502 with `{ ok: false, error: { code: 'DOWNLOAD_FAILED', message, fallback: '<manual instructions>' } }`
-- **AND** no partial file remains in the cache directory
-
-#### Scenario: SHA256 mismatch
-- **WHEN** the downloaded binary's sha256 does not match the published `.sha256` file
-- **THEN** the temp file is deleted and the response is 502 with `{ ok: false, error: { code: 'INTEGRITY_FAILED', message } }`
-
-#### Scenario: Install on macOS
-- **WHEN** install is POSTed on `process.platform === 'darwin'` (no upstream prebuilt)
-- **THEN** the response is 501 with `{ ok: false, error: { code: 'NOT_AUTOFETCHABLE', suggestion: 'brew install ttyd' } }`
-
-#### Scenario: Cache hit on subsequent call
-- **WHEN** a valid cached binary already exists at the expected path
-- **THEN** `POST /api/terminal/install` short-circuits — no network — and returns `{ ok: true, alreadyPresent: true, version: "1.7.7" }`
+## MODIFIED Requirements
 
 ### Requirement: Start a ttyd-backed terminal session bound to tmux
 
@@ -150,16 +88,6 @@ If the chosen agent's CLI binary is not on PATH, the early-stderr capture SHALL 
 - **WHEN** ttyd is not on PATH and the authenticated user POSTs `start`
 - **THEN** the response is 503 with `{ error: { code: "TTYD_UNAVAILABLE", message: "<install hint>" } }` and no process is spawned
 
-### Requirement: Stop the active ttyd without killing the tmux session
-
-The web backend SHALL expose `POST /api/terminal/stop` accepting body `{ sessionName }`. It SHALL kill the ttyd child process bound to that sessionName but SHALL NOT run `tmux kill-session`. The corresponding tmux session SHALL remain in detached state for re-attachment from a real terminal.
-
-#### Scenario: Closing the in-browser panel
-- **WHEN** the user closes the terminal sheet (or POSTs `stop` with the active sessionName)
-- **THEN** the ttyd child process is killed
-- **AND** `tmux ls | grep memon-claude-` still lists the session
-- **AND** the user can run `tmux attach -t memon-claude-<id>` from a real terminal to take over
-
 ### Requirement: List active ttyd sessions for the UI
 
 The web backend SHALL expose `GET /api/terminal/list` returning `{ sessions: [{ sessionName, port, startedAt, lastActiveAt, project, scope, slug, agent, warnings }] }`. The list SHALL contain one entry per ttyd in the manager's `Map<sessionName, Entry>` — there is no longer a single-entry constraint.
@@ -173,26 +101,6 @@ The list SHALL only enumerate ttyd entries the manager currently holds (i.e. ses
 #### Scenario: Multiple active ttyds
 - **WHEN** ttyds are running for `(claude, project-a, run, foo-...)` on port 7683 and `(codex, project-a, run, bar-...)` on port 7684
 - **THEN** `GET /api/terminal/list` returns both entries as separate items in the `sessions` array, each with its own `port`
-
-### Requirement: Frontend "Open in browser" button beside Ask Claude Code
-
-The experiment detail header SHALL render a new button labeled "Open in browser" adjacent to the existing "Ask Claude Code" button. Clicking it SHALL open a shadcn `<Sheet>` (or `<Dialog>` full-screen on small viewports) containing an `<iframe>` whose `src` is the `url` returned from `POST /api/terminal/start`. Closing the sheet SHALL POST `/api/terminal/stop` (best-effort; ignore failure).
-
-#### Scenario: Click the button while ttyd is available
-- **WHEN** `GET /api/terminal/check` returned `{ available: true }` and the user clicks "Open in browser"
-- **THEN** the sheet slides in showing a "starting…" state
-- **AND** within 3 seconds the iframe loads the ttyd UI
-- **AND** the user sees claude's REPL prompt (or the existing tmux session's last screen state)
-
-#### Scenario: Click the button while ttyd is unavailable
-- **WHEN** `available: false` from the check endpoint
-- **THEN** the button is disabled
-- **AND** hovering shows a tooltip with the install command
-
-#### Scenario: Closing the sheet
-- **WHEN** the user closes the sheet via the X button or escape key
-- **THEN** `POST /api/terminal/stop` is fired with the sessionName
-- **AND** the tmux session remains alive (verifiable with `tmux ls`)
 
 ### Requirement: Terminal manager cleans up on memon process exit
 
@@ -307,6 +215,8 @@ The `/terminal-popup` route SHALL render a chrome-less page (no AppBar, no Sideb
 - **GIVEN** the viewport width is below the Tailwind `md` breakpoint
 - **WHEN** the management page renders rows
 - **THEN** the `Open in popup` button per row is `display: none` (Tailwind `hidden md:inline-flex`)
+
+## ADDED Requirements
 
 ### Requirement: Session-name format with project, scope, and double-hyphen scope delimiter
 
@@ -444,4 +354,3 @@ This rule is necessary because project names appear in tmux session names (per t
 - **GIVEN** `config.yml` has `terminal: { ttyd_max_concurrent: -1 }`
 - **WHEN** `loadConfig` runs
 - **THEN** it throws `ConfigError`
-

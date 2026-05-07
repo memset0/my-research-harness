@@ -427,11 +427,19 @@ export interface AuthConfig {
   password: string
 }
 
+export interface TerminalConfig {
+  /** Soft cap on concurrent ttyd processes; LRU evicts beyond this. */
+  ttydMaxConcurrent: number
+  /** Kill ttyd after this many minutes with no connected client. `0` disables. */
+  ttydIdleTtlMinutes: number
+}
+
 export interface Config {
   projects: ProjectConfig[]
   poll: PollConfig
   /** Present iff config.yml has a complete `auth` block; absent triggers first-run init in the HTTP server. */
   auth?: AuthConfig
+  terminal: TerminalConfig
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [
@@ -447,4 +455,9 @@ export const DEFAULT_POLL: PollConfig = {
   minIntervalMs: 1000,
   maxIntervalMs: 300_000,
   backoffFactor: 2,
+}
+
+export const DEFAULT_TERMINAL: TerminalConfig = {
+  ttydMaxConcurrent: 16,
+  ttydIdleTtlMinutes: 30,
 }
