@@ -30,7 +30,7 @@ import { StatusEdit } from './status-edit'
 import { Markdown } from './markdown'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { OpenClaudeCodeButton } from './open-claude-code-button'
-import { TerminalButton } from './terminal-button'
+import { OpenWithButton } from './open-with-button'
 import { AddNoteButton } from './add-note-button'
 import { LogViewer } from './log-viewer'
 import { TimestampLocal } from './timestamp'
@@ -255,8 +255,7 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
-        <OpenClaudeCodeButton kind="run" id={runId} projectName={project} />
-        <TerminalButton runId={runId} projectName={project} />
+        <OpenWithButton runId={runId} projectName={project} />
         <AddNoteButton project={project} runId={runId} />
         {run.hasReadme ? (
           <StatusEdit

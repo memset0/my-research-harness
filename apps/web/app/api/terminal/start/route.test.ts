@@ -35,6 +35,7 @@ describe('POST /api/terminal/start', () => {
       startedAt: '2026-05-04T10:00:00+08:00',
       runId: 'foo',
       projectName: 'a',
+      agent: 'claude',
       warnings: [],
     })
     const res = await POST(postReq({ runId: 'foo', projectName: 'a' }))

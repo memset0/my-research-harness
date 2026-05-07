@@ -17,6 +17,7 @@ export const dynamic = 'force-dynamic'
 const BodySchema = z.object({
   runId: z.string().min(1),
   projectName: z.string().min(1),
+  agent: z.enum(['none', 'claude', 'codex', 'opencode']).optional(),
 })
 
 export async function POST(req: NextRequest) {

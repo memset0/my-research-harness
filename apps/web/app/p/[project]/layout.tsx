@@ -3,6 +3,7 @@ import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { AppBar } from '../../../components/app-bar'
 import { AppSidebar } from '../../../components/app-sidebar'
 import { SidebarInset, SidebarProvider } from '../../../components/ui/sidebar'
+import { TerminalDrawerProvider } from '../../../components/terminal-drawer-provider'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { getRuntime } from '../../../lib/runtime'
 import { getExperimentsData, getProjectsData } from '../../../lib/server/data'
@@ -45,7 +46,9 @@ export default async function ProjectLayout({
         <AppSidebar />
         <SidebarInset>
           <AppBar project={decoded} />
-          <div className="flex-1">{children}</div>
+          <TerminalDrawerProvider>
+            <div className="flex-1">{children}</div>
+          </TerminalDrawerProvider>
         </SidebarInset>
       </SidebarProvider>
     </HydrationBoundary>

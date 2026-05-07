@@ -30,7 +30,28 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { probeTtyd } from './binary'
 
 const PORT = 7682
-const SESSION_PREFIX = 'memon-claude-'
+
+export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
+export type AgentKind = (typeof AGENT_KINDS)[number]
+
+/**
+ * Map an agent to its tmux session-name prefix. Different agents on the
+ * same run get distinct tmux sessions instead of colliding on the
+ * historical `memon-claude-` prefix.
+ */
+function sessionPrefixFor(agent: AgentKind): string {
+  switch (agent) {
+    case 'none':
+      return 'memon-term-'
+    case 'claude':
+      return 'memon-claude-'
+    case 'codex':
+      return 'memon-codex-'
+    case 'opencode':
+      return 'memon-opencode-'
+  }
+}
+
 /** Anything more permissive risks tmux command injection via session name. */
 const EXP_ID_RE = /^[a-zA-Z0-9._-]+$/
 
@@ -40,6 +61,7 @@ export interface ActiveSession {
   startedAt: string
   runId: string
   projectName: string
+  agent: AgentKind
   warnings: string[]
 }
 
@@ -115,10 +137,14 @@ const SERIALIZER_KEY = '__memonTerminalStartChain' as const
 type StartSlot = GlobalSlot & { [SERIALIZER_KEY]?: Promise<unknown> }
 const startSlot = globalThis as unknown as StartSlot
 
-export async function startSession(input: {
+export interface StartSessionInput {
   runId: string
   projectName: string
-}): Promise<ActiveSession> {
+  /** Default 'claude' to preserve back-compat with existing callers. */
+  agent?: AgentKind
+}
+
+export async function startSession(input: StartSessionInput): Promise<ActiveSession> {
   const prev = startSlot[SERIALIZER_KEY] ?? Promise.resolve()
   const mine = prev.catch(() => {}).then(() => doStartSession(input))
   // Mark slot "done" even on rejection so the chain doesn't stall
@@ -126,10 +152,7 @@ export async function startSession(input: {
   return mine
 }
 
-async function doStartSession(input: {
-  runId: string
-  projectName: string
-}): Promise<ActiveSession> {
+async function doStartSession(input: StartSessionInput): Promise<ActiveSession> {
   if (!EXP_ID_RE.test(input.runId)) {
     throw new TerminalManagerError(
       'BAD_REQUEST',
@@ -140,7 +163,8 @@ async function doStartSession(input: {
     throw new TerminalManagerError('BAD_REQUEST', 'projectName is required')
   }
 
-  const sessionName = `${SESSION_PREFIX}${input.runId}`
+  const agent: AgentKind = input.agent ?? 'claude'
+  const sessionName = `${sessionPrefixFor(agent)}${input.runId}`
 
   // Idempotent: same experiment + healthy ttyd → return existing
   const existingSame = getCurrent()
@@ -176,6 +200,13 @@ async function doStartSession(input: {
   // (404). With it, all URLs are prefixed and stay inside the @terminal
   // matcher.
   const basePath = `/api/terminal/proxy/${sessionName}`
+  // Build the tmux argv tail per-agent: `none` runs just a shell (no
+  // trailing command); the others run their CLI binary as the
+  // tmux session's first command.
+  const tmuxTail =
+    agent === 'none'
+      ? ['tmux', 'new-session', '-A', '-s', sessionName]
+      : ['tmux', 'new-session', '-A', '-s', sessionName, agent]
   const args = [
     '-p',
     String(PORT),
@@ -184,12 +215,7 @@ async function doStartSession(input: {
     '-b',
     basePath,
     '--writable',
-    'tmux',
-    'new-session',
-    '-A',
-    '-s',
-    sessionName,
-    'claude',
+    ...tmuxTail,
   ]
 
   const child = spawn(probe.path, args, {
@@ -235,6 +261,7 @@ async function doStartSession(input: {
     startedAt: new Date().toISOString(),
     runId: input.runId,
     projectName: input.projectName,
+    agent,
     warnings,
   }
   setCurrent(session)
@@ -265,6 +292,7 @@ function toPublic(c: CurrentEntry): ActiveSession {
     startedAt: c.startedAt,
     runId: c.runId,
     projectName: c.projectName,
+    agent: c.agent,
     warnings: [...c.warnings],
   }
 }

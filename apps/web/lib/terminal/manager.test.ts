@@ -100,6 +100,70 @@ describe('startSession', () => {
     ])
     expect(session.sessionName).toBe('memon-claude-foo-260501-100000')
     expect(session.port).toBe(7682)
+    expect(session.agent).toBe('claude')
+  })
+
+  it("agent='none' produces a memon-term- session and no trailing tmux command", async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await startSession({
+      runId: 'foo',
+      projectName: 'project-a',
+      agent: 'none',
+    })
+    const [, args] = spawnMock.mock.calls[0]!
+    expect(args).toEqual([
+      '-p',
+      '7682',
+      '-i',
+      '127.0.0.1',
+      '-b',
+      '/api/terminal/proxy/memon-term-foo',
+      '--writable',
+      'tmux',
+      'new-session',
+      '-A',
+      '-s',
+      'memon-term-foo',
+    ])
+    expect(session.sessionName).toBe('memon-term-foo')
+    expect(session.agent).toBe('none')
+  })
+
+  it("agent='codex' produces a memon-codex- session with codex as trailing command", async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await startSession({
+      runId: 'foo',
+      projectName: 'project-a',
+      agent: 'codex',
+    })
+    const [, args] = spawnMock.mock.calls[0]!
+    // ttyd's -b basePath reflects the new agent's prefix
+    expect(args).toContain('/api/terminal/proxy/memon-codex-foo')
+    // The tmux session name + agent are the trailing two argv elements
+    expect(args.slice(-6)).toEqual([
+      'tmux',
+      'new-session',
+      '-A',
+      '-s',
+      'memon-codex-foo',
+      'codex',
+    ])
+    expect(session.sessionName).toBe('memon-codex-foo')
+    expect(session.agent).toBe('codex')
+  })
+
+  it("agent='opencode' produces a memon-opencode- session with opencode as trailing command", async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await startSession({
+      runId: 'foo',
+      projectName: 'project-a',
+      agent: 'opencode',
+    })
+    const [, args] = spawnMock.mock.calls[0]!
+    expect(args).toContain('/api/terminal/proxy/memon-opencode-foo')
+    expect(args).toContain('opencode')
+    expect(session.sessionName).toBe('memon-opencode-foo')
+    expect(session.agent).toBe('opencode')
   })
 
   it('kills any existing ttyd before starting a new one', async () => {

@@ -410,12 +410,12 @@ with the following display rules:
 
 The expanded run panel inside the v3 exp detail page SHALL render every piece of information from the legacy run-as-experiment page (`/p/<project>/experiments/<id>`) that's still relevant under the v3 model — so users don't need to follow a "(legacy)" link to see standard run metadata, edit run status, or browse logs. The panel content sits below the trigger row inside the `<CollapsibleContent>` and is laid out as **three flat divider-separated stripes** in this top-to-bottom order:
 
-1. **Action stripe** (`border-t p-3`) — `Edit markdown`,
-   `Open Claude Code`, `Terminal`, `+ Note`, plus the `<StatusEdit>`
-   control. The parse-errors `<Badge variant="destructive">` (when
-   `run.parseErrors.length > 0`) ALSO renders here, next to
-   StatusEdit, so it stays visible without needing a header row in
-   the frontmatter stripe.
+1. **Action stripe** (`border-t p-3`) — three primary buttons in this order:
+   - `Edit markdown`
+   - `Open with [picker]` — a split-button whose main face launches the **default agent** (a localStorage-persisted choice; ships defaulting to `claude code`) and whose chevron opens a `DropdownMenu` with the four agent options (`Terminal`, `Claude Code`, `Codex`, `OpenCode`) plus an `Open in new window` action that opens the current default in a chrome-less popup.
+   - `+ Note`
+   Plus the `<StatusEdit>` control and the parse-errors `<Badge variant="destructive">` (when `run.parseErrors.length > 0`) at the right end of the stripe.
+   The previous separate `<TerminalButton>` and `<OpenClaudeCodeButton>` are NOT used in this stripe; both are subsumed by the `Open with` combo.
 2. **Frontmatter stripe** (`border-t p-3`) — a 2-column-on-mobile
    / 4-column-on-desktop dl grid of frontmatter fields:
    name, project (only when it differs from the URL's project),
@@ -456,18 +456,31 @@ appear in the panel.
   full content-box width and visually connect to the run panel's
   outer border)
 
+#### Scenario: Action stripe order
+- **WHEN** the action stripe renders
+- **THEN** its primary buttons appear in this order: `Edit markdown`, `Open with [picker]`, `+ Note` — followed by `StatusEdit` and (if applicable) the parse-errors Badge
+
+#### Scenario: Open with picker has four agent options + popup option
+- **WHEN** the user clicks the chevron on the `Open with` split-button
+- **THEN** a `DropdownMenu` appears containing exactly these items in this order: `Terminal`, `Claude Code`, `Codex`, `OpenCode`, then a separator, then `Open in new window`
+- **AND** clicking any of the four agent items launches the side drawer for that agent
+- **AND** clicking `Open in new window` opens the default agent in a chrome-less popup window
+
+#### Scenario: Action stripe no longer carries TerminalButton or OpenClaudeCodeButton directly
+- **WHEN** the action stripe renders
+- **THEN** there is exactly ONE button whose visible label starts with the text `Open with`
+- **AND** there are NO buttons whose visible label is exactly `Open in browser` (the previous TerminalButton label) or `Open Claude Code` (the previous OpenClaudeCodeButton label)
+
 #### Scenario: Action bar is above the frontmatter
 - **WHEN** the panel renders
 - **THEN** the order of children inside `<CollapsibleContent>` is
-  action stripe FIRST, then frontmatter stripe, then body stripe —
-  NOT the previous order (frontmatter then action bar)
+  action stripe FIRST, then frontmatter stripe, then body stripe
 
 #### Scenario: StatusEdit lives in the action stripe
 - **GIVEN** a run with status `RUNNING`
 - **WHEN** the panel renders
 - **THEN** the editable `<StatusEdit>` control appears inside the
-  action stripe (alongside the Terminal / Edit / Note / Open Claude
-  Code buttons), NOT inside the frontmatter stripe
+  action stripe, NOT inside the frontmatter stripe
 
 #### Scenario: Frontmatter stripe omits redundant id row
 - **WHEN** the panel renders

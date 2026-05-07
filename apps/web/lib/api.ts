@@ -377,12 +377,15 @@ export interface TerminalInstallResult {
   durationMs: number
 }
 
+export type TerminalAgentKind = 'none' | 'claude' | 'codex' | 'opencode'
+
 export interface TerminalSession {
   sessionName: string
   port: number
   startedAt: string
   runId: string
   projectName: string
+  agent: TerminalAgentKind
   warnings: string[]
 }
 
@@ -407,6 +410,7 @@ export async function installTerminal(): Promise<TerminalInstallResult> {
 export async function startTerminal(input: {
   runId: string
   projectName: string
+  agent?: TerminalAgentKind
 }): Promise<TerminalStartResponse> {
   const res = await fetch('/api/terminal/start', {
     method: 'POST',

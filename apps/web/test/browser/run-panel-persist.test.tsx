@@ -130,15 +130,12 @@ describe('ExperimentPage — run panel expand persists across reload', () => {
       expect(screen.getByText(RUN_ID)).toBeInTheDocument()
     })
 
-    // The <details> summary is the toggle; clicking it dispatches a toggle.
-    const summary = screen.getByText(RUN_ID).closest('summary')
-    expect(summary).not.toBeNull()
-    // jsdom's <details> doesn't reliably toggle via fireEvent.click; we
-    // dispatch the underlying `toggle` event with `open: true` on the
-    // <details> element directly.
-    const detailsEl = summary!.parentElement! as HTMLDetailsElement
-    detailsEl.open = true
-    detailsEl.dispatchEvent(new Event('toggle', { bubbles: true }))
+    // The trigger row is a Radix CollapsibleTrigger (rendered as a
+    // role="button" div via asChild). Clicking it toggles open and
+    // setOpenAndPersist writes to localStorage.
+    const trigger = screen.getByText(RUN_ID).closest('[data-state]') as HTMLElement | null
+    expect(trigger).not.toBeNull()
+    fireEvent.click(trigger!)
 
     await waitFor(() => {
       expect(localStorage.getItem(STORAGE_KEY)).toBe('1')
@@ -154,15 +151,16 @@ describe('ExperimentPage — run panel expand persists across reload', () => {
       <ExperimentPage project="project-a" experimentId={EXP_ID} initialOpenRun={null} />,
     )
 
-    // The summary is rendered and the panel content (including the
+    // The trigger is rendered and the panel content (including the
     // RunBody data fetched via fetchExperiment) appears once open.
     await waitFor(() => {
       expect(screen.getByText(RUN_ID)).toBeInTheDocument()
     })
-    // The "command" line from the run body only renders when the panel
-    // is expanded. If persistence works, it appears without a click.
+    // The run-body content (which only mounts when the panel is
+    // expanded) carries the run's command value. If persistence works
+    // we see this without clicking.
     await waitFor(() => {
-      expect(screen.getByText(/command:/i)).toBeInTheDocument()
+      expect(screen.getByText('bash run.sh')).toBeInTheDocument()
     })
   })
 })
