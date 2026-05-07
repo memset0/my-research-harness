@@ -77,7 +77,12 @@ function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocS
           >
             {exp.id}
           </Link>
-          <h3 className="truncate text-sm font-medium">{exp.frontMatter.title}</h3>
+          <Link
+            href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}`}
+            className="hover:underline"
+          >
+            <h3 className="truncate text-sm font-medium">{exp.frontMatter.title}</h3>
+          </Link>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusPill status={aggregateStatus as never} />
