@@ -32,7 +32,6 @@ import { EditMarkdownButton } from './edit-markdown-button'
 import { OpenClaudeCodeButton } from './open-claude-code-button'
 import { TerminalButton } from './terminal-button'
 import { AddNoteButton } from './add-note-button'
-import { WarningsCard } from './warnings-card'
 import { LogViewer } from './log-viewer'
 import { TimestampLocal } from './timestamp'
 import { cn } from '../lib/utils'
@@ -252,50 +251,17 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t p-3">
-      <RunFrontmatterCard run={run} project={project} />
-      <div className="flex flex-wrap gap-2">
-        <TerminalButton runId={runId} projectName={project} />
-        <AddNoteButton project={project} runId={runId} />
+    <>
+      {/* Action stripe */}
+      <div className="flex flex-wrap items-center gap-2 border-t p-3">
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
         <OpenClaudeCodeButton kind="run" id={runId} projectName={project} />
-      </div>
-      <RunSection heading="Setup" body={run.sections.setup ?? null} />
-      <RunSection heading="Result" body={run.sections.result ?? null} />
-      {run.hasReadme && (
-        <WarningsCard
-          runId={runId}
-          readmePath={`${run.path}/README.md`}
-          initialWarnings={run.warnings}
-          initialMtime={run.mtime}
-        />
-      )}
-      <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
-      {run.hasReadme && <LogViewer expPath={run.path} />}
-      {files && files.tree.children && files.tree.children.length > 0 && (
-        <section>
-          <h3 className="mb-1 text-xs font-semibold">
-            Files in run dir{' '}
-            {files.truncated && <span className="text-muted-foreground">(truncated)</span>}
-          </h3>
-          <FileTree node={files.tree} />
-        </section>
-      )}
-      <span className="hidden">{experimentId}</span>
-    </div>
-  )
-}
-
-function RunFrontmatterCard({ run, project }: { run: FullExperiment; project: string }) {
-  const fm = run.frontMatter
-  return (
-    <div className="rounded-md border bg-card/40 p-2">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs">{run.id}</span>
+        <TerminalButton runId={runId} projectName={project} />
+        <AddNoteButton project={project} runId={runId} />
         {run.hasReadme ? (
           <StatusEdit
-            id={run.id}
-            status={fm.status}
+            id={runId}
+            status={run.frontMatter.status}
             stale={run.stale}
             expectedMtime={run.mtime}
           />
@@ -308,7 +274,35 @@ function RunFrontmatterCard({ run, project }: { run: FullExperiment; project: st
           </Badge>
         )}
       </div>
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs md:grid-cols-4">
+      {/* Frontmatter stripe */}
+      <div className="border-t p-3">
+        <RunFrontmatterStripe run={run} project={project} />
+      </div>
+      {/* Body stripe */}
+      <div className="flex flex-col gap-3 border-t p-3">
+        <RunSection heading="Setup" body={run.sections.setup ?? null} />
+        <RunSection heading="Result" body={run.sections.result ?? null} />
+        <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
+        {run.hasReadme && <LogViewer expPath={run.path} />}
+        {files && files.tree.children && files.tree.children.length > 0 && (
+          <section>
+            <h3 className="mb-1 text-xs font-semibold">
+              Files in run dir{' '}
+              {files.truncated && <span className="text-muted-foreground">(truncated)</span>}
+            </h3>
+            <FileTree node={files.tree} />
+          </section>
+        )}
+        <span className="hidden">{experimentId}</span>
+      </div>
+    </>
+  )
+}
+
+function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: string }) {
+  const fm = run.frontMatter
+  return (
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs md:grid-cols-4">
         <FmField label="name" value={fm.name} />
         {fm.project && fm.project !== project && (
           <FmField label="sub-project" value={fm.project} />
@@ -366,8 +360,7 @@ function RunFrontmatterCard({ run, project }: { run: FullExperiment; project: st
             </div>
           </div>
         )}
-      </dl>
-    </div>
+    </dl>
   )
 }
 

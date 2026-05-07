@@ -408,86 +408,93 @@ with the following display rules:
 
 ### Requirement: Expanded run panel surfaces full run information
 
-The expanded run panel inside the v3 exp detail page SHALL render
-every piece of information shown on the legacy run-as-experiment
-page (`/p/<project>/experiments/<id>`), so that users do not need to
-follow a "(legacy)" link to see standard run metadata, edit run
-status, browse logs, or manage warnings. The panel SHALL render the
-following blocks in this top-to-bottom order:
+The expanded run panel inside the v3 exp detail page SHALL render every piece of information from the legacy run-as-experiment page (`/p/<project>/experiments/<id>`) that's still relevant under the v3 model — so users don't need to follow a "(legacy)" link to see standard run metadata, edit run status, or browse logs. The panel content sits below the trigger row inside the `<CollapsibleContent>` and is laid out as **three flat divider-separated stripes** in this top-to-bottom order:
 
-1. **Status + frontmatter header** — A bordered block at the top of
-   the panel containing:
-   - The editable `<StatusEdit>` pill bound to the run's id, status,
-     and current mtime.
-   - A 2-column-on-mobile / 4-column-on-desktop grid of frontmatter
-     fields. Each field uses a `text-[10px] uppercase tracking-wide
-     text-muted-foreground` label. The fields displayed are: name,
-     project (only when it differs from the URL's project), created
-     timestamp, finished timestamp, host, pid, gpus, entry, command
-     (full-width), wandb (full-width, as a link), tags
-     (full-width, as Badges), hypotheses (full-width, as linked
-     Badges).
-2. **Action bar** — Buttons in this order:
-   `<TerminalButton>`, `<AddNoteButton>`,
-   `<EditMarkdownButton target={kind:'run'}>`, and
-   `<OpenClaudeCodeButton kind='run'>`.
-3. **Setup** + **Result** sections — small section headings followed
-   by the rendered markdown body. Empty bodies SHALL render the
-   `to fill` italic placeholder.
-4. **Warnings card** — `<WarningsCard runId=… readmePath=… initialWarnings=… initialMtime=…>`,
-   passing the same props the legacy page uses.
-5. **Per-run Artifacts** — a small `<ul>` listing this run's
-   artifacts. The page-level (exp-doc-level) Artifacts card stays
-   unchanged and aggregates across all runs; the per-run block here
-   is a duplicate-but-narrower view scoped to this one run.
-6. **Log viewer** — `<LogViewer expPath={run.path}>`, the same
-   component used on the legacy page (NO new log-rendering
-   implementation).
-7. **Files in run dir** — the existing `<FileTree>` widget with the
-   reworked basename + counts + collapse behavior (already pinned
-   in the `experiment-edit` spec).
+1. **Action stripe** (`border-t p-3`) — `Edit markdown`,
+   `Open Claude Code`, `Terminal`, `+ Note`, plus the `<StatusEdit>`
+   control. The parse-errors `<Badge variant="destructive">` (when
+   `run.parseErrors.length > 0`) ALSO renders here, next to
+   StatusEdit, so it stays visible without needing a header row in
+   the frontmatter stripe.
+2. **Frontmatter stripe** (`border-t p-3`) — a 2-column-on-mobile
+   / 4-column-on-desktop dl grid of frontmatter fields:
+   name, project (only when it differs from the URL's project),
+   created, finished, host, pid, gpus, entry, command (full-width),
+   wandb (full-width link), tags (full-width Badges), hypotheses
+   (full-width linked Badges). Field labels use
+   `text-[10px] uppercase tracking-wide text-muted-foreground`.
+   The stripe SHALL NOT render an extra `<run.id>` + status row at
+   its top — the trigger row above already shows id + status, and
+   StatusEdit is now in the action stripe.
+3. **Body stripe** (`border-t p-3`) — Setup, Result, per-run
+   Artifacts, LogViewer (`<LogViewer expPath={run.path} />` — the
+   same component the legacy page uses), and the Files-in-run-dir
+   tree (with the reworked basename + count + collapse behavior).
+
+The stripe `<div>`s SHALL be direct children of
+`<CollapsibleContent>` so each stripe's `border-t` spans the full
+width of the run panel — the divider's left and right ends connect
+to the panel's outer border rather than sitting inside an outer
+`p-3` wrapper.
+
+The `<WarningsCard>` SHALL NOT appear inside the run panel.
+Warnings management for an experiment lives on the exp doc's
+`## Warnings` section only — the per-run warnings table was a v2
+artifact and duplicating it inside each run panel was noise.
 
 The previously-existing "Open run page (legacy)" `<Link>` SHALL NOT
-appear in the panel (the panel is now the canonical run view; the
-legacy URL still works but no longer needs an inline escape hatch).
+appear in the panel.
 
-#### Scenario: Status pill editable inline
-- **GIVEN** the user has expanded a run panel for a run whose
-  status is `RUNNING`
+#### Scenario: Three stripes with edge-to-edge dividers
+- **GIVEN** a user has expanded a run panel
 - **WHEN** the panel renders
-- **THEN** the top of the panel shows a `<StatusEdit>` control
-  bound to the run's id and current mtime — the user can change
-  the status without leaving the page
+- **THEN** the `<CollapsibleContent>` contains three direct child
+  `<div>` blocks, each with `border-t p-3`, in this order: action
+  stripe → frontmatter stripe → body stripe
+- **AND** none of those blocks is wrapped inside an additional
+  outer `p-3` div (so the `border-t` lines on the stripes span the
+  full content-box width and visually connect to the run panel's
+  outer border)
 
-#### Scenario: Frontmatter fields are visible at the top
-- **GIVEN** a run whose README frontmatter has `host: hyperion`,
-  `gpus: [0,1]`, `entry: train.py`, `command: 'python train.py …'`
-- **WHEN** the panel is expanded
-- **THEN** the top of the panel renders a frontmatter grid showing
-  the host, gpus, entry, and command fields with the literal
-  values above
+#### Scenario: Action bar is above the frontmatter
+- **WHEN** the panel renders
+- **THEN** the order of children inside `<CollapsibleContent>` is
+  action stripe FIRST, then frontmatter stripe, then body stripe —
+  NOT the previous order (frontmatter then action bar)
 
-#### Scenario: Warnings card lives inside the panel
+#### Scenario: StatusEdit lives in the action stripe
+- **GIVEN** a run with status `RUNNING`
+- **WHEN** the panel renders
+- **THEN** the editable `<StatusEdit>` control appears inside the
+  action stripe (alongside the Terminal / Edit / Note / Open Claude
+  Code buttons), NOT inside the frontmatter stripe
+
+#### Scenario: Frontmatter stripe omits redundant id row
+- **WHEN** the panel renders
+- **THEN** the frontmatter stripe does NOT render a `<run.id>` +
+  status row at its top — its first child is the dl grid of
+  frontmatter fields
+
+#### Scenario: WarningsCard is absent from the run panel
 - **GIVEN** a run whose README has a `## Warnings` table
 - **WHEN** the panel is expanded
-- **THEN** the panel renders a `<WarningsCard>` keyed on the run's
-  id and current mtime, with the parsed warnings already populated
+- **THEN** there is NO `<WarningsCard>` rendered inside the panel
+  (the panel does not import or reference WarningsCard at all)
 
 #### Scenario: Log viewer reuses the legacy component
 - **GIVEN** a run whose dir contains log files (per
   `/api/log-files?expPath=…`)
 - **WHEN** the panel is expanded
 - **THEN** the same `<LogViewer>` component used by the legacy
-  run page is rendered inside the panel — there is exactly one
-  log-viewer component implementation in the web app, used by
+  run page is rendered inside the body stripe — there is exactly
+  one log-viewer component implementation in the web app, used by
   both routes
 
 #### Scenario: No legacy escape hatch
 - **GIVEN** the user has expanded the panel
 - **WHEN** the panel renders
 - **THEN** there is NO `<Link>` whose visible text is "Open run
-  page (legacy)" inside the panel. The panel is intended to
-  contain everything the legacy page surfaces.
+  page (legacy)" inside the panel
 
 ### Requirement: Run panel expand/collapse is animated
 
