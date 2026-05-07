@@ -341,8 +341,11 @@ with the following display rules:
   - File rows: `<File>` icon.
   - Directory rows: `<Folder>` (collapsed) or `<FolderOpen>`
     (expanded).
-  - A `<ChevronRight>` (collapsed) or `<ChevronDown>` (expanded) SHALL
-    sit before the folder icon for any non-root directory row.
+  - Directory rows SHALL NOT render a leading
+    `<ChevronRight>` / `<ChevronDown>`. The Folder ↔ FolderOpen
+    morph alone conveys the open/closed state, and dropping the
+    chevron means folder rows align horizontally with file rows
+    (single icon column at every depth).
 - Per-depth indent SHALL be at least `16px` per level so hierarchy is
   scannable.
 - Each directory row (excluding the root) SHALL display a recursive
@@ -380,22 +383,28 @@ with the following display rules:
 - **GIVEN** a directory whose recursive descendant count is 11
 - **WHEN** the tree first renders
 - **THEN** the directory row is collapsed (its children are NOT in
-  the DOM); the chevron is `<ChevronRight>`; the folder icon is
-  `<Folder>`
+  the DOM); the folder icon is `<Folder>` (no chevron)
 
 #### Scenario: Folder expanded by default when recursive count ≤ 10
 - **GIVEN** a directory whose recursive descendant count is 7
 - **WHEN** the tree first renders
 - **THEN** the directory row is expanded (its children ARE in the
-  DOM); the chevron is `<ChevronDown>`; the folder icon is
-  `<FolderOpen>`
+  DOM); the folder icon is `<FolderOpen>` (no chevron)
 
 #### Scenario: Click toggles a folder's expand state
 - **GIVEN** a folder collapsed by default (count 11)
 - **WHEN** the user clicks anywhere on its row
-- **THEN** the folder expands (chevron switches to ChevronDown,
-  icon to FolderOpen, children render)
+- **THEN** the folder expands (icon morphs Folder → FolderOpen,
+  children render)
 - **AND** clicking again collapses it back
+
+#### Scenario: Folder and file rows align horizontally
+- **GIVEN** a directory containing both a sub-directory and a file
+  at the same depth
+- **WHEN** the tree renders both rows
+- **THEN** the leading icon (`<Folder>` for the dir, `<File>` for
+  the file) starts at the same horizontal x-position — there is
+  no chevron-width offset on the folder row
 
 ### Requirement: Expanded run panel surfaces full run information
 

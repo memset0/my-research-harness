@@ -14,7 +14,7 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
+import { File, Folder, FolderOpen } from 'lucide-react'
 import {
   fetchExperiment,
   fetchExperimentDoc,
@@ -512,7 +512,6 @@ function FileTreeRow({
   }
   const defaultExpanded = isRoot || childCount <= COLLAPSE_THRESHOLD
   const expanded = isRoot ? true : (overrides[node.path] ?? defaultExpanded)
-  const Chevron = expanded ? ChevronDown : ChevronRight
   const FolderIcon = expanded ? FolderOpen : Folder
   return (
     <>
@@ -524,7 +523,6 @@ function FileTreeRow({
         style={{ paddingLeft: depth * INDENT_PX }}
         onClick={isRoot ? undefined : () => onToggle(node.path, defaultExpanded)}
       >
-        {!isRoot && <Chevron className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
         <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="truncate font-semibold">{label}</span>
         {!isRoot && (
