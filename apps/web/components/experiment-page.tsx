@@ -64,7 +64,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         <div className="flex items-baseline flex-wrap gap-2">
           <span className="font-mono text-sm text-muted-foreground">{exp.id}</span>
           {exp.frontMatter.tags.map((t) => (
-            <Badge key={t} variant="outline" className="text-xs">
+            <Badge key={t} variant="outline" className="text-[10px]">
               #{t}
             </Badge>
           ))}

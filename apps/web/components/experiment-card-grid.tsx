@@ -116,7 +116,7 @@ function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocS
       <footer className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap gap-1">
           {exp.frontMatter.tags.map((t) => (
-            <Badge key={t} variant="outline" className="text-xs">
+            <Badge key={t} variant="outline" className="text-[10px]">
               #{t}
             </Badge>
           ))}
