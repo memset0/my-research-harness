@@ -414,7 +414,14 @@ export interface TmuxSessionRow {
   tmuxCreatedAt: string
   tmuxLastActivity: string
   matchable: boolean
-  staleReason: 'unknown-project' | 'unknown-target' | 'old-format' | 'unparseable' | null
+  /**
+   * Stale = parses to the standard `memon-<agent>-<project>--<scope>--<slug>`
+   * format AND the project / target lookup failed. Manual rows (legacy or
+   * arbitrary names like `memon-manual-foo`) have `staleReason: null` AND
+   * `matchable: false` — they are not stale, just not addressable as a
+   * standard project/run/exp target.
+   */
+  staleReason: 'unknown-project' | 'unknown-target' | null
 }
 
 export async function checkTerminal(): Promise<TerminalCheckResult> {
@@ -465,6 +472,17 @@ export async function killTmuxSession(name: string): Promise<{ ok: true }> {
     method: 'DELETE',
   })
   return jsonOrThrow<{ ok: true }>(res)
+}
+
+export async function createTmuxSession(input: {
+  name: string
+}): Promise<{ ok: true; sessionName: string; alreadyExisted: boolean }> {
+  const res = await fetch('/api/tmux-sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow<{ ok: true; sessionName: string; alreadyExisted: boolean }>(res)
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {

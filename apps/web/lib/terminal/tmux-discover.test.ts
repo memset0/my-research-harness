@@ -19,7 +19,12 @@ vi.mock('./manager', async () => {
   }
 })
 
-import { listMemonTmuxSessions, killTmuxSessionByName, tmuxHasSession } from './tmux-discover'
+import {
+  createManualTmuxSession,
+  killTmuxSessionByName,
+  listMemonTmuxSessions,
+  tmuxHasSession,
+} from './tmux-discover'
 
 class FakeProc extends EventEmitter {
   stdout = new EventEmitter()
@@ -137,11 +142,19 @@ describe('listMemonTmuxSessions', () => {
     expect(rows[0]?.staleReason).toBe('unknown-target')
   })
 
-  it('classifies old-format legacy session', async () => {
+  it('classifies legacy-format session as manual (matchable=false, staleReason=null)', async () => {
     tmuxLsReturns('memon-claude-foo-260507-103000|1700000000|1700001000\n')
     const rows = await listMemonTmuxSessions(fakeRuntime())
-    expect(rows[0]?.staleReason).toBe('old-format')
+    expect(rows[0]?.matchable).toBe(false)
+    expect(rows[0]?.staleReason).toBeNull()
     expect(rows[0]?.parsed.legacy).toBe(true)
+  })
+
+  it('classifies arbitrary memon-manual-* name as manual (matchable=false, staleReason=null)', async () => {
+    tmuxLsReturns('memon-manual-myscratch|1700000000|1700001000\n')
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.matchable).toBe(false)
+    expect(rows[0]?.staleReason).toBeNull()
   })
 
   it('surfaces live entry from manager lookupSession', async () => {
@@ -197,6 +210,102 @@ describe('killTmuxSessionByName', () => {
     expect(spawnMock).toHaveBeenCalledWith(
       'tmux',
       ['kill-session', '-t', 'memon-claude-project-a--run--foo-260507-103000'],
+      expect.any(Object),
+    )
+  })
+})
+
+describe('createManualTmuxSession', () => {
+  it('happy path: spawns tmux new-session -d -s memon-manual-<name> -c <cwd>, returns alreadyExisted=false', async () => {
+    // First spawn call is `tmux has-session` (returns non-zero → not exists)
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new FakeProc()
+      setImmediate(() => proc.emit('exit', 1))
+      return proc
+    })
+    // Second spawn call is `tmux new-session -d -s ... -c ...`
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new FakeProc()
+      setImmediate(() => proc.emit('exit', 0))
+      return proc
+    })
+    const result = await createManualTmuxSession({ name: 'foo', cwd: '/repo' })
+    expect(result).toEqual({ sessionName: 'memon-manual-foo', alreadyExisted: false })
+    expect(spawnMock).toHaveBeenCalledTimes(2)
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      1,
+      'tmux',
+      ['has-session', '-t', 'memon-manual-foo'],
+      expect.any(Object),
+    )
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      2,
+      'tmux',
+      ['new-session', '-d', '-s', 'memon-manual-foo', '-c', '/repo'],
+      expect.any(Object),
+    )
+  })
+
+  it('idempotent: returns alreadyExisted=true and skips new-session when has-session exits 0', async () => {
+    // has-session returns 0 → already exists; new-session must NOT be called
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new FakeProc()
+      setImmediate(() => proc.emit('exit', 0))
+      return proc
+    })
+    const result = await createManualTmuxSession({ name: 'foo', cwd: '/repo' })
+    expect(result.alreadyExisted).toBe(true)
+    // Only one spawn call: has-session. No new-session.
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(spawnMock).toHaveBeenCalledWith(
+      'tmux',
+      ['has-session', '-t', 'memon-manual-foo'],
+      expect.any(Object),
+    )
+  })
+
+  it('rejects empty name', async () => {
+    await expect(createManualTmuxSession({ name: '' })).rejects.toThrow(/name is required/)
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects name containing --', async () => {
+    await expect(createManualTmuxSession({ name: 'foo--bar' })).rejects.toThrow(/--/)
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects name starting with memon-', async () => {
+    await expect(createManualTmuxSession({ name: 'memon-foo' })).rejects.toThrow(/memon-/)
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects name with disallowed character (space)', async () => {
+    await expect(createManualTmuxSession({ name: 'foo bar' })).rejects.toThrow()
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects name with disallowed character (slash)', async () => {
+    await expect(createManualTmuxSession({ name: 'foo/bar' })).rejects.toThrow()
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it("defaults cwd to process.cwd() when not provided", async () => {
+    const cwd = process.cwd()
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new FakeProc()
+      setImmediate(() => proc.emit('exit', 1))
+      return proc
+    })
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new FakeProc()
+      setImmediate(() => proc.emit('exit', 0))
+      return proc
+    })
+    await createManualTmuxSession({ name: 'foo' })
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      2,
+      'tmux',
+      ['new-session', '-d', '-s', 'memon-manual-foo', '-c', cwd],
       expect.any(Object),
     )
   })

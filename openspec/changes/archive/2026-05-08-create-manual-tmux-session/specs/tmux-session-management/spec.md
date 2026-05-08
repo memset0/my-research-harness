@@ -1,16 +1,58 @@
-# tmux-session-management Specification
+## ADDED Requirements
 
-## Purpose
+### Requirement: POST /api/tmux-sessions creates a new manual tmux session
 
-Machine-level inventory and lifecycle UI for `memon-*` tmux sessions on
-the host. Enumerates every memon-prefixed tmux session across all
-configured projects (plus orphans whose project is no longer in the
-config), classifies each as matchable or stale, and lets the user open
-a session in the drawer / popup or kill it explicitly. This is the only
-UI path that ends a tmux session — drawer close and `memon serve`
-restart leave tmux alive.
+The web backend SHALL expose `POST /api/tmux-sessions` with body `{ name: string }` that creates (or attaches to) a tmux session named `memon-manual-<name>` with `cwd = process.cwd()` of the running `memon serve` process.
 
-## Requirements
+The `name` field SHALL be validated:
+- non-empty,
+- matches `^[A-Za-z0-9._-]+$`,
+- does NOT contain the substring `--` (reserved scope delimiter),
+- does NOT start with the substring `memon-` (avoid double-prefix names).
+
+The endpoint SHALL run `tmux new-session -A -d -s memon-manual-<name> -c <cwd>` (idempotent: `-A` attach-if-exists, `-d` detached). To distinguish "already existed" from "freshly created" for the response and downstream toast, the endpoint SHALL run `tmux has-session -t memon-manual-<name>` BEFORE the create call and use the boolean result as `alreadyExisted`.
+
+Response shape:
+- 200: `{ ok: true, sessionName: "memon-manual-<name>", alreadyExisted: boolean }`
+- 400: `{ error: { code: "BAD_REQUEST", message } }` for validation failures
+- 500: `{ error: { message } }` for tmux exec failures
+
+The endpoint SHALL be auth-gated (HTTP Basic) and classified as a `shell` route under `auth-system`.
+
+#### Scenario: Create a new manual session
+- **GIVEN** no tmux session named `memon-manual-foo` exists on the host
+- **WHEN** an authenticated client `POST`s `{ name: "foo" }` to `/api/tmux-sessions`
+- **THEN** `tmux new-session -A -d -s memon-manual-foo -c <process.cwd()>` runs and exits 0
+- **AND** the response is 200 with `{ ok: true, sessionName: "memon-manual-foo", alreadyExisted: false }`
+
+#### Scenario: Idempotent on existing name
+- **GIVEN** a tmux session named `memon-manual-foo` already exists
+- **WHEN** an authenticated client `POST`s `{ name: "foo" }`
+- **THEN** the response is 200 with `{ ok: true, sessionName: "memon-manual-foo", alreadyExisted: true }`
+- **AND** no error from `tmux new-session` (the `-A` flag absorbs the conflict)
+
+#### Scenario: Empty name rejected
+- **WHEN** the body is `{ name: "" }`
+- **THEN** the response is 400 with code `BAD_REQUEST`
+
+#### Scenario: Name with double-hyphen rejected
+- **WHEN** the body is `{ name: "foo--bar" }`
+- **THEN** the response is 400 with a message mentioning `--`
+
+#### Scenario: Name starting with memon- rejected
+- **WHEN** the body is `{ name: "memon-claude" }`
+- **THEN** the response is 400 with a message mentioning the `memon-` prefix collision
+
+#### Scenario: Name with disallowed character rejected
+- **WHEN** the body is `{ name: "foo bar" }` (space)
+- **THEN** the response is 400
+
+#### Scenario: Anonymous request rejected
+- **WHEN** an anonymous client `POST`s to `/api/tmux-sessions`
+- **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"`
+- **AND** no `tmux new-session` is run
+
+## MODIFIED Requirements
 
 ### Requirement: tmux session inventory page at /manage/tmux
 
@@ -89,58 +131,6 @@ The page SHALL provide three filter tabs: `All`, `Active in memon`, `Stale`. The
 - **THEN** `POST /api/tmux-sessions { name: "foo" }` fires
 - **AND** on 200 response, the dialog closes and the list refetches showing the new `memon-manual-foo` row in the manual category
 
-### Requirement: POST /api/tmux-sessions creates a new manual tmux session
-
-The web backend SHALL expose `POST /api/tmux-sessions` with body `{ name: string }` that creates (or attaches to) a tmux session named `memon-manual-<name>` with `cwd = process.cwd()` of the running `memon serve` process.
-
-The `name` field SHALL be validated:
-- non-empty,
-- matches `^[A-Za-z0-9._-]+$`,
-- does NOT contain the substring `--` (reserved scope delimiter),
-- does NOT start with the substring `memon-` (avoid double-prefix names).
-
-The endpoint SHALL run `tmux new-session -A -d -s memon-manual-<name> -c <cwd>` (idempotent: `-A` attach-if-exists, `-d` detached). To distinguish "already existed" from "freshly created" for the response and downstream toast, the endpoint SHALL run `tmux has-session -t memon-manual-<name>` BEFORE the create call and use the boolean result as `alreadyExisted`.
-
-Response shape:
-- 200: `{ ok: true, sessionName: "memon-manual-<name>", alreadyExisted: boolean }`
-- 400: `{ error: { code: "BAD_REQUEST", message } }` for validation failures
-- 500: `{ error: { message } }` for tmux exec failures
-
-The endpoint SHALL be auth-gated (HTTP Basic) and classified as a `shell` route under `auth-system`.
-
-#### Scenario: Create a new manual session
-- **GIVEN** no tmux session named `memon-manual-foo` exists on the host
-- **WHEN** an authenticated client `POST`s `{ name: "foo" }` to `/api/tmux-sessions`
-- **THEN** `tmux new-session -A -d -s memon-manual-foo -c <process.cwd()>` runs and exits 0
-- **AND** the response is 200 with `{ ok: true, sessionName: "memon-manual-foo", alreadyExisted: false }`
-
-#### Scenario: Idempotent on existing name
-- **GIVEN** a tmux session named `memon-manual-foo` already exists
-- **WHEN** an authenticated client `POST`s `{ name: "foo" }`
-- **THEN** the response is 200 with `{ ok: true, sessionName: "memon-manual-foo", alreadyExisted: true }`
-- **AND** no error from `tmux new-session` (the `-A` flag absorbs the conflict)
-
-#### Scenario: Empty name rejected
-- **WHEN** the body is `{ name: "" }`
-- **THEN** the response is 400 with code `BAD_REQUEST`
-
-#### Scenario: Name with double-hyphen rejected
-- **WHEN** the body is `{ name: "foo--bar" }`
-- **THEN** the response is 400 with a message mentioning `--`
-
-#### Scenario: Name starting with memon- rejected
-- **WHEN** the body is `{ name: "memon-claude" }`
-- **THEN** the response is 400 with a message mentioning the `memon-` prefix collision
-
-#### Scenario: Name with disallowed character rejected
-- **WHEN** the body is `{ name: "foo bar" }` (space)
-- **THEN** the response is 400
-
-#### Scenario: Anonymous request rejected
-- **WHEN** an anonymous client `POST`s to `/api/tmux-sessions`
-- **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"`
-- **AND** no `tmux new-session` is run
-
 ### Requirement: GET /api/tmux-sessions enumerates all memon-prefix tmux sessions
 
 The web backend SHALL expose `GET /api/tmux-sessions` returning `{ sessions: TmuxSessionRow[] }` where each row has shape:
@@ -198,36 +188,6 @@ The endpoint SHALL be auth-gated (HTTP Basic) and SHALL be classified as a `read
 #### Scenario: tmux not running
 - **WHEN** `tmux ls` exits with code != 0 because the tmux daemon hasn't started yet
 - **THEN** the endpoint SHALL return `{ sessions: [] }` (graceful — no daemon means no sessions)
-
-### Requirement: DELETE /api/tmux-sessions/:name kills a tmux session
-
-The web backend SHALL expose `DELETE /api/tmux-sessions/:name` that runs `tmux kill-session -t <name>` after URL-decoding `:name`. On success it SHALL also remove the corresponding entry from the terminal manager's session map (the ttyd child will exit naturally because its tmux client process exits when the session ends, but the manager SHALL also send SIGTERM to ensure prompt cleanup).
-
-The `:name` SHALL be validated against the session-name format (new or legacy) before invoking `tmux kill-session`. Names that don't match either format SHALL be rejected with 400.
-
-The endpoint SHALL be auth-gated (HTTP Basic) and SHALL be classified as a `shell` route under `auth-system` (it executes a process).
-
-#### Scenario: Kill removes session and live entry
-- **GIVEN** a tmux session `memon-claude-project-a--run--foo-...` exists AND the manager holds a live entry for it
-- **WHEN** an authenticated client `DELETE`s `/api/tmux-sessions/memon-claude-project-a--run--foo-...`
-- **THEN** `tmux kill-session -t memon-claude-project-a--run--foo-...` runs successfully
-- **AND** the manager's entry for that sessionName is removed
-- **AND** the response is 200 with `{ ok: true }`
-
-#### Scenario: Kill nonexistent session
-- **GIVEN** a sessionName not on the host
-- **WHEN** the user `DELETE`s that name
-- **THEN** the response is 404 with `{ error: { code: 'NOT_FOUND', message } }`
-
-#### Scenario: Anonymous request rejected
-- **WHEN** an anonymous client `DELETE`s `/api/tmux-sessions/<name>`
-- **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"`
-- **AND** no `tmux kill-session` is run
-
-#### Scenario: Malformed name rejected
-- **WHEN** the user `DELETE`s `/api/tmux-sessions/not-a-memon-prefix`
-- **THEN** the response is 400 (the name doesn't start with `memon-`)
-- **AND** no `tmux kill-session` is run
 
 ### Requirement: Stale classification cross-references the project, run, and exp indexes
 

@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   ExternalLink,
   Loader2,
+  Plus,
   RefreshCw,
   Sidebar,
   Trash2,
@@ -15,6 +16,7 @@ import {
 import { toast } from 'sonner'
 import {
   ApiError,
+  createTmuxSession,
   killTmuxSession,
   listTmuxSessions,
   type TmuxSessionRow,
@@ -29,6 +31,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../components/ui/dialog'
+import { Input } from '../../../components/ui/input'
+import { Label } from '../../../components/ui/label'
 import { useTerminalDrawer } from '../../../components/terminal-drawer-provider'
 import { cn } from '../../../lib/utils'
 
@@ -37,9 +41,10 @@ type Filter = 'all' | 'active' | 'stale'
 const STALE_REASON_LABEL: Record<NonNullable<TmuxSessionRow['staleReason']>, string> = {
   'unknown-project': 'unknown-project',
   'unknown-target': 'unknown-target',
-  'old-format': 'old-format',
-  unparseable: 'unparseable',
 }
+
+const MANUAL_PREFIX = 'memon-manual-'
+const MANUAL_NAME_RE = /^[A-Za-z0-9._-]+$/
 
 function popupTarget(row: TmuxSessionRow): string {
   return `memon-popup-${row.sessionName}`
@@ -70,6 +75,8 @@ export function TmuxManagePageClient() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState<Filter>('all')
   const [killTarget, setKillTarget] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
 
   const { data, isFetching, refetch } = useQuery({
     queryKey: ['tmux-sessions'],
@@ -80,7 +87,9 @@ export function TmuxManagePageClient() {
   const all = data?.sessions ?? []
   const visible = all.filter((s) => {
     if (filter === 'active') return s.liveEntry !== null
-    if (filter === 'stale') return s.matchable === false
+    // Stale tab shows ONLY rows with a non-null staleReason. Manual rows
+    // (matchable=false but staleReason=null) are NOT stale and don't appear here.
+    if (filter === 'stale') return s.staleReason !== null
     return true
   })
 
@@ -97,10 +106,28 @@ export function TmuxManagePageClient() {
     },
   })
 
+  const createMutation = useMutation({
+    mutationFn: (name: string) => createTmuxSession({ name }),
+    onSuccess: (res) => {
+      toast.success(
+        res.alreadyExisted
+          ? `joined existing ${res.sessionName}`
+          : `created ${res.sessionName}`,
+      )
+      void qc.invalidateQueries({ queryKey: ['tmux-sessions'] })
+      setCreateOpen(false)
+      setCreateName('')
+    },
+    onError: (err) => {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      toast.error(`create failed: ${msg}`)
+    },
+  })
+
   const counts = {
     all: all.length,
     active: all.filter((s) => s.liveEntry !== null).length,
-    stale: all.filter((s) => s.matchable === false).length,
+    stale: all.filter((s) => s.staleReason !== null).length,
   }
 
   const handleOpenDrawer = (row: TmuxSessionRow) => {
@@ -121,6 +148,19 @@ export function TmuxManagePageClient() {
     window.open(url, popupTarget(row), 'popup,width=1200,height=800')
   }
 
+  const trimmedCreateName = createName.trim()
+  const createNameValid =
+    trimmedCreateName.length > 0 &&
+    MANUAL_NAME_RE.test(trimmedCreateName) &&
+    !trimmedCreateName.includes('--') &&
+    !trimmedCreateName.startsWith('memon-')
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!createNameValid || createMutation.isPending) return
+    createMutation.mutate(trimmedCreateName)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-4">
@@ -131,19 +171,25 @@ export function TmuxManagePageClient() {
             sessions on this host. Sessions persist across <code className="rounded bg-muted px-1">memon serve</code> restarts.
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-        >
-          {isFetching ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="size-3.5" />
-          )}
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="default" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-3.5" />
+            New session
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+          >
+            {isFetching ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
@@ -223,6 +269,81 @@ export function TmuxManagePageClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(o) => {
+          if (!o && !createMutation.isPending) {
+            setCreateOpen(false)
+            setCreateName('')
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleCreateSubmit}>
+            <DialogHeader>
+              <DialogTitle>New tmux session</DialogTitle>
+              <DialogDescription>
+                Creates a manually-named tmux session with cwd =
+                <code className="ml-1 rounded bg-muted px-1">memon serve</code>'s working directory.
+                If the name already exists, joins the existing session
+                instead of erroring.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-3">
+              <Label htmlFor="manual-session-name" className="text-xs">
+                Name
+              </Label>
+              <div className="flex items-stretch overflow-hidden rounded-md border bg-background">
+                <span className="flex items-center bg-muted px-2 font-mono text-[11px] text-muted-foreground">
+                  {MANUAL_PREFIX}
+                </span>
+                <Input
+                  id="manual-session-name"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="my-scratch"
+                  className="rounded-none border-0 font-mono text-xs focus-visible:ring-0"
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={createMutation.isPending}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Allowed: letters, digits, <code>.</code>, <code>_</code>, <code>-</code>.
+                No <code>--</code>. Cannot start with <code>memon-</code>.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCreateOpen(false)
+                  setCreateName('')
+                }}
+                disabled={createMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!createNameValid || createMutation.isPending}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Plus className="size-3.5" />
+                )}
+                Create
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -291,13 +412,15 @@ function SessionRow({
             {p.slug}
             <ArrowUpRight className="size-3" />
           </Link>
-        ) : (
+        ) : row.staleReason !== null ? (
           <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
             <AlertTriangle className="size-3" />
             <span className="text-[11px]">
-              stale ({row.staleReason ? STALE_REASON_LABEL[row.staleReason] : 'unknown'})
+              stale ({STALE_REASON_LABEL[row.staleReason]})
             </span>
           </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
         )}
       </Td>
       <Td>

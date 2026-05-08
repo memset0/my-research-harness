@@ -15,7 +15,10 @@ import {
 } from './manager'
 import type { Runtime } from '../runtime'
 
-export type StaleReason = 'unknown-project' | 'unknown-target' | 'old-format' | 'unparseable'
+// Stale = "this name parses as the standard convention but the project /
+// target lookup failed". Legacy and arbitrary user-created names are NOT
+// stale — they're the manual category (matchable: false, staleReason: null).
+export type StaleReason = 'unknown-project' | 'unknown-target'
 
 export interface TmuxSessionRow {
   sessionName: string
@@ -71,9 +74,13 @@ function classify(parsed: ParsedSessionName, rt: Runtime): {
   matchable: boolean
   staleReason: StaleReason | null
 } {
-  if (parsed.legacy) return { matchable: false, staleReason: 'old-format' }
+  // Legacy or arbitrary names → manual category (not stale). The user might
+  // have created them via the New session dialog (memon-manual-<name>) or
+  // they're holdovers from before tmux-session-rework. Either way, don't
+  // flag them as stale just because they don't fit the new convention.
+  if (parsed.legacy) return { matchable: false, staleReason: null }
   if (!parsed.project || !parsed.scope || !parsed.slug || !parsed.agent) {
-    return { matchable: false, staleReason: 'unparseable' }
+    return { matchable: false, staleReason: null }
   }
   const project = rt.config.projects.find((p) => p.name === parsed.project)
   if (!project) return { matchable: false, staleReason: 'unknown-project' }
@@ -107,6 +114,48 @@ export async function killTmuxSessionByName(name: string): Promise<void> {
     /* ignore — manager may not have an entry */
   })
   await execTmux(['kill-session', '-t', name])
+}
+
+/** Prefix the user's typed name with `memon-manual-` to form the full
+ *  tmux session name. */
+const MANUAL_PREFIX = 'memon-manual-'
+const MANUAL_NAME_RE = /^[A-Za-z0-9._-]+$/
+
+export interface CreateManualResult {
+  sessionName: string
+  alreadyExisted: boolean
+}
+
+export async function createManualTmuxSession(input: {
+  name: string
+  cwd?: string
+}): Promise<CreateManualResult> {
+  const raw = input.name
+  if (!raw) {
+    throw new Error('name is required')
+  }
+  if (!MANUAL_NAME_RE.test(raw)) {
+    throw new Error(`name must match ${MANUAL_NAME_RE} (got ${JSON.stringify(raw)})`)
+  }
+  if (raw.includes('--')) {
+    throw new Error("name must not contain '--' (the scope delimiter)")
+  }
+  if (raw.startsWith('memon-')) {
+    throw new Error("name must not start with 'memon-' (the prefix is added automatically)")
+  }
+  const sessionName = `${MANUAL_PREFIX}${raw}`
+  const cwd = input.cwd ?? process.cwd()
+  const alreadyExisted = await tmuxHasSession(sessionName)
+  if (!alreadyExisted) {
+    // Detached create. Note: `new-session -A -d` (which would be the
+    // textbook "attach if exists else create detached" form) actually
+    // fails when the session exists with "open terminal failed: not a
+    // terminal" because the -A path still wants a controlling tty.
+    // Splitting into has-session + conditional new-session is robust
+    // and side-steps the issue.
+    await execTmux(['new-session', '-d', '-s', sessionName, '-c', cwd])
+  }
+  return { sessionName, alreadyExisted }
 }
 
 export async function tmuxHasSession(name: string): Promise<boolean> {
