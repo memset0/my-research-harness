@@ -315,26 +315,28 @@ function SessionRow({
       </Td>
       <Td className="text-right">
         <div className="inline-flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            onClick={() => onOpenDrawer(row)}
-            disabled={!p.agent || !p.project || !p.scope || !p.slug}
-          >
-            <Sidebar className="size-3" />
-            Drawer
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden h-7 px-2 text-[11px] md:inline-flex"
-            onClick={() => onOpenPopup(row)}
-            disabled={!p.agent || !p.project || !p.scope || !p.slug}
-          >
-            <ExternalLink className="size-3" />
-            Popup
-          </Button>
+          {row.matchable && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                onClick={() => onOpenDrawer(row)}
+              >
+                <Sidebar className="size-3" />
+                Drawer
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden h-7 px-2 text-[11px] md:inline-flex"
+                onClick={() => onOpenPopup(row)}
+              >
+                <ExternalLink className="size-3" />
+                Popup
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="sm"
