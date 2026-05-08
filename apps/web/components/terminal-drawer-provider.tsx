@@ -122,7 +122,7 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
       <Sheet open={state !== null} onOpenChange={handleOpenChange}>
         <SheetContent
           side="right"
-          className="flex w-[min(95vw,960px)] flex-col gap-2 p-0 sm:max-w-[960px]"
+          className="flex w-[min(80vw,1280px)] flex-col gap-2 p-0 sm:max-w-[1280px]"
         >
           {state ? (
             <>

@@ -249,6 +249,8 @@ Closing the drawer (the `X` button, escape key, or outside-click) SHALL hide the
 
 The drawer SHALL NOT expose a `Close + stop session` button. The only path that kills tmux is the management page's `Kill` action (per the `tmux-session-management` capability). Killing ttyd (without killing tmux) is automatic via the LRU + Idle TTL machinery and does not need a per-drawer affordance.
 
+The drawer's `<SheetContent>` SHALL size to `w-[min(80vw,1280px)] sm:max-w-[1280px]` — capped at 1280px on desktop and 80vw on small screens. Below the 1280px breakpoint the 80vw cap dominates so the underlying page always retains at least 20vw of visible width.
+
 #### Scenario: Closing the drawer leaves ttyd and tmux alive
 - **GIVEN** the user opened the terminal drawer for `(claude, project-a, run, foo-...)` and ttyd is running
 - **WHEN** the user clicks the drawer's `X` close button
@@ -272,6 +274,17 @@ The drawer SHALL NOT expose a `Close + stop session` button. The only path that 
 - **WHEN** the user is on `/manage/tmux` and clicks `Open in drawer` on a row
 - **THEN** the same `TerminalDrawerProvider` (mounted at root) opens the drawer on top of the management page
 - **AND** the iframe loads the corresponding ttyd
+
+#### Scenario: Drawer width caps at 80vw on small screens
+- **GIVEN** the viewport width is 1024px
+- **WHEN** the drawer opens
+- **THEN** the `<SheetContent>` is approximately 819px wide (80vw), NOT the 1280px desktop ceiling
+- **AND** at least 205px (20vw) of the underlying page remains visible
+
+#### Scenario: Drawer width caps at 1280px on wide screens
+- **GIVEN** the viewport width is 1920px
+- **WHEN** the drawer opens
+- **THEN** the `<SheetContent>` is exactly 1280px wide (the absolute cap), NOT 1536px (80vw of 1920)
 
 ### Requirement: Popup-window mode opens the terminal in a separate browser window
 
