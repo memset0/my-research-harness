@@ -17,6 +17,21 @@ Run `memon fs-version check --project-root . --format json` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
+## When to use
+
+- The user asks you to run an existing launcher script and own the run's README lifecycle
+- A sweep needs to fire across multiple env-var configurations of an existing script
+- A previous run failed and the user asks you to retry / resume / iterate-and-fix
+- The user pointed at a specific run dir and wants you to keep going (resume case)
+- The user described an experiment but wants you to drive both authoring AND running (delegate to `memon-write-script` first, then come back)
+
+## When NOT to use
+
+- ❌ The user wants to write a new script with no intent to run it now — handoff to `memon-write-script` only
+- ❌ For ad-hoc shell commands that don't produce a structured run dir — run them directly
+- ❌ For aggregate analysis across multiple existing runs — that's `memon-write-report` or `memon-digest-journal`
+- ❌ For one-off "just record this observation" with no actual training — `memon-append-journal --tag NOTE`
+
 ## Prerequisite — read `CLAUDE.md` first
 
 Before doing anything else, read `<projectRoot>/CLAUDE.md` if it exists.

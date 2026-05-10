@@ -22,6 +22,7 @@ work without a `config.yml`.
 | Daily integrity sweep + cursor-advancing digest | `memon-digest-journal` | User-invoked. Folds in the old `doctor` checks. |
 | Theme-driven, cursor-independent narrative report | `memon-write-report` | User-invoked. `R<NNNN>-<slug>.md` with re-runnable selector. |
 | "What should I run next?" — brainstorm + converge | `memon-propose` | User-invoked. Read-only research collaborator. |
+| Migrate a project's on-disk layout to a newer FS convention version | `memon-migrate-fs` | User-invoked. Only skill that bumps `.memon/version.json`. Exempt from the FS-version preflight. |
 
 ## Invocation policy
 

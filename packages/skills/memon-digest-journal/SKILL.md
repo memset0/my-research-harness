@@ -40,6 +40,20 @@ Run `memon fs-version check --project-root . --format json` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
+## When to use
+
+- It's been days / a sprint since the last digest, and the user wants the periodic sweep + cursor advance
+- The integrity sweep (formerly `memon-doctor`) needs to run alongside — there is no separate doctor skill
+- The user asks "what happened recently?" without a specific theme
+- A pre-meeting / pre-review status snapshot is wanted
+
+## When NOT to use
+
+- ❌ Theme-driven narrative ("everything about H0007") — that's `memon-write-report`
+- ❌ Just appending one event to the journal — that's `memon-append-journal`
+- ❌ For status changes on an experiment — `memon experiment status set` directly
+- ❌ When the user explicitly wants to skip the integrity sweep — there's no opt-out; this skill folds doctor in
+
 ## File naming
 
 Digests live at `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`:

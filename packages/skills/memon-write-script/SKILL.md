@@ -19,6 +19,20 @@ Run `memon fs-version check --project-root . --format json` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
+## When to use
+
+- The user asks you to write a new launcher script (e.g. "write a script for the zero-SNR sweep")
+- You're orchestrating a new experiment that has no launcher yet
+- An existing script needs a variant or wrapper for a sweep (`run_bs16.sh` next to `run.sh`)
+- The user asks for a script that follows the project's run-dir + log conventions
+
+## When NOT to use
+
+- ❌ The user just wants to run an existing script — that's `memon-run-experiment`'s job
+- ❌ For ad-hoc one-line shell or tmux commands — write those directly
+- ❌ When the script's purpose isn't launching an experiment (data preprocessing without a run dir, deployment scripts) — out of scope
+- ❌ For Python entry points or library code — this skill is shell-script-only
+
 ## Identify the parent experiment
 
 A script and its experiment doc are paired by convention. Even when

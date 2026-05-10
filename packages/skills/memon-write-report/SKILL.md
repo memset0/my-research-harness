@@ -31,6 +31,20 @@ Run `memon fs-version check --project-root . --format json` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
+## When to use
+
+- The user wants a theme-driven write-up that is NOT cursor-bound (e.g. "everything I learned about H0007 across the past 3 weeks")
+- An existing report (`R<NNNN>-<slug>.md`) needs updating with new evidence
+- The narrative should survive across digest boundaries (overlapping or disjoint windows)
+- The user wants a re-runnable selector embedded in the artifact so future updates know what to look for
+
+## When NOT to use
+
+- ❌ Periodic / cursor-advancing summaries — that's `memon-digest-journal`
+- ❌ A single observation that doesn't deserve a multi-paragraph artifact — `memon-append-journal --tag NOTE`
+- ❌ For run-specific READMEs — those are owned by `memon-run-experiment`
+- ❌ Hypothesis-status updates — edit `docs/hypotheses.md` directly, no report needed
+
 ## File naming
 
 Reports live at `<projectRoot>/docs/reports/R<NNNN>-<slug>.md`:

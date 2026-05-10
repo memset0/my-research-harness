@@ -47,6 +47,21 @@ Run `memon fs-version check --project-root . --format json` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
+## When to use
+
+- The user asks "what should I run next?"
+- A hypothesis is `OPEN` or `PARTIAL` and the user wants candidate probes
+- The user is between experiments and wants a menu of options to react against
+- A recent FAILED run hints at adjacent experiments worth running
+- The user wants explicit alternatives considered + rejected, not just one recommendation
+
+## When NOT to use
+
+- ❌ The user already named a specific experiment to run — go straight to `memon-write-script` / `memon-run-experiment`
+- ❌ For implementation help on a known direction — this skill is read-only brainstorm
+- ❌ For analyzing an in-flight experiment — those are still RUNNING; check via `memon show` instead
+- ❌ When the project has zero hypotheses yet — talk with the user about hypothesis seeding first
+
 ## Why brainstorm at all
 
 Single-best-pick recommendations from an LLM are usually
