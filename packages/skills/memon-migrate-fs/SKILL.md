@@ -81,7 +81,10 @@ ls packages/core/migrations/v${X}-to-v$((X+1)).md
 Present the plan in plain language and wait for explicit confirmation.
 Embed the prompt as user-facing dialogue (Chinese):
 
-> 当前 project root 的 FS 约定版本是 v${currentVersion}，工具要求 v${targetVersion}。我会运行 ${N} 个迁移步骤：v${currentVersion}→v${currentVersion+1}, ..., v${targetVersion-1}→v${targetVersion}。是否确认开始迁移？(y/N)
+> 当前 project root 的 FS 约定版本是 v${currentVersion}，工具要求
+> v${targetVersion}。我会运行 ${N} 个迁移步骤：
+> v${currentVersion}→v${currentVersion+1}, ..., v${targetVersion-1}→v${targetVersion}。
+> 是否确认开始迁移？(y/N)
 
 Only on affirmative response (`y` / `yes`) does the migration proceed.
 Any other answer (including silence / decline) means stop without writing
@@ -169,7 +172,9 @@ else
 fi
 ```
 
-The commit message is **fixed**: `chore(memon): migrate FS convention v<X> -> v<X+1>`. ASCII arrow `->`, not Unicode `→`. No body, no trailing period. Tooling may grep for this format.
+The commit message is **fixed**: `chore(memon): migrate FS convention
+v<X> -> v<X+1>`. ASCII arrow `->`, not Unicode `→`. No body, no trailing
+period. Tooling may grep for this format.
 
 ### 6. Final report
 
