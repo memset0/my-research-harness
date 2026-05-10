@@ -152,12 +152,8 @@ Field rules:
    alone (unless the user explicitly wants to refine the selector — in
    which case write a small note in the Update section).
 
-## Constraints
+## Anti-patterns
 
-- ✅ Always record the `selector` verbatim in frontmatter — the user
-  must be able to re-run it without rebuilding the filter from memory.
-- ✅ Show drafts inline before any file write; user can correct course.
-- ✅ Numbering is global across `docs/reports/` and never recycled.
 - ❌ **Never call `memon journal digest-mark`** — reports don't touch
   the cursor.
 - ❌ Never modify experiment READMEs.

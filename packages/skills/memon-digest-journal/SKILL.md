@@ -380,18 +380,8 @@ overlap. The second one to reach this step sees a different cursor and
 backs out cleanly. The user can then look at both digest files, decide
 how to merge, and manually `digest-mark` if desired.
 
-## Constraints
+## Anti-patterns
 
-- ✅ `INVOCATION_TIME` and `OBSERVED_LAST_DIGEST_AT` are captured at
-  start and never recomputed mid-run.
-- ✅ Each digest covers a strict, non-overlapping interval; consecutive
-  digests are adjacent.
-- ✅ Same date → append to the existing date's file. New date → new
-  file with the next global N.
-- ✅ Doctor checks happen before the digest body is finalized; user
-  walks through fixes interactively.
-- ✅ Race-safe via re-read of `last_digest_at` immediately before
-  `digest-mark`.
 - ❌ Never advance `last_digest_at` past `INVOCATION_TIME`.
 - ❌ Never advance `last_digest_at` if the race check fails.
 - ❌ Never silently rewind `last_digest_at` (only ever forward).
