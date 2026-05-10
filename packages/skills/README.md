@@ -80,6 +80,9 @@ worth recording" can fire on its own.
 - **All `memon ...` calls take `--project-root <path>` (or `.`)
   explicitly** — never rely on implicit-cwd fallback. Forces every
   skill to be cwd-portable.
+- **Preflight protocol** lives in `PREFLIGHT.md` (same dir). All
+  spec-mutating skills point to it instead of duplicating the branch
+  table.
 - **mtime optimistic locking** for any README write. After a successful
   write, capture the response's new `mtime` and use it as the next
   call's `--expected-mtime`. Exit 9 = `CONFLICT`.
