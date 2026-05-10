@@ -186,7 +186,8 @@ async function installOne(
   }
 
   const removed = existingMemonInTarget // every memon-* gets wiped before reinstall
-  const installed = sourceSkills
+  // installed[]: skill dir basenames + the PREFLIGHT.md sibling.
+  const installed = [...sourceSkills, 'PREFLIGHT.md']
 
   if (!dryRun) {
     await fs.mkdir(target.path, { recursive: true })
@@ -196,6 +197,10 @@ async function installOne(
     for (const name of sourceSkills) {
       await copyDir(join(src, name), join(target.path, name))
     }
+    // Sibling deposit. fs.copyFile overwrites unconditionally; a stale
+    // PREFLIGHT.md (not in removed[] under the memon-* replacement scope)
+    // is replaced from source on every non-dry-run invocation.
+    await fs.copyFile(join(src, 'PREFLIGHT.md'), join(target.path, 'PREFLIGHT.md'))
   }
 
   return { agent: target.agent, path: target.path, removed, installed }

@@ -16,16 +16,19 @@ let skillsSrc: string
 let prevSkillsEnv: string | undefined
 
 const FAKE_SKILLS = ['memon-foo', 'memon-bar'] as const
+const FAKE_PREFLIGHT = '# fake preflight\nbody\n'
 
 beforeEach(async () => {
   // Build a fake @memon/skills source directory so tests don't depend on the
-  // real bundled skills. Each fake skill has a single SKILL.md file.
+  // real bundled skills. Each fake skill has a single SKILL.md file, plus a
+  // sibling PREFLIGHT.md the synchroniser deposits as a sibling per target.
   skillsSrc = await fs.mkdtemp(join(tmpdir(), 'memon-skills-src-'))
   for (const name of FAKE_SKILLS) {
     const dir = join(skillsSrc, name)
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(join(dir, 'SKILL.md'), `# ${name}\n`)
   }
+  await fs.writeFile(join(skillsSrc, 'PREFLIGHT.md'), FAKE_PREFLIGHT)
   prevSkillsEnv = process.env.MEMON_SKILLS_DIR
   process.env.MEMON_SKILLS_DIR = skillsSrc
 })
@@ -168,7 +171,8 @@ describe('runInstallSkills — multi-target install', () => {
     for (const sub of Object.values(AGENT_TARGETS)) {
       const dir = join(projectRoot, sub)
       const entries = await fs.readdir(dir)
-      expect(entries.sort()).toEqual([...FAKE_SKILLS].sort())
+      // Skill dirs + the PREFLIGHT.md sibling.
+      expect(entries.sort()).toEqual([...FAKE_SKILLS, 'PREFLIGHT.md'].sort())
       for (const name of FAKE_SKILLS) {
         const skillFile = await fs.readFile(join(dir, name, 'SKILL.md'), 'utf8')
         expect(skillFile).toBe(`# ${name}\n`)
@@ -261,6 +265,107 @@ describe('runInstallSkills — multi-target install', () => {
     for (const sub of Object.values(AGENT_TARGETS)) {
       expect(await dirExists(join(projectRoot, sub))).toBe(false)
     }
+  })
+})
+
+// ----- runInstallSkills: PREFLIGHT.md sibling deposit -----
+
+describe('runInstallSkills — PREFLIGHT.md sibling', () => {
+  let projectRoot: string
+
+  beforeEach(async () => {
+    projectRoot = await fs.mkdtemp(join(tmpdir(), 'memon-preflight-'))
+  })
+  afterEach(async () => {
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  async function runJson(opts: {
+    agents?: AgentName[]
+    target?: string
+    dryRun?: boolean
+  } = {}) {
+    return runCapturing(async () => {
+      await runInstallSkills({
+        projectRoot: opts.target ? undefined : projectRoot,
+        cwd: projectRoot,
+        format: 'json',
+        agents: opts.agents,
+        target: opts.target,
+        dryRun: opts.dryRun,
+      })
+    })
+  }
+
+  it('deposits PREFLIGHT.md as a sibling in each populated target with byte-equal content', async () => {
+    const r = await runJson()
+    const json = JSON.parse(r.stdout)
+    for (const t of json.targets) {
+      // installed[] includes the literal "PREFLIGHT.md".
+      expect(t.installed).toContain('PREFLIGHT.md')
+      // file exists on disk with byte-equal content.
+      const onDisk = await fs.readFile(join(t.path, 'PREFLIGHT.md'), 'utf8')
+      expect(onDisk).toBe(FAKE_PREFLIGHT)
+    }
+  })
+
+  it('--agent claude deposits PREFLIGHT.md only in the claude target', async () => {
+    await runJson({ agents: ['claude'] })
+    expect(await pathExists(join(projectRoot, AGENT_TARGETS.claude, 'PREFLIGHT.md'))).toBe(true)
+    expect(await pathExists(join(projectRoot, AGENT_TARGETS.codex, 'PREFLIGHT.md'))).toBe(false)
+    expect(await pathExists(join(projectRoot, AGENT_TARGETS.opencode, 'PREFLIGHT.md'))).toBe(false)
+  })
+
+  it('--target deposits PREFLIGHT.md in the explicit target dir', async () => {
+    const explicit = join(projectRoot, 'custom', 'skills')
+    const r = await runJson({ target: explicit })
+    const json = JSON.parse(r.stdout)
+    expect(json.targets[0].installed).toContain('PREFLIGHT.md')
+    expect(await pathExists(join(explicit, 'PREFLIGHT.md'))).toBe(true)
+  })
+
+  it('--dry-run reports PREFLIGHT.md in installed[] but does not write it', async () => {
+    const r = await runJson({ dryRun: true })
+    const json = JSON.parse(r.stdout)
+    for (const t of json.targets) {
+      expect(t.installed).toContain('PREFLIGHT.md')
+      expect(await pathExists(join(t.path, 'PREFLIGHT.md'))).toBe(false)
+    }
+  })
+
+  it('overwrites a stale PREFLIGHT.md in the target', async () => {
+    const claudeDir = join(projectRoot, AGENT_TARGETS.claude)
+    await fs.mkdir(claudeDir, { recursive: true })
+    await fs.writeFile(join(claudeDir, 'PREFLIGHT.md'), 'STALE GARBAGE\n')
+    await runJson({ agents: ['claude'] })
+    const after = await fs.readFile(join(claudeDir, 'PREFLIGHT.md'), 'utf8')
+    expect(after).toBe(FAKE_PREFLIGHT)
+  })
+
+  it('leaves non-PREFLIGHT sibling files in the target untouched', async () => {
+    const claudeDir = join(projectRoot, AGENT_TARGETS.claude)
+    await fs.mkdir(claudeDir, { recursive: true })
+    const extra = join(claudeDir, 'extra-doc.md')
+    const notes = join(claudeDir, 'notes.txt')
+    await fs.writeFile(extra, 'keep extra\n')
+    await fs.writeFile(notes, 'keep notes\n')
+    await runJson({ agents: ['claude'] })
+    expect(await fs.readFile(extra, 'utf8')).toBe('keep extra\n')
+    expect(await fs.readFile(notes, 'utf8')).toBe('keep notes\n')
+  })
+
+  it('PREFLIGHT.md is NOT included in removed[] under the memon-* replacement scope', async () => {
+    const claudeDir = join(projectRoot, AGENT_TARGETS.claude)
+    await fs.mkdir(claudeDir, { recursive: true })
+    // Pre-populate a stale memon-* dir AND a stale PREFLIGHT.md.
+    await fs.mkdir(join(claudeDir, 'memon-renamed-old'), { recursive: true })
+    await fs.writeFile(join(claudeDir, 'memon-renamed-old', 'SKILL.md'), '# old\n')
+    await fs.writeFile(join(claudeDir, 'PREFLIGHT.md'), 'STALE\n')
+    const r = await runJson({ agents: ['claude'] })
+    const json = JSON.parse(r.stdout)
+    // memon-* is in removed[]; PREFLIGHT.md is NOT.
+    expect(json.targets[0].removed).toContain('memon-renamed-old')
+    expect(json.targets[0].removed).not.toContain('PREFLIGHT.md')
   })
 })
 
