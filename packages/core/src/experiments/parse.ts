@@ -5,7 +5,7 @@
 //   1. Split front matter (YAML between `---`) from body via gray-matter
 //   2. Validate front matter shape with zod (loose) and convert snake_case → camelCase
 //   3. Split body into ## H2 sections; capture
-//      Motivation/Method/Conclusion/Caveats/Warnings
+//      Motivation/Method/Plan/Conclusion/Caveats/Warnings
 //   4. Warnings section is preserved as `warningsRaw` for now; structured
 //      parsing of the 7-column table lives in a later task.
 //   5. Collect all parse issues.
@@ -29,6 +29,7 @@ import { splitH2Sections } from '../readme/sections.js'
 const STANDARD_EXPERIMENT_SECTIONS = [
   'Motivation',
   'Method',
+  'Plan',
   'Conclusion',
   'Caveats',
   'Warnings',
@@ -144,6 +145,7 @@ export function parseExperimentReadme(
   const sections: ExperimentSections = {
     motivation: getSection('Motivation'),
     method: getSection('Method'),
+    plan: getSection('Plan'),
     conclusion: getSection('Conclusion'),
     caveats: getSection('Caveats'),
   }
@@ -153,7 +155,7 @@ export function parseExperimentReadme(
   const warningsBody = split.sections.get('Warnings') ?? null
   const warningsRaw = warningsBody && warningsBody.trim() !== '' ? warningsBody : null
 
-  // Surface non-canonical sections (anything not in the 5 standard ones)
+  // Surface non-canonical sections (anything not in the 6 standard ones)
   for (const heading of split.order) {
     if (
       !STANDARD_EXPERIMENT_SECTIONS.includes(
@@ -238,6 +240,7 @@ function emptyResult(
     sections: {
       motivation: null,
       method: null,
+      plan: null,
       conclusion: null,
       caveats: null,
     },

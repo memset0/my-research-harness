@@ -249,6 +249,10 @@ export interface ExperimentFrontMatter {
 export interface ExperimentSections {
   motivation: string | null
   method: string | null
+  // v3 + Plan section: free-form markdown body, may contain GFM task lists
+  // at any nesting depth. Opaque to the parser (no per-task structured
+  // field). Null when the section is absent or its body is empty.
+  plan: string | null
   conclusion: string | null
   caveats: string | null
 }

@@ -46,7 +46,7 @@ const SAMPLE_EXP = {
     createdAt: '2026-05-01T08:00:00+08:00',
     updatedAt: '2026-05-01T08:00:00+08:00',
   },
-  sections: { motivation: null, method: null, conclusion: null, caveats: null },
+  sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
   warningsRaw: null,
   parseErrors: [],
   parseWarnings: [],

@@ -1,8 +1,31 @@
 'use client'
 
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '../lib/utils'
+
+// Force every `<input type="checkbox">` produced by remark-gfm's task-list
+// plugin to be `disabled`. v1 of the experiment doc Plan section is
+// read-only; toggling happens via the Edit markdown dialog. This override
+// guards against future remark-gfm versions that might emit interactive
+// checkboxes by default.
+const COMPONENTS: Components = {
+  input: ({ node: _node, type, checked, ...rest }) => {
+    if (type === 'checkbox') {
+      return (
+        <input
+          type="checkbox"
+          checked={!!checked}
+          disabled
+          readOnly
+          aria-readonly="true"
+          {...rest}
+        />
+      )
+    }
+    return <input type={type} {...rest} />
+  },
+}
 
 export function Markdown({ children, className }: { children: string; className?: string }) {
   return (
@@ -19,10 +42,24 @@ export function Markdown({ children, className }: { children: string; className?
         // its own pre-level background, padding, and font-size.
         '[&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none',
         '[&_pre_code]:text-inherit [&_pre_code]:text-[1em]',
+        // GFM task list rendering: remove the bullet marker on items that
+        // contain a checkbox so the checkbox itself is the leading glyph,
+        // and give the disabled checkbox an obvious affordance (cursor +
+        // slight opacity) so users learn that toggling goes through Edit
+        // markdown. Nested levels inherit the same treatment.
+        '[&_li.task-list-item]:list-none',
+        '[&_li.task-list-item]:pl-0',
+        '[&_li.task-list-item>input[type=checkbox]]:mr-2',
+        '[&_li.task-list-item>input[type=checkbox]]:cursor-not-allowed',
+        '[&_li.task-list-item>input[type=checkbox]]:opacity-70',
+        '[&_ul.contains-task-list]:list-none',
+        '[&_ul.contains-task-list]:pl-4',
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+        {children}
+      </ReactMarkdown>
     </div>
   )
 }

@@ -448,6 +448,22 @@ export async function startTerminal(input: {
   return jsonOrThrow<TerminalStartResponse>(res)
 }
 
+/**
+ * Raw-attach by sessionName. Used by /manage/tmux's manual-row Drawer
+ * and Popup buttons where the session name doesn't parse to the standard
+ * `memon-<agent>-<project>--<scope>--<slug>` format.
+ */
+export async function attachTerminal(input: {
+  sessionName: string
+}): Promise<TerminalStartResponse> {
+  const res = await fetch('/api/terminal/attach', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow<TerminalStartResponse>(res)
+}
+
 export async function stopTerminal(sessionName: string): Promise<{ stopped: boolean }> {
   const res = await fetch('/api/terminal/stop', {
     method: 'POST',
@@ -610,6 +626,7 @@ export interface ExperimentDocSummary {
   sections: {
     motivation: string | null
     method: string | null
+    plan: string | null
     conclusion: string | null
     caveats: string | null
   }

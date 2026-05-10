@@ -22,7 +22,7 @@ function exp(id: string, slug: string, runs: string[] = []): Experiment {
       createdAt: '2026-05-01T00:00:00+08:00',
       updatedAt: '2026-05-01T00:00:00+08:00',
     },
-    sections: { motivation: null, method: null, conclusion: null, caveats: null },
+    sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
     warnings: [],
     warningsRaw: null,
     body: '',

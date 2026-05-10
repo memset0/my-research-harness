@@ -329,7 +329,7 @@ export async function createExperiment(
         createdAt: now,
         updatedAt: now,
       },
-      sections: { motivation: null, method: null, conclusion: null, caveats: null },
+      sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
       warningsRaw: null,
     })
     try {

@@ -39,6 +39,28 @@ incidentally by `bar`'s reweighting analysis.
    tiny LoRA head for 2k steps to probe the FFT high-band energy ratio
    (H0002 cross-check).
 
+## Plan
+
+- [x] Run `foo-260501-100000` to 10k steps with v-pred + ε-pred parallel
+  - Both branches reached the val_loss=0.072 threshold; v-pred at step
+    3500, ε-pred at 5100. Loss curves diverge cleanly after step 1500.
+- [x] Sample 1k images per branch at CFG=7.5 every 5k steps
+  - 8 sample dumps collected; FID measured offline via `bar`.
+- [x] Run `bar-260502-150000` to compute step-to-threshold per σ bucket
+  - low-noise wins are largest (σ ∈ [0.002, 0.5]: 35–40% faster); the
+    advantage shrinks toward parity in the σ > 5.0 region.
+- [ ] Sweep min-SNR-γ ∈ {1, 3, 5, 7, 10} for the LoRA-head reweighting
+  - [x] γ=1 (baseline, no reweighting)
+  - [x] γ=3
+  - [x] γ=5 — best HF-band energy ratio so far
+  - [ ] γ=7
+  - [ ] γ=10
+- [ ] Cross-validate against E0003-snr-sweep results before promoting
+      min-SNR-γ=5 as the new default
+  - Need bar to land first; tracking via E0003's Plan.
+- [ ] Decide whether to extend to 512² resolution as a follow-up
+      experiment
+
 ## Conclusion
 
 H0001 ✅ confirmed. v-pred reaches val_loss=0.072 at step 3500; ε-pred

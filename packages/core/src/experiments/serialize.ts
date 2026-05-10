@@ -1,6 +1,6 @@
 // Serialize a v3 experiment doc back to markdown.
 //
-// Section ordering is canonical (Motivation/Method/Conclusion/Caveats/
+// Section ordering is canonical (Motivation/Method/Plan/Conclusion/Caveats/
 // Warnings). Empty/null sections produce an H2 heading with empty body so
 // editors round-trip cleanly. The Warnings section, when supplied as raw
 // markdown, is emitted verbatim — this writer does NOT re-render the
@@ -13,10 +13,11 @@ import type {
 } from '../types.js'
 import { isId } from '../ids.js'
 
-const SECTION_ORDER = ['motivation', 'method', 'conclusion', 'caveats'] as const
+const SECTION_ORDER = ['motivation', 'method', 'plan', 'conclusion', 'caveats'] as const
 const HEADING_FOR: Record<(typeof SECTION_ORDER)[number] | 'warnings', string> = {
   motivation: 'Motivation',
   method: 'Method',
+  plan: 'Plan',
   conclusion: 'Conclusion',
   caveats: 'Caveats',
   warnings: 'Warnings',

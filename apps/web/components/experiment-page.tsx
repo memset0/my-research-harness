@@ -113,6 +113,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
 
       <SectionCard heading="Motivation" body={exp.sections.motivation} />
       <SectionCard heading="Method" body={exp.sections.method} />
+      <SectionCard heading="Plan" body={exp.sections.plan} />
       <SectionCard heading="Conclusion" body={exp.sections.conclusion} />
       <SectionCard heading="Caveats" body={exp.sections.caveats} />
 
