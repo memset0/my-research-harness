@@ -13,6 +13,7 @@ const here = fileURLToPath(import.meta.url)
 export const SKILLS_DIR: string = resolve(here, '..', '..')
 
 export const SKILL_NAMES = [
+  'memon-drive',
   'memon-write-script',
   'memon-run-experiment',
   'memon-append-journal',

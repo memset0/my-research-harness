@@ -15,6 +15,7 @@ work without a `config.yml`.
 
 | Want to… | Use | Notes |
 |---|---|---|
+| Drive one experiment end-to-end via conversation (design → write-script → run-experiment → maintain exp doc) | `memon-drive` | Long-running orchestrator. Calls write-script / run-experiment as sub-tools. Primary canvas: exp doc's `## Plan`. |
 | Author a launcher script (`run.sh`, sweep wrapper, …) | `memon-write-script` | Stable script in `scripts/<area>/`; each run gets a fresh dir. |
 | Run an existing script + drive it through terminal state | `memon-run-experiment` | Owns the README's full content (frontmatter + body). |
 | Drop a one-line observation / request / error in JOURNAL | `memon-append-journal` | Cheap, single-event append. |
@@ -47,6 +48,13 @@ and would defeat the `memon-drive` orchestrator's ability to call
 them as sub-tools.
 
 ## Cross-skill handoffs
+
+`memon-drive` (the orchestrator skill) sits **above** this pipeline.
+It owns the conversation with the user and the exp doc's `## Plan`,
+and fires `memon-write-script` / `memon-run-experiment` on demand as
+it iterates through Plan items. The diagram below shows the
+per-action handoffs; in a `memon-drive` session, those handoffs are
+invoked by the orchestrator rather than typed by the user.
 
 ```
                 ┌─────────────────────┐
@@ -108,6 +116,7 @@ them as sub-tools.
 
 | skill | writes | never touches |
 |---|---|---|
+| `memon-drive` | exp doc body sections (Motivation / Method / Plan / Conclusion / Caveats) via `memon experiment readme write` | run READMEs (sub-skills own those), scripts (write-script owns), digests, reports, JOURNAL cursor, warning state changes |
 | `memon-write-script` | a `.sh` file under `scripts/` | run dirs, READMEs, JOURNAL frontmatter |
 | `memon-run-experiment` | `<run-dir>/README.md`, `code.diff`, `code.head` | scripts, digests, reports, JOURNAL frontmatter |
 | `memon-append-journal` | one event line in `docs/journal.md` body | JOURNAL frontmatter, READMEs |
