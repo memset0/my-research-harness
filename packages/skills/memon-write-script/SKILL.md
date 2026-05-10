@@ -2,7 +2,6 @@
 name: memon-write-script
 description: Write a shell script that launches an experiment in a memon project. The script lives in a stable scripts directory and, on each invocation, creates its own timestamped run directory under the project's logs path.
 argument-hint: <what the script should do, plus where it should live>
-disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0

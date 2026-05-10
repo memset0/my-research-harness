@@ -2,7 +2,6 @@
 name: memon-write-report
 description: Author or update a theme-driven report (`docs/reports/R<NNNN>-<slug>.md`) drawn from the project's JOURNAL. The report records the shell selector used to assemble it, so re-running the selector cheaply tells whether new events have landed since the last update.
 argument-hint: <theme of the report; or existing R-id to update>
-disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0

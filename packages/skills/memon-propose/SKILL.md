@@ -2,7 +2,6 @@
 name: memon-propose
 description: Brainstorm next experiments for a memon project — diverge into 5-8 candidates grounded in HYPOTHESES + recent experiments + open JOURNAL requests, then converge to the 1-3 strongest. Read-only research collaborator; does not scaffold or execute.
 argument-hint: <optional theme, hypothesis id, or constraint to focus the proposals>
-disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0

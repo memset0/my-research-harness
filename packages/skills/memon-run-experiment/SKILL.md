@@ -2,7 +2,6 @@
 name: memon-run-experiment
 description: Run an existing launcher script (optionally with hyperparameter env-var overrides), watch it through stable RUNNING, then write + finalize the run's README. The script handles its own run dir; this skill writes the README and drives the lifecycle around it, iterating through fixes when the script doesn't run cleanly.
 argument-hint: <script path + optional env vars; or experiment description>
-disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0

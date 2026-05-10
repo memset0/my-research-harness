@@ -2,7 +2,6 @@
 name: memon-digest-journal
 description: Run an integrity sweep over the project's experiments, fix what needs fixing in conversation with the user, then produce a date-keyed digest covering everything since the last digest cursor and advance `last_digest_at`. The "doctor" skill is folded in — issue triage happens here, not separately.
 argument-hint: <usually empty; the skill works out the window automatically>
-disable-model-invocation: true
 license: MIT
 metadata:
   author: memset0
