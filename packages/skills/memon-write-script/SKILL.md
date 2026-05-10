@@ -284,10 +284,10 @@ conda activate erdos
 **How to pick the right env name**: read sibling scripts in the same
 `scripts/<area>/` dir (or `make` targets, CI configs, README) for the
 project's existing `conda activate` / `source .venv` line. If there's
-no precedent, **ask the user**:
+no precedent, **ask the user** (in Chinese):
 
-> "我看到 scripts 目录下没有现成的环境激活规范,这个脚本要不要 inline
-> `conda activate <env>` ?如果要,环境叫什么?"
+> 我看到 scripts 目录下没有现成的环境激活规范,这个脚本要不要 inline
+> `conda activate <env>` ?如果要,环境叫什么?
 
 1. **Identify where the script should live.** Ask if not clear; default
    `<projectRoot>/scripts/<area>/`. If a sibling `run.sh` already exists
@@ -531,7 +531,7 @@ If `$EXP_BINDING` is empty (Branch 3), skip this step entirely.
    invocation catches typos in the three `[memon]` echo lines and
    verifies `RUN_DIR` is created where claimed — but it spends real
    compute on the training step unless the script gates that. Don't
-   run it by default; just offer:
+   run it by default; just offer (in Chinese):
 
    > 要现在跑一个 smoke-test 验证 `[memon]` 行 + `RUN_DIR` 正确吗?
    > (会真的执行训练步骤,除非脚本里有 `${SMOKE:-0}` 这样的 gate)

@@ -79,7 +79,7 @@ ls packages/core/migrations/v${X}-to-v$((X+1)).md
 ### 3. Confirm with user
 
 Present the plan in plain language and wait for explicit confirmation.
-Embed the prompt as user-facing dialogue (Chinese):
+Embed the prompt as user-facing dialogue (in Chinese):
 
 > 当前 project root 的 FS 约定版本是 v${currentVersion}，工具要求
 > v${targetVersion}。我会运行 ${N} 个迁移步骤：
@@ -185,6 +185,8 @@ Tell the user:
   one more time).
 - Either the list of new git commits (`git log --oneline -n <N>`) or the
   list of backup tarballs created.
+
+Tell the user (in Chinese):
 
 > 迁移完成。从 v${currentVersion} 升级到 v${targetVersion}。
 > 共 ${N} 步：

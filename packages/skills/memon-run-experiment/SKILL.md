@@ -112,7 +112,7 @@ Branch:
 - **An existing experiment fits** (the user's described work matches one of
   the listed experiments' motivation/method) → ask the user to confirm the
   pick. Capture its id as `$PARENT_EXP_ID` (e.g. `E0001-vpred-convergence`).
-- **No existing experiment fits** → propose creating a new one. In Chinese:
+- **No existing experiment fits** → propose creating a new one (in Chinese):
 
   > 这个 run 看起来不属于任何已有 experiment。我建议新建一个：
   > slug=`<slug>` title=`<title>`，hypotheses=[…]。可以吗？
@@ -943,7 +943,7 @@ Instead, **stop and ask the user (in Chinese)** something like:
 
 > 这个项目还在旧版本的 memon FS convention（`memon fs-version
 > check` 报 `behind`）。要先跑一次 `memon-migrate-fs` skill 才
->能走完整的 run-experiment 流程。要不要现在就开始迁移？
+> 能走完整的 run-experiment 流程。要不要现在就开始迁移？
 >
 > （如果用户同意）我会调用 `memon-migrate-fs`，按照
 > `packages/core/migrations/v<N>-to-v<N+1>.md` 的步骤
