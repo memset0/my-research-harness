@@ -91,6 +91,18 @@ LATEST_DIGEST=$(ls -t docs/digests/D*-*.md 2>/dev/null | head -1)
 ls docs/reports/R*-*.md 2>/dev/null | xargs -r cat
 ```
 
+Also read each relevant exp doc's `## Plan` section — `[ ]` items
+there are the user's already-declared intent and act as strong priors
+for the brainstorm:
+
+```sh
+for exp in $(echo "$SNAPSHOT" | jq -r '.experiments.entries[].id'); do
+  echo "=== $exp ==="
+  memon experiment show "$exp" --project-root . --format json \
+    | jq -r '.sections.plan // empty'
+done
+```
+
 ### 2. Filter to live hypotheses
 
 ```sh
@@ -125,7 +137,15 @@ a probe-experiment.
 
 ### 4. Diverge — 5-8 candidates (one paragraph each)
 
-Cast a wide net. Mix of:
+Before proposing net-new candidates, surface any already-`[ ]`-listed
+Plan items across the relevant exps as "already-planned, can be
+resumed by the user" — these are strong priors. Don't re-propose
+them as net-new candidates; if a proposal overlaps with an existing
+Plan item, frame it explicitly as "extends Plan item E0001-foo §
+'sweep bs' by …" with a clear rationale for the extension, or as
+"alternative to Plan item E0001-foo § 'X' because …".
+
+Then, for the brainstorm proper, cast a wide net. Mix of:
 
 - **Confirmation-style** — direct probes of OPEN / PARTIAL hypotheses
 - **Falsification-style** — what experiment would refute the leading
@@ -172,7 +192,10 @@ react against the full set.)
 
 For each picked proposal, write the full case (markdown the user can
 paste). Include **why this and not the others** — that's the part
-researchers actually use.
+researchers actually use. If a converged proposal overlaps with an
+already-`[ ]` Plan item from §1, name that explicitly ("Plan item
+E0001-foo § 'sweep bs' — this proposal extends it by …") rather
+than presenting it as net-new.
 
 ````markdown
 ## Proposal 1: bs-sweep-bf16

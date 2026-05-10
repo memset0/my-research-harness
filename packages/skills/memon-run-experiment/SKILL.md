@@ -130,6 +130,13 @@ Branch:
   in afterwards — typically while writing the run's README in §6 the agent
   also writes Motivation/Method into the exp doc on the user's behalf.
 
+  If the user has forward-looking ideas like "next try X / Y / Z" at this
+  point, write them into `## Plan` as `- [ ]` task items, NOT as bullets
+  in `## Method`. Method describes stable methodology; Plan holds
+  forward-looking TODOs (and later, per-run reflection sub-bullets).
+  Resulting section order: `Motivation` → `Method` → `Plan` →
+  `Conclusion` → `Caveats` → `Warnings`.
+
 - **The user explicitly wants this run to be orphan** (e.g. a one-off
   smoke test that doesn't deserve an experiment doc) → set
   `$PARENT_EXP_ID=""` and skip the link step in §6. This is rare; default
@@ -596,17 +603,51 @@ gist without re-reading it. Cover:
 
 - 改动了什么(对应 `**Got it running by**:`,如果有,在这个 run 的 Setup 里)
 - 主要结果是什么(对应 run 的 `## Result`)
-- 结论是什么 / 怎么影响关联的假说(对应 exp doc 的 `## Conclusion` 更新)
-- 实现思路 / 设计 rationale(对应 exp doc 的 `## Method` 追加)
+- 这一 run 学到了什么 → 如果是跨 run 已经能下的结论(同方向证据 ≥2 run),写进 exp doc 的 `## Conclusion`;否则放进对应 `## Plan` task 下面作为反思 sub-bullet,等多 run 攒够再 promote
+- 对应的 Plan task 如果做完了,把 `- [ ]` 改成 `- [x]`(就改这一条,不动其他)
+- 实现思路 / 设计 rationale 如果泛化到整个 experiment,追加到 exp doc 的 `## Method`
 - 让用户注意的细节 / 解读限制(对应 exp doc 的 `## Caveats` 追加)
 - 添加的警告(if §12 added any),让用户知道有哪几条需要他们裁决
 
-Every cross-run insight has a deterministic home — there is no
-"if neither side fits" loose path. If a thought genuinely doesn't
-fit either Method or Caveats (rare), it probably belongs in
-`docs/journal.md` as a `[NOTE]` event, not in any README.
+Every cross-run insight has a deterministic home:
+
+- **Reproducible mechanical changes that made the run launch** → this
+  run's `## Setup` (`**Got it running by**:` paragraph).
+- **Per-run observation, not yet a defensible cross-run pattern** → a
+  reflection sub-bullet under the relevant `## Plan` task on the exp doc.
+- **Defensible cross-run conclusion** (consistent evidence from ≥2 runs)
+  → exp doc's `## Conclusion`.
+- **Methodology refinement that applies across the experiment** → exp
+  doc's `## Method`.
+- **Cross-run interpretation limit** → exp doc's `## Caveats`.
+- **Anomaly the human should adjudicate** → exp doc's `## Warnings`
+  (via §12's post-run review).
+- **Cross-cutting observation that doesn't belong to any single
+  experiment** → `docs/journal.md` as a `[NOTE]` event (e.g. "memory
+  leaks above 32B context on this box" — applies project-wide).
+
+Plan is the default for per-run learnings; journal-NOTE is the fallback
+for the genuinely cross-experiment case.
 
 Brief — 3-6 lines is plenty.
+
+#### Consider FINISHED?
+
+After updating the exp doc, check three signals:
+
+1. Every `- [ ]` in `## Plan` is now `- [x]` (the plan is done).
+2. Every member run in the exp's `runs[]` is in a terminal state
+   (`FINISHED` or `FAILED`, no `RUNNING` or `PENDING`).
+3. `## Conclusion` is non-empty (the cross-run finding is on disk).
+
+If all three hold, surface to the user (in Chinese):
+
+> 这个 experiment 看起来可以收尾了(Plan 全勾 / 所有 run 都终止 /
+> Conclusion 有内容)。要不要把它标成 FINISHED?
+
+This is a *signal*, not an auto-promote. The user's `yes` is the actual
+transition trigger; the agent SHALL NOT call any status-set CLI without
+that confirmation.
 
 ### 10. Terminal — failure path (FAILED)
 
@@ -769,6 +810,12 @@ The Warnings section is the canonical surface for "I noticed something
 the human should adjudicate". It is NOT for facts you already wrote
 into `## Result`, hypotheses you yourself can confirm, or items the
 user already named in the parent experiment's `## Caveats`.
+
+`## Warnings` is distinct from `## Plan` reflections. Plan reflections
+(added in §9's walkthrough) capture per-run learnings the agent is
+processing toward an eventual Conclusion. Warnings (added here in §12)
+flag anomalies the human MUST adjudicate. Same run, different surfaces;
+this skill writes to Warnings only.
 
 #### What qualifies as a warning
 

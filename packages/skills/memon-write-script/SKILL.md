@@ -79,6 +79,10 @@ If the user agrees:
 1. Discuss initial Motivation / Method content with the user
    (Method MAY start as a single sentence — the script registry
    line will be appended to it after the script is written).
+   If the user mentions forward-looking ideas like "next try
+   X / Y / Z", those go in `## Plan` as `- [ ]` task items,
+   NOT in `## Method`. Method describes methodology only; Plan
+   holds forward-looking TODOs.
 2. Call `memon experiment create`:
 
    ```sh
@@ -474,6 +478,11 @@ If `$EXP_BINDING` is set to an exp id (Branch 1 or Branch 2 from
 script to that exp doc's `## Method` body — that way an agent
 reading the exp later can find every script that contributes to it
 without grepping `scripts/`.
+
+This script-registry line IS part of methodology (it names what the
+experiment's reproducible setup includes), so it belongs in `## Method`
+— NOT in `## Plan`. Plan is reserved for forward-looking TODOs and
+per-run reflections, not for the inventory of scripts.
 
 The format is the same as the `## Artifacts` section uses on run
 READMEs:
