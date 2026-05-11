@@ -99,7 +99,7 @@ Every run dir SHOULD be bound to a `docs/experiments/E<NNNN>-<slug>.md`
 file that owns motivation / method / conclusion / caveats / warnings across
 the run set. The run README itself only carries setup / result / artifacts.
 Decide which experiment this run belongs to **before** launching, so the
-binding can land atomically right after the README is written in §6.
+binding lands atomically at Phase 1 in §3, right after the proof-of-life first write.
 
 ```sh
 # List existing experiments in this project.
@@ -126,8 +126,8 @@ Branch:
 
   Capture the returned id (`E<NNNN>-<slug>`) as `$PARENT_EXP_ID`. The CLI
   writes the exp doc with empty section stubs that you (or the user) fill
-  in afterwards — typically while writing the run's README in §6 the agent
-  also writes Motivation/Method into the exp doc on the user's behalf.
+  in afterwards — typically while doing the Phase 2 expansion in §6 the
+  agent also writes Motivation/Method into the exp doc on the user's behalf.
 
   If the user has forward-looking ideas like "next try X / Y / Z" at this
   point, write them into `## Plan` as `- [ ]` task items, NOT as bullets
@@ -138,13 +138,12 @@ Branch:
 
 - **The user explicitly wants this run to be orphan** (e.g. a one-off
   smoke test that doesn't deserve an experiment doc) → set
-  `$PARENT_EXP_ID=""` and skip the link step in §6. This is rare; default
+  `$PARENT_EXP_ID=""` and skip the link step in §3 (Phase 1). This is rare; default
   is "always have an exp doc".
 
 The actual bidirectional binding (writing `experiment:` to the run
 frontmatter + appending the run dir name to the exp's `runs[]`) happens
-in §6 after the run README is written. The atomicity guarantee comes from
-running `memon experiment link` once both files exist — see §6.
+in §3 at Phase 1, when the first README + link both fire. See §3.
 
 ### 1. Pre-launch — env + GPU sanity check, then capture `code.diff` + wandb pre-flight
 
@@ -376,11 +375,104 @@ ask the user to update the script (handoff to `memon-write-script`) or
 to identify the run dir manually. Don't try to recover by grepping
 filesystem — the contract is "the script tells you where it ran".
 
+#### Proof-of-life check
+
+Before Phase 1 fires, confirm the script reached a state where it's
+actually doing something. Two conditions:
+
+1. `$RUN_DIR` was extracted above (we know where the run lives).
+2. `$RUN_DIR/run.log` exists and has non-zero size (the script got
+   past `mkdir -p` and `tee` is producing output).
+
+A small retry window handles the case where the `[memon]` echo flushed
+before the log file's first content:
+
+```sh
+RUN_LOG="$RUN_DIR/run.log"
+for _ in 1 2 3 4 5; do
+  [ -s "$RUN_LOG" ] && break
+  sleep 1
+done
+if [ ! -s "$RUN_LOG" ]; then
+  # Script didn't produce any log output within 5s — proof-of-life
+  # failed. Do NOT write Phase 1. Surface to the user as a §3 fallback
+  # (no contract violation, but unusual; consider §10b's rare-edge path
+  # if the script also already exited).
+  echo "WARN: $RUN_LOG empty after 5s — proof-of-life check failed"
+fi
+```
+
+If proof-of-life succeeds, continue to Phase 1. If it fails, do NOT
+write a Phase 1 README; the script is either silently stalled (handoff
+to user) or already crashed without output (treat as §10b's rare edge).
+
+#### Phase 1 — First README write (minimal) + `memon experiment link`
+
+The Phase 1 README locks the run ↔ exp linkage immediately. It carries
+complete frontmatter but a placeholder body (`## Setup` content is
+filled in at Phase 2 in §6 after stable RUNNING confirms; this Phase 1
+write only proves "the run exists and is bound").
+
+```sh
+RUN_ID=$(basename "$RUN_DIR")
+NOW=$(date +%Y-%m-%dT%H:%M:%S%:z)
+cat <<EOF | memon run readme write "$RUN_ID" --project-root . --expected-mtime 0
+---
+id: $RUN_ID
+name: <RUN_NAME or whatever the script defaulted to>
+status: RUNNING
+created_at: $NOW
+updated_at: $NOW
+experiment: $PARENT_EXP_ID    # from §0; empty/omit if intentional orphan
+finished_at: null
+host: $(hostname)
+pid: <captured if available>
+gpus: [...]
+entry: <script-relative-path>
+command: bash <script-relative-path>
+wandb: <wandb-url-or-null>
+---
+
+## Setup
+(pending — full setup written after stable RUNNING in §6)
+
+## Result
+(pending — written when the run reaches a terminal state)
+
+## Artifacts
+- \`./run.log\` — full stdout/stderr
+- \`./code.diff\` — uncommitted changes at launch (code only)
+- \`./code.head\` — git HEAD at launch
+- \`./checkpoints/\` — model weights (if produced)
+EOF
+```
+
+Capture the returned `mtime` as `$MTIME` — this is the handle every
+later update (Phase 2 expansion in §6, periodic updates in §7+,
+terminal writes in §9 / §10) MUST pass via `--expected-mtime`.
+
+Then bind the run to its parent experiment (skip when `$PARENT_EXP_ID`
+is empty / orphan-by-choice):
+
+```sh
+memon experiment link "$PARENT_EXP_ID" "$RUN_ID" --project-root .
+```
+
+This is the atomic bidirectional bind: `<run>.experiment` and
+`<exp>.runs[]` stay in sync. The `experiment:` field already in the
+Phase 1 README is consistent (no rewrite happens), but the exp doc's
+`runs[]` gains the new entry. The link is locked WHILE the run is
+still alive — that's the whole point of Phase 1 firing here rather
+than after stable RUNNING.
+
 ### 4. Drop in code snapshots
 
-The script only `mkdir`s `$RUN_DIR` and tees `run.log`. It does NOT
-write `README.md` — that's this skill's job, and it happens AFTER the
-stable check (§6), not now. For now, just deposit the code snapshots:
+By this point §3 has already written the Phase 1 README and locked
+the `memon experiment link`. The script meanwhile has its `$RUN_DIR`
+created and is teeing to `run.log`. §4's job: deposit the code
+snapshots whose paths the Phase 1 README's `## Artifacts` list already
+named, so those claims are backed by files on disk before §6 expands
+the Setup body.
 
 **Fresh launch**: snapshots go in as plain `code.diff` + `code.head`.
 
@@ -405,31 +497,34 @@ LINES=$(wc -l < "$RUN_LOG" 2>/dev/null || echo 0)
 ```
 
 If the script returned non-zero in sync mode (or the tmux session
-already exited), skip to §10 (Failed path) — and do NOT write a RUNNING
-README; the failure path will write a FAILED README from scratch.
+already exited), skip to §10a (the existing-README failure path). The
+Phase 1 README written in §3 already exists; §10a will flip its status
+to FAILED via mtime-locked update. §10b is for the rare edge where
+Phase 1 itself never fired.
 
-### 6. Write the README (status: RUNNING)
+### 6. Phase 2 — Expand the README after stable RUNNING
 
-Only after §5 confirms the run is alive. This ordering is deliberate:
-writing a RUNNING README before the script proves it can survive the
-first 60 seconds means orphan READMEs claiming to be RUNNING for
-processes that already died.
+§3 already wrote the Phase 1 README (`status: RUNNING`, complete
+frontmatter, placeholder body) and locked the `memon experiment link`.
+§5 just confirmed the script survived ~60s. §6's job is to UPDATE that
+existing README — mtime-locked — and replace the `## Setup` placeholder
+with the full env / hardware / hyperparams content. Status stays
+`RUNNING`; this is an expansion, not a fresh write.
 
-**Fresh launch**: README doesn't exist yet. Use `--expected-mtime 0`
-(the CLI treats `0` as a sentinel for "first write to a missing
-README").
+The mtime to pass is the one captured at the end of §3's Phase 1 write
+(`$MTIME`). On exit 9 (CONFLICT — another writer touched the README
+between §3 and §6), refresh: `MTIME=$(memon show "$RUN_ID"
+--project-root . --format json | jq -r .mtime)`, re-apply, retry once.
 
-**Resume**: README probably already exists from the prior run. Read its
-current `mtime` and content first (`memon show $EXP_ID --format json`),
-merge your new Motivation / Setup / Method context with whatever's
-already there (or just re-set status to RUNNING if the prior README is
-fine), then write back with that mtime as `--expected-mtime`.
+**Resume case**: the run dir already existed from a prior run; §3's
+Phase 1 detected the existing README via the `--expected-mtime`
+fail-and-refresh path and used the prior mtime as its starting point.
+By §6, you're updating that same README with the new attempt's Setup
+content.
 
 ```sh
 RUN_ID=$(basename "$RUN_DIR")
 NOW=$(date +%Y-%m-%dT%H:%M:%S%:z)
-# Fresh: --expected-mtime 0
-# Resume: --expected-mtime "$EXISTING_MTIME"
 cat <<EOF | memon run readme write "$RUN_ID" --project-root . --expected-mtime "$MTIME"
 ---
 id: $RUN_ID
@@ -477,20 +572,12 @@ EOF
   hypotheses are added to `docs/hypotheses.md` directly.
 
 Capture the new `mtime` from the response — that's `$MTIME` for any
-subsequent README write (terminal-state finalization, etc.).
+subsequent README write (Phase 3 periodic updates, terminal-state
+finalization, etc.).
 
-**Then bind the run to its parent experiment** (skip when
-`$PARENT_EXP_ID` is empty / orphan-by-choice):
-
-```sh
-memon experiment link "$PARENT_EXP_ID" "$RUN_ID" --project-root .
-```
-
-This is the atomic bidirectional bind: it ensures `<run>.experiment`
-and `<exp>.runs[]` stay in sync. The `experiment:` field already
-written by the README above is consistent (no rewrite happens), but
-the exp doc's `runs[]` gets the new entry appended. Capture the new
-exp-doc mtime if the conversation later edits motivation/method.
+The `memon experiment link` call is NOT repeated here — it already
+fired at Phase 1 in §3. If `$PARENT_EXP_ID` was empty (orphan-by-choice
+in §0), this skill never linked; that's expected.
 
 If the script was a re-run that came after recovery iterations, the
 **Got it running by:** breakdown goes in this run's `## Setup` section
@@ -650,15 +737,22 @@ that confirmation.
 
 ### 10. Terminal — failure path (FAILED)
 
-Branch on **whether §6 already wrote a README**:
+Branch on **whether Phase 1 (§3) wrote a README**. This is almost
+always yes — Phase 1 fires as soon as proof-of-life is established,
+so the only way to land in §10b is if the script crashed before
+emitting `[memon] RUN_DIR=...` OR never produced any log output within
+the proof-of-life wait window.
 
-- **§6 ran** (failure happened mid-run, e.g. caught by §7 inspection,
-  or §5 saw a crash *after* `status: RUNNING` was on disk) — flip
-  status with the existing `$MTIME`, then optionally append a failure
-  reason.
-- **§6 never ran** (script crashed in §2 or §5 before stable, so the
-  run dir exists but `README.md` does not) — write a minimal FAILED
-  README from scratch with `--expected-mtime 0`.
+- **§10a — Phase 1 README exists (dominant path)**: flip status to
+  FAILED via mtime-locked update; append a one-line reason in
+  `## Result`. This covers the vast majority of failures, including
+  crashes inside §5's stability window (since Phase 1 already wrote
+  the README) and any mid-run / late-run crash.
+- **§10b — Phase 1 never fired (rare edge)**: the script crashed
+  before proof-of-life (no `[memon]` lines OR no log output). The run
+  dir may or may not exist on disk; in either case the agent must
+  construct a regex-conforming run dir manually (per `^.+-\d{6}-\d{6}$`)
+  and write a FAILED README from scratch.
 
 Always grep a one-line reason out of `run.log` first (used in either
 branch's body):
@@ -667,7 +761,7 @@ branch's body):
 REASON=$(tail -n 50 "$RUN_LOG" | grep -iE 'error|exception|traceback' | tail -1)
 ```
 
-#### 10a. If §6 already wrote a README (`$MTIME` defined)
+#### 10a. Phase 1 README exists (`$MTIME` defined)
 
 ```sh
 memon run status set "$RUN_ID" --project-root . --to FAILED \
@@ -676,9 +770,10 @@ memon run status set "$RUN_ID" --project-root . --to FAILED \
 MTIME=$(memon show "$RUN_ID" --project-root . --format json | jq -r .mtime)
 ```
 
-The `status set` alone is sometimes enough — the README from §6 already
-names the run. To also record the failure reason inline, write the
-README with the fresh `$MTIME`:
+The `status set` alone is sometimes enough — the Phase 1 README from
+§3 already names the run + binds it to the parent experiment. To also
+record the failure reason inline (and to expand Setup if §6 had a
+chance to run), write the README with the fresh `$MTIME`:
 
 ```sh
 cat <<EOF | memon run readme write "$RUN_ID" --project-root . \
@@ -701,10 +796,18 @@ See \`./run.log\` for the full stack trace.
 EOF
 ```
 
-#### 10b. If §6 never ran (no README on disk)
+#### 10b. Phase 1 never fired — rare edge case
 
-`status set` would fail — there's no README to update. Skip directly
-to writing a minimal FAILED README from scratch:
+Phase 1 from §3 did NOT fire. Either the script crashed before
+emitting `[memon] RUN_DIR=...` (no run-dir path on hand) or the
+proof-of-life log check timed out (run dir created but `run.log` empty
+within the wait window). In both cases there's no Phase 1 README on
+disk, so `status set` would fail.
+
+The agent SHALL construct a regex-conforming run dir manually (basename
+matching `^.+-\d{6}-\d{6}$`, per the Anti-patterns rule — non-matching
+names get silently dropped by memon discovery), then write a minimal
+FAILED README from scratch:
 
 ```sh
 RUN_ID=$(basename "$RUN_DIR")
@@ -941,7 +1044,19 @@ Right behaviour:
   a sweep where each iteration needs a distinct slug.
 - ❌ Pre-setting `RUN_DIR` from this skill — that's reserved for the
   resume case.
-- ❌ Writing the full README before the run is stably RUNNING (§5).
+- ❌ Skipping the Phase 1 first README write at §3. A run dir on disk
+  without a README and without `memon experiment link` is how runs get
+  lost — not in discovery (no README to identify it as run-bearing),
+  not in the parent exp's `runs[]` either. Phase 1 IS the linkage; do
+  it as soon as the script reaches proof-of-life (run dir + log
+  content), not after stable RUNNING.
+- ❌ Calling `memon experiment link` only at terminal state (or
+  deferring it past Phase 1). The link must fire at Phase 1 in §3 —
+  locking the run ↔ exp binding while the run is still alive is the
+  whole point of writing the README early.
+- ❌ Writing the FULL Setup body in the Phase 1 README. Phase 1 is
+  intentionally minimal (placeholder Setup); the full content lands in
+  the Phase 2 expansion at §6 once stable RUNNING is confirmed.
 - ❌ Setting `FINISHED` without filling `## Result`.
 - ❌ Setting `FAILED` without leaving a 1-line note in `## Result`.
 - ❌ Naming a failed run's dir something that doesn't match
