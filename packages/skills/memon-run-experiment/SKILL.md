@@ -944,6 +944,9 @@ Right behaviour:
 - ❌ Writing the full README before the run is stably RUNNING (§5).
 - ❌ Setting `FINISHED` without filling `## Result`.
 - ❌ Setting `FAILED` without leaving a 1-line note in `## Result`.
+- ❌ Naming a failed run's dir something that doesn't match
+  `^.+-\d{6}-\d{6}$` — memon discovery silently skips it, the
+  failure record gets dropped.
 - ❌ Leaving status `RUNNING` after the script returns.
 - ❌ **Proposing to archive failed runs.** User does that on the web.
 - ❌ Glossing over a recovery loop. If you had to change anything to
