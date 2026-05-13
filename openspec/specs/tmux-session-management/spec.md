@@ -16,7 +16,7 @@ restart leave tmux alive.
 
 The dashboard SHALL render a page at `/manage/tmux` that lists every tmux session on the host whose name starts with `memon-`. The page SHALL be top-level (NOT scoped under `/p/<project>/`) so it can show sessions across all configured projects, plus sessions whose `<project>` cannot be matched in the current config.
 
-The page SHALL fetch the session list from `GET /api/tmux-sessions`. The list SHALL be auto-refreshed every 5 seconds while the page is visible, with a manual refresh button to force an immediate refetch. Auto-refetch SHALL update per-row content (live ttyd port, last-activity timestamp, status badges) but SHALL NOT reorder the list — see the **Stable client-side ordering** requirement below for the exact policy.
+The page SHALL fetch the session list from `GET /api/tmux-sessions`. The list SHALL be auto-refreshed every 5 seconds while the page is visible, with a manual refresh button to force an immediate refetch. Auto-refetch SHALL update per-row content (live ttyd port, last-activity timestamp, status badges) but SHALL NOT reorder the list — see the **Stable client-side ordering** requirement.
 
 The page SHALL expose a `New session` button at the top of the left pane that opens a Dialog with a text input for the session name. Submitting the dialog SHALL `POST /api/tmux-sessions { name }` and, on success, invalidate the list query so the row appears immediately. A toast SHALL communicate the outcome ("created `memon-manual-<name>`" vs "joined existing `memon-manual-<name>`" based on `alreadyExisted`).
 
@@ -31,31 +31,44 @@ The list pane SHALL provide three filter tabs: `All`, `Active in memon`, `Stale`
 
 Each row SHALL render as a clickable card (NOT a table cell). The card SHALL contain:
 
-- A **category badge** as the lead element, derived from the session name and the parse result, with category-specific color treatment:
-  - `manual` (amber) when the sessionName starts with `memon-manual-`.
-  - `run` (emerald) when `parsed.scope === 'run'`.
-  - `exp` (sky) when `parsed.scope === 'exp'`.
-  - `project` (violet) when the sessionName starts with `memon-project-` (forward-compatible — no current names match, but the rule SHALL be in place).
-  - `legacy` (muted) when `parsed.legacy === true` and none of the prefixes above match.
-  - For stale rows, the category badge SHALL render in muted styling regardless of which category the parse would otherwise assign.
-
 - A **title** that is the session name with the universal `memon-` prefix stripped AND any of `manual-` / `project-` / `exp-` / `run-` stripped if present immediately after `memon-`. Examples:
-  - `memon-manual-foo` renders as title `foo` (category badge: `manual`).
-  - `memon-claude-project-a--run--foo-260507-103000` renders as title `claude-project-a--run--foo-260507-103000` (category badge: `run`).
-  - `memon-claude-foo-260507-103000` (legacy format) renders as title `claude-foo-260507-103000` (category badge: `legacy`).
+  - `memon-manual-foo` renders as title `foo`.
+  - `memon-claude-project-a--run--foo-260507-103000` renders as title `claude-project-a--run--foo-260507-103000`.
+  - `memon-claude-foo-260507-103000` (legacy format) renders as title `claude-foo-260507-103000`.
 
 - A **last activity** label (relative time, e.g. `5m ago`), formatted exactly as today.
 
-- A row of **inline metadata badges**, AFTER the category badge. Each badge SHALL be rendered ONLY when its corresponding value is non-null (i.e. the previous table layout would have shown a value other than `—`):
-  - `:<port>` — the ttyd bound port (rendered when `row.liveEntry !== null`).
-  - `<agent>` — `claude` / `codex` / `opencode` / `terminal` (rendered when `parsed.agent !== null` AND `parsed.agent !== 'none'`).
-  - `<project>` — the project name (rendered when `parsed.project !== null`).
-  - target — a clickable link with an arrow icon when the row is matchable. The link target depends on `parsed.scope`:
-    - `/p/<project>/r/<slug>` for `scope: 'run'`
-    - `/p/<project>/e/<slug>` for `scope: 'exp'`
-    - `/p/<project>` for `scope: 'project'` (the slug is always `'root'` and is not embedded in the link; the badge label reads `project root` rather than `root`)
-  - stale indicator — an inline `⚠ stale (<reason>)` chip in place of the target badge when `row.staleReason !== null`. Reasons remain `unknown-project` or `unknown-target`. Project-scope rows can only ever be `unknown-project` (slug `root` is always valid by contract).
-  - Scope SHALL NOT be a standalone badge — it's encoded in the category badge.
+- A row of **inline metadata badges**. Each badge SHALL include a `lucide-react` icon at its leading edge (size class `size-3`), and each badge type SHALL carry a category-specific color treatment. Badges SHALL be rendered ONLY when their corresponding value is non-null (i.e. the previous table layout would have shown a value other than `—`). The render order, when all are present, is: ttyd port → agent → project → scope/target. Per-badge rules:
+
+  - **ttyd port badge** (when `row.liveEntry !== null`):
+    - leading glyph: a small emerald dot (a `size-1.5` round span with `bg-emerald-500`). No icon font.
+    - content: `:<port>` (e.g. `:7683`). No prefix label.
+    - style: muted background, NO border. Text in emerald (`text-emerald-700` / `dark:text-emerald-300`). The dot is the only visual signal that a ttyd is bound; removing the badge entirely communicates "no ttyd".
+
+  - **Agent badge** (when `parsed.agent !== null` AND `parsed.agent !== 'none'`):
+    - icon: `Bot` (lucide).
+    - content: the literal prefix word `Agent` followed by `parsed.agent` (e.g. `Agent claude`, `Agent codex`).
+    - style: orange color family (bg/text/border in the orange palette, with a `dark:` variant for the dark theme).
+
+  - **Project badge** (when `parsed.project !== null` AND `parsed.scope !== 'project'`):
+    - icon: `Folder` (lucide).
+    - content: the project name (e.g. `project-a`). No prefix label (the project name alone is unambiguous, and a literal prefix would crowd the adjacent colored scope/target badge).
+    - style: muted (neutral) color, matching the existing muted-chip treatment.
+    - Suppressed for `parsed.scope === 'project'` rows because the scope/target badge already names the project.
+
+  - **Scope/target badge** (one of six variants, replacing the prior standalone uppercase category chip plus separate target link):
+    - For `scope: 'run'` matchable rows: icon `Zap`, content `Run <slug>` (e.g. `Run foo-260507-103000`), emerald color, rendered as a `<Link>` to `/p/<project>/r/<slug>`.
+    - For `scope: 'exp'` matchable rows: icon `FlaskConical`, content `Exp <slug>` (e.g. `Exp E0042-bar`), sky color, rendered as a `<Link>` to `/p/<project>/e/<slug>`.
+    - For `scope: 'project'` matchable rows: icon `FolderTree`, content `Project <project>` (e.g. `Project project-a`), violet color, rendered as a `<Link>` to `/p/<project>`.
+    - For **manual** rows (sessionName matches `^memon-manual-` AND `parsed.scope === null` AND `staleReason === null`): icon `Wrench`, content `Manual`, amber color. NOT a link.
+    - For **legacy** rows (`parsed.legacy === true` AND none of the above match): icon `Archive`, content `Legacy`, muted color. NOT a link.
+    - For **stale** rows (`row.staleReason !== null`): icon `AlertTriangle`, content `Stale (<reason>)`, amber color (or `destructive` if dark). NOT a link.
+    
+    All clickable scope/target variants (run / exp / project) SHALL be rendered with `target="_blank"` and `rel="noopener noreferrer"` so the target page opens in a new browser tab. Clicking the badge SHALL NOT bubble up to the card's row-selection handler — the badge anchor SHALL call `event.stopPropagation()` to keep the right pane attached to the currently-selected session.
+
+  - The prefix label words used by the three user-listed badge types — `Agent`, `Exp`, `Run` — SHALL render in Title Case (one capital, rest lowercase) and in `font-medium`; the trailing value SHALL render in `font-mono`. The mixed weight + family lets the prefix read as a label and the value as the addressable identifier.
+
+  - A standalone uppercase category chip (e.g. a leading `RUN` / `EXP` / `MANUAL` chip) SHALL NOT be rendered. The scope/target badge above carries the category signal via its color and prefix label.
 
 - An **actions** group, right-aligned on the card. Action buttons depend on row classification:
   - **Matchable** and **Manual** rows render exactly two actions: `Popup` and `Kill`. The `Popup` button SHALL be hidden on viewports below the Tailwind `md` breakpoint (`hidden md:inline-flex`).
@@ -63,10 +76,12 @@ Each row SHALL render as a clickable card (NOT a table cell). The card SHALL con
   - The `Open in drawer` button is REMOVED for every row category. Its function is replaced by clicking the card body to select the row.
 
 Click handling on each row card:
-- For **Matchable** and **Manual** rows, clicking the card BODY (anywhere except the action buttons) SHALL select that row. Action buttons SHALL stop propagation so clicking `Popup` or `Kill` does NOT change the selection.
+- For **Matchable** and **Manual** rows, clicking the card BODY (anywhere except the action buttons or the scope/target badge link) SHALL select that row. Action buttons SHALL stop propagation so clicking `Popup` or `Kill` does NOT change the selection. The scope/target badge link SHALL also stop propagation so clicking the link to open a new tab does NOT change the selection.
 - For **Stale** rows, clicking the card body SHALL be a no-op — stale rows cannot be selected and cannot mount a terminal. The card SHALL render with reduced opacity (`opacity-75`) and SHALL NOT be a focusable interactive region (`role` is not `button`, `tabIndex` is `-1`).
 
-The currently-selected row SHALL be visually distinguished (e.g., subtle accent background and / or a leading accent bar).
+The currently-selected row SHALL be visually distinguished by a **full border in the primary theme color** (e.g. `border-primary` on all four sides), NOT by a leading-edge accent bar or background fill. The selected card's background SHALL remain the same `bg-card` (white in light mode) as the unselected card.
+
+The unselected card SHALL render on the `bg-card` surface color (white in light mode). The previous transparent-background look is removed so cards read as distinct elements against the SidebarInset's `bg-background`.
 
 The page SHALL be auth-gated per the existing `auth-system` rules.
 
@@ -92,33 +107,84 @@ The page SHALL be auth-gated per the existing `auth-system` rules.
 - **GIVEN** the host has session `memon-manual-foo`
 - **WHEN** the row renders
 - **THEN** the card title text SHALL be `foo` (both `memon-` and `manual-` stripped)
-- **AND** the lead category badge SHALL render the `manual` chip in amber styling
+- **AND** the scope/target badge SHALL be the `Manual` variant (icon `Wrench`, amber color, no link)
 
-#### Scenario: Category badge reflects parsed scope for matchable rows
-- **GIVEN** the host has sessions `memon-claude-project-a--run--foo-...` and `memon-claude-project-a--exp--E0001-bar`
-- **WHEN** the rows render
-- **THEN** the first row's category badge SHALL be `run` in emerald styling
-- **AND** the second row's category badge SHALL be `exp` in sky styling
+#### Scenario: Run target badge renders with prefix label, icon, color, and new-tab link
+- **GIVEN** the host has session `memon-claude-project-a--run--foo-260507-103000` and `project-a` resolves on disk
+- **WHEN** the row renders
+- **THEN** the scope/target badge SHALL contain the `Zap` icon, the literal prefix `Run`, and the value `foo-260507-103000`
+- **AND** the badge SHALL be rendered with the emerald color family (e.g. `bg-emerald-100` light / `dark:bg-emerald-900/40` dark)
+- **AND** the badge SHALL be an anchor with `href="/p/project-a/r/foo-260507-103000"`, `target="_blank"`, and `rel="noopener noreferrer"`
 
-#### Scenario: Legacy rows render with legacy category badge
+#### Scenario: Exp target badge renders with prefix label, icon, color, and new-tab link
+- **GIVEN** the host has session `memon-claude-project-a--exp--E0042-bar` and the exp doc exists
+- **WHEN** the row renders
+- **THEN** the scope/target badge SHALL contain the `FlaskConical` icon, the prefix `Exp`, and value `E0042-bar`
+- **AND** the badge SHALL be rendered in the sky color family
+- **AND** the badge SHALL be an anchor with `href="/p/project-a/e/E0042-bar"`, `target="_blank"`, `rel="noopener noreferrer"`
+
+#### Scenario: Project-scope target badge renders with prefix label, icon, color, and new-tab link
+- **GIVEN** the host has session `memon-claude-project-a--project--root` and `project-a` is in config
+- **WHEN** the row renders
+- **THEN** the scope/target badge SHALL contain the `FolderTree` icon, the prefix `Project`, and the value `project-a`
+- **AND** the badge SHALL be rendered in the violet color family
+- **AND** the badge SHALL be an anchor with `href="/p/project-a"`, `target="_blank"`, `rel="noopener noreferrer"`
+- **AND** no separate `Folder` project badge SHALL appear on the same row
+
+#### Scenario: ttyd port badge renders with an emerald dot and no icon font
+- **GIVEN** the host has session `memon-claude-project-a--run--foo-...` with a live ttyd on port 7683
+- **WHEN** the row renders
+- **THEN** the row SHALL contain a port badge whose leading glyph is a small emerald-filled circle (e.g. `bg-emerald-500` on a `size-1.5 rounded-full` span)
+- **AND** the badge's content SHALL read `:7683` in monospace, in an emerald foreground color
+- **AND** the badge SHALL NOT carry any colored border
+- **AND** the badge's background SHALL be the muted color used by neutral chips
+- **AND** the badge SHALL NOT render the `Plug` lucide icon (the dot is the entire leading visual)
+
+#### Scenario: Agent badge renders with bot icon and Agent prefix
+- **GIVEN** the host has session `memon-claude-project-a--run--foo-...` where the parsed agent is `claude`
+- **WHEN** the row renders
+- **THEN** the agent badge SHALL contain the `Bot` icon, the literal prefix `Agent`, and the value `claude`
+- **AND** the badge SHALL be rendered in the orange color family
+
+#### Scenario: Project badge renders with folder icon and NO prefix
+- **GIVEN** a matchable row with `scope: 'run'` and `parsed.project === 'project-a'`
+- **WHEN** the row renders
+- **THEN** the project badge SHALL contain the `Folder` icon and the value `project-a`
+- **AND** the badge SHALL NOT carry a `Project` prefix word (the project name alone is the content)
+- **AND** the badge SHALL render in the muted color family (no per-project color variation)
+
+#### Scenario: Legacy rows render with archive icon and Legacy variant
 - **GIVEN** the host has session `memon-claude-foo-260507-103000` (pre-rework format)
 - **WHEN** the row renders
-- **THEN** the lead category badge SHALL be `legacy` in muted styling
-- **AND** the card title SHALL be `claude-foo-260507-103000`
+- **THEN** the scope/target badge SHALL be the `Legacy` variant: icon `Archive`, content `Legacy`, muted color
+- **AND** the badge SHALL NOT be rendered as a link
 
-#### Scenario: Inline badges are omitted when their value is null
+#### Scenario: Stale rows render with alert icon and Stale variant
+- **GIVEN** a stale row (e.g. `memon-claude-archived-proj--run--baz-...` where `archived-proj` is not in config)
+- **WHEN** the row renders
+- **THEN** the scope/target badge SHALL be the `Stale` variant: icon `AlertTriangle`, content `Stale (unknown-project)`, amber color
+- **AND** the badge SHALL NOT be rendered as a link
+
+#### Scenario: Inline badges are omitted when their value is null (badge structure unchanged from prior behavior)
 - **GIVEN** the host has session `memon-manual-foo` with NO live ttyd entry
 - **WHEN** the row renders
-- **THEN** no `:<port>` badge SHALL be present in the row
-- **AND** no `<agent>` badge SHALL be present (manual row has no parsed agent)
-- **AND** no `<project>` badge SHALL be present
-- **AND** no target badge SHALL be present (manual rows have no target)
-- **AND** ONLY the category badge (`manual`) and the title are visible
+- **THEN** no port badge SHALL be present (no `liveEntry`)
+- **AND** no agent badge SHALL be present (manual row has no parsed agent)
+- **AND** no project badge SHALL be present (manual row has no parsed project)
+- **AND** the scope/target badge SHALL be the `Manual` variant (icon `Wrench`, amber, no link)
 
 #### Scenario: Inline badges render fully for an active matchable row
 - **GIVEN** the host has session `memon-claude-project-a--run--foo-260507-103000`, the manager holds a live ttyd entry on port 7683 for it, and `project-a` resolves on disk
 - **WHEN** the row renders
-- **THEN** the card SHALL contain badges in this order: category `run`, `:7683`, `claude`, `project-a`, and a target link to `/p/project-a/r/foo-260507-103000`
+- **THEN** the card SHALL contain badges in this order: port (`:7683` with `Plug` icon and emerald border), agent (`Agent claude` with `Bot` icon in orange), project (`project-a` with `Folder` icon in muted), and scope/target (`Run foo-260507-103000` with `Zap` icon in emerald, anchor to `/p/project-a/r/foo-260507-103000` opening in a new tab)
+- **AND** no standalone uppercase category chip (e.g. `[RUN]` alone) SHALL be rendered
+
+#### Scenario: Clicking a target-badge link opens a new tab and does not change selection
+- **GIVEN** a matchable row for `memon-claude-project-a--run--foo-...` and an unrelated session `Y` is currently selected (right pane shows Y's terminal)
+- **WHEN** the user clicks the `Run foo-...` target badge on the matchable row
+- **THEN** a new browser tab opens at `/p/project-a/r/foo-...`
+- **AND** the current `/manage/tmux` tab stays on the page
+- **AND** session `Y` remains selected (the right pane stays on Y's terminal — clicking the badge does NOT propagate to the card's select handler)
 
 #### Scenario: Manual rows render Popup + Kill only (no Drawer)
 - **GIVEN** a manual row (e.g. `memon-manual-foo`)
@@ -148,8 +214,9 @@ The page SHALL be auth-gated per the existing `auth-system` rules.
 
 #### Scenario: Clicking a matchable row card selects that session
 - **GIVEN** a matchable row in the left pane and no session currently selected
-- **WHEN** the user clicks the card body (not an action button)
-- **THEN** the row SHALL render with a selected-row visual treatment (accent background)
+- **WHEN** the user clicks the card body (not an action button or the target badge link)
+- **THEN** the row's outer card SHALL gain a primary-colored border on all four sides (`border-primary`)
+- **AND** the card background SHALL remain the same `bg-card` as before selection (no background fill change)
 - **AND** the right pane SHALL mount `<TerminalView>` in `standard` mode wired to that row's `(project, scope, slug, agent)`
 
 #### Scenario: Clicking a manual row card selects that session in raw mode

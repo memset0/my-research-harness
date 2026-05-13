@@ -6,13 +6,20 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  ArrowUpRight,
+  Archive,
+  Bot,
   ExternalLink,
+  FlaskConical,
+  Folder,
+  FolderTree,
   Loader2,
   Plus,
   RefreshCw,
   TerminalSquare,
   Trash2,
+  Wrench,
+  Zap,
+  type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -45,7 +52,6 @@ import { useMediaQuery } from '../../../lib/use-media-query'
 import { cn } from '../../../lib/utils'
 
 type Filter = 'all' | 'active' | 'stale'
-type Category = 'manual' | 'run' | 'exp' | 'project' | 'legacy' | null
 
 const STALE_REASON_LABEL: Record<NonNullable<TmuxSessionRow['staleReason']>, string> = {
   'unknown-project': 'unknown-project',
@@ -103,89 +109,164 @@ function targetHref(row: TmuxSessionRow): string | null {
 
 /**
  * Strip the universal `memon-` prefix and any of `manual-` / `project-` /
- * `exp-` / `run-` if it appears immediately after. Then classify into one
- * of the colored categories.
+ * `exp-` / `run-` if it appears immediately after, for use as the card title.
  */
-function categorize(row: TmuxSessionRow): { category: Category; title: string } {
-  const name = row.sessionName
-  if (!name.startsWith('memon-')) return { category: null, title: name }
-  const after = name.slice('memon-'.length)
+function stripTitle(sessionName: string): string {
+  if (!sessionName.startsWith('memon-')) return sessionName
+  const after = sessionName.slice('memon-'.length)
   for (const prefix of ['manual-', 'project-', 'exp-', 'run-'] as const) {
-    if (after.startsWith(prefix)) {
-      return {
-        category: prefix.slice(0, -1) as Category,
-        title: after.slice(prefix.length),
-      }
-    }
+    if (after.startsWith(prefix)) return after.slice(prefix.length)
   }
-  const p = row.parsed
-  if (p.scope === 'run') return { category: 'run', title: after }
-  if (p.scope === 'exp') return { category: 'exp', title: after }
-  if (p.scope === 'project') return { category: 'project', title: after }
-  if (p.legacy) return { category: 'legacy', title: after }
-  return { category: null, title: after }
+  return after
 }
 
-const CATEGORY_CLASS: Record<NonNullable<Category>, string> = {
-  manual:
-    'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
+const BADGE_COLORS = {
+  port: 'bg-muted text-emerald-700 dark:text-emerald-300',
+  agent:
+    'border border-orange-200 bg-orange-100 text-orange-900 dark:border-orange-900/60 dark:bg-orange-900/40 dark:text-orange-200',
+  project: 'border border-transparent bg-muted text-muted-foreground',
   run:
-    'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200',
+    'border border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-900/40 dark:text-emerald-200',
   exp:
-    'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-200',
-  project:
-    'bg-violet-100 text-violet-900 dark:bg-violet-900/40 dark:text-violet-200',
-  legacy:
-    'bg-muted text-muted-foreground',
+    'border border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-900/60 dark:bg-sky-900/40 dark:text-sky-200',
+  projectScope:
+    'border border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-900/60 dark:bg-violet-900/40 dark:text-violet-200',
+  manual:
+    'border border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/40 dark:text-amber-200',
+  legacy: 'border border-transparent bg-muted text-muted-foreground',
+  stale:
+    'border border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/40 dark:text-amber-200',
+} as const
+
+function MetaBadge({
+  icon: Icon,
+  prefix,
+  value,
+  className,
+  asLink,
+  href,
+  openInNewTab,
+}: {
+  icon: LucideIcon
+  prefix?: string
+  value: React.ReactNode
+  className?: string
+  asLink?: boolean
+  href?: string
+  openInNewTab?: boolean
+}) {
+  const cls = cn(
+    'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
+    className,
+  )
+  const content = (
+    <>
+      <Icon className="size-3 shrink-0" />
+      {prefix !== undefined && <span className="font-medium">{prefix}</span>}
+      <span className="font-mono">{value}</span>
+    </>
+  )
+  if (asLink && href) {
+    const linkProps = openInNewTab
+      ? { target: '_blank' as const, rel: 'noopener noreferrer' as const }
+      : {}
+    return (
+      <Link
+        href={href}
+        className={cn(cls, 'hover:brightness-110 hover:underline')}
+        onClick={(e) => e.stopPropagation()}
+        {...linkProps}
+      >
+        {content}
+      </Link>
+    )
+  }
+  return <span className={cls}>{content}</span>
 }
 
-function CategoryBadge({
-  category,
-  muted,
-}: {
-  category: Category
-  muted?: boolean
-}) {
-  if (category === null) return null
+function PortBadge({ port }: { port: number }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-        muted ? CATEGORY_CLASS.legacy : CATEGORY_CLASS[category],
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
+        BADGE_COLORS.port,
       )}
     >
-      {category}
+      <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+      <span className="font-mono">:{port}</span>
     </span>
   )
 }
 
-function MetaBadge({
-  children,
-  asLink,
-  href,
-  className,
-}: {
-  children: React.ReactNode
-  asLink?: boolean
-  href?: string
-  className?: string
-}) {
-  const cls = cn(
-    'inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground',
-    className,
+function AgentBadge({ agent }: { agent: string }) {
+  return (
+    <MetaBadge icon={Bot} prefix="Agent" value={agent} className={BADGE_COLORS.agent} />
   )
-  if (asLink && href) {
+}
+
+function ProjectBadge({ project }: { project: string }) {
+  return (
+    <MetaBadge icon={Folder} value={project} className={BADGE_COLORS.project} />
+  )
+}
+
+function ScopeBadge({ row }: { row: TmuxSessionRow }) {
+  const p = row.parsed
+  if (row.staleReason !== null) {
     return (
-      <Link
-        href={href}
-        className={cn(cls, 'hover:bg-accent hover:text-foreground')}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </Link>
+      <MetaBadge
+        icon={AlertTriangle}
+        value={`Stale (${STALE_REASON_LABEL[row.staleReason]})`}
+        className={BADGE_COLORS.stale}
+      />
     )
   }
-  return <span className={cls}>{children}</span>
+  if (row.matchable && p.project && p.scope === 'run' && p.slug) {
+    return (
+      <MetaBadge
+        icon={Zap}
+        prefix="Run"
+        value={p.slug}
+        className={BADGE_COLORS.run}
+        asLink
+        href={`/p/${encodeURIComponent(p.project)}/r/${encodeURIComponent(p.slug)}`}
+        openInNewTab
+      />
+    )
+  }
+  if (row.matchable && p.project && p.scope === 'exp' && p.slug) {
+    return (
+      <MetaBadge
+        icon={FlaskConical}
+        prefix="Exp"
+        value={p.slug}
+        className={BADGE_COLORS.exp}
+        asLink
+        href={`/p/${encodeURIComponent(p.project)}/e/${encodeURIComponent(p.slug)}`}
+        openInNewTab
+      />
+    )
+  }
+  if (row.matchable && p.project && p.scope === 'project') {
+    return (
+      <MetaBadge
+        icon={FolderTree}
+        prefix="Project"
+        value={p.project}
+        className={BADGE_COLORS.projectScope}
+        asLink
+        href={`/p/${encodeURIComponent(p.project)}`}
+        openInNewTab
+      />
+    )
+  }
+  if (row.sessionName.startsWith('memon-manual-')) {
+    return <MetaBadge icon={Wrench} value="Manual" className={BADGE_COLORS.manual} />
+  }
+  if (p.legacy) {
+    return <MetaBadge icon={Archive} value="Legacy" className={BADGE_COLORS.legacy} />
+  }
+  return <MetaBadge icon={Archive} value="Other" className={BADGE_COLORS.legacy} />
 }
 
 function relativeTime(iso: string): string {
@@ -214,11 +295,10 @@ function SessionCard({
   onSelect: (sessionName: string) => void
   onAskKill: (sessionName: string) => void
 }) {
-  const { category, title } = categorize(row)
   const stale = row.staleReason !== null
   const p = row.parsed
-  const href = targetHref(row)
   const popup = popupUrl(row)
+  const title = stripTitle(row.sessionName)
 
   const handleSelect = () => {
     if (stale) return
@@ -239,14 +319,13 @@ function SessionCard({
       onClick={handleSelect}
       onKeyDown={handleKey}
       className={cn(
-        'group rounded-md border p-2.5 transition-colors',
+        'group rounded-md border bg-card p-2.5 transition-colors',
         stale ? 'opacity-75' : 'cursor-pointer hover:bg-accent/40',
-        selected && !stale && 'border-l-2 border-l-primary bg-accent',
+        selected && !stale && 'border-primary',
         !stale && 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
     >
       <div className="flex items-start gap-2">
-        <CategoryBadge category={category} muted={stale} />
         <span
           className="min-w-0 flex-1 truncate font-mono text-[11px]"
           title={row.sessionName}
@@ -255,54 +334,43 @@ function SessionCard({
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           {popup && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden h-6 px-1.5 text-[10px] md:inline-flex"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  window.open(popup, popupTarget(row), 'popup,width=1200,height=800')
+                }}
+                aria-label="Open in popup"
+              >
+                <ExternalLink className="size-3" />
+                Popup
+              </Button>
+          )}
             <Button
               variant="ghost"
               size="sm"
-              className="hidden h-6 px-1.5 text-[10px] md:inline-flex"
+              className="h-6 px-1.5 text-[10px] text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={(e) => {
                 e.stopPropagation()
-                window.open(popup, popupTarget(row), 'popup,width=1200,height=800')
+                onAskKill(row.sessionName)
               }}
-              aria-label="Open in popup"
+              aria-label="Kill session"
             >
-              <ExternalLink className="size-3" />
-              Popup
+              <Trash2 className="size-3" />
+              Kill
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-1.5 text-[10px] text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onAskKill(row.sessionName)
-            }}
-            aria-label="Kill session"
-          >
-            <Trash2 className="size-3" />
-            Kill
-          </Button>
         </div>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 text-[10px] text-muted-foreground">
         <span className="font-mono">
           {row.tmuxLastActivity ? relativeTime(row.tmuxLastActivity) : '—'}
         </span>
-        {row.liveEntry !== null && <MetaBadge>:{row.liveEntry.port}</MetaBadge>}
-        {p.agent !== null && p.agent !== 'none' && <MetaBadge>{p.agent}</MetaBadge>}
-        {p.project !== null && <MetaBadge>{p.project}</MetaBadge>}
-        {row.matchable && href && p.slug && (
-          <MetaBadge asLink href={href}>
-            {p.scope === 'project' ? 'project root' : p.slug}
-            <ArrowUpRight className="size-2.5" />
-          </MetaBadge>
-        )}
-        {stale && row.staleReason !== null && (
-          <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
-            <AlertTriangle className="size-2.5" />
-            stale ({STALE_REASON_LABEL[row.staleReason]})
-          </span>
-        )}
+        {row.liveEntry !== null && <PortBadge port={row.liveEntry.port} />}
+        {p.agent !== null && p.agent !== 'none' && <AgentBadge agent={p.agent} />}
+        {p.project !== null && p.scope !== 'project' && <ProjectBadge project={p.project} />}
+        <ScopeBadge row={row} />
       </div>
     </div>
   )
@@ -342,29 +410,29 @@ function LeftPane({
             </p>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="default"
-              className="h-7 px-2 text-[11px]"
-              onClick={onAskCreate}
-            >
-              <Plus className="size-3" />
-              New
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-[11px]"
-              onClick={onRefetch}
-              disabled={isFetching}
-              aria-label="Refresh"
-            >
-              {isFetching ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <RefreshCw className="size-3" />
-              )}
-            </Button>
+              <Button
+                size="sm"
+                variant="default"
+                className="h-7 px-2 text-[11px]"
+                onClick={onAskCreate}
+              >
+                <Plus className="size-3" />
+                New
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-[11px]"
+                onClick={onRefetch}
+                disabled={isFetching}
+                aria-label="Refresh"
+              >
+                {isFetching ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3" />
+                )}
+              </Button>
           </div>
         </div>
         <Tabs
@@ -442,17 +510,17 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
           {row.sessionName}
         </span>
         {popup && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 px-2 text-[11px]"
-            onClick={() =>
-              window.open(popup, popupTarget(row), 'popup,width=1200,height=800')
-            }
-          >
-            <ExternalLink className="size-3" />
-            Pop out
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-[11px]"
+              onClick={() =>
+                window.open(popup, popupTarget(row), 'popup,width=1200,height=800')
+              }
+            >
+              <ExternalLink className="size-3" />
+              Pop out
+            </Button>
         )}
       </div>
       <div className="flex flex-1 flex-col min-h-0">
@@ -692,19 +760,19 @@ export function TmuxManagePageClient() {
             <Button variant="outline" size="sm" onClick={() => setKillTarget(null)}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={killMutation.isPending}
-              onClick={() => killTarget && killMutation.mutate(killTarget)}
-            >
-              {killMutation.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="size-3.5" />
-              )}
-              Kill session
-            </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={killMutation.isPending}
+                onClick={() => killTarget && killMutation.mutate(killTarget)}
+              >
+                {killMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="size-3.5" />
+                )}
+                Kill session
+              </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -767,18 +835,18 @@ export function TmuxManagePageClient() {
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!createNameValid || createMutation.isPending}
-              >
-                {createMutation.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Plus className="size-3.5" />
-                )}
-                Create
-              </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!createNameValid || createMutation.isPending}
+                >
+                  {createMutation.isPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="size-3.5" />
+                  )}
+                  Create
+                </Button>
             </DialogFooter>
           </form>
         </DialogContent>
