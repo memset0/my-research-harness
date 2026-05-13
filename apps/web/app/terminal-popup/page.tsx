@@ -12,11 +12,40 @@
 // global font) but NOT the per-project layout that provides AppBar +
 // Sidebar — which is exactly what we want for an undecorated terminal.
 
+import type { Metadata } from 'next'
 import { TerminalPopupClient } from './terminal-popup-client'
 
 const VALID_AGENTS = ['none', 'claude', 'codex', 'opencode'] as const
 const VALID_SCOPES = ['exp', 'run', 'project'] as const
 const RAW_SESSION_NAME_RE = /^memon-[A-Za-z0-9._-]+$/
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    project?: string
+    scope?: string
+    slug?: string
+    agent?: string
+    sessionName?: string
+  }>
+}): Promise<Metadata> {
+  try {
+    const sp = await searchParams
+    if (sp.sessionName && RAW_SESSION_NAME_RE.test(sp.sessionName)) {
+      return { title: sp.sessionName }
+    }
+    const scope = (VALID_SCOPES as readonly string[]).includes(sp.scope ?? '')
+      ? (sp.scope as (typeof VALID_SCOPES)[number])
+      : null
+    if (scope && sp.slug) {
+      return { title: `${scope}:${sp.slug}` }
+    }
+    return { title: 'Terminal' }
+  } catch {
+    return { title: 'Terminal' }
+  }
+}
 
 export default async function TerminalPopupPage({
   searchParams,

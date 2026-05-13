@@ -1,7 +1,10 @@
+import type { Metadata } from 'next'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { InboxShell } from '../../../../components/inbox-shell'
 import { getQueryClient } from '../../../../lib/get-query-client'
 import { getDigestsList } from '../../../../lib/server/data'
+
+export const metadata: Metadata = { title: 'Digests' }
 
 export default async function DigestsPage({
   params,

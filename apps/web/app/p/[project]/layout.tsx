@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { AppBar } from '../../../components/app-bar'
@@ -6,6 +7,25 @@ import { SidebarInset, SidebarProvider } from '../../../components/ui/sidebar'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { getRuntime } from '../../../lib/runtime'
 import { getExperimentsData, getProjectsData } from '../../../lib/server/data'
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ project: string }>
+}): Promise<Metadata> {
+  try {
+    const { project } = await params
+    const decoded = decodeURIComponent(project)
+    return {
+      title: {
+        default: decoded,
+        template: `%s · ${decoded} · memon`,
+      },
+    }
+  } catch {
+    return {}
+  }
+}
 
 export default async function ProjectLayout({
   children,

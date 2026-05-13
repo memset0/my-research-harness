@@ -1,8 +1,32 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { ExperimentDetail } from '../../../../../components/experiment-detail'
 import { getQueryClient } from '../../../../../lib/get-query-client'
 import { getExperimentData } from '../../../../../lib/server/data'
+import { getRuntime } from '../../../../../lib/runtime'
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  let rawId = ''
+  try {
+    const { id } = await params
+    rawId = decodeURIComponent(id)
+    const rt = await getRuntime()
+    const exp = rt.experiments.get(rawId)
+    if (exp) {
+      const eNumber = exp.id.split('-')[0]
+      const slug = exp.frontMatter.slug
+      return { title: slug ? `${eNumber} ${slug}` : eNumber }
+    }
+    return { title: rawId.split('-')[0] }
+  } catch {
+    return { title: rawId.split('-')[0] || 'Experiment' }
+  }
+}
 
 export default async function ExperimentPage({
   params,

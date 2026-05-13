@@ -1,7 +1,10 @@
+import type { Metadata } from 'next'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { HypothesisView } from '../../../../components/hypothesis-view'
 import { getQueryClient } from '../../../../lib/get-query-client'
 import { getHypothesesData } from '../../../../lib/server/data'
+
+export const metadata: Metadata = { title: 'Hypotheses' }
 
 export default async function HypothesesPage({
   params,

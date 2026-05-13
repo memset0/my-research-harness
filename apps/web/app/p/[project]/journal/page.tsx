@@ -1,7 +1,10 @@
+import type { Metadata } from 'next'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { JournalView } from '../../../../components/journal-view'
 import { getQueryClient } from '../../../../lib/get-query-client'
 import { getJournalData } from '../../../../lib/server/data'
+
+export const metadata: Metadata = { title: 'Journal' }
 
 export default async function JournalPage({
   params,
