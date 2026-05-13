@@ -26,8 +26,12 @@ Each row SHALL display:
 - The bound ttyd port if the manager currently holds a live entry for this sessionName, otherwise an em-dash `—`.
 - The session's `last activity` (parsed from `tmux ls`'s `#{session_activity}`).
 - A **Target** cell that is one of THREE forms:
-  - A clickable link with arrow icon to `/p/<project>/r/<slug>` (for `scope: 'run'`) or `/p/<project>/e/<slug>` (for `scope: 'exp'`) when the row is matchable (parses to the standard format AND project + run/exp resolved on disk).
-  - An inline `⚠ stale (<reason>)` indicator when the row parses to the standard format but the project or target lookup failed. Reasons are `unknown-project` or `unknown-target`.
+  - A clickable link with arrow icon to:
+    - `/p/<project>/r/<slug>` for `scope: 'run'`,
+    - `/p/<project>/e/<slug>` for `scope: 'exp'`, or
+    - `/p/<project>` for `scope: 'project'` (slug is always `'root'` and is not embedded in the link)
+    when the row is matchable (parses to the standard format AND project + run/exp resolved on disk; project-scope rows require only project-in-config).
+  - An inline `⚠ stale (<reason>)` indicator when the row parses to the standard format but the project or target lookup failed. Reasons are `unknown-project` or `unknown-target`. Project-scope rows can only ever be `unknown-project` (slug `root` is always valid by contract).
   - An em-dash `—` when the row does NOT parse to the standard format (legacy `memon-<agent>-<runId>` or arbitrary user-created names like `memon-manual-foo`). These are the **manual** category — neither matchable nor stale.
 - Action buttons that depend on matchability:
   - **Matchable** rows render `Open in drawer`, `Open in popup`, `Kill`. The `Open in popup` button SHALL be hidden on viewports below the Tailwind `md` breakpoint.
@@ -41,6 +45,18 @@ The page SHALL provide three filter tabs: `All`, `Active in memon`, `Stale`. The
 - **THEN** all three rows appear by default (filter `All`)
 - **AND** the first two have a clickable Target link
 - **AND** the third has `⚠ stale (unknown-project)` and ttyd port `—` if no live entry
+
+#### Scenario: Project-scope row links to project overview
+- **GIVEN** the host has session `memon-claude-project-a--project--root` and `project-a` is in config
+- **WHEN** the page lists rows
+- **THEN** the Target cell renders a clickable link with arrow icon pointing to `/p/project-a`
+- **AND** the row is `matchable` so `Open in drawer`, `Open in popup`, `Kill` all render
+
+#### Scenario: Project-scope row with unknown project is stale
+- **GIVEN** the host has session `memon-claude-archived-proj--project--root` and `archived-proj` is NOT in config
+- **WHEN** the page lists rows
+- **THEN** the Target cell renders `⚠ stale (unknown-project)`
+- **AND** the row's actions cell contains exactly one button: `Kill`
 
 #### Scenario: Manual rows render with em-dash Target
 - **GIVEN** the host has session `memon-manual-foo` (created via the new dialog)
@@ -68,7 +84,7 @@ The page SHALL provide three filter tabs: `All`, `Active in memon`, `Stale`. The
 - **AND** no `Open in drawer` or `Open in popup` button is present in the DOM for that row
 
 #### Scenario: Matchable rows show all three actions
-- **GIVEN** a matchable row in the table (the parsed name resolves to a real project + run/exp)
+- **GIVEN** a matchable row in the table (the parsed name resolves to a real project + run/exp/project)
 - **WHEN** the row is rendered
 - **THEN** the actions cell contains `Open in drawer`, `Open in popup`, and `Kill`
 
@@ -151,7 +167,7 @@ The web backend SHALL expose `GET /api/tmux-sessions` returning `{ sessions: Tmu
   parsed: {
     agent: 'terminal' | 'claude' | 'codex' | 'opencode' | null
     project: string | null
-    scope: 'exp' | 'run' | null
+    scope: 'exp' | 'run' | 'project' | null
     slug: string | null
     legacy: boolean   // true when the name matches the old format
   }
@@ -169,13 +185,17 @@ The endpoint SHALL implement the following:
 3. For each filtered line: parse the name (per `browser-terminal` Session-name format), look up `liveEntry` from the terminal manager's session map, and classify `matchable` / `staleReason`.
 4. Sort the response by `tmuxLastActivity` descending.
 
-Classification rules:
-- **Matchable** (`matchable: true, staleReason: null`): the session name parses to the standard format AND the parsed project is in `runtime.config.projects` AND the parsed slug resolves to a real run dir (for `scope: 'run'`) or exp doc (for `scope: 'exp'`).
-- **Stale - unknown-project** (`matchable: false, staleReason: 'unknown-project'`): parses to the standard format AND the parsed project is NOT in `runtime.config.projects`.
-- **Stale - unknown-target** (`matchable: false, staleReason: 'unknown-target'`): parses to the standard format AND the parsed project IS in config BUT the slug does NOT resolve to a real run/exp.
-- **Manual** (`matchable: false, staleReason: null`): the session name does NOT parse to the standard format. This includes legacy `memon-<agent>-<runId>` and arbitrary user-created names like `memon-manual-foo`. The classifier SHALL NOT mark these as stale — they're treated as user-managed sessions.
+For `scope: 'project'` rows, `matchable` is `true` IFF the parsed `project` resolves in the current config; the slug is `'root'` by contract and is not validated against an on-disk artefact. `staleReason` for project-scope rows is `'unknown-project'` or `null` — `'unknown-target'` never applies.
 
-The endpoint SHALL be auth-gated (HTTP Basic) and SHALL be classified as a `read` route under `auth-system`.
+#### Scenario: Project-scope row classifies on project lookup only
+- **GIVEN** the host has session `memon-claude-project-a--project--root` and `project-a` is in config
+- **WHEN** `GET /api/tmux-sessions` runs
+- **THEN** the corresponding row has `parsed.scope === 'project'`, `parsed.slug === 'root'`, `matchable === true`, and `staleReason === null`
+
+#### Scenario: Project-scope row with unknown project is unknown-project stale
+- **GIVEN** the host has session `memon-claude-archived-proj--project--root` and `archived-proj` is NOT in config
+- **WHEN** `GET /api/tmux-sessions` runs
+- **THEN** the corresponding row has `matchable === false` and `staleReason === 'unknown-project'`
 
 #### Scenario: Empty when host has no memon sessions
 - **GIVEN** `tmux ls` returns no sessions starting with `memon-`

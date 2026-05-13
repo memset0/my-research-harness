@@ -37,7 +37,7 @@ const IDLE_TIMER_INTERVAL_MS = 60_000
 export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
 export type AgentKind = (typeof AGENT_KINDS)[number]
 
-export const SCOPE_KINDS = ['exp', 'run'] as const
+export const SCOPE_KINDS = ['exp', 'run', 'project'] as const
 export type ScopeKind = (typeof SCOPE_KINDS)[number]
 
 /** Visible in tmux session names. `none` is rendered as `terminal`. */
@@ -204,7 +204,7 @@ export function parseSessionName(name: string): ParsedSessionName {
     }
   }
   if (!agent || !project || !PROJECT_RE.test(project)) return empty(false)
-  if (scopeStr !== 'exp' && scopeStr !== 'run') return empty(false)
+  if (scopeStr !== 'exp' && scopeStr !== 'run' && scopeStr !== 'project') return empty(false)
   if (!SLUG_RE.test(slug) || slug.length === 0) return empty(false)
 
   return { raw: name, agent, project, scope: scopeStr, slug, legacy: false }
@@ -500,6 +500,160 @@ async function doStartSession(
     project: input.project,
     scope: input.scope,
     slug: input.slug,
+    startedAt: new Date().toISOString(),
+    lastActiveAtMs: Date.now(),
+    wsConnections: 0,
+    warnings,
+  }
+  state.sessions.set(sessionName, entry)
+  return toPublic(entry)
+}
+
+/** Validates that `sessionName` is a safe `memon-*` name shape. */
+const ATTACH_SAFE_NAME_RE = /^memon-[A-Za-z0-9._-]+$/
+
+export interface AttachSessionInput {
+  sessionName: string
+  /** From `runtime.config.terminal`. */
+  maxConcurrent: number
+  /** From `runtime.config.terminal`. `0` disables the killer. */
+  idleTtlMinutes: number
+}
+
+/**
+ * Spawn ttyd attached to an existing tmux session by name. Used for
+ * "manual" rows on /manage/tmux (legacy or arbitrary `memon-*` names) where
+ * no parsed `(agent, project, scope, slug)` is available.
+ *
+ * Differences from `startSession`:
+ *   - tmux argv has NO `-c <cwd>` and NO trailing agent CLI; it's just
+ *     `tmux new-session -A -s <sessionName>`. If the session exists, ttyd
+ *     attaches; if not, tmux creates a fresh shell at memon's cwd (the
+ *     `-A` semantic).
+ *   - No conversation resume probe.
+ *   - The Entry's `agent / project / scope / slug` are filled by parsing
+ *     `sessionName`; unparseable parts surface as nulls (or `'none'`
+ *     sentinel for `agent` so the Entry shape stays non-nullable).
+ *
+ * Reuses everything else: per-sessionName serializer (shared with
+ * startSession so concurrent calls don't double-spawn), port allocator,
+ * LRU eviction, idle TTL, exit handlers.
+ */
+export async function attachExistingSession(input: AttachSessionInput): Promise<ActiveSession> {
+  if (!ATTACH_SAFE_NAME_RE.test(input.sessionName)) {
+    throw new TerminalManagerError(
+      'BAD_REQUEST',
+      `sessionName must match ${ATTACH_SAFE_NAME_RE} (got ${JSON.stringify(input.sessionName)})`,
+    )
+  }
+  const state = getState()
+  ensureIdleTimer(state, input.idleTtlMinutes)
+
+  const sessionName = input.sessionName
+  const prev = state.startChains.get(sessionName) ?? Promise.resolve()
+  const mine = prev.catch(() => {}).then(() => doAttachSession(state, input, sessionName))
+  state.startChains.set(
+    sessionName,
+    mine.catch(() => {}),
+  )
+  return mine
+}
+
+async function doAttachSession(
+  state: GlobalState,
+  input: AttachSessionInput,
+  sessionName: string,
+): Promise<ActiveSession> {
+  // Idempotent: if the manager already holds a healthy entry for this
+  // sessionName (regardless of whether it was created via start or attach),
+  // bump and return.
+  const existing = state.sessions.get(sessionName)
+  if (existing && !existing.child.killed && existing.child.exitCode === null) {
+    existing.lastActiveAtMs = Date.now()
+    return toPublic(existing)
+  }
+  if (existing) state.sessions.delete(sessionName)
+
+  while (state.sessions.size >= input.maxConcurrent) {
+    await evictOnce(state)
+  }
+
+  const probe = await probeTtyd()
+  if (!probe.available || !probe.path) {
+    throw new TerminalManagerError(
+      'TTYD_UNAVAILABLE',
+      probe.suggestion ?? 'ttyd is not installed; POST /api/terminal/install',
+    )
+  }
+
+  const port = await allocatePort(state)
+
+  const basePath = `/api/terminal/proxy/${sessionName}`
+  // Raw-attach argv: no -c, no agent CLI tail. Just attach (or create at
+  // memon's cwd if the named session doesn't exist).
+  const args = [
+    '-p',
+    String(port),
+    '-i',
+    '127.0.0.1',
+    '-b',
+    basePath,
+    '--writable',
+    'tmux',
+    'new-session',
+    '-A',
+    '-s',
+    sessionName,
+  ]
+
+  const child = spawn(probe.path, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: false,
+  })
+
+  const warnings: string[] = []
+  let stderrBuf = ''
+  const onStderr = (b: Buffer) => {
+    stderrBuf += b.toString('utf8')
+    if (stderrBuf.length > 200) child.stderr?.off('data', onStderr)
+  }
+  child.stderr?.on('data', onStderr)
+
+  let earlyExit = false
+  child.once('exit', (code, signal) => {
+    earlyExit = true
+    const cur = state.sessions.get(sessionName)
+    if (cur && cur.child === child) state.sessions.delete(sessionName)
+    if (code !== 0 && stderrBuf) {
+      warnings.push(`ttyd exited early (${code ?? signal}): ${stderrBuf.slice(0, 200)}`)
+    }
+  })
+
+  await new Promise<void>((r) => setTimeout(r, 500))
+
+  if (earlyExit) {
+    throw new TerminalManagerError(
+      'TTYD_UNAVAILABLE',
+      `ttyd failed to start: ${stderrBuf.slice(0, 200) || 'no stderr output'}`,
+    )
+  }
+
+  registerExitHandlers(state)
+
+  // Synthesize agent/project/scope/slug from the parsed name. Unparseable
+  // names yield nulls for project/scope/slug; agent falls back to 'none' so
+  // the Entry's non-nullable agent slot stays well-typed (the Entry's
+  // semantics for agent='none' are "no agent CLI was spawned", which
+  // matches raw-attach exactly).
+  const parsed = parseSessionName(sessionName)
+  const entry: Entry = {
+    child,
+    port,
+    sessionName,
+    agent: parsed.agent ?? 'none',
+    project: parsed.project ?? '',
+    scope: parsed.scope ?? 'run',
+    slug: parsed.slug ?? '',
     startedAt: new Date().toISOString(),
     lastActiveAtMs: Date.now(),
     wsConnections: 0,

@@ -32,6 +32,7 @@ vi.mock('./binary', () => ({
 import {
   TerminalManagerError,
   __resetForTests,
+  attachExistingSession,
   buildSessionName,
   listSessions,
   lookupSession,
@@ -107,6 +108,12 @@ describe('buildSessionName', () => {
     ).toBe('memon-terminal-project-a--exp--E0042-bar')
   })
 
+  it("project scope with sentinel slug 'root'", () => {
+    expect(
+      buildSessionName({ agent: 'claude', project: 'project-a', scope: 'project', slug: 'root' }),
+    ).toBe('memon-claude-project-a--project--root')
+  })
+
   it('rejects slug containing --', () => {
     expect(() =>
       buildSessionName({ agent: 'claude', project: 'p', scope: 'run', slug: 'foo--bar' }),
@@ -139,6 +146,17 @@ describe('parseSessionName', () => {
       project: 'sparse-fsdp',
       scope: 'exp',
       slug: 'E0042-bar',
+      legacy: false,
+    })
+  })
+
+  it('parses project-scope session name', () => {
+    expect(parseSessionName('memon-claude-project-a--project--root')).toEqual({
+      raw: 'memon-claude-project-a--project--root',
+      agent: 'claude',
+      project: 'project-a',
+      scope: 'project',
+      slug: 'root',
       legacy: false,
     })
   })
@@ -364,6 +382,103 @@ describe('lookupSession + ws activity', () => {
     expect(remaining).toContain('third-260507-103000')
     expect(remaining).not.toContain('second-260507-103000')
     noteWsDisconnect(s.sessionName)
+  })
+})
+
+describe('attachExistingSession', () => {
+  function attachInput(overrides: Partial<{
+    sessionName: string
+    maxConcurrent: number
+    idleTtlMinutes: number
+  }> = {}) {
+    return {
+      sessionName: 'memon-manual-foo',
+      maxConcurrent: 16,
+      idleTtlMinutes: 30,
+      ...overrides,
+    }
+  }
+
+  it('rejects non-memon sessionName', async () => {
+    await expect(
+      attachExistingSession(attachInput({ sessionName: 'not-memon' })),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects sessionName with disallowed character (space)', async () => {
+    await expect(
+      attachExistingSession(attachInput({ sessionName: 'memon- foo' })),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('happy path: spawns ttyd with `tmux new-session -A -s <name>` (no -c, no agent CLI)', async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await attachExistingSession(attachInput({ sessionName: 'memon-manual-myscratch' }))
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    const [, args] = spawnMock.mock.calls[0]!
+    // The argv tail must be exactly: tmux new-session -A -s <name>
+    // — no -c, no trailing agent.
+    expect(args).toEqual([
+      '-p',
+      String(session.port),
+      '-i',
+      '127.0.0.1',
+      '-b',
+      '/api/terminal/proxy/memon-manual-myscratch',
+      '--writable',
+      'tmux',
+      'new-session',
+      '-A',
+      '-s',
+      'memon-manual-myscratch',
+    ])
+    expect(session.sessionName).toBe('memon-manual-myscratch')
+  })
+
+  it('idempotent: second call returns same entry, no extra spawn', async () => {
+    newSpawnReturnsHealthyChild()
+    const a = await attachExistingSession(attachInput())
+    const b = await attachExistingSession(attachInput())
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(a.sessionName).toBe(b.sessionName)
+    expect(a.startedAt).toBe(b.startedAt)
+  })
+
+  it('shares serializer with startSession on the same sessionName — single ttyd', async () => {
+    // Concurrent: start that resolves to sessionName memon-claude-project-a--run--foo-260507-103000
+    // and an attach with that exact same sessionName. Only one ttyd should spawn.
+    newSpawnReturnsHealthyChild()
+    const sharedName = 'memon-claude-project-a--run--foo-260507-103000'
+    const [a, b] = await Promise.all([
+      startSession(defaultInput({ slug: 'foo-260507-103000' })),
+      attachExistingSession(attachInput({ sessionName: sharedName })),
+    ])
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(a.sessionName).toBe(sharedName)
+    expect(b.sessionName).toBe(sharedName)
+    expect(a.startedAt).toBe(b.startedAt)
+  })
+
+  it('parses agent/project/scope/slug from new-format sessionName for the entry', async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await attachExistingSession(
+      attachInput({ sessionName: 'memon-claude-project-a--run--foo-260507-103000' }),
+    )
+    // The Entry stores parsed metadata — listSessions reflects it.
+    expect(session.agent).toBe('claude')
+    expect(session.project).toBe('project-a')
+    expect(session.scope).toBe('run')
+    expect(session.slug).toBe('foo-260507-103000')
+  })
+
+  it('falls back to sentinel agent for unparseable name (e.g. memon-manual-foo)', async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await attachExistingSession(attachInput({ sessionName: 'memon-manual-foo' }))
+    // memon-manual-foo doesn't have a recognized agent prefix → parsed.agent === null
+    // → Entry uses sentinel 'none' so the ActiveSession shape stays well-typed.
+    expect(session.agent).toBe('none')
   })
 })
 

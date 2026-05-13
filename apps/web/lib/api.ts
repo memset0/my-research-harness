@@ -287,32 +287,6 @@ export async function putRunReadme(input: {
   return body as PutReadmeResponse
 }
 
-export interface OpenClaudeCodeResult {
-  command: string
-  cwd: string
-  hint: string
-}
-
-/**
- * Returns a copy-paste command that opens Claude Code in the given target's
- * working directory. The web layer does NOT spawn a process — it returns
- * what the user should run locally (mirrors the `AskClaudeCode` pattern).
- *
- * For `kind: 'exp'`, cwd defaults to the project root. For `kind: 'run'`,
- * cwd is the run directory.
- */
-export async function openClaudeCode(input: {
-  kind: 'exp' | 'run'
-  id: string
-  projectName: string
-}): Promise<OpenClaudeCodeResult> {
-  return jsonFetch('/api/open-claude-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-}
-
 export async function putReadme(input: {
   path: string
   content: string
@@ -378,7 +352,13 @@ export interface TerminalInstallResult {
 }
 
 export type TerminalAgentKind = 'none' | 'claude' | 'codex' | 'opencode'
-export type TerminalScopeKind = 'exp' | 'run'
+export type TerminalScopeKind = 'exp' | 'run' | 'project'
+
+/** Slug carried in `(scope: 'project')` calls. Project scope has no
+ *  per-target slug — the project name itself disambiguates — but the
+ *  session-name format reserves a slug segment, so we use this sentinel.
+ *  Render: `memon-<agent>-<project>--project--root`. */
+export const PROJECT_SCOPE_SLUG = 'root' as const
 
 export interface TerminalSession {
   sessionName: string

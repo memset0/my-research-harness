@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { PROJECT_SCOPE_SLUG } from '../lib/api'
 import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
+import { OpenWithButton } from './open-with-button'
 import { TabBadge, type TabKind } from './tab-badge'
 
 interface TabSpec {
@@ -93,6 +95,7 @@ export function AppBar({ project }: { project: string }) {
           )
         })}
       </nav>
+      <OpenWithButton project={project} scope="project" slug={PROJECT_SCOPE_SLUG} />
     </header>
   )
 }

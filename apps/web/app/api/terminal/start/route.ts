@@ -1,9 +1,11 @@
 // POST /api/terminal/start — spawn ttyd → tmux → agent (per tmux-session-rework).
 //
-// Request body: `{ project, scope: 'exp' | 'run', slug, agent? }`.
+// Request body: `{ project, scope: 'exp' | 'run' | 'project', slug, agent? }`.
 // Server resolves cwd from runtime indexes (run dir for `run`, project root
-// for `exp`); falls back to project root or HOME with a `warnings` entry
-// if the target cannot be matched.
+// for `exp` and `project`); falls back to project root or HOME with a
+// `warnings` entry if the target cannot be matched. For `scope: 'project'`,
+// the slug is the sentinel `'root'` (per `PROJECT_SCOPE_SLUG` in
+// `apps/web/lib/api.ts`) and is not validated against on-disk artefacts.
 //
 // Returns the iframe URL `/api/terminal/proxy/<sessionName>/`. That path is
 // expected to be handled by Caddy (or whatever reverse proxy fronts memon)
@@ -22,7 +24,7 @@ export const dynamic = 'force-dynamic'
 
 const BodySchema = z.object({
   project: z.string().min(1).regex(/^[A-Za-z0-9-]+$/, 'project must match [A-Za-z0-9-]+'),
-  scope: z.enum(['exp', 'run']),
+  scope: z.enum(['exp', 'run', 'project']),
   slug: z
     .string()
     .min(1)
@@ -75,8 +77,7 @@ export async function POST(req: NextRequest) {
           `target run "${parsed.data.slug}" not found in project "${project.name}"; opened at project root`,
         )
       }
-    } else {
-      // exp scope — open at project root regardless of whether exp doc exists.
+    } else if (parsed.data.scope === 'exp') {
       cwd = project.root
       const expFound = Array.from(runtime.experiments.values()).some(
         (e) => e.project === project.name && e.id === parsed.data.slug,
@@ -86,6 +87,11 @@ export async function POST(req: NextRequest) {
           `exp "${parsed.data.slug}" not found in project "${project.name}"; opened at project root`,
         )
       }
+    } else {
+      // project scope — open at project root. Slug is the contract sentinel
+      // (PROJECT_SCOPE_SLUG = 'root') and is not validated against on-disk
+      // artefacts; the project name itself is the addressing key.
+      cwd = project.root
     }
   } else {
     cwd = homedir()

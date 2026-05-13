@@ -2,18 +2,25 @@
 
 // Root-mounted state holder for the single browser-terminal drawer.
 //
-// Design (post tmux-session-rework):
+// Design (post tmux-session-rework + attach-tmux-by-name):
 // - Mounted at root layout (in `Providers`), so the drawer is reachable
 //   from every page including `/manage/tmux`.
+// - Drawer state is a discriminated union with two modes:
+//   - `kind: 'standard'` — carries (project, scope, slug, agent). Used by
+//     run/exp page action bar's `Open with` button. Hits POST
+//     /api/terminal/start.
+//   - `kind: 'raw'` — carries just sessionName. Used by /manage/tmux's
+//     manual rows where no parsed target exists. Hits POST
+//     /api/terminal/attach.
 // - Drawer state persists across pathname changes — navigation alone
 //   neither closes the drawer nor kills the underlying ttyd / tmux.
 // - `X` close (or escape / outside-click) hides the drawer; ttyd + tmux
 //   stay alive (LRU + Idle TTL handle ttyd cleanup; tmux is only killed
 //   via the management page or by the user exiting the agent / shell from
 //   inside ttyd).
-// - `Pop out` opens the same `(agent, project, scope, slug)` in a popup
-//   window AND closes the drawer. Both views share the same ttyd thanks
-//   to the manager's sessionName dedup.
+// - `Pop out` opens the same target in a popup window AND closes the
+//   drawer. Both views share the same ttyd via the manager's sessionName
+//   dedup.
 
 import {
   Sheet,
@@ -25,12 +32,13 @@ import {
 import { Button } from './ui/button'
 import { ExternalLink } from 'lucide-react'
 import { createContext, useCallback, useContext, useState } from 'react'
-import type { TerminalAgentKind } from '../lib/api'
+import type { TerminalAgentKind, TerminalScopeKind } from '../lib/api'
 import { TerminalView } from './terminal-view'
 
-export type TerminalScopeKind = 'exp' | 'run'
+export type { TerminalScopeKind }
 
-interface DrawerState {
+interface StandardDrawerState {
+  kind: 'standard'
   project: string
   scope: TerminalScopeKind
   slug: string
@@ -39,6 +47,13 @@ interface DrawerState {
   sessionName: string | null
 }
 
+interface RawDrawerState {
+  kind: 'raw'
+  sessionName: string
+}
+
+type DrawerState = StandardDrawerState | RawDrawerState
+
 export interface DrawerOpenInput {
   project: string
   scope: TerminalScopeKind
@@ -46,8 +61,15 @@ export interface DrawerOpenInput {
   agent: TerminalAgentKind
 }
 
+export interface DrawerOpenRawInput {
+  sessionName: string
+}
+
 interface DrawerApi {
+  /** Open the drawer in standard mode (parsed target → /api/terminal/start). */
   open: (input: DrawerOpenInput) => void
+  /** Open the drawer in raw mode (sessionName-only → /api/terminal/attach). */
+  openRaw: (input: DrawerOpenRawInput) => void
   close: () => void
 }
 
@@ -55,6 +77,7 @@ const TerminalDrawerContext = createContext<DrawerApi | null>(null)
 
 const NOOP_API: DrawerApi = {
   open: () => {},
+  openRaw: () => {},
   close: () => {},
 }
 
@@ -78,11 +101,40 @@ export function useTerminalDrawer(): DrawerApi {
   return ctx
 }
 
+function deriveStandardSessionName(state: StandardDrawerState): string {
+  return state.sessionName ??
+    `memon-${state.agent === 'none' ? 'terminal' : state.agent}-${state.project}--${state.scope}--${state.slug}`
+}
+
+function popupUrlFor(state: DrawerState): string {
+  if (state.kind === 'standard') {
+    return (
+      `/terminal-popup?project=${encodeURIComponent(state.project)}` +
+      `&scope=${encodeURIComponent(state.scope)}` +
+      `&slug=${encodeURIComponent(state.slug)}` +
+      `&agent=${encodeURIComponent(state.agent)}`
+    )
+  }
+  return `/terminal-popup?sessionName=${encodeURIComponent(state.sessionName)}`
+}
+
+function popupTargetFor(state: DrawerState): string {
+  if (state.kind === 'standard') {
+    const name = deriveStandardSessionName(state)
+    return `memon-popup-${name}`
+  }
+  return `memon-popup-${state.sessionName}`
+}
+
 export function TerminalDrawerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DrawerState | null>(null)
 
   const open = useCallback((input: DrawerOpenInput) => {
-    setState({ ...input, sessionName: null })
+    setState({ kind: 'standard', ...input, sessionName: null })
+  }, [])
+
+  const openRaw = useCallback((input: DrawerOpenRawInput) => {
+    setState({ kind: 'raw', sessionName: input.sessionName })
   }, [])
 
   const close = useCallback(() => {
@@ -97,27 +149,24 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
   )
 
   const handleSessionReady = useCallback((sessionName: string) => {
-    setState((prev) => (prev ? { ...prev, sessionName } : prev))
+    setState((prev) => {
+      if (!prev) return prev
+      if (prev.kind === 'standard') return { ...prev, sessionName }
+      // Raw mode: sessionName is fixed at open time; no update needed.
+      return prev
+    })
   }, [])
 
   const handlePopOut = useCallback(() => {
     setState((cur) => {
       if (!cur) return cur
-      const target = cur.sessionName
-        ? `memon-popup-${cur.sessionName}`
-        : `memon-popup-${cur.agent}-${cur.project}-${cur.scope}-${cur.slug}`
-      const url =
-        `/terminal-popup?project=${encodeURIComponent(cur.project)}` +
-        `&scope=${encodeURIComponent(cur.scope)}` +
-        `&slug=${encodeURIComponent(cur.slug)}` +
-        `&agent=${encodeURIComponent(cur.agent)}`
-      window.open(url, target, 'popup,width=1200,height=800')
+      window.open(popupUrlFor(cur), popupTargetFor(cur), 'popup,width=1200,height=800')
       return null
     })
   }, [])
 
   return (
-    <TerminalDrawerContext.Provider value={{ open, close }}>
+    <TerminalDrawerContext.Provider value={{ open, openRaw, close }}>
       {children}
       <Sheet open={state !== null} onOpenChange={handleOpenChange}>
         <SheetContent
@@ -130,9 +179,13 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <SheetTitle className="font-mono text-xs">
-                      {state.agent} ·{' '}
-                      {state.sessionName ??
-                        `memon-${state.agent === 'none' ? 'terminal' : state.agent}-${state.project}--${state.scope}--${state.slug}`}
+                      {state.kind === 'standard' ? (
+                        <>
+                          {state.agent} · {deriveStandardSessionName(state)}
+                        </>
+                      ) : (
+                        state.sessionName
+                      )}
                     </SheetTitle>
                     <SheetDescription className="text-[11px]">
                       Closing this panel keeps ttyd and the tmux session alive.
@@ -152,13 +205,18 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
                 </div>
               </SheetHeader>
               <div className="min-h-0 flex-1 overflow-hidden">
-                <TerminalView
-                  project={state.project}
-                  scope={state.scope}
-                  slug={state.slug}
-                  agent={state.agent}
-                  onSessionReady={handleSessionReady}
-                />
+                {state.kind === 'standard' ? (
+                  <TerminalView
+                    mode="standard"
+                    project={state.project}
+                    scope={state.scope}
+                    slug={state.slug}
+                    agent={state.agent}
+                    onSessionReady={handleSessionReady}
+                  />
+                ) : (
+                  <TerminalView mode="raw" sessionName={state.sessionName} />
+                )}
               </div>
             </>
           ) : (

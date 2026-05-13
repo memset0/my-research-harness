@@ -122,6 +122,37 @@ describe('POST /api/terminal/start (tmux-session-rework)', () => {
     )
   })
 
+  it('project scope passes project root as cwd with no slug-existence warning', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+      }),
+    )
+    vi.mocked(startSession).mockResolvedValue({
+      sessionName: 'memon-claude-project-a--project--root',
+      port: 7687,
+      startedAt: 't',
+      lastActiveAt: 't',
+      agent: 'claude',
+      project: 'project-a',
+      scope: 'project',
+      slug: 'root',
+      warnings: [],
+    })
+    const res = await POST(
+      postReq({ project: 'project-a', scope: 'project', slug: 'root', agent: 'claude' }),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      sessionName: 'memon-claude-project-a--project--root',
+      warnings: [],
+    })
+    expect(vi.mocked(startSession)).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/repo/project-a', scope: 'project', slug: 'root' }),
+    )
+  })
+
   it('warns when run slug not found, falls back to project root', async () => {
     vi.mocked(getRuntime).mockResolvedValue(
       fakeRuntime({

@@ -29,7 +29,6 @@ import { StatusPill } from './status-pill'
 import { StatusEdit } from './status-edit'
 import { Markdown } from './markdown'
 import { EditMarkdownButton } from './edit-markdown-button'
-import { OpenClaudeCodeButton } from './open-claude-code-button'
 import { OpenWithButton } from './open-with-button'
 import { AddNoteButton } from './add-note-button'
 import { LogViewer } from './log-viewer'
@@ -81,7 +80,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         )}
         <div className="flex flex-wrap gap-2 pt-1">
           <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
-          <OpenClaudeCodeButton kind="exp" id={exp.id} projectName={project} />
+          <OpenWithButton project={project} scope="exp" slug={exp.id} />
         </div>
       </header>
 

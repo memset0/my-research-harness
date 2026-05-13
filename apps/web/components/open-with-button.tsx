@@ -1,9 +1,13 @@
 'use client'
 
-// Split-button replacement for the legacy <TerminalButton> +
-// <OpenClaudeCodeButton> pair. Click main face → open default agent in
-// the side drawer. Click chevron → DropdownMenu with all four agents
-// + "Open in new window" (popup-window mode).
+// Unified split-button for the project / exp / run "open an agent
+// against this thing" action. Three call sites — AppBar header
+// (scope='project'), experiment-page exp action bar (scope='exp'),
+// experiment-page run-panel action bar (scope='run') — render this
+// same component with different (scope, slug) props. Click main face
+// → open default agent in the side drawer. Click chevron →
+// DropdownMenu with all four agents + "Open in new window"
+// (popup-window mode).
 
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -164,7 +168,7 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   }
 
   return (
-    <div className="inline-flex items-stretch overflow-hidden rounded-md border bg-background">
+    <div className="inline-flex items-stretch overflow-hidden rounded-md border bg-card">
       <Button
         variant="ghost"
         size="sm"

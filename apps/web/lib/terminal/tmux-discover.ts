@@ -90,13 +90,18 @@ function classify(parsed: ParsedSessionName, rt: Runtime): {
     const found = runs.some((r) => r.id === parsed.slug)
     return found ? { matchable: true, staleReason: null } : { matchable: false, staleReason: 'unknown-target' }
   }
-  // exp scope
-  const expFound = Array.from(rt.experiments.values()).some(
-    (e) => e.project === project.name && e.id === parsed.slug,
-  )
-  return expFound
-    ? { matchable: true, staleReason: null }
-    : { matchable: false, staleReason: 'unknown-target' }
+  if (parsed.scope === 'exp') {
+    const expFound = Array.from(rt.experiments.values()).some(
+      (e) => e.project === project.name && e.id === parsed.slug,
+    )
+    return expFound
+      ? { matchable: true, staleReason: null }
+      : { matchable: false, staleReason: 'unknown-target' }
+  }
+  // project scope — slug is the contract sentinel ('root'); matchability
+  // depends only on project-in-config (already verified above), so always
+  // matchable when we reach here.
+  return { matchable: true, staleReason: null }
 }
 
 /** Validate the name looks like one of our session-name formats before
