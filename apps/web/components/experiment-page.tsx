@@ -27,6 +27,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { StatusPill } from './status-pill'
 import { StatusEdit } from './status-edit'
+import { ExperimentStatusEdit } from './experiment-status-edit'
+import { ArchiveToggle } from './archive-toggle'
 import { Markdown } from './markdown'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { OpenWithButton } from './open-with-button'
@@ -78,7 +80,19 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             ))}
           </div>
         )}
-        <div className="flex flex-wrap gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <ExperimentStatusEdit
+            expId={exp.id}
+            status={exp.frontMatter.status}
+            archived={exp.frontMatter.archived}
+            expectedMtime={exp.mtime}
+          />
+          <ArchiveToggle
+            kind="exp"
+            id={exp.id}
+            archived={exp.frontMatter.archived}
+            expectedMtime={exp.mtime}
+          />
           <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
           <OpenWithButton project={project} scope="exp" slug={exp.id} />
         </div>
@@ -258,12 +272,21 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
         <OpenWithButton project={project} scope="run" slug={runId} />
         <AddNoteButton project={project} runId={runId} />
         {run.hasReadme ? (
-          <StatusEdit
-            id={runId}
-            status={run.frontMatter.status}
-            stale={run.stale}
-            expectedMtime={run.mtime}
-          />
+          <>
+            <StatusEdit
+              id={runId}
+              status={run.frontMatter.status}
+              stale={run.stale}
+              expectedMtime={run.mtime}
+            />
+            <ArchiveToggle
+              kind="run"
+              id={runId}
+              archived={run.frontMatter.archived}
+              runStatus={run.frontMatter.status}
+              expectedMtime={run.mtime}
+            />
+          </>
         ) : (
           <Badge variant="outline" className="text-[10px]">no README</Badge>
         )}

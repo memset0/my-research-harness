@@ -11,6 +11,7 @@ import {
   appendJournalEvent,
   discoverExperiments,
   EXPERIMENT_FILENAME_REGEX,
+  EXPERIMENT_STATUS_VALUES,
   nextExperimentId,
   parseReadme,
   readExperimentDoc,
@@ -19,6 +20,7 @@ import {
   resolveExperimentId,
   scanProjectRoot,
   serializeExperimentReadme,
+  type ExperimentStatus,
   type Run,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -181,6 +183,9 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
         id: fullId,
         slug: input.slug,
         title: input.title ?? input.slug,
+        // v4: new experiments default to OPEN + not-archived (human-only writes).
+        status: 'OPEN',
+        archived: false,
         runs: initialRuns,
         hypotheses: input.hypotheses ?? [],
         tags: [],
@@ -341,6 +346,153 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
     },
   })
   emitJson({ ok: true, experimentId: expId, runId: run.id })
+}
+
+// ---------- experiment status set (v4) ----------
+
+export interface ExperimentStatusSetInput {
+  projectRoot?: string
+  cwd: string
+  experimentId: string
+  to: string
+  expectedMtime: number
+}
+
+export async function runExperimentStatusSet(
+  input: ExperimentStatusSetInput,
+): Promise<void> {
+  if (!(EXPERIMENT_STATUS_VALUES as readonly string[]).includes(input.to)) {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `--to must be one of: ${EXPERIMENT_STATUS_VALUES.join(', ')}`,
+    )
+  }
+  const r = await resolveContext(input)
+  const projectRoot = singleProjectRoot(r)
+  const projectName = r.config.projects[0]!.name
+  const expId = await resolveOrFail(projectRoot, input.experimentId)
+  const exp = await readExperimentDoc(projectRoot, projectName, expId)
+  if (!exp) {
+    emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
+  }
+
+  let stat
+  try {
+    stat = await fs.stat(exp.path)
+  } catch {
+    emitErrorAndExit('NOT_FOUND', `${exp.path} does not exist`)
+  }
+  if (stat.mtimeMs !== input.expectedMtime) {
+    const current = await fs.readFile(exp.path, 'utf8')
+    process.stdout.write(current)
+    process.stderr.write(
+      `${JSON.stringify({
+        error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
+        currentMtime: stat.mtimeMs,
+        expectedMtime: input.expectedMtime,
+      })}\n`,
+    )
+    process.exit(9)
+  }
+
+  const prevStatus = exp.frontMatter.status
+  const prevArchived = exp.frontMatter.archived
+  const nextStatus = input.to as ExperimentStatus
+  exp.frontMatter.status = nextStatus
+  exp.frontMatter.updatedAt = nowIso()
+  await atomicWrite(
+    exp.path,
+    serializeExperimentReadme({
+      frontMatter: exp.frontMatter,
+      sections: exp.sections,
+      warningsRaw: exp.warningsRaw,
+    }),
+  )
+  const newStat = await fs.stat(exp.path)
+
+  let journalAppended = false
+  if (prevStatus !== nextStatus) {
+    await appendJournalEvent({
+      path: join(projectRoot, 'docs', 'journal.md'),
+      event: {
+        timestamp: nowIso(),
+        tag: 'EXP_STATUS',
+        body: `\`${expId}\` ${prevStatus} → ${nextStatus}`,
+      },
+    })
+    journalAppended = true
+  }
+
+  const result: Record<string, unknown> = {
+    ok: true,
+    mtime: newStat.mtimeMs,
+    prevStatus,
+    nextStatus,
+    journalAppended,
+  }
+  if (prevArchived) {
+    process.stderr.write(`warning: ${expId} is archived; modifying anyway\n`)
+    result.warning = 'archived'
+  }
+  emitJson(result)
+}
+
+// ---------- experiment archive (v4 — exp-doc form) ----------
+
+export interface ExperimentArchiveInput {
+  projectRoot?: string
+  cwd: string
+  experimentId: string
+}
+
+export async function runExperimentArchiveDoc(
+  input: ExperimentArchiveInput,
+): Promise<void> {
+  await setExperimentArchived(input, true)
+}
+
+export async function runExperimentUnarchiveDoc(
+  input: ExperimentArchiveInput,
+): Promise<void> {
+  await setExperimentArchived(input, false)
+}
+
+async function setExperimentArchived(
+  input: ExperimentArchiveInput,
+  target: boolean,
+): Promise<void> {
+  const r = await resolveContext(input)
+  const projectRoot = singleProjectRoot(r)
+  const projectName = r.config.projects[0]!.name
+  const expId = await resolveOrFail(projectRoot, input.experimentId)
+  const exp = await readExperimentDoc(projectRoot, projectName, expId)
+  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
+
+  const prevArchived = exp.frontMatter.archived
+  if (prevArchived === target) {
+    emitJson({ ok: true, archived: target, noop: true })
+    return
+  }
+
+  exp.frontMatter.archived = target
+  exp.frontMatter.updatedAt = nowIso()
+  await atomicWrite(
+    exp.path,
+    serializeExperimentReadme({
+      frontMatter: exp.frontMatter,
+      sections: exp.sections,
+      warningsRaw: exp.warningsRaw,
+    }),
+  )
+  await appendJournalEvent({
+    path: join(projectRoot, 'docs', 'journal.md'),
+    event: {
+      timestamp: nowIso(),
+      tag: 'ARCHIVE',
+      body: `\`${expId}\` op=${target ? 'archive' : 'unarchive'}`,
+    },
+  })
+  emitJson({ ok: true, archived: target, noop: false })
 }
 
 // ---------- experiment delete ----------

@@ -9,6 +9,7 @@ finished_at: null
 host: gpu-node-07
 pid: 12345
 gpus: [0, 1, 2, 3]
+archived: false
 entry: ./train.sh
 command: bash train.sh --param=v --schedule=zero_snr --bs=128 --img=256
 wandb: https://wandb.ai/me/imgflow/runs/foo-260501-100000

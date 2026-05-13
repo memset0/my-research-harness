@@ -91,6 +91,26 @@ export function parseReadme(content: string): ParsedReadme {
     }
   }
 
+  // v4-added: archived flag. Missing → false with parse warning so callers
+  // (discovery layer) can fall back to the legacy `<runDir>/.archived`
+  // sidecar per archive-frontmatter spec.
+  let archived = false
+  if (raw.archived === undefined) {
+    warnings.push({
+      field: 'archived',
+      message: `MISSING_ARCHIVED_FIELD: archived flag missing from frontmatter; defaulting to false (sidecar fallback may apply)`,
+      severity: 'warning',
+    })
+  } else if (typeof raw.archived === 'boolean') {
+    archived = raw.archived
+  } else {
+    warnings.push({
+      field: 'archived',
+      message: `archived must be a boolean; received ${typeof raw.archived}; defaulting to false`,
+      severity: 'warning',
+    })
+  }
+
   const createdAt = stringOr(raw.created_at, '')
   const frontMatter: RunFrontMatter = {
     id: stringOr(raw.id, ''),
@@ -111,6 +131,7 @@ export function parseReadme(content: string): ParsedReadme {
     wandb: nullableString(raw.wandb),
     hypotheses: validatedHypothesisRefs(raw.hypotheses, warnings),
     tags: stringArray(raw.tags),
+    archived,
   }
 
   // Split body into sections
@@ -176,6 +197,7 @@ function emptyResult(errors: ParseIssue[], warnings: ParseIssue[], body: string)
       wandb: null,
       hypotheses: [],
       tags: [],
+      archived: false,
     },
     sections: {
       motivation: null,

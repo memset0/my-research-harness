@@ -99,6 +99,8 @@ function renderFrontMatter(fm: RunFrontMatter): string {
   lines.push(`host: ${fm.host === null ? 'null' : quoteIfNeeded(fm.host)}`)
   lines.push(`pid: ${fm.pid === null ? 'null' : fm.pid}`)
   lines.push(`gpus: ${renderNumberArray(fm.gpus)}`)
+  // v4-added: archived flag in canonical key order (between gpus and entry).
+  lines.push(`archived: ${fm.archived ? 'true' : 'false'}`)
   lines.push(`entry: ${quoteIfNeeded(fm.entry)}`)
   lines.push(`command: ${quoteIfNeeded(fm.command)}`)
   lines.push(`wandb: ${fm.wandb === null ? 'null' : quoteIfNeeded(fm.wandb)}`)

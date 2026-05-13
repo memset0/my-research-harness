@@ -2,6 +2,8 @@
 id: E0004-vae-decoder-profile
 slug: vae-decoder-profile
 title: "VAE decoder kernel profiling"
+status: OPEN
+archived: false
 runs: [vae-decoder-profile-260503-100000]
 hypotheses: [H0003]
 tags: [profile, nsight, vae]

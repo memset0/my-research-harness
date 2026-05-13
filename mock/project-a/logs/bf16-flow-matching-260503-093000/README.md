@@ -9,6 +9,7 @@ finished_at: null
 host: gpu-node-09
 pid: 14512
 gpus: [0, 1, 2, 3]
+archived: false
 entry: ./train.sh
 command: bash train.sh --param=v --formulation=flow_matching --dtype=bf16 --steps=50000
 wandb: https://wandb.ai/me/imgflow/runs/bf16-conv-260503-093000

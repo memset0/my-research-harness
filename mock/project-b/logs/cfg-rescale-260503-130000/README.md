@@ -9,6 +9,7 @@ finished_at: null
 host: bench-02
 pid: 5012
 gpus: [0]
+archived: false
 entry: ./run.sh
 command: bash run.sh --rescale_cfg --phi=0.7 --cfg=12 --reference_cfg=4.5 --prompts=parti1k
 wandb: null

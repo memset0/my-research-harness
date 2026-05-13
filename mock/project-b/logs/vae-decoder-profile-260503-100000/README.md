@@ -9,6 +9,7 @@ finished_at: 2026-05-03T10:30:00+08:00
 host: bench-01
 pid: null
 gpus: [0]
+archived: false
 entry: ./run.sh
 command: bash run.sh --workload=cfg_sweep --cfg=7.5 --profile=nsight --target=vae_decoder
 wandb: null

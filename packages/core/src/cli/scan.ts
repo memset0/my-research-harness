@@ -7,14 +7,18 @@ import { promises as fs } from 'node:fs'
 import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { isStaleRunning } from '../discovery/stale.js'
-import { discoverRuns, isArchived } from '../discovery/discover.js'
+import { discoverRuns, runArchivedFromRun } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
 import { parseJournal } from '../journal/parse.js'
 import type { Run, ParsedHypotheses, ParsedJournal } from '../types.js'
 
 export interface IndexedRun extends Run {
-  /** True iff `<runDir>/.archived` exists. Always set on scan output. */
+  /**
+   * v4: True iff the run is archived per `archive-frontmatter` semantics
+   * (frontmatter field, with legacy sidecar fallback when the field is
+   * missing). Always set on scan output.
+   */
   archived: boolean
   /** Mirrors backend's stale-RUNNING flag. */
   stale: boolean
@@ -66,13 +70,18 @@ export async function scanProjectRoot(
     exclude: [],
   }
 
-  const dirs = await discoverRuns(project, { includeArchived })
+  // v4: discoverRuns returns ALL paths; archive filtering happens
+  // post-parse using the README's frontmatter (with sidecar fallback for
+  // the migration window).
+  const dirs = await discoverRuns(project)
   const experiments: IndexedRun[] = []
   for (const d of dirs) {
     const exp = await readRunDir(d, projectName)
+    const archived = runArchivedFromRun(exp)
+    if (!includeArchived && archived) continue
     experiments.push({
       ...exp,
-      archived: isArchived(d),
+      archived,
       stale: isStaleRunning(exp),
     })
   }

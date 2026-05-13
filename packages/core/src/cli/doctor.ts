@@ -17,6 +17,9 @@ export type IssueCode =
   | 'PARSE_WARNING'
   | 'ORPHAN_HYPOTHESIS_REF'
   | 'WARN_UNRESOLVED'
+  // v4-added — see lifecycle-frontmatter-v4.
+  | 'INTERRUPTED_NO_NOTE'
+  | 'RESOLVED_NO_CONCLUSION'
   // v3 task 8.1 — exp ↔ run binding rules. Codes mirror the
   // `ExperimentMembershipAnomalyCode` set so doctor output is the same
   // string the web /api/anomalies endpoint emits, and the same string a
@@ -83,6 +86,23 @@ export async function runDoctor(
   try {
     const projectName = snapshot.experiments[0]?.project ?? '(scan)'
     const { experiments: expDocs } = await discoverExperiments(snapshot.projectRoot, projectName)
+
+    // v4: per-exp-doc lints (RESOLVED_NO_CONCLUSION). Mirrors the v3
+    // run-side MISSING_CONCLUSION lint, but for the exp doc's manual
+    // status === 'RESOLVED'.
+    for (const expDoc of expDocs) {
+      if (expDoc.frontMatter.status === 'RESOLVED' && isBlank(expDoc.sections.conclusion)) {
+        issues.push({
+          runId: expDoc.id,
+          code: 'RESOLVED_NO_CONCLUSION',
+          severity: 'info',
+          message: 'RESOLVED experiment has no Conclusion section',
+          suggestedAction:
+            'add a one-line conclusion describing what the investigation concluded, or set status back to OPEN',
+        })
+      }
+    }
+
     const { anomalies } = computeMembership({
       experiments: expDocs,
       runs: snapshot.experiments,
@@ -171,6 +191,18 @@ function inspect(exp: IndexedRun, knownHypIds: Set<string>): DoctorIssue[] {
       severity: 'info',
       message: 'FAILED experiment has no failure note in Result',
       suggestedAction: 'add a one-line note about why it failed, or archive',
+    })
+  }
+
+  // v4: INTERRUPTED runs should leave a note in Result describing why the
+  // user (or agent) stopped them. Symmetric with FAILED_NO_NOTE.
+  if (fm.status === 'INTERRUPTED' && isBlank(sec.result)) {
+    out.push({
+      runId: exp.id,
+      code: 'INTERRUPTED_NO_NOTE',
+      severity: 'info',
+      message: 'INTERRUPTED experiment has no note in Result describing why it was stopped',
+      suggestedAction: 'add a one-line note (e.g. "killed: bad hyperparameter")',
     })
   }
 

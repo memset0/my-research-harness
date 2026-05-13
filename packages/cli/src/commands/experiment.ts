@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import {
   appendJournalEvent,
   archiveRun,
+  ArchiveRunningForbiddenError,
   parseReadme,
   reserializeReadme,
   scanProjectRoot,
@@ -20,6 +21,7 @@ const STATUS_VALUES: readonly Status[] = [
   'PENDING',
   'RUNNING',
   'FINISHED',
+  'INTERRUPTED',
   'FAILED',
   'UNKNOWN',
 ] as const
@@ -87,6 +89,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
   const content = await fs.readFile(readmePath, 'utf8')
   const parsed = parseReadme(content)
   const prevStatus = parsed.frontMatter.status
+  const prevArchived = parsed.frontMatter.archived
   const nextStatus = input.to as Status
   parsed.frontMatter.status = nextStatus
   const newContent = reserializeReadme(parsed)
@@ -107,14 +110,21 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
     journalAppended = true
   }
 
-  void runDir
-  emitJson({
+  // v4: soft warning when modifying an archived run.
+  const result: Record<string, unknown> = {
     ok: true,
     mtime: newStat.mtimeMs,
     prevStatus,
     nextStatus,
     journalAppended,
-  })
+  }
+  if (prevArchived) {
+    process.stderr.write(`warning: ${input.runId} is archived; modifying anyway\n`)
+    result.warning = 'archived'
+  }
+
+  void runDir
+  emitJson(result)
 }
 
 // ---------- readme write ----------
@@ -174,8 +184,21 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
   }
 
   // Detect status transition for JOURNAL [STATUS] event
-  const prevStatus = parseReadme(currentContent).frontMatter.status
-  const nextStatus = parseReadme(input.stdinContent).frontMatter.status
+  const prevParsed = parseReadme(currentContent)
+  const nextParsed = parseReadme(input.stdinContent)
+  const prevStatus = prevParsed.frontMatter.status
+  const nextStatus = nextParsed.frontMatter.status
+  const prevArchived = prevParsed.frontMatter.archived
+  const nextArchived = nextParsed.frontMatter.archived
+
+  // v4: hard rule — refuse to write archived: true while status would be RUNNING.
+  if (nextArchived === true && nextStatus === 'RUNNING') {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      'cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first',
+      { id: input.runId },
+    )
+  }
 
   await atomicWrite(readmePath, input.stdinContent)
   const newStat = await fs.stat(readmePath)
@@ -192,8 +215,24 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
     })
     journalAppended = true
   }
+  if (prevArchived !== nextArchived) {
+    await appendJournalEvent({
+      path: join(projectRoot, 'docs', 'journal.md'),
+      event: {
+        timestamp: nowIso(),
+        tag: 'ARCHIVE',
+        body: `\`${input.runId}\` op=${nextArchived ? 'archive' : 'unarchive'}`,
+      },
+    })
+  }
 
-  emitJson({ ok: true, mtime: newStat.mtimeMs, journalAppended })
+  // v4: soft warning when modifying an archived run.
+  const result: Record<string, unknown> = { ok: true, mtime: newStat.mtimeMs, journalAppended }
+  if (prevArchived) {
+    process.stderr.write(`warning: ${input.runId} is archived; modifying anyway\n`)
+    result.warning = 'archived'
+  }
+  emitJson(result)
 }
 
 // ---------- archive / unarchive ----------
@@ -206,14 +245,26 @@ export interface ArchiveInput {
 
 export async function runArchive(input: ArchiveInput): Promise<void> {
   const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
-  const result = await archiveRun(runDir)
+  const now = nowIso()
+  let result
+  try {
+    result = await archiveRun(runDir, { now, id: input.runId })
+  } catch (err) {
+    if (err instanceof ArchiveRunningForbiddenError) {
+      emitErrorAndExit('BAD_REQUEST', err.message, { id: input.runId })
+    }
+    throw err
+  }
+  // Soft warning: re-archiving an already-archived target. (Archive ON an
+  // already-archived run is a noop, but if we ever expose a "force" path
+  // the warning would land here.)
   if (!result.noop) {
     await appendJournalEvent({
       path: join(projectRoot, 'docs', 'journal.md'),
       event: {
-        timestamp: nowIso(),
+        timestamp: now,
         tag: 'ARCHIVE',
-        body: `\`${input.runId}\` archived`,
+        body: `\`${input.runId}\` op=archive`,
       },
     })
   }
@@ -222,14 +273,18 @@ export async function runArchive(input: ArchiveInput): Promise<void> {
 
 export async function runUnarchive(input: ArchiveInput): Promise<void> {
   const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
-  const result = await unarchiveRun(runDir)
+  const now = nowIso()
+  // Unarchive is always allowed (no hard rule, no soft warning per
+  // archive-frontmatter — the unarchive IS the resolution to the archived
+  // state, not a "modifying anyway" action).
+  const result = await unarchiveRun(runDir, { now, id: input.runId })
   if (!result.noop) {
     await appendJournalEvent({
       path: join(projectRoot, 'docs', 'journal.md'),
       event: {
-        timestamp: nowIso(),
-        tag: 'NOTE',
-        body: `\`${input.runId}\` unarchived`,
+        timestamp: now,
+        tag: 'ARCHIVE',
+        body: `\`${input.runId}\` op=unarchive`,
       },
     })
   }

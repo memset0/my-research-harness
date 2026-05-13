@@ -104,10 +104,29 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const parsedReadme = parseReadme(currentContent)
     const prevStatus = parsedReadme.frontMatter.status
+    const prevArchived = parsedReadme.frontMatter.archived
     const nextStatus = parsed.data.status
 
     if (prevStatus === nextStatus) {
-      return NextResponse.json({ mtime: stat.mtimeMs, unchanged: true })
+      const noopResponse: Record<string, unknown> = { mtime: stat.mtimeMs, unchanged: true }
+      if (prevArchived) noopResponse.warning = 'archived'
+      return NextResponse.json(noopResponse)
+    }
+
+    // v4: hard rule — refuse status RUNNING when the run is currently archived.
+    // (Reverse direction: archived run can't be set RUNNING.)
+    if (nextStatus === 'RUNNING' && prevArchived) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'ARCHIVE_RUNNING_FORBIDDEN',
+            message:
+              'cannot set status to RUNNING on an archived run; unarchive first',
+            id,
+          },
+        },
+        { status: 422 },
+      )
     }
 
     parsedReadme.frontMatter.status = nextStatus
@@ -173,7 +192,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       // best-effort
     }
 
-    return NextResponse.json({ mtime: newStat.mtimeMs, prevStatus, nextStatus })
+    const responseBody: Record<string, unknown> = {
+      mtime: newStat.mtimeMs,
+      prevStatus,
+      nextStatus,
+    }
+    if (prevArchived) responseBody.warning = 'archived'
+    return NextResponse.json(responseBody)
   } catch (err) {
     return NextResponse.json(
       { error: { message: (err as Error).message } },

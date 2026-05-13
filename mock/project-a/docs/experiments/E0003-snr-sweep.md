@@ -2,6 +2,8 @@
 id: E0003-snr-sweep
 slug: snr-sweep
 title: "min-SNR-γ loss-weighting sweep"
+status: OPEN
+archived: false
 runs: [snr-sweep-260430-160000]
 hypotheses: [H0002]
 tags: [diffusion, sweep, min-snr]

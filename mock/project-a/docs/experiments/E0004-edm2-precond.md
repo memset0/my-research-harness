@@ -2,6 +2,8 @@
 id: E0004-edm2-precond
 slug: edm2-precond
 title: "EDM2 vs Karras-EDM preconditioning"
+status: OPEN
+archived: false
 runs: [edm2-precond-260503-080000, edm2-precond-rerun-260503-100000]
 hypotheses: [H0004]
 tags: [edm2, precond, fid]

@@ -9,6 +9,7 @@ finished_at: null
 host: null
 pid: null
 gpus: []
+archived: false
 entry: ./train.sh
 command: bash train.sh --rerun=baz-260503-080000 --skip-nan-step --grad-clip=0.5
 wandb: null

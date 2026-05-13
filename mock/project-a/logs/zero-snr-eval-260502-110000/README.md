@@ -9,6 +9,7 @@ finished_at: 2026-05-02T14:30:00+08:00
 host: gpu-node-04
 pid: 8810
 gpus: [0, 1]
+archived: false
 entry: ./eval.sh
 command: bash eval.sh --eval=foo-260501-100000@step=4500 --bench=t2i-compbench --cfg_sweep=4.5,7.5,10
 wandb: null

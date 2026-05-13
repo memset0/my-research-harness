@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { discoverRuns, mergeExcludes } from './discover.js'
+import type { Run } from '../types.js'
+import { discoverRuns, mergeExcludes, runArchivedFromRun } from './discover.js'
 
 let root: string
 
@@ -85,5 +86,116 @@ describe('mergeExcludes', () => {
     expect(merged.filter((e) => e === '.git').length).toBe(1)
     expect(merged).toContain('dist')
     expect(merged).toContain('mock')
+  })
+})
+
+describe('runArchivedFromRun (v4 archive resolver)', () => {
+  function makeRun(opts: {
+    runDir: string
+    archived: boolean
+    parseWarnings?: { message: string }[]
+  }): Run {
+    return {
+      id: 'foo-260513-100000',
+      project: 'p',
+      path: opts.runDir,
+      mtime: 0,
+      hasReadme: true,
+      frontMatter: {
+        id: 'foo-260513-100000',
+        name: 'foo',
+        project: 'p',
+        status: 'FINISHED',
+        createdAt: '',
+        experiment: null,
+        updatedAt: '',
+        finishedAt: null,
+        host: null,
+        pid: null,
+        gpus: [],
+        entry: '',
+        command: '',
+        wandb: null,
+        hypotheses: [],
+        tags: [],
+        archived: opts.archived,
+      },
+      sections: {
+        motivation: null,
+        setup: null,
+        method: null,
+        result: null,
+        conclusion: null,
+        caveats: null,
+        artifacts: [],
+        newHypotheses: null,
+      },
+      warnings: [],
+      warningsRaw: null,
+      body: '',
+      parseErrors: [],
+      parseWarnings: (opts.parseWarnings ?? []).map((w) => ({ ...w, severity: 'warning' as const })),
+    }
+  }
+
+  it('returns frontmatter value when the field is present (true)', async () => {
+    const dir = await fs.mkdtemp(join(tmpdir(), 'memon-archived-'))
+    try {
+      const run = makeRun({ runDir: dir, archived: true })
+      expect(runArchivedFromRun(run)).toBe(true)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns frontmatter value when the field is present (false)', async () => {
+    const dir = await fs.mkdtemp(join(tmpdir(), 'memon-archived-'))
+    try {
+      const run = makeRun({ runDir: dir, archived: false })
+      expect(runArchivedFromRun(run)).toBe(false)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to sidecar when MISSING_ARCHIVED_FIELD warning is present', async () => {
+    const dir = await fs.mkdtemp(join(tmpdir(), 'memon-archived-'))
+    try {
+      await fs.writeFile(join(dir, '.archived'), '', 'utf8')
+      const run = makeRun({
+        runDir: dir,
+        archived: false, // parser default when field missing
+        parseWarnings: [{ message: 'MISSING_ARCHIVED_FIELD: ...' }],
+      })
+      expect(runArchivedFromRun(run)).toBe(true)
+      // Sidecar fallback ALSO surfaces a LEGACY_ARCHIVE_SIDECAR warning.
+      expect(run.parseWarnings.some((w) => w.message.startsWith('LEGACY_ARCHIVE_SIDECAR'))).toBe(true)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('frontmatter wins over sidecar when both are present (false frontmatter, true sidecar)', async () => {
+    const dir = await fs.mkdtemp(join(tmpdir(), 'memon-archived-'))
+    try {
+      await fs.writeFile(join(dir, '.archived'), '', 'utf8')
+      const run = makeRun({ runDir: dir, archived: false })
+      expect(runArchivedFromRun(run)).toBe(false)
+      // But the inconsistency surfaces a LEGACY_ARCHIVE_SIDECAR warning.
+      expect(run.parseWarnings.some((w) => w.message.startsWith('LEGACY_ARCHIVE_SIDECAR'))).toBe(true)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not surface LEGACY_ARCHIVE_SIDECAR when no sidecar exists', async () => {
+    const dir = await fs.mkdtemp(join(tmpdir(), 'memon-archived-'))
+    try {
+      const run = makeRun({ runDir: dir, archived: false })
+      expect(runArchivedFromRun(run)).toBe(false)
+      expect(run.parseWarnings.some((w) => w.message.startsWith('LEGACY_ARCHIVE_SIDECAR'))).toBe(false)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 })

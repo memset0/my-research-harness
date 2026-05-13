@@ -2,6 +2,8 @@
 id: E0001-sampler-equivalence
 slug: sampler-equivalence
 title: "Sampler equivalence at lower step budgets"
+status: OPEN
+archived: false
 runs: [sampler-equivalence-baseline-260501-090000, sampler-equivalence-dpmpp-260502-130000]
 hypotheses: [H0001]
 tags: [sampler, ddim, dpmpp, fid]

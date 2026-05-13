@@ -9,6 +9,7 @@ finished_at: 2026-05-02T15:30:00+08:00
 host: bench-02
 pid: 4421
 gpus: [0]
+archived: false
 entry: ./run.sh
 command: bash run.sh --samplers=ddim,dpmpp_2m_karras --steps=20,50 --reruns=5
 wandb: null

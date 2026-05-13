@@ -23,6 +23,7 @@ function makeExp(
     wandb: null,
     hypotheses: [],
     tags: [],
+    archived: false,
     ...fmOverrides,
   }
   const sections: RunSections = {

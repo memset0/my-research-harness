@@ -40,6 +40,8 @@ const BASE_EXP = {
     id: EXP_ID,
     slug: 'plan-fixture',
     title: 'Plan fixture study',
+    status: 'OPEN' as const,
+    archived: false,
     runs: [],
     hypotheses: [],
     tags: [],

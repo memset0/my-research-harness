@@ -26,6 +26,7 @@ function makeExp(overrides: Partial<Run['frontMatter']> = {}): Run {
       wandb: null,
       hypotheses: ['H0001'],
       tags: ['t'],
+      archived: false,
       ...overrides,
     },
     sections: {

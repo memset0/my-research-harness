@@ -2,6 +2,8 @@
 id: E0002-cfg-diversity-decay
 slug: cfg-diversity-decay
 title: "CFG scale erodes sample diversity"
+status: OPEN
+archived: false
 runs: [cfg-diversity-decay-260502-090000]
 hypotheses: [H0002]
 tags: [cfg-sweep, diversity, lpips]

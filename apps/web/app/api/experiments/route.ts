@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
           memberRuns: memberRuns.map((r) => ({
             id: r.id,
             status: r.frontMatter.status,
+            archived: r.frontMatter.archived,
             createdAt: r.frontMatter.createdAt,
             updatedAt: r.frontMatter.updatedAt,
             finishedAt: r.frontMatter.finishedAt,

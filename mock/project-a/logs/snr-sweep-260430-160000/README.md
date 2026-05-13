@@ -9,6 +9,7 @@ finished_at: 2026-04-30T22:10:00+08:00
 host: gpu-node-04
 pid: 7821
 gpus: [0, 1]
+archived: false
 entry: ./train.sh
 command: bash train.sh --param=eps --loss_weight=min_snr --gamma_sweep=1,3,5,7,10
 wandb: https://wandb.ai/me/imgflow/runs/snr-sweep-260430-160000

@@ -2,6 +2,8 @@
 id: E0001-vpred-convergence
 slug: vpred-convergence
 title: "v-prediction vs ε-prediction convergence study"
+status: OPEN
+archived: false
 runs: [foo-260501-100000, bar-260502-150000]
 hypotheses: [H0001]
 tags: [diffusion, v-pred, convergence]

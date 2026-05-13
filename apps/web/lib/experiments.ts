@@ -132,6 +132,19 @@ export interface WriteReadmeResult {
    * dirty-state clears.
    */
   finalContent: string
+  /**
+   * v4: present when the on-disk pre-write target was `archived: true`. The
+   * write succeeded; the warning is informational so the client can surface
+   * a sonner toast.
+   */
+  warning?: 'archived'
+  /**
+   * v4 (run-side only): pre-write status, surfaced when a status transition
+   * happened so the client can correlate with the [STATUS] JOURNAL event.
+   */
+  prevStatus?: string
+  /** v4: post-write status. Set when a status change happened. */
+  nextStatus?: string
 }
 
 export async function writeExperimentReadme(
@@ -145,12 +158,17 @@ export async function writeExperimentReadme(
   }
   const owning = projectFromExp(rt, exp)
   const safePath = safe(exp.path, rt)
-  await readWithLock(safePath, input.expectedMtime, input.expectedHash)
+  const lock = await readWithLock(safePath, input.expectedMtime, input.expectedHash)
+  // Capture pre-write state for the soft-warning + EXP_STATUS event.
+  const prevParsed = parseExperimentReadme(lock.content, expId)
+  const prevArchived = prevParsed.frontMatter.archived
+  const prevStatus = prevParsed.frontMatter.status
   // Server bumps updated_at and re-serializes through the canonical
   // pretty-printer so on-disk format is invariant of the client buffer
   // formatting. parseExperimentReadme is tolerant of formatting drift.
   const parsed = parseExperimentReadme(input.content, expId)
   parsed.frontMatter.updatedAt = nowIso()
+  const nextStatus = parsed.frontMatter.status
   const finalContent = serializeExperimentReadme({
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
@@ -167,6 +185,17 @@ export async function writeExperimentReadme(
       body: `\`${expId}\` op=edit`,
     },
   })
+  // v4: separate [EXP_STATUS] event when the manual exp-status changed.
+  if (prevStatus !== nextStatus) {
+    await appendJournalEvent({
+      path: join(owning.root, 'docs', 'journal.md'),
+      event: {
+        timestamp: nowIso(),
+        tag: 'EXP_STATUS',
+        body: `\`${expId}\` ${prevStatus} → ${nextStatus}`,
+      },
+    })
+  }
   try {
     const updated = await readExperimentDoc(owning.root, owning.name, expId)
     if (updated) {
@@ -177,7 +206,13 @@ export async function writeExperimentReadme(
   } catch {
     // The write succeeded; we just couldn't refresh the index.
   }
-  return { mtime: stat.mtimeMs, hash, finalContent }
+  const result: WriteReadmeResult = { mtime: stat.mtimeMs, hash, finalContent }
+  if (prevStatus !== nextStatus) {
+    result.prevStatus = prevStatus
+    result.nextStatus = nextStatus
+  }
+  if (prevArchived) result.warning = 'archived'
+  return result
 }
 
 // ---------- 9.6: PUT run readme ----------
@@ -198,10 +233,24 @@ export async function writeRunReadme(
   }
   const readmePath = join(safeDir, 'README.md')
   const lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
-  // Compare prev vs new status to know whether to emit a [STATUS] event.
-  const prevStatus = parseReadme(lock.content).frontMatter.status
+  // Compare prev vs new state to know which JOURNAL events to emit.
+  const prevParsed = parseReadme(lock.content)
+  const prevStatus = prevParsed.frontMatter.status
+  const prevArchived = prevParsed.frontMatter.archived
   const nextParsed = parseReadme(input.content)
   const nextStatus = nextParsed.frontMatter.status
+  const nextArchived = nextParsed.frontMatter.archived
+
+  // v4: hard rule — refuse archived: true while post-write status is RUNNING.
+  if (nextArchived === true && nextStatus === 'RUNNING') {
+    throw new ExperimentHttpError(
+      422,
+      'ARCHIVE_RUNNING_FORBIDDEN',
+      'cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first',
+      { id: runId },
+    )
+  }
+
   // Server bumps updated_at + re-serializes for canonical on-disk format.
   nextParsed.frontMatter.updatedAt = nowIso()
   const finalContent = reserializeReadme(nextParsed)
@@ -218,6 +267,17 @@ export async function writeRunReadme(
       },
     })
   }
+  // v4: ARCHIVE event when archive flag flipped.
+  if (prevArchived !== nextArchived) {
+    await appendJournalEvent({
+      path: join(owning.root, 'docs', 'journal.md'),
+      event: {
+        timestamp: nowIso(),
+        tag: 'ARCHIVE',
+        body: `\`${runId}\` op=${nextArchived ? 'archive' : 'unarchive'}`,
+      },
+    })
+  }
   try {
     const updated = await readRunDir(safeDir, owning.name)
     rt.index.set(updated)
@@ -230,7 +290,13 @@ export async function writeRunReadme(
   } catch {
     // The write succeeded; we just couldn't refresh the index.
   }
-  return { mtime: stat.mtimeMs, hash, finalContent }
+  const result: WriteReadmeResult = { mtime: stat.mtimeMs, hash, finalContent }
+  if (prevStatus !== nextStatus) {
+    result.prevStatus = prevStatus
+    result.nextStatus = nextStatus
+  }
+  if (prevArchived) result.warning = 'archived'
+  return result
 }
 
 // ---------- 9.8: POST /api/experiments ----------
@@ -323,6 +389,9 @@ export async function createExperiment(
         id: fullId,
         slug: input.slug,
         title: input.title ?? input.slug,
+        // v4: new exp docs default to OPEN + not-archived (human-only writes).
+        status: 'OPEN',
+        archived: false,
         runs: initialRun ? [initialRun] : [],
         hypotheses: input.hypotheses ?? [],
         tags: input.tags ?? [],

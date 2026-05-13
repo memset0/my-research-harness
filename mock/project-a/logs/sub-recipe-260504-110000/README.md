@@ -9,6 +9,7 @@ finished_at: 2026-05-04T12:30:00+08:00
 host: gpu-node-09
 pid: 99221
 gpus: [0, 1]
+archived: false
 entry: ./train.sh
 command: bash train.sh --recipe=image-generation --bs=64
 wandb: null

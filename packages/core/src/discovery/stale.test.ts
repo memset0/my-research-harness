@@ -26,6 +26,7 @@ function makeExp(overrides: Partial<Run> = {}): Run {
       wandb: null,
       hypotheses: [],
       tags: [],
+      archived: false,
     },
     sections: {
       motivation: null,

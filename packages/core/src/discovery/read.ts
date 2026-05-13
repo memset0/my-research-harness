@@ -121,6 +121,10 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
       wandb: null,
       hypotheses: [],
       tags: [],
+      // No README means archive state cannot be determined from frontmatter.
+      // Default to false; the discovery layer's sidecar fallback (when the
+      // dir contains <runDir>/.archived) is applied separately if needed.
+      archived: false,
     },
     sections: {
       motivation: null,

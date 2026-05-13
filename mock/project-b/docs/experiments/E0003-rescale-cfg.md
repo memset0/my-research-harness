@@ -2,6 +2,8 @@
 id: E0003-rescale-cfg
 slug: rescale-cfg
 title: "Rescale-CFG saturation envelope recovery"
+status: OPEN
+archived: false
 runs: [cfg-rescale-260503-130000]
 hypotheses: [H0004]
 tags: [rescale-cfg, saturation, probe]

@@ -16,6 +16,8 @@ function exp(id: string, slug: string, runs: string[] = []): Experiment {
       id,
       slug,
       title: slug,
+      status: 'OPEN',
+      archived: false,
       runs,
       hypotheses: [],
       tags: [],
@@ -55,6 +57,7 @@ function run(id: string, experiment: string | null): Run {
       wandb: null,
       hypotheses: [],
       tags: [],
+      archived: false,
     },
     sections: {
       motivation: null,

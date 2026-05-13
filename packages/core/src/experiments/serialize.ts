@@ -54,6 +54,10 @@ function renderFrontMatter(fm: ExperimentFrontMatter): string {
   lines.push(`id: ${quoteIfNeeded(fm.id)}`)
   lines.push(`slug: ${quoteIfNeeded(fm.slug)}`)
   lines.push(`title: ${quoteIfNeeded(fm.title)}`)
+  // v4-added: ExperimentStatus between title and archived.
+  lines.push(`status: ${fm.status}`)
+  // v4-added: archived between status and runs.
+  lines.push(`archived: ${fm.archived ? 'true' : 'false'}`)
   lines.push(`runs: ${renderStringArray(fm.runs)}`)
   for (const ref of fm.hypotheses) {
     if (!isId(ref, 'H')) {

@@ -309,6 +309,12 @@ export interface PatchStatusResponse {
   prevStatus?: string
   nextStatus?: string
   unchanged?: boolean
+  /** v4: present when the on-disk pre-write archived was true. */
+  warning?: 'archived'
+}
+
+export interface PatchStatusForbidden {
+  error: { code: 'ARCHIVE_RUNNING_FORBIDDEN'; message: string; id?: string }
 }
 
 export async function patchExperimentStatus(input: {
@@ -316,7 +322,7 @@ export async function patchExperimentStatus(input: {
   status: string
   expectedMtime: number
   expectedHash?: string
-}): Promise<PatchStatusResponse | PutReadmeConflict> {
+}): Promise<PatchStatusResponse | PutReadmeConflict | PatchStatusForbidden> {
   const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -328,8 +334,83 @@ export async function patchExperimentStatus(input: {
   })
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
+  if (res.status === 422 && body?.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
+    return body as PatchStatusForbidden
+  }
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
   return body as PatchStatusResponse
+}
+
+// ---------- v4 archive toggle ----------
+
+export interface PatchArchiveResponse {
+  ok: true
+  archived: boolean
+  mtime: number
+  noop?: boolean
+}
+
+export interface PatchArchiveForbidden {
+  error: { code: 'ARCHIVE_RUNNING_FORBIDDEN'; message: string; id?: string }
+}
+
+export async function patchRunArchived(input: {
+  id: string
+  archived: boolean
+  expectedMtime?: number
+}): Promise<PatchArchiveResponse | PatchArchiveForbidden | PutReadmeConflict> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/archive`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archived: input.archived, expectedMtime: input.expectedMtime }),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (res.status === 422 && body?.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
+    return body as PatchArchiveForbidden
+  }
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PatchArchiveResponse
+}
+
+export interface PatchExperimentStatusResponse {
+  mtime: number
+  prevStatus?: string
+  nextStatus?: string
+  unchanged?: boolean
+  warning?: 'archived'
+}
+
+export async function patchExperimentStatusV4(input: {
+  id: string
+  status: 'OPEN' | 'RESOLVED' | 'ABANDONED'
+  expectedMtime: number
+}): Promise<PatchExperimentStatusResponse | PutReadmeConflict> {
+  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: input.status, expectedMtime: input.expectedMtime }),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PatchExperimentStatusResponse
+}
+
+export async function patchExperimentArchived(input: {
+  id: string
+  archived: boolean
+  expectedMtime?: number
+}): Promise<PatchArchiveResponse | PutReadmeConflict> {
+  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/archive`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archived: input.archived, expectedMtime: input.expectedMtime }),
+  })
+  const body = await res.json()
+  if (res.status === 409) return body as PutReadmeConflict
+  if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
+  return body as PatchArchiveResponse
 }
 
 // ---------- Browser terminal (ttyd + tmux) ----------
@@ -584,6 +665,8 @@ export interface MemberRunSummary {
   host: string | null
   gpus: number[]
   path?: string
+  /** v4-added — true when the run README's `archived` frontmatter is true. */
+  archived?: boolean
   /** The run README's manually-described Artifacts (path + description). */
   artifacts: { path: string; description: string }[]
 }
@@ -597,6 +680,10 @@ export interface ExperimentDocSummary {
     id: string
     slug: string
     title: string
+    /** v4: ExperimentStatus enum from frontmatter. */
+    status: 'OPEN' | 'RESOLVED' | 'ABANDONED'
+    /** v4: archived flag from frontmatter. */
+    archived: boolean
     runs: string[]
     hypotheses: string[]
     tags: string[]

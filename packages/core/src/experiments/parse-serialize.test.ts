@@ -14,6 +14,19 @@ const FRONT_MATTER = `---
 id: E0001-foo
 slug: foo
 title: Foo study
+status: OPEN
+archived: false
+runs: [foo-260501-100000]
+hypotheses: []
+tags: []
+created_at: '2026-05-01T08:00:00+08:00'
+updated_at: '2026-05-01T08:00:00+08:00'
+---`
+
+const V3_FRONT_MATTER = `---
+id: E0001-foo
+slug: foo
+title: Foo study
 runs: [foo-260501-100000]
 hypotheses: []
 tags: []
@@ -153,5 +166,87 @@ describe('parseExperimentReadme + serializeExperimentReadme — Plan section', (
       expect(idx, `expected ${heading} at or after cursor ${cursor}`).toBeGreaterThanOrEqual(cursor)
       cursor = idx + heading.length
     }
+  })
+})
+
+describe('parseExperimentReadme + serializeExperimentReadme — v4 lifecycle frontmatter', () => {
+  it('round-trips a v4 frontmatter with status + archived (covers tasks.md 2.5)', () => {
+    const original = makeDoc('- [ ] Plan item')
+    const parsed = parseExperimentReadme(original, 'E0001-foo')
+
+    expect(parsed.parseErrors).toEqual([])
+    expect(parsed.parseWarnings).toEqual([])
+    expect(parsed.frontMatter.status).toBe('OPEN')
+    expect(parsed.frontMatter.archived).toBe(false)
+
+    const out = serializeExperimentReadme({
+      frontMatter: parsed.frontMatter,
+      sections: parsed.sections,
+      warningsRaw: parsed.warningsRaw,
+    })
+
+    expect(out).toContain('status: OPEN')
+    expect(out).toContain('archived: false')
+    // Canonical key order: status between title and archived; archived between status and runs.
+    const titleIdx = out.indexOf('title:')
+    const statusIdx = out.indexOf('status:')
+    const archivedIdx = out.indexOf('archived:')
+    const runsIdx = out.indexOf('runs:')
+    expect(statusIdx).toBeGreaterThan(titleIdx)
+    expect(archivedIdx).toBeGreaterThan(statusIdx)
+    expect(runsIdx).toBeGreaterThan(archivedIdx)
+  })
+
+  it('preserves a non-default status + archived round-trip', () => {
+    const fm = `---
+id: E0001-foo
+slug: foo
+title: Foo study
+status: RESOLVED
+archived: true
+runs: [foo-260501-100000]
+hypotheses: []
+tags: []
+created_at: '2026-05-01T08:00:00+08:00'
+updated_at: '2026-05-13T12:00:00+08:00'
+---`
+    const original = `${fm}\n\n## Motivation\n\n## Method\n\n## Conclusion\nWe got it.\n\n## Caveats\n\n## Warnings\n`
+    const parsed = parseExperimentReadme(original, 'E0001-foo')
+
+    expect(parsed.parseErrors).toEqual([])
+    expect(parsed.parseWarnings).toEqual([])
+    expect(parsed.frontMatter.status).toBe('RESOLVED')
+    expect(parsed.frontMatter.archived).toBe(true)
+
+    const out = serializeExperimentReadme({
+      frontMatter: parsed.frontMatter,
+      sections: parsed.sections,
+      warningsRaw: parsed.warningsRaw,
+    })
+    expect(out).toContain('status: RESOLVED')
+    expect(out).toContain('archived: true')
+  })
+
+  it('a v3-shaped doc (no status / archived) parses with defaulted values + warnings; serializer produces v4 shape (covers tasks.md 2.6)', () => {
+    const original = `${V3_FRONT_MATTER}\n\n## Motivation\n\n## Method\n\n## Conclusion\n\n## Caveats\n\n## Warnings\n`
+    const parsed = parseExperimentReadme(original, 'E0001-foo')
+
+    expect(parsed.parseErrors).toEqual([])
+    // Expect the two MISSING warnings.
+    const codes = parsed.parseWarnings.map((w) => w.message.split(':')[0])
+    expect(codes).toContain('MISSING_EXP_STATUS')
+    expect(codes).toContain('MISSING_ARCHIVED_FIELD')
+    // Defaulted values.
+    expect(parsed.frontMatter.status).toBe('OPEN')
+    expect(parsed.frontMatter.archived).toBe(false)
+
+    // Serializer (re-emit) produces v4 shape with the defaulted values.
+    const out = serializeExperimentReadme({
+      frontMatter: parsed.frontMatter,
+      sections: parsed.sections,
+      warningsRaw: parsed.warningsRaw,
+    })
+    expect(out).toContain('status: OPEN')
+    expect(out).toContain('archived: false')
   })
 })

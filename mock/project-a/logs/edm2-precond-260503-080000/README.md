@@ -9,6 +9,7 @@ finished_at: 2026-05-03T09:30:00+08:00
 host: gpu-node-07
 pid: 14123
 gpus: [0, 1, 2, 3]
+archived: false
 entry: ./train.sh
 command: bash train.sh --precond=edm2 --baseline_compare --img=256 --steps=120000
 wandb: https://wandb.ai/me/imgflow/runs/baz-260503-080000

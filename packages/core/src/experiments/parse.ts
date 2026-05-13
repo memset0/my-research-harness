@@ -23,6 +23,7 @@ import {
   EXPERIMENT_FILENAME_REGEX,
 } from '../types.js'
 import { ExperimentFrontMatterRawSchema } from '../schemas.js'
+import { normalizeExperimentStatus } from '../status.js'
 import { matterOptions } from '../yaml-engine.js'
 import { splitH2Sections } from '../readme/sections.js'
 
@@ -126,10 +127,48 @@ export function parseExperimentReadme(
   // Validate hypothesis refs (drop bad ones with warnings)
   const hypotheses = validatedHypothesisRefs(raw.hypotheses, warnings)
 
+  // v4-added: ExperimentStatus. Missing → OPEN with parse warning.
+  let status: ExperimentFrontMatter['status']
+  if (raw.status === undefined) {
+    status = 'OPEN'
+    warnings.push({
+      field: 'status',
+      message: `MISSING_EXP_STATUS: experiment status missing from frontmatter; defaulting to OPEN`,
+      severity: 'warning',
+    })
+  } else {
+    const result = normalizeExperimentStatus(raw.status)
+    status = result.value
+    if (result.issue) {
+      if (result.issue.severity === 'error') errors.push(result.issue)
+      else warnings.push(result.issue)
+    }
+  }
+
+  // v4-added: archived flag. Missing → false with parse warning.
+  let archived = false
+  if (raw.archived === undefined) {
+    warnings.push({
+      field: 'archived',
+      message: `MISSING_ARCHIVED_FIELD: archived flag missing from frontmatter; defaulting to false`,
+      severity: 'warning',
+    })
+  } else if (typeof raw.archived === 'boolean') {
+    archived = raw.archived
+  } else {
+    warnings.push({
+      field: 'archived',
+      message: `archived must be a boolean; received ${typeof raw.archived}; defaulting to false`,
+      severity: 'warning',
+    })
+  }
+
   const frontMatter: ExperimentFrontMatter = {
     id: fnameId ?? declaredId,
     slug: fnameSlug ?? declaredSlug,
     title: stringOr(raw.title, ''),
+    status,
+    archived,
     runs,
     hypotheses,
     tags: stringArray(raw.tags),
@@ -231,6 +270,8 @@ function emptyResult(
       id: fnameId ?? '',
       slug: fnameSlug ?? '',
       title: '',
+      status: 'OPEN',
+      archived: false,
       runs: [],
       hypotheses: [],
       tags: [],

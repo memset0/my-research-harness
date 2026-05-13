@@ -28,6 +28,8 @@ function makeExpDoc(id: string, effectiveUpdatedAt: string) {
       id,
       slug: id.replace(/^E\d+-/, ''),
       title: id,
+      status: 'OPEN' as const,
+      archived: false,
       runs: [],
       hypotheses: [],
       tags: [],

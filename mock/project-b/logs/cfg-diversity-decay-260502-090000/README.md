@@ -9,6 +9,7 @@ finished_at: 2026-05-02T17:00:00+08:00
 host: bench-01
 pid: 9012
 gpus: [0]
+archived: false
 entry: ./run.sh
 command: bash run.sh --workload=cfg_sweep --cfg=4.5,7.5,10,12 --samples_per_prompt=4
 wandb: null

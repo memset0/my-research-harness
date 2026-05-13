@@ -9,6 +9,7 @@ finished_at: 2026-05-01T11:00:00+08:00
 host: bench-01
 pid: 8421
 gpus: [0]
+archived: false
 entry: ./run.sh
 command: bash run.sh --reruns=10 --sampler=ddim --steps=50 --ref-sampler=ddpm --ref-steps=1000
 wandb: null

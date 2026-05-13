@@ -40,6 +40,8 @@ const SAMPLE_EXP = {
     id: EXP_ID,
     slug: 'foo',
     title: 'Foo study',
+    status: 'OPEN' as const,
+    archived: false,
     runs: [RUN_ID],
     hypotheses: [],
     tags: [],
@@ -90,6 +92,7 @@ const SAMPLE_RUN = {
     wandb: null,
     hypotheses: [],
     tags: [],
+    archived: false,
   },
   sections: {
     motivation: null,
