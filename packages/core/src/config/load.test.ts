@@ -252,7 +252,12 @@ projects:
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal).toEqual({ ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 })
+    expect(cfg!.terminal).toEqual({
+      ttydMaxConcurrent: 16,
+      ttydIdleTtlMinutes: 30,
+      paneInfoActivePollMs: 5_000,
+      paneInfoIdlePollMs: 60_000,
+    })
   })
 
   it('partial config fills missing defaults', async () => {
@@ -264,7 +269,12 @@ terminal:
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal).toEqual({ ttydMaxConcurrent: 8, ttydIdleTtlMinutes: 30 })
+    expect(cfg!.terminal).toEqual({
+      ttydMaxConcurrent: 8,
+      ttydIdleTtlMinutes: 30,
+      paneInfoActivePollMs: 5_000,
+      paneInfoIdlePollMs: 60_000,
+    })
   })
 
   it('idle_ttl_minutes 0 is allowed (disables killer)', async () => {
@@ -310,5 +320,42 @@ terminal:
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('honors custom pane_info polling intervals', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  pane_info_active_poll_ms: 3000
+  pane_info_idle_poll_ms: 120000
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal.paneInfoActivePollMs).toBe(3000)
+    expect(cfg!.terminal.paneInfoIdlePollMs).toBe(120000)
+  })
+
+  it('rejects zero pane_info_active_poll_ms', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  pane_info_active_poll_ms: 0
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects pane_info_idle_poll_ms below active', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  pane_info_active_poll_ms: 5000
+  pane_info_idle_poll_ms: 2000
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/must be >=/)
   })
 })

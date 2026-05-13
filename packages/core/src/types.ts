@@ -479,6 +479,19 @@ export interface TerminalConfig {
   ttydMaxConcurrent: number
   /** Kill ttyd after this many minutes with no connected client. `0` disables. */
   ttydIdleTtlMinutes: number
+  /**
+   * Recommended client poll interval (ms) for `GET /api/tmux-sessions/:name`
+   * when the named session has a live ttyd entry (the user is actively
+   * watching). Default `5000`. Consumed by per-target indicators (future
+   * change wires this into the UI).
+   */
+  paneInfoActivePollMs: number
+  /**
+   * Recommended client poll interval (ms) when the named session has NO live
+   * ttyd entry (no ttyd bound, or the session does not exist on the host).
+   * Default `60000`. MUST be `>= paneInfoActivePollMs` (validated at load).
+   */
+  paneInfoIdlePollMs: number
 }
 
 export interface Config {
@@ -507,4 +520,6 @@ export const DEFAULT_POLL: PollConfig = {
 export const DEFAULT_TERMINAL: TerminalConfig = {
   ttydMaxConcurrent: 16,
   ttydIdleTtlMinutes: 30,
+  paneInfoActivePollMs: 5_000,
+  paneInfoIdlePollMs: 60_000,
 }

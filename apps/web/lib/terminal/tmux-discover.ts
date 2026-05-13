@@ -20,6 +20,15 @@ import type { Runtime } from '../runtime'
 // stale — they're the manual category (matchable: false, staleReason: null).
 export type StaleReason = 'unknown-project' | 'unknown-target'
 
+export interface TmuxPaneInfo {
+  /** PTY-protocol window title (OSC-set by the foreground program). */
+  title: string | null
+  /** Basename of the foreground process. */
+  currentCommand: string | null
+  /** Absolute cwd of the foreground process. */
+  currentPath: string | null
+}
+
 export interface TmuxSessionRow {
   sessionName: string
   parsed: ParsedSessionName
@@ -30,9 +39,20 @@ export interface TmuxSessionRow {
   tmuxLastActivity: string
   matchable: boolean
   staleReason: StaleReason | null
+  /** Active-pane info from `tmux list-panes -a`. Null when tmux didn't
+   *  surface a usable active pane (daemon down, race, etc). */
+  pane: TmuxPaneInfo | null
 }
 
 const FORMAT = '#{session_name}|#{session_created}|#{session_activity}'
+
+// `pane_title` is LAST so embedded `|` in the title doesn't break the parser;
+// we rejoin tokens past position 6 to reconstruct titles verbatim. See spec
+// "Server-side pane-info enrichment with bounded shell-out cost".
+const PANE_FORMAT =
+  '#{session_name}|#{window_active}|#{pane_active}|#{pane_pid}|#{pane_current_command}|#{pane_current_path}|#{pane_title}'
+const PANE_TITLE_MAX_LEN = 256
+const PANE_CACHE_TTL_MS = 800
 
 export async function listMemonTmuxSessions(rt: Runtime): Promise<TmuxSessionRow[]> {
   let stdout: string
@@ -42,6 +62,8 @@ export async function listMemonTmuxSessions(rt: Runtime): Promise<TmuxSessionRow
     // tmux daemon not running or no sessions: classify as empty
     return []
   }
+
+  const paneMap = await getActivePaneMapCached()
 
   const rows: TmuxSessionRow[] = []
   for (const rawLine of stdout.split('\n')) {
@@ -63,11 +85,26 @@ export async function listMemonTmuxSessions(rt: Runtime): Promise<TmuxSessionRow
       tmuxLastActivity: epochToIso(activityEpoch),
       matchable,
       staleReason,
+      pane: paneMap.get(name) ?? null,
     })
   }
 
   rows.sort((a, b) => parseTime(b.tmuxLastActivity) - parseTime(a.tmuxLastActivity))
   return rows
+}
+
+/**
+ * Enriched single-row lookup by sessionName. Returns the matching
+ * `TmuxSessionRow` from `listMemonTmuxSessions` output, or null if the host
+ * has no tmux session by that name. Uses the same pane-cache as the bulk
+ * listing so concurrent calls in the same 800 ms window share one shell-out.
+ */
+export async function getEnrichedSession(
+  rt: Runtime,
+  name: string,
+): Promise<TmuxSessionRow | null> {
+  const rows = await listMemonTmuxSessions(rt)
+  return rows.find((r) => r.sessionName === name) ?? null
 }
 
 function classify(parsed: ParsedSessionName, rt: Runtime): {
@@ -203,4 +240,107 @@ function parseTime(iso: string): number {
   if (!iso) return 0
   const t = Date.parse(iso)
   return Number.isFinite(t) ? t : 0
+}
+
+// ---------- Active-pane enrichment ----------
+//
+// Bulk pane data is fetched once per refresh from `tmux list-panes -a` and
+// cached for PANE_CACHE_TTL_MS so concurrent callers (the list endpoint plus
+// future per-button polls) collapse to one shell-out. The cache slot is
+// pinned on globalThis to survive Next.js HMR — mirrors the pattern in
+// `manager.ts`'s `getState()`.
+
+const PANE_CACHE_GLOBAL_KEY = '__memonTmuxPaneCache' as const
+interface PaneCacheSlot {
+  at: number
+  map: Map<string, TmuxPaneInfo>
+  inflight: Promise<Map<string, TmuxPaneInfo>> | null
+}
+function getPaneCacheSlot(): { value: PaneCacheSlot | null; set: (v: PaneCacheSlot | null) => void } {
+  const holder = globalThis as unknown as { [PANE_CACHE_GLOBAL_KEY]?: PaneCacheSlot | null }
+  return {
+    value: holder[PANE_CACHE_GLOBAL_KEY] ?? null,
+    set: (v) => {
+      holder[PANE_CACHE_GLOBAL_KEY] = v
+    },
+  }
+}
+
+export async function getActivePaneMapCached(): Promise<Map<string, TmuxPaneInfo>> {
+  const slot = getPaneCacheSlot()
+  const now = Date.now()
+  const cur = slot.value
+  if (cur && now - cur.at < PANE_CACHE_TTL_MS) return cur.map
+  if (cur && cur.inflight) return cur.inflight
+
+  const inflight = fetchActivePaneMap()
+  // Mark inflight on the existing slot so concurrent calls share it; the
+  // first caller will replace the slot once the fetch resolves.
+  slot.set({
+    at: cur?.at ?? 0,
+    map: cur?.map ?? new Map(),
+    inflight,
+  })
+  try {
+    const map = await inflight
+    slot.set({ at: Date.now(), map, inflight: null })
+    return map
+  } catch {
+    // Any failure → fall back to an empty map and clear inflight so the next
+    // call retries. We do NOT keep a stale cached map past TTL on error;
+    // returning empty is safer than serving stale data marked fresh.
+    slot.set({ at: Date.now(), map: new Map(), inflight: null })
+    return new Map()
+  }
+}
+
+async function fetchActivePaneMap(): Promise<Map<string, TmuxPaneInfo>> {
+  let stdout: string
+  try {
+    stdout = await execTmux(['list-panes', '-a', '-F', PANE_FORMAT])
+  } catch {
+    // Daemon down, no panes, exec error — all surface as empty pane info.
+    return new Map()
+  }
+  const out = new Map<string, TmuxPaneInfo>()
+  for (const rawLine of stdout.split('\n')) {
+    const line = rawLine.trimEnd()
+    if (!line) continue
+    // Split into the 6 fixed fields + the title tail. We expect 7 segments
+    // but title may itself contain `|`, so we limit splits to 6 and rejoin
+    // the remainder.
+    const segments = line.split('|')
+    if (segments.length < 7) continue
+    const sessionName = segments[0]!
+    const windowActive = segments[1]!
+    const paneActive = segments[2]!
+    // segments[3] is pane_pid — unused on the public shape but kept in the
+    // format string for future incident-debugging.
+    const currentCommand = segments[4] ?? ''
+    const currentPath = segments[5] ?? ''
+    const titleRaw = segments.slice(6).join('|')
+    if (windowActive !== '1' || paneActive !== '1') continue
+    if (!sessionName) continue
+    out.set(sessionName, {
+      title: normalizeTitle(titleRaw),
+      currentCommand: currentCommand.length > 0 ? currentCommand : null,
+      currentPath: currentPath.length > 0 ? currentPath : null,
+    })
+  }
+  return out
+}
+
+function normalizeTitle(raw: string): string | null {
+  if (raw.length === 0) return null
+  // Replace embedded newlines / carriage returns with a single space.
+  const collapsed = raw.replace(/[\r\n]+/g, ' ')
+  if (collapsed.length <= PANE_TITLE_MAX_LEN) return collapsed
+  return collapsed.slice(0, PANE_TITLE_MAX_LEN) + '…'
+}
+
+/** Test-only: clear the pane-info cache so unit tests get deterministic
+ *  shell-out counts. */
+export function __resetPaneCacheForTests(): void {
+  const slot = getPaneCacheSlot()
+  slot.set(null)
 }

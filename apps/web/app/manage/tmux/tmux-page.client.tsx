@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Activity,
   AlertTriangle,
   Archive,
   Bot,
@@ -27,6 +28,7 @@ import {
   createTmuxSession,
   killTmuxSession,
   listTmuxSessions,
+  type TmuxPaneInfo,
   type TmuxSessionRow,
 } from '../../../lib/api'
 import { Button } from '../../../components/ui/button'
@@ -270,6 +272,40 @@ function ScopeBadge({ row }: { row: TmuxSessionRow }) {
   return <MetaBadge icon={Archive} value="Other" className={BADGE_COLORS.legacy} />
 }
 
+/**
+ * Commands that, when present alongside a title, add no information beyond
+ * "an idle shell is in the foreground". We suppress the command in that case
+ * so the line reads cleanly. If NO title is available, we render the command
+ * anyway so the line isn't blank.
+ */
+const UNINFORMATIVE_SHELLS = new Set(['bash', 'zsh', 'sh', 'fish', 'tmux'])
+
+function displayPane(pane: TmuxPaneInfo | null): { command: string | null; title: string | null } {
+  if (!pane) return { command: null, title: null }
+  const title = pane.title && pane.title.length > 0 ? pane.title : null
+  const rawCmd = pane.currentCommand && pane.currentCommand.length > 0 ? pane.currentCommand : null
+  let command = rawCmd
+  if (command && UNINFORMATIVE_SHELLS.has(command) && title !== null) {
+    command = null
+  }
+  return { command, title }
+}
+
+function PaneInfoLine({ pane }: { pane: TmuxPaneInfo | null }) {
+  const { command, title } = displayPane(pane)
+  if (command === null && title === null) return null
+  return (
+    <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground/90">
+      <Activity className="size-3 shrink-0" aria-hidden />
+      {command !== null && <span className="font-mono shrink-0">{command}</span>}
+      {command !== null && title !== null && <span className="opacity-60">·</span>}
+      {title !== null && (
+        <span className="font-mono min-w-0 truncate">{title}</span>
+      )}
+    </div>
+  )
+}
+
 function relativeTime(iso: string): string {
   const t = Date.parse(iso)
   if (!Number.isFinite(t)) return iso
@@ -313,12 +349,18 @@ function SessionCard({
     }
   }
 
+  // Browser-tooltip on the whole card: show the full untruncated pane title
+  // when present so the user can hover the line (or anywhere on the card)
+  // to read past the visual truncation.
+  const cardTitle = row.pane?.title ?? undefined
+
   return (
     <div
       role={stale ? undefined : 'button'}
       tabIndex={stale ? -1 : 0}
       onClick={handleSelect}
       onKeyDown={handleKey}
+      title={cardTitle}
       className={cn(
         'group rounded-md border bg-card p-2.5 transition-colors',
         stale ? 'opacity-75' : 'cursor-pointer hover:bg-accent/40',
@@ -377,6 +419,7 @@ function SessionCard({
         {p.project !== null && p.scope !== 'project' && <ProjectBadge project={p.project} />}
         <ScopeBadge row={row} />
       </div>
+      <PaneInfoLine pane={row.pane} />
     </div>
   )
 }
@@ -509,15 +552,33 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
     row.parsed.project !== null &&
     row.parsed.scope !== null &&
     row.parsed.slug !== null
+  const { command: paneCmd, title: paneTitle } = displayPane(row.pane)
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <span
-          className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
-          title={row.sessionName}
-        >
-          {row.sessionName}
-        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span
+            className="shrink-0 truncate font-mono text-[11px] text-muted-foreground"
+            title={row.sessionName}
+          >
+            {row.sessionName}
+          </span>
+          {(paneCmd !== null || paneTitle !== null) && (
+            <span
+              className="flex min-w-0 items-center gap-1 font-mono text-[10px] text-muted-foreground/80"
+              title={paneTitle ?? undefined}
+            >
+              <span className="opacity-60">·</span>
+              {paneCmd !== null && <span className="shrink-0">{paneCmd}</span>}
+              {paneCmd !== null && paneTitle !== null && (
+                <span className="opacity-60">·</span>
+              )}
+              {paneTitle !== null && (
+                <span className="min-w-0 truncate">{paneTitle}</span>
+              )}
+            </span>
+          )}
+        </div>
         {popup && (
           <ViewerGuard reason="Manage tmux session">
             <Button

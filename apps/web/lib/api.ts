@@ -461,6 +461,21 @@ export interface TerminalStartResponse {
   warnings: string[]
 }
 
+/**
+ * Active-pane info sourced from `tmux list-panes -a`. All fields are
+ * possibly null — `pane: null` (parent-level) means tmux didn't surface
+ * a usable active pane; individual nulls mean tmux returned an empty
+ * string for that field.
+ */
+export interface TmuxPaneInfo {
+  /** OSC-set PTY window title from the foreground program. Truncated to ≤257 chars. */
+  title: string | null
+  /** Basename of the foreground process (e.g. `claude`, `bash`, `node`). */
+  currentCommand: string | null
+  /** Absolute cwd of the foreground process. */
+  currentPath: string | null
+}
+
 export interface TmuxSessionRow {
   sessionName: string
   parsed: {
@@ -483,6 +498,8 @@ export interface TmuxSessionRow {
    * standard project/run/exp target.
    */
   staleReason: 'unknown-project' | 'unknown-target' | null
+  /** Pane info from `tmux list-panes -a`; null when tmux didn't surface a usable active pane. */
+  pane: TmuxPaneInfo | null
 }
 
 export async function checkTerminal(): Promise<TerminalCheckResult> {
@@ -542,6 +559,16 @@ export async function listTerminals(): Promise<{ sessions: TerminalSession[] }> 
 export async function listTmuxSessions(): Promise<{ sessions: TmuxSessionRow[] }> {
   const res = await fetch('/api/tmux-sessions')
   return jsonOrThrow<{ sessions: TmuxSessionRow[] }>(res)
+}
+
+/**
+ * Enriched single-row lookup. Returns the same row shape as
+ * `listTmuxSessions().sessions[i]`. Used by per-target indicators that
+ * only need to know about one session without polling the whole inventory.
+ */
+export async function getTmuxSession(name: string): Promise<{ row: TmuxSessionRow }> {
+  const res = await fetch(`/api/tmux-sessions/${encodeURIComponent(name)}`)
+  return jsonOrThrow<{ row: TmuxSessionRow }>(res)
 }
 
 export async function killTmuxSession(name: string): Promise<{ ok: true }> {

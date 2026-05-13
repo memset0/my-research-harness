@@ -118,6 +118,17 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   const terminal: TerminalConfig = {
     ttydMaxConcurrent: cfg.terminal?.ttyd_max_concurrent ?? DEFAULT_TERMINAL.ttydMaxConcurrent,
     ttydIdleTtlMinutes: cfg.terminal?.ttyd_idle_ttl_minutes ?? DEFAULT_TERMINAL.ttydIdleTtlMinutes,
+    paneInfoActivePollMs:
+      cfg.terminal?.pane_info_active_poll_ms ?? DEFAULT_TERMINAL.paneInfoActivePollMs,
+    paneInfoIdlePollMs:
+      cfg.terminal?.pane_info_idle_poll_ms ?? DEFAULT_TERMINAL.paneInfoIdlePollMs,
+  }
+
+  if (terminal.paneInfoIdlePollMs < terminal.paneInfoActivePollMs) {
+    throw new ConfigError(
+      `terminal.pane_info_idle_poll_ms (${terminal.paneInfoIdlePollMs}) must be >= terminal.pane_info_active_poll_ms (${terminal.paneInfoActivePollMs})`,
+      candidate,
+    )
   }
 
   return { projects, poll, auth, terminal }

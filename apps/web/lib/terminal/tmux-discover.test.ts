@@ -20,7 +20,10 @@ vi.mock('./manager', async () => {
 })
 
 import {
+  __resetPaneCacheForTests,
   createManualTmuxSession,
+  getActivePaneMapCached,
+  getEnrichedSession,
   killTmuxSessionByName,
   listMemonTmuxSessions,
   tmuxHasSession,
@@ -50,17 +53,22 @@ function fakeRuntime(opts: FakeRuntimeOpts = {}) {
   } as any
 }
 
-function tmuxLsReturns(stdout: string): void {
+function queueTmuxResponse(stdout: string, exitCode = 0): void {
   spawnMock.mockImplementationOnce(() => {
     const proc = new FakeProc()
     setImmediate(() => {
-      proc.stdout.emit('data', Buffer.from(stdout))
-      proc.emit('exit', 0)
+      if (stdout.length > 0) proc.stdout.emit('data', Buffer.from(stdout))
+      proc.emit('exit', exitCode)
     })
     return proc
   })
 }
 
+/**
+ * Queue ONLY a `tmux ls` mock that errors. `listMemonTmuxSessions` short-
+ * circuits before reaching the panes shell-out in that case, so no second
+ * mock is needed.
+ */
 function tmuxLsErrors(): void {
   spawnMock.mockImplementationOnce(() => {
     const proc = new FakeProc()
@@ -72,10 +80,31 @@ function tmuxLsErrors(): void {
   })
 }
 
+/**
+ * Queue a `tmux ls` mock with the given stdout, followed by an empty
+ * `tmux list-panes -a` mock so the pane-enrichment shell-out resolves to
+ * an empty map. Existing tests that don't care about pane data should use
+ * this helper.
+ */
+function tmuxLsReturns(stdout: string): void {
+  queueTmuxResponse(stdout)
+  queueTmuxResponse('')
+}
+
+/**
+ * Queue both `tmux ls` and `tmux list-panes -a` with their respective
+ * stdouts. Use this when asserting pane enrichment.
+ */
+function tmuxLsAndPanesReturns(lsStdout: string, panesStdout: string): void {
+  queueTmuxResponse(lsStdout)
+  queueTmuxResponse(panesStdout)
+}
+
 beforeEach(() => {
   spawnMock.mockReset()
   lookupSessionMock.mockReset().mockReturnValue(null)
   stopSessionMock.mockReset().mockResolvedValue({ stopped: true })
+  __resetPaneCacheForTests()
 })
 
 describe('listMemonTmuxSessions', () => {
@@ -308,6 +337,166 @@ describe('createManualTmuxSession', () => {
       ['new-session', '-d', '-s', 'memon-manual-foo', '-c', cwd],
       expect.any(Object),
     )
+  })
+})
+
+describe('pane enrichment', () => {
+  it('populates pane info on every row from list-panes output', async () => {
+    tmuxLsAndPanesReturns(
+      'memon-claude-project-a--run--foo-260507-103000|1700000000|1700001000\n',
+      'memon-claude-project-a--run--foo-260507-103000|1|1|12345|claude|/repo/project-a/run-foo|✻ Claude — Building digest\n',
+    )
+    const rows = await listMemonTmuxSessions(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+        runs: [{ id: 'foo-260507-103000', project: 'project-a' }],
+      }),
+    )
+    expect(rows[0]?.pane).toEqual({
+      title: '✻ Claude — Building digest',
+      currentCommand: 'claude',
+      currentPath: '/repo/project-a/run-foo',
+    })
+  })
+
+  it('only picks the active-window active-pane per session', async () => {
+    tmuxLsAndPanesReturns(
+      'memon-claude-project-a--run--foo|1700000000|1700001000\n',
+      // window 0 inactive, window 1 active. pane 0 inactive, pane 1 active.
+      'memon-claude-project-a--run--foo|0|1|11|bash|/tmp|w0p0-title\n' +
+        'memon-claude-project-a--run--foo|1|0|22|node|/tmp|w1p0-title\n' +
+        'memon-claude-project-a--run--foo|1|1|33|claude|/proj|w1p1-title\n',
+    )
+    const rows = await listMemonTmuxSessions(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+        runs: [{ id: 'foo', project: 'project-a' }],
+      }),
+    )
+    expect(rows[0]?.pane).toEqual({
+      title: 'w1p1-title',
+      currentCommand: 'claude',
+      currentPath: '/proj',
+    })
+  })
+
+  it('preserves pane_title containing | characters', async () => {
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      'memon-manual-foo|1|1|99|bash|/tmp|a|b|c\n',
+    )
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.pane?.title).toBe('a|b|c')
+  })
+
+  it('truncates pane_title over 256 chars with ellipsis suffix', async () => {
+    const longTitle = 'x'.repeat(300)
+    tmuxLsAndPanesReturns(
+      'memon-manual-long|1700000000|1700001000\n',
+      `memon-manual-long|1|1|10|bash|/tmp|${longTitle}\n`,
+    )
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    const title = rows[0]?.pane?.title ?? ''
+    // 256 source chars + 1 ellipsis = 257 total.
+    expect(title.length).toBe(257)
+    expect(title.endsWith('…')).toBe(true)
+  })
+
+  it('replaces newline characters in title with a space', async () => {
+    // tmux's `tmux ls` output is per-line; an embedded newline would split
+    // into two records. We simulate the post-tmux parse where a stray \n
+    // sneaks into a single record's title-tail token by injecting it via
+    // the fixture string. The parser should normalize it.
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      // Note the embedded \r\n in the title tail (last field on the line).
+      // Our spec replaces \r and \n with a space.
+      'memon-manual-foo|1|1|10|bash|/tmp|line1\rline2 still same record',
+    )
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.pane?.title).toBe('line1 line2 still same record')
+  })
+
+  it('falls back to null pane on list-panes failure', async () => {
+    queueTmuxResponse('memon-claude-project-a--run--foo|1700000000|1700001000\n')
+    queueTmuxResponse('', 1) // list-panes errors
+    const rows = await listMemonTmuxSessions(
+      fakeRuntime({
+        projects: [{ name: 'project-a', root: '/repo/project-a' }],
+        runs: [{ id: 'foo', project: 'project-a' }],
+      }),
+    )
+    expect(rows[0]?.pane).toBeNull()
+  })
+
+  it('null pane when session has no matching active pane in output', async () => {
+    tmuxLsAndPanesReturns(
+      'memon-manual-no-pane|1700000000|1700001000\n',
+      // list-panes output has a different sessionName only
+      'memon-other-session|1|1|10|bash|/tmp|other\n',
+    )
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.pane).toBeNull()
+  })
+})
+
+describe('getActivePaneMapCached', () => {
+  it('caches across consecutive calls within TTL: one shell-out for two calls', async () => {
+    queueTmuxResponse(
+      'memon-claude-x--run--y|1|1|10|claude|/proj|hello\n',
+    )
+    const a = await getActivePaneMapCached()
+    const b = await getActivePaneMapCached()
+    expect(a).toBe(b) // same reference: served from cache
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares the in-flight promise across concurrent callers', async () => {
+    let resolve: (v: unknown) => void = () => {}
+    spawnMock.mockImplementationOnce(() => {
+      const proc = new FakeProc()
+      const promise = new Promise<void>((r) => {
+        resolve = () => r()
+      })
+      void promise.then(() => {
+        proc.stdout.emit('data', Buffer.from('memon-x|1|1|10|claude|/proj|t\n'))
+        proc.emit('exit', 0)
+      })
+      return proc
+    })
+    const p1 = getActivePaneMapCached()
+    const p2 = getActivePaneMapCached()
+    resolve(undefined)
+    const [a, b] = await Promise.all([p1, p2])
+    expect(a).toBe(b)
+    expect(spawnMock).toHaveBeenCalledTimes(1) // only one fetch even though two callers
+  })
+})
+
+describe('getEnrichedSession', () => {
+  it('returns the matching row with pane info populated', async () => {
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      'memon-manual-foo|1|1|10|bash|/repo|title-here\n',
+    )
+    const row = await getEnrichedSession(fakeRuntime(), 'memon-manual-foo')
+    expect(row?.sessionName).toBe('memon-manual-foo')
+    expect(row?.pane?.title).toBe('title-here')
+  })
+
+  it('returns null when no session matches', async () => {
+    tmuxLsAndPanesReturns(
+      'memon-manual-other|1700000000|1700001000\n',
+      'memon-manual-other|1|1|10|bash|/tmp|whatever\n',
+    )
+    const row = await getEnrichedSession(fakeRuntime(), 'memon-manual-missing')
+    expect(row).toBeNull()
+  })
+
+  it('returns null when tmux ls errors', async () => {
+    tmuxLsErrors()
+    const row = await getEnrichedSession(fakeRuntime(), 'memon-manual-anything')
+    expect(row).toBeNull()
   })
 })
 

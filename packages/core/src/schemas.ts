@@ -125,6 +125,8 @@ export const TerminalConfigRawSchema = z
   .object({
     ttyd_max_concurrent: z.number().int().min(1).optional(),
     ttyd_idle_ttl_minutes: z.number().int().min(0).optional(),
+    pane_info_active_poll_ms: z.number().int().positive().optional(),
+    pane_info_idle_poll_ms: z.number().int().positive().optional(),
   })
   .optional()
 
