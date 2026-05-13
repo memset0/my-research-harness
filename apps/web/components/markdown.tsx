@@ -28,12 +28,29 @@ const COMPONENTS: Components = {
     }
     return <input type={type} {...rest} />
   },
+  // Wrap every GFM <table> in a horizontally-scrollable container so a
+  // wide table can scroll inside its parent Card (which carries
+  // `overflow-hidden` for chrome) instead of being clipped at the right
+  // edge. `min-w-0` on the <Markdown> root is what lets this engage in
+  // a flex/grid ancestor — see the wrapper className below.
+  table: ({ node: _node, ...rest }) => (
+    <div className="my-4 w-full overflow-x-auto">
+      <table {...rest} />
+    </div>
+  ),
 }
 
 export function Markdown({ children, className }: { children: string; className?: string }) {
   return (
     <div
       className={cn(
+        // `min-w-0` is load-bearing: it lets this wrapper shrink below its
+        // intrinsic content width inside a flex/grid ancestor, which is the
+        // only way descendants with `overflow-x-auto` (tables, <pre>, KaTeX
+        // display blocks) actually engage their horizontal scrollbar
+        // instead of pushing the wrapper past the Card's `overflow-hidden`
+        // chrome and getting clipped.
+        'min-w-0',
         'prose prose-sm dark:prose-invert max-w-none',
         'prose-code:before:content-none prose-code:after:content-none',
         // Inline <code> as a badge-like chip.
@@ -63,6 +80,13 @@ export function Markdown({ children, className }: { children: string; className?
         // narrow viewports.
         '[&_.katex-display]:my-4',
         '[&_.katex-display]:overflow-x-auto',
+        // Long fenced-code lines (e.g., a single-line shell command)
+        // must scroll horizontally inside their own <pre> rather than
+        // being clipped by an ancestor Card's `overflow-hidden`. The
+        // prose plugin sets this by default, but we enforce it
+        // explicitly so the behaviour does not depend on
+        // @tailwindcss/typography version drift.
+        '[&_pre]:overflow-x-auto',
         className,
       )}
     >
