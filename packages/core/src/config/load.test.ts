@@ -158,6 +158,36 @@ auth:
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
+
+  it('parses session_secret when present', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+auth:
+  username: alice
+  password: secret123
+  session_secret: AbCdEf0123456789-_abcdef0123456789ABCDEFGHIJ
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.auth).toEqual({
+      username: 'alice',
+      password: 'secret123',
+      sessionSecret: 'AbCdEf0123456789-_abcdef0123456789ABCDEFGHIJ',
+    })
+  })
+
+  it('rejects non-base64url session_secret', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+auth:
+  password: secret123
+  session_secret: "not base64url!"
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
 })
 
 describe('implicitCwdProject', () => {

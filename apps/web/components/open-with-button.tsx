@@ -29,6 +29,8 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { useTerminalDrawer } from './terminal-drawer-provider'
+import { ViewerGuard } from './viewer-guard'
+import { useSession } from './session-provider'
 
 const STORAGE_KEY = 'memon:terminal:default-agent'
 const DEFAULT_AGENT: TerminalAgentKind = 'claude'
@@ -96,6 +98,8 @@ export interface OpenWithButtonProps {
 export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   const drawer = useTerminalDrawer()
   const qc = useQueryClient()
+  const { role } = useSession()
+  const isViewer = role !== 'owner'
   const [defaultAgent, setDefaultAgentState] = useState<TerminalAgentKind>(DEFAULT_AGENT)
   const [installing, setInstalling] = useState(false)
 
@@ -109,10 +113,14 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
     writeDefaultAgent(agent)
   }
 
+  // Viewers can't use the terminal (the API is shell-classed = owner-only).
+  // Skip the probe entirely so we don't trigger `401 + WWW-Authenticate`,
+  // which would pop the browser's native Basic-auth dialog.
   const { data: probe } = useQuery({
     queryKey: ['terminal', 'check'],
     queryFn: checkTerminal,
     staleTime: 10_000,
+    enabled: role === 'owner',
   })
 
   // ttyd unavailable but auto-installable: render a single Install button
@@ -136,10 +144,12 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
       }
     }
     return (
-      <Button variant="outline" size="sm" onClick={() => void onInstall()} disabled={installing}>
-        {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-        {installing ? 'Installing…' : 'Install ttyd (~5MB)'}
-      </Button>
+      <ViewerGuard reason="Open with…">
+        <Button variant="outline" size="sm" onClick={() => void onInstall()} disabled={installing}>
+          {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+          {installing ? 'Installing…' : 'Install ttyd (~5MB)'}
+        </Button>
+      </ViewerGuard>
     )
   }
 
@@ -154,11 +164,13 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   }
 
   const launchInDrawer = (agent: TerminalAgentKind) => {
+    if (isViewer) return
     setDefaultAgent(agent)
     drawer.open({ project, scope, slug, agent })
   }
 
   const launchInPopup = (agent: TerminalAgentKind) => {
+    if (isViewer) return
     setDefaultAgent(agent)
     window.open(
       popupUrl({ agent, project, scope, slug }),
@@ -169,15 +181,17 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
 
   return (
     <div className="inline-flex items-stretch overflow-hidden rounded-md border bg-card">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="rounded-none border-0"
-        onClick={() => launchInDrawer(defaultAgent)}
-      >
-        <Bot className="size-3.5" />
-        Open with {AGENT_LABEL[defaultAgent]}
-      </Button>
+      <ViewerGuard reason="Open with…">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="rounded-none border-0"
+          onClick={() => launchInDrawer(defaultAgent)}
+        >
+          <Bot className="size-3.5" />
+          Open with {AGENT_LABEL[defaultAgent]}
+        </Button>
+      </ViewerGuard>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

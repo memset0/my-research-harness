@@ -23,13 +23,17 @@ import {
   runUnarchive,
 } from './commands/experiment.js'
 import {
+  runExperimentArchiveDoc,
   runExperimentCreate,
   runExperimentDelete,
   runExperimentLink,
   runExperimentLs,
   runExperimentShow,
+  runExperimentStatusSet,
+  runExperimentUnarchiveDoc,
   runExperimentUnlink,
 } from './commands/experiment-doc.js'
+import { EXPERIMENT_FILENAME_REGEX, RUN_DIR_REGEX } from '@memon/core'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
 import { runRunWarningAdd } from './commands/run-warning.js'
@@ -44,6 +48,7 @@ import { runHypothesesRead } from './commands/hypotheses.js'
 import { runDoctorCmd } from './commands/doctor.js'
 import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
 import { runFsVersionCheck } from './commands/fs-version-check.js'
+import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
 
@@ -294,20 +299,42 @@ experiment
 
 const status = experiment
   .command('status')
-  .description('status field operations (run-level; v2 alias of `memon run status`)')
+  .description(
+    'status field operations. Run-id form (`<slug>-<YYMMDD>-<HHMMSS>`) is a deprecation alias for `memon run status`; exp-id form (`E<NNNN>-<slug>`) writes ExperimentStatus on the exp doc.',
+  )
 status
   .command('set <id>')
-  .description('atomically write README + append [STATUS] event')
-  .requiredOption('--to <status>', 'PENDING|RUNNING|FINISHED|FAILED|UNKNOWN')
+  .description(
+    'atomically set status. Run-id: writes [STATUS] event with values PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN. Exp-id: writes [EXP_STATUS] with OPEN|RESOLVED|ABANDONED.',
+  )
+  .requiredOption('--to <status>', 'run-side: PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN; exp-side: OPEN|RESOLVED|ABANDONED')
   .requiredOption(
     '--expected-mtime <ms>',
     "expected README mtime (epoch ms; get from 'memon show')",
     (v) => Number(v),
   )
   .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
-    emitV2DeprecationBanner('experiment status set', 'run status set')
     const g = readGlobals()
-    await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
+    if (`${id}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+      // Exp-id form (v3+) — operate on the exp doc.
+      await runExperimentStatusSet({
+        ...g,
+        experimentId: id,
+        to: opts.to,
+        expectedMtime: opts.expectedMtime,
+      })
+      return
+    }
+    // Run-id form — deprecation alias for `memon run status set`.
+    if (RUN_DIR_REGEX.test(id)) {
+      emitV2DeprecationBanner('experiment status set', 'run status set')
+      await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
+      return
+    }
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `id "${id}" matches neither EXPERIMENT_FILENAME_REGEX (E<NNNN>-<slug>) nor RUN_DIR_REGEX (<slug>-<YYMMDD>-<HHMMSS>)`,
+    )
   })
 
 const readme = experiment.command('readme').description('README.md operations')
@@ -434,19 +461,39 @@ warning
 
 experiment
   .command('archive <id>')
-  .description('mark a run as archived (run-level; v2 alias of `memon run archive`)')
+  .description(
+    'mark archived. Run-id (`<slug>-<YYMMDD>-<HHMMSS>`): deprecation alias for `memon run archive`. Exp-id (`E<NNNN>-<slug>`): writes archived: true on the exp doc.',
+  )
   .action(async (id: string) => {
-    emitV2DeprecationBanner('experiment archive', 'run archive')
     const g = readGlobals()
-    await runArchive({ ...g, runId: id })
+    if (`${id}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+      await runExperimentArchiveDoc({ ...g, experimentId: id })
+      return
+    }
+    if (RUN_DIR_REGEX.test(id)) {
+      emitV2DeprecationBanner('experiment archive', 'run archive')
+      await runArchive({ ...g, runId: id })
+      return
+    }
+    emitErrorAndExit('BAD_REQUEST', `id "${id}" matches neither exp nor run pattern`)
   })
 experiment
   .command('unarchive <id>')
-  .description('unmark archived (run-level; v2 alias of `memon run unarchive`)')
+  .description(
+    'unmark archived. Run-id: deprecation alias for `memon run unarchive`. Exp-id: writes archived: false on the exp doc.',
+  )
   .action(async (id: string) => {
-    emitV2DeprecationBanner('experiment unarchive', 'run unarchive')
     const g = readGlobals()
-    await runUnarchive({ ...g, runId: id })
+    if (`${id}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+      await runExperimentUnarchiveDoc({ ...g, experimentId: id })
+      return
+    }
+    if (RUN_DIR_REGEX.test(id)) {
+      emitV2DeprecationBanner('experiment unarchive', 'run unarchive')
+      await runUnarchive({ ...g, runId: id })
+      return
+    }
+    emitErrorAndExit('BAD_REQUEST', `id "${id}" matches neither exp nor run pattern`)
   })
 
 /**
@@ -518,7 +565,7 @@ runWarning
 
 run
   .command('archive <id>')
-  .description('mark a run as archived (.archived sidecar)')
+  .description('mark a run as archived (writes archived: true to README frontmatter)')
   .action(async (id: string) => {
     const g = readGlobals()
     await runArchive({ ...g, runId: id })
@@ -535,7 +582,7 @@ const runStatus = run.command('status').description('run status field operations
 runStatus
   .command('set <id>')
   .description('atomically write README + append [STATUS] event')
-  .requiredOption('--to <status>', 'PENDING|RUNNING|FINISHED|FAILED|UNKNOWN')
+  .requiredOption('--to <status>', 'PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN')
   .requiredOption('--expected-mtime <ms>', 'expected README mtime', (v) => Number(v))
   .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
     const g = readGlobals()
@@ -606,6 +653,50 @@ program
       dryRun: !!opts.dryRun,
       format: g.format,
     })
+  })
+
+const share = program
+  .command('share')
+  .description('per-project share-link commands (writes <projectRoot>/.memon/shares.json)')
+share
+  .command('create <project>')
+  .description('issue a new share link for the project; prints the URL')
+  .option('--label <text>', 'human-readable label (≤ 64 chars)')
+  .option('--expires <duration>', '"never" | "<int>d" | "<int>h" (default never)')
+  .option(
+    '--url-base <base>',
+    'origin to prepend to the share path (e.g. https://memon.example.com); falls back to $MEMON_PUBLIC_URL, else path-only output',
+  )
+  .action(
+    async (
+      projectName: string,
+      opts: { label?: string; expires?: string; urlBase?: string },
+    ) => {
+      const g = readGlobals()
+      await runShareCreate({
+        ...g,
+        projectName,
+        label: opts.label,
+        expires: opts.expires,
+        urlBase: opts.urlBase,
+      })
+    },
+  )
+share
+  .command('list')
+  .description('list share records for the project (tokens redacted)')
+  .option('--project <name>', 'project name to display (default: derived from --project-root)')
+  .action(async (opts: { project?: string }) => {
+    const g = readGlobals()
+    await runShareList({ ...g, projectName: opts.project })
+  })
+share
+  .command('revoke <id-or-label>')
+  .description('remove a share by id-prefix or exact label')
+  .option('--force', 'revoke ALL matching records on ambiguity', false)
+  .action(async (idOrLabel: string, opts: { force?: boolean }) => {
+    const g = readGlobals()
+    await runShareRevoke({ ...g, idOrLabel, force: !!opts.force })
   })
 
 const fsVersion = program

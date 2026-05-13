@@ -7,6 +7,7 @@ import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
 import { OpenWithButton } from './open-with-button'
 import { TabBadge, type TabKind } from './tab-badge'
+import { ManageSharesDialog } from './manage-shares-dialog'
 
 interface TabSpec {
   name: string
@@ -95,6 +96,7 @@ export function AppBar({ project }: { project: string }) {
           )
         })}
       </nav>
+      <ManageSharesDialog project={project} />
       <OpenWithButton project={project} scope="project" slug={PROJECT_SCOPE_SLUG} />
     </header>
   )

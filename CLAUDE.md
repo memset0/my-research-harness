@@ -221,12 +221,22 @@ its loader. Match by listening port (`ss -ltnp | grep 3737`) instead.
 
 ## Dev: HTTP API auth — curl with credentials from `config.yml`
 
-The dashboard is gated by HTTP Basic auth (see `openspec/specs/auth-system/`).
-**Every** curl/wget against `http://localhost:3737/*` (and the public site)
-needs `Authorization: Basic` except for static assets and `/api/auth/check`.
-Plaintext credentials live at `config.yml` under `auth.username` /
-`auth.password`. Read them at the start of any session that needs to hit the
-HTTP API:
+The dashboard accepts three auth modes (see `openspec/specs/auth-system/`):
+
+1. **Owner session cookie** (`memon-session`) — set by the `/login` page or
+   `POST /api/auth/login`. Used by the browser. Refreshed on every
+   authenticated request (rolling 30-day TTL).
+2. **Owner HTTP Basic** (`Authorization: Basic ...`) — the CLI / curl
+   automation fallback. Same plaintext credentials in `config.yml`.
+3. **Viewer share cookie** (`memon-shares`) — set by visiting a
+   `/share/<project>/<token>` URL. Read-only access scoped to the project
+   the share was issued for. Only evaluated on `read`-class routes; shell
+   + mutating routes never decode this cookie.
+
+Modes are evaluated lazily in that order; the first passing one wins.
+
+**For curl/CLI automation: use Basic.** It's unchanged. Read credentials at
+the start of any session:
 
 ```bash
 MEMON_USER=$(grep -E '^\s*username:' config.yml | sed -E 's/.*: *"?([^"]+)"?$/\1/' | head -1)
@@ -237,19 +247,40 @@ curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/api/projects
 
 If `auth.password` isn't in `config.yml` yet, `memon serve` hasn't been run
 once — start it (`cd apps/web && pnpm dev`) and the first request triggers
-first-run, which writes a random plaintext password into `config.yml` and
-prints it to stdout once. After that, the password persists in `config.yml`
-forever (until you rotate it by editing the file).
+first-run, which writes a random plaintext password AND a `session_secret`
+into `config.yml` and prints the password to stdout once. After that, both
+values persist in `config.yml` forever (until you rotate by editing).
+
+**Inspecting viewer mode via curl** (rare — usually you click the share URL
+in a browser): use a `-c cookies.txt -L` pair to follow the share-landing
+redirect and capture the `memon-shares` cookie, then reuse the jar:
+
+```bash
+# 1. Issue a share via the CLI
+SHARE_URL=$(memon share create project-a --label dev --format human)
+# 2. Open the share URL with curl → 302 → /p/project-a; captures cookie.
+curl -sS -c viewer.txt -L "$SHARE_URL" -o /dev/null
+# 3. Now hit /p/project-a as the viewer.
+curl -sS -b viewer.txt http://localhost:3737/p/project-a | head
+```
 
 **Anti-patterns**:
 
 - Don't read from `~/.cache/memon/initial-password.txt` — that path was
   removed; the canonical source is `config.yml`.
-- Don't omit `-u` and treat 401 as "the server is down" — first read the
-  config and add credentials.
-- Don't paste the password into commit messages, PR descriptions, slash
-  commands, or anywhere outside the local shell. It's plaintext on disk by
+- Don't omit `-u` (or `-b cookies.txt`) and treat 401 as "the server is
+  down" — first read the config and add credentials.
+- Don't paste `auth.password` or `auth.session_secret` into commit
+  messages, PR descriptions, or slash commands. Plaintext on disk by
   design (single-user threat model), but that doesn't make it OK to leak.
+- For HTML page navigation, 401 is rewritten to `302 → /login?next=...` so
+  the browser lands on the login form instead of triggering the native
+  Basic-auth dialog. API requests (paths starting with `/api/`) still get
+  the raw 401 + `WWW-Authenticate: Basic` header.
+- The ONLY place 403 appears is when a logged-in viewer requests a `read`
+  route for a project that is NOT in their share scope. Every other deny
+  is 401 (or its HTML 302 rewrite). If you see a 403 in CI / automation,
+  you're probably running with a viewer cookie when you wanted owner Basic.
 
 ## Verification protocol for UI changes
 

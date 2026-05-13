@@ -1,16 +1,46 @@
 import { describe, expect, it } from 'vitest'
-import { classify, isAuthBypass } from './route-classes'
+import {
+  classify,
+  classifyAndExtract,
+  isAuthBypass,
+  type ProjectResolverContext,
+} from './route-classes'
 
-describe('classify', () => {
+const stubCtx = (overrides: Partial<ProjectResolverContext> = {}): ProjectResolverContext => ({
+  isKnownProject: (name: string) => ['project-a', 'project-b'].includes(name),
+  resolveByRunId: () => null,
+  resolveByExperimentId: () => null,
+  resolveByDigestId: () => null,
+  resolveByReportId: () => null,
+  resolveByPath: () => null,
+  ...overrides,
+})
+
+const emptySearch = () => new URLSearchParams('')
+const search = (raw: string) => new URLSearchParams(raw)
+
+describe('classify (pure class only)', () => {
+  it('classifies anon routes', () => {
+    expect(classify('GET', '/login')).toBe('anon')
+    expect(classify('POST', '/api/auth/login')).toBe('anon')
+    expect(classify('GET', '/api/auth/check')).toBe('anon')
+    expect(classify('GET', '/share/project-a/abcd1234')).toBe('anon')
+  })
+
   it('classifies all /api/terminal/* as shell, regardless of method', () => {
     expect(classify('GET', '/api/terminal/check')).toBe('shell')
     expect(classify('POST', '/api/terminal/start')).toBe('shell')
     expect(classify('POST', '/api/terminal/stop')).toBe('shell')
-    expect(classify('POST', '/api/terminal/install')).toBe('shell')
     expect(classify('GET', '/api/terminal/list')).toBe('shell')
     expect(classify('GET', '/api/terminal/proxy/sess/')).toBe('shell')
-    // Hypothetical future terminal sub-route.
     expect(classify('PUT', '/api/terminal/anything')).toBe('shell')
+  })
+
+  it('classifies tmux + manage as shell', () => {
+    expect(classify('GET', '/api/tmux-sessions')).toBe('shell')
+    expect(classify('DELETE', '/api/tmux-sessions/foo')).toBe('shell')
+    expect(classify('GET', '/manage/tmux')).toBe('shell')
+    expect(classify('GET', '/terminal-popup')).toBe('shell')
   })
 
   it('classifies known GET /api/* read endpoints as read', () => {
@@ -18,23 +48,31 @@ describe('classify', () => {
     expect(classify('GET', '/api/runs')).toBe('read')
     expect(classify('GET', '/api/runs/foo-260501-100000')).toBe('read')
     expect(classify('GET', '/api/log/foo')).toBe('read')
-    expect(classify('GET', '/api/log/stream/foo')).toBe('read')
     expect(classify('GET', '/api/events')).toBe('read')
     expect(classify('GET', '/api/runtime/health')).toBe('read')
+  })
+
+  it('classifies /api/projects/<project>/shares family as mutating (owner-only — even GET)', () => {
+    expect(classify('GET', '/api/projects/project-a/shares')).toBe('mutating')
+    expect(classify('POST', '/api/projects/project-a/shares')).toBe('mutating')
+    expect(classify('DELETE', '/api/projects/project-a/shares/shr_abc')).toBe('mutating')
   })
 
   it('classifies page routes as read', () => {
     expect(classify('GET', '/')).toBe('read')
     expect(classify('GET', '/p/project-a')).toBe('read')
-    expect(classify('GET', '/e/foo-260501-100000')).toBe('read')
-    expect(classify('GET', '/login')).toBe('read')
+    expect(classify('GET', '/p/project-a/e/exp-id')).toBe('read')
+  })
+
+  it('classifies /login as anon (NOT read — anon is reachable without identity)', () => {
+    expect(classify('GET', '/login')).toBe('anon')
   })
 
   it('classifies non-GET on read paths as mutating (default fail-closed)', () => {
     expect(classify('PUT', '/api/runs/foo/readme')).toBe('mutating')
-    expect(classify('POST', '/api/runs/foo/journal')).toBe('mutating')
+    expect(classify('POST', '/api/journal/append')).toBe('mutating')
     expect(classify('PATCH', '/api/projects')).toBe('mutating')
-    expect(classify('DELETE', '/api/runtime/cache')).toBe('mutating')
+    expect(classify('DELETE', '/api/runs/foo')).toBe('mutating')
   })
 
   it('defaults unknown /api/* paths to mutating (fail-closed)', () => {
@@ -44,6 +82,143 @@ describe('classify', () => {
 
   it('defaults unknown page paths to mutating (forces explicit listing)', () => {
     expect(classify('GET', '/internal-tool')).toBe('mutating')
+  })
+
+  it('classifies /api/auth/logout as mutating (owner-only)', () => {
+    expect(classify('POST', '/api/auth/logout')).toBe('mutating')
+  })
+})
+
+describe('classifyAndExtract — project extraction', () => {
+  it('extracts project from /p/<project>/...', () => {
+    const r = classifyAndExtract('GET', '/p/project-a/journal', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('returns "global" for / (root)', () => {
+    const r = classifyAndExtract('GET', '/', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'global' })
+  })
+
+  it('returns "multi" for /api/projects', () => {
+    const r = classifyAndExtract('GET', '/api/projects', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'multi' })
+  })
+
+  it('extracts project from /api/anomalies?project=', () => {
+    const r = classifyAndExtract('GET', '/api/anomalies', search('project=project-a'), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('returns "multi" when /api/anomalies has no project query', () => {
+    const r = classifyAndExtract('GET', '/api/anomalies', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'multi' })
+  })
+
+  it('extracts project from /api/runs?project=', () => {
+    const r = classifyAndExtract('GET', '/api/runs', search('project=project-b'), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'project-b' })
+  })
+
+  it('resolves /api/runs/<id> via RunIndex', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/runs/some-run-260501-100000',
+      emptySearch(),
+      stubCtx({ resolveByRunId: (id) => (id === 'some-run-260501-100000' ? 'project-a' : null) }),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('returns null for unknown run id (handler will 404 anyway)', () => {
+    const r = classifyAndExtract('GET', '/api/runs/unknown-id', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: null })
+  })
+
+  it('resolves /api/experiments/<id> via experiments cache', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/experiments/E0001-some-slug',
+      emptySearch(),
+      stubCtx({
+        resolveByExperimentId: (id) => (id === 'E0001-some-slug' ? 'project-a' : null),
+      }),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('resolves /api/digests/<id>', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/digests/D0042',
+      emptySearch(),
+      stubCtx({ resolveByDigestId: () => 'project-a' }),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('resolves /api/reports/<id>', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/reports/R0007',
+      emptySearch(),
+      stubCtx({ resolveByReportId: () => 'project-b' }),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-b' })
+  })
+
+  it('extracts project from /api/log?path= via path resolver', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/log',
+      search('path=/abs/path/to/foo.log'),
+      stubCtx({
+        resolveByPath: (p) => (p === '/abs/path/to/foo.log' ? 'project-a' : null),
+      }),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('extracts project from /api/readme?path=', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/readme',
+      search('path=/abs/path/to/run/README.md'),
+      stubCtx({ resolveByPath: () => 'project-b' }),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-b' })
+  })
+
+  it('returns "multi" for /api/events (SSE — handler filters)', () => {
+    const r = classifyAndExtract('GET', '/api/events', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'multi' })
+  })
+
+  it('returns "global" for /api/runtime/health', () => {
+    const r = classifyAndExtract('GET', '/api/runtime/health', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'global' })
+  })
+
+  it('share-landing extracts project from URL segment', () => {
+    const r = classifyAndExtract('GET', '/share/project-a/some-token', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'anon', project: 'project-a' })
+  })
+
+  it('mutating routes return null project (extraction not relevant)', () => {
+    const r = classifyAndExtract(
+      'POST',
+      '/api/experiments/E0001/readme',
+      emptySearch(),
+      stubCtx(),
+    )
+    // Default rule: class=mutating, project=null. Middleware won't bother
+    // resolving project for mutating routes since they're owner-only.
+    expect(r.class).toBe('mutating')
+  })
+
+  it('shell routes return "global" project', () => {
+    const r = classifyAndExtract('POST', '/api/terminal/start', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'shell', project: 'global' })
   })
 })
 
@@ -66,5 +241,9 @@ describe('isAuthBypass', () => {
   it('does NOT bypass arbitrary api routes', () => {
     expect(isAuthBypass('/api/projects')).toBe(false)
     expect(isAuthBypass('/api/auth/something-else')).toBe(false)
+  })
+
+  it('does NOT bypass /login (the page goes through middleware, just classified as anon)', () => {
+    expect(isAuthBypass('/login')).toBe(false)
   })
 })

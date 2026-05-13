@@ -4,6 +4,13 @@
 // raw node:http IncomingMessage so it can also be invoked from the
 // `upgrade` event listener (which has no access to NextRequest / Headers).
 //
+// Three-mode evaluation, OWNER-ONLY: this gate covers `/api/terminal/proxy/*`
+// which is shell-classed. The viewer share cookie (mode 3) SHALL NOT be
+// decoded — viewers are categorically denied terminal access.
+//
+//   1. Owner session cookie  (memon-session)
+//   2. Owner HTTP Basic      (Authorization: Basic ...)
+//
 // We share the same primitives (parseBasicAuth, verifyBasic, consume) and
 // the same process-global rate-limit bucket — so a brute-force attempt
 // counted by middleware on HTTP cannot be circumvented by switching to a
@@ -18,6 +25,10 @@ import {
   TOO_MANY_HEADERS,
 } from './basic-auth'
 import { consume, refund } from './rate-limit'
+import {
+  SESSION_COOKIE_NAME,
+  verifySessionCookie,
+} from './cookies'
 
 export interface AuthOutcome {
   ok: boolean
@@ -30,6 +41,28 @@ export interface AuthOutcome {
 function firstHeader(v: string | string[] | undefined): string | undefined {
   if (Array.isArray(v)) return v[0]
   return v
+}
+
+/**
+ * Parse the `Cookie` header (one or more `name=value; ...` entries) and
+ * return the value of the named cookie, or null. Same simple form Next.js
+ * itself uses internally for cookie parsing.
+ */
+function readCookie(req: IncomingMessage, name: string): string | null {
+  const header = firstHeader(req.headers['cookie'])
+  if (!header) return null
+  // Split on `;` and find the entry whose key equals `name`. Whitespace
+  // around tokens is normalized.
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=')
+    if (eq === -1) continue
+    const k = part.slice(0, eq).trim()
+    if (k === name) {
+      const v = part.slice(eq + 1).trim()
+      return v
+    }
+  }
+  return null
 }
 
 /**
@@ -51,12 +84,14 @@ function clientIpFromNodeRequest(req: IncomingMessage): string {
 }
 
 /**
- * Verify HTTP Basic credentials on a raw Node request. Returns a structured
+ * Verify owner credentials on a raw Node request. Returns a structured
  * outcome the caller turns into an HTTP/1.1 status line + headers (for
  * `request` events) or a raw socket write (for `upgrade` events).
  *
  * Order: rate-limit FIRST (so a brute-force loop with cheap-to-fail
- * credentials still hits the bucket), then password check.
+ * credentials still hits the bucket), then mode 1 (cookie), then mode 2
+ * (Basic). Mode 3 (share cookie) is INTENTIONALLY not evaluated — this
+ * gate protects shell routes (terminal proxy) which are owner-only.
  */
 export async function authenticateNodeRequest(req: IncomingMessage): Promise<AuthOutcome> {
   const ip = clientIpFromNodeRequest(req)
@@ -70,14 +105,31 @@ export async function authenticateNodeRequest(req: IncomingMessage): Promise<Aut
   }
 
   const runtime = await getRuntime()
+  const secret = runtime.auth.sessionSecret ?? ''
+
+  // Mode 1: owner session cookie.
+  if (secret) {
+    const sessionValue = readCookie(req, SESSION_COOKIE_NAME)
+    if (sessionValue) {
+      const payload = verifySessionCookie(sessionValue, secret)
+      if (payload) {
+        refund(ip)
+        return { ok: true }
+      }
+    }
+  }
+
+  // Mode 2: owner HTTP Basic.
   const authHeader = firstHeader(req.headers['authorization'])
   const parsed = parseBasicAuth(authHeader ?? null)
-  const ok = await verifyBasic(parsed, runtime.auth)
-  if (!ok) {
-    return { ok: false, status: 401, headers: { ...UNAUTHORIZED_HEADERS } }
+  const ok = await verifyBasic(parsed, {
+    username: runtime.auth.username,
+    password: runtime.auth.password,
+  })
+  if (ok) {
+    refund(ip)
+    return { ok: true }
   }
-  // Refund the consumed token: legitimate authenticated upgrades do not
-  // drain the brute-force bucket. Failed auth (above) intentionally does not.
-  refund(ip)
-  return { ok: true }
+
+  return { ok: false, status: 401, headers: { ...UNAUTHORIZED_HEADERS } }
 }

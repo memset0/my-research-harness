@@ -4,7 +4,7 @@
 // poller + writer hooks). Frontend uses this to invalidate its TanStack
 // Query caches without polling every endpoint manually.
 //
-// v3 topics (task 9.13 + v3-spec-sync):
+// v3 topics:
 //   - run-change         : fires on RUN edits (frontmatter / body / status /
 //                          link change). Payload includes `parentExperimentId`
 //                          when the run is bound, so the client can invalidate
@@ -14,20 +14,41 @@
 //   - anomaly            : fires after the runtime recomputes the membership
 //                          anomaly set for a project. Payload: `{project,count}`.
 //
-// The v2 alias `experiment-change` for run edits has been removed — the topic
-// name now means exp-doc events ONLY. Clients still on the legacy semantics
-// MUST migrate to `run-change`. See live-updates spec.
+// Viewer-mode filtering: viewer sessions receive only events for projects
+// in `req.scopeProjects`. Events for other projects are dropped at the
+// publish site (no need to broadcast them only to drop them client-side).
 
 import type { NextRequest } from 'next/server'
+import type { Run } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
+import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
 
 const TOPICS = ['run-change', 'experiment-change', 'anomaly'] as const
 type Topic = (typeof TOPICS)[number]
 
-export async function GET(_req: NextRequest) {
+function eventProject(topic: Topic, evt: unknown): string | null {
+  if (!evt || typeof evt !== 'object') return null
+  const e = evt as Record<string, unknown>
+  if (topic === 'anomaly') {
+    return typeof e.project === 'string' ? e.project : null
+  }
+  if (topic === 'experiment-change') {
+    if (typeof e.project === 'string') return e.project
+    const exp = e.experiment as { project?: string } | undefined
+    return exp?.project ?? null
+  }
+  if (topic === 'run-change') {
+    const run = e.experiment as Run | undefined
+    return run?.project ?? null
+  }
+  return null
+}
+
+export async function GET(req: NextRequest) {
   const rt = await getRuntime()
+  const { role, scopeProjects } = readIdentityFromRequest(req)
   const encoder = new TextEncoder()
 
   const handlers = new Map<Topic, (evt: unknown) => void>()
@@ -43,7 +64,13 @@ export async function GET(_req: NextRequest) {
         }
       }
       for (const topic of TOPICS) {
-        const h = (evt: unknown) => send(topic, evt)
+        const h = (evt: unknown) => {
+          if (role === 'viewer') {
+            const proj = eventProject(topic, evt)
+            if (!proj || !scopeProjects.has(proj)) return
+          }
+          send(topic, evt)
+        }
         handlers.set(topic, h)
         rt.events.on(topic, h)
       }

@@ -518,6 +518,47 @@ should return 401 anonymously). Confirm `auth.password` is set in
 `config.yml` and that `reverse_proxy localhost:3737` actually points
 at memon.
 
+### Sharing a project read-only
+
+To let a collaborator look at ONE project's runs / experiments / reports
+without giving them owner credentials, issue a per-project share link:
+
+```bash
+# In the project directory (or pass --project-root):
+memon share create project-a --label "Reviewer Alice" --expires 30d \
+  --url-base https://memon.example.com
+# → prints: https://memon.example.com/share/project-a/<token>
+```
+
+What the link does when opened:
+
+1. Validates the token against `<projectRoot>/.memon/shares.json` (created
+   atomically; gitignored).
+2. Sets a signed `memon-shares` cookie scoped to that project on the
+   visitor's browser, HttpOnly + SameSite=Lax + Max-Age=90 days.
+3. Redirects to `/p/<project>` — viewer mode.
+
+In viewer mode the dashboard:
+
+- Lists ONLY the scoped project(s) in the sidebar and project switcher.
+- Renders every mutating control (Edit, Status, Open Claude Code, browser
+  terminal, …) visible-but-`disabled` with a "Viewer mode — action
+  disabled" tooltip.
+- Filters SSE / project-list responses to the scope set so other projects'
+  names never leak across the wire.
+
+A single browser can accumulate share cookies for multiple projects (one
+entry per project; the cookie is a signed list). Viewers can also click
+"Log in as owner" on the banner to elevate to owner mode for the rest of
+the session.
+
+To revoke a share, run `memon share revoke <id-prefix>` (or use the "Share"
+button on the project page header). The cookie holder silently loses
+access on their next request; no error message reveals the revocation.
+
+Rotate `auth.session_secret` in `config.yml` to invalidate every open
+browser session AND every outstanding share-cookie in one shot.
+
 ### `.memon/version.json`
 
 `memon install-skills` stamps a per-project marker at

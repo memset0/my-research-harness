@@ -17,6 +17,10 @@ function req(url: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(url, { method: 'GET', headers })
 }
 
+function jsonApiHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { accept: 'application/json', ...extra }
+}
+
 let auth: AuthConfig
 beforeAll(() => {
   auth = { username: 'admin', password: 'correct' }
@@ -24,7 +28,19 @@ beforeAll(() => {
 
 beforeEach(() => {
   __resetForTests()
-  vi.mocked(getRuntime).mockResolvedValue({ auth } as Awaited<ReturnType<typeof getRuntime>>)
+  // Minimal Runtime mock — enough to satisfy makeProjectResolver +
+  // share-cookie validator paths (neither matters for Basic-auth tests).
+  vi.mocked(getRuntime).mockResolvedValue({
+    auth,
+    config: { projects: [] },
+    index: { get: () => undefined },
+    experiments: new Map(),
+    reportsCache: { getList: () => [] },
+    digestsCache: { getList: () => [] },
+    projectFor: () => null,
+    reportsDir: () => null,
+    digestsDir: () => null,
+  } as unknown as Awaited<ReturnType<typeof getRuntime>>)
 })
 
 afterEach(() => {
@@ -34,22 +50,36 @@ afterEach(() => {
 describe('middleware', () => {
   it('passes through with valid Basic auth (NextResponse.next)', async () => {
     const res = await middleware(
-      req('http://localhost/p/project-a', {
+      req('http://localhost/api/projects', {
         authorization: basic('admin', 'correct'),
         'x-forwarded-for': '203.0.113.1',
       }),
     )
-    // NextResponse.next() returns a response with x-middleware-next: 1
     expect(res.headers.get('x-middleware-next')).toBe('1')
   })
 
-  it('returns 401 + WWW-Authenticate on anonymous page request', async () => {
-    const res = await middleware(req('http://localhost/p/project-a', { 'x-forwarded-for': '203.0.113.2' }))
+  it('returns 401 + WWW-Authenticate on anonymous API request', async () => {
+    const res = await middleware(
+      req('http://localhost/api/projects', jsonApiHeaders({ 'x-forwarded-for': '203.0.113.2' })),
+    )
     expect(res.status).toBe(401)
     expect(res.headers.get('www-authenticate')).toBe('Basic realm="memon"')
   })
 
-  it('returns 401 on wrong password', async () => {
+  it('returns 302 to /login on anonymous HTML page request', async () => {
+    const res = await middleware(
+      req('http://localhost/p/project-a', {
+        accept: 'text/html',
+        'x-forwarded-for': '203.0.113.2',
+      }),
+    )
+    expect(res.status).toBe(302)
+    const location = res.headers.get('location') ?? ''
+    expect(location).toContain('/login')
+    expect(location).toContain('next=%2Fp%2Fproject-a')
+  })
+
+  it('returns 401 on wrong password (API)', async () => {
     const res = await middleware(
       req('http://localhost/api/projects', {
         authorization: basic('admin', 'WRONG'),
@@ -59,7 +89,7 @@ describe('middleware', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 401 on wrong username', async () => {
+  it('returns 401 on wrong username (API)', async () => {
     const res = await middleware(
       req('http://localhost/api/projects', {
         authorization: basic('eve', 'correct'),
@@ -69,9 +99,22 @@ describe('middleware', () => {
     expect(res.status).toBe(401)
   })
 
-  it('bypasses auth for /api/auth/check (forward_auth probe)', async () => {
-    // The route handler does its own validation, not the middleware.
+  it('bypasses auth for /api/auth/check (own validation)', async () => {
     const res = await middleware(req('http://localhost/api/auth/check'))
+    expect(res.headers.get('x-middleware-next')).toBe('1')
+  })
+
+  it('passes /login (anon class) without identity', async () => {
+    const res = await middleware(
+      req('http://localhost/login', { 'x-forwarded-for': '203.0.113.99' }),
+    )
+    expect(res.headers.get('x-middleware-next')).toBe('1')
+  })
+
+  it('passes /share/<project>/<token> (anon class) without identity', async () => {
+    const res = await middleware(
+      req('http://localhost/share/project-a/abc123', { 'x-forwarded-for': '203.0.113.98' }),
+    )
     expect(res.headers.get('x-middleware-next')).toBe('1')
   })
 
@@ -79,12 +122,18 @@ describe('middleware', () => {
     const ip = '203.0.113.123'
     for (let i = 0; i < __limits.CAPACITY; i += 1) {
       const r = await middleware(
-        req('http://localhost/p/x', { authorization: basic('admin', 'WRONG'), 'x-forwarded-for': ip }),
+        req('http://localhost/api/projects', {
+          authorization: basic('admin', 'WRONG'),
+          'x-forwarded-for': ip,
+        }),
       )
       expect(r.status).toBe(401)
     }
     const r = await middleware(
-      req('http://localhost/p/x', { authorization: basic('admin', 'correct'), 'x-forwarded-for': ip }),
+      req('http://localhost/api/projects', {
+        authorization: basic('admin', 'correct'),
+        'x-forwarded-for': ip,
+      }),
     )
     expect(r.status).toBe(429)
     expect(r.headers.get('retry-after')).toMatch(/^\d+$/)
@@ -95,10 +144,9 @@ describe('middleware', () => {
     { timeout: 30_000 },
     async () => {
       const ip = '203.0.113.50'
-      // Far more than CAPACITY successful requests should all pass.
       for (let i = 0; i < __limits.CAPACITY * 2; i += 1) {
         const r = await middleware(
-          req('http://localhost/p/x', {
+          req('http://localhost/api/projects', {
             authorization: basic('admin', 'correct'),
             'x-forwarded-for': ip,
           }),
@@ -113,20 +161,18 @@ describe('middleware', () => {
     { timeout: 30_000 },
     async () => {
       const ip = '203.0.113.51'
-      // 30 wrong → bucket goes from CAPACITY to CAPACITY-30
       for (let i = 0; i < 30; i += 1) {
         const r = await middleware(
-          req('http://localhost/p/x', {
+          req('http://localhost/api/projects', {
             authorization: basic('admin', 'WRONG'),
             'x-forwarded-for': ip,
           }),
         )
         expect(r.status).toBe(401)
       }
-      // CAPACITY successful requests must all pass (each refunds its consume).
       for (let i = 0; i < __limits.CAPACITY; i += 1) {
         const r = await middleware(
-          req('http://localhost/p/x', {
+          req('http://localhost/api/projects', {
             authorization: basic('admin', 'correct'),
             'x-forwarded-for': ip,
           }),
@@ -140,13 +186,14 @@ describe('middleware', () => {
     const { GET } = await import('./app/api/auth/check/route')
     const ip = '203.0.113.222'
     const half = Math.floor(__limits.CAPACITY / 2)
-    // half via middleware…
     for (let i = 0; i < half; i += 1) {
       await middleware(
-        req('http://localhost/p/x', { authorization: basic('admin', 'WRONG'), 'x-forwarded-for': ip }),
+        req('http://localhost/api/projects', {
+          authorization: basic('admin', 'WRONG'),
+          'x-forwarded-for': ip,
+        }),
       )
     }
-    // …then the rest via /api/auth/check should exhaust the same bucket.
     for (let i = 0; i < __limits.CAPACITY - half; i += 1) {
       const r = await GET(
         req('http://localhost/api/auth/check', {
@@ -156,9 +203,11 @@ describe('middleware', () => {
       )
       expect(r.status).toBe(401)
     }
-    // The (CAPACITY+1)th attempt — through either path — should be 429.
     const next = await middleware(
-      req('http://localhost/p/x', { authorization: basic('admin', 'correct'), 'x-forwarded-for': ip }),
+      req('http://localhost/api/projects', {
+        authorization: basic('admin', 'correct'),
+        'x-forwarded-for': ip,
+      }),
     )
     expect(next.status).toBe(429)
   })

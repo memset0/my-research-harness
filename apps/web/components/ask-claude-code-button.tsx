@@ -16,15 +16,18 @@ import {
   DialogTitle,
 } from './ui/dialog'
 import { Textarea } from './ui/textarea'
+import { ViewerGuard } from './viewer-guard'
 
 export function AskClaudeCodeButton({ experiment }: { experiment: FullExperiment }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <Bot className="size-3.5" />
-        Ask Claude Code
-      </Button>
+      <ViewerGuard reason="Ask Claude Code">
+        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+          <Bot className="size-3.5" />
+          Ask Claude Code
+        </Button>
+      </ViewerGuard>
       {open && <AgentHandoffDialog experiment={experiment} onClose={() => setOpen(false)} />}
     </>
   )

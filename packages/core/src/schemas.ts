@@ -37,6 +37,10 @@ export const RunFrontMatterRawSchema = z.object({
   wandb: z.union([z.string(), z.null()]).optional(),
   hypotheses: z.array(z.string()).optional(),
   tags: z.array(z.string()).optional(),
+  // v4-added: human-managed archive flag. Optional at the schema level so
+  // the parser can distinguish "missing entirely" from "explicitly false"
+  // for the MISSING_ARCHIVED_FIELD parse warning + sidecar fallback.
+  archived: z.boolean().optional(),
 })
 
 export type RunFrontMatterRaw = z.infer<typeof RunFrontMatterRawSchema>
@@ -52,6 +56,13 @@ export const ExperimentFrontMatterRawSchema = z.object({
   id: z.string().min(1),
   slug: z.string().min(1),
   title: z.string().min(1),
+  // v4-added: manual lifecycle status. Optional at the schema level so the
+  // parser can distinguish "missing entirely" (MISSING_EXP_STATUS warning)
+  // from "explicitly set." Validated through normalizeExperimentStatus.
+  status: z.unknown().optional(),
+  // v4-added: human-managed archive flag. Optional for the same reason as
+  // run-side `archived`.
+  archived: z.boolean().optional(),
   runs: z.array(z.string()).optional(),
   hypotheses: z.array(z.string()).optional(),
   tags: z.array(z.string()).optional(),
@@ -98,6 +109,15 @@ export const AuthConfigRawSchema = z
   .object({
     username: z.string().min(1).optional(),
     password: z.string().min(1),
+    // HMAC signing key for memon-session and memon-shares cookies. Plaintext
+    // base64url-encoded 32 random bytes (44 chars). Auto-generated on first
+    // start when absent — see openspec/specs/auth-system/spec.md
+    // "HMAC signing key cfg.auth.session_secret auto-generated on first run".
+    session_secret: z
+      .string()
+      .min(1)
+      .regex(/^[A-Za-z0-9_-]+$/, 'must be base64url')
+      .optional(),
   })
   .optional()
 

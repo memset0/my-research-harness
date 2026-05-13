@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from './ui/button'
 import { AddEventModal } from './add-event-modal'
+import { ViewerGuard } from './viewer-guard'
 
 export function AddNoteButton({
   project,
@@ -14,9 +15,11 @@ export function AddNoteButton({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        + Note
-      </Button>
+      <ViewerGuard reason="Add note">
+        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+          + Note
+        </Button>
+      </ViewerGuard>
       <AddEventModal
         mode="note"
         project={project}

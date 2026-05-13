@@ -13,6 +13,8 @@ import {
   TooltipTrigger,
 } from './ui/tooltip'
 import { TerminalSheet } from './terminal-sheet'
+import { ViewerGuard } from './viewer-guard'
+import { useSession } from './session-provider'
 
 export function TerminalButton({
   runId,
@@ -22,13 +24,17 @@ export function TerminalButton({
   projectName: string
 }) {
   const qc = useQueryClient()
+  const { role } = useSession()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [installing, setInstalling] = useState(false)
 
+  // Viewers can't use the terminal (API is shell = owner-only). Skip the
+  // probe so we don't 401 + trigger the native Basic-auth dialog.
   const { data: probe } = useQuery({
     queryKey: ['terminal', 'check'],
     queryFn: checkTerminal,
     staleTime: 10_000,
+    enabled: role === 'owner',
   })
 
   if (!probe) {
@@ -46,10 +52,12 @@ export function TerminalButton({
   if (probe.available) {
     return (
       <>
-        <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
-          <Bot className="size-3.5" />
-          Open in browser
-        </Button>
+        <ViewerGuard reason="Open terminal">
+          <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
+            <Bot className="size-3.5" />
+            Open in browser
+          </Button>
+        </ViewerGuard>
         <TerminalSheet
           open={sheetOpen}
           onOpenChange={setSheetOpen}
@@ -80,10 +88,12 @@ export function TerminalButton({
       }
     }
     return (
-      <Button variant="outline" size="sm" onClick={() => void onInstall()} disabled={installing}>
-        {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-        {installing ? 'Installing…' : 'Install ttyd (~5MB)'}
-      </Button>
+      <ViewerGuard reason="Open terminal">
+        <Button variant="outline" size="sm" onClick={() => void onInstall()} disabled={installing}>
+          {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+          {installing ? 'Installing…' : 'Install ttyd (~5MB)'}
+        </Button>
+      </ViewerGuard>
     )
   }
 

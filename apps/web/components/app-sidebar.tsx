@@ -28,11 +28,13 @@ import {
   CollapsibleTrigger,
 } from './ui/collapsible'
 import { cn } from '../lib/utils'
+import { useSession } from './session-provider'
 
 const DEFAULT_VISIBLE = 5
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
 export function AppSidebar() {
+  const { role, scopeProjects } = useSession()
   const pathname = usePathname() ?? ''
   const activeProject = decodeURIComponent(pathname.match(/^\/p\/([^/]+)/)?.[1] ?? '')
   // v3 exp-doc detail URLs: `/p/<project>/e/<E-id>` (and the alias
@@ -46,7 +48,12 @@ export function AppSidebar() {
     queryFn: fetchProjects,
     staleTime: 60_000,
   })
-  const projects = projectsData?.projects ?? []
+  const allProjects = projectsData?.projects ?? []
+  // Viewer sessions: restrict to scope-set projects. Owner / anon: full list.
+  const projects =
+    role === 'viewer'
+      ? allProjects.filter((p) => scopeProjects.includes(p.name))
+      : allProjects
 
   // Default: the active project is open. This means the very first SSR HTML
   // already contains its experiment rows (no skeleton flash on initial nav).
@@ -120,14 +127,16 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
-              <Link href="/manage/tmux">
-                <Terminal className="size-4" />
-                <span>Manage tmux</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {role !== 'viewer' && (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
+                <Link href="/manage/tmux">
+                  <Terminal className="size-4" />
+                  <span>Manage tmux</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
@@ -199,9 +208,13 @@ function ProjectExperimentDocs({
     staleTime: 5_000,
   })
   const docs: ExperimentDocSummary[] = data?.experiments ?? []
+  // v4: sidebar shows ACTIVE experiments only. Archived items are not
+  // surfaced here at all — they live exclusively on the main grid (which
+  // has the "Show archived" checkbox + bottom-of-list bucket).
   const sorted = useMemo(
     () =>
       docs
+        .filter((e) => !e.frontMatter.archived)
         .slice()
         .sort((a, b) => b.effectiveUpdatedAt.localeCompare(a.effectiveUpdatedAt)),
     [docs],

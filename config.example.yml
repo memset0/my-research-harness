@@ -40,6 +40,14 @@ poll:
 # CLI commands (`memon list`, `memon scan`, …) do not require auth; only the
 # HTTP server does.
 #
+# The `session_secret` field signs the browser-facing login + share-link
+# cookies (memon-session / memon-shares). It is also auto-generated on first
+# run; rotating it invalidates every open browser session and every
+# outstanding share-link cookie (force-logging-out viewers as well).
+#
 # auth:
 #   username: admin
-#   password: <plaintext>     # set on first run, edit to rotate
+#   password: <plaintext>           # set on first run, edit to rotate
+#   session_secret: <plaintext>     # 256-bit HMAC key for browser cookies;
+#                                   # auto-generated on first run alongside
+#                                   # `password`. Rotate to log everyone out.

@@ -4,8 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useMemonEvents } from './use-memon-events'
 import { TerminalDrawerProvider } from './terminal-drawer-provider'
+import { SessionProvider, type SessionInfo } from './session-provider'
 
-export function Providers({ children }: { children: React.ReactNode }) {
+interface ProvidersProps {
+  children: React.ReactNode
+  session: SessionInfo
+}
+
+export function Providers({ children, session }: ProvidersProps) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -25,10 +31,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   )
   return (
-    <QueryClientProvider client={client}>
-      <MemonEventsBridge />
-      <TerminalDrawerProvider>{children}</TerminalDrawerProvider>
-    </QueryClientProvider>
+    <SessionProvider value={session}>
+      <QueryClientProvider client={client}>
+        <MemonEventsBridge />
+        <TerminalDrawerProvider>{children}</TerminalDrawerProvider>
+      </QueryClientProvider>
+    </SessionProvider>
   )
 }
 

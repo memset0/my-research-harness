@@ -47,6 +47,7 @@ import {
   ResizablePanelGroup,
 } from '../../../components/ui/resizable'
 import { TerminalView } from '../../../components/terminal-view'
+import { ViewerGuard } from '../../../components/viewer-guard'
 import { useLocalStorageState } from '../../../lib/use-local-storage-state'
 import { useMediaQuery } from '../../../lib/use-media-query'
 import { cn } from '../../../lib/utils'
@@ -334,6 +335,7 @@ function SessionCard({
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           {popup && (
+            <ViewerGuard reason="Manage tmux session">
               <Button
                 variant="ghost"
                 size="sm"
@@ -347,7 +349,9 @@ function SessionCard({
                 <ExternalLink className="size-3" />
                 Popup
               </Button>
+            </ViewerGuard>
           )}
+          <ViewerGuard reason="Manage tmux session">
             <Button
               variant="ghost"
               size="sm"
@@ -361,6 +365,7 @@ function SessionCard({
               <Trash2 className="size-3" />
               Kill
             </Button>
+          </ViewerGuard>
         </div>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 text-[10px] text-muted-foreground">
@@ -410,6 +415,7 @@ function LeftPane({
             </p>
           </div>
           <div className="flex items-center gap-1">
+            <ViewerGuard reason="Manage tmux session">
               <Button
                 size="sm"
                 variant="default"
@@ -419,6 +425,8 @@ function LeftPane({
                 <Plus className="size-3" />
                 New
               </Button>
+            </ViewerGuard>
+            <ViewerGuard reason="Manage tmux session">
               <Button
                 size="sm"
                 variant="outline"
@@ -433,6 +441,7 @@ function LeftPane({
                   <RefreshCw className="size-3" />
                 )}
               </Button>
+            </ViewerGuard>
           </div>
         </div>
         <Tabs
@@ -510,6 +519,7 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
           {row.sessionName}
         </span>
         {popup && (
+          <ViewerGuard reason="Manage tmux session">
             <Button
               variant="outline"
               size="sm"
@@ -521,6 +531,7 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
               <ExternalLink className="size-3" />
               Pop out
             </Button>
+          </ViewerGuard>
         )}
       </div>
       <div className="flex flex-1 flex-col min-h-0">
@@ -760,6 +771,7 @@ export function TmuxManagePageClient() {
             <Button variant="outline" size="sm" onClick={() => setKillTarget(null)}>
               Cancel
             </Button>
+            <ViewerGuard reason="Manage tmux session">
               <Button
                 variant="destructive"
                 size="sm"
@@ -773,6 +785,7 @@ export function TmuxManagePageClient() {
                 )}
                 Kill session
               </Button>
+            </ViewerGuard>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -835,6 +848,7 @@ export function TmuxManagePageClient() {
               >
                 Cancel
               </Button>
+              <ViewerGuard reason="Manage tmux session">
                 <Button
                   type="submit"
                   size="sm"
@@ -847,6 +861,7 @@ export function TmuxManagePageClient() {
                   )}
                   Create
                 </Button>
+              </ViewerGuard>
             </DialogFooter>
           </form>
         </DialogContent>

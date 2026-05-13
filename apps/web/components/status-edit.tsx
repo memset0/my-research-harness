@@ -12,9 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
+import { ViewerGuard } from './viewer-guard'
 
-const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
-type Status = (typeof STATUS_VALUES)[number]
+// All v4 status values, used as the type for the incoming `status` prop
+// (since the on-disk value CAN be UNKNOWN even though the picker doesn't
+// offer it as user-selectable).
+type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
+
+// v4: picker excludes UNKNOWN — it's parser-only per archive-frontmatter /
+// experiment-readme spec.
+const SELECTABLE_STATUS_VALUES = [
+  'PENDING',
+  'RUNNING',
+  'FINISHED',
+  'INTERRUPTED',
+  'FAILED',
+] as const
 
 export function StatusEdit({
   id,
@@ -47,8 +60,17 @@ export function StatusEdit({
             onClick: () => queryClient.invalidateQueries({ queryKey: ['run', id] }),
           },
         })
+      } else if ('error' in res && res.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
+        // v4 hard rule: cannot transition to RUNNING on an archived run.
+        toast.error(`Cannot set RUNNING on an archived run`, {
+          description: 'Unarchive first, then change the status.',
+        })
       } else if ('mtime' in res) {
         toast.success(`Status: ${status} → ${next}`)
+        // v4: soft warning when modifying archived material.
+        if ('warning' in res && res.warning === 'archived') {
+          toast.warning(`${id} is archived; modifying anyway`)
+        }
         queryClient.invalidateQueries({ queryKey: ['run', id] })
         queryClient.invalidateQueries({ queryKey: ['runs'] })
       }
@@ -64,11 +86,13 @@ export function StatusEdit({
     <div className="inline-flex items-center gap-2">
       <StatusPill status={status} stale={stale} />
       <Select value={status} disabled={busy} onValueChange={(v) => void onChange(v)}>
-        <SelectTrigger size="sm" className="h-7 w-[8rem] text-xs" aria-label="Change status">
-          <SelectValue />
-        </SelectTrigger>
+        <ViewerGuard reason="Change status">
+          <SelectTrigger size="sm" className="h-7 w-[8rem] text-xs" aria-label="Change status">
+            <SelectValue />
+          </SelectTrigger>
+        </ViewerGuard>
         <SelectContent>
-          {STATUS_VALUES.map((s) => (
+          {SELECTABLE_STATUS_VALUES.map((s) => (
             <SelectItem key={s} value={s}>
               {s}
             </SelectItem>

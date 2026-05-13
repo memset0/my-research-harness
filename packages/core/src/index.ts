@@ -53,10 +53,31 @@ export {
   ARCHIVED_SIDECAR,
   discoverRuns,
   isArchived,
+  isArchivedSidecar,
   mergeExcludes,
+  runArchivedFromRun,
 } from './discovery/discover.js'
-export { archiveRun, unarchiveRun } from './discovery/archive.js'
+export {
+  archiveRun,
+  ArchiveRunningForbiddenError,
+  setRunArchived,
+  unarchiveRun,
+} from './discovery/archive.js'
 export type { ArchiveResult } from './discovery/archive.js'
+export {
+  migrateV3ToV4,
+  rewriteV3ExpDoc,
+  rewriteV3RunReadme,
+} from './migrations/v3-to-v4.js'
+export type {
+  MigrateV3ToV4Options,
+  MigrateV3ToV4Result,
+  MigrateV3ToV4Stat,
+  RewriteV3ExpInput,
+  RewriteV3ExpResult,
+  RewriteV3RunInput,
+  RewriteV3RunResult,
+} from './migrations/v3-to-v4.js'
 export { readRunDir } from './discovery/read.js'
 export { RunIndex } from './discovery/index.js'
 export type { ListFilter, SearchScope } from './discovery/index.js'
@@ -121,6 +142,27 @@ export {
   writeFsVersion,
 } from './fs-version/index.js'
 export type { FsVersionRecord, FsVersionStatus } from './fs-version/index.js'
+
+export {
+  addShare,
+  AmbiguousShareError,
+  emptySharesFile,
+  listShares,
+  parseDuration,
+  readShares,
+  resolveSharesFilePath,
+  revokeShare,
+  ShareNotFoundError,
+  ShareStoreError,
+  validateShare,
+  writeShares,
+} from './shares/index.js'
+export type {
+  AddShareOptions,
+  RevokeShareOptions,
+  ShareRecord,
+  SharesFile,
+} from './shares/index.js'
 
 // CLI helpers (callable from the @memon/cli package and from skills written
 // in TypeScript that link directly against @memon/core).

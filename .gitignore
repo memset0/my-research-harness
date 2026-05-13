@@ -27,6 +27,10 @@ pnpm-debug.log*
 # Mock fixtures (tracked even though they end in .log)
 !mock/**/*.log
 
+# Per-project .memon/ side-files (fs-version markers, share secrets, etc.)
+# — generated at runtime; not checked in.
+mock/**/.memon/
+
 # Environment
 .env
 .env.*

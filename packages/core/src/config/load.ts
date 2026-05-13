@@ -109,9 +109,11 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  const auth: AuthConfig | undefined = cfg.auth
-    ? { username: cfg.auth.username ?? 'admin', password: cfg.auth.password }
-    : undefined
+  let auth: AuthConfig | undefined
+  if (cfg.auth) {
+    auth = { username: cfg.auth.username ?? 'admin', password: cfg.auth.password }
+    if (cfg.auth.session_secret !== undefined) auth.sessionSecret = cfg.auth.session_secret
+  }
 
   const terminal: TerminalConfig = {
     ttydMaxConcurrent: cfg.terminal?.ttyd_max_concurrent ?? DEFAULT_TERMINAL.ttydMaxConcurrent,

@@ -1,29 +1,51 @@
-// Auth middleware (Node runtime).
+// Auth + scope middleware (Node runtime).
 //
-// Gates every request behind HTTP Basic auth, except for:
-//   - /api/auth/check (does its own check — it's the validation ping
-//     endpoint; middleware MUST NOT short-circuit it)
-//   - /api/terminal/proxy/* (auth-gated at the custom-server entry in
-//     `apps/web/server.ts`, which also is what answers the request — it
-//     never reaches Next when running via `tsx server.ts`. The bypass
-//     here is defense-in-depth.)
-//   - Next.js static asset paths (the basic-auth dialog itself can't load
-//     CSS without these)
-//   - The favicon
+// Evaluates three auth modes lazily on every non-anon request:
+//   1. Owner session cookie  (memon-session, HMAC-signed)
+//   2. Owner HTTP Basic      (Authorization: Basic ..., CLI tooling fallback)
+//   3. Viewer share cookie   (memon-shares — ONLY on `read`-class routes;
+//                              shell/mutating skip mode 3 entirely)
 //
-// Uses node-runtime middleware (Next 15.2+) so it can run scrypt directly.
-// See next.config.mjs `experimental.nodeMiddleware`.
+// Outcomes:
+//   - Owner identity passes any class.
+//   - Viewer identity passes only `read` whose `projectFor` resolves to a
+//     name in their scope OR returns 'multi' (handler filters).
+//   - Anon on a non-anon route → 401 with WWW-Authenticate (API) or 302 to
+//     /login?next=<path> (HTML pages).
 //
-// Rate-limiting: a process-global token-bucket limiter (60 capacity, 60/60s
-// refill, keyed on client IP from X-Forwarded-For) gates this middleware,
-// /api/auth/check, AND the custom server's WebSocket-upgrade auth. Brute-
-// force across any of those paths is counted in one bucket per IP.
+// Rate-limit and refresh details:
+//   - Every non-anon request consumes one token from the shared per-IP bucket.
+//   - Authenticated requests refund their token (legitimate traffic should
+//     not drain the brute-force bucket).
+//   - Owner session cookie is refreshed on every passing request
+//     (rolling 30-day window).
+//   - Share cookie is re-signed with pruned entries when any entry was
+//     stale; or cleared when all entries are now invalid.
+//
+// Bypass list (isAuthBypass): /api/auth/check, /api/terminal/proxy/*,
+// /_next/static/*, /_next/image, /favicon.ico — these never hit middleware.
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { getRuntime } from './lib/runtime'
-import { parseBasicAuth, verifyBasic, UNAUTHORIZED_HEADERS, TOO_MANY_HEADERS } from './lib/auth/basic-auth'
-import { isAuthBypass } from './lib/auth/route-classes'
+import { UNAUTHORIZED_HEADERS, TOO_MANY_HEADERS } from './lib/auth/basic-auth'
+import {
+  classifyAndExtract,
+  isAuthBypass,
+  type ResolvedProject,
+} from './lib/auth/route-classes'
 import { clientIpFromHeaders, consume, refund } from './lib/auth/rate-limit'
+import {
+  buildClearCookieHeader,
+  buildSetCookieHeader,
+  OWNER_SESSION_TTL_SECONDS,
+  SESSION_COOKIE_NAME,
+  SHARES_COOKIE_NAME,
+  SHARES_COOKIE_TTL_SECONDS,
+} from './lib/auth/cookies'
+import { resolveIdentity, type ShareValidator } from './lib/auth/identity'
+import { makeProjectResolver } from './lib/auth/project-resolver'
+import { isHttps, publicOrigin } from './lib/auth/public-url'
+import { validateShare as coreValidateShare } from '@memon/core'
 
 export const config = {
   runtime: 'nodejs',
@@ -35,11 +57,59 @@ export const config = {
   ],
 }
 
+function wantsHtml(req: NextRequest): boolean {
+  const accept = req.headers.get('accept') ?? ''
+  const path = req.nextUrl.pathname
+  // API paths default to JSON-style 401 even without Accept header.
+  if (path.startsWith('/api/')) return false
+  return accept.includes('text/html') || accept === '' || accept === '*/*'
+}
+
+function denyAnon(req: NextRequest): NextResponse {
+  if (wantsHtml(req)) {
+    const next = req.nextUrl.pathname + req.nextUrl.search
+    // Next.js middleware requires an ABSOLUTE Location. Build against the
+    // public origin (X-Forwarded-Host/Proto from Caddy) so the browser
+    // navigates to the user-facing hostname, not memon's internal one.
+    const loginUrl = new URL('/login', publicOrigin(req))
+    loginUrl.searchParams.set('next', next)
+    return NextResponse.redirect(loginUrl, 302)
+  }
+  return new NextResponse('Unauthorized', { status: 401, headers: UNAUTHORIZED_HEADERS })
+}
+
+function denyForbidden(message: string): NextResponse {
+  return new NextResponse(message, {
+    status: 403,
+    headers: { 'Cache-Control': 'no-store' },
+  })
+}
+
+function appendSetCookie(headers: Headers, value: string): void {
+  headers.append('Set-Cookie', value)
+}
+
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl
   if (isAuthBypass(pathname)) return NextResponse.next()
 
-  // Rate limit BEFORE scrypt. Same key for both middleware and /api/auth/check.
+  // Classify the route + compute projectFor. We do this BEFORE any auth
+  // work to know whether to evaluate mode 3 (viewer share cookie) at all.
+  const runtime = await getRuntime()
+  const ctx = makeProjectResolver(runtime)
+  const search = req.nextUrl.searchParams
+  const { class: routeClass, project } = classifyAndExtract(
+    req.method,
+    pathname,
+    search,
+    ctx,
+  )
+
+  // Anon routes pass without auth (rate-limit still applies via the
+  // /api/auth/login handler's own consume).
+  if (routeClass === 'anon') return NextResponse.next()
+
+  // Rate limit BEFORE any signature verify / scrypt.
   const ip = clientIpFromHeaders(req.headers)
   const limit = consume(ip)
   if (!limit.ok) {
@@ -49,15 +119,107 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  const runtime = await getRuntime()
-  const parsed = parseBasicAuth(req.headers.get('authorization'))
-  const ok = await verifyBasic(parsed, runtime.auth)
-  if (!ok) {
-    return new NextResponse('Unauthorized', { status: 401, headers: UNAUTHORIZED_HEADERS })
+  // Build a share validator backed by the runtime's projects.
+  const shareValidator: ShareValidator = {
+    validate: async (projectName, token) => {
+      const projectCfg = runtime.config.projects.find((p) => p.name === projectName)
+      if (!projectCfg) return false
+      const record = await coreValidateShare(projectCfg.root, token).catch(() => null)
+      return record !== null
+    },
   }
-  // Refund the token consumed above: legitimate authenticated traffic should
-  // not drain the brute-force bucket. Failed auth (above) intentionally does
-  // not refund — that is the throttle.
-  refund(ip)
-  return NextResponse.next()
+
+  const allowViewer = routeClass === 'read'
+  const identity = await resolveIdentity(
+    {
+      authorizationHeader: req.headers.get('authorization'),
+      sessionCookieValue: req.cookies.get(SESSION_COOKIE_NAME)?.value ?? null,
+      sharesCookieValue: req.cookies.get(SHARES_COOKIE_NAME)?.value ?? null,
+      allowViewer,
+    },
+    runtime.auth,
+    shareValidator,
+  )
+
+  if (identity.refundToken) refund(ip)
+
+  // Build the response we'll return — either a deny or a passthrough with
+  // request-context headers + refreshed cookies.
+  let response: NextResponse
+  let allow = false
+
+  if (identity.role === 'owner') {
+    allow = true
+  } else if (identity.role === 'viewer') {
+    // Viewer can only reach `read` routes (allowViewer was true). Apply
+    // scope check against `project`.
+    const scopeOk = checkViewerScope(project, identity.scopeProjects)
+    if (scopeOk) {
+      allow = true
+    } else {
+      response = denyForbidden('Project not in your share scope')
+      attachCookieRefreshes(response.headers, identity, isHttps(req))
+      return response
+    }
+  } else {
+    // Anon — deny.
+    response = denyAnon(req)
+    attachCookieRefreshes(response.headers, identity, isHttps(req))
+    return response
+  }
+
+  // Allowed: passthrough with role/scope headers + refreshed cookies.
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-memon-role', identity.role)
+  requestHeaders.set(
+    'x-memon-scope',
+    Array.from(identity.scopeProjects).join(','),
+  )
+  // The class is useful for handlers that want to know "am I a 'multi' route?"
+  // without re-classifying — currently optional, costs one header byte to set.
+  requestHeaders.set('x-memon-route-class', routeClass)
+
+  response = NextResponse.next({ request: { headers: requestHeaders } })
+  attachCookieRefreshes(response.headers, identity, isHttps(req))
+  return response
 }
+
+function checkViewerScope(project: ResolvedProject, scope: Set<string>): boolean {
+  if (project === 'multi') return true // handler filters
+  if (project === 'global') return false // owner-only
+  if (project === null) return false // fail-closed
+  // project is a string name
+  return scope.has(project)
+}
+
+function attachCookieRefreshes(
+  headers: Headers,
+  identity: Awaited<ReturnType<typeof resolveIdentity>>,
+  secure: boolean,
+): void {
+  if (identity.refreshedSessionCookie) {
+    appendSetCookie(
+      headers,
+      buildSetCookieHeader({
+        name: SESSION_COOKIE_NAME,
+        value: identity.refreshedSessionCookie,
+        maxAgeSeconds: OWNER_SESSION_TTL_SECONDS,
+        secure,
+      }),
+    )
+  }
+  if (identity.refreshedSharesCookie) {
+    appendSetCookie(
+      headers,
+      buildSetCookieHeader({
+        name: SHARES_COOKIE_NAME,
+        value: identity.refreshedSharesCookie,
+        maxAgeSeconds: SHARES_COOKIE_TTL_SECONDS,
+        secure,
+      }),
+    )
+  } else if (identity.clearSharesCookie) {
+    appendSetCookie(headers, buildClearCookieHeader(SHARES_COOKIE_NAME, secure))
+  }
+}
+

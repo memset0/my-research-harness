@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { Button } from './ui/button'
 import { ReadmeEditor, type EditorTarget } from './readme-editor'
+import { ViewerGuard } from './viewer-guard'
 
 interface Props {
   /** Path used as the editor's display label (passed through to legacy load — see EditorTarget). */
@@ -35,10 +36,12 @@ export function EditMarkdownButton({
   const text = label ?? (target.kind === 'exp' ? 'Edit markdown (exp)' : 'Edit markdown (run)')
   return (
     <>
-      <Button variant={variant} size={size} onClick={() => setOpen(true)}>
-        <Pencil className="size-3.5" />
-        {text}
-      </Button>
+      <ViewerGuard reason="Edit markdown">
+        <Button variant={variant} size={size} onClick={() => setOpen(true)}>
+          <Pencil className="size-3.5" />
+          {text}
+        </Button>
+      </ViewerGuard>
       {open && (
         <ReadmeEditor
           path={path}

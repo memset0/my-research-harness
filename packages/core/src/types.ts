@@ -4,12 +4,13 @@
 // YAML on disk uses snake_case; we convert to camelCase at the parse boundary
 // so internal code is idiomatic TypeScript.
 
-export type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'FAILED' | 'UNKNOWN'
+export type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
 
 export const STATUS_VALUES: readonly Status[] = [
   'PENDING',
   'RUNNING',
   'FINISHED',
+  'INTERRUPTED',
   'FAILED',
   'UNKNOWN',
 ] as const
@@ -18,8 +19,23 @@ export const STATUS_EMOJI: Readonly<Record<Status, string>> = {
   PENDING: '📝',
   RUNNING: '🟢',
   FINISHED: '✅',
+  INTERRUPTED: '⏸️',
   FAILED: '❌',
   UNKNOWN: '❓',
+}
+
+export type ExperimentStatus = 'OPEN' | 'RESOLVED' | 'ABANDONED'
+
+export const EXPERIMENT_STATUS_VALUES: readonly ExperimentStatus[] = [
+  'OPEN',
+  'RESOLVED',
+  'ABANDONED',
+] as const
+
+export const EXPERIMENT_STATUS_EMOJI: Readonly<Record<ExperimentStatus, string>> = {
+  OPEN: '🔵',
+  RESOLVED: '✅',
+  ABANDONED: '⚫',
 }
 
 export type HypothesisStatus = 'CONFIRMED' | 'REFUTED' | 'PARTIAL' | 'OPEN' | 'DEFERRED'
@@ -141,6 +157,15 @@ export interface RunFrontMatter {
    * to `createdAt` when missing from the file.
    */
   updatedAt: string
+  /**
+   * v4-added: human-managed archive flag. Default `false` for new runs.
+   * Replaces the legacy `<runDir>/.archived` sidecar file. Per
+   * `archive-frontmatter` spec: human-only writes; cannot be set to `true`
+   * while `status === 'RUNNING'`; soft warning on writes-to-archived.
+   * Parser falls back to `false` when missing (with `MISSING_ARCHIVED_FIELD`
+   * parse warning) or to the sidecar's presence in the migration window.
+   */
+  archived: boolean
 }
 
 export interface ArtifactEntry {
@@ -235,6 +260,18 @@ export interface ExperimentFrontMatter {
   /** The slug portion (e.g. `zero-snr-fix`). Must equal the filename slug. */
   slug: string
   title: string
+  /**
+   * v4-added: manually-set lifecycle state. Enum: `OPEN` / `RESOLVED` /
+   * `ABANDONED`. Default `OPEN` for new experiments. Human-only writes;
+   * never auto-derived from member runs. Parser falls back to `OPEN` when
+   * missing (with `MISSING_EXP_STATUS` parse warning).
+   */
+  status: ExperimentStatus
+  /**
+   * v4-added: human-managed archive flag. Default `false` for new
+   * experiments. Per `archive-frontmatter` spec.
+   */
+  archived: boolean
   /** Run dir base names that this experiment claims as members. */
   runs: string[]
   /** Hypothesis IDs in canonical 4-digit padded form (`H0001`, `H0003`, ...). */
@@ -429,6 +466,12 @@ export interface AuthConfig {
   username: string
   /** Plaintext. Stored in config.yml — see openspec/specs/auth-system. */
   password: string
+  /**
+   * HMAC signing key for `memon-session` and `memon-shares` cookies.
+   * Plaintext base64url string from `crypto.randomBytes(32)` (44 chars).
+   * Auto-generated on first server start when absent.
+   */
+  sessionSecret?: string
 }
 
 export interface TerminalConfig {

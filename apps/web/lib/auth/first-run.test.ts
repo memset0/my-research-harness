@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '@memon/core'
-import { ensureAuthInitialised } from './first-run'
+import { ensureAuthInitialised, __testAppendSessionSecretToAuthBlock } from './first-run'
 
 let dir: string
 let configPath: string
@@ -32,7 +32,7 @@ poll:
 `
 
 describe('ensureAuthInitialised', () => {
-  it('generates and persists a plaintext password when missing', async () => {
+  it('generates and persists a plaintext password AND session_secret when both missing', async () => {
     await fs.writeFile(configPath, BASE_CONFIG)
     const cfg = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
     expect(cfg.auth).toBeUndefined()
@@ -40,6 +40,7 @@ describe('ensureAuthInitialised', () => {
     const result = await ensureAuthInitialised(configPath, cfg)
     expect(result.username).toBe('admin')
     expect(result.password).toMatch(/^[A-Za-z0-9_-]{20,}$/)
+    expect(result.sessionSecret).toMatch(/^[A-Za-z0-9_-]{40,}$/)
 
     // Reload should round-trip the same auth.
     const reloaded = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
@@ -51,21 +52,57 @@ describe('ensureAuthInitialised', () => {
     expect(after).toContain('min_interval_ms: 1000')
     // Plaintext is on disk now (the whole point of this design).
     expect(after).toContain(`password: "${result.password}"`)
+    expect(after).toContain(`session_secret: "${result.sessionSecret}"`)
 
-    // Banner was printed once.
+    // Banner was printed once. The banner shows the password but NOT the
+    // session_secret (the secret is opaque to the user; the password is
+    // what they need to log in).
     const banner = logSpy.mock.calls.map((c) => String(c[0])).join('\n')
     expect(banner).toContain('username: admin')
     expect(banner).toContain(`password: ${result.password}`)
+    expect(banner).not.toContain(result.sessionSecret!)
   })
 
-  it('returns existing creds without rewriting when password already present', async () => {
+  it('adds session_secret to an existing auth block when only password is present', async () => {
     const seed = BASE_CONFIG + '\nauth:\n  username: alice\n  password: known-pass\n'
+    await fs.writeFile(configPath, seed)
+    const cfg = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
+    expect(cfg.auth).toBeDefined()
+    expect(cfg.auth!.sessionSecret).toBeUndefined()
+
+    const result = await ensureAuthInitialised(configPath, cfg)
+    expect(result.username).toBe('alice')
+    expect(result.password).toBe('known-pass')
+    expect(result.sessionSecret).toMatch(/^[A-Za-z0-9_-]{40,}$/)
+
+    // Reload round-trips.
+    const reloaded = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
+    expect(reloaded.auth).toEqual(result)
+
+    // No banner — the password was already set.
+    expect(logSpy).not.toHaveBeenCalled()
+
+    // The original two lines are preserved.
+    const after = await fs.readFile(configPath, 'utf8')
+    expect(after).toContain('username: alice')
+    expect(after).toContain('password: known-pass')
+    expect(after).toContain(`session_secret: "${result.sessionSecret}"`)
+  })
+
+  it('returns existing creds without rewriting when both password and session_secret are present', async () => {
+    const seed =
+      BASE_CONFIG +
+      '\nauth:\n  username: alice\n  password: known-pass\n  session_secret: existing-secret-abc123\n'
     await fs.writeFile(configPath, seed)
     const cfg = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
     const before = await fs.stat(configPath)
 
     const result = await ensureAuthInitialised(configPath, cfg)
-    expect(result).toEqual({ username: 'alice', password: 'known-pass' })
+    expect(result).toEqual({
+      username: 'alice',
+      password: 'known-pass',
+      sessionSecret: 'existing-secret-abc123',
+    })
 
     // mtime unchanged → no rewrite.
     const after = await fs.stat(configPath)
@@ -91,7 +128,7 @@ describe('ensureAuthInitialised', () => {
     await expect(ensureAuthInitialised(configPath, fakeCfg)).rejects.toThrow(/loadConfig couldn't parse/)
   })
 
-  it('detects concurrent edit via mtime guard and aborts', async () => {
+  it('detects concurrent edit via mtime guard and aborts (fresh auth)', async () => {
     await fs.writeFile(configPath, BASE_CONFIG)
     const cfg = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
 
@@ -114,10 +151,31 @@ describe('ensureAuthInitialised', () => {
     }
   })
 
+  it('detects concurrent edit via mtime guard and aborts (session_secret append path)', async () => {
+    const seed = BASE_CONFIG + '\nauth:\n  username: alice\n  password: known-pass\n'
+    await fs.writeFile(configPath, seed)
+    const cfg = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
+
+    const realStat = fs.stat.bind(fs)
+    let calls = 0
+    const statSpy = vi.spyOn(fs, 'stat').mockImplementation(async (p) => {
+      const real = await realStat(p as string)
+      calls += 1
+      if (calls === 2) {
+        return { ...real, mtimeMs: real.mtimeMs + 9999 } as Awaited<ReturnType<typeof realStat>>
+      }
+      return real
+    })
+    try {
+      await expect(ensureAuthInitialised(configPath, cfg)).rejects.toThrow(
+        /modified during first-run/,
+      )
+    } finally {
+      statSpy.mockRestore()
+    }
+  })
+
   it('does NOT write a ~/.cache/memon/initial-password.txt file (deprecated)', async () => {
-    // Sanity-check that the new design avoids the cache-file trap. We run the
-    // first-run flow and assert that no fs.writeFile was called for any path
-    // outside of <dir>.
     await fs.writeFile(configPath, BASE_CONFIG)
     const cfg = (await loadConfig({ explicitPath: configPath, cwd: dir }))!
 
@@ -134,10 +192,36 @@ describe('ensureAuthInitialised', () => {
       writeSpy.mockRestore()
     }
 
-    // Every write should be inside the tmp dir (= configPath rewrite). No
-    // ~/.cache writes.
     for (const w of writes) {
       expect(w.startsWith(dir)).toBe(true)
     }
+  })
+})
+
+describe('appendSessionSecretToAuthBlock', () => {
+  it('inserts the new line at the end of an indented auth block', () => {
+    const before = 'projects:\n  - name: a\n    root: ./a\nauth:\n  username: alice\n  password: pw\n'
+    const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
+    expect(after).toContain('auth:\n  username: alice\n  password: pw\n  session_secret: "NEW-SECRET"')
+  })
+
+  it('preserves trailing content after the auth block', () => {
+    const before =
+      'auth:\n  username: alice\n  password: pw\n\nterminal:\n  ttyd_max_concurrent: 8\n'
+    const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
+    expect(after).toContain('  session_secret: "NEW-SECRET"\n\nterminal:')
+    expect(after).toContain('ttyd_max_concurrent: 8')
+  })
+
+  it('matches the existing auth-block indentation if non-default', () => {
+    const before = 'auth:\n    username: alice\n    password: pw\n'
+    const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
+    expect(after).toContain('    session_secret: "NEW-SECRET"')
+  })
+
+  it('handles auth: as the last block (no trailing non-indented line)', () => {
+    const before = 'auth:\n  username: alice\n  password: pw'
+    const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
+    expect(after.endsWith('  session_secret: "NEW-SECRET"')).toBe(true)
   })
 })

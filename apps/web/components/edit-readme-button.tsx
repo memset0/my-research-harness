@@ -5,6 +5,7 @@ import { useIsDesktop } from '@/hooks/use-is-desktop'
 import { Button } from './ui/button'
 import { ReadmeEditor } from './readme-editor'
 import { useReadmeEditorOptional } from './readme-editor-context'
+import { ViewerGuard } from './viewer-guard'
 
 export function EditReadmeButton({
   path,
@@ -21,14 +22,16 @@ export function EditReadmeButton({
   if (isDesktop && ctx) {
     const isPanelOpen = ctx.open && !ctx.collapsed
     return (
-      <Button
-        variant={ctx.open ? 'secondary' : 'outline'}
-        size="sm"
-        aria-pressed={ctx.open}
-        onClick={() => ctx.setOpen(!ctx.open)}
-      >
-        {isPanelOpen ? 'Hide editor' : 'Edit README'}
-      </Button>
+      <ViewerGuard reason="Edit README">
+        <Button
+          variant={ctx.open ? 'secondary' : 'outline'}
+          size="sm"
+          aria-pressed={ctx.open}
+          onClick={() => ctx.setOpen(!ctx.open)}
+        >
+          {isPanelOpen ? 'Hide editor' : 'Edit README'}
+        </Button>
+      </ViewerGuard>
     )
   }
 
@@ -36,9 +39,11 @@ export function EditReadmeButton({
   // open a Dialog locally.
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpenDialog(true)}>
-        Edit README
-      </Button>
+      <ViewerGuard reason="Edit README">
+        <Button variant="outline" size="sm" onClick={() => setOpenDialog(true)}>
+          Edit README
+        </Button>
+      </ViewerGuard>
       {openDialog && (
         <ReadmeEditor
           path={`${path}/README.md`}
