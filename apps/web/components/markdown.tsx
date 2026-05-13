@@ -2,6 +2,9 @@
 
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { cn } from '../lib/utils'
 
 // Force every `<input type="checkbox">` produced by remark-gfm's task-list
@@ -54,10 +57,20 @@ export function Markdown({ children, className }: { children: string; className?
         '[&_li.task-list-item>input[type=checkbox]]:opacity-70',
         '[&_ul.contains-task-list]:list-none',
         '[&_ul.contains-task-list]:pl-4',
+        // KaTeX display-math safety: give block formulas breathing room
+        // matching `prose-sm` paragraph rhythm, and allow horizontal
+        // scroll so wide formulas don't blow out the panel width on
+        // narrow viewports.
+        '[&_.katex-display]:my-4',
+        '[&_.katex-display]:overflow-x-auto',
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={COMPONENTS}
+      >
         {children}
       </ReactMarkdown>
     </div>
