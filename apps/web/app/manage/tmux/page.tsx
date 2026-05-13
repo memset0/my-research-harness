@@ -20,10 +20,8 @@ export default async function TmuxManagePage() {
   qc.setQueryData(['tmux-sessions'], { sessions })
 
   return (
-    <div className="mx-auto max-w-[1400px] p-6">
-      <HydrationBoundary state={dehydrate(qc)}>
-        <TmuxManagePageClient />
-      </HydrationBoundary>
-    </div>
+    <HydrationBoundary state={dehydrate(qc)}>
+      <TmuxManagePageClient />
+    </HydrationBoundary>
   )
 }

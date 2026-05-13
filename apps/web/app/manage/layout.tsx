@@ -22,10 +22,10 @@ export default async function ManageLayout({
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <SidebarProvider>
+      <SidebarProvider className="h-svh overflow-hidden">
         <AppSidebar />
-        <SidebarInset>
-          <div className="flex-1">{children}</div>
+        <SidebarInset className="min-h-0 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
         </SidebarInset>
       </SidebarProvider>
     </HydrationBoundary>
