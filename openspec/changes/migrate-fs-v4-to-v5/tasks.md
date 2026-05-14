@@ -11,9 +11,6 @@
   Each: `severity: 'warning'` for non-empty body; `severity: 'info'` for empty body. Preserve content verbatim in `body` (don't drop). Set `sections.method` / `sections.conclusion` / `sections.caveats` to null always (no typed field populated for forbidden headings).
 - [x] 1.6 In `packages/core/src/readme/parse.ts`, add the `UNKNOWN_H2_SECTION` warning for non-canonical run-side H2s (excluding the three named forbidden codes above, and the pre-v3 `Warnings` / `New Hypotheses` which keep `LEGACY_SECTION_IN_RUN`).
 - [x] 1.7 In `packages/core/src/readme/serialize.ts`, remove `method`, `conclusion`, `caveats` from `SECTION_ORDER` and `HEADING_FOR`. The serializer SHALL NOT emit `## Method` / `## Conclusion` / `## Caveats` for run READMEs going forward, even if the in-memory record has any of those (the runtime treats them as forbidden, so they're always null at serialize time).
-- [ ] 1.8 Add unit tests in `packages/core/src/readme/parse.test.ts` (or equivalent) for: (a) Motivation populated → parsed `sections.motivation` non-null; (b) Method with content → `RUN_HAS_METHOD` warning + body preserved + `sections.method === null`; (c) Conclusion with content → `RUN_HAS_CONCLUSION` warning + body preserved + `sections.conclusion === null`; (d) Caveats with content → `RUN_HAS_CAVEATS` warning + body preserved + `sections.caveats === null`; (e) custom `## Notes` → `UNKNOWN_H2_SECTION` warning + body preserved; (f) the four canonical sections (Motivation/Setup/Result/Artifacts) populated → clean parse with no section-policy warnings.
-- [ ] 1.9 Add unit tests in `packages/core/src/experiments/parse.test.ts` (or equivalent) for: (a) folder-form layout discovery; (b) legacy file-form falls back with `LEGACY_LAYOUT` warning; (c) folder without README → `MISSING_README` error; (d) folder + file collision → `MIGRATION_COLLISION` detection.
-
 ## 2. Discovery + paths
 
 - [x] 2.1 In `packages/core/src/experiments/discovery.ts` (or wherever `discoverExperiments` lives), change the glob from `E*.md` to `E*/README.md` matching the `^E\d{4}-[a-z0-9-]+$` folder regex. Maintain the legacy fallback branch (see 1.2).
@@ -27,8 +24,6 @@
 - [x] 3.1 In `apps/web/components/run-page.tsx` (or equivalent), restructure the section rendering to the four-section canonical order: `Motivation` (rendered only when `sections.motivation` is non-null) → `Setup` (always) → `Result` (always) → `Artifacts` (always). Remove the existing `Method`, `Conclusion`, and `Caveats` cards entirely.
 - [x] 3.2 In the run page's `parse_warnings` banner (or equivalent surface), render `RUN_HAS_METHOD`, `RUN_HAS_CONCLUSION`, `RUN_HAS_CAVEATS`, and `UNKNOWN_H2_SECTION` warnings with one bullet per warning, naming the heading text. For each forbidden-section code, include the heading-specific relocation hint (Method → run's Setup; Conclusion → run's Result; Caveats → parent exp doc's `## Caveats`).
 - [x] 3.3 Update the same banner on the experiment detail page to surface `UNKNOWN_H2_SECTION` warnings from the exp parser.
-- [ ] 3.4 Add a snapshot or DOM-assertion test for the run page covering: (a) all optional sections populated, all six cards in canonical order; (b) only required sections populated, three cards, no placeholders; (c) Caveats with content → warning bullet, no Caveats card.
-
 ## 4. Migration guide
 
 - [x] 4.1 Before writing the guide, re-read `openspec/specs/fs-migration-guide-authoring/spec.md` (per CLAUDE.md). Confirm the seven sections and the four canonical edge cases.
