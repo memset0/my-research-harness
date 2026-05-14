@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
       cwd,
       maxConcurrent: runtime.config.terminal.ttydMaxConcurrent,
       idleTtlMinutes: runtime.config.terminal.ttydIdleTtlMinutes,
+      commands: runtime.config.terminal.commands,
     })
     return NextResponse.json({
       sessionName: session.sessionName,

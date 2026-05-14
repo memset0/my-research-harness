@@ -87,6 +87,13 @@ function newSpawnReturnsHealthyChild(): FakeChild {
   return child
 }
 
+const DEFAULT_COMMANDS = {
+  none: [] as readonly string[],
+  claude: ['claude'] as readonly string[],
+  codex: ['codex'] as readonly string[],
+  opencode: ['opencode'] as readonly string[],
+}
+
 function defaultInput(overrides: Partial<StartSessionInput> = {}): StartSessionInput {
   return {
     project: 'project-a',
@@ -96,6 +103,7 @@ function defaultInput(overrides: Partial<StartSessionInput> = {}): StartSessionI
     cwd: '/tmp/run-foo',
     maxConcurrent: 16,
     idleTtlMinutes: 30,
+    commands: DEFAULT_COMMANDS,
     ...overrides,
   }
 }
@@ -353,6 +361,59 @@ describe('startSession', () => {
     const [, args] = spawnMock.mock.calls[0]!
     expect(args).not.toContain('--continue')
     // probeResumeArgvTail short-circuits on agent='none' before any readdir
+    expect(readdirMock).not.toHaveBeenCalled()
+  })
+
+  it('custom claude argv replaces the default and is pushed verbatim', async () => {
+    newSpawnReturnsHealthyChild()
+    await startSession(
+      defaultInput({
+        commands: {
+          ...DEFAULT_COMMANDS,
+          claude: ['claude', '--dangerously-skip-permissions'],
+        },
+      }),
+    )
+    const [, args] = spawnMock.mock.calls[0]!
+    // The custom argv is pushed exactly; no --continue appended because the
+    // default readdir mock rejects with ENOENT (no resumable conversation).
+    expect(args.slice(-2)).toEqual(['claude', '--dangerously-skip-permissions'])
+    expect(args).not.toContain('--continue')
+  })
+
+  it('custom claude argv + resumable cwd appends --continue after the user argv', async () => {
+    readdirMock.mockResolvedValueOnce(['session-abc.jsonl'])
+    newSpawnReturnsHealthyChild()
+    await startSession(
+      defaultInput({
+        cwd: '/tmp/run-with-history',
+        commands: {
+          ...DEFAULT_COMMANDS,
+          claude: ['claude', '--dangerously-skip-permissions'],
+        },
+      }),
+    )
+    const [, args] = spawnMock.mock.calls[0]!
+    // Resume tail goes AFTER the user's argv.
+    expect(args.slice(-3)).toEqual([
+      'claude',
+      '--dangerously-skip-permissions',
+      '--continue',
+    ])
+  })
+
+  it("custom 'none' argv runs the user's command verbatim with no resume tail", async () => {
+    newSpawnReturnsHealthyChild()
+    await startSession(
+      defaultInput({
+        agent: 'none',
+        commands: { ...DEFAULT_COMMANDS, none: ['zsh', '-l'] },
+      }),
+    )
+    const [, args] = spawnMock.mock.calls[0]!
+    expect(args.slice(-2)).toEqual(['zsh', '-l'])
+    // Session name still uses the 'terminal' segment (the agent kind, not the argv).
+    expect(args).toContain('memon-terminal-project-a--run--foo-260507-103000')
     expect(readdirMock).not.toHaveBeenCalled()
   })
 })

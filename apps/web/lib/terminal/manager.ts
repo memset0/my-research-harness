@@ -28,6 +28,7 @@ import { createServer } from 'node:net'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { AGENT_KINDS, type AgentKind } from '@memon/core'
 import { probeTtyd } from './binary'
 import { clearPaneStateMemo } from './pane-state'
 
@@ -35,8 +36,7 @@ const PORT_BASE = 7682
 const PORT_SCAN_LIMIT = 256
 const IDLE_TIMER_INTERVAL_MS = 60_000
 
-export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
-export type AgentKind = (typeof AGENT_KINDS)[number]
+export { AGENT_KINDS, type AgentKind }
 
 export const SCOPE_KINDS = ['exp', 'run', 'project'] as const
 export type ScopeKind = (typeof SCOPE_KINDS)[number]
@@ -380,6 +380,14 @@ export interface StartSessionInput {
   maxConcurrent: number
   /** From `runtime.config.terminal`. `0` disables the killer. */
   idleTtlMinutes: number
+  /**
+   * Per-agent tmux argv from `runtime.config.terminal.commands`. The route
+   * is responsible for filling defaults; this field is required so the
+   * manager has one source of truth and cannot accidentally fall back to
+   * old hard-coded values. The resume probe's tail is appended AFTER the
+   * resolved argv unchanged.
+   */
+  commands: Record<AgentKind, readonly string[]>
 }
 
 export async function startSession(input: StartSessionInput): Promise<ActiveSession> {
@@ -441,6 +449,11 @@ async function doStartSession(
   const resumeTail = await probeResumeArgvTail({ agent, cwd: input.cwd })
 
   const basePath = `/api/terminal/proxy/${sessionName}`
+  // `?? []` placates `noUncheckedIndexedAccess`; in practice the route
+  // always passes a fully-populated `Record<AgentKind, readonly string[]>`
+  // from `runtime.config.terminal.commands` so this fallback is unreachable
+  // at runtime.
+  const agentArgv = input.commands[agent] ?? []
   const tmuxTail: string[] = [
     'tmux',
     'new-session',
@@ -449,10 +462,9 @@ async function doStartSession(
     sessionName,
     '-c',
     input.cwd,
+    ...agentArgv,
+    ...resumeTail,
   ]
-  if (agent !== 'none') {
-    tmuxTail.push(agent, ...resumeTail)
-  }
   const args = [
     '-p',
     String(port),
