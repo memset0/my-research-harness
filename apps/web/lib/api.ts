@@ -20,14 +20,14 @@ export interface ProjectSummary {
 }
 
 export interface IndexedRun
-  extends Pick<Run, 'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
+  extends Pick<Run, 'id' | 'project' | 'path' | 'mtime' | 'readmeMtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
   stale: boolean
 }
 
 export interface FullExperiment
   extends Pick<
     Run,
-    'id' | 'project' | 'path' | 'mtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
+    'id' | 'project' | 'path' | 'mtime' | 'readmeMtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
   > {
   stale: boolean
   resources: null
@@ -476,6 +476,12 @@ export interface TmuxPaneInfo {
   currentPath: string | null
 }
 
+/**
+ * Card-footer liveness state derived server-side from `pane.title` plus the
+ * unacknowledged-running memo. See `apps/web/lib/terminal/pane-state.ts`.
+ */
+export type TmuxPaneState = 'idle' | 'running' | 'attention' | 'done'
+
 export interface TmuxSessionRow {
   sessionName: string
   parsed: {
@@ -500,6 +506,15 @@ export interface TmuxSessionRow {
   staleReason: 'unknown-project' | 'unknown-target' | null
   /** Pane info from `tmux list-panes -a`; null when tmux didn't surface a usable active pane. */
   pane: TmuxPaneInfo | null
+  /** Liveness state derived server-side from pane.title plus an
+   *  unacknowledged-running memo. Drives the card footer's bg tint. */
+  state: TmuxPaneState
+  /** ISO8601 of the most recent server-observed state transition for this
+   *  sessionName, or `null` when none has been observed since the memo
+   *  was last reset (fresh first-seen row, or right after the user
+   *  opened the ttyd). The card displays
+   *  `max(lastStateChangeAt, tmuxLastActivity)` as the relative time. */
+  lastStateChangeAt: string | null
 }
 
 export async function checkTerminal(): Promise<TerminalCheckResult> {
@@ -778,6 +793,57 @@ export async function fetchRunFiles(
   depth = 3,
 ): Promise<{ runId: string; runPath: string; depth: number; truncated: boolean; entries: number; tree: RunFileTreeNode }> {
   return jsonFetch(`/api/runs/${encodeURIComponent(id)}/files?depth=${depth}`)
+}
+
+// Slurm widget — one fetch every 30s while the sidebar footer is mounted.
+
+export interface SlurmJobJson {
+  jobId: string
+  partition: string
+  name: string
+  state: string
+  time: string
+  numNodes: number
+  nodeList: string
+}
+
+export type SlurmStatus =
+  | { enabled: false }
+  | {
+      enabled: true
+      totalNodes: number
+      usedNodes: number
+      jobs: SlurmJobJson[]
+    }
+  | {
+      enabled: true
+      error: { code: 'SLURM_UNAVAILABLE'; message: string }
+    }
+
+export async function fetchSlurmStatus(): Promise<SlurmStatus> {
+  const res = await fetch('/api/slurm/status')
+  const text = await res.text()
+  let body: unknown
+  try {
+    body = text ? JSON.parse(text) : null
+  } catch {
+    throw new ApiError(res.status, `unparseable response: ${text.slice(0, 200)}`)
+  }
+  if (res.ok) return body as SlurmStatus
+  // 500-with-JSON-error case: surface the structured error rather than throwing.
+  if (
+    body !== null &&
+    typeof body === 'object' &&
+    'enabled' in body &&
+    (body as { enabled: unknown }).enabled === true &&
+    'error' in body
+  ) {
+    return body as SlurmStatus
+  }
+  throw new ApiError(
+    res.status,
+    (body as { error?: { message?: string } })?.error?.message ?? text,
+  )
 }
 
 // Re-exports for convenience

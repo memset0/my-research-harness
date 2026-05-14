@@ -43,6 +43,10 @@ import {
   stopSession,
   type StartSessionInput,
 } from './manager'
+import {
+  __resetPaneStateMemoForTests,
+  computePaneState,
+} from './pane-state'
 
 class FakeChild extends EventEmitter {
   pid = 12345
@@ -70,6 +74,7 @@ beforeEach(() => {
   // Default: probe finds nothing (fresh agent).
   readdirMock.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
   __resetForTests()
+  __resetPaneStateMemoForTests()
 })
 
 afterEach(() => {
@@ -502,5 +507,75 @@ describe('stopSession', () => {
 describe('listSessions', () => {
   it('empty by default', () => {
     expect(listSessions()).toEqual([])
+  })
+})
+
+describe('pane-state memo interaction', () => {
+  const sessionName = 'memon-claude-project-a--run--foo-260507-103000'
+  const runningPane = { title: '⠐ running', currentCommand: 'claude', currentPath: '/tmp' }
+  const idlePane = { title: 'idle title', currentCommand: 'claude', currentPath: '/tmp' }
+
+  function primeRunningMemo() {
+    // 1) running tick sets the memo flag for sessionName.
+    expect(computePaneState(sessionName, runningPane)).toBe('running')
+    // 2) idle tick now returns 'done' because the flag is still set.
+    expect(computePaneState(sessionName, idlePane)).toBe('done')
+  }
+
+  it('startSession (fresh spawn) clears the running memo', async () => {
+    primeRunningMemo()
+    newSpawnReturnsHealthyChild()
+    await startSession(defaultInput())
+    // After startSession committed the entry, the memo is cleared.
+    expect(computePaneState(sessionName, idlePane)).toBe('idle')
+  })
+
+  it('startSession (idempotent reattach) also clears the memo', async () => {
+    newSpawnReturnsHealthyChild()
+    await startSession(defaultInput())
+    // Now there's a healthy entry. Prime the memo by simulating a running tick.
+    primeRunningMemo()
+    // Second startSession call hits the idempotent-return path. It SHOULD
+    // still clear the memo because the user explicitly opened the ttyd.
+    await startSession(defaultInput())
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(computePaneState(sessionName, idlePane)).toBe('idle')
+  })
+
+  it('attachExistingSession (fresh spawn) clears the running memo', async () => {
+    primeRunningMemo()
+    newSpawnReturnsHealthyChild()
+    await attachExistingSession({
+      sessionName,
+      maxConcurrent: 16,
+      idleTtlMinutes: 30,
+    })
+    expect(computePaneState(sessionName, idlePane)).toBe('idle')
+  })
+
+  it('attachExistingSession (idempotent) also clears the memo', async () => {
+    newSpawnReturnsHealthyChild()
+    await attachExistingSession({
+      sessionName,
+      maxConcurrent: 16,
+      idleTtlMinutes: 30,
+    })
+    primeRunningMemo()
+    await attachExistingSession({
+      sessionName,
+      maxConcurrent: 16,
+      idleTtlMinutes: 30,
+    })
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(computePaneState(sessionName, idlePane)).toBe('idle')
+  })
+
+  it('stopSession does NOT clear the memo', async () => {
+    newSpawnReturnsHealthyChild()
+    await startSession(defaultInput())
+    primeRunningMemo()
+    await stopSession(sessionName)
+    // Memo should still hold the flag → next idle eval still returns 'done'.
+    expect(computePaneState(sessionName, idlePane)).toBe('done')
   })
 })

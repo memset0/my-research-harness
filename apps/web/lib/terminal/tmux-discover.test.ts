@@ -28,6 +28,7 @@ import {
   listMemonTmuxSessions,
   tmuxHasSession,
 } from './tmux-discover'
+import { __resetPaneStateMemoForTests } from './pane-state'
 
 class FakeProc extends EventEmitter {
   stdout = new EventEmitter()
@@ -105,6 +106,7 @@ beforeEach(() => {
   lookupSessionMock.mockReset().mockReturnValue(null)
   stopSessionMock.mockReset().mockResolvedValue({ stopped: true })
   __resetPaneCacheForTests()
+  __resetPaneStateMemoForTests()
 })
 
 describe('listMemonTmuxSessions', () => {
@@ -470,6 +472,99 @@ describe('getActivePaneMapCached', () => {
     const [a, b] = await Promise.all([p1, p2])
     expect(a).toBe(b)
     expect(spawnMock).toHaveBeenCalledTimes(1) // only one fetch even though two callers
+  })
+})
+
+describe('row.state derived from pane title', () => {
+  it('idle for a row with no pane info', async () => {
+    tmuxLsReturns('memon-manual-foo|1700000000|1700001000\n')
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('idle')
+  })
+
+  it("running for a row whose pane title starts with a Braille code point", async () => {
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      'memon-manual-foo|1|1|10|claude|/repo|⠐ ttyd-title-fetch\n',
+    )
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('running')
+  })
+
+  it("attention for a row whose pane title contains 'Action Required'", async () => {
+    tmuxLsAndPanesReturns(
+      'memon-codex-x--exp--E0001|1700000000|1700001000\n',
+      'memon-codex-x--exp--E0001|1|1|10|node|/repo|[ . ] Action Required | project\n',
+    )
+    const rows = await listMemonTmuxSessions(
+      fakeRuntime({
+        projects: [{ name: 'x', root: '/repo' }],
+        experiments: [{ id: 'E0001', project: 'x' }],
+      }),
+    )
+    expect(rows[0]?.state).toBe('attention')
+  })
+
+  it("attention beats running when both rules match", async () => {
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      'memon-manual-foo|1|1|10|claude|/repo|⠐ Action Required\n',
+    )
+    const rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('attention')
+  })
+
+  it("two-tick sequence: running → done when title stops matching", async () => {
+    // Tick 1: pane title matches running rule → state becomes running and memo flag is set
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      'memon-manual-foo|1|1|10|claude|/repo|⠐ working\n',
+    )
+    let rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('running')
+
+    // Reset cache so a new tmux ls + list-panes pair is consumed; do NOT
+    // reset pane-state memo (we want to observe that the memo persists).
+    __resetPaneCacheForTests()
+
+    // Tick 2: pane title no longer matches → state falls through to done
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700002000\n',
+      'memon-manual-foo|1|1|10|claude|/repo|idle now\n',
+    )
+    rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('done')
+  })
+
+  it("prunes the memo when a session disappears between ticks", async () => {
+    // Tick 1: running session 'foo' → memo gets the flag
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700001000\n',
+      'memon-manual-foo|1|1|10|claude|/repo|⠐ working\n',
+    )
+    let rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('running')
+
+    __resetPaneCacheForTests()
+
+    // Tick 2: 'foo' is gone from tmux ls — only 'bar' is present
+    tmuxLsAndPanesReturns(
+      'memon-manual-bar|1700000000|1700002000\n',
+      'memon-manual-bar|1|1|11|claude|/repo|idle\n',
+    )
+    rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows.find((r) => r.sessionName === 'memon-manual-foo')).toBeUndefined()
+
+    __resetPaneCacheForTests()
+
+    // Tick 3: 'foo' re-appears. Because the memo was pruned in tick 2,
+    // a fresh idle title yields state 'idle' (not 'done').
+    tmuxLsAndPanesReturns(
+      'memon-manual-foo|1700000000|1700003000\n',
+      'memon-manual-foo|1|1|10|claude|/repo|idle\n',
+    )
+    rows = await listMemonTmuxSessions(fakeRuntime())
+    expect(rows[0]?.state).toBe('idle')
   })
 })
 

@@ -58,6 +58,8 @@ describe('GET /api/tmux-sessions/[name]', () => {
         currentCommand: 'bash',
         currentPath: '/repo',
       },
+      state: 'idle',
+      lastStateChangeAt: null,
     })
     const res = await GET({} as never, mkCtx('memon-manual-foo'))
     expect(res.status).toBe(200)

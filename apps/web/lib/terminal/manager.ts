@@ -29,6 +29,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { probeTtyd } from './binary'
+import { clearPaneStateMemo } from './pane-state'
 
 const PORT_BASE = 7682
 const PORT_SCAN_LIMIT = 256
@@ -414,6 +415,11 @@ async function doStartSession(
   const existing = state.sessions.get(sessionName)
   if (existing && !existing.child.killed && existing.child.exitCode === null) {
     existing.lastActiveAtMs = Date.now()
+    // Treat idempotent reattach as a "user-opened-ttyd" event for the
+    // pane-state memo — clears the 'done' marker exactly like a fresh
+    // spawn would. See openspec/specs/tmux-session-management/spec.md
+    // "Card footer liveness state computed server-side from pane title".
+    clearPaneStateMemo(sessionName)
     return toPublic(existing)
   }
   if (existing) state.sessions.delete(sessionName)
@@ -506,6 +512,7 @@ async function doStartSession(
     warnings,
   }
   state.sessions.set(sessionName, entry)
+  clearPaneStateMemo(sessionName)
   return toPublic(entry)
 }
 
@@ -570,6 +577,7 @@ async function doAttachSession(
   const existing = state.sessions.get(sessionName)
   if (existing && !existing.child.killed && existing.child.exitCode === null) {
     existing.lastActiveAtMs = Date.now()
+    clearPaneStateMemo(sessionName)
     return toPublic(existing)
   }
   if (existing) state.sessions.delete(sessionName)
@@ -660,6 +668,7 @@ async function doAttachSession(
     warnings,
   }
   state.sessions.set(sessionName, entry)
+  clearPaneStateMemo(sessionName)
   return toPublic(entry)
 }
 

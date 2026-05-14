@@ -13,6 +13,12 @@ import {
   stopSession,
   type ParsedSessionName,
 } from './manager'
+import {
+  computePaneState,
+  getLastStateChangeAt,
+  prunePaneStateMemoToActiveSet,
+  type PaneSessionState,
+} from './pane-state'
 import type { Runtime } from '../runtime'
 
 // Stale = "this name parses as the standard convention but the project /
@@ -42,6 +48,15 @@ export interface TmuxSessionRow {
   /** Active-pane info from `tmux list-panes -a`. Null when tmux didn't
    *  surface a usable active pane (daemon down, race, etc). */
   pane: TmuxPaneInfo | null
+  /** Liveness state derived from pane.title plus the server-side
+   *  unacknowledged-running memo. See pane-state.ts. */
+  state: PaneSessionState
+  /** ISO8601 of the most recent state transition for this sessionName, or
+   *  `null` when no transition has been observed since the memo was last
+   *  reset (fresh first-seen row, or right after the user opened the
+   *  ttyd). The card displays `max(lastStateChangeAt, tmuxLastActivity)`
+   *  as the relative time so state changes refresh the displayed clock. */
+  lastStateChangeAt: string | null
 }
 
 const FORMAT = '#{session_name}|#{session_created}|#{session_activity}'
@@ -77,6 +92,10 @@ export async function listMemonTmuxSessions(rt: Runtime): Promise<TmuxSessionRow
 
     const { matchable, staleReason } = classify(parsed, rt)
 
+    const pane = paneMap.get(name) ?? null
+    // computePaneState MUST run before getLastStateChangeAt so a transition
+    // observed THIS tick is reflected in the timestamp we surface.
+    const state = computePaneState(name, pane)
     rows.push({
       sessionName: name,
       parsed,
@@ -85,9 +104,15 @@ export async function listMemonTmuxSessions(rt: Runtime): Promise<TmuxSessionRow
       tmuxLastActivity: epochToIso(activityEpoch),
       matchable,
       staleReason,
-      pane: paneMap.get(name) ?? null,
+      pane,
+      state,
+      lastStateChangeAt: getLastStateChangeAt(name),
     })
   }
+
+  // Drop memo entries for sessions no longer present on the host so the
+  // memo doesn't leak memory across long-lived processes.
+  prunePaneStateMemoToActiveSet(new Set(rows.map((r) => r.sessionName)))
 
   rows.sort((a, b) => parseTime(b.tmuxLastActivity) - parseTime(a.tmuxLastActivity))
   return rows

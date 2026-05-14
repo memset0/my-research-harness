@@ -11,14 +11,12 @@ import {
   Bot,
   ExternalLink,
   FlaskConical,
-  Folder,
   FolderTree,
   Loader2,
   Plus,
   RefreshCw,
   TerminalSquare,
   Trash2,
-  Wrench,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -29,6 +27,7 @@ import {
   killTmuxSession,
   listTmuxSessions,
   type TmuxPaneInfo,
+  type TmuxPaneState,
   type TmuxSessionRow,
 } from '../../../lib/api'
 import { Button } from '../../../components/ui/button'
@@ -127,19 +126,62 @@ const BADGE_COLORS = {
   port: 'bg-muted text-emerald-700 dark:text-emerald-300',
   agent:
     'border border-orange-200 bg-orange-100 text-orange-900 dark:border-orange-900/60 dark:bg-orange-900/40 dark:text-orange-200',
-  project: 'border border-transparent bg-muted text-muted-foreground',
   run:
     'border border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-900/40 dark:text-emerald-200',
   exp:
     'border border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-900/60 dark:bg-sky-900/40 dark:text-sky-200',
+  // Used by both the project-scope ScopeBadge and the standalone project
+  // badge on run/exp rows — the two are visually unified per the
+  // polish-tmux-card-layout change.
   projectScope:
     'border border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-900/60 dark:bg-violet-900/40 dark:text-violet-200',
-  manual:
-    'border border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/40 dark:text-amber-200',
   legacy: 'border border-transparent bg-muted text-muted-foreground',
   stale:
     'border border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/40 dark:text-amber-200',
 } as const
+
+/** Per-state visuals for the small corner badge that sits in the
+ *  bottom-right of the card footer. `idle` has no badge — the state is
+ *  encoded by its ABSENCE so idle cards stay visually quiet. */
+const STATE_BADGE_CONFIG: Record<
+  Exclude<TmuxPaneState, 'idle'>,
+  { label: string; chip: string; dot: string }
+> = {
+  running: {
+    label: 'RUNNING',
+    chip: 'bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-200',
+    dot: 'bg-blue-500',
+  },
+  attention: {
+    label: 'ATTENTION',
+    chip: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
+    dot: 'bg-amber-500',
+  },
+  done: {
+    label: 'DONE',
+    chip: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200',
+    dot: 'bg-emerald-500',
+  },
+}
+
+function StateBadge({ state }: { state: TmuxPaneState }) {
+  if (state === 'idle') return null
+  const cfg = STATE_BADGE_CONFIG[state]
+  // `font-sans` overrides the parent footer's `font-mono` so the
+  // all-caps label reads as a proper status pill, not as code text.
+  return (
+    <span
+      className={cn(
+        'ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5',
+        'text-[10px] font-sans font-semibold tracking-wide',
+        cfg.chip,
+      )}
+    >
+      <span className={cn('size-1.5 shrink-0 rounded-full', cfg.dot)} aria-hidden />
+      {cfg.label}
+    </span>
+  )
+}
 
 function MetaBadge({
   icon: Icon,
@@ -202,71 +244,114 @@ function PortBadge({ port }: { port: number }) {
 }
 
 function AgentBadge({ agent }: { agent: string }) {
+  return <MetaBadge icon={Bot} value={agent} className={BADGE_COLORS.agent} />
+}
+
+/**
+ * Project badge for run/exp rows. Visually unified with the project-scope
+ * ScopeBadge variant — same FolderTree icon, same violet color family, same
+ * `Project <name>` text shape, same link to `/p/<project>`.
+ *
+ * Render condition: `parsed.project !== null && parsed.scope !== 'project'`
+ * (project-scope rows render only the ScopeBadge so the project name doesn't
+ * duplicate).
+ */
+function ProjectBadge({ project }: { project: string }) {
   return (
-    <MetaBadge icon={Bot} prefix="Agent" value={agent} className={BADGE_COLORS.agent} />
+    <MetaBadge
+      icon={FolderTree}
+      value={project}
+      className={BADGE_COLORS.projectScope}
+      asLink
+      href={`/p/${encodeURIComponent(project)}`}
+      openInNewTab
+    />
   )
 }
 
-function ProjectBadge({ project }: { project: string }) {
-  return (
-    <MetaBadge icon={Folder} value={project} className={BADGE_COLORS.project} />
-  )
+type ScopeBadgeVariant =
+  | { kind: 'stale'; reason: 'unknown-project' | 'unknown-target' }
+  | { kind: 'run'; project: string; slug: string }
+  | { kind: 'exp'; project: string; slug: string }
+  | { kind: 'project'; project: string }
+  | { kind: 'legacy' }
+  | { kind: 'other' }
+
+/**
+ * Single source of truth for what scope-badge variant (if any) a row maps
+ * to. `null` means NO scope badge renders. The `memon-manual-` branch in
+ * particular now resolves to `null` — manual rows render zero scope/target
+ * badges (the previous `Wrench`/`Manual` amber chip is gone).
+ *
+ * Returning a variant tag instead of a JSX element lets the parent
+ * compute `hasAnyBadge` before render without duplicating the cascade.
+ */
+function classifyScopeBadge(row: TmuxSessionRow): ScopeBadgeVariant | null {
+  const p = row.parsed
+  if (row.staleReason !== null) return { kind: 'stale', reason: row.staleReason }
+  if (row.matchable && p.project && p.scope === 'run' && p.slug) {
+    return { kind: 'run', project: p.project, slug: p.slug }
+  }
+  if (row.matchable && p.project && p.scope === 'exp' && p.slug) {
+    return { kind: 'exp', project: p.project, slug: p.slug }
+  }
+  if (row.matchable && p.project && p.scope === 'project') {
+    return { kind: 'project', project: p.project }
+  }
+  if (row.sessionName.startsWith('memon-manual-')) return null
+  if (p.legacy) return { kind: 'legacy' }
+  return { kind: 'other' }
 }
 
 function ScopeBadge({ row }: { row: TmuxSessionRow }) {
-  const p = row.parsed
-  if (row.staleReason !== null) {
+  const variant = classifyScopeBadge(row)
+  if (variant === null) return null
+  if (variant.kind === 'stale') {
     return (
       <MetaBadge
         icon={AlertTriangle}
-        value={`Stale (${STALE_REASON_LABEL[row.staleReason]})`}
+        value={`Stale (${STALE_REASON_LABEL[variant.reason]})`}
         className={BADGE_COLORS.stale}
       />
     )
   }
-  if (row.matchable && p.project && p.scope === 'run' && p.slug) {
+  if (variant.kind === 'run') {
     return (
       <MetaBadge
         icon={Zap}
-        prefix="Run"
-        value={p.slug}
+        value={variant.slug}
         className={BADGE_COLORS.run}
         asLink
-        href={`/p/${encodeURIComponent(p.project)}/r/${encodeURIComponent(p.slug)}`}
+        href={`/p/${encodeURIComponent(variant.project)}/r/${encodeURIComponent(variant.slug)}`}
         openInNewTab
       />
     )
   }
-  if (row.matchable && p.project && p.scope === 'exp' && p.slug) {
+  if (variant.kind === 'exp') {
     return (
       <MetaBadge
         icon={FlaskConical}
-        prefix="Exp"
-        value={p.slug}
+        value={variant.slug}
         className={BADGE_COLORS.exp}
         asLink
-        href={`/p/${encodeURIComponent(p.project)}/e/${encodeURIComponent(p.slug)}`}
+        href={`/p/${encodeURIComponent(variant.project)}/e/${encodeURIComponent(variant.slug)}`}
         openInNewTab
       />
     )
   }
-  if (row.matchable && p.project && p.scope === 'project') {
+  if (variant.kind === 'project') {
     return (
       <MetaBadge
         icon={FolderTree}
-        prefix="Project"
-        value={p.project}
+        value={variant.project}
         className={BADGE_COLORS.projectScope}
         asLink
-        href={`/p/${encodeURIComponent(p.project)}`}
+        href={`/p/${encodeURIComponent(variant.project)}`}
         openInNewTab
       />
     )
   }
-  if (row.sessionName.startsWith('memon-manual-')) {
-    return <MetaBadge icon={Wrench} value="Manual" className={BADGE_COLORS.manual} />
-  }
-  if (p.legacy) {
+  if (variant.kind === 'legacy') {
     return <MetaBadge icon={Archive} value="Legacy" className={BADGE_COLORS.legacy} />
   }
   return <MetaBadge icon={Archive} value="Other" className={BADGE_COLORS.legacy} />
@@ -291,17 +376,51 @@ function displayPane(pane: TmuxPaneInfo | null): { command: string | null; title
   return { command, title }
 }
 
-function PaneInfoLine({ pane }: { pane: TmuxPaneInfo | null }) {
+function CardFooter({
+  pane,
+  state,
+}: {
+  pane: TmuxPaneInfo | null
+  state: TmuxPaneState
+}) {
   const { command, title } = displayPane(pane)
-  if (command === null && title === null) return null
+  const hasPaneContent = command !== null || title !== null
+  const hasStateBadge = state !== 'idle'
+  if (!hasPaneContent && !hasStateBadge) return null
+
+  // Claude-specific render: orange ✻ glyph + word "Claude". The `aria-hidden`
+  // on the glyph keeps screen-reader output as just "Claude". For every
+  // other command we render the generic Activity icon + the command text.
+  const isClaude = pane?.currentCommand === 'claude'
+
   return (
-    <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground/90">
-      <Activity className="size-3 shrink-0" aria-hidden />
-      {command !== null && <span className="font-mono shrink-0">{command}</span>}
-      {command !== null && title !== null && <span className="opacity-60">·</span>}
-      {title !== null && (
-        <span className="font-mono min-w-0 truncate">{title}</span>
+    <div
+      className={cn(
+        'mt-2 -mx-2.5 border-t border-border/40 px-2.5 pt-1.5',
+        'flex items-center gap-1 text-[10px] font-mono text-foreground/85',
       )}
+    >
+      {hasPaneContent && (
+        <>
+          {isClaude ? (
+            <span className="shrink-0 font-semibold text-orange-600 dark:text-orange-400">
+              <span aria-hidden>✻</span> Claude
+            </span>
+          ) : (
+            <>
+              <Activity className="size-3 shrink-0 text-foreground/60" aria-hidden />
+              {command !== null && (
+                <span className="shrink-0 font-semibold">{command}</span>
+              )}
+            </>
+          )}
+          {((isClaude && title !== null) || (!isClaude && command !== null && title !== null)) && (
+            <span className="opacity-60">·</span>
+          )}
+          {title !== null && <span className="min-w-0 truncate">{title}</span>}
+        </>
+      )}
+      <StateBadge state={state} />
     </div>
   )
 }
@@ -319,6 +438,27 @@ function relativeTime(iso: string): string {
   if (diffHr < 24) return `${diffHr}h ago`
   const diffDay = Math.floor(diffHr / 24)
   return `${diffDay}d ago`
+}
+
+/**
+ * The card's "last activity" timestamp is the most recent of:
+ *   - tmux's session_activity (input/output bumps it; covers user typing
+ *     and program output, including the redraw when ttyd attaches),
+ *   - the server-observed last state transition for this sessionName
+ *     (running ↔ idle ↔ attention ↔ done).
+ *
+ * Returns an ISO8601 string suitable for `relativeTime`, or `null` when
+ * neither input is parseable (which renders as `—` in the card).
+ */
+function pickDisplayActivity(row: TmuxSessionRow): string | null {
+  const a = Date.parse(row.tmuxLastActivity)
+  const b = row.lastStateChangeAt ? Date.parse(row.lastStateChangeAt) : NaN
+  const aValid = Number.isFinite(a)
+  const bValid = Number.isFinite(b)
+  if (!aValid && !bValid) return null
+  if (!aValid) return row.lastStateChangeAt
+  if (!bValid) return row.tmuxLastActivity
+  return b > a ? row.lastStateChangeAt : row.tmuxLastActivity
 }
 
 function SessionCard({
@@ -354,6 +494,15 @@ function SessionCard({
   // to read past the visual truncation.
   const cardTitle = row.pane?.title ?? undefined
 
+  // Compute whether row 2 (badges) should render at all. Manual rows with
+  // no liveEntry / no parsed agent / no parsed project collapse to row 1
+  // only.
+  const hasPort = row.liveEntry !== null
+  const hasAgent = p.agent !== null && p.agent !== 'none'
+  const hasProject = p.project !== null && p.scope !== 'project'
+  const hasScopeBadge = classifyScopeBadge(row) !== null
+  const hasAnyBadge = hasPort || hasAgent || hasProject || hasScopeBadge
+
   return (
     <div
       role={stale ? undefined : 'button'}
@@ -368,20 +517,29 @@ function SessionCard({
         !stale && 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
     >
-      <div className="flex items-start gap-2">
+      {/* Content row 1: title + time + icon-only actions */}
+      <div className="flex items-center gap-2">
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px]"
+          className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold"
           title={row.sessionName}
         >
           {title}
         </span>
+        {(() => {
+          const ts = pickDisplayActivity(row)
+          return ts ? (
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {relativeTime(ts)}
+            </span>
+          ) : null
+        })()}
         <div className="flex shrink-0 items-center gap-0.5">
           {popup && (
             <ViewerGuard reason="Manage tmux session">
               <Button
                 variant="ghost"
                 size="sm"
-                className="hidden h-6 px-1.5 text-[10px] md:inline-flex"
+                className="hidden h-6 w-6 p-0 md:inline-flex"
                 onClick={(e) => {
                   e.stopPropagation()
                   window.open(popup, popupTarget(row), 'popup,width=1200,height=800')
@@ -389,7 +547,6 @@ function SessionCard({
                 aria-label="Open in popup"
               >
                 <ExternalLink className="size-3" />
-                Popup
               </Button>
             </ViewerGuard>
           )}
@@ -397,7 +554,7 @@ function SessionCard({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-[10px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={(e) => {
                 e.stopPropagation()
                 onAskKill(row.sessionName)
@@ -405,21 +562,23 @@ function SessionCard({
               aria-label="Kill session"
             >
               <Trash2 className="size-3" />
-              Kill
             </Button>
           </ViewerGuard>
         </div>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 text-[10px] text-muted-foreground">
-        <span className="font-mono">
-          {row.tmuxLastActivity ? relativeTime(row.tmuxLastActivity) : '—'}
-        </span>
-        {row.liveEntry !== null && <PortBadge port={row.liveEntry.port} />}
-        {p.agent !== null && p.agent !== 'none' && <AgentBadge agent={p.agent} />}
-        {p.project !== null && p.scope !== 'project' && <ProjectBadge project={p.project} />}
-        <ScopeBadge row={row} />
-      </div>
-      <PaneInfoLine pane={row.pane} />
+
+      {/* Content row 2: badges (omitted entirely when no badge applies) */}
+      {hasAnyBadge && (
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 text-[10px] text-muted-foreground">
+          {hasPort && <PortBadge port={row.liveEntry!.port} />}
+          {hasAgent && <AgentBadge agent={p.agent!} />}
+          {hasProject && <ProjectBadge project={p.project!} />}
+          <ScopeBadge row={row} />
+        </div>
+      )}
+
+      {/* Footer: pane info + state-driven background tint */}
+      <CardFooter pane={row.pane} state={row.state} />
     </div>
   )
 }
