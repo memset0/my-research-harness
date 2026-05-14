@@ -50,6 +50,32 @@ The field SHALL be illustrated with a concrete example like `entry: scripts/erdo
 - **THEN** the line is annotated or commented to say the path is relative to the project root
 - **AND** the example value visible to the reader is a relative path like `scripts/<area>/<name>.sh` (no leading `/`, no `..`)
 
+### Requirement: Per-experiment scratch space policy in `memon-drive`
+
+The skill `packages/skills/memon-drive/SKILL.md` SHALL contain a dedicated section that documents the canonical policy for the v5 per-experiment scratch space at `<projectRoot>/docs/experiments/E<NNNN>-<slug>/`. The section SHALL state:
+
+1. The **placement criterion**: reusability. The agent decides whether a script / artifact goes in the scratch space by asking "is this reusable outside this one experiment — would someone working on a different experiment or another contributor pick it up and use it as-is?" If no, it belongs in the scratch space; if yes, it belongs in the main repo (`scripts/<area>/` or the project's shared-code / recipe area). The criterion is reusability, NOT importance — a critical analysis script that produces an experiment's key conclusion still lives in the scratch space if it's specific to this experiment's data / setup.
+2. **Examples** that disambiguate the criterion: sbatch / cluster-launcher scripts (cluster-specific, not portable) → scratch space; ad-hoc analysis scripts answering a single user question → scratch space; analysis scripts producing experiment-specific conclusions (anyone reproducing the conclusion runs THIS script on THIS data) → scratch space; generic CSV-to-figure pipelines reusable across experiments → main repo; result files (figures, summary CSVs, learned parameter snapshots) → scratch space.
+3. **Size policy** for tracked files: if a scratch file is small (under 1 MB), it MAY be committed via git alongside the exp README. If a file is 1 MB or larger, the agent SHALL add a corresponding pattern to `.gitignore` (project-level or per-folder) rather than commit it. The agent SHALL ask the user before committing any large binary.
+4. **What does NOT belong** in the scratch space: reusable cross-experiment helpers (those go to `scripts/<area>/` or the project's recipe area), run-dir contents (those stay in the run dir under `<projectRoot>/<...>/<slug>-<YYMMDD>-<HHMMSS>/`), and content that should be on a sibling exp doc.
+
+`packages/skills/memon-write-script/SKILL.md` SHALL acknowledge the per-experiment scratch space as an alternative home for **experiment-specific** launchers and SHALL name the reusability criterion as the deciding factor between `scripts/<area>/` vs. the per-exp folder. The write-script body SHALL refer readers to `memon-drive` for the full policy + examples + size threshold; it SHALL NOT replicate the full policy.
+
+#### Scenario: `memon-drive` documents the scratch-space policy explicitly
+- **WHEN** a reader inspects `packages/skills/memon-drive/SKILL.md`
+- **THEN** the body contains a section that names `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` as the per-experiment scratch space
+- **AND** the section names the reusability-based placement criterion explicitly
+- **AND** the section states that the criterion is reusability, NOT importance
+- **AND** the section enumerates the artifact kinds (temp launcher scripts including sbatch, ad-hoc analysis scripts, experiment-specific analysis scripts producing key conclusions, result files)
+- **AND** the section states the 1 MB git-vs-gitignore size threshold
+- **AND** the section names what does NOT belong (reusable cross-experiment helpers → `scripts/<area>/`)
+
+#### Scenario: `memon-write-script` points at the scratch-space policy without replicating it
+- **WHEN** a reader inspects `packages/skills/memon-write-script/SKILL.md`
+- **THEN** the body acknowledges `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` as an alternative home for experiment-specific launchers
+- **AND** the body names the reusability criterion as the deciding factor between `scripts/<area>/` vs. the per-exp folder
+- **AND** the body refers readers to `memon-drive` for the full per-experiment scratch space policy (size threshold, what kinds of artifacts belong, examples)
+
 ### Requirement: SKILL.md files SHALL warn against custom H2 sections
 
 At least one skill that writes to spec files (`memon-drive`, `memon-run-experiment`, or `memon-write-script`) SHALL contain an anti-pattern bullet stating that creating a custom H2 section (not in the canonical list) produces an `UNKNOWN_H2_SECTION` parse warning. The bullet SHALL advise the agent to either (a) rename the heading to a canonical section name, (b) drop the content if it doesn't belong, or (c) accept the warning explicitly if the custom section is intentional.

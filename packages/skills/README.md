@@ -16,7 +16,7 @@ work without a `config.yml`.
 | Want to… | Use | Notes |
 |---|---|---|
 | Drive one experiment end-to-end via conversation (design → write-script → run-experiment → maintain exp doc) | `memon-drive` | Long-running orchestrator. Calls write-script / run-experiment as sub-tools. Primary canvas: exp doc's `## Plan`. |
-| Author a launcher script (`run.sh`, sweep wrapper, …) | `memon-write-script` | Stable script in `scripts/<area>/`; each run gets a fresh dir. |
+| Author a launcher script (`run.sh`, sweep wrapper, …) | `memon-write-script` | Stable script in `scripts/<area>/` (cross-exp) or `docs/experiments/E<id>-<slug>/` (per-exp scratch); each run gets a fresh dir. |
 | Run an existing script + drive it through terminal state | `memon-run-experiment` | Owns the README's full content (frontmatter + body). |
 | Drop a one-line observation / request / error in JOURNAL | `memon-append-journal` | Cheap, single-event append. |
 | Flag one anomaly on an existing run for human adjudication | `memon-append-warning` | Single OPEN row in the README's `## Warnings` table. NEVER resolves / reopens / deletes. |

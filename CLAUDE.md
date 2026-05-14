@@ -48,61 +48,90 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 - pnpm monorepo: `packages/core` (TypeScript types, parsers, polling, indexing, LineIndex), `packages/cli` (memon CLI), `apps/web` (Next.js 15 App Router + Tailwind v4 + shadcn/ui)
 - Node.js ≥ 20.19 required; pnpm 10.x
 - No external DB, no fs watcher (cluster-safe polling with exponential backoff)
-- **v3 file model** (`FS_CONVENTION_VERSION === 3`):
-  - **Experiment** = `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md`. Owns
-    motivation / method / conclusion / caveats / warnings across one or
-    more runs. Frontmatter has `runs[]`, `hypotheses[]`, `tags[]`,
-    `created_at`, `updated_at`, `title`, `id`, `slug`.
+- **File model** (`FS_CONVENTION_VERSION === 5`):
+  - **Experiment** = `<projectRoot>/docs/experiments/E<NNNN>-<slug>/README.md`.
+    The enclosing folder `E<NNNN>-<slug>/` is a sanctioned scratch
+    space for experiment-local artifacts (smoke-run scripts, sbatch
+    templates, multi-launch helpers, ad-hoc analysis utils tied to
+    one experiment). memon only touches `README.md`; sibling files and
+    sub-directories in the folder are opaque user content.
+    The README owns motivation / method / plan / conclusion / caveats /
+    warnings across one or more runs. Frontmatter: `id`, `slug`,
+    `title`, `status` (`OPEN` / `RESOLVED` / `ABANDONED`, human-only
+    write), `archived` (bool), `runs[]`, `hypotheses[]`, `tags[]`,
+    `created_at`, `updated_at`.
   - **Run** = `<projectRoot>/<…>/<slug>-<YYMMDD>-<HHMMSS>/README.md`.
-    Owns setup / result / artifacts. Frontmatter carries
+    Owns four H2 sections: `Motivation` (optional, rendered when
+    populated), `Setup` (required), `Result` (required), `Artifacts`
+    (required). `## Method`, `## Conclusion`, `## Caveats` are
+    **forbidden** on the run side — the parser surfaces
+    `RUN_HAS_METHOD` / `RUN_HAS_CONCLUSION` / `RUN_HAS_CAVEATS`
+    warnings. Per-run methodology folds into `## Setup`; per-run
+    findings into `## Result`; cross-run interpretation limits live
+    on the parent exp doc's `## Caveats`. Frontmatter carries
     `experiment: E<NNNN>-<slug>` (or null/absent for orphans),
-    `updated_at`, plus the existing host/pid/gpus/entry/command/wandb
-    fields.
-  - Hypotheses still live in `docs/hypotheses.md`; per-H entries can
+    `status` (`PENDING`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/`UNKNOWN`),
+    `archived` (bool), `updated_at`, plus the existing
+    host/pid/gpus/entry/command/wandb fields. The `entry:` field
+    SHALL be relative to the project root (e.g. `scripts/erdos/run.sh`),
+    so `bash <entry>` from project root re-runs the script.
+  - Both parsers emit a `UNKNOWN_H2_SECTION` parse warning when an
+    H2 heading falls outside the canonical list — content is
+    preserved verbatim, the warning surfaces in `parse_warnings` for
+    user adjudication.
+  - Hypotheses live in `docs/hypotheses.md`; per-H entries can
     reference experiments (`Experiments:` field listing E IDs) and/or
     specific runs (`Runs:` field listing run dir base names).
-  - TS internal naming after the v3 rename: `Run` = run dir record;
-    `Experiment` = exp doc record. `discoverRuns` / `RunIndex` /
-    `archiveRun` etc. are the run-side functions; `discoverExperiments` /
-    `parseExperimentReadme` / `serializeExperimentReadme` /
-    `computeMembership` are the new exp-side functions.
+  - TS internal naming: `Run` = run dir record; `Experiment` = exp
+    doc record. `discoverRuns` / `RunIndex` / `archiveRun` are
+    run-side; `discoverExperiments` / `parseExperimentReadme` /
+    `serializeExperimentReadme` / `computeMembership` are exp-side.
+    `EXPERIMENT_DIR_REGEX` matches the canonical `E<NNNN>-<slug>`
+    folder name.
 
-### v3 surfaces (post `v3-spec-sync`)
+### Web / CLI / SSE surfaces
 
-The dashboard, CLI, and SSE wire surfaces all changed when v3 landed.
-A fresh session shouldn't have to git-blame these — they're listed here
-so you can wire up new code without re-discovering the layout.
+Listed here so a fresh session can wire up new code without re-discovering
+the layout.
 
 **Web action bars** (rendered at the top of every exp-doc detail page,
 plus inline at the top of each expanded run panel):
-- `Edit markdown` — opens `ReadmeEditor` in a Dialog with a v3
+- `Edit markdown` — opens `ReadmeEditor` in a Dialog with an
   id-addressed `target = { kind: 'exp', id }` (or `'run'`). The
   underlying call hits `PUT /api/experiments/:id/readme` or
   `PUT /api/runs/:id/readme`. Component: `EditMarkdownButton` in
   `apps/web/components/edit-markdown-button.tsx`.
 - `Open Claude Code` — calls `POST /api/open-claude-code` and copies
-  the suggested `cd <dir> && claude` command to clipboard. Component:
-  `OpenClaudeCodeButton` in `apps/web/components/open-claude-code-button.tsx`.
-  Distinct from the existing `TerminalButton` (which spawns ttyd+tmux+
-  claude in the browser via `/api/terminal/start`).
+  the suggested `cd <dir> && claude` command to clipboard. For
+  `kind: 'exp'` the `cwd` is the experiment folder (`docs/experiments/
+  E<NNNN>-<slug>/`), so the spawned agent lands inside the sanctioned
+  scratch space alongside any local launchers / analysis utils.
+  Component: `OpenClaudeCodeButton` in
+  `apps/web/components/open-claude-code-button.tsx`. Distinct from
+  `TerminalButton` (which spawns ttyd+tmux+claude in the browser via
+  `/api/terminal/start`).
 
-**v3 CLI subcommands** (in addition to the v2 surface):
+**CLI subcommands**:
 - `memon experiment ls` — list exp docs in the project
 - `memon experiment show <id-or-slug>` — print one exp doc
 - `memon experiment create <slug> [--title T] [--from-run <run-dir>]` —
-  allocate next E<NNNN> and write `docs/experiments/E<NNNN>-<slug>.md`
+  allocate next E<NNNN>, create `docs/experiments/E<NNNN>-<slug>/`,
+  write `README.md` inside
 - `memon experiment link|unlink <exp> <run>` — bidirectional bind
 - `memon experiment delete <exp> [--force]` — cascade-unlink + delete
+  the experiment folder. Default refuses if the folder has non-README
+  content; `--force` blows away the whole folder including scratch
 - `memon experiment warning add <exp-id-or-run-dir> [--run <r>] --category C --message M` —
-  v3 form writes to the exp doc's `## Warnings`; v2 form (run-dir id)
-  writes to the run README, no `--run` allowed
+  writes to the exp doc's `## Warnings`; the run-dir-id form is
+  supported and writes through to the parent exp doc (with `--run`
+  disallowed in that form)
 - `memon run rename <run> <new-slug>` — rename preserving timestamp suffix
 - `memon experiment {status set,readme write,archive,unarchive}` —
-  legacy v2 aliases. Each emits a one-line `[deprecation]` banner to
+  legacy aliases. Each emits a one-line `[deprecation]` banner to
   stderr. Use `memon run {status set,readme write,archive,unarchive}`
   in new code. Set `MEMON_QUIET_DEPRECATIONS=1` to silence the banner.
 
-**v3 web endpoints**:
+**Web endpoints**:
 - `GET /api/experiments[?project=…]` — exp doc list with effective times
 - `GET /api/experiments/:id` — exp doc detail incl. `memberRuns[]` and
   `effectiveCreatedAt` / `effectiveUpdatedAt`
@@ -110,25 +139,23 @@ plus inline at the top of each expanded run panel):
 - `DELETE /api/experiments/:id[?force=true]` — cascade-unlink + delete
 - `POST /api/experiments/:id/link` / `:id/unlink` — bind / release
 - `PUT /api/experiments/:id/readme` — write exp doc body with mtime+hash lock
-- `GET|POST|PATCH|DELETE /api/experiments/:id/warnings[/:rowId]` — v3
+- `GET|POST|PATCH|DELETE /api/experiments/:id/warnings[/:rowId]` —
   Warnings table (with `Run` column and per-row `run` attribution)
-- `PUT /api/runs/:id/readme` — id-addressed v3 replacement for legacy
-  `/api/readme` (which took an absolute path). Both routes bump
-  `updated_at` server-side and return `finalContent` so the editor
-  re-baselines its buffer.
+- `PUT /api/runs/:id/readme` — id-addressed write for run README;
+  bumps `updated_at` server-side and returns `finalContent` so the
+  editor re-baselines its buffer
 - `POST /api/open-claude-code` — `{kind: 'exp'|'run', id, projectName}`
-  → `{command, cwd, hint}`. Returns a copy-paste command, does NOT spawn.
+  → `{command, cwd, hint}`. For `kind: 'exp'` the `cwd` is the
+  experiment folder. Returns a copy-paste command, does NOT spawn.
 - `GET /api/anomalies?project=…` — membership anomalies (orphan runs,
   phantom refs, mismatch refs, slug-uniqueness violations).
 
-**SSE wire topics** (post v3-spec-sync rename — no aliases anymore):
-- `run-change` — fires on RUN edits (frontmatter / body / status). Payload
-  carries `parentExperimentId` when the run is bound, so the client can
-  invalidate the parent exp's detail cache too.
+**SSE wire topics**:
+- `run-change` — fires on RUN edits (frontmatter / body / status).
+  Payload carries `parentExperimentId` when the run is bound, so the
+  client can invalidate the parent exp's detail cache too.
 - `experiment-change` — fires on EXP-DOC edits/creates/deletes/binds.
-  In v3 this topic name MEANS exp-doc events; the v2 alias for run
-  edits has been removed. Old listeners that still subscribe to
-  `experiment-change` expecting run events SHOULD migrate to `run-change`.
+  This topic name MEANS exp-doc events only.
 - `anomaly` — `{project, count}` after `recomputeAnomalies(project)`.
 
 **TanStack query keys** (matched to SSE topics for invalidation):

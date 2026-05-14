@@ -49,8 +49,16 @@
 ## 5. Fixture + test updates
 
 - [x] 5.1 Update test fixtures under `mock/` (and any `packages/core/src/__fixtures__/` directories) to use the new folder-based exp doc layout. Any fixture that had a `docs/experiments/E0001-*.md` file → move to `docs/experiments/E0001-*/README.md`.
-- [ ] 5.2 Update any test that asserts on a clean parse of a legacy run README with `## Caveats` — those now expect `RUN_HAS_CAVEATS` warnings.
-- [ ] 5.3 Update CLAUDE.md's "v4 file model" section (when it gets renamed to v5) so future sessions read the new layout. Defer to a later commit if scope creep — but note this as a follow-up in the apply phase.
+- [x] 5.2 Update any test that asserts on a clean parse of a legacy run README with `## Caveats` — those now expect `RUN_HAS_CAVEATS` warnings. (Audit confirms existing tests assert on `parseErrors === []`, not `parseWarnings`; my new warnings don't break them. 289/289 still green.)
+- [x] 5.3 Rewrite CLAUDE.md's stale `v3 file model` block (lines 51–68) AND the `v3 surfaces` block (lines 70–137) as version-less v5 current-state. Drop all `v3 / v4` migration narrative; reframe `### v3 surfaces (post v3-spec-sync)` as `### Web / CLI / SSE surfaces`; strip `v3 id-addressed` / `legacy v2 aliases` / `post v3-spec-sync rename` qualifiers; keep deprecation-banner mechanism intact (just unanchor from a version number). Add: `entry:` is project-root-relative; `## Method` / `## Conclusion` / `## Caveats` forbidden on run side; `UNKNOWN_H2_SECTION` warning code; per-exp folder is sanctioned scratch space.
+
+- [x] 5.4 Update `packages/skills/memon-write-script/SKILL.md` to present two sanctioned homes for new launchers:
+  - `<projectRoot>/scripts/<area>/` — cross-experiment launchers (reused across multiple exps).
+  - `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` — experiment-specific launchers (smoke / sbatch / multi-launch tied to one exp).
+
+  Apply to the Mental Model section, the "Conventions you MUST follow" rule about script location, AND the workflow step where the agent decides where the script should live. The matrix row in `packages/skills/README.md` gets the same update.
+
+- [x] 5.5 Update `packages/skills/memon-drive/SKILL.md` §2c (Inline analysis utility) AND the corresponding anti-pattern bullet to recommend the v5 exp folder (`docs/experiments/E<NNNN>-<slug>/`) as the **default** home for analysis utils tied to one experiment, with `scripts/<area>/analysis/` as fallback for cross-experiment helpers.
 
 ## 7. Skill updates (descriptive — bundled per the exception clause)
 

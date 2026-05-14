@@ -114,9 +114,15 @@ and pays off later.
 
 ## Mental model — script ≠ run
 
-A script is a **launcher**. It lives in a stable, repo-tracked location
-(typically `<projectRoot>/scripts/<area>/`) and gets reused across many
-runs. **Each invocation generates a fresh run directory** under the
+A script is a **launcher**. It lives in a stable, repo-tracked
+location — either `<projectRoot>/scripts/<area>/` for cross-experiment
+launchers OR `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` for
+launchers tied to one specific experiment (smoke / sbatch / sweep
+drivers for THIS exp). See `memon-drive`'s "Per-experiment scratch
+space" section for the full policy (size threshold, what kinds of
+artifacts belong there).
+
+**Each invocation generates a fresh run directory** under the
 project's logs path, named `<RUN_NAME>-<YYMMDD>-<HHMMSS>` so it matches
 the memon experiment regex `^.+-\d{6}-\d{6}$`.
 
@@ -180,9 +186,11 @@ checkpoints, all output files — lives inside `RUN_DIR`.
 
 ## Conventions you MUST follow
 
-1. **Script lives in a stable location** under the project (typically
-   `<projectRoot>/scripts/<area>/`), tracked by git. It is NOT placed
-   inside any run directory.
+1. **Script lives in a stable, tracked location** under the project —
+   `<projectRoot>/scripts/<area>/` for cross-experiment launchers OR
+   `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` for experiment-
+   specific launchers (per `memon-drive`'s scratch-space policy).
+   It is NOT placed inside any run directory.
 
 2. **Each invocation creates its own run dir.** Use the `RUN_NAME` +
    timestamp pattern above; the basename must match `^.+-\d{6}-\d{6}$`.
@@ -292,10 +300,19 @@ no precedent, **ask the user** (in Chinese):
 > 我看到 scripts 目录下没有现成的环境激活规范,这个脚本要不要 inline
 > `conda activate <env>` ?如果要,环境叫什么?
 
-1. **Identify where the script should live.** Ask if not clear; default
-   `<projectRoot>/scripts/<area>/`. If a sibling `run.sh` already exists
-   there, prefer adding a variant `run_<descriptor>.sh` that delegates
-   to the core, instead of duplicating logic.
+1. **Identify where the script should live.** The criterion is
+   reusability — would someone working on a different experiment, or
+   another contributor, pick this script up and use it as-is? See
+   `memon-drive`'s "Per-experiment scratch space" section for the
+   full policy + examples.
+   - **Reusable** (cross-experiment, portable): default
+     `<projectRoot>/scripts/<area>/`. If a sibling `run.sh` already
+     exists there, prefer adding a variant `run_<descriptor>.sh` that
+     delegates to the core, instead of duplicating logic.
+   - **Specific to this experiment** (sbatch wrapper for this cluster,
+     smoke run for this exp's setup, sweep driver for THIS exp's
+     parameter space): place inside
+     `<projectRoot>/docs/experiments/E<NNNN>-<slug>/`.
 
 2. **Identify `LOGS_DIR`** for this project (default `logs`, but check
    for an existing convention in `CLAUDE.md` or sibling scripts).
