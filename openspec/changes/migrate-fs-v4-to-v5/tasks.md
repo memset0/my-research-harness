@@ -19,14 +19,14 @@
 - [x] 2.1 In `packages/core/src/experiments/discovery.ts` (or wherever `discoverExperiments` lives), change the glob from `E*.md` to `E*/README.md` matching the `^E\d{4}-[a-z0-9-]+$` folder regex. Maintain the legacy fallback branch (see 1.2).
 - [x] 2.2 In `packages/cli/src/commands/experiment-doc.ts`, update `runExperimentCreate` to `mkdir -p <root>/docs/experiments/<id>` first, then write `<id>/README.md` inside. The `wx` flag still gives atomicity on the README file.
 - [x] 2.3 Update `runExperimentShow`, `runExperimentDelete`, `runExperimentLink`, `runExperimentUnlink` and any other CLI function reading the exp path to use the new folder layout. For `delete --force`, recursively remove the folder; for default `delete` (no `--force`), refuse if the folder has non-README content (treat as user scratch).
-- [ ] 2.4 In `apps/web/app/api/experiments/[id]/route.ts` (and the readme PUT route), update path resolution.
-- [ ] 2.5 In `apps/web/app/api/open-claude-code/route.ts` (or wherever), return the folder path (not the file path) when `kind === 'exp'`. Update the response's `command` and `hint` accordingly.
+- [x] 2.4 In `apps/web/app/api/experiments/[id]/route.ts` (and the readme PUT route), update path resolution.
+- [x] 2.5 In `apps/web/app/api/open-claude-code/route.ts` (or wherever), return the folder path (not the file path) when `kind === 'exp'`. Update the response's `command` and `hint` accordingly.
 
 ## 3. Web rendering
 
-- [ ] 3.1 In `apps/web/components/run-page.tsx` (or equivalent), restructure the section rendering to the four-section canonical order: `Motivation` (rendered only when `sections.motivation` is non-null) → `Setup` (always) → `Result` (always) → `Artifacts` (always). Remove the existing `Method`, `Conclusion`, and `Caveats` cards entirely.
-- [ ] 3.2 In the run page's `parse_warnings` banner (or equivalent surface), render `RUN_HAS_METHOD`, `RUN_HAS_CONCLUSION`, `RUN_HAS_CAVEATS`, and `UNKNOWN_H2_SECTION` warnings with one bullet per warning, naming the heading text. For each forbidden-section code, include the heading-specific relocation hint (Method → run's Setup; Conclusion → run's Result; Caveats → parent exp doc's `## Caveats`).
-- [ ] 3.3 Update the same banner on the experiment detail page to surface `UNKNOWN_H2_SECTION` warnings from the exp parser.
+- [x] 3.1 In `apps/web/components/run-page.tsx` (or equivalent), restructure the section rendering to the four-section canonical order: `Motivation` (rendered only when `sections.motivation` is non-null) → `Setup` (always) → `Result` (always) → `Artifacts` (always). Remove the existing `Method`, `Conclusion`, and `Caveats` cards entirely.
+- [x] 3.2 In the run page's `parse_warnings` banner (or equivalent surface), render `RUN_HAS_METHOD`, `RUN_HAS_CONCLUSION`, `RUN_HAS_CAVEATS`, and `UNKNOWN_H2_SECTION` warnings with one bullet per warning, naming the heading text. For each forbidden-section code, include the heading-specific relocation hint (Method → run's Setup; Conclusion → run's Result; Caveats → parent exp doc's `## Caveats`).
+- [x] 3.3 Update the same banner on the experiment detail page to surface `UNKNOWN_H2_SECTION` warnings from the exp parser.
 - [ ] 3.4 Add a snapshot or DOM-assertion test for the run page covering: (a) all optional sections populated, all six cards in canonical order; (b) only required sections populated, three cards, no placeholders; (c) Caveats with content → warning bullet, no Caveats card.
 
 ## 4. Migration guide
@@ -48,7 +48,7 @@
 
 ## 5. Fixture + test updates
 
-- [ ] 5.1 Update test fixtures under `mock/` (and any `packages/core/src/__fixtures__/` directories) to use the new folder-based exp doc layout. Any fixture that had a `docs/experiments/E0001-*.md` file → move to `docs/experiments/E0001-*/README.md`.
+- [x] 5.1 Update test fixtures under `mock/` (and any `packages/core/src/__fixtures__/` directories) to use the new folder-based exp doc layout. Any fixture that had a `docs/experiments/E0001-*.md` file → move to `docs/experiments/E0001-*/README.md`.
 - [ ] 5.2 Update any test that asserts on a clean parse of a legacy run README with `## Caveats` — those now expect `RUN_HAS_CAVEATS` warnings.
 - [ ] 5.3 Update CLAUDE.md's "v4 file model" section (when it gets renamed to v5) so future sessions read the new layout. Defer to a later commit if scope creep — but note this as a follow-up in the apply phase.
 
@@ -77,9 +77,9 @@
 
 - [x] 8.1 `pnpm --filter @memon/core build && pnpm --filter @memon/core typecheck && pnpm --filter @memon/core test` — all green, including the new parse tests.
 - [x] 8.2 `pnpm --filter @memon/cli build && pnpm --filter @memon/cli typecheck && pnpm --filter @memon/cli test` — all green.
-- [ ] 8.3 `pnpm --filter @memon/web build && pnpm --filter @memon/web typecheck && pnpm --filter @memon/web test` — all green.
+- [x] 8.3 `pnpm --filter @memon/web build && pnpm --filter @memon/web typecheck && pnpm --filter @memon/web test` — all green.
 - [x] 8.4 `pnpm --filter @memon/skills build && pnpm --filter @memon/skills typecheck` — all green.
-- [ ] 8.5 Build prod web + smoke a test project root pre-seeded at v4 (one `.md` file experiment + one run README with `## Caveats` body + one run README with a custom `## Notes` body):
+- [x] 8.5 Build prod web + smoke a test project root pre-seeded at v4 (one `.md` file experiment + one run README with `## Caveats` body + one run README with a custom `## Notes` body):
   - Run `memon-migrate-fs` (user-invoked skill). It picks up `v4-to-v5.md` automatically.
   - Verify: marker is 5; exp doc at folder/README; run with `## Caveats` halted the migration and asked the user; run with `## Notes` halted the migration and asked the user.
   - Verify in the web UI: exp detail page renders from folder; run with `Motivation` / `Method` / `Conclusion` populated renders those cards; run with `Caveats` shows the warning banner.

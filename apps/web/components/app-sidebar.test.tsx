@@ -22,7 +22,7 @@ function makeExpDoc(id: string, effectiveUpdatedAt: string) {
   return {
     id,
     project: 'project-a',
-    path: `/p/a/docs/experiments/${id}.md`,
+    path: `/p/a/docs/experiments/${id}/README.md`,
     mtime: 0,
     frontMatter: {
       id,

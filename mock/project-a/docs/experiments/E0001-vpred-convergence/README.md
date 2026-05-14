@@ -1,18 +1,17 @@
 ---
 id: E0001-vpred-convergence
 slug: vpred-convergence
-title: "v-prediction vs ε-prediction convergence study"
+title: v-prediction vs ε-prediction convergence study
 status: OPEN
 archived: false
 runs: [foo-260501-100000, bar-260502-150000]
 hypotheses: [H0001]
 tags: [diffusion, v-pred, convergence]
-created_at: 2026-05-01T10:00:00+08:00
-updated_at: 2026-05-04T10:00:00+08:00
+created_at: "2026-05-01T10:00:00+08:00"
+updated_at: "2026-05-13T23:56:02+00:00"
 ---
 
 ## Motivation
-
 We want to replicate the v-prediction convergence advantage from
 Salimans & Ho 2022 on our internal 256² image dataset (H0001), and
 quantify the brightness-vs-composition tradeoff of zero terminal-SNR
@@ -28,7 +27,6 @@ hypothesis under test here; H0002 (min-SNR loss weighting) is touched
 incidentally by `bar`'s reweighting analysis.
 
 ## Method
-
 1. `foo-260501-100000` — primary training run. DiT-B/2, bs=128, lr=2e-4,
    v-prediction, EDM noise schedule with zero terminal-SNR. Two parallel
    threads share a seed: a v-pred branch and an ε-pred control branch.
@@ -42,7 +40,6 @@ incidentally by `bar`'s reweighting analysis.
    (H0002 cross-check).
 
 ## Plan
-
 - [x] Run `foo-260501-100000` to 10k steps with v-pred + ε-pred parallel
   - Both branches reached the val_loss=0.072 threshold; v-pred at step
     3500, ε-pred at 5100. Loss curves diverge cleanly after step 1500.
@@ -64,7 +61,6 @@ incidentally by `bar`'s reweighting analysis.
       experiment
 
 ## Conclusion
-
 H0001 ✅ confirmed. v-pred reaches val_loss=0.072 at step 3500; ε-pred
 reaches the same threshold at step 5100, ~31% slower. The advantage is
 concentrated in low-noise buckets (σ ∈ [0.002, 0.5]: 35–40% faster) and
@@ -77,7 +73,6 @@ HF-band energy 24% with no FID cost.
 Recommendation: default future runs to v-pred + min-SNR-γ=5.
 
 ## Caveats
-
 - Results measured at 256² resolution only; 512² behavior may differ.
 - Text encoder (CLIP-L/14) frozen for both runs — joint-finetune
   behavior out of scope.
@@ -87,6 +82,5 @@ Recommendation: default future runs to v-pred + min-SNR-γ=5.
   effect — small batch may not benefit from min-SNR.
 
 ## Warnings
-
 | Status | Created | Run | Category | Message | Resolved | Note |
 | --- | --- | --- | --- | --- | --- | --- |

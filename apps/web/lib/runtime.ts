@@ -18,6 +18,7 @@ import {
   DIGEST_FILENAME_REGEX,
   discoverExperiments,
   discoverRuns,
+  EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
   extractTitle,
   loadConfig,
@@ -310,16 +311,28 @@ async function init(): Promise<Runtime> {
         return
       }
 
-      // v3: individual exp doc file change.
+      // v5: individual exp doc README.md change (`docs/experiments/E*/README.md`).
+      // Also tolerate legacy v4 file form (`docs/experiments/E*.md`) during
+      // the migration window.
       const expFileMatch = config.projects.find(
         (p) =>
           path.startsWith(join(p.root, 'docs', 'experiments') + '/') && path.endsWith('.md'),
       )
       if (expFileMatch) {
         const filename = basename(path)
-        const m = EXPERIMENT_FILENAME_REGEX.exec(filename)
-        if (m) {
-          const expId = filename.replace(/\.md$/, '')
+        // v5: README.md inside a `E<NNNN>-<slug>/` folder.
+        let expId: string | null = null
+        if (filename === 'README.md') {
+          const parent = basename(dirname(path))
+          if (EXPERIMENT_DIR_REGEX.test(parent)) {
+            expId = parent
+          }
+        } else {
+          // v4 legacy: `E<NNNN>-<slug>.md` directly.
+          const m = EXPERIMENT_FILENAME_REGEX.exec(filename)
+          if (m) expId = filename.replace(/\.md$/, '')
+        }
+        if (expId) {
           try {
             const updated = await readExperimentDoc(expFileMatch.root, expFileMatch.name, expId)
             if (updated) {

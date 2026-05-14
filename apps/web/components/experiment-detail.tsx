@@ -58,7 +58,7 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
           <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="font-mono">{exp.id}</CardTitle>
             {exp.hasReadme ? (
-              <StatusEdit id={exp.id} status={fm.status} stale={exp.stale} expectedMtime={exp.mtime} />
+              <StatusEdit id={exp.id} status={fm.status} stale={exp.stale} expectedMtime={exp.readmeMtime} />
             ) : (
               <WarningBadge>no README — status edit unavailable</WarningBadge>
             )}
@@ -130,18 +130,21 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
         </CardContent>
       </Card>
 
-      <SectionCard id="motivation" title="Motivation" body={exp.sections.motivation} />
+      {/* v5: 4-section canonical for runs. Motivation is optional (rendered
+          only when populated); Method / Conclusion / Caveats are forbidden
+          and surface in the warnings banner below if present. */}
+      <DetailParseWarningsBanner warnings={exp.parseWarnings ?? []} />
+      {exp.sections.motivation && (
+        <SectionCard id="motivation" title="Motivation" body={exp.sections.motivation} />
+      )}
       <SectionCard id="setup" title="Setup" body={exp.sections.setup} />
-      <SectionCard id="method" title="Method" body={exp.sections.method} />
       <SectionCard id="result" title="Result" body={exp.sections.result} />
-      <SectionCard id="conclusion" title="Conclusion" body={exp.sections.conclusion} />
-      <SectionCard id="caveats" title="Caveats" body={exp.sections.caveats} />
       {exp.hasReadme && (
         <WarningsCard
           runId={exp.id}
           readmePath={`${exp.path}/README.md`}
           initialWarnings={exp.warnings}
-          initialMtime={exp.mtime}
+          initialMtime={exp.readmeMtime}
         />
       )}
       <ArtifactsCard artifacts={exp.sections.artifacts} expPath={exp.path} />
@@ -175,6 +178,40 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
         />
       )}
     </div>
+  )
+}
+
+/**
+ * v5: surface run-side parse warnings flagging forbidden sections (Method /
+ * Conclusion / Caveats) and any unknown H2 in the README body. Severity-info
+ * warnings (empty dangling headings) render with reduced emphasis.
+ */
+function DetailParseWarningsBanner({
+  warnings,
+}: {
+  warnings: Array<{ message: string; severity?: 'error' | 'warning' | 'info' }>
+}) {
+  const relevant = warnings.filter((w) =>
+    /^(RUN_HAS_METHOD|RUN_HAS_CONCLUSION|RUN_HAS_CAVEATS|UNKNOWN_H2_SECTION|LEGACY_SECTION_IN_RUN)/.test(
+      w.message,
+    ),
+  )
+  if (relevant.length === 0) return null
+  return (
+    <Card className="border-amber-400/60 bg-amber-50/40">
+      <CardHeader>
+        <CardTitle className="text-sm">Section warnings ({relevant.length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="list-disc space-y-1 pl-5 text-xs text-amber-950">
+          {relevant.map((w, i) => (
+            <li key={i} className={w.severity === 'info' ? 'opacity-70' : ''}>
+              {w.message}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   )
 }
 

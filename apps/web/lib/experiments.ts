@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import {
   appendJournalEvent,
   discoverExperiments,
-  EXPERIMENT_FILENAME_REGEX,
+  EXPERIMENT_DIR_REGEX,
   nextExperimentId,
   parseExperimentReadme,
   parseReadme,
@@ -55,6 +55,15 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   const tmp = join(dirname(path), `.${Date.now()}.${Math.random().toString(36).slice(2)}.exp.tmp`)
   await fs.writeFile(tmp, content, 'utf8')
   await fs.rename(tmp, path)
+}
+
+// Re-serialize a run README with `updated_at` cleared, so two contents
+// that differ only in their `updated_at` timestamp collapse to the same
+// string. Used by the writeRunReadme noop escape hatch.
+function canonicalSansUpdatedAt(content: string): string {
+  const parsed = parseReadme(content)
+  parsed.frontMatter.updatedAt = ''
+  return reserializeReadme(parsed)
 }
 
 interface LockState {
@@ -232,7 +241,32 @@ export async function writeRunReadme(
     throw new ExperimentHttpError(403, 'FORBIDDEN', `run path not under any project root`)
   }
   const readmePath = join(safeDir, 'README.md')
-  const lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
+  let lock: LockState
+  try {
+    lock = await readWithLock(readmePath, input.expectedMtime, input.expectedHash)
+  } catch (e) {
+    // Idempotent escape hatch: when the lock fails BUT the request would
+    // re-write content that is canonically identical to what's on disk
+    // (modulo `updated_at`, which the server always bumps anyway), treat
+    // it as a successful no-op. Covers the common case where the client's
+    // expectedMtime is stale because of unrelated dir-level activity but
+    // the editor buffer matches disk byte-for-byte (e.g. a click on Save
+    // with no actual edits, or two clients racing to write the same
+    // content).
+    if (e instanceof ExperimentHttpError && e.status === 409 && e.payload?.content !== undefined) {
+      const onDisk = e.payload as { content: string; mtime: number; hash: string }
+      const reqCanonical = canonicalSansUpdatedAt(input.content)
+      const diskCanonical = canonicalSansUpdatedAt(onDisk.content)
+      if (reqCanonical === diskCanonical) {
+        return {
+          mtime: onDisk.mtime,
+          hash: onDisk.hash,
+          finalContent: onDisk.content,
+        }
+      }
+    }
+    throw e
+  }
   // Compare prev vs new state to know which JOURNAL events to emit.
   const prevParsed = parseReadme(lock.content)
   const prevStatus = prevParsed.frontMatter.status
@@ -373,16 +407,17 @@ export async function createExperiment(
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = await nextExperimentId(project.root)
     const fullId = `${candidate}-${input.slug}`
-    if (!`${fullId}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+    if (!fullId.match(EXPERIMENT_DIR_REGEX)) {
       throw new ExperimentHttpError(
         500,
         'INTERNAL',
-        `allocator produced invalid filename for "${fullId}"`,
+        `allocator produced invalid exp id "${fullId}"`,
       )
     }
-    const dir = join(project.root, EXPERIMENTS_SUBDIR)
-    await fs.mkdir(dir, { recursive: true })
-    const filepath = join(dir, `${fullId}.md`)
+    // v5: docs/experiments/E<NNNN>-<slug>/README.md (folder per exp).
+    const expDir = join(project.root, EXPERIMENTS_SUBDIR, fullId)
+    await fs.mkdir(expDir, { recursive: true })
+    const filepath = join(expDir, 'README.md')
     const now = nowIso()
     const content = serializeExperimentReadme({
       frontMatter: {
@@ -575,7 +610,35 @@ export async function deleteExperiment(
       await setRunExperiment(rt, owning.name, runDir, null)
     }
   }
-  await fs.unlink(safe(exp.path, rt))
+  // v5: delete the exp folder (containing README.md + any user-owned
+  // scratch). For legacy v4 records still on disk mid-migration,
+  // exp.path is the .md file directly; fall back to fs.unlink.
+  const safePath = safe(exp.path, rt)
+  if (safePath.endsWith(`${expId}.md`)) {
+    await fs.unlink(safePath)
+  } else {
+    const expFolder = dirname(safePath)
+    // With force, blow away the whole folder + scratch.
+    // Without force, default-delete refuses if folder has sibling files
+    // (already screened by the memberRuns check above; this guard
+    // additionally protects against user scratch that isn't a member run).
+    if (!force) {
+      let siblings: string[] = []
+      try {
+        siblings = (await fs.readdir(expFolder)).filter((n) => n !== 'README.md')
+      } catch {
+        /* folder vanished mid-op — fall through to rm */
+      }
+      if (siblings.length > 0) {
+        throw new ExperimentHttpError(
+          400,
+          'BAD_REQUEST',
+          `experiment folder has ${siblings.length} non-README file(s) ${JSON.stringify(siblings)}; pass force=true to remove the whole folder + scratch`,
+        )
+      }
+    }
+    await fs.rm(expFolder, { recursive: true, force: true })
+  }
   await appendJournalEvent({
     path: join(owning.root, 'docs', 'journal.md'),
     event: {

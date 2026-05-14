@@ -124,6 +124,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         </CardContent>
       </Card>
 
+      <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
       <SectionCard heading="Motivation" body={exp.sections.motivation} />
       <SectionCard heading="Method" body={exp.sections.method} />
       <SectionCard heading="Plan" body={exp.sections.plan} />
@@ -277,14 +278,14 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
               id={runId}
               status={run.frontMatter.status}
               stale={run.stale}
-              expectedMtime={run.mtime}
+              expectedMtime={run.readmeMtime}
             />
             <ArchiveToggle
               kind="run"
               id={runId}
               archived={run.frontMatter.archived}
               runStatus={run.frontMatter.status}
-              expectedMtime={run.mtime}
+              expectedMtime={run.readmeMtime}
             />
           </>
         ) : (
@@ -300,8 +301,12 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
       <div className="border-t p-3">
         <RunFrontmatterStripe run={run} project={project} />
       </div>
-      {/* Body stripe */}
+      {/* Body stripe — v5 canonical 4 sections (Motivation optional). */}
       <div className="flex flex-col gap-3 border-t p-3">
+        <RunParseWarningsBanner warnings={run.parseWarnings} />
+        {run.sections.motivation && (
+          <RunSection heading="Motivation" body={run.sections.motivation} />
+        )}
         <RunSection heading="Setup" body={run.sections.setup ?? null} />
         <RunSection heading="Result" body={run.sections.result ?? null} />
         <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
@@ -445,6 +450,39 @@ function RunSection({ heading, body }: { heading: string; body: string | null })
       ) : (
         <div className="text-xs italic text-muted-foreground">to fill</div>
       )}
+    </section>
+  )
+}
+
+/**
+ * v5: surface run-side parse warnings that flag forbidden sections (Method /
+ * Conclusion / Caveats) and any unknown H2 in the README body. Severity-info
+ * warnings (empty dangling headings) get a softer treatment; severity-warning
+ * gets the destructive variant so they stand out.
+ */
+function RunParseWarningsBanner({
+  warnings,
+}: {
+  warnings: Array<{ message: string; severity?: 'error' | 'warning' | 'info' }>
+}) {
+  const relevant = warnings.filter((w) =>
+    /^(RUN_HAS_METHOD|RUN_HAS_CONCLUSION|RUN_HAS_CAVEATS|UNKNOWN_H2_SECTION|LEGACY_SECTION_IN_RUN)/.test(
+      w.message,
+    ),
+  )
+  if (relevant.length === 0) return null
+  return (
+    <section className="rounded border border-amber-300 bg-amber-50 p-2 text-xs">
+      <div className="mb-1 font-semibold text-amber-900">
+        Section warnings ({relevant.length})
+      </div>
+      <ul className="list-disc space-y-0.5 pl-4 text-amber-950">
+        {relevant.map((w, i) => (
+          <li key={i} className={w.severity === 'info' ? 'opacity-70' : ''}>
+            {w.message}
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
