@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 import {
   appendJournalEvent,
   discoverExperiments,
-  EXPERIMENT_FILENAME_REGEX,
+  EXPERIMENT_DIR_REGEX,
   EXPERIMENT_STATUS_VALUES,
   nextExperimentId,
   parseReadme,
@@ -157,10 +157,10 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = await nextExperimentId(projectRoot)
     const fullId = `${candidate}-${input.slug}`
-    const filename = `${fullId}.md`
-    const dir = join(projectRoot, EXPERIMENTS_SUBDIR)
-    await fs.mkdir(dir, { recursive: true })
-    const filepath = join(dir, filename)
+    // v5 layout: docs/experiments/E<NNNN>-<slug>/README.md inside a per-exp folder.
+    const expDir = join(projectRoot, EXPERIMENTS_SUBDIR, fullId)
+    await fs.mkdir(expDir, { recursive: true })
+    const filepath = join(expDir, 'README.md')
     const now = nowIso()
     const initialRuns: string[] = []
     if (input.fromRun) {
@@ -532,8 +532,34 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
     }
   }
 
-  // Delete the exp file.
-  await fs.unlink(exp.path)
+  // v5: Delete the exp folder (and everything inside — README.md plus any
+  // user-owned scratch files). For legacy v4 records still on disk (the
+  // mid-migration window), `exp.path` is a file path; just unlink it.
+  if (exp.path.endsWith(`${expId}.md`)) {
+    // Legacy v4 file form — just unlink the single file.
+    await fs.unlink(exp.path)
+  } else {
+    // v5 folder form — remove the whole experiment folder.
+    const expFolder = dirname(exp.path)
+    if (!input.force) {
+      // Without --force, refuse if the folder contains anything other than
+      // README.md (treats sibling files as user scratch the user might
+      // care about).
+      let siblings: string[] = []
+      try {
+        siblings = (await fs.readdir(expFolder)).filter((n) => n !== 'README.md')
+      } catch {
+        /* folder vanished mid-op — fall through to rm */
+      }
+      if (siblings.length > 0) {
+        emitErrorAndExit(
+          'BAD_REQUEST',
+          `experiment folder ${expFolder} contains ${siblings.length} non-README file(s) ${JSON.stringify(siblings)}; pass --force to remove the whole folder + scratch`,
+        )
+      }
+    }
+    await fs.rm(expFolder, { recursive: true, force: true })
+  }
 
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
@@ -549,7 +575,9 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
 // ---------- helpers ----------
 
 async function resolveOrFail(projectRoot: string, idOrSlug: string): Promise<string> {
-  if (idOrSlug.match(/^E\d{4}-/) && `${idOrSlug}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+  // Fast path: if the input already looks like a canonical v5 id (`E<NNNN>-<slug>`),
+  // skip the slug-lookup round-trip. The id format itself is the v5 folder regex.
+  if (idOrSlug.match(EXPERIMENT_DIR_REGEX)) {
     return idOrSlug
   }
   const resolved = await resolveExperimentId(projectRoot, idOrSlug)

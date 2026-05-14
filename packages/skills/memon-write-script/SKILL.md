@@ -37,7 +37,7 @@ step. If `status !== "match"`, STOP and follow the branch protocol in
 A script and its experiment doc are paired by convention. Even when
 the user only asks for "a script", that script almost always exists
 to drive a particular investigation, and the corresponding
-`docs/experiments/E<NNNN>-<slug>.md` is the place where future
+`docs/experiments/E<NNNN>-<slug>/README.md` (v5 folder layout) is the place where future
 agents will look for context — including a record of which scripts
 contribute to the experiment.
 

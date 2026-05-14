@@ -95,7 +95,7 @@ from this skill.
 
 ### 0. Identify (or create) the parent experiment doc
 
-Every run dir SHOULD be bound to a `docs/experiments/E<NNNN>-<slug>.md`
+Every run dir SHOULD be bound to a `docs/experiments/E<NNNN>-<slug>/README.md` (v5 folder layout)
 file that owns motivation / method / conclusion / caveats / warnings across
 the run set. The run README itself only carries setup / result / artifacts.
 Decide which experiment this run belongs to **before** launching, so the
@@ -428,8 +428,8 @@ finished_at: null
 host: $(hostname)
 pid: <captured if available>
 gpus: [...]
-entry: <script-relative-path>
-command: bash <script-relative-path>
+entry: <path-relative-to-project-root, e.g. scripts/erdos/run.sh>
+command: bash <path-relative-to-project-root>
 wandb: <wandb-url-or-null>
 ---
 
@@ -537,8 +537,8 @@ finished_at: null
 host: $(hostname)
 pid: <captured if available>
 gpus: [...]
-entry: <script-relative-path>
-command: bash <script-relative-path>
+entry: <path-relative-to-project-root, e.g. scripts/erdos/run.sh>
+command: bash <path-relative-to-project-root>
 wandb: <wandb-url-or-null>
 ---
 
@@ -558,18 +558,37 @@ note it here so the run is reproducible.>
 EOF
 ```
 
-**Run README schema reminders:**
+**Run README schema reminders (v5):**
 
 - Frontmatter does NOT carry `project:` / `hypotheses:` / `tags:` —
   those concerns live on the parent experiment doc.
 - Frontmatter MUST carry `experiment:` (parent E-id, or `null` when
   intentionally orphan) and `updated_at:`.
-- Body sections are `Setup / Result / Artifacts` only. The cross-run
-  story (`Motivation`, `Method`, `Conclusion`, `Caveats`, `Warnings`)
-  lives on the parent experiment doc — write or update those there in
-  §0/§9, not here.
+- Frontmatter's `entry:` value SHALL be a path **relative to the
+  project root** (NOT absolute, NOT relative to the script, NOT
+  relative to the run dir). Example: `entry: scripts/erdos/run.sh`.
+  This makes the field useful for reproduction (`bash <entry>` from
+  the project root re-runs the script).
+- Canonical body sections (v5, four total): `Motivation` (optional —
+  rendered when populated) / `Setup` (required) / `Result` (required) /
+  `Artifacts` (required). The web UI renders Motivation only when its
+  body is non-null.
+- **Forbidden on the run side**, each with a relocation destination:
+  - `## Method` → fold content into the same run's `## Setup` (per-run
+    methodology IS part of setup). Parser surfaces `RUN_HAS_METHOD`.
+  - `## Conclusion` → fold content into the same run's `## Result`
+    (per-run findings live in Result). Parser surfaces
+    `RUN_HAS_CONCLUSION`.
+  - `## Caveats` → relocate content to the **parent experiment doc's**
+    `## Caveats`. Parser surfaces `RUN_HAS_CAVEATS`.
+- The cross-run story (parent exp doc's `Motivation`, `Method`, `Plan`,
+  `Conclusion`, `Caveats`, `Warnings`) gets written / updated in §0 / §9
+  on the parent exp doc, NOT here.
 - There is no `## New Hypotheses` section on the run README; new
   hypotheses are added to `docs/hypotheses.md` directly.
+- Any non-canonical H2 heading (e.g. user-added `## Notes`) surfaces a
+  `UNKNOWN_H2_SECTION` parse warning. Either rename to a canonical
+  heading, drop the content, or accept the warning as intentional.
 
 Capture the new `mtime` from the response — that's `$MTIME` for any
 subsequent README write (Phase 3 periodic updates, terminal-state
@@ -823,8 +842,8 @@ updated_at: $NOW
 experiment: $PARENT_EXP_ID    # from §0; empty if intentional orphan
 finished_at: $NOW
 host: $(hostname)
-entry: <script-relative-path>
-command: bash <script-relative-path>
+entry: <path-relative-to-project-root, e.g. scripts/erdos/run.sh>
+command: bash <path-relative-to-project-root>
 wandb: null
 ---
 
@@ -1062,6 +1081,23 @@ Right behaviour:
 - ❌ Naming a failed run's dir something that doesn't match
   `^.+-\d{6}-\d{6}$` — memon discovery silently skips it, the
   failure record gets dropped.
+- ❌ Writing `## Method` content on a run README — fold the
+  methodology refinement into this run's `## Setup` instead. The
+  parser surfaces `RUN_HAS_METHOD` if you leave a Method heading on
+  the run side; the web UI does NOT render a Method card on run pages.
+- ❌ Writing `## Conclusion` content on a run README — the per-run
+  finding belongs in `## Result`. The parser surfaces
+  `RUN_HAS_CONCLUSION`; the web UI does NOT render a Conclusion card
+  on run pages. (Cross-run conclusions live on the parent exp doc's
+  `## Conclusion`, written via §9.)
+- ❌ Writing `## Caveats` content on a run README — Caveats is a
+  cross-run interpretation note that lives on the parent exp doc's
+  `## Caveats`, not on individual run READMEs. The parser surfaces
+  `RUN_HAS_CAVEATS`; the web UI does NOT render a Caveats card.
+- ❌ Writing `entry:` as an absolute path or a path relative to the
+  script. The field SHALL be relative to the project root (so
+  `bash <entry>` from the project root re-runs the script). Example:
+  `entry: scripts/erdos/run.sh`.
 - ❌ Leaving status `RUNNING` after the script returns.
 - ❌ **Proposing to archive failed runs.** User does that on the web.
 - ❌ Glossing over a recovery loop. If you had to change anything to

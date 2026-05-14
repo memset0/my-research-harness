@@ -36,9 +36,6 @@ Converges.
 ## Conclusion
 Confirmed.
 
-## Caveats
-Small.
-
 ## Artifacts
 - \`./out\` — output dir
 `
@@ -55,16 +52,21 @@ describe('serializeReadme', () => {
     expect(parsed2.sections.motivation).toBe(parsed1.sections.motivation)
   })
 
-  it('emits all 7 standard sections in canonical order', () => {
+  it('emits the four v5 canonical run-side sections in canonical order', () => {
     const parsed = parseReadme(SAMPLE)
     const out = reserializeReadme(parsed)
-    const order = ['Motivation', 'Setup', 'Method', 'Result', 'Conclusion', 'Caveats', 'Artifacts']
+    // v5: 4 canonical sections; Method/Conclusion/Caveats forbidden on run side.
+    const order = ['Motivation', 'Setup', 'Result', 'Artifacts']
     let prev = -1
     for (const heading of order) {
       const idx = out.indexOf(`## ${heading}`)
       expect(idx).toBeGreaterThan(prev)
       prev = idx
     }
+    // None of the forbidden run-side headings appear after re-serialization.
+    expect(out).not.toContain('## Method')
+    expect(out).not.toContain('## Conclusion')
+    expect(out).not.toContain('## Caveats')
   })
 
   it('omits optional New Hypotheses section when empty by default', () => {

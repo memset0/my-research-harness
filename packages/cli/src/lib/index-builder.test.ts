@@ -52,7 +52,14 @@ describe('buildIndex', () => {
         { name: 'b', root: projectB, include: [], exclude: [] },
       ],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
-      terminal: { ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
+      terminal: {
+        ttydMaxConcurrent: 16,
+        ttydIdleTtlMinutes: 30,
+        paneInfoActivePollMs: 5_000,
+        paneInfoIdlePollMs: 60_000,
+        commands: { none: [], claude: ['claude'], codex: ['codex'], opencode: ['opencode'] },
+      },
+      slurm: { totalNodes: -1 },
     }
 
     const idx = await buildIndex(config)
@@ -73,7 +80,14 @@ describe('buildIndex', () => {
         { name: 'b', root: projectB, include: [], exclude: [] },
       ],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
-      terminal: { ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
+      terminal: {
+        ttydMaxConcurrent: 16,
+        ttydIdleTtlMinutes: 30,
+        paneInfoActivePollMs: 5_000,
+        paneInfoIdlePollMs: 60_000,
+        commands: { none: [], claude: ['claude'], codex: ['codex'], opencode: ['opencode'] },
+      },
+      slurm: { totalNodes: -1 },
     }
 
     const idx = await buildIndex(config, { project: 'a' })

@@ -1,5 +1,5 @@
-// parseExperimentReadme — turn the raw markdown content of a v3 experiment
-// doc (`docs/experiments/E<NNNN>-<slug>.md`) into a structured record.
+// parseExperimentReadme — turn the raw markdown content of a v5 experiment
+// doc (`docs/experiments/E<NNNN>-<slug>/README.md`) into a structured record.
 //
 // Behavior:
 //   1. Split front matter (YAML between `---`) from body via gray-matter
@@ -8,7 +8,8 @@
 //      Motivation/Method/Plan/Conclusion/Caveats/Warnings
 //   4. Warnings section is preserved as `warningsRaw` for now; structured
 //      parsing of the 7-column table lives in a later task.
-//   5. Collect all parse issues.
+//   5. Collect all parse issues, including `UNKNOWN_H2_SECTION` warnings
+//      for any non-canonical H2 heading.
 
 import matter from 'gray-matter'
 import { ZodError } from 'zod'
@@ -20,7 +21,7 @@ import {
   type ExperimentSections,
   type ExperimentWarningRecord,
   type ParseIssue,
-  EXPERIMENT_FILENAME_REGEX,
+  EXPERIMENT_DIR_REGEX,
 } from '../types.js'
 import { ExperimentFrontMatterRawSchema } from '../schemas.js'
 import { normalizeExperimentStatus } from '../status.js'
@@ -47,9 +48,13 @@ export interface ParsedExperiment {
 }
 
 /**
- * Parse a v3 experiment doc's markdown content. Caller supplies the
- * filename (without extension, e.g. `E0001-zero-snr-fix`) so the parser can
- * cross-check `id` and `slug` against the file basename.
+ * Parse a v5 experiment doc's markdown content. Caller supplies the
+ * experiment id (`E<NNNN>-<slug>`, matching the enclosing folder name) so
+ * the parser can cross-check `id` and `slug` against it.
+ *
+ * The second parameter is kept positional + named `filenameStem` for
+ * back-compat with v4 call sites; in v5 it is the folder basename
+ * (e.g. `E0001-zero-snr-fix`).
  */
 export function parseExperimentReadme(
   content: string,
@@ -58,8 +63,9 @@ export function parseExperimentReadme(
   const errors: ParseIssue[] = []
   const warnings: ParseIssue[] = []
 
-  // Cross-check filename against E<NNNN>-<slug> shape.
-  const fnameMatch = `${filenameStem}.md`.match(EXPERIMENT_FILENAME_REGEX)
+  // Cross-check folder name (v5) or filename stem (legacy v4) against
+  // E<NNNN>-<slug> shape.
+  const fnameMatch = filenameStem.match(EXPERIMENT_DIR_REGEX)
   const fnameId = fnameMatch ? `E${fnameMatch[1]}-${fnameMatch[2]}` : null
   const fnameSlug = fnameMatch ? fnameMatch[2]! : null
 
@@ -194,7 +200,9 @@ export function parseExperimentReadme(
   const warningsBody = split.sections.get('Warnings') ?? null
   const warningsRaw = warningsBody && warningsBody.trim() !== '' ? warningsBody : null
 
-  // Surface non-canonical sections (anything not in the 6 standard ones)
+  // Surface non-canonical sections (anything not in the 6 standard ones).
+  // v5: every non-canonical heading produces an explicit `UNKNOWN_H2_SECTION`
+  // parse warning so doctor / digest / web `parse_warnings` can flag them.
   for (const heading of split.order) {
     if (
       !STANDARD_EXPERIMENT_SECTIONS.includes(
@@ -215,7 +223,7 @@ export function parseExperimentReadme(
       }
       warnings.push({
         field: `section.${heading}`,
-        message: `unknown section "${heading}" (not in experiment doc schema)`,
+        message: `UNKNOWN_H2_SECTION: heading "## ${heading}" is not in the canonical experiment doc section list; content is preserved verbatim but not categorised`,
         severity: 'warning',
       })
     }

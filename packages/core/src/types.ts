@@ -86,7 +86,12 @@ export const JOURNAL_TAG_VALUES: readonly JournalEventTag[] = [
 export interface ParseIssue {
   field?: string
   message: string
-  severity: 'error' | 'warning'
+  /**
+   * v5: `'info'` is a non-actionable signal (e.g. a dangling empty `## Caveats`
+   * heading on a run README that the migration script can auto-clean).
+   * `'warning'` is actionable (the user should fix). `'error'` blocks parsing.
+   */
+  severity: 'error' | 'warning' | 'info'
 }
 
 /**
@@ -258,12 +263,22 @@ export interface Run {
   parseWarnings: ParseIssue[]
 }
 
-// ---------- Run Doc (v3 — `docs/experiments/E<NNNN>-<slug>.md`) ----------
+// ---------- Experiment Doc (v5 — `docs/experiments/E<NNNN>-<slug>/README.md`) ----------
 
 /**
- * Regex matching experiment doc file basenames under
- * `<projectRoot>/docs/experiments/`: `E<NNNN>-<slug>.md` where slug is
- * kebab-case alphanumeric (`[a-z0-9][a-z0-9-]*`).
+ * v5: regex matching experiment doc folder names under
+ * `<projectRoot>/docs/experiments/`: `E<NNNN>-<slug>` (no extension) where
+ * slug is kebab-case alphanumeric (`[a-z0-9][a-z0-9-]*`). The folder
+ * contains the experiment's `README.md` plus any user-owned scratch files
+ * (smoke scripts, sbatch templates, multi-launch helpers).
+ */
+export const EXPERIMENT_DIR_REGEX = /^E(\d{4})-([a-z0-9][a-z0-9-]*)$/
+
+/**
+ * v4 legacy: regex matching the old single-file experiment doc layout.
+ * Retained for the v4→v5 migration window so discovery can surface
+ * `LEGACY_LAYOUT` warnings when a project hasn't migrated yet. After
+ * migration, no `.md` files remain at this layer.
  */
 export const EXPERIMENT_FILENAME_REGEX = /^E(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
 

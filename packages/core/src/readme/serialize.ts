@@ -1,10 +1,15 @@
 // serializeReadme — turn a ParsedReadme back into raw markdown.
 //
-// Section ordering is canonical (Motivation/Setup/Method/Result/Conclusion/
-// Caveats/Artifacts/(opt)New Hypotheses). Empty/null sections produce a
-// heading with an empty body rather than being omitted, so that:
+// v5 section ordering: Motivation / Setup / Method / Result / Conclusion /
+// Artifacts. Caveats is REMOVED from the run-side serializer order (it
+// lives on the parent exp doc only). Empty/null required sections produce
+// a heading with an empty body rather than being omitted, so that:
 //   - editors round-trip cleanly
 //   - the user can fill in a placeholder section without renaming/reordering
+//
+// Optional run-side sections (Motivation, Method, Conclusion) are also
+// emitted as headings with empty bodies when null (consistent with the
+// other empty sections); the web UI hides the empty placeholders.
 //
 // The Artifacts section is regenerated from the structured entries, so any
 // extra prose in that section is dropped — agents writing free-form Artifacts
@@ -18,13 +23,15 @@ import type {
 } from '../types.js'
 import { isId } from '../ids.js'
 
-const SECTION_ORDER: ReadonlyArray<keyof Omit<RunSections, 'artifacts'> | 'artifacts'> = [
+// v5 run-side canonical section order: 4 sections plus the legacy-optional
+// New Hypotheses. Method / Conclusion / Caveats are NOT emitted (they're
+// forbidden on the run side per the parse policy).
+const SECTION_ORDER: ReadonlyArray<
+  keyof Pick<RunSections, 'motivation' | 'setup' | 'result' | 'newHypotheses'> | 'artifacts'
+> = [
   'motivation',
   'setup',
-  'method',
   'result',
-  'conclusion',
-  'caveats',
   'artifacts',
   'newHypotheses',
 ]
@@ -32,10 +39,7 @@ const SECTION_ORDER: ReadonlyArray<keyof Omit<RunSections, 'artifacts'> | 'artif
 const HEADING_FOR: Record<(typeof SECTION_ORDER)[number], string> = {
   motivation: 'Motivation',
   setup: 'Setup',
-  method: 'Method',
   result: 'Result',
-  conclusion: 'Conclusion',
-  caveats: 'Caveats',
   artifacts: 'Artifacts',
   newHypotheses: 'New Hypotheses',
 }

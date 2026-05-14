@@ -24,17 +24,25 @@ import { parseArtifacts } from './artifacts.js'
 import { splitH2Sections } from './sections.js'
 import { parseWarningsBody } from './warnings.js'
 
-const STANDARD_SECTIONS = [
-  'Motivation',
-  'Setup',
-  'Method',
-  'Result',
-  'Conclusion',
-  'Caveats',
-  'Warnings',
-  'Artifacts',
-  'New Hypotheses',
-] as const
+// v5 canonical run-side section list (four sections). `Motivation` is the
+// only optional section (rendered when populated). `Setup` absorbs the role
+// of methodology on the run side; `Result` absorbs the role of per-run
+// conclusion. Sections that look like they belong here but were removed:
+//   - `Method`     → forbidden; content folds into `## Setup` of this run
+//   - `Conclusion` → forbidden; content folds into `## Result` of this run
+//   - `Caveats`    → forbidden; content relocates to parent exp doc
+// Each removed heading produces a distinct `RUN_HAS_*` warning at parse.
+// The legacy v2/v3 sections `Warnings` and `New Hypotheses` keep their
+// `LEGACY_SECTION_IN_RUN` treatment.
+const STANDARD_SECTIONS = ['Motivation', 'Setup', 'Result', 'Artifacts'] as const
+
+const FORBIDDEN_RUN_SECTIONS: ReadonlyMap<string, { code: string; target: string }> = new Map([
+  ['Method', { code: 'RUN_HAS_METHOD', target: "this run's `## Setup`" }],
+  ['Conclusion', { code: 'RUN_HAS_CONCLUSION', target: "this run's `## Result`" }],
+  ['Caveats', { code: 'RUN_HAS_CAVEATS', target: "the parent experiment doc's `## Caveats`" }],
+])
+
+const LEGACY_RUN_SECTIONS: ReadonlySet<string> = new Set(['Warnings', 'New Hypotheses'])
 
 export function parseReadme(content: string): ParsedReadme {
   const errors: ParseIssue[] = []
@@ -139,27 +147,61 @@ export function parseReadme(content: string): ParsedReadme {
   const sections: RunSections = {
     motivation: getSection(split.sections, 'Motivation'),
     setup: getSection(split.sections, 'Setup'),
-    method: getSection(split.sections, 'Method'),
+    // v5: Method is forbidden on the run side. Always null in sections;
+    // presence on disk produces RUN_HAS_METHOD below.
+    method: null,
     result: getSection(split.sections, 'Result'),
-    conclusion: getSection(split.sections, 'Conclusion'),
-    caveats: getSection(split.sections, 'Caveats'),
+    // v5: Conclusion is forbidden on the run side. Always null; presence
+    // on disk produces RUN_HAS_CONCLUSION below.
+    conclusion: null,
+    // v5: Caveats is forbidden on the run side. Always null; presence on
+    // disk produces RUN_HAS_CAVEATS below.
+    caveats: null,
     artifacts: parseArtifacts(getSection(split.sections, 'Artifacts') ?? ''),
     newHypotheses: getSection(split.sections, 'New Hypotheses'),
   }
 
-  // Parse Warnings section (optional). Out-of-table content is preserved
-  // as warningsRaw and the parser surfaces a structured warning so the
-  // CLI can refuse to mutate non-conforming sections.
+  // Parse Warnings section (optional, legacy). Out-of-table content is
+  // preserved as warningsRaw and the parser surfaces a structured warning
+  // so the CLI can refuse to mutate non-conforming sections.
   const warningsSection = getSection(split.sections, 'Warnings') ?? ''
   const warningsParse = parseWarningsBody(warningsSection)
   for (const w of warningsParse.parseWarnings) warnings.push(w)
 
-  // Warn on unknown sections (Warnings is now in STANDARD_SECTIONS)
+  // Surface v5-specific section-policy warnings per heading observed:
+  //   - `Method`     → RUN_HAS_METHOD     (target: this run's Setup)
+  //   - `Conclusion` → RUN_HAS_CONCLUSION (target: this run's Result)
+  //   - `Caveats`    → RUN_HAS_CAVEATS    (target: parent exp doc's Caveats)
+  //   - `Warnings` / `New Hypotheses` → LEGACY_SECTION_IN_RUN
+  //   - anything else not in STANDARD_SECTIONS → UNKNOWN_H2_SECTION
+  // Each forbidden heading: severity 'warning' for non-empty body, 'info'
+  // for empty (the migration script auto-cleans dangling empties).
   for (const heading of split.order) {
+    const forbidden = FORBIDDEN_RUN_SECTIONS.get(heading)
+    if (forbidden) {
+      const sectionBody = (getSection(split.sections, heading) ?? '').trim()
+      warnings.push({
+        field: `section.${heading}`,
+        message:
+          sectionBody === ''
+            ? `${forbidden.code}: empty \`## ${heading}\` heading on a run README; remove it (content belongs in ${forbidden.target})`
+            : `${forbidden.code}: \`## ${heading}\` content on a run README; relocate the text to ${forbidden.target}`,
+        severity: sectionBody === '' ? 'info' : 'warning',
+      })
+      continue
+    }
+    if (LEGACY_RUN_SECTIONS.has(heading)) {
+      warnings.push({
+        field: `section.${heading}`,
+        message: `LEGACY_SECTION_IN_RUN: \`## ${heading}\` is a pre-v3 legacy run-side section; relocate any content to the parent experiment doc`,
+        severity: 'warning',
+      })
+      continue
+    }
     if (!STANDARD_SECTIONS.includes(heading as (typeof STANDARD_SECTIONS)[number])) {
       warnings.push({
         field: `section.${heading}`,
-        message: `unknown section "${heading}" (not in standard schema)`,
+        message: `UNKNOWN_H2_SECTION: heading "## ${heading}" is not in the canonical run README section list; content is preserved verbatim but not categorised`,
         severity: 'warning',
       })
     }

@@ -119,7 +119,7 @@ export type {
   ExperimentMembershipAnomaly,
   ExperimentMembershipAnomalyCode,
 } from './types.js'
-export { EXPERIMENT_FILENAME_REGEX } from './types.js'
+export { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from './types.js'
 export { ExperimentFrontMatterRawSchema } from './schemas.js'
 export type { ExperimentFrontMatterRaw } from './schemas.js'
 
