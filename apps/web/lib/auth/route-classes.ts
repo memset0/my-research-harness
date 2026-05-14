@@ -330,6 +330,11 @@ const RULES: Rule[] = [
     class: 'read',
     projectFor: projectGlobal(),
   },
+  {
+    match: methodIs(['GET'], exact('/api/slurm/status')),
+    class: 'read',
+    projectFor: projectGlobal(),
+  },
 
   // ===== read: page-level GETs =====
   { match: methodIs(['GET'], exact('/')), class: 'read', projectFor: projectGlobal() },

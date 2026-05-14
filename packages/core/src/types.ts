@@ -233,8 +233,21 @@ export interface Run {
   project: string
   /** Absolute path to experiment directory */
   path: string
-  /** Latest known mtime in epoch milliseconds (max of dir mtime, README mtime) */
+  /**
+   * Latest known mtime in epoch milliseconds (max of dir mtime, README
+   * mtime). Use for SSE invalidation, staleness banners, and the runtime
+   * index's change detection. MUST NOT be used as the optimistic-locking
+   * key for mutating routes — pass `readmeMtime` instead.
+   */
   mtime: number
+  /**
+   * README.md's own mtime in epoch milliseconds, in isolation. `0` when
+   * `hasReadme === false`. This is the canonical optimistic-locking key
+   * for `expectedMtime` on every run-side mutating route
+   * (`PATCH /api/runs/:id/archive`, `PATCH /api/runs/:id/status`,
+   * `PUT /api/runs/:id/readme`, `/api/runs/:id/warnings*`).
+   */
+  readmeMtime: number
   hasReadme: boolean
   frontMatter: RunFrontMatter
   sections: RunSections
@@ -474,6 +487,22 @@ export interface AuthConfig {
   sessionSecret?: string
 }
 
+/**
+ * Closed enum of agent kinds that the browser-terminal feature knows how
+ * to spawn inside a tmux pane. `'none'` means "no agent CLI — just shell".
+ *
+ * The session-name format (`memon-<agent>-...`) encodes the agent kind,
+ * NOT the user-configured argv. Adding a new entry here requires:
+ *  - extending `DEFAULT_TERMINAL.commands` below with a default argv,
+ *  - widening the `apps/web/lib/api.ts` mirror `TerminalAgentKind` (the
+ *    client-side string-literal union we keep separate so the web client
+ *    doesn't pull `@memon/core` runtime),
+ *  - and the agent-prefix table in `apps/web/lib/terminal/manager.ts`.
+ */
+export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
+
+export type AgentKind = (typeof AGENT_KINDS)[number]
+
 export interface TerminalConfig {
   /** Soft cap on concurrent ttyd processes; LRU evicts beyond this. */
   ttydMaxConcurrent: number
@@ -492,6 +521,28 @@ export interface TerminalConfig {
    * Default `60000`. MUST be `>= paneInfoActivePollMs` (validated at load).
    */
   paneInfoIdlePollMs: number
+  /**
+   * Per-agent argv pushed into the tmux pane after `tmux new-session -A -s
+   * <name> -c <cwd>`. The resume probe's tail (e.g. `['--continue']` for
+   * claude) is appended AFTER this argv unchanged. When the value is `[]`
+   * (only legal for `'none'`), no trailing command is pushed.
+   *
+   * Defaults: `none: []`, `claude: ['claude']`, `codex: ['codex']`,
+   * `opencode: ['opencode']` — reproducing the legacy hard-coded behaviour.
+   * Per-agent partial override: any agent key absent from `config.yml`
+   * inherits its default.
+   */
+  commands: Record<AgentKind, readonly string[]>
+}
+
+export interface SlurmConfig {
+  /**
+   * Cluster node total used as the denominator in the dashboard's
+   * slurm-status widget. The value `-1` disables the feature entirely
+   * (no probe, no widget, no API output). A positive integer enables
+   * the feature; zero is rejected at config-load time.
+   */
+  totalNodes: number
 }
 
 export interface Config {
@@ -500,6 +551,7 @@ export interface Config {
   /** Present iff config.yml has a complete `auth` block; absent triggers first-run init in the HTTP server. */
   auth?: AuthConfig
   terminal: TerminalConfig
+  slurm: SlurmConfig
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [
@@ -522,4 +574,14 @@ export const DEFAULT_TERMINAL: TerminalConfig = {
   ttydIdleTtlMinutes: 30,
   paneInfoActivePollMs: 5_000,
   paneInfoIdlePollMs: 60_000,
+  commands: {
+    none: [] as const,
+    claude: ['claude'] as const,
+    codex: ['codex'] as const,
+    opencode: ['opencode'] as const,
+  },
+}
+
+export const DEFAULT_SLURM: SlurmConfig = {
+  totalNodes: -1,
 }

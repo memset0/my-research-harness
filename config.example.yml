@@ -29,11 +29,39 @@ poll:
 # the block (or any individual field) to use the defaults shown below.
 # `pane_info_idle_poll_ms` MUST be >= `pane_info_active_poll_ms`.
 #
+# The `commands` sub-map overrides what gets pushed into the tmux pane after
+# `tmux new-session -A -s <name> -c <cwd>`. Keys are agent kinds
+# (`none | claude | codex | opencode`); values are argv arrays. Omit any
+# agent key to inherit its default. `commands.none: []` keeps the legacy
+# "no trailing command — just tmux's default shell" behaviour; for every
+# other agent the array must be non-empty.
+#
+# NOTE: the resume tail (e.g. `["--continue"]` for claude when a prior
+# conversation exists at <cwd>) is appended AFTER the user's argv. If you
+# wrap with `bash -lc "exec claude"`, that resume tail becomes a bash
+# positional arg rather than a claude flag, so auto-resume effectively
+# disables itself for wrapped forms.
+#
 # terminal:
 #   ttyd_max_concurrent: 16          # soft LRU cap on concurrent ttyd procs
 #   ttyd_idle_ttl_minutes: 30        # kill ttyd after this many idle minutes; 0 disables
 #   pane_info_active_poll_ms: 5000   # per-target poll interval when ttyd is bound
 #   pane_info_idle_poll_ms: 60000    # per-target poll interval otherwise; >= active
+#   commands:
+#     none: []                       # plain shell; tmux picks the default
+#     claude: ["claude"]
+#     codex: ["codex"]
+#     opencode: ["opencode"]
+
+# Slurm cluster-status widget in the sidebar footer. Opt-in: set
+# `total_nodes` to the cluster's node total to enable; the widget then
+# shows "<usedNodes> / total_nodes" with `squeue --me` job details on
+# hover (desktop) / tap (mobile). The value `-1` (default when block is
+# absent) disables the feature — no `squeue` probe, no widget, no API.
+# When enabled the server refuses to start if `squeue --me` doesn't work.
+#
+# slurm:
+#   total_nodes: 8
 
 # Authentication for the HTTP dashboard. Leave this block COMMENTED on a
 # fresh install — `memon serve` will generate a random 144-bit password on

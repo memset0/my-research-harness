@@ -41,11 +41,21 @@ import {
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { ensureAuthInitialised } from './auth/first-run'
+import { probeSqueue } from './slurm/probe'
 
 export interface ExperimentChangeEvent {
   type: 'set' | 'delete'
   experiment?: Run
   id: string
+}
+
+export interface SlurmRuntimeState {
+  /** True iff `Config.slurm.totalNodes !== -1` AND the startup probe passed. */
+  enabled: boolean
+  /** Mirror of `Config.slurm.totalNodes` when enabled; `-1` otherwise. */
+  totalNodes: number
+  /** Probe outcome. False when the probe was skipped (feature disabled). */
+  supported: boolean
 }
 
 export class Runtime {
@@ -82,6 +92,12 @@ export class Runtime {
      * `anomaly` topic on each recompute).
      */
     public readonly recomputeAnomalies: (projectName: string) => void,
+    /**
+     * Slurm feature state captured at init time. `/api/slurm/status` reads
+     * this; when `enabled === false` the API short-circuits to
+     * `{ enabled: false }` without spawning `squeue`.
+     */
+    public readonly slurm: SlurmRuntimeState,
   ) {}
 
   /** Reset poll backoff for the experiment whose path matches `path`. */
@@ -152,6 +168,24 @@ async function init(): Promise<Runtime> {
   // write the hash back, print the plaintext once. Idempotent on subsequent
   // boots.
   const auth = await ensureAuthInitialised(configPath, config)
+
+  // Slurm capability probe. When the user opts in via `slurm.total_nodes`,
+  // we MUST be able to run `squeue --me` — refuse to start otherwise so the
+  // failure surfaces at deploy time, not buried in a 500 nobody reads.
+  let slurm: SlurmRuntimeState
+  if (config.slurm.totalNodes === -1) {
+    slurm = { enabled: false, totalNodes: -1, supported: false }
+  } else {
+    const probe = await probeSqueue()
+    if (!probe.supported) {
+      throw new Error(
+        `memon: squeue probe failed (${probe.reason ?? 'unknown'}). ` +
+          `The slurm-status widget requires \`squeue --me\` to work. ` +
+          `Set \`slurm.total_nodes: -1\` in ${configPath} to disable the feature.`,
+      )
+    }
+    slurm = { enabled: true, totalNodes: config.slurm.totalNodes, supported: true }
+  }
 
   const index = new RunIndex()
   const events = new EventEmitter()
@@ -425,6 +459,7 @@ async function init(): Promise<Runtime> {
     sharedExperiments,
     sharedAnomalies,
     recomputeAnomalies,
+    slurm,
   )
   for (const [projectName] of experimentsByProject) {
     recomputeAnomalies(projectName)

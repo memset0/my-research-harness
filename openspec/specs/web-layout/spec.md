@@ -556,7 +556,9 @@ The link SHALL use a `<SidebarMenuButton size="sm" asChild>` wrapping a Next.js 
 
 The footer SHALL be visually distinct from the per-project Collapsible groups in `<SidebarContent>`, but follow shadcn's standard `SidebarFooter` styling (no custom backgrounds or borders). When the page route equals `/manage/tmux` the link SHALL render with `isActive` styling (per the existing active-highlight requirement).
 
-The footer area SHALL be reserved for future `/manage/<other>` siblings; v1 only adds the tmux link.
+The footer area MAY contain additional siblings of the Manage tmux item that surface owner-only status / management affordances. v2 adds one such sibling: the **Slurm status widget** (capability `slurm-status`), mounted above the Manage tmux item, rendered only when `Config.slurm.totalNodes !== -1` AND `role !== 'viewer'`. When the Slurm feature is disabled by config (`total_nodes === -1`) the widget SHALL render nothing — the footer in that case is visually identical to v1.
+
+The footer area SHALL remain reserved for future `/manage/<other>` siblings and other host-level status indicators.
 
 #### Scenario: Sidebar shows the manage-tmux link in the footer
 - **WHEN** the dashboard is rendered on a project page
@@ -571,6 +573,16 @@ The footer area SHALL be reserved for future `/manage/<other>` siblings; v1 only
 #### Scenario: Empty projects list still shows the footer
 - **GIVEN** `runtime.config.projects` is empty (so `<SidebarContent>` shows "No projects configured")
 - **THEN** the footer with the manage-tmux link is still visible
+
+#### Scenario: Slurm widget mounts above Manage tmux when enabled
+- **GIVEN** `Config.slurm.totalNodes === 8` and `role === 'owner'`
+- **WHEN** the sidebar renders
+- **THEN** the SidebarFooter contains two items: the Slurm status widget row (top), and the Manage tmux link (bottom)
+
+#### Scenario: Slurm widget absent when disabled
+- **GIVEN** `Config.slurm.totalNodes === -1`
+- **WHEN** the sidebar renders
+- **THEN** the SidebarFooter contains only the Manage tmux link; no Slurm row
 
 ### Requirement: AppSidebar visible on /manage/* pages
 

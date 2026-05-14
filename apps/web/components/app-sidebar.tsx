@@ -29,6 +29,7 @@ import {
 } from './ui/collapsible'
 import { cn } from '../lib/utils'
 import { useSession } from './session-provider'
+import { SlurmStatusWidget } from './slurm-status-widget'
 
 const DEFAULT_VISIBLE = 5
 const STORAGE_KEY = 'memon:sidebar:expanded'
@@ -128,14 +129,17 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           {role !== 'viewer' && (
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
-                <Link href="/manage/tmux">
-                  <Terminal className="size-4" />
-                  <span>Manage tmux</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            <>
+              <SlurmStatusWidget />
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
+                  <Link href="/manage/tmux">
+                    <Terminal className="size-4" />
+                    <span>Manage tmux</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </>
           )}
         </SidebarMenu>
       </SidebarFooter>

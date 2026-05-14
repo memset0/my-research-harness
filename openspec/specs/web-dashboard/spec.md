@@ -657,6 +657,7 @@ The application sidebar (`apps/web/components/app-sidebar.tsx`) SHALL render dif
 - **WHEN** a viewer is on any page
 - **THEN** the sidebar does NOT show a "Manage tmux" link (the manage page is shell-classed)
 - **AND** it does NOT show a "Settings" link (settings is owner-only mutating)
+- **AND** it does NOT show the Slurm status widget (the `slurm-status` capability is owner-only; the widget is gated on `role !== 'viewer'` in the same conditional block that gates Manage tmux)
 
 ### Requirement: Viewer-mode banner with "Log in as owner" link
 

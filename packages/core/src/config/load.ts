@@ -16,11 +16,13 @@ import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
 import {
   DEFAULT_POLL,
+  DEFAULT_SLURM,
   DEFAULT_TERMINAL,
   type AuthConfig,
   type Config,
   type PollConfig,
   type ProjectConfig,
+  type SlurmConfig,
   type TerminalConfig,
 } from '../types.js'
 
@@ -115,6 +117,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     if (cfg.auth.session_secret !== undefined) auth.sessionSecret = cfg.auth.session_secret
   }
 
+  const cmds = cfg.terminal?.commands
   const terminal: TerminalConfig = {
     ttydMaxConcurrent: cfg.terminal?.ttyd_max_concurrent ?? DEFAULT_TERMINAL.ttydMaxConcurrent,
     ttydIdleTtlMinutes: cfg.terminal?.ttyd_idle_ttl_minutes ?? DEFAULT_TERMINAL.ttydIdleTtlMinutes,
@@ -122,6 +125,12 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       cfg.terminal?.pane_info_active_poll_ms ?? DEFAULT_TERMINAL.paneInfoActivePollMs,
     paneInfoIdlePollMs:
       cfg.terminal?.pane_info_idle_poll_ms ?? DEFAULT_TERMINAL.paneInfoIdlePollMs,
+    commands: {
+      none: cmds?.none ?? DEFAULT_TERMINAL.commands.none,
+      claude: cmds?.claude ?? DEFAULT_TERMINAL.commands.claude,
+      codex: cmds?.codex ?? DEFAULT_TERMINAL.commands.codex,
+      opencode: cmds?.opencode ?? DEFAULT_TERMINAL.commands.opencode,
+    },
   }
 
   if (terminal.paneInfoIdlePollMs < terminal.paneInfoActivePollMs) {
@@ -131,7 +140,18 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  return { projects, poll, auth, terminal }
+  const slurm: SlurmConfig = {
+    totalNodes: cfg.slurm?.total_nodes ?? DEFAULT_SLURM.totalNodes,
+  }
+
+  if (slurm.totalNodes < -1 || slurm.totalNodes === 0) {
+    throw new ConfigError(
+      `slurm.total_nodes (${slurm.totalNodes}) must be -1 (disabled) or a positive integer`,
+      candidate,
+    )
+  }
+
+  return { projects, poll, auth, terminal, slurm }
 }
 
 /**
@@ -154,5 +174,6 @@ export function implicitCwdProject(cwd: string, name = '(cwd)'): Config {
     ],
     poll: { ...DEFAULT_POLL },
     terminal: { ...DEFAULT_TERMINAL },
+    slurm: { ...DEFAULT_SLURM },
   }
 }

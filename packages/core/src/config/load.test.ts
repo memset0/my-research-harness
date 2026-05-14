@@ -199,6 +199,72 @@ describe('implicitCwdProject', () => {
     expect(cfg.poll.minIntervalMs).toBe(1000)
     expect(cfg.terminal.ttydMaxConcurrent).toBe(16)
     expect(cfg.terminal.ttydIdleTtlMinutes).toBe(30)
+    expect(cfg.slurm.totalNodes).toBe(-1)
+  })
+})
+
+describe('loadConfig slurm block', () => {
+  it('defaults to totalNodes: -1 when block is absent', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.slurm).toEqual({ totalNodes: -1 })
+  })
+
+  it('parses positive total_nodes', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+slurm:
+  total_nodes: 8
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.slurm).toEqual({ totalNodes: 8 })
+  })
+
+  it('accepts the disabling sentinel -1', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+slurm:
+  total_nodes: -1
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.slurm).toEqual({ totalNodes: -1 })
+  })
+
+  it('rejects total_nodes: 0', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+slurm:
+  total_nodes: 0
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects total_nodes: -2', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+slurm:
+  total_nodes: -2
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects non-integer total_nodes', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+slurm:
+  total_nodes: 7.5
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 })
 
@@ -245,6 +311,13 @@ projects:
 })
 
 describe('loadConfig terminal block', () => {
+  const DEFAULT_COMMANDS = {
+    none: [],
+    claude: ['claude'],
+    codex: ['codex'],
+    opencode: ['opencode'],
+  }
+
   it('applies defaults when block is absent', async () => {
     const yaml = `
 projects:
@@ -257,6 +330,7 @@ projects:
       ttydIdleTtlMinutes: 30,
       paneInfoActivePollMs: 5_000,
       paneInfoIdlePollMs: 60_000,
+      commands: DEFAULT_COMMANDS,
     })
   })
 
@@ -274,6 +348,7 @@ terminal:
       ttydIdleTtlMinutes: 30,
       paneInfoActivePollMs: 5_000,
       paneInfoIdlePollMs: 60_000,
+      commands: DEFAULT_COMMANDS,
     })
   })
 
@@ -357,5 +432,93 @@ terminal:
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     await expect(loadConfig({ cwd: dir })).rejects.toThrow(/must be >=/)
+  })
+
+  it('per-agent commands partial override fills the rest with defaults', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  commands:
+    claude: ["claude", "--model", "claude-sonnet-4-6"]
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal.commands).toEqual({
+      none: [],
+      claude: ['claude', '--model', 'claude-sonnet-4-6'],
+      codex: ['codex'],
+      opencode: ['opencode'],
+    })
+  })
+
+  it('per-agent commands full override uses caller values exactly', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  commands:
+    none: ["zsh", "-l"]
+    claude: ["bash", "-lc", "exec claude"]
+    codex: ["codex", "--profile", "local"]
+    opencode: ["opencode"]
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal.commands).toEqual({
+      none: ['zsh', '-l'],
+      claude: ['bash', '-lc', 'exec claude'],
+      codex: ['codex', '--profile', 'local'],
+      opencode: ['opencode'],
+    })
+  })
+
+  it('commands.none empty array is accepted (default behaviour)', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  commands:
+    none: []
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal.commands.none).toEqual([])
+  })
+
+  it('rejects commands.claude empty array', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  commands:
+    claude: []
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects commands.claude with empty-string element', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  commands:
+    claude: ["", "--continue"]
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects commands with unknown agent key', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  commands:
+    aider: ["aider"]
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 })

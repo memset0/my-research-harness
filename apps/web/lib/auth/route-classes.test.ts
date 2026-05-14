@@ -51,6 +51,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/log/foo')).toBe('read')
     expect(classify('GET', '/api/events')).toBe('read')
     expect(classify('GET', '/api/runtime/health')).toBe('read')
+    expect(classify('GET', '/api/slurm/status')).toBe('read')
   })
 
   it('classifies /api/projects/<project>/shares family as mutating (owner-only — even GET)', () => {
@@ -197,6 +198,11 @@ describe('classifyAndExtract — project extraction', () => {
 
   it('returns "global" for /api/runtime/health', () => {
     const r = classifyAndExtract('GET', '/api/runtime/health', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'global' })
+  })
+
+  it('returns "global" for /api/slurm/status (owner-only host query)', () => {
+    const r = classifyAndExtract('GET', '/api/slurm/status', emptySearch(), stubCtx())
     expect(r).toEqual({ class: 'read', project: 'global' })
   })
 

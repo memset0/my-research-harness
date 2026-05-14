@@ -121,12 +121,38 @@ export const AuthConfigRawSchema = z
   })
   .optional()
 
+// Per-agent tmux argv. `none` may be empty (preserves the legacy
+// "no trailing command — just shell" semantics); every other agent kind
+// must be a non-empty array of non-empty strings.
+const NonEmptyArgvSchema = z.array(z.string().min(1)).min(1)
+const NoneArgvSchema = z.array(z.string().min(1))
+
+// `.strict()` causes unknown agent keys (e.g. `commands.aider`) to fail
+// parsing with Zod's default `Unrecognized key(s)` message. The closed
+// set of valid keys mirrors `AGENT_KINDS` in `./types.js`; widen this
+// object whenever a new agent kind is added there.
+export const TerminalCommandsRawSchema = z
+  .object({
+    none: NoneArgvSchema.optional(),
+    claude: NonEmptyArgvSchema.optional(),
+    codex: NonEmptyArgvSchema.optional(),
+    opencode: NonEmptyArgvSchema.optional(),
+  })
+  .strict()
+
 export const TerminalConfigRawSchema = z
   .object({
     ttyd_max_concurrent: z.number().int().min(1).optional(),
     ttyd_idle_ttl_minutes: z.number().int().min(0).optional(),
     pane_info_active_poll_ms: z.number().int().positive().optional(),
     pane_info_idle_poll_ms: z.number().int().positive().optional(),
+    commands: TerminalCommandsRawSchema.optional(),
+  })
+  .optional()
+
+export const SlurmConfigRawSchema = z
+  .object({
+    total_nodes: z.number().int(),
   })
   .optional()
 
@@ -135,6 +161,7 @@ export const ConfigRawSchema = z.object({
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
   terminal: TerminalConfigRawSchema,
+  slurm: SlurmConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

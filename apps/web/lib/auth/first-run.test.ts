@@ -123,7 +123,19 @@ describe('ensureAuthInitialised', () => {
     const fakeCfg = {
       projects: [{ name: 'a', root: dir, include: [], exclude: [] }],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
-      terminal: { ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
+      terminal: {
+        ttydMaxConcurrent: 16,
+        ttydIdleTtlMinutes: 30,
+        paneInfoActivePollMs: 5000,
+        paneInfoIdlePollMs: 60000,
+        commands: {
+          none: [],
+          claude: ['claude'],
+          codex: ['codex'],
+          opencode: ['opencode'],
+        },
+      },
+      slurm: { totalNodes: -1 },
     }
     await expect(ensureAuthInitialised(configPath, fakeCfg)).rejects.toThrow(/loadConfig couldn't parse/)
   })
