@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -47,9 +54,9 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '../../../components/ui/resizable'
+import type { GroupImperativeHandle, Layout } from 'react-resizable-panels'
 import { TerminalView } from '../../../components/terminal-view'
 import { ViewerGuard } from '../../../components/viewer-guard'
-import { useLocalStorageState } from '../../../lib/use-local-storage-state'
 import { useMediaQuery } from '../../../lib/use-media-query'
 import { cn } from '../../../lib/utils'
 
@@ -63,16 +70,30 @@ const STALE_REASON_LABEL: Record<NonNullable<TmuxSessionRow['staleReason']>, str
 const MANUAL_PREFIX = 'memon-manual-'
 const MANUAL_NAME_RE = /^[A-Za-z0-9._-]+$/
 
-const SPLIT_STORAGE_KEY = 'memon:manage-tmux:split-sizes'
-const SPLIT_PANEL_LEFT = 'tmux-list'
-const SPLIT_PANEL_RIGHT = 'tmux-terminal'
-const DESKTOP_DEFAULT_SIZES: Record<string, number> = {
-  [SPLIT_PANEL_LEFT]: 33,
-  [SPLIT_PANEL_RIGHT]: 67,
-}
-const MOBILE_DEFAULT_SIZES: Record<string, number> = {
-  [SPLIT_PANEL_LEFT]: 50,
-  [SPLIT_PANEL_RIGHT]: 50,
+export const SPLIT_STORAGE_KEY = 'memon:manage-tmux:split-sizes'
+export const SPLIT_PANEL_LEFT = 'tmux-list'
+export const SPLIT_PANEL_RIGHT = 'tmux-terminal'
+const SPLIT_WRITE_DEBOUNCE_MS = 250
+
+export function parseStoredLayout(raw: string | null): Layout | null {
+  if (raw === null) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return null
+  }
+  const obj = parsed as Record<string, unknown>
+  const left = obj[SPLIT_PANEL_LEFT]
+  const right = obj[SPLIT_PANEL_RIGHT]
+  if (typeof left !== 'number' || typeof right !== 'number') return null
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null
+  if (left < 0 || left > 100 || right < 0 || right > 100) return null
+  if (Math.abs(left + right - 100) > 0.5) return null
+  return { [SPLIT_PANEL_LEFT]: left, [SPLIT_PANEL_RIGHT]: right }
 }
 
 function popupTarget(row: TmuxSessionRow): string {
@@ -785,18 +806,43 @@ export function TmuxManagePageClient() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
 
-  const isDesktop = useMediaQuery('(min-width: 768px)')
-  const defaultSizes = isDesktop ? DESKTOP_DEFAULT_SIZES : MOBILE_DEFAULT_SIZES
-  const [sizes, setSizes] = useLocalStorageState<Record<string, number>>(
-    SPLIT_STORAGE_KEY,
-    defaultSizes,
+  const isDesktop = useMediaQuery('(min-width: 768px)', true)
+
+  const groupRef = useRef<GroupImperativeHandle | null>(null)
+  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return
+    let raw: string | null
+    try {
+      raw = window.localStorage.getItem(SPLIT_STORAGE_KEY)
+    } catch {
+      return
+    }
+    const layout = parseStoredLayout(raw)
+    if (layout !== null) {
+      groupRef.current?.setLayout(layout)
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (writeTimer.current) clearTimeout(writeTimer.current)
+    },
+    [],
   )
-  const validSizes =
-    sizes &&
-    typeof sizes[SPLIT_PANEL_LEFT] === 'number' &&
-    typeof sizes[SPLIT_PANEL_RIGHT] === 'number'
-      ? sizes
-      : defaultSizes
+
+  const handleLayoutChanged = useCallback((layout: Layout) => {
+    if (writeTimer.current) clearTimeout(writeTimer.current)
+    writeTimer.current = setTimeout(() => {
+      if (typeof window === 'undefined') return
+      try {
+        window.localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(layout))
+      } catch {
+        // private mode / quota — drop silently, in-memory state is still correct
+      }
+    }, SPLIT_WRITE_DEBOUNCE_MS)
+  }, [])
 
   const { data, isFetching, refetch } = useQuery({
     queryKey: ['tmux-sessions'],
@@ -941,14 +987,15 @@ export function TmuxManagePageClient() {
     <>
       <ResizablePanelGroup
         orientation={isDesktop ? 'horizontal' : 'vertical'}
-        defaultLayout={validSizes}
-        onLayoutChanged={(layout) => setSizes(layout)}
+        groupRef={groupRef}
+        onLayoutChanged={handleLayoutChanged}
         className="h-full w-full"
       >
         <ResizablePanel
           id={SPLIT_PANEL_LEFT}
-          defaultSize={validSizes[SPLIT_PANEL_LEFT]}
-          minSize={isDesktop ? 18 : 25}
+          defaultSize={isDesktop ? '300px' : '50%'}
+          minSize={isDesktop ? '180px' : 25}
+          maxSize={isDesktop ? '50%' : undefined}
         >
           <LeftPane
             rows={visible}
@@ -966,7 +1013,6 @@ export function TmuxManagePageClient() {
         <ResizableHandle withHandle />
         <ResizablePanel
           id={SPLIT_PANEL_RIGHT}
-          defaultSize={validSizes[SPLIT_PANEL_RIGHT]}
           minSize={isDesktop ? 35 : 25}
         >
           <RightPane row={selectedRow} />
