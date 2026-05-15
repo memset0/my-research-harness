@@ -240,9 +240,17 @@ function statusFromCode(c: string): GitFileStatus {
 
 // --- readGitFileContents --------------------------------------------------
 
+// `ref` historically accepted only `'HEAD' | 'index' | 'working'`. The
+// add-git-history-dialog change widens it to any git revision string (full
+// or short SHAs, `<sha>^`, `HEAD~3`, branch names, …) — anything that
+// isn't `'index'` or `'working'` is passed verbatim to `git show <ref>:
+// <path>`. Caller is responsible for sanitising user-supplied revs at the
+// route boundary.
+export type GitFileRef = 'index' | 'working' | string
+
 export async function readGitFileContents(
   cwd: string,
-  ref: 'HEAD' | 'index' | 'working',
+  ref: GitFileRef,
   filePath: string,
   opts: ReadGitFileContentsOptions = {},
 ): Promise<ReadGitFileContentsResult> {
@@ -271,7 +279,7 @@ export async function readGitFileContents(
     }
   }
 
-  const arg = ref === 'index' ? `:${filePath}` : `HEAD:${filePath}`
+  const arg = ref === 'index' ? `:${filePath}` : `${ref}:${filePath}`
 
   // Probe size first so over-cap blobs never hit `maxBuffer`.
   const sizeRes = await catFileSize(bin, arg, cwd, timeoutMs)

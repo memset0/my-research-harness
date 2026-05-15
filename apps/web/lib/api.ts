@@ -934,7 +934,7 @@ export async function fetchGitStatusFiles(project: string): Promise<GitStatusFil
 // asking about: staged = HEAD vs index, unstaged = index vs working,
 // untracked = empty vs working.
 
-export type GitDiffSide = 'staged' | 'unstaged' | 'untracked'
+export type GitDiffSide = 'staged' | 'unstaged' | 'untracked' | 'commit'
 
 export type GitDiffResponse =
   | {
@@ -958,10 +958,98 @@ export async function fetchGitDiff(
   project: string,
   path: string,
   side: GitDiffSide,
+  sha?: string,
 ): Promise<GitDiffResponse> {
   const params = new URLSearchParams({ path, side })
+  if (sha) params.set('sha', sha)
   return jsonFetch(
     `/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`,
+  )
+}
+
+// Git history — branches, commit list, single-commit detail. Lazy
+// (fetched on dialog open / branch change / commit click).
+
+export interface GitBranchEntry {
+  name: string
+  sha: string
+  isCurrent: boolean
+}
+
+export type GitBranches =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | {
+      enabled: true
+      current: string | null
+      detached: boolean
+      sha: string
+      branches: GitBranchEntry[]
+    }
+
+export interface GitCommitSummary {
+  sha: string
+  shortSha: string
+  subject: string
+  authorName: string
+  authorEmail: string
+  authorDate: string
+  parents: string[]
+}
+
+export type GitLog =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | { enabled: true; commits: GitCommitSummary[] }
+
+export type GitCommitDetail =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'not-found' | 'error'
+      message?: string
+    }
+  | {
+      enabled: true
+      sha: string
+      shortSha: string
+      subject: string
+      body: string
+      authorName: string
+      authorEmail: string
+      authorDate: string
+      parents: string[]
+      files: GitFileEntry[]
+    }
+
+export async function fetchGitBranches(project: string): Promise<GitBranches> {
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-branches`)
+}
+
+export async function fetchGitLog(
+  project: string,
+  ref: string,
+  limit?: number,
+): Promise<GitLog> {
+  const params = new URLSearchParams({ ref })
+  if (limit !== undefined) params.set('limit', String(limit))
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/git-log?${params.toString()}`,
+  )
+}
+
+export async function fetchGitCommit(
+  project: string,
+  sha: string,
+): Promise<GitCommitDetail> {
+  const params = new URLSearchParams({ sha })
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/git-commit?${params.toString()}`,
   )
 }
 

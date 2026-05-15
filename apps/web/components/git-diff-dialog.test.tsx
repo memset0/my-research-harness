@@ -117,6 +117,7 @@ describe('GitDiffDialog', () => {
         'project-a',
         'unstaged-a.txt',
         'unstaged',
+        undefined,
       )
     })
   })
@@ -171,5 +172,40 @@ describe('GitDiffDialog', () => {
         document.body.querySelector('[data-slot="file-diff"]')!.getAttribute('data-view-mode'),
       ).toBe('inline')
     })
+  })
+
+  it('renders the "View history" link when onOpenHistory is provided', async () => {
+    const onOpenHistory = vi.fn()
+    renderWithQuery(
+      <GitDiffDialog
+        project="project-a"
+        open
+        onOpenChange={() => {}}
+        onOpenHistory={onOpenHistory}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        document.body.querySelector('[data-slot="git-diff-dialog-history-link"]'),
+      ).not.toBeNull(),
+    )
+    await userEvent.click(
+      document.body.querySelector(
+        '[data-slot="git-diff-dialog-history-link"]',
+      ) as HTMLElement,
+    )
+    expect(onOpenHistory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits the "View history" link when no onOpenHistory prop given', async () => {
+    renderWithQuery(
+      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/Staged \(1\)/)).toBeInTheDocument(),
+    )
+    expect(
+      document.body.querySelector('[data-slot="git-diff-dialog-history-link"]'),
+    ).toBeNull()
   })
 })

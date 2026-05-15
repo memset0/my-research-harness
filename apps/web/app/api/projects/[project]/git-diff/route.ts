@@ -19,7 +19,9 @@ import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
 
-type Side = 'staged' | 'unstaged' | 'untracked'
+type Side = 'staged' | 'unstaged' | 'untracked' | 'commit'
+
+const SAFE_REF_REGEX = /^[A-Za-z0-9_\-/.~^]+$/
 
 type GitDiffResponse =
   | {
@@ -42,7 +44,12 @@ function badRequest(message: string): NextResponse {
 }
 
 function isValidSide(s: string | null): s is Side {
-  return s === 'staged' || s === 'unstaged' || s === 'untracked'
+  return (
+    s === 'staged' ||
+    s === 'unstaged' ||
+    s === 'untracked' ||
+    s === 'commit'
+  )
 }
 
 function pathEscapes(projectRoot: string, relPath: string): boolean {
@@ -79,12 +86,24 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   if (!path) return badRequest('missing path')
   if (path.includes('\0')) return badRequest('invalid path')
   if (pathEscapes(entry.root, path)) return badRequest('path escapes project root')
-  if (!isValidSide(side)) return badRequest('side must be staged|unstaged|untracked')
+  if (!isValidSide(side)) {
+    return badRequest('side must be staged|unstaged|untracked|commit')
+  }
 
-  // Determine old + new refs per side.
-  type ReaderRef = 'HEAD' | 'index' | 'working'
-  let oldRef: ReaderRef | null
-  let newRef: ReaderRef | null
+  // `side=commit` requires a `sha` query param; validate against a safe-ref
+  // character class before passing through to git.
+  const sha = url.searchParams.get('sha')
+  if (side === 'commit') {
+    if (!sha) return badRequest('missing sha for side=commit')
+    if (sha.length > 200 || !SAFE_REF_REGEX.test(sha)) {
+      return badRequest('invalid sha')
+    }
+  }
+
+  // Determine old + new refs per side. The reader accepts arbitrary git refs
+  // since add-git-history-dialog widened its type.
+  let oldRef: string | null
+  let newRef: string | null
   let defaultStatus: GitFileStatus
   switch (side) {
     case 'staged':
@@ -101,6 +120,11 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
       oldRef = null
       newRef = 'working'
       defaultStatus = 'untracked'
+      break
+    case 'commit':
+      oldRef = `${sha!}^`
+      newRef = sha!
+      defaultStatus = 'modified'
       break
   }
 

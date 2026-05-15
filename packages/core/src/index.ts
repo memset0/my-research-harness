@@ -118,12 +118,27 @@ export {
 } from './git/files.js'
 export type {
   GitFileEntry,
+  GitFileRef,
   GitFileStatus,
   GitStatusFiles,
   ReadGitFileContentsOptions,
   ReadGitFileContentsResult,
   ReadGitStatusFilesOptions,
 } from './git/files.js'
+export {
+  parseDiffTreeNameStatus,
+  readGitBranches,
+  readGitCommit,
+  readGitLog,
+} from './git/history.js'
+export type {
+  GitBranchEntry,
+  GitBranches,
+  GitCommitDetail,
+  GitCommitSummary,
+  GitLog,
+  ReadGitHistoryOptions,
+} from './git/history.js'
 
 // v3 experiment doc types (sed-renamed from Experiment* during rename pass)
 export type {

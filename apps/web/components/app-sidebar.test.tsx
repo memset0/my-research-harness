@@ -8,10 +8,16 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('../lib/api', () => ({
+  ApiError: class extends Error {},
   fetchProjects: vi.fn(),
   fetchExperimentDocs: vi.fn(),
   fetchSlurmStatus: vi.fn(),
   fetchGitStatus: vi.fn(),
+  fetchGitStatusFiles: vi.fn(),
+  fetchGitDiff: vi.fn(),
+  checkTerminal: vi.fn(),
+  startTerminal: vi.fn(),
+  stopTerminal: vi.fn(),
 }))
 
 import {
@@ -19,9 +25,15 @@ import {
   fetchExperimentDocs,
   fetchSlurmStatus,
   fetchGitStatus,
+  fetchGitStatusFiles,
+  checkTerminal,
 } from '../lib/api'
 import { AppSidebar } from './app-sidebar'
 import { SidebarProvider } from './ui/sidebar'
+import {
+  SessionProvider,
+  type SessionInfo,
+} from './session-provider'
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
@@ -72,13 +84,36 @@ describe('AppSidebar', () => {
       enabled: false,
       reason: 'not-a-repo',
     })
+    // Default terminal probe = available. Tests that need viewer or
+    // unavailable can override.
+    vi.mocked(checkTerminal).mockResolvedValue({
+      available: true,
+      version: '1.7.7',
+      source: 'cached',
+    })
+    // Default git-status-files mock — used by the GitDiffDialog when the
+    // sidebar pill-trigger tests open it.
+    vi.mocked(fetchGitStatusFiles).mockResolvedValue({
+      enabled: true,
+      branch: 'main',
+      detached: false,
+      sha: '0123456',
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [],
+      untracked: [],
+    })
   })
 
-  function setup() {
+  function setup(session: SessionInfo = { role: 'owner', scopeProjects: [] }) {
     return renderWithQuery(
-      <SidebarProvider>
-        <AppSidebar />
-      </SidebarProvider>,
+      <SessionProvider value={session}>
+        <SidebarProvider>
+          <AppSidebar />
+        </SidebarProvider>
+      </SessionProvider>,
     )
   }
 
@@ -166,5 +201,198 @@ describe('AppSidebar', () => {
     expect(
       container.querySelectorAll('[data-slot="git-status-pill-compact"]').length,
     ).toBe(0)
+  })
+
+  it('header has banner styling (bg + dividers), no chevron, name yields width to pill', async () => {
+    vi.mocked(fetchGitStatus).mockResolvedValue({
+      enabled: true,
+      branch: 'main',
+      detached: false,
+      sha: '0123456',
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      dirty: false,
+    })
+    const { container } = setup()
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll('[data-slot="git-status-pill-compact"]').length,
+      ).toBeGreaterThan(0)
+    })
+
+    // Find the project-a header trigger and walk its children.
+    const headerNameSpan = await screen.findByText('project-a')
+    const trigger = headerNameSpan.closest('[data-slot="sidebar-group-label"]')
+    expect(trigger).not.toBeNull()
+    const triggerEl = trigger as HTMLElement
+
+    // Banner styling lives on the SidebarGroupLabel: tinted background +
+    // top/bottom dividers. These are the affordances that replaced the
+    // chevron indicator — assert they're present.
+    expect(triggerEl.className).toMatch(/border-y/)
+    expect(triggerEl.className).toMatch(/border-sidebar-border/)
+    expect(triggerEl.className).toMatch(/bg-sidebar-accent/)
+
+    // The trigger via asChild=Slot renders a single button child whose
+    // own children are now exactly [name <span>, pill <span>] — no
+    // chevron <svg>.
+    const buttonChild = triggerEl.querySelector('button')
+    const innerHost = buttonChild ?? triggerEl
+    const innerChildren = Array.from(innerHost.children) as HTMLElement[]
+    expect(innerChildren).toHaveLength(2)
+
+    // Assert no chevron survives anywhere inside the header.
+    expect(innerHost.querySelector('svg.lucide-chevron-down')).toBeNull()
+
+    const [nameSpan, pillSlot] = innerChildren
+    expect(nameSpan!.textContent).toBe('project-a')
+    expect(nameSpan!.className).toMatch(/uppercase/)
+    expect(nameSpan!.className).toMatch(/tracking-wider/)
+    // Name yields width (min-w-0 flex-1) so the pill keeps its natural
+    // size and the name truncates first when space runs out.
+    expect(nameSpan!.className).toMatch(/min-w-0/)
+    expect(nameSpan!.className).toMatch(/flex-1/)
+    expect(nameSpan!.className).toMatch(/truncate/)
+    // The second child is now either the bare pill (non-git project) or
+    // the click-target wrapper around it (git project). In this test
+    // the git query resolves to `enabled: true`, so we expect the
+    // wrapper — verify that its inner pill still has the expected
+    // data-slot and `shrink-0`.
+    expect(pillSlot!.getAttribute('data-slot')).toBe('git-status-pill-trigger')
+    const innerPill = pillSlot!.querySelector(
+      '[data-slot="git-status-pill-compact"]',
+    )
+    expect(innerPill).not.toBeNull()
+    expect(innerPill!.className).toMatch(/shrink-0/)
+    expect(innerPill!.className).not.toMatch(/max-w-/)
+    expect(innerPill!.className).not.toMatch(/overflow-hidden/)
+  })
+
+  it('project name span carries uppercase class and is NOT font-mono', async () => {
+    setup()
+    const headerNameSpan = await screen.findByText('project-a')
+    expect(headerNameSpan.className).toMatch(/uppercase/)
+    expect(headerNameSpan.className).not.toMatch(/font-mono/)
+  })
+
+  it('clicking the sidebar git pill opens the diff dialog AND does not toggle the section', async () => {
+    vi.mocked(fetchGitStatus).mockResolvedValue({
+      enabled: true,
+      branch: 'main',
+      detached: false,
+      sha: '0123456',
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      dirty: false,
+    })
+    setup()
+    const trigger = await waitFor(() => {
+      const t = document.body.querySelector(
+        '[data-slot="git-status-pill-trigger"]',
+      ) as HTMLElement | null
+      expect(t).not.toBeNull()
+      return t as HTMLElement
+    })
+    // project-a is the default active project, so its section starts EXPANDED.
+    // Click the pill → dialog opens. Section stays expanded (the click did
+    // NOT bubble up to the CollapsibleTrigger).
+    await userEvent.click(trigger)
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-slot="git-diff-dialog"]'),
+      ).not.toBeNull()
+    })
+    // Section still expanded: localStorage still contains project-a.
+    const stored = localStorage.getItem(STORAGE_KEY) ?? '[]'
+    expect(stored).toContain('project-a')
+  })
+
+  it('non-git project: sidebar pill renders bare (no click trigger wrapper)', async () => {
+    // Default beforeEach mock returns enabled: false for all projects.
+    const { container } = setup()
+    await waitFor(() =>
+      expect(screen.getByText('project-a')).toBeInTheDocument(),
+    )
+    expect(
+      container.querySelectorAll('[data-slot="git-status-pill-trigger"]').length,
+    ).toBe(0)
+  })
+
+  it('renders all 12 experiments (no "View more" cap)', async () => {
+    const experiments = Array.from({ length: 12 }, (_, i) =>
+      makeExpDoc(
+        `E${String(i + 1).padStart(4, '0')}-x${i}`,
+        // descending ISO timestamps so order is predictable
+        `2026-05-${String(20 - i).padStart(2, '0')}T10:00:00+08:00`,
+      ),
+    )
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments })
+    const { container } = setup()
+    await waitFor(() => {
+      const links = container.querySelectorAll('a[href*="/p/project-a/e/"]')
+      expect(links.length).toBe(12)
+    })
+    // Confirm no "View more" / "Show fewer" affordance in the DOM.
+    expect(screen.queryByText(/View more/i)).toBeNull()
+    expect(screen.queryByText(/Show fewer/i)).toBeNull()
+  })
+
+  it('owner: terminal icon button is present on each experiment row', async () => {
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [
+        makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00'),
+        makeExpDoc('E0002-bravo', '2026-05-06T08:00:00+08:00'),
+      ],
+    })
+    setup({ role: 'owner', scopeProjects: [] })
+    await waitFor(() => {
+      const buttons = screen.getAllByRole('button', { name: /New terminal for E\d+-/ })
+      expect(buttons.length).toBe(2)
+      // Buttons are enabled when probe.available === true (the default mock).
+      buttons.forEach((b) => expect(b).not.toBeDisabled())
+    })
+  })
+
+  it('viewer: no terminal icon button is rendered on rows', async () => {
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [
+        makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00'),
+        makeExpDoc('E0002-bravo', '2026-05-06T08:00:00+08:00'),
+      ],
+    })
+    setup({ role: 'viewer', scopeProjects: ['project-a'] })
+    // Rows still render; just the icon button is absent.
+    await waitFor(() => {
+      expect(screen.getByText('E0001-alpha')).toBeInTheDocument()
+    })
+    expect(
+      screen.queryAllByRole('button', { name: /New terminal for E\d+-/ }).length,
+    ).toBe(0)
+  })
+
+  it('owner + ttyd unavailable: terminal button is disabled with tooltip suggestion', async () => {
+    vi.mocked(checkTerminal).mockResolvedValue({
+      available: false,
+      downloadable: false,
+      suggestion: 'brew install ttyd',
+    })
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00')],
+    })
+    setup({ role: 'owner', scopeProjects: [] })
+    await waitFor(() => {
+      const btn = screen.getByRole('button', {
+        name: /New terminal for E0001-alpha \(ttyd unavailable\)/,
+      })
+      expect(btn).toBeDisabled()
+    })
   })
 })

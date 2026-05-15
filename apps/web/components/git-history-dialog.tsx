@@ -1,0 +1,432 @@
+'use client'
+
+// Per-project git history modal. Two-pane:
+// - left: commit list (up to 100, newest-first) for the selected branch
+// - right: selected commit's metadata + per-file diff list (reuses
+//   `<FileRow />` from the working-tree dialog)
+//
+// Opens from two places: a footer icon button and a "View history" link in
+// `<GitDiffDialog />`. The parent (project-footer) keeps the two dialogs
+// mutually exclusive — only one open at a time.
+
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { History, RefreshCw } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
+import { Skeleton } from './ui/skeleton'
+import { Button } from './ui/button'
+import {
+  fetchGitBranches,
+  fetchGitCommit,
+  fetchGitLog,
+  type GitBranches,
+  type GitCommitDetail,
+  type GitCommitSummary,
+} from '../lib/api'
+import { useDiffViewMode } from '../lib/use-diff-view-mode'
+import { FileRow } from './file-row'
+import { formatRelativeTime } from '../lib/format-relative-time'
+import { cn } from '../lib/utils'
+
+export interface GitHistoryDialogProps {
+  project: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+const DETACHED_REF_PREFIX = '__detached__:'
+
+export function GitHistoryDialog({
+  project,
+  open,
+  onOpenChange,
+}: GitHistoryDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        data-slot="git-history-dialog"
+        className="flex max-h-[90vh] w-[min(90vw,1600px)] max-w-none flex-col gap-3 sm:max-w-none"
+      >
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="font-mono text-base">
+            <span className="text-muted-foreground">git history — </span>
+            {project}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Browse commits and their per-file changes for {project}.
+          </DialogDescription>
+        </DialogHeader>
+        {open && <HistoryBody project={project} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function HistoryBody({ project }: { project: string }) {
+  const qc = useQueryClient()
+  const branchesQuery = useQuery({
+    queryKey: ['git-branches', project],
+    queryFn: () => fetchGitBranches(project),
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  const [selectedRef, setSelectedRef] = useState<string | null>(null)
+  const [selectedSha, setSelectedSha] = useState<string | null>(null)
+
+  // Derive the effective ref to fetch: explicit selection wins, otherwise
+  // the current HEAD (branch name, or synthetic `__detached__:<sha>` when
+  // HEAD is detached).
+  const effectiveRef = useMemo(() => {
+    if (selectedRef) return selectedRef
+    const data = branchesQuery.data
+    if (!data || data.enabled === false) return null
+    if (data.detached) return `${DETACHED_REF_PREFIX}${data.sha}`
+    return data.current
+  }, [selectedRef, branchesQuery.data])
+
+  // The actual git rev to send to /git-log: strip the synthetic prefix for
+  // detached HEADs.
+  const gitRev =
+    effectiveRef && effectiveRef.startsWith(DETACHED_REF_PREFIX)
+      ? effectiveRef.slice(DETACHED_REF_PREFIX.length)
+      : effectiveRef
+
+  const logQuery = useQuery({
+    queryKey: ['git-log', project, gitRev],
+    queryFn: () => fetchGitLog(project, gitRev!, 100),
+    enabled: Boolean(gitRev),
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  function onRefresh() {
+    qc.invalidateQueries({ queryKey: ['git-branches', project] })
+    if (gitRev) {
+      qc.invalidateQueries({ queryKey: ['git-log', project, gitRev] })
+    }
+  }
+
+  return (
+    <>
+      <Toolbar
+        branches={branchesQuery.data}
+        selectedRef={effectiveRef}
+        onSelectedRefChange={(next) => {
+          setSelectedRef(next)
+          setSelectedSha(null)
+        }}
+        onRefresh={onRefresh}
+      />
+      <div className="flex min-h-0 flex-1 gap-3 sm:flex-row flex-col">
+        <CommitList
+          project={project}
+          query={logQuery}
+          selectedSha={selectedSha}
+          onSelect={setSelectedSha}
+        />
+        <CommitDetail project={project} sha={selectedSha} />
+      </div>
+    </>
+  )
+}
+
+function Toolbar({
+  branches,
+  selectedRef,
+  onSelectedRefChange,
+  onRefresh,
+}: {
+  branches: GitBranches | undefined
+  selectedRef: string | null
+  onSelectedRefChange: (ref: string) => void
+  onRefresh: () => void
+}) {
+  const [mode, setMode] = useDiffViewMode()
+
+  const items: { value: string; label: string; isCurrent: boolean }[] = []
+  if (branches && branches.enabled === true) {
+    if (branches.detached) {
+      items.push({
+        value: `${DETACHED_REF_PREFIX}${branches.sha}`,
+        label: `(detached @ ${branches.sha})`,
+        isCurrent: true,
+      })
+    }
+    for (const b of branches.branches) {
+      items.push({
+        value: b.name,
+        label: b.name + (b.isCurrent ? ' ★' : ''),
+        isCurrent: b.isCurrent,
+      })
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-b pb-2">
+      <Select
+        value={selectedRef ?? undefined}
+        onValueChange={onSelectedRefChange}
+      >
+        <SelectTrigger
+          data-slot="git-history-branch-select"
+          className="h-7 w-[14rem] text-xs"
+        >
+          <SelectValue placeholder="Loading branches…" />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((it) => (
+            <SelectItem key={it.value} value={it.value}>
+              <span className="font-mono text-xs">{it.label}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        type="button"
+        onClick={onRefresh}
+        data-slot="git-history-refresh"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        aria-label="Refresh"
+      >
+        <RefreshCw className="size-3.5" aria-hidden />
+      </Button>
+      <div className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+        view
+        <div className="inline-flex overflow-hidden rounded-md border">
+          <Button
+            variant={mode === 'split' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-7 rounded-none px-2 text-xs"
+            onClick={() => setMode('split')}
+            aria-pressed={mode === 'split'}
+            data-slot="view-mode-split"
+          >
+            split
+          </Button>
+          <Button
+            variant={mode === 'inline' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-7 rounded-none px-2 text-xs"
+            onClick={() => setMode('inline')}
+            aria-pressed={mode === 'inline'}
+            data-slot="view-mode-inline"
+          >
+            inline
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CommitList({
+  project: _project,
+  query,
+  selectedSha,
+  onSelect,
+}: {
+  project: string
+  query: ReturnType<typeof useQuery<unknown, Error>> &
+    { data?: import('../lib/api').GitLog | undefined }
+  selectedSha: string | null
+  onSelect: (sha: string) => void
+}) {
+  const { data, isPending, isError } = query as {
+    data: import('../lib/api').GitLog | undefined
+    isPending: boolean
+    isError: boolean
+  }
+
+  return (
+    <section
+      data-slot="commit-list"
+      className="flex w-full shrink-0 flex-col gap-1 overflow-auto sm:w-[35%] sm:max-w-[28rem]"
+    >
+      <h3 className="px-2 pb-1 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Commits
+      </h3>
+      {isPending ? (
+        <ListSkeleton />
+      ) : isError || !data ? (
+        <p className="px-2 text-xs text-destructive">Failed to load commits.</p>
+      ) : data.enabled === false ? (
+        <p className="px-2 text-xs text-muted-foreground italic">
+          {data.reason === 'not-a-repo'
+            ? 'not a git repository'
+            : `git unavailable: ${data.reason}`}
+        </p>
+      ) : data.commits.length === 0 ? (
+        <p className="px-2 text-xs text-muted-foreground italic">(no commits)</p>
+      ) : (
+        <ul className="space-y-0">
+          {data.commits.map((c) => (
+            <li key={c.sha}>
+              <CommitRow
+                commit={c}
+                selected={c.sha === selectedSha}
+                onSelect={() => onSelect(c.sha)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function CommitRow({
+  commit,
+  selected,
+  onSelect,
+}: {
+  commit: GitCommitSummary
+  selected: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      data-slot="commit-row"
+      data-selected={selected}
+      className={cn(
+        'flex w-full flex-col items-start gap-0.5 rounded px-2 py-1 text-left text-xs hover:bg-accent hover:text-accent-foreground',
+        selected && 'bg-accent text-accent-foreground',
+      )}
+      title={commit.authorDate}
+    >
+      <span className="flex w-full items-center gap-2">
+        <span className="font-mono text-muted-foreground">
+          {commit.shortSha}
+        </span>
+        <span className="truncate font-medium">{commit.subject}</span>
+      </span>
+      <span className="flex w-full items-center gap-2 text-[10px] text-muted-foreground">
+        <span className="truncate">{commit.authorName}</span>
+        <span aria-hidden>·</span>
+        <span>{formatRelativeTime(commit.authorDate)}</span>
+      </span>
+    </button>
+  )
+}
+
+function ListSkeleton() {
+  return (
+    <div className="space-y-1 px-2">
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-4/5" />
+    </div>
+  )
+}
+
+function CommitDetail({
+  project,
+  sha,
+}: {
+  project: string
+  sha: string | null
+}) {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ['git-commit', project, sha],
+    queryFn: () => fetchGitCommit(project, sha!),
+    enabled: Boolean(sha),
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  if (!sha) {
+    return (
+      <section
+        data-slot="commit-detail"
+        className="flex flex-1 items-center justify-center text-xs text-muted-foreground italic"
+      >
+        Select a commit to view its changes
+      </section>
+    )
+  }
+
+  return (
+    <section data-slot="commit-detail" className="flex-1 overflow-auto">
+      {isPending ? (
+        <div className="space-y-2 px-2">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="mt-3 h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+        </div>
+      ) : isError || !data ? (
+        <p className="px-2 text-xs text-destructive">Failed to load commit.</p>
+      ) : data.enabled === false ? (
+        <p className="px-2 text-xs text-muted-foreground italic">
+          {data.reason === 'not-found' ? 'commit not found' : `git: ${data.reason}`}
+        </p>
+      ) : (
+        <CommitDetailBody project={project} detail={data} sha={data.sha} />
+      )}
+    </section>
+  )
+}
+
+function CommitDetailBody({
+  project,
+  detail,
+  sha,
+}: {
+  project: string
+  detail: Extract<GitCommitDetail, { enabled: true }>
+  sha: string
+}) {
+  return (
+    <div className="space-y-3">
+      <header className="space-y-1 border-b pb-2 text-xs">
+        <div className="font-mono text-muted-foreground">{detail.sha}</div>
+        <div>
+          <span className="font-medium">{detail.authorName}</span>{' '}
+          <span className="text-muted-foreground">
+            &lt;{detail.authorEmail}&gt;
+          </span>{' '}
+          <span className="text-muted-foreground">· {detail.authorDate}</span>
+        </div>
+        <div className="font-medium">{detail.subject}</div>
+        {detail.body && (
+          <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
+            {detail.body}
+          </pre>
+        )}
+      </header>
+      <h4 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Files ({detail.files.length})
+      </h4>
+      {detail.files.length === 0 ? (
+        <p className="pl-2 text-xs text-muted-foreground italic">(none)</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {detail.files.map((f) => (
+            <li key={`${f.path}:${f.origPath ?? ''}`}>
+              <FileRow project={project} side="commit" sha={sha} entry={f} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}

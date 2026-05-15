@@ -4,9 +4,8 @@
 // footer's git pill. Three sections: Staged / Unstaged / Untracked.
 // Each file row collapsed by default; expanding lazily fetches the diff.
 
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, GitBranch } from 'lucide-react'
+import { GitBranch } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -17,47 +16,32 @@ import {
 import { Skeleton } from './ui/skeleton'
 import { Button } from './ui/button'
 import {
-  fetchGitDiff,
   fetchGitStatus,
   fetchGitStatusFiles,
-  type GitDiffResponse,
   type GitDiffSide,
   type GitFileEntry,
-  type GitFileStatus,
 } from '../lib/api'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
-import { FileDiff, type FileDiffSkipReason } from './file-diff'
-import { cn } from '../lib/utils'
+import { FileRow } from './file-row'
 
 export interface GitDiffDialogProps {
   project: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * When provided, the dialog renders a "View history" link in its header
+   * that invokes this callback. Callers are responsible for closing the
+   * status dialog and opening the history dialog (mutually exclusive).
+   */
+  onOpenHistory?: () => void
 }
 
-const STATUS_LABEL: Record<GitFileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  copied: 'C',
-  untracked: '?',
-  conflict: '!',
-  typechange: 'T',
-}
-
-const STATUS_COLOR: Record<GitFileStatus, string> = {
-  added: 'text-primary',
-  modified: 'text-amber-600 dark:text-amber-400',
-  deleted: 'text-destructive',
-  renamed: 'text-amber-600 dark:text-amber-400',
-  copied: 'text-amber-600 dark:text-amber-400',
-  untracked: 'text-muted-foreground',
-  conflict: 'text-destructive',
-  typechange: 'text-muted-foreground',
-}
-
-export function GitDiffDialog({ project, open, onOpenChange }: GitDiffDialogProps) {
+export function GitDiffDialog({
+  project,
+  open,
+  onOpenChange,
+  onOpenHistory,
+}: GitDiffDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -68,6 +52,16 @@ export function GitDiffDialog({ project, open, onOpenChange }: GitDiffDialogProp
           <DialogTitle className="font-mono text-base">
             <span className="text-muted-foreground">git status — </span>
             {project}
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={onOpenHistory}
+                data-slot="git-diff-dialog-history-link"
+                className="ml-3 cursor-pointer text-xs font-normal text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                View history
+              </button>
+            )}
           </DialogTitle>
           <DialogDescription asChild>
             <BranchSummary project={project} />
@@ -232,163 +226,3 @@ function Section({
   )
 }
 
-function FileRow({
-  project,
-  side,
-  entry,
-}: {
-  project: string
-  side: GitDiffSide
-  entry: GitFileEntry
-}) {
-  const [expanded, setExpanded] = useState(false)
-  // Once the user expands the row, we keep `<FileRowBody />` MOUNTED for the
-  // dialog session — collapsing only hides it visually. This preserves the
-  // TanStack query observer so re-expanding hits the cache rather than
-  // refiring `fetchGitDiff`.
-  const [hasBeenExpanded, setHasBeenExpanded] = useState(false)
-  const code = STATUS_LABEL[entry.status]
-  const colorCls = STATUS_COLOR[entry.status]
-
-  function onToggle() {
-    setExpanded((prev) => {
-      const next = !prev
-      if (next && !hasBeenExpanded) setHasBeenExpanded(true)
-      return next
-    })
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        data-slot="file-row-trigger"
-        data-expanded={expanded}
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent hover:text-accent-foreground"
-      >
-        <ChevronRight
-          className={cn(
-            'size-3.5 shrink-0 transition-transform',
-            expanded && 'rotate-90',
-          )}
-          aria-hidden
-        />
-        <span className={cn('w-3 shrink-0 text-center font-mono font-semibold', colorCls)}>
-          {code}
-        </span>
-        <span className="truncate font-mono">
-          {entry.origPath ? `${entry.origPath} → ${entry.path}` : entry.path}
-        </span>
-      </button>
-      {hasBeenExpanded && (
-        <div className={cn('pl-6', !expanded && 'hidden')}>
-          <FileRowBody project={project} side={side} entry={entry} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function FileRowBody({
-  project,
-  side,
-  entry,
-}: {
-  project: string
-  side: GitDiffSide
-  entry: GitFileEntry
-}) {
-  const { data, isPending, isError, error } = useQuery({
-    queryKey: ['git-diff', project, entry.path, side],
-    queryFn: () => fetchGitDiff(project, entry.path, side),
-    staleTime: Infinity,
-    retry: false,
-  })
-
-  if (isPending) {
-    return (
-      <FileDiff
-        filename={entry.path}
-        oldFilename={entry.origPath}
-        status={entry.status}
-        oldContent={null}
-        newContent={null}
-        loading
-      />
-    )
-  }
-  if (isError || !data) {
-    return (
-      <FileDiff
-        filename={entry.path}
-        oldFilename={entry.origPath}
-        status={entry.status}
-        oldContent={null}
-        newContent={null}
-        errorMessage={(error as Error)?.message ?? 'failed to load diff'}
-      />
-    )
-  }
-
-  const skip = extractSkipReason(data)
-  if (skip) {
-    return (
-      <FileDiff
-        filename={entry.path}
-        oldFilename={entry.origPath}
-        status={entry.status}
-        oldContent={null}
-        newContent={null}
-        skipReason={skip.reason}
-        skipSizeBytes={skip.sizeBytes}
-        skipMaxBytes={skip.maxBytes}
-      />
-    )
-  }
-
-  if ('ok' in data && data.ok) {
-    return (
-      <FileDiff
-        filename={data.filename}
-        oldFilename={entry.origPath}
-        status={data.status}
-        oldContent={data.oldContent}
-        newContent={data.newContent}
-      />
-    )
-  }
-
-  // ok: false with `error` field — fallback to error UI.
-  const message =
-    'error' in data && data.error?.message ? data.error.message : 'diff failed'
-  return (
-    <FileDiff
-      filename={entry.path}
-      oldFilename={entry.origPath}
-      status={entry.status}
-      oldContent={null}
-      newContent={null}
-      errorMessage={message}
-    />
-  )
-}
-
-function extractSkipReason(
-  data: GitDiffResponse,
-):
-  | { reason: FileDiffSkipReason; sizeBytes?: number; maxBytes?: number }
-  | null {
-  if ('ok' in data && data.ok === false && 'skipReason' in data) {
-    if (data.skipReason === 'too-large') {
-      return {
-        reason: 'too-large',
-        sizeBytes: data.sizeBytes,
-        maxBytes: data.maxBytes,
-      }
-    }
-    if (data.skipReason === 'binary') return { reason: 'binary' }
-  }
-  return null
-}

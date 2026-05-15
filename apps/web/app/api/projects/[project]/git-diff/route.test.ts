@@ -195,4 +195,92 @@ describe('GET /api/projects/[project]/git-diff', () => {
     )
     expect(res.status).toBe(403)
   })
+
+  describe('side=commit', () => {
+    it('200 ok=true for an existing file at a commit', async () => {
+      vi.mocked(readGitFileContents)
+        .mockResolvedValueOnce({ ok: true, content: 'parent\n' })
+        .mockResolvedValueOnce({ ok: true, content: 'commit\n' })
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=commit&sha=abc1234', {
+          'x-memon-role': 'owner',
+        }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        ok: true,
+        filename: 'app.ts',
+        status: 'modified',
+        oldContent: 'parent\n',
+        newContent: 'commit\n',
+      })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'abc1234^', 'app.ts')
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'abc1234', 'app.ts')
+    })
+
+    it('root commit: parent not-found → oldContent="" status=added', async () => {
+      vi.mocked(readGitFileContents)
+        .mockResolvedValueOnce({ ok: false, reason: 'not-found' })
+        .mockResolvedValueOnce({ ok: true, content: 'first\n' })
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=commit&sha=xyz0000', {
+          'x-memon-role': 'owner',
+        }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        ok: true,
+        status: 'added',
+        oldContent: '',
+        newContent: 'first\n',
+      })
+    })
+
+    it('400 missing sha', async () => {
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=commit', { 'x-memon-role': 'owner' }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(400)
+      expect(readGitFileContents).not.toHaveBeenCalled()
+    })
+
+    it('400 invalid sha (shell metachar)', async () => {
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=commit&sha=foo%3Brm', {
+          'x-memon-role': 'owner',
+        }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(400)
+      expect(readGitFileContents).not.toHaveBeenCalled()
+    })
+
+    it('forwards too-large from a commit side', async () => {
+      vi.mocked(readGitFileContents)
+        .mockResolvedValueOnce({ ok: true, content: 'parent\n' })
+        .mockResolvedValueOnce({
+          ok: false,
+          reason: 'too-large',
+          sizeBytes: 2_000_000,
+          maxBytes: 1_048_576,
+        })
+      const res = await GET(
+        req('project-a', 'path=big.txt&side=commit&sha=abc1234', {
+          'x-memon-role': 'owner',
+        }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        ok: false,
+        skipReason: 'too-large',
+        sizeBytes: 2_000_000,
+        maxBytes: 1_048_576,
+        side: 'new',
+      })
+    })
+  })
 })

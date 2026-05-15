@@ -6,12 +6,14 @@
 // indents from the left by `--sidebar-width` so it doesn't sit over the
 // sidebar; on mobile the sidebar is off-canvas, so full-width is correct.
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
+import { History } from 'lucide-react'
 import { fetchGitStatus } from '../lib/api'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
+import { GitHistoryDialog } from './git-history-dialog'
 import { GitStatusPill } from './git-status-pill'
 
 export interface ProjectFooterProps {
@@ -19,7 +21,10 @@ export interface ProjectFooterProps {
 }
 
 export function ProjectFooter({ project }: ProjectFooterProps) {
-  const [dialogOpen, setDialogOpen] = useState(false)
+  // The two dialogs are mutually exclusive — opening one closes the other.
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false)
+
   // Same query key as `<GitStatusPill />` so this read deduplicates with
   // the pill's poll — we don't fire an extra request.
   const { data } = useQuery({
@@ -29,6 +34,15 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
     retry: false,
   })
   const gitEnabled = data?.enabled === true
+
+  const openStatus = useCallback(() => {
+    setHistoryDialogOpen(false)
+    setStatusDialogOpen(true)
+  }, [])
+  const openHistory = useCallback(() => {
+    setStatusDialogOpen(false)
+    setHistoryDialogOpen(true)
+  }, [])
 
   return (
     <>
@@ -47,15 +61,26 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
         </Link>
         <span className="text-muted-foreground/40">·</span>
         {gitEnabled ? (
-          <button
-            type="button"
-            onClick={() => setDialogOpen(true)}
-            data-slot="git-diff-dialog-trigger"
-            aria-label={`View git diff for ${project}`}
-            className="inline-flex cursor-pointer items-center rounded px-1 hover:bg-accent hover:text-accent-foreground"
-          >
-            <GitStatusPill project={project} variant="footer" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={openStatus}
+              data-slot="git-diff-dialog-trigger"
+              aria-label={`View git diff for ${project}`}
+              className="inline-flex cursor-pointer items-center rounded px-1 hover:bg-accent hover:text-accent-foreground"
+            >
+              <GitStatusPill project={project} variant="footer" />
+            </button>
+            <button
+              type="button"
+              onClick={openHistory}
+              data-slot="git-history-dialog-trigger"
+              aria-label={`View git history for ${project}`}
+              className="inline-flex cursor-pointer items-center rounded p-1 hover:bg-accent hover:text-accent-foreground"
+            >
+              <History className="size-3.5" aria-hidden />
+            </button>
+          </>
         ) : (
           <GitStatusPill project={project} variant="footer" />
         )}
@@ -63,11 +88,19 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
         <div className="ml-auto" />
       </footer>
       {gitEnabled && (
-        <GitDiffDialog
-          project={project}
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-        />
+        <>
+          <GitDiffDialog
+            project={project}
+            open={statusDialogOpen}
+            onOpenChange={setStatusDialogOpen}
+            onOpenHistory={openHistory}
+          />
+          <GitHistoryDialog
+            project={project}
+            open={historyDialogOpen}
+            onOpenChange={setHistoryDialogOpen}
+          />
+        </>
       )}
     </>
   )

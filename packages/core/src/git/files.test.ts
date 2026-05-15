@@ -270,3 +270,65 @@ describe('readGitFileContents — git refs (HEAD / index)', () => {
     })
   })
 })
+
+describe('readGitFileContents — arbitrary git refs', () => {
+  it('reads bytes at a specific SHA', async () => {
+    await initRepoWithCommit(root)
+    await writeFile(join(root, 'app.ts'), 'v1\n', 'utf8')
+    await git(root, ['add', 'app.ts'])
+    await git(root, ['commit', '-m', 'v1'])
+    const shaV1 = (
+      await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })
+    ).stdout.trim()
+    await writeFile(join(root, 'app.ts'), 'v2\n', 'utf8')
+    await git(root, ['add', 'app.ts'])
+    await git(root, ['commit', '-m', 'v2'])
+
+    const r = await readGitFileContents(root, shaV1, 'app.ts')
+    expect(r).toEqual({ ok: true, content: 'v1\n' })
+  })
+
+  it('reads bytes at <sha>^ (parent commit)', async () => {
+    await initRepoWithCommit(root)
+    await writeFile(join(root, 'app.ts'), 'parent\n', 'utf8')
+    await git(root, ['add', 'app.ts'])
+    await git(root, ['commit', '-m', 'parent'])
+    await writeFile(join(root, 'app.ts'), 'child\n', 'utf8')
+    await git(root, ['add', 'app.ts'])
+    await git(root, ['commit', '-m', 'child'])
+    const headSha = (
+      await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })
+    ).stdout.trim()
+
+    const r = await readGitFileContents(root, `${headSha}^`, 'app.ts')
+    expect(r).toEqual({ ok: true, content: 'parent\n' })
+  })
+
+  it('returns not-found for <root-sha>^ (root commit has no parent)', async () => {
+    await initRepoWithCommit(root)
+    await writeFile(join(root, 'app.ts'), 'first\n', 'utf8')
+    await git(root, ['add', 'app.ts'])
+    await git(root, ['commit', '-m', 'first'])
+    // The previous `--allow-empty -m initial` commit is the root.
+    const rootSha = (
+      await execFileP('git', ['rev-list', '--max-parents=0', 'HEAD'], { cwd: root })
+    ).stdout.trim()
+
+    const r = await readGitFileContents(root, `${rootSha}^`, 'app.ts')
+    expect(r).toEqual({ ok: false, reason: 'not-found' })
+  })
+
+  it('reads bytes at a branch name', async () => {
+    await initRepoWithCommit(root)
+    await writeFile(join(root, 'on-main.ts'), 'main\n', 'utf8')
+    await git(root, ['add', 'on-main.ts'])
+    await git(root, ['commit', '-m', 'main commit'])
+    await git(root, ['checkout', '-b', 'feature/x'])
+    await writeFile(join(root, 'on-main.ts'), 'feature\n', 'utf8')
+    await git(root, ['add', 'on-main.ts'])
+    await git(root, ['commit', '-m', 'feature commit'])
+
+    const r = await readGitFileContents(root, 'main', 'on-main.ts')
+    expect(r).toEqual({ ok: true, content: 'main\n' })
+  })
+})
