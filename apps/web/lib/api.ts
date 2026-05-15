@@ -604,6 +604,21 @@ export async function createTmuxSession(input: {
   return jsonOrThrow<{ ok: true; sessionName: string; alreadyExisted: boolean }>(res)
 }
 
+export async function renameTmuxSession(input: {
+  name: string
+  newName: string
+}): Promise<{ ok: true; sessionName: string }> {
+  const res = await fetch(
+    `/api/tmux-sessions/${encodeURIComponent(input.name)}/rename`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newName: input.newName }),
+    },
+  )
+  return jsonOrThrow<{ ok: true; sessionName: string }>(res)
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   const body = await res.json()
   if (!res.ok) {
@@ -870,6 +885,84 @@ export type GitStatus =
 
 export async function fetchGitStatus(project: string): Promise<GitStatus> {
   return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-status`)
+}
+
+// Git status — detailed file lists. Fetched lazily once per dialog open.
+
+export type GitFileStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'copied'
+  | 'untracked'
+  | 'conflict'
+  | 'typechange'
+
+export interface GitFileEntry {
+  path: string
+  status: GitFileStatus
+  origPath?: string
+}
+
+export type GitStatusFiles =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | {
+      enabled: true
+      branch: string | null
+      detached: boolean
+      sha: string
+      upstream: string | null
+      ahead: number
+      behind: number
+      staged: GitFileEntry[]
+      unstaged: GitFileEntry[]
+      untracked: GitFileEntry[]
+    }
+
+export async function fetchGitStatusFiles(project: string): Promise<GitStatusFiles> {
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/git-status/files`,
+  )
+}
+
+// Per-file diff payload. Side encodes which pair of refs the dialog is
+// asking about: staged = HEAD vs index, unstaged = index vs working,
+// untracked = empty vs working.
+
+export type GitDiffSide = 'staged' | 'unstaged' | 'untracked'
+
+export type GitDiffResponse =
+  | {
+      ok: true
+      filename: string
+      status: GitFileStatus
+      oldContent: string | null
+      newContent: string | null
+    }
+  | {
+      ok: false
+      skipReason: 'too-large'
+      sizeBytes: number
+      maxBytes: number
+      side: 'old' | 'new'
+    }
+  | { ok: false; skipReason: 'binary' }
+  | { ok: false; error: { message: string } }
+
+export async function fetchGitDiff(
+  project: string,
+  path: string,
+  side: GitDiffSide,
+): Promise<GitDiffResponse> {
+  const params = new URLSearchParams({ path, side })
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`,
+  )
 }
 
 // Re-exports for convenience

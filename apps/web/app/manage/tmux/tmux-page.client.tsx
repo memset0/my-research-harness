@@ -20,6 +20,7 @@ import {
   FlaskConical,
   FolderTree,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   TerminalSquare,
@@ -33,6 +34,7 @@ import {
   createTmuxSession,
   killTmuxSession,
   listTmuxSessions,
+  renameTmuxSession,
   type TmuxPaneInfo,
   type TmuxPaneState,
   type TmuxSessionRow,
@@ -75,6 +77,19 @@ export const SPLIT_STORAGE_KEY = 'memon:manage-tmux:split-sizes'
 export const SPLIT_PANEL_LEFT = 'tmux-list'
 export const SPLIT_PANEL_RIGHT = 'tmux-terminal'
 const SPLIT_WRITE_DEBOUNCE_MS = 250
+
+/**
+ * Max number of `<TerminalView>` instances kept alive in the right pane
+ * across selection changes. Switching back to a recently-visited row is a
+ * CSS visibility flip on a still-mounted iframe (no re-attach, no fresh
+ * ttyd handshake, no xterm reinit). Backed by LRU eviction of the
+ * least-recently-selected entry. Tunable but intentionally small —
+ * each entry is a live iframe + WebSocket + xterm.
+ */
+export const MANAGE_TMUX_CACHE_CAP = 4
+
+/** BroadcastChannel name for cross-page release of cached entries. */
+const ATTACH_BROADCAST_CHANNEL = 'memon:terminal-attached'
 
 export function parseStoredLayout(raw: string | null): Layout | null {
   if (raw === null) return null
@@ -489,11 +504,13 @@ function SessionCard({
   selected,
   onSelect,
   onAskKill,
+  onAskRename,
 }: {
   row: TmuxSessionRow
   selected: boolean
   onSelect: (sessionName: string) => void
   onAskKill: (sessionName: string) => void
+  onAskRename: (sessionName: string) => void
 }) {
   const stale = row.staleReason !== null
   const p = row.parsed
@@ -556,6 +573,20 @@ function SessionCard({
           ) : null
         })()}
         <div className="flex shrink-0 items-center gap-0.5">
+          <ViewerGuard reason="Rename tmux session">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden h-6 w-6 p-0 md:inline-flex"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAskRename(row.sessionName)
+              }}
+              aria-label="Rename session"
+            >
+              <Pencil className="size-3" />
+            </Button>
+          </ViewerGuard>
           {popup && (
             <ViewerGuard reason="Manage tmux session">
               <Button
@@ -613,6 +644,7 @@ function LeftPane({
   selectedName,
   onSelect,
   onAskKill,
+  onAskRename,
   isFetching,
   onRefetch,
   onAskCreate,
@@ -624,6 +656,7 @@ function LeftPane({
   selectedName: string | null
   onSelect: (sessionName: string) => void
   onAskKill: (sessionName: string) => void
+  onAskRename: (sessionName: string) => void
   isFetching: boolean
   onRefetch: () => void
   onAskCreate: () => void
@@ -700,6 +733,7 @@ function LeftPane({
                 selected={selectedName === row.sessionName}
                 onSelect={onSelect}
                 onAskKill={onAskKill}
+                onAskRename={onAskRename}
               />
             ))}
           </div>
@@ -722,13 +756,19 @@ function RightPaneEmpty() {
   )
 }
 
-function RightPane({ row }: { row: TmuxSessionRow | null }) {
-  if (row === null) return <RightPaneEmpty />
+/**
+ * Per-cache-entry chrome + TerminalView. The `row` lookup is re-done by
+ * the parent on every render so cached-but-hidden entries pick up
+ * pane-info / staleReason updates from the 5-second refetch (cheap —
+ * `display: none` skips paint but React still reconciles).
+ *
+ * The classification (matchable vs raw) is computed from the row's
+ * current state on every render. In practice it's stable for a given
+ * sessionName, but if a session were to flip stale-ness, the wrapper
+ * does the right thing.
+ */
+function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
   const popup = popupUrl(row)
-  // Stale rows are matchable-by-parse but the on-disk target lookup
-  // failed; we still attach via raw mode so the user can read / kill
-  // the running pane. A banner above the iframe makes the staleness
-  // explicit.
   const isMatchable =
     row.staleReason === null &&
     row.matchable &&
@@ -738,7 +778,7 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
     row.parsed.slug !== null
   const { command: paneCmd, title: paneTitle } = displayPane(row.pane)
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
+    <>
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
@@ -785,21 +825,106 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
       <div className="flex flex-1 flex-col min-h-0">
         {isMatchable ? (
           <TerminalView
-            key={row.sessionName}
             mode="standard"
             project={row.parsed.project!}
             scope={row.parsed.scope!}
             slug={row.parsed.slug!}
             agent={row.parsed.agent!}
+            source="manage"
           />
         ) : (
           <TerminalView
-            key={row.sessionName}
             mode="raw"
             sessionName={row.sessionName}
+            source="manage"
           />
         )}
       </div>
+    </>
+  )
+}
+
+interface CacheEntry {
+  sessionName: string
+  /** Wall-clock millis. Bumped each time the entry becomes the selection. */
+  lastSeenAt: number
+}
+
+/**
+ * Returns the next cache state after the user selects `selected`. Pure;
+ * caller is responsible for guarding that `selected` exists in the
+ * server's row list (we don't want to cache phantom entries).
+ *
+ * - If `selected` is already in the cache: bump its `lastSeenAt`.
+ * - Else: append a fresh entry. If that pushes past `cap`, drop the
+ *   entry with the oldest `lastSeenAt` from the prior set (which never
+ *   includes the newly-selected entry by construction).
+ */
+export function applySelectionToCache(
+  prev: CacheEntry[],
+  selected: string,
+  cap: number,
+): CacheEntry[] {
+  const now = Date.now()
+  const idx = prev.findIndex((e) => e.sessionName === selected)
+  if (idx >= 0) {
+    const next = prev.slice()
+    next[idx] = { ...next[idx]!, lastSeenAt: now }
+    return next
+  }
+  const candidate: CacheEntry = { sessionName: selected, lastSeenAt: now }
+  if (prev.length < cap) return [...prev, candidate]
+  let lruIdx = 0
+  for (let i = 1; i < prev.length; i++) {
+    if (prev[i]!.lastSeenAt < prev[lruIdx]!.lastSeenAt) lruIdx = i
+  }
+  return prev.filter((_, i) => i !== lruIdx).concat(candidate)
+}
+
+function RightPane({
+  cache,
+  rowsByName,
+  selectedName,
+}: {
+  cache: CacheEntry[]
+  rowsByName: Map<string, TmuxSessionRow>
+  selectedName: string | null
+}) {
+  // Empty state when nothing has ever been selected (cache empty).
+  if (cache.length === 0) return <RightPaneEmpty />
+
+  const selectedRowExists =
+    selectedName !== null && rowsByName.has(selectedName)
+  return (
+    <div className="relative h-full w-full">
+      {cache.map((entry) => {
+        const row = rowsByName.get(entry.sessionName)
+        // If a cached entry's row vanished from the server list (e.g.
+        // killed externally between refetch and the eviction effect
+        // firing), render nothing for this slot — the eviction effect
+        // on `all` will drop it from the cache shortly.
+        if (!row) return null
+        const isVisible = entry.sessionName === selectedName
+        return (
+          <div
+            key={entry.sessionName}
+            className={cn(
+              'absolute inset-0 flex flex-col',
+              isVisible ? '' : 'hidden',
+            )}
+            // aria-hidden mirrors the visual hiding so AT users don't
+            // see the off-screen terminals as live regions.
+            aria-hidden={!isVisible}
+          >
+            <CachedTerminalView row={row} />
+          </div>
+        )
+      })}
+      {/* When the URL points at a sessionName that doesn't currently
+          exist in the row list, the cache stack renders nothing
+          visible — overlay the empty-state placeholder so the pane
+          isn't blank. */}
+      {!selectedRowExists && <RightPaneEmpty />}
     </div>
   )
 }
@@ -810,6 +935,9 @@ export function TmuxManagePageClient() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState<Filter>('all')
   const [killTarget, setKillTarget] = useState<string | null>(null)
+  const [renameTarget, setRenameTarget] = useState<string | null>(null)
+  const [renameInput, setRenameInput] = useState('')
+  const [renameServerError, setRenameServerError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
 
@@ -916,10 +1044,6 @@ export function TmuxManagePageClient() {
   }
 
   const selectedName = searchParams.get('session')
-  const selectedRow = useMemo(
-    () => (selectedName ? (all.find((s) => s.sessionName === selectedName) ?? null) : null),
-    [all, selectedName],
-  )
 
   useEffect(() => {
     if (
@@ -930,6 +1054,73 @@ export function TmuxManagePageClient() {
       router.replace('/manage/tmux')
     }
   }, [selectedName, all, router])
+
+  // Right-pane LRU cache. Each entry is a still-mounted <TerminalView>
+  // (one absolute-positioned slot per entry; only the selected slot is
+  // visible, the rest carry `hidden`). LRU = least-recently-selected.
+  // Capped at MANAGE_TMUX_CACHE_CAP. Updated synchronously when
+  // `selectedName` flips via the during-render-update pattern below;
+  // pruned when `all` no longer contains a cached sessionName.
+  const [cache, setCache] = useState<CacheEntry[]>([])
+  const [lastSelected, setLastSelected] = useState<string | null>(selectedName)
+  if (selectedName !== lastSelected) {
+    setLastSelected(selectedName)
+    if (selectedName !== null && allByName.has(selectedName)) {
+      setCache((prev) =>
+        applySelectionToCache(prev, selectedName, MANAGE_TMUX_CACHE_CAP),
+      )
+    }
+  }
+
+  // Prune the cache when a cached session disappears from the server
+  // (kill from this page, kill from another tab, external `tmux kill-
+  // session`). Wait for the FIRST refetch to populate `all` before
+  // pruning, otherwise the pre-fetch initial `all = []` would wipe a
+  // freshly-restored deep-link cache entry.
+  useEffect(() => {
+    if (allFromQuery === undefined) return
+    setCache((prev) => {
+      const next = prev.filter((e) => allByName.has(e.sessionName))
+      return next.length === prev.length ? prev : next
+    })
+  }, [allFromQuery, allByName])
+
+  // Selected-name ref kept in sync via effect so the BroadcastChannel
+  // listener (which subscribes ONCE on mount) always reads the latest
+  // selection without re-subscribing on every selection change.
+  const selectedNameRef = useRef<string | null>(selectedName)
+  useEffect(() => {
+    selectedNameRef.current = selectedName
+  }, [selectedName])
+
+  // Cross-page release: when another page (popup, drawer, other tab)
+  // attaches to a sessionName that is in OUR cache AND is NOT the
+  // currently-selected entry, drop our cache entry so we're not
+  // holding a duplicate WebSocket open. The selected entry is never
+  // released by this signal — both copies can coexist.
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return
+    const channel = new BroadcastChannel(ATTACH_BROADCAST_CHANNEL)
+    const handler = (ev: MessageEvent) => {
+      const data = ev.data as
+        | { sessionName?: unknown; source?: unknown; attachedAt?: unknown }
+        | null
+      if (!data || typeof data !== 'object') return
+      if (typeof data.sessionName !== 'string') return
+      if (typeof data.source !== 'string') return
+      const incoming = data.sessionName
+      if (incoming === selectedNameRef.current) return
+      setCache((prev) => {
+        const next = prev.filter((e) => e.sessionName !== incoming)
+        return next.length === prev.length ? prev : next
+      })
+    }
+    channel.addEventListener('message', handler)
+    return () => {
+      channel.removeEventListener('message', handler)
+      channel.close()
+    }
+  }, [])
 
   const writeSelection = (name: string | null) => {
     if (name === null) {
@@ -945,6 +1136,9 @@ export function TmuxManagePageClient() {
       toast.success(`killed ${name}`)
       void qc.invalidateQueries({ queryKey: ['tmux-sessions'] })
       setKillTarget(null)
+      // Eagerly drop the killed session from the cache so its iframe
+      // unmounts immediately rather than waiting on the next refetch.
+      setCache((prev) => prev.filter((e) => e.sessionName !== name))
       if (selectedName === name) writeSelection(null)
     },
     onError: (err) => {
@@ -971,6 +1165,51 @@ export function TmuxManagePageClient() {
     },
   })
 
+  const renameMutation = useMutation({
+    mutationFn: (vars: { oldName: string; newName: string }) =>
+      renameTmuxSession({ name: vars.oldName, newName: vars.newName }),
+    onSuccess: (_res, vars) => {
+      const { oldName, newName } = vars
+      toast.success(`renamed ${oldName} → ${newName}`)
+      void qc.invalidateQueries({ queryKey: ['tmux-sessions'] })
+      // Keep stable ordering: swap oldName -> newName in place so the
+      // row doesn't visually jump on the next refetch.
+      setOrderedNames((prev) =>
+        prev === null ? prev : prev.map((n) => (n === oldName ? newName : n)),
+      )
+      // Drop the OLD name from the cache. The backend's rename endpoint
+      // already tore down the old ttyd entry (`stopSession(oldName)`),
+      // so the old iframe is pointing at a gone process. The new name
+      // enters the cache via the standard fresh-selection path on the
+      // next render after the URL update below.
+      setCache((prev) => prev.filter((e) => e.sessionName !== oldName))
+      // If the renamed row was the selected session, refocus the URL
+      // onto the new name. The right-pane cache stack picks up the new
+      // sessionName and mounts a fresh entry for it.
+      if (selectedName === oldName) {
+        router.replace(`/manage/tmux?session=${encodeURIComponent(newName)}`)
+      }
+      setRenameTarget(null)
+      setRenameInput('')
+      setRenameServerError(null)
+    },
+    onError: (err) => {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      // Surface inline in the dialog rather than as a toast; keeps the
+      // user in context to retry with a different name.
+      setRenameServerError(msg)
+    },
+  })
+
+  // When the Rename dialog opens for a new target, pre-fill the input
+  // with the full current sessionName and clear stale server errors.
+  useEffect(() => {
+    if (renameTarget !== null) {
+      setRenameInput(renameTarget)
+      setRenameServerError(null)
+    }
+  }, [renameTarget])
+
   const counts = {
     all: all.length,
     active: all.filter((s) => s.liveEntry !== null).length,
@@ -988,6 +1227,25 @@ export function TmuxManagePageClient() {
     e.preventDefault()
     if (!createNameValid || createMutation.isPending) return
     createMutation.mutate(trimmedCreateName)
+  }
+
+  const SAFE_RENAME_RE = /^memon-[A-Za-z0-9._-]+$/
+  const renameClientError: string | null = (() => {
+    if (renameTarget === null) return null
+    if (!SAFE_RENAME_RE.test(renameInput)) {
+      return 'must match memon-[A-Za-z0-9._-]+'
+    }
+    if (renameInput === renameTarget) {
+      return 'same as current name'
+    }
+    return null
+  })()
+  const renameValid = renameTarget !== null && renameClientError === null
+
+  const handleRenameSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!renameValid || renameMutation.isPending || renameTarget === null) return
+    renameMutation.mutate({ oldName: renameTarget, newName: renameInput })
   }
 
   return (
@@ -1012,6 +1270,7 @@ export function TmuxManagePageClient() {
             selectedName={selectedName}
             onSelect={writeSelection}
             onAskKill={(name) => setKillTarget(name)}
+            onAskRename={(name) => setRenameTarget(name)}
             isFetching={isFetching}
             onRefetch={() => void handleRefresh()}
             onAskCreate={() => setCreateOpen(true)}
@@ -1022,7 +1281,11 @@ export function TmuxManagePageClient() {
           id={SPLIT_PANEL_RIGHT}
           minSize={isDesktop ? 35 : 25}
         >
-          <RightPane row={selectedRow} />
+          <RightPane
+            cache={cache}
+            rowsByName={allByName}
+            selectedName={selectedName}
+          />
         </ResizablePanel>
       </ResizablePanelGroup>
 
@@ -1060,6 +1323,89 @@ export function TmuxManagePageClient() {
               </Button>
             </ViewerGuard>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(o) => {
+          if (!o && !renameMutation.isPending) {
+            setRenameTarget(null)
+            setRenameInput('')
+            setRenameServerError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleRenameSubmit}>
+            <DialogHeader>
+              <DialogTitle>Rename tmux session</DialogTitle>
+              <DialogDescription>
+                Runs <code className="rounded bg-muted px-1">tmux rename-session</code> on the host.
+                The pane and any running program are preserved. If the
+                session has a live ttyd, it is torn down and re-spawned
+                under the new name on next open.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-3">
+              <Label htmlFor="rename-session-name" className="text-xs">
+                Current: <code className="font-mono">{renameTarget ?? ''}</code>
+              </Label>
+              <Input
+                id="rename-session-name"
+                value={renameInput}
+                onChange={(e) => {
+                  setRenameInput(e.target.value)
+                  if (renameServerError) setRenameServerError(null)
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="memon-..."
+                className="font-mono text-xs"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                disabled={renameMutation.isPending}
+              />
+              {(renameServerError || renameClientError) && (
+                <p className="text-[11px] text-destructive">
+                  {renameServerError ?? renameClientError}
+                </p>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                Must match <code>memon-[A-Za-z0-9._-]+</code>.
+                Renaming does NOT touch on-disk runs or experiments.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setRenameTarget(null)
+                  setRenameInput('')
+                  setRenameServerError(null)
+                }}
+                disabled={renameMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <ViewerGuard reason="Rename tmux session">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!renameValid || renameMutation.isPending}
+                >
+                  {renameMutation.isPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Pencil className="size-3.5" />
+                  )}
+                  {renameMutation.isPending ? 'Renaming…' : 'Rename'}
+                </Button>
+              </ViewerGuard>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

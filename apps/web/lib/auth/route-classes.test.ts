@@ -40,6 +40,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/tmux-sessions')).toBe('shell')
     expect(classify('GET', '/api/tmux-sessions/memon-manual-foo')).toBe('shell')
     expect(classify('DELETE', '/api/tmux-sessions/foo')).toBe('shell')
+    expect(classify('POST', '/api/tmux-sessions/memon-manual-foo/rename')).toBe('shell')
     expect(classify('GET', '/manage/tmux')).toBe('shell')
     expect(classify('GET', '/terminal-popup')).toBe('shell')
   })

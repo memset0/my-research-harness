@@ -39,9 +39,10 @@ The **content** zone SHALL contain:
     - The title SHALL render in `font-mono text-[11px] font-semibold` with `min-w-0 flex-1 truncate` so it fills available width and truncates with ellipsis. The semibold weight differentiates the title from the surrounding regular-weight content + ellipsis-truncated badge values.
   - A **last activity** label (relative time, e.g. `5m ago`). The timestamp the label renders is the more recent of `row.tmuxLastActivity` and `row.lastStateChangeAt` — so a state transition (running ↔ idle ↔ attention ↔ done) refreshes the displayed clock back to "just now" alongside tmux's own input/output activity. The label SHALL be `text-[10px] text-muted-foreground` in the default sans-serif font (NOT monospace — relative-time strings like `5m ago` are prose, not code, and the sans rendering reads more naturally next to the title and buttons). It SHALL render when EITHER timestamp is parseable; when BOTH are absent/unparseable, the label is omitted entirely. It sits to the IMMEDIATE LEFT of the action buttons on row 1 (NOT in the badge row).
   - An **actions** group, right-aligned. Action buttons depend on row classification:
-    - **Matchable**, **Manual**, AND **Stale** rows render exactly two actions: a `Popup` button and a `Kill` button. The `Popup` button SHALL be hidden on viewports below the Tailwind `md` breakpoint (`hidden md:inline-flex`).
+    - **Matchable**, **Manual**, AND **Stale** rows render exactly three actions in this left-to-right order: a `Rename` button, a `Popup` button, and a `Kill` button. Both the `Rename` and `Popup` buttons SHALL be hidden on viewports below the Tailwind `md` breakpoint (`hidden md:inline-flex`); the `Kill` button SHALL be visible at every viewport size so the destructive action remains reachable on mobile.
     - The `Open in drawer` button is REMOVED for every row category. Its function is replaced by clicking the card body to select the row.
-    - Both buttons SHALL render as **icon-only** — the leading lucide icon stays (`ExternalLink` for Popup, `Trash2` for Kill) but the visible text labels `"Popup"` and `"Kill"` SHALL NOT be rendered. The buttons MUST continue to carry their `aria-label` (`"Open in popup"` / `"Kill session"`) for accessibility.
+    - All three buttons SHALL render as **icon-only** — the leading lucide icon is the only content (`Pencil` for Rename, `ExternalLink` for Popup, `Trash2` for Kill). The visible text labels `"Rename"` / `"Popup"` / `"Kill"` SHALL NOT be rendered. The buttons MUST carry `aria-label` attributes (`"Rename session"` / `"Open in popup"` / `"Kill session"`) for accessibility.
+    - The `Rename` and `Popup` buttons SHALL each be wrapped in `<ViewerGuard reason="...">` so they are hidden / non-interactive for viewer-mode visitors, matching the existing `Kill` button's gating.
 
 - **Row 2 — Inline metadata badges** (conditional): A row of badges SHALL be rendered ONLY when AT LEAST ONE badge would otherwise appear. When no badge applies (e.g. a `memon-manual-foo` row with no live ttyd and no parsed agent/project), row 2 SHALL be absent from the DOM (no empty `<div>`, no reserved vertical space). When at least one badge applies, the row renders all applicable badges flex-wrapping if needed.
 
@@ -80,7 +81,7 @@ Each badge in row 2 SHALL include a `lucide-react` icon at its leading edge (siz
   - A standalone uppercase category chip (e.g. a leading `RUN` / `EXP` / `MANUAL` chip) SHALL NOT be rendered either. The scope/target badge above carries the category signal via its icon + color.
 
 Click handling on each row card:
-- For **Matchable**, **Manual**, AND **Stale** rows, clicking the card BODY (anywhere except the action buttons or any badge link) SHALL select that row. Action buttons SHALL stop propagation so clicking the icon-only `Popup` or `Kill` does NOT change the selection. The scope/target badge link AND the project-badge link SHALL also stop propagation.
+- For **Matchable**, **Manual**, AND **Stale** rows, clicking the card BODY (anywhere except the action buttons or any badge link) SHALL select that row. Action buttons SHALL stop propagation so clicking the icon-only `Rename`, `Popup`, or `Kill` does NOT change the selection. The scope/target badge link AND the project-badge link SHALL also stop propagation.
 - For **Stale** rows specifically, the card SHALL keep `opacity-75` (signalling "no current memon target") but SHALL be a focusable interactive region (`role="button"`, `tabIndex={0}`, `cursor-pointer`, `focus-visible:ring-*`) so it behaves identically to manual rows for keyboard and pointer interaction. The reduced opacity is the only visual deviation from matchable/manual rows; it does NOT gate selection.
 
 The currently-selected row SHALL be visually distinguished by a **full border in the primary theme color** (e.g. `border-primary` on all four sides), NOT by a leading-edge accent bar or background fill. The selected card's background SHALL remain the same `bg-card` (white in light mode) as the unselected card. This applies to stale rows too: a selected stale row SHALL gain the `border-primary` outline while keeping its `opacity-75`.
@@ -209,38 +210,41 @@ The page SHALL be auth-gated per the existing `auth-system` rules.
 #### Scenario: Action buttons render icon-only with no text label
 - **GIVEN** any matchable, manual, or stale row
 - **WHEN** the row renders
-- **THEN** the `Popup` button (when present) SHALL contain ONLY the `ExternalLink` lucide icon — no `Popup` text child
+- **THEN** the `Rename` button SHALL contain ONLY the `Pencil` lucide icon — no `Rename` text child
+- **AND** the `Popup` button (when present) SHALL contain ONLY the `ExternalLink` lucide icon — no `Popup` text child
 - **AND** the `Kill` button SHALL contain ONLY the `Trash2` lucide icon — no `Kill` text child
-- **AND** both buttons SHALL carry an `aria-label` attribute (`"Open in popup"` and `"Kill session"` respectively)
+- **AND** all three buttons SHALL carry an `aria-label` attribute (`"Rename session"` / `"Open in popup"` / `"Kill session"` respectively)
 
-#### Scenario: Manual rows render Popup + Kill only (no Drawer)
+#### Scenario: Manual rows render Rename + Popup + Kill (no Drawer)
 - **GIVEN** a manual row (e.g. `memon-manual-foo`)
 - **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly two icon-only buttons: `Popup` and `Kill`
+- **THEN** the actions group SHALL contain exactly three icon-only buttons in this left-to-right order: `Rename`, `Popup`, `Kill`
 - **AND** no `Drawer` button SHALL be present in the DOM
 - **AND** clicking `Popup` SHALL open `/terminal-popup?sessionName=memon-manual-foo`
 
-#### Scenario: Matchable rows render Popup + Kill only (no Drawer)
+#### Scenario: Matchable rows render Rename + Popup + Kill (no Drawer)
 - **GIVEN** a matchable row (`memon-claude-project-a--run--foo-260507-103000`)
 - **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly two icon-only buttons: `Popup` and `Kill`
+- **THEN** the actions group SHALL contain exactly three icon-only buttons in this left-to-right order: `Rename`, `Popup`, `Kill`
 - **AND** no `Drawer` button SHALL be present in the DOM
 - **AND** clicking `Popup` SHALL open the standard popup URL with `project / scope / slug / agent` query params
 
-#### Scenario: Stale rows render Popup + Kill and are selectable in raw mode
+#### Scenario: Stale rows render Rename + Popup + Kill and are selectable in raw mode
 - **GIVEN** a stale row (e.g. `memon-claude-archived-proj--run--baz-...` where `archived-proj` is not in config)
 - **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly two icon-only buttons: `Popup` and `Kill`
+- **THEN** the actions group SHALL contain exactly three icon-only buttons in this left-to-right order: `Rename`, `Popup`, `Kill`
 - **AND** no `Drawer` button SHALL be present in the DOM
 - **AND** clicking `Popup` SHALL open `/terminal-popup?sessionName=memon-claude-archived-proj--run--baz-...&stale=unknown-project`
 - **AND** clicking the card body (or pressing Enter / Space when the card is focused) SHALL select the row and mount `<TerminalView mode="raw" sessionName={row.sessionName} />` in the right pane
 - **AND** the card SHALL render with `opacity-75` AND `role="button"` AND `tabIndex={0}` AND `cursor-pointer`
 - **AND** when selected the card SHALL also gain the `border-primary` outline (opacity stays at `0.75`)
 
-#### Scenario: Popup button on mobile is hidden for matchable and manual rows
+#### Scenario: Rename and Popup buttons are hidden on mobile, Kill stays visible
 - **GIVEN** the viewport is below the Tailwind `md` breakpoint
-- **WHEN** any matchable or manual row renders
-- **THEN** the `Popup` button SHALL carry class `hidden md:inline-flex` and not be visible
+- **WHEN** any matchable, manual, or stale row renders
+- **THEN** the `Rename` button SHALL carry class `hidden md:inline-flex` and not be visible
+- **AND** the `Popup` button SHALL carry class `hidden md:inline-flex` and not be visible
+- **AND** the `Kill` button SHALL remain visible (no `hidden` class)
 
 #### Scenario: Clicking a matchable row card selects that session
 - **GIVEN** a matchable row in the left pane and no session currently selected
@@ -259,6 +263,12 @@ The page SHALL be auth-gated per the existing `auth-system` rules.
 - **WHEN** the user clicks the `Popup` button on row `B`
 - **THEN** session `A` SHALL remain selected (right pane stays on A's terminal)
 - **AND** a popup window opens for `B`
+
+#### Scenario: Rename button click does not change selection
+- **GIVEN** session `A` is currently selected and session `B` is also visible
+- **WHEN** the user clicks the `Rename` button on row `B`
+- **THEN** session `A` SHALL remain selected (right pane stays on A's terminal)
+- **AND** the Rename dialog opens with row B's sessionName pre-filled in the input
 
 #### Scenario: Kill removes the session and clears selection if it was selected
 - **GIVEN** session `X` is currently selected
@@ -1331,4 +1341,162 @@ The banner SHALL NOT consume vertical space inside the iframe; the iframe-host c
 - **WHEN** the page mounts
 - **THEN** NO stale warning banner SHALL render
 - **AND** `<TerminalView mode="standard" ...>` SHALL mount normally
+
+### Requirement: Rename dialog opens from the per-row Rename button on /manage/tmux
+
+Clicking the per-row `Rename` icon-only button SHALL open a shadcn `Dialog` modal scoped to that row's sessionName. The dialog SHALL contain:
+
+- A title `Rename tmux session`.
+- A short description naming the current sessionName in `font-mono`.
+- A single `<Input>` pre-filled with the current sessionName (the FULL `memon-...` form, not the stripped display title). The input SHALL be auto-focused on dialog open and SHALL select-all so the user can immediately type-replace.
+- An inline validation message area below the input. Validation SHALL run on every keystroke and SHALL surface one of:
+  - "" (empty / valid) — no message, submit enabled.
+  - `must match memon-[A-Za-z0-9._-]+`
+  - `same as current name`
+  - any server error returned from a failed submit (e.g. `tmux session already exists`).
+- A `Rename` submit button — disabled when client validation fails or when a submit is in flight (button text changes to `Renaming…` while in flight).
+- A `Cancel` button that closes the dialog without firing the request.
+
+Submitting the dialog SHALL `POST /api/tmux-sessions/<oldName>/rename` with body `{ newName }` where `<oldName>` is URL-encoded. On 200:
+- The list query (`['tmux-sessions']`) SHALL be invalidated to force an immediate refetch.
+- A `sonner` toast `renamed <old> → <new>` SHALL be shown.
+- If `<oldName>` was the currently-selected session (URL `?session=<oldName>`), the URL SHALL be updated via `router.replace` to `?session=<newName>` so the right pane re-mounts attached to the new name. The right pane's `<TerminalView>` SHALL re-key on the new sessionName and re-call `POST /api/terminal/attach` for `<newName>` (the backend has already torn down the old ttyd entry, so a fresh ttyd is spawned).
+- The dialog closes.
+
+On 4xx error (validation, not-found, or conflict):
+- The server error message SHALL be displayed in the inline validation area.
+- The dialog SHALL NOT close.
+- The list query SHALL NOT be invalidated (the source-of-truth state is unchanged).
+
+On 5xx error:
+- A toast SHALL surface the generic error message.
+- The dialog stays open so the user can retry.
+
+The dialog SHALL be auth-gated by `<ViewerGuard>` on the trigger button (viewer-mode visitors never see the Rename button).
+
+#### Scenario: Dialog opens with pre-filled current name
+- **GIVEN** a matchable row for `memon-claude-project-a--run--foo-260507-103000`
+- **WHEN** the user clicks the `Rename` icon button on that row
+- **THEN** a shadcn `Dialog` opens with title `Rename tmux session`
+- **AND** the input is pre-filled with `memon-claude-project-a--run--foo-260507-103000`
+- **AND** the input is auto-focused and its contents are selected
+- **AND** the inline validation area is empty
+
+#### Scenario: Submit triggers POST and updates selection
+- **GIVEN** the Rename dialog is open for `memon-manual-old` and that row is the currently-selected session (URL is `/manage/tmux?session=memon-manual-old`)
+- **WHEN** the user changes the input to `memon-manual-new` and clicks `Rename`
+- **THEN** `POST /api/tmux-sessions/memon-manual-old/rename` fires with body `{ "newName": "memon-manual-new" }`
+- **AND** the response is 200 `{ ok: true, sessionName: "memon-manual-new" }`
+- **AND** the dialog closes
+- **AND** a toast `renamed memon-manual-old → memon-manual-new` appears
+- **AND** the list query is invalidated and the row reappears under its new name in the next render
+- **AND** the URL becomes `/manage/tmux?session=memon-manual-new` via `router.replace`
+- **AND** the right pane's `<TerminalView key="memon-manual-new" mode="raw" sessionName="memon-manual-new" />` re-mounts and attaches a fresh ttyd
+
+#### Scenario: Invalid name shows inline validation and disables submit
+- **GIVEN** the Rename dialog is open for `memon-manual-foo`
+- **WHEN** the user clears the input and types `nopfx`
+- **THEN** the inline validation area shows `must match memon-[A-Za-z0-9._-]+`
+- **AND** the `Rename` submit button is disabled
+
+#### Scenario: No-op rename (same name) is rejected client-side
+- **GIVEN** the Rename dialog is open for `memon-manual-foo`
+- **WHEN** the input contains exactly `memon-manual-foo` (unchanged)
+- **THEN** the inline validation area shows `same as current name`
+- **AND** the `Rename` submit button is disabled
+- **AND** no HTTP request is fired
+
+#### Scenario: Duplicate target shows server error and keeps dialog open
+- **GIVEN** the Rename dialog is open for `memon-manual-foo`
+- **AND** another tmux session `memon-manual-bar` already exists on the host
+- **WHEN** the user changes the input to `memon-manual-bar` and clicks `Rename`
+- **THEN** `POST /api/tmux-sessions/memon-manual-foo/rename` returns 409 `{ error: { code: "CONFLICT", message: "tmux session memon-manual-bar already exists" } }`
+- **AND** the dialog stays open
+- **AND** the inline validation area shows `tmux session memon-manual-bar already exists`
+- **AND** the list query is NOT invalidated
+- **AND** no toast is shown
+
+#### Scenario: Cancel closes the dialog without firing a request
+- **GIVEN** the Rename dialog is open with a modified input value
+- **WHEN** the user clicks `Cancel`
+- **THEN** the dialog closes
+- **AND** no HTTP request is fired
+- **AND** the underlying session is unchanged
+
+### Requirement: POST /api/tmux-sessions/:name/rename renames a tmux session
+
+The web backend SHALL expose `POST /api/tmux-sessions/:name/rename` with body `{ newName: string }` that renames an existing tmux session via `tmux rename-session -t <oldName> <newName>`.
+
+The endpoint SHALL be classified as a `shell` route under `auth-system` (it executes a process), SHALL require owner Basic auth or session cookie, and SHALL refuse viewer-cookie auth.
+
+Path validation:
+- `<oldName>` (URL path param, URL-decoded) MUST match `^memon-[A-Za-z0-9._-]+$`. Otherwise the response is 400 `{ error: { code: "BAD_REQUEST", message: "name must match memon-[A-Za-z0-9._-]+" } }` and no `tmux` shell-out runs.
+
+Body validation:
+- `newName` MUST be a non-empty string matching `^memon-[A-Za-z0-9._-]+$`. Otherwise 400.
+- `newName` MUST differ from `<oldName>`. Otherwise 400 `{ error: { code: "BAD_REQUEST", message: "newName must differ from oldName" } }`.
+
+Pre-execution checks:
+- The old session MUST exist on the host (`tmux has-session -t <oldName>` returns 0). Otherwise 404 `{ error: { code: "NOT_FOUND", message: "tmux session not found" } }`.
+- The new name MUST NOT already exist on the host (`tmux has-session -t <newName>` returns non-0). Otherwise 409 `{ error: { code: "CONFLICT", message: "tmux session <newName> already exists" } }`.
+
+Execution sequence (in order):
+1. If the terminal manager has a live ttyd entry under `<oldName>`, call `stopSession(<oldName>)` to tear it down. Errors from `stopSession` SHALL be caught and logged but SHALL NOT prevent the rename from proceeding.
+2. Run `tmux rename-session -t <oldName> <newName>`. On non-0 exit, return 500 `{ error: { message: "<stderr>" } }`.
+3. On success, return 200 `{ ok: true, sessionName: "<newName>" }`.
+
+The endpoint SHALL NOT touch on-disk memon artefacts. Renaming a `memon-<agent>-<project>--<scope>--<slug>` session does NOT rename the corresponding run dir / exp doc.
+
+#### Scenario: Successful rename
+- **GIVEN** the host has session `memon-manual-old` AND no session `memon-manual-new` exists
+- **WHEN** an authenticated owner `POST`s to `/api/tmux-sessions/memon-manual-old/rename` with body `{ "newName": "memon-manual-new" }`
+- **THEN** `tmux rename-session -t memon-manual-old memon-manual-new` runs and exits 0
+- **AND** the response is 200 with body `{ "ok": true, "sessionName": "memon-manual-new" }`
+- **AND** subsequent `GET /api/tmux-sessions` lists `memon-manual-new` and NOT `memon-manual-old`
+
+#### Scenario: Live ttyd is torn down before rename
+- **GIVEN** the manager holds a live ttyd entry for `memon-manual-old` on port 7683
+- **WHEN** the rename endpoint fires
+- **THEN** the manager's entry under `memon-manual-old` is removed BEFORE `tmux rename-session` runs
+- **AND** after the rename, `lookupSession("memon-manual-old")` returns `null`
+- **AND** the next `POST /api/terminal/attach { sessionName: "memon-manual-new" }` spawns a fresh ttyd entry for the new name
+
+#### Scenario: Old name not found
+- **WHEN** an owner `POST`s `/api/tmux-sessions/memon-manual-ghost/rename` with `{ newName: "memon-manual-x" }` and no `memon-manual-ghost` exists on the host
+- **THEN** the response is 404 with `{ error: { code: "NOT_FOUND", message: "tmux session not found" } }`
+- **AND** no `tmux rename-session` runs
+
+#### Scenario: New name already exists (conflict)
+- **GIVEN** sessions `memon-manual-foo` AND `memon-manual-bar` BOTH exist on the host
+- **WHEN** an owner `POST`s `/api/tmux-sessions/memon-manual-foo/rename` with `{ newName: "memon-manual-bar" }`
+- **THEN** the response is 409 with `{ error: { code: "CONFLICT", message: "tmux session memon-manual-bar already exists" } }`
+- **AND** no `tmux rename-session` runs
+- **AND** the manager's entry for `memon-manual-foo` is NOT torn down
+
+#### Scenario: Empty newName rejected
+- **WHEN** an owner `POST`s `/api/tmux-sessions/memon-manual-foo/rename` with `{ newName: "" }`
+- **THEN** the response is 400 with `{ error: { code: "BAD_REQUEST", message: "newName must match memon-[A-Za-z0-9._-]+" } }`
+
+#### Scenario: newName without memon- prefix rejected
+- **WHEN** the body is `{ newName: "nopfx" }`
+- **THEN** the response is 400 with a message mentioning the `memon-` prefix requirement
+
+#### Scenario: newName equal to oldName rejected
+- **WHEN** the body is `{ newName: "memon-manual-foo" }` and the path is `/api/tmux-sessions/memon-manual-foo/rename`
+- **THEN** the response is 400 with `{ error: { code: "BAD_REQUEST", message: "newName must differ from oldName" } }`
+
+#### Scenario: Anonymous request rejected
+- **WHEN** an anonymous client `POST`s `/api/tmux-sessions/<n>/rename`
+- **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"`
+- **AND** no `tmux rename-session` runs
+
+#### Scenario: Viewer cookie rejected
+- **WHEN** a request bearing only a `memon-shares` viewer cookie hits the endpoint
+- **THEN** the response is 401 (the route is `shell`-classified and viewer cookies do not authenticate shell routes)
+- **AND** no `tmux rename-session` runs
+
+#### Scenario: Path param fails name regex
+- **WHEN** the URL path is `/api/tmux-sessions/not-a-memon-prefix/rename`
+- **THEN** the response is 400 with `{ error: { code: "BAD_REQUEST", message: "name must match memon-[A-Za-z0-9._-]+" } }`
+- **AND** no `tmux` shell-out runs
 

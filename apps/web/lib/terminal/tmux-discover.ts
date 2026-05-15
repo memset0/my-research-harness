@@ -183,6 +183,44 @@ export async function killTmuxSessionByName(name: string): Promise<void> {
   await execTmux(['kill-session', '-t', name])
 }
 
+/**
+ * Rename a tmux session in place. Preserves the pane / process /
+ * scrollback (tmux rename-session does NOT disconnect attached
+ * clients). Tears down the manager's ttyd entry for the old name
+ * BEFORE the rename so we don't leak a key pointing at a name that
+ * no longer exists. Callers map thrown errors to HTTP status:
+ *   - `code === 'NOT_FOUND'`     → 404 (old session missing)
+ *   - `code === 'CONFLICT'`      → 409 (new name already exists)
+ *   - any other Error            → 500 (tmux exec failure etc.)
+ */
+export async function renameTmuxSession(input: {
+  oldName: string
+  newName: string
+}): Promise<void> {
+  const { oldName, newName } = input
+  if (!SAFE_NAME_RE.test(oldName)) {
+    throw new Error(`refusing to rename: oldName does not match memon-[A-Za-z0-9._-]+`)
+  }
+  if (!SAFE_NAME_RE.test(newName)) {
+    throw new Error(`refusing to rename: newName does not match memon-[A-Za-z0-9._-]+`)
+  }
+  if (oldName === newName) {
+    throw new Error('newName must differ from oldName')
+  }
+  if (!(await tmuxHasSession(oldName))) {
+    throw Object.assign(new Error('old session not found'), { code: 'NOT_FOUND' as const })
+  }
+  if (await tmuxHasSession(newName)) {
+    throw Object.assign(new Error(`tmux session ${newName} already exists`), {
+      code: 'CONFLICT' as const,
+    })
+  }
+  await stopSession(oldName).catch(() => {
+    /* ignore — manager may not have an entry */
+  })
+  await execTmux(['rename-session', '-t', oldName, newName])
+}
+
 /** Prefix the user's typed name with `memon-manual-` to form the full
  *  tmux session name. */
 const MANUAL_PREFIX = 'memon-manual-'
