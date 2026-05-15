@@ -17,6 +17,7 @@ import { TerminalPopupClient } from './terminal-popup-client'
 
 const VALID_AGENTS = ['none', 'claude', 'codex', 'opencode'] as const
 const VALID_SCOPES = ['exp', 'run', 'project'] as const
+const VALID_STALE_REASONS = ['unknown-project', 'unknown-target'] as const
 const RAW_SESSION_NAME_RE = /^memon-[A-Za-z0-9._-]+$/
 
 export async function generateMetadata({
@@ -28,6 +29,7 @@ export async function generateMetadata({
     slug?: string
     agent?: string
     sessionName?: string
+    stale?: string
   }>
 }): Promise<Metadata> {
   try {
@@ -56,13 +58,23 @@ export default async function TerminalPopupPage({
     slug?: string
     agent?: string
     sessionName?: string
+    stale?: string
   }>
 }) {
   const sp = await searchParams
 
   // Raw mode takes precedence when a valid sessionName is supplied.
   if (sp.sessionName && RAW_SESSION_NAME_RE.test(sp.sessionName)) {
-    return <TerminalPopupClient mode="raw" sessionName={sp.sessionName} />
+    const staleReason = (VALID_STALE_REASONS as readonly string[]).includes(sp.stale ?? '')
+      ? (sp.stale as (typeof VALID_STALE_REASONS)[number])
+      : null
+    return (
+      <TerminalPopupClient
+        mode="raw"
+        sessionName={sp.sessionName}
+        staleReason={staleReason}
+      />
+    )
   }
 
   const agent = (VALID_AGENTS as readonly string[]).includes(sp.agent ?? '')

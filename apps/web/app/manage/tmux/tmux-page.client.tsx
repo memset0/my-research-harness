@@ -55,6 +55,7 @@ import {
   ResizablePanelGroup,
 } from '../../../components/ui/resizable'
 import type { GroupImperativeHandle, Layout } from 'react-resizable-panels'
+import { StaleBanner } from '../../../components/stale-banner'
 import { TerminalView } from '../../../components/terminal-view'
 import { ViewerGuard } from '../../../components/viewer-guard'
 import { useMediaQuery } from '../../../lib/use-media-query'
@@ -111,10 +112,11 @@ function popupUrl(row: TmuxSessionRow): string | null {
       `&agent=${encodeURIComponent(p.agent)}`
     )
   }
-  if (row.staleReason === null) {
-    return `/terminal-popup?sessionName=${encodeURIComponent(row.sessionName)}`
+  const base = `/terminal-popup?sessionName=${encodeURIComponent(row.sessionName)}`
+  if (row.staleReason !== null) {
+    return `${base}&stale=${encodeURIComponent(row.staleReason)}`
   }
-  return null
+  return base
 }
 
 function targetHref(row: TmuxSessionRow): string | null {
@@ -499,11 +501,9 @@ function SessionCard({
   const title = stripTitle(row.sessionName)
 
   const handleSelect = () => {
-    if (stale) return
     onSelect(row.sessionName)
   }
   const handleKey: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
-    if (stale) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onSelect(row.sessionName)
@@ -526,16 +526,17 @@ function SessionCard({
 
   return (
     <div
-      role={stale ? undefined : 'button'}
-      tabIndex={stale ? -1 : 0}
+      role="button"
+      tabIndex={0}
       onClick={handleSelect}
       onKeyDown={handleKey}
       title={cardTitle}
       className={cn(
         'group rounded-md border bg-card p-2.5 transition-colors',
-        stale ? 'opacity-75' : 'cursor-pointer hover:bg-accent/40',
-        selected && !stale && 'border-primary',
-        !stale && 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'cursor-pointer hover:bg-accent/40',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        stale && 'opacity-75',
+        selected && 'border-primary',
       )}
     >
       {/* Content row 1: title + time + icon-only actions */}
@@ -723,10 +724,13 @@ function RightPaneEmpty() {
 
 function RightPane({ row }: { row: TmuxSessionRow | null }) {
   if (row === null) return <RightPaneEmpty />
-  const stale = row.staleReason !== null
-  if (stale) return <RightPaneEmpty />
   const popup = popupUrl(row)
+  // Stale rows are matchable-by-parse but the on-disk target lookup
+  // failed; we still attach via raw mode so the user can read / kill
+  // the running pane. A banner above the iframe makes the staleness
+  // explicit.
   const isMatchable =
+    row.staleReason === null &&
     row.matchable &&
     row.parsed.agent !== null &&
     row.parsed.project !== null &&
@@ -775,6 +779,9 @@ function RightPane({ row }: { row: TmuxSessionRow | null }) {
           </ViewerGuard>
         )}
       </div>
+      {row.staleReason !== null && (
+        <StaleBanner reason={row.staleReason} sessionName={row.sessionName} />
+      )}
       <div className="flex flex-1 flex-col min-h-0">
         {isMatchable ? (
           <TerminalView

@@ -39,8 +39,7 @@ The **content** zone SHALL contain:
     - The title SHALL render in `font-mono text-[11px] font-semibold` with `min-w-0 flex-1 truncate` so it fills available width and truncates with ellipsis. The semibold weight differentiates the title from the surrounding regular-weight content + ellipsis-truncated badge values.
   - A **last activity** label (relative time, e.g. `5m ago`). The timestamp the label renders is the more recent of `row.tmuxLastActivity` and `row.lastStateChangeAt` — so a state transition (running ↔ idle ↔ attention ↔ done) refreshes the displayed clock back to "just now" alongside tmux's own input/output activity. The label SHALL be `text-[10px] text-muted-foreground` in the default sans-serif font (NOT monospace — relative-time strings like `5m ago` are prose, not code, and the sans rendering reads more naturally next to the title and buttons). It SHALL render when EITHER timestamp is parseable; when BOTH are absent/unparseable, the label is omitted entirely. It sits to the IMMEDIATE LEFT of the action buttons on row 1 (NOT in the badge row).
   - An **actions** group, right-aligned. Action buttons depend on row classification:
-    - **Matchable** and **Manual** rows render exactly two actions: a `Popup` button and a `Kill` button. The `Popup` button SHALL be hidden on viewports below the Tailwind `md` breakpoint (`hidden md:inline-flex`).
-    - **Stale** rows render only the `Kill` button. The `Popup` button is omitted.
+    - **Matchable**, **Manual**, AND **Stale** rows render exactly two actions: a `Popup` button and a `Kill` button. The `Popup` button SHALL be hidden on viewports below the Tailwind `md` breakpoint (`hidden md:inline-flex`).
     - The `Open in drawer` button is REMOVED for every row category. Its function is replaced by clicking the card body to select the row.
     - Both buttons SHALL render as **icon-only** — the leading lucide icon stays (`ExternalLink` for Popup, `Trash2` for Kill) but the visible text labels `"Popup"` and `"Kill"` SHALL NOT be rendered. The buttons MUST continue to carry their `aria-label` (`"Open in popup"` / `"Kill session"`) for accessibility.
 
@@ -81,10 +80,10 @@ Each badge in row 2 SHALL include a `lucide-react` icon at its leading edge (siz
   - A standalone uppercase category chip (e.g. a leading `RUN` / `EXP` / `MANUAL` chip) SHALL NOT be rendered either. The scope/target badge above carries the category signal via its icon + color.
 
 Click handling on each row card:
-- For **Matchable** and **Manual** rows, clicking the card BODY (anywhere except the action buttons or any badge link) SHALL select that row. Action buttons SHALL stop propagation so clicking the icon-only `Popup` or `Kill` does NOT change the selection. The scope/target badge link AND the project-badge link SHALL also stop propagation.
-- For **Stale** rows, clicking the card body SHALL be a no-op — stale rows cannot be selected and cannot mount a terminal. The card SHALL render with reduced opacity (`opacity-75`) and SHALL NOT be a focusable interactive region (`role` is not `button`, `tabIndex` is `-1`).
+- For **Matchable**, **Manual**, AND **Stale** rows, clicking the card BODY (anywhere except the action buttons or any badge link) SHALL select that row. Action buttons SHALL stop propagation so clicking the icon-only `Popup` or `Kill` does NOT change the selection. The scope/target badge link AND the project-badge link SHALL also stop propagation.
+- For **Stale** rows specifically, the card SHALL keep `opacity-75` (signalling "no current memon target") but SHALL be a focusable interactive region (`role="button"`, `tabIndex={0}`, `cursor-pointer`, `focus-visible:ring-*`) so it behaves identically to manual rows for keyboard and pointer interaction. The reduced opacity is the only visual deviation from matchable/manual rows; it does NOT gate selection.
 
-The currently-selected row SHALL be visually distinguished by a **full border in the primary theme color** (e.g. `border-primary` on all four sides), NOT by a leading-edge accent bar or background fill. The selected card's background SHALL remain the same `bg-card` (white in light mode) as the unselected card.
+The currently-selected row SHALL be visually distinguished by a **full border in the primary theme color** (e.g. `border-primary` on all four sides), NOT by a leading-edge accent bar or background fill. The selected card's background SHALL remain the same `bg-card` (white in light mode) as the unselected card. This applies to stale rows too: a selected stale row SHALL gain the `border-primary` outline while keeping its `opacity-75`.
 
 The unselected card SHALL render on the `bg-card` surface color (white in light mode). The previous transparent-background look is removed so cards read as distinct elements against the SidebarInset's `bg-background`.
 
@@ -228,12 +227,15 @@ The page SHALL be auth-gated per the existing `auth-system` rules.
 - **AND** no `Drawer` button SHALL be present in the DOM
 - **AND** clicking `Popup` SHALL open the standard popup URL with `project / scope / slug / agent` query params
 
-#### Scenario: Stale rows render Kill only and are non-selectable
+#### Scenario: Stale rows render Popup + Kill and are selectable in raw mode
 - **GIVEN** a stale row (e.g. `memon-claude-archived-proj--run--baz-...` where `archived-proj` is not in config)
 - **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly one icon-only button: `Kill`
-- **AND** no `Popup` or `Drawer` button SHALL be present in the DOM
-- **AND** clicking the card body SHALL NOT change the selected session
+- **THEN** the actions group SHALL contain exactly two icon-only buttons: `Popup` and `Kill`
+- **AND** no `Drawer` button SHALL be present in the DOM
+- **AND** clicking `Popup` SHALL open `/terminal-popup?sessionName=memon-claude-archived-proj--run--baz-...&stale=unknown-project`
+- **AND** clicking the card body (or pressing Enter / Space when the card is focused) SHALL select the row and mount `<TerminalView mode="raw" sessionName={row.sessionName} />` in the right pane
+- **AND** the card SHALL render with `opacity-75` AND `role="button"` AND `tabIndex={0}` AND `cursor-pointer`
+- **AND** when selected the card SHALL also gain the `border-primary` outline (opacity stays at `0.75`)
 
 #### Scenario: Popup button on mobile is hidden for matchable and manual rows
 - **GIVEN** the viewport is below the Tailwind `md` breakpoint
@@ -445,7 +447,14 @@ The right pane of `/manage/tmux` SHALL render one of:
 
 The right pane SHALL include a slim **header bar** ABOVE the `<TerminalView>` iframe when a session is selected, showing:
 - The full (unstripped) session name in monospace.
-- A `Pop out` button that opens the same `/terminal-popup` URL the per-row `Popup` button would (standard query shape for matchable, `?sessionName=` for manual).
+- A `Pop out` button that opens the same `/terminal-popup` URL the per-row `Popup` button would (standard query shape for matchable, `?sessionName=` for manual, `?sessionName=&stale=<reason>` for stale).
+
+When the selected row is **stale** (`row.staleReason !== null`), the right pane SHALL render a one-line **stale warning banner** between the slim header bar and the `<TerminalView>` iframe-host container. The banner SHALL:
+- be a single horizontal `flex` row spanning the full width of the right pane,
+- carry the same amber palette used by the list-row `Stale (<reason>)` badge (e.g. `bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200` with an `AlertTriangle` lucide icon at its leading edge),
+- read `Stale: <reason> — memon links won't resolve. ttyd is still attached.` (where `<reason>` is one of `unknown-project` or `unknown-target`),
+- include the full sessionName in `font-mono` at the end of the line (truncating with ellipsis if it overflows),
+- NOT be dismissible — no close button, no localStorage state.
 
 The `<TerminalView>` SHALL be keyed on `sessionName` (`key={sessionName}` on the JSX element) so that switching the selected row tears down the previous instance (firing its cleanup effect) and mounts a fresh instance for the new session. This guarantees:
 - The previous iframe is removed from the DOM (no zombie connections).
@@ -454,9 +463,9 @@ The `<TerminalView>` SHALL be keyed on `sessionName` (`key={sessionName}` on the
 `<TerminalView>` mode dispatch:
 - Matchable row (`row.matchable === true`): mode is `standard`, wired to `row.parsed.project / scope / slug / agent`. The component internally calls `POST /api/terminal/start`.
 - Manual row (`row.matchable === false && row.staleReason === null`): mode is `raw`, wired to `row.sessionName`. The component internally calls `POST /api/terminal/attach`.
-- Stale row: NEVER selectable, so no terminal mount path applies.
+- Stale row (`row.staleReason !== null`): mode is `raw`, wired to `row.sessionName`. The component internally calls `POST /api/terminal/attach`. The right pane additionally renders the stale warning banner described above.
 
-The right-pane container SHALL be `flex flex-col h-full min-h-0` so the iframe stretches to fill the pane and the iframe scrolls internally rather than the page scrolling.
+The right-pane container SHALL be `flex flex-col h-full min-h-0` so the iframe stretches to fill the pane and the iframe scrolls internally rather than the page scrolling. The banner SHALL NOT consume scroll space inside the iframe — it lives outside the iframe-host container.
 
 #### Scenario: Empty state placeholder when nothing is selected
 - **GIVEN** the user is on `/manage/tmux` with no `?session=` and has not clicked any row
@@ -469,12 +478,30 @@ The right-pane container SHALL be `flex flex-col h-full min-h-0` so the iframe s
 - **WHEN** the user clicks the row card
 - **THEN** the right pane mounts `<TerminalView mode="standard" project="project-a" scope="run" slug="foo-260507-103000" agent="claude" />`
 - **AND** the header bar shows the full `memon-claude-project-a--run--foo-260507-103000` text and a `Pop out` button
+- **AND** no stale warning banner SHALL be present
 
 #### Scenario: Selecting a manual row mounts TerminalView in raw mode
 - **GIVEN** a manual row for `memon-manual-foo`
 - **WHEN** the user clicks the row card
 - **THEN** the right pane mounts `<TerminalView mode="raw" sessionName="memon-manual-foo" />`
 - **AND** the header bar shows `memon-manual-foo` and a `Pop out` button that opens `/terminal-popup?sessionName=memon-manual-foo`
+- **AND** no stale warning banner SHALL be present
+
+#### Scenario: Selecting a stale row mounts TerminalView in raw mode with a stale banner
+- **GIVEN** a stale row `memon-claude-archived-proj--run--baz-...` where `archived-proj` is not in config (so `row.staleReason === 'unknown-project'`)
+- **WHEN** the user clicks the row card
+- **THEN** the right pane mounts `<TerminalView mode="raw" sessionName="memon-claude-archived-proj--run--baz-..." />`
+- **AND** a stale warning banner SHALL render between the slim header bar and the iframe-host container
+- **AND** the banner SHALL include the `AlertTriangle` icon, the text `Stale: unknown-project — memon links won't resolve. ttyd is still attached.`, and the full sessionName in `font-mono`
+- **AND** the banner SHALL carry the amber palette (`bg-amber-100`/`dark:bg-amber-900/40`)
+- **AND** the banner SHALL NOT have a close/dismiss button
+
+#### Scenario: Switching from a stale row to a matchable row clears the banner
+- **GIVEN** the right pane currently shows a stale session with the warning banner visible
+- **WHEN** the user clicks a matchable row in the list
+- **THEN** the previous `<TerminalView>` SHALL unmount
+- **AND** a new `<TerminalView mode="standard" ...>` mounts for the matchable row
+- **AND** the stale warning banner SHALL NOT be in the DOM
 
 #### Scenario: Switching selected sessions unmounts the previous TerminalView
 - **GIVEN** session `A` is selected and its `<TerminalView>` is mounted with `key="memon-..-A"`
@@ -483,11 +510,12 @@ The right-pane container SHALL be `flex flex-col h-full min-h-0` so the iframe s
 - **AND** a new `<TerminalView key="memon-..-B">` SHALL mount with the right props
 - **AND** the header bar's sessionName updates to B's full name
 
-#### Scenario: Stale rows do not mount the terminal
-- **GIVEN** a stale row in the list
-- **WHEN** the user clicks the stale row's card body
-- **THEN** no `<TerminalView>` is mounted
-- **AND** the right pane stays on whatever it showed before (empty state, or a previously-selected session's terminal)
+#### Scenario: Pop out from the right-pane header on a stale row carries the stale query param
+- **GIVEN** a stale session is currently selected with `row.staleReason === 'unknown-target'`
+- **WHEN** the user clicks `Pop out` in the right-pane header
+- **THEN** a popup window opens at `/terminal-popup?sessionName=<encoded>&stale=unknown-target`
+- **AND** the popup page renders the stale warning banner with the same shape as the inline banner
+- **AND** the right pane's iframe is NOT torn down (the manager dedups concurrent attach calls for the same sessionName)
 
 #### Scenario: Pop out from the right-pane header
 - **GIVEN** session `memon-claude-project-a--run--foo-260507-103000` is currently selected
@@ -653,7 +681,11 @@ When condition 1 holds but 2 or 3 or 4 fails, the row SHALL be classified as **s
 - `unknown-project` — condition 2 fails.
 - `unknown-target` — condition 2 holds but 3 or 4 fails.
 
-Stale classification SHALL NOT prevent the `Kill` action from working — `Kill` remains available on every row regardless of matchability. Manual classification SHALL NOT prevent `Kill` either. `Open in drawer` and `Open in popup` are intentionally NOT exposed on stale or manual rows because both lack a parsed target to construct a startTerminal call.
+Stale classification SHALL NOT prevent the `Kill` action from working — `Kill` remains available on every row regardless of matchability. Manual classification SHALL NOT prevent `Kill` either.
+
+Stale classification SHALL NOT prevent ttyd attach either: stale rows expose the same `Popup` icon button as manual rows and SHALL mount `<TerminalView mode="raw">` in the right pane when selected. The right pane and popup page SHALL render a stale warning banner (see the **Right pane renders inline terminal for the selected session** requirement) so the user understands that memon-side navigation links won't resolve while the underlying tmux session is still attachable. Manual rows and matchable rows are unaffected by the banner requirement.
+
+The `Open in drawer` button has been REMOVED for every row category (the drawer-based primary surface was retired by the manage-tmux split change); its function is taken by clicking the card body to mount the inline right-pane terminal.
 
 #### Scenario: Removed project marks rows stale
 - **GIVEN** the host has session `memon-claude-old-proj--run--foo-...` AND `old-proj` is not in `runtime.config.projects`
@@ -683,6 +715,13 @@ Stale classification SHALL NOT prevent the `Kill` action from working — `Kill`
 - **GIVEN** a manual row (`staleReason: null`, not matchable)
 - **WHEN** the user clicks `Kill` and confirms
 - **THEN** `DELETE /api/tmux-sessions/<name>` fires and on success the row disappears
+
+#### Scenario: Stale row Popup opens raw popup with stale query param
+- **GIVEN** a stale row (`row.staleReason === 'unknown-project'`)
+- **WHEN** the user clicks the row's icon-only `Popup` button
+- **THEN** a popup window opens at `/terminal-popup?sessionName=<encoded>&stale=unknown-project`
+- **AND** the popup page mounts `<TerminalView mode="raw">` for that sessionName
+- **AND** the popup page renders the stale warning banner above the iframe
 
 ### Requirement: Server-side pane-info enrichment with bounded shell-out cost
 
@@ -1245,4 +1284,51 @@ The page SHALL accomplish this by:
 - **WHEN** the hook initializes
 - **THEN** the initial value SHALL be `false` (the prior behavior is
   preserved when no `defaultValue` is supplied)
+
+### Requirement: Terminal popup page renders a stale warning banner when stale query param is present
+
+The `/terminal-popup` route SHALL accept an optional `stale=<reason>` query parameter alongside `sessionName=<name>`. When BOTH are present AND `<reason>` matches one of `unknown-project` / `unknown-target`, the popup page SHALL render a one-line stale warning banner ABOVE the `<TerminalView mode="raw" fullscreen />` iframe.
+
+The banner SHALL:
+- be a single horizontal `flex` row spanning the full viewport width,
+- carry the amber palette (`bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200`),
+- include an `AlertTriangle` lucide icon at the leading edge,
+- read `Stale: <reason> — memon links won't resolve. ttyd is still attached.`,
+- include the sessionName in `font-mono` at the end of the line (truncating with ellipsis if it overflows the viewport width),
+- NOT be dismissible — no close button, no localStorage state.
+
+When `sessionName=` is present but `stale=` is absent or carries an unrecognized value, the popup page SHALL render only the iframe (no banner) — preserving the existing manual-popup behavior. When `sessionName=` is absent (standard-mode popup), the `stale=` param SHALL be ignored entirely.
+
+The banner SHALL NOT consume vertical space inside the iframe; the iframe-host container SHALL still stretch to fill the remaining viewport height (e.g. via a `min-h-0 flex-1` flex child below a fixed-height banner row).
+
+#### Scenario: Raw popup with stale=unknown-project renders the banner
+- **GIVEN** the user opens `/terminal-popup?sessionName=memon-claude-archived--run--baz-...&stale=unknown-project`
+- **WHEN** the page mounts
+- **THEN** a one-line amber stale warning banner SHALL render at the top of the viewport
+- **AND** the banner text SHALL be `Stale: unknown-project — memon links won't resolve. ttyd is still attached.`
+- **AND** the banner SHALL include the sessionName in `font-mono`
+- **AND** below the banner the `<TerminalView mode="raw" fullscreen />` iframe SHALL fill the remaining viewport height
+
+#### Scenario: Raw popup with stale=unknown-target renders the banner
+- **GIVEN** the user opens `/terminal-popup?sessionName=memon-claude-project-a--run--archived-...&stale=unknown-target`
+- **WHEN** the page mounts
+- **THEN** the banner text SHALL include the substring `Stale: unknown-target`
+
+#### Scenario: Manual popup (no stale param) renders no banner
+- **GIVEN** the user opens `/terminal-popup?sessionName=memon-manual-foo`
+- **WHEN** the page mounts
+- **THEN** NO stale warning banner SHALL render
+- **AND** the `<TerminalView mode="raw" fullscreen />` iframe SHALL fill the full viewport
+
+#### Scenario: Popup with invalid stale value ignores the banner
+- **GIVEN** the user opens `/terminal-popup?sessionName=memon-manual-foo&stale=garbage`
+- **WHEN** the page mounts
+- **THEN** NO stale warning banner SHALL render
+- **AND** the `<TerminalView mode="raw" fullscreen />` iframe SHALL fill the full viewport
+
+#### Scenario: Standard-mode popup ignores stale param
+- **GIVEN** the user opens `/terminal-popup?project=project-a&scope=run&slug=foo-...&agent=claude&stale=unknown-project`
+- **WHEN** the page mounts
+- **THEN** NO stale warning banner SHALL render
+- **AND** `<TerminalView mode="standard" ...>` SHALL mount normally
 

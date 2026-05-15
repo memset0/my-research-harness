@@ -1,25 +1,51 @@
 'use client'
 
+import { StaleBanner, type StaleReason } from '../../components/stale-banner'
 import { TerminalView } from '../../components/terminal-view'
 import type { TerminalAgentKind, TerminalScopeKind } from '../../lib/api'
 
-export function TerminalPopupClient({
-  project,
-  scope,
-  slug,
-  agent,
-}: {
-  project: string
-  scope: TerminalScopeKind
-  slug: string
-  agent: TerminalAgentKind
-}) {
+export type TerminalPopupClientProps =
+  | {
+      mode: 'standard'
+      project: string
+      scope: TerminalScopeKind
+      slug: string
+      agent: TerminalAgentKind
+    }
+  | {
+      mode: 'raw'
+      sessionName: string
+      staleReason?: StaleReason | null
+    }
+
+export function TerminalPopupClient(props: TerminalPopupClientProps) {
+  if (props.mode === 'raw') {
+    if (props.staleReason) {
+      // Banner above the iframe — wrap in a flex column so the banner
+      // takes its content height and TerminalView fills the rest.
+      // Drop `fullscreen` here since the wrapper provides the viewport
+      // sizing; TerminalView falls back to `h-full w-full`.
+      return (
+        <div className="flex h-svh w-svw flex-col bg-zinc-950">
+          <StaleBanner
+            reason={props.staleReason}
+            sessionName={props.sessionName}
+          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <TerminalView mode="raw" sessionName={props.sessionName} />
+          </div>
+        </div>
+      )
+    }
+    return <TerminalView mode="raw" sessionName={props.sessionName} fullscreen />
+  }
   return (
     <TerminalView
-      project={project}
-      scope={scope}
-      slug={slug}
-      agent={agent}
+      mode="standard"
+      project={props.project}
+      scope={props.scope}
+      slug={props.slug}
+      agent={props.agent}
       fullscreen
     />
   )
