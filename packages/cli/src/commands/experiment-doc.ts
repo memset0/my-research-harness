@@ -1,8 +1,10 @@
-// memon experiment {ls, show, create, link, unlink, delete} — v3 exp-doc commands.
+// memon experiment {ls, show, create, link, unlink, delete} — exp-doc commands.
 //
-// These operate on `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md`. Run-level
-// operations (status set / readme write / archive / unarchive / rename) live in
-// experiment.ts (legacy file name) and run-rename.ts respectively.
+// These operate on `<projectRoot>/docs/experiments/E<NNNN>-<slug>/README.md`
+// (v5 folder layout). Run-level operations (status set / readme write /
+// archive / unarchive) live in experiment.ts (legacy file name from a
+// pre-v3 rename pass); run rename lives in run-rename.ts. There is no
+// experiment-rename command yet.
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'

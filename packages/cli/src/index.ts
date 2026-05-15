@@ -33,7 +33,7 @@ import {
   runExperimentUnarchiveDoc,
   runExperimentUnlink,
 } from './commands/experiment-doc.js'
-import { EXPERIMENT_FILENAME_REGEX, RUN_DIR_REGEX } from '@memon/core'
+import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
 import { runRunWarningAdd } from './commands/run-warning.js'
@@ -225,7 +225,7 @@ program
 
 const experiment = program
   .command('experiment')
-  .description('experiment-doc commands (v3 docs/experiments/E<NNNN>-<slug>.md)')
+  .description('experiment-doc commands (docs/experiments/E<NNNN>-<slug>/README.md)')
 
 experiment
   .command('ls')
@@ -245,7 +245,7 @@ experiment
 
 experiment
   .command('create <slug>')
-  .description('allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>.md')
+  .description('allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>/README.md')
   .option('--title <text>', 'human-readable title')
   .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
   .option('--from-run <run-dir>', 'bind an existing run as the first member')
@@ -315,7 +315,7 @@ status
   )
   .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
     const g = readGlobals()
-    if (`${id}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+    if (EXPERIMENT_DIR_REGEX.test(id)) {
       // Exp-id form (v3+) — operate on the exp doc.
       await runExperimentStatusSet({
         ...g,
@@ -333,7 +333,7 @@ status
     }
     emitErrorAndExit(
       'BAD_REQUEST',
-      `id "${id}" matches neither EXPERIMENT_FILENAME_REGEX (E<NNNN>-<slug>) nor RUN_DIR_REGEX (<slug>-<YYMMDD>-<HHMMSS>)`,
+      `id "${id}" matches neither EXPERIMENT_DIR_REGEX (E<NNNN>-<slug>) nor RUN_DIR_REGEX (<slug>-<YYMMDD>-<HHMMSS>)`,
     )
   })
 
@@ -466,7 +466,7 @@ experiment
   )
   .action(async (id: string) => {
     const g = readGlobals()
-    if (`${id}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+    if (EXPERIMENT_DIR_REGEX.test(id)) {
       await runExperimentArchiveDoc({ ...g, experimentId: id })
       return
     }
@@ -484,7 +484,7 @@ experiment
   )
   .action(async (id: string) => {
     const g = readGlobals()
-    if (`${id}.md`.match(EXPERIMENT_FILENAME_REGEX)) {
+    if (EXPERIMENT_DIR_REGEX.test(id)) {
       await runExperimentUnarchiveDoc({ ...g, experimentId: id })
       return
     }
