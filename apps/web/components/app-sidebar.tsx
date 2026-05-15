@@ -43,6 +43,7 @@ import { SlurmStatusWidget } from './slurm-status-widget'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
 import { TerminalSheet } from './terminal-sheet'
+import { ThemeToggle } from './theme-toggle'
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
@@ -114,13 +115,14 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="px-3 py-2">
+      <SidebarHeader className="flex flex-row items-center justify-between px-3 py-2">
         <Link
           href="/"
           className="font-mono text-lg font-bold tracking-tight text-sidebar-foreground"
         >
           memon
         </Link>
+        <ThemeToggle />
       </SidebarHeader>
       {/*
         VSCode-Explorer-style section layout. SidebarContent is a flex

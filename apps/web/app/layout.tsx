@@ -8,6 +8,7 @@ import {
   RuntimeConfigBootstrap,
   readSerializedRuntimeConfig,
 } from '../components/runtime-config-bootstrap'
+import { ThemeProvider } from '../components/theme-provider'
 import { ViewerBanner } from '../components/viewer-banner'
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -25,7 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     readSerializedRuntimeConfig(),
   ])
   return (
-    <html lang="en" className={cn("font-sans", inter.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", inter.variable)}>
       <head>
         <SessionBootstrap session={session} />
         <RuntimeConfigBootstrap config={runtimeConfig} />
@@ -33,9 +34,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="bg-background text-foreground antialiased">
         <NextTopLoader height={2} showSpinner={false} shadow={false} crawlSpeed={200} speed={200} />
         <Providers session={session}>
-          <ViewerBanner />
-          <div className="min-h-screen">{children}</div>
-          <Toaster richColors position="bottom-right" closeButton />
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <ViewerBanner />
+            <div className="min-h-screen">{children}</div>
+            <Toaster richColors position="bottom-right" closeButton />
+          </ThemeProvider>
         </Providers>
       </body>
     </html>
