@@ -1,20 +1,26 @@
-// Run-doc id allocation.
+// Experiment id allocation and slug↔id resolution.
 //
 // IDs are `E<NNNN>-<slug>` where `<NNNN>` is 4-digit zero-padded, monotonically
 // assigned per project. Allocation is lock-free; callers retry on EEXIST.
+//
+// On disk (post-v5) each experiment lives at
+// `<projectRoot>/docs/experiments/E<NNNN>-<slug>/README.md`. For the v4→v5
+// migration window we also accept the legacy file form
+// `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md` so allocation stays
+// monotonic when both shapes coexist briefly.
 
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 
 import { padId, parseId } from '../ids.js'
-import { EXPERIMENT_FILENAME_REGEX } from '../types.js'
+import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
 
 const EXPERIMENTS_SUBDIR = 'docs/experiments'
 
 /**
- * Scan `<projectRoot>/docs/experiments/` for existing `E<NNNN>-<slug>.md`
- * files and return `padId('E', max+1)`. When the directory does not exist,
- * returns `'E0001'`.
+ * Scan `<projectRoot>/docs/experiments/` for existing experiments
+ * (post-v5 folders OR legacy v4 files) and return `padId('E', max+1)`.
+ * When the directory does not exist, returns `'E0001'`.
  *
  * Throws when the next id would exceed `E9999`.
  */
@@ -30,7 +36,7 @@ export async function nextExperimentId(projectRoot: string): Promise<string> {
   }
   let max = 0
   for (const entry of entries) {
-    const m = entry.match(EXPERIMENT_FILENAME_REGEX)
+    const m = entry.match(EXPERIMENT_DIR_REGEX) ?? entry.match(EXPERIMENT_FILENAME_REGEX)
     if (!m) continue
     const id = `E${m[1]}`
     const parsed = parseId(id)
@@ -40,8 +46,9 @@ export async function nextExperimentId(projectRoot: string): Promise<string> {
 }
 
 /**
- * Resolve a slug-or-id to a full canonical id by scanning existing files.
- * Returns null when no match. Used by CLI commands that accept `<id-or-slug>`.
+ * Resolve a slug-or-id to a full canonical id by scanning existing
+ * entries (post-v5 folders OR legacy v4 files). Returns null when no
+ * match. Used by CLI commands that accept `<id-or-slug>`.
  */
 export async function resolveExperimentId(
   projectRoot: string,
@@ -58,13 +65,13 @@ export async function resolveExperimentId(
   }
   // Direct id match: needle starts with E\d{4}-
   if (/^E\d{4}-/.test(needle)) {
-    const filename = `${needle}.md`
-    return entries.includes(filename) ? needle : null
+    if (entries.includes(needle) || entries.includes(`${needle}.md`)) return needle
+    return null
   }
   // Slug lookup: needle could be the slug part alone
   const matches: string[] = []
   for (const entry of entries) {
-    const m = entry.match(EXPERIMENT_FILENAME_REGEX)
+    const m = entry.match(EXPERIMENT_DIR_REGEX) ?? entry.match(EXPERIMENT_FILENAME_REGEX)
     if (!m) continue
     const slug = m[2]
     if (slug === needle) matches.push(`E${m[1]}-${slug}`)
