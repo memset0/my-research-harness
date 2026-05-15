@@ -213,9 +213,14 @@ export function TerminalDrawerProvider({ children }: { children: React.ReactNode
                     slug={state.slug}
                     agent={state.agent}
                     onSessionReady={handleSessionReady}
+                    source="drawer"
                   />
                 ) : (
-                  <TerminalView mode="raw" sessionName={state.sessionName} />
+                  <TerminalView
+                    mode="raw"
+                    sessionName={state.sessionName}
+                    source="drawer"
+                  />
                 )}
               </div>
             </>

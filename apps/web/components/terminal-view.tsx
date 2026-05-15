@@ -6,41 +6,94 @@
 // iframe + the loading/error/ready phases. Does NOT own outer chrome
 // (header, close button, sheet/window scaffolding) — callers wrap as
 // appropriate.
+//
+// Two modes, discriminated by the `mode` prop:
+//   - 'standard': calls POST /api/terminal/start with parsed
+//     (project, scope, slug, agent). Used for run/exp page action bar.
+//   - 'raw': calls POST /api/terminal/attach with just sessionName. Used
+//     for /manage/tmux's manual rows (legacy or arbitrary memon-* names).
 
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import {
   ApiError,
+  attachTerminal,
   startTerminal,
   type TerminalAgentKind,
   type TerminalScopeKind,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
-export interface TerminalViewProps {
-  project: string
-  scope: TerminalScopeKind
-  slug: string
-  agent: TerminalAgentKind
+export type TerminalViewSource = 'manage' | 'drawer' | 'popup' | 'unknown'
+
+export type TerminalViewProps = (
+  | {
+      mode: 'standard'
+      project: string
+      scope: TerminalScopeKind
+      slug: string
+      agent: TerminalAgentKind
+    }
+  | {
+      mode: 'raw'
+      sessionName: string
+    }
+) & {
   /** When true, the view occupies 100vw x 100svh (popup-window mode). */
   fullscreen?: boolean
-  /** Callback fired once the start endpoint returns the sessionName. */
+  /** Callback fired once the start/attach endpoint returns the sessionName. */
   onSessionReady?: (sessionName: string) => void
+  /**
+   * Surface attribution for the cross-page `memon:terminal-attached`
+   * BroadcastChannel post. Cache holders elsewhere (e.g. /manage/tmux)
+   * use the broadcast to release backgrounded entries when the same
+   * session opens here. Default `'unknown'` keeps test/storybook
+   * mounts inert.
+   */
+  source?: TerminalViewSource
 }
 
-export function TerminalView({
-  project,
-  scope,
-  slug,
-  agent,
-  fullscreen,
-  onSessionReady,
-}: TerminalViewProps) {
+const ATTACH_BROADCAST_CHANNEL = 'memon:terminal-attached'
+
+export function postTerminalAttached(
+  sessionName: string,
+  source: TerminalViewSource,
+): void {
+  if (typeof BroadcastChannel === 'undefined') return
+  let channel: BroadcastChannel | null = null
+  try {
+    channel = new BroadcastChannel(ATTACH_BROADCAST_CHANNEL)
+    channel.postMessage({ sessionName, source, attachedAt: Date.now() })
+  } finally {
+    channel?.close()
+  }
+}
+
+export function TerminalView(props: TerminalViewProps) {
+  const { mode, fullscreen, onSessionReady, source } = props
   const [phase, setPhase] = useState<'starting' | 'ready' | 'error'>('starting')
   const [iframeUrl, setIframeUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
   const sessionAnnouncedRef = useRef<string | null>(null)
+  // Read source via a ref inside the start/attach effect so a parent
+  // changing the source tag does NOT trigger a fresh start/attach
+  // cycle. Source is purely a broadcast tag; it's read at the moment
+  // the broadcast fires.
+  const sourceRef = useRef<TerminalViewSource>(source ?? 'unknown')
+  useEffect(() => {
+    sourceRef.current = source ?? 'unknown'
+  }, [source])
+
+  // Effect deps: pull individual fields out so changing one re-fires.
+  // Discriminated-union access: we read `mode` plus mode-specific fields.
+  // The eslint-react-hooks rule isn't sophisticated enough to prove our
+  // disjoint effect deps are exhaustive without listing all of them.
+  const standardProject = mode === 'standard' ? props.project : undefined
+  const standardScope = mode === 'standard' ? props.scope : undefined
+  const standardSlug = mode === 'standard' ? props.slug : undefined
+  const standardAgent = mode === 'standard' ? props.agent : undefined
+  const rawSessionName = mode === 'raw' ? props.sessionName : undefined
 
   useEffect(() => {
     let cancelled = false
@@ -48,7 +101,16 @@ export function TerminalView({
     setError(null)
     setIframeUrl(null)
     setWarnings([])
-    void startTerminal({ project, scope, slug, agent })
+    const promise =
+      mode === 'standard'
+        ? startTerminal({
+            project: standardProject!,
+            scope: standardScope!,
+            slug: standardSlug!,
+            agent: standardAgent,
+          })
+        : attachTerminal({ sessionName: rawSessionName! })
+    void promise
       .then((res) => {
         if (cancelled) return
         setIframeUrl(res.url)
@@ -58,6 +120,7 @@ export function TerminalView({
           sessionAnnouncedRef.current = res.sessionName
           onSessionReady?.(res.sessionName)
         }
+        postTerminalAttached(res.sessionName, sourceRef.current)
       })
       .catch((err) => {
         if (cancelled) return
@@ -68,7 +131,18 @@ export function TerminalView({
     return () => {
       cancelled = true
     }
-  }, [project, scope, slug, agent, onSessionReady])
+  }, [
+    mode,
+    standardProject,
+    standardScope,
+    standardSlug,
+    standardAgent,
+    rawSessionName,
+    onSessionReady,
+  ])
+
+  const iframeTitle =
+    mode === 'standard' ? `${standardAgent} terminal` : `${rawSessionName} terminal`
 
   return (
     <div
@@ -99,7 +173,7 @@ export function TerminalView({
         <iframe
           key={iframeUrl}
           src={iframeUrl}
-          title={`${agent} terminal`}
+          title={iframeTitle}
           className="h-full w-full border-0"
         />
       )}

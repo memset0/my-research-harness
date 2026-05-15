@@ -32,12 +32,19 @@ export function TerminalPopupClient(props: TerminalPopupClientProps) {
             sessionName={props.sessionName}
           />
           <div className="flex min-h-0 flex-1 flex-col">
-            <TerminalView mode="raw" sessionName={props.sessionName} />
+            <TerminalView mode="raw" sessionName={props.sessionName} source="popup" />
           </div>
         </div>
       )
     }
-    return <TerminalView mode="raw" sessionName={props.sessionName} fullscreen />
+    return (
+      <TerminalView
+        mode="raw"
+        sessionName={props.sessionName}
+        fullscreen
+        source="popup"
+      />
+    )
   }
   return (
     <TerminalView
@@ -47,6 +54,7 @@ export function TerminalPopupClient(props: TerminalPopupClientProps) {
       slug={props.slug}
       agent={props.agent}
       fullscreen
+      source="popup"
     />
   )
 }
