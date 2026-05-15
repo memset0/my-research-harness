@@ -10,9 +10,16 @@ vi.mock('next/navigation', () => ({
 vi.mock('../lib/api', () => ({
   fetchProjects: vi.fn(),
   fetchExperimentDocs: vi.fn(),
+  fetchSlurmStatus: vi.fn(),
+  fetchGitStatus: vi.fn(),
 }))
 
-import { fetchProjects, fetchExperimentDocs } from '../lib/api'
+import {
+  fetchProjects,
+  fetchExperimentDocs,
+  fetchSlurmStatus,
+  fetchGitStatus,
+} from '../lib/api'
 import { AppSidebar } from './app-sidebar'
 import { SidebarProvider } from './ui/sidebar'
 
@@ -57,6 +64,14 @@ describe('AppSidebar', () => {
       ],
     })
     vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments: [] })
+    // SlurmStatusWidget + GitStatusPill render `null` when their query
+    // returns `enabled: false`, so default both to that path to keep the
+    // sidebar tests focused on project / experiment rendering.
+    vi.mocked(fetchSlurmStatus).mockResolvedValue({ enabled: false })
+    vi.mocked(fetchGitStatus).mockResolvedValue({
+      enabled: false,
+      reason: 'not-a-repo',
+    })
   })
 
   function setup() {
@@ -119,5 +134,37 @@ describe('AppSidebar', () => {
     )
     const ids = links.map((a) => within(a).getByText(/^E\d+-/).textContent)
     expect(ids).toEqual(['E0002-bravo', 'E0003-charlie', 'E0001-alpha'])
+  })
+
+  it('renders a compact git pill per project row when git status is available', async () => {
+    vi.mocked(fetchGitStatus).mockImplementation(async (project) => ({
+      enabled: true,
+      branch: project === 'project-a' ? 'main' : 'feature/x',
+      detached: false,
+      sha: '0123456',
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      dirty: false,
+    }))
+    const { container } = setup()
+    await waitFor(() => {
+      const pills = container.querySelectorAll('[data-slot="git-status-pill-compact"]')
+      expect(pills.length).toBe(2)
+    })
+    expect(screen.getByText('main')).toBeInTheDocument()
+    expect(screen.getByText('feature/x')).toBeInTheDocument()
+  })
+
+  it('renders the project row layout unchanged when git pill is disabled', async () => {
+    // Default beforeEach mock returns enabled: false. Confirm no pill markup.
+    const { container } = setup()
+    await waitFor(() => expect(screen.getByText('project-a')).toBeInTheDocument())
+    expect(
+      container.querySelectorAll('[data-slot="git-status-pill-compact"]').length,
+    ).toBe(0)
   })
 })

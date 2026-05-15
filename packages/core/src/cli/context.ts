@@ -10,7 +10,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { implicitCwdProject } from '../config/load.js'
-import { DEFAULT_POLL, DEFAULT_SLURM, DEFAULT_TERMINAL, type Config } from '../types.js'
+import { DEFAULT_GIT_STATUS, DEFAULT_POLL, DEFAULT_SLURM, DEFAULT_TERMINAL, type Config } from '../types.js'
 
 export class CliContextError extends Error {
   constructor(
@@ -66,6 +66,7 @@ export async function loadCliContext(
         poll: { ...DEFAULT_POLL },
         terminal: { ...DEFAULT_TERMINAL },
         slurm: { ...DEFAULT_SLURM },
+        gitStatus: { ...DEFAULT_GIT_STATUS },
       },
       source: 'project-root',
     }

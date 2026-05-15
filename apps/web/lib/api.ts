@@ -846,5 +846,31 @@ export async function fetchSlurmStatus(): Promise<SlurmStatus> {
   )
 }
 
+// Git status — per-project working-tree state. Polled by sidebar + project footer.
+
+export type GitStatus =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | {
+      enabled: true
+      branch: string | null
+      detached: boolean
+      sha: string
+      upstream: string | null
+      ahead: number
+      behind: number
+      staged: number
+      unstaged: number
+      untracked: number
+      dirty: boolean
+    }
+
+export async function fetchGitStatus(project: string): Promise<GitStatus> {
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-status`)
+}
+
 // Re-exports for convenience
 export type { Run, Hypothesis, JournalEvent, WarningRecord }

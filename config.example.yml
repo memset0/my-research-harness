@@ -63,6 +63,13 @@ poll:
 # slurm:
 #   total_nodes: 8
 
+# Git status pill (sidebar + project-page footer). One knob drives BOTH the
+# client TanStack `refetchInterval` AND the server-side per-project throttle
+# window, so the two cadences cannot drift. Default 10s; floor 1s.
+#
+# git_status:
+#   interval_ms: 10000
+
 # Authentication for the HTTP dashboard. Leave this block COMMENTED on a
 # fresh install — `memon serve` will generate a random 144-bit password on
 # first run, persist it (PLAINTEXT) here, and print it to stdout once.

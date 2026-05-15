@@ -108,6 +108,8 @@ export {
 } from './time.js'
 export { FS_CONVENTION_VERSION } from './version.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
+export { parsePorcelainV2, readGitStatus } from './git/status.js'
+export type { GitStatus, ReadGitStatusOptions } from './git/status.js'
 
 // v3 experiment doc types (sed-renamed from Experiment* during rename pass)
 export type {

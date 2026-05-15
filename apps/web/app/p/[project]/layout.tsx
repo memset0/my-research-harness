@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { AppBar } from '../../../components/app-bar'
 import { AppSidebar } from '../../../components/app-sidebar'
+import { ProjectFooter } from '../../../components/project-footer'
 import { SidebarInset, SidebarProvider } from '../../../components/ui/sidebar'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { getRuntime } from '../../../lib/runtime'
@@ -65,8 +66,11 @@ export default async function ProjectLayout({
         <AppSidebar />
         <SidebarInset>
           <AppBar project={decoded} />
-          <div className="flex-1">{children}</div>
+          {/* `pb-8` clears the fixed project footer (~28px) so the last
+              row of content isn't occluded. */}
+          <div className="flex-1 pb-8">{children}</div>
         </SidebarInset>
+        <ProjectFooter project={decoded} />
       </SidebarProvider>
     </HydrationBoundary>
   )

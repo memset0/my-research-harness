@@ -136,6 +136,7 @@ describe('ensureAuthInitialised', () => {
         },
       },
       slurm: { totalNodes: -1 },
+      gitStatus: { intervalMs: 10_000 },
     }
     await expect(ensureAuthInitialised(configPath, fakeCfg)).rejects.toThrow(/loadConfig couldn't parse/)
   })

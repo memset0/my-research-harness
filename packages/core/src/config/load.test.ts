@@ -268,6 +268,62 @@ slurm:
   })
 })
 
+describe('loadConfig git_status block', () => {
+  it('defaults to intervalMs: 10000 when block is absent', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.gitStatus).toEqual({ intervalMs: 10_000 })
+  })
+
+  it('parses a custom interval_ms', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+git_status:
+  interval_ms: 30000
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.gitStatus).toEqual({ intervalMs: 30_000 })
+  })
+
+  it('accepts the floor (1000)', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+git_status:
+  interval_ms: 1000
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.gitStatus).toEqual({ intervalMs: 1_000 })
+  })
+
+  it('rejects interval_ms below the 1000ms floor', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+git_status:
+  interval_ms: 500
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('git_status.interval_ms'),
+    })
+  })
+
+  it('rejects non-integer interval_ms', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+git_status:
+  interval_ms: 1500.5
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+})
+
 describe('loadConfig project-name regex', () => {
   it('accepts letters, digits, and hyphens', async () => {
     const yaml = `

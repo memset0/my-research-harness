@@ -156,12 +156,19 @@ export const SlurmConfigRawSchema = z
   })
   .optional()
 
+export const GitStatusConfigRawSchema = z
+  .object({
+    interval_ms: z.number().int(),
+  })
+  .optional()
+
 export const ConfigRawSchema = z.object({
   projects: z.array(ProjectConfigRawSchema).min(1),
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
   terminal: TerminalConfigRawSchema,
   slurm: SlurmConfigRawSchema,
+  git_status: GitStatusConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

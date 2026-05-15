@@ -4,6 +4,10 @@ import NextTopLoader from 'nextjs-toploader'
 import './globals.css'
 import { Providers } from '../components/providers'
 import { SessionBootstrap, readSerializedSession } from '../components/session-bootstrap'
+import {
+  RuntimeConfigBootstrap,
+  readSerializedRuntimeConfig,
+} from '../components/runtime-config-bootstrap'
 import { ViewerBanner } from '../components/viewer-banner'
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -16,11 +20,15 @@ export const metadata: Metadata = {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const session = await readSerializedSession()
+  const [session, runtimeConfig] = await Promise.all([
+    readSerializedSession(),
+    readSerializedRuntimeConfig(),
+  ])
   return (
     <html lang="en" className={cn("font-sans", inter.variable)}>
       <head>
         <SessionBootstrap session={session} />
+        <RuntimeConfigBootstrap config={runtimeConfig} />
       </head>
       <body className="bg-background text-foreground antialiased">
         <NextTopLoader height={2} showSpinner={false} shadow={false} crawlSpeed={200} speed={200} />

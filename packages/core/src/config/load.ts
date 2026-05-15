@@ -15,11 +15,14 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
 import {
+  DEFAULT_GIT_STATUS,
   DEFAULT_POLL,
   DEFAULT_SLURM,
   DEFAULT_TERMINAL,
+  MIN_GIT_STATUS_INTERVAL_MS,
   type AuthConfig,
   type Config,
+  type GitStatusConfig,
   type PollConfig,
   type ProjectConfig,
   type SlurmConfig,
@@ -151,7 +154,18 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  return { projects, poll, auth, terminal, slurm }
+  const gitStatus: GitStatusConfig = {
+    intervalMs: cfg.git_status?.interval_ms ?? DEFAULT_GIT_STATUS.intervalMs,
+  }
+
+  if (gitStatus.intervalMs < MIN_GIT_STATUS_INTERVAL_MS) {
+    throw new ConfigError(
+      `git_status.interval_ms (${gitStatus.intervalMs}) must be >= ${MIN_GIT_STATUS_INTERVAL_MS}`,
+      candidate,
+    )
+  }
+
+  return { projects, poll, auth, terminal, slurm, gitStatus }
 }
 
 /**
@@ -175,5 +189,6 @@ export function implicitCwdProject(cwd: string, name = '(cwd)'): Config {
     poll: { ...DEFAULT_POLL },
     terminal: { ...DEFAULT_TERMINAL },
     slurm: { ...DEFAULT_SLURM },
+    gitStatus: { ...DEFAULT_GIT_STATUS },
   }
 }

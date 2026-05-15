@@ -560,6 +560,16 @@ export interface SlurmConfig {
   totalNodes: number
 }
 
+export interface GitStatusConfig {
+  /**
+   * Cadence used for BOTH the client TanStack `refetchInterval` AND
+   * the server-side throttle window for `/api/projects/:project/
+   * git-status`. Default 10000; minimum 1000 (config-load time
+   * validation).
+   */
+  intervalMs: number
+}
+
 export interface Config {
   projects: ProjectConfig[]
   poll: PollConfig
@@ -567,6 +577,7 @@ export interface Config {
   auth?: AuthConfig
   terminal: TerminalConfig
   slurm: SlurmConfig
+  gitStatus: GitStatusConfig
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [
@@ -600,3 +611,9 @@ export const DEFAULT_TERMINAL: TerminalConfig = {
 export const DEFAULT_SLURM: SlurmConfig = {
   totalNodes: -1,
 }
+
+export const DEFAULT_GIT_STATUS: GitStatusConfig = {
+  intervalMs: 10_000,
+}
+
+export const MIN_GIT_STATUS_INTERVAL_MS = 1_000

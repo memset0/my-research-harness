@@ -30,6 +30,7 @@ import {
 import { cn } from '../lib/utils'
 import { useSession } from './session-provider'
 import { SlurmStatusWidget } from './slurm-status-widget'
+import { GitStatusPill } from './git-status-pill'
 
 const DEFAULT_VISIBLE = 5
 const STORAGE_KEY = 'memon:sidebar:expanded'
@@ -177,7 +178,12 @@ function ProjectGroup({
           )}
         >
           <CollapsibleTrigger>
-            {name}
+            <span className="truncate">{name}</span>
+            <GitStatusPill
+              project={name}
+              variant="compact"
+              className="ml-2 max-w-[8rem] overflow-hidden"
+            />
             <ChevronDown className="ml-auto size-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
           </CollapsibleTrigger>
         </SidebarGroupLabel>
