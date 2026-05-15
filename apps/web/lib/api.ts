@@ -1053,5 +1053,54 @@ export async function fetchGitCommit(
   )
 }
 
+// Commit verification marks — per-project CSV stored under `.memon/`.
+
+export type CommitMarkStatus = 'verified' | 'suspicious' | 'issue'
+
+export interface CommitMark {
+  sha: string
+  status: CommitMarkStatus
+  note: string
+  updatedAt: string
+}
+
+export interface CommitMarksResponse {
+  marks: Record<string, CommitMark>
+  parseWarnings: string[]
+}
+
+export async function fetchCommitMarks(
+  project: string,
+): Promise<CommitMarksResponse> {
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/commit-marks`,
+  )
+}
+
+export async function setCommitMark(
+  project: string,
+  sha: string,
+  input: { status: CommitMarkStatus; note?: string },
+): Promise<{ mark: CommitMark }> {
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/commit-marks/${encodeURIComponent(sha)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function deleteCommitMark(
+  project: string,
+  sha: string,
+): Promise<{ deleted: boolean }> {
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/commit-marks/${encodeURIComponent(sha)}`,
+    { method: 'DELETE' },
+  )
+}
+
 // Re-exports for convenience
 export type { Run, Hypothesis, JournalEvent, WarningRecord }

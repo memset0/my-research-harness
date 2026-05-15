@@ -29,14 +29,18 @@ import {
 import { Skeleton } from './ui/skeleton'
 import { Button } from './ui/button'
 import {
+  fetchCommitMarks,
   fetchGitBranches,
   fetchGitCommit,
   fetchGitLog,
+  type CommitMark,
   type GitBranches,
   type GitCommitDetail,
   type GitCommitSummary,
 } from '../lib/api'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
+import { CommitMarkBadge } from './commit-mark-badge'
+import { CommitMarkEditor } from './commit-mark-editor'
 import { FileRow } from './file-row'
 import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
@@ -113,11 +117,42 @@ function HistoryBody({ project }: { project: string }) {
     retry: false,
   })
 
+  // Per-project verification marks. Lazy on dialog open; the editor's
+  // TanStack mutation invalidates this query so badges update inline.
+  const marksQuery = useQuery({
+    queryKey: ['commit-marks', project],
+    queryFn: () => fetchCommitMarks(project),
+    staleTime: Infinity,
+    retry: false,
+  })
+  const marks = marksQuery.data?.marks ?? {}
+
   function onRefresh() {
     qc.invalidateQueries({ queryKey: ['git-branches', project] })
     if (gitRev) {
       qc.invalidateQueries({ queryKey: ['git-log', project, gitRev] })
     }
+  }
+
+  // Track whether the currently-mounted CommitMarkEditor has a dirty
+  // note draft. When the user clicks a DIFFERENT commit row, gate the
+  // selection change behind a confirm prompt so unsaved drafts aren't
+  // silently discarded.
+  const [editorDirty, setEditorDirty] = useState(false)
+
+  function trySelect(nextSha: string) {
+    if (
+      editorDirty &&
+      selectedSha &&
+      selectedSha !== nextSha &&
+      typeof window !== 'undefined'
+    ) {
+      const ok = window.confirm(
+        'You have unsaved note changes. Discard them and switch commits?',
+      )
+      if (!ok) return
+    }
+    setSelectedSha(nextSha)
   }
 
   return (
@@ -136,9 +171,15 @@ function HistoryBody({ project }: { project: string }) {
           project={project}
           query={logQuery}
           selectedSha={selectedSha}
-          onSelect={setSelectedSha}
+          onSelect={trySelect}
+          marks={marks}
         />
-        <CommitDetail project={project} sha={selectedSha} />
+        <CommitDetail
+          project={project}
+          sha={selectedSha}
+          marks={marks}
+          onDirtyChange={setEditorDirty}
+        />
       </div>
     </>
   )
@@ -240,12 +281,14 @@ function CommitList({
   query,
   selectedSha,
   onSelect,
+  marks,
 }: {
   project: string
   query: ReturnType<typeof useQuery<unknown, Error>> &
     { data?: import('../lib/api').GitLog | undefined }
   selectedSha: string | null
   onSelect: (sha: string) => void
+  marks: Record<string, CommitMark>
 }) {
   const { data, isPending, isError } = query as {
     data: import('../lib/api').GitLog | undefined
@@ -281,6 +324,7 @@ function CommitList({
                 commit={c}
                 selected={c.sha === selectedSha}
                 onSelect={() => onSelect(c.sha)}
+                mark={marks[c.sha]}
               />
             </li>
           ))}
@@ -294,10 +338,12 @@ function CommitRow({
   commit,
   selected,
   onSelect,
+  mark,
 }: {
   commit: GitCommitSummary
   selected: boolean
   onSelect: () => void
+  mark?: CommitMark
 }) {
   return (
     <button
@@ -312,6 +358,7 @@ function CommitRow({
       title={commit.authorDate}
     >
       <span className="flex w-full items-center gap-2">
+        <CommitMarkBadge mark={mark} />
         <span className="font-mono text-muted-foreground">
           {commit.shortSha}
         </span>
@@ -340,9 +387,13 @@ function ListSkeleton() {
 function CommitDetail({
   project,
   sha,
+  marks,
+  onDirtyChange,
 }: {
   project: string
   sha: string | null
+  marks: Record<string, CommitMark>
+  onDirtyChange: (dirty: boolean) => void
 }) {
   const { data, isPending, isError } = useQuery({
     queryKey: ['git-commit', project, sha],
@@ -380,7 +431,13 @@ function CommitDetail({
           {data.reason === 'not-found' ? 'commit not found' : `git: ${data.reason}`}
         </p>
       ) : (
-        <CommitDetailBody project={project} detail={data} sha={data.sha} />
+        <CommitDetailBody
+          project={project}
+          detail={data}
+          sha={data.sha}
+          mark={marks[data.sha]}
+          onDirtyChange={onDirtyChange}
+        />
       )}
     </section>
   )
@@ -390,14 +447,18 @@ function CommitDetailBody({
   project,
   detail,
   sha,
+  mark,
+  onDirtyChange,
 }: {
   project: string
   detail: Extract<GitCommitDetail, { enabled: true }>
   sha: string
+  mark?: CommitMark
+  onDirtyChange: (dirty: boolean) => void
 }) {
   return (
     <div className="space-y-3">
-      <header className="space-y-1 border-b pb-2 text-xs">
+      <header className="space-y-2 border-b pb-2 text-xs">
         <div className="font-mono text-muted-foreground">{detail.sha}</div>
         <div>
           <span className="font-medium">{detail.authorName}</span>{' '}
@@ -406,6 +467,12 @@ function CommitDetailBody({
           </span>{' '}
           <span className="text-muted-foreground">· {detail.authorDate}</span>
         </div>
+        <CommitMarkEditor
+          project={project}
+          sha={sha}
+          mark={mark}
+          onDirtyChange={onDirtyChange}
+        />
         <div className="font-medium">{detail.subject}</div>
         {detail.body && (
           <pre className="whitespace-pre-wrap text-xs text-muted-foreground">

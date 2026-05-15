@@ -131,6 +131,21 @@ export {
   readGitCommit,
   readGitLog,
 } from './git/history.js'
+export {
+  COMMIT_MARKS_RELPATH,
+  COMMIT_MARK_STATUSES,
+  deleteCommitMark,
+  parseCsv as parseCommitMarksCsv,
+  readCommitMarks,
+  serializeCsv as serializeCommitMarksCsv,
+  setCommitMark,
+} from './git/commit-marks.js'
+export type {
+  CommitMark,
+  CommitMarkStatus,
+  ReadCommitMarksOptions,
+  ReadCommitMarksResult,
+} from './git/commit-marks.js'
 export type {
   GitBranchEntry,
   GitBranches,

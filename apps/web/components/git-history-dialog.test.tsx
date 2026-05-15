@@ -8,9 +8,13 @@ vi.mock('../lib/api', () => ({
   fetchGitLog: vi.fn(),
   fetchGitCommit: vi.fn(),
   fetchGitDiff: vi.fn(),
+  fetchCommitMarks: vi.fn(),
+  setCommitMark: vi.fn(),
+  deleteCommitMark: vi.fn(),
 }))
 
 import {
+  fetchCommitMarks,
   fetchGitBranches,
   fetchGitCommit,
   fetchGitDiff,
@@ -88,6 +92,7 @@ beforeEach(() => {
   vi.mocked(fetchGitLog).mockResolvedValue(LOG)
   vi.mocked(fetchGitCommit).mockResolvedValue(COMMIT_A)
   vi.mocked(fetchGitDiff).mockResolvedValue(DIFF)
+  vi.mocked(fetchCommitMarks).mockResolvedValue({ marks: {}, parseWarnings: [] })
 })
 afterEach(() => {
   window.localStorage.clear()
@@ -199,5 +204,128 @@ describe('GitHistoryDialog', () => {
     // The previously-fetched commit detail MUST stay cached (refresh does
     // not invalidate `['git-commit', ...]`).
     expect(fetchGitCommit).toHaveBeenCalledTimes(1)
+  })
+
+  it('every commit row has a commit-mark-badge (verified for marked, none otherwise)', async () => {
+    vi.mocked(fetchCommitMarks).mockResolvedValue({
+      marks: {
+        ['a'.repeat(40)]: {
+          sha: 'a'.repeat(40),
+          status: 'verified',
+          note: '',
+          updatedAt: '2026-05-15T12:00:00+08:00',
+        },
+      },
+      parseWarnings: [],
+    })
+    renderWithQuery(
+      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
+    )
+    await waitFor(() =>
+      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
+    )
+    const badges = document.body.querySelectorAll(
+      '[data-slot="commit-mark-badge"]',
+    )
+    expect(badges.length).toBe(2)
+    const statuses = Array.from(badges).map((b) => b.getAttribute('data-status'))
+    expect(statuses).toContain('verified')
+    expect(statuses).toContain('none')
+  })
+
+  it('selecting a commit renders a commit-mark-editor in the detail pane', async () => {
+    renderWithQuery(
+      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
+    )
+    await waitFor(() =>
+      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
+    )
+    await userEvent.click(screen.getByText('fix the bug'))
+    await waitFor(() => {
+      const editor = document.body.querySelector(
+        '[data-slot="commit-mark-editor"]',
+      )
+      expect(editor).not.toBeNull()
+      expect(editor!.getAttribute('data-sha')).toBe('a'.repeat(40))
+    })
+  })
+
+  it('switching to a different commit with a dirty note prompts confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      renderWithQuery(
+        <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
+      )
+      await waitFor(() =>
+        expect(screen.getByText('fix the bug')).toBeInTheDocument(),
+      )
+      // Select the first commit so an editor is mounted.
+      await userEvent.click(screen.getByText('fix the bug'))
+      const note = await waitFor(() => {
+        const el = document.body.querySelector(
+          '[data-slot="commit-mark-note"]',
+        ) as HTMLTextAreaElement | null
+        expect(el).not.toBeNull()
+        return el!
+      })
+      // Dirty the note (no save).
+      await userEvent.type(note, 'unsaved draft')
+      // Now click the OTHER commit row.
+      await userEvent.click(screen.getByText('add feature'))
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(confirmSpy.mock.calls[0]![0]).toMatch(/unsaved/i)
+    } finally {
+      confirmSpy.mockRestore()
+    }
+  })
+
+  it('cancelling the confirm keeps the current selection', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      renderWithQuery(
+        <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
+      )
+      await waitFor(() =>
+        expect(screen.getByText('fix the bug')).toBeInTheDocument(),
+      )
+      await userEvent.click(screen.getByText('fix the bug'))
+      const note = await waitFor(() => {
+        const el = document.body.querySelector(
+          '[data-slot="commit-mark-note"]',
+        ) as HTMLTextAreaElement | null
+        expect(el).not.toBeNull()
+        return el!
+      })
+      await userEvent.type(note, 'unsaved')
+      const fetchCallsBefore = vi.mocked(fetchGitCommit).mock.calls.length
+      await userEvent.click(screen.getByText('add feature'))
+      // No NEW git-commit fetch fired (user cancelled).
+      expect(vi.mocked(fetchGitCommit).mock.calls.length).toBe(fetchCallsBefore)
+    } finally {
+      confirmSpy.mockRestore()
+    }
+  })
+
+  it('switching without a dirty note does NOT prompt', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm')
+    try {
+      renderWithQuery(
+        <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
+      )
+      await waitFor(() =>
+        expect(screen.getByText('fix the bug')).toBeInTheDocument(),
+      )
+      await userEvent.click(screen.getByText('fix the bug'))
+      // Wait for editor to mount but DO NOT type into the note.
+      await waitFor(() =>
+        expect(
+          document.body.querySelector('[data-slot="commit-mark-editor"]'),
+        ).not.toBeNull(),
+      )
+      await userEvent.click(screen.getByText('add feature'))
+      expect(confirmSpy).not.toHaveBeenCalled()
+    } finally {
+      confirmSpy.mockRestore()
+    }
   })
 })
