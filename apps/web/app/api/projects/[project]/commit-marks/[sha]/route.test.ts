@@ -24,6 +24,7 @@ const MARK = {
   status: 'verified' as const,
   note: 'ok',
   updatedAt: '2026-05-15T12:00:00+08:00',
+  submodule: '',
 }
 
 function paramsFor(name: string, sha: string) {
@@ -170,7 +171,9 @@ describe('DELETE /api/projects/[project]/commit-marks/[sha]', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ deleted: true })
-    expect(deleteCommitMark).toHaveBeenCalledWith('/tmp/a', 'abc1234')
+    expect(deleteCommitMark).toHaveBeenCalledWith('/tmp/a', 'abc1234', {
+      submodule: undefined,
+    })
   })
 
   it('403 viewer in scope', async () => {

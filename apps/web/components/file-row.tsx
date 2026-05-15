@@ -49,9 +49,11 @@ export interface FileRowProps {
   entry: GitFileEntry
   /** Required when `side === 'commit'`; ignored otherwise. */
   sha?: string
+  /** When set, the per-file diff is scoped to the named submodule. */
+  submodule?: string
 }
 
-export function FileRow({ project, side, entry, sha }: FileRowProps) {
+export function FileRow({ project, side, entry, sha, submodule }: FileRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [hasBeenExpanded, setHasBeenExpanded] = useState(false)
   const code = STATUS_LABEL[entry.status]
@@ -91,7 +93,13 @@ export function FileRow({ project, side, entry, sha }: FileRowProps) {
       </button>
       {hasBeenExpanded && (
         <div className={cn('pl-6', !expanded && 'hidden')}>
-          <FileRowBody project={project} side={side} entry={entry} sha={sha} />
+          <FileRowBody
+            project={project}
+            side={side}
+            entry={entry}
+            sha={sha}
+            submodule={submodule}
+          />
         </div>
       )}
     </div>
@@ -103,20 +111,28 @@ export function FileRowBody({
   side,
   entry,
   sha,
+  submodule,
 }: {
   project: string
   side: GitDiffSide
   entry: GitFileEntry
   sha?: string
+  submodule?: string
 }) {
-  // When `sha` is part of the key, two commits sharing a path key
-  // independently — exactly what we want for cache reuse semantics.
-  const queryKey = sha
-    ? (['git-diff', project, entry.path, side, sha] as const)
-    : (['git-diff', project, entry.path, side] as const)
+  // Cache key includes both `sha` (for commit-side diffs) and `submodule`
+  // (for any side scoped to a submodule) so we don't collide across
+  // (path, side) tuples that live in different repos.
+  const queryKey = [
+    'git-diff',
+    project,
+    entry.path,
+    side,
+    sha,
+    submodule,
+  ] as const
   const { data, isPending, isError, error } = useQuery({
     queryKey,
-    queryFn: () => fetchGitDiff(project, entry.path, side, sha),
+    queryFn: () => fetchGitDiff(project, entry.path, side, sha, submodule),
     staleTime: Infinity,
     retry: false,
   })

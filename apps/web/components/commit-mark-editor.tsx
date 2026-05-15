@@ -28,6 +28,8 @@ export interface CommitMarkEditorProps {
   project: string
   sha: string
   mark?: CommitMark | null
+  /** When set, mutations are scoped to the named submodule. Empty / undefined = main repo. */
+  submodule?: string
   /** Fires on a successful upsert OR delete. */
   onMutated?: () => void
   /** Fires whenever the note draft's dirty state flips. */
@@ -51,6 +53,7 @@ export function CommitMarkEditor({
   project,
   sha,
   mark,
+  submodule,
   onMutated,
   onDirtyChange,
 }: CommitMarkEditorProps) {
@@ -86,10 +89,12 @@ export function CommitMarkEditor({
       const finalStatus = vars.status ?? status
       if (!finalStatus) throw new Error('status required')
       const finalNote = vars.note !== undefined ? vars.note : note
-      return setCommitMark(project, sha, {
-        status: finalStatus,
-        note: finalNote || undefined,
-      })
+      return setCommitMark(
+        project,
+        sha,
+        { status: finalStatus, note: finalNote || undefined },
+        submodule,
+      )
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['commit-marks', project] })
@@ -98,7 +103,7 @@ export function CommitMarkEditor({
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => deleteCommitMark(project, sha),
+    mutationFn: () => deleteCommitMark(project, sha, submodule),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['commit-marks', project] })
       setStatus(null)

@@ -11,6 +11,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { readGitStatusFiles } from '@memon/core'
 import { getRuntime } from '../../../../../../lib/runtime'
+import { resolveSubmoduleCwd } from '../../../../../../lib/server/resolve-submodule-cwd'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +41,16 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     )
   }
 
-  const result = await readGitStatusFiles(entry.root)
+  const url = new URL(req.url)
+  const submodule = url.searchParams.get('submodule')
+  const resolved = await resolveSubmoduleCwd(entry.root, submodule)
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { error: { message: resolved.message } },
+      { status: resolved.status },
+    )
+  }
+
+  const result = await readGitStatusFiles(resolved.cwd)
   return NextResponse.json(result)
 }

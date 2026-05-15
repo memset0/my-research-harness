@@ -20,6 +20,7 @@ const EXISTING: CommitMark = {
   status: 'verified',
   note: 'looked good',
   updatedAt: '2026-05-15T12:00:00+08:00',
+  submodule: '',
 }
 
 beforeEach(() => {
@@ -42,10 +43,12 @@ describe('CommitMarkEditor', () => {
     ) as HTMLButtonElement
     await userEvent.click(suspiciousBtn)
     await waitFor(() => {
-      expect(setCommitMark).toHaveBeenCalledWith('project-a', 'abc1234', {
-        status: 'suspicious',
-        note: 'looked good',
-      })
+      expect(setCommitMark).toHaveBeenCalledWith(
+        'project-a',
+        'abc1234',
+        { status: 'suspicious', note: 'looked good' },
+        undefined,
+      )
     })
   })
 
@@ -62,10 +65,12 @@ describe('CommitMarkEditor', () => {
     ) as HTMLButtonElement
     await userEvent.click(verifiedBtn)
     await waitFor(() => {
-      expect(setCommitMark).toHaveBeenCalledWith('project-a', 'abc1234', {
-        status: 'verified',
-        note: 'needs review',
-      })
+      expect(setCommitMark).toHaveBeenCalledWith(
+        'project-a',
+        'abc1234',
+        { status: 'verified', note: 'needs review' },
+        undefined,
+      )
     })
   })
 
@@ -109,10 +114,12 @@ describe('CommitMarkEditor', () => {
     ) as HTMLButtonElement
     await userEvent.click(save)
     await waitFor(() => {
-      expect(setCommitMark).toHaveBeenCalledWith('project-a', 'abc1234', {
-        status: 'verified',
-        note: 'still good',
-      })
+      expect(setCommitMark).toHaveBeenCalledWith(
+        'project-a',
+        'abc1234',
+        { status: 'verified', note: 'still good' },
+        undefined,
+      )
     })
   })
 
@@ -129,10 +136,12 @@ describe('CommitMarkEditor', () => {
     note.focus()
     await userEvent.keyboard('{Control>}s{/Control}')
     await waitFor(() => {
-      expect(setCommitMark).toHaveBeenCalledWith('project-a', 'abc1234', {
-        status: 'verified',
-        note: 'looked good more',
-      })
+      expect(setCommitMark).toHaveBeenCalledWith(
+        'project-a',
+        'abc1234',
+        { status: 'verified', note: 'looked good more' },
+        undefined,
+      )
     })
   })
 
@@ -167,7 +176,11 @@ describe('CommitMarkEditor', () => {
     ) as HTMLButtonElement
     await userEvent.click(clearBtn)
     await waitFor(() => {
-      expect(deleteCommitMark).toHaveBeenCalledWith('project-a', 'abc1234')
+      expect(deleteCommitMark).toHaveBeenCalledWith(
+        'project-a',
+        'abc1234',
+        undefined,
+      )
     })
   })
 

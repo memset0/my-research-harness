@@ -924,9 +924,15 @@ export type GitStatusFiles =
       untracked: GitFileEntry[]
     }
 
-export async function fetchGitStatusFiles(project: string): Promise<GitStatusFiles> {
+export async function fetchGitStatusFiles(
+  project: string,
+  submodule?: string,
+): Promise<GitStatusFiles> {
+  const params = new URLSearchParams()
+  if (submodule) params.set('submodule', submodule)
+  const qs = params.toString()
   return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-status/files`,
+    `/api/projects/${encodeURIComponent(project)}/git-status/files${qs ? `?${qs}` : ''}`,
   )
 }
 
@@ -959,9 +965,11 @@ export async function fetchGitDiff(
   path: string,
   side: GitDiffSide,
   sha?: string,
+  submodule?: string,
 ): Promise<GitDiffResponse> {
   const params = new URLSearchParams({ path, side })
   if (sha) params.set('sha', sha)
+  if (submodule) params.set('submodule', submodule)
   return jsonFetch(
     `/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`,
   )
@@ -1027,17 +1035,27 @@ export type GitCommitDetail =
       files: GitFileEntry[]
     }
 
-export async function fetchGitBranches(project: string): Promise<GitBranches> {
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-branches`)
+export async function fetchGitBranches(
+  project: string,
+  submodule?: string,
+): Promise<GitBranches> {
+  const params = new URLSearchParams()
+  if (submodule) params.set('submodule', submodule)
+  const qs = params.toString()
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/git-branches${qs ? `?${qs}` : ''}`,
+  )
 }
 
 export async function fetchGitLog(
   project: string,
   ref: string,
   limit?: number,
+  submodule?: string,
 ): Promise<GitLog> {
   const params = new URLSearchParams({ ref })
   if (limit !== undefined) params.set('limit', String(limit))
+  if (submodule) params.set('submodule', submodule)
   return jsonFetch(
     `/api/projects/${encodeURIComponent(project)}/git-log?${params.toString()}`,
   )
@@ -1046,11 +1064,32 @@ export async function fetchGitLog(
 export async function fetchGitCommit(
   project: string,
   sha: string,
+  submodule?: string,
 ): Promise<GitCommitDetail> {
   const params = new URLSearchParams({ sha })
+  if (submodule) params.set('submodule', submodule)
   return jsonFetch(
     `/api/projects/${encodeURIComponent(project)}/git-commit?${params.toString()}`,
   )
+}
+
+// --- Submodules ---
+
+export interface GitSubmoduleEntry {
+  name: string
+  path: string
+}
+
+export type GitSubmodules =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'no-gitmodules' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | { enabled: true; submodules: GitSubmoduleEntry[] }
+
+export async function fetchSubmodules(project: string): Promise<GitSubmodules> {
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/submodules`)
 }
 
 // Commit verification marks — per-project CSV stored under `.memon/`.
@@ -1062,10 +1101,12 @@ export interface CommitMark {
   status: CommitMarkStatus
   note: string
   updatedAt: string
+  /** Empty string = main repo; otherwise the submodule name from `.gitmodules`. */
+  submodule: string
 }
 
 export interface CommitMarksResponse {
-  marks: Record<string, CommitMark>
+  marks: CommitMark[]
   parseWarnings: string[]
 }
 
@@ -1077,29 +1118,31 @@ export async function fetchCommitMarks(
   )
 }
 
+function commitMarkUrl(project: string, sha: string, submodule?: string): string {
+  const base = `/api/projects/${encodeURIComponent(project)}/commit-marks/${encodeURIComponent(sha)}`
+  if (!submodule) return base
+  return `${base}?submodule=${encodeURIComponent(submodule)}`
+}
+
 export async function setCommitMark(
   project: string,
   sha: string,
   input: { status: CommitMarkStatus; note?: string },
+  submodule?: string,
 ): Promise<{ mark: CommitMark }> {
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/commit-marks/${encodeURIComponent(sha)}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    },
-  )
+  return jsonFetch(commitMarkUrl(project, sha, submodule), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
 }
 
 export async function deleteCommitMark(
   project: string,
   sha: string,
+  submodule?: string,
 ): Promise<{ deleted: boolean }> {
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/commit-marks/${encodeURIComponent(sha)}`,
-    { method: 'DELETE' },
-  )
+  return jsonFetch(commitMarkUrl(project, sha, submodule), { method: 'DELETE' })
 }
 
 // Re-exports for convenience

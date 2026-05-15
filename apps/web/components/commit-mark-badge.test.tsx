@@ -23,6 +23,7 @@ describe('CommitMarkBadge', () => {
           status: 'verified',
           note: '',
           updatedAt: '2026-05-15T12:00:00+08:00',
+          submodule: '',
         }}
       />,
     )
@@ -41,6 +42,7 @@ describe('CommitMarkBadge', () => {
           status: 'suspicious',
           note: '',
           updatedAt: '2026-05-15T12:00:00+08:00',
+          submodule: '',
         }}
       />,
     )
@@ -56,6 +58,7 @@ describe('CommitMarkBadge', () => {
           status: 'issue',
           note: '',
           updatedAt: '2026-05-15T12:00:00+08:00',
+          submodule: '',
         }}
       />,
     )
@@ -74,6 +77,7 @@ describe('CommitMarkBadge', () => {
           status: 'verified',
           note: 'great commit',
           updatedAt: '2026-05-15T12:00:00+08:00',
+          submodule: '',
         }}
       />,
     )

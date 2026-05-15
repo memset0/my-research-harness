@@ -10,25 +10,17 @@ vi.mock('@memon/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@memon/core')>()
   return {
     ...actual,
-    readCommitMarks: vi.fn(),
+    readGitSubmodules: vi.fn(),
   }
 })
 
-import { readCommitMarks } from '@memon/core'
+import { readGitSubmodules } from '@memon/core'
 import { GET } from './route'
 import { getRuntime } from '../../../../../lib/runtime'
 
 const PAYLOAD = {
-  marks: [
-    {
-      sha: 'abc1234',
-      status: 'verified' as const,
-      note: '',
-      updatedAt: '2026-05-15T12:00:00+08:00',
-      submodule: '',
-    },
-  ],
-  parseWarnings: [],
+  enabled: true as const,
+  submodules: [{ name: 'vendor/foo', path: 'vendor/foo' }],
 }
 
 function paramsFor(name: string) {
@@ -36,10 +28,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/commit-marks`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/submodules`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -52,18 +44,18 @@ beforeEach(() => {
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
-  vi.mocked(readCommitMarks).mockResolvedValue(PAYLOAD)
+  vi.mocked(readGitSubmodules).mockResolvedValue(PAYLOAD)
 })
 
-describe('GET /api/projects/[project]/commit-marks', () => {
-  it('200 for owner', async () => {
+describe('GET /api/projects/[project]/submodules', () => {
+  it('200 for owner with payload', async () => {
     const res = await GET(
       req('project-a', { 'x-memon-role': 'owner' }),
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
-    expect(readCommitMarks).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitSubmodules).toHaveBeenCalledWith('/tmp/a')
   })
 
   it('200 for viewer in scope', async () => {
@@ -80,10 +72,10 @@ describe('GET /api/projects/[project]/commit-marks', () => {
       paramsFor('project-b'),
     )
     expect(res.status).toBe(403)
-    expect(readCommitMarks).not.toHaveBeenCalled()
+    expect(readGitSubmodules).not.toHaveBeenCalled()
   })
 
-  it('404 for unknown project', async () => {
+  it('404 unknown project', async () => {
     const res = await GET(
       req('nope', { 'x-memon-role': 'owner' }),
       paramsFor('nope'),

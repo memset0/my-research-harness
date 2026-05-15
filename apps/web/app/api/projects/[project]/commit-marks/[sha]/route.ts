@@ -13,6 +13,7 @@ import {
   type CommitMarkStatus,
 } from '@memon/core'
 import { getRuntime } from '../../../../../../lib/runtime'
+import { resolveSubmoduleCwd } from '../../../../../../lib/server/resolve-submodule-cwd'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
@@ -81,9 +82,30 @@ async function resolveAndAuthorize(
   return { ok: true, projectRoot: entry.root, sha }
 }
 
+async function resolveSubmoduleFromQuery(
+  req: NextRequest,
+  projectRoot: string,
+): Promise<{ ok: true; submodule: string } | { ok: false; response: NextResponse }> {
+  const url = new URL(req.url)
+  const submoduleParam = url.searchParams.get('submodule')
+  const resolved = await resolveSubmoduleCwd(projectRoot, submoduleParam)
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: { message: resolved.message } },
+        { status: resolved.status },
+      ),
+    }
+  }
+  return { ok: true, submodule: resolved.submodule }
+}
+
 export async function PUT(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
   const auth = await resolveAndAuthorize(req, ctx)
   if (!auth.ok) return auth.response
+  const sub = await resolveSubmoduleFromQuery(req, auth.projectRoot)
+  if (!sub.ok) return sub.response
 
   let body: unknown
   try {
@@ -108,14 +130,22 @@ export async function PUT(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   }
   const note: string | undefined = typeof rawNote === 'string' ? rawNote : undefined
 
-  const mark = await setCommitMark(auth.projectRoot, auth.sha, { status, note })
+  const mark = await setCommitMark(auth.projectRoot, auth.sha, {
+    status,
+    note,
+    submodule: sub.submodule || undefined,
+  })
   return NextResponse.json({ mark })
 }
 
 export async function DELETE(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
   const auth = await resolveAndAuthorize(req, ctx)
   if (!auth.ok) return auth.response
+  const sub = await resolveSubmoduleFromQuery(req, auth.projectRoot)
+  if (!sub.ok) return sub.response
 
-  const result = await deleteCommitMark(auth.projectRoot, auth.sha)
+  const result = await deleteCommitMark(auth.projectRoot, auth.sha, {
+    submodule: sub.submodule || undefined,
+  })
   return NextResponse.json(result)
 }

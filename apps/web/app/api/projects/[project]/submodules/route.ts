@@ -1,13 +1,11 @@
-// GET /api/projects/<project>/git-branches — local branches + HEAD info.
+// GET /api/projects/<project>/submodules — local submodule list.
 //
-// Lazy companion to the git-history dialog. Returns the discriminated-union
-// payload from `readGitBranches`. Project resolution + viewer-scope match
-// the existing git endpoints.
+// Owner + viewer-in-scope can read. Returns the discriminated-union
+// from `readGitSubmodules` directly.
 
 import { NextResponse, type NextRequest } from 'next/server'
-import { readGitBranches } from '@memon/core'
+import { readGitSubmodules } from '@memon/core'
 import { getRuntime } from '../../../../../lib/runtime'
-import { resolveSubmoduleCwd } from '../../../../../lib/server/resolve-submodule-cwd'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
@@ -37,16 +35,6 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     )
   }
 
-  const url = new URL(req.url)
-  const submodule = url.searchParams.get('submodule')
-  const resolved = await resolveSubmoduleCwd(entry.root, submodule)
-  if (!resolved.ok) {
-    return NextResponse.json(
-      { error: { message: resolved.message } },
-      { status: resolved.status },
-    )
-  }
-
-  const result = await readGitBranches(resolved.cwd)
+  const result = await readGitSubmodules(entry.root)
   return NextResponse.json(result)
 }

@@ -18,8 +18,10 @@ import { Button } from './ui/button'
 import {
   fetchGitStatus,
   fetchGitStatusFiles,
+  fetchSubmodules,
   type GitDiffSide,
   type GitFileEntry,
+  type GitSubmoduleEntry,
 } from '../lib/api'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
 import { FileRow } from './file-row'
@@ -68,8 +70,9 @@ export function GitDiffDialog({
           </DialogDescription>
         </DialogHeader>
         <Toolbar />
-        <div className="flex-1 overflow-auto">
-          <Sections project={project} open={open} />
+        <div className="flex-1 overflow-auto space-y-6">
+          <RepoBlock project={project} open={open} submodule={undefined} title="Main repo" />
+          <SubmoduleBlocks project={project} open={open} />
         </div>
       </DialogContent>
     </Dialog>
@@ -138,60 +141,102 @@ function Toolbar() {
   )
 }
 
-function Sections({ project, open }: { project: string; open: boolean }) {
+function RepoBlock({
+  project,
+  open,
+  submodule,
+  title,
+}: {
+  project: string
+  open: boolean
+  submodule: string | undefined
+  title: string
+}) {
+  const queryKey = submodule
+    ? (['git-status-files', project, submodule] as const)
+    : (['git-status-files', project] as const)
   const { data, isPending, isError } = useQuery({
-    queryKey: ['git-status-files', project],
-    queryFn: () => fetchGitStatusFiles(project),
+    queryKey,
+    queryFn: () => fetchGitStatusFiles(project, submodule),
     enabled: open,
     staleTime: 2_000,
     retry: false,
   })
 
-  if (isPending) {
-    return (
-      <div className="space-y-2">
-        <Skeleton className="h-6 w-1/3" />
-        <Skeleton className="h-6 w-1/2" />
-        <Skeleton className="h-6 w-2/5" />
-      </div>
-    )
-  }
-  if (isError || !data) {
-    return (
-      <p className="text-xs text-destructive">Failed to load file list.</p>
-    )
-  }
-  if (data.enabled === false) {
-    return (
-      <p className="text-xs text-muted-foreground italic">
-        {data.reason === 'not-a-repo'
-          ? 'not a git repository'
-          : `git unavailable: ${data.reason}`}
-      </p>
-    )
-  }
-
   return (
-    <div className="space-y-4">
-      <Section
-        title="Staged"
-        entries={data.staged}
-        project={project}
-        side="staged"
-      />
-      <Section
-        title="Unstaged"
-        entries={data.unstaged}
-        project={project}
-        side="unstaged"
-      />
-      <Section
-        title="Untracked"
-        entries={data.untracked}
-        project={project}
-        side="untracked"
-      />
-    </div>
+    <section
+      data-slot={submodule ? 'repo-block-submodule' : 'repo-block-main'}
+      data-submodule={submodule ?? ''}
+      className="space-y-3"
+    >
+      <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h2>
+      {isPending ? (
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-6 w-1/2" />
+        </div>
+      ) : isError || !data ? (
+        <p className="text-xs text-destructive">Failed to load file list.</p>
+      ) : data.enabled === false ? (
+        <p className="text-xs text-muted-foreground italic">
+          {data.reason === 'not-a-repo'
+            ? 'not initialised'
+            : `git unavailable: ${data.reason}`}
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <Section
+            title="Staged"
+            entries={data.staged}
+            project={project}
+            side="staged"
+            submodule={submodule}
+          />
+          <Section
+            title="Unstaged"
+            entries={data.unstaged}
+            project={project}
+            side="unstaged"
+            submodule={submodule}
+          />
+          <Section
+            title="Untracked"
+            entries={data.untracked}
+            project={project}
+            side="untracked"
+            submodule={submodule}
+          />
+        </div>
+      )}
+    </section>
+  )
+}
+
+function SubmoduleBlocks({ project, open }: { project: string; open: boolean }) {
+  const { data } = useQuery({
+    queryKey: ['submodules', project],
+    queryFn: () => fetchSubmodules(project),
+    enabled: open,
+    staleTime: Infinity,
+    retry: false,
+  })
+  if (!data || data.enabled === false || data.submodules.length === 0) {
+    return null
+  }
+  return (
+    <>
+      {data.submodules.map((sub: GitSubmoduleEntry) => (
+        <RepoBlock
+          key={sub.name}
+          project={project}
+          open={open}
+          submodule={sub.name}
+          title={`Submodule: ${sub.name}`}
+        />
+      ))}
+    </>
   )
 }
 
@@ -200,11 +245,13 @@ function Section({
   entries,
   project,
   side,
+  submodule,
 }: {
   title: string
   entries: GitFileEntry[]
   project: string
   side: GitDiffSide
+  submodule?: string
 }) {
   return (
     <section data-slot={`section-${side}`}>
@@ -217,7 +264,12 @@ function Section({
         <ul className="space-y-0.5">
           {entries.map((entry) => (
             <li key={`${entry.path}:${entry.origPath ?? ''}`}>
-              <FileRow project={project} side={side} entry={entry} />
+              <FileRow
+                project={project}
+                side={side}
+                entry={entry}
+                submodule={submodule}
+              />
             </li>
           ))}
         </ul>

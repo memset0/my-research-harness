@@ -6,6 +6,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { readGitCommit } from '@memon/core'
 import { getRuntime } from '../../../../../lib/runtime'
+import { resolveSubmoduleCwd } from '../../../../../lib/server/resolve-submodule-cwd'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
@@ -48,6 +49,15 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     return badRequest('invalid sha')
   }
 
-  const result = await readGitCommit(entry.root, sha)
+  const submodule = url.searchParams.get('submodule')
+  const resolved = await resolveSubmoduleCwd(entry.root, submodule)
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { error: { message: resolved.message } },
+      { status: resolved.status },
+    )
+  }
+
+  const result = await readGitCommit(resolved.cwd, sha)
   return NextResponse.json(result)
 }

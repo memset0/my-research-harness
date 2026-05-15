@@ -33,10 +33,12 @@ import {
   fetchGitBranches,
   fetchGitCommit,
   fetchGitLog,
+  fetchSubmodules,
   type CommitMark,
   type GitBranches,
   type GitCommitDetail,
   type GitCommitSummary,
+  type GitSubmoduleEntry,
 } from '../lib/api'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
 import { CommitMarkBadge } from './commit-mark-badge'
@@ -52,6 +54,8 @@ export interface GitHistoryDialogProps {
 }
 
 const DETACHED_REF_PREFIX = '__detached__:'
+/** Radix Select rejects an empty string value; use this sentinel for "main repo". */
+const MAIN_REPO_SENTINEL = '__main__'
 
 export function GitHistoryDialog({
   project,
@@ -81,9 +85,21 @@ export function GitHistoryDialog({
 
 function HistoryBody({ project }: { project: string }) {
   const qc = useQueryClient()
+
+  // Empty string = main repo. Set via the submodule selector.
+  const [selectedSubmodule, setSelectedSubmodule] = useState<string>('')
+
+  const submodulesQuery = useQuery({
+    queryKey: ['submodules', project],
+    queryFn: () => fetchSubmodules(project),
+    staleTime: Infinity,
+    retry: false,
+  })
+
   const branchesQuery = useQuery({
-    queryKey: ['git-branches', project],
-    queryFn: () => fetchGitBranches(project),
+    queryKey: ['git-branches', project, selectedSubmodule],
+    queryFn: () =>
+      fetchGitBranches(project, selectedSubmodule || undefined),
     staleTime: Infinity,
     retry: false,
   })
@@ -110,8 +126,9 @@ function HistoryBody({ project }: { project: string }) {
       : effectiveRef
 
   const logQuery = useQuery({
-    queryKey: ['git-log', project, gitRev],
-    queryFn: () => fetchGitLog(project, gitRev!, 100),
+    queryKey: ['git-log', project, selectedSubmodule, gitRev],
+    queryFn: () =>
+      fetchGitLog(project, gitRev!, 100, selectedSubmodule || undefined),
     enabled: Boolean(gitRev),
     staleTime: Infinity,
     retry: false,
@@ -125,12 +142,16 @@ function HistoryBody({ project }: { project: string }) {
     staleTime: Infinity,
     retry: false,
   })
-  const marks = marksQuery.data?.marks ?? {}
+  const marks: CommitMark[] = marksQuery.data?.marks ?? []
 
   function onRefresh() {
-    qc.invalidateQueries({ queryKey: ['git-branches', project] })
+    qc.invalidateQueries({
+      queryKey: ['git-branches', project, selectedSubmodule],
+    })
     if (gitRev) {
-      qc.invalidateQueries({ queryKey: ['git-log', project, gitRev] })
+      qc.invalidateQueries({
+        queryKey: ['git-log', project, selectedSubmodule, gitRev],
+      })
     }
   }
 
@@ -158,6 +179,13 @@ function HistoryBody({ project }: { project: string }) {
   return (
     <>
       <Toolbar
+        submodules={submodulesQuery.data}
+        selectedSubmodule={selectedSubmodule}
+        onSelectedSubmoduleChange={(next) => {
+          setSelectedSubmodule(next)
+          setSelectedRef(null)
+          setSelectedSha(null)
+        }}
         branches={branchesQuery.data}
         selectedRef={effectiveRef}
         onSelectedRefChange={(next) => {
@@ -173,11 +201,13 @@ function HistoryBody({ project }: { project: string }) {
           selectedSha={selectedSha}
           onSelect={trySelect}
           marks={marks}
+          submodule={selectedSubmodule}
         />
         <CommitDetail
           project={project}
           sha={selectedSha}
           marks={marks}
+          submodule={selectedSubmodule}
           onDirtyChange={setEditorDirty}
         />
       </div>
@@ -186,11 +216,17 @@ function HistoryBody({ project }: { project: string }) {
 }
 
 function Toolbar({
+  submodules,
+  selectedSubmodule,
+  onSelectedSubmoduleChange,
   branches,
   selectedRef,
   onSelectedRefChange,
   onRefresh,
 }: {
+  submodules: import('../lib/api').GitSubmodules | undefined
+  selectedSubmodule: string
+  onSelectedSubmoduleChange: (s: string) => void
   branches: GitBranches | undefined
   selectedRef: string | null
   onSelectedRefChange: (ref: string) => void
@@ -216,8 +252,37 @@ function Toolbar({
     }
   }
 
+  const submoduleItems: { value: string; label: string }[] = [
+    { value: MAIN_REPO_SENTINEL, label: 'main' },
+  ]
+  if (submodules && submodules.enabled === true) {
+    for (const s of submodules.submodules) {
+      submoduleItems.push({ value: s.name, label: s.name })
+    }
+  }
+
   return (
     <div className="flex items-center gap-2 border-b pb-2">
+      <Select
+        value={selectedSubmodule || MAIN_REPO_SENTINEL}
+        onValueChange={(next) =>
+          onSelectedSubmoduleChange(next === MAIN_REPO_SENTINEL ? '' : next)
+        }
+      >
+        <SelectTrigger
+          data-slot="git-history-submodule-select"
+          className="h-7 w-[12rem] text-xs"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {submoduleItems.map((it) => (
+            <SelectItem key={it.value} value={it.value}>
+              <span className="font-mono text-xs">{it.label}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Select
         value={selectedRef ?? undefined}
         onValueChange={onSelectedRefChange}
@@ -282,13 +347,15 @@ function CommitList({
   selectedSha,
   onSelect,
   marks,
+  submodule,
 }: {
   project: string
   query: ReturnType<typeof useQuery<unknown, Error>> &
     { data?: import('../lib/api').GitLog | undefined }
   selectedSha: string | null
   onSelect: (sha: string) => void
-  marks: Record<string, CommitMark>
+  marks: CommitMark[]
+  submodule: string
 }) {
   const { data, isPending, isError } = query as {
     data: import('../lib/api').GitLog | undefined
@@ -324,7 +391,9 @@ function CommitList({
                 commit={c}
                 selected={c.sha === selectedSha}
                 onSelect={() => onSelect(c.sha)}
-                mark={marks[c.sha]}
+                mark={marks.find(
+                  (m) => m.sha === c.sha && m.submodule === submodule,
+                )}
               />
             </li>
           ))}
@@ -388,16 +457,18 @@ function CommitDetail({
   project,
   sha,
   marks,
+  submodule,
   onDirtyChange,
 }: {
   project: string
   sha: string | null
-  marks: Record<string, CommitMark>
+  marks: CommitMark[]
+  submodule: string
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ['git-commit', project, sha],
-    queryFn: () => fetchGitCommit(project, sha!),
+    queryKey: ['git-commit', project, submodule, sha],
+    queryFn: () => fetchGitCommit(project, sha!, submodule || undefined),
     enabled: Boolean(sha),
     staleTime: Infinity,
     retry: false,
@@ -435,7 +506,10 @@ function CommitDetail({
           project={project}
           detail={data}
           sha={data.sha}
-          mark={marks[data.sha]}
+          submodule={submodule}
+          mark={marks.find(
+            (m) => m.sha === data.sha && m.submodule === submodule,
+          )}
           onDirtyChange={onDirtyChange}
         />
       )}
@@ -447,12 +521,14 @@ function CommitDetailBody({
   project,
   detail,
   sha,
+  submodule,
   mark,
   onDirtyChange,
 }: {
   project: string
   detail: Extract<GitCommitDetail, { enabled: true }>
   sha: string
+  submodule: string
   mark?: CommitMark
   onDirtyChange: (dirty: boolean) => void
 }) {
@@ -471,6 +547,7 @@ function CommitDetailBody({
           project={project}
           sha={sha}
           mark={mark}
+          submodule={submodule || undefined}
           onDirtyChange={onDirtyChange}
         />
         <div className="font-medium">{detail.subject}</div>
@@ -489,7 +566,13 @@ function CommitDetailBody({
         <ul className="space-y-0.5">
           {detail.files.map((f) => (
             <li key={`${f.path}:${f.origPath ?? ''}`}>
-              <FileRow project={project} side="commit" sha={sha} entry={f} />
+              <FileRow
+                project={project}
+                side="commit"
+                sha={sha}
+                submodule={submodule || undefined}
+                entry={f}
+              />
             </li>
           ))}
         </ul>

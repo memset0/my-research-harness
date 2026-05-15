@@ -1,22 +1,29 @@
 // Per-project store of commit verification marks. Each project's marks
 // live in `<projectRoot>/.memon/commit-marks.csv` — a tiny CSV with one
-// row per marked commit, sorted by SHA ascending so git diffs stay clean
-// across edits. Unmarked commits don't appear in the file at all.
+// row per marked commit, sorted by (submodule, sha) ascending so git
+// diffs stay clean across edits. Unmarked commits don't appear in the
+// file at all.
 //
 // CSV layout (RFC 4180):
-//   sha,status,note,updated_at
-//   <full SHA>,<verified|suspicious|issue>,<note>,<ISO 8601 w/ offset>
+//   sha,status,note,updated_at,submodule
+//   <full SHA>,<verified|suspicious|issue>,<note>,<ISO 8601 w/ offset>,<submodule-name-or-empty>
 //
 // Notes containing commas / quotes / newlines are double-quoted with
-// inner quotes doubled per RFC 4180. The file is meant to be committed
-// to the project's own git so the marks travel between machines.
+// inner quotes doubled per RFC 4180. The `submodule` column is the
+// submodule NAME from `.gitmodules` (empty for the main repo).
+//
+// Back-compat: the reader accepts the legacy 4-column header
+// (`sha,status,note,updated_at`) and treats every row as
+// `submodule = ''`. The writer always emits the 5-column form, so the
+// first write after deployment upgrades the file in place.
 
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 export const COMMIT_MARKS_RELPATH = '.memon/commit-marks.csv'
 
-const HEADER = 'sha,status,note,updated_at'
+const HEADER_V5 = 'sha,status,note,updated_at,submodule'
+const HEADER_V4_LEGACY = 'sha,status,note,updated_at'
 const SAFE_SHA_REGEX = /^[A-Za-z0-9_\-/.~^]+$/
 const MAX_SHA_LEN = 200
 
@@ -33,10 +40,12 @@ export interface CommitMark {
   status: CommitMarkStatus
   note: string
   updatedAt: string
+  /** Submodule name from `.gitmodules`; empty string for main repo. */
+  submodule: string
 }
 
 export interface ReadCommitMarksResult {
-  marks: Record<string, CommitMark>
+  marks: CommitMark[]
   parseWarnings: string[]
 }
 
@@ -55,7 +64,7 @@ export async function readCommitMarks(
     text = await readFile(path, 'utf8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { marks: {}, parseWarnings: [] }
+      return { marks: [], parseWarnings: [] }
     }
     throw err
   }
@@ -65,11 +74,12 @@ export async function readCommitMarks(
 export async function setCommitMark(
   projectRoot: string,
   sha: string,
-  input: { status: CommitMarkStatus; note?: string },
+  input: { status: CommitMarkStatus; note?: string; submodule?: string },
   opts: ReadCommitMarksOptions = {},
 ): Promise<CommitMark> {
   validateSha(sha)
   validateStatus(input.status)
+  const submodule = input.submodule ?? ''
   const path = opts.csvPathOverride ?? join(projectRoot, COMMIT_MARKS_RELPATH)
   const { marks } = await readCommitMarks(projectRoot, opts)
   const next: CommitMark = {
@@ -77,8 +87,16 @@ export async function setCommitMark(
     status: input.status,
     note: input.note ?? '',
     updatedAt: formatIsoNow(),
+    submodule,
   }
-  marks[sha] = next
+  const existingIdx = marks.findIndex(
+    (m) => m.sha === sha && m.submodule === submodule,
+  )
+  if (existingIdx >= 0) {
+    marks[existingIdx] = next
+  } else {
+    marks.push(next)
+  }
   await atomicWriteMarks(path, marks)
   return next
 }
@@ -86,14 +104,18 @@ export async function setCommitMark(
 export async function deleteCommitMark(
   projectRoot: string,
   sha: string,
-  opts: ReadCommitMarksOptions = {},
+  opts: ReadCommitMarksOptions & { submodule?: string } = {},
 ): Promise<{ deleted: boolean }> {
   validateSha(sha)
+  const submodule = opts.submodule ?? ''
   const path = opts.csvPathOverride ?? join(projectRoot, COMMIT_MARKS_RELPATH)
   const { marks } = await readCommitMarks(projectRoot, opts)
-  if (!(sha in marks)) return { deleted: false }
-  delete marks[sha]
-  await atomicWriteMarks(path, marks)
+  const before = marks.length
+  const next = marks.filter(
+    (m) => !(m.sha === sha && m.submodule === submodule),
+  )
+  if (next.length === before) return { deleted: false }
+  await atomicWriteMarks(path, next)
   return { deleted: true }
 }
 
@@ -127,12 +149,10 @@ function validateStatus(status: string): asserts status is CommitMarkStatus {
 
 async function atomicWriteMarks(
   path: string,
-  marks: Record<string, CommitMark>,
+  marks: CommitMark[],
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
-  const sorted = Object.values(marks).sort((a, b) =>
-    a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0,
-  )
+  const sorted = sortMarks(marks)
   const text = serializeCsv(sorted)
   const tmp = `${path}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`
   try {
@@ -148,13 +168,31 @@ async function atomicWriteMarks(
   }
 }
 
+function sortMarks(marks: CommitMark[]): CommitMark[] {
+  return [...marks].sort((a, b) => {
+    if (a.submodule !== b.submodule) {
+      // Empty (main repo) sorts before any non-empty submodule name.
+      if (a.submodule === '') return -1
+      if (b.submodule === '') return 1
+      return a.submodule < b.submodule ? -1 : 1
+    }
+    return a.sha < b.sha ? -1 : a.sha > b.sha ? 1 : 0
+  })
+}
+
 // --- CSV parser / serializer (RFC 4180) ----------------------------------
 
 export function serializeCsv(marks: CommitMark[]): string {
-  const lines = [HEADER]
+  const lines = [HEADER_V5]
   for (const m of marks) {
     lines.push(
-      [m.sha, m.status, quoteIfNeeded(m.note), m.updatedAt].join(','),
+      [
+        m.sha,
+        m.status,
+        quoteIfNeeded(m.note),
+        m.updatedAt,
+        quoteIfNeeded(m.submodule),
+      ].join(','),
     )
   }
   return `${lines.join('\n')}\n`
@@ -175,31 +213,39 @@ function quoteIfNeeded(s: string): string {
 
 export function parseCsv(text: string): ReadCommitMarksResult {
   const parseWarnings: string[] = []
-  const marks: Record<string, CommitMark> = {}
+  const marks: CommitMark[] = []
   const records = parseCsvRecords(text)
   if (records.length === 0) {
     parseWarnings.push('empty file')
     return { marks, parseWarnings }
   }
   const headerRow = records[0]!.join(',')
-  if (headerRow !== HEADER) {
+  let legacyV4 = false
+  if (headerRow === HEADER_V5) {
+    // current schema
+  } else if (headerRow === HEADER_V4_LEGACY) {
+    legacyV4 = true
+    parseWarnings.push(
+      'legacy 4-column header (sha,status,note,updated_at) — next write upgrades to 5-column form',
+    )
+  } else {
     parseWarnings.push('missing or malformed header')
     return { marks, parseWarnings }
   }
+  const expectedCols = legacyV4 ? 4 : 5
   for (let i = 1; i < records.length; i += 1) {
     const fields = records[i]!
-    if (fields.length !== 4) {
+    if (fields.length !== expectedCols) {
       parseWarnings.push(
-        `row ${i + 1}: expected 4 columns, got ${fields.length}`,
+        `row ${i + 1}: expected ${expectedCols} columns, got ${fields.length}`,
       )
       continue
     }
-    const [sha, status, note, updatedAt] = fields as [
-      string,
-      string,
-      string,
-      string,
-    ]
+    const sha = fields[0]!
+    const status = fields[1]!
+    const note = fields[2]!
+    const updatedAt = fields[3]!
+    const submodule = legacyV4 ? '' : fields[4]!
     if (!sha || sha.length > MAX_SHA_LEN || !SAFE_SHA_REGEX.test(sha)) {
       parseWarnings.push(`row ${i + 1}: invalid sha`)
       continue
@@ -212,7 +258,7 @@ export function parseCsv(text: string): ReadCommitMarksResult {
       parseWarnings.push(`row ${i + 1}: invalid status "${status}"`)
       continue
     }
-    marks[sha] = { sha, status, note, updatedAt }
+    marks.push({ sha, status, note, updatedAt, submodule })
   }
   return { marks, parseWarnings }
 }

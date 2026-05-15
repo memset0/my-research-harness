@@ -15,6 +15,7 @@ import {
   type ReadGitFileContentsResult,
 } from '@memon/core'
 import { getRuntime } from '../../../../../lib/runtime'
+import { resolveSubmoduleCwd } from '../../../../../lib/server/resolve-submodule-cwd'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
@@ -81,11 +82,23 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   }
 
   const url = new URL(req.url)
+  const submoduleParam = url.searchParams.get('submodule')
+  const resolved = await resolveSubmoduleCwd(entry.root, submoduleParam)
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { error: { message: resolved.message } },
+      { status: resolved.status },
+    )
+  }
+  const cwd = resolved.cwd
+
   const path = url.searchParams.get('path')
   const side = url.searchParams.get('side')
   if (!path) return badRequest('missing path')
   if (path.includes('\0')) return badRequest('invalid path')
-  if (pathEscapes(entry.root, path)) return badRequest('path escapes project root')
+  // Path-escape check is scoped to the resolved cwd (project root for the
+  // main repo, submodule root otherwise).
+  if (pathEscapes(cwd, path)) return badRequest('path escapes project root')
   if (!isValidSide(side)) {
     return badRequest('side must be staged|unstaged|untracked|commit')
   }
@@ -129,8 +142,8 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   }
 
   const [oldRes, newRes] = await Promise.all([
-    oldRef ? readGitFileContents(entry.root, oldRef, path) : Promise.resolve(null),
-    newRef ? readGitFileContents(entry.root, newRef, path) : Promise.resolve(null),
+    oldRef ? readGitFileContents(cwd, oldRef, path) : Promise.resolve(null),
+    newRef ? readGitFileContents(cwd, newRef, path) : Promise.resolve(null),
   ])
 
   // Resolve old side: a `not-found` for HEAD/index means this is a new file

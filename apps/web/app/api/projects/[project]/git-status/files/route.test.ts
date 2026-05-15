@@ -11,10 +11,11 @@ vi.mock('@memon/core', async (importOriginal) => {
   return {
     ...actual,
     readGitStatusFiles: vi.fn(),
+    readGitSubmodules: vi.fn(),
   }
 })
 
-import { readGitStatusFiles } from '@memon/core'
+import { readGitStatusFiles, readGitSubmodules } from '@memon/core'
 import { GET } from './route'
 import { getRuntime } from '../../../../../../lib/runtime'
 
@@ -97,5 +98,35 @@ describe('GET /api/projects/[project]/git-status/files', () => {
     )
     expect(res.status).toBe(200)
     expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a')
+  })
+
+  describe('?submodule=<name>', () => {
+    it('resolves to the submodule cwd and calls readGitStatusFiles there', async () => {
+      vi.mocked(readGitSubmodules).mockResolvedValue({
+        enabled: true,
+        submodules: [{ name: 'vendor/foo', path: 'vendor/foo' }],
+      })
+      const r = new NextRequest(
+        'http://localhost/api/projects/project-a/git-status/files?submodule=vendor%2Ffoo',
+        { method: 'GET', headers: { 'x-memon-role': 'owner' } },
+      )
+      const res = await GET(r, paramsFor('project-a'))
+      expect(res.status).toBe(200)
+      expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a/vendor/foo')
+    })
+
+    it('400 for an unknown submodule name', async () => {
+      vi.mocked(readGitSubmodules).mockResolvedValue({
+        enabled: true,
+        submodules: [{ name: 'vendor/foo', path: 'vendor/foo' }],
+      })
+      const r = new NextRequest(
+        'http://localhost/api/projects/project-a/git-status/files?submodule=does-not-exist',
+        { method: 'GET', headers: { 'x-memon-role': 'owner' } },
+      )
+      const res = await GET(r, paramsFor('project-a'))
+      expect(res.status).toBe(400)
+      expect(readGitStatusFiles).not.toHaveBeenCalled()
+    })
   })
 })

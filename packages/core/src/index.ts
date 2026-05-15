@@ -140,6 +140,12 @@ export {
   serializeCsv as serializeCommitMarksCsv,
   setCommitMark,
 } from './git/commit-marks.js'
+export { readGitSubmodules } from './git/submodules.js'
+export type {
+  GitSubmoduleEntry,
+  GitSubmodules,
+  ReadGitSubmodulesOptions,
+} from './git/submodules.js'
 export type {
   CommitMark,
   CommitMarkStatus,

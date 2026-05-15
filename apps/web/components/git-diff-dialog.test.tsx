@@ -6,6 +6,7 @@ import { renderWithQuery } from '../test/utils'
 vi.mock('../lib/api', () => ({
   fetchGitStatus: vi.fn(),
   fetchGitStatusFiles: vi.fn(),
+  fetchSubmodules: vi.fn(),
   fetchGitDiff: vi.fn(),
 }))
 
@@ -13,6 +14,7 @@ import {
   fetchGitDiff,
   fetchGitStatus,
   fetchGitStatusFiles,
+  fetchSubmodules,
   type GitDiffResponse,
   type GitStatusFiles,
 } from '../lib/api'
@@ -61,6 +63,7 @@ beforeEach(() => {
   window.localStorage.clear()
   vi.mocked(fetchGitStatus).mockResolvedValue(STATUS)
   vi.mocked(fetchGitStatusFiles).mockResolvedValue(FILES)
+  vi.mocked(fetchSubmodules).mockResolvedValue({ enabled: true, submodules: [] })
   vi.mocked(fetchGitDiff).mockResolvedValue(DIFF)
 })
 afterEach(() => {
@@ -78,7 +81,7 @@ describe('GitDiffDialog', () => {
       expect(screen.getByText(/Untracked \(1\)/)).toBeInTheDocument()
     })
     expect(fetchGitStatusFiles).toHaveBeenCalledTimes(1)
-    expect(fetchGitStatusFiles).toHaveBeenCalledWith('project-a')
+    expect(fetchGitStatusFiles).toHaveBeenCalledWith('project-a', undefined)
   })
 
   it('does not fetch the file list while open=false', () => {
@@ -117,6 +120,7 @@ describe('GitDiffDialog', () => {
         'project-a',
         'unstaged-a.txt',
         'unstaged',
+        undefined,
         undefined,
       )
     })
@@ -207,5 +211,44 @@ describe('GitDiffDialog', () => {
     expect(
       document.body.querySelector('[data-slot="git-diff-dialog-history-link"]'),
     ).toBeNull()
+  })
+
+  it('renders a per-submodule repo block when submodules are present', async () => {
+    vi.mocked(fetchSubmodules).mockResolvedValue({
+      enabled: true,
+      submodules: [
+        { name: 'vendor/foo', path: 'vendor/foo' },
+        { name: 'themes/dark', path: 'themes/dark' },
+      ],
+    })
+    vi.mocked(fetchGitStatusFiles).mockImplementation(async (_p, submodule) => {
+      if (submodule === 'vendor/foo') {
+        return {
+          enabled: true,
+          branch: 'main',
+          detached: false,
+          sha: '1234567',
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+          staged: [],
+          unstaged: [{ path: 'lib.ts', status: 'modified' }],
+          untracked: [],
+        }
+      }
+      return FILES
+    })
+    renderWithQuery(
+      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
+    )
+    await waitFor(() => {
+      const main = document.body.querySelector('[data-slot="repo-block-main"]')
+      const subs = document.body.querySelectorAll('[data-slot="repo-block-submodule"]')
+      expect(main).not.toBeNull()
+      expect(subs.length).toBe(2)
+    })
+    expect(fetchGitStatusFiles).toHaveBeenCalledWith('project-a', undefined)
+    expect(fetchGitStatusFiles).toHaveBeenCalledWith('project-a', 'vendor/foo')
+    expect(fetchGitStatusFiles).toHaveBeenCalledWith('project-a', 'themes/dark')
   })
 })

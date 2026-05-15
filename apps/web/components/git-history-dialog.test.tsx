@@ -9,6 +9,7 @@ vi.mock('../lib/api', () => ({
   fetchGitCommit: vi.fn(),
   fetchGitDiff: vi.fn(),
   fetchCommitMarks: vi.fn(),
+  fetchSubmodules: vi.fn(),
   setCommitMark: vi.fn(),
   deleteCommitMark: vi.fn(),
 }))
@@ -19,6 +20,7 @@ import {
   fetchGitCommit,
   fetchGitDiff,
   fetchGitLog,
+  fetchSubmodules,
   type GitBranches,
   type GitCommitDetail,
   type GitDiffResponse,
@@ -92,7 +94,8 @@ beforeEach(() => {
   vi.mocked(fetchGitLog).mockResolvedValue(LOG)
   vi.mocked(fetchGitCommit).mockResolvedValue(COMMIT_A)
   vi.mocked(fetchGitDiff).mockResolvedValue(DIFF)
-  vi.mocked(fetchCommitMarks).mockResolvedValue({ marks: {}, parseWarnings: [] })
+  vi.mocked(fetchCommitMarks).mockResolvedValue({ marks: [], parseWarnings: [] })
+  vi.mocked(fetchSubmodules).mockResolvedValue({ enabled: true, submodules: [] })
 })
 afterEach(() => {
   window.localStorage.clear()
@@ -130,8 +133,8 @@ describe('GitHistoryDialog', () => {
       expect(screen.getByText('fix the bug')).toBeInTheDocument(),
     )
     expect(screen.getByText('add feature')).toBeInTheDocument()
-    expect(fetchGitBranches).toHaveBeenCalledWith('project-a')
-    expect(fetchGitLog).toHaveBeenCalledWith('project-a', 'main', 100)
+    expect(fetchGitBranches).toHaveBeenCalledWith('project-a', undefined)
+    expect(fetchGitLog).toHaveBeenCalledWith('project-a', 'main', 100, undefined)
   })
 
   it('right pane shows placeholder until a commit is clicked', async () => {
@@ -154,7 +157,11 @@ describe('GitHistoryDialog', () => {
     )
     await userEvent.click(screen.getByText('fix the bug'))
     await waitFor(() => {
-      expect(fetchGitCommit).toHaveBeenCalledWith('project-a', 'a'.repeat(40))
+      expect(fetchGitCommit).toHaveBeenCalledWith(
+        'project-a',
+        'a'.repeat(40),
+        undefined,
+      )
     })
     expect(screen.getByText('app/page.tsx')).toBeInTheDocument()
     expect(screen.getByText('lib/util.ts')).toBeInTheDocument()
@@ -178,6 +185,7 @@ describe('GitHistoryDialog', () => {
         'app/page.tsx',
         'commit',
         'a'.repeat(40),
+        undefined,
       )
     })
   })
@@ -208,14 +216,15 @@ describe('GitHistoryDialog', () => {
 
   it('every commit row has a commit-mark-badge (verified for marked, none otherwise)', async () => {
     vi.mocked(fetchCommitMarks).mockResolvedValue({
-      marks: {
-        ['a'.repeat(40)]: {
+      marks: [
+        {
           sha: 'a'.repeat(40),
           status: 'verified',
           note: '',
           updatedAt: '2026-05-15T12:00:00+08:00',
+          submodule: '',
         },
-      },
+      ],
       parseWarnings: [],
     })
     renderWithQuery(
