@@ -6,8 +6,12 @@
 // indents from the left by `--sidebar-width` so it doesn't sit over the
 // sidebar; on mobile the sidebar is off-canvas, so full-width is correct.
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
+import { fetchGitStatus } from '../lib/api'
 import { cn } from '../lib/utils'
+import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
 
 export interface ProjectFooterProps {
@@ -15,24 +19,56 @@ export interface ProjectFooterProps {
 }
 
 export function ProjectFooter({ project }: ProjectFooterProps) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  // Same query key as `<GitStatusPill />` so this read deduplicates with
+  // the pill's poll — we don't fire an extra request.
+  const { data } = useQuery({
+    queryKey: ['git-status', project],
+    queryFn: () => fetchGitStatus(project),
+    staleTime: 5_000,
+    retry: false,
+  })
+  const gitEnabled = data?.enabled === true
+
   return (
-    <footer
-      data-slot="project-footer"
-      className={cn(
-        'fixed inset-x-0 bottom-0 z-40 flex h-7 items-center gap-3 border-t bg-card px-3 text-xs text-muted-foreground',
-        'md:left-[var(--sidebar-width)]',
-      )}
-    >
-      <Link
-        href={`/p/${encodeURIComponent(project)}`}
-        className="font-mono font-medium text-foreground hover:underline"
+    <>
+      <footer
+        data-slot="project-footer"
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-40 flex h-7 items-center gap-3 border-t bg-card px-3 text-xs text-muted-foreground',
+          'md:left-[var(--sidebar-width)]',
+        )}
       >
-        {project}
-      </Link>
-      <span className="text-muted-foreground/40">·</span>
-      <GitStatusPill project={project} variant="footer" />
-      {/* Spacer reserved for future widgets (build state, monitor, etc.). */}
-      <div className="ml-auto" />
-    </footer>
+        <Link
+          href={`/p/${encodeURIComponent(project)}`}
+          className="font-mono font-medium text-foreground hover:underline"
+        >
+          {project}
+        </Link>
+        <span className="text-muted-foreground/40">·</span>
+        {gitEnabled ? (
+          <button
+            type="button"
+            onClick={() => setDialogOpen(true)}
+            data-slot="git-diff-dialog-trigger"
+            aria-label={`View git diff for ${project}`}
+            className="inline-flex cursor-pointer items-center rounded px-1 hover:bg-accent hover:text-accent-foreground"
+          >
+            <GitStatusPill project={project} variant="footer" />
+          </button>
+        ) : (
+          <GitStatusPill project={project} variant="footer" />
+        )}
+        {/* Spacer reserved for future widgets (build state, monitor, etc.). */}
+        <div className="ml-auto" />
+      </footer>
+      {gitEnabled && (
+        <GitDiffDialog
+          project={project}
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+        />
+      )}
+    </>
   )
 }

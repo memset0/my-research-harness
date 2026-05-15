@@ -110,6 +110,20 @@ export { FS_CONVENTION_VERSION } from './version.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
 export { parsePorcelainV2, readGitStatus } from './git/status.js'
 export type { GitStatus, ReadGitStatusOptions } from './git/status.js'
+export {
+  MAX_DIFF_BYTES,
+  parsePorcelainV2WithFiles,
+  readGitFileContents,
+  readGitStatusFiles,
+} from './git/files.js'
+export type {
+  GitFileEntry,
+  GitFileStatus,
+  GitStatusFiles,
+  ReadGitFileContentsOptions,
+  ReadGitFileContentsResult,
+  ReadGitStatusFilesOptions,
+} from './git/files.js'
 
 // v3 experiment doc types (sed-renamed from Experiment* during rename pass)
 export type {
