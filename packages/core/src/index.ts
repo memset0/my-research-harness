@@ -134,6 +134,12 @@ export { discoverExperiments, readExperimentDoc } from './experiments/discover.j
 export type { DiscoverExperimentsResult } from './experiments/discover.js'
 export { computeMembership } from './experiments/membership.js'
 export type { MembershipInput, MembershipResult } from './experiments/membership.js'
+export { renameExperiment, RenameExperimentError } from './experiments/rename.js'
+export type {
+  RenameExperimentOptions,
+  RenameExperimentResult,
+  RenameExperimentWarning,
+} from './experiments/rename.js'
 
 export {
   computeFsVersionStatus,

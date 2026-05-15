@@ -33,6 +33,7 @@ import {
   runExperimentUnarchiveDoc,
   runExperimentUnlink,
 } from './commands/experiment-doc.js'
+import { runExperimentRename } from './commands/experiment-rename.js'
 import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
@@ -267,6 +268,14 @@ experiment
       })
     },
   )
+
+experiment
+  .command('rename <id-or-slug> <new-slug>')
+  .description("rename an experiment's slug (NNNN preserved); cascades through bound runs and hypotheses.md")
+  .action(async (idOrSlug: string, newSlug: string) => {
+    const g = readGlobals()
+    await runExperimentRename({ ...g, idOrSlug, newSlug })
+  })
 
 experiment
   .command('link <id-or-slug> <run-dir-or-id>')
