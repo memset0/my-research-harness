@@ -357,3 +357,115 @@ describe('memon experiment warning resolve / reopen / delete', () => {
     expect(exit!.exitCode).toBe(4)
   })
 })
+
+const EXP_README_BASE = `---
+id: E0001-foo
+slug: foo
+title: Exp foo
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: '2026-05-01T08:00:00+08:00'
+updated_at: '2026-05-01T08:00:00+08:00'
+---
+
+## Motivation
+
+m
+
+## Method
+
+x
+
+## Conclusion
+
+c
+
+## Caveats
+
+cav
+
+## Warnings
+
+| Status | Created | Run | Category | Message | Resolved | Note |
+| --- | --- | --- | --- | --- | --- | --- |
+`
+
+describe('memon experiment warning * — v5 exp doc', () => {
+  let expReadmePath: string
+
+  beforeEach(async () => {
+    const expDir = join(root, 'docs', 'experiments', 'E0001-foo')
+    await fs.mkdir(expDir, { recursive: true })
+    expReadmePath = join(expDir, 'README.md')
+    await fs.writeFile(expReadmePath, EXP_README_BASE)
+  })
+
+  it('writes a new row to the v5 exp folder README on `warning add E0001-foo`', async () => {
+    await runWarningAdd({
+      cwd: root,
+      projectRoot: root,
+      runId: 'E0001-foo',
+      run: 'bar-260501-100000',
+      category: 'result',
+      message: 'loss diverges in v5 layout',
+    })
+    const out = lastJsonStdout()
+    expect(out.ok).toBe(true)
+    expect(out.rowId).toMatch(/^w_/)
+    const md = await fs.readFile(expReadmePath, 'utf8')
+    expect(md).toContain('loss diverges in v5 layout')
+    expect(md).toContain('bar-260501-100000')
+    const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
+    expect(journal).toContain('[WARNING]')
+    expect(journal).toContain('op=add')
+    expect(journal).toContain('`E0001-foo`')
+    expect(journal).toContain('run=bar-260501-100000')
+  })
+
+  it('returns NOT_FOUND on a missing exp id', async () => {
+    let exit: ExitCalled | undefined
+    try {
+      await runWarningAdd({
+        cwd: root,
+        projectRoot: root,
+        runId: 'E0099-missing',
+        category: 'result',
+        message: 'whatever',
+      })
+    } catch (e) {
+      if (e instanceof ExitCalled) exit = e
+      else throw e
+    }
+    expect(exit).toBeDefined()
+    expect(exit!.exitCode).toBe(4)
+    const err = JSON.parse(stderrChunks.join(''))
+    expect(err.error.code).toBe('NOT_FOUND')
+    // Verify nothing was written
+    const md = await fs.readFile(expReadmePath, 'utf8')
+    expect(md).toBe(EXP_README_BASE)
+  })
+
+  it('warning list returns the rows from the v5 exp folder README', async () => {
+    await runWarningAdd({
+      cwd: root,
+      projectRoot: root,
+      runId: 'E0001-foo',
+      run: 'bar-260501-100000',
+      category: 'result',
+      message: 'one',
+    })
+    stdoutChunks = []
+    await runWarningList({
+      cwd: root,
+      projectRoot: root,
+      runId: 'E0001-foo',
+      status: 'all',
+    })
+    const out = lastJsonStdout()
+    expect(out.ok).toBe(true)
+    expect(out.warnings).toHaveLength(1)
+  })
+})

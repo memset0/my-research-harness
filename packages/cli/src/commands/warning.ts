@@ -1,10 +1,11 @@
 // memon experiment warning {add, list, resolve, reopen, delete}
 //
 // Section-bound writes against `## Warnings` in either:
-//   - <runDir>/README.md          (v2 / legacy alias path — first arg is a run dir id)
-//   - docs/experiments/<expId>.md (v3 exp-doc path       — first arg is `E\d{4}-<slug>`)
+//   - <runDir>/README.md                              (legacy v2 path — first arg is a run dir id)
+//   - docs/experiments/E<NNNN>-<slug>/README.md       (post-v5 exp-doc path — first arg is `E\d{4}-<slug>`)
+//   - docs/experiments/E<NNNN>-<slug>.md              (legacy v4 file-form fallback)
 //
-// Detection is by id shape. The v3 path additionally accepts `--run <runDir>` on
+// Detection is by id shape. The exp-doc path additionally accepts `--run <runDir>` on
 // `add` to attribute the warning row to a specific member run; absence means
 // experiment-scoped (Run cell rendered as `—`).
 //
@@ -17,6 +18,7 @@ import { dirname, join } from 'node:path'
 import {
   appendJournalEvent,
   applyWarningOp,
+  discoverExperiments,
   generateRowId,
   parseReadme,
   scanProjectRoot,
@@ -46,9 +48,17 @@ async function resolveTarget(
 ): Promise<ResolvedTarget> {
   const r = await resolveContext(ctx)
   const projectRoot = singleProjectRoot(r)
+  const projectName = r.config.projects[0]!.name
   if (EXP_ID_RE.test(idOrSlug)) {
-    const readmePath = join(projectRoot, 'docs', 'experiments', `${idOrSlug}.md`)
-    return { readmePath, projectRoot, targetId: idOrSlug, isExpDoc: true }
+    // Exp-id form: resolve via the v5-aware discovery helper, which
+    // handles both the v5 folder layout (`E<NNNN>-<slug>/README.md`)
+    // and the legacy v4 file fallback (`E<NNNN>-<slug>.md`).
+    const { experiments } = await discoverExperiments(projectRoot, projectName)
+    const exp = experiments.find((e) => e.id === idOrSlug)
+    if (!exp) {
+      emitErrorAndExit('NOT_FOUND', `experiment "${idOrSlug}" not found in ${projectRoot}`)
+    }
+    return { readmePath: exp.path, projectRoot, targetId: idOrSlug, isExpDoc: true }
   }
   // Legacy v2 form: id is a run dir base name. Resolve via the runtime index.
   const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
