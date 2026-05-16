@@ -125,25 +125,46 @@ export function AppSidebar() {
         <ThemeToggle />
       </SidebarHeader>
       {/*
-        VSCode-Explorer-style section layout. SidebarContent is a flex
-        column that fills the space between SidebarHeader and
-        SidebarFooter. The shadcn primitive already supplies
-        `flex min-h-0 flex-1 flex-col gap-0 overflow-auto` — those are
-        the load-bearing classes for "even-height distribution across
-        expanded sections":
-          • `flex-1`  → take remaining height (sibling-aware: it leaves
-            header + footer their intrinsic slots, unlike `h-full` which
-            would devour them).
-          • `min-h-0` → let children with `flex-1` actually shrink/grow.
-          • `flex-col gap-0` → vertical stack, no inter-section gap.
-        We deliberately DO NOT override here (an earlier `h-full` cut
-        produced a visible bug where the last expanded section ran past
-        the footer's slot — `h-full` made SidebarContent claim 100% of
-        the sidebar height, leaving header/footer no room).
-        Each `<ProjectGroup>` toggles between `flex-1 min-h-0`
-        (expanded) and `flex-none` (collapsed); see `ProjectGroup`.
+        VSCode-Explorer-style section layout via CSS Grid.
+
+        We replace shadcn SidebarContent's default flex layout with a
+        grid for two reasons:
+
+        1. **Banner safety**: in a flex column where each section is a
+           flex child with default `flex-shrink: 1`, multi-expand
+           overflow shrinks EVERY child including closed sections —
+           collapsing their banners below intrinsic height, causing
+           visible banner overlap. Grid rows with `minmax(BANNER, ...)`
+           enforce a hard minimum per row, so banners never compress.
+
+        2. **Smooth multi-section animation**: animating each row from
+           `minmax(BANNER, 0fr)` to `minmax(BANNER, 1fr)` interpolates
+           the `fr` component natively (Chrome 121+ supports fr-unit
+           interpolation in minmax). All rows reflow simultaneously
+           — the opened section grows, expanded siblings shrink to
+           share — over a single 200ms `grid-template-rows`
+           transition. Earlier attempts with flex-grow / per-row
+           Radix keyframes either fought the flex overflow or
+           snap-jumped because of mismatched basis values.
+
+        `gridTemplateRows` is computed from the `expanded` set;
+        `!grid` overrides shadcn's `flex` (Tailwind's `!` = important).
+        `overflow-hidden` clips section content during transition so
+        intermediate intrinsic-vs-row-size mismatches don't bleed
+        into siblings.
       */}
-      <SidebarContent>
+      <SidebarContent
+        style={{
+          gridTemplateRows: projects
+            .map((p) =>
+              expanded.has(p.name)
+                ? `minmax(var(--sidebar-section-banner-h, 1.75rem), 1fr)`
+                : `minmax(var(--sidebar-section-banner-h, 1.75rem), 0fr)`,
+            )
+            .join(' '),
+        }}
+        className="!grid !overflow-hidden transition-[grid-template-rows] duration-200 ease-out"
+      >
         {projects.map((p) => (
           <ProjectGroup
             key={p.name}
@@ -261,13 +282,23 @@ function ProjectGroup({
     // instead of per-section internal scroll". Putting flex-1 here
     // makes the section row actually a flex child of SidebarContent and
     // restores the multi-expand even-height contract.
+    // Each Collapsible is now a single GRID ROW of SidebarContent's
+    // grid (see the SidebarContent block above for the row-template).
+    // We deliberately do NOT carry flex-grow / flex-1 / flex-none on
+    // this wrapper anymore — the outer grid's `minmax(28px, 0fr|1fr)`
+    // template controls the row's height transition. The wrapper just
+    // needs to be a flex column internally (banner + content stack)
+    // and clip overflow so content shrinking past banner-only height
+    // disappears cleanly during the grid transition.
+    //
+    // `min-h-0` is essential so the inner `<CollapsibleContent>` with
+    // `flex-1 min-h-0 overflow-y-auto` can shrink past min-content and
+    // scroll internally instead of pushing the row taller than its
+    // grid-template-rows says.
     <Collapsible
       open={isOpen}
       onOpenChange={onOpenChange}
-      className={cn(
-        'group/collapsible flex flex-col min-h-0',
-        isOpen ? 'flex-1' : 'flex-none',
-      )}
+      className="group/collapsible flex min-h-0 flex-col overflow-hidden"
     >
       <SidebarGroup
         className={cn(
@@ -302,7 +333,11 @@ function ProjectGroup({
             // `text-align: center` that CollapsibleTrigger renders
             // with — without it the project name floats to the middle
             // of the flex-1 span instead of sitting flush-left.
-            'h-auto cursor-pointer rounded-none border-y border-sidebar-border bg-sidebar-accent/60 px-2 py-1 -mx-2 text-left hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            // Banner height is fixed to `h-7` (1.75rem = 28px) so the
+            // grid-row `minmax(1.75rem, …)` min matches the banner
+            // exactly — closed rows are 28px = banner with no slack
+            // and no overflow.
+            'h-7 cursor-pointer rounded-none border-y border-sidebar-border bg-sidebar-accent/60 px-2 -mx-2 text-left hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             isActive && 'text-sidebar-primary',
           )}
         >
@@ -355,40 +390,30 @@ function ProjectGroup({
           </CollapsibleTrigger>
         </SidebarGroupLabel>
         {/*
-          Expand/collapse animation uses Radix's built-in keyframes
-          (`animate-collapsible-down/up` from tw-animate-css). They
-          animate `height: 0 → var(--radix-collapsible-content-
-          height)`, where Radix measures the inner content's
-          intrinsic height at mount and writes it onto this element
-          as an inline CSS custom property. The browser interpolates
-          natively over 200ms.
+          With the grid-template-rows transition on the OUTER
+          SidebarContent driving the section's height animation, we
+          drop Radix's `animate-collapsible-*` keyframes here — they
+          would compete with the row's height (keyframe sets
+          `height: 0 → var(--radix-collapsible-content-height)`
+          which doesn't match the row-share size) and produce a
+          snap when the keyframe ends.
 
-          Why NOT the grid-template-rows `0fr ↔ 1fr` trick: in a
-          single-row grid, ANY non-zero fr resolves to the full
-          container height (no siblings to share with), so
-          interpolating `0fr → 1fr` is a step function visually —
-          no smooth transition appears. The Radix keyframe approach
-          animates a real length (height in px) so the interpolation
-          shows.
+          `forceMount` keeps the content in the DOM regardless of
+          state. Combined with Radix's internal `hidden: !isOpen`,
+          this means the element exists but `display: none`s when
+          closed — so closed rows' grid-row intrinsic stays at
+          banner-only height. When opening, Radix removes hidden
+          and the row's `1fr` grid max kicks in, letting the
+          grid-template-rows transition smoothly grow the row.
 
-          Layout caveat: for sections whose `intrinsic content
-          height` exceeds the section's `flex-share` (common — 12
-          experiments * 30px ≈ 360px, flex-share for 2-open in a
-          600px sidebar ≈ 264px), the keyframe overshoots the
-          rendered region during the tail of the animation. The
-          extra is clipped by `overflow-hidden`. After the animation
-          ends, the flex layout takes over and the section settles
-          at `flex-share`. For sections shorter than `flex-share`,
-          there's a small "snap" at the end as flex grows the
-          element past intrinsic — acceptable trade-off; the bulk
-          of the motion is smooth.
+          `flex-1 min-h-0 overflow-hidden` makes CollapsibleContent
+          fill the row's remaining space after the banner; the
+          inner scroll div with `overflow-y-auto` handles content
+          taller than the available space.
         */}
         <CollapsibleContent
-          className={cn(
-            'flex-1 min-h-0 overflow-hidden',
-            'data-[state=open]:animate-collapsible-down',
-            'data-[state=closed]:animate-collapsible-up',
-          )}
+          forceMount
+          className="flex-1 min-h-0 overflow-hidden"
         >
           <div className="h-full overflow-y-auto">
             <SidebarGroupContent>

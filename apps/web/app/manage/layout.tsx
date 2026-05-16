@@ -4,9 +4,11 @@
 // sidebar's `Manage tmux` footer link surfaces here automatically
 // because `<AppSidebar>` is now in the tree.
 
+import { cookies } from 'next/headers'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { AppSidebar } from '../../components/app-sidebar'
-import { SidebarInset, SidebarProvider } from '../../components/ui/sidebar'
+import { ResizableSidebarProvider } from '../../components/resizable-sidebar-provider'
+import { SidebarInset } from '../../components/ui/sidebar'
 import { getQueryClient } from '../../lib/get-query-client'
 import { getProjectsData } from '../../lib/server/data'
 
@@ -20,14 +22,23 @@ export default async function ManageLayout({
   const queryClient = getQueryClient()
   await queryClient.prefetchQuery({ queryKey: ['projects'], queryFn: getProjectsData })
 
+  // Match `/p/[project]/layout.tsx`: read `sidebar_state` so the collapse
+  // state survives navigation across the project / manage boundary.
+  const cookieStore = await cookies()
+  const sidebarStateCookie = cookieStore.get('sidebar_state')?.value
+  const defaultOpen = sidebarStateCookie !== 'false'
+
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <SidebarProvider className="h-svh overflow-hidden">
+      <ResizableSidebarProvider
+        defaultOpen={defaultOpen}
+        className="h-svh overflow-hidden"
+      >
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-hidden">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
         </SidebarInset>
-      </SidebarProvider>
+      </ResizableSidebarProvider>
     </HydrationBoundary>
   )
 }

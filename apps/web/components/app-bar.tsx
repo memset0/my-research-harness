@@ -65,7 +65,11 @@ export function AppBar({ project }: { project: string }) {
 
   return (
     <header className="sticky top-0 z-20 flex min-h-12 shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5 md:px-4">
-      <SidebarTrigger className="md:hidden" />
+      {/* Visible at every viewport. Mobile users see this as the only
+          drawer affordance; desktop users use it to collapse the
+          sidebar into offcanvas (the keyboard shortcut Cmd/Ctrl+B
+          continues to do the same). */}
+      <SidebarTrigger />
       {/*
         nav: do NOT add overflow-x-auto here. Per CSS spec, setting
         overflow-x to a non-visible value makes overflow-y auto as well,

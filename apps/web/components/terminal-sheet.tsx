@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertTriangle } from 'lucide-react'
-import { ApiError, startTerminal, stopTerminal } from '../lib/api'
+import {
+  ApiError,
+  startTerminal,
+  stopTerminal,
+  type TerminalAgentKind,
+  type TerminalScopeKind,
+} from '../lib/api'
 import {
   Sheet,
   SheetContent,
@@ -11,17 +17,47 @@ import {
   SheetTitle,
 } from './ui/sheet'
 
-export function TerminalSheet({
-  open,
-  onOpenChange,
-  runId,
-  projectName,
-}: {
+// Props: TerminalSheet accepts EITHER the legacy `{ runId, projectName }`
+// pair (used by `experiment-detail.tsx` via `TerminalButton`, defaults to
+// `agent: 'claude'`, `scope: 'run'`) OR the explicit
+// `{ project, scope, slug, agent }` quartet used by the sidebar's per-row
+// shell launcher (passes `agent: 'none'`, `scope: 'exp'`). The legacy
+// shape is preserved verbatim so existing callsites are unaffected.
+interface CommonProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+interface LegacyProps extends CommonProps {
   runId: string
   projectName: string
-}) {
+  project?: undefined
+  scope?: undefined
+  slug?: undefined
+  agent?: undefined
+}
+
+interface ExplicitProps extends CommonProps {
+  project: string
+  scope: TerminalScopeKind
+  slug: string
+  agent: TerminalAgentKind
+  runId?: undefined
+  projectName?: undefined
+}
+
+export type TerminalSheetProps = LegacyProps | ExplicitProps
+
+export function TerminalSheet(props: TerminalSheetProps) {
+  // Normalize the two prop shapes into the explicit quartet, defaulting the
+  // legacy form to `agent: 'claude'` and `scope: 'run'` — i.e. unchanged
+  // behavior for `experiment-detail.tsx`'s usage.
+  const project = props.project ?? props.projectName ?? ''
+  const scope: TerminalScopeKind = props.scope ?? 'run'
+  const slug = props.slug ?? props.runId ?? ''
+  const agent: TerminalAgentKind = props.agent ?? 'claude'
+  const { open, onOpenChange } = props
+
   const [phase, setPhase] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle')
   const [iframeUrl, setIframeUrl] = useState<string | null>(null)
   const [sessionName, setSessionName] = useState<string | null>(null)
@@ -50,10 +86,7 @@ export function TerminalSheet({
     let cancelled = false
     setPhase('starting')
     setError(null)
-    // Legacy v2 shim: TerminalSheet's caller (TerminalButton via the v2
-    // experiment-detail page) only knows {runId, projectName}; map to the
-    // new (project, scope, slug, agent) shape.
-    void startTerminal({ project: projectName, scope: 'run', slug: runId, agent: 'claude' })
+    void startTerminal({ project, scope, slug, agent })
       .then((res) => {
         if (cancelled) {
           // Closed before we got a response; ensure we still tear it down
@@ -76,7 +109,14 @@ export function TerminalSheet({
     return () => {
       cancelled = true
     }
-  }, [open, runId, projectName])
+  }, [open, project, scope, slug, agent])
+
+  // Sheet header label: legacy `claude · memon-claude-<slug>` for the
+  // claude-agent shape (to keep the existing copy unchanged), or
+  // `<agent> · <session>` for the explicit-props shape. Both forms render
+  // the session name once it's known; before that, fall back to a
+  // synthesized placeholder.
+  const fallbackSessionName = `memon-${agent}-${slug}`
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -86,13 +126,13 @@ export function TerminalSheet({
       >
         <SheetHeader className="border-b p-3 pb-2">
           <SheetTitle className="font-mono text-xs">
-            claude · {sessionName ?? `memon-claude-${runId}`}
+            {agent} · {sessionName ?? fallbackSessionName}
           </SheetTitle>
           <SheetDescription className="text-[11px]">
             Terminal runs inside tmux. Closing this panel leaves the session
             detached — re-attach with{' '}
             <code className="font-mono">
-              tmux attach -t memon-claude-{runId}
+              tmux attach -t {sessionName ?? fallbackSessionName}
             </code>
             .
           </SheetDescription>
@@ -121,7 +161,7 @@ export function TerminalSheet({
             <iframe
               key={iframeUrl}
               src={iframeUrl}
-              title="claude code"
+              title={`${agent} terminal`}
               className="h-full w-full border-0"
             />
           )}

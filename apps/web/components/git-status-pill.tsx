@@ -62,8 +62,29 @@ function CompactPill({ status, className }: { status: EnabledStatus; className?:
         <TooltipTrigger asChild>
           <span
             data-slot="git-status-pill-compact"
+            // tabIndex + onClick make the pill clickable in addition
+            // to hoverable: clicking focuses the span, which causes
+            // Radix Tooltip to open via its focus-based open path —
+            // giving touch users (no hover) AND mouse users (who tap
+            // the pill expecting a popup) the same git-info bubble
+            // that hover already shows. stopPropagation is essential
+            // here because the compact pill renders inside the
+            // sidebar's `<CollapsibleTrigger>` button — without it a
+            // click on the pill would also toggle the section.
+            tabIndex={0}
+            onClick={(e) => {
+              // Stop bubbling so the surrounding CollapsibleTrigger
+              // (when this pill is rendered inside the sidebar
+              // section header) doesn't also toggle the section.
+              e.stopPropagation()
+              // Most browsers do NOT auto-focus tabIndex=0 spans on
+              // mouse click (only on Tab keyboard nav). Force focus
+              // so Radix Tooltip's focus-open path fires and the
+              // git-info popup appears for the click action.
+              e.currentTarget.focus()
+            }}
             className={cn(
-              'inline-flex items-center gap-1 text-[10px] text-muted-foreground',
+              'inline-flex cursor-pointer items-center gap-1 rounded-sm text-[10px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring',
               status.detached && 'italic',
               className,
             )}
