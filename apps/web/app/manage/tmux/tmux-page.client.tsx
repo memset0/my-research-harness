@@ -548,6 +548,7 @@ function SessionCard({
       onClick={handleSelect}
       onKeyDown={handleKey}
       title={cardTitle}
+      data-session-name={row.sessionName}
       className={cn(
         'group rounded-md border bg-card p-2.5 transition-colors',
         'cursor-pointer hover:bg-accent/40',
@@ -881,6 +882,14 @@ export function applySelectionToCache(
   return prev.filter((_, i) => i !== lruIdx).concat(candidate)
 }
 
+import { isManageTmuxNavShortcut, resolveNeighbor } from './keyboard-nav'
+// Backwards-compat re-exports — the helpers were defined here originally
+// and have existing test + component imports. They now live in
+// `./keyboard-nav` so `TerminalView` can use them without a circular
+// import; this file re-exports the same names so callers don't have to
+// update unless they want to.
+export { isManageTmuxNavShortcut, resolveNeighbor }
+
 function RightPane({
   cache,
   rowsByName,
@@ -1129,6 +1138,59 @@ export function TmuxManagePageClient() {
     }
     router.replace(`/manage/tmux?session=${encodeURIComponent(name)}`)
   }
+
+  // Ctrl+Shift+ArrowUp/Down: move selection to the prev/next row in the
+  // currently-visible list. Suppressed while focus is in an editable
+  // control or any dialog is open (so the rename dialog's text-selection
+  // shortcut still works as expected).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (event: KeyboardEvent) => {
+      if (!isManageTmuxNavShortcut(event)) return
+      const direction: 'up' | 'down' =
+        event.key === 'ArrowDown' ? 'down' : 'up'
+
+      const target = event.target as HTMLElement | null
+      if (target && typeof target.matches === 'function') {
+        if (
+          target.matches('input, textarea, select') ||
+          target.isContentEditable
+        ) {
+          return
+        }
+      }
+      if (killTarget !== null || renameTarget !== null || createOpen) return
+
+      const next = resolveNeighbor(visible, selectedName, direction)
+      if (next === null) return
+
+      event.preventDefault()
+      writeSelection(next)
+
+      // Defer the scroll to after React commits the new selected styling,
+      // so `scrollIntoView({ block: 'nearest' })` measures the post-render
+      // layout. RAF is enough — querySelector hits the existing card node,
+      // which is already in the DOM (only its className changes).
+      const reduced =
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      requestAnimationFrame(() => {
+        const sel = `[data-session-name="${CSS.escape(next)}"]`
+        const el = document.querySelector<HTMLElement>(sel)
+        el?.scrollIntoView({
+          block: 'nearest',
+          behavior: reduced ? 'auto' : 'smooth',
+        })
+      })
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+    // `writeSelection` is recreated each render but closes over `router`
+    // (stable from the hook) and is a thin wrapper; including it in deps
+    // is fine. `visible` / `selectedName` / dialog flags change as the
+    // user interacts, so the listener picks up fresh closures each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, selectedName, killTarget, renameTarget, createOpen, router])
 
   const killMutation = useMutation({
     mutationFn: (name: string) => killTmuxSession(name),
