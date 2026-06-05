@@ -27,6 +27,7 @@ which has no project context: it reads Telegram credentials from a
 | Flag one anomaly on an existing run for human adjudication | `memon-append-warning` | Single OPEN row in the README's `## Warnings` table. NEVER resolves / reopens / deletes. |
 | Daily integrity sweep + cursor-advancing digest | `memon-digest-journal` | Folds in the old `doctor` checks. |
 | Theme-driven, cursor-independent narrative report | `memon-write-report` | `R<NNNN>-<slug>.md` with re-runnable selector. |
+| Leave a human a guided review of one session's worth of code | `memon-write-code-review` | `docs/code-review/<date>-<slug>.md` (project-wide) or an experiment's `code-review/`. Frontmatter lists the reviewed commits (per-repo GitHub links) + a review checklist; the dashboard tracks per-commit / per-item progress. |
 | "What should I run next?" — brainstorm + converge | `memon-propose` | Read-only research collaborator. |
 | Ping the user on Telegram when an autonomous run needs attention | `memon-notify` | One event = one notification. Send-only (push, no reply). Uses `--config`, not `--project-root`. |
 | Migrate a project's on-disk layout to a newer FS convention version | `memon-migrate-fs` | **User-invoked only** (sole skill with `disable-model-invocation`). Only skill that bumps `.memon/version.json`. Exempt from the FS-version preflight. |
@@ -129,6 +130,7 @@ invoked by the orchestrator rather than typed by the user.
 | `memon-append-warning` | one OPEN row in `<run>/README.md` `## Warnings`; one `[WARNING]` event in `docs/journal.md` body | other README sections, JOURNAL frontmatter; never calls `warning resolve|reopen|delete` |
 | `memon-digest-journal` | `docs/digests/D<NNNN>-<YYYY-MM-DD>.md`, `last_digest_at` cursor; may write READMEs *during* doctor fixes | reports |
 | `memon-write-report` | `docs/reports/R<NNNN>-<slug>.md` | digests, READMEs, JOURNAL cursor |
+| `memon-write-code-review` | `docs/code-review/<date>-<slug>.md` or `docs/experiments/E<id>-<slug>/code-review/<date>-<slug>.md` | run/exp READMEs, scripts, reports, digests, JOURNAL; never flips a `reviewed`/`done` the human already checked |
 | `memon-propose` | nothing — read-only | everything |
 
 ## Versioning

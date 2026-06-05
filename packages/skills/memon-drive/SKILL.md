@@ -16,8 +16,9 @@ through running multiple launches, accumulating per-run learnings,
 and proposing FINISHED when the cross-run picture stabilises.
 
 `memon-drive` is an **orchestrator**, not a doer. It calls
-`memon-write-script` and `memon-run-experiment` as sub-tools, and
-treats the exp doc's `## Plan` section as its working memory.
+`memon-write-script`, `memon-run-experiment`, and
+`memon-write-code-review` as sub-tools, and treats the exp doc's
+`## Plan` section as its working memory.
 Every meaningful turn of the conversation produces either a Plan
 edit, a Method/Caveats/Motivation refinement, or (when warranted)
 a Conclusion update — there is no "this conversation happened but
@@ -182,6 +183,22 @@ from the response for the next write. On exit 9 (`CONFLICT`),
 refresh mtime via `memon experiment show ... --format json | jq -r
 .mtime`, re-apply, retry once; on a second conflict, stop and
 surface to the user.
+
+### 3b. After a reviewable code change lands: offer a code-review
+
+When a Plan item produced a **non-trivial code change** — a new feature, a
+bug fix, or a refactor that landed as one or more commits (i.e. there is now
+code a human would want to review) — and it has not already been written up,
+proactively ask the user whether to capture it as a code-review doc. On a
+yes, hand off to `memon-write-code-review` scoped to this experiment (the doc
+lands in `docs/experiments/<EXP_ID>/code-review/`). Ask **once per reviewable
+unit, not per commit**, and skip it for runs / sweeps that produced results
+but no code change (those belong in Plan reflections / `## Conclusion`):
+
+> 这次「<one-line summary of the change>」落了代码(`<n>` 个 commit),
+> 要不要我生成一份 code-review 方便你过一遍?(会挂在本实验下)
+
+On a yes, invoke `memon-write-code-review`. On a no, drop it and continue.
 
 ### 4. Continuously transcribe conversation into the exp doc
 

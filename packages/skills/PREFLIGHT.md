@@ -7,11 +7,11 @@ before doing any work. The check is a single CLI call; the agent
 branches on its result to either proceed, stop with a recommendation,
 or surface a fatal mismatch.
 
-This doc is the canonical source for the protocol. The seven
+This doc is the canonical source for the protocol. The eight
 spec-mutating skills (`memon-write-script`, `memon-run-experiment`,
 `memon-append-journal`, `memon-append-warning`, `memon-digest-journal`,
-`memon-write-report`, `memon-propose`) point here instead of
-duplicating the branch table.
+`memon-write-report`, `memon-write-code-review`, `memon-propose`) point
+here instead of duplicating the branch table.
 
 ## How
 

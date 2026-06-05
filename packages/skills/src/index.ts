@@ -20,6 +20,7 @@ export const SKILL_NAMES = [
   'memon-append-warning',
   'memon-digest-journal',
   'memon-write-report',
+  'memon-write-code-review',
   'memon-propose',
   'memon-migrate-fs',
   'memon-notify',
