@@ -25,13 +25,13 @@ import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
 
-const TOPICS = ['run-change', 'experiment-change', 'anomaly'] as const
+const TOPICS = ['run-change', 'experiment-change', 'anomaly', 'code-reviews-change'] as const
 type Topic = (typeof TOPICS)[number]
 
 function eventProject(topic: Topic, evt: unknown): string | null {
   if (!evt || typeof evt !== 'object') return null
   const e = evt as Record<string, unknown>
-  if (topic === 'anomaly') {
+  if (topic === 'anomaly' || topic === 'code-reviews-change') {
     return typeof e.project === 'string' ? e.project : null
   }
   if (topic === 'experiment-change') {

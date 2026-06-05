@@ -49,6 +49,14 @@ export interface AnomalyEvent {
 }
 
 /**
+ * Code-review change event — fires after the code-reviews cache updates for a
+ * project (a doc added/removed/edited, or a progress checkbox toggled).
+ */
+export interface CodeReviewsChangeEvent {
+  project: string
+}
+
+/**
  * Discriminated union of all SSE events the client cares about. Each
  * payload carries a `topic` so listeners can fan out by type without a
  * separate subscription per topic.
@@ -57,6 +65,7 @@ export type MemonEvent =
   | ({ topic: 'run-change' } & RunChangeEvent)
   | ({ topic: 'experiment-change' } & ExperimentDocChangeEvent)
   | ({ topic: 'anomaly' } & AnomalyEvent)
+  | ({ topic: 'code-reviews-change' } & CodeReviewsChangeEvent)
 
 /**
  * @deprecated Pre-v3 code used `ExperimentChangeEvent` to mean a run edit.
@@ -105,6 +114,9 @@ function ensureConnected() {
   })
   source.addEventListener('anomaly', (e) => {
     parseAndDispatch('anomaly', (e as MessageEvent).data)
+  })
+  source.addEventListener('code-reviews-change', (e) => {
+    parseAndDispatch('code-reviews-change', (e as MessageEvent).data)
   })
   // EventSource auto-reconnects on network drops; nothing extra to do here.
 }

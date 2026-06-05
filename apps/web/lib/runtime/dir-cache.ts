@@ -119,6 +119,47 @@ export class DirCache<T> {
     return Array.from(this.knownDirs)
   }
 
+  /**
+   * Register, scan, and watch a new content directory at runtime. Used for the
+   * dynamic set of docs/experiments/E-slug/code-review/ dirs, which appear and
+   * disappear as experiments are created. Missing dirs are tolerated (treated
+   * as empty until they appear; the Poller detects their creation). No-op if
+   * the dir is already known.
+   */
+  async addDir(dir: string, poller?: Poller): Promise<void> {
+    if (this.knownDirs.has(dir)) return
+    this.knownDirs.add(dir)
+    this.state.set(dir, { byPath: new Map(), dirMtime: 0 })
+    await this.scanDir(dir, poller)
+    if (poller) {
+      const st = this.state.get(dir)
+      poller.watch(dir, st?.dirMtime ?? 0)
+    }
+  }
+
+  /**
+   * Drop a content directory and its entries from the cache. Stale Poller
+   * watches on the removed dir's files are harmless (they ENOENT like any
+   * deleted file), matching how scanDir handles a vanished directory.
+   */
+  removeDir(dir: string): void {
+    const st = this.state.get(dir)
+    if (st) {
+      for (const p of st.byPath.keys()) this.knownPaths.delete(p)
+      this.state.delete(dir)
+    }
+    this.knownDirs.delete(dir)
+  }
+
+  /** All entries across every watched directory (for cross-dir aggregation). */
+  getAllList(): T[] {
+    const out: T[] = []
+    for (const st of this.state.values()) {
+      for (const e of st.byPath.values()) out.push(e.meta)
+    }
+    return out
+  }
+
   /** List metadata for one watched directory. */
   getList(dir: string): T[] {
     const st = this.state.get(dir)

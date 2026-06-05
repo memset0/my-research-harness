@@ -300,6 +300,16 @@ const RULES: Rule[] = [
     projectFor: projectFromReportId(),
   },
   {
+    match: methodIs(['GET'], exact('/api/code-reviews')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+  {
+    match: methodIs(['GET'], startsWith('/api/code-reviews/')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+  {
     match: methodIs(['GET'], exact('/api/hypotheses')),
     class: 'read',
     projectFor: projectQueryOrMulti(),

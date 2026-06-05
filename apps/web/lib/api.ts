@@ -3,6 +3,9 @@
 // the client bundle (it transitively pulls in fast-glob → fs).
 
 import type {
+  CodeReviewSummary,
+  CodeReviewFrontMatter,
+  CodeReviewCompletion,
   DigestSummary,
   Run,
   Hypothesis,
@@ -120,6 +123,54 @@ export async function putReport(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   })
+}
+
+// ---------- Code reviews ----------
+
+export interface FullCodeReview {
+  id: string
+  scope: 'project' | 'experiment'
+  experiment: string | null
+  frontmatter: CodeReviewFrontMatter
+  body: string
+  mtime: number
+  hash: string
+  completion: CodeReviewCompletion
+}
+
+export type CodeReviewProgressPatch =
+  | { op: 'commit'; sha: string; reviewed: boolean; expectedMtime: number; expectedHash: string }
+  | { op: 'todo'; index: number; done: boolean; expectedMtime: number; expectedHash: string }
+
+// The id is the docs-relative path (it contains slashes); encode each segment
+// but keep the slashes so the catch-all route still matches.
+const encodeCodeReviewId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
+
+export async function fetchCodeReviews(
+  project: string,
+): Promise<{ codeReviews: CodeReviewSummary[] }> {
+  return jsonFetch(`/api/code-reviews?project=${encodeURIComponent(project)}`)
+}
+
+export async function fetchCodeReview(project: string, id: string): Promise<FullCodeReview> {
+  return jsonFetch(
+    `/api/code-reviews/${encodeCodeReviewId(id)}?project=${encodeURIComponent(project)}`,
+  )
+}
+
+export async function patchCodeReviewProgress(
+  project: string,
+  id: string,
+  patch: CodeReviewProgressPatch,
+): Promise<{ ok: true; mtime: number; hash: string; completion: CodeReviewCompletion }> {
+  return jsonFetch(
+    `/api/code-reviews/${encodeCodeReviewId(id)}?project=${encodeURIComponent(project)}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  )
 }
 
 // ---------- Digests ----------

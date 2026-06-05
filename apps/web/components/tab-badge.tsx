@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
+  fetchCodeReviews,
   fetchDigests,
   fetchExperimentDocs,
   fetchHypotheses,
@@ -10,7 +11,13 @@ import {
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
-export type TabKind = 'experiments' | 'hypotheses' | 'journal' | 'reports' | 'digests'
+export type TabKind =
+  | 'experiments'
+  | 'hypotheses'
+  | 'journal'
+  | 'reports'
+  | 'digests'
+  | 'code-review'
 
 /**
  * Small count badge rendered next to AppBar tab labels. Reuses the same
@@ -84,6 +91,8 @@ function useTabCount(kind: TabKind, project: string): TabCountResult {
       return useReportsCount(project)
     case 'digests':
       return useDigestsCount(project)
+    case 'code-review':
+      return useCodeReviewsCount(project)
   }
 }
 
@@ -133,4 +142,13 @@ function useDigestsCount(project: string): TabCountResult {
     staleTime: 5_000,
   })
   return { value: q.data?.digests.length, isLoading: q.isLoading }
+}
+
+function useCodeReviewsCount(project: string): TabCountResult {
+  const q = useQuery({
+    queryKey: ['code-reviews', project],
+    queryFn: () => fetchCodeReviews(project),
+    staleTime: 5_000,
+  })
+  return { value: q.data?.codeReviews.length, isLoading: q.isLoading }
 }

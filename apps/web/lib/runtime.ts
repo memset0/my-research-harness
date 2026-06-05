@@ -11,12 +11,15 @@
 // config.yml (or config.example.yml as last-resort fallback).
 
 import { promises as fs } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { EventEmitter } from 'node:events'
 import {
+  CODE_REVIEW_FILENAME_REGEX,
   computeMembership,
+  deriveCompletion,
   DIGEST_FILENAME_REGEX,
   discoverExperiments,
+  parseCodeReview,
   discoverRuns,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
@@ -30,6 +33,7 @@ import {
   REPORT_FILENAME_REGEX,
   RunIndex,
   type AuthConfig,
+  type CodeReviewSummary,
   type Config,
   type DigestSummary,
   type Experiment,
@@ -75,6 +79,7 @@ export class Runtime {
     public readonly journalCache: FileCache<ParsedJournal>,
     public readonly reportsCache: DirCache<ReportSummary>,
     public readonly digestsCache: DirCache<DigestSummary>,
+    public readonly codeReviewsCache: DirCache<CodeReviewSummary>,
     public readonly auth: AuthConfig,
     /**
      * v3 experiment-doc index, keyed by `E<NNNN>-<slug>`. Shared by reference
@@ -143,6 +148,32 @@ export class Runtime {
   digestsDir(project: string): string | null {
     const p = this.config.projects.find((x) => x.name === project)
     return p ? join(p.root, 'docs', 'digests') : null
+  }
+
+  /**
+   * Aggregated code-reviews for a project across the flat docs/code-review/
+   * dir and every docs/experiments/E-slug/code-review/ dir, sorted by date
+   * desc (ties broken by id desc).
+   */
+  getCodeReviewsList(project: string): CodeReviewSummary[] {
+    const p = this.config.projects.find((x) => x.name === project)
+    if (!p) return []
+    const prefix = join(p.root, 'docs') + '/'
+    return this.codeReviewsCache
+      .getAllList()
+      .filter((s) => s.path.startsWith(prefix))
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+  }
+
+  /**
+   * Absolute path for a code-review id (the docs-relative path without the
+   * .md extension) in a project. Returns null for an unknown project. The
+   * caller MUST still validate via assertWithinProjectRoots().
+   */
+  codeReviewPath(project: string, id: string): string | null {
+    const p = this.config.projects.find((x) => x.name === project)
+    if (!p) return null
+    return join(p.root, 'docs', `${id}.md`)
   }
 }
 
@@ -252,6 +283,46 @@ async function init(): Promise<Runtime> {
     },
   })
 
+  // Per-project code-review docs at the flat docs/code-review/ (project-wide)
+  // plus the dynamic set of docs/experiments/E*/code-review/ (experiment-
+  // scoped, seeded after experiment discovery below).
+  const codeReviewsCache = new DirCache<CodeReviewSummary>({
+    name: 'code-reviews',
+    dirs: config.projects.map((p) => join(p.root, 'docs', 'code-review')),
+    fileNameRegex: CODE_REVIEW_FILENAME_REGEX,
+    parseFile: (absPath, content, mtime): CodeReviewSummary => {
+      const { frontmatter: fm } = parseCodeReview(content)
+      const proj = config.projects.find((p) => absPath.startsWith(join(p.root, 'docs') + '/'))
+      const docsRoot = proj ? join(proj.root, 'docs') : dirname(dirname(absPath))
+      const id = relative(docsRoot, absPath).replace(/\.md$/, '')
+      const scope: 'project' | 'experiment' = id.startsWith('experiments/')
+        ? 'experiment'
+        : 'project'
+      let experiment = fm.experiment
+      if (!experiment && scope === 'experiment') {
+        const m = /^experiments\/(E\d{4}-[a-z0-9-]+)\/code-review\//.exec(id)
+        experiment = m ? m[1]! : null
+      }
+      const fn = CODE_REVIEW_FILENAME_REGEX.exec(basename(absPath))
+      return {
+        id,
+        scope,
+        experiment,
+        title: fm.title,
+        date: fn ? fn[1]! : '',
+        createdAt: fm.createdAt,
+        updatedAt: fm.updatedAt,
+        path: absPath,
+        mtime,
+        completion: deriveCompletion(fm),
+      }
+    },
+    onUpdate: (dir) => {
+      const project = projectForDir(config, dir)
+      if (project) events.emit('code-reviews-change', { project })
+    },
+  })
+
   // Shared, mutable state captured by both the Poller closure and the
   // Runtime instance. The Runtime constructor takes these by reference so
   // poll-driven mutations and API-route reads see the same Map.
@@ -279,6 +350,7 @@ async function init(): Promise<Runtime> {
       // Try directory caches (handles both dir-mtime and per-file changes).
       if (reportsCache.handlePollChange(path, poller)) return
       if (digestsCache.handlePollChange(path, poller)) return
+      if (codeReviewsCache.handlePollChange(path, poller)) return
 
       // v3: docs/experiments/ directory mtime advance → rediscover the
       // exp-doc set for the owning project. Individual file changes are
@@ -303,6 +375,24 @@ async function init(): Promise<Runtime> {
             if (!seen.has(id)) sharedExperiments.delete(id)
           }
           for (const e of discovered) sharedExperiments.set(e.id, e)
+          // Reconcile the dynamic set of experiment-scoped code-review dirs:
+          // add subdirs for newly-seen experiments, drop those for vanished
+          // ones. The flat docs/code-review/ dir is never touched here.
+          const desiredCrDirs = new Set(
+            discovered.map((e) => join(dirname(e.path), 'code-review')),
+          )
+          const expsRoot = join(expDirMatch.root, 'docs', 'experiments') + '/'
+          for (const d of codeReviewsCache.dirs()) {
+            if (d.startsWith(expsRoot) && !desiredCrDirs.has(d)) {
+              codeReviewsCache.removeDir(d)
+            }
+          }
+          for (const d of desiredCrDirs) {
+            if (!codeReviewsCache.dirs().includes(d)) {
+              await codeReviewsCache.addDir(d, poller)
+            }
+          }
+          events.emit('code-reviews-change', { project: expDirMatch.name })
           recomputeAnomalies(expDirMatch.name)
           events.emit('experiment-change', { type: 'rediscover', project: expDirMatch.name })
         } catch {
@@ -382,6 +472,7 @@ async function init(): Promise<Runtime> {
     journalCache.warmup(),
     reportsCache.warmup(),
     digestsCache.warmup(),
+    codeReviewsCache.warmup(),
     (async () => {
       for (const project of config.projects) {
         const dirs = await discoverRuns(project)
@@ -411,6 +502,16 @@ async function init(): Promise<Runtime> {
     })(),
   ])
 
+  // Seed the dynamic set of experiment-scoped code-review dirs (one level
+  // deeper than the flat docs/code-review/). Tolerant of dirs that don't exist
+  // yet — the Poller detects their creation like any watched directory. Poller
+  // registration for these dirs + their files happens in the loop below.
+  for (const [, docs] of experimentsByProject) {
+    for (const doc of docs) {
+      await codeReviewsCache.addDir(join(dirname(doc.path), 'code-review'))
+    }
+  }
+
   // Register watch entries for the file caches with the mtimes observed during
   // warmup. Must happen after warmup so the Poller's "lastSeen mtime" is
   // accurate (else the very first tick would unnecessarily refire).
@@ -438,6 +539,12 @@ async function init(): Promise<Runtime> {
   for (const filePath of digestsCache.paths()) {
     poller.watch(filePath, await fileMtimeOrZero(filePath))
   }
+  for (const dir of codeReviewsCache.dirs()) {
+    poller.watch(dir, await dirMtimeOrZero(dir))
+  }
+  for (const filePath of codeReviewsCache.paths()) {
+    poller.watch(filePath, await fileMtimeOrZero(filePath))
+  }
 
   const expDocCount = Array.from(experimentsByProject.values()).reduce(
     (n, list) => n + list.length,
@@ -449,7 +556,8 @@ async function init(): Promise<Runtime> {
       `${expDocCount} experiments, ` +
       `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
       `${journalCache.populated()}/${journalPaths.length} journal files, ` +
-      `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests`,
+      `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests, ` +
+      `${codeReviewsCache.paths().length} code-reviews`,
   )
 
   // Seed shared maps (used by both the poller closure and the Runtime
@@ -468,6 +576,7 @@ async function init(): Promise<Runtime> {
     journalCache,
     reportsCache,
     digestsCache,
+    codeReviewsCache,
     auth,
     sharedExperiments,
     sharedAnomalies,
@@ -485,6 +594,13 @@ function projectForDir(config: Config, dir: string): string | null {
   for (const p of config.projects) {
     if (dir === join(p.root, 'docs', 'reports')) return p.name
     if (dir === join(p.root, 'docs', 'digests')) return p.name
+  }
+  // Code-review dirs: the flat docs/code-review/ or any nested
+  // docs/experiments/E*/code-review/.
+  for (const p of config.projects) {
+    const docs = join(p.root, 'docs')
+    if (dir === join(docs, 'code-review')) return p.name
+    if (dir.startsWith(docs + '/') && dir.endsWith('/code-review')) return p.name
   }
   return null
 }

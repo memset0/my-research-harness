@@ -22,6 +22,14 @@ export { parseArtifacts } from './readme/artifacts.js'
 export { splitH2Sections } from './readme/sections.js'
 export { extractTitle } from './readme/title.js'
 export {
+  deriveCompletion,
+  parseCodeReview,
+  splitCodeReviewFrontmatter,
+  toggleCommitReviewed,
+  toggleTodoDone,
+} from './code-review/parse.js'
+export type { ParsedCodeReview, SplitCodeReview } from './code-review/parse.js'
+export {
   applyWarningOp,
   findWarningsSectionRange,
   generateRowId,
@@ -174,6 +182,8 @@ export type {
 export { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from './types.js'
 export { ExperimentFrontMatterRawSchema } from './schemas.js'
 export type { ExperimentFrontMatterRaw } from './schemas.js'
+export { CodeReviewFrontMatterRawSchema } from './schemas.js'
+export type { CodeReviewFrontMatterRaw } from './schemas.js'
 
 // v3 experiment-doc parser / serializer / discovery / membership
 export { parseExperimentReadme, buildExperimentRecord } from './experiments/parse.js'

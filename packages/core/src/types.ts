@@ -112,6 +112,15 @@ export const REPORT_FILENAME_REGEX = /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
  */
 export const DIGEST_FILENAME_REGEX = /^D(\d{4})-(\d{4}-\d{2}-\d{2})\.md$/
 
+/**
+ * Regex matching code-review doc basenames under
+ * `<projectRoot>/docs/code-review/` and
+ * `<projectRoot>/docs/experiments/E<NNNN>-<slug>/code-review/`:
+ * `<YYYY-MM-DD>-<slug>.md` where slug is kebab-case alphanumeric.
+ * Capture groups: 1 = date (`YYYY-MM-DD`), 2 = slug.
+ */
+export const CODE_REVIEW_FILENAME_REGEX = /^(\d{4}-\d{2}-\d{2})-([a-z0-9][a-z0-9-]*)\.md$/
+
 // ---------- Run README front matter ----------
 
 /**
@@ -421,6 +430,83 @@ export interface DigestSummary {
   mtime: number
   /** First H1 heading of the body, or null when absent. */
   title: string | null
+}
+
+// ---------- Code-review docs ----------
+
+/** One reviewed commit referenced by a code-review doc. */
+export interface CodeReviewCommit {
+  /** Path relative to project root; `.` = main repo, else a submodule path. */
+  repo: string
+  /** Full commit hash. */
+  sha: string
+  /** Already-resolved, directly-openable GitHub commit URL. */
+  url: string
+  /** Optional commit subject line for readability. */
+  subject?: string
+  /** Per-commit review checkbox. */
+  reviewed: boolean
+}
+
+/** One human review-checklist item. */
+export interface CodeReviewTodo {
+  item: string
+  done: boolean
+}
+
+/** Parsed (camelCase) code-review frontmatter. */
+export interface CodeReviewFrontMatter {
+  title: string
+  description: string
+  /** `E<NNNN>-<slug>` association, or null for project-wide. */
+  experiment: string | null
+  /** ISO8601 with offset. */
+  createdAt: string
+  /** ISO8601 with offset. */
+  updatedAt: string
+  commits: CodeReviewCommit[]
+  reviewTodolist: CodeReviewTodo[]
+}
+
+/** Derived completion summary (never stored on disk). */
+export interface CodeReviewCompletion {
+  totalCommits: number
+  reviewedCommits: number
+  totalTodos: number
+  doneTodos: number
+  /** True iff there is something to review AND every box is checked. */
+  isComplete: boolean
+}
+
+/** Whether the doc lives in the flat project dir or an experiment folder. */
+export type CodeReviewScope = 'project' | 'experiment'
+
+/** List-view metadata for one code-review doc. */
+export interface CodeReviewSummary {
+  /** Path relative to `<projectRoot>/docs/`, without the `.md` extension. */
+  id: string
+  scope: CodeReviewScope
+  /** Canonical association (frontmatter, falling back to the folder id). */
+  experiment: string | null
+  title: string
+  /** ISO date from the filename (`YYYY-MM-DD`), used for sorting. */
+  date: string
+  createdAt: string
+  updatedAt: string
+  /** Absolute filesystem path. */
+  path: string
+  /** mtime in epoch ms. */
+  mtime: number
+  completion: CodeReviewCompletion
+}
+
+/** Full detail payload for one code-review doc. */
+export interface CodeReview extends CodeReviewSummary {
+  frontmatter: CodeReviewFrontMatter
+  /** Opaque markdown body (everything after the frontmatter). */
+  body: string
+  /** sha1 hex of the full file content (for optimistic locking). */
+  hash: string
 }
 
 // ---------- Hypothesis ----------

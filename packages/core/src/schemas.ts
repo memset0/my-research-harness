@@ -82,6 +82,38 @@ export const JournalFrontMatterSchema = z.object({
 
 export type JournalFrontMatterRaw = z.infer<typeof JournalFrontMatterSchema>
 
+// ---------- Code-review doc frontmatter (snake_case) ----------
+//
+// Lenient on read: every field has a default so a hand-edited or
+// partially-written doc still validates (only malformed YAML fails, in which
+// case the DirCache skips the file). The authoring skill writes the full,
+// canonical shape.
+
+const CodeReviewCommitRawSchema = z.object({
+  repo: z.string().min(1),
+  sha: z.string().min(1),
+  url: z.string().min(1),
+  subject: z.string().optional(),
+  reviewed: z.boolean().default(false),
+})
+
+const CodeReviewTodoRawSchema = z.object({
+  item: z.string().min(1),
+  done: z.boolean().default(false),
+})
+
+export const CodeReviewFrontMatterRawSchema = z.object({
+  title: z.string().default(''),
+  description: z.string().default(''),
+  experiment: z.union([z.string(), z.null()]).default(null),
+  created_at: z.string().default(''),
+  updated_at: z.string().default(''),
+  commits: z.array(CodeReviewCommitRawSchema).default([]),
+  review_todolist: z.array(CodeReviewTodoRawSchema).default([]),
+})
+
+export type CodeReviewFrontMatterRaw = z.infer<typeof CodeReviewFrontMatterRawSchema>
+
 // ---------- Config (camelCase keys after YAML parse normalize) ----------
 
 export const ProjectConfigRawSchema = z.object({

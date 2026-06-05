@@ -24,6 +24,7 @@ import {
 } from '../lib/api'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import { ExperimentCodeReviews } from './experiment-code-reviews'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { StatusPill } from './status-pill'
 import { StatusEdit } from './status-edit'
@@ -123,6 +124,8 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           )}
         </CardContent>
       </Card>
+
+      <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
       <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
       <SectionCard heading="Motivation" body={exp.sections.motivation} />

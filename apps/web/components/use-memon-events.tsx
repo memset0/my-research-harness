@@ -76,6 +76,14 @@ export function useMemonEvents() {
           queryClient.invalidateQueries({ queryKey: ['anomalies'] })
           return
         }
+        case 'code-reviews-change': {
+          if (evt.project) {
+            queryClient.invalidateQueries({ queryKey: ['code-reviews', evt.project] })
+            // Prefix-match invalidates every ['code-review', project, id] too.
+            queryClient.invalidateQueries({ queryKey: ['code-review', evt.project] })
+          }
+          return
+        }
       }
     })
 

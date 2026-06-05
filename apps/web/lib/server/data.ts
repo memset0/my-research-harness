@@ -9,9 +9,17 @@
 
 import 'server-only'
 
-import { isStaleRunning, type DigestSummary, type ReportSummary } from '@memon/core'
+import {
+  deriveCompletion,
+  isStaleRunning,
+  parseCodeReview,
+  type CodeReviewSummary,
+  type DigestSummary,
+  type ReportSummary,
+} from '@memon/core'
 import { getRuntime } from '../runtime'
 import type {
+  FullCodeReview,
   FullDigest,
   FullExperiment,
   FullReport,
@@ -148,6 +156,39 @@ export async function getReport(project: string, id: string): Promise<FullReport
     mtime: fresh.mtime,
     hash: fresh.hash,
     content: fresh.content,
+  }
+}
+
+export async function getCodeReviewsList(
+  project: string,
+): Promise<{ codeReviews: CodeReviewSummary[] }> {
+  const rt = await getRuntime()
+  return { codeReviews: rt.getCodeReviewsList(project) }
+}
+
+export async function getCodeReview(project: string, id: string): Promise<FullCodeReview | null> {
+  const rt = await getRuntime()
+  const path = rt.codeReviewPath(project, id)
+  if (!path) return null
+  const fresh = await rt.codeReviewsCache.getContent(path)
+  if (!fresh) return null
+  let parsed
+  try {
+    parsed = parseCodeReview(fresh.content)
+  } catch {
+    return null
+  }
+  const scope: 'project' | 'experiment' = id.startsWith('experiments/') ? 'experiment' : 'project'
+  const expMatch = /^experiments\/(E\d{4}-[a-z0-9-]+)\/code-review\//.exec(id)
+  return {
+    id,
+    scope,
+    experiment: parsed.frontmatter.experiment ?? (expMatch ? expMatch[1]! : null),
+    frontmatter: parsed.frontmatter,
+    body: parsed.body,
+    mtime: fresh.mtime,
+    hash: fresh.hash,
+    completion: deriveCompletion(parsed.frontmatter),
   }
 }
 
