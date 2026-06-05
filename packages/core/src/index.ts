@@ -109,6 +109,35 @@ export type { CacheOptions, CacheRecord } from './log/cache.js'
 export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
 export type { LoadConfigOptions } from './config/load.js'
 export {
+  AGENT_KIND_RE,
+  FOOTER_EMOJI,
+  NOTIFY_SEVERITIES,
+  RESERVED_CONTEXT_KEYS,
+  SEVERITY_META,
+  TELEGRAM_MESSAGE_CAP,
+  assembleMessage,
+  escapeHtml,
+  escapeMarkdownV2,
+  renderDetails,
+  redactToken,
+} from './notify/telegram.js'
+export type {
+  AssembleMessageAutoContext,
+  AssembleMessageInput,
+  FooterField,
+  NotifySeverity,
+  ParseMode,
+  SeverityMeta,
+} from './notify/telegram.js'
+export {
+  AgentKindError,
+  collapseHome,
+  detectAgent,
+  nowIsoLocal,
+  probeGitBranch,
+} from './notify/auto-context.js'
+export type { GitBranchInfo } from './notify/auto-context.js'
+export {
   formatRunStamp,
   formatIsoLocal,
   parseSlugFromRunDir,
@@ -135,9 +164,11 @@ export type {
 } from './git/files.js'
 export {
   parseDiffTreeNameStatus,
+  parseDiffTreeRaw,
   readGitBranches,
   readGitCommit,
   readGitLog,
+  readGitRange,
 } from './git/history.js'
 export {
   COMMIT_MARKS_RELPATH,
@@ -166,6 +197,7 @@ export type {
   GitCommitDetail,
   GitCommitSummary,
   GitLog,
+  GitRange,
   ReadGitHistoryOptions,
 } from './git/history.js'
 

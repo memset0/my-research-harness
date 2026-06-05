@@ -18,6 +18,7 @@ import {
   DEFAULT_GIT_STATUS,
   DEFAULT_POLL,
   DEFAULT_SLURM,
+  DEFAULT_TELEGRAM_PARSE_MODE,
   DEFAULT_TERMINAL,
   MIN_GIT_STATUS_INTERVAL_MS,
   type AuthConfig,
@@ -26,6 +27,7 @@ import {
   type PollConfig,
   type ProjectConfig,
   type SlurmConfig,
+  type TelegramConfig,
   type TerminalConfig,
 } from '../types.js'
 
@@ -165,7 +167,17 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  return { projects, poll, auth, terminal, slurm, gitStatus }
+  let telegram: TelegramConfig | undefined
+  if (cfg.telegram) {
+    telegram = {
+      botToken: cfg.telegram.bot_token,
+      chatId: String(cfg.telegram.chat_id),
+      parseMode: cfg.telegram.parse_mode ?? DEFAULT_TELEGRAM_PARSE_MODE,
+      disableNotification: cfg.telegram.disable_notification ?? false,
+    }
+  }
+
+  return { projects, poll, auth, terminal, slurm, gitStatus, telegram }
 }
 
 /**

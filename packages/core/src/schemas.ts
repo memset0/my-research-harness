@@ -194,6 +194,19 @@ export const GitStatusConfigRawSchema = z
   })
   .optional()
 
+// Telegram bot block for `memon notify`. Block is wholly optional; when
+// present, both `bot_token` and `chat_id` are required. `parse_mode`
+// defaults to `MarkdownV2` and is restricted to the two modes the
+// renderer knows how to escape for.
+export const TelegramConfigRawSchema = z
+  .object({
+    bot_token: z.string().min(1),
+    chat_id: z.union([z.string().min(1), z.number().int()]),
+    parse_mode: z.enum(['MarkdownV2', 'HTML']).optional(),
+    disable_notification: z.boolean().optional(),
+  })
+  .optional()
+
 export const ConfigRawSchema = z.object({
   projects: z.array(ProjectConfigRawSchema).min(1),
   poll: PollConfigRawSchema,
@@ -201,6 +214,7 @@ export const ConfigRawSchema = z.object({
   terminal: TerminalConfigRawSchema,
   slurm: SlurmConfigRawSchema,
   git_status: GitStatusConfigRawSchema,
+  telegram: TelegramConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

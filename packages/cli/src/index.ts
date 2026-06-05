@@ -50,6 +50,7 @@ import { runDoctorCmd } from './commands/doctor.js'
 import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
 import { runFsVersionCheck } from './commands/fs-version-check.js'
 import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
+import { runNotifySend, runNotifyTest } from './commands/notify.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
 
@@ -707,6 +708,98 @@ share
     const g = readGlobals()
     await runShareRevoke({ ...g, idOrLabel, force: !!opts.force })
   })
+
+// `memon notify` — push notifications to a configured Telegram chat. See
+// openspec/specs/telegram-notify/ for the full contract. Does NOT take
+// --project-root / --project (it has no notion of a project context); the
+// credentials are read from MEMON_TELEGRAM_BOT_TOKEN+MEMON_TELEGRAM_CHAT_ID
+// env vars, or from --config <path> or cwd config.yml's `telegram:` block.
+function parseContextKv(value: string, prev: Array<[string, string]>): Array<[string, string]> {
+  const eq = value.indexOf('=')
+  if (eq < 0) {
+    process.stderr.write(`memon: --context value must be KEY=VALUE (got: ${value})\n`)
+    process.exit(EXIT.USAGE)
+  }
+  const k = value.slice(0, eq).trim()
+  const v = value.slice(eq + 1)
+  if (!k) {
+    process.stderr.write(`memon: --context KEY must be non-empty (got: ${value})\n`)
+    process.exit(EXIT.USAGE)
+  }
+  return [...prev, [k, v]]
+}
+
+const notify = program
+  .command('notify')
+  .description('push a notification to the configured Telegram chat')
+  .argument('<severity>', 'one of: info, warn, error, question, done — OR the literal "test" to invoke the self-test')
+  .argument('[title]', 'one-line headline (≤ 200 chars); omitted when severity=test')
+  .option('--details <text>', 'longer markdown body')
+  .option('--details-file <path>', 'read body from file; `-` means stdin')
+  .option(
+    '--context <key=value>',
+    'context KV (repeatable); reserved keys: host, agent, session, cwd, branch, ts',
+    parseContextKv,
+    [] as Array<[string, string]>,
+  )
+  .option('--link <url>', 'https:// URL rendered as a tap-target')
+  .option('--agent <kind>', 'agent kind (e.g. claude, codex, opencode); auto-detected from CLAUDECODE env when omitted')
+  .option('--session <name>', 'agent session/conversation name')
+  .option('--soft', 'on send failure, print error to stderr but exit 0', false)
+  .option('--quiet', 'set telegram disable_notification=true (silent delivery)', false)
+  .option('--config <path>', 'explicit path to config.yml (otherwise cwd/config.yml)')
+  .action(
+    async (
+      severity: string,
+      title: string | undefined,
+      opts: {
+        details?: string
+        detailsFile?: string
+        context: Array<[string, string]>
+        link?: string
+        agent?: string
+        session?: string
+        soft?: boolean
+        quiet?: boolean
+        config?: string
+      },
+    ) => {
+      const g = readGlobals()
+      if (severity === 'test') {
+        if (title !== undefined) {
+          process.stderr.write('memon: `notify test` does not accept a title argument\n')
+          process.exit(EXIT.USAGE)
+        }
+        await runNotifyTest({
+          agent: opts.agent,
+          session: opts.session,
+          format: g.format,
+          configPath: opts.config,
+          cwd: g.cwd,
+        })
+        return
+      }
+      if (title === undefined) {
+        process.stderr.write('memon: notify <severity> requires a <title>\n')
+        process.exit(EXIT.USAGE)
+      }
+      await runNotifySend({
+        severity,
+        title,
+        details: opts.details,
+        detailsFile: opts.detailsFile,
+        context: opts.context,
+        link: opts.link,
+        agent: opts.agent,
+        session: opts.session,
+        soft: !!opts.soft,
+        quiet: !!opts.quiet,
+        format: g.format,
+        configPath: opts.config,
+        cwd: g.cwd,
+      })
+    },
+  )
 
 const fsVersion = program
   .command('fs-version')
