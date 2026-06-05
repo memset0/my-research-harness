@@ -206,16 +206,26 @@ subsection is empty — write "None"):
   root-cause logic of the problem, the trade-offs (including rejected
   alternatives), and any relevant math written as LaTeX (`$…$` inline, `$$…$$`
   block). This is the most important subsection; do not skimp.
-- **Analysis** — a focused walkthrough. Inline **only the essential** code lines;
-  link the full code via a line-level permalink rather than pasting it. Pseudocode
-  is allowed when it explains better — **say it is pseudocode in a sentence right
-  before the fenced block.**
+- **Analysis** — a **complete, end-to-end walk-through** of the change. Take the
+  reader through what changed and how it works, step by step, until they could
+  understand it without opening the diff themselves. This is a **substantial**
+  section, NOT one or two lines — if your Analysis is that short you have not
+  walked the reader through anything; expand it. **Weave together**, throughout
+  the narrative: short excerpts of the **essential** real code (excerpt, never
+  whole files), **line-level permalinks** to the changed code so the reader can
+  jump to the full source, **pseudocode** wherever it conveys a flow better (say
+  it is pseudocode in a sentence right before the fenced block), and any **math**
+  (`$…$` / `$$…$$`) the change involves. The prose is the spine; the snippets,
+  permalinks, pseudocode, and formulas are threaded into it — not dumped as a
+  bare code block with no explanation.
 - **Verification** — how to check *this* change specifically.
 - **Details** — any leftover specifics for this change (gotchas, naming choices,
   TODOs left behind, edge cases). Write "None" if there are none.
 
-Detail balance: **code snippets stay minimal (excerpt + permalink); the "why"
-goes deep.**
+Detail balance: keep **raw code** minimal (excerpt + permalink, never whole
+files) — but the **explanation is thorough**. The minimal-code rule is about not
+pasting source dumps; it is NOT license to write a short Analysis. Spend your
+words on the Design Decisions "why" and the Analysis walk-through.
 
 ### `## Verification`
 

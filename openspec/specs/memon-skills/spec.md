@@ -383,9 +383,13 @@ The skill body SHALL document the body template: `## Requirement`, `## Changes`,
 `## Verification`, `## Notes`, with each change in `## Changes` titled in
 Conventional Commits style and carrying the H4 subsections Deliverables, Design
 Decisions, Analysis, Verification, and Details (write "None" when empty). It
-SHALL instruct: keep inline code minimal and link full code via permalink; go
-deep on "why" (underlying root cause + relevant math in `$…$` / `$$…$$`); label
-pseudocode with a sentence before the fenced block. It SHALL instruct the agent
+SHALL instruct: `Analysis` is a complete, end-to-end walk-through of the change
+(substantial, not one or two lines) that weaves together essential code
+excerpts, line-level permalinks, pseudocode, and math (`$…$` / `$$…$$`); keep
+raw code minimal (link full code via permalink, never paste whole files) without
+shortening the walk-through; go deep on the "why" in `Design Decisions`
+(underlying root cause + relevant math); label pseudocode with a sentence before
+the fenced block. It SHALL instruct the agent
 to consult the user via AskUserQuestion (or a plain question where that tool is
 unavailable) when the change-split granularity is ambiguous, and SHALL frame the
 sections as angles to consider rather than a rigid template (omit what does not
