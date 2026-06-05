@@ -22,6 +22,7 @@ export const SKILL_NAMES = [
   'memon-write-report',
   'memon-propose',
   'memon-migrate-fs',
+  'memon-notify',
 ] as const
 
 export type SkillName = (typeof SKILL_NAMES)[number]

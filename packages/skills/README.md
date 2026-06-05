@@ -1,7 +1,9 @@
 # memon skills — index
 
-Seven agent skills that compose into the **author → run → observe →
-synthesize → propose** loop for an ML experiment project. Bundled and
+Ten agent skills that compose into the **author → run → observe →
+synthesize → propose** loop for an ML experiment project (plus
+`memon-notify`, an out-of-band push to the user, and `memon-migrate-fs`,
+the schema-migration entry-point). Bundled and
 synced into `<projectRoot>/.claude/skills/`, `.codex/skills/`, and
 `.opencode/skills/` by `memon install-skills --project-root <path>`
 (opt out of any agent dir with `--agent claude` / `--agent claude,opencode`
@@ -9,7 +11,10 @@ synced into `<projectRoot>/.claude/skills/`, `.codex/skills/`, and
 
 All skills are zero-runtime-dependency on the memon web stack — they
 only call the `memon` CLI with `--project-root <path>` (or `.`) so they
-work without a `config.yml`.
+work without a `config.yml`. The sole exception is `memon-notify`,
+which has no project context: it reads Telegram credentials from a
+`config.yml` `telegram:` block (or env vars) via `--config`, not
+`--project-root`.
 
 ## Pick the right skill for the job
 
@@ -23,6 +28,7 @@ work without a `config.yml`.
 | Daily integrity sweep + cursor-advancing digest | `memon-digest-journal` | Folds in the old `doctor` checks. |
 | Theme-driven, cursor-independent narrative report | `memon-write-report` | `R<NNNN>-<slug>.md` with re-runnable selector. |
 | "What should I run next?" — brainstorm + converge | `memon-propose` | Read-only research collaborator. |
+| Ping the user on Telegram when an autonomous run needs attention | `memon-notify` | One event = one notification. Send-only (push, no reply). Uses `--config`, not `--project-root`. |
 | Migrate a project's on-disk layout to a newer FS convention version | `memon-migrate-fs` | **User-invoked only** (sole skill with `disable-model-invocation`). Only skill that bumps `.memon/version.json`. Exempt from the FS-version preflight. |
 
 ## Invocation policy
