@@ -1,18 +1,20 @@
 'use client'
 
+import { useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { cn } from '../lib/utils'
+import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
 
 // Force every `<input type="checkbox">` produced by remark-gfm's task-list
 // plugin to be `disabled`. v1 of the experiment doc Plan section is
 // read-only; toggling happens via the Edit markdown dialog. This override
 // guards against future remark-gfm versions that might emit interactive
 // checkboxes by default.
-const COMPONENTS: Components = {
+const BASE_COMPONENTS: Components = {
   input: ({ node: _node, type, checked, ...rest }) => {
     if (type === 'checkbox') {
       return (
@@ -40,7 +42,45 @@ const COMPONENTS: Components = {
   ),
 }
 
-export function Markdown({ children, className }: { children: string; className?: string }) {
+export function Markdown({
+  children,
+  className,
+  project,
+}: {
+  children: string
+  className?: string
+  // When set, GitHub blob line-permalinks in the body become hover-preview
+  // links (code is fetched from the project's mapped LOCAL repo). Omit it
+  // and links render as plain external anchors. Threaded from every page
+  // that knows which project the markdown belongs to.
+  project?: string
+}) {
+  const components = useMemo<Components>(
+    () => ({
+      ...BASE_COMPONENTS,
+      a: ({ node: _node, href, children: linkChildren, ...rest }) => {
+        if (project && href && isGithubBlobPermalink(href)) {
+          return (
+            <GithubPermalinkPreview href={href} project={project}>
+              {linkChildren}
+            </GithubPermalinkPreview>
+          )
+        }
+        const external = !!href && /^https?:\/\//i.test(href)
+        return (
+          <a
+            href={href}
+            {...(external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+            {...rest}
+          >
+            {linkChildren}
+          </a>
+        )
+      },
+    }),
+    [project],
+  )
+
   return (
     <div
       className={cn(
@@ -93,7 +133,7 @@ export function Markdown({ children, className }: { children: string; className?
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
-        components={COMPONENTS}
+        components={components}
       >
         {children}
       </ReactMarkdown>

@@ -563,11 +563,21 @@ export interface ParsedJournal {
 
 // ---------- Config ----------
 
+/** A GitHub owner/repo mapped to a local git repo path (absolute after load). */
+export interface GithubRepoMapping {
+  owner: string
+  repo: string
+  /** Absolute local path: the main repo root or a submodule root. */
+  path: string
+}
+
 export interface ProjectConfig {
   name: string
   root: string // absolute path
   include: string[]
   exclude: string[]
+  /** GitHub repo -> local path mappings for code-preview (optional). */
+  github?: GithubRepoMapping[]
 }
 
 export interface PollConfig {

@@ -310,6 +310,11 @@ const RULES: Rule[] = [
     projectFor: projectQueryOrMulti(),
   },
   {
+    match: methodIs(['GET'], exact('/api/code-preview')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+  {
     match: methodIs(['GET'], exact('/api/hypotheses')),
     class: 'read',
     projectFor: projectQueryOrMulti(),

@@ -14,6 +14,23 @@ projects:
     # are always applied. Entries below ADD to that set.
     exclude: []
 
+    # Optional: map GitHub owner/repo -> a LOCAL git checkout so that GitHub
+    # blob line-permalinks in rendered markdown (code-review docs, run/exp
+    # READMEs, reports, digests) get a hover-preview of the referenced code,
+    # read from the local repo at the permalink's commit. No GitHub network
+    # access; the preview endpoint is logged-in-only. `path` is resolved
+    # against this project's `root` (use "." for the project's own repo). Add
+    # one entry per submodule whose code your permalinks reference, pointing
+    # at the submodule's GitHub owner/repo and its working-tree path.
+    #
+    # github:
+    #   - owner: acme            # github.com/acme/project-a
+    #     repo: project-a
+    #     path: .                # the project's own checkout (root repo)
+    #   - owner: acme            # a submodule: github.com/acme/fsdp-ext
+    #     repo: fsdp-ext
+    #     path: third_party/fsdp-ext
+
   - name: project-b
     root: ./mock/project-b
 

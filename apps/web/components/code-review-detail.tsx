@@ -178,7 +178,9 @@ export function CodeReviewDetail({ project, id }: { project: string; id: string 
 
       <Separator />
 
-      <Markdown className="min-w-0">{data.body}</Markdown>
+      <Markdown className="min-w-0" project={project}>
+        {data.body}
+      </Markdown>
     </div>
   )
 }

@@ -173,6 +173,34 @@ export async function patchCodeReviewProgress(
   )
 }
 
+// ---------- Code preview ----------
+
+export interface CodePreviewLine {
+  n: number
+  text: string
+  target: boolean
+}
+
+export interface CodePreview {
+  owner: string
+  repo: string
+  sha: string
+  path: string
+  startLine: number
+  endLine: number
+  lines: CodePreviewLine[]
+  truncated: boolean
+  // Set when the link resolved but the bytes couldn't be previewed
+  // (e.g. the file is too large or binary). `lines` is empty in that case.
+  reason?: 'too-large' | 'binary'
+}
+
+export async function fetchCodePreview(project: string, url: string): Promise<CodePreview> {
+  return jsonFetch(
+    `/api/code-preview?project=${encodeURIComponent(project)}&url=${encodeURIComponent(url)}`,
+  )
+}
+
 // ---------- Digests ----------
 
 export interface FullDigest {

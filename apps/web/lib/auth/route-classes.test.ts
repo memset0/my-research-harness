@@ -53,6 +53,12 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/events')).toBe('read')
     expect(classify('GET', '/api/runtime/health')).toBe('read')
     expect(classify('GET', '/api/slurm/status')).toBe('read')
+    expect(classify('GET', '/api/code-preview')).toBe('read')
+  })
+
+  it('classifies non-GET /api/code-preview as mutating (logged-in GET only, fail-closed)', () => {
+    expect(classify('POST', '/api/code-preview')).toBe('mutating')
+    expect(classify('PUT', '/api/code-preview')).toBe('mutating')
   })
 
   it('classifies /api/projects/<project>/shares family as mutating (owner-only — even GET)', () => {
@@ -121,6 +127,16 @@ describe('classifyAndExtract — project extraction', () => {
   it('extracts project from /api/runs?project=', () => {
     const r = classifyAndExtract('GET', '/api/runs', search('project=project-b'), stubCtx())
     expect(r).toEqual({ class: 'read', project: 'project-b' })
+  })
+
+  it('extracts project from /api/code-preview?project= (read + project-scoped)', () => {
+    const r = classifyAndExtract('GET', '/api/code-preview', search('project=project-a'), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('returns "multi" when /api/code-preview has no project query', () => {
+    const r = classifyAndExtract('GET', '/api/code-preview', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'multi' })
   })
 
   it('resolves /api/runs/<id> via RunIndex', () => {

@@ -127,6 +127,17 @@ export const ProjectConfigRawSchema = z.object({
   root: z.string().min(1),
   include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),
+  // Per-project GitHub owner/repo -> local path mappings, for code-preview.
+  // `path` is relative to the project root ('.' = main repo, else a submodule).
+  github: z
+    .array(
+      z.object({
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        path: z.string().min(1),
+      }),
+    )
+    .optional(),
 })
 
 export const PollConfigRawSchema = z

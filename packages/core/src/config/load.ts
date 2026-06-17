@@ -89,12 +89,25 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   const baseDir = dirname(resolve(candidate))
   const cfg = validated.data
 
-  const projects: ProjectConfig[] = cfg.projects.map((p) => ({
-    name: p.name,
-    root: isAbsolute(p.root) ? p.root : resolve(baseDir, p.root),
-    include: p.include ?? [],
-    exclude: p.exclude ?? [],
-  }))
+  const projects: ProjectConfig[] = cfg.projects.map((p) => {
+    const root = isAbsolute(p.root) ? p.root : resolve(baseDir, p.root)
+    return {
+      name: p.name,
+      root,
+      include: p.include ?? [],
+      exclude: p.exclude ?? [],
+      // Resolve each github mapping's path against the project root (absolute).
+      ...(p.github
+        ? {
+            github: p.github.map((g) => ({
+              owner: g.owner,
+              repo: g.repo,
+              path: resolve(root, g.path),
+            })),
+          }
+        : {}),
+    }
+  })
 
   const poll: PollConfig = {
     minIntervalMs: cfg.poll?.min_interval_ms ?? DEFAULT_POLL.minIntervalMs,

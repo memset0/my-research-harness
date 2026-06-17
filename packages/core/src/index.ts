@@ -29,6 +29,8 @@ export {
   toggleTodoDone,
 } from './code-review/parse.js'
 export type { ParsedCodeReview, SplitCodeReview } from './code-review/parse.js'
+export { parseGithubPermalink, sliceContext } from './git/github-permalink.js'
+export type { GithubPermalink, PreviewLine, CodeContext } from './git/github-permalink.js'
 export {
   applyWarningOp,
   findWarningsSectionRange,
