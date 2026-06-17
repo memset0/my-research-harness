@@ -62,7 +62,7 @@ export function AppBar({ project }: { project: string }) {
       matches: (p) => p.startsWith(`${projectBase}/digests`),
     },
     {
-      name: 'Code review',
+      name: 'Code Review',
       kind: 'code-review',
       href: `${projectBase}/code-review`,
       matches: (p) => p.startsWith(`${projectBase}/code-review`),
@@ -71,43 +71,59 @@ export function AppBar({ project }: { project: string }) {
 
   return (
     <header className="sticky top-0 z-20 flex min-h-12 shrink-0 items-center gap-2 border-b bg-background px-3 py-1.5 md:px-4">
-      {/* Visible at every viewport. Mobile users see this as the only
-          drawer affordance; desktop users use it to collapse the
-          sidebar into offcanvas (the keyboard shortcut Cmd/Ctrl+B
-          continues to do the same). */}
+      {/* Fixed leading control: visible at every viewport. Mobile users see
+          this as the only drawer affordance; desktop users use it to
+          collapse the sidebar into offcanvas (Cmd/Ctrl+B does the same).
+          It stays pinned on the left and is NOT part of the wrap flow
+          below — it never reflows with the tabs / right controls. */}
       <SidebarTrigger />
       {/*
-        nav: do NOT add overflow-x-auto here. Per CSS spec, setting
-        overflow-x to a non-visible value makes overflow-y auto as well,
-        and shadcn Button's `active:translate-y-px` (1px nudge on click)
-        then makes content overflow vertically by 1px → stray scrollbar.
+        Shared wrap flow for the nav tabs + right-side controls ONLY (the
+        SidebarTrigger above is deliberately excluded). This inner wrapper
+        is flex-1 + min-w-0 so it claims the row's remaining width (after
+        the trigger) and its own flex-wrap kicks in when the items are wider
+        than that; without min-w-0, flex's default min-width:auto would keep
+        it at intrinsic width and overflow the page instead of wrapping.
 
-        flex-1 + min-w-0 lets the nav constrain to the row's remaining
-        width (after the SidebarTrigger) so flex-wrap can actually
-        kick in when the tab list is wider than that — without
-        min-w-0, flex's default min-width:auto keeps the nav at
-        intrinsic content width and overflow goes back to the page.
+        The <nav> uses `display: contents` so its tab buttons participate
+        directly in this wrapper's flex flow (filling from the left), while
+        the role="tablist" grouping stays in the a11y tree. The right-side
+        control group carries ml-auto so it right-aligns on whatever line it
+        lands on — so on the final (shared or trailing) line the trailing
+        tab(s) hug left and the controls hug right.
+
+        do NOT add overflow-x-auto anywhere here. Per CSS spec, overflow-x
+        to a non-visible value makes overflow-y auto too, and shadcn
+        Button's `active:translate-y-px` (1px click nudge) then overflows
+        vertically by 1px → stray scrollbar. Wrapping (flex-wrap) is the
+        overflow strategy, so no overflow utility is needed.
       */}
-      <nav className="flex flex-1 flex-wrap items-center gap-1 min-w-0" role="tablist">
-        {tabs.map((t) => {
-          const isActive = t.matches(pathname)
-          return (
-            <Button
-              key={t.href}
-              asChild
-              size="sm"
-              variant={isActive ? 'default' : 'ghost'}
-            >
-              <Link href={t.href} role="tab" aria-selected={isActive}>
-                <span>{t.name}</span>
-                <TabBadge kind={t.kind} project={project} active={isActive} />
-              </Link>
-            </Button>
-          )
-        })}
-      </nav>
-      <ManageSharesDialog project={project} />
-      <OpenWithButton project={project} scope="project" slug={PROJECT_SCOPE_SLUG} />
+      <div className="flex flex-1 flex-wrap items-center gap-1 min-w-0">
+        <nav className="contents" role="tablist">
+          {tabs.map((t) => {
+            const isActive = t.matches(pathname)
+            return (
+              <Button
+                key={t.href}
+                asChild
+                size="sm"
+                variant={isActive ? 'default' : 'ghost'}
+              >
+                <Link href={t.href} role="tab" aria-selected={isActive}>
+                  <span>{t.name}</span>
+                  <TabBadge kind={t.kind} project={project} active={isActive} />
+                </Link>
+              </Button>
+            )
+          })}
+        </nav>
+        {/* Right-side controls grouped as one non-splittable unit; ml-auto
+            pushes the group to the right edge of its flex line. */}
+        <div className="ml-auto flex items-center gap-1">
+          <ManageSharesDialog project={project} />
+          <OpenWithButton project={project} scope="project" slug={PROJECT_SCOPE_SLUG} />
+        </div>
+      </div>
     </header>
   )
 }
