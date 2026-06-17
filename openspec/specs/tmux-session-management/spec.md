@@ -14,281 +14,87 @@ restart leave tmux alive.
 
 The dashboard SHALL render a page at `/manage/tmux` that lists every tmux session on the host whose name starts with `memon-`. The page SHALL be top-level (NOT scoped under `/p/<project>/`) so it can show sessions across all configured projects, plus sessions whose `<project>` cannot be matched in the current config.
 
-The page SHALL fetch the session list from `GET /api/tmux-sessions`. The list SHALL be auto-refreshed every 5 seconds while the page is visible, with a manual refresh button to force an immediate refetch. Auto-refetch SHALL update per-row content (live ttyd port, last-activity timestamp, status badges, footer state tint) but SHALL NOT reorder the list — see the **Stable client-side ordering** requirement.
+The page SHALL fetch the session list from `GET /api/tmux-sessions` (defined below). The list SHALL be auto-refreshed every 5 seconds while the page is visible, with a manual refresh button to force an immediate refetch.
 
-The page SHALL expose a `New session` button at the top of the left pane that opens a Dialog with a text input for the session name. Submitting the dialog SHALL `POST /api/tmux-sessions { name }` and, on success, invalidate the list query so the row appears immediately. A toast SHALL communicate the outcome ("created `memon-manual-<name>`" vs "joined existing `memon-manual-<name>`" based on `alreadyExisted`).
+The page SHALL also expose a `New session` button at the top that opens a Dialog with a text input for the session name. Submitting the dialog SHALL `POST /api/tmux-sessions { name }` and, on success, invalidate the list query so the row appears immediately. A toast SHALL communicate the outcome ("created `memon-manual-<name>`" vs "joined existing `memon-manual-<name>`" based on `alreadyExisted`).
 
-The page SHALL render as a two-pane resizable layout (not a table):
-- A **left pane** containing the session list and the header controls (filter tabs, `New session`, `Refresh`).
-- A **right pane** showing the inline terminal for the currently-selected session, or an empty-state placeholder when none is selected.
-- A draggable **divider** between the panes. The user SHALL be able to resize the split by mouse drag, touch drag, or keyboard (arrow keys when the handle is focused), per the underlying `react-resizable-panels` primitive.
+Each row SHALL display:
+- The full tmux session name.
+- The parsed `(agent, scope, project, slug)` derived from the session name.
+- The bound ttyd port if the manager currently holds a live entry for this sessionName, otherwise an em-dash `—`.
+- The session's `last activity` (parsed from `tmux ls`'s `#{session_activity}`).
+- A **Target** cell that is one of THREE forms:
+  - A clickable link with arrow icon to `/p/<project>/r/<slug>` (for `scope: 'run'`) or `/p/<project>/e/<slug>` (for `scope: 'exp'`) when the row is matchable (parses to the standard format AND project + run/exp resolved on disk).
+  - An inline `⚠ stale (<reason>)` indicator when the row parses to the standard format but the project or target lookup failed. Reasons are `unknown-project` or `unknown-target`.
+  - An em-dash `—` when the row does NOT parse to the standard format (legacy `memon-<agent>-<runId>` or arbitrary user-created names like `memon-manual-foo`). These are the **manual** category — neither matchable nor stale.
+- Action buttons that depend on row classification:
+  - **Matchable** rows render `Open in drawer`, `Open in popup`, `Kill`. The drawer + popup use the **standard** path (parsed `(project, scope, slug, agent)` → `POST /api/terminal/start`). The `Open in popup` button SHALL be hidden on viewports below the Tailwind `md` breakpoint.
+  - **Manual** rows render `Open in drawer`, `Open in popup`, `Kill`. The drawer + popup use the **raw-attach** path (just `sessionName` → `POST /api/terminal/attach`, per the `browser-terminal` capability). The `Open in popup` button SHALL be hidden on the mobile breakpoint, same as for matchable rows.
+  - **Stale** rows render only `Kill`. `Open in drawer` and `Open in popup` SHALL be omitted (not rendered) — opening a stale session would surface a confusing "project not in config" warning since the parse succeeded but the lookup failed.
 
-On viewports `>= 768px` (the Tailwind `md` breakpoint) the panel orientation SHALL be horizontal (list left, terminal right). On viewports `< 768px` the orientation SHALL be vertical (list top, terminal bottom). The same `ResizablePanelGroup` SHALL be reused with `direction` switched based on the viewport; no separate component tree per orientation.
+The page SHALL provide three filter tabs: `All`, `Active in memon`, `Stale`. The default filter is `All`. `Active in memon` shows only rows where the manager has a live ttyd entry. `Stale` shows only rows whose `staleReason` is non-null (manual rows do NOT appear under the `Stale` tab).
 
-The list pane SHALL provide three filter tabs: `All`, `Active in memon`, `Stale`. The default filter is `All`. `Active in memon` shows only rows where the manager has a live ttyd entry. `Stale` shows only rows whose `staleReason` is non-null (manual rows do NOT appear under the `Stale` tab).
-
-Each row SHALL render as a clickable card (NOT a table cell). The card SHALL be split into two visually distinct zones — a **content** zone above and an optional **footer** zone below — separated by a thin horizontal border (`border-t border-border/40`) that extends to the card's left and right padded edges. The footer zone is described in the separate `/manage/tmux cards render a pane info line under the badge row` requirement; the content zone is described here.
-
-The **content** zone SHALL contain:
-
-- **Row 1 — Title + time + actions** (a single horizontal `flex` row, items vertically centered):
-  - A **title** that is the session name with the universal `memon-` prefix stripped AND any of `manual-` / `project-` / `exp-` / `run-` stripped if present immediately after `memon-`. Examples:
-    - `memon-manual-foo` renders as title `foo`.
-    - `memon-claude-project-a--run--foo-260507-103000` renders as title `claude-project-a--run--foo-260507-103000`.
-    - `memon-claude-foo-260507-103000` (legacy format) renders as title `claude-foo-260507-103000`.
-    - The title SHALL render in `font-mono text-[11px] font-semibold` with `min-w-0 flex-1 truncate` so it fills available width and truncates with ellipsis. The semibold weight differentiates the title from the surrounding regular-weight content + ellipsis-truncated badge values.
-  - A **last activity** label (relative time, e.g. `5m ago`). The timestamp the label renders is the more recent of `row.tmuxLastActivity` and `row.lastStateChangeAt` — so a state transition (running ↔ idle ↔ attention ↔ done) refreshes the displayed clock back to "just now" alongside tmux's own input/output activity. The label SHALL be `text-[10px] text-muted-foreground` in the default sans-serif font (NOT monospace — relative-time strings like `5m ago` are prose, not code, and the sans rendering reads more naturally next to the title and buttons). It SHALL render when EITHER timestamp is parseable; when BOTH are absent/unparseable, the label is omitted entirely. It sits to the IMMEDIATE LEFT of the action buttons on row 1 (NOT in the badge row).
-  - An **actions** group, right-aligned. Action buttons depend on row classification:
-    - **Matchable**, **Manual**, AND **Stale** rows render exactly three actions in this left-to-right order: a `Rename` button, a `Popup` button, and a `Kill` button. Both the `Rename` and `Popup` buttons SHALL be hidden on viewports below the Tailwind `md` breakpoint (`hidden md:inline-flex`); the `Kill` button SHALL be visible at every viewport size so the destructive action remains reachable on mobile.
-    - The `Open in drawer` button is REMOVED for every row category. Its function is replaced by clicking the card body to select the row.
-    - All three buttons SHALL render as **icon-only** — the leading lucide icon is the only content (`Pencil` for Rename, `ExternalLink` for Popup, `Trash2` for Kill). The visible text labels `"Rename"` / `"Popup"` / `"Kill"` SHALL NOT be rendered. The buttons MUST carry `aria-label` attributes (`"Rename session"` / `"Open in popup"` / `"Kill session"`) for accessibility.
-    - The `Rename` and `Popup` buttons SHALL each be wrapped in `<ViewerGuard reason="...">` so they are hidden / non-interactive for viewer-mode visitors, matching the existing `Kill` button's gating.
-
-- **Row 2 — Inline metadata badges** (conditional): A row of badges SHALL be rendered ONLY when AT LEAST ONE badge would otherwise appear. When no badge applies (e.g. a `memon-manual-foo` row with no live ttyd and no parsed agent/project), row 2 SHALL be absent from the DOM (no empty `<div>`, no reserved vertical space). When at least one badge applies, the row renders all applicable badges flex-wrapping if needed.
-
-Each badge in row 2 SHALL include a `lucide-react` icon at its leading edge (size class `size-3`), and each badge type SHALL carry a category-specific color treatment. The render order, when all are present, is: ttyd port → agent → project → scope/target. Per-badge rules:
-
-  - **ttyd port badge** (when `row.liveEntry !== null`):
-    - leading glyph: a small emerald dot (a `size-1.5` round span with `bg-emerald-500`). No icon font.
-    - content: `:<port>` (e.g. `:7683`). No prefix label.
-    - style: muted background, NO border. Text in emerald (`text-emerald-700` / `dark:text-emerald-300`). The dot is the only visual signal that a ttyd is bound; removing the badge entirely communicates "no ttyd".
-
-  - **Agent badge** (when `parsed.agent !== null` AND `parsed.agent !== 'none'`):
-    - icon: `Bot` (lucide).
-    - content: just the agent value (e.g. `claude`, `codex`) in `font-mono`. NO prefix label word — the icon carries the category signal.
-    - style: orange color family (bg/text/border in the orange palette, with a `dark:` variant for the dark theme).
-
-  - **Project badge** (when `parsed.project !== null` AND `parsed.scope !== 'project'`):
-    - icon: `FolderTree` (lucide).
-    - content: just the project name (e.g. `project-a`) in `font-mono`. NO prefix label word.
-    - style: violet color family (bg/text/border in the violet palette, with a `dark:` variant). This visual SHALL be identical to the project-scope `ScopeBadge` variant — the two badges are visually unified.
-    - The badge SHALL be rendered as a `<Link>` to `/p/<project>` with `target="_blank"` and `rel="noopener noreferrer"`. Clicking the badge SHALL NOT bubble up to the card's row-selection handler — the anchor SHALL call `event.stopPropagation()`.
-    - Suppressed for `parsed.scope === 'project'` rows because the scope/target badge already names the project.
-
-  - **Scope/target badge** — one of five variants (the previous `Manual` variant is REMOVED):
-    - For `scope: 'run'` matchable rows: icon `Zap`, content `<slug>` (e.g. `foo-260507-103000`) in `font-mono`, emerald color, rendered as a `<Link>` to `/p/<project>/r/<slug>`. NO prefix label word.
-    - For `scope: 'exp'` matchable rows: icon `FlaskConical`, content `<slug>` (e.g. `E0042-bar`) in `font-mono`, sky color, rendered as a `<Link>` to `/p/<project>/e/<slug>`. NO prefix label word.
-    - For `scope: 'project'` matchable rows: icon `FolderTree`, content `<project>` (e.g. `project-a`) in `font-mono`, violet color, rendered as a `<Link>` to `/p/<project>`. NO prefix label word.
-    - For **legacy** rows (`parsed.legacy === true` AND none of the matchable variants match): icon `Archive`, content `Legacy`, muted color. NOT a link.
-    - For **stale** rows (`row.staleReason !== null`): icon `AlertTriangle`, content `Stale (<reason>)`, amber color (or `destructive` if dark). NOT a link.
-    - For **manual** rows (sessionName matches `^memon-manual-` AND none of the above apply): the scope/target badge SHALL be ABSENT. (Previously a `Wrench`/`Manual` amber chip; that variant is dropped.) This combined with manual rows usually having no liveEntry/agent/project means row 2 itself collapses.
-    - For any other row that falls through all the above conditions (e.g. parseable-but-unclassified): icon `Archive`, content `Other`, muted color. NOT a link.
-
-    All clickable scope/target variants (run / exp / project) SHALL be rendered with `target="_blank"` and `rel="noopener noreferrer"`. Clicking the badge SHALL NOT bubble up to the card's row-selection handler — the badge anchor SHALL call `event.stopPropagation()` to keep the right pane attached to the currently-selected session.
-
-  - Across the Agent / Project / Run / Exp / Project-scope badges, NO prefix label word (e.g. `Agent`, `Project`, `Run`, `Exp`) SHALL be rendered. The leading lucide icon carries the category signal and the colored chip + value is the only content. The category-fallback badges (Legacy / Stale / Other) keep their fixed text content as defined above — those are full-word labels by necessity, not prefixes followed by a value.
-
-  - A standalone uppercase category chip (e.g. a leading `RUN` / `EXP` / `MANUAL` chip) SHALL NOT be rendered either. The scope/target badge above carries the category signal via its icon + color.
-
-Click handling on each row card:
-- For **Matchable**, **Manual**, AND **Stale** rows, clicking the card BODY (anywhere except the action buttons or any badge link) SHALL select that row. Action buttons SHALL stop propagation so clicking the icon-only `Rename`, `Popup`, or `Kill` does NOT change the selection. The scope/target badge link AND the project-badge link SHALL also stop propagation.
-- For **Stale** rows specifically, the card SHALL keep `opacity-75` (signalling "no current memon target") but SHALL be a focusable interactive region (`role="button"`, `tabIndex={0}`, `cursor-pointer`, `focus-visible:ring-*`) so it behaves identically to manual rows for keyboard and pointer interaction. The reduced opacity is the only visual deviation from matchable/manual rows; it does NOT gate selection.
-
-The currently-selected row SHALL be visually distinguished by a **full border in the primary theme color** (e.g. `border-primary` on all four sides), NOT by a leading-edge accent bar or background fill. The selected card's background SHALL remain the same `bg-card` (white in light mode) as the unselected card. This applies to stale rows too: a selected stale row SHALL gain the `border-primary` outline while keeping its `opacity-75`.
-
-The unselected card SHALL render on the `bg-card` surface color (white in light mode). The previous transparent-background look is removed so cards read as distinct elements against the SidebarInset's `bg-background`.
-
-The page SHALL be auth-gated per the existing `auth-system` rules.
-
-#### Scenario: Page renders as a resizable split-pane on desktop
-- **GIVEN** the viewport width is `>= 768px` and the host has at least one `memon-*` tmux session
+#### Scenario: Page lists sessions across projects
+- **GIVEN** the host has tmux sessions `memon-claude-project-a--run--foo-...`, `memon-codex-project-b--exp--E0001-bar`, and `memon-claude-archived-proj--run--baz-...` (where `archived-proj` is not in the current `config.yml`)
 - **WHEN** the user navigates to `/manage/tmux`
-- **THEN** a horizontal split is rendered with the session list in the left pane and an empty terminal pane on the right
-- **AND** a draggable handle SHALL appear between the two panes
-- **AND** dragging the handle horizontally SHALL resize the panes
+- **THEN** all three rows appear by default (filter `All`)
+- **AND** the first two have a clickable Target link
+- **AND** the third has `⚠ stale (unknown-project)` and ttyd port `—` if no live entry
 
-#### Scenario: Page renders as a vertical split on mobile
-- **GIVEN** the viewport width is `< 768px`
-- **WHEN** the user navigates to `/manage/tmux`
-- **THEN** the layout SHALL be a vertical split with the list on top and the terminal pane on the bottom
-- **AND** the draggable handle SHALL be the horizontal bar between them
+#### Scenario: Manual rows render with em-dash Target
+- **GIVEN** the host has session `memon-manual-foo` (created via the new dialog)
+- **WHEN** the page lists rows
+- **THEN** the Target cell for that row renders `—` (no `⚠ stale`)
 
-#### Scenario: memon- prefix is stripped from row titles
-- **GIVEN** the host has session `memon-claude-project-a--run--foo-260507-103000`
-- **WHEN** the row renders
-- **THEN** the card title text SHALL be `claude-project-a--run--foo-260507-103000` (no leading `memon-`)
+#### Scenario: Manual rows render Drawer + Popup + Kill actions
+- **GIVEN** a manual row (e.g., `memon-manual-foo` or a legacy `memon-claude-foo-260507-103000`)
+- **WHEN** the row is rendered
+- **THEN** the actions cell contains `Open in drawer`, `Open in popup`, and `Kill`
+- **AND** clicking `Open in drawer` calls the drawer provider's `openRaw({ sessionName })` (NOT the standard `open(...)`)
+- **AND** clicking `Open in popup` opens `/terminal-popup?sessionName=<row.sessionName>` (raw query shape)
 
-#### Scenario: Manual rows render without a scope/target badge
-- **GIVEN** the host has session `memon-manual-foo`
-- **WHEN** the row renders
-- **THEN** the card title text SHALL be `foo` (both `memon-` and `manual-` stripped)
-- **AND** no scope/target badge SHALL be present in the DOM (no `Wrench`/`Manual` amber chip)
-- **AND** if there is also no live ttyd entry, no parsed agent, and no parsed project, row 2 itself SHALL NOT render
+#### Scenario: Legacy-format rows render as Manual, not Stale
+- **GIVEN** the host has session `memon-claude-foo-260507-103000` (legacy pre-tmux-session-rework format, no `--`)
+- **WHEN** the page lists rows
+- **THEN** the Target cell renders `—`, NOT `⚠ stale (old-format)`
+- **AND** the row does NOT appear under the `Stale` filter tab
+- **AND** the actions cell renders Drawer + Popup + Kill (per the manual-row rule above)
 
-#### Scenario: Run target badge renders with icon, value (no prefix), color, and new-tab link
-- **GIVEN** the host has session `memon-claude-project-a--run--foo-260507-103000` and `project-a` resolves on disk
-- **WHEN** the row renders
-- **THEN** the scope/target badge SHALL contain the `Zap` icon and the value `foo-260507-103000` in `font-mono`
-- **AND** the badge SHALL NOT contain a `Run` prefix label word
-- **AND** the badge SHALL be rendered with the emerald color family (e.g. `bg-emerald-100` light / `dark:bg-emerald-900/40` dark)
-- **AND** the badge SHALL be an anchor with `href="/p/project-a/r/foo-260507-103000"`, `target="_blank"`, and `rel="noopener noreferrer"`
-
-#### Scenario: Exp target badge renders with icon, value (no prefix), color, and new-tab link
-- **GIVEN** the host has session `memon-claude-project-a--exp--E0042-bar` and the exp doc exists
-- **WHEN** the row renders
-- **THEN** the scope/target badge SHALL contain the `FlaskConical` icon and the value `E0042-bar` in `font-mono`
-- **AND** the badge SHALL NOT contain an `Exp` prefix label word
-- **AND** the badge SHALL be rendered in the sky color family
-- **AND** the badge SHALL be an anchor with `href="/p/project-a/e/E0042-bar"`, `target="_blank"`, `rel="noopener noreferrer"`
-
-#### Scenario: Project-scope target badge renders with icon, value (no prefix), color, and new-tab link
-- **GIVEN** the host has session `memon-claude-project-a--project--root` and `project-a` is in config
-- **WHEN** the row renders
-- **THEN** the scope/target badge SHALL contain the `FolderTree` icon and the value `project-a` in `font-mono`
-- **AND** the badge SHALL NOT contain a `Project` prefix label word
-- **AND** the badge SHALL be rendered in the violet color family
-- **AND** the badge SHALL be an anchor with `href="/p/project-a"`, `target="_blank"`, `rel="noopener noreferrer"`
-- **AND** no separate Project badge SHALL appear in the badge row (the scope/target badge IS the project on project-scope rows)
-
-#### Scenario: ttyd port badge renders with an emerald dot and no icon font
-- **GIVEN** the host has session `memon-claude-project-a--run--foo-...` with a live ttyd on port 7683
-- **WHEN** the row renders
-- **THEN** the row SHALL contain a port badge whose leading glyph is a small emerald-filled circle (e.g. `bg-emerald-500` on a `size-1.5 rounded-full` span)
-- **AND** the badge's content SHALL read `:7683` in monospace, in an emerald foreground color
-- **AND** the badge SHALL NOT carry any colored border
-- **AND** the badge's background SHALL be the muted color used by neutral chips
-
-#### Scenario: Agent badge renders with bot icon and value only (no prefix)
-- **GIVEN** the host has session `memon-claude-project-a--run--foo-...` where the parsed agent is `claude`
-- **WHEN** the row renders
-- **THEN** the agent badge SHALL contain the `Bot` icon and the value `claude` in `font-mono`
-- **AND** the badge SHALL NOT contain an `Agent` prefix label word
-- **AND** the badge SHALL be rendered in the orange color family
-
-#### Scenario: Project badge unified with project-scope visual on run/exp rows
-- **GIVEN** a matchable row with `scope: 'run'` and `parsed.project === 'project-a'`
-- **WHEN** the row renders
-- **THEN** the project badge SHALL contain the `FolderTree` icon and the value `project-a` in `font-mono`
-- **AND** the badge SHALL NOT contain a `Project` prefix label word
-- **AND** the badge SHALL be rendered in the violet color family (matching the project-scope scope/target badge)
-- **AND** the badge SHALL be an anchor with `href="/p/project-a"`, `target="_blank"`, `rel="noopener noreferrer"`
-- **AND** clicking the badge SHALL open the project page in a new tab and SHALL NOT change the selected session in the current tab
-- **AND** no muted-Folder badge variant SHALL be rendered (the previous Folder/no-prefix/muted treatment is removed)
-
-#### Scenario: Legacy rows render with archive icon and Legacy variant
-- **GIVEN** the host has session `memon-claude-foo-260507-103000` (pre-rework format)
-- **WHEN** the row renders
-- **THEN** the scope/target badge SHALL be the `Legacy` variant: icon `Archive`, content `Legacy`, muted color
-- **AND** the badge SHALL NOT be rendered as a link
-
-#### Scenario: Stale rows render with alert icon and Stale variant
-- **GIVEN** a stale row (e.g. `memon-claude-archived-proj--run--baz-...` where `archived-proj` is not in config)
-- **WHEN** the row renders
-- **THEN** the scope/target badge SHALL be the `Stale` variant: icon `AlertTriangle`, content `Stale (unknown-project)`, amber color
-- **AND** the badge SHALL NOT be rendered as a link
-
-#### Scenario: Row 2 is absent when no badges apply
-- **GIVEN** the host has session `memon-manual-foo` with NO live ttyd entry
-- **WHEN** the row renders
-- **THEN** no port badge SHALL be present (no `liveEntry`)
-- **AND** no agent badge SHALL be present (manual row has no parsed agent)
-- **AND** no project badge SHALL be present (manual row has no parsed project)
-- **AND** no scope/target badge SHALL be present (the Manual variant is removed)
-- **AND** row 2 itself SHALL NOT be in the DOM — the card content collapses to row 1 only (title + time + buttons)
-
-#### Scenario: Inline badges render fully for an active matchable row
-- **GIVEN** the host has session `memon-claude-project-a--run--foo-260507-103000`, the manager holds a live ttyd entry on port 7683 for it, and `project-a` resolves on disk
-- **WHEN** the row renders
-- **THEN** the card SHALL contain badges in row 2 in this order: port (`:7683` with emerald dot, no icon font), agent (just `claude` in `font-mono` with `Bot` icon in orange — no `Agent` prefix word), project (just `project-a` in `font-mono` with `FolderTree` icon in violet, anchor to `/p/project-a` — no `Project` prefix word), and scope/target (just `foo-260507-103000` in `font-mono` with `Zap` icon in emerald, anchor to `/p/project-a/r/foo-260507-103000` opening in a new tab — no `Run` prefix word)
-- **AND** the project badge SHALL share the same visual class as the project-scope scope/target badge (both violet, both `FolderTree`, both `Project <name>` form)
-- **AND** no standalone uppercase category chip (e.g. `[RUN]` alone) SHALL be rendered
-- **AND** the relative time label (e.g. `5m ago`) SHALL be in row 1 immediately to the left of the action buttons, NOT in row 2
-
-#### Scenario: Clicking a target-badge link opens a new tab and does not change selection
-- **GIVEN** a matchable row for `memon-claude-project-a--run--foo-...` and an unrelated session `Y` is currently selected (right pane shows Y's terminal)
-- **WHEN** the user clicks the `Run foo-...` target badge on the matchable row
-- **THEN** a new browser tab opens at `/p/project-a/r/foo-...`
-- **AND** the current `/manage/tmux` tab stays on the page
-- **AND** session `Y` remains selected (the right pane stays on Y's terminal — clicking the badge does NOT propagate to the card's select handler)
-
-#### Scenario: Clicking a project-badge link opens a new tab and does not change selection
-- **GIVEN** a matchable run row for `memon-claude-project-a--run--foo-...` whose project badge links to `/p/project-a`
-- **WHEN** the user clicks the project badge
-- **THEN** a new browser tab opens at `/p/project-a`
-- **AND** the current row's selected state in `/manage/tmux` is unchanged
-
-#### Scenario: Action buttons render icon-only with no text label
-- **GIVEN** any matchable, manual, or stale row
-- **WHEN** the row renders
-- **THEN** the `Rename` button SHALL contain ONLY the `Pencil` lucide icon — no `Rename` text child
-- **AND** the `Popup` button (when present) SHALL contain ONLY the `ExternalLink` lucide icon — no `Popup` text child
-- **AND** the `Kill` button SHALL contain ONLY the `Trash2` lucide icon — no `Kill` text child
-- **AND** all three buttons SHALL carry an `aria-label` attribute (`"Rename session"` / `"Open in popup"` / `"Kill session"` respectively)
-
-#### Scenario: Manual rows render Rename + Popup + Kill (no Drawer)
-- **GIVEN** a manual row (e.g. `memon-manual-foo`)
-- **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly three icon-only buttons in this left-to-right order: `Rename`, `Popup`, `Kill`
-- **AND** no `Drawer` button SHALL be present in the DOM
-- **AND** clicking `Popup` SHALL open `/terminal-popup?sessionName=memon-manual-foo`
-
-#### Scenario: Matchable rows render Rename + Popup + Kill (no Drawer)
-- **GIVEN** a matchable row (`memon-claude-project-a--run--foo-260507-103000`)
-- **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly three icon-only buttons in this left-to-right order: `Rename`, `Popup`, `Kill`
-- **AND** no `Drawer` button SHALL be present in the DOM
-- **AND** clicking `Popup` SHALL open the standard popup URL with `project / scope / slug / agent` query params
-
-#### Scenario: Stale rows render Rename + Popup + Kill and are selectable in raw mode
-- **GIVEN** a stale row (e.g. `memon-claude-archived-proj--run--baz-...` where `archived-proj` is not in config)
-- **WHEN** the row renders
-- **THEN** the actions group SHALL contain exactly three icon-only buttons in this left-to-right order: `Rename`, `Popup`, `Kill`
-- **AND** no `Drawer` button SHALL be present in the DOM
-- **AND** clicking `Popup` SHALL open `/terminal-popup?sessionName=memon-claude-archived-proj--run--baz-...&stale=unknown-project`
-- **AND** clicking the card body (or pressing Enter / Space when the card is focused) SHALL select the row and mount `<TerminalView mode="raw" sessionName={row.sessionName} />` in the right pane
-- **AND** the card SHALL render with `opacity-75` AND `role="button"` AND `tabIndex={0}` AND `cursor-pointer`
-- **AND** when selected the card SHALL also gain the `border-primary` outline (opacity stays at `0.75`)
-
-#### Scenario: Rename and Popup buttons are hidden on mobile, Kill stays visible
-- **GIVEN** the viewport is below the Tailwind `md` breakpoint
-- **WHEN** any matchable, manual, or stale row renders
-- **THEN** the `Rename` button SHALL carry class `hidden md:inline-flex` and not be visible
-- **AND** the `Popup` button SHALL carry class `hidden md:inline-flex` and not be visible
-- **AND** the `Kill` button SHALL remain visible (no `hidden` class)
-
-#### Scenario: Clicking a matchable row card selects that session
-- **GIVEN** a matchable row in the left pane and no session currently selected
-- **WHEN** the user clicks the card body (not an action button, target badge link, or project badge link)
-- **THEN** the row's outer card SHALL gain a primary-colored border on all four sides (`border-primary`)
-- **AND** the card background SHALL remain the same `bg-card` as before selection (no background fill change)
-- **AND** the right pane SHALL mount `<TerminalView>` in `standard` mode wired to that row's `(project, scope, slug, agent)`
-
-#### Scenario: Clicking a manual row card selects that session in raw mode
-- **GIVEN** a manual row (e.g. `memon-manual-foo`)
-- **WHEN** the user clicks the card body
-- **THEN** the right pane SHALL mount `<TerminalView>` in `raw` mode wired to that row's `sessionName`
-
-#### Scenario: Action button clicks do not change selection
-- **GIVEN** session `A` is currently selected and session `B` is also visible
-- **WHEN** the user clicks the `Popup` button on row `B`
-- **THEN** session `A` SHALL remain selected (right pane stays on A's terminal)
-- **AND** a popup window opens for `B`
-
-#### Scenario: Rename button click does not change selection
-- **GIVEN** session `A` is currently selected and session `B` is also visible
-- **WHEN** the user clicks the `Rename` button on row `B`
-- **THEN** session `A` SHALL remain selected (right pane stays on A's terminal)
-- **AND** the Rename dialog opens with row B's sessionName pre-filled in the input
-
-#### Scenario: Kill removes the session and clears selection if it was selected
-- **GIVEN** session `X` is currently selected
-- **WHEN** the user clicks `Kill` on row `X` and confirms
-- **THEN** `DELETE /api/tmux-sessions/<X>` fires
-- **AND** on success the row disappears and the right pane returns to the empty-state placeholder
-- **AND** the `?session=` URL param SHALL be removed
-
-#### Scenario: Filter tabs narrow the list (unchanged from prior behavior)
-- **GIVEN** there are 5 total `memon-*` sessions, 2 with live ttyd entries, 1 of which is stale
-- **WHEN** the user clicks `Active in memon`
-- **THEN** only the 2 rows with live entries are visible in the left pane
+#### Scenario: Filter tabs narrow the list
+- **GIVEN** there are 5 total `memon-*` sessions, 2 of which have live ttyd entries, 1 of which is stale
+- **WHEN** the user clicks the `Active in memon` tab
+- **THEN** only the 2 rows with live entries are visible
 - **WHEN** the user clicks `Stale`
 - **THEN** only the 1 stale row is visible (manual rows excluded)
-- **AND** the right pane SHALL remain unchanged (filter does NOT clear the selected session unless that session's row is filtered out, in which case it stays selected — the user just can't see the source row until they switch the filter back)
 
-#### Scenario: New session button creates a manual session (unchanged)
+#### Scenario: Stale rows show only Kill
+- **GIVEN** a stale row in the table (`staleReason` is `unknown-project` or `unknown-target`)
+- **WHEN** the row is rendered
+- **THEN** the actions cell contains exactly one button: `Kill`
+- **AND** no `Open in drawer` or `Open in popup` button is present in the DOM for that row
+
+#### Scenario: Matchable rows show all three actions
+- **GIVEN** a matchable row in the table (the parsed name resolves to a real project + run/exp)
+- **WHEN** the row is rendered
+- **THEN** the actions cell contains `Open in drawer`, `Open in popup`, and `Kill`
+- **AND** clicking `Open in drawer` calls the drawer provider's standard `open({ project, scope, slug, agent })`
+
+#### Scenario: Open in popup hidden on mobile
+- **GIVEN** the viewport width is below the Tailwind `md` breakpoint
+- **WHEN** the page renders
+- **THEN** every row's `Open in popup` button has class `hidden md:inline-flex` (not visible) — applies to both matchable and manual rows
+
+#### Scenario: Kill removes the session
+- **GIVEN** a row for sessionName `memon-claude-project-a--run--foo-...`
+- **WHEN** the user clicks `Kill` and confirms
+- **THEN** `DELETE /api/tmux-sessions/memon-claude-project-a--run--foo-...` fires
+- **AND** on success the row disappears (next refetch / immediate invalidation)
+- **AND** the host no longer has the tmux session (`tmux has-session -t <name>` exits non-zero)
+
+#### Scenario: New session button creates a manual session
 - **WHEN** the user clicks `New session`, types `foo` in the dialog, and submits
 - **THEN** `POST /api/tmux-sessions { name: "foo" }` fires
-- **AND** on 200 response the dialog closes and the list refetches showing the new `memon-manual-foo` row
+- **AND** on 200 response, the dialog closes and the list refetches showing the new `memon-manual-foo` row in the manual category
 
 ### Requirement: Selected session is reflected in the URL
 
