@@ -57,6 +57,20 @@ export type GitLog =
     }
   | { enabled: true; commits: GitCommitSummary[] }
 
+export type GitRange =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | {
+      enabled: true
+      from: string
+      to: string
+      commits: GitCommitSummary[]
+      files: GitFileEntry[]
+    }
+
 export type GitCommitDetail =
   | {
       enabled: false
@@ -312,7 +326,7 @@ export async function readGitCommit(
 
   const filesRes = await runGit(
     bin,
-    ['diff-tree', '-r', '--root', '--name-status', '-M', sha],
+    ['diff-tree', '-r', '--root', '--raw', '-M', sha],
     cwd,
     timeoutMs,
   )
@@ -323,7 +337,7 @@ export async function readGitCommit(
     return { enabled: false, ...classifyEnabledFalseError(filesRes) }
   }
 
-  const files = parseDiffTreeNameStatus(filesRes.stdout)
+  const files = parseDiffTreeRaw(filesRes.stdout)
 
   return {
     enabled: true,
@@ -337,6 +351,69 @@ export async function readGitCommit(
     parents: parentsRaw ? parentsRaw.split(' ').filter(Boolean) : [],
     files,
   }
+}
+
+/**
+ * Parse `git diff-tree -r --raw` output.
+ *
+ * Each non-commit-id line looks like:
+ *
+ *   :<oldMode> <newMode> <oldSha> <newSha> <status>\t<path>[\t<origPath>]
+ *
+ * - The leading commit-id line (when `--no-commit-id` isn't passed) has no
+ *   tab and is skipped.
+ * - For rename / copy entries (status starts with `R` or `C`), there is a
+ *   second tab and an `<origPath>` segment after `<path>` — wait, git's
+ *   actual raw format puts `<origPath>` BEFORE `<path>` for renames. Both
+ *   styles appear in git docs; the empirical layout matches name-status:
+ *   `R<score>\t<old>\t<new>`.
+ * - For submodule pointer changes, BOTH modes are `160000` (gitlink). The
+ *   `<oldSha>` and `<newSha>` columns are the SUBMODULE's own commit SHAs.
+ *   We populate `entry.submoduleBump = { fromSha, toSha }` in that case.
+ */
+export function parseDiffTreeRaw(stdout: string): GitFileEntry[] {
+  const out: GitFileEntry[] = []
+  for (const rawLine of stdout.split('\n')) {
+    if (!rawLine) continue
+    if (!rawLine.startsWith(':')) continue // leading commit-id or stray
+    const tab = rawLine.indexOf('\t')
+    if (tab === -1) continue
+    const header = rawLine.slice(1, tab) // drop leading ':'
+    const rest = rawLine.slice(tab + 1)
+    // Header: `<oldMode> <newMode> <oldSha> <newSha> <status>`
+    const headerParts = header.split(' ')
+    if (headerParts.length < 5) continue
+    const [oldMode, newMode, oldSha, newSha, statusCode] = headerParts as [
+      string,
+      string,
+      string,
+      string,
+      string,
+    ]
+    if (!statusCode) continue
+    const statusHead = statusCode[0]!
+    let path: string
+    let origPath: string | undefined
+    if (statusHead === 'R' || statusHead === 'C') {
+      // `<origPath>\t<newPath>` after the status header.
+      const sep = rest.indexOf('\t')
+      if (sep === -1) continue
+      origPath = rest.slice(0, sep)
+      path = rest.slice(sep + 1)
+    } else {
+      path = rest
+    }
+    const entry: GitFileEntry = {
+      path,
+      status: statusFromCode(statusHead),
+      ...(origPath !== undefined ? { origPath } : {}),
+    }
+    if (oldMode === '160000' && newMode === '160000') {
+      entry.submoduleBump = { fromSha: oldSha, toSha: newSha }
+    }
+    out.push(entry)
+  }
+  return out
 }
 
 export function parseDiffTreeNameStatus(stdout: string): GitFileEntry[] {
@@ -373,6 +450,73 @@ export function parseDiffTreeNameStatus(stdout: string): GitFileEntry[] {
     }
   }
   return out
+}
+
+// --- readGitRange --------------------------------------------------------
+
+export async function readGitRange(
+  cwd: string,
+  options: { from: string; to: string },
+  opts: ReadGitHistoryOptions = {},
+): Promise<GitRange> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const bin = opts.gitBin ?? 'git'
+
+  const range = `${options.from}..${options.to}`
+
+  const logRes = await runGit(
+    bin,
+    ['log', range, `--format=${LOG_FORMAT}`],
+    cwd,
+    timeoutMs,
+  )
+  if (!logRes.ok) {
+    if (isUnknownRevisionStderr(logRes.stderr)) {
+      return { enabled: false, reason: 'error', message: 'unknown revision' }
+    }
+    return { enabled: false, ...classifyEnabledFalseError(logRes) }
+  }
+
+  const commits: GitCommitSummary[] = []
+  for (const rawRecord of logRes.stdout.split('\x1e')) {
+    const rec = rawRecord.replace(/^\n+/, '')
+    if (!rec) continue
+    const parts = rec.split('\0')
+    if (parts.length < 7) continue
+    const [sha, shortSha, authorName, authorEmail, authorDate, parentsRaw, subject] =
+      parts as [string, string, string, string, string, string, string]
+    commits.push({
+      sha,
+      shortSha,
+      subject,
+      authorName,
+      authorEmail,
+      authorDate,
+      parents: parentsRaw ? parentsRaw.split(' ').filter(Boolean) : [],
+    })
+  }
+
+  const filesRes = await runGit(
+    bin,
+    ['diff-tree', '-r', '--root', '--raw', '-M', range],
+    cwd,
+    timeoutMs,
+  )
+  if (!filesRes.ok) {
+    if (isUnknownRevisionStderr(filesRes.stderr)) {
+      return { enabled: false, reason: 'error', message: 'unknown revision' }
+    }
+    return { enabled: false, ...classifyEnabledFalseError(filesRes) }
+  }
+  const files = parseDiffTreeRaw(filesRes.stdout)
+
+  return {
+    enabled: true,
+    from: options.from,
+    to: options.to,
+    commits,
+    files,
+  }
 }
 
 function statusFromCode(c: string): GitFileStatus {

@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   parseDiffTreeNameStatus,
+  parseDiffTreeRaw,
   readGitBranches,
   readGitCommit,
   readGitLog,
+  readGitRange,
 } from './history.js'
 
 const execFileP = promisify(execFile)
@@ -203,6 +205,181 @@ describe('readGitCommit', () => {
     await initRepoWithCommit(root)
     const r = await readGitCommit(root, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
     expect(r).toEqual({ enabled: false, reason: 'not-found' })
+  })
+})
+
+describe('readGitRange', () => {
+  it('returns commits + files for a from..to range', async () => {
+    await initRepoWithCommit(root)
+    await writeFile(join(root, 'a.txt'), 'v1\n', 'utf8')
+    await git(root, ['add', 'a.txt'])
+    await git(root, ['commit', '-m', 'add a'])
+    const fromSha = await headSha(root)
+    await writeFile(join(root, 'a.txt'), 'v2\n', 'utf8')
+    await git(root, ['add', 'a.txt'])
+    await git(root, ['commit', '-m', 'modify a'])
+    await writeFile(join(root, 'b.txt'), 'b\n', 'utf8')
+    await git(root, ['add', 'b.txt'])
+    await git(root, ['commit', '-m', 'add b'])
+    const toSha = await headSha(root)
+
+    const r = await readGitRange(root, { from: fromSha, to: toSha })
+    if (!r.enabled) throw new Error(`expected enabled; got ${JSON.stringify(r)}`)
+    expect(r.from).toBe(fromSha)
+    expect(r.to).toBe(toSha)
+    expect(r.commits).toHaveLength(2) // modify a + add b
+    expect(r.files.map((f) => f.path).sort()).toEqual(['a.txt', 'b.txt'])
+  })
+
+  it('empty range (from === to) returns 0 commits / 0 files', async () => {
+    await initRepoWithCommit(root)
+    const sha = await headSha(root)
+    const r = await readGitRange(root, { from: sha, to: sha })
+    if (!r.enabled) throw new Error('expected enabled')
+    expect(r.commits).toEqual([])
+    expect(r.files).toEqual([])
+  })
+
+  it('returns enabled:false for an unknown ref', async () => {
+    await initRepoWithCommit(root)
+    const sha = await headSha(root)
+    const r = await readGitRange(root, {
+      from: sha,
+      to: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    })
+    expect(r.enabled).toBe(false)
+  })
+})
+
+describe('parseDiffTreeRaw — pure parser', () => {
+  it('parses A/M/D/T raw lines without submoduleBump', () => {
+    const stdout = [
+      'abc1234567890abcdef', // leading commit SHA — should be ignored
+      ':000000 100644 0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 A\tadded.txt',
+      ':100644 100644 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 M\tmodified.txt',
+      ':100644 000000 1111111111111111111111111111111111111111 0000000000000000000000000000000000000000 D\tdeleted.txt',
+      ':100644 100755 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 T\ttypechange.txt',
+      '',
+    ].join('\n')
+    const r = parseDiffTreeRaw(stdout)
+    expect(r).toEqual([
+      { path: 'added.txt', status: 'added' },
+      { path: 'modified.txt', status: 'modified' },
+      { path: 'deleted.txt', status: 'deleted' },
+      { path: 'typechange.txt', status: 'typechange' },
+    ])
+  })
+
+  it('parses renamed / copied entries with origPath', () => {
+    const stdout = [
+      ':100644 100644 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 R100\told.txt\tnew.txt',
+      ':100644 100644 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 C90\tsource.txt\tcopy.txt',
+      '',
+    ].join('\n')
+    const r = parseDiffTreeRaw(stdout)
+    expect(r).toEqual([
+      { path: 'new.txt', origPath: 'old.txt', status: 'renamed' },
+      { path: 'copy.txt', origPath: 'source.txt', status: 'copied' },
+    ])
+    // No submoduleBump on regular renames / copies.
+    expect(r[0]).not.toHaveProperty('submoduleBump')
+    expect(r[1]).not.toHaveProperty('submoduleBump')
+  })
+
+  it('populates submoduleBump when both modes are 160000', () => {
+    const stdout = [
+      ':160000 160000 aaa1111aaa1111aaa1111aaa1111aaa1111aaa11 bbb2222bbb2222bbb2222bbb2222bbb2222bbb22 M\tvendor/foo',
+      '',
+    ].join('\n')
+    const r = parseDiffTreeRaw(stdout)
+    expect(r).toHaveLength(1)
+    expect(r[0]).toEqual({
+      path: 'vendor/foo',
+      status: 'modified',
+      submoduleBump: {
+        fromSha: 'aaa1111aaa1111aaa1111aaa1111aaa1111aaa11',
+        toSha: 'bbb2222bbb2222bbb2222bbb2222bbb2222bbb22',
+      },
+    })
+  })
+
+  it('does NOT populate submoduleBump for regular file entries', () => {
+    const stdout =
+      ':100644 100644 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 M\tapp.ts\n'
+    const r = parseDiffTreeRaw(stdout)
+    expect(r[0]).not.toHaveProperty('submoduleBump')
+  })
+
+  it('skips the leading commit-id line', () => {
+    const stdout = [
+      '0123456789abcdef0123456789abcdef01234567',
+      ':100644 100644 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222 M\tfile.txt',
+    ].join('\n')
+    const r = parseDiffTreeRaw(stdout)
+    expect(r).toEqual([{ path: 'file.txt', status: 'modified' }])
+  })
+})
+
+describe('readGitCommit with submodule bump (real git)', () => {
+  it('surfaces submoduleBump for a commit that bumped a submodule', async () => {
+    // Create a separate `lib` repo, add it as a submodule to `main`, then
+    // bump its pin and verify readGitCommit reports the bump.
+    const libDir = await mkdtemp(join(tmpdir(), 'memon-git-lib-'))
+    try {
+      await initRepoWithCommit(libDir)
+      await writeFile(join(libDir, 'a.txt'), 'v1\n', 'utf8')
+      await git(libDir, ['add', 'a.txt'])
+      await git(libDir, ['commit', '-m', 'v1'])
+      const libV1 = (
+        await execFileP('git', ['rev-parse', 'HEAD'], { cwd: libDir })
+      ).stdout.trim()
+      await writeFile(join(libDir, 'a.txt'), 'v2\n', 'utf8')
+      await git(libDir, ['add', 'a.txt'])
+      await git(libDir, ['commit', '-m', 'v2'])
+      const libV2 = (
+        await execFileP('git', ['rev-parse', 'HEAD'], { cwd: libDir })
+      ).stdout.trim()
+
+      // Main repo
+      await initRepoWithCommit(root)
+      // git submodule add requires file:// URL on disk; force using local
+      // protocol explicitly via `-c protocol.file.allow=always`.
+      await git(root, [
+        '-c',
+        'protocol.file.allow=always',
+        'submodule',
+        'add',
+        libDir,
+        'vendor/foo',
+      ])
+      // Pin to libV1.
+      await execFileP('git', ['checkout', libV1], {
+        cwd: join(root, 'vendor/foo'),
+      })
+      await git(root, ['add', 'vendor/foo'])
+      await git(root, ['commit', '-m', 'add submodule at v1'])
+
+      // Bump to libV2.
+      await execFileP('git', ['checkout', libV2], {
+        cwd: join(root, 'vendor/foo'),
+      })
+      await git(root, ['add', 'vendor/foo'])
+      await git(root, ['commit', '-m', 'bump submodule to v2'])
+      const bumpSha = (
+        await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })
+      ).stdout.trim()
+
+      const r = await readGitCommit(root, bumpSha)
+      if (!r.enabled) throw new Error(`expected enabled; got ${JSON.stringify(r)}`)
+      const bump = r.files.find((f) => f.path === 'vendor/foo')
+      expect(bump).toBeDefined()
+      expect(bump!.submoduleBump).toEqual({
+        fromSha: libV1,
+        toSha: libV2,
+      })
+    } finally {
+      await rm(libDir, { recursive: true, force: true })
+    }
   })
 })
 

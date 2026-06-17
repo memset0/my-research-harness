@@ -436,91 +436,99 @@ shell).
 
 ### Requirement: `/git-diff` accepts `side=commit&sha=<x>`
 
-`GET /api/projects/:project/git-diff` SHALL accept a new `side`
-value `commit` alongside the existing `staged|unstaged|untracked`.
-When `side=commit`, the route REQUIRES an additional `sha` query
-parameter; missing `sha` MUST return 400.
+`GET /api/projects/:project/git-diff` SHALL accept the existing
+`side` values `staged|unstaged|untracked|commit` PLUS a new
+`range` value that compares two arbitrary refs.
 
-`sha` validation: non-empty, length ≤ 200, and matches the
-safe-ref character class `/^[A-Za-z0-9_\-/.~^]+$/`. Invalid `sha`
-returns 400.
+| side | required extras | oldRef | newRef |
+|------|----------------|--------|--------|
+| staged | — | HEAD | index |
+| unstaged | — | index | working |
+| untracked | — | (empty) | working |
+| commit | `sha=<x>` | `<sha>^` | `<sha>` |
+| range | `from=<sha>&to=<sha>` | `<from>` | `<to>` |
 
-On valid input, the route resolves the diff sides as:
+For `side=range`:
 
-- `oldRef = '<sha>^'`
-- `newRef = '<sha>'`
+- `from` and `to` MUST be present (400 otherwise).
+- Each MUST match the safe-ref character class
+  `/^[A-Za-z0-9_\-/.~^]+$/` with length ≤ 200 (400 otherwise).
+- All other validation (path safety, submodule scoping) is
+  unchanged.
 
-and delegates to `readGitFileContents` for each side. The
-existing fallback for `not-found` on the old side (used by the
-staged-add case) applies unchanged — root-commit diffs surface as
-`oldContent: ''`, `status: 'added'`.
+The existing `sha` validation rules for `side=commit` carry
+over: missing → 400, invalid → 400.
 
-The response shape is the existing `GitDiffResponse` union — no
-new fields.
+#### Scenario: Range diff between two arbitrary SHAs
+- **GIVEN** an owner session and a project whose local clone has
+  both `from=abc` and `to=def`
+- **WHEN** `GET /api/projects/<p>/git-diff?path=app.ts&side=
+  range&from=abc&to=def`
+- **THEN** the response is `200 { ok: true, oldContent: '<bytes
+  at abc:app.ts>', newContent: '<bytes at def:app.ts>',
+  filename: 'app.ts', status: 'modified' }`
 
-#### Scenario: side=commit returns ok=true with parent vs commit contents
-- **WHEN** `GET /api/projects/<p>/git-diff?path=app/page.tsx&side=
-  commit&sha=abc1234`
-- **THEN** the response is `200 { ok: true, oldContent: '<parent
-  bytes>', newContent: '<commit bytes>', status: 'modified',
-  filename: 'app/page.tsx' }`
+#### Scenario: Range diff scoped to a submodule
+- **GIVEN** the project has submodule `vendor/foo`
+- **WHEN** `GET /api/projects/<p>/git-diff?path=lib.ts&side=
+  range&from=aaa&to=bbb&submodule=vendor%2Ffoo`
+- **THEN** the route resolves cwd to
+  `<projectRoot>/vendor/foo` and returns the range diff from
+  there
 
-#### Scenario: side=commit on root commit
-- **GIVEN** `xyz0000` is the root commit
-- **WHEN** `GET /api/projects/<p>/git-diff?path=README.md&side=
-  commit&sha=xyz0000`
-- **THEN** the response is `200 { ok: true, oldContent: '',
-  newContent: '<file bytes at root>', status: 'added' }`
-
-#### Scenario: side=commit missing sha
-- **WHEN** `GET /api/projects/<p>/git-diff?path=app/page.tsx&
-  side=commit` (no `sha`)
+#### Scenario: range missing `from` or `to`
+- **WHEN** `GET /api/projects/<p>/git-diff?path=app.ts&side=
+  range&from=abc` (no `to`)
 - **THEN** the response is `400`
 
-#### Scenario: side=commit with malicious sha
-- **WHEN** `GET /api/projects/<p>/git-diff?path=app/page.tsx&side=
-  commit&sha=$(rm)`
-- **THEN** the response is `400` (validation rejects before any
-  reader runs)
-
-#### Scenario: side=commit forwards too-large from either side
-- **GIVEN** a commit `abc1234` that touched a 2 MB file
-- **WHEN** the user requests the diff for that file at that commit
-- **THEN** the response is `200 { ok: false, skipReason: 'too-
-  large', sizeBytes: 2000000, maxBytes: 1048576, side: 'new' }`
-  (or `side: 'old'` if the over-size side is the parent)
+#### Scenario: range with malicious shas
+- **WHEN** any of `from` / `to` contains shell metacharacters
+- **THEN** the response is `400` and no reader runs
 
 ### Requirement: `<FileRow />` extracted for cross-dialog reuse
 
-The collapsible file row used inside `<GitDiffDialog />` SHALL be
-extracted into a module (e.g. `apps/web/components/file-row.tsx`)
-and exported so `<GitHistoryDialog />` can mount the same widget
-without duplication.
+The collapsible file row used inside `<GitDiffDialog />` SHALL
+be exported from `apps/web/components/file-row.tsx` so all
+dialogs (status, history, submodule-bump) mount the same widget.
 
-The row's API SHALL accept an optional `sha?: string` prop. When
-provided, the row's per-file diff query is keyed by
-`(project, path, side, sha)` and the underlying fetcher invokes
-`fetchGitDiff(project, path, side, sha)`. When omitted, behaviour
-is identical to the previous spec (staged / unstaged / untracked
-without a sha).
+The row's API now accepts the discriminators below as optional
+props. The per-file diff query is keyed by ALL of them so two
+repos / commits / ranges with identical paths cache
+independently:
 
-Both call sites — `<GitDiffDialog />` and `<GitHistoryDialog />`
-— SHALL use the same `<FileRow />` and `<FileDiff />`
-components.
+```ts
+interface FileRowProps {
+  project: string
+  side: GitDiffSide       // 'staged' | 'unstaged' | 'untracked' | 'commit' | 'range'
+  entry: GitFileEntry
+  sha?: string            // required when side === 'commit'
+  submodule?: string      // any side; scopes cwd to a submodule
+  range?: { from: string; to: string }  // required when side === 'range'
+}
+```
 
-#### Scenario: FileRow without sha
-- **GIVEN** `<FileRow project="p" side="unstaged" entry={...} />`
-  is mounted (no `sha` prop)
+The query key SHALL include all five of `project`, `path`,
+`side`, the relevant ref(s) (`sha` OR `range.from`+`range.to`),
+and `submodule` so identical paths in different scopes don't
+collide.
+
+#### Scenario: FileRow in `side=range` mode
+- **GIVEN** `<FileRow project="p" side="range" range={{ from:
+  'abc', to: 'def' }} submodule="vendor/foo" entry={{ path:
+  'lib.ts', status: 'modified' }} />` is mounted
 - **WHEN** the user expands the row
 - **THEN** the fetched URL is
-  `/api/projects/p/git-diff?path=...&side=unstaged` (no `sha=`)
+  `/api/projects/p/git-diff?path=lib.ts&side=range&from=abc&to=
+  def&submodule=vendor%2Ffoo`
 
-#### Scenario: FileRow with sha
-- **GIVEN** `<FileRow project="p" side="commit" sha="abc1234"
-  entry={...} />` is mounted
-- **WHEN** the user expands the row
-- **THEN** the fetched URL is
-  `/api/projects/p/git-diff?path=...&side=commit&sha=abc1234`
+#### Scenario: Range and commit caches don't collide
+- **GIVEN** two FileRows mounted simultaneously for the same
+  path in the same submodule — one with `side="commit"
+  sha="def"`, the other with `side="range" range={{ from: 'abc',
+  to: 'def' }}`
+- **WHEN** the user expands BOTH
+- **THEN** two distinct GET requests fire, one per row, and
+  their results are cached under distinct TanStack query keys
 
 ### Requirement: Status dialog renders per-submodule blocks
 

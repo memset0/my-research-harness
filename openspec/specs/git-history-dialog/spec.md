@@ -305,62 +305,64 @@ it BEFORE invoking the reader.
 
 ### Requirement: `readGitCommit` core reader
 
-`@memon/core` SHALL export
-`readGitCommit(cwd: string, sha: string, opts?:
-{ timeoutMs?: number; gitBin?: string }):
-Promise<GitCommitDetail>`.
+`@memon/core`'s `readGitCommit(cwd, sha, opts?)` SHALL continue
+to return the existing `GitCommitDetail` discriminated union,
+with one extension: the `files` array's entries MAY carry an
+optional `submoduleBump?: { fromSha: string; toSha: string }`
+field for entries that represent submodule pointer changes.
 
-```ts
-type GitCommitDetail =
-  | { enabled: false; reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'not-found' | 'error'; message?: string }
-  | {
-      enabled: true
-      sha: string
-      shortSha: string
-      subject: string
-      body: string                   // possibly multi-line, possibly empty
-      authorName: string
-      authorEmail: string
-      authorDate: string
-      parents: string[]
-      files: GitFileEntry[]          // SAME type as the status-files spec
-    }
+Implementation change: the file list is now sourced from
+`git diff-tree -r --root --raw -M <sha>` (rather than
+`--name-status`). The raw output line format is:
+
+```
+:<oldMode> <newMode> <oldSha> <newSha> <status>\t<path>
 ```
 
-Implementation SHALL combine:
+with rename / copy entries adding a `\t<origPath>` segment. The
+parser:
 
-- `git show --format=<spec> --no-patch <sha>` for metadata
-- `git diff-tree -r --root --name-status <sha>` for the file
-  list (`--root` ensures the root commit's initial files report as
-  `A`)
+- Extracts `path` (and `origPath` for `R`/`C` entries) exactly
+  as before.
+- Maps the status code to the existing `GitFileStatus` enum.
+- When BOTH `oldMode` AND `newMode` are `160000` (the gitlink
+  mode), populates
+  `submoduleBump = { fromSha: <oldSha>, toSha: <newSha> }`.
+- For non-gitlink entries, `submoduleBump` is absent
+  (`undefined`).
 
-`'not-found'` SHALL be returned when git reports the sha does not
-resolve to a commit object.
+Returned shape (unchanged outer envelope; only `files[]` entries
+gain the optional field):
 
-#### Scenario: Returns metadata + file list
-- **GIVEN** a commit `abc1234` with 3 modified files
-- **WHEN** `readGitCommit(cwd, 'abc1234')` runs
-- **THEN** the resolved value has matching `sha`, `subject`,
-  `authorName`, `authorDate`, `parents`, AND
-  `files.length === 3`
+```ts
+export interface GitFileEntry {
+  path: string
+  status: GitFileStatus
+  origPath?: string
+  submoduleBump?: { fromSha: string; toSha: string }
+}
+```
 
-#### Scenario: Root commit
-- **GIVEN** the repo's initial commit `xyz0000` introduced 5 files
-- **WHEN** `readGitCommit(cwd, 'xyz0000')` runs
-- **THEN** the resolved value has `parents: []` AND `files.length
-  === 5` with each file's `status === 'added'`
+#### Scenario: Commit bumping a submodule pointer
+- **GIVEN** a commit whose `git diff-tree --raw` output contains
+  `:160000 160000 aaa1111 bbb2222 M\tvendor/foo`
+- **WHEN** `readGitCommit(cwd, sha)` runs
+- **THEN** the resolved `files` array contains
+  `{ path: 'vendor/foo', status: 'modified', submoduleBump:
+  { fromSha: 'aaa1111', toSha: 'bbb2222' } }`
 
-#### Scenario: Renamed file in commit
-- **GIVEN** a commit that renamed `old.ts` → `new.ts`
+#### Scenario: Regular file modification carries no submoduleBump
+- **GIVEN** a commit whose `git diff-tree --raw` output contains
+  `:100644 100644 1111111 2222222 M\tapp.ts`
 - **WHEN** the reader runs
-- **THEN** the file entry has `status: 'renamed'`, `path:
-  'new.ts'`, `origPath: 'old.ts'`
+- **THEN** the corresponding entry has `submoduleBump`
+  undefined / absent
 
-#### Scenario: Unknown SHA
-- **WHEN** `readGitCommit(cwd, 'deadbeef0000000000000000000000000000dead')` is
-  called for a SHA that does not exist
-- **THEN** the resolved value is
-  `{ enabled: false, reason: 'not-found' }`
+#### Scenario: Renamed file still parses status + origPath
+- **GIVEN** a rename `R100\told\tnew` in raw form
+- **WHEN** the reader runs
+- **THEN** the entry has `status: 'renamed'`, `path: 'new'`,
+  `origPath: 'old'`, and no `submoduleBump`
 
 ### Requirement: `GET /api/projects/:project/git-branches` endpoint
 
@@ -566,4 +568,39 @@ submodule scope — switching submodule is its own refetch path.
 - **WHEN** the diff fetch fires
 - **THEN** the request URL is
   `/api/projects/project-a/git-diff?path=<...>&side=commit&sha=<sha>&submodule=vendor%2Ffoo`
+
+### Requirement: Commit detail renders bump rows for submodule pointer changes
+
+`<GitHistoryDialog />`'s commit-detail file list SHALL route file
+entries through a discriminator:
+
+- An entry is a "submodule bump" when its `submoduleBump` field
+  is present AND its `path` matches a name OR path from
+  `['submodules', project]`.
+- Bump entries render via `<SubmoduleBumpRow />` (see
+  `git-submodule-bump-diff` capability).
+- All other entries render via the existing `<FileRow />` flow.
+
+The mark editor (`<CommitMarkEditor />`) at the top of the
+detail pane is UNAFFECTED by the presence of bump rows — the
+mark belongs to the main-repo commit being viewed.
+
+#### Scenario: Commit with regular files + a submodule bump renders both row variants
+- **GIVEN** a main-repo commit modified `app/page.tsx` AND
+  bumped the `vendor/foo` submodule
+- **WHEN** the detail pane renders
+- **THEN** the body contains exactly one
+  `data-slot="submodule-bump-row"` element AND at least one
+  `data-slot="file-row-trigger"` element; the
+  `data-slot="commit-mark-editor"` is present for the
+  main-repo SHA exactly as before this change
+
+#### Scenario: Submodule path with no `submoduleBump` is still a regular FileRow
+- **GIVEN** a `submoduleBump` field is absent on an entry
+  (e.g. a regular tracked file whose path happens to match a
+  legacy submodule name)
+- **WHEN** the detail pane renders
+- **THEN** the entry renders as a regular `<FileRow />`, NOT as
+  a bump row — the discriminator is `submoduleBump !==
+  undefined` AND a name match, both required
 

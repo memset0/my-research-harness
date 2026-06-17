@@ -283,4 +283,54 @@ describe('GET /api/projects/[project]/git-diff', () => {
       })
     })
   })
+
+  describe('side=range', () => {
+    it('200 ok=true with from + to refs', async () => {
+      vi.mocked(readGitFileContents)
+        .mockResolvedValueOnce({ ok: true, content: 'old\n' })
+        .mockResolvedValueOnce({ ok: true, content: 'new\n' })
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=range&from=aaa&to=bbb', {
+          'x-memon-role': 'owner',
+        }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        ok: true,
+        filename: 'app.ts',
+        status: 'modified',
+        oldContent: 'old\n',
+        newContent: 'new\n',
+      })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'aaa', 'app.ts')
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'bbb', 'app.ts')
+    })
+
+    it('400 missing from', async () => {
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=range&to=bbb', { 'x-memon-role': 'owner' }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(400)
+    })
+
+    it('400 missing to', async () => {
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=range&from=aaa', { 'x-memon-role': 'owner' }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(400)
+    })
+
+    it('400 invalid from', async () => {
+      const res = await GET(
+        req('project-a', 'path=app.ts&side=range&from=foo%3Brm&to=bbb', {
+          'x-memon-role': 'owner',
+        }),
+        paramsFor('project-a'),
+      )
+      expect(res.status).toBe(400)
+    })
+  })
 })

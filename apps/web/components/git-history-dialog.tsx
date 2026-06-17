@@ -44,6 +44,7 @@ import { useDiffViewMode } from '../lib/use-diff-view-mode'
 import { CommitMarkBadge } from './commit-mark-badge'
 import { CommitMarkEditor } from './commit-mark-editor'
 import { FileRow } from './file-row'
+import { SubmoduleBumpRow } from './submodule-bump-row'
 import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
 
@@ -208,6 +209,7 @@ function HistoryBody({ project }: { project: string }) {
           sha={selectedSha}
           marks={marks}
           submodule={selectedSubmodule}
+          submodules={submodulesQuery.data}
           onDirtyChange={setEditorDirty}
         />
       </div>
@@ -458,12 +460,14 @@ function CommitDetail({
   sha,
   marks,
   submodule,
+  submodules,
   onDirtyChange,
 }: {
   project: string
   sha: string | null
   marks: CommitMark[]
   submodule: string
+  submodules: import('../lib/api').GitSubmodules | undefined
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { data, isPending, isError } = useQuery({
@@ -507,6 +511,7 @@ function CommitDetail({
           detail={data}
           sha={data.sha}
           submodule={submodule}
+          submodules={submodules}
           mark={marks.find(
             (m) => m.sha === data.sha && m.submodule === submodule,
           )}
@@ -522,6 +527,7 @@ function CommitDetailBody({
   detail,
   sha,
   submodule,
+  submodules,
   mark,
   onDirtyChange,
 }: {
@@ -529,9 +535,19 @@ function CommitDetailBody({
   detail: Extract<GitCommitDetail, { enabled: true }>
   sha: string
   submodule: string
+  submodules: import('../lib/api').GitSubmodules | undefined
   mark?: CommitMark
   onDirtyChange: (dirty: boolean) => void
 }) {
+  // Submodule-bump entries only apply when viewing the MAIN repo's history;
+  // a submodule's own history wouldn't contain its own pointer changes.
+  // Build a path→name map for O(1) per-file lookup.
+  const submodulePathToName = new Map<string, string>()
+  if (!submodule && submodules && submodules.enabled === true) {
+    for (const s of submodules.submodules) {
+      submodulePathToName.set(s.path, s.name)
+    }
+  }
   return (
     <div className="space-y-3">
       <header className="space-y-2 border-b pb-2 text-xs">
@@ -564,17 +580,35 @@ function CommitDetailBody({
         <p className="pl-2 text-xs text-muted-foreground italic">(none)</p>
       ) : (
         <ul className="space-y-0.5">
-          {detail.files.map((f) => (
-            <li key={`${f.path}:${f.origPath ?? ''}`}>
-              <FileRow
-                project={project}
-                side="commit"
-                sha={sha}
-                submodule={submodule || undefined}
-                entry={f}
-              />
-            </li>
-          ))}
+          {detail.files.map((f) => {
+            const bumpName = f.submoduleBump
+              ? submodulePathToName.get(f.path)
+              : undefined
+            if (f.submoduleBump && bumpName) {
+              return (
+                <li key={`${f.path}:bump`}>
+                  <SubmoduleBumpRow
+                    project={project}
+                    submodule={bumpName}
+                    path={f.path}
+                    fromSha={f.submoduleBump.fromSha}
+                    toSha={f.submoduleBump.toSha}
+                  />
+                </li>
+              )
+            }
+            return (
+              <li key={`${f.path}:${f.origPath ?? ''}`}>
+                <FileRow
+                  project={project}
+                  side="commit"
+                  sha={sha}
+                  submodule={submodule || undefined}
+                  entry={f}
+                />
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

@@ -25,6 +25,15 @@ export interface GitFileEntry {
   path: string
   status: GitFileStatus
   origPath?: string
+  /**
+   * Populated by `readGitCommit` (and `readGitRange`) when the entry is a
+   * submodule pointer change — both old and new modes are gitlink
+   * (`160000`). The bytes on the main repo's tree are
+   * `Subproject commit <sha>\n` on each side; this field carries the
+   * SUBMODULE's own SHAs so callers can fetch the submodule's actual
+   * range diff.
+   */
+  submoduleBump?: { fromSha: string; toSha: string }
 }
 
 export type GitStatusFiles =

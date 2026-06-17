@@ -2,7 +2,7 @@
 
 // Collapsible per-file row used inside both `<GitDiffDialog />` and
 // `<GitHistoryDialog />`. Default state collapsed; expanding lazily
-// fetches the file's diff via `fetchGitDiff(project, path, side, sha?)`.
+// fetches the file's diff via `fetchGitDiff(project, path, side, opts?)`.
 //
 // Once expanded, the body stays MOUNTED for the dialog session (the visual
 // state hides it but the TanStack observer survives), so a collapse +
@@ -51,9 +51,18 @@ export interface FileRowProps {
   sha?: string
   /** When set, the per-file diff is scoped to the named submodule. */
   submodule?: string
+  /** Required when `side === 'range'`; ignored otherwise. */
+  range?: { from: string; to: string }
 }
 
-export function FileRow({ project, side, entry, sha, submodule }: FileRowProps) {
+export function FileRow({
+  project,
+  side,
+  entry,
+  sha,
+  submodule,
+  range,
+}: FileRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [hasBeenExpanded, setHasBeenExpanded] = useState(false)
   const code = STATUS_LABEL[entry.status]
@@ -99,6 +108,7 @@ export function FileRow({ project, side, entry, sha, submodule }: FileRowProps) 
             entry={entry}
             sha={sha}
             submodule={submodule}
+            range={range}
           />
         </div>
       )}
@@ -112,16 +122,19 @@ export function FileRowBody({
   entry,
   sha,
   submodule,
+  range,
 }: {
   project: string
   side: GitDiffSide
   entry: GitFileEntry
   sha?: string
   submodule?: string
+  range?: { from: string; to: string }
 }) {
-  // Cache key includes both `sha` (for commit-side diffs) and `submodule`
-  // (for any side scoped to a submodule) so we don't collide across
-  // (path, side) tuples that live in different repos.
+  // Cache key includes `sha` (commit-side), `submodule` (when scoped to a
+  // submodule), and `range.from` / `range.to` (range side). Distinct cache
+  // slots per (path, side, refs) tuple — same path can appear in different
+  // repos and different commit windows during a single dialog session.
   const queryKey = [
     'git-diff',
     project,
@@ -129,10 +142,18 @@ export function FileRowBody({
     side,
     sha,
     submodule,
+    range?.from,
+    range?.to,
   ] as const
   const { data, isPending, isError, error } = useQuery({
     queryKey,
-    queryFn: () => fetchGitDiff(project, entry.path, side, sha, submodule),
+    queryFn: () =>
+      fetchGitDiff(project, entry.path, side, {
+        sha,
+        submodule,
+        from: range?.from,
+        to: range?.to,
+      }),
     staleTime: Infinity,
     retry: false,
   })

@@ -120,8 +120,7 @@ describe('GitDiffDialog', () => {
         'project-a',
         'unstaged-a.txt',
         'unstaged',
-        undefined,
-        undefined,
+        { sha: undefined, submodule: undefined, from: undefined, to: undefined },
       )
     })
   })

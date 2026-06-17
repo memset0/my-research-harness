@@ -954,6 +954,14 @@ export interface GitFileEntry {
   path: string
   status: GitFileStatus
   origPath?: string
+  /**
+   * Set when this file is a submodule-pointer bump (a gitlink entry in
+   * `git diff-tree --raw` with old mode `160000` and new mode `160000`).
+   * Carries the two SHAs the submodule pointer is being changed between,
+   * so the UI can expand this row into a `git-range` view of the
+   * submodule's actual commits between `fromSha..toSha`.
+   */
+  submoduleBump?: { fromSha: string; toSha: string }
 }
 
 export type GitStatusFiles =
@@ -991,7 +999,7 @@ export async function fetchGitStatusFiles(
 // asking about: staged = HEAD vs index, unstaged = index vs working,
 // untracked = empty vs working.
 
-export type GitDiffSide = 'staged' | 'unstaged' | 'untracked' | 'commit'
+export type GitDiffSide = 'staged' | 'unstaged' | 'untracked' | 'commit' | 'range'
 
 export type GitDiffResponse =
   | {
@@ -1011,18 +1019,61 @@ export type GitDiffResponse =
   | { ok: false; skipReason: 'binary' }
   | { ok: false; error: { message: string } }
 
+export interface FetchGitDiffOpts {
+  sha?: string
+  submodule?: string
+  from?: string
+  to?: string
+}
+
 export async function fetchGitDiff(
   project: string,
   path: string,
   side: GitDiffSide,
-  sha?: string,
-  submodule?: string,
+  opts: FetchGitDiffOpts = {},
 ): Promise<GitDiffResponse> {
   const params = new URLSearchParams({ path, side })
-  if (sha) params.set('sha', sha)
-  if (submodule) params.set('submodule', submodule)
+  if (opts.sha) params.set('sha', opts.sha)
+  if (opts.submodule) params.set('submodule', opts.submodule)
+  if (opts.from) params.set('from', opts.from)
+  if (opts.to) params.set('to', opts.to)
   return jsonFetch(
     `/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`,
+  )
+}
+
+// Git range — commit list AND file list for `from..to`. Used by the
+// submodule-bump expander on a main-repo commit's gitlink entry: lazily
+// fetches what changed inside the submodule between the two pinned SHAs.
+// Always scoped to a submodule cwd in practice (the main-repo bump entry
+// only opens a range view for the submodule), but the endpoint accepts
+// either.
+
+export type GitRangeResponse =
+  | {
+      enabled: false
+      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      message?: string
+    }
+  | {
+      enabled: true
+      from: string
+      to: string
+      commits: GitCommitSummary[]
+      files: GitFileEntry[]
+      submodule: string
+    }
+
+export async function fetchGitRange(
+  project: string,
+  from: string,
+  to: string,
+  submodule?: string,
+): Promise<GitRangeResponse> {
+  const params = new URLSearchParams({ from, to })
+  if (submodule) params.set('submodule', submodule)
+  return jsonFetch(
+    `/api/projects/${encodeURIComponent(project)}/git-range?${params.toString()}`,
   )
 }
 

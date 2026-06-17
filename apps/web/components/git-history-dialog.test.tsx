@@ -184,8 +184,12 @@ describe('GitHistoryDialog', () => {
         'project-a',
         'app/page.tsx',
         'commit',
-        'a'.repeat(40),
-        undefined,
+        {
+          sha: 'a'.repeat(40),
+          submodule: undefined,
+          from: undefined,
+          to: undefined,
+        },
       )
     })
   })
@@ -313,6 +317,45 @@ describe('GitHistoryDialog', () => {
     } finally {
       confirmSpy.mockRestore()
     }
+  })
+
+  it('renders <SubmoduleBumpRow /> for submoduleBump entries matching a known submodule path', async () => {
+    vi.mocked(fetchSubmodules).mockResolvedValue({
+      enabled: true,
+      submodules: [{ name: 'vendor/foo', path: 'vendor/foo' }],
+    })
+    vi.mocked(fetchGitCommit).mockResolvedValue({
+      ...COMMIT_A,
+      files: [
+        { path: 'app/page.tsx', status: 'modified' },
+        {
+          path: 'vendor/foo',
+          status: 'modified',
+          submoduleBump: { fromSha: 'a'.repeat(40), toSha: 'b'.repeat(40) },
+        },
+      ],
+    })
+    renderWithQuery(
+      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
+    )
+    await waitFor(() =>
+      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
+    )
+    await userEvent.click(screen.getByText('fix the bug'))
+    await waitFor(() =>
+      expect(
+        document.body.querySelector('[data-slot="submodule-bump-row"]'),
+      ).not.toBeNull(),
+    )
+    // The submodule-bump row replaces the FileRow for that entry.
+    const fileRowTriggers = document.body.querySelectorAll(
+      '[data-slot="file-row-trigger"]',
+    )
+    // The non-submodule file STILL renders as a FileRow.
+    expect(fileRowTriggers.length).toBe(1)
+    // The header carries both short SHAs.
+    const bumpRow = document.body.querySelector('[data-slot="submodule-bump-row"]')!
+    expect(bumpRow.textContent).toMatch(/aaaaaaa → bbbbbbb/)
   })
 
   it('switching without a dirty note does NOT prompt', async () => {

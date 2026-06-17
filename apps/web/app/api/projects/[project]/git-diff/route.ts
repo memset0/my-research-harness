@@ -20,7 +20,7 @@ import { readIdentityFromRequest } from '@/lib/auth/request-context'
 
 export const dynamic = 'force-dynamic'
 
-type Side = 'staged' | 'unstaged' | 'untracked' | 'commit'
+type Side = 'staged' | 'unstaged' | 'untracked' | 'commit' | 'range'
 
 const SAFE_REF_REGEX = /^[A-Za-z0-9_\-/.~^]+$/
 
@@ -49,7 +49,8 @@ function isValidSide(s: string | null): s is Side {
     s === 'staged' ||
     s === 'unstaged' ||
     s === 'untracked' ||
-    s === 'commit'
+    s === 'commit' ||
+    s === 'range'
   )
 }
 
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   // main repo, submodule root otherwise).
   if (pathEscapes(cwd, path)) return badRequest('path escapes project root')
   if (!isValidSide(side)) {
-    return badRequest('side must be staged|unstaged|untracked|commit')
+    return badRequest('side must be staged|unstaged|untracked|commit|range')
   }
 
   // `side=commit` requires a `sha` query param; validate against a safe-ref
@@ -110,6 +111,20 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     if (!sha) return badRequest('missing sha for side=commit')
     if (sha.length > 200 || !SAFE_REF_REGEX.test(sha)) {
       return badRequest('invalid sha')
+    }
+  }
+
+  // `side=range` requires `from` AND `to`.
+  const fromRef = url.searchParams.get('from')
+  const toRef = url.searchParams.get('to')
+  if (side === 'range') {
+    if (!fromRef) return badRequest('missing from for side=range')
+    if (!toRef) return badRequest('missing to for side=range')
+    if (fromRef.length > 200 || !SAFE_REF_REGEX.test(fromRef)) {
+      return badRequest('invalid from')
+    }
+    if (toRef.length > 200 || !SAFE_REF_REGEX.test(toRef)) {
+      return badRequest('invalid to')
     }
   }
 
@@ -137,6 +152,11 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     case 'commit':
       oldRef = `${sha!}^`
       newRef = sha!
+      defaultStatus = 'modified'
+      break
+    case 'range':
+      oldRef = fromRef!
+      newRef = toRef!
       defaultStatus = 'modified'
       break
   }
