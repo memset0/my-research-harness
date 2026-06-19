@@ -41,6 +41,7 @@ function makeExp(
     project: 'p',
     path: `/tmp/${fm.id}`,
     mtime: 0,
+    readmeMtime: 0,
     hasReadme: true,
     frontMatter: fm,
     sections,

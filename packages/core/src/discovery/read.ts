@@ -24,12 +24,14 @@ export async function readRunDir(
 
   const dirStat = await fs.stat(dirPath)
   let mtime = dirStat.mtimeMs
+  let readmeMtime = 0
 
   let hasReadme = false
   let parsed: ParsedReadme
 
   try {
     const readmeStat = await fs.stat(readmePath)
+    readmeMtime = readmeStat.mtimeMs
     if (readmeStat.mtimeMs > mtime) mtime = readmeStat.mtimeMs
     const content = await fs.readFile(readmePath, 'utf8')
     parsed = parseReadme(content)
@@ -69,6 +71,7 @@ export async function readRunDir(
     project: projectName,
     path: dirPath,
     mtime,
+    readmeMtime,
     hasReadme,
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,

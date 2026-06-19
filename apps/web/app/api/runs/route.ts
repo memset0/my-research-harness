@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
         project: e.project,
         path: e.path,
         mtime: e.mtime,
+        readmeMtime: e.readmeMtime,
         hasReadme: e.hasReadme,
         frontMatter: e.frontMatter,
         parseErrors: e.parseErrors,

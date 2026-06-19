@@ -7,6 +7,13 @@
 // the same atomic-write + JOURNAL `[ARCHIVE]` flow as status set, per
 // `archive-frontmatter` spec. Hard rule: refuses `archived: true` when the
 // current `status === 'RUNNING'` (HTTP 422).
+//
+// `expectedMtime` is matched against the README.md file's own mtime
+// (NOT the synthesized run-effective mtime that mixes dir + README). The
+// route is idempotent: when the on-disk archived flag already equals the
+// requested target, it returns 200 `{noop: true}` regardless of whether
+// expectedMtime matches — covers the common case where the client view is
+// stale because of unrelated dir-level activity.
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -64,26 +71,31 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const readmePath = join(exp.path, 'README.md')
     const stat = await fs.stat(readmePath)
-    if (parsed.data.expectedMtime !== undefined && stat.mtimeMs !== parsed.data.expectedMtime) {
-      const current = await fs.readFile(readmePath, 'utf8')
-      return NextResponse.json(
-        {
-          error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
-          mtime: stat.mtimeMs,
-          content: current,
-        },
-        { status: 409 },
-      )
-    }
-
     const currentContent = await fs.readFile(readmePath, 'utf8')
     const parsedReadme = parseReadme(currentContent)
     const prevArchived = parsedReadme.frontMatter.archived
     const currentStatus = parsedReadme.frontMatter.status
     const target = parsed.data.archived
 
+    // Idempotent: on-disk already matches the requested target. Return
+    // noop success even when the client's expectedMtime is stale (e.g.
+    // a sibling write or a poll-driven cache refresh just landed). This
+    // is the hot path for double-click / racy-poll scenarios.
     if (prevArchived === target) {
       return NextResponse.json({ ok: true, archived: target, mtime: stat.mtimeMs, noop: true })
+    }
+
+    // Strict lock only kicks in when the client wants to flip the value
+    // AND its view of the file is stale.
+    if (parsed.data.expectedMtime !== undefined && stat.mtimeMs !== parsed.data.expectedMtime) {
+      return NextResponse.json(
+        {
+          error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
+          mtime: stat.mtimeMs,
+          content: currentContent,
+        },
+        { status: 409 },
+      )
     }
 
     // Hard rule: cannot archive a RUNNING run.

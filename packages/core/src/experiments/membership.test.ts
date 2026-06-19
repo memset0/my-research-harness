@@ -39,6 +39,7 @@ function run(id: string, experiment: string | null): Run {
     project: 'p',
     path: `/tmp/runs/${id}`,
     mtime: 0,
+    readmeMtime: 0,
     hasReadme: true,
     frontMatter: {
       id,

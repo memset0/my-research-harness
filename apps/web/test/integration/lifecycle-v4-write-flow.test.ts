@@ -372,4 +372,80 @@ describe('PUT /api/runs/:id/readme', () => {
     expect(journal).toContain('[ARCHIVE]')
     expect(journal).toContain('`alpha-260513-100000` op=archive')
   })
+
+  // fix-run-readme-mtime-lock-vs-dir-mtime D3: stale expectedMtime + content
+  // that is canonically identical to disk → 200 noop (no write, no journal).
+  it('stale expectedMtime + identical canonical content → 200 noop', async () => {
+    const id = 'beta-260513-110000' // FINISHED + archived: true (from fixture; doesn't matter for this test)
+    const before = await readReadme(id)
+    const journalBefore = await fs
+      .readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
+      .catch(() => '')
+    const mtimeBefore = await readmeMtime(id)
+
+    // Send the SAME content (no changes) but with a stale expectedMtime.
+    const res = await putRunReadme(
+      new NextRequest(`http://localhost/api/runs/${id}/readme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: before,
+          expectedMtime: mtimeBefore - 99999, // intentionally stale
+        }),
+      }),
+      { params: Promise.resolve({ id }) },
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      ok: boolean
+      mtime: number
+      finalContent: string
+    }
+    expect(body.ok).toBe(true)
+    expect(body.mtime).toBe(mtimeBefore) // no rewrite
+    expect(body.finalContent).toBe(before)
+
+    // No new journal entries from this noop call.
+    const journalAfter = await fs.readFile(
+      join(projectRoot, 'docs', 'journal.md'),
+      'utf8',
+    )
+    expect(journalAfter).toBe(journalBefore)
+  })
+
+  // Negative: stale expectedMtime + DIFFERENT canonical content → 409.
+  it('stale expectedMtime + different canonical content → 409 CONFLICT', async () => {
+    const id = 'beta-260513-110000'
+    const before = await readReadme(id)
+    const mtimeBefore = await readmeMtime(id)
+
+    // Change a section body — content is no longer canonically identical.
+    // Use a string-replace that doesn't depend on the section heading's
+    // surrounding whitespace exactly — the previous status patches
+    // reserialized the file via @memon/core which may have normalized
+    // whitespace.
+    const changed = before.replace(/^s$/m, 'DIFFERENT')
+    if (changed === before) {
+      throw new Error('Test setup error: failed to mutate `before` content')
+    }
+
+    const res = await putRunReadme(
+      new NextRequest(`http://localhost/api/runs/${id}/readme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: changed,
+          expectedMtime: mtimeBefore - 99999,
+        }),
+      }),
+      { params: Promise.resolve({ id }) },
+    )
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { error: { code: string }; mtime: number }
+    expect(body.error.code).toBe('CONFLICT')
+
+    // README unchanged.
+    const onDisk = await readReadme(id)
+    expect(onDisk).toBe(before)
+  })
 })

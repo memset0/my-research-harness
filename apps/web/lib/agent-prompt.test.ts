@@ -8,6 +8,7 @@ function makeExp(overrides: Partial<FullExperiment['frontMatter']> = {}): FullEx
     project: 'a',
     path: '/p/a/logs/foo-260501-100000',
     mtime: 0,
+    readmeMtime: 0,
     hasReadme: true,
     stale: false,
     parseErrors: [],

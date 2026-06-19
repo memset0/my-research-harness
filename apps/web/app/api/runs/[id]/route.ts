@@ -24,6 +24,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       project: exp.project,
       path: exp.path,
       mtime: exp.mtime,
+      readmeMtime: exp.readmeMtime,
       hasReadme: exp.hasReadme,
       frontMatter: exp.frontMatter,
       sections: exp.sections,

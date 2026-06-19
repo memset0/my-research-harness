@@ -100,6 +100,7 @@ describe('runArchivedFromRun (v4 archive resolver)', () => {
       project: 'p',
       path: opts.runDir,
       mtime: 0,
+      readmeMtime: 0,
       hasReadme: true,
       frontMatter: {
         id: 'foo-260513-100000',

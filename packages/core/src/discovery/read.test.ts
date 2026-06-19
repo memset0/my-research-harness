@@ -99,4 +99,43 @@ describe('readRunDir', () => {
     expect(exp.project).toBe('fallback-project') // membership from arg
     expect(exp.frontMatter.project).toBe('') // sub-project preserved verbatim, no backfill
   })
+
+  it('readmeMtime tracks the README file, not the run dir', async () => {
+    // Regression: a run dir whose mtime has drifted past the README mtime
+    // (e.g. a log/artifact file landed AFTER the README was written) must
+    // NOT pull the dir mtime into `readmeMtime`. The lock-key field reads
+    // README in isolation; the synthesized `mtime` keeps `max(dir, README)`
+    // for SSE/staleness purposes.
+    const dir = join(root, 'foo-260503-082800')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(join(dir, 'README.md'), FULL_README)
+    const readmeStat = await fs.stat(join(dir, 'README.md'))
+
+    // Bump dir mtime past README mtime by creating a sibling file later.
+    // Use a future mtime explicitly so the test is deterministic on
+    // low-resolution filesystems.
+    const siblingFuture = readmeStat.mtimeMs + 5000
+    await fs.writeFile(join(dir, 'output.log'), 'hello')
+    await fs.utimes(
+      join(dir, 'output.log'),
+      siblingFuture / 1000,
+      siblingFuture / 1000,
+    )
+    await fs.utimes(dir, siblingFuture / 1000, siblingFuture / 1000)
+
+    const exp = await readRunDir(dir, 'fsdp-comm')
+    expect(exp.readmeMtime).toBe(readmeStat.mtimeMs)
+    expect(exp.mtime).toBeGreaterThan(exp.readmeMtime)
+    expect(exp.mtime).toBeCloseTo(siblingFuture, -1)
+  })
+
+  it('readmeMtime is 0 when no README exists', async () => {
+    const dir = join(root, 'foo-260503-082800')
+    await fs.mkdir(dir, { recursive: true })
+
+    const exp = await readRunDir(dir, 'fsdp-comm')
+    expect(exp.hasReadme).toBe(false)
+    expect(exp.readmeMtime).toBe(0)
+    expect(exp.mtime).toBeGreaterThan(0) // dir mtime
+  })
 })

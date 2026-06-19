@@ -73,9 +73,36 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
   } catch {
     emitErrorAndExit('NOT_FOUND', `${readmePath} does not exist (no README)`)
   }
+
+  const content = await fs.readFile(readmePath, 'utf8')
+  const parsed = parseReadme(content)
+  const prevStatus = parsed.frontMatter.status
+  const prevArchived = parsed.frontMatter.archived
+  const nextStatus = input.to as Status
+
+  // Idempotent: on-disk already at the requested status. Return noop
+  // success even when expectedMtime is stale (mirrors the
+  // PATCH /api/runs/:id/status route — see fix-run-readme-mtime-lock-vs-dir-mtime).
+  if (prevStatus === nextStatus) {
+    const result: Record<string, unknown> = {
+      ok: true,
+      mtime: stat.mtimeMs,
+      prevStatus,
+      nextStatus,
+      journalAppended: false,
+      noop: true,
+    }
+    if (prevArchived) {
+      process.stderr.write(`warning: ${input.runId} is archived; modifying anyway\n`)
+      result.warning = 'archived'
+    }
+    emitJson(result)
+    return
+  }
+
+  // Strict lock when actually flipping the value.
   if (stat.mtimeMs !== input.expectedMtime) {
-    const current = await fs.readFile(readmePath, 'utf8')
-    process.stdout.write(current)
+    process.stdout.write(content)
     process.stderr.write(
       `${JSON.stringify({
         error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
@@ -86,11 +113,6 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
     process.exit(9)
   }
 
-  const content = await fs.readFile(readmePath, 'utf8')
-  const parsed = parseReadme(content)
-  const prevStatus = parsed.frontMatter.status
-  const prevArchived = parsed.frontMatter.archived
-  const nextStatus = input.to as Status
   parsed.frontMatter.status = nextStatus
   const newContent = reserializeReadme(parsed)
 
@@ -158,29 +180,43 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
 
   const currentContent = await fs.readFile(readmePath, 'utf8')
 
-  if (stat.mtimeMs !== input.expectedMtime) {
+  const mtimeStale = stat.mtimeMs !== input.expectedMtime
+  const hashStale =
+    input.expectedHash !== undefined &&
+    createHash('sha1').update(currentContent).digest('hex') !== input.expectedHash
+
+  if (mtimeStale || hashStale) {
+    // Idempotent escape hatch: if the request would re-write content that
+    // is canonically identical to what's on disk (modulo `updated_at`),
+    // succeed as a noop. Mirrors writeRunReadme in the web layer.
+    const reqCanonical = canonicalSansUpdatedAt(input.stdinContent)
+    const diskCanonical = canonicalSansUpdatedAt(currentContent)
+    if (reqCanonical === diskCanonical) {
+      emitJson({
+        ok: true,
+        mtime: stat.mtimeMs,
+        journalAppended: false,
+        noop: true,
+      })
+      return
+    }
+
     process.stdout.write(currentContent)
     process.stderr.write(
       `${JSON.stringify({
-        error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
+        error: {
+          code: 'CONFLICT',
+          message: mtimeStale
+            ? 'on-disk mtime differs from expectedMtime'
+            : 'on-disk content hash differs from expectedHash',
+        },
         currentMtime: stat.mtimeMs,
+        ...(hashStale && {
+          actualHash: createHash('sha1').update(currentContent).digest('hex'),
+        }),
       })}\n`,
     )
     process.exit(9)
-  }
-  if (input.expectedHash) {
-    const actual = createHash('sha1').update(currentContent).digest('hex')
-    if (actual !== input.expectedHash) {
-      process.stdout.write(currentContent)
-      process.stderr.write(
-        `${JSON.stringify({
-          error: { code: 'CONFLICT', message: 'on-disk content hash differs from expectedHash' },
-          currentMtime: stat.mtimeMs,
-          actualHash: actual,
-        })}\n`,
-      )
-      process.exit(9)
-    }
   }
 
   // Detect status transition for JOURNAL [STATUS] event
@@ -297,6 +333,16 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.cli.tmp`)
   await fs.writeFile(tmp, content, 'utf8')
   await fs.rename(tmp, path)
+}
+
+// Re-serialize a run README with `updated_at` cleared, so two contents
+// that differ only in their `updated_at` timestamp collapse to the same
+// string. Used by the readme-write noop escape hatch (paired with the
+// web layer's canonicalSansUpdatedAt in apps/web/lib/experiments.ts).
+function canonicalSansUpdatedAt(content: string): string {
+  const parsed = parseReadme(content)
+  parsed.frontMatter.updatedAt = ''
+  return reserializeReadme(parsed)
 }
 
 function nowIso(): string {

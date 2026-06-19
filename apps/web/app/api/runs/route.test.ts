@@ -23,6 +23,7 @@ const SAMPLE_EXP = {
   id: 'foo-260501-100000',
   path: '/p/a/logs/foo-260501-100000',
   mtime: 1000,
+  readmeMtime: 1000,
   hasReadme: true,
   frontMatter: {
     name: 'foo',

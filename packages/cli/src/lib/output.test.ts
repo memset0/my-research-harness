@@ -8,6 +8,7 @@ function makeExp(overrides: Partial<Run['frontMatter']> = {}): Run {
     project: 'p',
     path: '/x',
     mtime: 0,
+    readmeMtime: 0,
     hasReadme: true,
     frontMatter: {
       id: 'foo-260501-100000',

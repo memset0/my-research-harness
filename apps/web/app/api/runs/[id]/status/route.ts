@@ -71,21 +71,34 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const readmePath = join(exp.path, 'README.md')
     const stat = await fs.stat(readmePath)
+    const currentContent = await fs.readFile(readmePath, 'utf8')
+    const parsedReadme = parseReadme(currentContent)
+    const prevStatus = parsedReadme.frontMatter.status
+    const prevArchived = parsedReadme.frontMatter.archived
+    const nextStatus = parsed.data.status
 
-    // mtime check
+    // Idempotent: on-disk already at the requested status. Return noop
+    // even when expectedMtime is stale (covers the double-click / racy-
+    // poll case where the client's view drifted from disk via unrelated
+    // file activity in the run dir).
+    if (prevStatus === nextStatus) {
+      const noopResponse: Record<string, unknown> = { mtime: stat.mtimeMs, unchanged: true }
+      if (prevArchived) noopResponse.warning = 'archived'
+      return NextResponse.json(noopResponse)
+    }
+
+    // Strict lock only when we're flipping the status to a different
+    // value AND the client's view is stale.
     if (stat.mtimeMs !== parsed.data.expectedMtime) {
-      const current = await fs.readFile(readmePath, 'utf8')
       return NextResponse.json(
         {
           error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
           mtime: stat.mtimeMs,
-          content: current,
+          content: currentContent,
         },
         { status: 409 },
       )
     }
-
-    const currentContent = await fs.readFile(readmePath, 'utf8')
 
     // Optional hash check
     if (parsed.data.expectedHash) {
@@ -100,17 +113,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           { status: 409 },
         )
       }
-    }
-
-    const parsedReadme = parseReadme(currentContent)
-    const prevStatus = parsedReadme.frontMatter.status
-    const prevArchived = parsedReadme.frontMatter.archived
-    const nextStatus = parsed.data.status
-
-    if (prevStatus === nextStatus) {
-      const noopResponse: Record<string, unknown> = { mtime: stat.mtimeMs, unchanged: true }
-      if (prevArchived) noopResponse.warning = 'archived'
-      return NextResponse.json(noopResponse)
     }
 
     // v4: hard rule — refuse status RUNNING when the run is currently archived.

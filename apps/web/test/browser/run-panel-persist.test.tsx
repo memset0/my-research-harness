@@ -74,6 +74,7 @@ const SAMPLE_RUN = {
   project: 'project-a',
   path: `/p/a/logs/${RUN_ID}`,
   mtime: 1000,
+  readmeMtime: 1000,
   hasReadme: true,
   frontMatter: {
     id: RUN_ID,
