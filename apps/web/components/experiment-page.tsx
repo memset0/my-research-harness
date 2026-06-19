@@ -128,11 +128,11 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
       <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
       <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-      <SectionCard heading="Motivation" body={exp.sections.motivation} />
-      <SectionCard heading="Method" body={exp.sections.method} />
-      <SectionCard heading="Plan" body={exp.sections.plan} />
-      <SectionCard heading="Conclusion" body={exp.sections.conclusion} />
-      <SectionCard heading="Caveats" body={exp.sections.caveats} />
+      <SectionCard heading="Motivation" body={exp.sections.motivation} project={project} />
+      <SectionCard heading="Method" body={exp.sections.method} project={project} />
+      <SectionCard heading="Plan" body={exp.sections.plan} project={project} />
+      <SectionCard heading="Conclusion" body={exp.sections.conclusion} project={project} />
+      <SectionCard heading="Caveats" body={exp.sections.caveats} project={project} />
 
       {exp.warningsRaw && (
         <Card>
@@ -141,7 +141,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           </CardHeader>
           <CardContent>
             <div className="prose prose-sm max-w-none text-xs/relaxed">
-              <Markdown>{exp.warningsRaw}</Markdown>
+              <Markdown project={project}>{exp.warningsRaw}</Markdown>
             </div>
           </CardContent>
         </Card>
@@ -173,7 +173,15 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   )
 }
 
-function SectionCard({ heading, body }: { heading: string; body: string | null }) {
+function SectionCard({
+  heading,
+  body,
+  project,
+}: {
+  heading: string
+  body: string | null
+  project: string
+}) {
   return (
     <Card>
       <CardHeader>
@@ -182,7 +190,7 @@ function SectionCard({ heading, body }: { heading: string; body: string | null }
       <CardContent>
         {body ? (
           <div className="prose prose-sm max-w-none text-xs/relaxed">
-            <Markdown>{body}</Markdown>
+            <Markdown project={project}>{body}</Markdown>
           </div>
         ) : (
           <div className="text-xs italic text-muted-foreground">to fill</div>
@@ -308,10 +316,10 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
       <div className="flex flex-col gap-3 border-t p-3">
         <RunParseWarningsBanner warnings={run.parseWarnings} />
         {run.sections.motivation && (
-          <RunSection heading="Motivation" body={run.sections.motivation} />
+          <RunSection heading="Motivation" body={run.sections.motivation} project={project} />
         )}
-        <RunSection heading="Setup" body={run.sections.setup ?? null} />
-        <RunSection heading="Result" body={run.sections.result ?? null} />
+        <RunSection heading="Setup" body={run.sections.setup ?? null} project={project} />
+        <RunSection heading="Result" body={run.sections.result ?? null} project={project} />
         <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
         {run.hasReadme && <LogViewer expPath={run.path} />}
         {files && files.tree.children && files.tree.children.length > 0 && (
@@ -442,13 +450,21 @@ function RunArtifactsBlock({
   )
 }
 
-function RunSection({ heading, body }: { heading: string; body: string | null }) {
+function RunSection({
+  heading,
+  body,
+  project,
+}: {
+  heading: string
+  body: string | null
+  project: string
+}) {
   return (
     <section>
       <h3 className="mb-1 text-xs font-semibold">{heading}</h3>
       {body ? (
         <div className="prose prose-sm max-w-none text-xs/relaxed">
-          <Markdown>{body}</Markdown>
+          <Markdown project={project}>{body}</Markdown>
         </div>
       ) : (
         <div className="text-xs italic text-muted-foreground">to fill</div>

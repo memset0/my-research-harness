@@ -135,10 +135,15 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
           and surface in the warnings banner below if present. */}
       <DetailParseWarningsBanner warnings={exp.parseWarnings ?? []} />
       {exp.sections.motivation && (
-        <SectionCard id="motivation" title="Motivation" body={exp.sections.motivation} />
+        <SectionCard
+          id="motivation"
+          title="Motivation"
+          body={exp.sections.motivation}
+          project={project}
+        />
       )}
-      <SectionCard id="setup" title="Setup" body={exp.sections.setup} />
-      <SectionCard id="result" title="Result" body={exp.sections.result} />
+      <SectionCard id="setup" title="Setup" body={exp.sections.setup} project={project} />
+      <SectionCard id="result" title="Result" body={exp.sections.result} project={project} />
       {exp.hasReadme && (
         <WarningsCard
           runId={exp.id}
@@ -154,6 +159,7 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
           title="New Hypotheses"
           body={exp.sections.newHypotheses}
           highlight
+          project={project}
         />
       )}
 
@@ -220,11 +226,13 @@ function SectionCard({
   title,
   body,
   highlight,
+  project,
 }: {
   id: string
   title: string
   body: string | null
   highlight?: boolean
+  project: string
 }) {
   return (
     <Card id={id} className={highlight ? 'border-amber-400/60' : undefined}>
@@ -233,7 +241,9 @@ function SectionCard({
       </CardHeader>
       <CardContent>
         {body ? (
-          <Markdown className="text-xs">{body}</Markdown>
+          <Markdown className="text-xs" project={project}>
+            {body}
+          </Markdown>
         ) : (
           <div className="text-xs italic text-muted-foreground/70">to fill</div>
         )}

@@ -297,7 +297,7 @@ function SelectedItemPane({
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
         <div className={cn('overflow-y-auto overflow-x-hidden', editing ? 'min-w-0 flex-1' : 'min-w-0 flex-1')}>
           <div className="p-4 md:p-6">
-            <RenderedItem content={data.content} />
+            <RenderedItem content={data.content} project={project} />
           </div>
         </div>
         {editing && (
@@ -332,12 +332,12 @@ function SelectedItemPane({
   )
 }
 
-function RenderedItem({ content }: { content: string }) {
+function RenderedItem({ content, project }: { content: string; project: string }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
   return (
     <>
       {frontmatter && <FrontmatterPanel data={frontmatter} />}
-      <Markdown>{body}</Markdown>
+      <Markdown project={project}>{body}</Markdown>
     </>
   )
 }
