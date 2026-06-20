@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { Config } from '@memon/core'
+import { DEFAULT_GIT_STATUS, type Config } from '@memon/core'
 import { buildIndex } from './index-builder.js'
 
 let root: string
@@ -60,6 +60,7 @@ describe('buildIndex', () => {
         commands: { none: [], claude: ['claude'], codex: ['codex'], opencode: ['opencode'] },
       },
       slurm: { totalNodes: -1 },
+      gitStatus: { ...DEFAULT_GIT_STATUS },
     }
 
     const idx = await buildIndex(config)
@@ -88,6 +89,7 @@ describe('buildIndex', () => {
         commands: { none: [], claude: ['claude'], codex: ['codex'], opencode: ['opencode'] },
       },
       slurm: { totalNodes: -1 },
+      gitStatus: { ...DEFAULT_GIT_STATUS },
     }
 
     const idx = await buildIndex(config, { project: 'a' })
