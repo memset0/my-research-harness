@@ -16,6 +16,7 @@ import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
 import {
   DEFAULT_GIT_STATUS,
+  DEFAULT_NODE_CAPABILITIES,
   DEFAULT_POLL,
   DEFAULT_SLURM,
   DEFAULT_TELEGRAM_PARSE_MODE,
@@ -24,6 +25,8 @@ import {
   type AuthConfig,
   type Config,
   type GitStatusConfig,
+  type HubConfig,
+  type NodeConfig,
   type PollConfig,
   type ProjectConfig,
   type SlurmConfig,
@@ -190,7 +193,53 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     }
   }
 
-  return { projects, poll, auth, terminal, slurm, gitStatus, telegram }
+  // ── hub / node (mutually exclusive; openspec/changes/add-hub-node-split) ──
+  if (cfg.hub && cfg.node) {
+    throw new ConfigError(
+      'config has both `hub:` and `node:` blocks — they are mutually exclusive (a process is either a hub or a node)',
+      candidate,
+    )
+  }
+
+  let hub: HubConfig | undefined
+  if (cfg.hub) {
+    const nodes = cfg.hub.nodes.map((n) => ({ name: n.name, authToken: n.auth_token }))
+    const names = nodes.map((n) => n.name)
+    const dup = names.find((n, i) => names.indexOf(n) !== i)
+    if (dup) {
+      throw new ConfigError(`hub.nodes has a duplicate node name: ${dup}`, candidate)
+    }
+    hub = {
+      bindAddr: cfg.hub.bind_addr ?? '127.0.0.1',
+      bindPort: cfg.hub.bind_port ?? 3737,
+      nodes,
+      ...(cfg.hub.public_url ? { publicUrl: cfg.hub.public_url } : {}),
+    }
+  }
+
+  let node: NodeConfig | undefined
+  if (cfg.node) {
+    node = {
+      name: cfg.node.name,
+      authToken: cfg.node.auth_token,
+      hubUrl: cfg.node.hub_url,
+      capabilities: {
+        tmux: cfg.node.capabilities?.tmux ?? DEFAULT_NODE_CAPABILITIES.tmux,
+        projects: cfg.node.capabilities?.projects ?? DEFAULT_NODE_CAPABILITIES.projects,
+      },
+    }
+  }
+
+  // A hub has no local projects (they arrive from nodes); every other role
+  // requires at least one project.
+  if (!hub && projects.length === 0) {
+    throw new ConfigError(
+      'config must define at least one project (unless running as a hub)',
+      candidate,
+    )
+  }
+
+  return { projects, poll, auth, terminal, slurm, gitStatus, telegram, hub, node }
 }
 
 /**

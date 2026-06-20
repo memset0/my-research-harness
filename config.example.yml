@@ -142,3 +142,34 @@ poll:
 #   chat_id: "-100123456"           # numeric IDs MAY be unquoted
 #   parse_mode: "MarkdownV2"        # optional; default "MarkdownV2"
 #   disable_notification: false     # optional; default false
+
+# ── hub / node (multi-cluster) ──────────────────────────────────────────
+# By default memon runs standalone (frontend + backend in one process). To
+# manage several clusters from one place, split into a `hub` (central
+# frontend + thin broker) and one `node` per cluster (the full backend,
+# dialing OUT to the hub over WebSocket). A process has AT MOST ONE of these
+# blocks — `hub` and `node` are mutually exclusive.
+#
+# Hub process (serves the UI; holds no projects of its own):
+#
+# hub:
+#   bind_addr: "127.0.0.1"          # optional; default 127.0.0.1
+#   bind_port: 3737                 # optional; default 3737
+#   public_url: "wss://memon-m2.dev.mem.ac"   # optional; for display
+#   nodes:                          # the nodes allowed to connect
+#     - { name: m2,    auth_token: "<random-per-node-secret>" }
+#     - { name: nvl72, auth_token: "<random-per-node-secret>" }
+#
+# Node process (the cluster backend; lists this cluster's projects above):
+#
+# node:
+#   name: nvl72                     # unique, kebab-case; shown in the hub UI
+#   auth_token: "<matches the hub's nvl72 entry>"
+#   hub_url: "wss://memon-m2.dev.mem.ac"   # ws:// for localhost
+#   capabilities:                   # optional; both default true
+#     tmux: true
+#     projects: true
+#
+# Localhost dev: run two processes on one machine — a hub (this `hub:` block,
+# projects empty) and a node (a second config with `projects:` + this `node:`
+# block, hub_url: ws://localhost:3737).

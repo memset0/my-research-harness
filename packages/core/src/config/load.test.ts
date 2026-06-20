@@ -324,6 +324,140 @@ git_status:
   })
 })
 
+describe('loadConfig hub/node blocks', () => {
+  it('parses a node block to camelCase with default capabilities', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+node:
+  name: nvl72
+  auth_token: tok-abc
+  hub_url: ws://localhost:3737
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.node).toEqual({
+      name: 'nvl72',
+      authToken: 'tok-abc',
+      hubUrl: 'ws://localhost:3737',
+      capabilities: { tmux: true, projects: true },
+    })
+    expect(cfg!.hub).toBeUndefined()
+  })
+
+  it('honors a partial capabilities override', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+node:
+  name: m2
+  auth_token: t
+  hub_url: ws://localhost:3737
+  capabilities:
+    tmux: false
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.node!.capabilities).toEqual({ tmux: false, projects: true })
+  })
+
+  it('parses a hub block with defaults and a node registry', async () => {
+    const yaml = `
+hub:
+  public_url: wss://memon-m2.dev.mem.ac
+  nodes:
+    - { name: m2, auth_token: t1 }
+    - { name: nvl72, auth_token: t2 }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.hub).toEqual({
+      bindAddr: '127.0.0.1',
+      bindPort: 3737,
+      publicUrl: 'wss://memon-m2.dev.mem.ac',
+      nodes: [
+        { name: 'm2', authToken: 't1' },
+        { name: 'nvl72', authToken: 't2' },
+      ],
+    })
+    expect(cfg!.node).toBeUndefined()
+  })
+
+  it('allows a hub with no projects', async () => {
+    const yaml = `
+hub:
+  nodes:
+    - { name: m2, auth_token: t1 }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.hub).toBeDefined()
+    expect(cfg!.projects).toHaveLength(0)
+  })
+
+  it('rejects a non-hub config with no projects', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: []\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('at least one project'),
+    })
+  })
+
+  it('rejects both hub and node present', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+hub:
+  nodes: []
+node:
+  name: m2
+  auth_token: t
+  hub_url: ws://localhost:3737
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('mutually exclusive'),
+    })
+  })
+
+  it('rejects a node block missing hub_url', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+node:
+  name: m2
+  auth_token: t
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects a node name that is not kebab-case', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+node:
+  name: NVL72
+  auth_token: t
+  hub_url: ws://localhost:3737
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects duplicate node names in the hub registry', async () => {
+    const yaml = `
+hub:
+  nodes:
+    - { name: m2, auth_token: t1 }
+    - { name: m2, auth_token: t2 }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('duplicate node name'),
+    })
+  })
+})
+
 describe('loadConfig project-name regex', () => {
   it('accepts letters, digits, and hyphens', async () => {
     const yaml = `

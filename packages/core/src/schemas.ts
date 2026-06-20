@@ -218,14 +218,58 @@ export const TelegramConfigRawSchema = z
   })
   .optional()
 
+// ── hub / node federation (openspec/changes/add-hub-node-split) ──────────
+// A process runs as a `hub` (thin broker + frontend) or a `node` (full
+// backend dialing OUT to a hub), selected by which block is present.
+// Mutually exclusive (enforced in config/load.ts); absent both = standalone.
+
+const NodeNameSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-z0-9-]+$/, 'must match [a-z0-9-]+')
+
+export const NodeCapabilitiesRawSchema = z.object({
+  tmux: z.boolean().optional(),
+  projects: z.boolean().optional(),
+})
+
+export const NodeConfigRawSchema = z
+  .object({
+    name: NodeNameSchema,
+    auth_token: z.string().min(1),
+    // ws:// (localhost) or wss:// (remote). Non-empty string here; the loader
+    // does no URL-shape check beyond this for now.
+    hub_url: z.string().min(1),
+    capabilities: NodeCapabilitiesRawSchema.optional(),
+  })
+  .optional()
+
+export const HubNodeEntryRawSchema = z.object({
+  name: NodeNameSchema,
+  auth_token: z.string().min(1),
+})
+
+export const HubConfigRawSchema = z
+  .object({
+    bind_addr: z.string().min(1).optional(),
+    bind_port: z.number().int().min(1).max(65535).optional(),
+    public_url: z.string().min(1).optional(),
+    nodes: z.array(HubNodeEntryRawSchema).default([]),
+  })
+  .optional()
+
 export const ConfigRawSchema = z.object({
-  projects: z.array(ProjectConfigRawSchema).min(1),
+  // `.min(1)` relaxed to allow a project-less hub; config/load.ts enforces
+  // ">= 1 project unless hub mode".
+  projects: z.array(ProjectConfigRawSchema).default([]),
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
   terminal: TerminalConfigRawSchema,
   slurm: SlurmConfigRawSchema,
   git_status: GitStatusConfigRawSchema,
   telegram: TelegramConfigRawSchema,
+  hub: HubConfigRawSchema,
+  node: NodeConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

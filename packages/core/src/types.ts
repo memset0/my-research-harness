@@ -680,6 +680,48 @@ export interface TelegramConfig {
 
 export const DEFAULT_TELEGRAM_PARSE_MODE: TelegramConfig['parseMode'] = 'MarkdownV2'
 
+/** What a node exposes to the hub. Both default to true. */
+export interface NodeCapabilities {
+  tmux: boolean
+  projects: boolean
+}
+
+export const DEFAULT_NODE_CAPABILITIES: NodeCapabilities = {
+  tmux: true,
+  projects: true,
+}
+
+/**
+ * Present iff config.yml has a `node:` block. Runs this process as a node —
+ * the full backend, headless, dialing OUT to a hub. Mutually exclusive with
+ * `hub`. See openspec/specs/hub-node-transport.
+ */
+export interface NodeConfig {
+  /** Unique, stable, kebab-case identity shown in the hub UI. */
+  name: string
+  /** Per-node bearer token presented at the hub WS handshake. */
+  authToken: string
+  /** `ws://` (localhost) or `wss://` (remote) URL of the hub to dial. */
+  hubUrl: string
+  capabilities: NodeCapabilities
+}
+
+/**
+ * Present iff config.yml has a `hub:` block. Runs this process as a hub — a
+ * thin broker that accepts node WS connections and proxies browser requests
+ * to them. Mutually exclusive with `node`.
+ */
+export interface HubConfig {
+  /** Bind address for the server (default 127.0.0.1). */
+  bindAddr: string
+  /** Port the hub serves on (default 3737). */
+  bindPort: number
+  /** Public URL the hub is reached at (display / node docs). */
+  publicUrl?: string
+  /** Registered nodes: name + bearer token accepted at the WS handshake. */
+  nodes: Array<{ name: string; authToken: string }>
+}
+
 export interface Config {
   projects: ProjectConfig[]
   poll: PollConfig
@@ -690,6 +732,10 @@ export interface Config {
   gitStatus: GitStatusConfig
   /** Present iff config.yml has a complete `telegram:` block. */
   telegram?: TelegramConfig
+  /** Present iff config.yml has a `hub:` block (hub mode). */
+  hub?: HubConfig
+  /** Present iff config.yml has a `node:` block (node mode). */
+  node?: NodeConfig
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [
