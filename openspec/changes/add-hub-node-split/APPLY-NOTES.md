@@ -60,6 +60,19 @@ merged-projects sidebar are implemented and auto-verified. The remaining piece i
 > `pnpm --filter @memon/core build` before apps/web typecheck (web checks core's
 > built dist, not src).
 
+## Commits (this run — all pushed to origin/main)
+- `7e22869` §1 config (hub/node blocks)
+- `670db94` headless-node design decision (design + spec)
+- `1432bf3` §2a transport foundation (protocol + route resolver + dispatch + ws)
+- `7fd5255` §2b+§3 transport (node WS client, hub registry/endpoint+auth, role branching)
+- `9386b9c` §4 hub data proxy (forwarding + projects merge + SSE relay + owner-auth gate)
+- `7c76658` §5 sidebar node label + §7 config-driven role + tracking
+
+## Final verification (all green)
+- typecheck: `@memon/core`, `@memon/web`, `@memon/cli` — all clean.
+- tests: core 480, web 741, cli 116 — all pass.
+- NOT covered automatically: the live localhost e2e (§8.5) and §6 UI rendering — yours.
+
 ## Needs your attention on wake-up
 
 1. **§6 (tmux node-picker) is DEFERRED — the main remaining work.** Why: it needs
