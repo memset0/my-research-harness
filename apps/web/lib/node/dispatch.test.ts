@@ -5,7 +5,7 @@
 // setup as test/integration/read-flow.test.ts).
 
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // Point the runtime at the repo config.yml (lists ./mock/project-{a,b}) BEFORE
 // dispatchRpc triggers the first getRuntime().
@@ -15,6 +15,13 @@ process.env.MEMON_CONFIG_PATH = join(REPO_ROOT, 'config.yml')
 const { dispatchRpc } = await import('./dispatch')
 
 describe('dispatchRpc', () => {
+  // Warm the runtime once (it discovers the mock fixtures — slow, and slower
+  // still under full-suite CPU contention) so the per-test timeout covers only
+  // the dispatch call, not the cold warmup.
+  beforeAll(async () => {
+    await dispatchRpc({ kind: 'req', id: 0, method: 'GET', path: '/api/projects' })
+  }, 30_000)
+
   it('runs GET /api/projects through the real handler', async () => {
     const res = await dispatchRpc({ kind: 'req', id: 1, method: 'GET', path: '/api/projects' })
     expect(res.status).toBe(200)

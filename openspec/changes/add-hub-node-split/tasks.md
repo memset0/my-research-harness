@@ -8,17 +8,17 @@
 - [x] 1.5 Unit tests (9): node camelCase, capabilities override, hub defaults+registry, hub-no-projects ok, non-hub-no-projects→error, both→error, missing hub_url→error, non-kebab name→error, duplicate node name→error
 
 ## 2. Transport — node side (`apps/web/lib/node/`)
-- [ ] 2.1 WS client dialing `node.hub_url` with `Authorization: Bearer <auth_token>`; reconnect w/ exponential backoff
-- [x] 2.2 RPC dispatcher (`lib/node/dispatch.ts` + `lib/node/route-resolver.ts` + `lib/hub-node/protocol.ts`): resolve path→route module via filesystem walk, dynamic-import + invoke the handler with a synthetic Request + `{params}`, serialize `{status,body,headers}`. Verified: dispatch test runs GET /api/projects + /api/runs through real handlers.
-- [ ] 2.3 Event relay: subscribe `rt.events`, forward `{topic,project,payload}` frames to the hub
-- [ ] 2.4 On connect, advertise node `name` + `capabilities` + project list
-- [ ] 2.5 Node entrypoint: start the headless runtime (no browser serving) + the WS client when `role=node`
+- [x] 2.1 WS client (`lib/node/hub-client.ts`) dialing `node.hub_url` + connect path with `Authorization: Bearer`; reconnect w/ exponential backoff. Real-ws smoke test.
+- [x] 2.2 RPC dispatcher (`lib/node/dispatch.ts` + `lib/node/route-resolver.ts` + `lib/hub-node/protocol.ts`): resolve path→route module via filesystem walk, dynamic-import + invoke the handler with a synthetic Request + `{params}`, serialize `{status,body,headers}`. Verified against real handlers.
+- [x] 2.3 Event relay (`lib/node/node-link.ts` + hub-client): relay `rt.events` topics as `event` frames.
+- [x] 2.4 On connect, advertise `hello` (name + capabilities + project list).
+- [x] 2.5 Node entrypoint: `server.ts` runs headless (runtime + WS client, no Next) when `role=node`.
 
 ## 3. Transport — hub side (`apps/web/lib/hub/` + `lib/server-core.ts`)
-- [ ] 3.1 Node registry `Map<nodeName, {conn, capabilities, projects}>`
-- [ ] 3.2 `/api/hub/nodes/connect` WS endpoint in the `server-core.ts` upgrade path; Bearer verify vs `hub.nodes[]` (constant-time, reuse `basic-auth.ts` pattern); register on success, 401 on fail
-- [ ] 3.3 RPC client: send request frames, correlate responses by `id`, timeout + node-offline error
-- [ ] 3.4 Deregister on disconnect; replace on duplicate node name
+- [x] 3.1 Node registry (`lib/hub/registry.ts` `NodeRegistry` + `HubLink`): name→link, capabilities, projects; `forProject`/`tmuxNodes`/`projectNodes`.
+- [x] 3.2 `/api/hub/nodes/connect` WS endpoint in `server-core.ts` upgrade path; Bearer verify vs `hub.nodes[]` (`lib/hub/node-auth.ts`, constant-time); register on hello, 401 on fail.
+- [x] 3.3 RPC client (`HubLink.call`): send req frames, correlate by `id`, timeout + node-offline error.
+- [x] 3.4 Deregister on disconnect; replace on duplicate node name (`NodeRegistry.attach`).
 
 ## 4. Hub data proxy + event relay
 - [ ] 4.1 Hub-mode data-route forwarding: data `/api/*` → owning node (by project) → RPC → relay response; node-unavailable error if offline

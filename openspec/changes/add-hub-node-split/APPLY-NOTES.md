@@ -22,10 +22,18 @@ environment. Everything auto-verifiable (typecheck, unit tests) is kept green.
 ## Status
 - §1 config — DONE (7e22869, pushed).
 - Headless design decision recorded — DONE (670db94, pushed).
-- §2a transport foundation — DONE + verified (protocol + route-resolver +
-  dispatch; web typecheck clean; 13 unit tests pass).
-- §2b node WS client + event relay + headless entrypoint — NEXT.
-- §3 hub side, §4 data proxy, §5–6 UI, §7 run model, §8 tests — TODO.
+- §2a transport foundation — DONE (1432bf3, pushed).
+- §2b + §3 transport — DONE + verified. Node WS client (dial + reconnect),
+  event relay, headless entrypoint (`server.ts` `role=node`); hub registry,
+  `/api/hub/nodes/connect` + Bearer auth, RPC client with id-correlation +
+  timeout, role branching. Web typecheck clean; full web suite 735 pass
+  (incl. in-memory + real-ws transport tests).
+- §4 data proxy + projects merge + SSE relay — NEXT.
+- §5–6 UI, §7 run model, §8 tests — TODO.
+
+> Gotcha hit + handled: changing `@memon/core` types needs
+> `pnpm --filter @memon/core build` before apps/web typecheck (web checks core's
+> built dist, not src).
 
 ## Needs your attention on wake-up
 - Run the localhost end-to-end test (tasks.md §8.5): start a hub process + a

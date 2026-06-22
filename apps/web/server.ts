@@ -9,6 +9,8 @@ import next from 'next'
 import { createMemonServer } from './lib/server-core'
 import { getRuntime } from './lib/runtime'
 import { prewarmRoutes } from './lib/route-prewarm'
+import type { HubConfig } from '@memon/core'
+import type { NodeRegistry } from './lib/hub/registry'
 
 const dev = process.env.NODE_ENV !== 'production'
 const port = Number(process.env.PORT ?? 3737)
@@ -25,32 +27,61 @@ const runtime = await getRuntime()
 const globalAny = globalThis as unknown as { __memonWarmedAt?: number }
 globalAny.__memonWarmedAt = warmupStartedAt
 
-const app = next({ dev, hostname, port })
-const handle = app.getRequestHandler()
-await app.prepare()
+if (runtime.config.node) {
+  // ── Node mode: headless. Dial the hub, answer RPC by dispatching onto the
+  // route handlers, relay runtime events. No Next, no HTTP listener. ──
+  const node = runtime.config.node
+  const { startNodeClient } = await import('./lib/node/hub-client')
+  startNodeClient({
+    hubUrl: node.hubUrl,
+    name: node.name,
+    authToken: node.authToken,
+    capabilities: node.capabilities,
+    projects: runtime.config.projects.map((p) => p.name),
+    events: runtime.events,
+  })
+  console.log(
+    `> memon node "${node.name}" -> ${node.hubUrl} (headless; ${runtime.config.projects.length} project(s))`,
+  )
+} else {
+  // ── Hub or standalone: boot Next. In hub mode also accept node connections. ──
+  const app = next({ dev, hostname, port })
+  const handle = app.getRequestHandler()
+  await app.prepare()
 
-// `getUpgradeHandler` is internal in Next's typings; cast to call it.
-const getUpgradeHandler = (app as unknown as {
-  getUpgradeHandler?: () => (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
-}).getUpgradeHandler
-const upgradeHandler = typeof getUpgradeHandler === 'function' ? getUpgradeHandler.call(app) : undefined
+  // `getUpgradeHandler` is internal in Next's typings; cast to call it.
+  const getUpgradeHandler = (app as unknown as {
+    getUpgradeHandler?: () => (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
+  }).getUpgradeHandler
+  const upgradeHandler = typeof getUpgradeHandler === 'function' ? getUpgradeHandler.call(app) : undefined
 
-const server = createMemonServer({
-  handle,
-  upgradeHandler,
-  onProxyError: (err) => console.error('[ttyd-proxy]', err.message),
-})
-
-server.listen(port, () => {
-  console.log(`> memon ready on http://${hostname}:${port} (mode: ${dev ? 'dev' : 'prod'})`)
-  if (dev) {
-    // Fire-and-forget: pay each route's cold compile during boot instead of
-    // at the user's first click. See openspec/specs/dev-route-prewarm/.
-    void prewarmRoutes({
-      host: hostname,
-      port,
-      projects: runtime.config.projects,
-      auth: runtime.auth,
-    })
+  let hub: { config: HubConfig; registry: NodeRegistry } | undefined
+  if (runtime.config.hub) {
+    const { NodeRegistry } = await import('./lib/hub/registry')
+    hub = { config: runtime.config.hub, registry: new NodeRegistry() }
   }
-})
+
+  const server = createMemonServer({
+    handle,
+    upgradeHandler,
+    onProxyError: (err) => console.error('[ttyd-proxy]', err.message),
+    hub,
+  })
+
+  server.listen(port, () => {
+    const role = runtime.config.hub ? 'hub' : 'standalone'
+    console.log(
+      `> memon ready on http://${hostname}:${port} (mode: ${dev ? 'dev' : 'prod'}, role: ${role})`,
+    )
+    if (dev) {
+      // Fire-and-forget: pay each route's cold compile during boot instead of
+      // at the user's first click. See openspec/specs/dev-route-prewarm/.
+      void prewarmRoutes({
+        host: hostname,
+        port,
+        projects: runtime.config.projects,
+        auth: runtime.auth,
+      })
+    }
+  })
+}

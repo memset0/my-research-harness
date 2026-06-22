@@ -12,8 +12,13 @@
 
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
+import type { HubConfig } from '@memon/core'
 import { createProxyServer } from 'http-proxy-3'
+import { WebSocketServer } from 'ws'
 import { authenticateNodeRequest } from './auth/server-auth'
+import { wsToFrameSocket } from './hub-node/connection'
+import { authenticateNodeToken } from './hub/node-auth'
+import type { NodeRegistry } from './hub/registry'
 import {
   lookupSession,
   noteHttpActivity,
@@ -22,6 +27,7 @@ import {
 } from './terminal/manager'
 
 const PROXY_PREFIX = '/api/terminal/proxy/'
+const HUB_CONNECT_PATH = '/api/hub/nodes/connect'
 
 export interface MemonServerDeps {
   /** Next's request handler — invoked for any path NOT under PROXY_PREFIX. */
@@ -41,6 +47,12 @@ export interface MemonServerDeps {
   proxyTarget?: string
   /** Hook for tests that want to observe proxy errors. */
   onProxyError?: (err: Error) => void
+  /**
+   * Hub mode: when present, accept node WebSocket connections at
+   * `/api/hub/nodes/connect` (Bearer-authenticated against `config.nodes`) and
+   * register each into the supplied registry.
+   */
+  hub?: { config: HubConfig; registry: NodeRegistry }
 }
 
 function extractSessionName(reqUrl: string): string | null {
@@ -55,6 +67,7 @@ function extractSessionName(reqUrl: string): string | null {
 
 export function createMemonServer(deps: MemonServerDeps): Server {
   const proxy = createProxyServer({ ws: true, changeOrigin: false })
+  const nodeWss = deps.hub ? new WebSocketServer({ noServer: true }) : null
 
   proxy.on('error', (err, _req, res) => {
     const e = err instanceof Error ? err : new Error(String(err))
@@ -105,6 +118,18 @@ export function createMemonServer(deps: MemonServerDeps): Server {
   })
 
   server.on('upgrade', async (req, socket, head) => {
+    // Hub mode: a node dialing in over the connect path (Bearer-authenticated).
+    if (deps.hub && nodeWss && req.url === HUB_CONNECT_PATH) {
+      const name = authenticateNodeToken(req.headers.authorization, deps.hub.config)
+      if (!name) {
+        rejectUpgrade(socket, 401, {})
+        return
+      }
+      nodeWss.handleUpgrade(req, socket, head, (ws) => {
+        void deps.hub!.registry.attach(wsToFrameSocket(ws)).catch(() => ws.close())
+      })
+      return
+    }
     if (req.url?.startsWith(PROXY_PREFIX)) {
       try {
         const r = await authenticateNodeRequest(req)
