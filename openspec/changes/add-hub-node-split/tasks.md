@@ -9,7 +9,7 @@
 
 ## 2. Transport — node side (`apps/web/lib/node/`)
 - [ ] 2.1 WS client dialing `node.hub_url` with `Authorization: Bearer <auth_token>`; reconnect w/ exponential backoff
-- [ ] 2.2 RPC dispatcher: on `{id,method,path,query,body}` run the existing route handler / `lib/server/data.ts` fn, reply `{id,status,body}`
+- [x] 2.2 RPC dispatcher (`lib/node/dispatch.ts` + `lib/node/route-resolver.ts` + `lib/hub-node/protocol.ts`): resolve path→route module via filesystem walk, dynamic-import + invoke the handler with a synthetic Request + `{params}`, serialize `{status,body,headers}`. Verified: dispatch test runs GET /api/projects + /api/runs through real handlers.
 - [ ] 2.3 Event relay: subscribe `rt.events`, forward `{topic,project,payload}` frames to the hub
 - [ ] 2.4 On connect, advertise node `name` + `capabilities` + project list
 - [ ] 2.5 Node entrypoint: start the headless runtime (no browser serving) + the WS client when `role=node`
