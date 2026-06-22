@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Process role selection via config
-A memon process SHALL select its role from config: a `node` block runs it as a node, a `hub` block runs it as a hub, and neither block present preserves the current single-process (standalone) behavior. The `hub` and `node` blocks SHALL be mutually exclusive; config load SHALL fail with a clear error if both are present.
+A memon process SHALL select its role from config: a `node` block runs it as a node, a `hub` block runs it as a hub, and neither block present preserves the current single-process (standalone) behavior. The `hub` and `node` blocks SHALL be mutually exclusive; config load SHALL fail with a clear error if both are present. A node process runs **headless** — `runtime.ts` plus the hub WS client — and SHALL NOT serve the browser UI (the hub does).
 
 #### Scenario: Node block starts a node
 - **WHEN** config.yml contains a `node:` block with `name`, `auth_token`, and `hub_url`
@@ -38,7 +38,7 @@ A node SHALL authenticate its WebSocket handshake with `Authorization: Bearer <n
 - **THEN** the hub rejects the handshake with 401 and registers no connection
 
 ### Requirement: JSON-RPC request/response envelope
-Hub-to-node calls SHALL be framed as a JSON envelope `{ id, method, path, query, body }`; the node SHALL dispatch each onto its existing request handler and reply with `{ id, status, body, headers? }`. The `id` SHALL correlate responses to requests so that concurrent calls on one connection do not cross-talk.
+Hub-to-node calls SHALL be framed as a JSON envelope `{ id, method, path, query, body }`. The headless node SHALL dispatch each call by invoking the corresponding App Router route handler directly — a plain `Request -> Response` function imported and called without a Next server — extracting dynamic path params (e.g. `[id]`), then reply with `{ id, status, body, headers? }`. The `id` SHALL correlate responses to requests so that concurrent calls on one connection do not cross-talk.
 
 #### Scenario: Request is dispatched and answered
 - **WHEN** the hub sends `{ id: 1, method: "GET", path: "/api/runs", query: { project: "a" } }`

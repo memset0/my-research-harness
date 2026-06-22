@@ -27,7 +27,7 @@ Today memon runs its frontend + backend as one co-located process; the whole bac
 - **Reuse `server-core.ts` (http-proxy-3 + WS-upgrade)** for the new `/api/hub/nodes/connect` endpoint and for the localhost ttyd proxy. Proven plumbing; Caddy already upgrades WS, so deployment is unchanged.
 - **Relay node events into the existing `/api/events` SSE** rather than a new browser channel. The browser SSE client (`events-client.ts`, `use-memon-events.tsx`) and the viewer-scope filter are reused untouched.
 - **Two processes on localhost (hub + node), not a combined in-process mode.** Honest topology, no special-case code path; the local node is just a node that dials `ws://localhost`. A combined dev-convenience wrapper can come later. Trade: two processes to launch locally.
-- **Node runs headless** (its runtime, WS client, RPC dispatch, event relay) — it does not serve the browser; the hub does. Keeps responsibilities clean.
+- **Node runs headless and dispatches RPC directly onto the route handlers** (resolved during apply). The node process runs `runtime.ts` + the WS client + an RPC dispatcher — it does NOT boot Next or serve the browser (the hub does). The dispatcher maps each `{method, path}` to the corresponding App Router route handler — a plain `Request -> Response` function, importable and callable WITHOUT a Next server — using `lib/server/data.ts` for reads and the route modules for writes, and extracting dynamic params (e.g. `[id]`) from the path. Chosen over "node runs full Next + RPC re-issued as localhost HTTP" to keep a single Next (the hub only) and the slimmest node; cost is a small route-dispatch table + synthetic `Request` construction. `runtime.ts` stays intact.
 - **Project→node ownership is node-reported**: each node advertises its projects on connect; the hub registry maps project→node and tags projects by node for the sidebar. For v1's single node this is trivial but is written for N nodes.
 
 ## Risks / Trade-offs
@@ -45,6 +45,7 @@ Purely additive and opt-in. A config with no `hub`/`node` block keeps today's si
 
 ## Open Questions
 
-- Exact node-process shape (headless runtime vs full Next with HTTP serving disabled) — settle during apply; prefer the slimmest that keeps `runtime.ts` intact.
 - RPC framing: raw `ws` + JSON vs a tiny request-id helper — keep minimal; decide in apply.
 - Whether `/api/projects` ownership should ever be hub-config-driven instead of node-reported — default to node-reported.
+
+_Resolved during apply:_ node-process shape — the node runs **headless** and dispatches RPC **directly** onto the App Router route handlers (no Next on the node, no self-HTTP loop). See Decisions.
