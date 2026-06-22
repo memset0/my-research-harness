@@ -58,7 +58,12 @@ if (runtime.config.node) {
   let hub: { config: HubConfig; registry: NodeRegistry } | undefined
   if (runtime.config.hub) {
     const { NodeRegistry } = await import('./lib/hub/registry')
-    hub = { config: runtime.config.hub, registry: new NodeRegistry() }
+    const registry = new NodeRegistry()
+    // Relay node-pushed events into the hub's own event bus so the existing
+    // /api/events SSE stream (and its viewer-scope filter) fans them to browsers
+    // with no client change.
+    registry.setEventSink((_node, topic, data) => runtime.events.emit(topic, data))
+    hub = { config: runtime.config.hub, registry }
   }
 
   const server = createMemonServer({

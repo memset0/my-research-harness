@@ -18,6 +18,20 @@ environment. Everything auto-verifiable (typecheck, unit tests) is kept green.
 - **D5: added `ws` (+ `@types/ws`) to apps/web.** Node 20 has no built-in WS
   server (hub needs one) nor a stable global WS client, so the standard `ws`
   package is used for both sides.
+- **D7: v1 hub forwarding is OWNER-ONLY.** The hub forwards browser data
+  requests to nodes BEFORE Next's middleware, so I enforce auth there with the
+  existing owner gate (`authenticateNodeRequest`: session cookie / Basic). A
+  viewer (share cookie) is NOT served forwarded data in v1 — viewer-scoped
+  cross-hub sharing is a P3 concern. No auth bypass; just stricter than a
+  standalone instance for shared read access. **Please confirm this is OK.**
+- **D8: the hub reuses the full runtime (empty projects), not a bespoke stub.**
+  An empty-projects runtime is idle (no discovery/poll) but supplies `rt.events`
+  (for the SSE relay) and `rt.auth` (for the gate). A leaner hub-only stub is a
+  future optimization.
+- **D-route: id-only routes with multiple nodes** (e.g. `/api/runs/<id>` with no
+  project scope) use broadcast-first-non-404 across nodes. Trivial for one node;
+  correct (an id lives on one node) but not optimal for many. Non-GET without a
+  project scope is rejected 409 (ambiguous).
 
 ## Status
 - §1 config — DONE (7e22869, pushed).
@@ -28,8 +42,10 @@ environment. Everything auto-verifiable (typecheck, unit tests) is kept green.
   `/api/hub/nodes/connect` + Bearer auth, RPC client with id-correlation +
   timeout, role branching. Web typecheck clean; full web suite 735 pass
   (incl. in-memory + real-ws transport tests).
-- §4 data proxy + projects merge + SSE relay — NEXT.
-- §5–6 UI, §7 run model, §8 tests — TODO.
+- §4 data proxy + projects merge + SSE relay — DONE + verified (proxy routing
+  unit tests; web typecheck clean; full web suite 741 pass). Owner-auth gate
+  on forwarding; node events relayed into the hub SSE.
+- §5–6 UI (sidebar grouping + tmux node-picker), §7 run model, §8 tests — TODO.
 
 > Gotcha hit + handled: changing `@memon/core` types needs
 > `pnpm --filter @memon/core build` before apps/web typecheck (web checks core's

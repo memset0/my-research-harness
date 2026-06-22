@@ -18,6 +18,7 @@ import { WebSocketServer } from 'ws'
 import { authenticateNodeRequest } from './auth/server-auth'
 import { wsToFrameSocket } from './hub-node/connection'
 import { authenticateNodeToken } from './hub/node-auth'
+import { forwardRequest, isForwardable } from './hub/proxy'
 import type { NodeRegistry } from './hub/registry'
 import {
   lookupSession,
@@ -114,6 +115,24 @@ export function createMemonServer(deps: MemonServerDeps): Server {
       }
       return
     }
+    // Hub mode: forward data /api/* requests to the owning node. Owner auth is
+    // enforced here (the forward bypasses Next's middleware); viewers are denied
+    // forwarded data in v1 (viewer-scoped sharing across the hub is deferred).
+    if (deps.hub && req.url && isForwardable(req.url.split('?')[0]!)) {
+      try {
+        const r = await authenticateNodeRequest(req)
+        if (!r.ok) {
+          rejectHttp(res, r.status ?? 401, r.headers ?? {})
+          return
+        }
+        await forwardToNode(req, res, deps.hub.registry)
+      } catch (e) {
+        deps.onProxyError?.(e instanceof Error ? e : new Error(String(e)))
+        rejectHttp(res, 502, { 'Content-Type': 'text/plain' })
+        res.end('Bad Gateway: hub forward failed')
+      }
+      return
+    }
     await deps.handle(req, res)
   })
 
@@ -182,4 +201,40 @@ function rejectUpgrade(socket: Duplex, status: number, headers: Record<string, s
     `HTTP/1.1 ${status} ${reason}\r\n${headerLines}\r\nConnection: close\r\n\r\n`,
   )
   socket.destroy()
+}
+
+/** Hub mode: forward one data request to its owning node and write the reply. */
+async function forwardToNode(
+  req: IncomingMessage,
+  res: ServerResponse,
+  registry: NodeRegistry,
+): Promise<void> {
+  const u = new URL(req.url ?? '/', 'http://hub.internal')
+  const query: Record<string, string> = {}
+  u.searchParams.forEach((v, k) => {
+    query[k] = v
+  })
+  const method = req.method ?? 'GET'
+  let body: string | undefined
+  if (method !== 'GET' && method !== 'HEAD') body = await readRequestBody(req)
+  const fwdHeaders: Record<string, string> = {}
+  const ct = req.headers['content-type']
+  if (ct) fwdHeaders['content-type'] = Array.isArray(ct) ? ct[0]! : ct
+
+  const result = await forwardRequest(registry, { method, path: u.pathname, query, body, headers: fwdHeaders })
+  const outHeaders: Record<string, string> = { ...(result.headers ?? {}) }
+  if (!('content-type' in outHeaders) && !('Content-Type' in outHeaders)) {
+    outHeaders['content-type'] = 'application/json'
+  }
+  res.writeHead(result.status, outHeaders)
+  res.end(result.body)
+}
+
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    req.on('data', (c: Buffer) => chunks.push(c))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
 }

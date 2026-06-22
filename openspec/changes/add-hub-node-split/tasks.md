@@ -21,10 +21,10 @@
 - [x] 3.4 Deregister on disconnect; replace on duplicate node name (`NodeRegistry.attach`).
 
 ## 4. Hub data proxy + event relay
-- [ ] 4.1 Hub-mode data-route forwarding: data `/api/*` → owning node (by project) → RPC → relay response; node-unavailable error if offline
-- [ ] 4.2 `/api/projects` fan-out across `projects`-capable nodes + merge + tag by node
-- [ ] 4.3 SSE relay: hub-mode `/api/events` re-emits node event frames into the existing stream; preserve viewer-scope filter
-- [ ] 4.4 Hub-mode runtime stub: config + registry only (no discovery/poller/index)
+- [x] 4.1 Hub-mode data-route forwarding (`lib/hub/proxy.ts` `forwardRequest` + `server-core.ts` `forwardToNode`): data `/api/*` → owning node (by project, single-node, or broadcast-first-hit) → RPC → relay; 503 if offline. **Owner-auth enforced at the forward point** (viewers deferred to P3).
+- [x] 4.2 `/api/projects` fan-out across `projects`-capable nodes + merge + tag by node (`fanOutProjects`).
+- [x] 4.3 SSE relay: `registry.setEventSink` re-emits node events onto the hub's `rt.events`, so the existing `/api/events` stream + viewer-scope filter fan them to browsers unchanged.
+- [x] 4.4 Hub runtime: reuses the full runtime with empty `projects` (idle discovery/poller) to supply `rt.events` + `rt.auth`; a leaner bespoke stub is a future optimization, not needed for correctness.
 
 ## 5. Projects UI (sidebar)
 - [ ] 5.1 Carry the node tag on projects through `apps/web/lib/api.ts` types
