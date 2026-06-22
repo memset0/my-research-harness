@@ -27,22 +27,27 @@
 - [x] 4.4 Hub runtime: reuses the full runtime with empty `projects` (idle discovery/poller) to supply `rt.events` + `rt.auth`; a leaner bespoke stub is a future optimization, not needed for correctness.
 
 ## 5. Projects UI (sidebar)
-- [ ] 5.1 Carry the node tag on projects through `apps/web/lib/api.ts` types
-- [ ] 5.2 `apps/web/components/app-sidebar.tsx`: group/label projects by node
+- [x] 5.1 `ProjectSummary.node?` carried through `apps/web/lib/api.ts`.
+- [x] 5.2 `app-sidebar.tsx`: per-project node badge, shown only when >1 node is connected (single-node/standalone stays clean). UI typechecks but is NOT render-verified here — see §8.5.
 
-## 6. tmux node-picker
+## 6. tmux node-picker — DEFERRED to a focused follow-up (see APPLY-NOTES)
+> Heavy UI + an SSR-page refactor + the intricate stateful ttyd-attach-through-hub
+> (the hub must learn the node's loopback ttyd port and proxy to it). All of it
+> needs a live browser + two processes to build correctly (CLAUDE.md F1: UI isn't
+> "done" without rendering). The backend already forwards any node `/api/*` route,
+> so 6.1's data path is enabled for free once a node-side tmux-list route + UI land.
 - [ ] 6.1 Node-scoped tmux listing: thread `?node=` through the tmux-list fetch; hub RPC-forwards `tmux ls` (via `lib/terminal/tmux-discover.ts`) to the node
 - [ ] 6.2 `apps/web/app/manage/tmux/tmux-page.client.tsx`: shadcn `<Select>` of tmux-capable nodes above the list; scope list + query key by node
 - [ ] 6.3 Node-scoped terminal start (`apps/web/app/api/terminal/start`): target the selected node
 - [ ] 6.4 Localhost attach: hub proxies `/api/terminal/proxy/*` to the node's loopback ttyd port (resolved via RPC)
 
 ## 7. Localhost run model
-- [ ] 7.1 Role selection on `memon serve` (config block, optional `--role` override)
-- [ ] 7.2 Hub + node `config.example.yml` snippets + a short run-model note (start hub, then node)
+- [x] 7.1 Role is config-driven: `server.ts` branches headless-node / hub / standalone on the `node`/`hub` config blocks (no `--role` flag needed).
+- [x] 7.2 Hub + node `config.example.yml` snippets + run-model note (landed in §1).
 
 ## 8. Tests + verification
-- [ ] 8.1 Unit: RPC envelope round-trip (request → dispatch → response, id correlation)
-- [ ] 8.2 Unit: `/api/projects` fan-out/merge + node tagging
-- [ ] 8.3 Unit: Bearer handshake accept/reject
-- [ ] 8.4 `pnpm --filter @memon/core typecheck` + `pnpm --filter @memon/web typecheck`
-- [ ] 8.5 Manual e2e (localhost): start hub+node; sidebar shows the node's projects tagged; run detail loads (proxied); a README edit triggers SSE invalidation; tmux picker lists the node; attach opens a working terminal
+- [x] 8.1 Unit: RPC envelope + in-memory transport round-trip (hello/RPC/event/timeout/close) + real-ws smoke test.
+- [x] 8.2 Unit: `/api/projects` fan-out/merge + node tagging + routing (`lib/hub/proxy.test.ts`).
+- [x] 8.3 Unit: Bearer handshake accept/reject (`lib/hub/node-auth.test.ts`).
+- [x] 8.4 `pnpm --filter @memon/core|web|cli typecheck` — clean (core rebuilt for the new types).
+- [ ] 8.5 Manual e2e (localhost) — **YOURS to run**: start hub+node; sidebar shows the node's projects; run detail loads (proxied); a README edit triggers SSE invalidation. (tmux picker + attach = §6, deferred.)

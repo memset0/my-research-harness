@@ -45,16 +45,45 @@ environment. Everything auto-verifiable (typecheck, unit tests) is kept green.
 - §4 data proxy + projects merge + SSE relay — DONE + verified (proxy routing
   unit tests; web typecheck clean; full web suite 741 pass). Owner-auth gate
   on forwarding; node events relayed into the hub SSE.
-- §5–6 UI (sidebar grouping + tmux node-picker), §7 run model, §8 tests — TODO.
+- §5 sidebar node-label — DONE (per-project node badge, shown only when >1 node;
+  web typecheck clean). NOT render-verified — needs your browser (F1).
+- §7 run model — DONE (config-driven role branching in server.ts; config.example).
+- §8 verification — automated parts DONE (typecheck core+web+cli; unit tests).
+  §8.5 manual localhost e2e is YOURS.
+- §6 tmux node-picker — **DEFERRED**. See "Needs your attention".
+
+So: the entire BACKEND (config + transport + data proxy + SSE relay) and the
+merged-projects sidebar are implemented and auto-verified. The remaining piece is
+§6 (tmux picker UI + terminal-attach-through-hub).
 
 > Gotcha hit + handled: changing `@memon/core` types needs
 > `pnpm --filter @memon/core build` before apps/web typecheck (web checks core's
 > built dist, not src).
 
 ## Needs your attention on wake-up
-- Run the localhost end-to-end test (tasks.md §8.5): start a hub process + a
-  node process, open the hub, confirm merged projects + tmux picker + a terminal.
-- (risks / edge cases appended below as they come up)
+
+1. **§6 (tmux node-picker) is DEFERRED — the main remaining work.** Why: it needs
+   (a) the SSR `/manage/tmux` page converted to a node-scoped fetch, (b) a
+   node-side tmux-list route, (c) the `<Select>` UI, and (d) the hardest bit —
+   attaching a node's ttyd terminal through the hub (the hub must learn the node's
+   loopback ttyd port and proxy `/api/terminal/proxy/*` to it; stateful). All of
+   that needs a live browser + two processes to get right, which I can't run here
+   — and CLAUDE.md F1 says don't ship UI I haven't rendered. The backend already
+   forwards any node `/api/*` route, so the data half is ready. Decide if you want
+   this next.
+
+2. **Confirm D7 (owner-only hub forwarding).** v1 forwards data to nodes only for
+   the authenticated owner; viewers (share links) don't get forwarded data yet.
+   Fine for localhost; revisit for the public hub (P3). OK?
+
+3. **Run the localhost e2e (tasks.md §8.5).** Two processes on m2:
+   - hub config (no `projects`, a `hub:` block with a `nodes:` entry for m2 +
+     a token) → `memon serve --config hub.yml --port 3737`
+   - node config (your `projects:` + a `node:` block: name `m2`, the same token,
+     `hub_url: ws://localhost:3737`) → `memon serve --config node.yml --port 3738`
+   - Open `localhost:3737`: the sidebar should show m2's projects; opening a
+     run/experiment should load (proxied over WS); editing a README should push
+     an SSE update. (I could NOT verify this end-to-end here.)
 
 ### Risk notes
 - Headless dispatch `import()`s route modules at runtime. Route handlers that

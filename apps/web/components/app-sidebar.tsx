@@ -72,6 +72,10 @@ export function AppSidebar() {
       ? allProjects.filter((p) => scopeProjects.includes(p.name))
       : allProjects
 
+  // Hub mode: when more than one node is connected, label each project with its
+  // node so clusters are distinguishable. Single-node / standalone stays clean.
+  const showNodes = new Set(projects.map((p) => p.node).filter(Boolean)).size > 1
+
   // Default: the active project is open. This means the very first SSR HTML
   // already contains its experiment rows (no skeleton flash on initial nav).
   // Hydration matches because both server and client compute the same default.
@@ -169,6 +173,7 @@ export function AppSidebar() {
           <ProjectGroup
             key={p.name}
             name={p.name}
+            node={showNodes ? p.node : undefined}
             isActive={p.name === activeProject}
             isOpen={expanded.has(p.name)}
             activeExpDocId={activeExpDocId}
@@ -245,6 +250,7 @@ export function AppSidebar() {
  *  reachable through their parent experiment, not via the sidebar. */
 function ProjectGroup({
   name,
+  node,
   isActive,
   isOpen,
   activeExpDocId,
@@ -252,6 +258,7 @@ function ProjectGroup({
   onPillClick,
 }: {
   name: string
+  node?: string
   isActive: boolean
   isOpen: boolean
   activeExpDocId: string
@@ -345,6 +352,14 @@ function ProjectGroup({
             <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wider">
               {name}
             </span>
+            {node && (
+              <span
+                title={`node: ${node}`}
+                className="shrink-0 rounded bg-sidebar-foreground/10 px-1 text-[9px] font-medium normal-case tracking-normal text-sidebar-foreground/60"
+              >
+                {node}
+              </span>
+            )}
             {gitEnabled ? (
               // The pill is INSIDE the CollapsibleTrigger button, so a
               // bare click bubbles up and toggles the section. Wrap the

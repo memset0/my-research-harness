@@ -20,6 +20,8 @@ export interface ProjectSummary {
   name: string
   root: string
   exclude: string[]
+  /** Hub mode only: the node this project came from (set by the hub's fan-out). */
+  node?: string
 }
 
 export interface IndexedRun
