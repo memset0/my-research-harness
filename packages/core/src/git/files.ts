@@ -399,7 +399,8 @@ function isNotFoundStderr(stderr: string): boolean {
     /exists on disk/i.test(stderr) ||
     /did not match any/i.test(stderr) ||
     /not a valid object/i.test(stderr) ||
-    /Not a valid object name/i.test(stderr)
+    /Not a valid object name/i.test(stderr) ||
+    /invalid object name/i.test(stderr)
   )
 }
 
