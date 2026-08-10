@@ -14,16 +14,22 @@ import {
   discoverExperiments,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_STATUS_VALUES,
+  type ExperimentStatus,
+  emptyImplementationDocument,
+  emptyInvestigationDocument,
+  emptyResultsDocument,
   nextExperimentId,
   parseReadme,
+  type Run,
   readExperimentDoc,
   readRunDir,
   reserializeReadme,
   resolveExperimentId,
   scanProjectRoot,
   serializeExperimentReadme,
-  type ExperimentStatus,
-  type Run,
+  serializeImplementationYaml,
+  serializeInvestigationYaml,
+  serializeResultsYaml,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
@@ -70,6 +76,7 @@ export async function runExperimentLs(input: ExperimentLsInput): Promise<void> {
       updatedAt: e.frontMatter.updatedAt,
       path: e.path,
       mtime: e.mtime,
+      readmeMtime: e.readmeMtime,
       parseErrors: e.parseErrors,
       parseWarnings: e.parseWarnings,
     })),
@@ -104,8 +111,11 @@ export async function runExperimentShow(input: ExperimentShowInput): Promise<voi
     project: exp.project,
     path: exp.path,
     mtime: exp.mtime,
+    readmeMtime: exp.readmeMtime,
     frontMatter: exp.frontMatter,
     sections: exp.sections,
+    rawSections: exp.rawSections,
+    documents: exp.documents,
     warningsRaw: exp.warningsRaw,
     parseErrors: exp.parseErrors,
     parseWarnings: exp.parseWarnings,
@@ -165,6 +175,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     const filepath = join(expDir, 'README.md')
     const now = nowIso()
     const initialRuns: string[] = []
+    let importedRun: Run | null = null
     if (input.fromRun) {
       // Validate the run exists and is unbound (or already claims this exp;
       // in the normal flow the run hasn't been written yet).
@@ -179,6 +190,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
         )
       }
       initialRuns.push(runRecord.id)
+      importedRun = runRecord
     }
     const content = serializeExperimentReadme({
       frontMatter: {
@@ -194,7 +206,19 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
         createdAt: now,
         updatedAt: now,
       },
-      sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
+      sections: {
+        motivation: null,
+        design: null,
+        implementation: null,
+        investigation: null,
+        results: null,
+        findings: null,
+        limitations: null,
+        conclusion: null,
+        method: null,
+        plan: null,
+        caveats: null,
+      },
       warningsRaw: null,
     })
     try {
@@ -206,6 +230,50 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
         lastErr = e
         continue
       }
+      throw err
+    }
+    const initialResults = emptyResultsDocument()
+    if (importedRun) {
+      const unsuccessful =
+        importedRun.frontMatter.status === 'FAILED' ||
+        importedRun.frontMatter.status === 'INTERRUPTED' ||
+        importedRun.frontMatter.status === 'UNKNOWN'
+      initialResults.variants.push({
+        id: 'V0001',
+        name: `Imported ${importedRun.frontMatter.name || importedRun.id}`,
+        status: importedVariantStatus(importedRun),
+        description:
+          'Imported from an existing Run by `memon experiment create --from-run`; refine the Variant definition before launching another comparison.',
+        parameters: {},
+        metrics: {},
+        runs: unsuccessful ? [] : [importedRun.id],
+        attempts: unsuccessful ? [importedRun.id] : [],
+        ...(importedRun.frontMatter.entry
+          ? { provenance: { entry: importedRun.frontMatter.entry } }
+          : {}),
+      })
+    }
+    try {
+      await Promise.all([
+        fs.writeFile(
+          join(expDir, 'implementation.yaml'),
+          serializeImplementationYaml(emptyImplementationDocument()),
+          { encoding: 'utf8', flag: 'wx' },
+        ),
+        fs.writeFile(
+          join(expDir, 'investigation.yaml'),
+          serializeInvestigationYaml(emptyInvestigationDocument()),
+          { encoding: 'utf8', flag: 'wx' },
+        ),
+        fs.writeFile(join(expDir, 'results.yaml'), serializeResultsYaml(initialResults), {
+          encoding: 'utf8',
+          flag: 'wx',
+        }),
+      ])
+    } catch (err) {
+      // README `wx` allocated this directory. Never leave a half-created v6
+      // bundle discoverable if one sidecar write fails.
+      await fs.rm(expDir, { recursive: true, force: true })
       throw err
     }
     id = fullId
@@ -235,9 +303,28 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     break
   }
   if (id === null) {
-    emitErrorAndExit('BAD_STATE', `failed to allocate experiment id after 5 attempts: ${lastErr?.message}`)
+    emitErrorAndExit(
+      'BAD_STATE',
+      `failed to allocate experiment id after 5 attempts: ${lastErr?.message}`,
+    )
   }
   emitJson({ ok: true, id })
+}
+
+function importedVariantStatus(run: Run) {
+  switch (run.frontMatter.status) {
+    case 'FINISHED':
+      return 'COMPLETED' as const
+    case 'RUNNING':
+      return 'RUNNING' as const
+    case 'FAILED':
+    case 'INTERRUPTED':
+      return 'FAILED' as const
+    case 'UNKNOWN':
+      return 'INCONCLUSIVE' as const
+    default:
+      return 'PLANNED' as const
+  }
 }
 
 // ---------- experiment link / unlink ----------
@@ -290,6 +377,8 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
       frontMatter: exp.frontMatter,
       sections: exp.sections,
       warningsRaw: exp.warningsRaw,
+      rawSections: exp.rawSections,
+      rawBody: exp.body,
     }),
   )
   if (run.frontMatter.experiment !== expId) {
@@ -333,6 +422,8 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
       frontMatter: exp.frontMatter,
       sections: exp.sections,
       warningsRaw: exp.warningsRaw,
+      rawSections: exp.rawSections,
+      rawBody: exp.body,
     }),
   )
   if (run.frontMatter.experiment === expId) {
@@ -360,14 +451,9 @@ export interface ExperimentStatusSetInput {
   expectedMtime: number
 }
 
-export async function runExperimentStatusSet(
-  input: ExperimentStatusSetInput,
-): Promise<void> {
+export async function runExperimentStatusSet(input: ExperimentStatusSetInput): Promise<void> {
   if (!(EXPERIMENT_STATUS_VALUES as readonly string[]).includes(input.to)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `--to must be one of: ${EXPERIMENT_STATUS_VALUES.join(', ')}`,
-    )
+    emitErrorAndExit('BAD_REQUEST', `--to must be one of: ${EXPERIMENT_STATUS_VALUES.join(', ')}`)
   }
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
@@ -378,7 +464,7 @@ export async function runExperimentStatusSet(
     emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
   }
 
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(exp.path)
   } catch {
@@ -408,6 +494,8 @@ export async function runExperimentStatusSet(
       frontMatter: exp.frontMatter,
       sections: exp.sections,
       warningsRaw: exp.warningsRaw,
+      rawSections: exp.rawSections,
+      rawBody: exp.body,
     }),
   )
   const newStat = await fs.stat(exp.path)
@@ -428,6 +516,7 @@ export async function runExperimentStatusSet(
   const result: Record<string, unknown> = {
     ok: true,
     mtime: newStat.mtimeMs,
+    readmeMtime: newStat.mtimeMs,
     prevStatus,
     nextStatus,
     journalAppended,
@@ -447,15 +536,11 @@ export interface ExperimentArchiveInput {
   experimentId: string
 }
 
-export async function runExperimentArchiveDoc(
-  input: ExperimentArchiveInput,
-): Promise<void> {
+export async function runExperimentArchiveDoc(input: ExperimentArchiveInput): Promise<void> {
   await setExperimentArchived(input, true)
 }
 
-export async function runExperimentUnarchiveDoc(
-  input: ExperimentArchiveInput,
-): Promise<void> {
+export async function runExperimentUnarchiveDoc(input: ExperimentArchiveInput): Promise<void> {
   await setExperimentArchived(input, false)
 }
 
@@ -484,6 +569,8 @@ async function setExperimentArchived(
       frontMatter: exp.frontMatter,
       sections: exp.sections,
       warningsRaw: exp.warningsRaw,
+      rawSections: exp.rawSections,
+      rawBody: exp.body,
     }),
   )
   await appendJournalEvent({
@@ -549,7 +636,13 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
       // care about).
       let siblings: string[] = []
       try {
-        siblings = (await fs.readdir(expFolder)).filter((n) => n !== 'README.md')
+        const canonicalFiles = new Set([
+          'README.md',
+          'implementation.yaml',
+          'investigation.yaml',
+          'results.yaml',
+        ])
+        siblings = (await fs.readdir(expFolder)).filter((n) => !canonicalFiles.has(n))
       } catch {
         /* folder vanished mid-op — fall through to rm */
       }

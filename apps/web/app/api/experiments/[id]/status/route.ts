@@ -7,16 +7,16 @@
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { type NextRequest, NextResponse } from 'next/server'
 import {
-  EXPERIMENT_STATUS_VALUES,
   appendJournalEvent,
+  EXPERIMENT_STATUS_VALUES,
+  type ExperimentStatus,
   formatIsoLocal,
   parseExperimentReadme,
   readExperimentDoc,
   serializeExperimentReadme,
-  type ExperimentStatus,
 } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRuntime } from '../../../../../lib/runtime'
 
@@ -92,6 +92,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       frontMatter: parsedDoc.frontMatter,
       sections: parsedDoc.sections,
       warningsRaw: parsedDoc.warningsRaw,
+      // Status is frontmatter-only. Keep every supported, unsupported, and
+      // duplicate H2 byte-for-byte instead of rebuilding the body from the
+      // typed compatibility projection.
+      rawBody: parsedDoc.body,
     })
 
     const tmpPath = join(
@@ -112,10 +116,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         },
       })
     } catch (err) {
-      const tmpRollback = join(
-        dirname(exp.path),
-        `.${Date.now()}-rollback.exp-status.tmp`,
-      )
+      const tmpRollback = join(dirname(exp.path), `.${Date.now()}-rollback.exp-status.tmp`)
       await fs.writeFile(tmpRollback, currentContent, 'utf8')
       await fs.rename(tmpRollback, exp.path)
       throw err
@@ -140,9 +141,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (prevArchived) responseBody.warning = 'archived'
     return NextResponse.json(responseBody)
   } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

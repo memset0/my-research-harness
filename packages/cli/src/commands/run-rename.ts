@@ -146,8 +146,22 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
           frontMatter: exp.frontMatter,
           sections: exp.sections,
           warningsRaw: exp.warningsRaw,
+          rawSections: exp.rawSections,
+          rawBody: exp.body,
         }),
       )
+      const results = exp.documents?.results
+      if (
+        results?.raw &&
+        results.data?.variants.some(
+          (variant) => variant.runs.includes(oldId) || variant.attempts.includes(oldId),
+        )
+      ) {
+        const escaped = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const token = new RegExp(`(?<![A-Za-z0-9._-])${escaped}(?![A-Za-z0-9._-])`, 'g')
+        const rewritten = results.raw.replace(token, newId)
+        if (rewritten !== results.raw) await atomicWrite(results.path, rewritten)
+      }
     }
   }
 

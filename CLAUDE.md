@@ -48,15 +48,21 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 - pnpm monorepo: `packages/core` (TypeScript types, parsers, polling, indexing, LineIndex), `packages/cli` (memon CLI), `apps/web` (Next.js 15 App Router + Tailwind v4 + shadcn/ui)
 - Node.js ≥ 20.19 required; pnpm 10.x
 - No external DB, no fs watcher (cluster-safe polling with exponential backoff)
-- **File model** (`FS_CONVENTION_VERSION === 5`):
-  - **Experiment** = `<projectRoot>/docs/experiments/E<NNNN>-<slug>/README.md`.
+- **File model** (`FS_CONVENTION_VERSION === 6`):
+  - **Experiment bundle** = `<projectRoot>/docs/experiments/E<NNNN>-<slug>/`
+    containing `README.md`, `implementation.yaml`, `investigation.yaml`, and
+    `results.yaml` (all three YAML files declare `schema_version: 1`).
     The enclosing folder `E<NNNN>-<slug>/` is a sanctioned scratch
     space for experiment-local artifacts (smoke-run scripts, sbatch
     templates, multi-launch helpers, ad-hoc analysis utils tied to
-    one experiment). memon only touches `README.md`; sibling files and
-    sub-directories in the folder are opaque user content.
-    The README owns motivation / method / plan / conclusion / caveats /
-    warnings across one or more runs. Frontmatter: `id`, `slug`,
+    one experiment). Other sibling files and sub-directories are opaque user
+    content; `code-review/` is optional.
+    The canonical README H2 order is Motivation, Design, Implementation,
+    Investigation, Results, Findings, Limitations, Conclusion, Warnings.
+    Implementation, Investigation, and Results contain exact one-line pointers
+    to their YAML sources; section render/fetch projects those YAML files as
+    human-readable Markdown. Unknown or duplicate H2 sections are lint errors
+    but remain losslessly readable. Frontmatter: `id`, `slug`,
     `title`, `status` (`OPEN` / `RESOLVED` / `ABANDONED`, human-only
     write), `archived` (bool), `runs[]`, `hypotheses[]`, `tags[]`,
     `created_at`, `updated_at`.
@@ -67,8 +73,8 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
     **forbidden** on the run side — the parser surfaces
     `RUN_HAS_METHOD` / `RUN_HAS_CONCLUSION` / `RUN_HAS_CAVEATS`
     warnings. Per-run methodology folds into `## Setup`; per-run
-    findings into `## Result`; cross-run interpretation limits live
-    on the parent exp doc's `## Caveats`. Frontmatter carries
+    findings into `## Result`; cross-run interpretation and evidence limits
+    live in the parent Experiment's Findings and Limitations. Frontmatter carries
     `experiment: E<NNNN>-<slug>` (or null/absent for orphans),
     `status` (`PENDING`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/`UNKNOWN`),
     `archived` (bool), `updated_at`, plus the existing
@@ -116,13 +122,18 @@ plus inline at the top of each expanded run panel):
 - `memon experiment show <id-or-slug>` — print one exp doc
 - `memon experiment create <slug> [--title T] [--from-run <run-dir>]` —
   allocate next E<NNNN>, create `docs/experiments/E<NNNN>-<slug>/`,
-  write `README.md` inside
+  and atomically create the README plus all three schema-v1 YAML documents
+- `memon experiment doc {show,render,validate,lint} <id> [section]` —
+  read/check the structured bundle; these commands do not provide YAML CRUD
 - `memon experiment link|unlink <exp> <run>` — bidirectional bind
 - `memon experiment delete <exp> [--force]` — cascade-unlink + delete
-  the experiment folder. Default refuses if the folder has non-README
-  content; `--force` blows away the whole folder including scratch
+  the experiment folder. Default ignores the four canonical bundle files but
+  refuses other scratch content; `--force` removes the whole folder
 - `memon experiment warning add <exp-id-or-run-dir> [--run <r>] --category C --message M` —
-  writes to the exp doc's `## Warnings`; the run-dir-id form is
+  permanently supported compatibility entry that writes to the Experiment's
+  `## Warnings`; every warning CLI invocation prints exactly one
+  non-suppressible `[deprecated]` notice directing Agents to
+  `memon-write-experiment-doc`. The run-dir-id form is
   supported and writes through to the parent exp doc (with `--run`
   disallowed in that form)
 - `memon run rename <run> <new-slug>` — rename preserving timestamp suffix
@@ -134,13 +145,15 @@ plus inline at the top of each expanded run panel):
 **Web endpoints**:
 - `GET /api/experiments[?project=…]` — exp doc list with effective times
 - `GET /api/experiments/:id` — exp doc detail incl. `memberRuns[]` and
-  `effectiveCreatedAt` / `effectiveUpdatedAt`
+  `effectiveCreatedAt` / `effectiveUpdatedAt`, ordered raw sections, managed
+  documents/projections, diagnostics, and separate bundle/readme mtimes
 - `POST /api/experiments` — create (web equivalent of CLI create)
 - `DELETE /api/experiments/:id[?force=true]` — cascade-unlink + delete
 - `POST /api/experiments/:id/link` / `:id/unlink` — bind / release
 - `PUT /api/experiments/:id/readme` — write exp doc body with mtime+hash lock
 - `GET|POST|PATCH|DELETE /api/experiments/:id/warnings[/:rowId]` —
-  Warnings table (with `Run` column and per-row `run` attribution)
+  deprecated-compatible Warnings table API (with `Run` column and per-row
+  `run` attribution); official Agent writes route through the bundle writer
 - `PUT /api/runs/:id/readme` — id-addressed write for run README;
   bumps `updated_at` server-side and returns `finalContent` so the
   editor re-baselines its buffer

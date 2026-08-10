@@ -1,401 +1,148 @@
 ---
 name: memon-digest-journal
-description: Run an integrity sweep over the project's experiments, fix what needs fixing in conversation with the user, then produce a date-keyed digest covering everything since the last digest cursor and advance `last_digest_at`. The "doctor" skill is folded in — issue triage happens here, not separately.
-argument-hint: <usually empty; the skill works out the window automatically>
-license: MIT
-metadata:
-  author: memset0
-  version: "0.2.0"
+description: Run the project's integrity sweep, review/fix issues with the user, summarize the next non-overlapping Journal window into a date-keyed digest, and advance last_digest_at safely. Use for periodic status synthesis and doctor checks, including the current Experiment YAML schemas and managed-section contract.
 ---
 
 # memon-digest-journal
 
-The **only** skill that updates `last_digest_at` in docs/journal.md
-frontmatter. Each invocation:
+Produce a cursor-advancing periodic digest and run the integrated integrity
+sweep. Theme reports are separate and never advance the Journal cursor.
 
-1. Snapshots a single non-overlapping time window since the previous
-   digest cursor.
-2. Runs the integrity sweep formerly known as `memon-doctor` (FINISHED
-   w/ no Result, stale RUNNING, parse errors, orphan hypothesis refs,
-   …) and walks the user through fixing each issue.
-3. Writes a digest into `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`
-   covering that window — same date → same file (appended), new date →
-   new file with the next global N.
-4. Advances `last_digest_at` to the snapshot point.
+## Preflight
 
-There is **no** separate `memon-doctor` skill. The integrity sweep only
-makes sense as a precondition for advancing the cursor — running them
-together avoids the "I ran doctor but forgot to digest after fixing"
-failure mode.
+Run `memon --project-root . --format json fs-version check` first. Continue only
+for `match`; otherwise follow `../PREFLIGHT.md`.
 
-For theme-driven, free-form narratives that DON'T touch the cursor (e.g.
-"everything I learned about H0007 across the past three weeks"), use
-`memon-write-report` instead — that's a separate, cursor-independent
-artifact at `docs/reports/R<NNNN>-<slug>.md`.
+## Stable coverage window
 
-## Preflight — FS convention version
+At invocation start, capture:
 
-Run `memon fs-version check --project-root . --format json` as the first
-step. If `status !== "match"`, STOP and follow the branch protocol in
-`../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
+- `INVOCATION_TIME`: ISO8601 with timezone offset;
+- `OBSERVED_LAST_DIGEST_AT`: the current Journal cursor.
 
-## When to use
-
-- It's been days / a sprint since the last digest, and the user wants the periodic sweep + cursor advance
-- The integrity sweep (formerly `memon-doctor`) needs to run alongside — there is no separate doctor skill
-- The user asks "what happened recently?" without a specific theme
-- A pre-meeting / pre-review status snapshot is wanted
-
-## When NOT to use
-
-- ❌ Theme-driven narrative ("everything about H0007") — that's `memon-write-report`
-- ❌ Just appending one event to the journal — that's `memon-append-journal`
-- ❌ For status changes on an experiment — `memon experiment status set` directly
-- ❌ When the user explicitly wants to skip the integrity sweep — there's no opt-out; this skill folds doctor in
-
-## File naming
-
-Digests live at `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`:
-
-- `D` capital prefix.
-- `<NNNN>` 4-digit zero-padded global counter — `max(N) + 1` across the
-  whole `docs/digests/` directory. List existing `D*-*.md`, extract the
-  numeric portion, take the max, increment, and `printf '%04d'`.
-- `<YYYY-MM-DD>` is the local-time date of this invocation
-  (`date +%Y-%m-%d`). Both informative and the dedup key:
-  - if a `D*-${today}.md` already exists, **append** to it.
-  - otherwise **create** `D<NNNN>-${today}.md` (zero-padded).
-
-User does not pick a slug or pick the file — date and global N are both
-auto-assigned.
-
-## Coverage model — strictly non-overlapping intervals
-
-Each digest covers an interval `(prev_last_digest_at, INVOCATION_TIME]`,
-where:
-
-- `prev_last_digest_at` is whatever the JOURNAL frontmatter says when
-  the skill starts (or the oldest event's timestamp if `null`).
-- `INVOCATION_TIME` is **captured at skill start** and held fixed for
-  the entire run.
-
-Consecutive digests are exactly adjacent: `digest_n.to == digest_{n+1}.from`.
-No gaps, no overlaps. This eliminates the "did I already digest this
-event?" question.
-
-If the same date sees two invocations, the second's window starts where
-the first's ended (because the first advanced `last_digest_at`). The
-second appends to the same date's file with its own coverage entry.
-
-## Concurrency safety
-
-Holding a stable `INVOCATION_TIME` snapshot is what makes this race-safe
-even when other agents / humans are appending events concurrently:
-
-- Events with timestamp **>** `INVOCATION_TIME` are visible (they're in
-  JOURNAL on disk) but **deliberately ignored** for this digest. They
-  belong to the next one.
-- The skill MUST also remember `OBSERVED_LAST_DIGEST_AT` (the cursor
-  value at skill start) and re-read the cursor immediately before
-  calling `digest-mark`. If the on-disk value differs, another digest
-  ran in parallel — surface the race to the user, leave the digest file
-  in place, and **do not advance** the cursor (the user resolves
-  manually).
-
-Carry both `INVOCATION_TIME` and `OBSERVED_LAST_DIGEST_AT` through the
-entire conversation; do not lose them across the doctor / interactive
-phase.
-
-## Frontmatter
-
-```yaml
----
-id: D<NNNN>
-date: 2026-05-04
-covers:
-  from: 2026-05-02T20:00:00+08:00
-  to:   2026-05-04T11:30:00+08:00
-created_at: 2026-05-04T11:35:00+08:00
-updated_at: 2026-05-04T11:35:00+08:00
----
-```
-
-- `covers.from` — set once at file creation, never moves.
-- `covers.to` — bumped on each in-day re-invocation that extends the
-  window (still strictly non-overlapping with the next day's digest).
-- `created_at` — set once, never moves.
-- `updated_at` — bumped on every write.
-- **No `periods` list** — the digest covers a single contiguous window.
-  For discontinuous theme-based collections, use `memon-write-report`.
-
-## Body shape
-
-```markdown
-# D<NNNN>: <YYYY-MM-DD>
-
-<prose summary of this digest's window, ~300-500 words, grouped by:>
-
-- Experiments created (CREATE)
-- Status transitions (STATUS)
-- Agent observations (NOTE)
-- Open requests (REQUEST)
-- Errors (ERROR)
-- Archived runs (ARCHIVE)
-
-## Integrity sweep
-
-<bulleted summary of what the doctor pass found and what was done about each:
- "fixed", "downgraded to FAILED", "archived by user later", "skipped (deferred)">
-
-## Update <later-time>      ← added by an in-day re-invocation
-<events from the new sub-window>
-```
-
-## Workflow
-
-### 1. Snapshot the window
-
-Capture `INVOCATION_TIME` and `OBSERVED_LAST_DIGEST_AT` at the very
-start, before doing anything else. **Hold them in conversation memory
-through the entire run.**
+The digest covers `(OBSERVED_LAST_DIGEST_AT, INVOCATION_TIME]`. Events arriving
+later belong to the next digest even if visible before this workflow completes.
+Carry both values unchanged through the interactive integrity sweep.
 
 ```sh
 INVOCATION_TIME=$(date -Iseconds)
-JOURNAL_JSON=$(memon journal read --project-root . --limit 1000)
-OBSERVED_LAST_DIGEST_AT=$(echo "$JOURNAL_JSON" | jq -r .lastDigestAt)
+JOURNAL_JSON=$(memon --project-root . journal read --limit 1000)
+OBSERVED_LAST_DIGEST_AT=$(printf '%s' "$JOURNAL_JSON" | jq -r .lastDigestAt)
 ```
 
-If `OBSERVED_LAST_DIGEST_AT` is `null`, this is the first digest — set
-it to the timestamp of the oldest event (or just empty-string and treat
-the entire journal as in scope).
+For a null cursor, cover from the oldest event. Read events through the fixed
+upper bound; never use “now” again later.
 
-### 2. Read events in window
+## Integrity sweep
+
+Run:
 
 ```sh
-EVENTS=$(memon journal read --project-root . \
-  --since "$OBSERVED_LAST_DIGEST_AT" --limit 1000 \
-  | jq --arg until "$INVOCATION_TIME" \
-       '.events |= map(select(.timestamp <= $until))')
+memon --project-root . --format json doctor
 ```
 
-(`memon journal read` doesn't take `--until` directly in v1; the jq
-filter does the upper bound.)
+The sweep must inspect current Experiment bundles as well as Runs, hypotheses,
+and Journal state. Triage at least:
 
-### 3. Integrity sweep (formerly `memon-doctor`)
+- malformed/missing README frontmatter or canonical sections;
+- unknown/duplicate Experiment headings (reported but never hidden/deleted);
+- managed-section pointer conflicts;
+- missing/invalid/ahead/behind YAML `schema_version`;
+- invalid YAML fields or status values;
+- duplicate IDs, missing references, dependency cycles;
+- Investigation references to unknown Variants;
+- Variant references to missing, foreign, or duplicated Runs;
+- a Run present in both `runs` and `attempts`;
+- Variant/Run status contradictions;
+- parent/child terminal-status contradictions;
+- stale active Runs and terminal Runs with incomplete `Result`;
+- `RESOLVED` Experiments with empty Conclusion;
+- invalid hypothesis references and open Warnings.
+
+Strict linting must not become lossy repair. Unsupported sections and virtual
+section conflicts remain visible. For an Experiment semantic fix, invoke
+`memon-write-experiment-doc`; never call the deprecated warning CLI or rewrite
+the bundle inside this skill. Re-run doctor after each accepted fix.
+
+For every issue, show the evidence and one recommended action in Chinese. Let
+the user choose fix/defer when interpretation is required. Record `fixed`,
+`deferred`, or `unresolved` in the digest. Do not advance the cursor while a
+doctor error that makes the digest materially unreliable remains unresolved.
+
+## Digest file
+
+Use `docs/digests/D<NNNN>-<YYYY-MM-DD>.md`:
+
+- local date comes from `INVOCATION_TIME`;
+- use the next global zero-padded D ID for a new date;
+- append an Update section to the existing same-date digest;
+- never merge discontinuous windows.
+
+Frontmatter:
+
+```yaml
+---
+id: D0007
+date: 2026-08-10
+covers:
+  from: 2026-08-09T08:00:00+00:00
+  to: 2026-08-10T08:00:00+00:00
+created_at: 2026-08-10T08:05:00+00:00
+updated_at: 2026-08-10T08:05:00+00:00
+---
+```
+
+On same-date update, preserve `id`, `date`, `covers.from`, and `created_at`;
+advance `covers.to`, update `updated_at`, and append `## Update <ISO time>`.
+
+## Synthesis
+
+Draft a concise narrative grouped by meaningful changes rather than dumping
+events. Include:
+
+- Experiments created or resolved;
+- Implementation and Investigation progress;
+- new/changed Variants and selected Results;
+- failed/interrupted Attempts and recovery implications;
+- new Findings, Limitations, Conclusions, and Warnings;
+- hypothesis changes, open requests, errors, and archives;
+- the integrity-sweep outcome.
+
+Render relevant structured sections when needed:
 
 ```sh
-REPORT=$(memon doctor --project-root . --format json)
+memon --project-root . --format human experiment doc render <id> investigation
+memon --project-root . --format human experiment doc render <id> results
 ```
 
-The CLI returns a list of issues with `experimentId / code / severity /
-message / suggestedAction`. Codes (v1):
+Do not infer evidence from a hard-coded Run count. Preserve the distinction
+between Runs selected as Results and discarded Attempts.
 
-| code | severity | typical fix |
-|---|---|---|
-| `MISSING_RESULT` | warn | write Result via `memon experiment readme write`, or `status set FAILED` |
-| `MISSING_CONCLUSION` | warn | write Conclusion |
-| `FAILED_NO_NOTE` | info | write a 1-line failure note in Result via `readme write` |
-| `STALE_RUNNING` | info | check process; `status set FAILED` if dead, skip if still alive |
-| `PARSE_ERROR` | error | inspect README, fix structure, save via `readme write` |
-| `PARSE_WARNING` | warn | inspect, decide |
-| `ORPHAN_HYPOTHESIS_REF` | warn | edit README to fix the H-id, or add the hypothesis to docs/hypotheses.md |
-| `WARN_UNRESOLVED` | info | surface the open warnings to the user; offer to add new ones, but DO NOT resolve / reopen / delete |
+Show the draft before writing when the user is actively collaborating. In an
+explicitly autonomous periodic task, write after validation and summarize what
+was written.
 
-(Note: archive is not in this list — the user reviews failed runs in the
-web UI and archives there. Don't propose `archive` from this skill.)
+## Race check and cursor advance
 
-Walk the user through the issues one at a time:
+Immediately before advancing the cursor, reread `last_digest_at`. If it differs
+from `OBSERVED_LAST_DIGEST_AT`, another digest won the race. Leave the draft/file
+visible for reconciliation, do not advance the cursor, and report the conflict.
 
-```
-[<severity>] <experimentId>  <code>
-  <message>
-  → <suggestedAction>
-
-What to do? (1) fix in editor / (2) downgrade status / (3) skip
-```
-
-Each fix MUST carry `--expected-mtime` from a fresh
-`memon show <id> --format json`; on CONFLICT (exit 9), refresh and ask
-the user how to merge. After each action, re-run `memon doctor` to
-confirm the issue is gone (or explicitly track "skipped" for the digest
-body's integrity-sweep section).
-
-Helper for the README-rewrite fixes (most common path):
+Otherwise:
 
 ```sh
-# fix_readme <id> <new-body-on-stdin> → echoes new mtime on success.
-# Exits 9 on CONFLICT (caller decides whether to retry); 1 on other failure.
-fix_readme() {
-  local id="$1" body
-  body=$(cat)
-  local mtime
-  mtime=$(memon show "$id" --project-root . --format json | jq -r .mtime)
-  local out rc
-  out=$(printf '%s' "$body" \
-        | memon experiment readme write "$id" --project-root . \
-            --expected-mtime "$mtime")
-  rc=$?
-  case "$rc" in
-    0) echo "$out" | jq -r .mtime ;;
-    9) echo "CONFLICT" >&2; return 9 ;;
-    *) echo "WRITE_FAILED rc=$rc" >&2; return 1 ;;
-  esac
-}
-
-# Usage:
-NEW_MTIME=$(fix_readme "$EXP_ID" <<EOF
-$NEW_README_BODY
-EOF
-)
+memon --project-root . journal digest-mark --at "$INVOCATION_TIME"
 ```
 
-For status-only fixes (e.g. downgrade FINISHED → FAILED), use
-`memon experiment status set --to <STATUS> --expected-mtime <mtime>`
-with the same fresh-mtime discipline; the helper above is for full
-README rewrites.
+Advance only after the digest write succeeds. Never move the cursor past the
+fixed upper bound or backward.
 
-#### 3a. Per-experiment Warnings review (append-only)
+## Guardrails
 
-After the doctor pass above is clean (or after the user explicitly
-skips remaining items), walk a per-experiment Warnings review for the
-following scope:
-
-- **(a)** every experiment whose `README.md` mtime falls inside the
-  digest window OR whose status changed in the journal events being
-  digested, AND
-- **(b)** every experiment that currently has at least one warning
-  with `Status=OPEN` (regardless of mtime) — these are the
-  `WARN_UNRESOLVED` items the doctor pass already flagged.
-
-For each experiment in the union of (a) ∪ (b):
-
-1. Fetch the current state:
-   ```sh
-   memon experiment warning list "$EXP_ID" --project-root . --format json
-   ```
-2. Look at the run with **full current context** — the latest journal
-   events from this digest window, baselines or comparison runs that
-   landed during the window, any new evidence on referenced
-   hypotheses. Ask:
-   - Should a new warning be appended? (config drift surfaced by a
-     comparison that didn't exist before, methodology issue noticed
-     in light of a new paper, baseline mismatch from a new ref run)
-   - Are existing OPEN warnings still relevant? (a 14-day-old open
-     warning the user keeps deferring — surface it, don't resolve it)
-3. Surface findings to the user as a list **and wait for explicit
-   confirmation per proposal** before writing anything:
-
-```
-For experiment <id>:
-  Existing OPEN warnings: 2
-    - [result] loss spike at step 1500 (12 days open)
-    - [config] bs=256 vs paper 512 (3 days open)
-  Proposed new warnings:
-    1. [compare] this run is now 0.4 acc points below the freshly
-       added baseline `cmp-260512-...`
-  → which to append? (1 / all / none)
-```
-
-4. **Append only what the user confirmed** via:
-
-```sh
-memon experiment warning add "$EXP_ID" --project-root . \
-  --category compare \
-  --message "this run is now 0.4 acc points below the freshly added baseline cmp-260512-..."
-```
-
-5. The Warnings review's outcome (per experiment: existing OPEN
-   counts, newly appended warnings, anything the user explicitly
-   declined) goes into the digest body's `## Integrity sweep`
-   section so the audit trail survives.
-
-#### Hard rule — append-only
-
-You SHALL NOT call `memon experiment warning resolve`,
-`memon experiment warning reopen`, or `memon experiment warning delete`
-during the doctor sweep or anywhere else in this skill. Even if a
-`WARN_UNRESOLVED` warning is obviously stale, even if the user says in
-conversation "this one is fine, mark it resolved" — point the user at
-the web UI or have them type the CLI command themselves. State changes
-on warnings are **human-only acts** by design; the digest skill's job
-is to surface them, not to clear them.
-
-### 4. Determine the target file
-
-```sh
-TODAY=$(date -d "$INVOCATION_TIME" +%Y-%m-%d 2>/dev/null \
-        || date -j -f "%Y-%m-%dT%H:%M:%S%z" "$INVOCATION_TIME" "+%Y-%m-%d")
-EXISTING=$(ls "docs/digests/D"*-"${TODAY}".md 2>/dev/null | head -1)
-
-if [ -n "$EXISTING" ]; then
-  TARGET="$EXISTING"     # append mode
-else
-  NEXT_N=$(ls "docs/digests/D"*-*.md 2>/dev/null \
-    | sed -E 's|.*/D([0-9]+)-.*\.md|\1|' \
-    | sort -n | tail -1)
-  NEXT_N=$((${NEXT_N:-0} + 1))
-  TARGET=$(printf "docs/digests/D%04d-%s.md" "$NEXT_N" "$TODAY")
-fi
-```
-
-Filename always uses 4-digit zero-padded `D<NNNN>` (e.g. `D0001-2026-05-04.md`).
-
-### 5. Write the digest
-
-**New file**: full frontmatter + body (events grouped + integrity-sweep
-section).
-
-**Append to existing**: extend `covers.to` to `$INVOCATION_TIME`, bump
-`updated_at`, and append a `## Update <ISO>` section to the body. Don't
-touch `covers.from` or `created_at`.
-
-Show the draft inline before writing. After the user confirms, write
-the file.
-
-### 6. Race check, then advance the watermark
-
-We only need the `last_digest_at` field of docs/journal.md frontmatter — no
-need to call `memon journal read` (which would also re-parse all
-events) for that. Plain awk on the frontmatter is enough:
-
-```sh
-CURRENT_LAST_DIGEST_AT=$(awk '
-  /^---$/ { c++; next }
-  c == 1 && /^last_digest_at:/ { sub(/^last_digest_at:[ \t]*/, ""); print; exit }
-' docs/journal.md)
-
-if [ "$CURRENT_LAST_DIGEST_AT" != "$OBSERVED_LAST_DIGEST_AT" ]; then
-  # Another digest finished in parallel.
-  # Surface to the user; DO NOT advance the cursor; DO NOT roll back
-  # the digest file we already wrote (let the user reconcile manually).
-  exit 1
-fi
-
-memon journal digest-mark --project-root . --at "$INVOCATION_TIME"
-```
-
-The race happens when two parallel `memon-digest-journal` invocations
-overlap. The second one to reach this step sees a different cursor and
-backs out cleanly. The user can then look at both digest files, decide
-how to merge, and manually `digest-mark` if desired.
-
-## Anti-patterns
-
-- ❌ Never advance `last_digest_at` past `INVOCATION_TIME`.
-- ❌ Never advance `last_digest_at` if the race check fails.
-- ❌ Never silently rewind `last_digest_at` (only ever forward).
-- ❌ Never include events with timestamp > `INVOCATION_TIME` in this
-  digest, even if they're already on disk.
-- ❌ Don't write reports here — those are `memon-write-report`'s job.
-  Reports and digests are separate artifacts in separate directories.
-- ❌ Don't propose `archive` from this skill — the user does that on
-  the web UI at their own pace.
-
-## Errors
-
-| exit | meaning |
-|---|---|
-| 0 | digest written + cursor advanced |
-| 1 | failure (race detected, fs error, jq missing, etc.); read the message |
-| 2 | BAD_REQUEST (e.g. `--at` not ISO8601 with offset) |
-| 9 | CONFLICT during one of the in-loop README writes (skill should refresh + retry; if it surfaces here, the user-driven retry also conflicted) |
+- Only this skill updates `last_digest_at`.
+- Never include events newer than `INVOCATION_TIME`.
+- Never use this workflow for a theme-driven report.
+- Never silently repair unknown sections or managed-section conflicts.
+- Never edit Experiment files directly; use `memon-write-experiment-doc`.
+- Never call the deprecated warning CLI.
+- Never archive Runs automatically.

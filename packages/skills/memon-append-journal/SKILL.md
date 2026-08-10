@@ -1,11 +1,6 @@
 ---
 name: memon-append-journal
 description: Manual + thin wrapper for the `memon journal append` CLI — append a single event to a project's docs/journal.md (NOTE / REQUEST / ERROR). Use when an agent wants to record an observation or open a question. For periodic organization / cleanup, use `memon-digest-journal` instead.
-argument-hint: <event tag and body, optionally with experiment id>
-license: MIT
-metadata:
-  author: memset0
-  version: "0.3.0"
 ---
 
 # memon-append-journal
@@ -21,7 +16,7 @@ this one. This skill is just for "append one event right now".
 
 ## Preflight — FS convention version
 
-Run `memon fs-version check --project-root . --format json` as the first
+Run `memon --project-root . --format json fs-version check` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
@@ -39,8 +34,9 @@ step. If `status !== "match"`, STOP and follow the branch protocol in
 - ❌ For status changes — those go through `memon experiment status set`,
   which emits a `[STATUS]` event automatically
 - ❌ For digest summaries — that's `memon-digest-journal`'s job
-- ❌ For things that belong in an experiment's README sections (Motivation,
-  Method, Result, Conclusion, Caveats) — write those into the README
+- ❌ For things that belong in an Experiment bundle (Motivation, Design,
+  Implementation, Investigation, Results, Findings, Limitations, Conclusion,
+  Warnings) — invoke `memon-write-experiment-doc`
 
 ## Tags
 
@@ -52,7 +48,7 @@ step. If `status !== "match"`, STOP and follow the branch protocol in
 | `ARCHIVE` | recorded automatically by `memon run archive` (or the v2 `memon experiment archive` alias) — don't emit manually |
 | `CREATE` | recorded automatically when an experiment dir first appears — don't emit manually |
 | `STATUS` | recorded automatically by `memon run status set` — REJECTED by `memon journal append` (exit 2 BAD_REQUEST); never emit manually |
-| `WARNING` | recorded automatically by `memon experiment warning {add,resolve,reopen,delete}` — don't emit manually |
+| `WARNING` | legacy audit event emitted by the permanently deprecated warning CLI — don't emit manually; current skills maintain Warnings through `memon-write-experiment-doc` |
 | `EXPERIMENT` | v3: emitted by `memon experiment {create,edit,delete}`. Don't emit manually. |
 | `BIND` | v3: emitted by `memon experiment {link,unlink}` when a run is bound / unbound. Don't emit manually. |
 | `RENAME` | v3: emitted by `memon run rename` (op=run-rename old=… new=…). Don't emit manually. |
@@ -69,14 +65,13 @@ duplicate / interfere with the audit trail those commands maintain.
    path or `.`; never omit the flag.)
 2. Pick the tag (default `NOTE` unless the user said otherwise).
 3. (Optional) include `--experiment-id <id>` to associate the event with a
-   specific run.
+   specific Experiment.
 4. Run the CLI:
 
 ```sh
-memon journal append \
-  --project-root . \
+memon --project-root . journal append \
   --tag NOTE \
-  --experiment-id "foo-260504-141512" \
+  --experiment-id "E0007-bf16-numerics" \
   --body "8B fp16 sweep converged faster than the bf16 reference; possible Adam-state cancellation effect"
 ```
 
@@ -92,7 +87,8 @@ Output (JSON to stdout):
 - For a REQUEST, end with a question mark or a clear ask
 - If the observation is about a specific experiment, **always** pass
   `--experiment-id` — it lets the journal view filter cleanly later
-- Don't paste log excerpts (use the experiment's `## Caveats` section for those)
+- Don't paste log excerpts (use the Run's `## Result`/artifacts, or the
+  Experiment's `Warnings`/`Limitations` through `memon-write-experiment-doc`)
 
 ### Tone — only when **you (the agent) are composing the body**
 

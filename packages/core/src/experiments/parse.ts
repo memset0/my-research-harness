@@ -12,34 +12,34 @@
 //      for any non-canonical H2 heading.
 
 import matter from 'gray-matter'
-import { ZodError } from 'zod'
+import type { ZodError } from 'zod'
 
 import { isId } from '../ids.js'
+import { splitH2Sections } from '../readme/sections.js'
+import { ExperimentFrontMatterRawSchema } from '../schemas.js'
+import { normalizeExperimentStatus } from '../status.js'
 import {
+  EXPERIMENT_DIR_REGEX,
   type Experiment,
   type ExperimentFrontMatter,
+  type ExperimentManagedDocuments,
+  type ExperimentRawSection,
   type ExperimentSections,
   type ExperimentWarningRecord,
   type ParseIssue,
-  EXPERIMENT_DIR_REGEX,
 } from '../types.js'
-import { ExperimentFrontMatterRawSchema } from '../schemas.js'
-import { normalizeExperimentStatus } from '../status.js'
 import { matterOptions } from '../yaml-engine.js'
-import { splitH2Sections } from '../readme/sections.js'
-
-const STANDARD_EXPERIMENT_SECTIONS = [
-  'Motivation',
-  'Method',
-  'Plan',
-  'Conclusion',
-  'Caveats',
-  'Warnings',
-] as const
+import {
+  CANONICAL_EXPERIMENT_SECTION_HEADINGS,
+  MANAGED_EXPERIMENT_SECTIONS,
+  MANAGED_SECTION_HEADINGS,
+  MANAGED_SECTION_POINTERS,
+} from './documents.js'
 
 export interface ParsedExperiment {
   frontMatter: ExperimentFrontMatter
   sections: ExperimentSections
+  rawSections: ExperimentRawSection[]
   warnings: ExperimentWarningRecord[]
   warningsRaw: string | null
   body: string
@@ -56,10 +56,7 @@ export interface ParsedExperiment {
  * back-compat with v4 call sites; in v5 it is the folder basename
  * (e.g. `E0001-zero-snr-fix`).
  */
-export function parseExperimentReadme(
-  content: string,
-  filenameStem: string,
-): ParsedExperiment {
+export function parseExperimentReadme(content: string, filenameStem: string): ParsedExperiment {
   const errors: ParseIssue[] = []
   const warnings: ParseIssue[] = []
 
@@ -189,11 +186,37 @@ export function parseExperimentReadme(
 
   const sections: ExperimentSections = {
     motivation: getSection('Motivation'),
+    design: getSection('Design'),
+    implementation: getSection('Implementation'),
+    investigation: getSection('Investigation'),
+    results: getSection('Results'),
+    findings: getSection('Findings'),
+    limitations: getSection('Limitations'),
+    conclusion: getSection('Conclusion'),
+    // Compatibility projections for old clients. These headings are not
+    // canonical in v6 and are still surfaced as unsupported raw sections.
     method: getSection('Method'),
     plan: getSection('Plan'),
-    conclusion: getSection('Conclusion'),
     caveats: getSection('Caveats'),
   }
+
+  const canonical = new Set<string>(CANONICAL_EXPERIMENT_SECTION_HEADINGS)
+  const managedByHeading = new Map<string, (typeof MANAGED_EXPERIMENT_SECTIONS)[number]>(
+    MANAGED_EXPERIMENT_SECTIONS.map((kind) => [MANAGED_SECTION_HEADINGS[kind], kind]),
+  )
+  const rawSections: ExperimentRawSection[] = split.entries.map((entry) => {
+    const managedKind = managedByHeading.get(entry.heading)
+    return {
+      ...entry,
+      supported: canonical.has(entry.heading),
+      managed: managedKind !== undefined,
+      pointerValid:
+        managedKind === undefined
+          ? null
+          : entry.body.trim() === MANAGED_SECTION_POINTERS[managedKind] &&
+            entry.body.trim().split(/\r?\n/).length === 1,
+    }
+  })
 
   // Warnings section is preserved as raw for now; structured parsing comes
   // with the 7-column table update in a follow-up task.
@@ -203,27 +226,46 @@ export function parseExperimentReadme(
   // Surface non-canonical sections (anything not in the 6 standard ones).
   // v5: every non-canonical heading produces an explicit `UNKNOWN_H2_SECTION`
   // parse warning so doctor / digest / web `parse_warnings` can flag them.
-  for (const heading of split.order) {
-    if (
-      !STANDARD_EXPERIMENT_SECTIONS.includes(
-        heading as (typeof STANDARD_EXPERIMENT_SECTIONS)[number],
-      )
-    ) {
-      // Carry-over from v2: the legacy `New Hypotheses` section is no longer
-      // part of the experiment doc schema. Surface a structured warning so
-      // the user moves the content into Motivation / Conclusion.
-      if (heading === 'New Hypotheses') {
+  for (const section of rawSections) {
+    const heading = section.heading
+    if (!section.supported) {
+      // Method/Plan/Caveats are a recognised v5 compatibility shape. They
+      // remain unsupported (strict lint reports them), but ordinary tolerant
+      // reads do not add noise beyond `rawSections.supported = false`.
+      if (heading === 'Method' || heading === 'Plan' || heading === 'Caveats') {
+        // Continue with duplicate checks below.
+      } else {
+        // Carry-over from v2: the legacy `New Hypotheses` section is no longer
+        // part of the experiment doc schema. Surface a structured warning so
+        // the user moves the content into Motivation / Conclusion.
+        if (heading === 'New Hypotheses') {
+          warnings.push({
+            field: 'section.New Hypotheses',
+            message:
+              'legacy `## New Hypotheses` section in experiment doc — relocate into Motivation/Conclusion',
+            severity: 'warning',
+          })
+          continue
+        }
         warnings.push({
-          field: 'section.New Hypotheses',
-          message:
-            'legacy `## New Hypotheses` section in experiment doc — relocate into Motivation/Conclusion',
+          field: `section.${heading}`,
+          message: `UNKNOWN_H2_SECTION: heading "## ${heading}" is not in the canonical experiment doc section list; content is preserved verbatim but not categorised`,
           severity: 'warning',
         })
-        continue
       }
+    }
+    if (section.occurrence > 1) {
       warnings.push({
         field: `section.${heading}`,
-        message: `UNKNOWN_H2_SECTION: heading "## ${heading}" is not in the canonical experiment doc section list; content is preserved verbatim but not categorised`,
+        message: `DUPLICATE_H2_SECTION: heading "## ${heading}" occurs more than once; every occurrence is preserved for compatibility rendering`,
+        severity: 'warning',
+      })
+    }
+    if (section.managed && !section.pointerValid) {
+      const kind = managedByHeading.get(heading)!
+      warnings.push({
+        field: `section.${heading}`,
+        message: `MANAGED_SECTION_NOT_STUB: "## ${heading}" must contain exactly: ${MANAGED_SECTION_POINTERS[kind]}; original content is preserved`,
         severity: 'warning',
       })
     }
@@ -232,6 +274,7 @@ export function parseExperimentReadme(
   return {
     frontMatter,
     sections,
+    rawSections,
     warnings: [], // structured parsing TBD
     warningsRaw,
     body,
@@ -247,15 +290,26 @@ export function parseExperimentReadme(
  */
 export function buildExperimentRecord(
   parsed: ParsedExperiment,
-  meta: { id: string; project: string; path: string; mtime: number },
+  meta: {
+    id: string
+    project: string
+    path: string
+    mtime: number
+    /** README-only lock time; defaults to mtime for compatibility callers. */
+    readmeMtime?: number
+    documents?: ExperimentManagedDocuments | null
+  },
 ): Experiment {
   return {
     id: meta.id,
     project: meta.project,
     path: meta.path,
     mtime: meta.mtime,
+    readmeMtime: meta.readmeMtime ?? meta.mtime,
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
+    rawSections: parsed.rawSections,
+    documents: meta.documents ?? null,
     warnings: parsed.warnings,
     warningsRaw: parsed.warningsRaw,
     body: parsed.body,
@@ -288,11 +342,18 @@ function emptyResult(
     },
     sections: {
       motivation: null,
+      design: null,
+      implementation: null,
+      investigation: null,
+      results: null,
+      findings: null,
+      limitations: null,
+      conclusion: null,
       method: null,
       plan: null,
-      conclusion: null,
       caveats: null,
     },
+    rawSections: [],
     warnings: [],
     warningsRaw: null,
     body,

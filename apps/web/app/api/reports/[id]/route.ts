@@ -9,6 +9,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
 import { PathSafetyError, assertWithinProjectRoots } from '../../../../lib/path-safety'
+import { findReport, readReport, writeReport } from '../../../../lib/server/reports'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         { status: 404 },
       )
     }
-    const entry = rt.reportsCache.getList(dir).find((r) => r.id === id)
+    const entry = await findReport(dir, id)
     if (!entry) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `report "${id}" not found in project "${projectName}"` } },
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       }
       throw err
     }
-    const fresh = await rt.reportsCache.getContent(entry.path)
+    const fresh = await readReport(entry)
     if (!fresh) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `report "${id}" file disappeared` } },
@@ -72,6 +73,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       mtime: fresh.mtime,
       hash: fresh.hash,
       content: fresh.content,
+      format: fresh.format,
     })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
@@ -121,7 +123,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
         { status: 404 },
       )
     }
-    const entry = rt.reportsCache.getList(dir).find((r) => r.id === id)
+    const entry = await findReport(dir, id)
     if (!entry) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `report "${id}" not found` } },
@@ -139,12 +141,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       }
       throw err
     }
-    const result = await rt.reportsCache.putContent(
-      entry.path,
-      body.content,
-      body.expectedMtime,
-      body.expectedHash,
-    )
+    const result = await writeReport(entry, body.content, body.expectedMtime, body.expectedHash)
     if (result.ok) {
       return NextResponse.json({ ok: true, mtime: result.mtime, hash: result.hash })
     }

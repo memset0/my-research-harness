@@ -3,10 +3,10 @@
 // and that a non-null `sections.plan` body flows through the Markdown
 // component (so checkboxes render as actual <input> elements).
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import { renderWithQuery } from '../utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentPage } from '../../components/experiment-page'
+import { renderWithQuery } from '../utils'
 
 vi.mock('../../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/api')>()
@@ -25,17 +25,14 @@ import { fetchExperimentDoc } from '../../lib/api'
 
 const EXP_ID = 'E0002-plan-fixture'
 
-const PLAN_BODY = [
-  '- [x] Done task',
-  '- [ ] Pending task',
-  '  - [ ] Nested pending',
-].join('\n')
+const PLAN_BODY = ['- [x] Done task', '- [ ] Pending task', '  - [ ] Nested pending'].join('\n')
 
 const BASE_EXP = {
   id: EXP_ID,
   project: 'project-a',
   path: `/p/a/docs/experiments/${EXP_ID}.md`,
   mtime: 1000,
+  readmeMtime: 1000,
   frontMatter: {
     id: EXP_ID,
     slug: 'plan-fixture',
@@ -82,9 +79,7 @@ describe('ExperimentPage — Plan section', () => {
       expect(screen.getByText('Motivation')).toBeInTheDocument()
     })
 
-    const headings = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-slot="card-title"]'),
-    )
+    const headings = Array.from(container.querySelectorAll<HTMLElement>('[data-slot="card-title"]'))
       .map((h) => h.textContent?.trim())
       .filter(Boolean) as string[]
 

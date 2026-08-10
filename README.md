@@ -9,8 +9,9 @@ project. `squeue + grep + ls` doesn't scale; you need a single place to see
 **what's running, what's done, what verified what hypothesis**, with edits
 that flow back into the same files an agent can read.
 
-`memon` is that single place. Everything lives as plain markdown on disk —
-delete the tool and your data is still there, fully readable.
+`memon` is that single place. Everything lives as plain Markdown, YAML, and
+optional Report assets on disk — delete the tool and your data is still there,
+fully readable.
 
 ## 60-second quickstart
 
@@ -35,9 +36,10 @@ The `config.example.yml` ships pointing at `mock/project-a` and
 
 memon distinguishes two units on disk:
 
-- **Experiment** (canonical): `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md`
-  — the long-lived motivation / method / conclusion / caveats / warnings
-  doc. One per investigation; can have many member runs.
+- **Experiment** (canonical):
+  `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` — a long-lived README plus
+  structured Implementation, Investigation, and Results YAML. One per
+  investigation; can have many member Runs and Variants.
 - **Run**: a directory matching base-name regex `^.+-\d{6}-\d{6}$` (e.g.
   `foo-260503-082800`). Owns the per-attempt setup / result / artifacts.
   The parent directory name is irrelevant — `logs/`, `runs/`, anywhere works.
@@ -60,13 +62,25 @@ sides disagree:
 Run slugs MAY repeat across timestamps within a project — only experiment
 slugs are constrained to be unique.
 
-### Per-experiment doc `docs/experiments/E<NNNN>-<slug>.md`
+### Per-experiment bundle `docs/experiments/E<NNNN>-<slug>/`
 
-```yaml
+```text
+E0001-fsdp-collective/
+├── README.md
+├── implementation.yaml
+├── investigation.yaml
+└── results.yaml
+```
+
+`README.md` keeps the narrative and the three exact managed-section pointers:
+
+```markdown
 ---
 id: E0001-fsdp-collective
 slug: fsdp-collective
 title: FSDP collective overlap study
+status: OPEN
+archived: false
 runs: [fsdp-collective-260503-082800, fsdp-collective-260504-141200]
 hypotheses: [H0007, H0012]
 tags: [moe, fsdp2]
@@ -75,16 +89,25 @@ updated_at: 2026-05-04T14:12:00+08:00
 ---
 
 ## Motivation
-## Method        # also lists scripts: `- \`scripts/foo/run.sh\` — <purpose>`
+## Design
+## Implementation
+> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.
+## Investigation
+> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
+## Results
+> Managed in [results.yaml](./results.yaml); read and update that file directly.
+## Findings
+## Limitations
 ## Conclusion
-## Caveats
 ## Warnings      # GFM table; see "Warnings" below
 ```
 
-The `## Method` section is also where launcher scripts that drive this
-experiment get registered (one bullet per script,
-`- \`<rel-path>\` — <one-sentence purpose>`), so an agent reading the
-exp doc later can find every script that contributes to it.
+`implementation.yaml` is the hierarchical engineering plan;
+`investigation.yaml` tracks empirical questions and criteria; `results.yaml`
+defines Variants before launch and keeps selected `runs` separate from failed,
+interrupted, invalid, or superseded `attempts`. Agents edit these YAML files
+directly. `memon experiment doc render` provides their shared human-readable
+Markdown projection for the CLI and Web.
 
 ### Per-run `README.md`
 
@@ -112,9 +135,10 @@ wandb: https://...                  # optional
 - `./outputs/loss.csv` — per-step loss
 ```
 
-The run README is intentionally narrow — only `Setup` / `Result` /
-`Artifacts`. The cross-run story (`Motivation`, `Method`, `Conclusion`,
-`Caveats`, `Warnings`) lives on the parent experiment doc.
+The run README is intentionally narrow — only `Motivation` / `Setup` /
+`Result` / `Artifacts`. Cross-Run design, structured work, comparison,
+interpretation, limitations, conclusion, and warnings live in the parent
+Experiment bundle.
 
 `status` enum is uppercase. Each value renders with an emoji in the UI:
 📝 `PENDING` / 🟢 `RUNNING` / ✅ `FINISHED` / ❌ `FAILED` / ❓ `UNKNOWN`.
@@ -132,8 +156,10 @@ mismatch, hardware blips. It's a single GFM table:
 ```
 
 Each row is addressed by a stable `rowId` embedded as an HTML comment.
-Agents may only APPEND `[OPEN]` rows (via `memon experiment warning add`,
-`memon run warning add`, or the web UI's Add form); state changes
+Current skills maintain this section through `memon-write-experiment-doc`.
+The legacy `memon experiment warning ...` and `memon run warning add` CLI
+surfaces remain functional indefinitely, but print a permanent deprecation
+notice on every invocation. State changes
 (resolve / reopen) and deletion are **human-only acts** exposed through
 the same CLI or the web UI's per-row controls. The doctor sweep
 (`memon doctor`) reports a `WARN_UNRESOLVED` info finding for each
@@ -177,6 +203,27 @@ are emitted only by the corresponding write commands; the others can be
 appended manually via `memon journal append`. The `last_digest_at` field
 is **owned by the digest agent** — ordinary writes never touch it.
 
+### Reports
+
+Existing Markdown Reports stay in their single-file form. HTML/interactive
+Reports are opt-in directory bundles:
+
+```text
+docs/reports/R0001-summary.md
+
+docs/reports/R0002-interactive-summary/
+├── README.md
+├── charts.html
+├── data/metrics.json
+└── assets/report.{js,css}
+```
+
+Bundle HTML may fetch sibling JSON and load local or CDN JavaScript/CSS. In
+the bundle README, `![Training curves](./charts.html)` embeds the local HTML as
+a same-origin iframe, while `[Open curves](./charts.html)` remains an ordinary
+link. The first version intentionally does not sandbox Agent-authored iframe
+content; local asset requests are nevertheless confined to that Report bundle.
+
 ## CLI
 
 ```
@@ -189,10 +236,14 @@ memon hypo list                        # list hypotheses
 memon hypo show <H#>                   # show one hypothesis
 memon mock seed                        # copy mock/ to mock-runtime/ (dev)
 
-# Experiment-doc commands (docs/experiments/E<NNNN>-<slug>.md)
+# Experiment-bundle commands (docs/experiments/E<NNNN>-<slug>/)
 memon experiment ls                    # list exp docs
 memon experiment show <id-or-slug>     # show one exp doc
 memon experiment create <slug> [--title TXT] [--from-run <run-dir>]
+memon experiment doc show <id> <implementation|investigation|results>
+memon --format human experiment doc render <id> <implementation|investigation|results>
+memon experiment doc validate <id>     # YAML schema + cross-reference checks
+memon experiment doc lint <id>         # strict README/Results integrity checks
 memon experiment link <exp> <run>      # bind a run to an exp (writes both sides)
 memon experiment unlink <exp> <run>    # release a run
 memon experiment delete <exp> [--force]  # cascade-unlink + delete
@@ -225,11 +276,13 @@ memon fs-version check                 # report the project's .memon/version.jso
 Default output is JSON (agent-friendly). `--format human` switches to
 tabular display for direct terminal use.
 
-The `memon experiment {status set, readme write, archive, unarchive,
-warning *}` family also exists as a back-compat surface — it dispatches
-to the corresponding `memon run …` command and prints a one-line
-`[deprecation]` banner to stderr. New scripts should use `memon run …`
-directly. Set `MEMON_QUIET_DEPRECATIONS=1` to silence the banner.
+Legacy run-shaped aliases in the `memon experiment {status set, readme write,
+archive, unarchive}` family print a one-line `[deprecation]` banner; new scripts
+should use `memon run …` directly. `MEMON_QUIET_DEPRECATIONS=1` may silence
+those v2-alias banners. It never silences the permanent warning-CLI banner:
+every `memon experiment warning ...` or `memon run warning add ...` invocation
+continues to work and reports that Warnings should now be maintained through
+`memon-write-experiment-doc`.
 
 ### Skill mode: `--project-root`
 
@@ -299,14 +352,21 @@ choice via `/memon-<name>`:
 
 | Skill | What it does |
 |---|---|
-| `memon-write-script` | Author or edit a launcher script. Identifies the parent experiment first (3 branches: existing exp / create new / standalone); when bound, registers the script's path in the exp doc's `## Method`. Templates only `mkdir` the run dir + tee the log; the README is the agent's job. |
-| `memon-run-experiment` | Launch an existing script (with optional env-var overrides), capture `code.diff`, write the initial RUNNING README, periodically check in (every ~120 min), finalize on terminal state, post-run anomaly review (appends `[OPEN]` warnings to the exp doc), and iterate through fixes when the script doesn't run cleanly. |
-| `memon-append-journal` | Manual / thin wrapper for `memon journal append` — append a single `NOTE` / `REQUEST` / `ERROR` / `EXPERIMENT` / `BIND` / `RENAME` event to docs/journal.md. (Organizing the journal is `memon-digest-journal`'s job.) |
-| `memon-append-warning` | Manual / thin wrapper for `memon experiment warning add` (or `memon run warning add`). All warnings land on the parent exp doc's `## Warnings` table with the originating run named in the `Run` column. Refuses on orphan runs (prompts to bind via `memon experiment link` first). |
-| `memon-digest-journal` | Run an integrity sweep, produce a date-keyed digest at `docs/digests/D<N>-<YYYY-MM-DD>.md` covering everything since the last cursor, and advance `last_digest_at`. The only skill allowed to update the cursor; race-safe. |
-| `memon-write-report` | Author or update a theme-driven report at `docs/reports/R<N>-<slug>.md`. The report records its own selector (a re-runnable shell snippet) so re-running cheaply tells whether new events qualify. Doesn't touch the cursor. |
-| `memon-propose` | Read-only — suggest 1-3 next experiments tied to open hypotheses. |
-| `memon-migrate-fs` | Upgrade a project root's on-disk schema across `FS_CONVENTION_VERSION` bumps by reading the natural-language guides at `packages/core/migrations/v<N>-to-v<N+1>.md`. User-invoked only; never auto-fires. |
+| `memon-drive` | Coordinate one Experiment across engineering, investigation, predeclared Variants, Runs, findings, and user-approved resolution. Delegates every Experiment write to the canonical writer. |
+| `memon-write-experiment-doc` | Maintain the README plus `implementation.yaml`, `investigation.yaml`, and `results.yaml`; preserve unsupported content; validate and lint after edits. |
+| `memon-write-script` | Author a portable launcher and return entry/recipe/env provenance without creating an Implementation item just because a script exists. |
+| `memon-run-experiment` | Launch and monitor one Run for a predeclared Variant, own its README/artifacts, and route selected `runs` or discarded `attempts` through the Experiment writer. |
+| `memon-append-journal` | Append one cross-project `NOTE` / `REQUEST` / `ERROR` / lifecycle event to `docs/journal.md`. |
+| `memon-digest-journal` | Run the integrity sweep, write a date-keyed digest, and safely advance `last_digest_at`; semantic Experiment fixes go through the writer. |
+| `memon-write-report` | Write a single Markdown Report by default, or an HTML-capable directory bundle only when the user explicitly requests HTML/interactive presentation. |
+| `memon-write-code-review` | Write a project- or Experiment-scoped human review guide and optionally link it to an Implementation item through the writer. |
+| `memon-propose` | Read-only research collaborator that ranks useful next Experiments or Variant sets. |
+| `memon-migrate-fs` | User-invoked staged FS-convention migration with review before production publish. |
+| `memon-notify` | Send an out-of-band Telegram notification; does not mutate the project tree. |
+
+The former `memon-append-warning` skill is intentionally absent. Reinstalling
+skills removes its stale installed directory. Its CLI commands remain as the
+permanently deprecated compatibility surface described above.
 
 Each `SKILL.md` is plain markdown — `cat ~/.claude/skills/memon-*/SKILL.md`
 or read the source under `packages/skills/` to see the exact agent
@@ -335,8 +395,10 @@ hypothesis-binding lives in the exp doc. Two layers, no duplication.
 - **/p/[project]/e/[id]** — exp doc detail page: header (id + title +
   tags + hypotheses) + action bar (Edit markdown / Open Claude Code /
   in-browser terminal); Runs section with collapsible per-run panels
-  (default folded, persisted in localStorage); Motivation / Method /
-  Conclusion / Caveats sections; Warnings table; aggregated Artifacts.
+  (default folded, persisted in localStorage); all canonical v6 sections in
+  README order; YAML-rendered Implementation / Investigation / Results;
+  compatibility diagnostics that keep unknown/duplicate/conflicting content
+  visible; Warnings and aggregated Artifacts.
 - **/p/[project]/r/[id]** — legacy URL; redirects to the parent exp's
   detail page with `?run=<id>` so the corresponding run panel is
   auto-expanded.
@@ -345,7 +407,9 @@ hypothesis-binding lives in the exp doc. Two layers, no duplication.
 - **/p/[project]/journal** — reverse-chronological timeline, filter by
   tag and experiment id, browser-tz timestamps.
 - **/p/[project]/reports** + **/digests** — index pages for the
-  `docs/reports/R<N>-*.md` and `docs/digests/D<N>-<date>.md` files.
+  single-file or directory-bundle Reports and
+  `docs/digests/D<N>-<date>.md` files. Local `.html` image references render
+  as unsandboxed iframes; normal links remain links.
 
 The exp detail page's action bar exposes:
 

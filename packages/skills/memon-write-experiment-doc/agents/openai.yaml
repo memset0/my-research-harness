@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Experiment Doc"
+  short_description: "Maintain a memon Experiment document bundle"
+  default_prompt: "Use $memon-write-experiment-doc to update this Experiment document bundle safely."

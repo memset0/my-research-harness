@@ -99,6 +99,8 @@ export function rewriteV3ExpDoc(input: RewriteV3ExpInput): RewriteV3ExpResult {
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
     warningsRaw: parsed.warningsRaw,
+    rawSections: parsed.rawSections,
+    rawBody: parsed.body,
   })
   return { content, unchanged: false, parsed }
 }

@@ -1,11 +1,6 @@
 ---
 name: memon-notify
-description: Manual + thin wrapper for `memon notify` — push a one-shot Telegram alert to the user when an autonomous run needs their attention. Use when the agent is stuck on a bug it cannot resolve, hit a fatal error, does not know why something died, needs a human judgment call it would otherwise raise via AskUserQuestion, or finished a long-running task the user delegated then walked away from. One notification per significant event — NEVER per loop iteration. Send-only: push and keep working, do not block waiting for a reply.
-argument-hint: <severity> "<title>" [--details … | --details-file -]
-license: MIT
-metadata:
-  author: memset0
-  version: "0.1.0"
+description: "Manual + thin wrapper for `memon notify` — push a one-shot Telegram alert to the user when an autonomous run needs their attention. Use when the agent is stuck on a bug it cannot resolve, hit a fatal error, does not know why something died, needs a human judgment call it would otherwise raise via AskUserQuestion, or finished a long-running task the user delegated then walked away from. One notification per significant event — NEVER per loop iteration. Send-only: push and keep working, do not block waiting for a reply."
 ---
 
 # memon-notify
@@ -48,8 +43,8 @@ Pick the severity that matches your situation:
   event. A 50-step sweep is ONE `done`, not 50 `info`s.
 - ❌ As a durable log — that's `memon-append-journal` (a `[NOTE]` /
   `[ERROR]` event survives; a notification is an ephemeral nudge).
-- ❌ For a routine anomaly that belongs on the experiment doc — that's
-  `memon-append-warning` (one OPEN row for human adjudication).
+- ❌ For durable Experiment warnings or limitations — maintain those through
+  `memon-write-experiment-doc`; a notification is only an ephemeral nudge.
 - ❌ As a blocking wait. If you cannot proceed without an answer in an
   interactive session, use AskUserQuestion, not a notification.
 

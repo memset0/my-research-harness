@@ -46,6 +46,7 @@ export function Markdown({
   children,
   className,
   project,
+  resourceBaseUrl,
 }: {
   children: string
   className?: string
@@ -54,6 +55,13 @@ export function Markdown({
   // and links render as plain external anchors. Threaded from every page
   // that knows which project the markdown belongs to.
   project?: string
+  /**
+   * Base endpoint for relative assets in a directory-style Report. Markdown
+   * images are rewritten beneath it; an image whose target ends in .html or
+   * .htm becomes a same-origin iframe. Intentionally no `sandbox` attribute:
+   * report HTML is trusted Agent-authored content in the v1 trust model.
+   */
+  resourceBaseUrl?: string
 }) {
   const components = useMemo<Components>(
     () => ({
@@ -66,10 +74,12 @@ export function Markdown({
             </GithubPermalinkPreview>
           )
         }
-        const external = !!href && /^https?:\/\//i.test(href)
+        const resolvedHref =
+          href && resourceBaseUrl ? resolveReportResourceUrl(resourceBaseUrl, href) ?? href : href
+        const external = !!resolvedHref && /^https?:\/\//i.test(resolvedHref)
         return (
           <a
-            href={href}
+            href={resolvedHref}
             {...(external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
             {...rest}
           >
@@ -77,8 +87,26 @@ export function Markdown({
           </a>
         )
       },
+      img: ({ node: _node, src, alt, title, ...rest }) => {
+        const resolvedSrc =
+          typeof src === 'string' && resourceBaseUrl
+            ? resolveReportResourceUrl(resourceBaseUrl, src)
+            : null
+        if (resolvedSrc && typeof src === 'string' && isHtmlResource(src)) {
+          return (
+            <iframe
+              src={resolvedSrc}
+              title={alt || title || 'Embedded HTML report'}
+              className="my-4 h-[70vh] min-h-[32rem] w-full rounded-md border bg-background"
+              loading="lazy"
+              data-report-html
+            />
+          )
+        }
+        return <img src={resolvedSrc ?? src} alt={alt ?? ''} title={title} {...rest} />
+      },
     }),
-    [project],
+    [project, resourceBaseUrl],
   )
 
   return (
@@ -139,4 +167,49 @@ export function Markdown({
       </ReactMarkdown>
     </div>
   )
+}
+
+/**
+ * Convert a safe relative report URL to the report-scoped resource endpoint.
+ * Dot-segments are rejected before the browser gets a chance to normalize
+ * them out of the endpoint prefix. The server independently performs lexical
+ * and realpath containment checks.
+ */
+export function resolveReportResourceUrl(baseUrl: string, source: string): string | null {
+  if (
+    source.length === 0 ||
+    source.startsWith('/') ||
+    source.startsWith('#') ||
+    source.startsWith('//') ||
+    /^[a-z][a-z0-9+.-]*:/i.test(source)
+  ) {
+    return null
+  }
+
+  const match = /^([^?#]*)([?#][\s\S]*)?$/.exec(source)
+  const rawPath = match?.[1] ?? source
+  const suffix = match?.[2] ?? ''
+  const rawSegments = rawPath.split('/')
+  while (rawSegments[0] === '.') rawSegments.shift()
+  if (rawSegments.length === 0 || rawSegments.some((segment) => segment.length === 0)) return null
+
+  const encoded: string[] = []
+  for (const raw of rawSegments) {
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(raw)
+    } catch {
+      return null
+    }
+    if (decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
+      return null
+    }
+    encoded.push(encodeURIComponent(decoded))
+  }
+  return `${baseUrl.replace(/\/$/, '')}/${encoded.join('/')}${suffix}`
+}
+
+function isHtmlResource(source: string): boolean {
+  const path = source.split(/[?#]/, 1)[0] ?? ''
+  return /\.html?$/i.test(path)
 }

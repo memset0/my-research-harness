@@ -55,6 +55,7 @@ export class NodeLink {
           id: req.id,
           status: result.status,
           body: result.body,
+          bodyEncoding: result.bodyEncoding,
           headers: result.headers,
         }),
       )

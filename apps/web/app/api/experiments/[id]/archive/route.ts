@@ -8,7 +8,6 @@
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { type NextRequest, NextResponse } from 'next/server'
 import {
   appendJournalEvent,
   formatIsoLocal,
@@ -16,6 +15,7 @@ import {
   readExperimentDoc,
   serializeExperimentReadme,
 } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRuntime } from '../../../../../lib/runtime'
 
@@ -88,6 +88,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       frontMatter: parsedDoc.frontMatter,
       sections: parsedDoc.sections,
       warningsRaw: parsedDoc.warningsRaw,
+      // Archive is frontmatter-only; legacy/unknown/duplicate sections must
+      // remain exactly as the user stored them.
+      rawBody: parsedDoc.body,
     })
 
     const tmpPath = join(
@@ -108,10 +111,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         },
       })
     } catch (err) {
-      const tmpRollback = join(
-        dirname(exp.path),
-        `.${Date.now()}-rollback.archive.tmp`,
-      )
+      const tmpRollback = join(dirname(exp.path), `.${Date.now()}-rollback.archive.tmp`)
       await fs.writeFile(tmpRollback, currentContent, 'utf8')
       await fs.rename(tmpRollback, exp.path)
       throw err
@@ -130,9 +130,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     return NextResponse.json({ ok: true, archived: target, mtime: newStat.mtimeMs })
   } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

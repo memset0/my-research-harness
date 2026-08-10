@@ -6,8 +6,8 @@
 // per-file dirent stat; we layer it on here from the cache state.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import type { ReportSummary } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
+import { discoverReports } from '../../../lib/server/reports'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,12 +29,10 @@ export async function GET(req: NextRequest) {
         { status: 404 },
       )
     }
-    // Sort by id desc — string compare works because ids are zero-padded.
-    const reports: ReportSummary[] = rt.reportsCache.getList(dir).slice().sort((a, b) => {
-      if (a.id > b.id) return -1
-      if (a.id < b.id) return 1
-      return 0
-    })
+    // Discover on request so directory bundles and their README changes are
+    // visible alongside legacy standalone Markdown reports. The old
+    // reportsCache intentionally remains file-only for backward compatibility.
+    const reports = (await discoverReports(dir)).map(({ rootPath: _rootPath, ...summary }) => summary)
     return NextResponse.json({ reports })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })

@@ -20,8 +20,9 @@
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 
-import type { Experiment, ParseIssue } from '../types.js'
+import type { Experiment } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
+import { readExperimentManagedDocuments } from './documents.js'
 import { buildExperimentRecord, parseExperimentReadme } from './parse.js'
 
 const EXPERIMENTS_SUBDIR = 'docs/experiments'
@@ -102,6 +103,7 @@ export async function discoverExperiments(
           project: projectName,
           path: readmePath,
           mtime: folderStat.mtimeMs,
+          readmeMtime: 0,
         }),
       )
       continue
@@ -114,6 +116,7 @@ export async function discoverExperiments(
       continue
     }
     const parsed = parseExperimentReadme(content, folderName)
+    const { documents, mtime: documentMtime } = await readDocumentsWithMtime(folderPath)
     // Collision: a same-id `.md` file ALSO exists alongside this folder.
     if (legacyIds.has(id)) {
       parsed.parseWarnings.push({
@@ -126,7 +129,9 @@ export async function discoverExperiments(
         id,
         project: projectName,
         path: readmePath,
-        mtime: readmeStat.mtimeMs,
+        mtime: Math.max(readmeStat.mtimeMs, documentMtime),
+        readmeMtime: readmeStat.mtimeMs,
+        documents,
       }),
     )
   }
@@ -165,6 +170,7 @@ export async function discoverExperiments(
         project: projectName,
         path: filePath,
         mtime: stat.mtimeMs,
+        readmeMtime: stat.mtimeMs,
       }),
     )
   }
@@ -194,6 +200,7 @@ export async function readExperimentDoc(
     if (stat.isFile()) {
       const content = await fs.readFile(readmePath, 'utf8')
       const parsed = parseExperimentReadme(content, experimentId)
+      const { documents, mtime: documentMtime } = await readDocumentsWithMtime(folderPath)
       // Check for collision: legacy file also present.
       try {
         const legacyStat = await fs.stat(legacyPath)
@@ -210,7 +217,9 @@ export async function readExperimentDoc(
         id: experimentId,
         project: projectName,
         path: readmePath,
-        mtime: stat.mtimeMs,
+        mtime: Math.max(stat.mtimeMs, documentMtime),
+        readmeMtime: stat.mtimeMs,
+        documents,
       })
     }
   } catch (err) {
@@ -234,10 +243,27 @@ export async function readExperimentDoc(
       project: projectName,
       path: legacyPath,
       mtime: stat.mtimeMs,
+      readmeMtime: stat.mtimeMs,
     })
   } catch (err) {
     const e = err as NodeJS.ErrnoException
     if (e.code === 'ENOENT') return null
     throw err
   }
+}
+
+async function readDocumentsWithMtime(experimentDirectory: string) {
+  const documents = await readExperimentManagedDocuments(experimentDirectory)
+  let mtime = 0
+  for (const parsed of [documents.implementation, documents.investigation, documents.results]) {
+    if (!parsed.exists) continue
+    try {
+      const stat = await fs.stat(parsed.path)
+      mtime = Math.max(mtime, stat.mtimeMs)
+    } catch {
+      // The parser already records a missing-file diagnostic. A concurrent
+      // unlink between read and stat should not make discovery fail.
+    }
+  }
+  return { documents, mtime }
 }

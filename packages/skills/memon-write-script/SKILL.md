@@ -1,353 +1,75 @@
 ---
 name: memon-write-script
-description: Write a shell script that launches an experiment in a memon project. The script lives in a stable scripts directory and, on each invocation, creates its own timestamped run directory under the project's logs path.
-argument-hint: <what the script should do, plus where it should live>
-license: MIT
-metadata:
-  author: memset0
-  version: '0.4.0'
+description: Write or update a portable shell launcher for a memon Run, including run-directory creation, logging, and machine-readable launch output. Use when an Experiment or Variant needs a reusable launcher, wrapper, or sweep script; return its entry/recipe/env provenance for the Experiment writer without automatically creating an Implementation item.
 ---
 
 # memon-write-script
 
-Author a shell script that launches an experiment.
+Author a launcher script. The script creates a fresh timestamped Run directory;
+`memon-run-experiment` owns the Run README and lifecycle around it.
 
-## Preflight — FS convention version
+## Preflight and context
 
-Run `memon fs-version check --project-root . --format json` as the first
-step. If `status !== "match"`, STOP and follow the branch protocol in
-`../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
+Run `memon --project-root . --format json fs-version check` first and follow
+`../PREFLIGHT.md` unless the status is `match`.
 
-## When to use
+Read project instructions and nearby launchers before writing. Determine:
 
-- The user asks you to write a new launcher script (e.g. "write a script for the zero-SNR sweep")
-- You're orchestrating a new experiment that has no launcher yet
-- An existing script needs a variant or wrapper for a sweep (`run_bs16.sh` next to `run.sh`)
-- The user asks for a script that follows the project's run-dir + log conventions
+- the Experiment and optional Variant this launcher serves;
+- whether a meaningful Implementation item already exists;
+- the entry command, training recipe, environment variables, output path, and
+  resume behavior;
+- the project's Python environment, scheduler, GPU, and logs conventions.
 
-## When NOT to use
+Do not create an Implementation item merely because a script is being added.
+If the script implements part of an existing engineering item, hand its path
+back to `memon-write-experiment-doc`; otherwise record it as Variant/Run
+provenance.
 
-- ❌ The user just wants to run an existing script — that's `memon-run-experiment`'s job
-- ❌ For ad-hoc one-line shell or tmux commands — write those directly
-- ❌ When the script's purpose isn't launching an experiment (data preprocessing without a run dir, deployment scripts) — out of scope
-- ❌ For Python entry points or library code — this skill is shell-script-only
+## Placement
 
-## Identify the parent experiment
+- Cross-Experiment and portable launcher → `scripts/<area>/`.
+- Experiment-specific scheduler wrapper, smoke launcher, or sweep helper → the
+  Experiment directory next to its bundle.
+- One-shot CPU analysis producing a plot/table → write it as an
+  Experiment-local utility, not through this skill and not as a Run.
 
-A script and its experiment doc are paired by convention. Even when
-the user only asks for "a script", that script almost always exists
-to drive a particular investigation, and the corresponding
-`docs/experiments/E<NNNN>-<slug>/README.md` (v5 folder layout) is the place where future
-agents will look for context — including a record of which scripts
-contribute to the experiment.
+Keep generated Run data out of the launcher directory.
 
-**Before** you write the script, decide which of the three branches
-applies. Save the result as `$EXP_BINDING` for the registry-write
-step in "When you're done":
+## Launcher contract
 
-### Branch 1 — User named an existing experiment
+Every launcher must:
 
-The user referenced an exp by id (`E0001-foo`) or slug (`foo`).
-Confirm it exists:
+1. Start with a functional one-line description and strict shell mode.
+2. Derive `PROJECT_ROOT` portably; never hard-code a user's absolute path.
+3. Accept caller-overridable `RUN_NAME` and `RUN_DIR`.
+4. Create a fresh directory named `<RUN_NAME>-<YYMMDD>-<HHMMSS>` unless an
+   existing `RUN_DIR` is explicitly supplied for a supported resume.
+5. Emit these lines immediately after directory creation:
 
-```sh
-memon experiment show "$EXP_BINDING_ARG" --project-root . --format json
-```
-
-- Exit 0 → set `EXP_BINDING=<the canonical id>`. READ the response's
-  `sections.method` field; you'll be appending to it later.
-- Exit 4 (`NOT_FOUND`) → the user named something that doesn't
-  exist. Ask the user (in Chinese) whether they meant an existing
-  exp (offer `memon experiment ls --format human` output as
-  options) or want to create a new one (drop into Branch 2).
-
-### Branch 2 — Experiment implied but no doc yet
-
-The user described an experiment ("write a script for the zero-SNR
-sweep", "I want to test bf16 throughput") but didn't reference an
-existing exp doc. Ask the user (in Chinese) whether to create one
-now:
-
-> 这个脚本看起来对应一个新 experiment（e.g. `<slug-i-suggest>`），
-> 但 `docs/experiments/` 下还没有对应的 doc。要不要现在创建？
-> 如果要，初始的 `## Motivation` / `## Method` 写什么？我可以
-> 拟一份草稿，由你确认/改。
-
-If the user agrees:
-
-1. Discuss initial Motivation / Method content with the user
-   (Method MAY start as a single sentence — the script registry
-   line will be appended to it after the script is written).
-   If the user mentions forward-looking ideas like "next try
-   X / Y / Z", those go in `## Plan` as `- [ ]` task items,
-   NOT in `## Method`. Method describes methodology only; Plan
-   holds forward-looking TODOs.
-2. Call `memon experiment create`:
-
-   ```sh
-   memon experiment create "<slug>" \
-     --project-root . \
-     --title "<one-line title>" \
-     --hypotheses "<H0001,H0007>"   # optional
+   ```text
+   [memon] PROJECT_ROOT=<absolute path>
+   [memon] RUN_NAME=<slug>
+   [memon] RUN_DIR=<absolute path>
    ```
 
-3. Capture the returned `id` as `$EXP_BINDING`.
-4. If the user supplied initial body content, write it via
-   `memon experiment readme write` (read the freshly-created doc
-   first to get the mtime, modify the Method body, write back).
-5. Continue with the script-writing workflow below.
+6. Append stdout/stderr to `"$RUN_DIR/run.log"` with `tee -a`.
+7. Never call `memon`, write `README.md`, or mutate the Experiment bundle.
+8. Remain runnable with bash and the project's actual dependencies even when
+   memon is not installed on the execution host.
 
-If the user declines, treat as Branch 3.
-
-### Branch 3 — Explicitly no exp doc binding
-
-The user explicitly says "just write the script, no exp doc"
-(e.g. one-off smoke test, throwaway debugging tool, very early
-exploration where the investigation hasn't crystallised). Set
-`EXP_BINDING=` (empty). The script will be written without an
-exp-binding header comment, and the "When you're done"
-registry-write step will be skipped.
-
-This branch is fine but should be the exception. If the user is
-unsure, default to Branch 2 — creating the exp doc costs little
-and pays off later.
-
-## Mental model — script ≠ run
-
-A script is a **launcher**. It lives in a stable, repo-tracked
-location — either `<projectRoot>/scripts/<area>/` for cross-experiment
-launchers OR `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` for
-launchers tied to one specific experiment (smoke / sbatch / sweep
-drivers for THIS exp). See `memon-drive`'s "Per-experiment scratch
-space" section for the full policy (size threshold, what kinds of
-artifacts belong there).
-
-**Each invocation generates a fresh run directory** under the
-project's logs path, named `<RUN_NAME>-<YYMMDD>-<HHMMSS>` so it matches
-the memon experiment regex `^.+-\d{6}-\d{6}$`.
-
-There is **no single "right" file layout**. All of these are fine:
-
-```
-# A. Several independent standalone scripts (no shared core)
-<projectRoot>/scripts/erdos/
-├── run_baseline.sh
-├── run_smoke.sh
-└── run_resume.sh
-
-# B. One core + several thin wrappers that set env vars
-<projectRoot>/scripts/erdos/
-├── run.sh           # core launcher
-├── run_smoke.sh     # `RUN_NAME=smoke ... bash run.sh`
-└── run_bs8.sh       # `RUN_NAME=bs8 BS=8 ... bash run.sh`
-
-# C. One file that's both — runnable directly AND callable from a wrapper
-<projectRoot>/scripts/erdos/
-└── run.sh           # accepts ${VAR:-default} env vars; standalone OR delegated to
-```
-
-Every run dir lands somewhere matching `^.+-\d{6}-\d{6}$`. Default
-location: `<projectRoot>/<LOGS_DIR>/<RUN_NAME>-<TIMESTAMP>/`.
-
-The _script_ never moves. The _run dirs_ accumulate as the experiment is
-re-run with different params. Re-invoking the script with `RUN_DIR=<existing-path>`
-**resumes** into that existing dir instead of creating a new one (only do
-this if the underlying training program actually supports resume).
-
-**The only hard requirement is**: the script that ends up running must
-correctly create `RUN_DIR` (and emit the three `[memon]` output lines —
-see Convention #5). Whether that script is a standalone, a core, a thin
-wrapper, or some hybrid is up to whatever fits the experiment.
-
-## The variables you'll see in every script
-
-Two **caller-tunable** vars (`RUN_NAME`, `RUN_DIR`) plus two
-**environment-derived** vars (`PROJECT_ROOT`, `LOGS_DIR`):
-
-| variable       | role                                                                                                               | when to override                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `RUN_NAME`     | short slug WITHOUT timestamp (`baseline`, `bs16`, `smoke`, `lr1e4`). Becomes the prefix of the run dir's basename. | Sweeps — set per iteration so each gets a distinct run dir. |
-| `RUN_DIR`      | absolute path to the actual run directory. **Don't pass this in normally**; the script computes it.                | **Only** for resuming into a specific existing run dir.     |
-| `PROJECT_ROOT` | absolute path to the repo root. Defaults to `git rev-parse --show-toplevel`.                                       | Rarely — when running outside a git checkout.               |
-| `LOGS_DIR`     | logs directory **relative to** `PROJECT_ROOT` (default `logs`).                                                    | Per-project — match the project's existing convention.      |
-
-Default derivation:
-
-```bash
-RUN_DIR="${PROJECT_ROOT}/${LOGS_DIR}/${RUN_NAME}-$(date +%y%m%d-%H%M%S)"
-```
-
-where `LOGS_DIR` is the logs directory **relative to the project root**
-(default `logs`, but the project may use `outputs/logs`, `exp/<area>/logs`,
-etc. — pick what fits the project, ask if not clear).
-
-Everything generated by the run — `run.log`, `README.md`, all
-checkpoints, all output files — lives inside `RUN_DIR`.
-
-## Conventions you MUST follow
-
-1. **Script lives in a stable, tracked location** under the project —
-   `<projectRoot>/scripts/<area>/` for cross-experiment launchers OR
-   `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` for experiment-
-   specific launchers (per `memon-drive`'s scratch-space policy).
-   It is NOT placed inside any run directory.
-
-2. **Each invocation creates its own run dir.** Use the `RUN_NAME` +
-   timestamp pattern above; the basename must match `^.+-\d{6}-\d{6}$`.
-
-3. **`RUN_NAME` is env-overridable** so a wrapper can run a sweep:
-   `RUN_NAME=bs16 BS=16 bash run.sh`.
-
-4. **`RUN_DIR` is env-overridable** for resume:
-   `RUN_DIR=<projectRoot>/logs/baseline-260504-141512 bash run.sh`. The
-   `${RUN_DIR:-...}` form below already supports this.
-
-5. **Echo three `[memon] ...=<value>` lines to stdout right after
-   `mkdir`** so any caller (notably `memon-run-experiment`) can grep
-   them from the captured output / `tmux capture-pane` without
-   re-deriving anything from the script's source or filesystem state:
-
-   ```bash
-   echo "[memon] PROJECT_ROOT=$PROJECT_ROOT"
-   echo "[memon] RUN_NAME=$RUN_NAME"
-   echo "[memon] RUN_DIR=$RUN_DIR"
-   ```
-
-   Order is not strict, but emit all three. These three lines are the
-   only "memon-aware" content the script carries; they don't make it
-   depend on memon (they're just `echo`s of strings).
-
-6. **Don't write `README.md` from the script.** That's
-   `memon-run-experiment`'s job — the agent running that skill writes
-   the initial frontmatter + Setup content right after the script gets
-   going. The script's _only_ responsibility for the run dir is
-   `mkdir -p`; everything else (README, finalization, status
-   transitions, the run-to-experiment binding via `memon experiment
-   link`) happens from outside the script. The script itself stays
-   memon-agnostic so it runs on any host with bash + the experiment's
-   actual deps even with memon uninstalled.
-
-7. **One-line header at the top of every shell script**, right after the
-   shebang:
-
-   ```bash
-   #!/usr/bin/env bash
-   # <one-line functional description of what THIS script does>
-   set -euo pipefail
-   ```
-
-   Functional, not motivational. Examples:
-   - `# Sweep batch size 4/8/16 with bf16, log per-step Δparam histograms.`
-   - `# Smoke test: 100 steps, single GPU, tiny model.`
-   - `# Resume a run from its latest checkpoint.`
-
-8. **Logging**: end the main pipeline with `2>&1 | tee -a "$RUN_DIR/run.log"`.
-   `tee -a` (append) instead of `tee` so a resume invocation
-   (`RUN_DIR=<existing> bash run.sh`) keeps the prior log content. memon's
-   web log viewer auto-discovers `*.log` files under the run dir.
-
-9. **The script MUST NOT depend on memon.** No `memon ...` invocations,
-   no `@memon/*` imports, no writes to `README.md`. The script must run
-   on any machine with bash + the experiment's actual deps, even with
-   memon uninstalled. (The `[memon] RUN_DIR=...` echo above is just a
-   string — not a memon dep.)
-
-10. **Path portability**: derive `PROJECT_ROOT` from
-    `git rev-parse --show-toplevel` (with a fallback) at the top —
-    never hard-code `/home/...` or `/Users/...`.
-
-## Optional: in-script env activation
-
-The script MAY embed `conda activate <env>` (or `source
-<venv>/bin/activate`) right after `set -euo pipefail` so it doesn't
-silently inherit whatever env the calling shell happened to have
-active. This avoids the classic "ran with the wrong python" failure
-that costs hours to diagnose because everything looks fine until
-imports fail mid-run.
+Default template:
 
 ```bash
 #!/usr/bin/env bash
-# <one-line purpose>
+# <one-line functional description>
 set -euo pipefail
 
-# Activate the project's env so we don't inherit the caller's shell.
-# shellcheck disable=SC1091
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate erdos
-```
-
-(For `venv` / `uv`: `source .venv/bin/activate` instead.)
-
-**When to do this:**
-
-- The project has a single canonical env (look for `environment.yml`,
-  `pyproject.toml`, sibling scripts that already activate one).
-- Different sub-projects of the repo have different envs and the
-  caller often forgets which one applies.
-- The user has been bitten by env mismatches before in this project.
-
-**When to skip it:**
-
-- The caller (e.g. `memon-run-experiment`) is expected to activate the
-  env outside the script.
-- The repo has no Python env convention yet — don't invent one.
-
-**How to pick the right env name**: read sibling scripts in the same
-`scripts/<area>/` dir (or `make` targets, CI configs, README) for the
-project's existing `conda activate` / `source .venv` line. If there's
-no precedent, **ask the user** (in Chinese):
-
-> 我看到 scripts 目录下没有现成的环境激活规范,这个脚本要不要 inline
-> `conda activate <env>` ?如果要,环境叫什么?
-
-1. **Identify where the script should live.** The criterion is
-   reusability — would someone working on a different experiment, or
-   another contributor, pick this script up and use it as-is? See
-   `memon-drive`'s "Per-experiment scratch space" section for the
-   full policy + examples.
-   - **Reusable** (cross-experiment, portable): default
-     `<projectRoot>/scripts/<area>/`. If a sibling `run.sh` already
-     exists there, prefer adding a variant `run_<descriptor>.sh` that
-     delegates to the core, instead of duplicating logic.
-   - **Specific to this experiment** (sbatch wrapper for this cluster,
-     smoke run for this exp's setup, sweep driver for THIS exp's
-     parameter space): place inside
-     `<projectRoot>/docs/experiments/E<NNNN>-<slug>/`.
-
-2. **Identify `LOGS_DIR`** for this project (default `logs`, but check
-   for an existing convention in `CLAUDE.md` or sibling scripts).
-
-3. **Decide layout** (matches Mental Model A / B / C above):
-   - **Standalone (A)**: a single `run_xxx.sh` that does everything itself.
-   - **Variant of an existing core (B)**: when a core `run.sh` exists in
-     the same dir, the new variant just sets env vars and `bash`-execs
-     the core. See "Composability" below.
-   - **Hybrid single-file (C)**: one `run.sh` that's both directly
-     runnable AND callable from a thin wrapper that sets env vars. Use
-     when there's only ever one runner today but you want to leave the
-     door open for sweeps without splitting the file yet.
-
-4. **Pick Style A or Style B** based on complexity:
-   - **Style A (flat)** — minimal params, single command. Default.
-   - **Style B (structured)** — >50 lines, grouped flags as bash arrays.
-
-5. **Add the one-line header**.
-
-6. **`tee -a` the log** to `"$RUN_DIR/run.log"` (append, never truncate
-   — Convention #8 / Resume contract).
-
-## Style A (default, standalone)
-
-```bash
-#!/usr/bin/env bash
-# <one-line purpose>
-set -euo pipefail
-
-# --- naming + paths ---
-RUN_NAME="${RUN_NAME:-baseline}"            # slug; override per sweep iteration
-LOGS_DIR="${LOGS_DIR:-logs}"                # relative to PROJECT_ROOT
+RUN_NAME="${RUN_NAME:-baseline}"
+LOGS_DIR="${LOGS_DIR:-logs}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 RUN_DIR="${RUN_DIR:-${PROJECT_ROOT}/${LOGS_DIR}/${RUN_NAME}-$(date +%y%m%d-%H%M%S)}"
+
 mkdir -p "$RUN_DIR"
 echo "[memon] PROJECT_ROOT=$PROJECT_ROOT"
 echo "[memon] RUN_NAME=$RUN_NAME"
@@ -355,212 +77,67 @@ echo "[memon] RUN_DIR=$RUN_DIR"
 
 cd "$PROJECT_ROOT"
 python -m my_module \
-    --out "$RUN_DIR" \
-    2>&1 \
-  | tee -a "$RUN_DIR/run.log"
+  --out "$RUN_DIR" \
+  2>&1 | tee -a "$RUN_DIR/run.log"
 ```
 
-## Composability — optional core + variants pattern
+Use bash arrays for a large argument surface. Use thin wrappers that set env
+vars and delegate when a stable core launcher already exists. A sweep wrapper
+must let the core derive a separate Run directory per Variant/setting.
 
-When several scripts in the same dir share most of their logic, factoring
-the shared part into a core `run.sh` and having siblings delegate via env
-vars can reduce duplication. **This is one valid pattern, not a
-requirement** — independent standalone scripts are equally valid.
+Inline environment activation only when the repository has a clear precedent.
+Do not guess a conda/venv name.
 
-When you do use it:
+## Variant alignment
 
-**Core** (`scripts/erdos/run.sh`): the Style A template above.
+When this script is part of an imminent Run:
 
-**Variant** (`scripts/erdos/run_bs16.sh`):
+- confirm the Variant already exists in `results.yaml` before launch;
+- make entry, recipe, and injected env match that Variant's provenance;
+- do not silently broaden one launcher invocation into undeclared Variants;
+- expose comparison parameters as explicit env vars/flags so the actual command
+  can be audited against Results.
 
-```bash
-#!/usr/bin/env bash
-# Same as run.sh but with batch size 16.
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUN_NAME="${RUN_NAME:-bs16}" BS=16 bash "$HERE/run.sh"
+This skill may prepare the launcher before the Variant is finalized, but it must
+not launch it. `memon-run-experiment` enforces the pre-launch Variant check.
+
+## Workflow
+
+1. Inspect instructions, sibling scripts, entry code, and recipe.
+2. Choose placement and whether to extend a core launcher or add a standalone
+   script.
+3. Implement the smallest auditable launcher.
+4. Run `bash -n <script>` and the repository's shell formatter/linter if
+   configured.
+5. Perform only a cheap dry/smoke invocation when it is safe and explicitly
+   supported. Do not accidentally start the full training job.
+6. Return a provenance handoff. If Experiment bundle metadata must change,
+   invoke `memon-write-experiment-doc` rather than editing it here.
+
+Handoff shape:
+
+```json
+{
+  "files": ["scripts/train/run_bf16.sh"],
+  "entry": "scripts/train/run_bf16.sh",
+  "recipe": "recipes/bf16.yaml",
+  "env": {"PRECISION": "bf16"},
+  "experiment": "E0007-bf16-numerics",
+  "variant": "V0002",
+  "implementation_item": null,
+  "verification": ["bash -n scripts/train/run_bf16.sh"]
+}
 ```
 
-**Sweep wrapper** (`scripts/erdos/run_sweep_bs.sh`):
+Use actual values and omit irrelevant optional fields.
 
-```bash
-#!/usr/bin/env bash
-# Sweep batch size 4/8/16, one run dir per setting.
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-for bs in 4 8 16; do
-  RUN_NAME="bs$bs" BS=$bs bash "$HERE/run.sh"
-done
-```
+## Guardrails
 
-Variants stay tiny — they only set env vars + delegate. The core owns
-the actual logic and the run-dir derivation. `RUN_DIR` should NOT be set
-by the wrapper — let the core compute a fresh one per iteration so each
-setting gets its own dir.
-
-**No naming convention is enforced** for variant filenames — pick what
-matches the variant's purpose (`run_smoke.sh`, `run_resume.sh`,
-`run_bs16.sh`, …).
-
-## Style B (only when justified — large param space)
-
-```bash
-#!/usr/bin/env bash
-# <one-line purpose>
-set -ex
-
-RUN_NAME="${RUN_NAME:-train_full}"
-LOGS_DIR="${LOGS_DIR:-logs}"
-PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-RUN_DIR="${RUN_DIR:-${PROJECT_ROOT}/${LOGS_DIR}/${RUN_NAME}-$(date +%y%m%d-%H%M%S)}"
-mkdir -p "$RUN_DIR"
-echo "[memon] PROJECT_ROOT=$PROJECT_ROOT"
-echo "[memon] RUN_NAME=$RUN_NAME"
-echo "[memon] RUN_DIR=$RUN_DIR"
-
-MODEL_ARGS=(
-  --model-name "${MODEL_NAME:-llama3-8b}"
-  --dtype bf16
-)
-
-TRAIN_ARGS=(
-  --batch-size "${BATCH_SIZE:-8}"
-  --lr "${LR:-1e-5}"
-  --max-steps "${MAX_STEPS:-1000}"
-)
-
-IO_ARGS=(
-  --output-dir "$RUN_DIR"
-  --log-file "$RUN_DIR/run.log"
-)
-
-cd "$PROJECT_ROOT"
-python -m train \
-    "${MODEL_ARGS[@]}" \
-    "${TRAIN_ARGS[@]}" \
-    "${IO_ARGS[@]}" \
-    2>&1 \
-  | tee -a "$RUN_DIR/run.log"
-```
-
-## Resume — minimal contract
-
-`memon-run-experiment` is what decides _when_ to resume; the only thing
-this skill needs to bake into the script is the **mechanical contract**
-that makes resume possible:
-
-1. `RUN_DIR` is env-overridable (the `${RUN_DIR:-...}` form already
-   handles this) — caller can pass `RUN_DIR=<existing>` to reuse a dir.
-2. **The log pipe uses `tee -a`** (append) instead of `tee` (truncate),
-   so a resume into an existing `run.log` keeps prior content. Bake
-   `tee -a "$RUN_DIR/run.log"` into the template; it does the right
-   thing for both fresh and resume invocations.
-3. The actual training program is responsible for picking up from a
-   checkpoint inside `$RUN_DIR` — the launcher just hands it the path.
-   If the program doesn't support resume, mention that in the script's
-   one-line header.
-
-Beyond those three points, resume orchestration (when to do it, how to
-detect prior state, README updates) belongs in `memon-run-experiment`,
-not here.
-
-## Anti-patterns
-
-- ❌ **Calling `memon` from inside the script** — breaks the "runs on a
-  memon-less machine" guarantee.
-- ❌ Importing `@memon/*` from Python / TS code that the script invokes.
-- ❌ Putting the script _inside_ a run dir. Scripts are stable launchers
-  in `scripts/`; run dirs are per-invocation under `${LOGS_DIR}/`.
-- ❌ Naming the run dir something that doesn't match `^.+-\d{6}-\d{6}$`.
-  memon discovery silently skips non-matching dirs.
-- ❌ Hard-coding `RUN_DIR` without a `${RUN_DIR:-...}` fallback. Breaks
-  resume _and_ sweeps simultaneously.
-- ❌ Setting `RUN_DIR` from a sweep wrapper. Let `RUN_NAME` differentiate
-  iterations and let the core derive distinct `RUN_DIR`s.
-- ❌ Skipping the three `[memon] ...` echo lines. Callers grep them to
-  locate the run dir without re-deriving paths or scanning the
-  filesystem; missing them breaks `memon-run-experiment`'s lifecycle.
-- ❌ Writing `README.md` from the script. That's `memon-run-experiment`'s
-  job — the script only `mkdir`s the run dir and tees the log.
-- ❌ Banners / `usage()` functions / multi-paragraph header comments.
-- ❌ Hard-coded `/home/...` / `/Users/...` paths.
-
-## When you're done
-
-### Register the script with its parent experiment
-
-If `$EXP_BINDING` is set to an exp id (Branch 1 or Branch 2 from
-"Identify the parent experiment"), append a single line naming this
-script to that exp doc's `## Method` body — that way an agent
-reading the exp later can find every script that contributes to it
-without grepping `scripts/`.
-
-This script-registry line IS part of methodology (it names what the
-experiment's reproducible setup includes), so it belongs in `## Method`
-— NOT in `## Plan`. Plan is reserved for forward-looking TODOs and
-per-run reflections, not for the inventory of scripts.
-
-The format is the same as the `## Artifacts` section uses on run
-READMEs:
-
-```
-- `<rel-path-from-project-root>` — <one-sentence purpose>
-```
-
-For example:
-
-```
-- `scripts/erdos/run_zero_snr.sh` — zero-SNR ablation launcher
-- `scripts/erdos/run_baseline.sh` — baseline DDPM with the standard schedule
-```
-
-Workflow:
-
-1. Read the exp doc to get its current Method body + mtime:
-
-   ```sh
-   memon experiment show "$EXP_BINDING" --project-root . --format json \
-     | tee /tmp/exp.json
-   MTIME=$(jq -r .mtime /tmp/exp.json)
-   ```
-
-2. Modify the Method body in memory: append a new bullet line for
-   the script you just wrote. Preserve every existing line in
-   Method, Motivation, Conclusion, Caveats, Warnings, frontmatter.
-
-3. Re-emit the full doc body and pipe it back to
-   `memon experiment readme write`:
-
-   ```sh
-   cat new-exp-content.md \
-     | memon experiment readme write "$EXP_BINDING" \
-         --project-root . --expected-mtime "$MTIME"
-   ```
-
-4. On exit 9 (`CONFLICT`), refresh mtime and retry once. On a
-   second 9, stop and surface the current exp doc to the user.
-
-If `$EXP_BINDING` is empty (Branch 3), skip this step entirely.
-
-### Tell the user
-
-1. Where the script was written (`<scriptsDir>/run_<name>.sh`)
-2. The one-line header you chose
-3. How to launch it (`bash <path>` or `RUN_NAME=foo BS=16 bash <path>`)
-4. Where its run dirs will land
-   (`<projectRoot>/${LOGS_DIR}/<RUN_NAME>-<TIMESTAMP>/`)
-5. Whether resume works (depends on the training program)
-6. Whether the script was registered in an exp doc's Method
-   (`$EXP_BINDING` set), or written standalone (Branch 3)
-7. **Ask whether to smoke-test now.** A throwaway `RUN_NAME=__smoke__`
-   invocation catches typos in the three `[memon]` echo lines and
-   verifies `RUN_DIR` is created where claimed — but it spends real
-   compute on the training step unless the script gates that. Don't
-   run it by default; just offer (in Chinese):
-
-   > 要现在跑一个 smoke-test 验证 `[memon]` 行 + `RUN_DIR` 正确吗?
-   > (会真的执行训练步骤,除非脚本里有 `${SMOKE:-0}` 这样的 gate)
-
-   If the user says yes, run the smoke-test (you can wrap heavy
-   sections of the script in `[ "${SMOKE:-0}" = "1" ] && exit 0` first
-   if the training step is too costly).
+- Do not register scripts in a legacy `Method` section.
+- Do not create a generic Implementation item for every launcher.
+- Do not write Variant facts after a Run has started.
+- Do not put credentials or cluster-local secrets into committed scripts,
+  recipes, provenance env, or logs.
+- Do not overwrite an existing script without reading and preserving its
+  supported interfaces.
+- Do not use a timestamp-free directory for a fresh Run.

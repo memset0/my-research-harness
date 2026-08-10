@@ -8,8 +8,8 @@
 // effective_updated_at by joining with member runs from the run index.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../../../lib/runtime'
 import { createExperiment, ExperimentHttpError } from '../../../lib/experiments'
+import { getRuntime } from '../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,12 +29,17 @@ export async function GET(req: NextRequest) {
         const memberRuns = e.frontMatter.runs
           .map((r) => runIndex.get(r))
           .filter((r): r is NonNullable<typeof r> => Boolean(r))
-        const effective = computeEffective(e.frontMatter.createdAt, e.frontMatter.updatedAt, memberRuns)
+        const effective = computeEffective(
+          e.frontMatter.createdAt,
+          e.frontMatter.updatedAt,
+          memberRuns,
+        )
         return {
           id: e.id,
           project: e.project,
           path: e.path,
           mtime: e.mtime,
+          readmeMtime: e.readmeMtime,
           frontMatter: e.frontMatter,
           sections: e.sections,
           warningsRaw: e.warningsRaw,

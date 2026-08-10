@@ -272,7 +272,7 @@ export interface Run {
   parseWarnings: ParseIssue[]
 }
 
-// ---------- Experiment Doc (v5 — `docs/experiments/E<NNNN>-<slug>/README.md`) ----------
+// ---------- Experiment Doc (v6 — README + managed YAML documents) ----------
 
 /**
  * v5: regex matching experiment doc folder names under
@@ -322,13 +322,165 @@ export interface ExperimentFrontMatter {
 
 export interface ExperimentSections {
   motivation: string | null
-  method: string | null
-  // v3 + Plan section: free-form markdown body, may contain GFM task lists
-  // at any nesting depth. Opaque to the parser (no per-task structured
-  // field). Null when the section is absent or its body is empty.
-  plan: string | null
+  design?: string | null
+  /** Literal one-line pointer stored in README.md, not the rendered YAML. */
+  implementation?: string | null
+  /** Literal one-line pointer stored in README.md, not the rendered YAML. */
+  investigation?: string | null
+  /** Literal one-line pointer stored in README.md, not the rendered YAML. */
+  results?: string | null
+  findings?: string | null
+  limitations?: string | null
   conclusion: string | null
+  /** @deprecated v5 compatibility projection; `Method` is unsupported in v6. */
+  method: string | null
+  /** @deprecated v5 compatibility projection; `Plan` is unsupported in v6. */
+  plan: string | null
+  /** @deprecated v5 compatibility projection; `Caveats` is unsupported in v6. */
   caveats: string | null
+}
+
+export type ManagedExperimentSection = 'implementation' | 'investigation' | 'results'
+
+/** One H2 occurrence, retained even when unsupported or duplicated. */
+export interface ExperimentRawSection {
+  heading: string
+  body: string
+  index: number
+  occurrence: number
+  supported: boolean
+  managed: boolean
+  /** Null for ordinary sections; exact-stub validity for managed sections. */
+  pointerValid: boolean | null
+}
+
+export type ImplementationStatus = 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'DROPPED'
+export type InvestigationStatus =
+  | 'PLANNED'
+  | 'IN_PROGRESS'
+  | 'BLOCKED'
+  | 'ANSWERED'
+  | 'INCONCLUSIVE'
+  | 'DROPPED'
+export type VariantStatus =
+  | 'PLANNED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'INCONCLUSIVE'
+  | 'DROPPED'
+
+export interface ImplementationCommit {
+  repo: string
+  sha: string
+  url?: string
+}
+
+export interface ImplementationItem {
+  id: string
+  title: string
+  status: ImplementationStatus
+  description?: string
+  dependsOn: string[]
+  acceptanceCriteria: string[]
+  files: string[]
+  commits: ImplementationCommit[]
+  codeReviews: string[]
+  outcome?: string
+  children: ImplementationItem[]
+  /** Unknown YAML keys retained for forward compatibility. */
+  extra?: Record<string, unknown>
+}
+
+export interface InvestigationItem {
+  id: string
+  title: string
+  status: InvestigationStatus
+  description?: string
+  dependsOn: string[]
+  question?: string
+  rationale?: string
+  successCriteria: string[]
+  variantIds: string[]
+  outcome?: string
+  children: InvestigationItem[]
+  /** Unknown YAML keys retained for forward compatibility. */
+  extra?: Record<string, unknown>
+}
+
+export interface ImplementationDocument {
+  schemaVersion: number
+  items: ImplementationItem[]
+}
+
+export interface InvestigationDocument {
+  schemaVersion: number
+  items: InvestigationItem[]
+}
+
+export type ResultColumnGroup = 'parameter' | 'metric'
+export type ResultColumnType = 'string' | 'number' | 'boolean' | 'enum'
+
+export interface ResultColumn {
+  key: string
+  label: string
+  group: ResultColumnGroup
+  type: ResultColumnType
+  options?: Array<string | number | boolean>
+}
+
+export type ResultScalar = string | number | boolean | null
+
+export interface VariantProvenance {
+  repo?: string
+  commit?: string
+  entry?: string
+  recipe?: string
+  env?: Record<string, string>
+}
+
+export interface ResultVariant {
+  id: string
+  name: string
+  status: VariantStatus
+  description?: string
+  parameters: Record<string, ResultScalar>
+  metrics: Record<string, ResultScalar>
+  /** Runs accepted as evidence for this Variant. */
+  runs: string[]
+  /** Failed, interrupted, superseded, or otherwise unselected attempts. */
+  attempts: string[]
+  provenance?: VariantProvenance
+  /** Unknown YAML keys retained for forward compatibility. */
+  extra?: Record<string, unknown>
+}
+
+export interface ResultsDocument {
+  schemaVersion: number
+  columns: ResultColumn[]
+  variants: ResultVariant[]
+}
+
+export type ExperimentManagedDocument =
+  | ImplementationDocument
+  | InvestigationDocument
+  | ResultsDocument
+
+export interface ParsedManagedDocument<T extends ExperimentManagedDocument> {
+  kind: ManagedExperimentSection
+  fileName: string
+  path: string
+  exists: boolean
+  raw: string | null
+  data: T | null
+  parseErrors: ParseIssue[]
+  parseWarnings: ParseIssue[]
+}
+
+export interface ExperimentManagedDocuments {
+  implementation: ParsedManagedDocument<ImplementationDocument>
+  investigation: ParsedManagedDocument<InvestigationDocument>
+  results: ParsedManagedDocument<ResultsDocument>
 }
 
 /** Warning row attributed to a specific run, or null for exp-scoped warnings. */
@@ -344,9 +496,24 @@ export interface Experiment {
   project: string
   /** Absolute path to the doc file. */
   path: string
+  /**
+   * Latest known activity for the complete Experiment bundle (README plus
+   * managed YAML sidecars). Use this for refresh/invalidation, never as a
+   * README optimistic-lock key.
+   */
   mtime: number
+  /**
+   * README.md's own mtime in epoch milliseconds. This is the canonical
+   * optimistic-lock key for mutations that rewrite README.md. It is `0` for
+   * a placeholder record whose Experiment directory has no README.
+   */
+  readmeMtime: number
   frontMatter: ExperimentFrontMatter
   sections: ExperimentSections
+  /** Ordered, lossless H2 view used for tolerant compatibility rendering. */
+  rawSections?: ExperimentRawSection[]
+  /** Parsed v6 YAML siblings; null for a legacy single-file experiment. */
+  documents?: ExperimentManagedDocuments | null
   warnings: ExperimentWarningRecord[]
   warningsRaw: string | null
   body: string

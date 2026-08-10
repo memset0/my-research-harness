@@ -3,6 +3,7 @@
 // interactive fixes through the existing write commands.
 
 import { discoverExperiments } from '../experiments/discover.js'
+import { lintExperimentDocument } from '../experiments/documents.js'
 import { computeMembership } from '../experiments/membership.js'
 import { scanProjectRoot, type IndexedRun } from './scan.js'
 
@@ -30,6 +31,7 @@ export type IssueCode =
   | 'RUN_SLUG_PREFIX_VIOLATION'
   | 'DUPLICATE_EXPERIMENT_SLUG'
   | 'EXPERIMENT_SLUG_PREFIX_COLLISION'
+  | 'EXPERIMENT_DOC_INVALID'
 
 export interface DoctorIssue {
   runId: string
@@ -101,6 +103,21 @@ export async function runDoctor(
             'add a one-line conclusion describing what the investigation concluded, or set status back to OPEN',
         })
       }
+      const documentDiagnostics = lintExperimentDocument(expDoc)
+      if (documentDiagnostics.length > 0) {
+        const errors = documentDiagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+        const warnings = documentDiagnostics.filter(
+          (diagnostic) => diagnostic.severity === 'warning',
+        )
+        issues.push({
+          runId: expDoc.id,
+          code: 'EXPERIMENT_DOC_INVALID',
+          severity: errors.length > 0 ? 'error' : 'warn',
+          message: `Experiment document has ${errors.length} error(s) and ${warnings.length} warning(s): ${documentDiagnostics.map((diagnostic) => diagnostic.code).join(', ')}`,
+          suggestedAction: `run \`memon experiment doc lint ${expDoc.id} --format human\` and fix the README/YAML package`,
+          data: { diagnostics: documentDiagnostics },
+        })
+      }
     }
 
     const { anomalies } = computeMembership({
@@ -124,7 +141,7 @@ export async function runDoctor(
           a.code === 'ORPHAN_RUN'
             ? 'bind the run via `memon experiment link <exp> <run>` or set its `experiment:` field'
             : a.code === 'PHANTOM_RUN_REF'
-              ? 'remove the stale entry from the experiment doc\'s `runs:` field, or restore the missing run dir'
+              ? "remove the stale entry from the experiment doc's `runs:` field, or restore the missing run dir"
               : a.code === 'MISMATCH_EXPERIMENT_REF'
                 ? 'unlink + re-link to bring both sides into agreement'
                 : a.code === 'RUN_SLUG_PREFIX_VIOLATION'

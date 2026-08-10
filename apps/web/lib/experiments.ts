@@ -6,27 +6,39 @@
 // Run-side write (writeRunReadme) lives here too — it replaces the v2
 // `/api/readme` PUT for run targets in v3 (task 9.6).
 
-import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   appendJournalEvent,
   discoverExperiments,
   EXPERIMENT_DIR_REGEX,
+  type Experiment,
+  emptyImplementationDocument,
+  emptyInvestigationDocument,
+  emptyResultsDocument,
+  MANAGED_DOCUMENT_FILE_NAMES,
   nextExperimentId,
   parseExperimentReadme,
   parseReadme,
+  type Run,
   readExperimentDoc,
   readRunDir,
   reserializeReadme,
   serializeExperimentReadme,
-  type Experiment,
+  serializeImplementationYaml,
+  serializeInvestigationYaml,
+  serializeResultsYaml,
 } from '@memon/core'
+import { assertWithinProjectRoots, PathSafetyError } from './path-safety'
 import type { Runtime } from './runtime'
-import { PathSafetyError, assertWithinProjectRoots } from './path-safety'
 
 const EXPERIMENTS_SUBDIR = 'docs/experiments'
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/
+const CANONICAL_EXPERIMENT_BUNDLE_FILES = new Set([
+  'README.md',
+  ...Object.values(MANAGED_DOCUMENT_FILE_NAMES),
+])
 
 export class ExperimentHttpError extends Error {
   constructor(
@@ -94,11 +106,16 @@ async function readWithLock(
     })
   }
   if (expectedHash !== undefined && hash !== expectedHash) {
-    throw new ExperimentHttpError(409, 'CONFLICT', 'on-disk content hash differs from expectedHash', {
-      mtime,
-      hash,
-      content,
-    })
+    throw new ExperimentHttpError(
+      409,
+      'CONFLICT',
+      'on-disk content hash differs from expectedHash',
+      {
+        mtime,
+        hash,
+        content,
+      },
+    )
   }
   return { content, mtime, hash }
 }
@@ -182,6 +199,10 @@ export async function writeExperimentReadme(
     frontMatter: parsed.frontMatter,
     sections: parsed.sections,
     warningsRaw: parsed.warningsRaw,
+    // Preserve the submitted body exactly. Strict lint may reject unknown or
+    // duplicate H2 headings, but an ordinary edit must never normalize them
+    // away while canonicalizing frontmatter.
+    rawBody: parsed.body,
   })
   await atomicWrite(safePath, finalContent)
   const stat = await fs.stat(safePath)
@@ -385,6 +406,7 @@ export async function createExperiment(
   }
   // Optional fromRun validation.
   let initialRun: string | null = null
+  let importedRun: Run | null = null
   if (input.fromRun) {
     const run = rt.index.get(input.fromRun)
     if (!run) {
@@ -398,6 +420,7 @@ export async function createExperiment(
       )
     }
     initialRun = run.id
+    importedRun = run
   }
   // Lock-free allocator with EEXIST retry.
   let createdId: string | null = null
@@ -444,6 +467,49 @@ export async function createExperiment(
         lastErr = e
         continue
       }
+      throw err
+    }
+    const initialResults = emptyResultsDocument()
+    if (importedRun) {
+      const unsuccessful =
+        importedRun.frontMatter.status === 'FAILED' ||
+        importedRun.frontMatter.status === 'INTERRUPTED' ||
+        importedRun.frontMatter.status === 'UNKNOWN'
+      initialResults.variants.push({
+        id: 'V0001',
+        name: `Imported ${importedRun.frontMatter.name || importedRun.id}`,
+        status: importedVariantStatus(importedRun),
+        description:
+          'Imported from an existing Run by the Web create flow; refine the Variant definition before launching another comparison.',
+        parameters: {},
+        metrics: {},
+        runs: unsuccessful ? [] : [importedRun.id],
+        attempts: unsuccessful ? [importedRun.id] : [],
+        ...(importedRun.frontMatter.entry
+          ? { provenance: { entry: importedRun.frontMatter.entry } }
+          : {}),
+      })
+    }
+    try {
+      await fs.writeFile(
+        join(expDir, 'implementation.yaml'),
+        serializeImplementationYaml(emptyImplementationDocument()),
+        { encoding: 'utf8', flag: 'wx' },
+      )
+      await fs.writeFile(
+        join(expDir, 'investigation.yaml'),
+        serializeInvestigationYaml(emptyInvestigationDocument()),
+        { encoding: 'utf8', flag: 'wx' },
+      )
+      await fs.writeFile(join(expDir, 'results.yaml'), serializeResultsYaml(initialResults), {
+        encoding: 'utf8',
+        flag: 'wx',
+      })
+    } catch (err) {
+      // This ID was allocated by creating README with `wx`; remove the whole
+      // just-created bundle if a sidecar write fails so discovery cannot see
+      // a half-created v6 Experiment.
+      await fs.rm(expDir, { recursive: true, force: true })
       throw err
     }
     createdId = fullId
@@ -521,16 +587,18 @@ export async function linkRun(rt: Runtime, expId: string, input: LinkInput): Pro
   if (run.frontMatter.experiment !== expId) {
     await setRunExperiment(rt, owning.name, run.id, expId)
   }
-  if (!exp.frontMatter.runs.includes(run.id)) {
-    exp.frontMatter.runs.push(run.id)
-  }
-  exp.frontMatter.updatedAt = nowIso()
+  const expPath = safe(exp.path, rt)
+  const current = await fs.readFile(expPath, 'utf8')
+  const parsed = parseExperimentReadme(current, expId)
+  if (!parsed.frontMatter.runs.includes(run.id)) parsed.frontMatter.runs.push(run.id)
+  parsed.frontMatter.updatedAt = nowIso()
   await atomicWrite(
-    safe(exp.path, rt),
+    expPath,
     serializeExperimentReadme({
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warningsRaw: exp.warningsRaw,
+      frontMatter: parsed.frontMatter,
+      sections: parsed.sections,
+      warningsRaw: parsed.warningsRaw,
+      rawBody: parsed.body,
     }),
   )
   await appendJournalEvent({
@@ -546,24 +614,24 @@ export async function linkRun(rt: Runtime, expId: string, input: LinkInput): Pro
   return { experimentId: expId, runId: run.id }
 }
 
-export async function unlinkRun(
-  rt: Runtime,
-  expId: string,
-  input: LinkInput,
-): Promise<LinkResult> {
+export async function unlinkRun(rt: Runtime, expId: string, input: LinkInput): Promise<LinkResult> {
   const exp = rt.experiments.get(expId)
   if (!exp) throw new ExperimentHttpError(404, 'NOT_FOUND', `experiment doc "${expId}" not found`)
   const run = rt.index.get(input.run)
   if (!run) throw new ExperimentHttpError(404, 'NOT_FOUND', `run "${input.run}" not found`)
   const owning = projectFromExp(rt, exp)
-  exp.frontMatter.runs = exp.frontMatter.runs.filter((r) => r !== run.id)
-  exp.frontMatter.updatedAt = nowIso()
+  const expPath = safe(exp.path, rt)
+  const current = await fs.readFile(expPath, 'utf8')
+  const parsed = parseExperimentReadme(current, expId)
+  parsed.frontMatter.runs = parsed.frontMatter.runs.filter((r) => r !== run.id)
+  parsed.frontMatter.updatedAt = nowIso()
   await atomicWrite(
-    safe(exp.path, rt),
+    expPath,
     serializeExperimentReadme({
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warningsRaw: exp.warningsRaw,
+      frontMatter: parsed.frontMatter,
+      sections: parsed.sections,
+      warningsRaw: parsed.warningsRaw,
+      rawBody: parsed.body,
     }),
   )
   if (run.frontMatter.experiment === expId) {
@@ -579,6 +647,22 @@ export async function unlinkRun(
   })
   await refreshBoth(rt, owning, expId, run.id)
   return { experimentId: expId, runId: run.id }
+}
+
+function importedVariantStatus(run: Run) {
+  switch (run.frontMatter.status) {
+    case 'FINISHED':
+      return 'COMPLETED' as const
+    case 'RUNNING':
+      return 'RUNNING' as const
+    case 'FAILED':
+    case 'INTERRUPTED':
+      return 'FAILED' as const
+    case 'UNKNOWN':
+      return 'INCONCLUSIVE' as const
+    default:
+      return 'PLANNED' as const
+  }
 }
 
 // ---------- 9.10: DELETE exp-doc ----------
@@ -625,7 +709,9 @@ export async function deleteExperiment(
     if (!force) {
       let siblings: string[] = []
       try {
-        siblings = (await fs.readdir(expFolder)).filter((n) => n !== 'README.md')
+        siblings = (await fs.readdir(expFolder)).filter(
+          (name) => !CANONICAL_EXPERIMENT_BUNDLE_FILES.has(name),
+        )
       } catch {
         /* folder vanished mid-op — fall through to rm */
       }

@@ -111,6 +111,14 @@ const projectFromApiProjectsSegment =
     return seg ?? null
   }
 
+/** project from /api/report-assets/<project>/... segment. */
+const projectFromReportAssetsSegment =
+  () =>
+  (_m: string, p: string): ResolvedProject => {
+    const seg = segmentAfter(p, '/api/report-assets/')
+    return seg ?? null
+  }
+
 // ----- ID-resolved extractors -----
 
 function idAfter(pathname: string, prefix: string): string | null {
@@ -298,6 +306,11 @@ const RULES: Rule[] = [
     match: methodIs(['GET'], startsWith('/api/reports/')),
     class: 'read',
     projectFor: projectFromReportId(),
+  },
+  {
+    match: methodIs(['GET'], startsWith('/api/report-assets/')),
+    class: 'read',
+    projectFor: projectFromReportAssetsSegment(),
   },
   {
     match: methodIs(['GET'], exact('/api/code-reviews')),

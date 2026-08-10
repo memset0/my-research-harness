@@ -4,11 +4,11 @@
 // useQuery; we mock the fetcher and assert the rendered DOM contains
 // one Card per exp doc.
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { renderWithQuery } from '../utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentCardGrid } from '../../components/experiment-card-grid'
+import { renderWithQuery } from '../utils'
 
 vi.mock('../../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/api')>()
@@ -28,6 +28,7 @@ const SAMPLE_DOCS = {
       project: 'project-a',
       path: '/p/a/docs/experiments/E0001-fsdp.md',
       mtime: 1000,
+      readmeMtime: 1000,
       frontMatter: {
         id: 'E0001-fsdp',
         slug: 'fsdp',
@@ -74,6 +75,7 @@ const SAMPLE_DOCS = {
       project: 'project-a',
       path: '/p/a/docs/experiments/E0002-attention.md',
       mtime: 2000,
+      readmeMtime: 2000,
       frontMatter: {
         id: 'E0002-attention',
         slug: 'attention',
@@ -131,6 +133,7 @@ const ARCHIVED_DOC = {
   project: 'project-a',
   path: '/p/a/docs/experiments/E0099-old-thing.md',
   mtime: 99,
+  readmeMtime: 99,
   frontMatter: {
     id: 'E0099-old-thing',
     slug: 'old-thing',
@@ -188,9 +191,7 @@ describe('ExperimentCardGrid — v4 manual status pill + secondary line', () => 
     vi.mocked(fetchExperimentDocs).mockResolvedValue(SAMPLE_DOCS)
     renderWithQuery(<ExperimentCardGrid project="project-a" />)
     // E0001-fsdp: 1 RUNNING + 1 FINISHED -> "1 running · 1 done"
-    await waitFor(() =>
-      expect(screen.getByText(/1 running.*1 done/)).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText(/1 running.*1 done/)).toBeInTheDocument())
     // E0002-attention has 0 runs -> "no runs yet"
     expect(screen.getByText('no runs yet')).toBeInTheDocument()
   })

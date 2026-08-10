@@ -2,8 +2,11 @@
 
 This directory holds **natural-language migration guides** that describe how
 to upgrade a project root's on-disk layout from one `FS_CONVENTION_VERSION`
-to the next. Guides are read and applied by an LLM agent (via the
-`memon-migrate-fs` skill); there are no hardcoded migration scripts.
+to the next. Guides are read and applied by an LLM agent through the
+`memon-migrate-fs` skill. A guide MAY reference a narrowly scoped executor in
+`scripts/` when a semantic migration needs persistent approval state,
+hash-based invalidation, transactional publication, or rollback support; the
+guide remains the authoritative workflow.
 
 ## Naming
 
@@ -52,7 +55,11 @@ canonical edge cases every guide must address.
 
 ## Status
 
-Current: `FS_CONVENTION_VERSION = 2`. Guides present:
+Current: `FS_CONVENTION_VERSION = 6`. Guides present:
 
-- `v1-to-v2.md` — relocates `JOURNAL.md` → `docs/journal.md` and
-  `HYPOTHESES.md` → `docs/hypotheses.md` (lowercase + moved under `docs/`).
+- `v1-to-v2.md`
+- `v2-to-v3.md`
+- `v3-to-v4.md`
+- `v4-to-v5.md`
+- `v5-to-v6.md` — staged, per-Experiment semantic migration to structured
+  Implementation, Investigation, and Results sidecars.

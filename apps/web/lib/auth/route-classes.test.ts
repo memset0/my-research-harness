@@ -54,6 +54,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/runtime/health')).toBe('read')
     expect(classify('GET', '/api/slurm/status')).toBe('read')
     expect(classify('GET', '/api/code-preview')).toBe('read')
+    expect(classify('GET', '/api/report-assets/project-a/R0001/chart.html')).toBe('read')
   })
 
   it('classifies non-GET /api/code-preview as mutating (logged-in GET only, fail-closed)', () => {
@@ -184,6 +185,16 @@ describe('classifyAndExtract — project extraction', () => {
       stubCtx({ resolveByReportId: () => 'project-b' }),
     )
     expect(r).toEqual({ class: 'read', project: 'project-b' })
+  })
+
+  it('extracts project from directory-report asset URLs', () => {
+    const r = classifyAndExtract(
+      'GET',
+      '/api/report-assets/project-a/R0007/charts/loss.html',
+      emptySearch(),
+      stubCtx(),
+    )
+    expect(r).toEqual({ class: 'read', project: 'project-a' })
   })
 
   it('extracts project from /api/log?path= via path resolver', () => {

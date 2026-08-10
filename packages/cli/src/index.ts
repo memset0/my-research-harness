@@ -34,6 +34,12 @@ import {
   runExperimentUnlink,
 } from './commands/experiment-doc.js'
 import { runExperimentRename } from './commands/experiment-rename.js'
+import {
+  runExperimentDocumentLint,
+  runExperimentDocumentRender,
+  runExperimentDocumentShow,
+  runExperimentDocumentValidate,
+} from './commands/experiment-document.js'
 import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
@@ -53,6 +59,7 @@ import { runShareCreate, runShareList, runShareRevoke } from './commands/share.j
 import { runNotifySend, runNotifyTest } from './commands/notify.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
+import { emitWarningDeprecationBanner } from './lib/deprecations.js'
 
 const program = new Command()
 program
@@ -278,6 +285,56 @@ experiment
     await runExperimentRename({ ...g, idOrSlug, newSlug })
   })
 
+const experimentDoc = experiment
+  .command('doc')
+  .description('read, render, validate, and lint the v6 Experiment document package')
+experimentDoc
+  .command('show <id-or-slug> <section>')
+  .description('show normalized implementation, investigation, or results data')
+  .action(async (idOrSlug: string, section: string) => {
+    await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section })
+  })
+experimentDoc
+  .command('render <id-or-slug> <section>')
+  .description('render a managed section as human-readable Markdown')
+  .action(async (idOrSlug: string, section: string) => {
+    await runExperimentDocumentRender({ ...readGlobals(), idOrSlug, section })
+  })
+experimentDoc
+  .command('validate <id-or-slug>')
+  .description('validate the three managed YAML schemas and cross-references')
+  .action(async (idOrSlug: string) => {
+    await runExperimentDocumentValidate({ ...readGlobals(), idOrSlug })
+  })
+experimentDoc
+  .command('lint <id-or-slug>')
+  .description('strictly lint README sections, managed pointers, YAML, and references')
+  .action(async (idOrSlug: string) => {
+    await runExperimentDocumentLint({ ...readGlobals(), idOrSlug })
+  })
+
+// Read-only convenience forms kept deliberately small: Agents edit the YAML
+// files directly; these commands are projections, never CRUD APIs.
+for (const section of ['implementation', 'investigation', 'results'] as const) {
+  const sectionCommand = experiment.command(section).description(`${section}.yaml read commands`)
+  sectionCommand
+    .command('show <id-or-slug>')
+    .description(`render ${section}.yaml as human-readable Markdown or normalized JSON`)
+    .action(async (idOrSlug: string) => {
+      await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section })
+    })
+}
+
+const experimentSection = experiment
+  .command('section')
+  .description('managed-section compatibility aliases')
+experimentSection
+  .command('show <id-or-slug> <section>')
+  .description('show a managed Experiment section')
+  .action(async (idOrSlug: string, section: string) => {
+    await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section })
+  })
+
 experiment
   .command('link <id-or-slug> <run-dir-or-id>')
   .description('bidirectionally bind a run to an experiment')
@@ -394,6 +451,7 @@ warning
         expectedHash?: string
       },
     ) => {
+      emitWarningDeprecationBanner()
       const g = readGlobals()
       await runWarningAdd({
         ...g,
@@ -411,6 +469,7 @@ warning
   .description('list warnings on a run')
   .option('--status <s>', 'open | resolved | all (default all)', 'all')
   .action(async (id: string, opts: { status?: string }) => {
+    emitWarningDeprecationBanner()
     const g = readGlobals()
     const status = opts.status === 'open' ? 'open' : opts.status === 'resolved' ? 'resolved' : 'all'
     await runWarningList({ ...g, runId: id, status })
@@ -427,6 +486,7 @@ warning
       rowId: string,
       opts: { note: string; expectedMtime?: number; expectedHash?: string },
     ) => {
+      emitWarningDeprecationBanner()
       const g = readGlobals()
       await runWarningResolve({
         ...g,
@@ -444,6 +504,7 @@ warning
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .option('--expected-hash <sha1>', 'optional content sha1 lock')
   .action(async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
+    emitWarningDeprecationBanner()
     const g = readGlobals()
     await runWarningReopen({
       ...g,
@@ -459,6 +520,7 @@ warning
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .option('--expected-hash <sha1>', 'optional content sha1 lock')
   .action(async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
+    emitWarningDeprecationBanner()
     const g = readGlobals()
     await runWarningDelete({
       ...g,
@@ -561,6 +623,7 @@ runWarning
         expectedHash?: string
       },
     ) => {
+      emitWarningDeprecationBanner()
       const g = readGlobals()
       await runRunWarningAdd({
         ...g,

@@ -18,7 +18,7 @@ import { WebSocketServer } from 'ws'
 import { authenticateNodeRequest } from './auth/server-auth'
 import { wsToFrameSocket } from './hub-node/connection'
 import { authenticateNodeToken } from './hub/node-auth'
-import { forwardRequest, isForwardable } from './hub/proxy'
+import { decodeProxyResultBody, forwardRequest, isForwardable } from './hub/proxy'
 import type { NodeRegistry } from './hub/registry'
 import {
   lookupSession,
@@ -227,7 +227,7 @@ async function forwardToNode(
     outHeaders['content-type'] = 'application/json'
   }
   res.writeHead(result.status, outHeaders)
-  res.end(result.body)
+  res.end(decodeProxyResultBody(result))
 }
 
 function readRequestBody(req: IncomingMessage): Promise<string> {

@@ -14,15 +14,14 @@
 
 import { promises as fs } from 'node:fs'
 import { join, relative } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { NextRequest } from 'next/server'
-
-import { GET as getExperiments } from '../../app/api/experiments/route'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { GET as getAnomalies } from '../../app/api/anomalies/route'
 import { GET as getExperimentDetail } from '../../app/api/experiments/[id]/route'
 import { GET as getExperimentWarnings } from '../../app/api/experiments/[id]/warnings/route'
-import { GET as getRuns } from '../../app/api/runs/route'
+import { GET as getExperiments } from '../../app/api/experiments/route'
 import { GET as getRunDetail } from '../../app/api/runs/[id]/route'
-import { GET as getAnomalies } from '../../app/api/anomalies/route'
+import { GET as getRuns } from '../../app/api/runs/route'
 
 // Point the runtime at the repo's config.yml (which already lists
 // `./mock/project-{a,b}`). Must run BEFORE the runtime module imports.
@@ -74,12 +73,8 @@ describe('integration: v3 read flow against mock fixtures', () => {
     for (const p of PROJECTS) {
       Object.assign(postMtimes, await snapshotMtimes(join(REPO_ROOT, 'mock', p)))
     }
-    const drift = Object.entries(postMtimes).filter(
-      ([k, v]) => preMtimes[k] !== v,
-    )
-    expect(drift, `mock fixture mtimes drifted: ${drift.map(([k]) => k).join(', ')}`).toEqual(
-      [],
-    )
+    const drift = Object.entries(postMtimes).filter(([k, v]) => preMtimes[k] !== v)
+    expect(drift, `mock fixture mtimes drifted: ${drift.map(([k]) => k).join(', ')}`).toEqual([])
   })
 
   describe('GET /api/experiments?project=project-a', () => {
@@ -91,6 +86,8 @@ describe('integration: v3 read flow against mock fixtures', () => {
       const body = (await res.json()) as {
         experiments: Array<{
           id: string
+          mtime: number
+          readmeMtime: number
           effectiveCreatedAt: string
           effectiveUpdatedAt: string
           frontMatter: { runs: string[] }
@@ -99,6 +96,8 @@ describe('integration: v3 read flow against mock fixtures', () => {
       expect(body.experiments.length).toBeGreaterThanOrEqual(1)
       for (const e of body.experiments) {
         expect(e.id).toMatch(/^E\d{4}-/)
+        expect(e.readmeMtime).toBeGreaterThan(0)
+        expect(e.mtime).toBeGreaterThanOrEqual(e.readmeMtime)
         expect(e.effectiveCreatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
         expect(e.effectiveUpdatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
         // effective range is closed: created ≤ updated
@@ -117,12 +116,16 @@ describe('integration: v3 read flow against mock fixtures', () => {
       expect(res.status).toBe(200)
       const body = (await res.json()) as {
         id: string
+        mtime: number
+        readmeMtime: number
         frontMatter: { runs: string[]; title: string }
         memberRuns: Array<{ id: string; status: string }>
         effectiveCreatedAt: string
         effectiveUpdatedAt: string
       }
       expect(body.id).toBe(id)
+      expect(body.readmeMtime).toBeGreaterThan(0)
+      expect(body.mtime).toBeGreaterThanOrEqual(body.readmeMtime)
       expect(body.frontMatter.runs.length).toBeGreaterThan(0)
       // memberRuns is the cross-join — every confirmed member run shows up
       expect(body.memberRuns.length).toBeGreaterThan(0)
@@ -192,10 +195,9 @@ describe('integration: v3 read flow against mock fixtures', () => {
       const runId = expBody.memberRuns[0]?.id
       expect(runId).toBeTruthy()
 
-      const res = await getRunDetail(
-        new NextRequest(`http://localhost/api/runs/${runId}`),
-        { params: Promise.resolve({ id: runId! }) },
-      )
+      const res = await getRunDetail(new NextRequest(`http://localhost/api/runs/${runId}`), {
+        params: Promise.resolve({ id: runId! }),
+      })
       expect(res.status).toBe(200)
       const body = (await res.json()) as {
         id: string

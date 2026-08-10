@@ -20,6 +20,7 @@ export { parseReadme } from './readme/parse.js'
 export { reserializeReadme, serializeReadme } from './readme/serialize.js'
 export { parseArtifacts } from './readme/artifacts.js'
 export { splitH2Sections } from './readme/sections.js'
+export type { H2SectionEntry, SectionSplit } from './readme/sections.js'
 export { extractTitle } from './readme/title.js'
 export {
   deriveCompletion,
@@ -224,6 +225,40 @@ export { parseExperimentReadme, buildExperimentRecord } from './experiments/pars
 export type { ParsedExperiment } from './experiments/parse.js'
 export { serializeExperimentReadme } from './experiments/serialize.js'
 export type { SerializeExperimentInput } from './experiments/serialize.js'
+export {
+  CANONICAL_EXPERIMENT_SECTION_HEADINGS,
+  EXPERIMENT_YAML_SCHEMA_VERSIONS,
+  IMPLEMENTATION_SCHEMA_VERSION,
+  INVESTIGATION_SCHEMA_VERSION,
+  MANAGED_DOCUMENT_FILE_NAMES,
+  MANAGED_EXPERIMENT_SECTIONS,
+  MANAGED_SECTION_HEADINGS,
+  MANAGED_SECTION_POINTERS,
+  RESULTS_SCHEMA_VERSION,
+  emptyImplementationDocument,
+  emptyInvestigationDocument,
+  emptyResultsDocument,
+  lintExperimentDocument,
+  parseImplementationYaml,
+  parseInvestigationYaml,
+  parseResultsYaml,
+  readExperimentManagedDocuments,
+  renderExperimentManagedSection,
+  renderImplementationMarkdown,
+  renderInvestigationMarkdown,
+  renderManagedDocumentMarkdown,
+  renderResultsMarkdown,
+  serializeImplementationYaml,
+  serializeInvestigationYaml,
+  serializeResultsYaml,
+  validateExperimentManagedDocuments,
+} from './experiments/documents.js'
+export type {
+  ExperimentDocumentDiagnostic,
+  RenderManagedSectionResult,
+  ResultsRenderContext,
+  ResultsRunLink,
+} from './experiments/documents.js'
 export { discoverExperiments, readExperimentDoc } from './experiments/discover.js'
 export type { DiscoverExperimentsResult } from './experiments/discover.js'
 export { computeMembership } from './experiments/membership.js'

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { Markdown } from './markdown'
+import { Markdown, resolveReportResourceUrl } from './markdown'
 
 describe('<Markdown> math rendering', () => {
   it('renders inline `$...$` as KaTeX inside the surrounding paragraph', () => {
@@ -129,5 +129,51 @@ describe('<Markdown> overflow scrolling', () => {
     const root = container.firstElementChild
     expect(root).not.toBeNull()
     expect(root!.className).toMatch(/\bmin-w-0\b/)
+  })
+})
+
+describe('<Markdown> directory Report resources', () => {
+  const base = '/api/report-assets/research/R0002'
+
+  it('renders a relative .html image target as an unsandboxed iframe', () => {
+    const { container } = render(
+      <Markdown resourceBaseUrl={base}>{'![Interactive curves](./charts/curves.html)'}</Markdown>,
+    )
+
+    const iframe = container.querySelector('iframe[data-report-html]')
+    expect(iframe).not.toBeNull()
+    expect(iframe?.getAttribute('src')).toBe(`${base}/charts/curves.html`)
+    expect(iframe?.getAttribute('title')).toBe('Interactive curves')
+    expect(iframe?.hasAttribute('sandbox')).toBe(false)
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('keeps an HTML markdown link as a link while rewriting its target', () => {
+    const { container } = render(
+      <Markdown resourceBaseUrl={base}>{'[Open curves](./charts/curves.html)'}</Markdown>,
+    )
+
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(`${base}/charts/curves.html`)
+  })
+
+  it('rewrites relative images and leaves remote images untouched', () => {
+    const { container } = render(
+      <Markdown resourceBaseUrl={base}>
+        {'![local](images/loss.png)\n\n![remote](https://example.com/loss.png)'}
+      </Markdown>,
+    )
+
+    const images = container.querySelectorAll('img')
+    expect(images[0]?.getAttribute('src')).toBe(`${base}/images/loss.png`)
+    expect(images[1]?.getAttribute('src')).toBe('https://example.com/loss.png')
+  })
+
+  it('refuses relative paths with traversal segments', () => {
+    expect(resolveReportResourceUrl(base, '../secret.json')).toBeNull()
+    expect(resolveReportResourceUrl(base, '%2e%2e/secret.json')).toBeNull()
+    expect(resolveReportResourceUrl(base, './data/metrics.json')).toBe(
+      `${base}/data/metrics.json`,
+    )
   })
 })

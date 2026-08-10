@@ -16,7 +16,12 @@ export interface ProxyRequest {
 export interface ProxyResult {
   status: number
   body: string
+  bodyEncoding?: 'base64'
   headers?: Record<string, string>
+}
+
+export function decodeProxyResultBody(result: ProxyResult): string | Buffer {
+  return result.bodyEncoding === 'base64' ? Buffer.from(result.body, 'base64') : result.body
 }
 
 // Paths the hub serves itself (never forwarded to a node): browser auth, the
@@ -33,10 +38,10 @@ export function isForwardable(path: string): boolean {
   return path.startsWith('/api/') && !isHubLocal(path)
 }
 
-/** Extract the target project from `?project=` or `/api/projects/<p>/...`. */
+/** Extract the target project from query or a project-scoped API path. */
 export function projectFromRequest(path: string, query?: Record<string, string>): string | null {
   if (query?.project) return query.project
-  const m = /^\/api\/projects\/([^/?]+)(?:\/|$)/.exec(path)
+  const m = /^\/api\/(?:projects|report-assets)\/([^/?]+)(?:\/|$)/.exec(path)
   return m ? decodeURIComponent(m[1]!) : null
 }
 
@@ -68,8 +73,20 @@ async function broadcastFirstHit(nodes: HubLink[], req: ProxyRequest): Promise<P
   for (const n of nodes) {
     try {
       const res = await n.call({ method: req.method, path: req.path, query: req.query })
-      if (res.status !== 404) return { status: res.status, body: res.body, headers: res.headers }
-      last = { status: res.status, body: res.body, headers: res.headers }
+      if (res.status !== 404) {
+        return {
+          status: res.status,
+          body: res.body,
+          bodyEncoding: res.bodyEncoding,
+          headers: res.headers,
+        }
+      }
+      last = {
+        status: res.status,
+        body: res.body,
+        bodyEncoding: res.bodyEncoding,
+        headers: res.headers,
+      }
     } catch {
       /* try the next node */
     }
@@ -118,7 +135,12 @@ export async function forwardRequest(registry: NodeRegistry, req: ProxyRequest):
       body: req.body,
       headers: req.headers,
     })
-    return { status: res.status, body: res.body, headers: res.headers }
+    return {
+      status: res.status,
+      body: res.body,
+      bodyEncoding: res.bodyEncoding,
+      headers: res.headers,
+    }
   } catch (e) {
     return jsonResult(503, { error: { message: `node "${node!.name}" unavailable: ${(e as Error).message}` } })
   }

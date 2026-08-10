@@ -3,6 +3,7 @@ import { makeSocketPair } from '../hub-node/connection'
 import type { NodeHello } from '../hub-node/protocol'
 import { NodeLink } from '../node/node-link'
 import {
+  decodeProxyResultBody,
   forwardRequest,
   isForwardable,
   isHubLocal,
@@ -17,6 +18,8 @@ async function attachNode(
   dispatch: (req: { path: string; query?: Record<string, string>; method: string }) => Promise<{
     status: number
     body: string
+    bodyEncoding?: 'base64'
+    headers?: Record<string, string>
   }>,
 ) {
   const [hubSock, nodeSock] = makeSocketPair()
@@ -39,6 +42,7 @@ describe('hub proxy routing', () => {
   it('extracts the project from query or path', () => {
     expect(projectFromRequest('/api/runs', { project: 'a' })).toBe('a')
     expect(projectFromRequest('/api/projects/proj-b/git-status')).toBe('proj-b')
+    expect(projectFromRequest('/api/report-assets/proj-b/R0002/chart.html')).toBe('proj-b')
     expect(projectFromRequest('/api/runs/some-id')).toBeNull()
   })
 
@@ -49,6 +53,23 @@ describe('hub proxy routing', () => {
     const res = await forwardRequest(reg, { method: 'GET', path: '/api/runs', query: { project: 'project-b' } })
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body).node).toBe('nvl72')
+  })
+
+  it('preserves and decodes opaque report asset bytes', async () => {
+    const original = Buffer.from([0, 255, 1, 2, 3, 137, 80, 78, 71])
+    const reg = new NodeRegistry()
+    await attachNode(reg, 'm2', ['project-a'], async () => ({
+      status: 200,
+      body: original.toString('base64'),
+      bodyEncoding: 'base64',
+      headers: { 'content-type': 'image/png' },
+    }))
+    const result = await forwardRequest(reg, {
+      method: 'GET',
+      path: '/api/report-assets/project-a/R0001/plot.png',
+    })
+    expect(result.bodyEncoding).toBe('base64')
+    expect(decodeProxyResultBody(result)).toEqual(original)
   })
 
   it('fans out + merges /api/projects, tagging each by node', async () => {

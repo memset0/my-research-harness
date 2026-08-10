@@ -25,6 +25,7 @@ import {
   EXPERIMENT_FILENAME_REGEX,
   extractTitle,
   loadConfig,
+  MANAGED_DOCUMENT_FILE_NAMES,
   parseHypotheses,
   parseJournal,
   Poller,
@@ -365,14 +366,18 @@ async function init(): Promise<Runtime> {
           const seen = new Set<string>()
           for (const e of discovered) {
             seen.add(e.id)
-            // Register per-file watch so individual edits also get caught.
-            poller.watch(e.path, e.mtime)
+            // Register README, managed YAML sidecars, and the bundle directory
+            // so direct Agent edits and sidecar creation/deletion are visible.
+            await watchExperimentBundle(poller, e)
           }
           // Replace the project's slice of the experiments map.
           for (const id of Array.from(sharedExperiments.keys())) {
             const cur = sharedExperiments.get(id)!
             if (cur.project !== expDirMatch.name) continue
-            if (!seen.has(id)) sharedExperiments.delete(id)
+            if (!seen.has(id)) {
+              unwatchExperimentBundle(poller, cur)
+              sharedExperiments.delete(id)
+            }
           }
           for (const e of discovered) sharedExperiments.set(e.id, e)
           // Reconcile the dynamic set of experiment-scoped code-review dirs:
@@ -401,33 +406,23 @@ async function init(): Promise<Runtime> {
         return
       }
 
-      // v5: individual exp doc README.md change (`docs/experiments/E*/README.md`).
-      // Also tolerate legacy v4 file form (`docs/experiments/E*.md`) during
-      // the migration window.
+      // Individual Experiment bundle change: README.md, any managed YAML
+      // sidecar, or the bundle directory itself. Also tolerate the legacy v4
+      // file form (`docs/experiments/E*.md`) during migration.
       const expFileMatch = config.projects.find(
-        (p) =>
-          path.startsWith(join(p.root, 'docs', 'experiments') + '/') && path.endsWith('.md'),
+        (p) => path.startsWith(join(p.root, 'docs', 'experiments') + '/'),
       )
       if (expFileMatch) {
-        const filename = basename(path)
-        // v5: README.md inside a `E<NNNN>-<slug>/` folder.
-        let expId: string | null = null
-        if (filename === 'README.md') {
-          const parent = basename(dirname(path))
-          if (EXPERIMENT_DIR_REGEX.test(parent)) {
-            expId = parent
-          }
-        } else {
-          // v4 legacy: `E<NNNN>-<slug>.md` directly.
-          const m = EXPERIMENT_FILENAME_REGEX.exec(filename)
-          if (m) expId = filename.replace(/\.md$/, '')
-        }
+        const expId = experimentIdForWatchedPath(expFileMatch.root, path)
         if (expId) {
           try {
             const updated = await readExperimentDoc(expFileMatch.root, expFileMatch.name, expId)
             if (updated) {
               sharedExperiments.set(expId, updated)
+              await watchExperimentBundle(poller, updated)
             } else {
+              const previous = sharedExperiments.get(expId)
+              if (previous) unwatchExperimentBundle(poller, previous)
               sharedExperiments.delete(expId)
             }
             recomputeAnomalies(expFileMatch.name)
@@ -492,11 +487,11 @@ async function init(): Promise<Runtime> {
         const { experiments: docs } = await discoverExperiments(project.root, project.name)
         experimentsByProject.set(project.name, docs)
         // Register the docs/experiments/ dir for poll tracking + each
-        // discovered file for individual-mtime watch (task 5.6).
+        // discovered bundle for individual README/YAML/directory watches.
         const expDir = join(project.root, 'docs', 'experiments')
         poller.watch(expDir, await dirMtimeOrZero(expDir))
         for (const doc of docs) {
-          poller.watch(doc.path, doc.mtime)
+          await watchExperimentBundle(poller, doc)
         }
       }
     })(),
@@ -620,6 +615,47 @@ async function fileMtimeOrZero(path: string): Promise<number> {
     return stat.mtimeMs
   } catch {
     return 0
+  }
+}
+
+const MANAGED_EXPERIMENT_FILE_NAMES = Object.values(MANAGED_DOCUMENT_FILE_NAMES)
+
+export function experimentIdForWatchedPath(projectRoot: string, watchedPath: string): string | null {
+  const experimentsRoot = join(projectRoot, 'docs', 'experiments')
+  if (!watchedPath.startsWith(`${experimentsRoot}/`)) return null
+  const filename = basename(watchedPath)
+  if (EXPERIMENT_DIR_REGEX.test(filename) && dirname(watchedPath) === experimentsRoot) {
+    return filename
+  }
+  if (
+    filename === 'README.md' ||
+    MANAGED_EXPERIMENT_FILE_NAMES.includes(filename)
+  ) {
+    const parent = basename(dirname(watchedPath))
+    return EXPERIMENT_DIR_REGEX.test(parent) ? parent : null
+  }
+  const legacy = EXPERIMENT_FILENAME_REGEX.exec(filename)
+  return legacy && dirname(watchedPath) === experimentsRoot ? filename.replace(/\.md$/, '') : null
+}
+
+export async function watchExperimentBundle(poller: Poller, experiment: Experiment): Promise<void> {
+  poller.watch(experiment.path, experiment.readmeMtime)
+  if (basename(experiment.path) !== 'README.md') return
+  const directory = dirname(experiment.path)
+  poller.watch(directory, await dirMtimeOrZero(directory))
+  for (const fileName of MANAGED_EXPERIMENT_FILE_NAMES) {
+    const sidecar = join(directory, fileName)
+    poller.watch(sidecar, await fileMtimeOrZero(sidecar))
+  }
+}
+
+function unwatchExperimentBundle(poller: Poller, experiment: Experiment): void {
+  poller.unwatch(experiment.path)
+  if (basename(experiment.path) !== 'README.md') return
+  const directory = dirname(experiment.path)
+  poller.unwatch(directory)
+  for (const fileName of MANAGED_EXPERIMENT_FILE_NAMES) {
+    poller.unwatch(join(directory, fileName))
   }
 }
 

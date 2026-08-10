@@ -12,4 +12,4 @@
  * `openspec/specs/fs-migration-guide-authoring/spec.md` for the required
  * structure of those guides.
  */
-export const FS_CONVENTION_VERSION = 5
+export const FS_CONVENTION_VERSION = 6

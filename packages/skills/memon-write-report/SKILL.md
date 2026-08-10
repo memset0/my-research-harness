@@ -1,167 +1,170 @@
 ---
 name: memon-write-report
-description: Author or update a theme-driven report (`docs/reports/R<NNNN>-<slug>.md`) drawn from the project's JOURNAL. The report records the shell selector used to assemble it, so re-running the selector cheaply tells whether new events have landed since the last update.
-argument-hint: <theme of the report; or existing R-id to update>
-license: MIT
-metadata:
-  author: memset0
-  version: "0.1.0"
+description: Author or update a theme-driven memon Report from Journal, Experiment Results/Findings, Runs, digests, and other project evidence. Default to a single Markdown file; only when the user explicitly requests HTML or interactive presentation, create a directory Report bundle with README.md plus local HTML, JSON, JavaScript, CSS, and image assets.
 ---
 
 # memon-write-report
 
-A **report** is a theme-driven, user-curated narrative built from JOURNAL
-events. It does NOT advance any cursor. It does NOT have to cover a
-contiguous period. Multiple reports may overlap in time. Reports
-co-exist with the daily-cadenced **digests** produced by
-`memon-digest-journal` — they're separate artifacts for separate jobs:
+Write an on-demand narrative Report. Reports are cursor-independent and may
+cover overlapping or discontinuous evidence. `memon-digest-journal` remains the
+only cursor-advancing periodic summary.
 
-| | digest | report |
-|---|---|---|
-| cadence | one per calendar date, automatic | on demand, theme-driven |
-| time scope | strict non-overlapping window between consecutive digests | arbitrary, possibly disjoint |
-| advances `last_digest_at` | yes | **no** |
-| filename | `D<NNNN>-<YYYY-MM-DD>.md` | `R<NNNN>-<slug>.md` |
-| typical use | "what happened since last digest + integrity sweep" | "everything I learned about H0007 across the past 3 weeks" |
+## Preflight
 
-## Preflight — FS convention version
+Run `memon --project-root . --format json fs-version check` first. Continue only
+for `match`; otherwise follow `../PREFLIGHT.md`.
 
-Run `memon fs-version check --project-root . --format json` as the first
-step. If `status !== "match"`, STOP and follow the branch protocol in
-`../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
+## Choose the representation
 
-## When to use
+Two forms coexist:
 
-- The user wants a theme-driven write-up that is NOT cursor-bound (e.g. "everything I learned about H0007 across the past 3 weeks")
-- An existing report (`R<NNNN>-<slug>.md`) needs updating with new evidence
-- The narrative should survive across digest boundaries (overlapping or disjoint windows)
-- The user wants a re-runnable selector embedded in the artifact so future updates know what to look for
+```text
+docs/reports/R0001-theme.md             # ordinary Markdown report
 
-## When NOT to use
+docs/reports/R0002-interactive-theme/   # HTML-capable bundle
+├── README.md
+├── charts.html
+├── data/
+│   └── metrics.json
+└── assets/
+    ├── charts.js
+    ├── report.css
+    └── figure.png
+```
 
-- ❌ Periodic / cursor-advancing summaries — that's `memon-digest-journal`
-- ❌ A single observation that doesn't deserve a multi-paragraph artifact — `memon-append-journal --tag NOTE`
-- ❌ For run-specific READMEs — those are owned by `memon-run-experiment`
-- ❌ Hypothesis-status updates — edit `docs/hypotheses.md` directly, no report needed
+Rules:
 
-## File naming
+- Default to the single `.md` form.
+- Create a directory bundle only when the user explicitly asks for HTML,
+  interactive visualization, or an HTML report.
+- Updating an existing directory bundle keeps its form; no repeated request is
+  needed.
+- Never migrate an existing `.md` Report merely because bundle support exists.
+- Keep one `memon-write-report` skill for both forms.
 
-Reports live at `<projectRoot>/docs/reports/R<NNNN>-<slug>.md`:
+IDs are global across both files and directories. Scan `R<NNNN>-*`, take the
+maximum numeric ID, and allocate the next zero-padded value. Use lowercase
+kebab-case slugs.
 
-- `R` capital prefix — the namespace marker (mirrors `H<NNNN>` for hypotheses, `D<NNNN>` for digests).
-- `<NNNN>` 4-digit zero-padded counter — next available across the whole `docs/reports/` directory. List existing `R*-*.md`, take the numeric max, `+1`, and `printf '%04d'`.
-- `<slug>` lowercase kebab-case, ~3-6 words describing the theme. E.g. `R0001-bf16-investigation`, `R0002-h0007-followup`, `R0003-aug-debug-log`.
+## Evidence sources
 
-## Frontmatter
+Read whatever supports the user's theme:
+
+- Journal events and open requests;
+- Experiment Motivation/Design/Investigation/Results/Findings/Limitations;
+- selected Run READMEs, W&B metadata, and artifacts;
+- hypotheses, digests, existing Reports, and code-review docs.
+
+Results are not limited to Journal events. Distinguish selected Variant `runs`
+from failed/superseded `attempts`, and cite stable Experiment, Investigation,
+Variant, and Run IDs.
+
+## Common frontmatter
+
+The `.md` file or bundle `README.md` carries:
 
 ```yaml
 ---
-id: R<NNNN>
-title: <human-readable title>
-created_at: 2026-05-04T14:30:00+08:00
-updated_at: 2026-05-04T14:30:00+08:00
+id: R0002
+title: BF16 convergence analysis
+created_at: 2026-08-10T10:00:00+00:00
+updated_at: 2026-08-10T10:00:00+00:00
 selector: |
-  # Single shell snippet that selects this report's events from the JOURNAL.
-  # Re-run this on demand to check whether new events qualify for inclusion.
-  # Run from <projectRoot> — the `.` in `--project-root .` resolves to it.
-  memon journal read --project-root . --since 2026-04-15T00:00:00+08:00 --limit 1000 \
-    | jq '.events[] | select((.experimentId // "") | startswith("bf16-"))'
+  memon --project-root . journal read --limit 1000 \
+    | jq '.events[] | select(.body | contains("bf16"))'
 ---
 ```
 
-Field rules:
+`selector` is a rerunnable evidence query when Journal selection is relevant.
+It may be broader than the final source set; the body cites structured
+Experiment/Run sources separately. Preserve `created_at`; update `updated_at`.
+Do not advance `last_digest_at`.
 
-- `selector` — **required**. A bash snippet (multi-line is fine) that
-  emits the JOURNAL events the report draws from. The snippet should be
-  re-runnable: invoking it later returns the **current** matching event
-  set, including any that have landed since the report was written. The
-  agent uses this to detect "is there new evidence since the last
-  update?" without re-deriving filters from scratch.
+## Markdown Report workflow
 
-  Use whatever combination of `memon journal read` flags + `jq` filters
-  expresses the theme. Examples:
+1. Agree on the theme and scope.
+2. Gather evidence and verify IDs/links.
+3. Draft a clear narrative, normally 200–500 words unless the user requests
+   depth. Separate facts from interpretation and uncertainty.
+4. Show the draft when collaborating, then write
+   `docs/reports/R<NNNN>-<slug>.md`.
+5. For later additions, append/update coherently and bump `updated_at`; preserve
+   prior claims or explicitly explain corrections.
 
-  ```bash
-  # all events touching experiments with id prefix "bf16-"
-  memon journal read --project-root . --limit 1000 \
-    | jq '.events[] | select((.experimentId // "") | startswith("bf16-"))'
+## HTML bundle workflow
 
-  # all NOTE/REQUEST events mentioning "H0007" in the body
-  memon journal read --project-root . --tag NOTE --limit 1000 \
-    | jq '.events[] | select(.body | contains("H0007"))'
+Use this workflow only under the representation rule above.
 
-  # everything between two specific dates, no other filter
-  memon journal read --project-root . \
-    --since 2026-04-01T00:00:00+08:00 --limit 1000 \
-    | jq '.events[] | select(.timestamp <= "2026-04-30T23:59:59+08:00")'
-  ```
+1. Put narrative and composition in `README.md`.
+2. Put structured display data in JSON rather than embedding large literals in
+   HTML/JavaScript.
+3. Let HTML fetch bundle-relative JSON and load bundle-relative JS/CSS/images.
+4. Local code may use third-party HTTPS CDN scripts/styles when useful.
+5. Keep every local path inside the Report directory. Never use `../` to read
+   arbitrary project/server files.
+6. Make the HTML independently understandable: title, source attribution,
+   loading/error states, and readable fallback text.
 
-- `created_at` — set once at file creation, **never changed**.
-- `updated_at` — equals `created_at` at creation; bumped on every update.
-- **No `periods`, no `events_consumed`** — the selector replaces both.
-  Actual coverage is whatever the selector currently returns.
+Example:
 
-## Body shape
-
-```markdown
-# R<NNNN>: <title>
-
-<prose narrative, ~200-500 words, free-form; references experiment ids inline>
-
-## Update <ISO date>      ← added by every subsequent update
-
-<prose covering what's new since the previous update>
+```html
+<link rel="stylesheet" href="./assets/report.css">
+<div id="chart"></div>
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script type="module">
+  const metrics = await fetch('./data/metrics.json').then((r) => r.json())
+  // render metrics
+</script>
 ```
 
-## Workflow — new report
+### Embed convention
 
-1. **Decide the theme** with the user (`H0007 investigation`, `bf16 sweep
-   recap`, `pre-may cleanup`, …) and pick a slug.
-2. **Construct the selector**. Write the bash snippet that filters
-   JOURNAL down to the events the theme covers. Verify it returns
-   non-empty by running it.
-3. **Pick the next R-id** and pad to 4 digits:
-   ```sh
-   NEXT_N=$(ls "$PROJECT_ROOT/docs/reports/R"*-*.md 2>/dev/null \
-     | sed -E 's|.*/R([0-9]+)-.*\.md|\1|' \
-     | sort -n | tail -1)
-   NEXT_N=$((${NEXT_N:-0} + 1))
-   FILENAME=$(printf 'R%04d-%s.md' "$NEXT_N" "$SLUG")
-   # → e.g. R0007-bf16-investigation.md
-   ```
-4. **Draft the body** from the selector's output. Group events by
-   category (CREATE / STATUS / NOTE / REQUEST / ERROR / ARCHIVE),
-   reference experiment ids inline, ~200-500 words. Show the draft
-   inline so the user can correct course before any write.
-5. **Write** `<projectRoot>/docs/reports/R<NNNN>-<slug>.md` with the
-   frontmatter (selector embedded verbatim) + body.
+In bundle `README.md`, an image-form Markdown reference whose local target ends
+in `.html` is an iframe embed:
 
-## Workflow — update an existing report
+```markdown
+![Training curves](./charts.html)
+```
 
-1. Open `<projectRoot>/docs/reports/R<id>-<slug>.md` and read its
-   frontmatter `selector` block.
-2. Re-run the selector. Diff against what's already covered in the body
-   (heuristic: any event whose timestamp is newer than the report's
-   `updated_at`).
-3. If nothing new, tell the user "no new events match" and stop.
-4. Otherwise, draft an `## Update <ISO date>` section summarizing the
-   new events; show inline.
-5. On confirm, **append** the new section to the file body. Update
-   `updated_at` to "now". Leave `created_at`, `id`, `title`, `selector`
-   alone (unless the user explicitly wants to refine the selector — in
-   which case write a small note in the Update section).
+A normal link remains a link:
 
-## Anti-patterns
+```markdown
+[Open training curves](./charts.html)
+```
 
-- ❌ **Never call `memon journal digest-mark`** — reports don't touch
-  the cursor.
-- ❌ Never modify experiment READMEs.
-- ❌ Never modify other reports (one invocation = one report touched).
-- ❌ Never reorder or delete prior `## Update` sections — appends only.
+Images and other assets keep their ordinary Markdown behavior.
 
-## Errors
+The first version intentionally treats Agent-authored Report HTML as trusted:
+the iframe is not sandboxed and JavaScript/CDN access is allowed. Do not claim
+security isolation. Still enforce bundle path containment and never include
+credentials or secret data. Because same-origin code may access memon APIs and
+browser state, generate HTML only on the user's explicit request and review
+third-party dependencies carefully.
 
-| exit | meaning |
-|---|---|
-| 0 | report written / updated |
-| 1 | failure (fs error, selector returned non-JSON, etc.) |
+## Validation
+
+For both forms:
+
+- parse frontmatter and check ID/path consistency;
+- rerun selectors where present;
+- verify cited Experiment/Variant/Run IDs and local links;
+- ensure `created_at` is stable and `updated_at` is current.
+
+For bundles also:
+
+- serve/open each HTML entry through the same Report asset route used by the
+  web app, not `file://`;
+- verify `fetch()` paths and MIME types;
+- test loading without silently depending on a developer's absolute path;
+- ensure README uses the `.html` image embed syntax intentionally.
+
+## Guardrails
+
+- Never create an HTML bundle based only on Agent preference.
+- Never convert or relocate an existing single Markdown Report implicitly.
+- Never touch the digest cursor.
+- Never copy a large Results matrix into prose when stable IDs/structured data
+  can be cited or loaded.
+- Never inline secrets, auth tokens, or private environment values in HTML,
+  JSON, JS, CSS, or Markdown.
+- Never let a local asset path escape its Report bundle.

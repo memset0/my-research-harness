@@ -38,22 +38,13 @@ auth:
 process.env.MEMON_CONFIG_PATH = configPath
 
 import { NextRequest } from 'next/server'
+
 // Lazy import: these resolve runtime() the first time a route is hit.
-const { PATCH: patchRunArchive } = await import(
-  '../../app/api/runs/[id]/archive/route'
-)
-const { PATCH: patchRunStatus } = await import(
-  '../../app/api/runs/[id]/status/route'
-)
-const { PATCH: patchExpStatus } = await import(
-  '../../app/api/experiments/[id]/status/route'
-)
-const { PATCH: patchExpArchive } = await import(
-  '../../app/api/experiments/[id]/archive/route'
-)
-const { PUT: putRunReadme } = await import(
-  '../../app/api/runs/[id]/readme/route'
-)
+const { PATCH: patchRunArchive } = await import('../../app/api/runs/[id]/archive/route')
+const { PATCH: patchRunStatus } = await import('../../app/api/runs/[id]/status/route')
+const { PATCH: patchExpStatus } = await import('../../app/api/experiments/[id]/status/route')
+const { PATCH: patchExpArchive } = await import('../../app/api/experiments/[id]/archive/route')
+const { PUT: putRunReadme } = await import('../../app/api/runs/[id]/readme/route')
 
 const RUN_RUNNING = `---
 id: alpha-260513-100000
@@ -130,25 +121,27 @@ a
 
 ## Caveats
 
+## Legacy Notes
+
+first unsupported occurrence
+
+## Legacy Notes
+
+second unsupported occurrence
+
 ## Warnings
 `
 
 beforeAll(async () => {
   await fs.mkdir(join(projectRoot, 'logs', 'alpha-260513-100000'), { recursive: true })
-  await fs.writeFile(
-    join(projectRoot, 'logs', 'alpha-260513-100000', 'README.md'),
-    RUN_RUNNING,
-  )
+  await fs.writeFile(join(projectRoot, 'logs', 'alpha-260513-100000', 'README.md'), RUN_RUNNING)
   await fs.mkdir(join(projectRoot, 'logs', 'beta-260513-110000'), { recursive: true })
   await fs.writeFile(
     join(projectRoot, 'logs', 'beta-260513-110000', 'README.md'),
     RUN_FINISHED_ARCHIVED,
   )
   await fs.mkdir(join(projectRoot, 'docs', 'experiments'), { recursive: true })
-  await fs.writeFile(
-    join(projectRoot, 'docs', 'experiments', 'E0001-alpha.md'),
-    EXP_OPEN,
-  )
+  await fs.writeFile(join(projectRoot, 'docs', 'experiments', 'E0001-alpha.md'), EXP_OPEN)
 })
 
 afterAll(async () => {
@@ -279,6 +272,9 @@ describe('PATCH /api/experiments/:id/status', () => {
 
     const exp = await readExp(id)
     expect(exp).toContain('status: RESOLVED')
+    expect(exp.match(/^## Legacy Notes$/gm)).toHaveLength(2)
+    expect(exp).toContain('first unsupported occurrence')
+    expect(exp).toContain('second unsupported occurrence')
 
     const journal = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
     expect(journal).toContain('[EXP_STATUS]')
@@ -320,6 +316,9 @@ describe('PATCH /api/experiments/:id/archive', () => {
 
     const exp = await readExp(id)
     expect(exp).toContain('archived: true')
+    expect(exp.match(/^## Legacy Notes$/gm)).toHaveLength(2)
+    expect(exp).toContain('first unsupported occurrence')
+    expect(exp).toContain('second unsupported occurrence')
 
     const journal = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
     expect(journal).toContain('`E0001-alpha` op=archive')
@@ -406,10 +405,7 @@ describe('PUT /api/runs/:id/readme', () => {
     expect(body.finalContent).toBe(before)
 
     // No new journal entries from this noop call.
-    const journalAfter = await fs.readFile(
-      join(projectRoot, 'docs', 'journal.md'),
-      'utf8',
-    )
+    const journalAfter = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
     expect(journalAfter).toBe(journalBefore)
   })
 

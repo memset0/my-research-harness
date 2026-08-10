@@ -3,16 +3,19 @@
 // the client bundle (it transitively pulls in fast-glob → fs).
 
 import type {
-  CodeReviewSummary,
-  CodeReviewFrontMatter,
   CodeReviewCompletion,
+  CodeReviewFrontMatter,
+  CodeReviewSummary,
   DigestSummary,
-  Run,
+  ExperimentDocumentDiagnostic,
+  ExperimentManagedDocuments,
+  ExperimentRawSection,
   Hypothesis,
   JournalEvent,
   ParsedHypotheses,
   ParsedJournal,
   ReportSummary,
+  Run,
   WarningRecord,
 } from '@memon/core'
 
@@ -25,14 +28,35 @@ export interface ProjectSummary {
 }
 
 export interface IndexedRun
-  extends Pick<Run, 'id' | 'project' | 'path' | 'mtime' | 'readmeMtime' | 'hasReadme' | 'frontMatter' | 'parseErrors' | 'parseWarnings'> {
+  extends Pick<
+    Run,
+    | 'id'
+    | 'project'
+    | 'path'
+    | 'mtime'
+    | 'readmeMtime'
+    | 'hasReadme'
+    | 'frontMatter'
+    | 'parseErrors'
+    | 'parseWarnings'
+  > {
   stale: boolean
 }
 
 export interface FullExperiment
   extends Pick<
     Run,
-    'id' | 'project' | 'path' | 'mtime' | 'readmeMtime' | 'hasReadme' | 'frontMatter' | 'sections' | 'body' | 'parseErrors' | 'parseWarnings'
+    | 'id'
+    | 'project'
+    | 'path'
+    | 'mtime'
+    | 'readmeMtime'
+    | 'hasReadme'
+    | 'frontMatter'
+    | 'sections'
+    | 'body'
+    | 'parseErrors'
+    | 'parseWarnings'
   > {
   stale: boolean
   resources: null
@@ -50,13 +74,19 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     body = text
   }
   if (!res.ok) {
-    throw new ApiError(res.status, (body as { error?: { message?: string } })?.error?.message ?? text)
+    throw new ApiError(
+      res.status,
+      (body as { error?: { message?: string } })?.error?.message ?? text,
+    )
   }
   return body as T
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message)
     this.name = 'ApiError'
   }
@@ -75,7 +105,9 @@ export async function fetchExperiment(id: string): Promise<FullExperiment> {
   return jsonFetch(`/api/runs/${encodeURIComponent(id)}`)
 }
 
-export async function fetchHypotheses(project: string): Promise<{ path: string } & ParsedHypotheses> {
+export async function fetchHypotheses(
+  project: string,
+): Promise<{ path: string } & ParsedHypotheses> {
   return jsonFetch(`/api/hypotheses?project=${encodeURIComponent(project)}`)
 }
 
@@ -105,9 +137,14 @@ export interface FullReport {
   mtime: number
   hash: string
   content: string
+  format: 'markdown' | 'bundle'
 }
 
-export async function fetchReports(project: string): Promise<{ reports: ReportSummary[] }> {
+export interface ReportListItem extends ReportSummary {
+  format: 'markdown' | 'bundle'
+}
+
+export async function fetchReports(project: string): Promise<{ reports: ReportListItem[] }> {
   return jsonFetch(`/api/reports?project=${encodeURIComponent(project)}`)
 }
 
@@ -120,11 +157,14 @@ export async function putReport(
   id: string,
   payload: { content: string; expectedMtime: number; expectedHash: string },
 ): Promise<{ ok: true; mtime: number; hash: string }> {
-  return jsonFetch(`/api/reports/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  return jsonFetch(
+    `/api/reports/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
 }
 
 // ---------- Code reviews ----------
@@ -227,11 +267,14 @@ export async function putDigest(
   id: string,
   payload: { content: string; expectedMtime: number; expectedHash: string },
 ): Promise<{ ok: true; mtime: number; hash: string }> {
-  return jsonFetch(`/api/digests/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  return jsonFetch(
+    `/api/digests/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
 }
 
 export async function fetchLog(
@@ -689,23 +732,18 @@ export async function renameTmuxSession(input: {
   name: string
   newName: string
 }): Promise<{ ok: true; sessionName: string }> {
-  const res = await fetch(
-    `/api/tmux-sessions/${encodeURIComponent(input.name)}/rename`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ newName: input.newName }),
-    },
-  )
+  const res = await fetch(`/api/tmux-sessions/${encodeURIComponent(input.name)}/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newName: input.newName }),
+  })
   return jsonOrThrow<{ ok: true; sessionName: string }>(res)
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   const body = await res.json()
   if (!res.ok) {
-    const msg =
-      (body as { error?: { message?: string } })?.error?.message ??
-      `HTTP ${res.status}`
+    const msg = (body as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`
     throw new ApiError(res.status, msg)
   }
   return body as T
@@ -813,7 +851,10 @@ export interface ExperimentDocSummary {
   id: string
   project: string
   path: string
+  /** Bundle activity mtime (README + managed YAML); display/sorting only. */
   mtime: number
+  /** README.md's own mtime; optimistic-lock key for README mutations. */
+  readmeMtime: number
   frontMatter: {
     id: string
     slug: string
@@ -830,6 +871,12 @@ export interface ExperimentDocSummary {
   }
   sections: {
     motivation: string | null
+    design?: string | null
+    implementation?: string | null
+    investigation?: string | null
+    results?: string | null
+    findings?: string | null
+    limitations?: string | null
     method: string | null
     plan: string | null
     conclusion: string | null
@@ -849,7 +896,22 @@ export interface ExperimentDocSummary {
  * returns `effectiveCreatedAt` / `effectiveUpdatedAt` so this type now
  * extends the summary directly.
  */
-export interface ExperimentDocDetail extends ExperimentDocSummary {}
+export interface ExperimentDisplaySection extends ExperimentRawSection {
+  /** Human-readable Markdown; a valid managed section is rendered from YAML. */
+  body: string
+  /** Literal README body retained when `body` is a YAML projection. */
+  rawBody: string
+  source: 'readme' | 'yaml' | 'diagnostic'
+  diagnostics: ExperimentDocumentDiagnostic[]
+}
+
+export interface ExperimentDocDetail extends ExperimentDocSummary {
+  rawSections?: ExperimentRawSection[]
+  documents?: ExperimentManagedDocuments | null
+  documentSections?: ExperimentDisplaySection[]
+  documentDiagnostics?: ExperimentDocumentDiagnostic[]
+  documentReadOnly?: boolean
+}
 
 export interface AnomalyRecord {
   code: 'ORPHAN_RUN' | 'PHANTOM_RUN_REF' | 'MISMATCH_EXPERIMENT_REF'
@@ -863,7 +925,9 @@ export interface AnomalyRecord {
 export async function fetchExperimentDocs(
   project?: string,
 ): Promise<{ experiments: ExperimentDocSummary[] }> {
-  const url = project ? `/api/experiments?project=${encodeURIComponent(project)}` : '/api/experiments'
+  const url = project
+    ? `/api/experiments?project=${encodeURIComponent(project)}`
+    : '/api/experiments'
   return jsonFetch(url)
 }
 
@@ -887,7 +951,14 @@ export interface RunFileTreeNode {
 export async function fetchRunFiles(
   id: string,
   depth = 3,
-): Promise<{ runId: string; runPath: string; depth: number; truncated: boolean; entries: number; tree: RunFileTreeNode }> {
+): Promise<{
+  runId: string
+  runPath: string
+  depth: number
+  truncated: boolean
+  entries: number
+  tree: RunFileTreeNode
+}> {
   return jsonFetch(`/api/runs/${encodeURIComponent(id)}/files?depth=${depth}`)
 }
 
@@ -936,10 +1007,7 @@ export async function fetchSlurmStatus(): Promise<SlurmStatus> {
   ) {
     return body as SlurmStatus
   }
-  throw new ApiError(
-    res.status,
-    (body as { error?: { message?: string } })?.error?.message ?? text,
-  )
+  throw new ApiError(res.status, (body as { error?: { message?: string } })?.error?.message ?? text)
 }
 
 // Git status — per-project working-tree state. Polled by sidebar + project footer.
@@ -1067,9 +1135,7 @@ export async function fetchGitDiff(
   if (opts.submodule) params.set('submodule', opts.submodule)
   if (opts.from) params.set('from', opts.from)
   if (opts.to) params.set('to', opts.to)
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`,
-  )
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`)
 }
 
 // Git range — commit list AND file list for `from..to`. Used by the
@@ -1102,9 +1168,7 @@ export async function fetchGitRange(
 ): Promise<GitRangeResponse> {
   const params = new URLSearchParams({ from, to })
   if (submodule) params.set('submodule', submodule)
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-range?${params.toString()}`,
-  )
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-range?${params.toString()}`)
 }
 
 // Git history — branches, commit list, single-commit detail. Lazy
@@ -1167,16 +1231,11 @@ export type GitCommitDetail =
       files: GitFileEntry[]
     }
 
-export async function fetchGitBranches(
-  project: string,
-  submodule?: string,
-): Promise<GitBranches> {
+export async function fetchGitBranches(project: string, submodule?: string): Promise<GitBranches> {
   const params = new URLSearchParams()
   if (submodule) params.set('submodule', submodule)
   const qs = params.toString()
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-branches${qs ? `?${qs}` : ''}`,
-  )
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-branches${qs ? `?${qs}` : ''}`)
 }
 
 export async function fetchGitLog(
@@ -1188,9 +1247,7 @@ export async function fetchGitLog(
   const params = new URLSearchParams({ ref })
   if (limit !== undefined) params.set('limit', String(limit))
   if (submodule) params.set('submodule', submodule)
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-log?${params.toString()}`,
-  )
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-log?${params.toString()}`)
 }
 
 export async function fetchGitCommit(
@@ -1200,9 +1257,7 @@ export async function fetchGitCommit(
 ): Promise<GitCommitDetail> {
   const params = new URLSearchParams({ sha })
   if (submodule) params.set('submodule', submodule)
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-commit?${params.toString()}`,
-  )
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-commit?${params.toString()}`)
 }
 
 // --- Submodules ---
@@ -1242,12 +1297,8 @@ export interface CommitMarksResponse {
   parseWarnings: string[]
 }
 
-export async function fetchCommitMarks(
-  project: string,
-): Promise<CommitMarksResponse> {
-  return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/commit-marks`,
-  )
+export async function fetchCommitMarks(project: string): Promise<CommitMarksResponse> {
+  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/commit-marks`)
 }
 
 function commitMarkUrl(project: string, sha: string, submodule?: string): string {
@@ -1278,4 +1329,4 @@ export async function deleteCommitMark(
 }
 
 // Re-exports for convenience
-export type { Run, Hypothesis, JournalEvent, WarningRecord }
+export type { Hypothesis, JournalEvent, Run, WarningRecord }

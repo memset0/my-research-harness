@@ -2,9 +2,8 @@
 // six anomaly codes it surfaces. Inputs are constructed in-memory; no fs.
 
 import { describe, expect, it } from 'vitest'
-
-import { computeMembership } from './membership.js'
 import type { Experiment, Run } from '../types.js'
+import { computeMembership } from './membership.js'
 
 function exp(id: string, slug: string, runs: string[] = []): Experiment {
   return {
@@ -12,6 +11,7 @@ function exp(id: string, slug: string, runs: string[] = []): Experiment {
     project: 'p',
     path: `/tmp/${id}.md`,
     mtime: 0,
+    readmeMtime: 0,
     frontMatter: {
       id,
       slug,

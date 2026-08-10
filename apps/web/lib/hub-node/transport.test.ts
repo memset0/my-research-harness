@@ -30,6 +30,29 @@ describe('hub<->node transport', () => {
     expect(JSON.parse(res.body)).toEqual({ echoed: '/api/runs', q: { project: 'p' } })
   })
 
+  it('preserves binary response bytes through the JSON RPC envelope', async () => {
+    const original = Buffer.from([0, 255, 137, 80, 78, 71, 13, 10, 26, 10])
+    const [hubSock, nodeSock] = makeSocketPair()
+    const hub = new HubLink(hubSock)
+    new NodeLink(nodeSock, {
+      hello,
+      dispatch: async () => ({
+        status: 200,
+        body: original.toString('base64'),
+        bodyEncoding: 'base64',
+        headers: { 'content-type': 'image/png' },
+      }),
+    })
+
+    await hub.ready
+    const response = await hub.call({
+      method: 'GET',
+      path: '/api/report-assets/p/R0001/plot.png',
+    })
+    expect(response.bodyEncoding).toBe('base64')
+    expect(Buffer.from(response.body, 'base64')).toEqual(original)
+  })
+
   it('relays node events to the hub', async () => {
     const [hubSock, nodeSock] = makeSocketPair()
     const events: Array<{ topic: string; data: unknown }> = []

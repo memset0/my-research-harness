@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('next/navigation', () => ({
@@ -21,19 +21,16 @@ vi.mock('../lib/api', () => ({
 }))
 
 import {
-  fetchProjects,
+  checkTerminal,
   fetchExperimentDocs,
-  fetchSlurmStatus,
   fetchGitStatus,
   fetchGitStatusFiles,
-  checkTerminal,
+  fetchProjects,
+  fetchSlurmStatus,
 } from '../lib/api'
 import { AppSidebar } from './app-sidebar'
+import { type SessionInfo, SessionProvider } from './session-provider'
 import { SidebarProvider } from './ui/sidebar'
-import {
-  SessionProvider,
-  type SessionInfo,
-} from './session-provider'
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
@@ -43,6 +40,7 @@ function makeExpDoc(id: string, effectiveUpdatedAt: string) {
     project: 'project-a',
     path: `/p/a/docs/experiments/${id}/README.md`,
     mtime: 0,
+    readmeMtime: 0,
     frontMatter: {
       id,
       slug: id.replace(/^E\d+-/, ''),
@@ -198,9 +196,7 @@ describe('AppSidebar', () => {
     // Default beforeEach mock returns enabled: false. Confirm no pill markup.
     const { container } = setup()
     await waitFor(() => expect(screen.getByText('project-a')).toBeInTheDocument())
-    expect(
-      container.querySelectorAll('[data-slot="git-status-pill-compact"]').length,
-    ).toBe(0)
+    expect(container.querySelectorAll('[data-slot="git-status-pill-compact"]').length).toBe(0)
   })
 
   it('header has banner styling (bg + dividers), no chevron, name yields width to pill', async () => {
@@ -263,9 +259,7 @@ describe('AppSidebar', () => {
     // wrapper — verify that its inner pill still has the expected
     // data-slot and `shrink-0`.
     expect(pillSlot!.getAttribute('data-slot')).toBe('git-status-pill-trigger')
-    const innerPill = pillSlot!.querySelector(
-      '[data-slot="git-status-pill-compact"]',
-    )
+    const innerPill = pillSlot!.querySelector('[data-slot="git-status-pill-compact"]')
     expect(innerPill).not.toBeNull()
     expect(innerPill!.className).toMatch(/shrink-0/)
     expect(innerPill!.className).not.toMatch(/max-w-/)
@@ -306,9 +300,7 @@ describe('AppSidebar', () => {
     // NOT bubble up to the CollapsibleTrigger).
     await userEvent.click(trigger)
     await waitFor(() => {
-      expect(
-        document.body.querySelector('[data-slot="git-diff-dialog"]'),
-      ).not.toBeNull()
+      expect(document.body.querySelector('[data-slot="git-diff-dialog"]')).not.toBeNull()
     })
     // Section still expanded: localStorage still contains project-a.
     const stored = localStorage.getItem(STORAGE_KEY) ?? '[]'
@@ -318,12 +310,8 @@ describe('AppSidebar', () => {
   it('non-git project: sidebar pill renders bare (no click trigger wrapper)', async () => {
     // Default beforeEach mock returns enabled: false for all projects.
     const { container } = setup()
-    await waitFor(() =>
-      expect(screen.getByText('project-a')).toBeInTheDocument(),
-    )
-    expect(
-      container.querySelectorAll('[data-slot="git-status-pill-trigger"]').length,
-    ).toBe(0)
+    await waitFor(() => expect(screen.getByText('project-a')).toBeInTheDocument())
+    expect(container.querySelectorAll('[data-slot="git-status-pill-trigger"]').length).toBe(0)
   })
 
   it('renders all 12 experiments (no "View more" cap)', async () => {
@@ -373,9 +361,7 @@ describe('AppSidebar', () => {
     await waitFor(() => {
       expect(screen.getByText('E0001-alpha')).toBeInTheDocument()
     })
-    expect(
-      screen.queryAllByRole('button', { name: /New terminal for E\d+-/ }).length,
-    ).toBe(0)
+    expect(screen.queryAllByRole('button', { name: /New terminal for E\d+-/ }).length).toBe(0)
   })
 
   it('owner + ttyd unavailable: terminal button is disabled with tooltip suggestion', async () => {

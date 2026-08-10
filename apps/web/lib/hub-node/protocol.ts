@@ -25,6 +25,8 @@ export interface RpcResponse {
   status: number
   /** Raw response body (usually JSON text). */
   body: string
+  /** Binary responses are base64 inside the JSON WebSocket envelope. */
+  bodyEncoding?: 'base64'
   headers?: Record<string, string>
 }
 

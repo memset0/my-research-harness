@@ -8,10 +8,10 @@
 // The localStorage write happens inside `setOpenAndPersist`; on remount
 // the same key is read in a `useEffect` and the panel auto-opens.
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { renderWithQuery } from '../utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentPage } from '../../components/experiment-page'
+import { renderWithQuery } from '../utils'
 
 vi.mock('../../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/api')>()
@@ -26,7 +26,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
   }
 })
 
-import { fetchExperimentDoc, fetchExperiment } from '../../lib/api'
+import { fetchExperiment, fetchExperimentDoc } from '../../lib/api'
 
 const EXP_ID = 'E0001-foo'
 const RUN_ID = 'foo-260501-100000'
@@ -36,6 +36,7 @@ const SAMPLE_EXP = {
   project: 'project-a',
   path: `/p/a/docs/experiments/${EXP_ID}.md`,
   mtime: 1000,
+  readmeMtime: 1000,
   frontMatter: {
     id: EXP_ID,
     slug: 'foo',

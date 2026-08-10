@@ -4,8 +4,9 @@
 //                                deletion of an exp with members.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
 import { deleteExperiment, ExperimentHttpError } from '../../../../lib/experiments'
+import { getRuntime } from '../../../../lib/runtime'
+import { buildExperimentDocumentView } from '../../../../lib/server/experiment-sections'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,14 +27,35 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // Compute effective times (task 5.4): the experiment's logical
     // creation/update window expands to cover all member runs, so the UI
     // can sort exp docs by activity rather than by exp-doc-edit time.
-    const effective = computeEffective(exp.frontMatter.createdAt, exp.frontMatter.updatedAt, memberRuns)
+    const effective = computeEffective(
+      exp.frontMatter.createdAt,
+      exp.frontMatter.updatedAt,
+      memberRuns,
+    )
+    const documentView = buildExperimentDocumentView(exp, {
+      runs: Object.fromEntries(
+        memberRuns.map((run) => [
+          run.id,
+          {
+            documentUrl: `/p/${encodeURIComponent(exp.project)}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(run.id)}`,
+            wandbUrl: run.frontMatter.wandb,
+          },
+        ]),
+      ),
+    })
     return NextResponse.json({
       id: exp.id,
       project: exp.project,
       path: exp.path,
       mtime: exp.mtime,
+      readmeMtime: exp.readmeMtime,
       frontMatter: exp.frontMatter,
       sections: exp.sections,
+      rawSections: exp.rawSections,
+      documents: exp.documents,
+      documentSections: documentView.sections,
+      documentDiagnostics: documentView.diagnostics,
+      documentReadOnly: documentView.readOnly,
       warningsRaw: exp.warningsRaw,
       parseErrors: exp.parseErrors,
       parseWarnings: exp.parseWarnings,
@@ -67,8 +89,12 @@ function computeEffective(
   if (members.length === 0) {
     return { createdAt: expCreatedAt, updatedAt: expUpdatedAt }
   }
-  const created = [expCreatedAt, ...members.map((m) => m.frontMatter.createdAt)].filter(Boolean).sort()
-  const updated = [expUpdatedAt, ...members.map((m) => m.frontMatter.updatedAt)].filter(Boolean).sort()
+  const created = [expCreatedAt, ...members.map((m) => m.frontMatter.createdAt)]
+    .filter(Boolean)
+    .sort()
+  const updated = [expUpdatedAt, ...members.map((m) => m.frontMatter.updatedAt)]
+    .filter(Boolean)
+    .sort()
   return {
     createdAt: created[0] ?? expCreatedAt,
     updatedAt: updated[updated.length - 1] ?? expUpdatedAt,

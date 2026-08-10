@@ -1,227 +1,219 @@
 ---
 name: memon-migrate-fs
-description: Upgrade a project root's on-disk layout from one FS convention version to the next by reading natural-language migration guides (`packages/core/migrations/v<N>-to-v<N+1>.md`) and applying them step-by-step. Run when `memon install-skills` or any other memon skill reports `fs-version: behind`. Never auto-fires; user must invoke explicitly and confirm before any filesystem mutation.
-argument-hint: <usually empty; reads .memon/version.json and target version from FS_CONVENTION_VERSION>
+description: Upgrade a memon project's on-disk FS convention by following each shipped migration guide and conversion script. Use only when the user explicitly asks to migrate; for review-required semantic upgrades such as v5 to v6, stage every Experiment, iterate with the user, record per-Experiment approval and hashes, and publish only after all candidates receive final approval.
 disable-model-invocation: true
-license: MIT
-metadata:
-  author: memset0
-  version: "0.1.0"
 ---
 
 # memon-migrate-fs
 
-This is the **only** skill that bumps `<projectRoot>/.memon/version.json`'s
-`fs_convention_version` field. It reads natural-language migration guides
-shipped under `packages/core/migrations/v<N>-to-v<N+1>.md` and applies them
-sequentially, with a `git commit` boundary between every step (or a backup
-tarball when the project root isn't a git repo).
+This is the only skill allowed to update `.memon/version.json`. It is exempt
+from normal skill preflight because resolving an FS mismatch is its purpose.
+Never run autonomously.
 
-This skill is exempt from the standard FS-version preflight that other
-memon-* skills run — it IS the migration runtime. It reads
-`.memon/version.json` directly as part of its own state-determination
-step.
+## Determine the migration chain
 
-## When to use
-
-- `memon install-skills` reported `fsVersion.status: "behind"` and printed a
-  banner recommending you run this skill.
-- Another memon-* skill refused to run with a "project FS convention is at
-  v<X>; tool expects v<Y>" message.
-- The user explicitly asked to upgrade the project's on-disk layout.
-
-## When NOT to use
-
-- ❌ The user just wants to add a journal entry / write a README — version
-  mismatch is a precondition, not a goal in itself. Surface the gap, get
-  user confirmation, *then* run this skill.
-- ❌ `fsVersion.status: "ahead"` (project is newer than this memon). This
-  skill does NOT downgrade. Tell the user to upgrade memon instead.
-- ❌ Working tree has uncommitted changes (in a git repo). Refuse and ask
-  the user to commit / stash / discard first. Do NOT auto-stash.
-
-## Workflow
-
-### 1. Read state
+Run:
 
 ```sh
-# Always pass --project-root . explicitly (project convention).
-memon fs-version check --project-root . --format json
+memon --project-root . --format json fs-version check
 ```
 
-Parse the JSON. Branch on `status`:
+- `match`: report that nothing is needed and stop.
+- `uninitialised`: ask the user to install memon first; stop.
+- `ahead`: do not downgrade; ask the user to upgrade memon.
+- `behind`: enumerate every `vN-to-vN+1` guide through the target.
 
-- `match` → tell the user "already up to date, nothing to do" and stop.
-- `uninitialised` → tell the user "this project root has not had memon
-  installed yet; run `memon install-skills --project-root .` first" and
-  stop.
-- `ahead` → forward the `MEMON_TOO_OLD` error to the user and stop. Do
-  not attempt downgrade.
-- `behind` → continue.
+Resolve and read every guide completely before writing. Each guide declares
+whether it is a mechanical step or a review-required semantic migration and
+names any deterministic conversion scripts. A missing guide/script is fatal.
 
-Capture `currentVersion = $current` and `targetVersion = $available`.
+Present the full chain and wait for explicit user confirmation. A request that
+triggered some other skill is not migration consent.
 
-### 2. Plan
+## Git and local staging preflight
 
-Enumerate every step from `currentVersion` to `targetVersion - 1`. For each
-step `v<X>→v<X+1>`, verify that `packages/core/migrations/v<X>-to-v<X+1>.md`
-exists in the installed memon. If any guide is missing, abort with an
-error listing the missing guide(s) — do NOT proceed.
+For Git projects, require a clean tracked and untracked working tree before
+starting. Never auto-stash or discard work. Show dirty paths and stop.
 
-```sh
-# Resolve the migrations dir. The CLI doesn't expose it directly; resolve
-# from the @memon/core package or the bundled skills source. In Claude
-# Code, typically the project's checked-out memon repo at
-# packages/core/migrations/.
-ls packages/core/migrations/v${X}-to-v$((X+1)).md
+Keep review candidates local under:
+
+```text
+.memon/migrations/v<N>-to-v<N+1>/<migration-id>/
+├── state.yaml
+├── live-backup/
+└── experiments/
 ```
 
-### 3. Confirm with user
+Add `.memon/migrations/` to the repository-local `.git/info/exclude` if it is
+not already ignored. Do not modify the tracked project `.gitignore` merely for
+migration state, and never include staging in a commit.
 
-Present the plan in plain language and wait for explicit confirmation.
-Embed the prompt as user-facing dialogue (in Chinese):
+`state.yaml` records at least:
 
-> 当前 project root 的 FS 约定版本是 v${currentVersion}，工具要求
-> v${targetVersion}。我会运行 ${N} 个迁移步骤：
-> v${currentVersion}→v${currentVersion+1}, ..., v${targetVersion-1}→v${targetVersion}。
-> 是否确认开始迁移？(y/N)
-
-Only on affirmative response (`y` / `yes`) does the migration proceed.
-Any other answer (including silence / decline) means stop without writing
-anything to disk.
-
-A user message that triggered the agent for some other reason (e.g. "add a
-journal entry") MUST NEVER be treated as implicit consent. The
-confirmation step is mandatory.
-
-### 4. Preflight — clean tree (git mode) or fallback detection
-
-```sh
-# Detect git mode.
-if git -C . rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  GIT_MODE=1
-else
-  GIT_MODE=0
-fi
+```yaml
+schema_version: 1
+migration: v5-to-v6
+migration_id: 20260810T120000Z
+published_at: null
+experiments:
+  E0001-example:
+    status: APPROVED
+    source_paths:
+      - docs/experiments/E0001-example/README.md
+      - logs/baseline-260810-120000/README.md
+    source_hash: <combined hash of Experiment and referenced Run READMEs>
+    staged_hash: <hash of candidate bundle>
+    approved_at: <ISO8601 with offset>
+    stale_reason: null
 ```
 
-If `GIT_MODE=1`:
+Per-Experiment states are `DRAFT`, `APPROVED`, `STALE`, and `PUBLISHED`.
+Treat a missing or ambiguous referenced Run README as a blocking source error.
 
-```sh
-# Refuse if working tree is dirty (modified, staged, or untracked).
-status=$(git -C . status --porcelain)
-if [ -n "$status" ]; then
-  echo "Working tree is dirty; refuse to migrate." >&2
-  echo "$status" >&2
-  exit 1
-fi
-```
+The directory and state survive conversation boundaries. Resume an existing
+matching migration instead of starting a second candidate set.
 
-If working tree is dirty, surface the offending files to the user and tell
-them to commit / stash / discard before retrying. Do NOT auto-stash.
+## Mechanical step
 
-If `GIT_MODE=0` (project root is not a git repo), prepare the backup
-directory:
+For a guide explicitly marked mechanical:
 
-```sh
-mkdir -p .memon/backups
-```
+1. Run its conversion script in `--check`/dry-run mode.
+2. Show the planned file changes and request the guide-required confirmation.
+3. Create a backup.
+4. Run the deterministic, idempotent conversion.
+5. Run every verification command from the guide.
+6. Update the FS marker only after verification succeeds.
+7. In Git mode, commit only explicit touched paths with the guide's fixed
+   migration commit message.
 
-### 5. Per-step loop
+Never improvise a semantic rewrite under this shorter path.
 
-For each step `v<X>→v<X+1>` from `currentVersion` to `targetVersion - 1`:
+## Review-required semantic step
 
-```sh
-# Read the guide.
-GUIDE=packages/core/migrations/v${X}-to-v$((X+1)).md
+v5→v6 uses this strict workflow. Any future guide may opt into it too.
 
-# Apply the changes described in the guide. The guide will list the exact
-# files to read/edit. Do exactly what it says — no improvisation.
+### 1. Stage one Experiment at a time
 
-# Run the verification commands from the guide's `## Verification`
-# section. Every command must exit 0. If any fail, abort: surface the
-# failure and the staged diff, stop the loop. Do NOT commit.
+For the next unapproved Experiment:
 
-# Bump the marker. Read the existing record, change the version + set
-# last_migrated_at to the current ISO8601-with-offset timestamp, write
-# atomically. Use a small helper script or inline jq/python:
-NOW=$(date +%Y-%m-%dT%H:%M:%S%:z)
-python3 -c "
-import json, sys
-p = '.memon/version.json'
-with open(p) as f: r = json.load(f)
-r['fs_convention_version'] = $((X+1))
-r['last_migrated_at'] = '$NOW'
-import os
-tmp = p + '.tmp'
-with open(tmp, 'w') as f: json.dump(r, f, indent=2); f.write('\n')
-os.rename(tmp, p)
-"
+1. Hash its complete source bundle and record `source_hash`.
+2. Read every legacy section and related Runs. Unsupported/unknown headings are
+   evidence, not disposable errors.
+3. Generate a complete target candidate only under the staging directory:
+   canonical `README.md`, `implementation.yaml`, `investigation.yaml`, and
+   `results.yaml`, plus any guide-required files.
+4. Use the current `memon-write-experiment-doc` schema/routing contract in
+   staging mode. Do not touch the production Experiment.
+5. Run the guide's staging validator and YAML conversion checks.
+6. Render Implementation, Investigation, and Results as human-readable Markdown
+   and show the README diff and diagnostics to the user.
 
-if [ "$GIT_MODE" = "1" ]; then
-  # Stage ONLY files this step touched (read from the guide's file list)
-  # plus the marker. Never `git add -A` / `git add .` — parallel agent
-  # sessions may have unrelated dirty files.
-  git -C . add -- <files-this-step-touched> .memon/version.json
-  git -C . commit -m "chore(memon): migrate FS convention v${X} -> v$((X+1))"
-else
-  # Non-git mode: snapshot the touched files into a tarball BEFORE the
-  # next step so the user has a rollback artifact. Use the guide's file
-  # list. Tarball name uses the next version (post-step state).
-  tar -czf ".memon/backups/post-v$((X+1))-${NOW}.tar.gz" .memon/version.json <files-this-step-touched>
-fi
-```
+The Agent performs semantic reconstruction: split legacy coding tasks into
+Implementation, experimental work into Investigation, group retries into
+Variants, choose Results columns, and separate facts/Findings/Conclusion. Do not
+pretend this classification is lossless.
 
-The commit message is **fixed**: `chore(memon): migrate FS convention
-v<X> -> v<X+1>`. ASCII arrow `->`, not Unicode `→`. No body, no trailing
-period. Tooling may grep for this format.
+### 2. Iterate until the user approves
 
-### 6. Final report
+Accept feedback such as:
 
-Tell the user:
+- missing or incorrectly classified work;
+- wrong hierarchy/dependency;
+- wrong Variant grouping or selected Run;
+- a needed Results column or enum option;
+- inaccurate Findings, Limitations, or Conclusion;
+- legacy content that must remain visible.
 
-- How many steps ran successfully.
-- The final `fs_convention_version` value (verify by reading the marker
-  one more time).
-- Either the list of new git commits (`git log --oneline -n <N>`) or the
-  list of backup tarballs created.
+Modify only the staged candidate, rerun validation/rendering, and show the new
+diff. Repeat without a fixed retry limit.
 
-Tell the user (in Chinese):
+When the user explicitly approves that Experiment, record `staged_hash`,
+`source_hash`, and `approved_at`; set it `APPROVED`. Approval applies only to
+those exact bytes.
 
-> 迁移完成。从 v${currentVersion} 升级到 v${targetVersion}。
-> 共 ${N} 步：
-> - v1 → v2 (commit abcd123)
-> - v2 → v3 (commit efgh456)
-> 已写入 `.memon/version.json`。如需回退，可用 `git reset --hard HEAD~${N}`。
+### 3. Invalidate stale approvals
 
-## Anti-patterns
+Before moving to another Experiment and again before publication:
 
-- ❌ **Never `git add -A` / `git add .`** — these sweep in unrelated dirty
-  files from concurrent agent sessions, contaminating the migration
-  commit. Always stage explicitly with `git add -- <paths>`.
-- ❌ **Never auto-stash on the user's behalf** — if the working tree is
-  dirty, refuse and ask the user. Stashing silently can hide work the user
-  was actively doing.
-- ❌ **Never skip the user-confirmation step** — even if the gap is small
-  (e.g. v1→v2). The user must say "yes" before any filesystem write.
-- ❌ **Never delete `.memon/backups/`** — those tarballs are the user's
-  rollback artifact in non-git mode. Garbage collection is the user's
-  responsibility (a future `memon fs-version prune-backups` may help).
-- ❌ **Never apply more than one step's changes before committing** —
-  each step has its own commit so the user can `git reset --hard HEAD~1`
-  to undo just the most recent step. Batching steps into one commit
-  defeats the rollback boundary.
-- ❌ **Never improvise outside what the guide says** — the migration guide
-  is the contract. If the guide is missing or incomplete, abort and report
-  the gap; do not "fill in" what you think it should say.
-- ❌ **Never edit `.memon/version.json` by hand** without going through
-  the read-modify-write cycle above. If the schema validator rejects
-  your write, fix the input — do not bypass it.
+- recompute every approved source hash;
+- recompute every approved staged hash.
 
-## Errors
+If candidate bytes differ, mark that Experiment `STALE`, rerun checks, and
+request approval for the new candidate bytes. If source bytes differ, do not
+reapprove the old candidate: start a new staging migration from the new source,
+regenerate the conversion, and repeat review. Never carry approval across
+changed bytes.
 
-| exit | meaning |
-|---|---|
-| 0  | success |
-| 1  | generic failure (working tree dirty, missing guide, verification failed) |
-| 11 | MEMON_TOO_OLD — the project root is newer than the running memon; tell user to upgrade memon |
+### 4. Require all approvals and final confirmation
+
+Do not partially publish an approved Experiment. Continue until every
+Experiment is `APPROVED`, all candidate files validate, all cross-Experiment
+references validate, and all hashes still match.
+
+Show a final summary of every Experiment, changed file, unresolved diagnostic,
+and source/staged hash. Then ask for one explicit final publication
+confirmation. Until that confirmation:
+
+- production Experiment files remain untouched;
+- the FS marker remains unchanged;
+- no migration commit is created.
+
+### 5. Publish as one guarded operation
+
+After final confirmation:
+
+1. Recheck the Git tree and all hashes.
+2. Project every approved candidate into an isolated validation root and run
+   YAML validation, bundle lint, cross-reference checks, and all managed-section
+   renders before touching production.
+3. Copy current production files into the staging `backup/` directory.
+4. Promote every approved candidate using the guide's atomic publication
+   script/rename strategy.
+5. Repeat per-file YAML validation, bundle lint, cross-reference checks, CLI
+   rendering, and guide verification across the production tree.
+6. If verification fails, restore from the backup, leave the FS marker at its
+   old version, and report the failure.
+7. Only after all production checks and migration-state writes pass, atomically update
+   `.memon/version.json` (`fs_convention_version` and `last_migrated_at`).
+8. Re-run the version check and final smoke tests.
+9. In Git mode, stage only guide-listed production paths and the marker; never
+   stage `.memon/migrations/` or unrelated files. Create the fixed migration
+   commit.
+
+The FS marker is the final write, never a promise that incomplete files will be
+fixed later.
+
+## YAML schema upgrades
+
+Every YAML schema change is governed by an FS convention step. The guide must
+ship a deterministic conversion script that is:
+
+- idempotent;
+- capable of dry-run/check mode;
+- explicit about source and target `schema_version`;
+- comment/order/unknown-field preserving where possible;
+- atomic per file;
+- validated across every Experiment before the global marker changes.
+
+If semantic judgment is required, the script creates the mechanical skeleton
+and the review-required workflow handles meaning. Never upgrade YAML silently
+while reading it.
+
+## Final report
+
+Report the version chain, approved/published Experiment count, verification
+results, migration commit(s) or non-Git backup paths, and retained local staging
+path. Do not delete staging automatically; it is the audit record until the user
+chooses to remove it.
+
+## Guardrails
+
+- Never skip explicit start confirmation or final publication confirmation.
+- Never edit production Experiment files during staged review.
+- Never publish a subset of a review-required migration.
+- Never accept changed source/candidate bytes under an old approval.
+- Never bump the marker before successful production verification.
+- Never use `git add .` or `git add -A`.
+- Never auto-stash, reset, discard, or delete user work.
+- Never commit `.memon/migrations/`.
+- Never infer that parser success means a semantic migration is correct.

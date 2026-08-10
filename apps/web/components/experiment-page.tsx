@@ -11,32 +11,33 @@
 //   4. Warnings (raw markdown for now)
 //   5. Artifacts (aggregated from member runs, grouped by run)
 
-import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
-import { File, Folder, FolderOpen } from 'lucide-react'
+import { AlertTriangle, File, Folder, FolderOpen } from 'lucide-react'
+import Link from 'next/link'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
+  type ExperimentDisplaySection,
+  type FullExperiment,
   fetchExperiment,
   fetchExperimentDoc,
   fetchRunFiles,
-  type FullExperiment,
   type MemberRunSummary,
 } from '../lib/api'
+import { cn } from '../lib/utils'
+import { AddNoteButton } from './add-note-button'
+import { ArchiveToggle } from './archive-toggle'
+import { EditMarkdownButton } from './edit-markdown-button'
+import { ExperimentCodeReviews } from './experiment-code-reviews'
+import { ExperimentStatusEdit } from './experiment-status-edit'
+import { LogViewer } from './log-viewer'
+import { Markdown } from './markdown'
+import { OpenWithButton } from './open-with-button'
+import { StatusEdit } from './status-edit'
+import { StatusPill } from './status-pill'
+import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { ExperimentCodeReviews } from './experiment-code-reviews'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
-import { StatusPill } from './status-pill'
-import { StatusEdit } from './status-edit'
-import { ExperimentStatusEdit } from './experiment-status-edit'
-import { ArchiveToggle } from './archive-toggle'
-import { Markdown } from './markdown'
-import { EditMarkdownButton } from './edit-markdown-button'
-import { OpenWithButton } from './open-with-button'
-import { AddNoteButton } from './add-note-button'
-import { LogViewer } from './log-viewer'
-import { TimestampLocal } from './timestamp'
-import { cn } from '../lib/utils'
 
 interface Props {
   project: string
@@ -45,18 +46,32 @@ interface Props {
 }
 
 export function ExperimentPage({ project, experimentId, initialOpenRun }: Props) {
-  const { data: exp, isLoading, error } = useQuery({
+  const {
+    data: exp,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['experiment', experimentId],
     queryFn: () => fetchExperimentDoc(experimentId),
   })
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   if (error || !exp) {
-    return <div className="p-6 text-sm text-destructive">Failed to load experiment {experimentId}</div>
+    return (
+      <div className="p-6 text-sm text-destructive">Failed to load experiment {experimentId}</div>
+    )
   }
 
   const aggregatedArtifacts = exp.memberRuns.flatMap((r) =>
     r.artifacts.map((a) => ({ runId: r.id, path: a.path, description: a.description })),
+  )
+  const documentSections: ExperimentDisplaySection[] =
+    exp.documentSections ?? legacyDocumentSections(exp)
+  const inlineDiagnosticKeys = new Set(
+    documentSections.flatMap((section) => section.diagnostics.map(diagnosticKey)),
+  )
+  const remainingDocumentDiagnostics = (exp.documentDiagnostics ?? []).filter(
+    (diagnostic) => !inlineDiagnosticKeys.has(diagnosticKey(diagnostic)),
   )
 
   return (
@@ -75,7 +90,11 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           <div className="flex flex-wrap gap-1 text-xs">
             <span className="text-muted-foreground">Hypotheses:</span>
             {exp.frontMatter.hypotheses.map((h) => (
-              <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses`} className="underline">
+              <Link
+                key={h}
+                href={`/p/${encodeURIComponent(project)}/hypotheses`}
+                className="underline"
+              >
                 {h}
               </Link>
             ))}
@@ -86,18 +105,37 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             expId={exp.id}
             status={exp.frontMatter.status}
             archived={exp.frontMatter.archived}
-            expectedMtime={exp.mtime}
+            expectedMtime={exp.readmeMtime}
           />
           <ArchiveToggle
             kind="exp"
             id={exp.id}
             archived={exp.frontMatter.archived}
-            expectedMtime={exp.mtime}
+            expectedMtime={exp.readmeMtime}
           />
           <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
+          {exp.documentReadOnly && (
+            <Badge
+              variant="outline"
+              className="border-amber-500/50 text-amber-700 dark:text-amber-300"
+            >
+              compatibility view
+            </Badge>
+          )}
           <OpenWithButton project={project} scope="exp" slug={exp.id} />
         </div>
       </header>
+
+      {exp.documentReadOnly && (
+        <div className="flex gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <div>
+            This Experiment uses unsupported, incomplete, or conflicting document structure. All
+            source sections remain visible below. Metadata and Markdown edits preserve the original
+            section body; resolve diagnostics explicitly rather than relying on normalization.
+          </div>
+        </div>
+      )}
 
       {/* Runs first — it's the most actionable info for the user opening
           this page. Default folded so the long-form prose below is
@@ -105,7 +143,10 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
       <Card>
         <CardHeader>
           <CardTitle>
-            Runs <span className="font-normal text-sm text-muted-foreground">({exp.memberRuns.length})</span>
+            Runs{' '}
+            <span className="font-normal text-sm text-muted-foreground">
+              ({exp.memberRuns.length})
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
@@ -128,24 +169,14 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
       <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
       <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-      <SectionCard heading="Motivation" body={exp.sections.motivation} project={project} />
-      <SectionCard heading="Method" body={exp.sections.method} project={project} />
-      <SectionCard heading="Plan" body={exp.sections.plan} project={project} />
-      <SectionCard heading="Conclusion" body={exp.sections.conclusion} project={project} />
-      <SectionCard heading="Caveats" body={exp.sections.caveats} project={project} />
-
-      {exp.warningsRaw && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Warnings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="prose prose-sm max-w-none text-xs/relaxed">
-              <Markdown project={project}>{exp.warningsRaw}</Markdown>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
+      {documentSections.map((section) => (
+        <SectionCard
+          key={`${section.index}:${section.heading}:${section.occurrence}`}
+          section={section}
+          project={project}
+        />
+      ))}
 
       <Card>
         <CardHeader>
@@ -173,21 +204,65 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   )
 }
 
-function SectionCard({
-  heading,
-  body,
-  project,
-}: {
-  heading: string
-  body: string | null
-  project: string
-}) {
+function SectionCard({ section, project }: { section: ExperimentDisplaySection; project: string }) {
+  const { heading, body } = section
+  const managedConflict = section.managed && section.source === 'readme'
+  const hasErrors = section.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
   return (
-    <Card>
-      <CardHeader>
+    <Card
+      className={cn(
+        !section.supported && 'border-amber-500/60 bg-amber-500/[0.04]',
+        managedConflict && 'border-destructive/60 bg-destructive/[0.04]',
+      )}
+      data-supported={section.supported ? 'true' : 'false'}
+      data-managed-source={section.managed ? section.source : undefined}
+    >
+      <CardHeader className="flex-row items-center justify-between gap-2">
         <CardTitle>{heading}</CardTitle>
+        <div className="flex flex-wrap gap-1">
+          {!section.supported && (
+            <Badge variant="outline" className="border-amber-500/60">
+              Unsupported
+            </Badge>
+          )}
+          {section.managed && section.source === 'yaml' && (
+            <Badge variant="secondary">Managed YAML</Badge>
+          )}
+          {managedConflict && <Badge variant="destructive">Managed section conflict</Badge>}
+          {section.occurrence > 1 && (
+            <Badge variant="destructive">Duplicate #{section.occurrence}</Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
+        {!section.supported && (
+          <SectionNotice tone="warning">
+            This heading is not supported by the current Experiment schema. Its original content is
+            preserved and rendered for compatibility.
+          </SectionNotice>
+        )}
+        {managedConflict && (
+          <SectionNotice tone="error">
+            This managed section must appear exactly once and contain only its canonical one-line
+            YAML pointer. The actual README content is shown below; move it into the managed YAML
+            document during migration.
+          </SectionNotice>
+        )}
+        {section.managed && section.source === 'diagnostic' && (
+          <SectionNotice tone="error">
+            The managed YAML document could not be rendered. Fix the document diagnostics below; the
+            README pointer has not been treated as content.
+          </SectionNotice>
+        )}
+        {section.diagnostics.length > 0 && (hasErrors || !section.supported) && (
+          <ul className="mb-3 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+            {section.diagnostics.map((diagnostic, index) => (
+              <li key={`${diagnostic.code}:${index}`}>
+                <code>{diagnostic.code}</code>: {diagnostic.message}
+              </li>
+            ))}
+          </ul>
+        )}
         {body ? (
           <div className="prose prose-sm max-w-none text-xs/relaxed">
             <Markdown project={project}>{body}</Markdown>
@@ -198,6 +273,83 @@ function SectionCard({
       </CardContent>
     </Card>
   )
+}
+
+function DocumentDiagnosticsBanner({
+  diagnostics,
+}: {
+  diagnostics: ExperimentDisplaySection['diagnostics']
+}) {
+  if (diagnostics.length === 0) return null
+  return (
+    <Card className="border-destructive/50 bg-destructive/[0.04]">
+      <CardHeader>
+        <CardTitle>Document diagnostics</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="list-disc space-y-1 pl-5 text-xs">
+          {diagnostics.map((diagnostic, index) => (
+            <li key={`${diagnostic.code}:${index}`}>
+              <code>{diagnostic.code}</code>: {diagnostic.message}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  )
+}
+
+function diagnosticKey(diagnostic: ExperimentDisplaySection['diagnostics'][number]): string {
+  return `${diagnostic.code}\0${diagnostic.file}\0${diagnostic.field ?? ''}\0${diagnostic.message}`
+}
+
+function SectionNotice({ tone, children }: { tone: 'warning' | 'error'; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'mb-3 rounded-md border px-3 py-2 text-xs',
+        tone === 'error'
+          ? 'border-destructive/50 bg-destructive/10 text-destructive'
+          : 'border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-100',
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+function legacyDocumentSections(exp: {
+  sections: {
+    motivation: string | null
+    method: string | null
+    plan: string | null
+    conclusion: string | null
+    caveats: string | null
+  }
+  warningsRaw: string | null
+}): ExperimentDisplaySection[] {
+  const entries = [
+    ['Motivation', exp.sections.motivation],
+    ['Method', exp.sections.method],
+    ['Plan', exp.sections.plan],
+    ['Conclusion', exp.sections.conclusion],
+    ['Caveats', exp.sections.caveats],
+    ...(exp.warningsRaw ? ([['Warnings', exp.warningsRaw]] as Array<[string, string]>) : []),
+  ] as Array<[string, string | null]>
+  return entries.map(([heading, body], index) => ({
+    heading,
+    body: body ?? '',
+    rawBody: body ?? '',
+    index,
+    occurrence: 1,
+    // This fallback only exists for stale SSR/test payloads from the old API.
+    // Actual v6 detail responses carry Core's supported flag and warnings.
+    supported: true,
+    managed: false,
+    pointerValid: null,
+    source: 'readme',
+    diagnostics: [],
+  }))
 }
 
 function RunPanel({
@@ -234,17 +386,9 @@ function RunPanel({
   }
 
   return (
-    <Collapsible
-      open={open}
-      onOpenChange={setOpenAndPersist}
-      className="rounded-md border bg-card"
-    >
+    <Collapsible open={open} onOpenChange={setOpenAndPersist} className="rounded-md border bg-card">
       <CollapsibleTrigger asChild>
-        <div
-          role="button"
-          tabIndex={0}
-          className="flex cursor-pointer items-center gap-2 p-2"
-        >
+        <div role="button" tabIndex={0} className="flex cursor-pointer items-center gap-2 p-2">
           <StatusPill status={summary.status as never} />
           <span className="font-mono text-sm">{runId}</span>
           <span className="ml-auto text-xs text-muted-foreground">
@@ -253,16 +397,22 @@ function RunPanel({
           </span>
         </div>
       </CollapsibleTrigger>
-      <CollapsibleContent
-        className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up"
-      >
+      <CollapsibleContent className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <RunBody project={project} experimentId={experimentId} runId={runId} />
       </CollapsibleContent>
     </Collapsible>
   )
 }
 
-function RunBody({ project, experimentId, runId }: { project: string; experimentId: string; runId: string }) {
+function RunBody({
+  project,
+  experimentId,
+  runId,
+}: {
+  project: string
+  experimentId: string
+  runId: string
+}) {
   const { data: run, isLoading } = useQuery({
     queryKey: ['run', runId],
     queryFn: () => fetchExperiment(runId),
@@ -300,7 +450,9 @@ function RunBody({ project, experimentId, runId }: { project: string; experiment
             />
           </>
         ) : (
-          <Badge variant="outline" className="text-[10px]">no README</Badge>
+          <Badge variant="outline" className="text-[10px]">
+            no README
+          </Badge>
         )}
         {run.parseErrors.length > 0 && (
           <Badge variant="destructive" className="text-[10px]">
@@ -341,73 +493,67 @@ function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: 
   const fm = run.frontMatter
   return (
     <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs md:grid-cols-4">
-        <FmField label="name" value={fm.name} />
-        {fm.project && fm.project !== project && (
-          <FmField label="sub-project" value={fm.project} />
-        )}
-        <FmField label="created">
-          <TimestampLocal value={fm.createdAt} variant="long" />
-        </FmField>
-        <FmField label="finished">
-          <TimestampLocal value={fm.finishedAt} variant="long" />
-        </FmField>
-        <FmField label="host" value={fm.host ?? '—'} />
-        <FmField label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
-        <FmField label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />
-        <FmField label="entry" value={fm.entry || '—'} />
-        <div className="col-span-2 break-all md:col-span-4">
-          <FmLabel>command</FmLabel>
-          <code className="block rounded bg-muted px-2 py-1 font-mono text-[11px]">
-            {fm.command || '—'}
-          </code>
+      <FmField label="name" value={fm.name} />
+      {fm.project && fm.project !== project && <FmField label="sub-project" value={fm.project} />}
+      <FmField label="created">
+        <TimestampLocal value={fm.createdAt} variant="long" />
+      </FmField>
+      <FmField label="finished">
+        <TimestampLocal value={fm.finishedAt} variant="long" />
+      </FmField>
+      <FmField label="host" value={fm.host ?? '—'} />
+      <FmField label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
+      <FmField label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />
+      <FmField label="entry" value={fm.entry || '—'} />
+      <div className="col-span-2 break-all md:col-span-4">
+        <FmLabel>command</FmLabel>
+        <code className="block rounded bg-muted px-2 py-1 font-mono text-[11px]">
+          {fm.command || '—'}
+        </code>
+      </div>
+      {fm.wandb && (
+        <div className="col-span-2 md:col-span-4">
+          <FmLabel>wandb</FmLabel>
+          <a
+            className="text-[11px] text-primary underline-offset-4 hover:underline"
+            href={fm.wandb}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {fm.wandb}
+          </a>
         </div>
-        {fm.wandb && (
-          <div className="col-span-2 md:col-span-4">
-            <FmLabel>wandb</FmLabel>
-            <a
-              className="text-[11px] text-primary underline-offset-4 hover:underline"
-              href={fm.wandb}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {fm.wandb}
-            </a>
+      )}
+      {fm.tags.length > 0 && (
+        <div className="col-span-2 md:col-span-4">
+          <FmLabel>tags</FmLabel>
+          <div className="flex flex-wrap gap-1">
+            {fm.tags.map((t) => (
+              <Badge key={t} variant="outline" className="text-[10px]">
+                #{t}
+              </Badge>
+            ))}
           </div>
-        )}
-        {fm.tags.length > 0 && (
-          <div className="col-span-2 md:col-span-4">
-            <FmLabel>tags</FmLabel>
-            <div className="flex flex-wrap gap-1">
-              {fm.tags.map((t) => (
-                <Badge key={t} variant="outline" className="text-[10px]">
-                  #{t}
-                </Badge>
-              ))}
-            </div>
+        </div>
+      )}
+      {fm.hypotheses.length > 0 && (
+        <div className="col-span-2 md:col-span-4">
+          <FmLabel>hypotheses</FmLabel>
+          <div className="flex flex-wrap gap-1">
+            {fm.hypotheses.map((h) => (
+              <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
+                <Badge className="text-[10px]">{h}</Badge>
+              </Link>
+            ))}
           </div>
-        )}
-        {fm.hypotheses.length > 0 && (
-          <div className="col-span-2 md:col-span-4">
-            <FmLabel>hypotheses</FmLabel>
-            <div className="flex flex-wrap gap-1">
-              {fm.hypotheses.map((h) => (
-                <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
-                  <Badge className="text-[10px]">{h}</Badge>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
+      )}
     </dl>
   )
 }
 
 function FmLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-      {children}
-    </div>
-  )
+  return <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
 }
 
 function FmField({
@@ -422,18 +568,12 @@ function FmField({
   return (
     <div className="flex flex-col gap-0.5">
       <FmLabel>{label}</FmLabel>
-      {children ?? (
-        <div className="truncate font-mono text-[11px] text-foreground">{value}</div>
-      )}
+      {children ?? <div className="truncate font-mono text-[11px] text-foreground">{value}</div>}
     </div>
   )
 }
 
-function RunArtifactsBlock({
-  artifacts,
-}: {
-  artifacts: { path: string; description: string }[]
-}) {
+function RunArtifactsBlock({ artifacts }: { artifacts: { path: string; description: string }[] }) {
   if (artifacts.length === 0) return null
   return (
     <section>
@@ -492,9 +632,7 @@ function RunParseWarningsBanner({
   if (relevant.length === 0) return null
   return (
     <section className="rounded border border-amber-300 bg-amber-50 p-2 text-xs">
-      <div className="mb-1 font-semibold text-amber-900">
-        Section warnings ({relevant.length})
-      </div>
+      <div className="mb-1 font-semibold text-amber-900">Section warnings ({relevant.length})</div>
       <ul className="list-disc space-y-0.5 pl-4 text-amber-950">
         {relevant.map((w, i) => (
           <li key={i} className={w.severity === 'info' ? 'opacity-70' : ''}>
@@ -544,12 +682,7 @@ function FileTree({ node }: { node: TreeNodeShape }) {
   }
   return (
     <ul className="text-xs">
-      <FileTreeRow
-        node={node}
-        depth={0}
-        overrides={overrides}
-        onToggle={toggle}
-      />
+      <FileTreeRow node={node} depth={0} overrides={overrides} onToggle={toggle} />
     </ul>
   )
 }
@@ -597,9 +730,7 @@ function FileTreeRow({
       >
         <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="truncate font-semibold">{label}</span>
-        {!isRoot && (
-          <span className="text-muted-foreground tabular-nums">({childCount})</span>
-        )}
+        {!isRoot && <span className="text-muted-foreground tabular-nums">({childCount})</span>}
       </li>
       {expanded &&
         (node.children ?? []).map((c, i) => (
@@ -614,4 +745,3 @@ function FileTreeRow({
     </>
   )
 }
-

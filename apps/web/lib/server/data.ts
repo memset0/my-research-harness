@@ -15,9 +15,9 @@ import {
   parseCodeReview,
   type CodeReviewSummary,
   type DigestSummary,
-  type ReportSummary,
 } from '@memon/core'
 import { getRuntime } from '../runtime'
+import { discoverReports, findReport, readReport, type WebReportSummary } from './reports'
 import type {
   FullCodeReview,
   FullDigest,
@@ -131,15 +131,11 @@ export async function getJournalData(
 
 // ---------- Reports + Digests ----------
 
-export async function getReportsList(project: string): Promise<{ reports: ReportSummary[] }> {
+export async function getReportsList(project: string): Promise<{ reports: WebReportSummary[] }> {
   const rt = await getRuntime()
   const dir = rt.reportsDir(project)
   if (!dir) return { reports: [] }
-  const reports = rt.reportsCache.getList(dir).slice().sort((a, b) => {
-    if (a.id > b.id) return -1
-    if (a.id < b.id) return 1
-    return 0
-  })
+  const reports = (await discoverReports(dir)).map(({ rootPath: _rootPath, ...summary }) => summary)
   return { reports }
 }
 
@@ -147,9 +143,9 @@ export async function getReport(project: string, id: string): Promise<FullReport
   const rt = await getRuntime()
   const dir = rt.reportsDir(project)
   if (!dir) return null
-  const entry = rt.reportsCache.getList(dir).find((r) => r.id === id)
+  const entry = await findReport(dir, id)
   if (!entry) return null
-  const fresh = await rt.reportsCache.getContent(entry.path)
+  const fresh = await readReport(entry)
   if (!fresh) return null
   return {
     id: entry.id,
@@ -158,6 +154,7 @@ export async function getReport(project: string, id: string): Promise<FullReport
     mtime: fresh.mtime,
     hash: fresh.hash,
     content: fresh.content,
+    format: fresh.format,
   }
 }
 

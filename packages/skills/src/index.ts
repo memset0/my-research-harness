@@ -4,8 +4,8 @@
 // holding `memon-*/SKILL.md`. The CLI's `install-skills` command copies that
 // tree into the user's `~/.claude/skills/`.
 
-import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const here = fileURLToPath(import.meta.url)
 // dist/index.js → resolve up to package root → siblings of dist/ are the
@@ -14,10 +14,10 @@ export const SKILLS_DIR: string = resolve(here, '..', '..')
 
 export const SKILL_NAMES = [
   'memon-drive',
+  'memon-write-experiment-doc',
   'memon-write-script',
   'memon-run-experiment',
   'memon-append-journal',
-  'memon-append-warning',
   'memon-digest-journal',
   'memon-write-report',
   'memon-write-code-review',

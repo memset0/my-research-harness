@@ -164,6 +164,8 @@ export async function renameExperiment(
       frontMatter: parsed.frontMatter,
       sections: parsed.sections,
       warningsRaw: parsed.warningsRaw,
+      rawSections: parsed.rawSections,
+      rawBody: parsed.body,
     })
     await atomicWrite(newReadmePath, serialized)
   }

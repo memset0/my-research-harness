@@ -1,11 +1,6 @@
 ---
 name: memon-write-code-review
-description: Author (or update) a code-review doc that guides a human through one session's worth of change. The doc lives at `docs/code-review/<date>-<slug>.md` (project-wide) or `docs/experiments/E<NNNN>-<slug>/code-review/<date>-<slug>.md` (experiment-scoped); its frontmatter lists the reviewed commits (with directly-openable GitHub links) plus a review checklist, and its body explains each change with line-level permalinks. The dashboard renders it with checkable per-commit + per-item progress.
-argument-hint: <what you built/fixed this session; or an existing code-review doc path to update>
-license: MIT
-metadata:
-  author: memset0
-  version: "0.1.0"
+description: Author or update a human-facing code-review doc for one reviewable unit, with immutable commit/line links and unchecked review progress. Use project-wide scope or an Experiment's code-review directory; when it supports an Implementation item, link the finished review through memon-write-experiment-doc.
 ---
 
 # memon-write-code-review
@@ -29,7 +24,7 @@ refactors — and all of them belong in this single doc.
 Run, as the first step:
 
 ```sh
-memon fs-version check --project-root . --format json
+memon --project-root . --format json fs-version check
 ```
 
 Branch on `status` per `../PREFLIGHT.md` (`match` → proceed; `behind` /
@@ -45,9 +40,9 @@ doc unless `status == "match"`.
 ## When NOT to use
 
 - ❌ A one-line observation / request / error → `memon-append-journal`.
-- ❌ A run or experiment write-up (Setup/Result, methodology, findings) →
+- ❌ A Run or Experiment write-up (Setup/Result, design, findings) →
   `memon-run-experiment` / `memon-drive`; a theme report → `memon-write-report`.
-- ❌ A single anomaly to flag for adjudication → `memon-append-warning`.
+- ❌ An Experiment warning or limitation → `memon-write-experiment-doc`.
 - ❌ A doc per commit. One doc per session / large change; it spans many commits.
 
 ## File naming and scope
@@ -254,8 +249,10 @@ Don't pad sections just to fill them.
 ## Workflow
 
 1. **Preflight** (above). Stop unless `match`.
-2. **Decide scope**: is this change tied to one experiment (→ that experiment's
-   `code-review/` folder) or project-wide (→ `docs/code-review/`)?
+2. **Decide scope and linkage**: is this change tied to one Experiment (→ that
+   Experiment's `code-review/` folder) or project-wide (→
+   `docs/code-review/`)? If the caller supplies an `IMP...` item, verify that it
+   exists; the review doc itself does not duplicate the Implementation tree.
 3. **Gather the commits** this review covers (`git log`, the session's commits).
    Resolve each one's `repo` / `sha` / `url` / `subject` per the link recipe —
    including any submodule commits, with per-repo url + sha.
@@ -291,6 +288,11 @@ Don't pad sections just to fill them.
    `memon-notify` skill's credentials note) and stop — the doc already exists,
    so a missing notification must not undo or fail it. Do not block waiting for
    a reply; the bot is send-only.
+8. **Link an Experiment-scoped review when applicable.** Invoke
+   `memon-write-experiment-doc` to add the review's Experiment-relative path to
+   the existing Implementation item's `code_reviews`. Do not create an
+   Implementation item merely because a review doc exists, and do not edit
+   `implementation.yaml` directly from this skill.
 
 ### Updating an existing doc
 
@@ -312,6 +314,8 @@ Open the doc, add the new commits to `commits[]` (`reviewed: false`) and any new
 - ❌ Treating the sections as fields to fill mechanically. They are angles; omit
   what doesn't apply and add what's missing.
 - ❌ One doc per commit, or splitting one session across several docs.
+- ❌ Duplicating an Implementation task in the code-review body or creating one
+  automatically. Link to an existing `IMP...` item through the writer.
 
 ## Errors
 

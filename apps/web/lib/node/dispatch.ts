@@ -20,6 +20,7 @@ const moduleCache = new Map<string, Record<string, unknown>>()
 export interface DispatchResult {
   status: number
   body: string
+  bodyEncoding?: 'base64'
   headers?: Record<string, string>
 }
 
@@ -70,10 +71,37 @@ export async function dispatchRpc(req: RpcRequest): Promise<DispatchResult> {
     return jsonError(500, (e as Error).message)
   }
 
-  const body = await res.text()
   const headers: Record<string, string> = {}
   res.headers.forEach((v, k) => {
     headers[k] = v
   })
-  return { status: res.status, body, headers }
+  const bytes = Buffer.from(await res.arrayBuffer())
+  const binary = isBinaryContentType(res.headers.get('content-type'))
+  return {
+    status: res.status,
+    body: binary ? bytes.toString('base64') : bytes.toString('utf8'),
+    bodyEncoding: binary ? 'base64' : undefined,
+    headers,
+  }
+}
+
+export function isBinaryContentType(contentType: string | null): boolean {
+  if (!contentType) return false
+  const mime = contentType.split(';', 1)[0]!.trim().toLowerCase()
+  if (mime.startsWith('text/')) return false
+  if (
+    mime === 'application/json' ||
+    mime.endsWith('+json') ||
+    mime === 'application/javascript' ||
+    mime === 'application/x-javascript' ||
+    mime === 'application/xml' ||
+    mime.endsWith('+xml') ||
+    mime === 'application/yaml' ||
+    mime === 'application/x-yaml' ||
+    mime === 'application/x-www-form-urlencoded' ||
+    mime === 'image/svg+xml'
+  ) {
+    return false
+  }
+  return true
 }

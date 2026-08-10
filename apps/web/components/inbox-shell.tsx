@@ -21,8 +21,9 @@ import {
   putReport,
   type FullDigest,
   type FullReport,
+  type ReportListItem,
 } from '../lib/api'
-import type { DigestSummary, ReportSummary } from '@memon/core'
+import type { DigestSummary } from '@memon/core'
 import { Button } from './ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
 import { Markdown } from './markdown'
@@ -51,6 +52,7 @@ interface FullItem {
   hash: string
   content: string
   subLabel: string
+  format?: 'markdown' | 'bundle'
 }
 
 const EMPTY_COPY = {
@@ -132,7 +134,7 @@ function useItemsList(kind: InboxKind, project: string): CommonItem[] {
   })
   return useMemo(() => {
     if (kind === 'reports') {
-      const reports: ReportSummary[] = reportsQ.data?.reports ?? []
+      const reports: ReportListItem[] = reportsQ.data?.reports ?? []
       return reports.map((r) => ({ id: r.id, path: r.path, mtime: r.mtime, title: r.title, subLabel: r.slug }))
     }
     const digests: DigestSummary[] = digestsQ.data?.digests ?? []
@@ -215,7 +217,7 @@ function RailList({
       {items.map((it) => {
         const active = it.id === selectedId
         return (
-          <li key={it.id}>
+          <li key={`${it.id}:${it.path}`}>
             <Link
               href={`${base}/${encodeURIComponent(it.id)}`}
               onClick={onSelect}
@@ -297,7 +299,15 @@ function SelectedItemPane({
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
         <div className={cn('overflow-y-auto overflow-x-hidden', editing ? 'min-w-0 flex-1' : 'min-w-0 flex-1')}>
           <div className="p-4 md:p-6">
-            <RenderedItem content={data.content} project={project} />
+            <RenderedItem
+              content={data.content}
+              project={project}
+              resourceBaseUrl={
+                kind === 'reports' && data.format === 'bundle'
+                  ? reportResourceBaseUrl(project, selectedId)
+                  : undefined
+              }
+            />
           </div>
         </div>
         {editing && (
@@ -332,14 +342,26 @@ function SelectedItemPane({
   )
 }
 
-function RenderedItem({ content, project }: { content: string; project: string }) {
+function RenderedItem({
+  content,
+  project,
+  resourceBaseUrl,
+}: {
+  content: string
+  project: string
+  resourceBaseUrl?: string
+}) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
   return (
     <>
       {frontmatter && <FrontmatterPanel data={frontmatter} />}
-      <Markdown project={project}>{body}</Markdown>
+      <Markdown project={project} resourceBaseUrl={resourceBaseUrl}>{body}</Markdown>
     </>
   )
+}
+
+function reportResourceBaseUrl(project: string, reportId: string): string {
+  return `/api/report-assets/${encodeURIComponent(project)}/${encodeURIComponent(reportId)}`
 }
 
 function InboxEditor({
