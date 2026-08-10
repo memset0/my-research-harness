@@ -9,6 +9,15 @@ Drive one launcher execution from preflight to a finalized Run README. This
 skill owns Run-local truth; `memon-write-experiment-doc` owns the parent
 Experiment's Results.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill or a delegated skill, follow the
+CLI issue handoff in `../PREFLIGHT.md`. After safely finishing the requested
+task, report any CLI crash, valid-input rejection, malformed/inconsistent
+output, or required CLI workaround; if it blocks completion, report it in the
+blocked handoff. Do not mislabel an expected validation or domain-state
+rejection as a CLI bug.
+
 ## Preconditions
 
 1. Run `memon --project-root . --format json fs-version check`; continue only

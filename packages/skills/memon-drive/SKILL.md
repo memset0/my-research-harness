@@ -19,6 +19,15 @@ in the Experiment bundle through the writer skill.
 Run `memon --project-root . --format json fs-version check` first. Continue only
 for `match`; otherwise stop according to `../PREFLIGHT.md`.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill or a delegated skill, follow the
+CLI issue handoff in `../PREFLIGHT.md`. After safely finishing the requested
+task, report any CLI crash, valid-input rejection, malformed/inconsistent
+output, or required CLI workaround; if it blocks completion, report it in the
+blocked handoff. Do not mislabel an expected validation or domain-state
+rejection as a CLI bug.
+
 ## Start or resume
 
 ### New Experiment

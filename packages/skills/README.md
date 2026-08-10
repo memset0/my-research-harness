@@ -10,7 +10,8 @@ memon --project-root . install-skills
 Every project-aware skill passes `--project-root .` explicitly and runs the
 shared FS-version protocol in `PREFLIGHT.md`. `memon-notify` is the only
 project-independent skill; `memon-migrate-fs` is the only preflight-exempt and
-user-invoked-only skill.
+user-invoked-only skill. The same shared file defines the CLI issue handoff used
+by all eleven skills, including `memon-notify` and `memon-migrate-fs`.
 
 ## Skill index
 
@@ -106,6 +107,10 @@ approval, but always writes Variants before launching Runs.
 - Never silently upgrade a YAML `schema_version`; FS migration owns conversion.
 - Preserve unrelated user edits and use optimistic concurrency for shared
   documents.
+- After safely resolving the requested task, report suspected `memon` CLI
+  crashes, valid-input rejections, malformed/inconsistent output, and required
+  workarounds using the redacted handoff in `PREFLIGHT.md`; expected validation
+  and domain-state failures are not automatically CLI bugs.
 
 Canonical document commands:
 

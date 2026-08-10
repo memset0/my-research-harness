@@ -31,6 +31,15 @@ Branch on `status` per `../PREFLIGHT.md` (`match` → proceed; `behind` /
 `uninitialised` / `ahead` → STOP with the recommendation there). Do not write the
 doc unless `status == "match"`.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill or a delegated skill, follow the
+CLI issue handoff in `../PREFLIGHT.md`. After safely finishing the requested
+task, report any CLI crash, valid-input rejection, malformed/inconsistent
+output, or required CLI workaround; if it blocks completion, report it in the
+blocked handoff. Do not mislabel an expected validation or domain-state
+rejection as a CLI bug.
+
 ## When to use
 
 - You just finished a session or a large change and want to leave a human a

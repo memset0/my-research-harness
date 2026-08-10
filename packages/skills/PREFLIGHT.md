@@ -1,4 +1,6 @@
-# Preflight — FS convention version
+# Shared memon CLI protocols
+
+## FS convention preflight
 
 Every memon skill that reads or writes spec files (Experiment bundles, Run
 READMEs, `docs/hypotheses.md`, `docs/journal.md`, anything under
@@ -50,3 +52,45 @@ sections so users can review old projects. That tolerant UI behavior does not
 authorize an ordinary skill to operate on a `behind` project. Only the migration
 skill may transform old content, and review-required migrations do so in local
 staging before touching production files.
+
+## CLI issue handoff
+
+Every bundled skill uses this protocol whenever it invokes the `memon` CLI.
+An Agent must not hide a suspected CLI defect merely because it found a
+workaround or ultimately completed the user's task.
+
+Treat any of the following as a suspected CLI issue:
+
+- an unexpected non-zero exit, uncaught exception, or crash;
+- rejection of an invocation that is valid under the current CLI contract;
+- malformed output, including invalid JSON or a response that violates the
+  documented output shape;
+- inconsistent results from equivalent calls or results that contradict the
+  command's documented behavior;
+- a workaround required specifically because the CLI did not behave as
+  documented.
+
+First preserve safety and make reasonable progress on the user's requested
+task. Use a safe workaround when available, without weakening validation or
+performing an unapproved destructive action. Capture enough evidence for a
+minimal reproduction, but do not turn a completed task into an open-ended CLI
+debugging project unless the user asks.
+
+After the requested task is resolved, include a **CLI issue** entry in the final
+handoff. If the issue prevents completion, include the same entry in the
+blocked handoff instead. Report:
+
+- the command or minimal reproduction, with credentials and sensitive values
+  redacted;
+- observed behavior versus expected behavior, including the exit code and a
+  short sanitized output excerpt when useful;
+- impact on the requested task and the workaround, if any;
+- reproducibility (`always`, `intermittent`, `observed once`, or `not retested`)
+  and relevant CLI/environment version context when known.
+
+Do not label an expected validation or domain-state failure as a CLI bug. For
+example, a documented lint rejection of an invalid bundle, an expected
+FS-version mismatch, a missing requested record, or an unmet command
+precondition is ordinary task state. Report it normally when relevant. When the
+contract is ambiguous, say **suspected CLI issue** and explain the uncertainty
+instead of either suppressing it or asserting a confirmed bug.

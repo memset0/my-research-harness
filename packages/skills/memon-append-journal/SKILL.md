@@ -20,6 +20,14 @@ Run `memon --project-root . --format json fs-version check` as the first
 step. If `status !== "match"`, STOP and follow the branch protocol in
 `../PREFLIGHT.md` (covers `match` / `behind` / `uninitialised` / `ahead`).
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill, follow the CLI issue handoff in
+`../PREFLIGHT.md`. After safely finishing the requested task, report any CLI
+crash, valid-input rejection, malformed/inconsistent output, or required CLI
+workaround; if it blocks completion, report it in the blocked handoff. Do not
+mislabel an expected validation or domain-state rejection as a CLI bug.
+
 ## When to use
 
 - You observed something cross-cutting that doesn't belong in any single

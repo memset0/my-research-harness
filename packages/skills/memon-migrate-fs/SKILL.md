@@ -10,6 +10,15 @@ This is the only skill allowed to update `.memon/version.json`. It is exempt
 from normal skill preflight because resolving an FS mismatch is its purpose.
 Never run autonomously.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill, follow the CLI issue handoff in
+`../PREFLIGHT.md`. After safely finishing the requested migration step, report
+any CLI crash, valid-input rejection, malformed/inconsistent output, or
+required CLI workaround; if it blocks completion, report it in the blocked
+handoff. Do not mislabel an expected validation or domain-state rejection as a
+CLI bug.
+
 ## Determine the migration chain
 
 Run:

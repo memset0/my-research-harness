@@ -22,6 +22,15 @@ There is no FS-convention preflight here: `memon notify` never touches
 the experiment tree (no run dirs, no exp docs, no journal). It only
 reads the `telegram:` block of `config.yml` and POSTs to Telegram.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill, follow the CLI issue handoff in
+`../PREFLIGHT.md`; this protocol applies even though FS-version preflight does
+not. After safely finishing the requested task, report any CLI crash,
+valid-input rejection, malformed/inconsistent output, or required CLI
+workaround; if it blocks completion, report it in the blocked handoff. Do not
+mislabel an expected validation or domain-state rejection as a CLI bug.
+
 ## When to use
 
 Pick the severity that matches your situation:

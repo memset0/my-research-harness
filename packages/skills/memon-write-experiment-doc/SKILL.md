@@ -25,6 +25,14 @@ Proceed only when `status == "match"`. For every other status, stop and follow
 `../PREFLIGHT.md`. Migration staging is the sole exception; in that case the
 `memon-migrate-fs` skill owns the destination and version rules.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill, follow the CLI issue handoff in
+`../PREFLIGHT.md`. After safely finishing the requested task, report any CLI
+crash, valid-input rejection, malformed/inconsistent output, or required CLI
+workaround; if it blocks completion, report it in the blocked handoff. Do not
+mislabel an expected validation or domain-state rejection as a CLI bug.
+
 ## Responsibilities
 
 - Create or update canonical README prose: `Motivation`, `Design`, `Findings`,

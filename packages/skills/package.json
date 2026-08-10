@@ -13,7 +13,8 @@
   },
   "files": [
     "dist",
-    "memon-*"
+    "memon-*",
+    "PREFLIGHT.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

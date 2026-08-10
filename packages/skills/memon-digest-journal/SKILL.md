@@ -13,6 +13,14 @@ sweep. Theme reports are separate and never advance the Journal cursor.
 Run `memon --project-root . --format json fs-version check` first. Continue only
 for `match`; otherwise follow `../PREFLIGHT.md`.
 
+## Memon CLI issue handoff
+
+For every `memon` command used by this skill, follow the CLI issue handoff in
+`../PREFLIGHT.md`. After safely finishing the requested task, report any CLI
+crash, valid-input rejection, malformed/inconsistent output, or required CLI
+workaround; if it blocks completion, report it in the blocked handoff. Do not
+mislabel an expected validation or domain-state rejection as a CLI bug.
+
 ## Stable coverage window
 
 At invocation start, capture:
