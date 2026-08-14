@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '@memon/core'
-import { ensureAuthInitialised, __testAppendSessionSecretToAuthBlock } from './first-run'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { __testAppendSessionSecretToAuthBlock, ensureAuthInitialised } from './first-run'
 
 let dir: string
 let configPath: string
@@ -89,6 +89,78 @@ describe('ensureAuthInitialised', () => {
     expect(after).toContain(`session_secret: "${result.sessionSecret}"`)
   })
 
+  it('rejects config.example.yml before stat or write when the auth block is missing', async () => {
+    const examplePath = join(dir, 'config.example.yml')
+    await fs.writeFile(examplePath, BASE_CONFIG)
+    const cfg = (await loadConfig({ explicitPath: examplePath, cwd: dir }))!
+    const beforeText = await fs.readFile(examplePath, 'utf8')
+    const beforeStat = await fs.stat(examplePath)
+
+    const statSpy = vi.spyOn(fs, 'stat')
+    const writeSpy = vi.spyOn(fs, 'writeFile')
+    try {
+      await expect(ensureAuthInitialised(examplePath, cfg)).rejects.toThrow(
+        /config\.example\.yml.*template.*runtime code never writes/s,
+      )
+      expect(statSpy).not.toHaveBeenCalled()
+      expect(writeSpy).not.toHaveBeenCalled()
+    } finally {
+      statSpy.mockRestore()
+      writeSpy.mockRestore()
+    }
+
+    expect(await fs.readFile(examplePath, 'utf8')).toBe(beforeText)
+    expect((await fs.stat(examplePath)).mtimeMs).toBe(beforeStat.mtimeMs)
+    expect(
+      (await fs.readdir(dir)).filter((name) =>
+        name.startsWith('config.example.yml.first-run-tmp.'),
+      ),
+    ).toEqual([])
+  })
+
+  it('rejects config.example.yml before stat or write when session_secret is missing', async () => {
+    const examplePath = join(dir, 'config.example.yml')
+    const seed = BASE_CONFIG + '\nauth:\n  username: alice\n  password: known-pass\n'
+    await fs.writeFile(examplePath, seed)
+    const cfg = (await loadConfig({ explicitPath: examplePath, cwd: dir }))!
+    const beforeText = await fs.readFile(examplePath, 'utf8')
+    const beforeStat = await fs.stat(examplePath)
+
+    const statSpy = vi.spyOn(fs, 'stat')
+    const writeSpy = vi.spyOn(fs, 'writeFile')
+    try {
+      await expect(ensureAuthInitialised(examplePath, cfg)).rejects.toThrow(
+        /config\.example\.yml.*template.*runtime code never writes/s,
+      )
+      expect(statSpy).not.toHaveBeenCalled()
+      expect(writeSpy).not.toHaveBeenCalled()
+    } finally {
+      statSpy.mockRestore()
+      writeSpy.mockRestore()
+    }
+
+    expect(await fs.readFile(examplePath, 'utf8')).toBe(beforeText)
+    expect((await fs.stat(examplePath)).mtimeMs).toBe(beforeStat.mtimeMs)
+    expect(
+      (await fs.readdir(dir)).filter((name) =>
+        name.startsWith('config.example.yml.first-run-tmp.'),
+      ),
+    ).toEqual([])
+  })
+
+  it('persists generated auth to an explicitly selected custom instance filename', async () => {
+    const customPath = join(dir, 'cluster.yml')
+    await fs.writeFile(customPath, BASE_CONFIG)
+    const cfg = (await loadConfig({ explicitPath: customPath, cwd: dir }))!
+
+    const result = await ensureAuthInitialised(customPath, cfg)
+    const reloaded = (await loadConfig({ explicitPath: customPath, cwd: dir }))!
+    expect(reloaded.auth).toEqual(result)
+    expect(result.password).toMatch(/^[A-Za-z0-9_-]{20,}$/)
+    expect(result.sessionSecret).toMatch(/^[A-Za-z0-9_-]{40,}$/)
+    await expect(fs.access(join(dir, 'config.example.yml'))).rejects.toThrow()
+  })
+
   it('returns existing creds without rewriting when both password and session_secret are present', async () => {
     const seed =
       BASE_CONFIG +
@@ -115,9 +187,7 @@ describe('ensureAuthInitialised', () => {
     await fs.writeFile(configPath, seed)
 
     // loadConfig itself errors on partial auth via the schema.
-    await expect(
-      loadConfig({ explicitPath: configPath, cwd: dir }),
-    ).rejects.toThrow()
+    await expect(loadConfig({ explicitPath: configPath, cwd: dir })).rejects.toThrow()
 
     // Forge a Config with auth undefined to test the defensive branch.
     const fakeCfg = {
@@ -138,7 +208,9 @@ describe('ensureAuthInitialised', () => {
       slurm: { totalNodes: -1 },
       gitStatus: { intervalMs: 10_000 },
     }
-    await expect(ensureAuthInitialised(configPath, fakeCfg)).rejects.toThrow(/loadConfig couldn't parse/)
+    await expect(ensureAuthInitialised(configPath, fakeCfg)).rejects.toThrow(
+      /loadConfig couldn't parse/,
+    )
   })
 
   it('detects concurrent edit via mtime guard and aborts (fresh auth)', async () => {
@@ -213,9 +285,12 @@ describe('ensureAuthInitialised', () => {
 
 describe('appendSessionSecretToAuthBlock', () => {
   it('inserts the new line at the end of an indented auth block', () => {
-    const before = 'projects:\n  - name: a\n    root: ./a\nauth:\n  username: alice\n  password: pw\n'
+    const before =
+      'projects:\n  - name: a\n    root: ./a\nauth:\n  username: alice\n  password: pw\n'
     const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
-    expect(after).toContain('auth:\n  username: alice\n  password: pw\n  session_secret: "NEW-SECRET"')
+    expect(after).toContain(
+      'auth:\n  username: alice\n  password: pw\n  session_secret: "NEW-SECRET"',
+    )
   })
 
   it('preserves trailing content after the auth block', () => {

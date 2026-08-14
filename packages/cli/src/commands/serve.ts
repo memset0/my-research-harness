@@ -14,6 +14,8 @@ import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CONFIG_EXAMPLE_BASENAME, isProtectedExampleConfigPath } from '@memon/core'
+import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitError, emitHuman } from '../lib/output.js'
 
 export interface ServeOptions {
@@ -43,8 +45,18 @@ export async function runServe(opts: ServeOptions): Promise<void> {
     : await defaultConfigPath(opts.cwd, repoRoot)
 
   if (!resolvedConfigPath) {
-    emitError(
-      'no config.yml found in cwd or repo root; pass --config <path> or copy config.example.yml to config.yml',
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      'no instance configuration found; copy config.example.yml to config.yml or pass --config <path> to another instance file',
+      { cwd: resolve(opts.cwd), repoRoot },
+    )
+  }
+
+  if (isProtectedExampleConfigPath(resolvedConfigPath)) {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `${CONFIG_EXAMPLE_BASENAME} is a protected template and cannot be used as runtime configuration; copy it to config.yml (or another filename) first`,
+      { configPath: resolvedConfigPath },
     )
   }
 
@@ -52,13 +64,7 @@ export async function runServe(opts: ServeOptions): Promise<void> {
 
   const child = spawn(
     'pnpm',
-    [
-      'exec',
-      'next',
-      opts.dev ? 'dev' : 'start',
-      '-p',
-      String(opts.port),
-    ],
+    ['exec', 'next', opts.dev ? 'dev' : 'start', '-p', String(opts.port)],
     {
       cwd: webDir,
       stdio: 'inherit',

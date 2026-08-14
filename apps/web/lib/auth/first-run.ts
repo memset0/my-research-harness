@@ -13,9 +13,9 @@
 // js-yaml; the `auth:` block is appended as raw text to preserve the
 // operator's comments.
 
-import { promises as fs } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import type { AuthConfig, Config } from '@memon/core'
+import { promises as fs } from 'node:fs'
+import { type AuthConfig, type Config, isProtectedExampleConfigPath } from '@memon/core'
 
 const DEFAULT_USERNAME = 'admin'
 const PASSWORD_BYTES = 18 // 24 base64url chars, 144 bits of entropy
@@ -27,6 +27,16 @@ function generatePassword(): string {
 
 function generateSessionSecret(): string {
   return randomBytes(SESSION_SECRET_BYTES).toString('base64url')
+}
+
+function assertRuntimeWritableConfig(configPath: string): void {
+  if (!isProtectedExampleConfigPath(configPath)) return
+
+  throw new Error(
+    `memon: refusing to initialize runtime authentication in ${configPath}: ` +
+      '`config.example.yml` is a source-controlled template maintained by Agents/humans. ' +
+      'Copy it to `config.yml` or select another instance config; runtime code never writes the example.',
+  )
 }
 
 function spliceAuthBlock(
@@ -57,10 +67,7 @@ function spliceAuthBlock(
  * its indented child lines; insert the new line just before the first
  * non-indented (or EOF) line. Preserves all surrounding comments + ordering.
  */
-function appendSessionSecretToAuthBlock(
-  originalText: string,
-  sessionSecret: string,
-): string {
+function appendSessionSecretToAuthBlock(originalText: string, sessionSecret: string): string {
   const lines = originalText.split('\n')
   let authStartIdx = -1
   for (let i = 0; i < lines.length; i += 1) {
@@ -104,6 +111,9 @@ async function writeAtomicWithMtimeGuard(
   newText: string,
   expectedMtimeMs: number,
 ): Promise<void> {
+  // Defense in depth: callers must reject the template before reading it, but
+  // the final persistence boundary independently protects future call sites.
+  assertRuntimeWritableConfig(path)
   const recheck = await fs.stat(path)
   if (recheck.mtimeMs !== expectedMtimeMs) {
     throw new Error(
@@ -142,10 +152,11 @@ function printStdoutBlock(username: string, password: string, configPath: string
  *   existing auth block. NO password banner (the password was already set).
  * - If both are present: return as-is, no filesystem touch.
  */
-export async function ensureAuthInitialised(
-  configPath: string,
-  cfg: Config,
-): Promise<AuthConfig> {
+export async function ensureAuthInitialised(configPath: string, cfg: Config): Promise<AuthConfig> {
+  // The check intentionally precedes every stat/read/write. The example is a
+  // source-authored template, never a runtime configuration or write target.
+  assertRuntimeWritableConfig(configPath)
+
   // Case 1: no auth block at all.
   if (!cfg.auth) {
     const stat = await fs.stat(configPath)

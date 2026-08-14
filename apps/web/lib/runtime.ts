@@ -8,7 +8,8 @@
 //
 // Production model: `memon serve` spawns Next.js with MEMON_CONFIG_PATH set;
 // in dev `pnpm --filter @memon/web dev` we walk up to find the repo's
-// config.yml (or config.example.yml as last-resort fallback).
+// instance config.yml. The committed config.example.yml is never a runtime
+// configuration source.
 
 import { promises as fs } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
@@ -47,6 +48,7 @@ import {
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { ensureAuthInitialised } from './auth/first-run'
+import { resolveRuntimeConfigPath } from './runtime-config-path'
 import { probeSqueue } from './slurm/probe'
 
 export interface ExperimentChangeEvent {
@@ -186,10 +188,14 @@ export async function getRuntime(): Promise<Runtime> {
 }
 
 async function init(): Promise<Runtime> {
-  const configPath = await resolveConfigPath()
+  const configPath = await resolveRuntimeConfigPath({
+    cwd: process.cwd(),
+    explicitPath: process.env.MEMON_CONFIG_PATH,
+  })
   if (!configPath) {
     throw new Error(
-      'memon: no config file found. Set MEMON_CONFIG_PATH or place config.yml in the repo root',
+      'memon: no instance config found. Copy config.example.yml to config.yml, ' +
+        'set MEMON_CONFIG_PATH, or place config.yml in the repo root',
     )
   }
   const config = await loadConfig({ explicitPath: configPath, cwd: process.cwd() })
@@ -656,31 +662,5 @@ function unwatchExperimentBundle(poller: Poller, experiment: Experiment): void {
   poller.unwatch(directory)
   for (const fileName of MANAGED_EXPERIMENT_FILE_NAMES) {
     poller.unwatch(join(directory, fileName))
-  }
-}
-
-async function resolveConfigPath(): Promise<string | null> {
-  if (process.env.MEMON_CONFIG_PATH) return process.env.MEMON_CONFIG_PATH
-
-  // Walk up from cwd looking for pnpm-workspace.yaml (= repo root)
-  let dir = process.cwd()
-  while (true) {
-    try {
-      await fs.access(join(dir, 'pnpm-workspace.yaml'))
-      for (const candidate of [join(dir, 'config.yml'), join(dir, 'config.example.yml')]) {
-        try {
-          await fs.access(candidate)
-          return candidate
-        } catch {
-          // continue
-        }
-      }
-      return null
-    } catch {
-      // continue walking
-    }
-    const parent = dirname(dir)
-    if (parent === dir) return null
-    dir = parent
   }
 }

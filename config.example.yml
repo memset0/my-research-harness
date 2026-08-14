@@ -1,8 +1,10 @@
-# memon configuration.
+# memon configuration template.
 #
-# Copy this file to `config.yml` (gitignored) and edit `projects` to point at
-# your real logs directories. Paths can be relative (resolved against this
-# config file's directory) or absolute.
+# This source-controlled example is maintained only through intentional Agent
+# or human edits. memon runtime code never selects or writes this file. Copy it
+# to an instance such as `config.yml` (gitignored), then edit `projects` to
+# point at your real logs directories. Paths can be relative (resolved against
+# the instance config file's directory) or absolute.
 #
 # `memon serve` starts the dashboard at port 3737 by default. Caddy or a
 # similar reverse proxy can fan that out to a public domain.
@@ -87,14 +89,16 @@ poll:
 # git_status:
 #   interval_ms: 10000
 
-# Authentication for the HTTP dashboard. Leave this block COMMENTED on a
-# fresh install — `memon serve` will generate a random 144-bit password on
-# first run, persist it (PLAINTEXT) here, and print it to stdout once.
+# Authentication for the HTTP dashboard. Leave this block COMMENTED when
+# copying the template to a fresh instance — `memon serve` will generate a
+# random 144-bit password on first run, persist it (PLAINTEXT) in that instance
+# config, and print it to stdout once. It never persists into this template.
 #
 # Plaintext is intentional: the threat model is "single user, host fs trust =
 # auth trust", same as having an SSH key in $HOME. Storing plaintext means
 # dev agents and curl-based automation can read the password from one
-# canonical source (this file) without managing a separate secret store.
+# canonical source (the selected instance config) without managing a separate
+# secret store.
 #
 # To rotate: edit `password` below to a new value and restart `memon serve`.
 # To regenerate: delete the auth block entirely.

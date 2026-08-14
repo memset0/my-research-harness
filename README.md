@@ -22,7 +22,10 @@ pnpm dev                               # http://localhost:3737
 ```
 
 The `config.example.yml` ships pointing at `mock/project-a` and
-`mock/project-b` so a fresh clone shows real data immediately.
+`mock/project-b` so a fresh clone shows real data immediately after copying it.
+It is a source-controlled template maintained through intentional Agent or
+human edits; memon runtime code never selects or writes it. Runtime-generated
+values belong only in `config.yml` or another explicitly selected instance.
 
 ## Stack
 
@@ -511,10 +514,12 @@ participate in auth.
 
 ### First run
 
-Drop a `config.yml` next to `config.example.yml` (no `auth:` block needed),
-then `memon serve`. The first boot generates a random 144-bit password
-and persists it **plaintext** in `config.yml` under `auth.password`,
-then prints it to stdout once. Plaintext on disk is intentional — the
+Copy `config.example.yml` to an instance `config.yml` (no `auth:` block needed),
+then run `memon serve`. The example remains an Agent/human-maintained template:
+memon never selects it as the live configuration and never writes generated
+state into it. The first boot generates a random 144-bit password and persists
+it **plaintext** only in the selected instance under `auth.password`, then
+prints it to stdout once. Plaintext on disk is intentional — the
 threat model is "single user, host fs trust = auth trust" (same as
 `~/.ssh/id_*`), and the single canonical source means dev agents and
 curl-based automation can read the password from one place without a

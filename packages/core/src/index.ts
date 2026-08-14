@@ -112,6 +112,10 @@ export type { CacheOptions, CacheRecord } from './log/cache.js'
 export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
 export type { LoadConfigOptions } from './config/load.js'
 export {
+  CONFIG_EXAMPLE_BASENAME,
+  isProtectedExampleConfigPath,
+} from './config/path-policy.js'
+export {
   AGENT_KIND_RE,
   FOOTER_EMOJI,
   NOTIFY_SEVERITIES,
