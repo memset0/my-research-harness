@@ -4,12 +4,9 @@
 // exp doc's body sections + a Runs section with one collapsible panel per
 // member run. The `?run=<dir>` query param auto-expands that panel.
 //
-// Page layout (top to bottom):
-//   1. Header (id + title + tags + hypotheses)
-//   2. Runs section (collapsible panels — default folded)
-//   3. Motivation / Method / Conclusion / Caveats (each in a Card)
-//   4. Warnings (raw markdown for now)
-//   5. Artifacts (aggregated from member runs, grouped by run)
+// Page layout (top to bottom): header, Results, document sections,
+// supporting evidence, then Runs. Results is the decision surface; Runs is
+// deliberately last because it is the verbose execution detail.
 
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, File, Folder, FolderOpen } from 'lucide-react'
@@ -28,6 +25,8 @@ import { AddNoteButton } from './add-note-button'
 import { ArchiveToggle } from './archive-toggle'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { ExperimentCodeReviews } from './experiment-code-reviews'
+import { ExperimentManagedSection } from './experiment-managed-section'
+import { ExperimentResultsTable } from './experiment-results-table'
 import { ExperimentStatusEdit } from './experiment-status-edit'
 import { LogViewer } from './log-viewer'
 import { Markdown } from './markdown'
@@ -67,6 +66,8 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   )
   const documentSections: ExperimentDisplaySection[] =
     exp.documentSections ?? legacyDocumentSections(exp)
+  const resultsSections = documentSections.filter((section) => section.heading === 'Results')
+  const nonResultsSections = documentSections.filter((section) => section.heading !== 'Results')
   const inlineDiagnosticKeys = new Set(
     documentSections.flatMap((section) => section.diagnostics.map(diagnosticKey)),
   )
@@ -137,46 +138,31 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         </div>
       )}
 
-      {/* Runs first — it's the most actionable info for the user opening
-          this page. Default folded so the long-form prose below is
-          immediately visible too. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Runs{' '}
-            <span className="font-normal text-sm text-muted-foreground">
-              ({exp.memberRuns.length})
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {exp.memberRuns.map((mr) => (
-            <RunPanel
-              key={mr.id}
-              project={project}
-              experimentId={exp.id}
-              runId={mr.id}
-              initialOpenRun={initialOpenRun}
-              summary={mr}
-            />
-          ))}
-          {exp.memberRuns.length === 0 && (
-            <div className="text-xs text-muted-foreground">(no runs bound yet)</div>
-          )}
-        </CardContent>
-      </Card>
-
-      <ExperimentCodeReviews project={project} experimentId={exp.id} />
-
-      <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-      <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
-      {documentSections.map((section) => (
+      {resultsSections.map((section) => (
         <SectionCard
           key={`${section.index}:${section.heading}:${section.occurrence}`}
           section={section}
           project={project}
+          experimentId={exp.id}
+          documents={exp.documents}
+          memberRuns={exp.memberRuns}
         />
       ))}
+
+      <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
+      <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
+      {nonResultsSections.map((section) => (
+        <SectionCard
+          key={`${section.index}:${section.heading}:${section.occurrence}`}
+          section={section}
+          project={project}
+          experimentId={exp.id}
+          documents={exp.documents}
+          memberRuns={exp.memberRuns}
+        />
+      ))}
+
+      <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
       <Card>
         <CardHeader>
@@ -200,14 +186,41 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           )}
         </CardContent>
       </Card>
+
+      <RunsCard
+        project={project}
+        experimentId={exp.id}
+        initialOpenRun={initialOpenRun}
+        memberRuns={exp.memberRuns}
+      />
     </div>
   )
 }
 
-function SectionCard({ section, project }: { section: ExperimentDisplaySection; project: string }) {
+function SectionCard({
+  section,
+  project,
+  experimentId,
+  documents,
+  memberRuns,
+}: {
+  section: ExperimentDisplaySection
+  project: string
+  experimentId: string
+  documents?: import('@memon/core').ExperimentManagedDocuments | null
+  memberRuns: MemberRunSummary[]
+}) {
   const { heading, body } = section
   const managedConflict = section.managed && section.source === 'readme'
   const hasErrors = section.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  const managedKind =
+    heading === 'Implementation'
+      ? 'implementation'
+      : heading === 'Investigation'
+        ? 'investigation'
+        : null
+  const managedDocument = managedKind ? documents?.[managedKind].data : null
+  const resultsDocument = heading === 'Results' ? documents?.results.data : null
   return (
     <Card
       className={cn(
@@ -216,6 +229,7 @@ function SectionCard({ section, project }: { section: ExperimentDisplaySection; 
       )}
       data-supported={section.supported ? 'true' : 'false'}
       data-managed-source={section.managed ? section.source : undefined}
+      data-section-heading={heading}
     >
       <CardHeader className="flex-row items-center justify-between gap-2">
         <CardTitle>{heading}</CardTitle>
@@ -263,12 +277,64 @@ function SectionCard({ section, project }: { section: ExperimentDisplaySection; 
             ))}
           </ul>
         )}
-        {body ? (
+        {section.source === 'yaml' && resultsDocument ? (
+          <ExperimentResultsTable
+            document={resultsDocument}
+            project={project}
+            experimentId={experimentId}
+            memberRuns={memberRuns}
+          />
+        ) : section.source === 'yaml' && managedKind && managedDocument ? (
+          <ExperimentManagedSection
+            kind={managedKind}
+            document={managedDocument}
+            project={project}
+            experimentId={experimentId}
+          />
+        ) : body ? (
           <div className="prose prose-sm max-w-none text-xs/relaxed">
             <Markdown project={project}>{body}</Markdown>
           </div>
         ) : (
           <div className="text-xs italic text-muted-foreground">to fill</div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function RunsCard({
+  project,
+  experimentId,
+  initialOpenRun,
+  memberRuns,
+}: {
+  project: string
+  experimentId: string
+  initialOpenRun: string | null
+  memberRuns: MemberRunSummary[]
+}) {
+  return (
+    <Card data-section-heading="Runs">
+      <CardHeader>
+        <CardTitle>
+          Runs{' '}
+          <span className="font-normal text-sm text-muted-foreground">({memberRuns.length})</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {memberRuns.map((memberRun) => (
+          <RunPanel
+            key={memberRun.id}
+            project={project}
+            experimentId={experimentId}
+            runId={memberRun.id}
+            initialOpenRun={initialOpenRun}
+            summary={memberRun}
+          />
+        ))}
+        {memberRuns.length === 0 && (
+          <div className="text-xs text-muted-foreground">(no runs bound yet)</div>
         )}
       </CardContent>
     </Card>

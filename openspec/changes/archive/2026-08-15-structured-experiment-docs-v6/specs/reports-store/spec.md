@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Reports support legacy files and opt-in directory bundles
 
@@ -21,3 +21,11 @@ Directory report assets SHALL be served only from within that report directory w
 - **WHEN** the Hub forwards the node response to the browser
 - **THEN** the response bytes are identical to the source asset
 - **AND** HTML, CSS, JavaScript, JSON, and YAML remain UTF-8 text responses
+
+## REMOVED Requirements
+
+### Requirement: Reports live at `<projectRoot>/docs/reports/R<NNNN>-<slug>.md`
+
+**Reason**: v6 broadens the canonical store to support both the existing Markdown file and an explicitly requested static directory bundle.
+
+**Migration**: Existing Markdown Reports remain in place and valid. Only a new or already-directory Report selected for HTML uses `R<NNNN>-<slug>/README.md` plus confined assets.

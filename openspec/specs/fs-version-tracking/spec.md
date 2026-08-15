@@ -114,35 +114,28 @@ Both functions SHALL call `assertWithinProjectRoots()` (the existing path-safety
 - **WHEN** `readFsVersion(<root>)` or `writeFsVersion(<root>, record)` is called
 - **THEN** it throws the same `PATH_OUTSIDE_PROJECT_ROOTS` error that other path-accepting APIs throw
 
-### Requirement: Value after this change is 4
+### Requirement: Value after this change is 6 with per-file schema compatibility
 
-When this change (`lifecycle-frontmatter-v4`) is archived, `packages/core/src/version.ts` SHALL export `FS_CONVENTION_VERSION === 4`. The bump rationale is the following set of breaking on-disk schema changes:
-
-- The run README accepted set of `status:` values widens (`INTERRUPTED` is added).
-- The run README frontmatter gains a new required `archived: boolean` field.
-- The exp doc frontmatter gains two new required fields: `status: ExperimentStatus` (`OPEN` / `RESOLVED` / `ABANDONED`) and `archived: boolean`.
-- The legacy `<runDir>/.archived` sidecar file is removed by the v3→v4 migration; v4 readers SHALL NOT treat the sidecar as authoritative (only as a narrow migration-window fallback per `archive-frontmatter`).
-
-`packages/core/migrations/v3-to-v4.md` SHALL exist and follow `fs-migration-guide-authoring/spec.md`.
+`FS_CONVENTION_VERSION` SHALL equal `6`. Core SHALL publish the expected schema version for each structured YAML kind. A project marker and its files SHALL be treated as inconsistent when the global marker says v6 but a required sidecar is missing, has no schema version, is older, or is newer than supported.
 
 #### Scenario: Constant has the new value
-- **WHEN** the change is archived
-- **THEN** `FS_CONVENTION_VERSION === 4` in `packages/core/src/version.ts`
-- **AND** `packages/core/migrations/v3-to-v4.md` exists
+- **WHEN** this change is archived
+- **THEN** `FS_CONVENTION_VERSION === 6` in `packages/core/src/version.ts`
+- **AND** the staged v5-to-v6 migration guide and validator exist
 
 #### Scenario: Schema after first install on v4
 - **GIVEN** a project root with no prior `.memon/` directory
-- **WHEN** `memon install-skills --project-root <p>` runs and
-  `FS_CONVENTION_VERSION === 4`
-- **THEN** `<p>/.memon/version.json` exists with `fs_convention_version:
-  4`, `installed_at` an ISO8601 with offset, `last_migrated_at: null`
+- **WHEN** the current v6 skills are installed
+- **THEN** the new marker records `fs_convention_version: 6`
+- **AND** each subsequently created structured YAML file uses the schema version expected for its document kind
 
 #### Scenario: last_migrated_at advances after v3→v4 migration
-- **GIVEN** a project root at `fs_convention_version: 3,
-  last_migrated_at: "2026-04-01T..."`
-- **WHEN** `memon-migrate-fs` successfully completes the v3→v4 step at
-  `2026-05-13T14:23:00+08:00`
-- **THEN** the file now has `fs_convention_version: 4,
-  last_migrated_at: "2026-05-13T14:23:00+08:00"`
-- **AND** `installed_at` is unchanged
+- **GIVEN** a legacy project is still migrating through the v3-to-v4 step
+- **WHEN** that step succeeds before later steps continue to v6
+- **THEN** `last_migrated_at` advances for the completed v3-to-v4 step
+- **AND** the global marker does not claim v6 until all later staged migration work is published successfully
 
+#### Scenario: Partial YAML migration blocks v6 completion
+- **GIVEN** the marker says v6 but one `results.yaml` remains at an unsupported version
+- **WHEN** doctor or structured lint runs
+- **THEN** it reports an FS/YAML version mismatch and exits non-zero

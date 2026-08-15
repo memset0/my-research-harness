@@ -259,6 +259,11 @@ const RULES: Rule[] = [
     class: 'mutating',
     projectFor: () => null,
   },
+  {
+    match: exact('/api/ui-preferences'),
+    class: 'mutating',
+    projectFor: projectGlobal(),
+  },
 
   // ===== read: GET API endpoints =====
   {

@@ -71,6 +71,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         host: r.frontMatter.host,
         gpus: r.frontMatter.gpus,
         path: r.path,
+        wandb: r.frontMatter.wandb,
         // Per-run artifacts surfaced here so the exp detail page can
         // aggregate them at experiment level without firing N requests.
         artifacts: r.sections.artifacts,

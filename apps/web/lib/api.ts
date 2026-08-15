@@ -841,6 +841,8 @@ export interface MemberRunSummary {
   host: string | null
   gpus: number[]
   path?: string
+  /** Optional external run dashboard retained by the structured Results table. */
+  wandb?: string | null
   /** v4-added — true when the run README's `archived` frontmatter is true. */
   archived?: boolean
   /** The run README's manually-described Artifacts (path + description). */

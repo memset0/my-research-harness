@@ -1,8 +1,8 @@
 // Extend vitest's `expect` with @testing-library/jest-dom matchers
 // (`toBeInTheDocument`, `toHaveTextContent`, etc.).
 import '@testing-library/jest-dom/vitest'
-import { afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
+import { afterEach, vi } from 'vitest'
 
 // vitest is configured with `globals: false`, so @testing-library/react does
 // NOT auto-register its `afterEach(cleanup)` hook. Wire it up explicitly so
@@ -14,6 +14,28 @@ afterEach(() => {
 // jsdom doesn't implement these — Radix UI primitives (Select, Dialog) reach
 // for them. Stub once globally so any RTL test can use the shadcn primitives.
 if (typeof window !== 'undefined') {
+  // Node 26 exposes an experimental global `localStorage` accessor that is
+  // undefined unless `--localstorage-file` is supplied. Install a small
+  // spec-shaped in-memory Storage before components touch that accessor.
+  const localValues = new Map<string, string>()
+  const testLocalStorage: Storage = {
+    get length() {
+      return localValues.size
+    },
+    clear: () => localValues.clear(),
+    getItem: (key) => localValues.get(String(key)) ?? null,
+    key: (index) => Array.from(localValues.keys())[index] ?? null,
+    removeItem: (key) => localValues.delete(String(key)),
+    setItem: (key, value) => localValues.set(String(key), String(value)),
+  }
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: testLocalStorage,
+  })
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: testLocalStorage,
+  })
   if (!('ResizeObserver' in window)) {
     // biome-ignore lint/suspicious/noExplicitAny: minimal stub
     ;(window as any).ResizeObserver = class {

@@ -14,7 +14,6 @@ The v5 experiment folder already provides a natural home for sidecar data, but t
 - Make v5-to-v6 publication fully staged, resumable, reviewable, and all-at-once.
 
 **Non-Goals:**
-- A specialized interactive tree or Results table in the first web version.
 - Web editing of structured YAML.
 - Item-level mutation CLI commands.
 - Migrating existing single-file Reports.
@@ -60,9 +59,11 @@ Variant status is `PLANNED | RUNNING | COMPLETED | FAILED | INCONCLUSIVE | DROPP
 
 Drive always writes Variant definitions before launch. It decides from the user's tone whether to pause for table confirmation or proceed autonomously. A parameter change creates/updates a Variant before execution; retries with unchanged comparison conditions stay on the same Variant.
 
-### D5. One normalized model, Markdown first
+### D5. One normalized model, multiple projections
 
-Core parses YAML into normalized trees/results. A deterministic Markdown renderer powers CLI human/Markdown reads and the first web UI. Future React tree/table components consume the normalized model directly rather than parsing generated Markdown.
+Core parses YAML into normalized trees/results. A deterministic Markdown renderer powers CLI human/Markdown reads and remains the compatibility projection exposed by the Web API. The Web detail page consumes the same normalized model directly for status-aware Implementation/Investigation trees and an interactive Results table; it never reverse-parses generated Markdown.
+
+Results is the primary decision surface, so it renders immediately after the Experiment header while Runs moves to the final card. Results table preferences use browser storage immediately and, for the authenticated owner, an owner-keyed SQLite record in `memon-ui-preferences.sqlite3` beside the active `config.yml`: visibility, an ordered multi-column default-sort chain, line count, ordered left/right pin groups, AND-combined row predicates, and force-show/force-hide row overrides are scoped to one Experiment, while starred display names are scoped to the Project so repeated metrics receive consistent emphasis. A present SQLite row is authoritative even when it explicitly contains no filters; an absent row instead permits an existing browser value to win and be migrated. Viewer and anonymous sessions remain browser-only. Client rendering and local writes do not await the serialized background server write. Filters and default sorts use compact badge editors: clicking a saved badge edits it and a trailing add badge creates another. Default-sort badges compare from left to right and always fall back to natural Variant-ID ascending order; with no badges, that fallback is the complete default. Header clicks instead create a non-persistent single-column temporary sort, with the configured default chain used for ties. Row overrides take precedence over ordinary predicates and are available from the row context menu without consuming a visible table cell or requiring a separate top-level selector. Independent show-all toggles bypass saved row and column filtering only for the mounted page and are deliberately excluded from persistence; show-all also makes normally absent rows available for override editing. Exact scalar `wandb.ai` URLs receive a compact semantic projection—a chart icon and final path ID—while retaining the complete target and revealing it in a tooltip, reducing content-driven column width without losing navigation. Pin order is user-defined rather than derived from YAML: pinned-left, unpinned YAML order, then pinned-right. The web client measures rendered pinned widths and applies cumulative sticky offsets only while the combined pinned width is smaller than the scroll viewport; otherwise all columns scroll together without losing their pinned grouping.
 
 ### D6. Experiment writes are centralized as a workflow, not a CRUD gate
 

@@ -68,6 +68,11 @@ describe('classify (pure class only)', () => {
     expect(classify('DELETE', '/api/projects/project-a/shares/shr_abc')).toBe('mutating')
   })
 
+  it('classifies UI preferences as owner-only for reads and writes', () => {
+    expect(classify('GET', '/api/ui-preferences')).toBe('mutating')
+    expect(classify('PUT', '/api/ui-preferences')).toBe('mutating')
+  })
+
   it('classifies page routes as read', () => {
     expect(classify('GET', '/')).toBe('read')
     expect(classify('GET', '/p/project-a')).toBe('read')

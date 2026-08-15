@@ -58,20 +58,6 @@ Any skill that writes `README.md` SHALL: (a) fetch the current mtime via `memon 
 - **WHEN** reading `packages/skills/memon-digest-journal/SKILL.md`'s `fix_readme()` shell helper
 - **THEN** the helper fetches fresh mtime via `memon show` before calling `memon experiment readme write` and propagates the new mtime on success
 
-### Requirement: README authorship is exclusive to memon-run-experiment
-
-`<runDir>/README.md` (frontmatter and all body sections) SHALL be authored exclusively by `memon-run-experiment`. Launcher scripts produced by `memon-write-script` SHALL only `mkdir -p "$RUN_DIR"` and `tee -a "$RUN_DIR/run.log"`; they SHALL NOT touch `README.md` (no frontmatter, no body, no creation, no modification).
-
-This separation keeps the script callable on a memon-less host and makes README content the responsibility of the agent (which knows experiment intent), not the script (which only knows how to launch).
-
-#### Scenario: write-script templates do not write README
-- **WHEN** reviewing every example template in `packages/skills/memon-write-script/SKILL.md` (Style A, Style B, Composability variants)
-- **THEN** no template emits any operation against `README.md` (no `cat`, `echo`, `tee`, `cp`, `>`, `>>` targeting `README.md`)
-
-#### Scenario: Anti-pattern explicitly forbids it
-- **WHEN** reviewing `packages/skills/memon-write-script/SKILL.md` Anti-patterns section
-- **THEN** it contains an explicit prohibition: "Writing `README.md` from the script. That's `memon-run-experiment`'s job"
-
 ### Requirement: JOURNAL frontmatter is writable only via digest-mark
 
 Skills SHALL update `docs/journal.md` frontmatter (specifically `last_digest_at`) only via `memon journal digest-mark`. No other skill SHALL touch the frontmatter. Skills MAY only `memon journal append` event lines to the body.
@@ -215,18 +201,6 @@ This skill is the only one that is exempt from the FS-version preflight requirem
 - **WHEN** a reader samples 5 random headings and 10 random paragraphs from the SKILL body
 - **THEN** all sampled text is in English
 - **AND** any user-facing dialogue (confirmation prompts) appears inside `>` block quotes in Chinese
-
-### Requirement: `memon-append-warning` exists as a model-invocable single-row appender
-
-A bundled skill at `packages/skills/memon-append-warning/SKILL.md` SHALL exist. The skill SHALL: (a) accept a target experiment id, a category from the closed enum, and a message; (b) call `memon experiment warning add <id> --project-root . --category <cat> --message <text>` exactly once; (c) on exit 9 CONFLICT, refresh and retry once; (d) surface to the user on second conflict. The skill body SHALL be in English per the existing language convention. It SHALL NOT call `memon experiment warning resolve|reopen|delete`.
-
-#### Scenario: Skill calls warning add with --project-root
-- **WHEN** a reader inspects the workflow body of `packages/skills/memon-append-warning/SKILL.md`
-- **THEN** the example invocation is exactly `memon experiment warning add <id> --project-root . --category <cat> --message <text>`, includes `--project-root` explicitly, and contains a one-retry-on-CONFLICT branch
-
-#### Scenario: Skill is forbidden from calling resolve/reopen/delete
-- **WHEN** a reader greps `packages/skills/memon-append-warning/SKILL.md` for `warning resolve`, `warning reopen`, or `warning delete`
-- **THEN** any occurrence is inside an explicitly-marked Anti-pattern block; the workflow body itself contains zero such occurrences
 
 ### Requirement: `memon-run-experiment` post-run anomaly review step
 
@@ -473,4 +447,23 @@ results but no code change. `memon-write-code-review` SHALL be listed among
 
 - **WHEN** a reader inspects the `memon-drive` skill body
 - **THEN** `memon-write-code-review` appears among its sub-tools
+
+### Requirement: Drive coordinates all Experiment work through a dedicated writer skill
+
+`memon-drive` SHALL read the v6 bundle, distinguish engineering work from empirical investigation, define Variants before launching Runs, and invoke `memon-write-experiment-doc` for every Experiment semantic write. The writer SHALL directly edit README/YAML and validate afterward; it SHALL NOT require item-level mutation CLI commands.
+
+Before a run, drive SHALL decide from the user's intent whether Variant-table approval is required. Explicit autonomous delegation permits immediate creation/execution; collaborative design prompts require a proposed Markdown table and confirmation. In all cases, the Variant exists before launch.
+
+#### Scenario: Autonomous experiment still records Variant first
+- **GIVEN** the user explicitly delegates autonomous experimental choices
+- **WHEN** drive launches a run
+- **THEN** the corresponding Variant is already present in `results.yaml`
+
+### Requirement: Warning skill is removed while CLI compatibility remains
+
+The bundled skill inventory SHALL NOT contain `memon-append-warning`. Official skills SHALL route Warning updates through `memon-write-experiment-doc`. Existing warning CLI commands remain functional indefinitely and print a deprecation notice on every invocation.
+
+#### Scenario: Installed skill set removes warning skill
+- **WHEN** `memon install-skills` synchronizes v6 skills
+- **THEN** no `memon-append-warning` directory remains in the target
 

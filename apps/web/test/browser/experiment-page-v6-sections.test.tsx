@@ -55,8 +55,85 @@ describe('ExperimentPage v6 document sections', () => {
       effectiveCreatedAt: '2026-08-10T00:00:00+00:00',
       effectiveUpdatedAt: '2026-08-10T00:00:00+00:00',
       memberRuns: [],
+      documents: {
+        implementation: {
+          kind: 'implementation',
+          fileName: 'implementation.yaml',
+          path: `/project/docs/experiments/${EXP_ID}/implementation.yaml`,
+          exists: true,
+          raw: 'schema_version: 1',
+          data: {
+            schemaVersion: 1,
+            items: [
+              {
+                id: 'IMP0001',
+                title: 'Build the structured reader',
+                status: 'IN_PROGRESS',
+                dependsOn: [],
+                acceptanceCriteria: ['The YAML projection renders as structured UI'],
+                files: ['apps/web/components/experiment-page.tsx'],
+                commits: [],
+                codeReviews: [],
+                children: [],
+              },
+            ],
+          },
+          parseErrors: [],
+          parseWarnings: [],
+        },
+        investigation: {
+          kind: 'investigation',
+          fileName: 'investigation.yaml',
+          path: `/project/docs/experiments/${EXP_ID}/investigation.yaml`,
+          exists: true,
+          raw: 'schema_version: 1',
+          data: null,
+          parseErrors: [],
+          parseWarnings: [],
+        },
+        results: {
+          kind: 'results',
+          fileName: 'results.yaml',
+          path: `/project/docs/experiments/${EXP_ID}/results.yaml`,
+          exists: true,
+          raw: 'schema_version: 1',
+          data: {
+            schemaVersion: 1,
+            columns: [
+              { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
+              { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
+            ],
+            variants: [
+              {
+                id: 'V0001',
+                name: 'BF16',
+                status: 'PLANNED',
+                parameters: { precision: 'bf16' },
+                metrics: { loss: null },
+                runs: [],
+                attempts: [],
+              },
+            ],
+          },
+          parseErrors: [],
+          parseWarnings: [],
+        },
+      },
       documentReadOnly: true,
       documentSections: [
+        {
+          heading: 'Implementation',
+          body: '- **IMP0001** `[IN_PROGRESS]` Build the structured reader',
+          rawBody:
+            '> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.',
+          index: 0,
+          occurrence: 1,
+          supported: true,
+          managed: true,
+          pointerValid: true,
+          source: 'yaml',
+          diagnostics: [],
+        },
         {
           heading: 'Results',
           body: '| Variant | Status |\n| --- | --- |\n| **V0001** BF16 | `PLANNED` |',
@@ -119,11 +196,20 @@ describe('ExperimentPage v6 document sections', () => {
 
     await waitFor(() => expect(screen.getByText('Structured experiment')).toBeInTheDocument())
     expect(screen.getByText('V0001')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Build the structured reader' })).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="implementation-document"]')).toBeInTheDocument()
     expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
     expect(screen.getByText('Unsupported')).toBeInTheDocument()
     expect(screen.getByText('Managed section conflict')).toBeInTheDocument()
     expect(screen.getByText(/Original checklist that conflicts/)).toBeInTheDocument()
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
+    expect(container.querySelectorAll('input[type="checkbox"][disabled]')).toHaveLength(1)
+    expect(container.querySelector('[data-slot="results-table"]')).toBeInTheDocument()
+    const sectionOrder = Array.from(container.querySelectorAll('[data-section-heading]')).map(
+      (element) => element.getAttribute('data-section-heading'),
+    )
+    expect(sectionOrder[0]).toBe('Results')
+    expect(sectionOrder.indexOf('Results')).toBeLessThan(sectionOrder.indexOf('Implementation'))
+    expect(sectionOrder.at(-1)).toBe('Runs')
     expect(screen.getByText(/^compatibility view$/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /edit markdown/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /change experiment status/i })).toBeInTheDocument()
