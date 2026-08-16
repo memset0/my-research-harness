@@ -1,30 +1,21 @@
 'use client'
 
-import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { Bot, Download, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
 import { ApiError, checkTerminal, installTerminal } from '../lib/api'
-import { Button } from './ui/button'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip'
-import { TerminalSheet } from './terminal-sheet'
-import { ViewerGuard } from './viewer-guard'
+import { useRuntimeConfig } from '../lib/runtime-config'
 import { useSession } from './session-provider'
+import { TerminalSheet } from './terminal-sheet'
+import { Button } from './ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { ViewerGuard } from './viewer-guard'
 
-export function TerminalButton({
-  runId,
-  projectName,
-}: {
-  runId: string
-  projectName: string
-}) {
+export function TerminalButton({ runId, projectName }: { runId: string; projectName: string }) {
   const qc = useQueryClient()
   const { role } = useSession()
+  const { terminal } = useRuntimeConfig()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [installing, setInstalling] = useState(false)
 
@@ -34,8 +25,10 @@ export function TerminalButton({
     queryKey: ['terminal', 'check'],
     queryFn: checkTerminal,
     staleTime: 10_000,
-    enabled: role === 'owner',
+    enabled: role === 'owner' && terminal.tmuxEnabled,
   })
+
+  if (!terminal.tmuxEnabled) return null
 
   if (!probe) {
     // Loading or first paint — render a quiet placeholder button so layout
@@ -90,7 +83,11 @@ export function TerminalButton({
     return (
       <ViewerGuard reason="Open terminal">
         <Button variant="outline" size="sm" onClick={() => void onInstall()} disabled={installing}>
-          {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+          {installing ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Download className="size-3.5" />
+          )}
           {installing ? 'Installing…' : 'Install ttyd (~5MB)'}
         </Button>
       </ViewerGuard>
@@ -111,9 +108,7 @@ export function TerminalButton({
           </span>
         </TooltipTrigger>
         <TooltipContent>
-          <span className="font-mono text-[11px]">
-            {probe.suggestion ?? 'ttyd unavailable'}
-          </span>
+          <span className="font-mono text-[11px]">{probe.suggestion ?? 'ttyd unavailable'}</span>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

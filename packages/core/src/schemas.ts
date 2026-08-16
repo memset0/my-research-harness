@@ -70,9 +70,7 @@ export const ExperimentFrontMatterRawSchema = z.object({
   updated_at: z.string().min(1),
 })
 
-export type ExperimentFrontMatterRaw = z.infer<
-  typeof ExperimentFrontMatterRawSchema
->
+export type ExperimentFrontMatterRaw = z.infer<typeof ExperimentFrontMatterRawSchema>
 
 // ---------- Journal frontmatter ----------
 
@@ -185,6 +183,13 @@ export const TerminalCommandsRawSchema = z
 
 export const TerminalConfigRawSchema = z
   .object({
+    tmux_enabled: z.boolean().optional(),
+    herdr: z
+      .object({
+        cli: z.array(z.string().min(1)).min(1),
+      })
+      .strict()
+      .optional(),
     ttyd_max_concurrent: z.number().int().min(1).optional(),
     ttyd_idle_ttl_minutes: z.number().int().min(0).optional(),
     pane_info_active_poll_ms: z.number().int().positive().optional(),

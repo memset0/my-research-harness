@@ -14,16 +14,16 @@
 import { homedir } from 'node:os'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import {
-  TerminalManagerError,
-  startSession,
-} from '../../../../lib/terminal/manager'
 import { getRuntime } from '../../../../lib/runtime'
+import { startSession, TerminalManagerError } from '../../../../lib/terminal/manager'
 
 export const dynamic = 'force-dynamic'
 
 const BodySchema = z.object({
-  project: z.string().min(1).regex(/^[A-Za-z0-9-]+$/, 'project must match [A-Za-z0-9-]+'),
+  project: z
+    .string()
+    .min(1)
+    .regex(/^[A-Za-z0-9-]+$/, 'project must match [A-Za-z0-9-]+'),
   scope: z.enum(['exp', 'run', 'project']),
   slug: z
     .string()
@@ -59,6 +59,12 @@ export async function POST(req: NextRequest) {
   }
 
   const runtime = await getRuntime()
+  if (runtime.config.terminal?.tmuxEnabled === false) {
+    return NextResponse.json(
+      { error: { code: 'INTEGRATION_DISABLED', message: 'tmux integration is disabled' } },
+      { status: 404 },
+    )
+  }
   const project = runtime.config.projects.find((p) => p.name === parsed.data.project)
 
   // Resolve cwd; pre-warnings carry the "I had to fall back" message into
@@ -68,7 +74,9 @@ export async function POST(req: NextRequest) {
   let cwd: string
   if (project) {
     if (parsed.data.scope === 'run') {
-      const run = runtime.index.list({ project: project.name }).find((r) => r.id === parsed.data.slug)
+      const run = runtime.index
+        .list({ project: project.name })
+        .find((r) => r.id === parsed.data.slug)
       if (run) {
         cwd = run.path
       } else {
@@ -95,9 +103,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     cwd = homedir()
-    preWarnings.push(
-      `project "${parsed.data.project}" not in config; opened at HOME`,
-    )
+    preWarnings.push(`project "${parsed.data.project}" not in config; opened at HOME`)
   }
 
   try {
@@ -121,14 +127,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof TerminalManagerError) {
       const status = err.code === 'BAD_REQUEST' ? 400 : 503
-      return NextResponse.json(
-        { error: { code: err.code, message: err.message } },
-        { status },
-      )
+      return NextResponse.json({ error: { code: err.code, message: err.message } }, { status })
     }
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

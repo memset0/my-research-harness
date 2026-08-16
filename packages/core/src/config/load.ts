@@ -15,17 +15,17 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
 import {
+  type AuthConfig,
+  type Config,
   DEFAULT_GIT_STATUS,
   DEFAULT_NODE_CAPABILITIES,
   DEFAULT_POLL,
   DEFAULT_SLURM,
   DEFAULT_TELEGRAM_PARSE_MODE,
   DEFAULT_TERMINAL,
-  MIN_GIT_STATUS_INTERVAL_MS,
-  type AuthConfig,
-  type Config,
   type GitStatusConfig,
   type HubConfig,
+  MIN_GIT_STATUS_INTERVAL_MS,
   type NodeConfig,
   type PollConfig,
   type ProjectConfig,
@@ -140,12 +140,13 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
 
   const cmds = cfg.terminal?.commands
   const terminal: TerminalConfig = {
+    tmuxEnabled: cfg.terminal?.tmux_enabled ?? DEFAULT_TERMINAL.tmuxEnabled,
+    ...(cfg.terminal?.herdr ? { herdr: { cli: cfg.terminal.herdr.cli } } : {}),
     ttydMaxConcurrent: cfg.terminal?.ttyd_max_concurrent ?? DEFAULT_TERMINAL.ttydMaxConcurrent,
     ttydIdleTtlMinutes: cfg.terminal?.ttyd_idle_ttl_minutes ?? DEFAULT_TERMINAL.ttydIdleTtlMinutes,
     paneInfoActivePollMs:
       cfg.terminal?.pane_info_active_poll_ms ?? DEFAULT_TERMINAL.paneInfoActivePollMs,
-    paneInfoIdlePollMs:
-      cfg.terminal?.pane_info_idle_poll_ms ?? DEFAULT_TERMINAL.paneInfoIdlePollMs,
+    paneInfoIdlePollMs: cfg.terminal?.pane_info_idle_poll_ms ?? DEFAULT_TERMINAL.paneInfoIdlePollMs,
     commands: {
       none: cmds?.none ?? DEFAULT_TERMINAL.commands.none,
       claude: cmds?.claude ?? DEFAULT_TERMINAL.commands.claude,

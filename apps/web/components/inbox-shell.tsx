@@ -6,33 +6,36 @@
 // a right-side Sheet showing the rail; tapping Edit opens a full-viewport
 // bottom Sheet with Monaco.
 
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import type { DigestSummary } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { List, Pencil, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  type FullDigest,
+  type FullReport,
   fetchDigest,
   fetchDigests,
   fetchReport,
   fetchReports,
   putDigest,
   putReport,
-  type FullDigest,
-  type FullReport,
   type ReportListItem,
 } from '../lib/api'
-import type { DigestSummary } from '@memon/core'
-import { Button } from './ui/button'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
-import { Markdown } from './markdown'
-import { FrontmatterPanel } from './frontmatter-panel'
 import { splitFrontmatter } from '../lib/frontmatter'
+import { useUserPreferenceState } from '../lib/use-user-preference-state'
+import { cn } from '../lib/utils'
+import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
+import { FrontmatterPanel } from './frontmatter-panel'
+import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
-import { cn } from '../lib/utils'
+import { Button } from './ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
+import { ReportHtmlZoomProvider } from './report-html-embed'
 
 export type InboxKind = 'reports' | 'digests'
 
@@ -58,15 +61,16 @@ interface FullItem {
 const EMPTY_COPY = {
   reports: {
     rail: 'no reports yet',
-    body:
-      'No reports yet. Reports are written by `memon-write-report`; pick a hypothesis or set of experiments and ask the skill to summarize.',
+    body: 'No reports yet. Reports are written by `memon-write-report`; pick a hypothesis or set of experiments and ask the skill to summarize.',
   },
   digests: {
     rail: 'no digests yet',
-    body:
-      'No digests yet. Digests are written by `memon-digest-journal` and snapshot a date range from docs/journal.md.',
+    body: 'No digests yet. Digests are written by `memon-digest-journal` and snapshot a date range from docs/journal.md.',
   },
 } as const
+
+const REPORT_TIMESTAMP_KEYS = ['created_at', 'updated_at'] as const
+const REPORT_PICKER_PREFERENCE_KEY = 'memon:reports:picker-open'
 
 export function InboxShell({
   kind,
@@ -77,20 +81,43 @@ export function InboxShell({
   project: string
   selectedId: string | null
 }) {
-  const items = useItemsList(kind, project)
+  const { items, isLoading: itemsLoading } = useItemsList(kind, project)
   const selected = useSelectedItem(kind, project, selectedId)
+  const [storedReportRailOpen, setReportRailOpen] = useUserPreferenceState<boolean>(
+    REPORT_PICKER_PREFERENCE_KEY,
+    true,
+  )
+  const reportRailOpen = typeof storedReportRailOpen === 'boolean' ? storedReportRailOpen : true
 
   const empty = EMPTY_COPY[kind]
+  const showDesktopRail = kind === 'digests' || reportRailOpen
+  const showReportRail = kind === 'reports' && !reportRailOpen
 
   return (
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
       {/* Left rail — desktop only */}
-      <aside className="hidden w-72 shrink-0 border-r md:flex md:flex-col">
-        <RailHeader kind={kind} count={items.length} />
-        <div className="flex-1 overflow-y-auto">
-          <RailList kind={kind} project={project} items={items} selectedId={selectedId} loading={!items} />
-        </div>
-      </aside>
+      {showDesktopRail && (
+        <aside
+          aria-label={kind === 'reports' ? 'Report picker' : 'Digest picker'}
+          className="hidden w-72 shrink-0 border-r md:flex md:flex-col"
+          data-inbox-rail={kind}
+        >
+          <RailHeader
+            kind={kind}
+            count={items.length}
+            onHideReports={kind === 'reports' ? () => setReportRailOpen(false) : undefined}
+          />
+          <div className="flex-1 overflow-y-auto">
+            <RailList
+              kind={kind}
+              project={project}
+              items={items}
+              selectedId={selectedId}
+              loading={itemsLoading}
+            />
+          </div>
+        </aside>
+      )}
 
       {/* Right pane — rendered markdown + edit toggle.
           overflow-x-hidden alongside overflow-y-auto is needed to defeat
@@ -100,7 +127,10 @@ export function InboxShell({
           wide element). */}
       <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         {selectedId === null ? (
-          <EmptyState bodyMarkdown={empty.body} />
+          <EmptyState
+            bodyMarkdown={empty.body}
+            onShowReports={showReportRail ? () => setReportRailOpen(true) : undefined}
+          />
         ) : (
           <SelectedItemPane
             kind={kind}
@@ -109,17 +139,29 @@ export function InboxShell({
             data={selected.data}
             isLoading={selected.isLoading}
             error={selected.error}
+            onShowReports={showReportRail ? () => setReportRailOpen(true) : undefined}
+            items={items}
+            itemsLoading={itemsLoading}
           />
         )}
       </main>
 
       {/* Mobile FAB → drawer with the rail */}
-      <MobileRailDrawer kind={kind} project={project} items={items} selectedId={selectedId} />
+      <MobileRailDrawer
+        kind={kind}
+        project={project}
+        items={items}
+        itemsLoading={itemsLoading}
+        selectedId={selectedId}
+      />
     </div>
   )
 }
 
-function useItemsList(kind: InboxKind, project: string): CommonItem[] {
+function useItemsList(
+  kind: InboxKind,
+  project: string,
+): { items: CommonItem[]; isLoading: boolean } {
   const reportsQ = useQuery({
     queryKey: ['reports', project],
     queryFn: () => fetchReports(project),
@@ -132,14 +174,30 @@ function useItemsList(kind: InboxKind, project: string): CommonItem[] {
     enabled: kind === 'digests',
     staleTime: 5_000,
   })
-  return useMemo(() => {
+  const items = useMemo(() => {
     if (kind === 'reports') {
       const reports: ReportListItem[] = reportsQ.data?.reports ?? []
-      return reports.map((r) => ({ id: r.id, path: r.path, mtime: r.mtime, title: r.title, subLabel: r.slug }))
+      return reports.map((r) => ({
+        id: r.id,
+        path: r.path,
+        mtime: r.mtime,
+        title: r.title,
+        subLabel: r.slug,
+      }))
     }
     const digests: DigestSummary[] = digestsQ.data?.digests ?? []
-    return digests.map((d) => ({ id: d.id, path: d.path, mtime: d.mtime, title: d.title, subLabel: d.date }))
+    return digests.map((d) => ({
+      id: d.id,
+      path: d.path,
+      mtime: d.mtime,
+      title: d.title,
+      subLabel: d.date,
+    }))
   }, [kind, reportsQ.data, digestsQ.data])
+  return {
+    items,
+    isLoading: kind === 'reports' ? reportsQ.isLoading : digestsQ.isLoading,
+  }
 }
 
 function useSelectedItem(
@@ -173,12 +231,47 @@ function useSelectedItem(
   }
 }
 
-function RailHeader({ kind, count }: { kind: InboxKind; count: number }) {
+function RailHeader({
+  kind,
+  count,
+  onHideReports,
+}: {
+  kind: InboxKind
+  count: number
+  onHideReports?: () => void
+}) {
   return (
     <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
       <span>{kind === 'reports' ? 'Reports' : 'Digests'}</span>
-      <span className="tabular-nums">{count}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="tabular-nums">{count}</span>
+        {onHideReports && <ReportRailToggleButton action="hide" onClick={onHideReports} />}
+      </div>
     </div>
+  )
+}
+
+function ReportRailToggleButton({
+  action,
+  onClick,
+}: {
+  action: 'show' | 'hide'
+  onClick: () => void
+}) {
+  const label = action === 'show' ? 'Show reports' : 'Hide reports'
+  const Icon = action === 'show' ? PanelLeftOpen : PanelLeftClose
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      className="normal-case"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <Icon />
+    </Button>
   )
 }
 
@@ -213,7 +306,7 @@ function RailList({
     )
   }
   return (
-    <ul className="flex flex-col">
+    <ul className={cn('flex flex-col', kind === 'reports' && 'gap-1.5 p-2')}>
       {items.map((it) => {
         const active = it.id === selectedId
         return (
@@ -221,9 +314,14 @@ function RailList({
             <Link
               href={`${base}/${encodeURIComponent(it.id)}`}
               onClick={onSelect}
+              aria-current={active ? 'page' : undefined}
+              data-report-card={kind === 'reports' ? '' : undefined}
               className={cn(
-                'block border-b px-3 py-2 text-xs transition hover:bg-accent/40',
-                active && 'bg-accent text-accent-foreground',
+                kind === 'reports'
+                  ? 'block rounded-md border border-border bg-card p-2.5 text-xs transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1'
+                  : 'block border-b px-3 py-2 text-xs transition hover:bg-accent/40',
+                active &&
+                  (kind === 'reports' ? 'border-primary' : 'bg-accent text-accent-foreground'),
               )}
             >
               <div className="flex items-center justify-between gap-2">
@@ -241,12 +339,29 @@ function RailList({
   )
 }
 
-function EmptyState({ bodyMarkdown }: { bodyMarkdown: string }) {
+function EmptyState({
+  bodyMarkdown,
+  onShowReports,
+}: {
+  bodyMarkdown: string
+  onShowReports?: () => void
+}) {
   return (
-    <div className="flex h-full items-center justify-center p-8">
-      <div className="max-w-md text-sm text-muted-foreground">
-        <Markdown>{bodyMarkdown}</Markdown>
+    <div className="flex h-full flex-col">
+      {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
+      <div className="flex flex-1 items-center justify-center p-8">
+        <div className="max-w-md text-sm text-muted-foreground">
+          <Markdown>{bodyMarkdown}</Markdown>
+        </div>
       </div>
+    </div>
+  )
+}
+
+function ClosedReportRailToolbar({ onShowReports }: { onShowReports: () => void }) {
+  return (
+    <div className="hidden shrink-0 items-center border-b px-3 py-2 md:flex">
+      <ReportRailToggleButton action="show" onClick={onShowReports} />
     </div>
   )
 }
@@ -258,6 +373,9 @@ function SelectedItemPane({
   data,
   isLoading,
   error,
+  onShowReports,
+  items,
+  itemsLoading,
 }: {
   kind: InboxKind
   project: string
@@ -265,43 +383,83 @@ function SelectedItemPane({
   data: FullItem | undefined
   isLoading: boolean
   error: Error | null
+  onShowReports?: () => void
+  items: CommonItem[]
+  itemsLoading: boolean
 }) {
   const [editing, setEditing] = useState(false)
 
   if (isLoading && !data) {
     return (
-      <div className="p-4 md:p-6">
-        <ListSkeleton count={3} />
+      <div className="flex h-full flex-col">
+        {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
+        <div className="p-4 md:p-6">
+          <ListSkeleton count={3} />
+        </div>
       </div>
     )
   }
   if (error) {
-    return <div className="p-4 text-sm text-destructive">error: {error.message}</div>
+    return (
+      <div className="flex h-full flex-col">
+        {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
+        <div className="p-4 text-sm text-destructive">error: {error.message}</div>
+      </div>
+    )
   }
   if (!data) {
-    return <div className="p-4 text-sm text-muted-foreground">not found: {selectedId}</div>
+    return (
+      <div className="flex h-full flex-col">
+        {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
+        <div className="p-4 text-sm text-muted-foreground">not found: {selectedId}</div>
+      </div>
+    )
   }
 
   return (
     <div className="flex h-full flex-col">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
-        <div className="flex items-baseline gap-2 text-xs">
-          <span className="font-mono tabular-nums">{data.id}</span>
-          <span className="text-muted-foreground">{data.subLabel}</span>
-          <span className="text-muted-foreground/60">·</span>
-          <TimestampLocal value={new Date(data.mtime).toISOString()} />
+        <div className="flex min-w-0 items-center gap-2">
+          {onShowReports && <ReportRailToggleButton action="show" onClick={onShowReports} />}
+          <div className="flex min-w-0 items-baseline gap-2 text-xs">
+            <SelectedArtifactIdentity
+              key={onShowReports ? 'collapsed' : 'expanded'}
+              kind={kind}
+              project={project}
+              data={data}
+              items={items}
+              itemsLoading={itemsLoading}
+              quickSwitchEnabled={onShowReports !== undefined}
+            />
+            <span className="text-muted-foreground/60">·</span>
+            <TimestampLocal value={new Date(data.mtime).toISOString()} />
+          </div>
         </div>
-        <Button size="sm" variant={editing ? 'secondary' : 'outline'} onClick={() => setEditing((v) => !v)}>
+        <Button
+          size="sm"
+          variant={editing ? 'secondary' : 'outline'}
+          onClick={() => setEditing((v) => !v)}
+        >
           {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
           {editing ? 'Cancel' : 'Edit'}
         </Button>
       </div>
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
-        <div className={cn('overflow-y-auto overflow-x-hidden', editing ? 'min-w-0 flex-1' : 'min-w-0 flex-1')}>
+        <div
+          className={cn(
+            'min-w-0 flex-1 overflow-y-auto overflow-x-hidden',
+            kind === 'reports' && 'bg-card',
+          )}
+          data-inbox-reading-surface={kind}
+        >
           <div className="p-4 md:p-6">
             <RenderedItem
+              kind={kind}
               content={data.content}
               project={project}
+              sourceDocumentPath={data.path}
+              sourceSurface={kind === 'reports' ? 'full-report' : 'left'}
+              sourceReportId={kind === 'reports' ? selectedId : undefined}
               resourceBaseUrl={
                 kind === 'reports' && data.format === 'bundle'
                   ? reportResourceBaseUrl(project, selectedId)
@@ -342,25 +500,133 @@ function SelectedItemPane({
   )
 }
 
-function RenderedItem({
-  content,
+function SelectedArtifactIdentity({
+  kind,
   project,
-  resourceBaseUrl,
+  data,
+  items,
+  itemsLoading,
+  quickSwitchEnabled,
 }: {
-  content: string
+  kind: InboxKind
   project: string
-  resourceBaseUrl?: string
+  data: FullItem
+  items: CommonItem[]
+  itemsLoading: boolean
+  quickSwitchEnabled: boolean
 }) {
-  const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
+  const [open, setOpen] = useState(false)
+  const identity = `${data.id} ${data.subLabel}`
+
+  if (kind !== 'reports' || !quickSwitchEnabled) {
+    return (
+      <>
+        <span className="font-mono tabular-nums">{data.id}</span>
+        <span className="truncate text-muted-foreground">{data.subLabel}</span>
+      </>
+    )
+  }
+
   return (
     <>
-      {frontmatter && <FrontmatterPanel data={frontmatter} />}
-      <Markdown project={project} resourceBaseUrl={resourceBaseUrl}>{body}</Markdown>
+      <span className="flex min-w-0 items-baseline gap-2 md:hidden" data-report-identity-mobile>
+        <span className="font-mono tabular-nums">{data.id}</span>
+        <span className="truncate text-muted-foreground">{data.subLabel}</span>
+      </span>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="hidden h-6 min-w-0 max-w-[min(28rem,45vw)] gap-1.5 px-1.5 md:inline-flex"
+            aria-label={`Switch report, current ${identity}`}
+            title={identity}
+          >
+            <span className="shrink-0 font-mono tabular-nums">{data.id}</span>
+            <span className="min-w-0 truncate text-muted-foreground">{data.subLabel}</span>
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80 p-0" aria-label="Switch report">
+          <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <span>Reports</span>
+            <span className="tabular-nums">{items.length}</span>
+          </div>
+          <div className="max-h-[min(24rem,60vh)] overflow-y-auto" data-report-quick-switch-list>
+            <RailList
+              kind="reports"
+              project={project}
+              items={items}
+              selectedId={data.id}
+              loading={itemsLoading}
+              onSelect={() => setOpen(false)}
+            />
+          </div>
+        </PopoverContent>
+      </Popover>
     </>
   )
 }
 
-function reportResourceBaseUrl(project: string, reportId: string): string {
+export function RenderedItem({
+  kind,
+  content,
+  project,
+  resourceBaseUrl,
+  sourceDocumentPath,
+  sourceSurface,
+  sourceReportId,
+}: {
+  kind: InboxKind
+  content: string
+  project: string
+  resourceBaseUrl?: string
+  sourceDocumentPath?: string
+  sourceSurface?: 'left' | 'full-report' | 'side-report'
+  sourceReportId?: string
+}) {
+  const { frontmatter, body } = useMemo(() => splitFrontmatter(content), [content])
+  const rendered = (
+    <>
+      {frontmatter && (
+        <FrontmatterPanel
+          data={frontmatter}
+          timestampKeys={kind === 'reports' ? REPORT_TIMESTAMP_KEYS : undefined}
+        />
+      )}
+      {kind === 'reports' ? (
+        <ReportHtmlZoomProvider>
+          <Markdown
+            project={project}
+            resourceBaseUrl={resourceBaseUrl}
+            tableOfContents={{ headingIdPrefix: `report-${sourceReportId ?? 'document'}` }}
+          >
+            {body}
+          </Markdown>
+        </ReportHtmlZoomProvider>
+      ) : (
+        <Markdown project={project} resourceBaseUrl={resourceBaseUrl}>
+          {body}
+        </Markdown>
+      )}
+    </>
+  )
+  return sourceDocumentPath && sourceSurface ? (
+    <DocumentArtifactLinkProvider
+      project={project}
+      sourceDocumentPath={sourceDocumentPath}
+      sourceSurface={sourceSurface}
+      sourceReportId={sourceReportId}
+    >
+      {rendered}
+    </DocumentArtifactLinkProvider>
+  ) : (
+    rendered
+  )
+}
+
+export function reportResourceBaseUrl(project: string, reportId: string): string {
   return `/api/report-assets/${encodeURIComponent(project)}/${encodeURIComponent(reportId)}`
 }
 
@@ -402,7 +668,8 @@ function InboxEditor({
       setKnownMtime(res.mtime)
       setKnownHash(res.hash)
       // Invalidate the detail query so the rendered pane reflects the save.
-      const detailKey = kind === 'reports' ? ['report', project, data.id] : ['digest', project, data.id]
+      const detailKey =
+        kind === 'reports' ? ['report', project, data.id] : ['digest', project, data.id]
       const listKey = [kind, project]
       queryClient.invalidateQueries({ queryKey: detailKey })
       queryClient.invalidateQueries({ queryKey: listKey })
@@ -415,7 +682,8 @@ function InboxEditor({
           action: {
             label: 'Refresh',
             onClick: () => {
-              const detailKey = kind === 'reports' ? ['report', project, data.id] : ['digest', project, data.id]
+              const detailKey =
+                kind === 'reports' ? ['report', project, data.id] : ['digest', project, data.id]
               queryClient.invalidateQueries({ queryKey: detailKey })
               onClose()
             },
@@ -453,11 +721,13 @@ function MobileRailDrawer({
   kind,
   project,
   items,
+  itemsLoading,
   selectedId,
 }: {
   kind: InboxKind
   project: string
   items: CommonItem[]
+  itemsLoading: boolean
   selectedId: string | null
 }) {
   const [open, setOpen] = useState(false)
@@ -483,7 +753,7 @@ function MobileRailDrawer({
           project={project}
           items={items}
           selectedId={selectedId}
-          loading={false}
+          loading={itemsLoading}
           onSelect={() => setOpen(false)}
         />
       </SheetContent>

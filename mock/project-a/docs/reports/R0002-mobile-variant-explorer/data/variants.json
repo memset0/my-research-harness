@@ -1,0 +1,29 @@
+{
+  "source": "synthetic browser fixture",
+  "variants": [
+    {
+      "id": "V0001",
+      "name": "BF16 baseline",
+      "precision": "BF16",
+      "batch_size": 8,
+      "final_loss": 0.184,
+      "throughput": 12.7
+    },
+    {
+      "id": "V0002",
+      "name": "FP8 candidate",
+      "precision": "FP8",
+      "batch_size": 12,
+      "final_loss": 0.191,
+      "throughput": 18.4
+    },
+    {
+      "id": "V0003",
+      "name": "BF16 large batch",
+      "precision": "BF16",
+      "batch_size": 16,
+      "final_loss": 0.187,
+      "throughput": 16.1
+    }
+  ]
+}

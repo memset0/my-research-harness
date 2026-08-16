@@ -11,12 +11,20 @@ export interface RuntimeConfigPayload {
   gitStatus: {
     intervalMs: number
   }
+  terminal: {
+    tmuxEnabled: boolean
+    herdrEnabled: boolean
+  }
 }
 
 export async function readSerializedRuntimeConfig(): Promise<RuntimeConfigPayload> {
   const rt = await getRuntime()
   return {
     gitStatus: { intervalMs: rt.config.gitStatus.intervalMs },
+    terminal: {
+      tmuxEnabled: rt.config.terminal.tmuxEnabled,
+      herdrEnabled: rt.config.terminal.herdr !== undefined,
+    },
   }
 }
 

@@ -1,18 +1,24 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../../../../lib/runtime', () => ({
+  getRuntime: vi.fn().mockResolvedValue({
+    config: { terminal: { tmuxEnabled: true } },
+  }),
+}))
 
 vi.mock('../../../../../lib/terminal/tmux-discover', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../../../../lib/terminal/tmux-discover')
-  >('../../../../../lib/terminal/tmux-discover')
+  const actual = await vi.importActual<typeof import('../../../../../lib/terminal/tmux-discover')>(
+    '../../../../../lib/terminal/tmux-discover',
+  )
   return {
     ...actual,
     renameTmuxSession: vi.fn(),
   }
 })
 
-import { POST } from './route'
 import { renameTmuxSession } from '../../../../../lib/terminal/tmux-discover'
+import { POST } from './route'
 
 function mkCtx(name: string): { params: Promise<{ name: string }> } {
   return { params: Promise.resolve({ name }) }
@@ -63,10 +69,7 @@ describe('POST /api/tmux-sessions/[name]/rename', () => {
   })
 
   it('400 when newName does not match regex', async () => {
-    const res = await POST(
-      mkReq({ newName: 'nopfx' }) as never,
-      mkCtx('memon-manual-old'),
-    )
+    const res = await POST(mkReq({ newName: 'nopfx' }) as never, mkCtx('memon-manual-old'))
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.message).toMatch(/memon-/)
@@ -85,10 +88,7 @@ describe('POST /api/tmux-sessions/[name]/rename', () => {
   })
 
   it('400 on invalid JSON body', async () => {
-    const res = await POST(
-      mkReq('not json') as never,
-      mkCtx('memon-manual-old'),
-    )
+    const res = await POST(mkReq('not json') as never, mkCtx('memon-manual-old'))
     expect(res.status).toBe(400)
     expect(renameTmuxSession).not.toHaveBeenCalled()
   })
@@ -138,10 +138,7 @@ describe('POST /api/tmux-sessions/[name]/rename', () => {
   it('URL-decodes the path param before validation', async () => {
     vi.mocked(renameTmuxSession).mockResolvedValueOnce(undefined)
     const encoded = encodeURIComponent('memon-claude-project-a--run--foo-260101-000000')
-    const res = await POST(
-      mkReq({ newName: 'memon-manual-decoded' }) as never,
-      mkCtx(encoded),
-    )
+    const res = await POST(mkReq({ newName: 'memon-manual-decoded' }) as never, mkCtx(encoded))
     expect(res.status).toBe(200)
     expect(renameTmuxSession).toHaveBeenCalledWith({
       oldName: 'memon-claude-project-a--run--foo-260101-000000',

@@ -13,11 +13,12 @@
 //   - 'raw': calls POST /api/terminal/attach with just sessionName. Used
 //     for /manage/tmux's manual rows (legacy or arbitrary memon-* names).
 
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, AlertTriangle } from 'lucide-react'
 import {
   ApiError,
   attachTerminal,
+  startHerdrTerminal,
   startTerminal,
   type TerminalAgentKind,
   type TerminalScopeKind,
@@ -39,6 +40,12 @@ export type TerminalViewProps = (
       mode: 'raw'
       sessionName: string
     }
+  | {
+      mode: 'herdr'
+      project?: string
+      scope?: TerminalScopeKind
+      slug?: string
+    }
 ) & {
   /** When true, the view occupies 100vw x 100svh (popup-window mode). */
   fullscreen?: boolean
@@ -56,10 +63,7 @@ export type TerminalViewProps = (
 
 const ATTACH_BROADCAST_CHANNEL = 'memon:terminal-attached'
 
-export function postTerminalAttached(
-  sessionName: string,
-  source: TerminalViewSource,
-): void {
+export function postTerminalAttached(sessionName: string, source: TerminalViewSource): void {
   if (typeof BroadcastChannel === 'undefined') return
   let channel: BroadcastChannel | null = null
   try {
@@ -95,6 +99,9 @@ export function TerminalView(props: TerminalViewProps) {
   const standardSlug = mode === 'standard' ? props.slug : undefined
   const standardAgent = mode === 'standard' ? props.agent : undefined
   const rawSessionName = mode === 'raw' ? props.sessionName : undefined
+  const herdrProject = mode === 'herdr' ? props.project : undefined
+  const herdrScope = mode === 'herdr' ? props.scope : undefined
+  const herdrSlug = mode === 'herdr' ? props.slug : undefined
 
   useEffect(() => {
     let cancelled = false
@@ -110,7 +117,13 @@ export function TerminalView(props: TerminalViewProps) {
             slug: standardSlug!,
             agent: standardAgent,
           })
-        : attachTerminal({ sessionName: rawSessionName! })
+        : mode === 'raw'
+          ? attachTerminal({ sessionName: rawSessionName! })
+          : startHerdrTerminal(
+              herdrProject && herdrScope && herdrSlug
+                ? { project: herdrProject, scope: herdrScope, slug: herdrSlug }
+                : undefined,
+            )
     void promise
       .then((res) => {
         if (cancelled) return
@@ -139,11 +152,18 @@ export function TerminalView(props: TerminalViewProps) {
     standardSlug,
     standardAgent,
     rawSessionName,
+    herdrProject,
+    herdrScope,
+    herdrSlug,
     onSessionReady,
   ])
 
   const iframeTitle =
-    mode === 'standard' ? `${standardAgent} terminal` : `${rawSessionName} terminal`
+    mode === 'standard'
+      ? `${standardAgent} terminal`
+      : mode === 'raw'
+        ? `${rawSessionName} terminal`
+        : 'Herdr terminal'
 
   // When embedded in /manage/tmux (source === 'manage'), forward the
   // page-level `Ctrl+Shift+ArrowUp/Down` shortcut from the iframe up to
@@ -263,12 +283,7 @@ export function TerminalView(props: TerminalViewProps) {
   }, [phase, source, iframeUrl])
 
   return (
-    <div
-      className={cn(
-        'relative bg-zinc-950',
-        fullscreen ? 'h-svh w-svw' : 'h-full w-full',
-      )}
-    >
+    <div className={cn('relative bg-zinc-950', fullscreen ? 'h-svh w-svw' : 'h-full w-full')}>
       {warnings.length > 0 && phase === 'ready' && (
         <div className="absolute inset-x-0 top-0 z-10 flex items-start gap-1 bg-amber-50/95 p-2 text-[11px] text-amber-800 dark:bg-amber-950/80 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-3 shrink-0" />

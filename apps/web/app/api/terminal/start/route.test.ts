@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../lib/terminal/manager', async () => {
   const actual = await vi.importActual<typeof import('../../../../lib/terminal/manager')>(
@@ -16,9 +17,9 @@ vi.mock('../../../../lib/runtime', () => ({
   getRuntime: vi.fn(),
 }))
 
-import { POST } from './route'
-import { TerminalManagerError, startSession } from '../../../../lib/terminal/manager'
 import { getRuntime } from '../../../../lib/runtime'
+import { startSession, TerminalManagerError } from '../../../../lib/terminal/manager'
+import { POST } from './route'
 
 function postReq(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/terminal/start', {
@@ -34,6 +35,7 @@ interface FakeRuntimeOpts {
   experiments?: { id: string; project: string }[]
   ttydMaxConcurrent?: number
   ttydIdleTtlMinutes?: number
+  tmuxEnabled?: boolean
 }
 
 function fakeRuntime(opts: FakeRuntimeOpts = {}) {
@@ -43,6 +45,7 @@ function fakeRuntime(opts: FakeRuntimeOpts = {}) {
     config: {
       projects: opts.projects ?? [{ name: 'project-a', root: '/repo/project-a' }],
       terminal: {
+        tmuxEnabled: opts.tmuxEnabled ?? true,
         ttydMaxConcurrent: opts.ttydMaxConcurrent ?? 16,
         ttydIdleTtlMinutes: opts.ttydIdleTtlMinutes ?? 30,
       },
@@ -64,7 +67,13 @@ describe('POST /api/terminal/start (tmux-session-rework)', () => {
     vi.mocked(getRuntime).mockResolvedValue(
       fakeRuntime({
         projects: [{ name: 'project-a', root: '/repo/project-a' }],
-        runs: [{ id: 'foo-260507-103000', project: 'project-a', path: '/repo/project-a/runs/foo-260507-103000' }],
+        runs: [
+          {
+            id: 'foo-260507-103000',
+            project: 'project-a',
+            path: '/repo/project-a/runs/foo-260507-103000',
+          },
+        ],
       }),
     )
     vi.mocked(startSession).mockResolvedValue({
@@ -209,9 +218,7 @@ describe('POST /api/terminal/start (tmux-session-rework)', () => {
 
   it('400 BAD_REQUEST when slug contains --', async () => {
     vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
-    const res = await POST(
-      postReq({ project: 'project-a', scope: 'run', slug: 'foo--bar' }),
-    )
+    const res = await POST(postReq({ project: 'project-a', scope: 'run', slug: 'foo--bar' }))
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error.code).toBe('BAD_REQUEST')
@@ -219,11 +226,17 @@ describe('POST /api/terminal/start (tmux-session-rework)', () => {
     expect(startSession).not.toHaveBeenCalled()
   })
 
+  it('404 without invoking tmux manager when integration is disabled', async () => {
+    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime({ tmuxEnabled: false }))
+    const res = await POST(postReq({ project: 'project-a', scope: 'project', slug: 'root' }))
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('INTEGRATION_DISABLED')
+    expect(startSession).not.toHaveBeenCalled()
+  })
+
   it('400 BAD_REQUEST when project has disallowed character', async () => {
     vi.mocked(getRuntime).mockResolvedValue(fakeRuntime())
-    const res = await POST(
-      postReq({ project: 'bad name', scope: 'run', slug: 'foo' }),
-    )
+    const res = await POST(postReq({ project: 'bad name', scope: 'run', slug: 'foo' }))
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('BAD_REQUEST')
     expect(startSession).not.toHaveBeenCalled()

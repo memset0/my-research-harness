@@ -2,16 +2,18 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useMemonEvents } from './use-memon-events'
+import { type RuntimeConfigPayload, RuntimeConfigProvider } from '../lib/runtime-config'
+import { type SessionInfo, SessionProvider } from './session-provider'
 import { TerminalDrawerProvider } from './terminal-drawer-provider'
-import { SessionProvider, type SessionInfo } from './session-provider'
+import { useMemonEvents } from './use-memon-events'
 
 interface ProvidersProps {
   children: React.ReactNode
   session: SessionInfo
+  runtimeConfig: RuntimeConfigPayload
 }
 
-export function Providers({ children, session }: ProvidersProps) {
+export function Providers({ children, session, runtimeConfig }: ProvidersProps) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -32,10 +34,12 @@ export function Providers({ children, session }: ProvidersProps) {
   )
   return (
     <SessionProvider value={session}>
-      <QueryClientProvider client={client}>
-        <MemonEventsBridge />
-        <TerminalDrawerProvider>{children}</TerminalDrawerProvider>
-      </QueryClientProvider>
+      <RuntimeConfigProvider value={runtimeConfig}>
+        <QueryClientProvider client={client}>
+          <MemonEventsBridge />
+          <TerminalDrawerProvider>{children}</TerminalDrawerProvider>
+        </QueryClientProvider>
+      </RuntimeConfigProvider>
     </SessionProvider>
   )
 }

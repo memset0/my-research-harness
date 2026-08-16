@@ -781,7 +781,19 @@ export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
 
 export type AgentKind = (typeof AGENT_KINDS)[number]
 
+export interface HerdrTerminalConfig {
+  /**
+   * CLI argv used both to launch the Herdr TUI and to append workspace
+   * control subcommands. Invoked directly; no shell interpolation.
+   */
+  cli: readonly string[]
+}
+
 export interface TerminalConfig {
+  /** Existing tmux-backed terminal integration. Default true for compatibility. */
+  tmuxEnabled: boolean
+  /** Present only when the Herdr terminal integration is enabled. */
+  herdr?: HerdrTerminalConfig
   /** Soft cap on concurrent ttyd processes; LRU evicts beyond this. */
   ttydMaxConcurrent: number
   /** Kill ttyd after this many minutes with no connected client. `0` disables. */
@@ -921,6 +933,7 @@ export const DEFAULT_POLL: PollConfig = {
 }
 
 export const DEFAULT_TERMINAL: TerminalConfig = {
+  tmuxEnabled: true,
   ttydMaxConcurrent: 16,
   ttydIdleTtlMinutes: 30,
   paneInfoActivePollMs: 5_000,

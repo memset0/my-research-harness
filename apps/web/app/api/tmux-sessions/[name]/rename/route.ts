@@ -7,23 +7,24 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { renameTmuxSession } from '../../../../../lib/terminal/tmux-discover'
+import { getRuntime } from '../../../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
 
 const NAME_RE = /^memon-[A-Za-z0-9._-]+$/
 
 const BodySchema = z.object({
-  newName: z
-    .string()
-    .min(1)
-    .regex(NAME_RE, 'newName must match memon-[A-Za-z0-9._-]+'),
+  newName: z.string().min(1).regex(NAME_RE, 'newName must match memon-[A-Za-z0-9._-]+'),
 })
 
-export async function POST(
-  req: NextRequest,
-  ctx: { params: Promise<{ name: string }> },
-) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
+  const rt = await getRuntime()
+  if (rt.config.terminal?.tmuxEnabled === false) {
+    return NextResponse.json(
+      { error: { code: 'INTEGRATION_DISABLED', message: 'tmux integration is disabled' } },
+      { status: 404 },
+    )
+  }
   const { name: rawName } = await ctx.params
   const oldName = decodeURIComponent(rawName)
 
@@ -76,6 +77,7 @@ export async function POST(
   }
 
   try {
+    const { renameTmuxSession } = await import('../../../../../lib/terminal/tmux-discover')
     await renameTmuxSession({ oldName, newName })
     return NextResponse.json({ ok: true, sessionName: newName })
   } catch (err) {
@@ -87,14 +89,8 @@ export async function POST(
       )
     }
     if (e.code === 'CONFLICT') {
-      return NextResponse.json(
-        { error: { code: 'CONFLICT', message: e.message } },
-        { status: 409 },
-      )
+      return NextResponse.json({ error: { code: 'CONFLICT', message: e.message } }, { status: 409 })
     }
-    return NextResponse.json(
-      { error: { message: e.message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: e.message } }, { status: 500 })
   }
 }

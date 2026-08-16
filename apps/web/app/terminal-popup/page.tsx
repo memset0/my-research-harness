@@ -30,10 +30,12 @@ export async function generateMetadata({
     agent?: string
     sessionName?: string
     stale?: string
+    integration?: string
   }>
 }): Promise<Metadata> {
   try {
     const sp = await searchParams
+    if (sp.integration === 'herdr') return { title: 'Herdr' }
     if (sp.sessionName && RAW_SESSION_NAME_RE.test(sp.sessionName)) {
       return { title: sp.sessionName }
     }
@@ -59,22 +61,38 @@ export default async function TerminalPopupPage({
     agent?: string
     sessionName?: string
     stale?: string
+    integration?: string
   }>
 }) {
   const sp = await searchParams
+
+  if (sp.integration === 'herdr') {
+    const scope = (VALID_SCOPES as readonly string[]).includes(sp.scope ?? '')
+      ? (sp.scope as (typeof VALID_SCOPES)[number])
+      : undefined
+    const hasCompleteTarget = Boolean(sp.project && sp.slug && scope)
+    const hasPartialTarget = Boolean(sp.project || sp.slug || sp.scope) && !hasCompleteTarget
+    if (hasPartialTarget) {
+      return (
+        <div className="flex h-svh w-svw items-center justify-center bg-zinc-950 p-4 text-center text-xs text-zinc-300">
+          Herdr target requires project / scope / slug together
+        </div>
+      )
+    }
+    return (
+      <TerminalPopupClient
+        mode="herdr"
+        {...(hasCompleteTarget ? { project: sp.project!, scope: scope!, slug: sp.slug! } : {})}
+      />
+    )
+  }
 
   // Raw mode takes precedence when a valid sessionName is supplied.
   if (sp.sessionName && RAW_SESSION_NAME_RE.test(sp.sessionName)) {
     const staleReason = (VALID_STALE_REASONS as readonly string[]).includes(sp.stale ?? '')
       ? (sp.stale as (typeof VALID_STALE_REASONS)[number])
       : null
-    return (
-      <TerminalPopupClient
-        mode="raw"
-        sessionName={sp.sessionName}
-        staleReason={staleReason}
-      />
-    )
+    return <TerminalPopupClient mode="raw" sessionName={sp.sessionName} staleReason={staleReason} />
   }
 
   const agent = (VALID_AGENTS as readonly string[]).includes(sp.agent ?? '')

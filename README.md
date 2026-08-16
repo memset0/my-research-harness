@@ -216,16 +216,24 @@ docs/reports/R0001-summary.md
 
 docs/reports/R0002-interactive-summary/
 ├── README.md
-├── charts.html
 ├── data/metrics.json
-└── assets/report.{js,css}
+└── views/
+    └── training-curves/
+        ├── index.html
+        └── assets/*
 ```
 
-Bundle HTML may fetch sibling JSON and load local or CDN JavaScript/CSS. In
-the bundle README, `![Training curves](./charts.html)` embeds the local HTML as
-a same-origin iframe, while `[Open curves](./charts.html)` remains an ordinary
-link. The first version intentionally does not sandbox Agent-authored iframe
-content; local asset requests are nevertheless confined to that Report bundle.
+An HTML bundle is a framework-independent static visualization container, so
+the Report writer may coordinate with an installed visualization/frontend
+skill to produce an individual `views/<slug>/` tree. Bundle HTML may fetch
+Report-local JSON and load local or CDN JavaScript/CSS, but it must not depend
+on a development server. In the bundle README,
+`![Training curves](./views/training-curves/index.html)` embeds the local HTML as
+a same-origin iframe, while `[Open curves](./views/training-curves/index.html)`
+remains an ordinary link. Generated views should be responsive and usable on a
+phone as well as a desktop. The first version intentionally does not sandbox
+Agent-authored iframe content; local asset requests are nevertheless confined
+to that Report bundle.
 
 ## CLI
 

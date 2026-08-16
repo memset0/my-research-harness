@@ -566,6 +566,7 @@ export type TerminalScopeKind = 'exp' | 'run' | 'project'
 export const PROJECT_SCOPE_SLUG = 'root' as const
 
 export interface TerminalSession {
+  backend?: 'tmux' | 'herdr'
   sessionName: string
   port: number
   startedAt: string
@@ -661,6 +662,19 @@ export async function startTerminal(input: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  })
+  return jsonOrThrow<TerminalStartResponse>(res)
+}
+
+export async function startHerdrTerminal(input?: {
+  project: string
+  scope: TerminalScopeKind
+  slug: string
+}): Promise<TerminalStartResponse> {
+  const res = await fetch('/api/terminal/herdr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input ?? {}),
   })
   return jsonOrThrow<TerminalStartResponse>(res)
 }

@@ -4,19 +4,16 @@
 // sidebar's `Manage tmux` footer link surfaces here automatically
 // because `<AppSidebar>` is now in the tree.
 
+import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import { cookies } from 'next/headers'
-import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { AppSidebar } from '../../components/app-sidebar'
 import { ResizableSidebarProvider } from '../../components/resizable-sidebar-provider'
+import { WorkspaceSplitOutlet } from '../../components/terminal-drawer-provider'
 import { SidebarInset, SidebarTrigger } from '../../components/ui/sidebar'
 import { getQueryClient } from '../../lib/get-query-client'
 import { getProjectsData } from '../../lib/server/data'
 
-export default async function ManageLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default async function ManageLayout({ children }: { children: React.ReactNode }) {
   // SSR-prefetch the project list so the sidebar's project tree renders
   // in the initial HTML (no "No projects configured" flash on first paint).
   const queryClient = getQueryClient()
@@ -30,10 +27,7 @@ export default async function ManageLayout({
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <ResizableSidebarProvider
-        defaultOpen={defaultOpen}
-        className="h-svh overflow-hidden"
-      >
+      <ResizableSidebarProvider defaultOpen={defaultOpen} className="h-svh overflow-hidden">
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-hidden">
           {/* Manage pages deliberately do NOT mount <AppBar> (it's
@@ -45,7 +39,9 @@ export default async function ManageLayout({
           <header className="flex h-12 items-center gap-2 border-b border-border bg-background px-3">
             <SidebarTrigger />
           </header>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+          <WorkspaceSplitOutlet>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+          </WorkspaceSplitOutlet>
         </SidebarInset>
       </ResizableSidebarProvider>
     </HydrationBoundary>

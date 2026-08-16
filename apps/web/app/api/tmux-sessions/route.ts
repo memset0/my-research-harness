@@ -7,15 +7,13 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getRuntime } from '../../../lib/runtime'
-import {
-  createManualTmuxSession,
-  listMemonTmuxSessions,
-} from '../../../lib/terminal/tmux-discover'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const rt = await getRuntime()
+  if (rt.config.terminal?.tmuxEnabled === false) return tmuxDisabled()
+  const { listMemonTmuxSessions } = await import('../../../lib/terminal/tmux-discover')
   const sessions = await listMemonTmuxSessions(rt)
   return NextResponse.json({ sessions })
 }
@@ -25,6 +23,8 @@ const PostBodySchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  const rt = await getRuntime()
+  if (rt.config.terminal?.tmuxEnabled === false) return tmuxDisabled()
   let body: unknown
   try {
     body = await req.json()
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const { createManualTmuxSession } = await import('../../../lib/terminal/tmux-discover')
     const result = await createManualTmuxSession({ name: parsed.data.name })
     return NextResponse.json({
       ok: true,
@@ -59,11 +60,17 @@ export async function POST(req: NextRequest) {
     // Validation errors from createManualTmuxSession surface as plain
     // Error objects; treat them as 400. Anything else (tmux exec failure)
     // is 500.
-    const isValidation =
-      msg.startsWith('name ') || msg.includes('memon-') || msg.includes('--')
+    const isValidation = msg.startsWith('name ') || msg.includes('memon-') || msg.includes('--')
     return NextResponse.json(
       { error: { code: isValidation ? 'BAD_REQUEST' : 'INTERNAL', message: msg } },
       { status: isValidation ? 400 : 500 },
     )
   }
+}
+
+function tmuxDisabled() {
+  return NextResponse.json(
+    { error: { code: 'INTEGRATION_DISABLED', message: 'tmux integration is disabled' } },
+    { status: 404 },
+  )
 }

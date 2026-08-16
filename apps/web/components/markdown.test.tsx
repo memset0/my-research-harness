@@ -1,6 +1,18 @@
-import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
-import { Markdown, resolveReportResourceUrl } from './markdown'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ArtifactInventory, ArtifactTarget } from '../lib/artifact-links'
+import {
+  Markdown,
+  type MarkdownArtifactLinkContext,
+  MarkdownArtifactLinkProvider,
+  resolveReportResourceUrl,
+} from './markdown'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  window.history.replaceState({}, '', '/')
+})
 
 describe('<Markdown> math rendering', () => {
   it('renders inline `$...$` as KaTeX inside the surrounding paragraph', () => {
@@ -132,20 +144,96 @@ describe('<Markdown> overflow scrolling', () => {
   })
 })
 
+describe('<Markdown> table of contents', () => {
+  it('prepends a linked outline with stable, distinct heading anchors', () => {
+    const source = [
+      '# Report title',
+      '',
+      '## Overview',
+      '',
+      '### **Detailed** results',
+      '',
+      '## Overview',
+      '',
+      '#### 结果分析',
+    ].join('\n')
+    const { container } = render(
+      <Markdown tableOfContents={{ headingIdPrefix: 'report-R0002' }}>{source}</Markdown>,
+    )
+
+    const toc = screen.getByRole('navigation', { name: 'Table of contents' })
+    const links = within(toc).getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual([
+      'Overview',
+      'Detailed results',
+      'Overview',
+      '结果分析',
+    ])
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '#report-r0002-overview',
+      '#report-r0002-detailed-results',
+      '#report-r0002-overview-1',
+      '#report-r0002-%E7%BB%93%E6%9E%9C%E5%88%86%E6%9E%90',
+    ])
+    expect(toc.compareDocumentPosition(screen.getByRole('heading', { name: 'Report title' }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    expect(screen.getByRole('heading', { name: 'Report title' })).toHaveAttribute(
+      'id',
+      'report-r0002-report-title',
+    )
+    expect(container.querySelectorAll('h2')[0]).toHaveAttribute('id', 'report-r0002-overview')
+    expect(container.querySelectorAll('h2')[1]).toHaveAttribute('id', 'report-r0002-overview-1')
+    expect(screen.getByRole('heading', { name: '结果分析' })).toHaveAttribute(
+      'id',
+      'report-r0002-结果分析',
+    )
+    expect(links[1]?.closest('li')).toHaveClass('ml-3')
+    expect(links[3]?.closest('li')).toHaveClass('ml-6')
+  })
+
+  it('does not render an empty outline when the document has no section headings', () => {
+    render(
+      <Markdown tableOfContents={{ headingIdPrefix: 'report-R0003' }}>
+        {'# Title only\n\nBody.'}
+      </Markdown>,
+    )
+
+    expect(screen.queryByRole('navigation', { name: 'Table of contents' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Title only' })).toHaveAttribute(
+      'id',
+      'report-r0003-title-only',
+    )
+  })
+})
+
 describe('<Markdown> directory Report resources', () => {
   const base = '/api/report-assets/research/R0002'
 
-  it('renders a relative .html image target as an unsandboxed iframe', () => {
+  it('renders a relative .html image target as an unsandboxed iframe', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(null, { status: 200, headers: { 'content-type': 'text/html' } }),
+        ),
+    )
     const { container } = render(
       <Markdown resourceBaseUrl={base}>{'![Interactive curves](./charts/curves.html)'}</Markdown>,
     )
 
+    await waitFor(() => expect(container.querySelector('iframe[data-report-html]')).not.toBeNull())
     const iframe = container.querySelector('iframe[data-report-html]')
     expect(iframe).not.toBeNull()
     expect(iframe?.getAttribute('src')).toBe(`${base}/charts/curves.html`)
     expect(iframe?.getAttribute('title')).toBe('Interactive curves')
     expect(iframe?.hasAttribute('sandbox')).toBe(false)
     expect(container.querySelector('img')).toBeNull()
+    expect(iframe?.closest('p')).toBeNull()
+    expect(iframe?.closest('[data-report-html-wrapper]')?.parentElement?.tagName).toBe('DIV')
+    expect(consoleError).not.toHaveBeenCalled()
   })
 
   it('keeps an HTML markdown link as a link while rewriting its target', () => {
@@ -155,6 +243,13 @@ describe('<Markdown> directory Report resources', () => {
 
     expect(container.querySelector('iframe')).toBeNull()
     expect(container.querySelector('a')?.getAttribute('href')).toBe(`${base}/charts/curves.html`)
+  })
+
+  it('keeps an HTML image ordinary when no Report bundle resource base exists', () => {
+    const { container } = render(<Markdown>{'![Static fallback](./chart.html)'}</Markdown>)
+
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(container.querySelector('img')).toHaveAttribute('src', './chart.html')
   })
 
   it('rewrites relative images and leaves remote images untouched', () => {
@@ -167,13 +262,180 @@ describe('<Markdown> directory Report resources', () => {
     const images = container.querySelectorAll('img')
     expect(images[0]?.getAttribute('src')).toBe(`${base}/images/loss.png`)
     expect(images[1]?.getAttribute('src')).toBe('https://example.com/loss.png')
+    expect(images[0]?.closest('p')).not.toBeNull()
   })
 
   it('refuses relative paths with traversal segments', () => {
     expect(resolveReportResourceUrl(base, '../secret.json')).toBeNull()
     expect(resolveReportResourceUrl(base, '%2e%2e/secret.json')).toBeNull()
-    expect(resolveReportResourceUrl(base, './data/metrics.json')).toBe(
-      `${base}/data/metrics.json`,
+    expect(resolveReportResourceUrl(base, './data/metrics.json')).toBe(`${base}/data/metrics.json`)
+  })
+})
+
+describe('<Markdown> artifact references', () => {
+  const root = '/srv/vsqa'
+  const inventory: ArtifactInventory = {
+    project: 'vsqa',
+    experiments: [
+      {
+        id: 'E0017-vsqa-fvfa4-inference',
+        path: `${root}/docs/experiments/E0017-vsqa-fvfa4-inference/README.md`,
+      },
+    ],
+    reports: [
+      {
+        id: 'R0007',
+        path: `${root}/docs/reports/R0007-inference-kernel-learning-guide/README.md`,
+      },
+    ],
+  }
+  const sourceDocumentPath = inventory.experiments[0]!.path
+  const hrefFor = (target: ArtifactTarget) => `/artifact/${target.kind}/${target.id}`
+
+  function artifactLinks(
+    overrides: Partial<MarkdownArtifactLinkContext> = {},
+  ): MarkdownArtifactLinkContext {
+    return {
+      inventory,
+      sourceDocumentPath,
+      sourceSurface: 'left',
+      getArtifactHref: hrefFor,
+      ...overrides,
+    }
+  }
+
+  it('links unique bare short IDs and accents only the literal identifier', () => {
+    const { container } = render(
+      <Markdown artifactLinks={artifactLinks()}>
+        {'See R0007, E0017, and E0017-vsqa-fvfa4-inference.'}
+      </Markdown>,
     )
+
+    const links = container.querySelectorAll('a[data-memon-artifact-id]')
+    expect(links).toHaveLength(3)
+    expect(links[0]).toHaveAttribute('href', '/artifact/report/R0007')
+    expect(links[1]).toHaveAttribute('href', '/artifact/experiment/E0017-vsqa-fvfa4-inference')
+    expect(links[2]).toHaveTextContent('E0017-vsqa-fvfa4-inference')
+    expect(links[2]?.querySelector('span.font-bold.text-primary')).toHaveTextContent('E0017')
+    expect(links[2]?.querySelector('span')?.textContent).not.toContain('-vsqa')
+  })
+
+  it('supports a nearest provider while allowing a Markdown instance to opt out', () => {
+    const { container } = render(
+      <MarkdownArtifactLinkProvider value={artifactLinks()}>
+        <Markdown>{'R0007'}</Markdown>
+        <Markdown artifactLinks={null}>{'R0007'}</Markdown>
+      </MarkdownArtifactLinkProvider>,
+    )
+    expect(container.querySelectorAll('a[data-memon-artifact-id]')).toHaveLength(1)
+    expect(container.textContent).toBe('R0007R0007')
+  })
+
+  it('leaves code, math, raw HTML, unresolved IDs, and identifier substrings unchanged', () => {
+    const body = [
+      '`R0007` and R9999 and XR0007 and R00070 and R0007-title',
+      '',
+      '$E0017$',
+      '',
+      '```txt',
+      'E0017 R0007',
+      '```',
+      '',
+      '<span>R0007</span>',
+    ].join('\n')
+    const { container } = render(<Markdown artifactLinks={artifactLinks()}>{body}</Markdown>)
+
+    expect(container.querySelector('a[data-memon-artifact-id]')).toBeNull()
+    expect(container.querySelector('code')).toHaveTextContent('R0007')
+    expect(container.querySelector('.katex')).not.toBeNull()
+    expect(container.querySelector('pre')).toHaveTextContent('E0017 R0007')
+  })
+
+  it('does not nest or restyle an authored external link containing an artifact ID', () => {
+    const { container } = render(
+      <Markdown artifactLinks={artifactLinks()}>
+        {'[R0007 external](https://example.com/R0007.md)'}
+      </Markdown>,
+    )
+    const link = container.querySelector('a')
+    expect(container.querySelectorAll('a')).toHaveLength(1)
+    expect(link).toHaveAttribute('href', 'https://example.com/R0007.md')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link?.querySelector('.text-primary')).toBeNull()
+  })
+
+  it('recognizes an explicit relative artifact link before bundle resource rewriting', () => {
+    const { container } = render(
+      <Markdown artifactLinks={artifactLinks()} resourceBaseUrl="/api/report-assets/vsqa/R0001">
+        {'[R0007: learning guide](../../reports/R0007-inference-kernel-learning-guide/README.md)'}
+      </Markdown>,
+    )
+    const link = container.querySelector('a[data-memon-artifact-id="R0007"]')
+    expect(link).toHaveAttribute('href', '/artifact/report/R0007')
+    expect(link).toHaveTextContent('R0007: learning guide')
+    expect(link?.querySelector('.font-bold.text-primary')).toHaveTextContent('R0007')
+    expect(link?.querySelector('.font-bold.text-primary')?.textContent).not.toContain('learning')
+  })
+
+  it('recognizes an explicit absolute artifact link without inventing label emphasis', () => {
+    const context = artifactLinks({
+      sourceDocumentPath: inventory.reports[0]!.path,
+      sourceSurface: 'side-report',
+    })
+    const { container } = render(
+      <Markdown artifactLinks={context}>
+        {`[current experiment](${inventory.experiments[0]!.path}?plain=1#results)`}
+      </Markdown>,
+    )
+    const link = container.querySelector('a[data-memon-artifact-kind="experiment"]')
+    expect(link).toHaveAttribute('href', '/artifact/experiment/E0017-vsqa-fvfa4-inference')
+    expect(link).toHaveTextContent('current experiment')
+    expect(link?.querySelector('.text-primary')).toBeNull()
+  })
+
+  it('recognizes canonical project web routes and keeps unresolved files ordinary', () => {
+    const { container } = render(
+      <Markdown artifactLinks={artifactLinks()}>
+        {'[E0017 experiment](/p/vsqa/e/E0017-vsqa-fvfa4-inference) and [notes](./notes.md)'}
+      </Markdown>,
+    )
+    const artifact = container.querySelector('a[data-memon-artifact-kind="experiment"]')
+    expect(artifact).toHaveAttribute('href', '/artifact/experiment/E0017-vsqa-fvfa4-inference')
+    expect(container.querySelector('a[href="./notes.md"]')).not.toBeNull()
+  })
+
+  it('passes source surface to the navigation callback', () => {
+    const getArtifactHref = vi.fn((target: ArtifactTarget) => hrefFor(target))
+    render(
+      <Markdown artifactLinks={artifactLinks({ sourceSurface: 'full-report', getArtifactHref })}>
+        {'R0007'}
+      </Markdown>,
+    )
+    expect(getArtifactHref).toHaveBeenCalledWith({ kind: 'report', id: 'R0007' }, 'full-report')
+  })
+
+  it('updates same-left Report state through History without remounting local content', () => {
+    window.history.replaceState({}, '', '/p/vsqa/e/E0017-vsqa-fvfa4-inference?run=sample')
+    const context = artifactLinks({
+      getArtifactHref: () =>
+        '/p/vsqa/e/E0017-vsqa-fvfa4-inference?run=sample&report=R0007&reportSurface=split',
+    })
+    const { container } = render(
+      <div>
+        <input aria-label="Experiment draft" defaultValue="kept" />
+        <Markdown artifactLinks={context}>{'R0007'}</Markdown>
+      </div>,
+    )
+    const draft = container.querySelector('input') as HTMLInputElement
+    fireEvent.change(draft, { target: { value: 'unsaved experiment state' } })
+    const reportLink = container.querySelector('a[data-memon-artifact-id="R0007"]')!
+
+    fireEvent.click(reportLink)
+
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      '/p/vsqa/e/E0017-vsqa-fvfa4-inference?run=sample&report=R0007&reportSurface=split',
+    )
+    expect(container.querySelector('input')).toBe(draft)
+    expect(draft).toHaveValue('unsaved experiment state')
   })
 })

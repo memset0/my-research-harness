@@ -1,17 +1,19 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 // `lib/api` is mocked at the module boundary so we control whether
 // start/attach resolves or rejects per test. The mocks must be defined
 // BEFORE the component import so vi.mock hoists correctly.
 const startTerminalMock = vi.fn()
+const startHerdrTerminalMock = vi.fn()
 const attachTerminalMock = vi.fn()
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
   return {
     ...actual,
     startTerminal: (...args: unknown[]) => startTerminalMock(...args),
+    startHerdrTerminal: (...args: unknown[]) => startHerdrTerminalMock(...args),
     attachTerminal: (...args: unknown[]) => attachTerminalMock(...args),
   }
 })
@@ -61,6 +63,7 @@ function installBroadcastChannelMock(): {
 
 beforeEach(() => {
   startTerminalMock.mockReset()
+  startHerdrTerminalMock.mockReset()
   attachTerminalMock.mockReset()
 })
 
@@ -116,14 +119,42 @@ describe('TerminalView broadcast on ready', () => {
       startedAt: '2026-05-15T00:00:00+08:00',
       warnings: [],
     })
-    renderWithQuery(
-      <TerminalView mode="raw" sessionName="memon-manual-foo" source="popup" />,
-    )
+    renderWithQuery(<TerminalView mode="raw" sessionName="memon-manual-foo" source="popup" />)
     await waitFor(() => {
       const posts = bc.channels.flatMap((c) => c.posts)
       expect(posts.length).toBe(1)
       expect(posts[0]?.sessionName).toBe('memon-manual-foo')
       expect(posts[0]?.source).toBe('popup')
+    })
+  })
+
+  it('Herdr mode starts the target workspace and renders its shared proxy', async () => {
+    startHerdrTerminalMock.mockResolvedValue({
+      sessionName: 'memon-herdr',
+      url: '/api/terminal/proxy/memon-herdr/',
+      port: 7685,
+      startedAt: '2026-08-14T00:00:00Z',
+      warnings: [],
+    })
+    const { getByTitle } = renderWithQuery(
+      <TerminalView
+        mode="herdr"
+        project="project-a"
+        scope="exp"
+        slug="E0042-routing"
+        source="drawer"
+      />,
+    )
+    await waitFor(() => {
+      expect(startHerdrTerminalMock).toHaveBeenCalledWith({
+        project: 'project-a',
+        scope: 'exp',
+        slug: 'E0042-routing',
+      })
+      expect(getByTitle('Herdr terminal')).toHaveAttribute(
+        'src',
+        '/api/terminal/proxy/memon-herdr/',
+      )
     })
   })
 
@@ -182,16 +213,12 @@ describe('TerminalView broadcast when BroadcastChannel is unavailable', () => {
       warnings: [],
     })
     expect(() => {
-      renderWithQuery(
-        <TerminalView mode="raw" sessionName="memon-manual-baz" source="popup" />,
-      )
+      renderWithQuery(<TerminalView mode="raw" sessionName="memon-manual-baz" source="popup" />)
     }).not.toThrow()
     // Allow the start/attach promise to settle so the would-be-broadcast
     // path runs and the no-op guard exercises.
     await new Promise((r) => setTimeout(r, 30))
     // Sanity: BroadcastChannel really is undefined right now.
-    expect(
-      typeof (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel,
-    ).toBe('undefined')
+    expect(typeof (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel).toBe('undefined')
   })
 })

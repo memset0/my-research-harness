@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../lib/terminal/manager', async () => {
   const actual = await vi.importActual<typeof import('../../../../lib/terminal/manager')>(
@@ -16,9 +17,9 @@ vi.mock('../../../../lib/runtime', () => ({
   getRuntime: vi.fn(),
 }))
 
-import { POST } from './route'
-import { TerminalManagerError, attachExistingSession } from '../../../../lib/terminal/manager'
 import { getRuntime } from '../../../../lib/runtime'
+import { attachExistingSession, TerminalManagerError } from '../../../../lib/terminal/manager'
+import { POST } from './route'
 
 function postReq(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/terminal/attach', {
@@ -30,7 +31,7 @@ function postReq(body: unknown): NextRequest {
 
 const fakeRuntime = {
   config: {
-    terminal: { ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
+    terminal: { tmuxEnabled: true, ttydMaxConcurrent: 16, ttydIdleTtlMinutes: 30 },
   },
   // biome-ignore lint/suspicious/noExplicitAny: shrunken Runtime stub
 } as any
@@ -68,6 +69,22 @@ describe('POST /api/terminal/attach', () => {
     const res = await POST(postReq({}))
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe('BAD_REQUEST')
+    expect(attachExistingSession).not.toHaveBeenCalled()
+  })
+
+  it('404 without invoking attach when tmux is disabled', async () => {
+    vi.mocked(getRuntime).mockResolvedValue({
+      config: {
+        terminal: {
+          tmuxEnabled: false,
+          ttydMaxConcurrent: 16,
+          ttydIdleTtlMinutes: 30,
+        },
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: shrunken Runtime stub
+    } as any)
+    const res = await POST(postReq({ sessionName: 'memon-manual-foo' }))
+    expect(res.status).toBe(404)
     expect(attachExistingSession).not.toHaveBeenCalled()
   })
 

@@ -347,65 +347,96 @@ The proxy SHALL NOT alter ttyd's URL scheme — `/api/terminal/proxy/<sessionNam
 
 ### Requirement: Drawer state persists across panel close until route change
 
-The browser-terminal drawer SHALL be opened and dismissed by a single `TerminalDrawerProvider` mounted in the ROOT layout (`apps/web/app/layout.tsx`), reachable from every page in the dashboard including `/manage/tmux`. The drawer state SHALL persist across pathname changes — navigation alone SHALL NOT close the drawer or kill the underlying ttyd / tmux.
+The browser-terminal drawer SHALL be opened and dismissed by a single `TerminalDrawerProvider` mounted in the ROOT layout (`apps/web/app/layout.tsx`), reachable from every page in the dashboard including `/manage/tmux`. The active terminal target and presentation surface SHALL persist across pathname changes — navigation alone SHALL NOT close the terminal or kill the underlying ttyd / tmux.
 
-The drawer state SHALL be a discriminated union with two modes:
-- **Standard mode** (`kind: 'standard'`): carries `(project, scope, slug, agent)`. The drawer's `TerminalView` calls `POST /api/terminal/start` with these fields. This is the path used by the run/exp page action bar's `Open with` button.
-- **Raw mode** (`kind: 'raw'`): carries just `sessionName`. The drawer's `TerminalView` calls `POST /api/terminal/attach { sessionName }` instead. This is the path used by `/manage/tmux` rows for **manual** sessions (legacy or arbitrary `memon-*` names) where no parsed target exists.
+The target state SHALL be a discriminated union with these modes:
+- **Standard mode** (`kind: 'standard'`): carries `(project, scope, slug, agent)` and starts or reattaches through the standard terminal API.
+- **Raw mode** (`kind: 'raw'`): carries `sessionName` and attaches to an existing tmux session by name.
+- **Herdr mode** (`kind: 'herdr'`): optionally carries `(project, scope, slug)` and starts or reattaches the shared Herdr ttyd client after target workspace setup when a target is present.
 
-The provider SHALL expose two open methods on its context:
-- `open(input: { project, scope, slug, agent })` — standard mode
-- `openRaw(input: { sessionName })` — raw mode
+The provider SHALL expose existing drawer-open methods plus equivalent split-open methods for standard, raw, and Herdr targets. Existing callers of the drawer-open methods SHALL retain their behavior.
 
-The drawer header in raw mode SHALL show the sessionName as the title (no agent prefix, since "agent" doesn't apply to raw-attach).
+The panel header in raw mode SHALL show the sessionName as the title. Closing either the drawer or right split SHALL hide the browser client WITHOUT calling the terminal stop API. The underlying ttyd and backend-managed process SHALL remain alive. The panel SHALL NOT expose a `Close + stop session` button.
 
-Closing the drawer (the `X` button, escape key, or outside-click) SHALL hide the drawer WITHOUT calling `POST /api/terminal/stop`. The underlying ttyd + tmux session stays alive so the next open is an instant reattach.
+On desktop, the drawer SHALL open at the user's persisted drawer width. With no stored preference, its effective width SHALL remain the historical `min(80vw, 1280px)` default. A divider on its left edge SHALL allow pointer dragging and keyboard resizing. The effective width SHALL be clamped so the panel remains usable and a viewport gutter remains visible. The selected drawer width SHALL persist locally and SHALL be independent from the right-split width.
 
-The drawer SHALL NOT expose a `Close + stop session` button. The only path that kills tmux is the management page's `Kill` action (per the `tmux-session-management` capability). Killing ttyd (without killing tmux) is automatic via the LRU + Idle TTL machinery and does not need a per-drawer affordance.
-
-The drawer's `<SheetContent>` SHALL size to `w-[min(80vw,1280px)] sm:max-w-[1280px]` — capped at 1280px on desktop and 80vw on small screens. Below the 1280px breakpoint the 80vw cap dominates so the underlying page always retains at least 20vw of visible width.
+On a viewport below the 768-pixel breakpoint, the resize divider SHALL be hidden and the overlay drawer SHALL remain the only in-page terminal presentation.
 
 #### Scenario: Closing the drawer leaves ttyd and tmux alive
 - **GIVEN** the user opened the terminal drawer for `(claude, project-a, run, foo-...)` and ttyd is running
-- **WHEN** the user clicks the drawer's `X` close button
+- **WHEN** the user clicks the drawer's close button
 - **THEN** the drawer hides
-- **AND** `POST /api/terminal/stop` is NOT called
-- **AND** `GET /api/terminal/list` still returns the same session
+- **AND** the terminal stop API is NOT called
+- **AND** the terminal list still returns the same session
 
 #### Scenario: Reopening the drawer reattaches to the live ttyd
-- **GIVEN** the drawer was closed (per scenario above) and the manager entry is still live
-- **WHEN** the user clicks `Open with [claude code]` again from the same run panel
-- **THEN** the drawer reopens with the same iframe URL — `startTerminal` returns the existing entry idempotently
+- **GIVEN** the drawer was closed and the manager entry is still live
+- **WHEN** the user opens the same target again
+- **THEN** the drawer reopens using the existing manager-deduplicated ttyd entry
+
+#### Scenario: Route change keeps the terminal visible
+- **GIVEN** a drawer or right split is open with an active terminal
+- **WHEN** the user navigates to a different dashboard route
+- **THEN** the same surface remains open with the same target
+- **AND** the ttyd and its managed process are unaffected
 
 #### Scenario: Route change keeps the session alive
-- **GIVEN** the drawer is open with an active ttyd session for `(claude, project-a, run, foo-...)`
-- **WHEN** the user navigates to a different route (e.g. clicks Hypotheses)
-- **THEN** the drawer stays open showing the same iframe
-- **AND** ttyd and tmux are unaffected
-- **AND** the same drawer state survives navigation back to the original page
+- **GIVEN** the drawer is open with an active ttyd session
+- **WHEN** the user navigates to a different dashboard route
+- **THEN** the drawer stays open showing the same terminal target
+- **AND** ttyd and the backend-managed process remain unaffected
 
 #### Scenario: Drawer is reachable from the management page
-- **WHEN** the user is on `/manage/tmux` and clicks `Open in drawer` on a matchable row
-- **THEN** the same `TerminalDrawerProvider` (mounted at root) opens the drawer on top of the management page
+- **WHEN** the user is on `/manage/tmux` and opens a matchable row in the drawer
+- **THEN** the root terminal provider opens above the management page
 - **AND** the iframe loads the corresponding ttyd
 
+#### Scenario: Manual row opens in raw mode
+- **GIVEN** a manual tmux row named `memon-manual-foo`
+- **WHEN** the owner opens it in the drawer or right split
+- **THEN** the provider uses raw target state with that session name
+- **AND** the terminal attaches by session name instead of starting a parsed target
+
 #### Scenario: Manual row opens drawer in raw mode
-- **GIVEN** the user is on `/manage/tmux` and clicks `Open in drawer` on a manual row (e.g. `memon-manual-foo`)
+- **GIVEN** the user selects a manual tmux row such as `memon-manual-foo`
 - **WHEN** the drawer opens
-- **THEN** the provider's internal state is `{ kind: 'raw', sessionName: 'memon-manual-foo' }`
-- **AND** the `TerminalView` calls `POST /api/terminal/attach { sessionName: 'memon-manual-foo' }` (NOT `/api/terminal/start`)
-- **AND** the drawer header shows `memon-manual-foo` as the title (no agent prefix)
+- **THEN** the provider uses raw target state with that session name
+- **AND** the terminal attaches through the raw attach API rather than starting a parsed target
+
+#### Scenario: Drawer preserves its historical initial width
+- **GIVEN** no drawer width preference exists and the viewport is 1920 pixels wide
+- **WHEN** the drawer opens
+- **THEN** its initial width is 1280 pixels
 
 #### Scenario: Drawer width caps at 80vw on small screens
-- **GIVEN** the viewport width is 1024px
+- **GIVEN** no stored drawer width and a 1024-pixel viewport
 - **WHEN** the drawer opens
-- **THEN** the `<SheetContent>` is approximately 819px wide (80vw), NOT the 1280px desktop ceiling
-- **AND** at least 205px (20vw) of the underlying page remains visible
+- **THEN** its initial width is approximately 819 pixels
+- **AND** the resize bounds keep a visible viewport gutter
 
 #### Scenario: Drawer width caps at 1280px on wide screens
-- **GIVEN** the viewport width is 1920px
+- **GIVEN** no stored drawer width and a 1920-pixel viewport
 - **WHEN** the drawer opens
-- **THEN** the `<SheetContent>` is exactly 1280px wide (the absolute cap), NOT 1536px (80vw of 1920)
+- **THEN** its initial width is 1280 pixels
+- **AND** the user can subsequently resize it within the viewport-aware limits
+
+#### Scenario: Dragging the drawer divider persists width
+- **GIVEN** the desktop drawer is open
+- **WHEN** the user drags its left divider and releases it at a valid new width
+- **THEN** the drawer immediately uses that width
+- **AND** reopening or reloading restores that drawer width
+
+#### Scenario: Keyboard resizes the drawer
+- **GIVEN** the drawer divider is focused
+- **WHEN** the user presses ArrowLeft or ArrowRight
+- **THEN** the drawer grows or shrinks respectively within its limits
+- **AND** Shift plus an arrow uses a larger adjustment step
+
+#### Scenario: Mobile keeps the overlay behavior
+- **GIVEN** the viewport is narrower than 768 pixels
+- **WHEN** a caller requests the split surface
+- **THEN** the target opens in the overlay drawer
+- **AND** no draggable horizontal split is rendered
 
 ### Requirement: Popup-window mode opens the terminal in a separate browser window
 
@@ -825,4 +856,112 @@ The endpoint SHALL share the manager's per-sessionName promise serializer with `
 #### Scenario: Anonymous request rejected
 - **WHEN** an anonymous client `POST`s to `/api/terminal/attach`
 - **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"`
+
+### Requirement: Terminal backends are independently enabled
+
+The resolved terminal config SHALL expose `tmuxEnabled` and an optional Herdr
+CLI alongside the existing ttyd tuning and tmux agent commands. Tmux SHALL
+default to enabled when `terminal.tmux_enabled` is absent, preserving every
+existing tmux terminal behavior. Herdr SHALL be enabled only when
+`terminal.herdr` is present. A client with no enabled backend SHALL not issue
+the ttyd availability probe for an Open-with control that will not render.
+
+#### Scenario: Legacy config preserves tmux
+
+- **GIVEN** a valid config written before this change with no `tmux_enabled` or `herdr` field
+- **WHEN** it is loaded
+- **THEN** `tmuxEnabled` is `true` and Herdr is disabled
+- **AND** existing Terminal, Claude Code, Codex, and OpenCode behavior is unchanged
+
+#### Scenario: Only Herdr is enabled
+
+- **GIVEN** `terminal.tmux_enabled` is `false` and `terminal.herdr.cli` is configured
+- **WHEN** the Open-with control renders
+- **THEN** it offers Herdr and no tmux-backed agent choices
+- **AND** its primary action opens Herdr even if local storage names a previous tmux agent
+
+#### Scenario: Every backend disabled
+
+- **GIVEN** `terminal.tmux_enabled` is `false` and `terminal.herdr` is absent
+- **WHEN** a project, experiment, or run action bar renders
+- **THEN** it renders no Open-with control and performs no ttyd probe
+
+### Requirement: Shared ttyd manager supports tmux and Herdr entries
+
+The ttyd manager SHALL apply the same loopback binding, authenticated proxy,
+dynamic port allocation, per-key request serialization, LRU cap, idle TTL, and
+process-exit cleanup to both backend kinds. Cleanup SHALL kill only the ttyd
+client child; backend-owned durable processes SHALL remain alive.
+
+#### Scenario: LRU evicts a Herdr ttyd client
+
+- **GIVEN** the Herdr ttyd entry is the disconnected least-recently-used entry at the configured cap
+- **WHEN** a new ttyd entry starts
+- **THEN** the Herdr ttyd child is stopped
+- **AND** no `herdr server stop` or tmux command is invoked
+
+### Requirement: Open-with lists only enabled integrations
+
+The unified Open-with picker SHALL preserve the existing tmux agent ordering
+when tmux is enabled and append `Herdr` when Herdr is enabled. The stored
+default MAY be either a tmux agent or Herdr; if it is no longer enabled, the
+control SHALL select the first enabled backend deterministically. The popup
+action SHALL open the currently selected backend.
+
+#### Scenario: Both integrations enabled
+
+- **GIVEN** tmux and Herdr are enabled
+- **WHEN** the owner opens the picker
+- **THEN** it lists `Terminal`, `Claude Code`, `Codex`, `OpenCode`, then `Herdr`, followed by the popup action
+- **AND** all pre-existing tmux selections use their unchanged API and session naming
+
+### Requirement: Terminal can be docked in a resizable right split
+
+The terminal surface provider SHALL support a `split` presentation in addition to the overlay drawer and popup window. In split presentation, the existing page content SHALL remain interactive in a left region and the active terminal SHALL occupy the shared right-side workspace slot without an overlay or modal backdrop. The project AppBar, or the manage-page header, SHALL remain outside and above both regions so it spans the complete workspace width. A vertical divider SHALL resize the right region by pointer drag or keyboard, and its width SHALL persist independently from the drawer width.
+
+The split SHALL preserve the page React subtree when opened or closed. Moving the terminal between drawer and split SHALL keep the same target state and SHALL reconnect only the browser client to the manager-deduplicated ttyd entry. The split header SHALL provide controls to move the target back to the drawer, pop it out, or close it. Terminal and Report content SHALL be mutually exclusive occupants of the shared right-side slot; replacing a visible terminal with a Report SHALL hide the browser client without stopping its backend session.
+
+#### Scenario: Open target directly in split
+- **GIVEN** a desktop viewport and an enabled terminal integration
+- **WHEN** the owner selects `Open in split view`
+- **THEN** the page content is visible on the left and the target's ttyd terminal is visible on the right below the shared header
+- **AND** no modal overlay covers the page
+
+#### Scenario: Split divider resizes both regions
+- **GIVEN** the right split is open
+- **WHEN** the user drags the divider to the left
+- **THEN** the terminal becomes wider and the left page-content region becomes narrower
+- **AND** the shared header and project sidebar are not divided or compressed by that divider
+- **AND** both content regions remain within their minimum usable widths
+
+#### Scenario: Split width is restored independently
+- **GIVEN** the owner has chosen different widths for drawer and split presentations
+- **WHEN** each presentation is reopened
+- **THEN** each restores its own last committed width
+
+#### Scenario: Move drawer to split without restarting backend process
+- **GIVEN** a drawer is attached to a live ttyd entry
+- **WHEN** the owner chooses `Split right`
+- **THEN** the drawer closes and the same target appears in the right split below the shared header
+- **AND** no new tmux session, Herdr workspace, or duplicate ttyd entry is created
+
+#### Scenario: Report replaces visible terminal without stopping it
+- **GIVEN** a terminal browser client occupies the right split
+- **WHEN** a Report is opened in the shared right-side slot
+- **THEN** the terminal client is hidden and the Report becomes visible
+- **AND** the terminal backend remains available for later attachment
+
+### Requirement: Unified Open With picker exposes split presentation
+
+The shared project, experiment, and run Open With picker SHALL include an `Open in split view` action for the current default integration in addition to its integration choices and popup action. Selecting it SHALL use the same target identity and backend-specific setup as opening the default integration in the drawer.
+
+#### Scenario: Open With launches current default in split
+- **GIVEN** the owner's current default integration is Herdr for an experiment target
+- **WHEN** the owner selects `Open in split view`
+- **THEN** the Herdr target is created or focused using the experiment identity
+- **AND** its ttyd client opens in the right split
+
+#### Scenario: Existing main action remains a drawer action
+- **WHEN** the owner clicks the main face of Open With
+- **THEN** it continues to open the current default integration in the drawer
 

@@ -23,7 +23,7 @@ by all eleven skills, including `memon-notify` and `memon-migrate-fs`.
 | Launch and monitor one Run | `memon-run-experiment` | Run README/artifacts; Results updates through the bundle writer |
 | Append one cross-project event | `memon-append-journal` | One Journal event |
 | Periodic integrity sweep and digest | `memon-digest-journal` | Digest + `last_digest_at`; semantic Experiment fixes through the writer |
-| Write a theme Report | `memon-write-report` | Single Markdown by default; HTML bundle only on explicit request |
+| Write a theme Report | `memon-write-report` | Markdown by default; explicit HTML/interactive/dashboard requests use a static bundle, optionally with a delegated visualization/frontend skill |
 | Write a human code-review guide | `memon-write-code-review` | Project/Experiment code-review doc; optional Implementation link through writer |
 | Brainstorm next research work | `memon-propose` | Read-only |
 | Upgrade the FS convention | `memon-migrate-fs` | Staged migration + final FS marker; explicit user invocation only |
@@ -73,15 +73,22 @@ docs/reports/R0001-topic.md
 
 docs/reports/R0002-interactive-topic/
 ├── README.md
-├── *.html
 ├── data/*.json
-└── assets/*.{js,css,png,...}
+└── views/<slug>/
+    ├── index.html
+    └── assets/*
 ```
 
 The single Markdown form is the default and existing files remain unchanged.
-Only an explicit HTML/interactive request creates the directory form. Within a
-bundle, `![label](./view.html)` embeds the HTML as an iframe; a normal Markdown
-link remains a link.
+Only an explicit HTML, interactive, or dashboard request creates the directory
+form. It is a framework-agnostic static container that runs without a dev
+server. The Report writer may delegate one isolated `views/<slug>/` to an
+installed visualization/frontend skill, but retains ownership of README,
+frontmatter, normalized data, embeds, and final validation. Within a bundle,
+`![label](./views/topic/index.html)` embeds the HTML as an unsandboxed iframe; a
+normal Markdown link remains a link. New views must be responsive and touch
+usable at 390 px and desktop widths. Existing bundle layouts remain compatible;
+there is no required manifest or iframe auto-height protocol.
 
 ## Invocation policy
 

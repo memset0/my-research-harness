@@ -6,12 +6,18 @@
 // experiment-page run-panel action bar (scope='run') — render this
 // same component with different (scope, slug) props. Click main face
 // → open default agent in the side drawer. Click chevron →
-// DropdownMenu with all four agents + "Open in new window"
-// (popup-window mode).
+// DropdownMenu with enabled agents plus right-split and popup actions.
 
-import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Bot, ExternalLink, Loader2, Download } from 'lucide-react'
+import {
+  Bot,
+  ChevronDown,
+  Columns2,
+  Download,
+  ExternalLink,
+  Loader2,
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -20,6 +26,9 @@ import {
   type TerminalAgentKind,
   type TerminalScopeKind,
 } from '../lib/api'
+import { useRuntimeConfig } from '../lib/runtime-config'
+import { useSession } from './session-provider'
+import { useTerminalDrawer } from './terminal-drawer-provider'
 import { Button } from './ui/button'
 import {
   DropdownMenu,
@@ -28,35 +37,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
-import { useTerminalDrawer } from './terminal-drawer-provider'
 import { ViewerGuard } from './viewer-guard'
-import { useSession } from './session-provider'
 
 const STORAGE_KEY = 'memon:terminal:default-agent'
 const DEFAULT_AGENT: TerminalAgentKind = 'claude'
+type OpenWithKind = TerminalAgentKind | 'herdr'
 
-const AGENT_LABEL: Record<TerminalAgentKind, string> = {
+const AGENT_LABEL: Record<OpenWithKind, string> = {
   none: 'Terminal',
   claude: 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
+  herdr: 'Herdr',
 }
 
-function readDefaultAgent(): TerminalAgentKind {
+function readDefaultAgent(): OpenWithKind {
   if (typeof localStorage === 'undefined') return DEFAULT_AGENT
   const raw = localStorage.getItem(STORAGE_KEY)
   if (
     raw === 'none' ||
     raw === 'claude' ||
     raw === 'codex' ||
-    raw === 'opencode'
+    raw === 'opencode' ||
+    raw === 'herdr'
   ) {
     return raw
   }
   return DEFAULT_AGENT
 }
 
-function writeDefaultAgent(agent: TerminalAgentKind): void {
+function writeDefaultAgent(agent: OpenWithKind): void {
   if (typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(STORAGE_KEY, agent)
@@ -66,21 +76,29 @@ function writeDefaultAgent(agent: TerminalAgentKind): void {
 }
 
 function popupTarget(input: {
-  agent: TerminalAgentKind
+  agent: OpenWithKind
   project: string
   scope: TerminalScopeKind
   slug: string
 }): string {
+  if (input.agent === 'herdr') return `memon-popup-memon-herdr-${input.slug}`
   const agentSeg = input.agent === 'none' ? 'terminal' : input.agent
   return `memon-popup-memon-${agentSeg}-${input.project}--${input.scope}--${input.slug}`
 }
 
 function popupUrl(input: {
-  agent: TerminalAgentKind
+  agent: OpenWithKind
   project: string
   scope: TerminalScopeKind
   slug: string
 }): string {
+  if (input.agent === 'herdr') {
+    return (
+      `/terminal-popup?integration=herdr&project=${encodeURIComponent(input.project)}` +
+      `&scope=${encodeURIComponent(input.scope)}` +
+      `&slug=${encodeURIComponent(input.slug)}`
+    )
+  }
   return (
     `/terminal-popup?project=${encodeURIComponent(input.project)}` +
     `&scope=${encodeURIComponent(input.scope)}` +
@@ -99,16 +117,19 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   const drawer = useTerminalDrawer()
   const qc = useQueryClient()
   const { role } = useSession()
+  const { terminal } = useRuntimeConfig()
   const isViewer = role !== 'owner'
-  const [defaultAgent, setDefaultAgentState] = useState<TerminalAgentKind>(DEFAULT_AGENT)
+  const [defaultAgent, setDefaultAgentState] = useState<OpenWithKind>(DEFAULT_AGENT)
   const [installing, setInstalling] = useState(false)
 
   // Read localStorage AFTER mount to avoid SSR/hydration mismatch.
   useEffect(() => {
-    setDefaultAgentState(readDefaultAgent())
-  }, [])
+    const stored = readDefaultAgent()
+    const enabled = stored === 'herdr' ? terminal.herdrEnabled : terminal.tmuxEnabled
+    setDefaultAgentState(enabled ? stored : terminal.tmuxEnabled ? DEFAULT_AGENT : 'herdr')
+  }, [terminal.herdrEnabled, terminal.tmuxEnabled])
 
-  const setDefaultAgent = (agent: TerminalAgentKind) => {
+  const setDefaultAgent = (agent: OpenWithKind) => {
     setDefaultAgentState(agent)
     writeDefaultAgent(agent)
   }
@@ -120,8 +141,10 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
     queryKey: ['terminal', 'check'],
     queryFn: checkTerminal,
     staleTime: 10_000,
-    enabled: role === 'owner',
+    enabled: role === 'owner' && (terminal.tmuxEnabled || terminal.herdrEnabled),
   })
+
+  if (!terminal.tmuxEnabled && !terminal.herdrEnabled) return null
 
   // ttyd unavailable but auto-installable: render a single Install button
   // with no picker. Once installed, the picker becomes available.
@@ -146,7 +169,11 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
     return (
       <ViewerGuard reason="Open with…">
         <Button variant="outline" size="sm" onClick={() => void onInstall()} disabled={installing}>
-          {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+          {installing ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Download className="size-3.5" />
+          )}
           {installing ? 'Installing…' : 'Install ttyd (~5MB)'}
         </Button>
       </ViewerGuard>
@@ -163,13 +190,14 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
     )
   }
 
-  const launchInDrawer = (agent: TerminalAgentKind) => {
+  const launchInDrawer = (agent: OpenWithKind) => {
     if (isViewer) return
     setDefaultAgent(agent)
-    drawer.open({ project, scope, slug, agent })
+    if (agent === 'herdr') drawer.openHerdr({ project, scope, slug })
+    else drawer.open({ project, scope, slug, agent })
   }
 
-  const launchInPopup = (agent: TerminalAgentKind) => {
+  const launchInPopup = (agent: OpenWithKind) => {
     if (isViewer) return
     setDefaultAgent(agent)
     window.open(
@@ -177,6 +205,13 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
       popupTarget({ agent, project, scope, slug }),
       'popup,width=1200,height=800',
     )
+  }
+
+  const launchInSplit = (agent: OpenWithKind) => {
+    if (isViewer) return
+    setDefaultAgent(agent)
+    if (agent === 'herdr') drawer.openHerdrSplit({ project, scope, slug })
+    else drawer.openSplit({ project, scope, slug, agent })
   }
 
   return (
@@ -204,19 +239,32 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => launchInDrawer('none')}>
-            {AGENT_LABEL.none}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => launchInDrawer('claude')}>
-            {AGENT_LABEL.claude}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => launchInDrawer('codex')}>
-            {AGENT_LABEL.codex}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => launchInDrawer('opencode')}>
-            {AGENT_LABEL.opencode}
-          </DropdownMenuItem>
+          {terminal.tmuxEnabled && (
+            <>
+              <DropdownMenuItem onClick={() => launchInDrawer('none')}>
+                {AGENT_LABEL.none}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => launchInDrawer('claude')}>
+                {AGENT_LABEL.claude}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => launchInDrawer('codex')}>
+                {AGENT_LABEL.codex}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => launchInDrawer('opencode')}>
+                {AGENT_LABEL.opencode}
+              </DropdownMenuItem>
+            </>
+          )}
+          {terminal.herdrEnabled && (
+            <DropdownMenuItem onClick={() => launchInDrawer('herdr')}>
+              {AGENT_LABEL.herdr}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => launchInSplit(defaultAgent)}>
+            <Columns2 className="size-3.5" />
+            Open in split view
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => launchInPopup(defaultAgent)}>
             <ExternalLink className="size-3.5" />
             Open in new window

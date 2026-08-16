@@ -44,8 +44,9 @@ poll:
   max_interval_ms: 300000
   backoff_factor: 2
 
-# Browser-terminal + tmux-inventory tuning. Every field is optional; omit
-# the block (or any individual field) to use the defaults shown below.
+# Browser-terminal integrations and ttyd tuning. Every field is optional;
+# omit the block (or any individual field) to use the defaults shown below.
+# Tmux stays enabled by default for compatibility; Herdr is opt-in.
 # `pane_info_idle_poll_ms` MUST be >= `pane_info_active_poll_ms`.
 #
 # The `commands` sub-map overrides what gets pushed into the tmux pane after
@@ -62,6 +63,9 @@ poll:
 # disables itself for wrapped forms.
 #
 # terminal:
+#   tmux_enabled: true               # set false to skip all tmux UI and commands
+#   herdr:                           # omit this block to disable Herdr
+#     cli: ["herdr"]                 # executable/wrapper argv; no shell parsing
 #   ttyd_max_concurrent: 16          # soft LRU cap on concurrent ttyd procs
 #   ttyd_idle_ttl_minutes: 30        # kill ttyd after this many idle minutes; 0 disables
 #   pane_info_active_poll_ms: 5000   # per-target poll interval when ttyd is bound

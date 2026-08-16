@@ -17,8 +17,26 @@ export type TerminalPopupClientProps =
       sessionName: string
       staleReason?: StaleReason | null
     }
+  | {
+      mode: 'herdr'
+      project?: string
+      scope?: TerminalScopeKind
+      slug?: string
+    }
 
 export function TerminalPopupClient(props: TerminalPopupClientProps) {
+  if (props.mode === 'herdr') {
+    return (
+      <TerminalView
+        mode="herdr"
+        {...(props.project && props.scope && props.slug
+          ? { project: props.project, scope: props.scope, slug: props.slug }
+          : {})}
+        fullscreen
+        source="popup"
+      />
+    )
+  }
   if (props.mode === 'raw') {
     if (props.staleReason) {
       // Banner above the iframe — wrap in a flex column so the banner
@@ -27,24 +45,14 @@ export function TerminalPopupClient(props: TerminalPopupClientProps) {
       // sizing; TerminalView falls back to `h-full w-full`.
       return (
         <div className="flex h-svh w-svw flex-col bg-zinc-950">
-          <StaleBanner
-            reason={props.staleReason}
-            sessionName={props.sessionName}
-          />
+          <StaleBanner reason={props.staleReason} sessionName={props.sessionName} />
           <div className="flex min-h-0 flex-1 flex-col">
             <TerminalView mode="raw" sessionName={props.sessionName} source="popup" />
           </div>
         </div>
       )
     }
-    return (
-      <TerminalView
-        mode="raw"
-        sessionName={props.sessionName}
-        fullscreen
-        source="popup"
-      />
-    )
+    return <TerminalView mode="raw" sessionName={props.sessionName} fullscreen source="popup" />
   }
   return (
     <TerminalView

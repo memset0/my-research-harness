@@ -1776,3 +1776,50 @@ title-cased), consistent with the other title-cased tab labels
 - **THEN** its visible label text is exactly `Code Review` (not `Code
   review`)
 
+### Requirement: Sidebar footer exposes enabled terminal integrations
+
+For owners, the sidebar footer SHALL show `Manage tmux` only while tmux is
+enabled and SHALL show `Open Herdr` plus a Herdr popup affordance only while
+Herdr is enabled. Viewers SHALL see neither shell-capable integration. Existing
+Slurm footer behavior SHALL remain unchanged.
+
+#### Scenario: Both footer integrations enabled
+
+- **GIVEN** the owner runtime config enables tmux and Herdr
+- **WHEN** a project page renders
+- **THEN** the footer contains the existing `Manage tmux` link and an `Open Herdr` launcher
+
+#### Scenario: Tmux footer is hidden when disabled
+
+- **GIVEN** tmux is disabled and Herdr is enabled
+- **WHEN** the sidebar renders
+- **THEN** `Manage tmux` is absent and `Open Herdr` remains available
+
+#### Scenario: Viewer has no shell launcher
+
+- **GIVEN** the session role is viewer
+- **WHEN** the sidebar renders
+- **THEN** neither the tmux management link nor Herdr drawer/popup actions are present
+
+### Requirement: AppBar spans the paired-document workspace
+
+On project routes, the AppBar SHALL be laid out above the complete content workspace rather than inside the left split region. Opening, closing, or resizing a right-side terminal or Report SHALL affect only the content region below the AppBar; it SHALL NOT divide, duplicate, horizontally compress, or obscure the AppBar. The project sidebar SHALL also remain outside the paired content split.
+
+On manage routes, the manage header and SidebarTrigger SHALL follow the same rule when a terminal split is open.
+
+#### Scenario: Project AppBar remains shared above Report split
+- **GIVEN** a project page is open
+- **WHEN** a Report opens in the right split
+- **THEN** one AppBar spans above both the left document and the Report
+- **AND** only the region below the AppBar is divided
+
+#### Scenario: Project AppBar remains shared above terminal split
+- **WHEN** a terminal opens in the right split on a project route
+- **THEN** the AppBar retains the full project inset width above both content regions
+- **AND** its tabs and controls are not constrained to the left region
+
+#### Scenario: Manage header remains shared above terminal split
+- **WHEN** a terminal opens in the right split on a manage route
+- **THEN** the manage header remains above the divided content workspace
+- **AND** its SidebarTrigger remains available
+

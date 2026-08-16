@@ -1,6 +1,6 @@
 ---
 name: memon-write-report
-description: Author or update a theme-driven memon Report from Journal, Experiment Results/Findings, Runs, digests, and other project evidence. Default to a single Markdown file; only when the user explicitly requests HTML or interactive presentation, create a directory Report bundle with README.md plus local HTML, JSON, JavaScript, CSS, and image assets.
+description: Author or update a theme-driven memon Report from Journal, Experiment Results/Findings, Runs, digests, and other project evidence. Default to a single Markdown file; only when the user explicitly requests HTML, an interactive presentation, or a dashboard, create a framework-agnostic static Report bundle and optionally coordinate an installed visualization or frontend skill.
 ---
 
 # memon-write-report
@@ -27,47 +27,40 @@ mislabel an expected validation or domain-state rejection as a CLI bug.
 Two forms coexist:
 
 ```text
-docs/reports/R0001-theme.md             # ordinary Markdown report
+docs/reports/R0001-theme.md             # ordinary Markdown Report
 
-docs/reports/R0002-interactive-theme/   # HTML-capable bundle
+docs/reports/R0002-interactive-theme/   # static HTML-capable bundle
 ├── README.md
-├── charts.html
 ├── data/
 │   └── metrics.json
-└── assets/
-    ├── charts.js
-    ├── report.css
-    └── figure.png
+└── views/
+    └── training-curves/
+        ├── index.html
+        └── assets/
 ```
 
-Rules:
-
 - Default to the single `.md` form.
-- Create a directory bundle only when the user explicitly asks for HTML,
-  interactive visualization, or an HTML report.
-- Updating an existing directory bundle keeps its form; no repeated request is
-  needed.
-- Never migrate an existing `.md` Report merely because bundle support exists.
-- Keep one `memon-write-report` skill for both forms.
+- Use a directory bundle only when the user explicitly asks for HTML,
+  interactive presentation/visualization, or a dashboard.
+- Keep an existing Report in its current form. Never migrate a `.md` Report
+  implicitly, and never force an old HTML bundle into the new layout.
+- Keep one `memon-write-report` skill responsible for both forms.
 
-IDs are global across both files and directories. Scan `R<NNNN>-*`, take the
-maximum numeric ID, and allocate the next zero-padded value. Use lowercase
-kebab-case slugs.
+IDs are global across files and directories. Scan `R<NNNN>-*`, allocate the
+next zero-padded numeric ID, and use a lowercase kebab-case slug.
 
-## Evidence sources
+Before creating or changing an HTML bundle, read
+[references/html-report-bundle.md](references/html-report-bundle.md) in full.
+It is the detailed ownership, delegation, runtime, responsive-design, and
+validation contract.
 
-Read whatever supports the user's theme:
+## Evidence and frontmatter
 
-- Journal events and open requests;
-- Experiment Motivation/Design/Investigation/Results/Findings/Limitations;
-- selected Run READMEs, W&B metadata, and artifacts;
-- hypotheses, digests, existing Reports, and code-review docs.
-
-Results are not limited to Journal events. Distinguish selected Variant `runs`
-from failed/superseded `attempts`, and cite stable Experiment, Investigation,
-Variant, and Run IDs.
-
-## Common frontmatter
+Read whatever supports the user's theme: Journal events, Experiment sections,
+selected Run READMEs, W&B metadata and artifacts, hypotheses, digests, existing
+Reports, and code-review docs. Distinguish selected Variant `runs` from
+failed/superseded `attempts`; cite stable Experiment, Investigation, Variant,
+and Run IDs.
 
 The `.md` file or bundle `README.md` carries:
 
@@ -83,96 +76,79 @@ selector: |
 ---
 ```
 
-`selector` is a rerunnable evidence query when Journal selection is relevant.
-It may be broader than the final source set; the body cites structured
-Experiment/Run sources separately. Preserve `created_at`; update `updated_at`.
-Do not advance `last_digest_at`.
+Use `selector` when a rerunnable Journal query is relevant. It may be broader
+than the cited structured sources. Preserve `created_at`, update `updated_at`,
+and never advance `last_digest_at`.
 
-## Markdown Report workflow
+## Markdown workflow
 
 1. Agree on the theme and scope.
-2. Gather evidence and verify IDs/links.
+2. Gather evidence and verify IDs and links.
 3. Draft a clear narrative, normally 200–500 words unless the user requests
-   depth. Separate facts from interpretation and uncertainty.
+   depth. Separate facts, interpretation, and uncertainty.
 4. Show the draft when collaborating, then write
    `docs/reports/R<NNNN>-<slug>.md`.
-5. For later additions, append/update coherently and bump `updated_at`; preserve
-   prior claims or explicitly explain corrections.
+5. Update later additions coherently, preserve prior claims or explain
+   corrections, and bump `updated_at`.
 
 ## HTML bundle workflow
 
-Use this workflow only under the representation rule above.
+Use this workflow only after the user explicitly selected an HTML-capable form.
 
-1. Put narrative and composition in `README.md`.
-2. Put structured display data in JSON rather than embedding large literals in
-   HTML/JavaScript.
-3. Let HTML fetch bundle-relative JSON and load bundle-relative JS/CSS/images.
-4. Local code may use third-party HTTPS CDN scripts/styles when useful.
-5. Keep every local path inside the Report directory. Never use `../` to read
-   arbitrary project/server files.
-6. Make the HTML independently understandable: title, source attribution,
-   loading/error states, and readable fallback text.
+1. Allocate the Report directory and each unique `views/<slug>/` directory.
+2. Own the Report frontmatter, narrative `README.md`, evidence extraction,
+   normalized JSON under `data/`, iframe embeds, and final verification.
+3. Choose the most suitable implementation. Author the view directly or
+   autonomously invoke an installed visualization/frontend skill when useful.
+4. Give a delegated skill only one writable `views/<slug>/` directory and
+   read-only data inputs. It must not edit root `README.md`, frontmatter,
+   `data/`, or another view. Inspect its output before integration.
+5. Require a service-ready static entry point, normally
+   `views/<slug>/index.html`. A framework is allowed, but a dev server is not a
+   runtime dependency.
+6. Add the embed and record the framework/library, delegated skill (or `none`),
+   data inputs, and essential regeneration command in the root `README.md`.
+7. Validate the bundle through the web app's Report asset route at 390 px and a
+   representative desktop width, then deliver it.
 
-Example:
+If a preferred external skill is unavailable or fails, choose another suitable
+tool or author plain static HTML/CSS/JavaScript. An explicit HTML request must
+still produce an HTML bundle or end with a clear blocker; never silently
+downgrade it to Markdown-only.
 
-```html
-<link rel="stylesheet" href="./assets/report.css">
-<div id="chart"></div>
-<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-<script type="module">
-  const metrics = await fetch('./data/metrics.json').then((r) => r.json())
-  // render metrics
-</script>
-```
+## Embedding and trust
 
-### Embed convention
-
-In bundle `README.md`, an image-form Markdown reference whose local target ends
-in `.html` is an iframe embed:
+In bundle `README.md`, an image-form local `.html` reference embeds an iframe:
 
 ```markdown
-![Training curves](./charts.html)
+![Training curves](./views/training-curves/index.html)
 ```
 
-A normal link remains a link:
+A normal Markdown link to the same file remains a link. Existing bundle-relative
+HTML locations continue to work.
 
-```markdown
-[Open training curves](./charts.html)
-```
-
-Images and other assets keep their ordinary Markdown behavior.
-
-The first version intentionally treats Agent-authored Report HTML as trusted:
-the iframe is not sandboxed and JavaScript/CDN access is allowed. Do not claim
-security isolation. Still enforce bundle path containment and never include
-credentials or secret data. Because same-origin code may access memon APIs and
-browser state, generate HTML only on the user's explicit request and review
-third-party dependencies carefully.
+Agent-authored Report HTML remains trusted, same-origin content. The iframe is
+not sandboxed, and JavaScript/CDN access remains allowed; do not claim security
+isolation. Enforce Report-directory containment, exclude credentials and secret
+data, and review third-party dependencies carefully. Do not introduce a bundle
+manifest or an iframe auto-height protocol.
 
 ## Validation
 
-For both forms:
+For both forms, parse frontmatter, check ID/path consistency, rerun relevant
+selectors, verify cited IDs/local links, and check timestamps.
 
-- parse frontmatter and check ID/path consistency;
-- rerun selectors where present;
-- verify cited Experiment/Variant/Run IDs and local links;
-- ensure `created_at` is stable and `updated_at` is current.
-
-For bundles also:
-
-- serve/open each HTML entry through the same Report asset route used by the
-  web app, not `file://`;
-- verify `fetch()` paths and MIME types;
-- test loading without silently depending on a developer's absolute path;
-- ensure README uses the `.html` image embed syntax intentionally.
+For HTML bundles, additionally apply the complete checklist in the reference:
+static serving without a dev server, relative URLs and JSON loading, MIME/error
+states, per-view write containment, provenance/regeneration notes, iframe
+embedding, responsive layout, touch operation, and 390 px plus desktop checks.
 
 ## Guardrails
 
-- Never create an HTML bundle based only on Agent preference.
-- Never convert or relocate an existing single Markdown Report implicitly.
+- Never choose HTML based only on Agent or delegated-skill preference.
+- Never let delegation transfer Report-level ownership away from this writer.
 - Never touch the digest cursor.
 - Never copy a large Results matrix into prose when stable IDs/structured data
   can be cited or loaded.
-- Never inline secrets, auth tokens, or private environment values in HTML,
-  JSON, JS, CSS, or Markdown.
-- Never let a local asset path escape its Report bundle.
+- Never inline secrets or private environment values in Report files.
+- Never let a local path escape its Report bundle.

@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
 import { EventEmitter } from 'node:events'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Fake child_process.spawn so manager.ts thinks it spawned ttyd.
 const spawnMock = vi.hoisted(() => vi.fn())
@@ -30,7 +31,6 @@ vi.mock('./binary', () => ({
 }))
 
 import {
-  TerminalManagerError,
   __resetForTests,
   attachExistingSession,
   buildSessionName,
@@ -39,14 +39,13 @@ import {
   noteWsConnect,
   noteWsDisconnect,
   parseSessionName,
+  type StartSessionInput,
+  startHerdrSession,
   startSession,
   stopSession,
-  type StartSessionInput,
+  TerminalManagerError,
 } from './manager'
-import {
-  __resetPaneStateMemoForTests,
-  computePaneState,
-} from './pane-state'
+import { __resetPaneStateMemoForTests, computePaneState } from './pane-state'
 
 class FakeChild extends EventEmitter {
   pid = 12345
@@ -87,6 +86,24 @@ function newSpawnReturnsHealthyChild(): FakeChild {
   return child
 }
 
+function newSpawnReturnsCliResult(stdout: unknown, code = 0): FakeChild {
+  const child = new FakeChild()
+  spawnMock.mockImplementationOnce(() => {
+    setImmediate(() => {
+      if (stdout !== undefined) {
+        child.stdout.emit(
+          'data',
+          Buffer.from(typeof stdout === 'string' ? stdout : JSON.stringify(stdout)),
+        )
+      }
+      child.exitCode = code
+      child.emit('close', code, null)
+    })
+    return child
+  })
+  return child
+}
+
 const DEFAULT_COMMANDS = {
   none: [] as readonly string[],
   claude: ['claude'] as readonly string[],
@@ -111,7 +128,12 @@ function defaultInput(overrides: Partial<StartSessionInput> = {}): StartSessionI
 describe('buildSessionName', () => {
   it('renders new format with double-hyphen scope delimiter', () => {
     expect(
-      buildSessionName({ agent: 'claude', project: 'project-a', scope: 'run', slug: 'foo-260507-103000' }),
+      buildSessionName({
+        agent: 'claude',
+        project: 'project-a',
+        scope: 'run',
+        slug: 'foo-260507-103000',
+      }),
     ).toBe('memon-claude-project-a--run--foo-260507-103000')
   })
 
@@ -199,15 +221,18 @@ describe('parseSessionName', () => {
   })
 
   it('returns nulls for unparseable name with -- but bad scope', () => {
-    expect(parseSessionName('memon-claude-p--bogus--slug')).toMatchObject({ legacy: false, agent: null })
+    expect(parseSessionName('memon-claude-p--bogus--slug')).toMatchObject({
+      legacy: false,
+      agent: null,
+    })
   })
 })
 
 describe('startSession', () => {
   it('rejects slug with --', async () => {
-    await expect(
-      startSession(defaultInput({ slug: 'foo--bar' })),
-    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(startSession(defaultInput({ slug: 'foo--bar' }))).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    })
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
@@ -285,10 +310,7 @@ describe('startSession', () => {
 
   it('two parallel calls for same sessionName resolve to one ttyd', async () => {
     newSpawnReturnsHealthyChild()
-    const [a, b] = await Promise.all([
-      startSession(defaultInput()),
-      startSession(defaultInput()),
-    ])
+    const [a, b] = await Promise.all([startSession(defaultInput()), startSession(defaultInput())])
     expect(spawnMock).toHaveBeenCalledTimes(1)
     expect(a.sessionName).toBe(b.sessionName)
   })
@@ -313,7 +335,9 @@ describe('startSession', () => {
     await startSession(defaultInput({ slug: 'c-260507-103000', maxConcurrent: 2 }))
     expect(spawnMock).toHaveBeenCalledTimes(3)
     expect(childA.signals).toContain('SIGTERM')
-    const slugs = listSessions().map((s) => s.slug).sort()
+    const slugs = listSessions()
+      .map((s) => s.slug)
+      .sort()
     expect(slugs).toEqual(['b-260507-103000', 'c-260507-103000'])
   })
 
@@ -395,11 +419,7 @@ describe('startSession', () => {
     )
     const [, args] = spawnMock.mock.calls[0]!
     // Resume tail goes AFTER the user's argv.
-    expect(args.slice(-3)).toEqual([
-      'claude',
-      '--dangerously-skip-permissions',
-      '--continue',
-    ])
+    expect(args.slice(-3)).toEqual(['claude', '--dangerously-skip-permissions', '--continue'])
   })
 
   it("custom 'none' argv runs the user's command verbatim with no resume tail", async () => {
@@ -442,7 +462,9 @@ describe('lookupSession + ws activity', () => {
     // not the connected one (s).
     newSpawnReturnsHealthyChild()
     await startSession(defaultInput({ slug: 'third-260507-103000', maxConcurrent: 2 }))
-    const remaining = listSessions().map((x) => x.slug).sort()
+    const remaining = listSessions()
+      .map((x) => x.slug)
+      .sort()
     // First (s) survived because it's connected; second was evicted.
     expect(remaining).toContain(s.slug)
     expect(remaining).toContain('third-260507-103000')
@@ -451,12 +473,94 @@ describe('lookupSession + ws activity', () => {
   })
 })
 
+describe('startHerdrSession', () => {
+  const input = {
+    cli: ['/opt/herdr/bin/herdr'] as readonly string[],
+    cwd: '/repos/project-a',
+    maxConcurrent: 16,
+    idleTtlMinutes: 30,
+  }
+
+  it('spawns ttyd directly around the configured Herdr CLI', async () => {
+    newSpawnReturnsHealthyChild()
+    const session = await startHerdrSession(input)
+    expect(session).toMatchObject({
+      backend: 'herdr',
+      sessionName: 'memon-herdr',
+    })
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(spawnMock.mock.calls[0]?.[1]).toEqual([
+      '-p',
+      String(session.port),
+      '-i',
+      '127.0.0.1',
+      '-b',
+      '/api/terminal/proxy/memon-herdr',
+      '--writable',
+      '/opt/herdr/bin/herdr',
+    ])
+    expect(spawnMock.mock.calls[0]?.[2]).toMatchObject({ cwd: '/repos/project-a' })
+  })
+
+  it('focuses an exact existing workspace label', async () => {
+    newSpawnReturnsHealthyChild()
+    newSpawnReturnsCliResult({
+      result: {
+        workspaces: [
+          { workspace_id: 'w1', label: 'other' },
+          { workspace_id: 'w7', label: 'E0042-routing' },
+        ],
+      },
+    })
+    newSpawnReturnsCliResult({ result: { type: 'workspace_focused' } })
+
+    await startHerdrSession({
+      ...input,
+      target: { label: 'E0042-routing', cwd: '/repos/project-a' },
+    })
+    expect(spawnMock.mock.calls[1]?.slice(0, 2)).toEqual([
+      '/opt/herdr/bin/herdr',
+      ['workspace', 'list'],
+    ])
+    expect(spawnMock.mock.calls[2]?.slice(0, 2)).toEqual([
+      '/opt/herdr/bin/herdr',
+      ['workspace', 'focus', 'w7'],
+    ])
+  })
+
+  it('creates and focuses a missing workspace at the resolved cwd', async () => {
+    newSpawnReturnsHealthyChild()
+    newSpawnReturnsCliResult({ result: { workspaces: [] } })
+    newSpawnReturnsCliResult({ result: { type: 'workspace_created' } })
+
+    await startHerdrSession({
+      ...input,
+      target: { label: 'project-a', cwd: '/repos/project-a' },
+    })
+    expect(spawnMock.mock.calls[2]?.slice(0, 2)).toEqual([
+      '/opt/herdr/bin/herdr',
+      ['workspace', 'create', '--cwd', '/repos/project-a', '--label', 'project-a', '--focus'],
+    ])
+  })
+
+  it('deduplicates the Herdr ttyd client', async () => {
+    newSpawnReturnsHealthyChild()
+    const first = await startHerdrSession(input)
+    const second = await startHerdrSession(input)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(second.port).toBe(first.port)
+    expect(second.startedAt).toBe(first.startedAt)
+  })
+})
+
 describe('attachExistingSession', () => {
-  function attachInput(overrides: Partial<{
-    sessionName: string
-    maxConcurrent: number
-    idleTtlMinutes: number
-  }> = {}) {
+  function attachInput(
+    overrides: Partial<{
+      sessionName: string
+      maxConcurrent: number
+      idleTtlMinutes: number
+    }> = {},
+  ) {
     return {
       sessionName: 'memon-manual-foo',
       maxConcurrent: 16,
@@ -481,7 +585,9 @@ describe('attachExistingSession', () => {
 
   it('happy path: spawns ttyd with `tmux new-session -A -s <name>` (no -c, no agent CLI)', async () => {
     newSpawnReturnsHealthyChild()
-    const session = await attachExistingSession(attachInput({ sessionName: 'memon-manual-myscratch' }))
+    const session = await attachExistingSession(
+      attachInput({ sessionName: 'memon-manual-myscratch' }),
+    )
     expect(spawnMock).toHaveBeenCalledTimes(1)
     const [, args] = spawnMock.mock.calls[0]!
     // The argv tail must be exactly: tmux new-session -A -s <name>

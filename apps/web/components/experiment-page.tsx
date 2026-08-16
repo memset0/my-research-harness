@@ -23,6 +23,7 @@ import {
 import { cn } from '../lib/utils'
 import { AddNoteButton } from './add-note-button'
 import { ArchiveToggle } from './archive-toggle'
+import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { ExperimentCodeReviews } from './experiment-code-reviews'
 import { ExperimentManagedSection } from './experiment-managed-section'
@@ -76,124 +77,131 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   )
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
-      <header className="flex flex-col gap-2">
-        <div className="flex items-baseline flex-wrap gap-2">
-          <span className="font-mono text-sm text-muted-foreground">{exp.id}</span>
-          {exp.frontMatter.tags.map((t) => (
-            <Badge key={t} variant="outline" className="text-[10px]">
-              #{t}
-            </Badge>
-          ))}
-        </div>
-        <h1 className="text-xl font-semibold">{exp.frontMatter.title}</h1>
-        {exp.frontMatter.hypotheses.length > 0 && (
-          <div className="flex flex-wrap gap-1 text-xs">
-            <span className="text-muted-foreground">Hypotheses:</span>
-            {exp.frontMatter.hypotheses.map((h) => (
-              <Link
-                key={h}
-                href={`/p/${encodeURIComponent(project)}/hypotheses`}
-                className="underline"
-              >
-                {h}
-              </Link>
+    <DocumentArtifactLinkProvider
+      project={project}
+      sourceDocumentPath={exp.path}
+      sourceSurface="left"
+    >
+      <div className="flex flex-col gap-4 p-4 md:p-6">
+        <header className="flex flex-col gap-2">
+          <div className="flex items-baseline flex-wrap gap-2">
+            <span className="font-mono text-sm text-muted-foreground">{exp.id}</span>
+            {exp.frontMatter.tags.map((t) => (
+              <Badge key={t} variant="outline" className="text-[10px]">
+                #{t}
+              </Badge>
             ))}
           </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <ExperimentStatusEdit
-            expId={exp.id}
-            status={exp.frontMatter.status}
-            archived={exp.frontMatter.archived}
-            expectedMtime={exp.readmeMtime}
-          />
-          <ArchiveToggle
-            kind="exp"
-            id={exp.id}
-            archived={exp.frontMatter.archived}
-            expectedMtime={exp.readmeMtime}
-          />
-          <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
-          {exp.documentReadOnly && (
-            <Badge
-              variant="outline"
-              className="border-amber-500/50 text-amber-700 dark:text-amber-300"
-            >
-              compatibility view
-            </Badge>
-          )}
-          <OpenWithButton project={project} scope="exp" slug={exp.id} />
-        </div>
-      </header>
-
-      {exp.documentReadOnly && (
-        <div className="flex gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <div>
-            This Experiment uses unsupported, incomplete, or conflicting document structure. All
-            source sections remain visible below. Metadata and Markdown edits preserve the original
-            section body; resolve diagnostics explicitly rather than relying on normalization.
-          </div>
-        </div>
-      )}
-
-      {resultsSections.map((section) => (
-        <SectionCard
-          key={`${section.index}:${section.heading}:${section.occurrence}`}
-          section={section}
-          project={project}
-          experimentId={exp.id}
-          documents={exp.documents}
-          memberRuns={exp.memberRuns}
-        />
-      ))}
-
-      <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-      <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
-      {nonResultsSections.map((section) => (
-        <SectionCard
-          key={`${section.index}:${section.heading}:${section.occurrence}`}
-          section={section}
-          project={project}
-          experimentId={exp.id}
-          documents={exp.documents}
-          memberRuns={exp.memberRuns}
-        />
-      ))}
-
-      <ExperimentCodeReviews project={project} experimentId={exp.id} />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Artifacts</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {aggregatedArtifacts.length === 0 ? (
-            <div className="text-xs italic text-muted-foreground">
-              none described — runs may still produce files; check the run panel's file listing
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-1 text-xs">
-              {aggregatedArtifacts.map((a, i) => (
-                <li key={i} className="flex flex-wrap items-baseline gap-1">
-                  <span className="font-mono text-muted-foreground">{a.runId}</span>
-                  <code className="font-mono">{a.path}</code>
-                  <span className="text-muted-foreground">— {a.description}</span>
-                </li>
+          <h1 className="text-xl font-semibold">{exp.frontMatter.title}</h1>
+          {exp.frontMatter.hypotheses.length > 0 && (
+            <div className="flex flex-wrap gap-1 text-xs">
+              <span className="text-muted-foreground">Hypotheses:</span>
+              {exp.frontMatter.hypotheses.map((h) => (
+                <Link
+                  key={h}
+                  href={`/p/${encodeURIComponent(project)}/hypotheses`}
+                  className="underline"
+                >
+                  {h}
+                </Link>
               ))}
-            </ul>
+            </div>
           )}
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <ExperimentStatusEdit
+              expId={exp.id}
+              status={exp.frontMatter.status}
+              archived={exp.frontMatter.archived}
+              expectedMtime={exp.readmeMtime}
+            />
+            <ArchiveToggle
+              kind="exp"
+              id={exp.id}
+              archived={exp.frontMatter.archived}
+              expectedMtime={exp.readmeMtime}
+            />
+            <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
+            {exp.documentReadOnly && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/50 text-amber-700 dark:text-amber-300"
+              >
+                compatibility view
+              </Badge>
+            )}
+            <OpenWithButton project={project} scope="exp" slug={exp.id} />
+          </div>
+        </header>
 
-      <RunsCard
-        project={project}
-        experimentId={exp.id}
-        initialOpenRun={initialOpenRun}
-        memberRuns={exp.memberRuns}
-      />
-    </div>
+        {exp.documentReadOnly && (
+          <div className="flex gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              This Experiment uses unsupported, incomplete, or conflicting document structure. All
+              source sections remain visible below. Metadata and Markdown edits preserve the
+              original section body; resolve diagnostics explicitly rather than relying on
+              normalization.
+            </div>
+          </div>
+        )}
+
+        {resultsSections.map((section) => (
+          <SectionCard
+            key={`${section.index}:${section.heading}:${section.occurrence}`}
+            section={section}
+            project={project}
+            experimentId={exp.id}
+            documents={exp.documents}
+            memberRuns={exp.memberRuns}
+          />
+        ))}
+
+        <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
+        <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
+        {nonResultsSections.map((section) => (
+          <SectionCard
+            key={`${section.index}:${section.heading}:${section.occurrence}`}
+            section={section}
+            project={project}
+            experimentId={exp.id}
+            documents={exp.documents}
+            memberRuns={exp.memberRuns}
+          />
+        ))}
+
+        <ExperimentCodeReviews project={project} experimentId={exp.id} />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Artifacts</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {aggregatedArtifacts.length === 0 ? (
+              <div className="text-xs italic text-muted-foreground">
+                none described — runs may still produce files; check the run panel's file listing
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-1 text-xs">
+                {aggregatedArtifacts.map((a, i) => (
+                  <li key={i} className="flex flex-wrap items-baseline gap-1">
+                    <span className="font-mono text-muted-foreground">{a.runId}</span>
+                    <code className="font-mono">{a.path}</code>
+                    <span className="text-muted-foreground">— {a.description}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <RunsCard
+          project={project}
+          experimentId={exp.id}
+          initialOpenRun={initialOpenRun}
+          memberRuns={exp.memberRuns}
+        />
+      </div>
+    </DocumentArtifactLinkProvider>
   )
 }
 
@@ -492,8 +500,16 @@ function RunBody({
     return <div className="border-t p-3 text-xs text-muted-foreground">Loading run details…</div>
   }
 
+  const runSourceDocumentPath = /\.md$/i.test(run.path)
+    ? run.path
+    : `${run.path.replace(/\/$/, '')}/README.md`
+
   return (
-    <>
+    <DocumentArtifactLinkProvider
+      project={project}
+      sourceDocumentPath={runSourceDocumentPath}
+      sourceSurface="left"
+    >
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
@@ -551,7 +567,7 @@ function RunBody({
         )}
         <span className="hidden">{experimentId}</span>
       </div>
-    </>
+    </DocumentArtifactLinkProvider>
   )
 }
 

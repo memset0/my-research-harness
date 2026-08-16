@@ -53,6 +53,7 @@ describe('buildIndex', () => {
       ],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
       terminal: {
+        tmuxEnabled: true,
         ttydMaxConcurrent: 16,
         ttydIdleTtlMinutes: 30,
         paneInfoActivePollMs: 5_000,
@@ -82,6 +83,7 @@ describe('buildIndex', () => {
       ],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
       terminal: {
+        tmuxEnabled: true,
         ttydMaxConcurrent: 16,
         ttydIdleTtlMinutes: 30,
         paneInfoActivePollMs: 5_000,

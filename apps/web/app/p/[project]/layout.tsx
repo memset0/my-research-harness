@@ -1,11 +1,12 @@
+import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
-import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { AppBar } from '../../../components/app-bar'
 import { AppSidebar } from '../../../components/app-sidebar'
 import { ProjectFooter } from '../../../components/project-footer'
 import { ResizableSidebarProvider } from '../../../components/resizable-sidebar-provider'
+import { WorkspaceSplitOutlet } from '../../../components/terminal-drawer-provider'
 import { SidebarInset } from '../../../components/ui/sidebar'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { getRuntime } from '../../../lib/runtime'
@@ -74,7 +75,7 @@ export default async function ProjectLayout({
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <ResizableSidebarProvider defaultOpen={defaultOpen}>
+      <ResizableSidebarProvider defaultOpen={defaultOpen} className="h-svh min-h-0 overflow-hidden">
         <AppSidebar />
         {/*
           `min-w-0` is critical: SidebarInset is a flex item whose default
@@ -86,13 +87,15 @@ export default async function ProjectLayout({
           intrinsic min-width so wide children scroll inside their own
           containers instead of expanding the layout.
         */}
-        <SidebarInset className="min-w-0">
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
           <AppBar project={decoded} />
           {/* `pb-8` clears the fixed project footer (~28px) so the last
               row of content isn't occluded. `min-w-0` propagates the
               shrinkability one level deeper so the children block keeps
               the same constraint. */}
-          <div className="min-w-0 flex-1 pb-8">{children}</div>
+          <WorkspaceSplitOutlet>
+            <div className="min-h-0 min-w-0 flex-1 pb-8">{children}</div>
+          </WorkspaceSplitOutlet>
         </SidebarInset>
         <ProjectFooter project={decoded} />
       </ResizableSidebarProvider>

@@ -12,11 +12,8 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import {
-  TerminalManagerError,
-  attachExistingSession,
-} from '../../../../lib/terminal/manager'
 import { getRuntime } from '../../../../lib/runtime'
+import { attachExistingSession, TerminalManagerError } from '../../../../lib/terminal/manager'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +48,12 @@ export async function POST(req: NextRequest) {
   }
 
   const runtime = await getRuntime()
+  if (runtime.config.terminal?.tmuxEnabled === false) {
+    return NextResponse.json(
+      { error: { code: 'INTEGRATION_DISABLED', message: 'tmux integration is disabled' } },
+      { status: 404 },
+    )
+  }
   try {
     const session = await attachExistingSession({
       sessionName: parsed.data.sessionName,
@@ -67,14 +70,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof TerminalManagerError) {
       const status = err.code === 'BAD_REQUEST' ? 400 : 503
-      return NextResponse.json(
-        { error: { code: err.code, message: err.message } },
-        { status },
-      )
+      return NextResponse.json({ error: { code: err.code, message: err.message } }, { status })
     }
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

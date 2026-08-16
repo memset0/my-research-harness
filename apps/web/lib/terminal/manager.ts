@@ -1,18 +1,14 @@
-// ttyd subprocess orchestration with per-sessionName multi-port management.
+// ttyd subprocess orchestration with per-terminal-key multi-port management.
 //
-// Each (agent, project, scope, slug) tuple gets its own tmux session AND its
-// own ttyd process bound to a dynamically allocated loopback port. The
-// manager maintains `Map<sessionName, Entry>` keyed by the canonical session
-// name `memon-<agent>-<project>--<scope>--<slug>`. Concurrent sessions are
-// allowed; LRU eviction at `terminal.ttyd_max_concurrent` (config) keeps the
-// active count bounded, and an Idle TTL killer reaps ttyd processes whose
-// WebSocket has been idle for `terminal.ttyd_idle_ttl_minutes` minutes.
+// Tmux tuples get a canonical `memon-<agent>-<project>--<scope>--<slug>` key;
+// Herdr uses the singleton `memon-herdr` key because every browser view
+// attaches to the same Herdr server UI. Each key owns one ttyd process bound
+// to a dynamically allocated loopback port. LRU eviction and idle TTL reap
+// only ttyd client children.
 //
-// Lifecycle invariant: tmux session is durable. Neither LRU eviction, idle
-// TTL, nor `memon serve` restart kills tmux. Tmux sessions end only on (a)
-// explicit `tmux kill-session` (e.g. via the management page) or (b) the
-// user exiting the agent / shell from inside a connected ttyd (default tmux
-// behavior).
+// Lifecycle invariant: the backend is durable. Neither LRU eviction, idle
+// TTL, nor `memon serve` restart kills tmux sessions or the Herdr server.
+// Memon never invokes `herdr server stop`; Herdr owns its pane processes.
 //
 // Security model — three independent gates protect the writable terminal:
 //   1. Loopback bind: each ttyd listens on 127.0.0.1:<port> only.
@@ -23,9 +19,9 @@
 //   3. Next.js middleware HTTP Basic on every other dashboard route as
 //      defense-in-depth (`apps/web/middleware.ts`).
 
-import { spawn, type ChildProcess } from 'node:child_process'
-import { createServer } from 'node:net'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
+import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { AGENT_KINDS, type AgentKind } from '@memon/core'
@@ -40,6 +36,7 @@ export { AGENT_KINDS, type AgentKind }
 
 export const SCOPE_KINDS = ['exp', 'run', 'project'] as const
 export type ScopeKind = (typeof SCOPE_KINDS)[number]
+export type TerminalBackend = 'tmux' | 'herdr'
 
 /** Visible in tmux session names. `none` is rendered as `terminal`. */
 function agentToNameSegment(agent: AgentKind): string {
@@ -57,6 +54,7 @@ const PROJECT_RE = /^[A-Za-z0-9-]+$/
 const SLUG_RE = /^[A-Za-z0-9._-]+$/
 
 export interface ActiveSession {
+  backend?: TerminalBackend
   sessionName: string
   port: number
   startedAt: string
@@ -70,7 +68,7 @@ export interface ActiveSession {
 
 export class TerminalManagerError extends Error {
   constructor(
-    public code: 'BAD_REQUEST' | 'TTYD_UNAVAILABLE',
+    public code: 'BAD_REQUEST' | 'TTYD_UNAVAILABLE' | 'HERDR_UNAVAILABLE',
     message: string,
   ) {
     super(message)
@@ -79,6 +77,7 @@ export class TerminalManagerError extends Error {
 }
 
 interface Entry {
+  backend: TerminalBackend
   child: ChildProcess
   port: number
   sessionName: string
@@ -295,10 +294,7 @@ function ensureIdleTimer(state: GlobalState, ttlMinutes: number): void {
 
 // ---------- Conversation resume probe ----------
 
-async function probeResumeArgvTail(input: {
-  agent: AgentKind
-  cwd: string
-}): Promise<string[]> {
+async function probeResumeArgvTail(input: { agent: AgentKind; cwd: string }): Promise<string[]> {
   if (input.agent === 'none') return []
   try {
     if (input.agent === 'claude') {
@@ -355,6 +351,7 @@ function registerExitHandlers(state: GlobalState): void {
 
 function toPublic(e: Entry): ActiveSession {
   return {
+    backend: e.backend,
     sessionName: e.sessionName,
     port: e.port,
     startedAt: e.startedAt,
@@ -465,16 +462,7 @@ async function doStartSession(
     ...agentArgv,
     ...resumeTail,
   ]
-  const args = [
-    '-p',
-    String(port),
-    '-i',
-    '127.0.0.1',
-    '-b',
-    basePath,
-    '--writable',
-    ...tmuxTail,
-  ]
+  const args = ['-p', String(port), '-i', '127.0.0.1', '-b', basePath, '--writable', ...tmuxTail]
 
   const child = spawn(probe.path, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -511,6 +499,7 @@ async function doStartSession(
   registerExitHandlers(state)
 
   const entry: Entry = {
+    backend: 'tmux',
     child,
     port,
     sessionName,
@@ -667,6 +656,7 @@ async function doAttachSession(
   // matches raw-attach exactly).
   const parsed = parseSessionName(sessionName)
   const entry: Entry = {
+    backend: 'tmux',
     child,
     port,
     sessionName,
@@ -684,6 +674,272 @@ async function doAttachSession(
   return toPublic(entry)
 }
 
+// ---------- Herdr backend ----------
+
+export const HERDR_SESSION_NAME = 'memon-herdr'
+const HERDR_CLI_TIMEOUT_MS = 3_000
+const HERDR_CLI_MAX_OUTPUT = 1024 * 1024
+const HERDR_START_RETRY_COUNT = 20
+const HERDR_START_RETRY_MS = 100
+
+export interface HerdrWorkspaceTarget {
+  /** Exact visible Herdr workspace label to create or focus. */
+  label: string
+  /** Absolute cwd used only when the workspace must be created. */
+  cwd: string
+}
+
+export interface StartHerdrSessionInput {
+  /** Configured executable plus fixed prefix argv. */
+  cli: readonly string[]
+  /** Working directory for the Herdr TUI client process. */
+  cwd: string
+  target?: HerdrWorkspaceTarget
+  maxConcurrent: number
+  idleTtlMinutes: number
+}
+
+interface HerdrWorkspaceRow {
+  workspace_id: string
+  label: string
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function runHerdrCli(cli: readonly string[], args: readonly string[]): Promise<string> {
+  const [executable, ...prefixArgs] = cli
+  if (!executable) {
+    throw new TerminalManagerError('BAD_REQUEST', 'terminal.herdr.cli must not be empty')
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    let settled = false
+    let stdout = ''
+    let stderr = ''
+    let timer: NodeJS.Timeout | undefined
+    const child = spawn(executable, [...prefixArgs, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    })
+
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      if (error) reject(error)
+      else resolve(stdout)
+    }
+    const append = (current: string, chunk: Buffer): string => {
+      if (current.length >= HERDR_CLI_MAX_OUTPUT) return current
+      return (current + chunk.toString('utf8')).slice(0, HERDR_CLI_MAX_OUTPUT)
+    }
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout = append(stdout, chunk)
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr = append(stderr, chunk)
+    })
+    child.once('error', (err) => {
+      finish(
+        new TerminalManagerError(
+          'HERDR_UNAVAILABLE',
+          `failed to run Herdr CLI ${JSON.stringify(executable)}: ${err.message}`,
+        ),
+      )
+    })
+    child.once('close', (code, signal) => {
+      if (code === 0) {
+        finish()
+        return
+      }
+      finish(
+        new TerminalManagerError(
+          'HERDR_UNAVAILABLE',
+          `Herdr CLI exited ${code ?? signal}: ${stderr.trim() || 'no stderr output'}`,
+        ),
+      )
+    })
+    timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      finish(
+        new TerminalManagerError(
+          'HERDR_UNAVAILABLE',
+          `Herdr CLI timed out after ${HERDR_CLI_TIMEOUT_MS}ms`,
+        ),
+      )
+    }, HERDR_CLI_TIMEOUT_MS)
+    timer.unref?.()
+  })
+}
+
+function parseHerdrWorkspaceList(stdout: string): HerdrWorkspaceRow[] {
+  let value: unknown
+  try {
+    value = JSON.parse(stdout)
+  } catch {
+    throw new TerminalManagerError(
+      'HERDR_UNAVAILABLE',
+      'Herdr workspace list returned invalid JSON',
+    )
+  }
+  const root = value as {
+    result?: { workspaces?: unknown }
+    workspaces?: unknown
+  }
+  const rows = root?.result?.workspaces ?? root?.workspaces ?? (Array.isArray(value) ? value : null)
+  if (!Array.isArray(rows)) {
+    throw new TerminalManagerError(
+      'HERDR_UNAVAILABLE',
+      'Herdr workspace list response did not contain workspaces',
+    )
+  }
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== 'object') return []
+    const candidate = row as { workspace_id?: unknown; label?: unknown }
+    return typeof candidate.workspace_id === 'string' && typeof candidate.label === 'string'
+      ? [{ workspace_id: candidate.workspace_id, label: candidate.label }]
+      : []
+  })
+}
+
+async function ensureHerdrWorkspace(
+  cli: readonly string[],
+  target: HerdrWorkspaceTarget,
+): Promise<void> {
+  let rows: HerdrWorkspaceRow[] | null = null
+  let lastError: unknown
+  // The first ttyd client may still be bringing up Herdr's background server.
+  for (let attempt = 0; attempt < HERDR_START_RETRY_COUNT; attempt++) {
+    try {
+      rows = parseHerdrWorkspaceList(await runHerdrCli(cli, ['workspace', 'list']))
+      break
+    } catch (err) {
+      lastError = err
+      if (attempt + 1 < HERDR_START_RETRY_COUNT) await delay(HERDR_START_RETRY_MS)
+    }
+  }
+  if (!rows) throw lastError
+
+  const existing = rows.find((workspace) => workspace.label === target.label)
+  if (existing) {
+    await runHerdrCli(cli, ['workspace', 'focus', existing.workspace_id])
+    return
+  }
+  await runHerdrCli(cli, [
+    'workspace',
+    'create',
+    '--cwd',
+    target.cwd,
+    '--label',
+    target.label,
+    '--focus',
+  ])
+}
+
+/**
+ * Start or reuse the single browser-attached Herdr TUI. Herdr, not memon,
+ * owns the server and every pane process; this manager only owns the ttyd
+ * client that renders the TUI.
+ */
+export async function startHerdrSession(input: StartHerdrSessionInput): Promise<ActiveSession> {
+  if (input.cli.length === 0 || input.cli.some((arg) => arg.length === 0)) {
+    throw new TerminalManagerError(
+      'BAD_REQUEST',
+      'terminal.herdr.cli must be a non-empty argv of non-empty strings',
+    )
+  }
+  const state = getState()
+  ensureIdleTimer(state, input.idleTtlMinutes)
+  const previous = state.startChains.get(HERDR_SESSION_NAME) ?? Promise.resolve()
+  const mine = previous.catch(() => {}).then(() => doStartHerdrSession(state, input))
+  state.startChains.set(
+    HERDR_SESSION_NAME,
+    mine.catch(() => {}),
+  )
+  return mine
+}
+
+async function doStartHerdrSession(
+  state: GlobalState,
+  input: StartHerdrSessionInput,
+): Promise<ActiveSession> {
+  let entry = state.sessions.get(HERDR_SESSION_NAME)
+  if (!entry || entry.child.killed || entry.child.exitCode !== null) {
+    if (entry) state.sessions.delete(HERDR_SESSION_NAME)
+    while (state.sessions.size >= input.maxConcurrent) await evictOnce(state)
+
+    const probe = await probeTtyd()
+    if (!probe.available || !probe.path) {
+      throw new TerminalManagerError(
+        'TTYD_UNAVAILABLE',
+        probe.suggestion ?? 'ttyd is not installed; POST /api/terminal/install',
+      )
+    }
+    const port = await allocatePort(state)
+    const args = [
+      '-p',
+      String(port),
+      '-i',
+      '127.0.0.1',
+      '-b',
+      `/api/terminal/proxy/${HERDR_SESSION_NAME}`,
+      '--writable',
+      ...input.cli,
+    ]
+    const child = spawn(probe.path, args, {
+      cwd: input.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    })
+    const warnings: string[] = []
+    let stderrBuf = ''
+    const onStderr = (chunk: Buffer) => {
+      stderrBuf += chunk.toString('utf8')
+      if (stderrBuf.length > 200) child.stderr?.off('data', onStderr)
+    }
+    child.stderr?.on('data', onStderr)
+    let earlyExit = false
+    child.once('exit', (code, signal) => {
+      earlyExit = true
+      const current = state.sessions.get(HERDR_SESSION_NAME)
+      if (current?.child === child) state.sessions.delete(HERDR_SESSION_NAME)
+      if (code !== 0 && stderrBuf) {
+        warnings.push(`ttyd exited early (${code ?? signal}): ${stderrBuf.slice(0, 200)}`)
+      }
+    })
+    await delay(500)
+    if (earlyExit) {
+      throw new TerminalManagerError(
+        'HERDR_UNAVAILABLE',
+        `Herdr ttyd failed to start: ${stderrBuf.slice(0, 200) || 'no stderr output'}`,
+      )
+    }
+    registerExitHandlers(state)
+    entry = {
+      backend: 'herdr',
+      child,
+      port,
+      sessionName: HERDR_SESSION_NAME,
+      agent: 'none',
+      project: '',
+      scope: 'project',
+      slug: 'herdr',
+      startedAt: new Date().toISOString(),
+      lastActiveAtMs: Date.now(),
+      wsConnections: 0,
+      warnings,
+    }
+    state.sessions.set(HERDR_SESSION_NAME, entry)
+  } else {
+    entry.lastActiveAtMs = Date.now()
+  }
+
+  if (input.target) await ensureHerdrWorkspace(input.cli, input.target)
+  return toPublic(entry)
+}
+
 export async function stopSession(sessionName: string): Promise<{ stopped: boolean }> {
   const state = getState()
   const e = state.sessions.get(sessionName)
@@ -697,13 +953,9 @@ export function listSessions(): ActiveSession[] {
   return Array.from(getState().sessions.values()).map(toPublic)
 }
 
-export function lookupSession(
-  sessionName: string,
-): { port: number; lastActiveAt: string } | null {
+export function lookupSession(sessionName: string): { port: number; lastActiveAt: string } | null {
   const e = getState().sessions.get(sessionName)
-  return e
-    ? { port: e.port, lastActiveAt: new Date(e.lastActiveAtMs).toISOString() }
-    : null
+  return e ? { port: e.port, lastActiveAt: new Date(e.lastActiveAtMs).toISOString() } : null
 }
 
 /** Bump activity time on any HTTP hit; used by the proxy. */

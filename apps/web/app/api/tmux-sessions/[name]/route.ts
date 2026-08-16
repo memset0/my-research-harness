@@ -9,20 +9,14 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
-import {
-  getEnrichedSession,
-  killTmuxSessionByName,
-  tmuxHasSession,
-} from '../../../../lib/terminal/tmux-discover'
 
 export const dynamic = 'force-dynamic'
 
 const NAME_RE = /^memon-[A-Za-z0-9._-]+$/
 
-export async function GET(
-  _req: NextRequest,
-  ctx: { params: Promise<{ name: string }> },
-) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
+  const rt = await getRuntime()
+  if (rt.config.terminal?.tmuxEnabled === false) return tmuxDisabled()
   const { name: rawName } = await ctx.params
   const name = decodeURIComponent(rawName)
 
@@ -33,7 +27,7 @@ export async function GET(
     )
   }
 
-  const rt = await getRuntime()
+  const { getEnrichedSession } = await import('../../../../lib/terminal/tmux-discover')
   const row = await getEnrichedSession(rt, name)
   if (!row) {
     return NextResponse.json(
@@ -44,10 +38,9 @@ export async function GET(
   return NextResponse.json({ row })
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  ctx: { params: Promise<{ name: string }> },
-) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
+  const rt = await getRuntime()
+  if (rt.config.terminal?.tmuxEnabled === false) return tmuxDisabled()
   const { name: rawName } = await ctx.params
   const name = decodeURIComponent(rawName)
 
@@ -58,6 +51,9 @@ export async function DELETE(
     )
   }
 
+  const { killTmuxSessionByName, tmuxHasSession } = await import(
+    '../../../../lib/terminal/tmux-discover'
+  )
   if (!(await tmuxHasSession(name))) {
     return NextResponse.json(
       { error: { code: 'NOT_FOUND', message: 'tmux session not found' } },
@@ -69,9 +65,13 @@ export async function DELETE(
     await killTmuxSessionByName(name)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
+}
+
+function tmuxDisabled() {
+  return NextResponse.json(
+    { error: { code: 'INTEGRATION_DISABLED', message: 'tmux integration is disabled' } },
+    { status: 404 },
+  )
 }

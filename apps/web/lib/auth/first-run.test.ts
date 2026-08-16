@@ -194,6 +194,7 @@ describe('ensureAuthInitialised', () => {
       projects: [{ name: 'a', root: dir, include: [], exclude: [] }],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
       terminal: {
+        tmuxEnabled: true,
         ttydMaxConcurrent: 16,
         ttydIdleTtlMinutes: 30,
         paneInfoActivePollMs: 5000,

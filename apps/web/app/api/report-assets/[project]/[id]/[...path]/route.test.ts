@@ -18,6 +18,8 @@ beforeAll(async () => {
   root = await fs.mkdtemp(join(tmpdir(), 'memon-report-assets-route-'))
   reportsDir = join(root, 'docs', 'reports')
   const bundle = join(reportsDir, 'R0002-rich')
+  const nestedView = join(bundle, 'views', 'loss-curves')
+  await fs.mkdir(join(nestedView, 'assets'), { recursive: true })
   await fs.mkdir(join(bundle, 'data'), { recursive: true })
   await fs.writeFile(join(bundle, 'README.md'), '# Rich report\n', 'utf8')
   await fs.writeFile(
@@ -26,8 +28,15 @@ beforeAll(async () => {
     'utf8',
   )
   await fs.writeFile(join(bundle, 'data', 'metrics.json'), '{"loss": 1}', 'utf8')
+  await fs.writeFile(
+    join(nestedView, 'index.html'),
+    '<link rel="stylesheet" href="./assets/view.css"><script type="module">fetch("../../data/metrics.json")</script>',
+    'utf8',
+  )
+  await fs.writeFile(join(nestedView, 'assets', 'view.css'), 'body { margin: 0; }', 'utf8')
   await fs.writeFile(join(root, 'outside.json'), '{"secret": true}', 'utf8')
   await fs.symlink(join(root, 'outside.json'), join(bundle, 'leak.json'))
+  await fs.symlink(join(root, 'outside.json'), join(nestedView, 'leak.json'))
   vi.mocked(getRuntime).mockResolvedValue({
     reportsDir: (project: string) => (project === 'research' ? reportsDir : null),
   } as never)
@@ -61,6 +70,31 @@ describe('GET directory Report assets', () => {
     expect(json.status).toBe(200)
     expect(json.headers.get('content-type')).toBe('application/json; charset=utf-8')
     expect(await json.json()).toEqual({ loss: 1 })
+  })
+
+  it('serves a nested delegated view with view-local assets and writer-owned root JSON', async () => {
+    const html = await request(['views', 'loss-curves', 'index.html'])
+    expect(html.status).toBe(200)
+    expect(html.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(await html.text()).toContain('fetch("../../data/metrics.json")')
+
+    const entryUrl =
+      'http://localhost/api/report-assets/research/R0002/views/loss-curves/index.html'
+    expect(new URL('./assets/view.css', entryUrl).pathname).toBe(
+      '/api/report-assets/research/R0002/views/loss-curves/assets/view.css',
+    )
+    expect(new URL('../../data/metrics.json', entryUrl).pathname).toBe(
+      '/api/report-assets/research/R0002/data/metrics.json',
+    )
+
+    const css = await request(['views', 'loss-curves', 'assets', 'view.css'])
+    expect(css.status).toBe(200)
+    expect(css.headers.get('content-type')).toBe('text/css; charset=utf-8')
+    expect(await css.text()).toContain('margin: 0')
+
+    const json = await request(['data', 'metrics.json'])
+    expect(await json.json()).toEqual({ loss: 1 })
+    expect((await request(['views', 'loss-curves', 'leak.json'])).status).toBe(403)
   })
 
   it('rejects encoded traversal, escaping symlinks, directory roots, and README-as-asset', async () => {

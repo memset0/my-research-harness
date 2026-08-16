@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,6 +30,7 @@ import {
   fetchProjects,
   fetchSlurmStatus,
 } from '../lib/api'
+import { __resetRuntimeConfigForTests } from '../lib/runtime-config'
 import { AppSidebar } from './app-sidebar'
 import { type SessionInfo, SessionProvider } from './session-provider'
 import { SidebarProvider } from './ui/sidebar'
@@ -66,6 +69,8 @@ function makeExpDoc(id: string, effectiveUpdatedAt: string) {
 describe('AppSidebar', () => {
   beforeEach(() => {
     localStorage.clear()
+    document.getElementById('memon-runtime-config')?.remove()
+    __resetRuntimeConfigForTests()
     vi.clearAllMocks()
     vi.mocked(fetchProjects).mockResolvedValue({
       projects: [
@@ -103,6 +108,23 @@ describe('AppSidebar', () => {
       unstaged: [],
       untracked: [],
     })
+  })
+
+  it('shows Herdr and hides Manage tmux when only Herdr is enabled', async () => {
+    const script = document.createElement('script')
+    script.id = 'memon-runtime-config'
+    script.type = 'application/json'
+    script.textContent = JSON.stringify({
+      gitStatus: { intervalMs: 10_000 },
+      terminal: { tmuxEnabled: false, herdrEnabled: true },
+    })
+    document.head.appendChild(script)
+    __resetRuntimeConfigForTests()
+
+    setup()
+    expect(await screen.findByText('Open Herdr')).toBeInTheDocument()
+    expect(screen.queryByText('Manage tmux')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Herdr in new window' })).toBeInTheDocument()
   })
 
   function setup(session: SessionInfo = { role: 'owner', scopeProjects: [] }) {

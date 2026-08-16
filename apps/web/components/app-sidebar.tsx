@@ -1,17 +1,29 @@
 'use client'
 
+import { useQuery } from '@tanstack/react-query'
+import { ExternalLink, Loader2, PanelsTopLeft, Plus, Terminal } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2, Plus, Terminal } from 'lucide-react'
 import {
   checkTerminal,
+  type ExperimentDocSummary,
   fetchExperimentDocs,
   fetchGitStatus,
   fetchProjects,
-  type ExperimentDocSummary,
 } from '../lib/api'
+import { useRuntimeConfig } from '../lib/runtime-config'
+import { cn } from '../lib/utils'
+import { GitDiffDialog } from './git-diff-dialog'
+import { GitStatusPill } from './git-status-pill'
+import { useSession } from './session-provider'
+import { SidebarResizeHandle } from './sidebar-resize-handle'
+import { SlurmStatusWidget } from './slurm-status-widget'
+import { useTerminalDrawer } from './terminal-drawer-provider'
+import { TerminalSheet } from './terminal-sheet'
+import { ThemeToggle } from './theme-toggle'
+import { Button } from './ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
   Sidebar,
   SidebarContent,
@@ -21,34 +33,18 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from './ui/sidebar'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from './ui/collapsible'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip'
-import { Button } from './ui/button'
-import { cn } from '../lib/utils'
-import { useSession } from './session-provider'
-import { SidebarResizeHandle } from './sidebar-resize-handle'
-import { SlurmStatusWidget } from './slurm-status-widget'
-import { GitDiffDialog } from './git-diff-dialog'
-import { GitStatusPill } from './git-status-pill'
-import { TerminalSheet } from './terminal-sheet'
-import { ThemeToggle } from './theme-toggle'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
 export function AppSidebar() {
   const { role, scopeProjects } = useSession()
+  const { terminal } = useRuntimeConfig()
+  const terminalDrawer = useTerminalDrawer()
   // Which project's git-status dialog (if any) is open, opened from one
   // of the sidebar's compact git pills. `null` = closed.
   const [diffDialogProject, setDiffDialogProject] = useState<string | null>(null)
@@ -56,9 +52,7 @@ export function AppSidebar() {
   const activeProject = decodeURIComponent(pathname.match(/^\/p\/([^/]+)/)?.[1] ?? '')
   // v3 exp-doc detail URLs: `/p/<project>/e/<E-id>` (and the alias
   // `/p/<project>/r/<run-id>` already redirects to the same exp page).
-  const activeExpDocId = decodeURIComponent(
-    pathname.match(/\/e\/([^/]+)/)?.[1] ?? '',
-  )
+  const activeExpDocId = decodeURIComponent(pathname.match(/\/e\/([^/]+)/)?.[1] ?? '')
 
   const { data: projectsData } = useQuery({
     queryKey: ['projects'],
@@ -68,9 +62,7 @@ export function AppSidebar() {
   const allProjects = projectsData?.projects ?? []
   // Viewer sessions: restrict to scope-set projects. Owner / anon: full list.
   const projects =
-    role === 'viewer'
-      ? allProjects.filter((p) => scopeProjects.includes(p.name))
-      : allProjects
+    role === 'viewer' ? allProjects.filter((p) => scopeProjects.includes(p.name)) : allProjects
 
   // Hub mode: when more than one node is connected, label each project with its
   // node so clusters are distinguishable. Single-node / standalone stays clean.
@@ -194,14 +186,37 @@ export function AppSidebar() {
           {role !== 'viewer' && (
             <>
               <SlurmStatusWidget />
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
-                  <Link href="/manage/tmux">
-                    <Terminal className="size-4" />
-                    <span>Manage tmux</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {terminal.herdrEnabled && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton size="sm" onClick={() => terminalDrawer.openHerdr()}>
+                    <PanelsTopLeft className="size-4" />
+                    <span>Open Herdr</span>
+                  </SidebarMenuButton>
+                  <SidebarMenuAction
+                    aria-label="Open Herdr in new window"
+                    title="Open Herdr in new window"
+                    onClick={() => {
+                      window.open(
+                        '/terminal-popup?integration=herdr',
+                        'memon-popup-memon-herdr',
+                        'popup,width=1200,height=800',
+                      )
+                    }}
+                  >
+                    <ExternalLink className="size-3.5" />
+                  </SidebarMenuAction>
+                </SidebarMenuItem>
+              )}
+              {terminal.tmuxEnabled && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
+                    <Link href="/manage/tmux">
+                      <Terminal className="size-4" />
+                      <span>Manage tmux</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </>
           )}
         </SidebarMenu>
@@ -389,18 +404,10 @@ function ProjectGroup({
                 }}
                 className="shrink-0 cursor-pointer rounded px-1 hover:bg-accent hover:text-accent-foreground"
               >
-                <GitStatusPill
-                  project={name}
-                  variant="compact"
-                  className="shrink-0"
-                />
+                <GitStatusPill project={name} variant="compact" className="shrink-0" />
               </span>
             ) : (
-              <GitStatusPill
-                project={name}
-                variant="compact"
-                className="shrink-0"
-              />
+              <GitStatusPill project={name} variant="compact" className="shrink-0" />
             )}
           </CollapsibleTrigger>
         </SidebarGroupLabel>
@@ -426,10 +433,7 @@ function ProjectGroup({
           inner scroll div with `overflow-y-auto` handles content
           taller than the available space.
         */}
-        <CollapsibleContent
-          forceMount
-          className="flex-1 min-h-0 overflow-hidden"
-        >
+        <CollapsibleContent forceMount className="flex-1 min-h-0 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <SidebarGroupContent>
               <ProjectExperimentDocs project={name} activeId={activeExpDocId} enabled={isOpen} />
@@ -605,6 +609,7 @@ function ProjectExperimentDocs({
  *  link does not also navigate when the icon is clicked. */
 function ExpRowTerminalButton({ project, expId }: { project: string; expId: string }) {
   const { role } = useSession()
+  const { terminal } = useRuntimeConfig()
   const [sheetOpen, setSheetOpen] = useState(false)
 
   // Probe only when the user is the owner — viewers can't use the shell
@@ -614,10 +619,10 @@ function ExpRowTerminalButton({ project, expId }: { project: string; expId: stri
     queryKey: ['terminal', 'check'],
     queryFn: checkTerminal,
     staleTime: 10_000,
-    enabled: role === 'owner',
+    enabled: role === 'owner' && terminal.tmuxEnabled,
   })
 
-  if (role === 'viewer') return null
+  if (role === 'viewer' || !terminal.tmuxEnabled) return null
   if (!probe) return null
 
   const onIconClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -675,9 +680,7 @@ function ExpRowTerminalButton({ project, expId }: { project: string; expId: stri
           </span>
         </TooltipTrigger>
         <TooltipContent>
-          <span className="font-mono text-[11px]">
-            {probe.suggestion ?? 'ttyd unavailable'}
-          </span>
+          <span className="font-mono text-[11px]">{probe.suggestion ?? 'ttyd unavailable'}</span>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

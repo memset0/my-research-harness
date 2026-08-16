@@ -5,19 +5,25 @@
 
 'use client'
 
-import { useMemo } from 'react'
+import { createContext, createElement, useContext, useMemo } from 'react'
 
 export interface RuntimeConfigPayload {
   gitStatus: {
     intervalMs: number
   }
+  terminal: {
+    tmuxEnabled: boolean
+    herdrEnabled: boolean
+  }
 }
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfigPayload = {
   gitStatus: { intervalMs: 10_000 },
+  terminal: { tmuxEnabled: true, herdrEnabled: false },
 }
 
 let cached: RuntimeConfigPayload | null = null
+const RuntimeConfigContext = createContext<RuntimeConfigPayload | null>(null)
 
 export function readRuntimeConfig(): RuntimeConfigPayload {
   if (cached) return cached
@@ -43,6 +49,16 @@ export function readRuntimeConfig(): RuntimeConfigPayload {
             ? intervalMs
             : DEFAULT_RUNTIME_CONFIG.gitStatus.intervalMs,
       },
+      terminal: {
+        tmuxEnabled:
+          typeof parsed.terminal?.tmuxEnabled === 'boolean'
+            ? parsed.terminal.tmuxEnabled
+            : DEFAULT_RUNTIME_CONFIG.terminal.tmuxEnabled,
+        herdrEnabled:
+          typeof parsed.terminal?.herdrEnabled === 'boolean'
+            ? parsed.terminal.herdrEnabled
+            : DEFAULT_RUNTIME_CONFIG.terminal.herdrEnabled,
+      },
     }
     return cached
   } catch {
@@ -57,6 +73,17 @@ export function __resetRuntimeConfigForTests(): void {
 }
 
 export function useRuntimeConfig(): RuntimeConfigPayload {
-  // Stable reference across renders.
-  return useMemo(() => readRuntimeConfig(), [])
+  const provided = useContext(RuntimeConfigContext)
+  const fallback = useMemo(() => readRuntimeConfig(), [])
+  return provided ?? fallback
+}
+
+export function RuntimeConfigProvider({
+  value,
+  children,
+}: {
+  value: RuntimeConfigPayload
+  children: React.ReactNode
+}) {
+  return createElement(RuntimeConfigContext.Provider, { value }, children)
 }

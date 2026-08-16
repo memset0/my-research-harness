@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import {
-  __resetRuntimeConfigForTests,
-  readRuntimeConfig,
-} from './runtime-config'
+import { __resetRuntimeConfigForTests, readRuntimeConfig } from './runtime-config'
 
 function injectScript(payload: unknown): void {
   const existing = document.getElementById('memon-runtime-config')
@@ -27,12 +24,20 @@ afterEach(() => {
 
 describe('readRuntimeConfig', () => {
   it('returns the injected intervalMs when the script tag is present', () => {
-    injectScript({ gitStatus: { intervalMs: 30_000 } })
-    expect(readRuntimeConfig().gitStatus.intervalMs).toBe(30_000)
+    injectScript({
+      gitStatus: { intervalMs: 30_000 },
+      terminal: { tmuxEnabled: false, herdrEnabled: true },
+    })
+    const config = readRuntimeConfig()
+    expect(config.gitStatus.intervalMs).toBe(30_000)
+    expect(config.terminal).toEqual({ tmuxEnabled: false, herdrEnabled: true })
   })
 
   it('falls back to 10_000 when the script tag is absent', () => {
-    expect(readRuntimeConfig().gitStatus.intervalMs).toBe(10_000)
+    expect(readRuntimeConfig()).toEqual({
+      gitStatus: { intervalMs: 10_000 },
+      terminal: { tmuxEnabled: true, herdrEnabled: false },
+    })
   })
 
   it('falls back to 10_000 when the script tag holds invalid JSON', () => {

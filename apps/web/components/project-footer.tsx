@@ -6,21 +6,23 @@
 // indents from the left by `--sidebar-width` so it doesn't sit over the
 // sidebar; on mobile the sidebar is off-canvas, so full-width is correct.
 
-import { useCallback, useState } from 'react'
-import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { History } from 'lucide-react'
+import Link from 'next/link'
+import { type CSSProperties, useCallback, useState } from 'react'
 import { fetchGitStatus } from '../lib/api'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitHistoryDialog } from './git-history-dialog'
 import { GitStatusPill } from './git-status-pill'
+import { useWorkspaceSplitWidth } from './terminal-drawer-provider'
 
 export interface ProjectFooterProps {
   project: string
 }
 
 export function ProjectFooter({ project }: ProjectFooterProps) {
+  const workspaceSplitWidth = useWorkspaceSplitWidth()
   // The two dialogs are mutually exclusive — opening one closes the other.
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false)
@@ -48,8 +50,13 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
     <>
       <footer
         data-slot="project-footer"
+        style={
+          {
+            '--workspace-split-width': `${workspaceSplitWidth}px`,
+          } as CSSProperties
+        }
         className={cn(
-          'fixed inset-x-0 bottom-0 z-40 flex h-7 items-center gap-3 border-t bg-card px-3 text-xs text-muted-foreground',
+          'fixed bottom-0 left-0 right-[var(--workspace-split-width,0px)] z-40 flex h-7 items-center gap-3 border-t bg-card px-3 text-xs text-muted-foreground',
           'md:left-[var(--sidebar-width)]',
         )}
       >

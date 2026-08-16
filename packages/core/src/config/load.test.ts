@@ -516,6 +516,7 @@ projects:
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     const cfg = await loadConfig({ cwd: dir })
     expect(cfg!.terminal).toEqual({
+      tmuxEnabled: true,
       ttydMaxConcurrent: 16,
       ttydIdleTtlMinutes: 30,
       paneInfoActivePollMs: 5_000,
@@ -534,6 +535,7 @@ terminal:
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     const cfg = await loadConfig({ cwd: dir })
     expect(cfg!.terminal).toEqual({
+      tmuxEnabled: true,
       ttydMaxConcurrent: 8,
       ttydIdleTtlMinutes: 30,
       paneInfoActivePollMs: 5_000,
@@ -552,6 +554,35 @@ terminal:
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     const cfg = await loadConfig({ cwd: dir })
     expect(cfg!.terminal.ttydIdleTtlMinutes).toBe(0)
+  })
+
+  it('parses optional tmux enablement and Herdr CLI argv', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  tmux_enabled: false
+  herdr:
+    cli: ["/opt/herdr/bin/herdr", "--fixed-prefix"]
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.terminal.tmuxEnabled).toBe(false)
+    expect(cfg!.terminal.herdr).toEqual({
+      cli: ['/opt/herdr/bin/herdr', '--fixed-prefix'],
+    })
+  })
+
+  it('rejects an empty Herdr CLI argv', async () => {
+    const yaml = `
+projects:
+  - { name: a, root: ./a }
+terminal:
+  herdr:
+    cli: []
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 
   it('rejects negative ttyd_max_concurrent', async () => {
