@@ -390,6 +390,83 @@ describe('ExperimentResultsTable', () => {
     expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveClass('bg-amber-50')
   })
 
+  it('requires explicit confirmation before resetting saved and temporary view state', async () => {
+    const user = userEvent.setup()
+    renderResults('E0001-reset-confirmation')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Show Notes column' }))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum lines per results cell' }), {
+      target: { value: '3' },
+    })
+    await addDefaultSort(user, 'Final loss', 'Large to small (descending)')
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Learning rate: default sort; activate for temporary ascending',
+      }),
+    )
+
+    const preferenceKey = 'memon:results-table:research:E0001-reset-confirmation:preferences'
+    await waitFor(() => {
+      const preferences = JSON.parse(window.localStorage.getItem(preferenceKey) ?? '{}') as {
+        defaultSortRules?: unknown[]
+        hiddenColumnIds?: string[]
+        maxLines?: number
+      }
+      expect(preferences.defaultSortRules).toHaveLength(1)
+      expect(preferences.hiddenColumnIds).toContain('schema:notes')
+      expect(preferences.maxLines).toBe(3)
+    })
+    const configuredPreferences = window.localStorage.getItem(preferenceKey)
+    const resetButton = screen.getByRole('button', { name: 'Reset view' })
+    const notesCheckbox = screen.getByRole('checkbox', { name: 'Show Notes column' })
+    const maxLinesInput = screen.getByRole('spinbutton', {
+      name: 'Maximum lines per results cell',
+    })
+    const temporarySortBadge = screen.getByText('Temporary · Learning rate ↑')
+
+    await user.click(resetButton)
+    const dialog = await screen.findByRole('dialog', { name: 'Reset Results view?' })
+    expect(dialog).toHaveTextContent('saved default sort')
+    expect(dialog).toHaveTextContent('checkbox visibility')
+    expect(dialog).toHaveTextContent('This cannot be undone')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus())
+    expect(window.localStorage.getItem(preferenceKey)).toBe(configuredPreferences)
+    expect(notesCheckbox).not.toBeChecked()
+    expect(maxLinesInput).toHaveValue(3)
+    expect(temporarySortBadge).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Reset Results view?' })).not.toBeInTheDocument()
+    expect(window.localStorage.getItem(preferenceKey)).toBe(configuredPreferences)
+
+    await user.click(resetButton)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Reset Results view?' })).not.toBeInTheDocument()
+    expect(window.localStorage.getItem(preferenceKey)).toBe(configuredPreferences)
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).not.toBeChecked()
+
+    await user.click(resetButton)
+    await user.click(screen.getByRole('button', { name: 'Confirm reset Results view' }))
+    expect(screen.queryByRole('dialog', { name: 'Reset Results view?' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).toBeChecked()
+    expect(screen.getByRole('spinbutton', { name: 'Maximum lines per results cell' })).toHaveValue(
+      1,
+    )
+    expect(screen.queryByText('Temporary · Learning rate ↑')).not.toBeInTheDocument()
+    expect(resetButton).toBeDisabled()
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(preferenceKey) ?? '{}')).toEqual({
+        hiddenColumnIds: [],
+        columnOrderIds: [],
+        maxLines: 1,
+        defaultSortRules: [],
+        pinnedColumnIds: { left: [], right: [] },
+        rowFilters: [],
+        rowOverrides: {},
+      }),
+    )
+  })
+
   it('persists an ordered default sort chain and keeps header sort temporary', async () => {
     const user = userEvent.setup()
     const first = renderResults('E0001-default-sort')

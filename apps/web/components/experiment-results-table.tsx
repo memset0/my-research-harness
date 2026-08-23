@@ -52,6 +52,16 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from './ui/context-menu'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from './ui/dialog'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -173,10 +183,12 @@ export function ExperimentResultsTable({
   const [showAllColumns, setShowAllColumns] = useState(false)
   const [showAllRows, setShowAllRows] = useState(false)
   const [temporarySort, setTemporarySort] = useState<Omit<SortRule, 'id'> | null>(null)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DragItem | null>(null)
   const rowFilterSequence = useRef(0)
   const sortRuleSequence = useRef(0)
+  const resetCancelRef = useRef<HTMLButtonElement>(null)
 
   const preferences = normalizeResultsTablePreferences(
     storedPreferences,
@@ -255,6 +267,18 @@ export function ExperimentResultsTable({
     [columns, defaultSortRules, filteredVariants, temporarySort],
   )
   const hasVisibleRows = filteredVariants.length > 0
+  const resetDisabled =
+    hiddenColumnIds.length === 0 &&
+    !hasCustomColumnOrder &&
+    maxLines === 1 &&
+    defaultSortRules.length === 0 &&
+    temporarySort === null &&
+    pinnedColumnIds.left.length === 0 &&
+    pinnedColumnIds.right.length === 0 &&
+    rowFilters.length === 0 &&
+    Object.keys(rowOverrides).length === 0 &&
+    !showAllColumns &&
+    !showAllRows
 
   const updatePreferences = (
     update:
@@ -575,28 +599,48 @@ export function ExperimentResultsTable({
               className="w-16 tabular-nums"
               aria-label="Maximum lines per results cell"
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={resetView}
-              disabled={
-                hiddenColumnIds.length === 0 &&
-                !hasCustomColumnOrder &&
-                maxLines === 1 &&
-                defaultSortRules.length === 0 &&
-                temporarySort === null &&
-                pinnedColumnIds.left.length === 0 &&
-                pinnedColumnIds.right.length === 0 &&
-                rowFilters.length === 0 &&
-                Object.keys(rowOverrides).length === 0 &&
-                !showAllColumns &&
-                !showAllRows
-              }
-            >
-              <RotateCcw data-icon="inline-start" />
-              Reset view
-            </Button>
+            <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+              <DialogTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" disabled={resetDisabled}>
+                  <RotateCcw data-icon="inline-start" />
+                  Reset view
+                </Button>
+              </DialogTrigger>
+              <DialogContent
+                onOpenAutoFocus={(event) => {
+                  event.preventDefault()
+                  resetCancelRef.current?.focus()
+                }}
+              >
+                <DialogHeader>
+                  <DialogTitle>Reset Results view?</DialogTitle>
+                  <DialogDescription>
+                    This clears your saved default sort, row filters, checkbox visibility, column
+                    order, pinned columns, row overrides, maximum line count, and temporary view and
+                    sort controls. This cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button ref={resetCancelRef} type="button" variant="outline">
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    aria-label="Confirm reset Results view"
+                    onClick={() => {
+                      resetView()
+                      setResetDialogOpen(false)
+                    }}
+                  >
+                    <RotateCcw data-icon="inline-start" />
+                    Reset view
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
