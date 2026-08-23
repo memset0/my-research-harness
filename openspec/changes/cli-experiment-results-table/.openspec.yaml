@@ -2,3 +2,4 @@ id: cli-experiment-results-table
 title: CLI command for reading experiment results as a selectable table
 created: 2026-08-23
 status: proposed
+schema: spec-driven

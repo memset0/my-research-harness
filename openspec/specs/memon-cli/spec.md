@@ -833,24 +833,26 @@ The command SHALL be safe to call from skill preflight without side effects.
 The CLI SHALL expose `memon experiment` as a parent command with the following subcommands. All write subcommands SHALL emit JSON status objects on stdout (`{"ok":true, ...}`) on success and structured error JSON on failure; all read subcommands SHALL default to JSON output and support `--format human` for tabular output.
 
 ```
-memon experiment ls          [--project-root <p>]
-memon experiment show        <id-or-slug> [--project-root <p>]
-memon experiment create      <slug> [--title <t>] [--hypotheses <H,H,...>]
-                             [--from-run <run-dir>] [--project-root <p>]
-memon experiment rename      <id-or-slug> <new-slug> [--project-root <p>]
-memon experiment link        <id> <run-dir-or-id> [--project-root <p>]
-memon experiment unlink      <id> <run-dir-or-id> [--project-root <p>]
-memon experiment delete      <id> [--force] [--project-root <p>]
-memon experiment warning add     <id> [--run <run-dir>] --category <cat>
+memon experiment ls               [--project-root <p>]
+memon experiment show             <id-or-slug> [--project-root <p>]
+memon experiment create           <slug> [--title <t>] [--hypotheses <H,H,...>]
+                                  [--from-run <run-dir>] [--project-root <p>]
+memon experiment rename           <id-or-slug> <new-slug> [--project-root <p>]
+memon experiment link             <id> <run-dir-or-id> [--project-root <p>]
+memon experiment unlink           <id> <run-dir-or-id> [--project-root <p>]
+memon experiment delete           <id> [--force] [--project-root <p>]
+memon experiment results table    <id-or-slug> [--variant <ids>] [--status <statuses>]
+                                  [--column <keys>] [--group <group>] [--output <fmt>]
+memon experiment warning add      <id> [--run <run-dir>] --category <cat>
                                   --message <text> [--expected-mtime <ms>]
                                   [--expected-hash <sha1>]
-memon experiment warning resolve <id> <rowId> --note <text>
+memon experiment warning resolve  <id> <rowId> --note <text>
                                   [--expected-mtime <ms>] [--expected-hash <sha1>]
-memon experiment warning reopen  <id> <rowId> [--note <text>]
+memon experiment warning reopen   <id> <rowId> [--note <text>]
                                   [--expected-mtime <ms>] [--expected-hash <sha1>]
-memon experiment warning delete  <id> <rowId>
+memon experiment warning delete   <id> <rowId>
                                   [--expected-mtime <ms>] [--expected-hash <sha1>]
-memon experiment warning list    <id> [--status open|resolved|all]
+memon experiment warning list     <id> [--status open|resolved|all]
 ```
 
 The `id` argument SHALL accept either the canonical `E<NNNN>-<slug>` form or the slug alone (when the slug uniquely identifies an experiment). The `--run <run-dir>` option on `warning add` populates the `Run` column of the new row; absence means the warning is exp-scoped (rendered as `—`).
@@ -1060,6 +1062,90 @@ The CLI SHALL NOT expose item-level create, update, delete, reorder, or status-m
 - **WHEN** `memon --project-root . --format json experiment doc lint E0001-example` runs
 - **THEN** it exits non-zero with an `UNKNOWN_H2_SECTION` error
 - **AND** the README remains byte-unchanged and readable
+
+### Requirement: `memon experiment results table` reads results as a selectable flat table
+
+`memon experiment results table <id-or-slug> [--variant <ids>] [--status <statuses>] [--column <keys>] [--group <group>] [--output <fmt>]` SHALL read `results.yaml` for the named experiment, project it as a flat table with one row per Variant, and emit the result in the requested format.
+
+**Filters:**
+
+| Flag | Purpose |
+|------|---------|
+| `--variant <ids>` | Comma-separated Variant IDs to include (default: all) |
+| `--status <statuses>` | Comma-separated status values (`PLANNED`/`RUNNING`/`COMPLETED`/`FAILED`/`INCONCLUSIVE`/`DROPPED`) |
+| `--column <keys>` | Comma-separated column keys to include (default: all) |
+| `--group <group>` | Column group filter: `parameter`, `metric`, or `all` (default: `all`) |
+
+Filters are AND-composed. Column ordering preserves the declaration order from `results.yaml`.
+
+**Output formats (`--output`):**
+
+| Format | Behavior |
+|--------|----------|
+| `json` (default) | Structured object with `experimentId`, `resultsSchemaVersion`, `columns`, `rows`, `meta` |
+| `human` | Aligned terminal table with `─` separators |
+| `csv` | RFC 4180 CSV; `runs_count` / `attempts_count` as integer columns |
+| `markdown` | GFM table with bold Variant IDs |
+| `yaml` | Structured YAML mirroring the JSON envelope |
+
+**Row shape (JSON/YAML):**
+
+```jsonc
+{
+  "variantId": "V0001",
+  "variantName": "BF16",
+  "status": "COMPLETED",
+  "runs": ["run-a"],
+  "attempts": [],
+  "values": { "precision": "bf16", "accuracy": 0.95 }
+}
+```
+
+**Meta shape:**
+
+```jsonc
+{
+  "totalVariants": 3,
+  "filteredVariants": 1,
+  "filters": { "columnGroup": "metric", "variants": ["V0001"], "columns": ["accuracy"] }
+}
+```
+
+**Error contract:**
+
+| Condition | exit code | stderr `error.code` |
+|-----------|-----------|---------------------|
+| Experiment not found | 4 (`NOT_FOUND`) | `NOT_FOUND` |
+| `results.yaml` missing | 4 (`NOT_FOUND`) | `NOT_FOUND` |
+| `results.yaml` parse error | 1 (`GENERIC`) | `INVALID_RESULTS` |
+
+Empty filter results are not errors — the command returns zero rows with `meta.filteredVariants: 0`.
+
+#### Scenario: Default JSON output returns all variants
+- **WHEN** the user runs `memon experiment results table E0001-foo --output json`
+- **THEN** stdout is valid JSON with `rows.length` equal to the number of variants in `results.yaml`
+- **AND** each row contains `variantId`, `variantName`, `status`, `runs`, `attempts`, and `values`
+
+#### Scenario: --variant filters to specific Variants
+- **WHEN** the user runs `memon experiment results table E0001-foo --variant V0001,V0003 --output json`
+- **THEN** only rows whose `variantId` is `V0001` or `V0003` appear in `rows`
+- **AND** `meta.filters.variants` is `["V0001", "V0003"]`
+
+#### Scenario: --group metric excludes parameter columns
+- **WHEN** the user runs `memon experiment results table E0001-foo --group metric --output json`
+- **THEN** every column in `columns` has `group: "metric"`
+- **AND** `meta.filters.columnGroup` is `"metric"`
+
+#### Scenario: --output csv produces RFC 4180 output
+- **WHEN** the user runs `memon experiment results table E0001-foo --output csv`
+- **THEN** the first line is a comma-separated header: `variant_id,variant_name,status,<column keys...>,runs_count,attempts_count`
+- **AND** each subsequent line is a data row with values in the same column order
+
+#### Scenario: Missing results.yaml exits NOT_FOUND
+- **GIVEN** an experiment with no `results.yaml`
+- **WHEN** `memon experiment results table <id>` runs
+- **THEN** stderr contains `{"error":{"code":"NOT_FOUND","message":"results.yaml not found for experiment \"<id>\""}}`
+- **AND** exit code is 4
 
 ### Requirement: Warning compatibility commands remain permanently deprecated
 
