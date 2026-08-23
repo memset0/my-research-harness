@@ -1,5 +1,5 @@
 import type { ResultsDocument } from '@memon/core'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentResultsTable } from './experiment-results-table'
@@ -218,6 +218,38 @@ describe('ExperimentResultsTable', () => {
       'status',
     ])
     expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+  })
+
+  it('composes checkbox changes batched before React renders', async () => {
+    const first = renderResults('E0001-batched-checkboxes')
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    const loss = screen.getByRole('checkbox', { name: 'Show Final loss column' })
+    const notes = screen.getByRole('checkbox', { name: 'Show Notes column' })
+
+    act(() => {
+      loss.click()
+      notes.click()
+    })
+
+    expect(loss).not.toBeChecked()
+    expect(notes).not.toBeChecked()
+    await waitFor(() => {
+      const preferences = JSON.parse(
+        window.localStorage.getItem(
+          'memon:results-table:research:E0001-batched-checkboxes:preferences',
+        ) ?? '{}',
+      ) as { hiddenColumnIds?: string[] }
+      expect(preferences.hiddenColumnIds).toEqual(
+        expect.arrayContaining(['schema:loss', 'schema:notes']),
+      )
+    })
+
+    first.unmount()
+    renderResults('E0001-batched-checkboxes')
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked(),
+    )
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).not.toBeChecked()
   })
 
   it('normalizes a partial saved column order and appends current document columns', async () => {

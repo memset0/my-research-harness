@@ -245,6 +245,7 @@ describe('ExperimentPage v6 document sections', () => {
         columns: [
           { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
           { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
+          { key: 'throughput', label: 'Throughput', group: 'metric', type: 'number' },
         ],
         variants: [
           {
@@ -252,7 +253,7 @@ describe('ExperimentPage v6 document sections', () => {
             name: 'FP32 refreshed',
             status: 'COMPLETED',
             parameters: { precision: 'fp32' },
-            metrics: { loss: 0.125 },
+            metrics: { loss: 0.125, throughput: 42 },
             runs: [],
             attempts: [],
           },
@@ -267,6 +268,8 @@ describe('ExperimentPage v6 document sections', () => {
     expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
     expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Show Throughput column' })).toBeChecked()
+    expect(screen.getByRole('columnheader', { name: /Throughput/ })).toBeInTheDocument()
     expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
       'title',
       `Results snapshot read at ${refreshedSnapshotAt}`,

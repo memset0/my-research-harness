@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 
 type ServerState = 'pending' | 'enabled' | 'disabled'
 
@@ -73,7 +73,10 @@ async function writeServerPreference<T>(key: string, value: T): Promise<boolean>
  * filters. A missing server row is different: an existing browser value wins
  * and is migrated to SQLite. Viewer/anonymous responses disable server writes.
  */
-export function useUserPreferenceState<T>(key: string, initial: T): [T, (next: T) => void] {
+export function useUserPreferenceState<T>(
+  key: string,
+  initial: T,
+): [T, (next: SetStateAction<T>) => void] {
   const [value, setValue] = useState<T>(initial)
   const initialRef = useRef(initial)
   const valueRef = useRef(value)
@@ -115,6 +118,11 @@ export function useUserPreferenceState<T>(key: string, initial: T): [T, (next: T
 
       serverStateRef.current = 'enabled'
       if (server.found) {
+        if (changedWhilePendingRef.current) {
+          changedWhilePendingRef.current = false
+          enqueueServerWrite(valueRef.current)
+          return
+        }
         const authoritativeValue = server.value as T
         changedWhilePendingRef.current = false
         valueRef.current = authoritativeValue
@@ -138,7 +146,9 @@ export function useUserPreferenceState<T>(key: string, initial: T): [T, (next: T
   }, [enqueueServerWrite, key])
 
   const update = useCallback(
-    (next: T) => {
+    (action: SetStateAction<T>) => {
+      const next =
+        typeof action === 'function' ? (action as (previous: T) => T)(valueRef.current) : action
       valueRef.current = next
       setValue(next)
       writeLocalPreference(key, next)

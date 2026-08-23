@@ -13,6 +13,15 @@ function Harness() {
       <button type="button" onClick={() => setPreference({ filters: ['new'] })}>
         Change
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          setPreference((current) => ({ filters: [...current.filters, 'one'] }))
+          setPreference((current) => ({ filters: [...current.filters, 'two'] }))
+        }}
+      >
+        Batch change
+      </button>
     </>
   )
 }
@@ -58,6 +67,44 @@ describe('useUserPreferenceState', () => {
       key: KEY,
       value: { filters: ['browser'] },
     })
+  })
+
+  it('keeps a user change made while a found SQLite row is still loading', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ filters: ['browser'] }))
+    let resolveGet!: (response: Response) => void
+    const pendingGet = new Promise<Response>((resolve) => {
+      resolveGet = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(pendingGet)
+      .mockResolvedValueOnce(jsonResponse({ found: true, value: { filters: ['new'] } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Harness />)
+    await waitFor(() => expect(screen.getByLabelText('preference')).toHaveTextContent('browser'))
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+    resolveGet(jsonResponse({ found: true, value: { filters: ['older-server'] } }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(screen.getByLabelText('preference')).toHaveTextContent('{"filters":["new"]}')
+    expect(window.localStorage.getItem(KEY)).toBe(JSON.stringify({ filters: ['new'] }))
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      key: KEY,
+      value: { filters: ['new'] },
+    })
+  })
+
+  it('composes functional updates before React renders again', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('Forbidden', { status: 403 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Harness />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Batch change' }))
+
+    expect(screen.getByLabelText('preference')).toHaveTextContent('{"filters":["one","two"]}')
+    expect(window.localStorage.getItem(KEY)).toBe(JSON.stringify({ filters: ['one', 'two'] }))
   })
 
   it('keeps viewer and anonymous sessions browser-only', async () => {

@@ -178,31 +178,26 @@ export function ExperimentResultsTable({
   const rowFilterSequence = useRef(0)
   const sortRuleSequence = useRef(0)
 
-  const validColumnIds = new Set(columns.map((column) => column.id))
-  const validVariantIds = new Set(document.variants.map((variant) => variant.id))
-  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
-  const columnOrderIds = normalizeColumnOrderIds(
-    storedPreferences.columnOrderIds,
-    columns.map((column) => column.id),
+  const preferences = normalizeResultsTablePreferences(
+    storedPreferences,
+    columns,
+    document.variants,
   )
+  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
+  const columnOrderIds = preferences.columnOrderIds
   const orderedColumns = columnOrderIds
     .map((id) => columnsById.get(id))
     .filter((column): column is ResultTableColumn => column !== undefined)
   const hasCustomColumnOrder = columnOrderIds.some(
     (columnId, index) => columnId !== columns[index]?.id,
   )
-  const hiddenColumnIds = Array.isArray(storedPreferences.hiddenColumnIds)
-    ? storedPreferences.hiddenColumnIds.filter((id) => validColumnIds.has(id))
-    : []
+  const hiddenColumnIds = preferences.hiddenColumnIds
   const hiddenColumnSet = new Set(hiddenColumnIds)
-  const maxLines = normalizeMaxLines(storedPreferences.maxLines)
-  const defaultSortRules = normalizeSortRules(storedPreferences.defaultSortRules, validColumnIds)
-  const pinnedColumnIds = normalizePinnedColumnIds(
-    storedPreferences.pinnedColumnIds,
-    validColumnIds,
-  )
-  const rowFilters = normalizeRowFilters(storedPreferences.rowFilters, validColumnIds)
-  const rowOverrides = normalizeRowOverrides(storedPreferences.rowOverrides, validVariantIds)
+  const maxLines = preferences.maxLines
+  const defaultSortRules = preferences.defaultSortRules
+  const pinnedColumnIds = preferences.pinnedColumnIds
+  const rowFilters = preferences.rowFilters
+  const rowOverrides = preferences.rowOverrides
   const pinnedColumnSide = new Map<string, PinSide>([
     ...pinnedColumnIds.left.map((id) => [id, 'left'] as const),
     ...pinnedColumnIds.right.map((id) => [id, 'right'] as const),
@@ -261,43 +256,47 @@ export function ExperimentResultsTable({
   )
   const hasVisibleRows = filteredVariants.length > 0
 
-  const updatePreferences = (patch: Partial<ResultsTablePreferences>) => {
-    setStoredPreferences({
-      hiddenColumnIds,
-      columnOrderIds,
-      maxLines,
-      defaultSortRules,
-      pinnedColumnIds,
-      rowFilters,
-      rowOverrides,
-      ...patch,
+  const updatePreferences = (
+    update:
+      | Partial<ResultsTablePreferences>
+      | ((current: ResultsTablePreferences) => ResultsTablePreferences),
+  ) => {
+    setStoredPreferences((stored) => {
+      const current = normalizeResultsTablePreferences(stored, columns, document.variants)
+      return typeof update === 'function' ? update(current) : { ...current, ...update }
     })
   }
 
   const reorderColumns = (sourceId: string, targetId: string, edge: DropEdge) => {
-    const nextOrder = reorderIds(columnOrderIds, sourceId, targetId, edge)
-    if (nextOrder === columnOrderIds) return
-    const pinnedLeft = new Set(pinnedColumnIds.left)
-    const pinnedRight = new Set(pinnedColumnIds.right)
-    updatePreferences({
-      columnOrderIds: nextOrder,
-      pinnedColumnIds: {
-        left: nextOrder.filter((id) => pinnedLeft.has(id)),
-        right: nextOrder.filter((id) => pinnedRight.has(id)),
-      },
+    updatePreferences((current) => {
+      const nextOrder = reorderIds(current.columnOrderIds, sourceId, targetId, edge)
+      if (nextOrder === current.columnOrderIds) return current
+      const pinnedLeft = new Set(current.pinnedColumnIds.left)
+      const pinnedRight = new Set(current.pinnedColumnIds.right)
+      return {
+        ...current,
+        columnOrderIds: nextOrder,
+        pinnedColumnIds: {
+          left: nextOrder.filter((id) => pinnedLeft.has(id)),
+          right: nextOrder.filter((id) => pinnedRight.has(id)),
+        },
+      }
     })
   }
 
   const reorderRowFilters = (sourceId: string, targetId: string, edge: DropEdge) => {
-    const next = reorderItems(rowFilters, sourceId, targetId, edge)
-    if (next !== rowFilters) updatePreferences({ rowFilters: next })
+    updatePreferences((current) => {
+      const next = reorderItems(current.rowFilters, sourceId, targetId, edge)
+      return next === current.rowFilters ? current : { ...current, rowFilters: next }
+    })
   }
 
   const reorderDefaultSortRules = (sourceId: string, targetId: string, edge: DropEdge) => {
-    const next = reorderItems(defaultSortRules, sourceId, targetId, edge)
-    if (next === defaultSortRules) return
     setTemporarySort(null)
-    updatePreferences({ defaultSortRules: next })
+    updatePreferences((current) => {
+      const next = reorderItems(current.defaultSortRules, sourceId, targetId, edge)
+      return next === current.defaultSortRules ? current : { ...current, defaultSortRules: next }
+    })
   }
 
   const startDrag = (event: DragEvent<HTMLElement>, item: DragItem) => {
@@ -340,94 +339,128 @@ export function ExperimentResultsTable({
     dropTarget?.kind === kind && dropTarget.id === id
 
   const setColumnVisible = (columnId: string, visible: boolean) => {
-    const next = new Set(hiddenColumnIds)
-    if (visible) next.delete(columnId)
-    else next.add(columnId)
-    updatePreferences({ hiddenColumnIds: Array.from(next) })
+    updatePreferences((current) => {
+      const next = new Set(current.hiddenColumnIds)
+      if (visible) next.delete(columnId)
+      else next.add(columnId)
+      return { ...current, hiddenColumnIds: Array.from(next) }
+    })
   }
 
   const toggleStar = (label: string) => {
-    const next = new Set(starredLabels)
-    if (next.has(label)) next.delete(label)
-    else next.add(label)
-    setStoredStarredLabels(Array.from(next))
+    setStoredStarredLabels((current) => {
+      const next = new Set(
+        Array.isArray(current)
+          ? current.filter((candidate): candidate is string => typeof candidate === 'string')
+          : [],
+      )
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return Array.from(next)
+    })
   }
 
   const setColumnPin = (columnId: string, side: PinSide | null) => {
-    const next = {
-      left: pinnedColumnIds.left.filter((id) => id !== columnId),
-      right: pinnedColumnIds.right.filter((id) => id !== columnId),
-    }
-    if (side) next[side].push(columnId)
-    updatePreferences({ pinnedColumnIds: next })
+    updatePreferences((current) => {
+      const next = {
+        left: current.pinnedColumnIds.left.filter((id) => id !== columnId),
+        right: current.pinnedColumnIds.right.filter((id) => id !== columnId),
+      }
+      if (side) next[side].push(columnId)
+      return { ...current, pinnedColumnIds: next }
+    })
   }
 
   const saveRowFilter = (filter: Omit<RowFilter, 'id'>, filterId?: string) => {
     if (filterId) {
-      updatePreferences({
-        rowFilters: rowFilters.map((current) =>
-          current.id === filterId ? { id: filterId, ...filter } : current,
-        ),
+      updatePreferences((current) => {
+        return {
+          ...current,
+          rowFilters: current.rowFilters.map((candidate) =>
+            candidate.id === filterId ? { id: filterId, ...filter } : candidate,
+          ),
+        }
       })
       return
     }
-    updatePreferences({
-      rowFilters: [
-        ...rowFilters,
-        { id: `filter-${Date.now()}-${rowFilterSequence.current++}`, ...filter },
-      ],
+    updatePreferences((current) => {
+      return {
+        ...current,
+        rowFilters: [
+          ...current.rowFilters,
+          { id: `filter-${Date.now()}-${rowFilterSequence.current++}`, ...filter },
+        ],
+      }
     })
   }
 
   const removeRowFilter = (filterId: string) => {
-    updatePreferences({ rowFilters: rowFilters.filter((filter) => filter.id !== filterId) })
+    updatePreferences((current) => ({
+      ...current,
+      rowFilters: current.rowFilters.filter((filter) => filter.id !== filterId),
+    }))
   }
 
   const setRowOverride = (variantId: string, override: RowOverride | null) => {
-    const next = { ...rowOverrides }
-    if (override) next[variantId] = override
-    else delete next[variantId]
-    updatePreferences({ rowOverrides: next })
+    updatePreferences((current) => {
+      const next = { ...current.rowOverrides }
+      if (override) next[variantId] = override
+      else delete next[variantId]
+      return { ...current, rowOverrides: next }
+    })
   }
 
   const saveDefaultSortRule = (rule: Omit<SortRule, 'id'>, sortRuleId?: string) => {
     setTemporarySort(null)
     if (sortRuleId) {
-      updatePreferences({
-        defaultSortRules: defaultSortRules
-          .map((current) => (current.id === sortRuleId ? { id: sortRuleId, ...rule } : current))
-          .filter(
-            (current, index, rules) =>
-              rules.findIndex((candidate) => candidate.columnId === current.columnId) === index,
-          ),
+      updatePreferences((current) => {
+        return {
+          ...current,
+          defaultSortRules: current.defaultSortRules
+            .map((candidate) =>
+              candidate.id === sortRuleId ? { id: sortRuleId, ...rule } : candidate,
+            )
+            .filter(
+              (candidate, index, rules) =>
+                rules.findIndex((item) => item.columnId === candidate.columnId) === index,
+            ),
+        }
       })
       return
     }
-    updatePreferences({
-      defaultSortRules: [
-        ...defaultSortRules,
-        { id: `sort-${Date.now()}-${sortRuleSequence.current++}`, ...rule },
-      ],
+    updatePreferences((current) => {
+      return {
+        ...current,
+        defaultSortRules: [
+          ...current.defaultSortRules,
+          { id: `sort-${Date.now()}-${sortRuleSequence.current++}`, ...rule },
+        ],
+      }
     })
   }
 
   const removeDefaultSortRule = (sortRuleId: string) => {
     setTemporarySort(null)
-    updatePreferences({
-      defaultSortRules: defaultSortRules.filter((rule) => rule.id !== sortRuleId),
-    })
+    updatePreferences((current) => ({
+      ...current,
+      defaultSortRules: current.defaultSortRules.filter((rule) => rule.id !== sortRuleId),
+    }))
   }
 
   const moveDefaultSortRule = (sortRuleId: string, offset: -1 | 1) => {
-    const index = defaultSortRules.findIndex((rule) => rule.id === sortRuleId)
-    const targetIndex = index + offset
-    if (index < 0 || targetIndex < 0 || targetIndex >= defaultSortRules.length) return
-    const next = [...defaultSortRules]
-    const moved = next.splice(index, 1)[0]
-    if (!moved) return
-    next.splice(targetIndex, 0, moved)
     setTemporarySort(null)
-    updatePreferences({ defaultSortRules: next })
+    updatePreferences((current) => {
+      const index = current.defaultSortRules.findIndex((rule) => rule.id === sortRuleId)
+      const targetIndex = index + offset
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.defaultSortRules.length) {
+        return current
+      }
+      const next = [...current.defaultSortRules]
+      const moved = next.splice(index, 1)[0]
+      if (!moved) return current
+      next.splice(targetIndex, 0, moved)
+      return { ...current, defaultSortRules: next }
+    })
   }
 
   const cycleSort = (columnId: string) => {
@@ -1913,6 +1946,33 @@ function normalizeColumnOrderIds(value: unknown, defaultIds: string[]): string[]
       })
     : []
   return [...restored, ...defaultIds.filter((id) => !seen.has(id))]
+}
+
+function normalizeResultsTablePreferences(
+  value: unknown,
+  columns: ResultTableColumn[],
+  variants: ResultVariant[],
+): ResultsTablePreferences {
+  const candidate =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Partial<ResultsTablePreferences>)
+      : {}
+  const defaultColumnIds = columns.map((column) => column.id)
+  const validColumnIds = new Set(defaultColumnIds)
+  const validVariantIds = new Set(variants.map((variant) => variant.id))
+  return {
+    hiddenColumnIds: Array.isArray(candidate.hiddenColumnIds)
+      ? candidate.hiddenColumnIds.filter(
+          (id): id is string => typeof id === 'string' && validColumnIds.has(id),
+        )
+      : [],
+    columnOrderIds: normalizeColumnOrderIds(candidate.columnOrderIds, defaultColumnIds),
+    maxLines: normalizeMaxLines(candidate.maxLines),
+    defaultSortRules: normalizeSortRules(candidate.defaultSortRules, validColumnIds),
+    pinnedColumnIds: normalizePinnedColumnIds(candidate.pinnedColumnIds, validColumnIds),
+    rowFilters: normalizeRowFilters(candidate.rowFilters, validColumnIds),
+    rowOverrides: normalizeRowOverrides(candidate.rowOverrides, validVariantIds),
+  }
 }
 
 function normalizeMaxLines(value: unknown): number {
