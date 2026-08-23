@@ -151,6 +151,99 @@ describe('ExperimentResultsTable', () => {
     expect(within(domainCard).getByText('0.001')).toBeInTheDocument()
     expect(within(domainCard).getByText('0.002')).toBeInTheDocument()
     expect(within(domainCard).getByText('0.003')).toBeInTheDocument()
+    expect(screen.queryByText(/Pale-blue columns are metrics/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Click filter or sort badges/)).not.toBeInTheDocument()
+  })
+
+  it('shares persisted column order between checkbox controls and draggable headers', async () => {
+    const user = userEvent.setup()
+    const first = renderResults('E0001-column-order')
+    const table = screen.getByRole('table')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Show Final loss column' }))
+    dragBefore(
+      first.container.querySelector<HTMLElement>('[data-column-option="schema:notes"]')!,
+      first.container.querySelector<HTMLElement>('[data-column-option="variant"]')!,
+    )
+    expect(columnOptionIds(first.container).slice(0, 4)).toEqual([
+      'schema:notes',
+      'variant',
+      'status',
+      'schema:lr',
+    ])
+    expect(headerIds(table).slice(0, 4)).toEqual(['schema:notes', 'variant', 'status', 'schema:lr'])
+
+    dragBefore(
+      table.querySelector<HTMLElement>('thead [data-column-id="schema:lr"]')!,
+      table.querySelector<HTMLElement>('thead [data-column-id="schema:notes"]')!,
+    )
+    expect(columnOptionIds(first.container).slice(0, 4)).toEqual([
+      'schema:lr',
+      'schema:notes',
+      'variant',
+      'status',
+    ])
+    expect(headerIds(table).slice(0, 4)).toEqual(['schema:lr', 'schema:notes', 'variant', 'status'])
+
+    await waitFor(() => {
+      const preferences = JSON.parse(
+        window.localStorage.getItem(
+          'memon:results-table:research:E0001-column-order:preferences',
+        ) ?? '{}',
+      ) as { columnOrderIds?: string[]; hiddenColumnIds?: string[] }
+      expect(preferences.columnOrderIds?.slice(0, 5)).toEqual([
+        'schema:lr',
+        'schema:notes',
+        'variant',
+        'status',
+        'schema:loss',
+      ])
+      expect(preferences.hiddenColumnIds).toContain('schema:loss')
+    })
+
+    first.unmount()
+    const restored = renderResults('E0001-column-order')
+    await waitFor(() =>
+      expect(columnOptionIds(restored.container).slice(0, 4)).toEqual([
+        'schema:lr',
+        'schema:notes',
+        'variant',
+        'status',
+      ]),
+    )
+    expect(headerIds(screen.getByRole('table')).slice(0, 4)).toEqual([
+      'schema:lr',
+      'schema:notes',
+      'variant',
+      'status',
+    ])
+    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+  })
+
+  it('normalizes a partial saved column order and appends current document columns', async () => {
+    window.localStorage.setItem(
+      'memon:results-table:research:E0001-partial-order:preferences',
+      JSON.stringify({
+        columnOrderIds: ['schema:notes', 'stale-column', 'schema:notes', 'variant'],
+      }),
+    )
+
+    const rendered = renderResults('E0001-partial-order')
+    await waitFor(() =>
+      expect(columnOptionIds(rendered.container)).toEqual([
+        'schema:notes',
+        'variant',
+        'status',
+        'schema:lr',
+        'schema:loss',
+        'entry',
+        'recipe',
+        'commit',
+        'runs',
+        'attempts',
+      ]),
+    )
+    expect(headerIds(screen.getByRole('table'))).toEqual(columnOptionIds(rendered.container))
   })
 
   it('renders wandb.ai values as compact chart links with the full URL on hover', async () => {
@@ -300,6 +393,14 @@ describe('ExperimentResultsTable', () => {
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(variantOrder()).toEqual(['V0001', 'V0003', 'V0002'])
 
+    const sortRules = first.container.querySelectorAll<HTMLElement>('[data-sort-rule-order]')
+    dragBefore(sortRules[1]!, sortRules[0]!)
+    expect(
+      screen.getByRole('button', { name: 'Edit sort 1 Learning rate ascending' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit sort 2 Notes descending' })).toBeInTheDocument()
+    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
+
     await user.click(
       screen.getByRole('button', {
         name: 'Final loss: default sort; activate for temporary ascending',
@@ -320,7 +421,7 @@ describe('ExperimentResultsTable', () => {
         name: 'Final loss: temporarily sorted descending; activate for default sort',
       }),
     )
-    expect(variantOrder()).toEqual(['V0001', 'V0003', 'V0002'])
+    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
 
     await waitFor(() => {
       const preferences = JSON.parse(
@@ -329,14 +430,14 @@ describe('ExperimentResultsTable', () => {
         ) ?? '{}',
       ) as { defaultSortRules?: Array<{ columnId?: string; direction?: string }> }
       expect(preferences.defaultSortRules).toMatchObject([
-        { columnId: 'schema:notes', direction: 'desc' },
         { columnId: 'schema:lr', direction: 'asc' },
+        { columnId: 'schema:notes', direction: 'desc' },
       ])
     })
 
     first.unmount()
     renderResults('E0001-default-sort')
-    await waitFor(() => expect(variantOrder()).toEqual(['V0001', 'V0003', 'V0002']))
+    await waitFor(() => expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003']))
     expect(screen.queryByText(/Temporary ·/)).not.toBeInTheDocument()
   })
 
@@ -348,12 +449,12 @@ describe('ExperimentResultsTable', () => {
     await addRowFilter(user, 'Final loss', 'Greater than (>)', '0.15')
     expect(variantOrder()).toEqual(['V0002'])
 
-    await user.click(screen.getByRole('button', { name: 'Edit filter Final loss > 0.15' }))
+    await user.click(screen.getByRole('button', { name: 'Edit filter 1 Final loss > 0.15' }))
     await user.clear(screen.getByLabelText('Filter value'))
     await user.type(screen.getByLabelText('Filter value'), '0.05')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(variantOrder()).toEqual(['V0001', 'V0002'])
-    await user.click(screen.getByRole('button', { name: 'Edit filter Final loss > 0.05' }))
+    await user.click(screen.getByRole('button', { name: 'Edit filter 1 Final loss > 0.05' }))
     await user.clear(screen.getByLabelText('Filter value'))
     await user.type(screen.getByLabelText('Filter value'), '0.15')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
@@ -366,6 +467,16 @@ describe('ExperimentResultsTable', () => {
     expect(variantOrder()).toEqual(['V0002'])
     expect(first.container.querySelectorAll('[data-row-filter]')).toHaveLength(4)
     expect(screen.queryByText('Auto')).not.toBeInTheDocument()
+
+    const filterRules = first.container.querySelectorAll<HTMLElement>('[data-row-filter-order]')
+    dragBefore(filterRules[3]!, filterRules[0]!)
+    expect(
+      screen.getByRole('button', { name: 'Edit filter 1 Notes ≠ single line' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Edit filter 2 Final loss > 0.15' }),
+    ).toBeInTheDocument()
+    expect(variantOrder()).toEqual(['V0002'])
 
     await user.click(screen.getByRole('button', { name: 'Show all rows temporarily' }))
     fireEvent.contextMenu(first.container.querySelector('[data-variant-id="V0001"]')!)
@@ -393,17 +504,25 @@ describe('ExperimentResultsTable', () => {
         rowOverrides?: Record<string, string>
       }
       expect(preferences.rowFilters?.map((filter) => filter.operator)).toEqual([
+        'neq',
         'gt',
         'lt',
         'eq',
-        'neq',
       ])
       expect(preferences.rowOverrides).toEqual({ V0001: 'include', V0002: 'include' })
     })
 
     first.unmount()
-    renderResults('E0001-row-filters')
+    const restored = renderResults('E0001-row-filters')
     await waitFor(() => expect(variantOrder()).toEqual(['V0001', 'V0002']))
+    expect(
+      within(restored.container.querySelector<HTMLElement>('[data-row-filter-order]')!).getByText(
+        '1',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      restored.container.querySelector<HTMLElement>('[data-row-filter-order]'),
+    ).toHaveTextContent('Notes')
     expect(screen.getByRole('button', { name: 'Show all rows temporarily' })).toHaveAttribute(
       'data-state',
       'off',
@@ -470,17 +589,38 @@ describe('ExperimentResultsTable', () => {
     ])
     await waitFor(() => {
       expect(screen.getByRole('columnheader', { name: /Commit/ })).toHaveClass('sticky')
+      expect(screen.getByRole('columnheader', { name: /Commit/ })).toHaveClass('!bg-muted')
       expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveStyle({
         left: '120px',
       })
+      expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveClass(
+        '!bg-sky-50',
+        'dark:!bg-sky-950',
+      )
       expect(screen.getByRole('columnheader', { name: /Notes/ })).toHaveStyle({ right: '0px' })
+      expect(
+        table.querySelector('[data-variant-id="V0001"] [data-column-id="commit"]'),
+      ).toHaveClass('!bg-background')
+      expect(
+        table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"]'),
+      ).toHaveClass('!bg-sky-50', 'dark:!bg-sky-950')
     })
+
+    await chooseHeaderAction(user, 'Final loss', 'Star column')
+    expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveClass(
+      '!bg-amber-50',
+      'dark:!bg-amber-950',
+    )
+    expect(
+      table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"]'),
+    ).toHaveClass('!bg-amber-50', 'dark:!bg-amber-950')
 
     viewportWidth = 360
     fireEvent(window, new Event('resize'))
     await waitFor(() =>
       expect(screen.getByRole('columnheader', { name: /Commit/ })).not.toHaveClass('sticky'),
     )
+    expect(screen.getByRole('columnheader', { name: /Final loss/ })).not.toHaveClass('!bg-amber-50')
     expect(headerIds(table).slice(0, 2)).toEqual(['commit', 'schema:loss'])
     expect(headerIds(table).at(-1)).toBe('schema:notes')
     expect(screen.getByRole('columnheader', { name: /Commit/ })).toHaveAttribute(
@@ -547,6 +687,24 @@ function headerIds(table: HTMLElement): string[] {
     .getAllByRole('columnheader')
     .map((header) => header.getAttribute('data-column-id'))
     .filter((id): id is string => id !== null)
+}
+
+function columnOptionIds(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('[data-column-option]')).map(
+    (option) => option.dataset.columnOption ?? '',
+  )
+}
+
+function dragBefore(source: HTMLElement, target: HTMLElement) {
+  const dataTransfer = {
+    dropEffect: 'none',
+    effectAllowed: 'none',
+    setData: vi.fn(),
+  }
+  fireEvent.dragStart(source, { dataTransfer })
+  fireEvent.dragOver(target, { clientX: 0, dataTransfer })
+  fireEvent.drop(target, { clientX: 0, dataTransfer })
+  fireEvent.dragEnd(source, { dataTransfer })
 }
 
 async function chooseHeaderAction(

@@ -30,6 +30,7 @@ import {
 import Link from 'next/link'
 import {
   type CSSProperties,
+  type DragEvent,
   Fragment,
   type ReactNode,
   useLayoutEffect,
@@ -65,6 +66,8 @@ type SortDirection = 'asc' | 'desc'
 type PinSide = 'left' | 'right'
 type RowFilterOperator = 'eq' | 'neq' | 'gt' | 'lt'
 type RowOverride = 'include' | 'exclude'
+type DragKind = 'column' | 'row-filter' | 'sort-rule'
+type DropEdge = 'before' | 'after'
 type ResultValue = ResultScalar | string[] | undefined
 type ColumnKind =
   | 'variant'
@@ -86,6 +89,7 @@ interface ResultTableColumn {
 
 interface ResultsTablePreferences {
   hiddenColumnIds: string[]
+  columnOrderIds: string[]
   maxLines: number
   defaultSortRules: SortRule[]
   pinnedColumnIds: Record<PinSide, string[]>
@@ -112,8 +116,14 @@ interface PinLayout {
   rightOffsets: Record<string, number>
 }
 
+interface DragItem {
+  kind: DragKind
+  id: string
+}
+
 const DEFAULT_PREFERENCES: ResultsTablePreferences = {
   hiddenColumnIds: [],
+  columnOrderIds: [],
   maxLines: 1,
   defaultSortRules: [],
   pinnedColumnIds: { left: [], right: [] },
@@ -163,11 +173,24 @@ export function ExperimentResultsTable({
   const [showAllColumns, setShowAllColumns] = useState(false)
   const [showAllRows, setShowAllRows] = useState(false)
   const [temporarySort, setTemporarySort] = useState<Omit<SortRule, 'id'> | null>(null)
+  const [draggedItem, setDraggedItem] = useState<DragItem | null>(null)
+  const [dropTarget, setDropTarget] = useState<DragItem | null>(null)
   const rowFilterSequence = useRef(0)
   const sortRuleSequence = useRef(0)
 
   const validColumnIds = new Set(columns.map((column) => column.id))
   const validVariantIds = new Set(document.variants.map((variant) => variant.id))
+  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
+  const columnOrderIds = normalizeColumnOrderIds(
+    storedPreferences.columnOrderIds,
+    columns.map((column) => column.id),
+  )
+  const orderedColumns = columnOrderIds
+    .map((id) => columnsById.get(id))
+    .filter((column): column is ResultTableColumn => column !== undefined)
+  const hasCustomColumnOrder = columnOrderIds.some(
+    (columnId, index) => columnId !== columns[index]?.id,
+  )
   const hiddenColumnIds = Array.isArray(storedPreferences.hiddenColumnIds)
     ? storedPreferences.hiddenColumnIds.filter((id) => validColumnIds.has(id))
     : []
@@ -189,8 +212,7 @@ export function ExperimentResultsTable({
     : []
   const starredLabelSet = new Set(starredLabels)
   const effectiveHiddenColumnSet = showAllColumns ? new Set<string>() : hiddenColumnSet
-  const visibleColumns = columns.filter((column) => !effectiveHiddenColumnSet.has(column.id))
-  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
+  const visibleColumns = orderedColumns.filter((column) => !effectiveHiddenColumnSet.has(column.id))
   const orderedVisibleColumns = [
     ...pinnedColumnIds.left
       .map((id) => columnsById.get(id))
@@ -242,6 +264,7 @@ export function ExperimentResultsTable({
   const updatePreferences = (patch: Partial<ResultsTablePreferences>) => {
     setStoredPreferences({
       hiddenColumnIds,
+      columnOrderIds,
       maxLines,
       defaultSortRules,
       pinnedColumnIds,
@@ -250,6 +273,71 @@ export function ExperimentResultsTable({
       ...patch,
     })
   }
+
+  const reorderColumns = (sourceId: string, targetId: string, edge: DropEdge) => {
+    const nextOrder = reorderIds(columnOrderIds, sourceId, targetId, edge)
+    if (nextOrder === columnOrderIds) return
+    const pinnedLeft = new Set(pinnedColumnIds.left)
+    const pinnedRight = new Set(pinnedColumnIds.right)
+    updatePreferences({
+      columnOrderIds: nextOrder,
+      pinnedColumnIds: {
+        left: nextOrder.filter((id) => pinnedLeft.has(id)),
+        right: nextOrder.filter((id) => pinnedRight.has(id)),
+      },
+    })
+  }
+
+  const reorderRowFilters = (sourceId: string, targetId: string, edge: DropEdge) => {
+    const next = reorderItems(rowFilters, sourceId, targetId, edge)
+    if (next !== rowFilters) updatePreferences({ rowFilters: next })
+  }
+
+  const reorderDefaultSortRules = (sourceId: string, targetId: string, edge: DropEdge) => {
+    const next = reorderItems(defaultSortRules, sourceId, targetId, edge)
+    if (next === defaultSortRules) return
+    setTemporarySort(null)
+    updatePreferences({ defaultSortRules: next })
+  }
+
+  const startDrag = (event: DragEvent<HTMLElement>, item: DragItem) => {
+    setDraggedItem(item)
+    setDropTarget(null)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', `${item.kind}:${item.id}`)
+  }
+
+  const dragOver = (event: DragEvent<HTMLElement>, item: DragItem) => {
+    if (!draggedItem || draggedItem.kind !== item.kind || draggedItem.id === item.id) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDropTarget((current) =>
+      current?.kind === item.kind && current.id === item.id ? current : item,
+    )
+  }
+
+  const drop = (event: DragEvent<HTMLElement>, item: DragItem) => {
+    event.preventDefault()
+    if (draggedItem?.kind === item.kind && draggedItem.id !== item.id) {
+      const edge = dropEdge(event)
+      if (item.kind === 'column') reorderColumns(draggedItem.id, item.id, edge)
+      else if (item.kind === 'row-filter') reorderRowFilters(draggedItem.id, item.id, edge)
+      else reorderDefaultSortRules(draggedItem.id, item.id, edge)
+    }
+    setDraggedItem(null)
+    setDropTarget(null)
+  }
+
+  const endDrag = () => {
+    setDraggedItem(null)
+    setDropTarget(null)
+  }
+
+  const isDragged = (kind: DragKind, id: string) =>
+    draggedItem?.kind === kind && draggedItem.id === id
+
+  const isDropTarget = (kind: DragKind, id: string) =>
+    dropTarget?.kind === kind && dropTarget.id === id
 
   const setColumnVisible = (columnId: string, visible: boolean) => {
     const next = new Set(hiddenColumnIds)
@@ -461,6 +549,7 @@ export function ExperimentResultsTable({
               onClick={resetView}
               disabled={
                 hiddenColumnIds.length === 0 &&
+                !hasCustomColumnOrder &&
                 maxLines === 1 &&
                 defaultSortRules.length === 0 &&
                 temporarySort === null &&
@@ -480,21 +569,31 @@ export function ExperimentResultsTable({
 
         <fieldset className="flex flex-wrap gap-1.5">
           <legend className="sr-only">Visible results columns</legend>
-          {columns.map((column, index) => {
+          {orderedColumns.map((column, index) => {
             const values = domains.get(column.id) ?? []
             const starred = starredLabelSet.has(column.label)
             const metric = column.schema?.group === 'metric'
             const pinSide = pinnedColumnSide.get(column.id)
             const checkboxId = `results-column-${experimentId}-${index}`
             return (
-              <div
+              <fieldset
                 key={column.id}
                 className={cn(
-                  'flex h-7 items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 shadow-xs',
+                  'flex h-7 min-w-0 cursor-grab items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 shadow-xs active:cursor-grabbing',
                   metric && 'border-sky-200 bg-sky-50/60 dark:border-sky-900 dark:bg-sky-950/20',
                   starred &&
                     'border-amber-300 bg-amber-50/70 dark:border-amber-700/60 dark:bg-amber-950/30',
+                  isDragged('column', column.id) && 'opacity-50',
+                  isDropTarget('column', column.id) &&
+                    'ring-2 ring-primary/60 ring-offset-1 ring-offset-background',
                 )}
+                draggable
+                onDragStart={(event) => startDrag(event, { kind: 'column', id: column.id })}
+                onDragOver={(event) => dragOver(event, { kind: 'column', id: column.id })}
+                onDrop={(event) => drop(event, { kind: 'column', id: column.id })}
+                onDragEnd={endDrag}
+                aria-label={`${column.label} column control`}
+                title={`Drag ${column.label} to reorder columns`}
                 data-column-option={column.id}
                 data-column-group={column.schema?.group}
               >
@@ -564,16 +663,10 @@ export function ExperimentResultsTable({
                 >
                   <Star className={cn(starred && 'fill-current')} aria-hidden />
                 </Button>
-              </div>
+              </fieldset>
             )
           })}
         </fieldset>
-        <p className="text-[10px] text-muted-foreground">
-          Pale-blue columns are metrics. Hover parameter and metadata columns to inspect their
-          distinct values. Right-click a table header to pin it. Starred names are highlighted
-          across this project.
-        </p>
-
         <Separator />
 
         <div className="space-y-2.5" data-slot="row-filter-controls">
@@ -613,20 +706,38 @@ export function ExperimentResultsTable({
 
           <fieldset className="flex flex-wrap gap-1.5">
             <legend className="sr-only">Row filters</legend>
-            {rowFilters.map((filter) => (
-              <RowFilterBadgeEditor
+            {rowFilters.map((filter, index) => (
+              <fieldset
                 key={filter.id}
-                filter={filter}
-                columns={columns}
-                domains={domains}
-                experimentId={experimentId}
-                paused={showAllRows}
-                onSave={(next) => saveRowFilter(next, filter.id)}
-                onDelete={() => removeRowFilter(filter.id)}
-              />
+                draggable
+                onDragStart={(event) => startDrag(event, { kind: 'row-filter', id: filter.id })}
+                onDragOver={(event) => dragOver(event, { kind: 'row-filter', id: filter.id })}
+                onDrop={(event) => drop(event, { kind: 'row-filter', id: filter.id })}
+                onDragEnd={endDrag}
+                aria-label={`Row filter priority ${index + 1}`}
+                className={cn(
+                  'm-0 min-w-0 cursor-grab rounded-full border-0 p-0 active:cursor-grabbing',
+                  isDragged('row-filter', filter.id) && 'opacity-50',
+                  isDropTarget('row-filter', filter.id) &&
+                    'ring-2 ring-primary/60 ring-offset-1 ring-offset-background',
+                )}
+                title={`Drag filter priority ${index + 1} to reorder`}
+                data-row-filter-order={filter.id}
+              >
+                <RowFilterBadgeEditor
+                  filter={filter}
+                  priority={index + 1}
+                  columns={orderedColumns}
+                  domains={domains}
+                  experimentId={experimentId}
+                  paused={showAllRows}
+                  onSave={(next) => saveRowFilter(next, filter.id)}
+                  onDelete={() => removeRowFilter(filter.id)}
+                />
+              </fieldset>
             ))}
             <RowFilterBadgeEditor
-              columns={columns}
+              columns={orderedColumns}
               domains={domains}
               experimentId={experimentId}
               paused={showAllRows}
@@ -642,23 +753,40 @@ export function ExperimentResultsTable({
             <fieldset className="flex flex-wrap gap-1.5">
               <legend className="sr-only">Default sort priority</legend>
               {defaultSortRules.map((rule, index) => (
-                <SortBadgeEditor
+                <fieldset
                   key={rule.id}
-                  rule={rule}
-                  priority={index + 1}
-                  columns={columns}
-                  usedColumnIds={new Set(defaultSortRules.map((candidate) => candidate.columnId))}
-                  experimentId={experimentId}
-                  canMoveEarlier={index > 0}
-                  canMoveLater={index < defaultSortRules.length - 1}
-                  onSave={(next) => saveDefaultSortRule(next, rule.id)}
-                  onDelete={() => removeDefaultSortRule(rule.id)}
-                  onMoveEarlier={() => moveDefaultSortRule(rule.id, -1)}
-                  onMoveLater={() => moveDefaultSortRule(rule.id, 1)}
-                />
+                  draggable
+                  onDragStart={(event) => startDrag(event, { kind: 'sort-rule', id: rule.id })}
+                  onDragOver={(event) => dragOver(event, { kind: 'sort-rule', id: rule.id })}
+                  onDrop={(event) => drop(event, { kind: 'sort-rule', id: rule.id })}
+                  onDragEnd={endDrag}
+                  aria-label={`Default sort priority ${index + 1}`}
+                  className={cn(
+                    'm-0 min-w-0 cursor-grab rounded-full border-0 p-0 active:cursor-grabbing',
+                    isDragged('sort-rule', rule.id) && 'opacity-50',
+                    isDropTarget('sort-rule', rule.id) &&
+                      'ring-2 ring-primary/60 ring-offset-1 ring-offset-background',
+                  )}
+                  title={`Drag sort priority ${index + 1} to reorder`}
+                  data-sort-rule-order={rule.id}
+                >
+                  <SortBadgeEditor
+                    rule={rule}
+                    priority={index + 1}
+                    columns={orderedColumns}
+                    usedColumnIds={new Set(defaultSortRules.map((candidate) => candidate.columnId))}
+                    experimentId={experimentId}
+                    canMoveEarlier={index > 0}
+                    canMoveLater={index < defaultSortRules.length - 1}
+                    onSave={(next) => saveDefaultSortRule(next, rule.id)}
+                    onDelete={() => removeDefaultSortRule(rule.id)}
+                    onMoveEarlier={() => moveDefaultSortRule(rule.id, -1)}
+                    onMoveLater={() => moveDefaultSortRule(rule.id, 1)}
+                  />
+                </fieldset>
               ))}
               <SortBadgeEditor
-                columns={columns}
+                columns={orderedColumns}
                 usedColumnIds={new Set(defaultSortRules.map((rule) => rule.columnId))}
                 experimentId={experimentId}
                 priority={defaultSortRules.length + 1}
@@ -686,12 +814,6 @@ export function ExperimentResultsTable({
               </Badge>
             )}
           </div>
-
-          <p className="text-[10px] text-muted-foreground">
-            Click filter or sort badges to edit them. Default sort compares badges left to right,
-            then Variant ID. Header clicks apply a temporary sort. Right-click a row for force
-            show/hide.
-          </p>
         </div>
       </div>
 
@@ -735,14 +857,26 @@ export function ExperimentResultsTable({
                                 : 'none'
                           }
                           className={cn(
-                            'border-r px-1 last:border-r-0',
-                            pinSticky && 'sticky z-20 bg-muted',
+                            'cursor-grab border-r px-1 active:cursor-grabbing last:border-r-0',
+                            pinSticky && 'sticky z-20',
                             metric &&
                               'bg-sky-50/90 text-sky-950 dark:bg-sky-950/40 dark:text-sky-100',
                             starred &&
                               'bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100',
+                            pinSticky && pinnedOpaqueBackground(metric, starred, 'header'),
+                            isDragged('column', column.id) && 'opacity-50',
+                            isDropTarget('column', column.id) &&
+                              'outline-2 -outline-offset-2 outline-primary/60',
                           )}
                           style={pinnedColumnStyle(column.id, pinSide, pinLayout)}
+                          draggable
+                          onDragStart={(event) =>
+                            startDrag(event, { kind: 'column', id: column.id })
+                          }
+                          onDragOver={(event) => dragOver(event, { kind: 'column', id: column.id })}
+                          onDrop={(event) => drop(event, { kind: 'column', id: column.id })}
+                          onDragEnd={endDrag}
+                          title={`Drag ${column.label} to reorder columns`}
                           data-column-id={column.id}
                           data-column-group={column.schema?.group}
                           data-pinned={pinSide}
@@ -841,9 +975,10 @@ export function ExperimentResultsTable({
                               className={cn(
                                 'min-w-24 max-w-[32rem] border-r px-2.5 py-2 last:border-r-0',
                                 column.kind === 'variant' && 'min-w-52',
-                                pinSticky && 'sticky z-10 bg-background',
+                                pinSticky && 'sticky z-10',
                                 metric && 'bg-sky-50/40 dark:bg-sky-950/15',
                                 starred && 'bg-amber-50/50 dark:bg-amber-950/20',
+                                pinSticky && pinnedOpaqueBackground(metric, starred, 'cell'),
                               )}
                               style={pinnedColumnStyle(column.id, pinSide, pinLayout)}
                               data-column-id={column.id}
@@ -909,6 +1044,7 @@ export function ExperimentResultsTable({
 
 function RowFilterBadgeEditor({
   filter,
+  priority,
   columns,
   domains,
   experimentId,
@@ -917,6 +1053,7 @@ function RowFilterBadgeEditor({
   onDelete,
 }: {
   filter?: RowFilter
+  priority?: number
   columns: ResultTableColumn[]
   domains: ReadonlyMap<string, string[]>
   experimentId: string
@@ -959,7 +1096,10 @@ function RowFilterBadgeEditor({
           )}
           aria-label={
             filter
-              ? `Edit filter ${columnLabel} ${operatorSymbol(filter.operator)} ${filter.value || 'empty'}`
+              ? `Edit filter ${priority ?? ''} ${columnLabel} ${operatorSymbol(filter.operator)} ${filter.value || 'empty'}`.replace(
+                  /\s+/g,
+                  ' ',
+                )
               : 'Add row filter'
           }
           data-row-filter={filter?.id}
@@ -967,6 +1107,7 @@ function RowFilterBadgeEditor({
           {filter ? <Filter aria-hidden /> : <Plus aria-hidden />}
           {filter ? (
             <>
+              <span className="text-[9px] text-muted-foreground">{priority}</span>
               <span>{columnLabel}</span>
               <span className="font-mono text-muted-foreground">
                 {operatorSymbol(filter.operator)} {filter.value || '(empty)'}
@@ -989,7 +1130,7 @@ function RowFilterBadgeEditor({
         >
           <div>
             <div className="text-xs font-medium">
-              {filter ? 'Edit row filter' : 'Add row filter'}
+              {filter ? `Edit row filter · priority ${priority}` : 'Add row filter'}
             </div>
             <p className="text-[10px] text-muted-foreground">All filter badges combine with AND.</p>
           </div>
@@ -1730,6 +1871,50 @@ function parseWandbUrl(value: string): { href: string; label: string } | null {
   }
 }
 
+function dropEdge(event: DragEvent<HTMLElement>): DropEdge {
+  const bounds = event.currentTarget.getBoundingClientRect()
+  return event.clientX > bounds.left + bounds.width / 2 ? 'after' : 'before'
+}
+
+function reorderIds(ids: string[], sourceId: string, targetId: string, edge: DropEdge): string[] {
+  if (sourceId === targetId) return ids
+  const sourceIndex = ids.indexOf(sourceId)
+  if (sourceIndex < 0 || !ids.includes(targetId)) return ids
+  const next = ids.filter((id) => id !== sourceId)
+  const targetIndex = next.indexOf(targetId)
+  next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, sourceId)
+  return next.every((id, index) => id === ids[index]) ? ids : next
+}
+
+function reorderItems<T extends { id: string }>(
+  items: T[],
+  sourceId: string,
+  targetId: string,
+  edge: DropEdge,
+): T[] {
+  const currentIds = items.map((item) => item.id)
+  const nextIds = reorderIds(currentIds, sourceId, targetId, edge)
+  if (nextIds === currentIds) return items
+  const itemsById = new Map(items.map((item) => [item.id, item] as const))
+  const next = nextIds
+    .map((id) => itemsById.get(id))
+    .filter((item): item is T => item !== undefined)
+  return next.every((item, index) => item === items[index]) ? items : next
+}
+
+function normalizeColumnOrderIds(value: unknown, defaultIds: string[]): string[] {
+  const validIds = new Set(defaultIds)
+  const seen = new Set<string>()
+  const restored = Array.isArray(value)
+    ? value.filter((id): id is string => {
+        if (typeof id !== 'string' || !validIds.has(id) || seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+    : []
+  return [...restored, ...defaultIds.filter((id) => !seen.has(id))]
+}
+
 function normalizeMaxLines(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1
 }
@@ -1828,6 +2013,16 @@ function operatorSymbol(operator: RowFilterOperator): string {
   if (operator === 'neq') return '≠'
   if (operator === 'gt') return '>'
   return '<'
+}
+
+function pinnedOpaqueBackground(
+  metric: boolean,
+  starred: boolean,
+  surface: 'header' | 'cell',
+): string {
+  if (starred) return '!bg-amber-50 dark:!bg-amber-950'
+  if (metric) return '!bg-sky-50 dark:!bg-sky-950'
+  return surface === 'header' ? '!bg-muted' : '!bg-background'
 }
 
 function pinnedColumnStyle(
