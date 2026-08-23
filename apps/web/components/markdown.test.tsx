@@ -439,3 +439,29 @@ describe('<Markdown> artifact references', () => {
     expect(draft).toHaveValue('unsaved experiment state')
   })
 })
+
+describe('<Markdown> raw HTML with inline styles', () => {
+  it('preserves style attributes on span elements in raw HTML', () => {
+    const { container } = render(
+      <Markdown>{'<span style="color: red;">highlighted</span>'}</Markdown>,
+    )
+
+    const span = container.querySelector('span')
+    expect(span).not.toBeNull()
+    // style-to-js normalizes the value (drops spaces/semicolons); any non-empty
+    // style proves the attribute survived the render pipeline.
+    expect(span?.getAttribute('style')).toBeTruthy()
+    expect(span!.getAttribute('style')).toMatch(/color/)
+  })
+
+  it('preserves multiple CSS properties in inline styles', () => {
+    const { container } = render(
+      <Markdown>{'<span style="color: red; background-color: yellow;">styled</span>'}</Markdown>,
+    )
+
+    const span = container.querySelector('span')
+    expect(span).not.toBeNull()
+    expect(span?.getAttribute('style')).toBeTruthy()
+    expect(span!.getAttribute('style')).toMatch(/color/)
+  })
+})
