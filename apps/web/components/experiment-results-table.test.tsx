@@ -88,7 +88,11 @@ describe('ExperimentResultsTable', () => {
     expect(
       within(table)
         .getAllByRole('columnheader')
-        .map((header) => header.textContent),
+        .map(
+          (header) =>
+            header.querySelector<HTMLElement>('[data-column-label]')?.textContent ??
+            header.textContent,
+        ),
     ).toEqual([
       'Variant',
       'Status',
@@ -117,12 +121,36 @@ describe('ExperimentResultsTable', () => {
     expect(notesCell?.querySelectorAll('br')).toHaveLength(1)
 
     const lossOption = container.querySelector<HTMLElement>('[data-column-option="schema:loss"]')!
+    const learningRateOption = container.querySelector<HTMLElement>(
+      '[data-column-option="schema:lr"]',
+    )!
+    expect(lossOption).toHaveAttribute('data-column-group', 'metric')
+    expect(lossOption).toHaveClass('bg-sky-50/60')
+    expect(within(lossOption).queryByText('Metric')).not.toBeInTheDocument()
+    expect(learningRateOption).toHaveAttribute('data-column-group', 'parameter')
+    expect(learningRateOption).not.toHaveClass('bg-sky-50/60')
+    expect(within(learningRateOption).queryByText('Metric')).not.toBeInTheDocument()
+
+    const lossHeader = table.querySelector<HTMLElement>('thead [data-column-id="schema:loss"]')!
+    const lossCell = table.querySelector<HTMLElement>(
+      '[data-variant-id="V0001"] [data-column-id="schema:loss"]',
+    )!
+    expect(lossHeader).toHaveAttribute('data-column-group', 'metric')
+    expect(lossHeader).toHaveClass('bg-sky-50/90')
+    expect(lossHeader.querySelector('svg.lucide-chart-spline')).toBeInTheDocument()
+    expect(lossCell).toHaveAttribute('data-column-group', 'metric')
+    expect(lossCell).toHaveClass('bg-sky-50/40')
+
     expect(within(lossOption).getByText('2')).toBeInTheDocument()
     await user.hover(within(lossOption).getByText('Final loss'))
-    const domainHeading = await screen.findByText('Final loss · 2 distinct values')
+    expect(screen.queryByText('Final loss · 2 distinct values')).not.toBeInTheDocument()
+
+    await user.hover(within(learningRateOption).getByText('Learning rate'))
+    const domainHeading = await screen.findByText('Learning rate · 3 distinct values')
     const domainCard = domainHeading.closest<HTMLElement>('[data-slot="hover-card-content"]')!
-    expect(within(domainCard).getByText('0.1')).toBeInTheDocument()
-    expect(within(domainCard).getByText('0.2')).toBeInTheDocument()
+    expect(within(domainCard).getByText('0.001')).toBeInTheDocument()
+    expect(within(domainCard).getByText('0.002')).toBeInTheDocument()
+    expect(within(domainCard).getByText('0.003')).toBeInTheDocument()
   })
 
   it('renders wandb.ai values as compact chart links with the full URL on hover', async () => {

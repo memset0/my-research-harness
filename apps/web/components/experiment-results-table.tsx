@@ -483,6 +483,7 @@ export function ExperimentResultsTable({
           {columns.map((column, index) => {
             const values = domains.get(column.id) ?? []
             const starred = starredLabelSet.has(column.label)
+            const metric = column.schema?.group === 'metric'
             const pinSide = pinnedColumnSide.get(column.id)
             const checkboxId = `results-column-${experimentId}-${index}`
             return (
@@ -490,10 +491,12 @@ export function ExperimentResultsTable({
                 key={column.id}
                 className={cn(
                   'flex h-7 items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 shadow-xs',
+                  metric && 'border-sky-200 bg-sky-50/60 dark:border-sky-900 dark:bg-sky-950/20',
                   starred &&
                     'border-amber-300 bg-amber-50/70 dark:border-amber-700/60 dark:bg-amber-950/30',
                 )}
                 data-column-option={column.id}
+                data-column-group={column.schema?.group}
               >
                 <Checkbox
                   id={checkboxId}
@@ -501,56 +504,53 @@ export function ExperimentResultsTable({
                   onCheckedChange={(checked) => setColumnVisible(column.id, checked === true)}
                   aria-label={`Show ${column.label} column`}
                 />
-                <HoverCard openDelay={250} closeDelay={100}>
-                  <HoverCardTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 gap-1 px-1"
-                      aria-label={`Inspect distinct values for ${column.label}`}
-                    >
-                      <span>{column.label}</span>
-                      {pinSide && (
-                        <Badge
-                          variant="secondary"
-                          className="h-4 gap-0.5 px-1 text-[9px] uppercase"
-                          aria-label={`Pinned ${pinSide}`}
-                        >
-                          {pinSide === 'left' ? (
-                            <ArrowLeftToLine className="size-2.5" aria-hidden />
-                          ) : (
-                            <ArrowRightToLine className="size-2.5" aria-hidden />
-                          )}
-                          {pinSide}
-                        </Badge>
+                {metric ? (
+                  <div className="flex h-6 items-center gap-1 px-1 text-xs font-medium">
+                    <ColumnOptionSummary
+                      column={column}
+                      pinSide={pinSide}
+                      valueCount={values.length}
+                    />
+                  </div>
+                ) : (
+                  <HoverCard openDelay={250} closeDelay={100}>
+                    <HoverCardTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 gap-1 px-1"
+                        aria-label={`Inspect distinct values for ${column.label}`}
+                      >
+                        <ColumnOptionSummary
+                          column={column}
+                          pinSide={pinSide}
+                          valueCount={values.length}
+                        />
+                      </Button>
+                    </HoverCardTrigger>
+                    <HoverCardContent align="start" className="w-72 p-3">
+                      <div className="mb-2 text-xs font-medium">
+                        {column.label} · {values.length} distinct{' '}
+                        {values.length === 1 ? 'value' : 'values'}
+                      </div>
+                      {values.length === 0 ? (
+                        <div className="text-xs italic text-muted-foreground">No values</div>
+                      ) : (
+                        <ul className="max-h-64 space-y-1 overflow-y-auto text-xs">
+                          {values.map((value) => (
+                            <li
+                              key={value}
+                              className="break-all rounded bg-muted px-2 py-1 font-mono"
+                            >
+                              {renderTextWithBreaks(value)}
+                            </li>
+                          ))}
+                        </ul>
                       )}
-                      <Badge variant="outline" className="h-4 px-1.5 text-[9px] tabular-nums">
-                        {values.length}
-                      </Badge>
-                    </Button>
-                  </HoverCardTrigger>
-                  <HoverCardContent align="start" className="w-72 p-3">
-                    <div className="mb-2 text-xs font-medium">
-                      {column.label} · {values.length} distinct{' '}
-                      {values.length === 1 ? 'value' : 'values'}
-                    </div>
-                    {values.length === 0 ? (
-                      <div className="text-xs italic text-muted-foreground">No values</div>
-                    ) : (
-                      <ul className="max-h-64 space-y-1 overflow-y-auto text-xs">
-                        {values.map((value) => (
-                          <li
-                            key={value}
-                            className="break-all rounded bg-muted px-2 py-1 font-mono"
-                          >
-                            {renderTextWithBreaks(value)}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </HoverCardContent>
-                </HoverCard>
+                    </HoverCardContent>
+                  </HoverCard>
+                )}
                 <Button
                   type="button"
                   variant="ghost"
@@ -569,8 +569,9 @@ export function ExperimentResultsTable({
           })}
         </fieldset>
         <p className="text-[10px] text-muted-foreground">
-          Hover a column to inspect its distinct values. Right-click a table header to pin it.
-          Starred names are highlighted across this project.
+          Pale-blue columns are metrics. Hover parameter and metadata columns to inspect their
+          distinct values. Right-click a table header to pin it. Starred names are highlighted
+          across this project.
         </p>
 
         <Separator />
@@ -717,6 +718,7 @@ export function ExperimentResultsTable({
               <TableRow className="hover:bg-transparent">
                 {orderedVisibleColumns.map((column) => {
                   const starred = starredLabelSet.has(column.label)
+                  const metric = column.schema?.group === 'metric'
                   const direction =
                     temporarySort?.columnId === column.id ? temporarySort.direction : null
                   const pinSide = pinnedColumnSide.get(column.id)
@@ -735,11 +737,14 @@ export function ExperimentResultsTable({
                           className={cn(
                             'border-r px-1 last:border-r-0',
                             pinSticky && 'sticky z-20 bg-muted',
+                            metric &&
+                              'bg-sky-50/90 text-sky-950 dark:bg-sky-950/40 dark:text-sky-100',
                             starred &&
                               'bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100',
                           )}
                           style={pinnedColumnStyle(column.id, pinSide, pinLayout)}
                           data-column-id={column.id}
+                          data-column-group={column.schema?.group}
                           data-pinned={pinSide}
                           data-pin-sticky={pinSticky || undefined}
                         >
@@ -751,7 +756,16 @@ export function ExperimentResultsTable({
                             className="min-w-0 justify-start px-1.5"
                             aria-label={`${column.label}: ${sortActionLabel(direction)}`}
                           >
-                            <span className="truncate">{column.label}</span>
+                            {metric && (
+                              <ChartSpline
+                                className="size-3 shrink-0 text-sky-600 dark:text-sky-300"
+                                aria-hidden
+                              />
+                            )}
+                            <span className="truncate" data-column-label>
+                              {column.label}
+                            </span>
+                            {metric && <span className="sr-only">Metric column</span>}
                             <SortIcon direction={direction} />
                           </Button>
                         </TableHead>
@@ -818,6 +832,7 @@ export function ExperimentResultsTable({
                       >
                         {orderedVisibleColumns.map((column) => {
                           const starred = starredLabelSet.has(column.label)
+                          const metric = column.schema?.group === 'metric'
                           const pinSide = pinnedColumnSide.get(column.id)
                           const pinSticky = Boolean(pinSide && pinLayout.sticky)
                           return (
@@ -827,10 +842,12 @@ export function ExperimentResultsTable({
                                 'min-w-24 max-w-[32rem] border-r px-2.5 py-2 last:border-r-0',
                                 column.kind === 'variant' && 'min-w-52',
                                 pinSticky && 'sticky z-10 bg-background',
+                                metric && 'bg-sky-50/40 dark:bg-sky-950/15',
                                 starred && 'bg-amber-50/50 dark:bg-amber-950/20',
                               )}
                               style={pinnedColumnStyle(column.id, pinSide, pinLayout)}
                               data-column-id={column.id}
+                              data-column-group={column.schema?.group}
                               data-pinned={pinSide}
                               data-pin-sticky={pinSticky || undefined}
                             >
@@ -1253,6 +1270,39 @@ function SortBadgeEditor({
         </form>
       </PopoverContent>
     </Popover>
+  )
+}
+
+function ColumnOptionSummary({
+  column,
+  pinSide,
+  valueCount,
+}: {
+  column: ResultTableColumn
+  pinSide: PinSide | undefined
+  valueCount: number
+}) {
+  return (
+    <>
+      <span>{column.label}</span>
+      {pinSide && (
+        <Badge
+          variant="secondary"
+          className="h-4 gap-0.5 px-1 text-[9px] uppercase"
+          aria-label={`Pinned ${pinSide}`}
+        >
+          {pinSide === 'left' ? (
+            <ArrowLeftToLine className="size-2.5" aria-hidden />
+          ) : (
+            <ArrowRightToLine className="size-2.5" aria-hidden />
+          )}
+          {pinSide}
+        </Badge>
+      )}
+      <Badge variant="outline" className="h-4 px-1.5 text-[9px] tabular-nums">
+        {valueCount}
+      </Badge>
+    </>
   )
 }
 
