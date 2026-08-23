@@ -40,6 +40,7 @@ import {
   runExperimentDocumentShow,
   runExperimentDocumentValidate,
 } from './commands/experiment-document.js'
+import { runExperimentResults } from './commands/experiment-results.js'
 import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
@@ -314,7 +315,7 @@ experimentDoc
 
 // Read-only convenience forms kept deliberately small: Agents edit the YAML
 // files directly; these commands are projections, never CRUD APIs.
-for (const section of ['implementation', 'investigation', 'results'] as const) {
+for (const section of ['implementation', 'investigation'] as const) {
   const sectionCommand = experiment.command(section).description(`${section}.yaml read commands`)
   sectionCommand
     .command('show <id-or-slug>')
@@ -323,6 +324,32 @@ for (const section of ['implementation', 'investigation', 'results'] as const) {
       await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section })
     })
 }
+const resultsCommand = experiment.command('results').description('results.yaml read commands')
+resultsCommand
+  .command('show <id-or-slug>')
+  .description('render results.yaml as human-readable Markdown or normalized JSON')
+  .action(async (idOrSlug: string) => {
+    await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section: 'results' })
+  })
+resultsCommand
+  .command('table <id-or-slug>')
+  .description('read results as a selectable table with row/column filtering')
+  .option('--variant <ids>', 'comma-separated variant IDs to include (default: all)')
+  .option('--status <statuses>', 'comma-separated variant statuses to include (default: all)')
+  .option('--column <keys>', 'comma-separated column keys to include (default: all)')
+  .option('--group <group>', 'column group filter: parameter | metric | all (default: all)', 'all')
+  .option('--output <fmt>', 'output format: json | human | csv | markdown | yaml (default: json)', 'json')
+  .action(async (idOrSlug: string, opts: { variant?: string; status?: string; column?: string; group?: string; output?: string }) => {
+    await runExperimentResults({
+      ...readGlobals(),
+      idOrSlug,
+      variants: opts.variant,
+      statuses: opts.status,
+      columns: opts.column,
+      columnGroup: opts.group ?? 'all',
+      output: opts.output ?? 'json',
+    })
+  })
 
 const experimentSection = experiment
   .command('section')

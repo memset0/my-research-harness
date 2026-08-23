@@ -14,6 +14,7 @@ export const SKILLS_DIR: string = resolve(here, '..', '..')
 
 export const SKILL_NAMES = [
   'memon-drive',
+  'memon-read-results',
   'memon-write-experiment-doc',
   'memon-write-script',
   'memon-run-experiment',
