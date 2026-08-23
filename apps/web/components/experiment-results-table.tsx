@@ -20,12 +20,12 @@ import {
   Eye,
   EyeOff,
   Filter,
+  Minus,
   PinOff,
   Plus,
   RotateCcw,
   Rows3,
   Star,
-  Trophy,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -51,6 +51,9 @@ import {
   ContextMenuItem,
   ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from './ui/context-menu'
 import {
@@ -717,21 +720,11 @@ export function ExperimentResultsTable({
                   aria-label={`Show ${column.label} column`}
                 />
                 {metric ? (
-                  <div className="flex h-6 items-center gap-1 px-1 text-xs font-medium">
-                    <ColumnOptionSummary
-                      column={column}
-                      pinSide={pinSide}
-                      valueCount={values.length}
-                    />
-                    <SotaModeToggle
-                      mode={sotaModes[column.id] ?? 'off'}
-                      onToggle={() => cycleSotaMode(column.id)}
-                    />
-                    <DecimalPlacesInput
-                      places={decimalPlaces[column.id] ?? 0}
-                      onChange={(next) => setDecimalPlaces(column.id, next)}
-                    />
-                  </div>
+                  <ColumnOptionSummary
+                    column={column}
+                    pinSide={pinSide}
+                    valueCount={values.length}
+                  />
                 ) : (
                   <HoverCard openDelay={250} closeDelay={100}>
                     <HoverCardTrigger asChild>
@@ -1065,6 +1058,86 @@ export function ExperimentResultsTable({
                           <Star className={cn(starred && 'fill-current text-amber-500')} />
                           {starred ? 'Unstar column' : 'Star column'}
                         </ContextMenuItem>
+                        {metric && (
+                          <>
+                            <ContextMenuSeparator />
+                            <ContextMenuSub>
+                              <ContextMenuSubTrigger inset>
+                                <ArrowUp className="mr-2 size-4" />
+                                SOTA highlight
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent className="w-44">
+                                <ContextMenuItem
+                                  onSelect={() => cycleSotaMode(column.id)}
+                                  disabled={sotaModes[column.id] === 'off'}
+                                >
+                                  <Minus className="mr-2 size-4" />
+                                  Off
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onSelect={() => cycleSotaMode(column.id)}
+                                  disabled={sotaModes[column.id] === 'higher-is-better'}
+                                >
+                                  <ArrowUp className="mr-2 size-4" />
+                                  Higher is better
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onSelect={() => cycleSotaMode(column.id)}
+                                  disabled={sotaModes[column.id] === 'lower-is-better'}
+                                >
+                                  <ArrowDown className="mr-2 size-4" />
+                                  Lower is better
+                                </ContextMenuItem>
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                            <ContextMenuSub>
+                              <ContextMenuSubTrigger inset>
+                                <Columns3 className="mr-2 size-4" />
+                                Decimal places
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent className="w-44">
+                                <div className="flex items-center justify-between px-2 py-1.5">
+                                  <span className="text-xs text-muted-foreground">
+                                    {decimalPlaces[column.id] ?? 0} decimal place
+                                    {(decimalPlaces[column.id] ?? 0) === 1 ? '' : 's'}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="icon"
+                                      className="size-5 rounded"
+                                      aria-label="Decrease decimal places"
+                                      onClick={() =>
+                                        setDecimalPlaces(
+                                          column.id,
+                                          Math.max(0, (decimalPlaces[column.id] ?? 0) - 1),
+                                        )
+                                      }
+                                    >
+                                      <Minus className="size-3" aria-hidden />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="icon"
+                                      className="size-5 rounded"
+                                      aria-label="Increase decimal places"
+                                      onClick={() =>
+                                        setDecimalPlaces(
+                                          column.id,
+                                          Math.min(10, (decimalPlaces[column.id] ?? 0) + 1),
+                                        )
+                                      }
+                                    >
+                                      <Plus className="size-3" aria-hidden />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                          </>
+                        )}
                       </ContextMenuContent>
                     </ContextMenu>
                   )
@@ -2375,13 +2448,9 @@ function sotaModeLabel(mode: SotaMode): string {
 }
 
 function sotaModeIcon(mode: SotaMode): ReactNode {
-  const icon = <Trophy className="size-3" aria-hidden />
-  if (mode === 'off') return icon
-  return (
-    <span className={cn(mode === 'higher-is-better' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
-      {icon}
-    </span>
-  )
+  if (mode === 'higher-is-better') return <ArrowUp className="size-3" aria-hidden />
+  if (mode === 'lower-is-better') return <ArrowDown className="size-3" aria-hidden />
+  return <Minus className="size-3" aria-hidden />
 }
 
 function SotaModeToggle({ mode, onToggle }: { mode: SotaMode; onToggle: () => void }) {

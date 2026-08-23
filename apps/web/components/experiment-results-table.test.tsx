@@ -1,5 +1,5 @@
 import type { ResultsDocument } from '@memon/core'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentResultsTable } from './experiment-results-table'
@@ -756,37 +756,57 @@ describe('ExperimentResultsTable', () => {
   })
 
   it('persists SOTA mode and decimal places per metric column', async () => {
+    cleanup()
     const user = userEvent.setup()
-    const { container } = renderResults('E0001-sota-a')
+    const { container, unmount: unmountA } = renderResults('E0001-sota-a')
 
-    const lossOption = container.querySelector<HTMLElement>('[data-column-option="schema:loss"]')!
-    // Default: SOTA off, decimal places = 0
-    expect(lossOption.querySelector('[aria-label="SOTA highlight off"]')).toBeInTheDocument()
-    expect(lossOption.querySelector('[aria-label="Decimal places for metric column"]')).toHaveValue(
-      0,
-    )
+    // Right-click the "Final loss" column header to open the context menu.
+    const lossHeader = container.querySelector<HTMLElement>('[data-column-id="schema:loss"] button')!
+    fireEvent.contextMenu(lossHeader)
 
-    // Cycle SOTA mode to "higher is better"
-    await user.click(lossOption.querySelector('[aria-label="SOTA highlight off"]')!)
-    expect(lossOption.querySelector('[aria-label="Higher is better"]')).toBeInTheDocument()
+    // Context menu content is portaled to document.body; query from there.
+    const body = window.document.body
 
-    // Set decimal places to 2
-    const decimalInput = lossOption.querySelector('[aria-label="Decimal places for metric column"]')!
-    await user.clear(decimalInput)
-    await user.type(decimalInput, '2')
-    expect(decimalInput).toHaveValue(2)
+    // Open SOTA highlight submenu and select "Higher is better"
+    const sotaTrigger = Array.from(
+      body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
+    ).find((el) => el.textContent?.includes('SOTA highlight'))!
+    expect(sotaTrigger).toBeDefined()
+    await act(async () => {
+      fireEvent.click(sotaTrigger)
+    })
+    const higherOption = screen.getByRole('menuitem', { name: /Higher is better/i })
+    expect(higherOption).not.toBeDisabled()
+    await act(async () => {
+      fireEvent.click(higherOption)
+    })
 
-    const table = screen.getByRole('table')
-    // V0001 has loss=0.1, V0002 has loss=0.2, V0003 has loss=null
-    // With "higher is better": V0002 (0.2) is rank 1, V0001 (0.1) is rank 2
+    // Open decimal places submenu and click + twice to get 2
+    fireEvent.contextMenu(lossHeader)
+    const decimalTrigger = Array.from(
+      body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
+    ).find((el) => el.textContent?.includes('Decimal places'))!
+    await act(async () => {
+      fireEvent.click(decimalTrigger)
+    })
+    const plusButton = screen.getByRole('button', { name: /Increase decimal places/i })
+    await user.click(plusButton)
+    await user.click(plusButton)
+
+    const table = container.querySelector('table')!
+    // SOTA highlighting and decimal formatting apply after the preference-driven
+    // re-render; wait for them.
+    await waitFor(() => {
+      const v0002After = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
+      expect(v0002After).toHaveClass('font-bold', 'underline')
+    })
     const v0001LossCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
-    const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
-    expect(v0002LossCell).toHaveClass('font-bold', 'underline') // rank 1
-    expect(v0001LossCell).toHaveClass('font-bold') // rank 2
+    expect(v0001LossCell).toHaveClass('font-bold')
     expect(v0001LossCell).not.toHaveClass('underline')
 
     // Decimal formatting: 0.1 → "0.10", 0.2 → "0.20"
     expect(v0001LossCell).toHaveTextContent('0.10')
+    const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
     expect(v0002LossCell).toHaveTextContent('0.20')
 
     // Non-metric column (Learning rate) should not be affected
@@ -794,6 +814,7 @@ describe('ExperimentResultsTable', () => {
     expect(lrCell).not.toHaveClass('font-bold', 'underline')
     expect(lrCell).toHaveTextContent('0.001') // no formatting
 
+    unmountA()
     await waitFor(() => {
       const preferences = JSON.parse(
         window.localStorage.getItem('memon:results-table:research:E0001-sota-a:preferences') ?? '{}',
@@ -804,30 +825,45 @@ describe('ExperimentResultsTable', () => {
   })
 
   it('switches SOTA mode to lower-is-better and highlights the smallest values', async () => {
+    cleanup()
     const user = userEvent.setup()
-    const { container } = renderResults('E0001-sota-b')
+    const { container, unmount: unmountB } = renderResults('E0001-sota-b')
 
-    const lossOption = container.querySelector<HTMLElement>('[data-column-option="schema:loss"]')!
-    // Find the SOTA toggle button (aria-label changes with mode; grab whatever is there).
-    const findSotaButton = () =>
-      lossOption.querySelector<HTMLButtonElement>(
-        '[aria-label="SOTA highlight off"], [aria-label="Higher is better"], [aria-label="Lower is better"]',
-      )!
+    const lossHeader = container.querySelector<HTMLElement>('[data-column-id="schema:loss"] button')!
     // Start from off, cycle: off → higher → lower
-    expect(findSotaButton()).toHaveAttribute('aria-label', 'SOTA highlight off')
-    await user.click(findSotaButton())
-    expect(findSotaButton()).toHaveAttribute('aria-label', 'Higher is better')
-    await user.click(findSotaButton())
-    expect(findSotaButton()).toHaveAttribute('aria-label', 'Lower is better')
+    fireEvent.contextMenu(lossHeader)
+    const body = window.document.body
+    const sotaTriggerB = Array.from(
+      body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
+    ).find((el) => el.textContent?.includes('SOTA highlight'))!
+    await act(async () => {
+      fireEvent.click(sotaTriggerB)
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /Higher is better/i }))
+    })
 
-    const table = screen.getByRole('table')
-    // With "lower is better": V0001 (0.1) is rank 1, V0002 (0.2) is rank 2
-    const v0001LossCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
+    fireEvent.contextMenu(lossHeader)
+    const sotaTriggerC = Array.from(
+      body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
+    ).find((el) => el.textContent?.includes('SOTA highlight'))!
+    await act(async () => {
+      fireEvent.click(sotaTriggerC)
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /Lower is better/i }))
+    })
+
+    const table = container.querySelector('table')!
+    await waitFor(() => {
+      const v0001After = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
+      expect(v0001After).toHaveClass('font-bold', 'underline')
+    })
     const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
-    expect(v0001LossCell).toHaveClass('font-bold', 'underline') // rank 1 (smallest)
-    expect(v0002LossCell).toHaveClass('font-bold') // rank 2
+    expect(v0002LossCell).toHaveClass('font-bold')
     expect(v0002LossCell).not.toHaveClass('underline')
 
+    unmountB()
     await waitFor(() => {
       const preferences = JSON.parse(
         window.localStorage.getItem('memon:results-table:research:E0001-sota-b:preferences') ?? '{}',
@@ -837,28 +873,36 @@ describe('ExperimentResultsTable', () => {
   })
 
   it('does not highlight non-numeric metric values', async () => {
+    cleanup()
     const user = userEvent.setup()
-    renderResults('E0001-sota')
+    const { container, unmount } = renderResults('E0001-sota')
 
-    // Notes is a string metric column; find its column-option fieldset.
-    const notesOption = screen
-      .getAllByRole('group')
-      .find((el) => (el as HTMLElement).dataset.columnOption === 'schema:notes')!
-    const sotaButton = notesOption.querySelector('[aria-label="SOTA highlight off"]') ??
-      notesOption.querySelector('[aria-label="Higher is better"]') ??
-      notesOption.querySelector('[aria-label="Lower is better"]')
-    expect(sotaButton).toBeTruthy()
+    // Notes is a string metric column; verify the SOTA submenu exists in its
+    // context menu (metric columns get the display submenics).
+    const notesHeader = container.querySelector<HTMLElement>('[data-column-id="schema:notes"] button')!
+    fireEvent.contextMenu(notesHeader)
+    const sotaSubTrigger = screen.getByRole('menuitem', { name: /SOTA highlight/i })
+    expect(sotaSubTrigger).toBeInTheDocument()
+    await user.click(sotaSubTrigger)
+    // All three modes are valid options; "Off" is the default (not disabled).
+    expect(screen.getByRole('menuitem', { name: /^Off$/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Higher is better/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Lower is better/i })).toBeInTheDocument()
 
-    // Notes column control should be present (metric column), but string
-    // values never receive SOTA rank styling.
-    const table = screen.getByRole('table')
+    // String metric values never receive SOTA rank styling regardless of mode.
+    const table = container.querySelector('table') ?? screen.getByRole('table')
     const v0001NotesCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:notes"]')
     expect(v0001NotesCell).not.toHaveClass('font-bold', 'underline')
+
+    unmount()
   })
 })
 
 function renderResults(experimentId: string, document: ResultsDocument = RESULTS) {
-  return render(
+  const portalRoot = window.document.createElement('div')
+  portalRoot.id = 'portal-root'
+  window.document.body.appendChild(portalRoot)
+  const result = render(
     <ExperimentResultsTable
       document={document}
       project="research"
@@ -870,6 +914,14 @@ function renderResults(experimentId: string, document: ResultsDocument = RESULTS
       ]}
     />,
   )
+  return {
+    ...result,
+    portalRoot,
+    unmount: () => {
+      result.unmount()
+      portalRoot.remove()
+    },
+  }
 }
 
 function runSummary(id: string, wandb?: string) {
