@@ -463,6 +463,8 @@ describe('ExperimentResultsTable', () => {
         pinnedColumnIds: { left: [], right: [] },
         rowFilters: [],
         rowOverrides: {},
+        sotaModes: {},
+        decimalPlaces: {},
       }),
     )
   })
@@ -751,6 +753,107 @@ describe('ExperimentResultsTable', () => {
     renderResults('E0001-pins')
     await waitFor(() => expect(headerIds(screen.getByRole('table'))[0]).toBe('commit'))
     expect(headerIds(screen.getByRole('table')).at(-1)).toBe('schema:notes')
+  })
+
+  it('persists SOTA mode and decimal places per metric column', async () => {
+    const user = userEvent.setup()
+    const { container } = renderResults('E0001-sota-a')
+
+    const lossOption = container.querySelector<HTMLElement>('[data-column-option="schema:loss"]')!
+    // Default: SOTA off, decimal places = 0
+    expect(lossOption.querySelector('[aria-label="SOTA highlight off"]')).toBeInTheDocument()
+    expect(lossOption.querySelector('[aria-label="Decimal places for metric column"]')).toHaveValue(
+      0,
+    )
+
+    // Cycle SOTA mode to "higher is better"
+    await user.click(lossOption.querySelector('[aria-label="SOTA highlight off"]')!)
+    expect(lossOption.querySelector('[aria-label="Higher is better"]')).toBeInTheDocument()
+
+    // Set decimal places to 2
+    const decimalInput = lossOption.querySelector('[aria-label="Decimal places for metric column"]')!
+    await user.clear(decimalInput)
+    await user.type(decimalInput, '2')
+    expect(decimalInput).toHaveValue(2)
+
+    const table = screen.getByRole('table')
+    // V0001 has loss=0.1, V0002 has loss=0.2, V0003 has loss=null
+    // With "higher is better": V0002 (0.2) is rank 1, V0001 (0.1) is rank 2
+    const v0001LossCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
+    const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
+    expect(v0002LossCell).toHaveClass('font-bold', 'underline') // rank 1
+    expect(v0001LossCell).toHaveClass('font-bold') // rank 2
+    expect(v0001LossCell).not.toHaveClass('underline')
+
+    // Decimal formatting: 0.1 → "0.10", 0.2 → "0.20"
+    expect(v0001LossCell).toHaveTextContent('0.10')
+    expect(v0002LossCell).toHaveTextContent('0.20')
+
+    // Non-metric column (Learning rate) should not be affected
+    const lrCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:lr"] span')
+    expect(lrCell).not.toHaveClass('font-bold', 'underline')
+    expect(lrCell).toHaveTextContent('0.001') // no formatting
+
+    await waitFor(() => {
+      const preferences = JSON.parse(
+        window.localStorage.getItem('memon:results-table:research:E0001-sota-a:preferences') ?? '{}',
+      )
+      expect(preferences.sotaModes).toEqual({ 'schema:loss': 'higher-is-better' })
+      expect(preferences.decimalPlaces).toEqual({ 'schema:loss': 2 })
+    })
+  })
+
+  it('switches SOTA mode to lower-is-better and highlights the smallest values', async () => {
+    const user = userEvent.setup()
+    const { container } = renderResults('E0001-sota-b')
+
+    const lossOption = container.querySelector<HTMLElement>('[data-column-option="schema:loss"]')!
+    // Find the SOTA toggle button (aria-label changes with mode; grab whatever is there).
+    const findSotaButton = () =>
+      lossOption.querySelector<HTMLButtonElement>(
+        '[aria-label="SOTA highlight off"], [aria-label="Higher is better"], [aria-label="Lower is better"]',
+      )!
+    // Start from off, cycle: off → higher → lower
+    expect(findSotaButton()).toHaveAttribute('aria-label', 'SOTA highlight off')
+    await user.click(findSotaButton())
+    expect(findSotaButton()).toHaveAttribute('aria-label', 'Higher is better')
+    await user.click(findSotaButton())
+    expect(findSotaButton()).toHaveAttribute('aria-label', 'Lower is better')
+
+    const table = screen.getByRole('table')
+    // With "lower is better": V0001 (0.1) is rank 1, V0002 (0.2) is rank 2
+    const v0001LossCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
+    const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
+    expect(v0001LossCell).toHaveClass('font-bold', 'underline') // rank 1 (smallest)
+    expect(v0002LossCell).toHaveClass('font-bold') // rank 2
+    expect(v0002LossCell).not.toHaveClass('underline')
+
+    await waitFor(() => {
+      const preferences = JSON.parse(
+        window.localStorage.getItem('memon:results-table:research:E0001-sota-b:preferences') ?? '{}',
+      )
+      expect(preferences.sotaModes).toEqual({ 'schema:loss': 'lower-is-better' })
+    })
+  })
+
+  it('does not highlight non-numeric metric values', async () => {
+    const user = userEvent.setup()
+    renderResults('E0001-sota')
+
+    // Notes is a string metric column; find its column-option fieldset.
+    const notesOption = screen
+      .getAllByRole('group')
+      .find((el) => (el as HTMLElement).dataset.columnOption === 'schema:notes')!
+    const sotaButton = notesOption.querySelector('[aria-label="SOTA highlight off"]') ??
+      notesOption.querySelector('[aria-label="Higher is better"]') ??
+      notesOption.querySelector('[aria-label="Lower is better"]')
+    expect(sotaButton).toBeTruthy()
+
+    // Notes column control should be present (metric column), but string
+    // values never receive SOTA rank styling.
+    const table = screen.getByRole('table')
+    const v0001NotesCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:notes"]')
+    expect(v0001NotesCell).not.toHaveClass('font-bold', 'underline')
   })
 })
 

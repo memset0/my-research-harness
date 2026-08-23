@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Rows3,
   Star,
+  Trophy,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -97,6 +98,8 @@ interface ResultTableColumn {
   getValue: (variant: ResultVariant) => ResultValue
 }
 
+type SotaMode = 'off' | 'higher-is-better' | 'lower-is-better'
+
 interface ResultsTablePreferences {
   hiddenColumnIds: string[]
   columnOrderIds: string[]
@@ -105,6 +108,8 @@ interface ResultsTablePreferences {
   pinnedColumnIds: Record<PinSide, string[]>
   rowFilters: RowFilter[]
   rowOverrides: Record<string, RowOverride>
+  sotaModes: Record<string, SotaMode>
+  decimalPlaces: Record<string, number>
 }
 
 interface RowFilter {
@@ -139,6 +144,8 @@ const DEFAULT_PREFERENCES: ResultsTablePreferences = {
   pinnedColumnIds: { left: [], right: [] },
   rowFilters: [],
   rowOverrides: {},
+  sotaModes: {},
+  decimalPlaces: {},
 }
 
 const EMPTY_PIN_LAYOUT: PinLayout = { sticky: false, leftOffsets: {}, rightOffsets: {} }
@@ -210,6 +217,8 @@ export function ExperimentResultsTable({
   const pinnedColumnIds = preferences.pinnedColumnIds
   const rowFilters = preferences.rowFilters
   const rowOverrides = preferences.rowOverrides
+  const sotaModes = preferences.sotaModes
+  const decimalPlaces = preferences.decimalPlaces
   const pinnedColumnSide = new Map<string, PinSide>([
     ...pinnedColumnIds.left.map((id) => [id, 'left'] as const),
     ...pinnedColumnIds.right.map((id) => [id, 'right'] as const),
@@ -248,6 +257,10 @@ export function ExperimentResultsTable({
       ),
     [columns, document.variants],
   )
+  const sotaRanks = useMemo(
+    () => computeSotaRanks(document.variants, columns, sotaModes),
+    [document.variants, columns, sotaModes],
+  )
   const filteredVariants = useMemo(
     () => filterVariants(document.variants, columns, rowFilters, rowOverrides, showAllRows),
     [columns, document.variants, rowFilters, rowOverrides, showAllRows],
@@ -277,6 +290,8 @@ export function ExperimentResultsTable({
     pinnedColumnIds.right.length === 0 &&
     rowFilters.length === 0 &&
     Object.keys(rowOverrides).length === 0 &&
+    Object.keys(sotaModes).length === 0 &&
+    Object.keys(decimalPlaces).length === 0 &&
     !showAllColumns &&
     !showAllRows
 
@@ -499,6 +514,27 @@ export function ExperimentResultsTable({
     setTemporarySort(null)
   }
 
+  const cycleSotaMode = (columnId: string) => {
+    updatePreferences((current) => {
+      const currentMode = current.sotaModes[columnId] ?? 'off'
+      const nextMode =
+        currentMode === 'off'
+          ? 'higher-is-better'
+          : currentMode === 'higher-is-better'
+            ? 'lower-is-better'
+            : 'off'
+      return { ...current, sotaModes: { ...current.sotaModes, [columnId]: nextMode } }
+    })
+  }
+
+  const setDecimalPlaces = (columnId: string, places: number) => {
+    updatePreferences((current) => {
+      const clamped = Math.max(0, Math.min(10, Number.isFinite(places) ? Math.floor(places) : 0))
+      const next = { ...current.decimalPlaces, [columnId]: clamped }
+      return { ...current, decimalPlaces: next }
+    })
+  }
+
   const resetView = () => {
     setStoredPreferences(DEFAULT_PREFERENCES)
     setShowAllColumns(false)
@@ -686,6 +722,14 @@ export function ExperimentResultsTable({
                       column={column}
                       pinSide={pinSide}
                       valueCount={values.length}
+                    />
+                    <SotaModeToggle
+                      mode={sotaModes[column.id] ?? 'off'}
+                      onToggle={() => cycleSotaMode(column.id)}
+                    />
+                    <DecimalPlacesInput
+                      places={decimalPlaces[column.id] ?? 0}
+                      onChange={(next) => setDecimalPlaces(column.id, next)}
                     />
                   </div>
                 ) : (
@@ -1073,6 +1117,8 @@ export function ExperimentResultsTable({
                                   project={project}
                                   experimentId={experimentId}
                                   memberRunsById={memberRunsById}
+                                  sotaRank={metric ? sotaRanks.get(column.id)?.ranks.get(variant.id) : undefined}
+                                  decimalPlaces={metric ? decimalPlaces[column.id] : undefined}
                                 />
                               </CellClamp>
                             </TableCell>
@@ -1589,12 +1635,16 @@ function ResultCell({
   project,
   experimentId,
   memberRunsById,
+  sotaRank,
+  decimalPlaces,
 }: {
   column: ResultTableColumn
   variant: ResultVariant
   project: string
   experimentId: string
   memberRunsById: ReadonlyMap<string, MemberRunSummary>
+  sotaRank?: number
+  decimalPlaces?: number
 }) {
   if (column.kind === 'variant') {
     return (
@@ -1654,7 +1704,19 @@ function ResultCell({
 
   const value = column.getValue(variant)
   if (value === null || value === undefined || value === '') return <EmptyValue />
-  const text = String(value)
+
+  // Apply decimal-places formatting to finite numbers when the user has
+  // enabled it for this metric column. Non-numeric values are left as-is.
+  let displayText = String(value)
+  if (
+    decimalPlaces !== undefined &&
+    typeof value === 'number' &&
+    Number.isFinite(value)
+  ) {
+    displayText = value.toFixed(decimalPlaces)
+  }
+
+  const text = displayText
   const provenanceHref =
     column.kind === 'entry' || column.kind === 'recipe'
       ? gitBlobUrl(variant, text)
@@ -1674,8 +1736,25 @@ function ResultCell({
     )
   }
   const content = renderCellText(text)
+  const hasDecimalFormat = decimalPlaces !== undefined && typeof value === 'number' && Number.isFinite(value)
+  const sotaClass =
+    sotaRank === 1
+      ? 'font-bold underline'
+      : sotaRank === 2
+        ? 'font-bold'
+        : sotaRank === 3
+          ? 'underline'
+          : ''
   return column.kind === 'schema' ? (
-    <span className={cn(column.schema?.type === 'number' && 'tabular-nums')}>{content}</span>
+    <span
+      className={cn(
+        column.schema?.type === 'number' && 'tabular-nums',
+        hasDecimalFormat && 'tabular-nums',
+        sotaClass,
+      )}
+    >
+      {content}
+    </span>
   ) : (
     <code className="font-mono text-[10px]">{content}</code>
   )
@@ -2016,6 +2095,8 @@ function normalizeResultsTablePreferences(
     pinnedColumnIds: normalizePinnedColumnIds(candidate.pinnedColumnIds, validColumnIds),
     rowFilters: normalizeRowFilters(candidate.rowFilters, validColumnIds),
     rowOverrides: normalizeRowOverrides(candidate.rowOverrides, validVariantIds),
+    sotaModes: normalizeSotaModes(candidate.sotaModes, validColumnIds),
+    decimalPlaces: normalizeDecimalPlaces(candidate.decimalPlaces, validColumnIds),
   }
 }
 
@@ -2205,5 +2286,136 @@ function isSafeRelativePath(path: string): boolean {
     !normalized.startsWith('/') &&
     !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized) &&
     !normalized.split('/').includes('..')
+  )
+}
+
+// ── Display enhancement helpers ──────────────────────────────────────────────
+
+type SotaRank = 1 | 2 | 3 | undefined
+
+interface SotaRanking {
+  /** Map from variant id to its SOTA rank (1 = best, 2 = second, 3 = third). */
+  ranks: Map<string, SotaRank>
+  /** Whether the ranking is active (mode is not 'off'). */
+  active: boolean
+}
+
+function computeSotaRanks(
+  variants: ResultVariant[],
+  columns: ResultTableColumn[],
+  modes: Record<string, SotaMode>,
+): Map<string, SotaRanking> {
+  const result = new Map<string, SotaRanking>()
+  for (const column of columns) {
+    if (column.schema?.group !== 'metric') continue
+    const mode = modes[column.id] ?? 'off'
+    if (mode === 'off') continue
+
+    // Collect finite numeric values for this column, preserving variant order.
+    const entries: Array<{ variantId: string; value: number }> = []
+    for (const variant of variants) {
+      const raw = column.getValue(variant)
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        entries.push({ variantId: variant.id, value: raw })
+      }
+    }
+    if (entries.length === 0) continue
+
+    // Sort by value according to the mode direction.
+    const sorted = entries.slice().sort((a, b) =>
+      mode === 'higher-is-better' ? b.value - a.value : a.value - b.value,
+    )
+
+    // Assign ranks: best = 1, second = 2, third = 3.
+    const ranks = new Map<string, SotaRank>()
+    for (let i = 0; i < sorted.length && i < 3; i++) {
+      ranks.set(sorted[i]!.variantId, (i + 1) as SotaRank)
+    }
+    result.set(column.id, { ranks, active: true })
+  }
+  return result
+}
+
+function normalizeSotaModes(
+  value: unknown,
+  validColumnIds: ReadonlySet<string>,
+): Record<string, SotaMode> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const result: Record<string, SotaMode> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (!validColumnIds.has(key)) continue
+    if (raw === 'higher-is-better' || raw === 'lower-is-better') {
+      result[key] = raw
+    }
+    // 'off' and any unknown values are dropped (default to off).
+  }
+  return result
+}
+
+function normalizeDecimalPlaces(
+  value: unknown,
+  validColumnIds: ReadonlySet<string>,
+): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const result: Record<string, number> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (!validColumnIds.has(key)) continue
+    const places = typeof raw === 'number' ? Math.floor(raw) : NaN
+    if (Number.isFinite(places) && places >= 0 && places <= 10) {
+      result[key] = places
+    }
+  }
+  return result
+}
+
+function sotaModeLabel(mode: SotaMode): string {
+  if (mode === 'higher-is-better') return 'Higher is better'
+  if (mode === 'lower-is-better') return 'Lower is better'
+  return 'SOTA highlight off'
+}
+
+function sotaModeIcon(mode: SotaMode): ReactNode {
+  const icon = <Trophy className="size-3" aria-hidden />
+  if (mode === 'off') return icon
+  return (
+    <span className={cn(mode === 'higher-is-better' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+      {icon}
+    </span>
+  )
+}
+
+function SotaModeToggle({ mode, onToggle }: { mode: SotaMode; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={sotaModeLabel(mode)}
+      title={sotaModeLabel(mode)}
+      className={cn(
+        'inline-flex size-5 items-center justify-center rounded opacity-70 transition-opacity hover:opacity-100',
+        mode === 'off' && 'text-muted-foreground',
+      )}
+    >
+      {sotaModeIcon(mode)}
+    </button>
+  )
+}
+
+function DecimalPlacesInput({ places, onChange }: { places: number; onChange: (n: number) => void }) {
+  return (
+    <Input
+      type="number"
+      min={0}
+      max={10}
+      step={1}
+      value={places}
+      onChange={(event) => {
+        const raw = Number(event.target.value)
+        onChange(Number.isFinite(raw) ? raw : 0)
+      }}
+      aria-label="Decimal places for metric column"
+      title={`Show ${places} decimal place${places === 1 ? '' : 's'}`}
+      className="h-5 w-8 rounded px-1 text-[10px] tabular-nums"
+    />
   )
 }
