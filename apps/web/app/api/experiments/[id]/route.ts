@@ -3,6 +3,7 @@
 //                                member runs. Pass `?force=true` to allow
 //                                deletion of an exp with members.
 
+import { stat } from 'node:fs/promises'
 import { type NextRequest, NextResponse } from 'next/server'
 import { deleteExperiment, ExperimentHttpError } from '../../../../lib/experiments'
 import { getRuntime } from '../../../../lib/runtime'
@@ -43,6 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ]),
       ),
     })
+    const resultsUpdatedAt = await managedResultsUpdatedAt(exp.documents?.results)
+    const resultsSnapshotAt = new Date().toISOString()
     return NextResponse.json({
       id: exp.id,
       project: exp.project,
@@ -53,6 +56,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       sections: exp.sections,
       rawSections: exp.rawSections,
       documents: exp.documents,
+      resultsUpdatedAt,
+      resultsSnapshotAt,
       documentSections: documentView.sections,
       documentDiagnostics: documentView.diagnostics,
       documentReadOnly: documentView.readOnly,
@@ -79,6 +84,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  }
+}
+
+async function managedResultsUpdatedAt(
+  results: { exists: boolean; path: string } | undefined,
+): Promise<string | null> {
+  if (!results?.exists) return null
+  try {
+    return (await stat(results.path)).mtime.toISOString()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
   }
 }
 

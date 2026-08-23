@@ -14,7 +14,9 @@ import type {
   JournalEvent,
   ParsedHypotheses,
   ParsedJournal,
+  ParseIssue,
   ReportSummary,
+  ResultsDocument,
   Run,
   WarningRecord,
 } from '@memon/core'
@@ -927,6 +929,15 @@ export interface ExperimentDocDetail extends ExperimentDocSummary {
   documentSections?: ExperimentDisplaySection[]
   documentDiagnostics?: ExperimentDocumentDiagnostic[]
   documentReadOnly?: boolean
+  resultsUpdatedAt?: string | null
+  resultsSnapshotAt?: string
+}
+
+export interface ExperimentResultsSnapshot {
+  document: ResultsDocument
+  updatedAt: string
+  snapshotAt: string
+  warnings: ParseIssue[]
 }
 
 export interface AnomalyRecord {
@@ -949,6 +960,10 @@ export async function fetchExperimentDocs(
 
 export async function fetchExperimentDoc(id: string): Promise<ExperimentDocDetail> {
   return jsonFetch(`/api/experiments/${encodeURIComponent(id)}`)
+}
+
+export async function fetchExperimentResults(id: string): Promise<ExperimentResultsSnapshot> {
+  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}/results`, { cache: 'no-store' })
 }
 
 export async function fetchAnomalies(project?: string): Promise<{ anomalies: AnomalyRecord[] }> {

@@ -9,13 +9,14 @@ vi.mock('../../lib/api', async (importOriginal) => {
   return {
     ...actual,
     fetchExperimentDoc: vi.fn(),
+    fetchExperimentResults: vi.fn(),
     fetchExperiment: vi.fn(),
     fetchRunFiles: vi.fn(),
     patchExperimentStatusV4: vi.fn(),
   }
 })
 
-import { fetchExperimentDoc, patchExperimentStatusV4 } from '../../lib/api'
+import { fetchExperimentDoc, fetchExperimentResults, patchExperimentStatusV4 } from '../../lib/api'
 
 const EXP_ID = 'E0001-structured'
 
@@ -55,6 +56,8 @@ describe('ExperimentPage v6 document sections', () => {
       effectiveCreatedAt: '2026-08-10T00:00:00+00:00',
       effectiveUpdatedAt: '2026-08-10T00:00:00+00:00',
       memberRuns: [],
+      resultsUpdatedAt: '2026-08-23T03:00:00.000Z',
+      resultsSnapshotAt: '2026-08-23T04:00:00.000Z',
       documents: {
         implementation: {
           kind: 'implementation',
@@ -190,6 +193,14 @@ describe('ExperimentPage v6 document sections', () => {
       ],
     })
 
+    let resolveRefresh: (snapshot: Awaited<ReturnType<typeof fetchExperimentResults>>) => void =
+      () => undefined
+    vi.mocked(fetchExperimentResults).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRefresh = resolve
+      }),
+    )
+
     const { container } = renderWithQuery(
       <ExperimentPage project="research" experimentId={EXP_ID} initialOpenRun={null} />,
     )
@@ -213,6 +224,66 @@ describe('ExperimentPage v6 document sections', () => {
     expect(screen.getByText(/^compatibility view$/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /edit markdown/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /change experiment status/i })).toBeInTheDocument()
+    expect(fetchExperimentResults).not.toHaveBeenCalled()
+    expect(screen.getByText(/Last updated/)).toBeInTheDocument()
+    expect(screen.getByText(/Stale for/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Show Final loss column' }))
+    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+    expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
+
+    const refreshButton = screen.getByRole('button', { name: 'Refresh Results' })
+    await userEvent.click(refreshButton)
+    expect(fetchExperimentResults).toHaveBeenCalledTimes(1)
+    expect(refreshButton).toBeDisabled()
+    expect(refreshButton).toHaveTextContent('Refreshing…')
+    expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
+
+    const refreshedSnapshotAt = new Date().toISOString()
+    resolveRefresh({
+      document: {
+        schemaVersion: 1,
+        columns: [
+          { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
+          { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
+        ],
+        variants: [
+          {
+            id: 'V0002',
+            name: 'FP32 refreshed',
+            status: 'COMPLETED',
+            parameters: { precision: 'fp32' },
+            metrics: { loss: 0.125 },
+            runs: [],
+            attempts: [],
+          },
+        ],
+      },
+      updatedAt: '2026-08-23T04:40:00.000Z',
+      snapshotAt: refreshedSnapshotAt,
+      warnings: [],
+    })
+    await waitFor(() => expect(screen.getByText('V0002')).toBeInTheDocument())
+    expect(screen.queryByText('V0001')).not.toBeInTheDocument()
+    expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+    expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
+      'title',
+      `Results snapshot read at ${refreshedSnapshotAt}`,
+    )
+    expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 0s')
+
+    vi.mocked(fetchExperimentResults).mockRejectedValueOnce(new Error('network unavailable'))
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
+    await waitFor(() =>
+      expect(screen.getByText('Results refresh failed: network unavailable')).toBeInTheDocument(),
+    )
+    expect(screen.getByText('V0002')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh Results' })).toBeEnabled()
+    expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
+      'title',
+      `Results snapshot read at ${refreshedSnapshotAt}`,
+    )
 
     await userEvent.click(screen.getByRole('combobox', { name: /change experiment status/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'RESOLVED' }))

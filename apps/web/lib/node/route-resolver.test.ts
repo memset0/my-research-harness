@@ -21,6 +21,12 @@ describe('resolveRoute', () => {
     expect(r?.params).toEqual({ project: 'project-a' })
   })
 
+  it('resolves the Experiment Results snapshot route', () => {
+    const r = resolveRoute('/api/experiments/E0001-demo/results')
+    expect(r?.filePath).toMatch(/experiments\/\[id\]\/results\/route\.ts$/)
+    expect(r?.params).toEqual({ id: 'E0001-demo' })
+  })
+
   it('returns null for an unknown path', () => {
     expect(resolveRoute('/api/definitely-not-a-route-xyz')).toBeNull()
   })

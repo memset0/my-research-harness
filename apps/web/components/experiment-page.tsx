@@ -8,15 +8,17 @@
 // supporting evidence, then Runs. Results is the decision surface; Runs is
 // deliberately last because it is the verbose execution detail.
 
+import type { ResultsDocument } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, File, Folder, FolderOpen } from 'lucide-react'
+import { AlertTriangle, File, Folder, FolderOpen, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type ExperimentDisplaySection,
   type FullExperiment,
   fetchExperiment,
   fetchExperimentDoc,
+  fetchExperimentResults,
   fetchRunFiles,
   type MemberRunSummary,
 } from '../lib/api'
@@ -36,6 +38,7 @@ import { StatusEdit } from './status-edit'
 import { StatusPill } from './status-pill'
 import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
+import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 
@@ -153,6 +156,8 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             experimentId={exp.id}
             documents={exp.documents}
             memberRuns={exp.memberRuns}
+            resultsUpdatedAt={exp.resultsUpdatedAt}
+            resultsSnapshotAt={exp.resultsSnapshotAt}
           />
         ))}
 
@@ -211,12 +216,16 @@ function SectionCard({
   experimentId,
   documents,
   memberRuns,
+  resultsUpdatedAt,
+  resultsSnapshotAt,
 }: {
   section: ExperimentDisplaySection
   project: string
   experimentId: string
   documents?: import('@memon/core').ExperimentManagedDocuments | null
   memberRuns: MemberRunSummary[]
+  resultsUpdatedAt?: string | null
+  resultsSnapshotAt?: string
 }) {
   const { heading, body } = section
   const managedConflict = section.managed && section.source === 'readme'
@@ -228,7 +237,43 @@ function SectionCard({
         ? 'investigation'
         : null
   const managedDocument = managedKind ? documents?.[managedKind].data : null
-  const resultsDocument = heading === 'Results' ? documents?.results.data : null
+  const initialResultsDocument = heading === 'Results' ? documents?.results.data : null
+  const [resultsSnapshot, setResultsSnapshot] = useState<{
+    document: ResultsDocument
+    updatedAt: string | null
+    snapshotAt: string
+  } | null>(() =>
+    initialResultsDocument
+      ? {
+          document: initialResultsDocument,
+          updatedAt: resultsUpdatedAt ?? null,
+          snapshotAt: resultsSnapshotAt ?? new Date().toISOString(),
+        }
+      : null,
+  )
+  const [resultsRefreshing, setResultsRefreshing] = useState(false)
+  const [resultsRefreshError, setResultsRefreshError] = useState<string | null>(null)
+  const resultsRefreshInFlight = useRef(false)
+
+  const refreshResults = async () => {
+    if (!resultsSnapshot || resultsRefreshInFlight.current) return
+    resultsRefreshInFlight.current = true
+    setResultsRefreshing(true)
+    setResultsRefreshError(null)
+    try {
+      const next = await fetchExperimentResults(experimentId)
+      setResultsSnapshot({
+        document: next.document,
+        updatedAt: next.updatedAt,
+        snapshotAt: next.snapshotAt,
+      })
+    } catch (error) {
+      setResultsRefreshError(error instanceof Error ? error.message : 'Results refresh failed')
+    } finally {
+      resultsRefreshInFlight.current = false
+      setResultsRefreshing(false)
+    }
+  }
   return (
     <Card
       className={cn(
@@ -241,7 +286,7 @@ function SectionCard({
     >
       <CardHeader className="flex-row items-center justify-between gap-2">
         <CardTitle>{heading}</CardTitle>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           {!section.supported && (
             <Badge variant="outline" className="border-amber-500/60">
               Unsupported
@@ -254,9 +299,36 @@ function SectionCard({
           {section.occurrence > 1 && (
             <Badge variant="destructive">Duplicate #{section.occurrence}</Badge>
           )}
+          {resultsSnapshot && (
+            <>
+              <ResultsSnapshotStatus
+                key={resultsSnapshot.snapshotAt}
+                updatedAt={resultsSnapshot.updatedAt}
+                snapshotAt={resultsSnapshot.snapshotAt}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={resultsRefreshing}
+                onClick={refreshResults}
+                aria-label="Refresh Results"
+                data-results-refresh
+              >
+                <RefreshCw
+                  className={cn('size-3.5', resultsRefreshing && 'animate-spin')}
+                  aria-hidden
+                />
+                {resultsRefreshing ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </>
+          )}
         </div>
       </CardHeader>
       <CardContent>
+        {resultsRefreshError && (
+          <SectionNotice tone="error">Results refresh failed: {resultsRefreshError}</SectionNotice>
+        )}
         {!section.supported && (
           <SectionNotice tone="warning">
             This heading is not supported by the current Experiment schema. Its original content is
@@ -285,9 +357,9 @@ function SectionCard({
             ))}
           </ul>
         )}
-        {section.source === 'yaml' && resultsDocument ? (
+        {section.source === 'yaml' && resultsSnapshot ? (
           <ExperimentResultsTable
-            document={resultsDocument}
+            document={resultsSnapshot.document}
             project={project}
             experimentId={experimentId}
             memberRuns={memberRuns}
@@ -309,6 +381,49 @@ function SectionCard({
       </CardContent>
     </Card>
   )
+}
+
+function ResultsSnapshotStatus({
+  updatedAt,
+  snapshotAt,
+}: {
+  updatedAt: string | null
+  snapshotAt: string
+}) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  return (
+    <div
+      className="flex h-7 items-center gap-1.5 rounded-md border bg-muted/30 px-2 text-[10px] text-muted-foreground"
+      data-results-snapshot-status
+      title={`Results snapshot read at ${snapshotAt}`}
+    >
+      <span className="whitespace-nowrap">
+        Last updated <TimestampLocal value={updatedAt} />
+      </span>
+      <span aria-hidden>·</span>
+      <span className="whitespace-nowrap" data-results-stale-for>
+        Stale for {formatSnapshotAge(snapshotAt, now)}
+      </span>
+    </div>
+  )
+}
+
+function formatSnapshotAge(snapshotAt: string, now: number): string {
+  const snapshotTime = new Date(snapshotAt).getTime()
+  const elapsedSeconds = Number.isFinite(snapshotTime)
+    ? Math.max(0, Math.floor((now - snapshotTime) / 1_000))
+    : 0
+  if (elapsedSeconds < 60) return `${elapsedSeconds}s`
+  const minutes = Math.floor(elapsedSeconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
 }
 
 function RunsCard({
