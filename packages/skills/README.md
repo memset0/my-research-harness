@@ -1,17 +1,16 @@
 # memon skills
 
-Eleven bundled agent skills compose memon's research workflow. They are synced
+Ten bundled agent skills compose memon's research workflow. They are synced
 into a project's agent skill directories by:
 
 ```sh
 memon --project-root . install-skills
 ```
 
-Every project-aware skill passes `--project-root .` explicitly and runs the
-shared FS-version protocol in `PREFLIGHT.md`. `memon-notify` is the only
-project-independent skill; `memon-migrate-fs` is the only preflight-exempt and
-user-invoked-only skill. The same shared file defines the CLI issue handoff used
-by all eleven skills, including `memon-notify` and `memon-migrate-fs`.
+Every skill passes `--project-root .` explicitly when invoking `memon` and runs
+the shared FS-version protocol in `PREFLIGHT.md`; `memon-migrate-fs` is the only
+preflight-exempt and user-invoked-only skill. The same shared file defines the
+CLI issue handoff used by all ten skills.
 
 ## Skill index
 
@@ -27,7 +26,6 @@ by all eleven skills, including `memon-notify` and `memon-migrate-fs`.
 | Write a human code-review guide | `memon-write-code-review` | Project/Experiment code-review doc; optional Implementation link through writer |
 | Brainstorm next research work | `memon-propose` | Read-only |
 | Upgrade the FS convention | `memon-migrate-fs` | Staged migration + final FS marker; explicit user invocation only |
-| Send a Telegram alert | `memon-notify` | External notification only |
 
 `memon-append-warning` has been removed. The legacy warning CLI remains
 permanently available only as a deprecated compatibility entry and prints a
@@ -142,4 +140,3 @@ memon --project-root . --format json experiment doc lint <id>
 | `memon-write-code-review` | one code-review doc | Experiment bundle directly |
 | `memon-propose` | nothing | everything |
 | `memon-migrate-fs` | guide-defined staged/final paths + marker | unrelated work |
-| `memon-notify` | Telegram message | project tree |

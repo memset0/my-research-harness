@@ -5,46 +5,53 @@ TBD - created by archiving change add-skills-cli. Update Purpose after archive.
 ## Requirements
 ### Requirement: Skill invocation policy split by risk tier
 
-The bundled skills under `packages/skills/memon-*/` SHALL declare invocation control via the `disable-model-invocation` frontmatter field according to risk tier:
+The bundled skills under `packages/skills/memon-*/` SHALL declare invocation
+control via the `disable-model-invocation` frontmatter field according to their
+confirmation boundary. `memon-migrate-fs` SHALL set
+`disable-model-invocation: true` because it rewrites the full project convention
+and can create migration commits. Every other bundled skill MAY omit the field
+and be selected when its description matches, while still obeying the
+confirmation rules documented in its body.
 
-- Skills that perform multi-step disk writes, start long-running processes, or advance shared cursors SHALL set `disable-model-invocation: true` (user-invoked only). At archive time these are: `memon-write-script`, `memon-run-experiment`, `memon-digest-journal`, `memon-write-report`, `memon-propose`, `memon-migrate-fs`.
-- Skills that perform a single low-stakes append-only / fire-and-forget action MAY omit the field (model-invocable). At archive time these are: `memon-append-journal`, `memon-append-warning`, `memon-notify`.
+At archive time the model-invocable set is `memon-drive`,
+`memon-write-experiment-doc`, `memon-write-script`, `memon-run-experiment`,
+`memon-append-journal`, `memon-digest-journal`, `memon-write-report`,
+`memon-write-code-review`, and `memon-propose`.
 
-The intent is: heavy work needs a human in the loop; "I noticed something worth recording" or "the user should be pinged about this" can fire on its own. `memon-migrate-fs` belongs to the heavy tier — it rewrites spec files across multiple version steps and creates git commits, so it MUST be user-invoked. `memon-notify` belongs to the light tier — a single Telegram POST with no disk side-effects.
+#### Scenario: Run-experiment allows model invocation
 
-#### Scenario: Heavy skill is user-invoked
-- **WHEN** a reader inspects the frontmatter of `packages/skills/memon-run-experiment/SKILL.md`
-- **THEN** it contains the line `disable-model-invocation: true`
+- **WHEN** a reader inspects the frontmatter of
+  `packages/skills/memon-run-experiment/SKILL.md`
+- **THEN** no `disable-model-invocation` field is present (or the field is
+  `false`)
 
 #### Scenario: Migrate-fs is user-invoked
-- **WHEN** a reader inspects the frontmatter of `packages/skills/memon-migrate-fs/SKILL.md`
+
+- **WHEN** a reader inspects the frontmatter of
+  `packages/skills/memon-migrate-fs/SKILL.md`
 - **THEN** it contains the line `disable-model-invocation: true`
 
 #### Scenario: Append-journal allows model invocation
-- **WHEN** a reader inspects the frontmatter of `packages/skills/memon-append-journal/SKILL.md`
-- **THEN** no `disable-model-invocation` field is present (or the field is `false`)
 
-#### Scenario: Append-warning allows model invocation
-- **WHEN** a reader inspects the frontmatter of `packages/skills/memon-append-warning/SKILL.md`
-- **THEN** no `disable-model-invocation` field is present (or the field is `false`)
-
-#### Scenario: Notify allows model invocation
-- **WHEN** a reader inspects the frontmatter of `packages/skills/memon-notify/SKILL.md`
-- **THEN** no `disable-model-invocation` field is present (or the field is `false`)
+- **WHEN** a reader inspects the frontmatter of
+  `packages/skills/memon-append-journal/SKILL.md`
+- **THEN** no `disable-model-invocation` field is present (or the field is
+  `false`)
 
 ### Requirement: `--project-root` is always passed explicitly
 
-Every `memon ...` invocation issued from a skill body SHALL pass `--project-root <path>` (or `--project-root .`) explicitly. Skills SHALL NOT rely on the CLI's implicit-cwd fallback. This forces every skill to be portable across the project's cwd / `config.yml` configurations and removes the silent-cwd-default class of bugs.
-
-The sole exception is `memon notify`, which has no project context: it does not accept `--project-root` and instead resolves Telegram credentials from `--config <path>` (or the `MEMON_TELEGRAM_BOT_TOKEN` + `MEMON_TELEGRAM_CHAT_ID` env vars). The `memon-notify` skill's examples SHALL therefore pass `--config` (or rely on cwd `config.yml`) rather than `--project-root`; this is the only sanctioned skill-body deviation from the rule above.
+Every `memon ...` invocation issued from a skill body SHALL pass
+`--project-root <path>` (or `--project-root .`) explicitly. Skills SHALL NOT rely
+on the CLI's implicit-cwd fallback. This forces every skill to be portable
+across project cwd and configuration layouts and removes the
+silent-cwd-default class of bugs.
 
 #### Scenario: Append-journal example uses --project-root
-- **WHEN** reviewing the example invocation in `packages/skills/memon-append-journal/SKILL.md`
-- **THEN** the command includes `--project-root .` (or `--project-root <path>`) explicitly
 
-#### Scenario: Notify is the sanctioned exception
-- **WHEN** reviewing the example invocations in `packages/skills/memon-notify/SKILL.md`
-- **THEN** the `memon notify` commands do NOT pass `--project-root` (the flag is rejected by that subcommand) and instead pass `--config <path>` or rely on a cwd `config.yml`
+- **WHEN** reviewing the example invocation in
+  `packages/skills/memon-append-journal/SKILL.md`
+- **THEN** the command includes `--project-root .` (or
+  `--project-root <path>`) explicitly
 
 ### Requirement: mtime optimistic locking discipline
 
@@ -72,18 +79,33 @@ Skills SHALL update `docs/journal.md` frontmatter (specifically `last_digest_at`
 
 ### Requirement: Doctor checks fold into memon-digest-journal; no standalone memon-doctor skill
 
-There SHALL NOT be a standalone `memon-doctor` skill. Doctor checks (running the `memon doctor` CLI + walking the user through fixes) SHALL be performed inside `memon-digest-journal`'s workflow, before the cursor advance. The `memon doctor` CLI command itself is preserved for ad-hoc checks but no longer has a dedicated skill wrapper.
+There SHALL NOT be a standalone `memon-doctor` skill. Doctor checks (running the
+`memon doctor` CLI and walking the user through fixes) SHALL be performed inside
+`memon-digest-journal`'s workflow before the cursor advance. The `memon doctor`
+CLI command itself is preserved for ad-hoc checks but no longer has a dedicated
+skill wrapper.
 
-The rationale: integrity-sweep and cursor-advance share a natural commit point. Splitting them creates a "ran doctor, fixed things, forgot to digest" failure mode.
+The rationale is that integrity-sweep and cursor-advance share a natural commit
+point. Splitting them creates a "ran doctor, fixed things, forgot to digest"
+failure mode.
 
 #### Scenario: digest-journal includes the doctor sweep
-- **WHEN** reviewing `packages/skills/memon-digest-journal/SKILL.md` workflow
-- **THEN** it includes a step that runs `memon doctor --project-root . --format json` and walks the user through each issue with the 7 doctor codes
 
-#### Scenario: No memon-doctor skill on disk
+- **WHEN** reviewing `packages/skills/memon-digest-journal/SKILL.md` workflow
+- **THEN** it includes a step that runs
+  `memon doctor --project-root . --format json` and walks the user through each
+  issue with the documented doctor codes
+
+#### Scenario: Bundled skill inventory excludes removed wrappers
+
 - **WHEN** listing `packages/skills/memon-*` directories
-- **THEN** there is no `memon-doctor/` subdirectory
-- **AND** the only `memon-*` subdirectories present are the ten bundled skills (`memon-drive`, `memon-write-script`, `memon-run-experiment`, `memon-digest-journal`, `memon-write-report`, `memon-propose`, `memon-migrate-fs`, `memon-append-journal`, `memon-append-warning`, `memon-notify`)
+- **THEN** there is no `memon-doctor/`, `memon-append-warning/`, or
+  `memon-notify/` subdirectory
+- **AND** the only bundled directories are `memon-drive`,
+  `memon-write-experiment-doc`, `memon-write-script`,
+  `memon-run-experiment`, `memon-append-journal`, `memon-digest-journal`,
+  `memon-write-report`, `memon-write-code-review`, `memon-propose`, and
+  `memon-migrate-fs`
 
 ### Requirement: Skill body is English; user-facing dialogue is Chinese
 
@@ -256,133 +278,60 @@ Skills SHALL NOT invoke `memon experiment warning resolve`, `memon experiment wa
 - **WHEN** a reader inspects the Anti-pattern section of `memon-run-experiment`, `memon-digest-journal`, or `memon-append-warning`
 - **THEN** at least one bullet explicitly states "do NOT call `warning resolve`/`reopen`/`delete` — those are human acts"
 
-### Requirement: `memon-notify` exists as a model-invocable push-notification skill
-
-A bundled skill at `packages/skills/memon-notify/SKILL.md` SHALL exist.
-It is a manual + thin wrapper for the `memon notify` CLI (the
-`telegram-notify` capability). It SHALL be model-invocable (no
-`disable-model-invocation` field, or `false`) because it performs a
-single low-stakes side-effect (one HTTP POST, no disk writes) — the
-same tier as `memon-append-journal` / `memon-append-warning`.
-
-The skill body SHALL be in English (per the project language
-convention), with any user-facing dialogue in Chinese inside `>` block
-quotes.
-
-The skill body SHALL document a **When to use** section that maps each
-of the five severities to a concrete situation:
-
-| severity | situation |
-|---|---|
-| `error` | a fatal / unrecoverable failure — the run crashed and the agent can't recover, or a fix it tried did not work |
-| `warn` | stuck-but-running — a bug the agent has been circling without progress |
-| `question` | a human judgment call the agent would otherwise raise via AskUserQuestion |
-| `done` | a long task the user delegated then walked away from has finished AND been verified |
-| `info` | a milestone worth surfacing that needs no action |
-
-The skill body SHALL document a **When NOT to use** section that
-includes at minimum: (a) the user is actively in the conversation —
-just ask them; (b) per loop iteration / per step (one notification per
-*significant* event); (c) as a durable log (that is
-`memon-append-journal`); (d) routine exp-doc warnings (that is
-`memon-append-warning`).
-
-The skill body SHALL instruct the agent to ALWAYS pass `--agent` and
-`--session` so the message footer is attributable, to pipe multi-line
-markdown bodies via `--details-file -`, and to explain when `--soft`
-is and is not appropriate (use it when a lost notification must not
-break the agent's loop; omit it when delivery must be confirmed).
-
-The skill body SHALL state that the bot is **send-only**: the agent
-pushes and continues working; it does not block waiting for a reply.
-
-The skill body SHALL list anti-patterns including at minimum:
-per-iteration spam, crying-wolf `error` for non-fatal hiccups, dumping
-a long log into `--title`, omitting `--session`, and echoing the bot
-token (which lives in `config.yml` and is redacted from CLI errors).
-
-#### Scenario: Skill exists with model-invocable frontmatter
-
-- **WHEN** a reader inspects `packages/skills/memon-notify/SKILL.md`
-- **THEN** the frontmatter has `name: memon-notify` and contains NO
-  `disable-model-invocation: true` line (the field is absent or
-  `false`)
-
-#### Scenario: When-to-use covers all five severities
-
-- **WHEN** a reader inspects the skill's "When to use" section
-- **THEN** all five severities (`info`, `warn`, `error`, `question`,
-  `done`) appear, each paired with a concrete situation
-
-#### Scenario: Skill body language conventions
-
-- **WHEN** a reader samples headings and paragraphs from the SKILL body
-- **THEN** all sampled prose is in English
-- **AND** any user-facing dialogue appears inside `>` block quotes in
-  Chinese
-
-#### Scenario: Examples pass --agent and --session
-
-- **WHEN** a reader inspects the example `memon notify` invocations in
-  the workflow body
-- **THEN** each send-path example passes `--agent` and `--session`
-  explicitly
-
 ### Requirement: `memon-write-code-review` exists as a model-invocable code-review authoring skill
 
 A bundled skill at `packages/skills/memon-write-code-review/SKILL.md` SHALL
 exist. It authors a single code-review doc per invocation at
 `<projectRoot>/docs/code-review/<YYYY-MM-DD>-<slug>.md` (project-wide) or
 `<projectRoot>/docs/experiments/E<NNNN>-<slug>/code-review/<YYYY-MM-DD>-<slug>.md`
-(experiment-scoped). It SHALL be model-invocable (no `disable-model-invocation`
-field, or `false`) — one low-stakes markdown write, the same tier as
-`memon-write-report`. The skill body SHALL be English with any user-facing
-dialogue in Chinese inside `>` block quotes.
+(experiment-scoped). It SHALL be model-invocable (no
+`disable-model-invocation: true` field, or `false`) — one low-stakes markdown
+write, the same tier as `memon-write-report`. The skill body SHALL be English
+with any user-facing dialogue in Chinese inside `>` block quotes.
 
 The skill body SHALL document the frontmatter contract the runtime parses:
-`title`, `description`, `experiment` (`E<NNNN>-<slug>` or null),
-`created_at` / `updated_at` (ISO8601 with timezone offset), `commits[]` (each
-`repo`, `sha`, `url`, optional `subject`, and `reviewed`), and
-`review_todolist[]` (each `item` and `done`). It SHALL state that completion is
-derived (the human checks the boxes in the dashboard) and that the agent writes
-every `reviewed` / `done` flag as `false`.
+`title`, `description`, `experiment` (`E<NNNN>-<slug>` or null), `created_at` /
+`updated_at` (ISO8601 with timezone offset), `commits[]` (each `repo`, `sha`,
+`url`, optional `subject`, and `reviewed`), and `review_todolist[]` (each `item`
+and `done`). It SHALL state that completion is derived (the human checks the
+boxes in the dashboard) and that the agent writes every `reviewed` / `done` flag
+as `false`.
 
 The skill body SHALL give a submodule-aware recipe for the per-commit `url` and
-for in-body line-level permalinks: each link uses the owner/repo and `sha` of
-the repo the file lives in (the main repo or the specific submodule), with the
-`<path>` relative to that repo's root; the commit URL is `…/commit/<sha>` and
-the line permalink is `…/blob/<sha>/<path>#L<a>-L<b>`.
+for in-body line-level permalinks: each link uses the owner/repo and `sha` of the
+repo the file lives in (the main repo or the specific submodule), with the
+`<path>` relative to that repo's root; the commit URL is `…/commit/<sha>` and the
+line permalink is `…/blob/<sha>/<path>#L<a>-L<b>`.
 
-The skill body SHALL document the body template: `## Requirement`, `## Changes`,
-`## Verification`, `## Notes`, with each change in `## Changes` titled in
-Conventional Commits style and carrying the H4 subsections Deliverables, Design
-Decisions, Analysis, Verification, and Details (write "None" when empty). It
-SHALL instruct: `Analysis` is a complete, end-to-end walk-through of the change
-(substantial, not one or two lines) that weaves together essential code
-excerpts, line-level permalinks, pseudocode, and math (`$…$` / `$$…$$`); keep
-raw code minimal (link full code via permalink, never paste whole files) without
-shortening the walk-through; go deep on the "why" in `Design Decisions`
-(underlying root cause + relevant math); label pseudocode with a sentence before
-the fenced block. It SHALL instruct the agent
-to consult the user via AskUserQuestion (or a plain question where that tool is
+The skill body SHALL document the body template: `## Requirement`,
+`## Changes`, `## Verification`, `## Notes`, with each change in `## Changes`
+titled in Conventional Commits style and carrying the H4 subsections
+Deliverables, Design Decisions, Analysis, Verification, and Details (write
+"None" when empty). It SHALL instruct: `Analysis` is a complete, end-to-end
+walk-through of the change (substantial, not one or two lines) that weaves
+together essential code excerpts, line-level permalinks, pseudocode, and math
+(`$…$` / `$$…$$`); keep raw code minimal (link full code via permalink, never
+paste whole files) without shortening the walk-through; go deep on the "why" in
+`Design Decisions` (underlying root cause and relevant math); label pseudocode
+with a sentence before the fenced block. It SHALL instruct the agent to consult
+the user via AskUserQuestion (or a plain question where that tool is
 unavailable) when the change-split granularity is ambiguous, and SHALL frame the
 sections as angles to consider rather than a rigid template (omit what does not
 apply; extra content is allowed).
 
-The skill SHALL preflight-check the FS convention version per `../PREFLIGHT.md`,
-and SHALL appear in `packages/skills/README.md` (the skill-selection matrix and
-the files-written table).
+The skill SHALL preflight-check the FS convention version per
+`../PREFLIGHT.md`, and SHALL appear in `packages/skills/README.md` (the
+skill-selection matrix and the files-written table).
 
-On a successful write the skill SHALL push a one-shot notification via the
-`memon notify` CLI (the `memon-notify` skill) to tell the user a code-review is
-ready: severity `done`, a title beginning with `[code-review]`, passing
-`--agent` and `--session`. It is best-effort and runs after the doc is written —
-if Telegram is not configured (`memon notify` exits 2) the skill SHALL surface
-that once and proceed, never undoing or failing the already-written doc.
+After successfully writing the document, the skill SHALL tell the user in the
+active conversation that the code-review is ready and include the created or
+updated path. Completion SHALL NOT depend on an out-of-band notification
+command or transport.
 
 #### Scenario: Skill exists with model-invocable frontmatter
 
-- **WHEN** a reader inspects `packages/skills/memon-write-code-review/SKILL.md`
+- **WHEN** a reader inspects
+  `packages/skills/memon-write-code-review/SKILL.md`
 - **THEN** the frontmatter has `name: memon-write-code-review` and contains no
   `disable-model-invocation: true` line (the field is absent or `false`)
 
@@ -397,20 +346,21 @@ that once and proceed, never undoing or failing the already-written doc.
 
 - **WHEN** a reader inspects the GitHub-link guidance
 - **THEN** it specifies per-repo owner/sha and a `<path>` relative to the owning
-  repo's root for both the `/commit/<sha>` and `blob/<sha>/<path>#L<a>-L<b>` forms
+  repo's root for both the `/commit/<sha>` and
+  `blob/<sha>/<path>#L<a>-L<b>` forms
 
 #### Scenario: Body template with conventional-commit change titles and five subsections
 
 - **WHEN** a reader inspects the body template
-- **THEN** the sections Requirement / Changes / Verification / Notes appear, and
-  each change carries the five H4 subsections (Deliverables, Design Decisions,
-  Analysis, Verification, Details)
+- **THEN** the sections Requirement / Changes / Verification / Notes appear,
+  and each change carries the five H4 subsections (Deliverables, Design
+  Decisions, Analysis, Verification, Details)
 
 #### Scenario: Listed in the skills index
 
 - **WHEN** a reader inspects `packages/skills/README.md`
-- **THEN** `memon-write-code-review` appears in the skill-selection matrix and in
-  the files-written table
+- **THEN** `memon-write-code-review` appears in the skill-selection matrix and
+  in the files-written table
 
 #### Scenario: Skill body language conventions
 
@@ -418,12 +368,12 @@ that once and proceed, never undoing or failing the already-written doc.
 - **THEN** all sampled prose is in English, and any user-facing dialogue appears
   in Chinese inside `>` block quotes
 
-#### Scenario: Code-review completion notification
+#### Scenario: Code-review completion is conversational
 
 - **WHEN** `memon-write-code-review` finishes writing a doc
-- **THEN** it issues a `memon notify` with severity `done` and a title beginning
-  with `[code-review]`, passing `--agent` and `--session`, and a missing Telegram
-  config is surfaced once rather than failing the write
+- **THEN** the agent tells the user in the active conversation that the review
+  is ready and provides its path
+- **AND** no notification command is invoked
 
 ### Requirement: `memon-drive` offers a code-review when a reviewable change lands
 

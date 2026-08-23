@@ -10,8 +10,8 @@ branches on its result to either proceed, stop with a recommendation, or
 surface a fatal mismatch.
 
 This doc is the canonical source for the protocol. Project-aware skills point
-here instead of duplicating the branch table. `memon-notify` has no project
-tree, and `memon-migrate-fs` is exempt because it resolves version mismatch.
+here instead of duplicating the branch table. `memon-migrate-fs` is exempt
+because it resolves version mismatch.
 
 ## How
 

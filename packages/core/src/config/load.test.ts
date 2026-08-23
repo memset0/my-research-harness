@@ -744,14 +744,22 @@ terminal:
   })
 })
 
-describe('loadConfig telegram block', () => {
-  it('returns telegram: undefined when block is absent', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), VALID)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.telegram).toBeUndefined()
-  })
+describe('loadConfig legacy telegram block', () => {
+  async function captureStderr<T>(run: () => Promise<T>): Promise<{ value: T; stderr: string }> {
+    const original = process.stderr.write
+    let stderr = ''
+    process.stderr.write = ((chunk: unknown) => {
+      stderr += String(chunk)
+      return true
+    }) as typeof process.stderr.write
+    try {
+      return { value: await run(), stderr }
+    } finally {
+      process.stderr.write = original
+    }
+  }
 
-  it('parses a full telegram block to camelCase with defaults filled', async () => {
+  it('warns, redacts, and ignores a complete legacy block', async () => {
     const yaml = `
 projects:
   - { name: a, root: ./a }
@@ -760,76 +768,32 @@ telegram:
   chat_id: "-100123456"
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.telegram).toEqual({
-      botToken: '12345:ABC-DEF',
-      chatId: '-100123456',
-      parseMode: 'MarkdownV2',
-      disableNotification: false,
-    })
+    const { value: cfg, stderr } = await captureStderr(() => loadConfig({ cwd: dir }))
+    expect(cfg).not.toBeNull()
+    expect('telegram' in cfg!).toBe(false)
+    expect(stderr).toContain('config key `telegram` is no longer supported')
+    expect(stderr).toContain('delete its stored credentials')
+    expect(stderr).not.toContain('12345:ABC-DEF')
+    expect(stderr).not.toContain('-100123456')
   })
 
-  it('accepts numeric chat_id and stringifies', async () => {
+  it('warns and ignores a malformed legacy block instead of rejecting config', async () => {
     const yaml = `
 projects:
   - { name: a, root: ./a }
-telegram:
-  bot_token: "tok"
-  chat_id: -100123456
+telegram: definitely-not-an-object
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.telegram!.chatId).toBe('-100123456')
+    const { value: cfg, stderr } = await captureStderr(() => loadConfig({ cwd: dir }))
+    expect(cfg).not.toBeNull()
+    expect('telegram' in cfg!).toBe(false)
+    expect(stderr).toContain('config key `telegram` is no longer supported')
   })
 
-  it('honours parse_mode HTML and disable_notification true', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-telegram:
-  bot_token: "tok"
-  chat_id: "1"
-  parse_mode: HTML
-  disable_notification: true
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.telegram!.parseMode).toBe('HTML')
-    expect(cfg!.telegram!.disableNotification).toBe(true)
-  })
-
-  it('rejects block missing bot_token', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-telegram:
-  chat_id: "1"
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects block missing chat_id', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-telegram:
-  bot_token: "tok"
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects unsupported parse_mode like "Markdown"', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-telegram:
-  bot_token: "tok"
-  chat_id: "1"
-  parse_mode: Markdown
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  it('does not warn when the legacy key is absent', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const { value: cfg, stderr } = await captureStderr(() => loadConfig({ cwd: dir }))
+    expect(cfg).not.toBeNull()
+    expect(stderr).toBe('')
   })
 })

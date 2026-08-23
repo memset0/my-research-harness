@@ -845,20 +845,6 @@ export interface GitStatusConfig {
   intervalMs: number
 }
 
-/**
- * Optional Telegram bot for `memon notify` push notifications. Present iff
- * config.yml has a `telegram:` block with both `bot_token` and `chat_id`.
- * See openspec/specs/telegram-notify/.
- */
-export interface TelegramConfig {
-  botToken: string
-  chatId: string
-  parseMode: 'MarkdownV2' | 'HTML'
-  disableNotification: boolean
-}
-
-export const DEFAULT_TELEGRAM_PARSE_MODE: TelegramConfig['parseMode'] = 'MarkdownV2'
-
 /** What a node exposes to the hub. Both default to true. */
 export interface NodeCapabilities {
   tmux: boolean
@@ -909,8 +895,6 @@ export interface Config {
   terminal: TerminalConfig
   slurm: SlurmConfig
   gitStatus: GitStatusConfig
-  /** Present iff config.yml has a complete `telegram:` block. */
-  telegram?: TelegramConfig
   /** Present iff config.yml has a `hub:` block (hub mode). */
   hub?: HubConfig
   /** Present iff config.yml has a `node:` block (node mode). */

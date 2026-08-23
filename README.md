@@ -373,7 +373,6 @@ choice via `/memon-<name>`:
 | `memon-write-code-review` | Write a project- or Experiment-scoped human review guide and optionally link it to an Implementation item through the writer. |
 | `memon-propose` | Read-only research collaborator that ranks useful next Experiments or Variant sets. |
 | `memon-migrate-fs` | User-invoked staged FS-convention migration with review before production publish. |
-| `memon-notify` | Send an out-of-band Telegram notification; does not mutate the project tree. |
 
 The former `memon-append-warning` skill is intentionally absent. Reinstalling
 skills removes its stale installed directory. Its CLI commands remain as the

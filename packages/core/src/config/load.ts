@@ -21,7 +21,6 @@ import {
   DEFAULT_NODE_CAPABILITIES,
   DEFAULT_POLL,
   DEFAULT_SLURM,
-  DEFAULT_TELEGRAM_PARSE_MODE,
   DEFAULT_TERMINAL,
   type GitStatusConfig,
   type HubConfig,
@@ -30,9 +29,11 @@ import {
   type PollConfig,
   type ProjectConfig,
   type SlurmConfig,
-  type TelegramConfig,
   type TerminalConfig,
 } from '../types.js'
+
+const LEGACY_TELEGRAM_CONFIG_WARNING =
+  'memon: warning: config key `telegram` is no longer supported; remove the `telegram:` block and delete its stored credentials.\n'
 
 export class ConfigError extends Error {
   constructor(
@@ -79,6 +80,15 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     raw = yaml.load(content, { schema: yaml.JSON_SCHEMA })
   } catch (err) {
     throw new ConfigError(`invalid YAML: ${(err as Error).message}`, candidate)
+  }
+
+  if (
+    typeof raw === 'object' &&
+    raw !== null &&
+    !Array.isArray(raw) &&
+    Object.hasOwn(raw, 'telegram')
+  ) {
+    process.stderr.write(LEGACY_TELEGRAM_CONFIG_WARNING)
   }
 
   const validated = ConfigRawSchema.safeParse(raw)
@@ -184,16 +194,6 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  let telegram: TelegramConfig | undefined
-  if (cfg.telegram) {
-    telegram = {
-      botToken: cfg.telegram.bot_token,
-      chatId: String(cfg.telegram.chat_id),
-      parseMode: cfg.telegram.parse_mode ?? DEFAULT_TELEGRAM_PARSE_MODE,
-      disableNotification: cfg.telegram.disable_notification ?? false,
-    }
-  }
-
   // ── hub / node (mutually exclusive; openspec/changes/add-hub-node-split) ──
   if (cfg.hub && cfg.node) {
     throw new ConfigError(
@@ -240,7 +240,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  return { projects, poll, auth, terminal, slurm, gitStatus, telegram, hub, node }
+  return { projects, poll, auth, terminal, slurm, gitStatus, hub, node }
 }
 
 /**

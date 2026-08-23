@@ -281,27 +281,14 @@ Don't pad sections just to fill them.
 6. **Write the file** at the chosen path with the frontmatter (all `reviewed` /
    `done` set `false`) + the body. Set `created_at` == `updated_at` to now
    (ISO8601 + offset).
-7. **Notify the user** that a code-review is ready, via the `memon-notify`
-   skill (`memon notify`). The title MUST begin with `[code-review]`. Use
-   severity `done`, always pass `--agent` + `--session`, and keep it one line:
-
-   ```sh
-   memon notify done "[code-review] <short title> ready to review" \
-     --agent <agent> --session "$SESSION" \
-     --context project=<project> \
-     --config ./config.yml --soft
-   ```
-
-   This is best-effort and runs AFTER the doc is written: if `memon notify`
-   exits 2 because Telegram is not configured, tell the user once (per the
-   `memon-notify` skill's credentials note) and stop — the doc already exists,
-   so a missing notification must not undo or fail it. Do not block waiting for
-   a reply; the bot is send-only.
-8. **Link an Experiment-scoped review when applicable.** Invoke
+7. **Link an Experiment-scoped review when applicable.** Invoke
    `memon-write-experiment-doc` to add the review's Experiment-relative path to
    the existing Implementation item's `code_reviews`. Do not create an
    Implementation item merely because a review doc exists, and do not edit
    `implementation.yaml` directly from this skill.
+8. **Tell the user in the active conversation** that the code-review is ready
+   and provide the created or updated path. Do not depend on an out-of-band
+   command or transport for this completion handoff.
 
 ### Updating an existing doc
 

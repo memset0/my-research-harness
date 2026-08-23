@@ -210,19 +210,6 @@ export const GitStatusConfigRawSchema = z
   })
   .optional()
 
-// Telegram bot block for `memon notify`. Block is wholly optional; when
-// present, both `bot_token` and `chat_id` are required. `parse_mode`
-// defaults to `MarkdownV2` and is restricted to the two modes the
-// renderer knows how to escape for.
-export const TelegramConfigRawSchema = z
-  .object({
-    bot_token: z.string().min(1),
-    chat_id: z.union([z.string().min(1), z.number().int()]),
-    parse_mode: z.enum(['MarkdownV2', 'HTML']).optional(),
-    disable_notification: z.boolean().optional(),
-  })
-  .optional()
-
 // ── hub / node federation (openspec/changes/add-hub-node-split) ──────────
 // A process runs as a `hub` (thin broker + frontend) or a `node` (full
 // backend dialing OUT to a hub), selected by which block is present.
@@ -272,7 +259,6 @@ export const ConfigRawSchema = z.object({
   terminal: TerminalConfigRawSchema,
   slurm: SlurmConfigRawSchema,
   git_status: GitStatusConfigRawSchema,
-  telegram: TelegramConfigRawSchema,
   hub: HubConfigRawSchema,
   node: NodeConfigRawSchema,
 })

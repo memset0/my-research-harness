@@ -122,35 +122,6 @@ poll:
 #                                   # auto-generated on first run alongside
 #                                   # `password`. Rotate to log everyone out.
 
-# Telegram bot for `memon notify` push notifications. Opt-in: leave this
-# block COMMENTED and `memon notify` exits BAD_REQUEST until you fill it
-# in. When present, both `bot_token` and `chat_id` are required.
-#
-# To set up:
-#   1. Talk to @BotFather on Telegram, run /newbot, copy the token.
-#   2. Add the bot to the chat / channel where you want notifications,
-#      then send any message there.
-#   3. Discover the chat_id by visiting
-#      https://api.telegram.org/bot<TOKEN>/getUpdates and reading the
-#      `chat.id` of the message you just sent (negative for groups /
-#      channels, positive for DMs).
-#
-# Env-var overrides (highest priority): when BOTH
-# `MEMON_TELEGRAM_BOT_TOKEN` and `MEMON_TELEGRAM_CHAT_ID` are set, the
-# CLI uses those and skips this block — useful for per-shell overrides
-# and CI tests.
-#
-# `parse_mode` is one of `MarkdownV2` (default) or `HTML`. The renderer
-# escapes user-supplied text for the chosen mode. `disable_notification:
-# true` delivers messages silently (no sound / vibration). Per-call
-# `--quiet` overrides this to silent on a single invocation.
-#
-# telegram:
-#   bot_token: "12345:ABC-DEF..."
-#   chat_id: "-100123456"           # numeric IDs MAY be unquoted
-#   parse_mode: "MarkdownV2"        # optional; default "MarkdownV2"
-#   disable_notification: false     # optional; default false
-
 # ── hub / node (multi-cluster) ──────────────────────────────────────────
 # By default memon runs standalone (frontend + backend in one process). To
 # manage several clusters from one place, split into a `hub` (central

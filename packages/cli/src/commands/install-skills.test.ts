@@ -224,7 +224,7 @@ describe('runInstallSkills — multi-target install', () => {
   })
 
   it('removes stale memon-* dirs independently in each target', async () => {
-    const stale = 'memon-renamed-old'
+    const stale = 'memon-notify'
     for (const sub of Object.values(AGENT_TARGETS)) {
       await fs.mkdir(join(projectRoot, sub, stale), { recursive: true })
       await fs.writeFile(join(projectRoot, sub, stale, 'SKILL.md'), '# old\n')
