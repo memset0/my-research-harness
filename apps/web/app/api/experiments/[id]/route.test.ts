@@ -59,8 +59,8 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-describe('GET /api/experiments/:id Results timestamps', () => {
-  it('includes Results source mtime and detail snapshot time', async () => {
+describe('GET /api/experiments/:id Results timestamp', () => {
+  it('includes the Results source mtime without a snapshot-read timestamp', async () => {
     const modifiedAt = new Date('2026-08-23T04:20:00.000Z')
     await utimes(resultsPath, modifiedAt, modifiedAt)
 
@@ -71,7 +71,7 @@ describe('GET /api/experiments/:id Results timestamps', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.resultsUpdatedAt).toBe(modifiedAt.toISOString())
-    expect(Number.isNaN(Date.parse(body.resultsSnapshotAt))).toBe(false)
+    expect(body).not.toHaveProperty('resultsSnapshotAt')
   })
 
   it('uses a null source timestamp when managed Results are absent', async () => {

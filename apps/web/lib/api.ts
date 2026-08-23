@@ -930,13 +930,11 @@ export interface ExperimentDocDetail extends ExperimentDocSummary {
   documentDiagnostics?: ExperimentDocumentDiagnostic[]
   documentReadOnly?: boolean
   resultsUpdatedAt?: string | null
-  resultsSnapshotAt?: string
 }
 
 export interface ExperimentResultsSnapshot {
   document: ResultsDocument
   updatedAt: string
-  snapshotAt: string
   warnings: ParseIssue[]
 }
 

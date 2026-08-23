@@ -45,7 +45,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ),
     })
     const resultsUpdatedAt = await managedResultsUpdatedAt(exp.documents?.results)
-    const resultsSnapshotAt = new Date().toISOString()
     return NextResponse.json({
       id: exp.id,
       project: exp.project,
@@ -57,7 +56,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       rawSections: exp.rawSections,
       documents: exp.documents,
       resultsUpdatedAt,
-      resultsSnapshotAt,
       documentSections: documentView.sections,
       documentDiagnostics: documentView.diagnostics,
       documentReadOnly: documentView.readOnly,

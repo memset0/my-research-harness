@@ -57,7 +57,6 @@ describe('ExperimentPage v6 document sections', () => {
       effectiveUpdatedAt: '2026-08-10T00:00:00+00:00',
       memberRuns: [],
       resultsUpdatedAt: '2026-08-23T03:00:00.000Z',
-      resultsSnapshotAt: '2026-08-23T04:00:00.000Z',
       documents: {
         implementation: {
           kind: 'implementation',
@@ -238,7 +237,7 @@ describe('ExperimentPage v6 document sections', () => {
     expect(refreshButton).toHaveTextContent('Refreshing…')
     expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
 
-    const refreshedSnapshotAt = new Date().toISOString()
+    const refreshedUpdatedAt = new Date(Date.now() - 60 * 60 * 1_000).toISOString()
     resolveRefresh({
       document: {
         schemaVersion: 1,
@@ -259,8 +258,7 @@ describe('ExperimentPage v6 document sections', () => {
           },
         ],
       },
-      updatedAt: '2026-08-23T04:40:00.000Z',
-      snapshotAt: refreshedSnapshotAt,
+      updatedAt: refreshedUpdatedAt,
       warnings: [],
     })
     await waitFor(() => expect(screen.getByText('V0002')).toBeInTheDocument())
@@ -272,9 +270,17 @@ describe('ExperimentPage v6 document sections', () => {
     expect(screen.getByRole('columnheader', { name: /Throughput/ })).toBeInTheDocument()
     expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
       'title',
-      `Results snapshot read at ${refreshedSnapshotAt}`,
+      `Results last changed at ${refreshedUpdatedAt}`,
     )
-    expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 0s')
+    expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 1h')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
+    await waitFor(() => expect(fetchExperimentResults).toHaveBeenCalledTimes(2))
+    expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
+      'title',
+      `Results last changed at ${refreshedUpdatedAt}`,
+    )
+    expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 1h')
 
     vi.mocked(fetchExperimentResults).mockRejectedValueOnce(new Error('network unavailable'))
     await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
@@ -285,7 +291,7 @@ describe('ExperimentPage v6 document sections', () => {
     expect(screen.getByRole('button', { name: 'Refresh Results' })).toBeEnabled()
     expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
       'title',
-      `Results snapshot read at ${refreshedSnapshotAt}`,
+      `Results last changed at ${refreshedUpdatedAt}`,
     )
 
     await userEvent.click(screen.getByRole('combobox', { name: /change experiment status/i }))

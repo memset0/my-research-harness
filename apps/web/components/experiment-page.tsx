@@ -157,7 +157,6 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             documents={exp.documents}
             memberRuns={exp.memberRuns}
             resultsUpdatedAt={exp.resultsUpdatedAt}
-            resultsSnapshotAt={exp.resultsSnapshotAt}
           />
         ))}
 
@@ -217,7 +216,6 @@ function SectionCard({
   documents,
   memberRuns,
   resultsUpdatedAt,
-  resultsSnapshotAt,
 }: {
   section: ExperimentDisplaySection
   project: string
@@ -225,7 +223,6 @@ function SectionCard({
   documents?: import('@memon/core').ExperimentManagedDocuments | null
   memberRuns: MemberRunSummary[]
   resultsUpdatedAt?: string | null
-  resultsSnapshotAt?: string
 }) {
   const { heading, body } = section
   const managedConflict = section.managed && section.source === 'readme'
@@ -241,13 +238,11 @@ function SectionCard({
   const [resultsSnapshot, setResultsSnapshot] = useState<{
     document: ResultsDocument
     updatedAt: string | null
-    snapshotAt: string
   } | null>(() =>
     initialResultsDocument
       ? {
           document: initialResultsDocument,
           updatedAt: resultsUpdatedAt ?? null,
-          snapshotAt: resultsSnapshotAt ?? new Date().toISOString(),
         }
       : null,
   )
@@ -265,7 +260,6 @@ function SectionCard({
       setResultsSnapshot({
         document: next.document,
         updatedAt: next.updatedAt,
-        snapshotAt: next.snapshotAt,
       })
     } catch (error) {
       setResultsRefreshError(error instanceof Error ? error.message : 'Results refresh failed')
@@ -302,9 +296,8 @@ function SectionCard({
           {resultsSnapshot && (
             <>
               <ResultsSnapshotStatus
-                key={resultsSnapshot.snapshotAt}
+                key={resultsSnapshot.updatedAt ?? 'unknown'}
                 updatedAt={resultsSnapshot.updatedAt}
-                snapshotAt={resultsSnapshot.snapshotAt}
               />
               <Button
                 type="button"
@@ -383,13 +376,7 @@ function SectionCard({
   )
 }
 
-function ResultsSnapshotStatus({
-  updatedAt,
-  snapshotAt,
-}: {
-  updatedAt: string | null
-  snapshotAt: string
-}) {
+function ResultsSnapshotStatus({ updatedAt }: { updatedAt: string | null }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1_000)
@@ -400,24 +387,23 @@ function ResultsSnapshotStatus({
     <div
       className="flex h-7 items-center gap-1.5 rounded-md border bg-muted/30 px-2 text-[10px] text-muted-foreground"
       data-results-snapshot-status
-      title={`Results snapshot read at ${snapshotAt}`}
+      title={updatedAt ? `Results last changed at ${updatedAt}` : 'Results change time unavailable'}
     >
       <span className="whitespace-nowrap">
         Last updated <TimestampLocal value={updatedAt} />
       </span>
       <span aria-hidden>·</span>
       <span className="whitespace-nowrap" data-results-stale-for>
-        Stale for {formatSnapshotAge(snapshotAt, now)}
+        Stale for {formatResultsAge(updatedAt, now)}
       </span>
     </div>
   )
 }
 
-function formatSnapshotAge(snapshotAt: string, now: number): string {
-  const snapshotTime = new Date(snapshotAt).getTime()
-  const elapsedSeconds = Number.isFinite(snapshotTime)
-    ? Math.max(0, Math.floor((now - snapshotTime) / 1_000))
-    : 0
+function formatResultsAge(updatedAt: string | null, now: number): string {
+  const updatedTime = updatedAt ? new Date(updatedAt).getTime() : Number.NaN
+  if (!Number.isFinite(updatedTime)) return 'unknown'
+  const elapsedSeconds = Math.max(0, Math.floor((now - updatedTime) / 1_000))
   if (elapsedSeconds < 60) return `${elapsedSeconds}s`
   const minutes = Math.floor(elapsedSeconds / 60)
   if (minutes < 60) return `${minutes}m`

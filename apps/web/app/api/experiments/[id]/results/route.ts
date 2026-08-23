@@ -31,7 +31,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     ])
     const parsed = parseResultsYaml(raw, managedResults.path)
     const updatedAt = fileStat.mtime.toISOString()
-    const snapshotAt = new Date().toISOString()
     if (!parsed.data) {
       return NextResponse.json(
         {
@@ -41,7 +40,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
           },
           diagnostics: parsed.parseErrors,
           updatedAt,
-          snapshotAt,
         },
         { status: 422 },
       )
@@ -50,7 +48,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({
       document: parsed.data,
       updatedAt,
-      snapshotAt,
       warnings: parsed.parseWarnings,
     })
   } catch (error) {

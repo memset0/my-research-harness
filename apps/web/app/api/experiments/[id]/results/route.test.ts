@@ -63,7 +63,7 @@ function request(id = EXPERIMENT_ID) {
 }
 
 describe('GET /api/experiments/:id/results', () => {
-  it('reparses the current file and returns source and snapshot timestamps', async () => {
+  it('reparses the current file and returns its source timestamp', async () => {
     const modifiedAt = new Date('2026-08-23T04:30:00.000Z')
     await utimes(resultsPath, modifiedAt, modifiedAt)
 
@@ -75,7 +75,7 @@ describe('GET /api/experiments/:id/results', () => {
       variants: [{ id: 'V0001', name: 'Refreshed', metrics: { loss: 0.125 } }],
     })
     expect(body.updatedAt).toBe(modifiedAt.toISOString())
-    expect(Number.isNaN(Date.parse(body.snapshotAt))).toBe(false)
+    expect(body).not.toHaveProperty('snapshotAt')
     expect(body.warnings).toEqual([])
   })
 
