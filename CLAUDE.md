@@ -415,8 +415,8 @@ Before every deployment boundary, commit the reviewed implementation changes
 without a version bump. Then update the canonical version, validate the
 changed-surface policy, and create a separate release commit containing only
 the version and its required release metadata/assertions. Use a stable semantic
-commit message such as `chore: advance release`; do not put the version literal
-in the commit message. Push the release commit and record its exact 40-character
+commit message in the exact form `release: vMAJOR.MINOR.PATCH` (for example,
+`release: v2.8.0`). Push the release commit and record its exact 40-character
 SHA. Central and every affected node must fetch and install that same revision;
 never independently resolve a moving `latest`. Concrete node/domain/token/SSH
 values remain in Git-ignored or machine-local configuration and must not enter
