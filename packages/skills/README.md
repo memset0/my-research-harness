@@ -1,6 +1,6 @@
 # memon skills
 
-Ten bundled agent skills compose memon's research workflow. They are synced
+Bundled agent skills compose memon's research workflow. They are synced
 into a project's agent skill directories by:
 
 ```sh
@@ -10,13 +10,14 @@ memon --project-root . install-skills
 Every skill passes `--project-root .` explicitly when invoking `memon` and runs
 the shared FS-version protocol in `PREFLIGHT.md`; `memon-migrate-fs` is the only
 preflight-exempt and user-invoked-only skill. The same shared file defines the
-CLI issue handoff used by all ten skills.
+CLI issue handoff used by every bundled skill.
 
 ## Skill index
 
 | Goal | Skill | Write scope |
 |---|---|---|
 | Coordinate one Experiment end to end | `memon-drive` | Orchestrates other skills; Experiment writes go through the bundle writer |
+| Read and filter structured Experiment results | `memon-read-results` | Read-only projection of `results.yaml` |
 | Create/update Experiment-level documentation | `memon-write-experiment-doc` | README + `implementation.yaml` + `investigation.yaml` + `results.yaml` |
 | Author a portable launcher | `memon-write-script` | Launcher files only; returns provenance |
 | Launch and monitor one Run | `memon-run-experiment` | Run README/artifacts; Results updates through the bundle writer |
@@ -131,6 +132,7 @@ memon --project-root . --format json experiment doc lint <id>
 | Skill | Writes | Does not write |
 |---|---|---|
 | `memon-drive` | no direct bundle files | delegates all Experiment writes |
+| `memon-read-results` | nothing | all Experiment and Run documents |
 | `memon-write-experiment-doc` | one Experiment bundle | Run READMEs, Journal cursor, reports |
 | `memon-write-script` | launcher/script files | READMEs/YAML unless delegating to writer |
 | `memon-run-experiment` | Run README/artifacts | parent bundle directly |
