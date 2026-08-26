@@ -83,12 +83,17 @@ interface TabCountResult {
 
 function useTabCount(kind: TabKind, project: ProjectTarget): TabCountResult {
   const cacheKind = kind === 'journal' ? 'journal-count' : kind
-  const q = useQuery({
+  type CountQueryData = number | Awaited<ReturnType<typeof fetchExperimentDocs>>
+  const q = useQuery<CountQueryData, Error, number>({
     queryKey: [cacheKind, ...projectQueryKey(project)],
     queryFn: async () => {
       switch (kind) {
         case 'experiments':
-          return (await fetchExperimentDocs(project)).experiments.length
+          // This key is deliberately shared with ExperimentCardGrid and the
+          // sidebar. Cache the same DTO shape and project only this observer
+          // to a number; storing a number here races the grid's object value
+          // and can make React attempt to render `{ experiments: [...] }`.
+          return fetchExperimentDocs(project)
         case 'hypotheses':
           return (await fetchHypotheses(project)).entries.length
         case 'journal':
@@ -101,6 +106,7 @@ function useTabCount(kind: TabKind, project: ProjectTarget): TabCountResult {
           return (await fetchCodeReviews(project)).codeReviews.length
       }
     },
+    select: (data) => (typeof data === 'number' ? data : data.experiments.length),
     staleTime: 5_000,
   })
   return { value: q.data, isLoading: q.isLoading }

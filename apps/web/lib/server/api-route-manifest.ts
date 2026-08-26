@@ -195,7 +195,7 @@ export const DIRECT_RUNTIME_SURFACES = {
     purpose: 'project-data',
   },
   'app/page.tsx': { owner: 'composed', scope: 'global', purpose: 'project-data' },
-  'app/share/[project]/[token]/route.ts': {
+  'app/share/[host]/[project]/route.ts': {
     owner: 'composed',
     scope: 'project-path',
     purpose: 'share-landing',
