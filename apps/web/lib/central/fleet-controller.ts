@@ -38,6 +38,23 @@ export interface CentralFleetControllerOptions {
 
 export type DisplayHostAvailability = HostAvailability & { label?: string }
 
+const SSH_READINESS_RETRY_DELAY_MS = 100
+
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, delayMs)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 /**
  * Owns transport startup/probes while CentralHostRegistry owns public state.
  * Callers schedule `refreshAll()` at their chosen health cadence; each probe
@@ -78,19 +95,26 @@ export class CentralFleetController {
         hostId: host.id,
         transport: host.transport,
         readiness: async ({ signal }) => {
-          try {
-            const metadata = await this.probe(host, {
-              timeoutMs: this.probeTimeoutMs,
-              signal,
-            })
-            this.registry.acceptMetadata(host.id, metadata)
-            // A valid authenticated response proves the tunnel. Compatibility
-            // and identity remain separate registry states that block routing.
-            return true
-          } catch (error) {
-            this.recordProbeFailure(host.id, error)
-            throw error
+          const deadline = Date.now() + this.probeTimeoutMs
+          while (!signal.aborted) {
+            try {
+              const metadata = await this.probe(host, {
+                timeoutMs: Math.max(1, deadline - Date.now()),
+                signal,
+              })
+              this.registry.acceptMetadata(host.id, metadata)
+              // A valid authenticated response proves the tunnel. Compatibility
+              // and identity remain separate registry states that block routing.
+              return true
+            } catch (error) {
+              this.recordProbeFailure(host.id, error)
+              if (!(error instanceof BackendProbeError) || error.state !== 'offline') throw error
+              const remainingMs = deadline - Date.now()
+              if (remainingMs <= 0) throw error
+              await waitForRetry(Math.min(SSH_READINESS_RETRY_DELAY_MS, remainingMs), signal)
+            }
           }
+          throw new BackendProbeError('offline', 'Backend probe was cancelled')
         },
         onStateChange: (snapshot) => this.onTunnelState(host.id, snapshot),
       })

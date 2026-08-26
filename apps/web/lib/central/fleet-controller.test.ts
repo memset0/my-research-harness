@@ -9,6 +9,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { BackendProbeError } from './backend-client'
 import {
+  type BackendMetadataProbe,
   CentralFleetController,
   type ManagedSshTunnel,
   type SshTunnelFactory,
@@ -61,7 +62,7 @@ const config: CentralConfig = {
   ],
 }
 
-function metadata(host: string, release = '6.0.0'): BackendMetadata {
+function metadata(host: string, release = '6.1.0'): BackendMetadata {
   return {
     host: host as BackendMetadata['host'],
     release: release as BackendMetadata['release'],
@@ -153,6 +154,37 @@ describe('CentralFleetController', () => {
       }),
     ).resolves.toBe(true)
     expect(controller.registry.getAvailability('host-b')?.state).toBe('identity_mismatch')
+  })
+
+  it('retries only transient SSH readiness failures while OpenSSH binds the forward', async () => {
+    let sshAttempts = 0
+    const probe = vi.fn<BackendMetadataProbe>(async (host) => {
+      if (host.id === 'host-a') return metadata('host-a')
+      sshAttempts += 1
+      if (sshAttempts < 3) throw new BackendProbeError('offline', 'forward not ready')
+      return metadata('host-b')
+    })
+    let tunnel: FakeTunnel | undefined
+    const controller = new CentralFleetController(config, {
+      probe,
+      probeTimeoutMs: 1_000,
+      createSshTunnel: (options) => {
+        tunnel = new FakeTunnel(options)
+        return tunnel
+      },
+    })
+    await controller.start()
+
+    await expect(
+      tunnel?.options.readiness({
+        hostId: 'host-b',
+        localHost: '127.0.0.1',
+        localPort: 4738,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toBe(true)
+    expect(probe).toHaveBeenCalledTimes(4)
+    expect(controller.registry.getAvailability('host-b')?.state).toBe('online')
   })
 
   it.each([
