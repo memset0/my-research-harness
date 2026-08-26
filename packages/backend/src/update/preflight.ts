@@ -18,10 +18,13 @@ export interface BuildCommand {
 }
 export const DEFAULT_BACKEND_BUILD_COMMANDS: readonly BuildCommand[] = [
   { command: 'pnpm', args: ['install', '--frozen-lockfile'] },
-  ...['core', 'backend', 'cli'].flatMap((name) => [
+  ...['core', 'backend'].flatMap((name) => [
     { command: 'pnpm', args: ['--filter', `@memon/${name}`, 'build'] },
     { command: 'pnpm', args: ['--filter', `@memon/${name}`, 'test'] },
   ]),
+  { command: 'pnpm', args: ['--filter', '@memon/skills', 'build'] },
+  { command: 'pnpm', args: ['--filter', '@memon/cli', 'build'] },
+  { command: 'pnpm', args: ['--filter', '@memon/cli', 'test'] },
 ]
 
 export type UpdateExec = (

@@ -116,7 +116,7 @@
 
 ## 15. Central Ingress Cutover and Observation
 
-- [ ] 15.1 Install the central production build under the selected local supervisor and verify loopback readiness, restart behavior, logs, running `6.0.0` revision, and rollback before modifying reverse-proxy ingress.
+- [ ] 15.1 Install the central production build under the selected local supervisor and verify loopback readiness, restart behavior, logs, running canonical release/revision, and rollback before modifying reverse-proxy ingress.
 - [ ] 15.2 Add a machine-local credential-free reverse-proxy drop-in from the local runbook, validate before reload, and verify the public endpoint's TLS, anonymous rejection, owner login, Host UI, HTML/CSS, API, SSE flushing, and terminal WebSocket.
 - [ ] 15.3 Keep the prior ingress/runtime as a non-writable immediate rollback during observation, simulate and recover from Backend/tunnel/central failure, and verify rollback restores the legacy path before stopping candidates.
 - [ ] 15.4 After the observation gate passes, stop the legacy standalone watchdog/process, confirm it cannot revive on login/reboot, retain recovery material, and verify only central ingress plus the private Backend remain active.

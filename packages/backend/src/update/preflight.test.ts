@@ -75,6 +75,14 @@ describe('Backend update preflight', () => {
       expect(serialized).toContain('build')
       expect(serialized).toContain('test')
     }
+    const skillsBuildIndex = DEFAULT_BACKEND_BUILD_COMMANDS.findIndex(
+      ({ args }) => args.join(' ') === '--filter @memon/skills build',
+    )
+    const cliBuildIndex = DEFAULT_BACKEND_BUILD_COMMANDS.findIndex(
+      ({ args }) => args.join(' ') === '--filter @memon/cli build',
+    )
+    expect(skillsBuildIndex).toBeGreaterThan(-1)
+    expect(cliBuildIndex).toBeGreaterThan(skillsBuildIndex)
     expect(serialized).not.toMatch(/reset|autostash|checkout|latest/)
   })
   it('accepts only a clean checkout whose HEAD equals the exact target SHA', async () => {
@@ -170,7 +178,7 @@ describe('Backend update preflight', () => {
       assembleArtifact: passthroughArtifact,
       now: () => new Date('2026-08-26T18:00:00.000Z'),
     })
-    expect(prepared).toMatchObject({ outcome: 'installed', name: `6.0.0-${checkout.revision}` })
+    expect(prepared).toMatchObject({ outcome: 'installed', name: `6.1.0-${checkout.revision}` })
     expect((await store.status()).current).toBeNull()
     expect(prepared.manifest.artifactSha256).toMatch(/^[a-f0-9]{64}$/)
   })
