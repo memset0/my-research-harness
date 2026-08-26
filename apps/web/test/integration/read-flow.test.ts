@@ -23,10 +23,11 @@ import { GET as getExperiments } from '../../app/api/experiments/route'
 import { GET as getRunDetail } from '../../app/api/runs/[id]/route'
 import { GET as getRuns } from '../../app/api/runs/route'
 
-// Point the runtime at the repo's config.yml (which already lists
-// `./mock/project-{a,b}`). Must run BEFORE the runtime module imports.
+// Point the runtime at the committed test instance config. Unlike the protected
+// config.example.yml template, this file carries complete test-only auth and is
+// safe for runtime initialisation without any first-run persistence.
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..')
-process.env.MEMON_CONFIG_PATH = join(REPO_ROOT, 'config.yml')
+process.env.MEMON_CONFIG_PATH = join(__dirname, '..', 'fixtures', 'runtime-config.yml')
 
 const PROJECTS = ['project-a', 'project-b']
 

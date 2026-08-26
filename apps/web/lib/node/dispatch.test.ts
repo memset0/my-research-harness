@@ -7,10 +7,16 @@
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-// Point the runtime at the repo config.yml (lists ./mock/project-{a,b}) BEFORE
-// dispatchRpc triggers the first getRuntime().
-const REPO_ROOT = join(__dirname, '..', '..', '..', '..')
-process.env.MEMON_CONFIG_PATH = join(REPO_ROOT, 'config.yml')
+// Use the committed, fully initialised test instance config rather than a
+// developer's gitignored repo-root config.yml.
+process.env.MEMON_CONFIG_PATH = join(
+  __dirname,
+  '..',
+  '..',
+  'test',
+  'fixtures',
+  'runtime-config.yml',
+)
 
 const { dispatchRpc } = await import('./dispatch')
 

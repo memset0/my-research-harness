@@ -1,0 +1,19 @@
+# Runtime instance used by integration tests. It is intentionally distinct
+# from the protected repository-level config.example.yml documentation
+# template and carries complete auth so first-run initialisation never writes
+# back to this file.
+projects:
+  - name: project-a
+    root: ../../../../mock/project-a
+  - name: project-b
+    root: ../../../../mock/project-b
+
+poll:
+  min_interval_ms: 1000
+  max_interval_ms: 300000
+  backoff_factor: 2
+
+auth:
+  username: test
+  password: test-password
+  session_secret: test-session-secret
