@@ -26,10 +26,11 @@ import { getRuntime } from '@/lib/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
 
 interface RouteParams {
-  // Next requires sibling dynamic segments to share one slug name. At this
-  // legacy two-segment route the first `[host]` value is still the historical
-  // Project name; the three-segment route interprets the same slug as Host.
-  params: Promise<{ host: string; token: string }>
+  // Next requires every overlapping dynamic segment to share one slug name.
+  // At this legacy two-segment route `[host]` is the historical Project name
+  // and `[project]` is the historical token. The nested three-segment route
+  // interprets those same slugs as the real Host and Project respectively.
+  params: Promise<{ host: string; project: string }>
 }
 
 const GENERIC_NOT_FOUND_BODY = `<!DOCTYPE html>
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     })
   }
 
-  const { host: projectName, token } = await ctx.params
+  const { host: projectName, project: token } = await ctx.params
   if (!projectName || !token) return notFoundResponse()
 
   const runtime = await getRuntime()

@@ -12,7 +12,7 @@ import { validateCentralShare } from '@/lib/central/central-shares'
 import { getCentralFleet } from '@/lib/central/fleet-runtime'
 import { getRuntime } from '@/lib/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
-import { GET } from '../../app/share/[host]/[token]/route'
+import { GET } from '../../app/share/[host]/[project]/route'
 import { verifySharesCookie } from './cookies'
 
 const SECRET = 'central-session-secret'
@@ -39,7 +39,7 @@ describe('legacy share migration landing', () => {
     vi.mocked(validateCentralShare).mockResolvedValue(true)
 
     const response = await GET(request(), {
-      params: Promise.resolve({ host: 'shared-project', token: 'share_token' }),
+      params: Promise.resolve({ host: 'shared-project', project: 'share_token' }),
     })
     expect(response.status).toBe(302)
     expect(response.headers.get('location')).toBe(
@@ -61,7 +61,7 @@ describe('legacy share migration landing', () => {
       config: { central: { hosts: [] }, projects: [] },
     } as never)
     const response = await GET(request(), {
-      params: Promise.resolve({ host: 'shared-project', token: 'share_token' }),
+      params: Promise.resolve({ host: 'shared-project', project: 'share_token' }),
     })
     expect(response.status).toBe(404)
     expect(getCentralFleet).not.toHaveBeenCalled()
@@ -75,7 +75,7 @@ describe('legacy share migration landing', () => {
     } as never)
 
     const response = await GET(request(), {
-      params: Promise.resolve({ host: 'shared-project', token: 'share_token' }),
+      params: Promise.resolve({ host: 'shared-project', project: 'share_token' }),
     })
     expect(response.status).toBe(302)
     expect(response.headers.get('location')).toBe('https://memon.example.test/p/shared-project')
