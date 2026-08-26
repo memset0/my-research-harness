@@ -3,18 +3,12 @@
 // v4: ExperimentStatus picker. Mirrors `StatusEdit` (run side) but writes
 // through the dedicated PATCH /api/experiments/:id/status endpoint.
 
-import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, patchExperimentStatusV4 } from '../lib/api'
+import { ApiError, type ProjectTarget, patchExperimentStatusV4, projectQueryKey } from '../lib/api'
 import { ExperimentStatusPill } from './status-pill'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 type ExperimentStatus = 'OPEN' | 'RESOLVED' | 'ABANDONED'
 
@@ -22,17 +16,20 @@ const SELECTABLE: readonly ExperimentStatus[] = ['OPEN', 'RESOLVED', 'ABANDONED'
 
 export function ExperimentStatusEdit({
   expId,
+  project,
   status,
   archived,
   expectedMtime,
 }: {
   expId: string
+  project?: ProjectTarget
   status: ExperimentStatus
   archived?: boolean
   expectedMtime: number
 }) {
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
+  const projectKey = project ? projectQueryKey(project) : []
 
   const onChange = async (next: string) => {
     if (next === status) return
@@ -40,6 +37,7 @@ export function ExperimentStatusEdit({
     setBusy(true)
     try {
       const res = await patchExperimentStatusV4({
+        ...(project ? { project } : {}),
         id: expId,
         status: next as ExperimentStatus,
         expectedMtime,
@@ -49,7 +47,10 @@ export function ExperimentStatusEdit({
           description: 'Reload to see the latest content, then try again.',
           action: {
             label: 'Reload',
-            onClick: () => queryClient.invalidateQueries({ queryKey: ['experiment', expId] }),
+            onClick: () =>
+              queryClient.invalidateQueries({
+                queryKey: ['experiment', ...projectKey, expId],
+              }),
           },
         })
       } else if ('mtime' in res) {
@@ -57,8 +58,10 @@ export function ExperimentStatusEdit({
         if ('warning' in res && res.warning === 'archived') {
           toast.warning(`${expId} is archived; modifying anyway`)
         }
-        queryClient.invalidateQueries({ queryKey: ['experiment', expId] })
-        queryClient.invalidateQueries({ queryKey: ['experiments'] })
+        queryClient.invalidateQueries({
+          queryKey: ['experiment', ...projectKey, expId],
+        })
+        queryClient.invalidateQueries({ queryKey: ['experiments', ...projectKey] })
       }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
@@ -72,7 +75,11 @@ export function ExperimentStatusEdit({
     <div className="inline-flex items-center gap-2">
       <ExperimentStatusPill status={status} archived={archived} />
       <Select value={status} disabled={busy} onValueChange={(v) => void onChange(v)}>
-        <SelectTrigger size="sm" className="h-7 w-[8rem] text-xs" aria-label="Change experiment status">
+        <SelectTrigger
+          size="sm"
+          className="h-7 w-[8rem] text-xs"
+          aria-label="Change experiment status"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

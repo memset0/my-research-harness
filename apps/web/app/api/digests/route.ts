@@ -3,9 +3,11 @@
 // Returns the list of digests for a project — id, date, path, mtime, title.
 // Reads from the runtime's digestsCache. Sorted by date desc.
 
+import { BackendDigestsResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import type { DigestSummary } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
+import { standaloneDigest } from '../../../lib/server/standalone-dto'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,22 +22,15 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       )
     }
-    const dir = rt.digestsDir(projectName)
-    if (!dir) {
+    if (!rt.config.projects.some((project) => project.name === projectName)) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `project "${projectName}" not configured` } },
         { status: 404 },
       )
     }
-    const digests: DigestSummary[] = rt.digestsCache.getList(dir).slice().sort((a, b) => {
-      // Date descending (ISO YYYY-MM-DD sorts lexicographically).
-      if (a.date > b.date) return -1
-      if (a.date < b.date) return 1
-      // Same date → compare id desc as a tiebreaker.
-      if (a.id > b.id) return -1
-      if (a.id < b.id) return 1
-      return 0
-    })
+    const digests = BackendDigestsResponseSchema.parse(
+      await standaloneServices(rt.config).documents.listDigests(projectName),
+    ).digests.map((digest) => standaloneDigest(rt.config, digest))
     return NextResponse.json({ digests })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })

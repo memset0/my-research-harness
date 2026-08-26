@@ -1,34 +1,33 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   fetchExpDocReadme,
   fetchReadme,
   fetchRunReadme,
+  type ProjectTarget,
+  type PutReadmeConflict,
+  type PutReadmeResponse,
+  projectQueryKey,
   putExpDocReadme,
   putReadme,
   putRunReadme,
-  type PutReadmeConflict,
-  type PutReadmeResponse,
 } from '../lib/api'
 import { readPlainPref, writePlainPref } from '../lib/readme-editor-prefs'
-import { Button } from './ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
 import { ReadmeEditorToolbar } from './readme-editor-toolbar'
 import { ReadmeMonaco } from './readme-monaco'
 import { ReadmePlain } from './readme-plain'
+import { Button } from './ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
 
 // react-diff-viewer-continued is client-only.
-const DiffViewer = dynamic(
-  () => import('react-diff-viewer-continued').then((m) => m.default),
-  {
-    ssr: false,
-    loading: () => <div className="p-6 text-sm text-muted-foreground">loading diff…</div>,
-  },
-)
+const DiffViewer = dynamic(() => import('react-diff-viewer-continued').then((m) => m.default), {
+  ssr: false,
+  loading: () => <div className="p-6 text-sm text-muted-foreground">loading diff…</div>,
+})
 
 const DRAFT_PREFIX = 'memon:draft:'
 const DEBOUNCE_MS = 500
@@ -53,8 +52,8 @@ export type ContainerKind = 'dialog' | 'panel'
  * `/api/readme` (for back-compat with the v2 callsites and existing tests).
  */
 export type EditorTarget =
-  | { kind: 'exp'; id: string }
-  | { kind: 'run'; id: string }
+  | { kind: 'exp'; id: string; project: ProjectTarget }
+  | { kind: 'run'; id: string; project: ProjectTarget }
 
 export interface ReadmeEditorBodyProps {
   path: string
@@ -99,26 +98,23 @@ export function ReadmeEditorBody({
   const draftKey = useCallback(
     (mtime: number) =>
       target
-        ? `${DRAFT_PREFIX}${target.kind}:${target.id}:${mtime}`
+        ? `${DRAFT_PREFIX}${target.kind}:${projectQueryKey(target.project).join(':')}:${target.id}:${mtime}`
         : `${DRAFT_PREFIX}${path}:${mtime}`,
     [path, target],
   )
 
   const loadFromDisk = useCallback(async () => {
-    if (target?.kind === 'exp') return fetchExpDocReadme(target.id)
-    if (target?.kind === 'run') return fetchRunReadme(target.id)
+    if (target?.kind === 'exp') return fetchExpDocReadme(target.project, target.id)
+    if (target?.kind === 'run') return fetchRunReadme(target.project, target.id)
     // Legacy path-based load for v2 callers (no v3 target supplied).
     return fetchReadme(path)
   }, [path, target])
 
   const saveToDisk = useCallback(
-    async (
-      currentContent: string,
-      expectedMtime: number,
-      expectedHash?: string,
-    ) => {
+    async (currentContent: string, expectedMtime: number, expectedHash?: string) => {
       if (target?.kind === 'exp') {
         return putExpDocReadme({
+          project: target.project,
           id: target.id,
           content: currentContent,
           expectedMtime,
@@ -127,6 +123,7 @@ export function ReadmeEditorBody({
       }
       if (target?.kind === 'run') {
         return putRunReadme({
+          project: target.project,
           id: target.id,
           content: currentContent,
           expectedMtime,
@@ -211,7 +208,9 @@ export function ReadmeEditorBody({
         const ok = res as PutReadmeResponse
         toast.success(`Saved · mtime ${new Date(ok.mtime).toLocaleTimeString()}`)
         safeRemove(draftKey(diskMtime))
-        queryClient.invalidateQueries({ queryKey: ['run', runId] })
+        queryClient.invalidateQueries({
+          queryKey: ['run', ...(target ? projectQueryKey(target.project) : []), runId],
+        })
         queryClient.invalidateQueries({ queryKey: ['runs'] })
         // Server returns the canonical `finalContent` (post-bump,
         // post-pretty-print). Adopt it as both buffer + baseline so the
@@ -247,7 +246,9 @@ export function ReadmeEditorBody({
         const ok = res as PutReadmeResponse
         toast.success('Saved (overwrote conflicting changes)')
         if (diskMtime !== null) safeRemove(draftKey(diskMtime))
-        queryClient.invalidateQueries({ queryKey: ['run', runId] })
+        queryClient.invalidateQueries({
+          queryKey: ['run', ...(target ? projectQueryKey(target.project) : []), runId],
+        })
         queryClient.invalidateQueries({ queryKey: ['runs'] })
         const newContent = ok.finalContent ?? content
         setContent(newContent)
@@ -311,15 +312,12 @@ export function ReadmeEditorBody({
     }
   }
 
-  const handleMonacoLoadError = useCallback(
-    (_err: unknown) => {
-      // Auto-fall back to plain. Do NOT persist the user's preference — this
-      // is a transient failure, the next session should still try Monaco.
-      setPlainState(true)
-      toast.error('Editor failed to load — using plain text fallback')
-    },
-    [],
-  )
+  const handleMonacoLoadError = useCallback((_err: unknown) => {
+    // Auto-fall back to plain. Do NOT persist the user's preference — this
+    // is a transient failure, the next session should still try Monaco.
+    setPlainState(true)
+    toast.error('Editor failed to load — using plain text fallback')
+  }, [])
 
   const dirty = phase === 'editing' && content !== diskContent
   const saving = phase === 'saving'
@@ -346,10 +344,10 @@ export function ReadmeEditorBody({
       <div className="space-y-4 p-6">
         <h2 className="text-lg font-semibold">Unsaved draft found</h2>
         <p className="text-sm text-muted-foreground">
-          A draft from a previous session ({draftContent.length.toLocaleString()} characters)
-          is saved locally. The on-disk file has{' '}
-          <span className="font-mono">{diskContent.length.toLocaleString()}</span> characters.
-          What would you like to do?
+          A draft from a previous session ({draftContent.length.toLocaleString()} characters) is
+          saved locally. The on-disk file has{' '}
+          <span className="font-mono">{diskContent.length.toLocaleString()}</span> characters. What
+          would you like to do?
         </p>
         <div className="flex flex-wrap gap-2">
           <Button onClick={restoreDraft}>Restore my draft</Button>
@@ -418,11 +416,7 @@ export function ReadmeEditorBody({
         {plain ? (
           <ReadmePlain ref={plainTextareaRef} value={content} onChange={setContent} />
         ) : (
-          <ReadmeMonaco
-            value={content}
-            onChange={setContent}
-            onLoadError={handleMonacoLoadError}
-          />
+          <ReadmeMonaco value={content} onChange={setContent} onLoadError={handleMonacoLoadError} />
         )}
       </div>
     </div>
@@ -443,10 +437,7 @@ export function ReadmeEditor({
 }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
-        className="!max-w-5xl gap-0 overflow-hidden p-0"
-        showCloseButton={false}
-      >
+      <DialogContent className="!max-w-5xl gap-0 overflow-hidden p-0" showCloseButton={false}>
         <DialogTitle className="sr-only">Edit README</DialogTitle>
         <DialogDescription className="sr-only">{path}</DialogDescription>
         <div className="flex h-[85vh] min-h-0 flex-col">
@@ -488,7 +479,11 @@ function safeRemove(key: string): void {
 // `memon:draft:` is the canonical README editor draft; the `memon:warning-*-draft:`
 // families belong to the Warnings card (Note edits + Add-warning form drafts).
 // Any future draft type should be added here so it shares the cleanup cadence.
-const STALE_DRAFT_PREFIXES = ['memon:draft:', 'memon:warning-note-draft:', 'memon:warning-add-draft:']
+const STALE_DRAFT_PREFIXES = [
+  'memon:draft:',
+  'memon:warning-note-draft:',
+  'memon:warning-add-draft:',
+]
 
 function cleanupStaleDrafts(): void {
   if (typeof localStorage === 'undefined') return

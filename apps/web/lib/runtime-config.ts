@@ -8,6 +8,7 @@
 import { createContext, createElement, useContext, useMemo } from 'react'
 
 export interface RuntimeConfigPayload {
+  role: 'standalone' | 'central'
   gitStatus: {
     intervalMs: number
   }
@@ -18,6 +19,7 @@ export interface RuntimeConfigPayload {
 }
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfigPayload = {
+  role: 'standalone',
   gitStatus: { intervalMs: 10_000 },
   terminal: { tmuxEnabled: true, herdrEnabled: false },
 }
@@ -43,6 +45,7 @@ export function readRuntimeConfig(): RuntimeConfigPayload {
     const parsed = JSON.parse(text) as Partial<RuntimeConfigPayload>
     const intervalMs = parsed.gitStatus?.intervalMs
     cached = {
+      role: parsed.role === 'central' ? 'central' : 'standalone',
       gitStatus: {
         intervalMs:
           typeof intervalMs === 'number' && Number.isFinite(intervalMs) && intervalMs > 0

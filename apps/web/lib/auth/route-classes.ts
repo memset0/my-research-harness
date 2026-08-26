@@ -54,10 +54,6 @@ interface Rule {
 
 const startsWith = (prefix: string) => (_m: string, p: string) => p.startsWith(prefix)
 const exact = (path: string) => (_m: string, p: string) => p === path
-const startsWithAny =
-  (prefixes: string[]) =>
-  (_m: string, p: string): boolean =>
-    prefixes.some((q) => p === q || p.startsWith(q.endsWith('/') ? q : `${q}/`))
 const methodIs =
   (methods: string[], pred: (m: string, p: string) => boolean) =>
   (m: string, p: string): boolean =>
@@ -103,12 +99,12 @@ const projectFromPSegment =
     return seg ?? null
   }
 
-/** project from /api/projects/<project>/... segment. */
-const projectFromApiProjectsSegment =
+/** project from /h/<host>/p/<project>/... segment. */
+const projectFromHostProjectSegment =
   () =>
-  (_m: string, p: string): ResolvedProject => {
-    const seg = segmentAfter(p, '/api/projects/')
-    return seg ?? null
+  (_m: string, path: string): ResolvedProject => {
+    const match = /^\/h\/[^/]+\/p\/([^/]+)(?:\/|$)/.exec(path)
+    return match?.[1] ? decodeURIComponent(match[1]) : null
   }
 
 /** project from /api/report-assets/<project>/... segment. */
@@ -205,8 +201,9 @@ const projectFromPathQuery =
 const projectFromShareLanding =
   () =>
   (_m: string, p: string): ResolvedProject => {
-    const seg = segmentAfter(p, '/share/')
-    return seg ?? null
+    const segments = p.slice('/share/'.length).split('/').filter(Boolean)
+    const project = segments.length >= 3 ? segments[1] : segments[0]
+    return project ? decodeURIComponent(project) : null
   }
 
 // ----- Rules -----
@@ -231,6 +228,13 @@ const RULES: Rule[] = [
     class: 'anon',
     projectFor: projectGlobal(),
   },
+  {
+    match: methodIs(['GET'], exact('/api/hosts')),
+    class: 'read',
+    // Safe Host availability only; no Project payload or credential. The
+    // handler is responsible for returning the configured Host list.
+    projectFor: projectMulti(),
+  },
   // /share/<project>/<token> — the cookie-minting landing route. Token
   // validation happens in the handler; middleware only allows the request to
   // reach it.
@@ -238,6 +242,12 @@ const RULES: Rule[] = [
     match: methodIs(['GET'], startsWith('/share/')),
     class: 'anon',
     projectFor: projectFromShareLanding(),
+  },
+
+  {
+    match: methodIs(['GET'], startsWith('/h/')),
+    class: 'read',
+    projectFor: projectFromHostProjectSegment(),
   },
 
   // ===== shell =====

@@ -1,46 +1,51 @@
-// PATCH  /api/runs/:id/warnings/:rowId  — { op: 'resolve' | 'reopen', note?, expectedMtime, expectedHash }
-// DELETE /api/runs/:id/warnings/:rowId  — { expectedMtime, expectedHash }
-
-import { NextResponse, type NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../../../lib/runtime'
-import { deleteWarning, patchWarning, WarningHttpError } from '../../../../../../lib/warnings'
+import {
+  mutateStandaloneWarning,
+  standaloneWarningError,
+} from '../../../../../../lib/server/standalone-warning-route'
 
 export const dynamic = 'force-dynamic'
-
-interface PatchBody {
-  op: 'resolve' | 'reopen'
-  note?: string
-  expectedMtime?: number
-  expectedHash?: string
-}
-
-interface DeleteBody {
-  expectedMtime?: number
-  expectedHash?: string
-}
 
 export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string; rowId: string }> },
 ) {
   try {
-    const rt = await getRuntime()
+    const runtime = await getRuntime()
     const { id, rowId } = await ctx.params
-    const body = (await req.json()) as PatchBody
-    if (!body || (body.op !== 'resolve' && body.op !== 'reopen')) {
+    const body = (await req.json()) as {
+      op?: unknown
+      note?: string
+      expectedMtime?: number
+      expectedHash?: string
+    }
+    if (body?.op !== 'resolve' && body?.op !== 'reopen') {
       return NextResponse.json(
         { error: { code: 'BAD_REQUEST', message: 'op must be "resolve" or "reopen"' } },
         { status: 400 },
       )
     }
-    const out = await patchWarning(rt, id, rowId, body)
-    return NextResponse.json({ ok: true, ...out })
-  } catch (err) {
-    if (err instanceof WarningHttpError) {
-      const payload = err.payload ? { error: { code: err.code, message: err.message }, ...err.payload } : { error: { code: err.code, message: err.message } }
-      return NextResponse.json(payload, { status: err.status })
+    if (body.op === 'resolve' && (!body.note || body.note.trim() === '')) {
+      return NextResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'note is required for resolve' } },
+        { status: 400 },
+      )
     }
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+    return NextResponse.json(
+      await mutateStandaloneWarning(runtime, 'run', id, {
+        op: body.op,
+        rowId,
+        note: body.note,
+        expectedMtime: body.expectedMtime,
+        expectedHash: body.expectedHash,
+      }),
+    )
+  } catch (error) {
+    return (
+      standaloneWarningError(error) ??
+      NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
+    )
   }
 }
 
@@ -49,21 +54,24 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string; rowId: string }> },
 ) {
   try {
-    const rt = await getRuntime()
+    const runtime = await getRuntime()
     const { id, rowId } = await ctx.params
-    let body: DeleteBody = {}
-    try {
-      body = (await req.json()) as DeleteBody
-    } catch {
-      // DELETE body is optional
+    const body = (await req.json().catch(() => ({}))) as {
+      expectedMtime?: number
+      expectedHash?: string
     }
-    const out = await deleteWarning(rt, id, rowId, body)
-    return NextResponse.json({ ok: true, ...out })
-  } catch (err) {
-    if (err instanceof WarningHttpError) {
-      const payload = err.payload ? { error: { code: err.code, message: err.message }, ...err.payload } : { error: { code: err.code, message: err.message } }
-      return NextResponse.json(payload, { status: err.status })
-    }
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+    return NextResponse.json(
+      await mutateStandaloneWarning(runtime, 'run', id, {
+        op: 'delete',
+        rowId,
+        expectedMtime: body.expectedMtime,
+        expectedHash: body.expectedHash,
+      }),
+    )
+  } catch (error) {
+    return (
+      standaloneWarningError(error) ??
+      NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
+    )
   }
 }

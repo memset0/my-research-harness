@@ -39,7 +39,12 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { MemberRunSummary } from '../lib/api'
+import {
+  type MemberRunSummary,
+  type ProjectTarget,
+  projectQueryKey,
+  projectWebPath,
+} from '../lib/api'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
@@ -175,13 +180,14 @@ export function ExperimentResultsTable({
   memberRuns,
 }: {
   document: ResultsDocument
-  project: string
+  project: ProjectTarget
   experimentId: string
   memberRuns: MemberRunSummary[]
 }) {
   const columns = useMemo(() => buildColumns(document), [document])
-  const preferencesKey = `memon:results-table:${project}:${experimentId}:preferences`
-  const starsKey = `memon:results-table:${project}:starred-column-labels`
+  const projectKey = projectQueryKey(project).join(':')
+  const preferencesKey = `memon:results-table:${projectKey}:${experimentId}:preferences`
+  const starsKey = `memon:results-table:${projectKey}:starred-column-labels`
   const [storedPreferences, setStoredPreferences] = useUserPreferenceState(
     preferencesKey,
     DEFAULT_PREFERENCES,
@@ -1190,7 +1196,11 @@ export function ExperimentResultsTable({
                                   project={project}
                                   experimentId={experimentId}
                                   memberRunsById={memberRunsById}
-                                  sotaRank={metric ? sotaRanks.get(column.id)?.ranks.get(variant.id) : undefined}
+                                  sotaRank={
+                                    metric
+                                      ? sotaRanks.get(column.id)?.ranks.get(variant.id)
+                                      : undefined
+                                  }
                                   decimalPlaces={metric ? decimalPlaces[column.id] : undefined}
                                 />
                               </CellClamp>
@@ -1713,7 +1723,7 @@ function ResultCell({
 }: {
   column: ResultTableColumn
   variant: ResultVariant
-  project: string
+  project: ProjectTarget
   experimentId: string
   memberRunsById: ReadonlyMap<string, MemberRunSummary>
   sotaRank?: number
@@ -1746,7 +1756,7 @@ function ResultCell({
           return memberRun ? (
             <span key={runId} className="block whitespace-nowrap font-mono text-[10px]">
               <Link
-                href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(experimentId)}?run=${encodeURIComponent(runId)}`}
+                href={`${projectWebPath(project, `/e/${encodeURIComponent(experimentId)}`)}?run=${encodeURIComponent(runId)}`}
                 className="text-primary underline-offset-2 hover:underline"
               >
                 {runId}
@@ -1781,11 +1791,7 @@ function ResultCell({
   // Apply decimal-places formatting to finite numbers when the user has
   // enabled it for this metric column. Non-numeric values are left as-is.
   let displayText = String(value)
-  if (
-    decimalPlaces !== undefined &&
-    typeof value === 'number' &&
-    Number.isFinite(value)
-  ) {
+  if (decimalPlaces !== undefined && typeof value === 'number' && Number.isFinite(value)) {
     displayText = value.toFixed(decimalPlaces)
   }
 
@@ -1809,7 +1815,8 @@ function ResultCell({
     )
   }
   const content = renderCellText(text)
-  const hasDecimalFormat = decimalPlaces !== undefined && typeof value === 'number' && Number.isFinite(value)
+  const hasDecimalFormat =
+    decimalPlaces !== undefined && typeof value === 'number' && Number.isFinite(value)
   const sotaClass =
     sotaRank === 1
       ? 'font-bold underline'
@@ -2395,9 +2402,9 @@ function computeSotaRanks(
     if (entries.length === 0) continue
 
     // Sort by value according to the mode direction.
-    const sorted = entries.slice().sort((a, b) =>
-      mode === 'higher-is-better' ? b.value - a.value : a.value - b.value,
-    )
+    const sorted = entries
+      .slice()
+      .sort((a, b) => (mode === 'higher-is-better' ? b.value - a.value : a.value - b.value))
 
     // Assign ranks: best = 1, second = 2, third = 3.
     const ranks = new Map<string, SotaRank>()
@@ -2470,7 +2477,13 @@ function SotaModeToggle({ mode, onToggle }: { mode: SotaMode; onToggle: () => vo
   )
 }
 
-function DecimalPlacesInput({ places, onChange }: { places: number; onChange: (n: number) => void }) {
+function DecimalPlacesInput({
+  places,
+  onChange,
+}: {
+  places: number
+  onChange: (n: number) => void
+}) {
   return (
     <Input
       type="number"

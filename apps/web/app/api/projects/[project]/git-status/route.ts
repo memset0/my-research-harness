@@ -8,16 +8,18 @@
 // An in-memory throttle (1s window) shields the underlying git process from
 // HMR reload storms and parallel tabs.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { readGitStatus, type GitStatus } from '@memon/core'
-import { getRuntime } from '../../../../../lib/runtime'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { BackendGitStatusResponseSchema } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
+import {
+  gitServiceError,
+  standaloneGitContext,
+} from '../../../../../lib/server/standalone-git-route'
 
 export const dynamic = 'force-dynamic'
 
 interface CacheEntry {
   readAt: number
-  result: GitStatus
+  result: ReturnType<typeof BackendGitStatusResponseSchema.parse>
 }
 
 const cache = new Map<string, CacheEntry>()
@@ -28,37 +30,23 @@ interface RouteParams {
 
 export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
   const { project: rawProject } = await ctx.params
-  const project = decodeURIComponent(rawProject)
-
-  const rt = await getRuntime()
-  const entry = rt.config.projects.find((p) => p.name === project)
-  if (!entry) {
-    return NextResponse.json(
-      { error: { message: 'project not found' } },
-      { status: 404 },
-    )
-  }
-
-  const { role, scopeProjects } = readIdentityFromRequest(req)
-  if (role === 'viewer' && !scopeProjects.has(project)) {
-    return NextResponse.json(
-      { error: { message: 'forbidden' } },
-      { status: 403 },
-    )
-  }
+  const context = await standaloneGitContext(req, rawProject)
+  if (context instanceof NextResponse) return context
 
   // Throttle window equals the configured polling interval — see
   // `git_status` capability spec ("git_status config block" requirement).
-  const throttleMs = rt.config.gitStatus.intervalMs
   const now = Date.now()
-  const cached = cache.get(project)
-  if (cached && now - cached.readAt < throttleMs) {
+  const cached = cache.get(context.project)
+  if (cached && now - cached.readAt < context.gitStatusIntervalMs) {
     return NextResponse.json(cached.result)
   }
-
-  const result = await readGitStatus(entry.root)
-  cache.set(project, { readAt: now, result })
-  return NextResponse.json(result)
+  try {
+    const result = BackendGitStatusResponseSchema.parse(await context.git.status(context.project))
+    cache.set(context.project, { readAt: now, result })
+    return NextResponse.json(result)
+  } catch (error) {
+    return gitServiceError(error)
+  }
 }
 
 /** Test-only hook — vitest mocks rely on a clean throttle cache. */

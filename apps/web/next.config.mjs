@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Production browser artifacts must not expose server-only registry/config
+  // source through source maps.
+  productionBrowserSourceMaps: false,
   transpilePackages: ['@memon/core'],
   // Externalize Node-only packages so webpack doesn't try to bundle them
   // (fast-glob → @nodelib/fs.scandir → require('fs') would otherwise fail

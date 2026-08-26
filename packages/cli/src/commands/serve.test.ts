@@ -87,7 +87,7 @@ describe('runServe config path policy', () => {
   it('does not treat config.example.yml as the default runtime config', async () => {
     await fs.writeFile(join(repoRoot, 'config.example.yml'), 'projects: []\n', 'utf8')
 
-    await expect(runServe({ cwd: repoRoot, dev: false, port: 3737 })).rejects.toMatchObject({
+    await expect(runServe({ cwd: repoRoot, dev: false })).rejects.toMatchObject({
       exitCode: 2,
     })
 
@@ -103,7 +103,7 @@ describe('runServe config path policy', () => {
     })
   })
 
-  it('allows a custom config basename and passes its absolute path to Next', async () => {
+  it('allows a custom config basename and starts the custom Web entry', async () => {
     const customPath = join(repoRoot, 'cluster-config.yml')
     await fs.writeFile(customPath, 'projects: []\n', 'utf8')
 
@@ -117,11 +117,11 @@ describe('runServe config path policy', () => {
     expect(childProcessMocks.spawn).toHaveBeenCalledOnce()
     expect(childProcessMocks.spawn).toHaveBeenCalledWith(
       'pnpm',
-      ['exec', 'next', 'dev', '-p', '4747'],
+      ['run', 'dev'],
       expect.objectContaining({
         cwd: join(repoRoot, 'apps', 'web'),
         stdio: 'inherit',
-        env: expect.objectContaining({ MEMON_CONFIG_PATH: customPath }),
+        env: expect.objectContaining({ MEMON_CONFIG_PATH: customPath, PORT: '4747' }),
       }),
     )
   })
@@ -130,15 +130,17 @@ describe('runServe config path policy', () => {
     const configPath = join(repoRoot, 'config.yml')
     await fs.writeFile(configPath, 'projects: []\n', 'utf8')
 
-    await runServe({ cwd: repoRoot, dev: false, port: 3737 })
+    await runServe({ cwd: repoRoot, dev: false })
 
     expect(childProcessMocks.spawn).toHaveBeenCalledOnce()
     expect(childProcessMocks.spawn).toHaveBeenCalledWith(
       'pnpm',
-      ['exec', 'next', 'start', '-p', '3737'],
+      ['run', 'start'],
       expect.objectContaining({
         env: expect.objectContaining({ MEMON_CONFIG_PATH: configPath }),
       }),
     )
+    const spawnedEnv = childProcessMocks.spawn.mock.calls[0]![2]!.env!
+    expect(spawnedEnv.PORT).toBeUndefined()
   })
 })

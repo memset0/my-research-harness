@@ -1,169 +1,91 @@
-// PATCH /api/runs/[id]/archive — toggle the archived field on a run README.
-//
-// Body: { archived: boolean, expectedMtime?: number }
-//
-// v4 — replaces the legacy `<runDir>/.archived` sidecar mechanism. The
-// archive flag now lives in the README's frontmatter and participates in
-// the same atomic-write + JOURNAL `[ARCHIVE]` flow as status set, per
-// `archive-frontmatter` spec. Hard rule: refuses `archived: true` when the
-// current `status === 'RUNNING'` (HTTP 422).
-//
-// `expectedMtime` is matched against the README.md file's own mtime
-// (NOT the synthesized run-effective mtime that mixes dir + README). The
-// route is idempotent: when the on-disk archived flag already equals the
-// requested target, it returns 200 `{noop: true}` regardless of whether
-// expectedMtime matches — covers the common case where the client view is
-// stale because of unrelated dir-level activity.
-
-import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { BackendMutationError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  appendJournalEvent,
-  formatIsoLocal,
-  parseReadme,
-  readRunDir,
-  reserializeReadme,
-} from '@memon/core'
 import { z } from 'zod'
 import { getRuntime } from '../../../../../lib/runtime'
+import {
+  refreshStandaloneJournal,
+  refreshStandaloneRun,
+} from '../../../../../lib/server/standalone-mutation-refresh'
+import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-const PatchBody = z.object({
-  archived: z.boolean(),
-  expectedMtime: z.number().optional(),
-})
+const PatchBody = z.object({ archived: z.boolean(), expectedMtime: z.number().optional() }).strict()
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  try {
-    const rt = await getRuntime()
-    const { id } = await ctx.params
-    const exp = rt.index.get(id)
-    if (!exp) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: `run "${id}" not found` } },
-        { status: 404 },
-      )
-    }
-    const project = rt.projectFor(exp.path)
-    if (!project) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'owning project not found' } },
-        { status: 404 },
-      )
-    }
-
-    const parsed = PatchBody.safeParse(await req.json().catch(() => null))
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BAD_REQUEST',
-            message: parsed.error.issues
-              .map((i) => `${i.path.join('.') || 'body'}: ${i.message}`)
-              .join('; '),
-          },
-        },
-        { status: 400 },
-      )
-    }
-
-    const readmePath = join(exp.path, 'README.md')
-    const stat = await fs.stat(readmePath)
-    const currentContent = await fs.readFile(readmePath, 'utf8')
-    const parsedReadme = parseReadme(currentContent)
-    const prevArchived = parsedReadme.frontMatter.archived
-    const currentStatus = parsedReadme.frontMatter.status
-    const target = parsed.data.archived
-
-    // Idempotent: on-disk already matches the requested target. Return
-    // noop success even when the client's expectedMtime is stale (e.g.
-    // a sibling write or a poll-driven cache refresh just landed). This
-    // is the hot path for double-click / racy-poll scenarios.
-    if (prevArchived === target) {
-      return NextResponse.json({ ok: true, archived: target, mtime: stat.mtimeMs, noop: true })
-    }
-
-    // Strict lock only kicks in when the client wants to flip the value
-    // AND its view of the file is stale.
-    if (parsed.data.expectedMtime !== undefined && stat.mtimeMs !== parsed.data.expectedMtime) {
-      return NextResponse.json(
-        {
-          error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
-          mtime: stat.mtimeMs,
-          content: currentContent,
-        },
-        { status: 409 },
-      )
-    }
-
-    // Hard rule: cannot archive a RUNNING run.
-    if (target === true && currentStatus === 'RUNNING') {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'ARCHIVE_RUNNING_FORBIDDEN',
-            message:
-              'cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first',
-            id,
-          },
-        },
-        { status: 422 },
-      )
-    }
-
-    parsedReadme.frontMatter.archived = target
-    parsedReadme.frontMatter.updatedAt = formatIsoLocal(new Date())
-    const newContent = reserializeReadme(parsedReadme)
-
-    const tmpPath = join(
-      dirname(readmePath),
-      `.${Date.now()}-${Math.random().toString(36).slice(2)}.archive.tmp`,
-    )
-    await fs.writeFile(tmpPath, newContent, 'utf8')
-    await fs.rename(tmpPath, readmePath)
-    const newStat = await fs.stat(readmePath)
-
-    const timestamp = formatIsoLocal(new Date())
-    try {
-      await appendJournalEvent({
-        path: join(project.root, 'docs', 'journal.md'),
-        event: {
-          timestamp,
-          tag: 'ARCHIVE',
-          body: `\`${id}\` op=${target ? 'archive' : 'unarchive'}`,
-        },
-      })
-    } catch (err) {
-      // Roll back README on JOURNAL failure.
-      const tmpRollback = join(
-        dirname(readmePath),
-        `.${Date.now()}-rollback.archive.tmp`,
-      )
-      await fs.writeFile(tmpRollback, currentContent, 'utf8')
-      await fs.rename(tmpRollback, readmePath)
-      throw err
-    }
-
-    try {
-      const updated = await readRunDir(exp.path, project.name)
-      rt.index.set(updated)
-      rt.events.emit('run-change', {
-        type: 'set',
-        id: updated.id,
-        experiment: updated,
-        parentExperimentId: updated.frontMatter.experiment ?? null,
-      })
-    } catch {
-      // best-effort
-    }
-
-    return NextResponse.json({ ok: true, archived: target, mtime: newStat.mtimeMs })
-  } catch (err) {
+  const runtime = await getRuntime()
+  const { id } = await ctx.params
+  const current = runtime.index.get(id)
+  if (!current) {
     return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
+      { error: { code: 'NOT_FOUND', message: `run "${id}" not found` } },
+      { status: 404 },
     )
+  }
+  const project = runtime.projectFor(current.path)
+  if (!project) {
+    return NextResponse.json(
+      { error: { code: 'NOT_FOUND', message: 'owning project not found' } },
+      { status: 404 },
+    )
+  }
+  const body = PatchBody.safeParse(await req.json().catch(() => null))
+  if (!body.success) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'BAD_REQUEST',
+          message: body.error.issues
+            .map((issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`)
+            .join('; '),
+        },
+      },
+      { status: 400 },
+    )
+  }
+  try {
+    const { unchanged, ...result } = await standaloneServices(
+      runtime.config,
+    ).mutations.setRunArchived(project.name, id, body.data)
+    if (!unchanged) {
+      await Promise.all([
+        refreshStandaloneRun(runtime, project.name, id),
+        refreshStandaloneJournal(runtime, project.name),
+      ])
+    }
+    return NextResponse.json({ ...result, ...(unchanged ? { noop: true } : {}) })
+  } catch (error) {
+    if (error instanceof BackendMutationError) {
+      if (error.code === 'CONFLICT') {
+        return NextResponse.json(
+          {
+            error: { code: 'CONFLICT', message: error.message },
+            mtime: error.current?.mtime,
+            content: error.current?.content,
+          },
+          { status: 409 },
+        )
+      }
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'ARCHIVE_RUNNING_FORBIDDEN',
+              message:
+                'cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first',
+              id,
+            },
+          },
+          { status: 422 },
+        )
+      }
+      if (error.code === 'RESOURCE_NOT_FOUND' || error.code === 'PROJECT_NOT_FOUND') {
+        return NextResponse.json(
+          { error: { code: 'NOT_FOUND', message: error.message } },
+          { status: 404 },
+        )
+      }
+    }
+    return NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
   }
 }

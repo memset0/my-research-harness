@@ -23,7 +23,7 @@ export function TerminalButton({ runId, projectName }: { runId: string; projectN
   // probe so we don't 401 + trigger the native Basic-auth dialog.
   const { data: probe } = useQuery({
     queryKey: ['terminal', 'check'],
-    queryFn: checkTerminal,
+    queryFn: () => checkTerminal(),
     staleTime: 10_000,
     enabled: role === 'owner' && terminal.tmuxEnabled,
   })
@@ -100,7 +100,7 @@ export function TerminalButton({ runId, projectName }: { runId: string; projectN
       <Tooltip>
         <TooltipTrigger asChild>
           {/* span wraps the disabled button so the tooltip still triggers */}
-          <span tabIndex={0}>
+          <span>
             <Button variant="outline" size="sm" disabled>
               <Bot className="size-3.5" />
               Open in browser

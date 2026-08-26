@@ -5,7 +5,10 @@ import { useEffect, type ComponentType, type ReactNode } from 'react'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('@monaco-editor/react', () => ({
-  default: function MonacoStub(props: { value?: string; onChange?: (v: string | undefined) => void }) {
+  default: function MonacoStub(props: {
+    value?: string
+    onChange?: (v: string | undefined) => void
+  }) {
     return (
       <textarea
         data-testid="monaco-editor"
@@ -36,7 +39,10 @@ vi.mock('../lib/api', () => ({
 import { ReadmeEditorProvider, useReadmeEditor } from './readme-editor-context'
 import { ReadmeSidePanel } from './readme-side-panel'
 
-function withProvider(node: ReactNode, init: { open?: boolean; collapsed?: boolean; width?: number } = {}) {
+function withProvider(
+  node: ReactNode,
+  init: { open?: boolean; collapsed?: boolean; width?: number } = {},
+) {
   function Setup() {
     const ctx = useReadmeEditor()
     // Apply initial state ONCE on mount; do not re-coerce on later re-renders,
@@ -45,7 +51,7 @@ function withProvider(node: ReactNode, init: { open?: boolean; collapsed?: boole
       if (init.open !== undefined) ctx.setOpen(init.open)
       if (init.collapsed !== undefined) ctx.setCollapsed(init.collapsed)
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [ctx.setCollapsed, ctx.setOpen])
     return null
   }
   return (
@@ -83,9 +89,7 @@ describe('ReadmeSidePanel — render states', () => {
     )
     const panel = await screen.findByTestId('readme-side-panel')
     expect(panel).toHaveAttribute('data-state', 'collapsed')
-    expect(
-      screen.getByRole('button', { name: /expand readme editor/i }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /expand readme editor/i })).toBeInTheDocument()
   })
 
   it('toggles between collapsed and expanded via the handle button', async () => {
@@ -95,9 +99,7 @@ describe('ReadmeSidePanel — render states', () => {
         collapsed: true,
       }),
     )
-    await userEvent.click(
-      screen.getByRole('button', { name: /expand readme editor/i }),
-    )
+    await userEvent.click(screen.getByRole('button', { name: /expand readme editor/i }))
     await waitFor(() =>
       expect(screen.getByTestId('readme-side-panel')).toHaveAttribute('data-state', 'expanded'),
     )
@@ -106,9 +108,7 @@ describe('ReadmeSidePanel — render states', () => {
 
 describe('ReadmeSidePanel — drag to resize', () => {
   it('persists new width to localStorage on mouseup', async () => {
-    renderWithQuery(
-      withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />, { open: true }),
-    )
+    renderWithQuery(withProvider(<ReadmeSidePanel path="/x/README.md" runId="e" />, { open: true }))
     const handle = await screen.findByTestId('readme-side-panel-drag-handle')
 
     fireEvent.mouseDown(handle, { clientX: 800 })

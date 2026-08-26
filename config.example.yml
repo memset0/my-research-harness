@@ -122,33 +122,81 @@ poll:
 #                                   # auto-generated on first run alongside
 #                                   # `password`. Rotate to log everyone out.
 
-# ── hub / node (multi-cluster) ──────────────────────────────────────────
-# By default memon runs standalone (frontend + backend in one process). To
-# manage several clusters from one place, split into a `hub` (central
-# frontend + thin broker) and one `node` per cluster (the full backend,
-# dialing OUT to the hub over WebSocket). A process has AT MOST ONE of these
-# blocks — `hub` and `node` are mutually exclusive.
+# ── central / Backend roles (multi-Host) ──────────────────────
+# No role block means standalone (the default represented by this file).
+# A split deployment uses separate instance files: one with `central:` and no
+# Project roots, and one `backend:` instance per Host with local Project roots.
+# `central:` and `backend:` are mutually exclusive. Legacy `hub:` / `node:`
+# blocks are rejected rather than reviving the abandoned WebSocket-RPC design.
 #
-# Hub process (serves the UI; holds no projects of its own):
+# Values below are synthetic documentation placeholders only. Generate an
+# independent high-entropy token for every Backend; never reuse these example
+# strings. During rotation, add `next` to the Backend first, then central,
+# switch `current`, verify, and finally remove the old token.
 #
-# hub:
+# Central instance (remove the top-level `projects`, polling, terminal, Slurm,
+# and Git-status blocks when creating this separate instance):
+#
+# central:
 #   bind_addr: "127.0.0.1"          # optional; default 127.0.0.1
 #   bind_port: 3737                 # optional; default 3737
-#   public_url: "wss://memon-m2.dev.mem.ac"   # optional; for display
-#   nodes:                          # the nodes allowed to connect
-#     - { name: m2,    auth_token: "<random-per-node-secret>" }
-#     - { name: nvl72, auth_token: "<random-per-node-secret>" }
+#   public_url: "https://central.example.test"
+#   # Optional temporary migration target for legacy name-only share links.
+#   # legacy_share_host: host-a
+#   hosts:
+#     - id: host-a
+#       label: "Synthetic URL Host"
+#       tokens:
+#         current: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" # replace; 32+ base64url chars
+#         next: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"    # optional rotation slot
+#       transport:
+#         kind: url
+#         base_url: "https://backend-a.example.test"
+#         # Plain HTTP requires `allow_insecure_http: true` and is intended
+#         # only for an explicitly trusted private/loopback transport.
+#       operations:                 # optional machine-readable Agent hints
+#         ssh_target: "operator@host-a.example.test"
+#         checkout_path: "/example/checkouts/memon"
+#         config_path: "/example/config/backend.yml"
+#         runtime_bootstrap: ["memon", "backend", "daemon", "start"]
+#         supervisor_mode: supervised
 #
-# Node process (the cluster backend; lists this cluster's projects above):
+#     - id: host-b
+#       label: "Synthetic SSH Host"
+#       tokens:
+#         current: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" # replace independently
+#       transport:
+#         kind: ssh
+#         executable: "ssh"         # optional; default ssh
+#         target: "tunnel@host-b.example.test"
+#         known_hosts_file: "/example/secrets/known_hosts"
+#         identity_file: "/example/secrets/id_host_b" # optional
+#         local_port: 4738           # unique center-loopback forward
+#         remote_host: "127.0.0.1"  # optional; default loopback
+#         remote_port: 3738
 #
-# node:
-#   name: nvl72                     # unique, kebab-case; shown in the hub UI
-#   auth_token: "<matches the hub's nvl72 entry>"
-#   hub_url: "wss://memon-m2.dev.mem.ac"   # ws:// for localhost
-#   capabilities:                   # optional; both default true
-#     tmux: true
-#     projects: true
+# Backend instance (keep this Host's `projects` and cluster-local settings):
 #
-# Localhost dev: run two processes on one machine — a hub (this `hub:` block,
-# projects empty) and a node (a second config with `projects:` + this `node:`
-# block, hub_url: ws://localhost:3737).
+# backend:
+#   host_id: host-a
+#   access_mode: read_write          # read_only for private shadow verification
+#   bind_addr: "127.0.0.1"          # optional; default 127.0.0.1
+#   bind_port: 3738                 # optional; default 3738
+#   tokens:
+#     current: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" # matches only Host A
+#     next: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"    # optional rotation slot
+#   daemon:
+#     mode: supervised              # supervised | foreground | external
+#     state_dir: "/example/state/memon"
+#     release_dir: "/example/releases/memon"
+#     runtime_dir: "/example/run/memon" # must be node-local, not shared NFS
+#     guards:
+#       allowed_hostnames: ["login-*.example.test"]
+#       forbidden_env: ["SLURM_JOB_ID", "PBS_JOBID"]
+#     # `restart_argv` is accepted only with mode: external. If omitted, an
+#     # update reports restart_required instead of guessing service-manager UX.
+#     # restart_argv: ["service-wrapper", "restart"]
+#
+# Keep real Host IDs, domains, addresses, ports, SSH identities, paths, tokens,
+# and operational notes only in Git-ignored instance files. Narrative runbooks
+# belong in YAML comments beside the relevant local Host entry.

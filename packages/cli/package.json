@@ -10,13 +10,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "memon": "node ./dist/index.js"
   },
   "dependencies": {
+    "@memon/backend": "workspace:*",
     "@memon/core": "workspace:*",
     "@memon/skills": "workspace:*",
     "commander": "^12.1.0"

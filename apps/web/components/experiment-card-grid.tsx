@@ -25,6 +25,10 @@ import {
   fetchExperimentDocs,
   type ExperimentDocSummary,
   type MemberRunSummary,
+  projectHost,
+  projectName,
+  projectQueryKey,
+  type ProjectTarget,
 } from '../lib/api'
 import { AnomalyBanner } from './anomaly-banner'
 import { Badge } from './ui/badge'
@@ -32,15 +36,22 @@ import { Checkbox } from './ui/checkbox'
 import { ExperimentStatusPill, StatusPill } from './status-pill'
 import { cn } from '../lib/utils'
 
-const STORAGE_KEY_SHOW_ARCHIVED = (project: string) => `memon:list:${project}:show-archived`
+const STORAGE_KEY_SHOW_ARCHIVED = (project: ProjectTarget) =>
+  `memon:list:${projectQueryKey(project).join(':')}:show-archived`
 
-export function ExperimentCardGrid({ project }: { project: string }) {
+function projectBasePath(project: ProjectTarget): string {
+  const name = encodeURIComponent(projectName(project))
+  const host = projectHost(project)
+  return host ? `/h/${encodeURIComponent(host)}/p/${name}` : `/p/${name}`
+}
+
+export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
   const { data: expData, isLoading: expLoading } = useQuery({
-    queryKey: ['experiments', project],
+    queryKey: ['experiments', ...projectQueryKey(project)],
     queryFn: () => fetchExperimentDocs(project),
   })
   const { data: anomalyData } = useQuery({
-    queryKey: ['anomalies', project],
+    queryKey: ['anomalies', ...projectQueryKey(project)],
     queryFn: () => fetchAnomalies(project),
   })
 
@@ -75,8 +86,14 @@ export function ExperimentCardGrid({ project }: { project: string }) {
   const sortFn = (a: ExperimentDocSummary, b: ExperimentDocSummary) =>
     b.effectiveUpdatedAt.localeCompare(a.effectiveUpdatedAt)
 
-  const active = experiments.filter((e) => !e.frontMatter.archived).slice().sort(sortFn)
-  const archived = experiments.filter((e) => e.frontMatter.archived).slice().sort(sortFn)
+  const active = experiments
+    .filter((e) => !e.frontMatter.archived)
+    .slice()
+    .sort(sortFn)
+  const archived = experiments
+    .filter((e) => e.frontMatter.archived)
+    .slice()
+    .sort(sortFn)
   const integrated = experiments.slice().sort(sortFn)
 
   return (
@@ -88,8 +105,12 @@ export function ExperimentCardGrid({ project }: { project: string }) {
             ({showArchived ? experiments.length : active.length})
           </span>
         </h2>
-        <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+        <label
+          htmlFor="show-archived-experiments"
+          className="ml-auto flex items-center gap-2 text-xs text-muted-foreground"
+        >
           <Checkbox
+            id="show-archived-experiments"
             checked={showArchived}
             onCheckedChange={(v) => setShowArchived(v === true)}
             aria-label="Show archived experiments"
@@ -120,19 +141,15 @@ export function ExperimentCardGrid({ project }: { project: string }) {
         <div className="text-sm text-muted-foreground">(no experiments yet)</div>
       )}
       {anomalyData?.anomalies.length === 0 && experiments.length > 0 && (
-        <div className="text-xs text-muted-foreground">No anomalies — all runs bound consistently.</div>
+        <div className="text-xs text-muted-foreground">
+          No anomalies — all runs bound consistently.
+        </div>
       )}
     </div>
   )
 }
 
-function CardList({
-  project,
-  exps,
-}: {
-  project: string
-  exps: ExperimentDocSummary[]
-}) {
+function CardList({ project, exps }: { project: ProjectTarget; exps: ExperimentDocSummary[] }) {
   return (
     <div className="flex flex-col gap-3">
       {exps.map((exp) => (
@@ -148,7 +165,7 @@ function ArchivedBucket({
   revealed,
   onToggle,
 }: {
-  project: string
+  project: ProjectTarget
   archived: ExperimentDocSummary[]
   revealed: boolean
   onToggle: () => void
@@ -174,28 +191,23 @@ function ArchivedBucket({
   )
 }
 
-function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocSummary }) {
+function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: ExperimentDocSummary }) {
   const archived = exp.frontMatter.archived
+  const basePath = projectBasePath(project)
   return (
     <article
-      className={cn(
-        'flex flex-col gap-2 rounded-md border bg-card p-3',
-        archived && 'opacity-60',
-      )}
+      className={cn('flex flex-col gap-2 rounded-md border bg-card p-3', archived && 'opacity-60')}
       aria-label={archived ? `${exp.id} (archived)` : exp.id}
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-0.5 min-w-0">
           <Link
-            href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}`}
+            href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
             className="truncate font-mono text-xs text-muted-foreground hover:underline"
           >
             {exp.id}
           </Link>
-          <Link
-            href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}`}
-            className="hover:underline"
-          >
+          <Link href={`${basePath}/e/${encodeURIComponent(exp.id)}`} className="hover:underline">
             <h3 className="truncate text-sm font-medium">{exp.frontMatter.title}</h3>
           </Link>
           <div className="text-xs text-muted-foreground">{summariseRoster(exp.memberRuns)}</div>
@@ -214,15 +226,13 @@ function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocS
                 </td>
                 <td className="py-1 pr-2">
                   <Link
-                    href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(r.id)}`}
+                    href={`${basePath}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(r.id)}`}
                     className="font-mono hover:underline"
                   >
                     {r.id}
                   </Link>
                 </td>
-                <td className="py-1 pr-2 text-muted-foreground">
-                  {r.createdAt.slice(11, 16)}
-                </td>
+                <td className="py-1 pr-2 text-muted-foreground">{r.createdAt.slice(11, 16)}</td>
               </tr>
             ))}
           </tbody>
@@ -237,11 +247,17 @@ function ExperimentCard({ project, exp }: { project: string; exp: ExperimentDocS
           ))}
         </div>
         <div className="ml-auto flex shrink-0 gap-3 font-mono">
-          <span className="flex items-center gap-1" title="Effective created (min over member runs)">
+          <span
+            className="flex items-center gap-1"
+            title="Effective created (min over member runs)"
+          >
             <CalendarDays className="size-3" aria-hidden />
             {formatTimestamp(exp.effectiveCreatedAt)}
           </span>
-          <span className="flex items-center gap-1" title="Effective updated (max over member runs)">
+          <span
+            className="flex items-center gap-1"
+            title="Effective updated (max over member runs)"
+          >
             <Pencil className="size-3" aria-hidden />
             {formatTimestamp(exp.effectiveUpdatedAt)}
           </span>

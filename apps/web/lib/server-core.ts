@@ -10,16 +10,17 @@
 // Factored out of the entry script (`apps/web/server.ts`) so it can be
 // constructed in tests without booting Next.
 
-import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http'
 import type { Duplex } from 'node:stream'
-import type { HubConfig } from '@memon/core'
 import { createProxyServer } from 'http-proxy-3'
-import { WebSocketServer } from 'ws'
 import { authenticateNodeRequest } from './auth/server-auth'
-import { wsToFrameSocket } from './hub-node/connection'
-import { authenticateNodeToken } from './hub/node-auth'
-import { decodeProxyResultBody, forwardRequest, isForwardable } from './hub/proxy'
-import type { NodeRegistry } from './hub/registry'
+import type { CentralGatewayHandler } from './central/http-bridge'
+import type { CentralTerminalRelay } from './central/terminal-relay'
 import {
   lookupSession,
   noteHttpActivity,
@@ -28,7 +29,6 @@ import {
 } from './terminal/manager'
 
 const PROXY_PREFIX = '/api/terminal/proxy/'
-const HUB_CONNECT_PATH = '/api/hub/nodes/connect'
 
 export interface MemonServerDeps {
   /** Next's request handler — invoked for any path NOT under PROXY_PREFIX. */
@@ -48,12 +48,18 @@ export interface MemonServerDeps {
   proxyTarget?: string
   /** Hook for tests that want to observe proxy errors. */
   onProxyError?: (err: Error) => void
-  /**
-   * Hub mode: when present, accept node WebSocket connections at
-   * `/api/hub/nodes/connect` (Bearer-authenticated against `config.nodes`) and
-   * register each into the supplied registry.
-   */
-  hub?: { config: HubConfig; registry: NodeRegistry }
+  /** Central-only HTTP data bridge. Omitted in standalone mode. */
+  centralGateway?: CentralGatewayHandler
+  /** Central-only Host-qualified HTTP/WebSocket terminal relay. */
+  centralTerminalRelay?: CentralTerminalRelay
+  /** Shared standalone terminal singleton; old manager remains a test/legacy fallback. */
+  standaloneTerminal?: {
+    target(sessionName: string): string | null
+    noteHttpActivity?(sessionName: string): void
+    noteWsConnect?(sessionName: string): void
+    noteWsDisconnect?(sessionName: string): void
+    close?(): void
+  }
 }
 
 function extractSessionName(reqUrl: string): string | null {
@@ -68,7 +74,6 @@ function extractSessionName(reqUrl: string): string | null {
 
 export function createMemonServer(deps: MemonServerDeps): Server {
   const proxy = createProxyServer({ ws: true, changeOrigin: false })
-  const nodeWss = deps.hub ? new WebSocketServer({ noServer: true }) : null
 
   proxy.on('error', (err, _req, res) => {
     const e = err instanceof Error ? err : new Error(String(err))
@@ -88,12 +93,24 @@ export function createMemonServer(deps: MemonServerDeps): Server {
     if (deps.proxyTarget) return deps.proxyTarget
     const name = extractSessionName(reqUrl)
     if (!name) return null
+    if (deps.standaloneTerminal) return deps.standaloneTerminal.target(name)
     const entry = lookupSession(name)
     return entry ? `http://127.0.0.1:${entry.port}` : null
   }
 
   const server = createHttpServer(async (req, res) => {
     if (req.url?.startsWith(PROXY_PREFIX)) {
+      if (deps.centralTerminalRelay) {
+        try {
+          if (!(await deps.centralTerminalRelay.handleHttp(req, res))) {
+            rejectHttp(res, 404, { 'Content-Type': 'application/json' })
+          }
+        } catch (error) {
+          deps.onProxyError?.(error instanceof Error ? error : new Error(String(error)))
+          rejectHttp(res, 500, { 'Content-Type': 'application/json' })
+        }
+        return
+      }
       try {
         const r = await authenticateNodeRequest(req)
         if (!r.ok) {
@@ -107,7 +124,10 @@ export function createMemonServer(deps: MemonServerDeps): Server {
           return
         }
         const name = extractSessionName(req.url)
-        if (name) noteHttpActivity(name)
+        if (name) {
+          if (deps.standaloneTerminal) deps.standaloneTerminal.noteHttpActivity?.(name)
+          else noteHttpActivity(name)
+        }
         proxy.web(req, res, { target })
       } catch (e) {
         deps.onProxyError?.(e instanceof Error ? e : new Error(String(e)))
@@ -115,41 +135,31 @@ export function createMemonServer(deps: MemonServerDeps): Server {
       }
       return
     }
-    // Hub mode: forward data /api/* requests to the owning node. Owner auth is
-    // enforced here (the forward bypasses Next's middleware); viewers are denied
-    // forwarded data in v1 (viewer-scoped sharing across the hub is deferred).
-    if (deps.hub && req.url && isForwardable(req.url.split('?')[0]!)) {
+    if (deps.centralGateway) {
       try {
-        const r = await authenticateNodeRequest(req)
-        if (!r.ok) {
-          rejectHttp(res, r.status ?? 401, r.headers ?? {})
-          return
-        }
-        await forwardToNode(req, res, deps.hub.registry)
-      } catch (e) {
-        deps.onProxyError?.(e instanceof Error ? e : new Error(String(e)))
-        rejectHttp(res, 502, { 'Content-Type': 'text/plain' })
-        res.end('Bad Gateway: hub forward failed')
+        if (await deps.centralGateway(req, res)) return
+      } catch (error) {
+        deps.onProxyError?.(error instanceof Error ? error : new Error(String(error)))
+        rejectHttp(res, 500, { 'Content-Type': 'text/plain' })
+        return
       }
-      return
     }
     await deps.handle(req, res)
   })
 
   server.on('upgrade', async (req, socket, head) => {
-    // Hub mode: a node dialing in over the connect path (Bearer-authenticated).
-    if (deps.hub && nodeWss && req.url === HUB_CONNECT_PATH) {
-      const name = authenticateNodeToken(req.headers.authorization, deps.hub.config)
-      if (!name) {
-        rejectUpgrade(socket, 401, {})
+    if (req.url?.startsWith(PROXY_PREFIX)) {
+      if (deps.centralTerminalRelay) {
+        try {
+          if (!(await deps.centralTerminalRelay.handleUpgrade(req, socket, head))) {
+            rejectUpgrade(socket, 404, { 'Content-Type': 'application/json' })
+          }
+        } catch (error) {
+          deps.onProxyError?.(error instanceof Error ? error : new Error(String(error)))
+          rejectUpgrade(socket, 500, { 'Content-Type': 'application/json' })
+        }
         return
       }
-      nodeWss.handleUpgrade(req, socket, head, (ws) => {
-        void deps.hub!.registry.attach(wsToFrameSocket(ws)).catch(() => ws.close())
-      })
-      return
-    }
-    if (req.url?.startsWith(PROXY_PREFIX)) {
       try {
         const r = await authenticateNodeRequest(req)
         if (!r.ok) {
@@ -163,8 +173,13 @@ export function createMemonServer(deps: MemonServerDeps): Server {
         }
         const name = extractSessionName(req.url)
         if (name) {
-          noteWsConnect(name)
-          socket.once('close', () => noteWsDisconnect(name))
+          if (deps.standaloneTerminal) {
+            deps.standaloneTerminal.noteWsConnect?.(name)
+            socket.once('close', () => deps.standaloneTerminal?.noteWsDisconnect?.(name))
+          } else {
+            noteWsConnect(name)
+            socket.once('close', () => noteWsDisconnect(name))
+          }
         }
         proxy.ws(req, socket, head, { target })
       } catch (e) {
@@ -180,6 +195,12 @@ export function createMemonServer(deps: MemonServerDeps): Server {
     }
   })
 
+  server.once('close', () => {
+    proxy.close()
+    deps.centralTerminalRelay?.close()
+    deps.standaloneTerminal?.close?.()
+  })
+
   return server
 }
 
@@ -190,51 +211,20 @@ function rejectHttp(res: ServerResponse, status: number, headers: Record<string,
 
 function rejectUpgrade(socket: Duplex, status: number, headers: Record<string, string>): void {
   const reason =
-    status === 401 ? 'Unauthorized'
-    : status === 429 ? 'Too Many Requests'
-    : status === 502 ? 'Bad Gateway'
-    : 'Forbidden'
+    status === 401
+      ? 'Unauthorized'
+      : status === 429
+        ? 'Too Many Requests'
+        : status === 502
+          ? 'Bad Gateway'
+          : status === 500
+            ? 'Internal Server Error'
+            : status === 404
+              ? 'Not Found'
+              : 'Forbidden'
   const headerLines = Object.entries(headers)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\r\n')
-  socket.write(
-    `HTTP/1.1 ${status} ${reason}\r\n${headerLines}\r\nConnection: close\r\n\r\n`,
-  )
+  socket.write(`HTTP/1.1 ${status} ${reason}\r\n${headerLines}\r\nConnection: close\r\n\r\n`)
   socket.destroy()
-}
-
-/** Hub mode: forward one data request to its owning node and write the reply. */
-async function forwardToNode(
-  req: IncomingMessage,
-  res: ServerResponse,
-  registry: NodeRegistry,
-): Promise<void> {
-  const u = new URL(req.url ?? '/', 'http://hub.internal')
-  const query: Record<string, string> = {}
-  u.searchParams.forEach((v, k) => {
-    query[k] = v
-  })
-  const method = req.method ?? 'GET'
-  let body: string | undefined
-  if (method !== 'GET' && method !== 'HEAD') body = await readRequestBody(req)
-  const fwdHeaders: Record<string, string> = {}
-  const ct = req.headers['content-type']
-  if (ct) fwdHeaders['content-type'] = Array.isArray(ct) ? ct[0]! : ct
-
-  const result = await forwardRequest(registry, { method, path: u.pathname, query, body, headers: fwdHeaders })
-  const outHeaders: Record<string, string> = { ...(result.headers ?? {}) }
-  if (!('content-type' in outHeaders) && !('Content-Type' in outHeaders)) {
-    outHeaders['content-type'] = 'application/json'
-  }
-  res.writeHead(result.status, outHeaders)
-  res.end(decodeProxyResultBody(result))
-}
-
-function readRequestBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (c: Buffer) => chunks.push(c))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
-    req.on('error', reject)
-  })
 }

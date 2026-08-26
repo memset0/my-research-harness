@@ -5,11 +5,7 @@
 // surfaces soft warnings as one-line stderr JSON events, and emits
 // JSON success on stdout.
 
-import {
-  renameExperiment,
-  RenameExperimentError,
-  type RenameExperimentWarning,
-} from '@memon/core'
+import { renameExperiment, RenameExperimentError, type RenameExperimentWarning } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
@@ -27,7 +23,7 @@ export async function runExperimentRename(input: ExperimentRenameInput): Promise
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
 
-  let result
+  let result: Awaited<ReturnType<typeof renameExperiment>>
   try {
     result = await renameExperiment(projectRoot, projectName, input.idOrSlug, input.newSlug)
   } catch (err) {
@@ -35,8 +31,7 @@ export async function runExperimentRename(input: ExperimentRenameInput): Promise
       // EXPERIMENT_SLUG_PREFIX_COLLISION is a user-input issue (slug
       // they typed conflicts with an existing one) — map to USAGE
       // exit, same as `memon experiment create`'s collision branch.
-      const exitCode =
-        err.code === 'EXPERIMENT_SLUG_PREFIX_COLLISION' ? EXIT.USAGE : undefined
+      const exitCode = err.code === 'EXPERIMENT_SLUG_PREFIX_COLLISION' ? EXIT.USAGE : undefined
       emitErrorAndExit(err.code, err.message, err.extra, exitCode)
     }
     throw err

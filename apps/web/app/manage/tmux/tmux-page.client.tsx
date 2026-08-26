@@ -1,15 +1,5 @@
 'use client'
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -20,27 +10,23 @@ import {
   FlaskConical,
   FolderTree,
   Loader2,
+  type LucideIcon,
   Pencil,
   Plus,
   RefreshCw,
   TerminalSquare,
   Trash2,
   Zap,
-  type LucideIcon,
 } from 'lucide-react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { GroupImperativeHandle, Layout } from 'react-resizable-panels'
 import { toast } from 'sonner'
-import {
-  ApiError,
-  createTmuxSession,
-  killTmuxSession,
-  listTmuxSessions,
-  renameTmuxSession,
-  type TmuxPaneInfo,
-  type TmuxPaneState,
-  type TmuxSessionRow,
-} from '../../../lib/api'
+import { HostStatusBadge } from '../../../components/host-status-badge'
+import { StaleBanner } from '../../../components/stale-banner'
+import { TerminalView } from '../../../components/terminal-view'
 import { Button } from '../../../components/ui/button'
-import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -56,10 +42,28 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '../../../components/ui/resizable'
-import type { GroupImperativeHandle, Layout } from 'react-resizable-panels'
-import { StaleBanner } from '../../../components/stale-banner'
-import { TerminalView } from '../../../components/terminal-view'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/tabs'
 import { ViewerGuard } from '../../../components/viewer-guard'
+import {
+  ApiError,
+  createTmuxSession,
+  fetchHosts,
+  killTmuxSession,
+  listTmuxSessions,
+  type ProjectTarget,
+  renameTmuxSession,
+  type TmuxPaneInfo,
+  type TmuxPaneState,
+  type TmuxSessionRow,
+} from '../../../lib/api'
+import { useRuntimeConfig } from '../../../lib/runtime-config'
 import { useMediaQuery } from '../../../lib/use-media-query'
 import { cn } from '../../../lib/utils'
 
@@ -113,38 +117,29 @@ export function parseStoredLayout(raw: string | null): Layout | null {
 }
 
 function popupTarget(row: TmuxSessionRow): string {
-  return `memon-popup-${row.sessionName}`
+  return `memon-popup-${row.host ? `${row.host}-` : ''}${row.sessionName}`
 }
 
 function popupUrl(row: TmuxSessionRow): string | null {
+  const host = row.host ?? undefined
   if (row.matchable) {
     const p = row.parsed
     if (!p.agent || !p.project || !p.scope || !p.slug) return null
-    return (
-      `/terminal-popup?project=${encodeURIComponent(p.project)}` +
-      `&scope=${encodeURIComponent(p.scope)}` +
-      `&slug=${encodeURIComponent(p.slug)}` +
-      `&agent=${encodeURIComponent(p.agent)}`
-    )
+    const params = new URLSearchParams({
+      project: p.project,
+      scope: p.scope,
+      slug: p.slug,
+      agent: p.agent,
+    })
+    if (host) params.set('host', host)
+    return `/terminal-popup?${params.toString()}`
   }
-  const base = `/terminal-popup?sessionName=${encodeURIComponent(row.sessionName)}`
+  const params = new URLSearchParams({ sessionName: row.sessionName })
+  if (host) params.set('host', host)
   if (row.staleReason !== null) {
-    return `${base}&stale=${encodeURIComponent(row.staleReason)}`
+    params.set('stale', row.staleReason)
   }
-  return base
-}
-
-function targetHref(row: TmuxSessionRow): string | null {
-  const p = row.parsed
-  if (!row.matchable || !p.project || !p.scope) return null
-  if (p.scope === 'project') {
-    return `/p/${encodeURIComponent(p.project)}`
-  }
-  if (!p.slug) return null
-  if (p.scope === 'run') {
-    return `/p/${encodeURIComponent(p.project)}/r/${encodeURIComponent(p.slug)}`
-  }
-  return `/p/${encodeURIComponent(p.project)}/e/${encodeURIComponent(p.slug)}`
+  return `/terminal-popup?${params.toString()}`
 }
 
 /**
@@ -164,10 +159,8 @@ const BADGE_COLORS = {
   port: 'bg-muted text-emerald-700 dark:text-emerald-300',
   agent:
     'border border-orange-200 bg-orange-100 text-orange-900 dark:border-orange-900/60 dark:bg-orange-900/40 dark:text-orange-200',
-  run:
-    'border border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-900/40 dark:text-emerald-200',
-  exp:
-    'border border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-900/60 dark:bg-sky-900/40 dark:text-sky-200',
+  run: 'border border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-900/40 dark:text-emerald-200',
+  exp: 'border border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-900/60 dark:bg-sky-900/40 dark:text-sky-200',
   // Used by both the project-scope ScopeBadge and the standalone project
   // badge on run/exp rows — the two are visually unified per the
   // polish-tmux-card-layout change.
@@ -238,10 +231,7 @@ function MetaBadge({
   href?: string
   openInNewTab?: boolean
 }) {
-  const cls = cn(
-    'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]',
-    className,
-  )
+  const cls = cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]', className)
   const content = (
     <>
       <Icon className="size-3 shrink-0" />
@@ -414,13 +404,7 @@ function displayPane(pane: TmuxPaneInfo | null): { command: string | null; title
   return { command, title }
 }
 
-function CardFooter({
-  pane,
-  state,
-}: {
-  pane: TmuxPaneInfo | null
-  state: TmuxPaneState
-}) {
+function CardFooter({ pane, state }: { pane: TmuxPaneInfo | null; state: TmuxPaneState }) {
   const { command, title } = displayPane(pane)
   const hasPaneContent = command !== null || title !== null
   const hasStateBadge = state !== 'idle'
@@ -447,9 +431,7 @@ function CardFooter({
           ) : (
             <>
               <Activity className="size-3 shrink-0 text-foreground/60" aria-hidden />
-              {command !== null && (
-                <span className="shrink-0 font-semibold">{command}</span>
-              )}
+              {command !== null && <span className="shrink-0 font-semibold">{command}</span>}
             </>
           )}
           {((isClaude && title !== null) || (!isClaude && command !== null && title !== null)) && (
@@ -535,13 +517,15 @@ function SessionCard({
   // Compute whether row 2 (badges) should render at all. Manual rows with
   // no liveEntry / no parsed agent / no parsed project collapse to row 1
   // only.
-  const hasPort = row.liveEntry !== null
+  const livePort = row.liveEntry?.port
+  const hasPort = typeof livePort === 'number'
   const hasAgent = p.agent !== null && p.agent !== 'none'
   const hasProject = p.project !== null && p.scope !== 'project'
   const hasScopeBadge = classifyScopeBadge(row) !== null
   const hasAnyBadge = hasPort || hasAgent || hasProject || hasScopeBadge
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: the selectable card contains nested action buttons and implements keyboard activation.
     <div
       role="button"
       tabIndex={0}
@@ -568,9 +552,7 @@ function SessionCard({
         {(() => {
           const ts = pickDisplayActivity(row)
           return ts ? (
-            <span className="shrink-0 text-[10px] text-muted-foreground">
-              {relativeTime(ts)}
-            </span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">{relativeTime(ts)}</span>
           ) : null
         })()}
         <div className="flex shrink-0 items-center gap-0.5">
@@ -624,7 +606,7 @@ function SessionCard({
       {/* Content row 2: badges (omitted entirely when no badge applies) */}
       {hasAnyBadge && (
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-0.5 text-[10px] text-muted-foreground">
-          {hasPort && <PortBadge port={row.liveEntry!.port} />}
+          {livePort !== undefined && <PortBadge port={livePort} />}
           {hasAgent && <AgentBadge agent={p.agent!} />}
           {hasProject && <ProjectBadge project={p.project!} />}
           <ScopeBadge row={row} />
@@ -702,11 +684,7 @@ function LeftPane({
             </ViewerGuard>
           </div>
         </div>
-        <Tabs
-          value={filter}
-          onValueChange={(v) => setFilter(v as Filter)}
-          className="mt-2"
-        >
+        <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)} className="mt-2">
           <TabsList className="h-7">
             <TabsTrigger value="all" className="px-2 text-[11px]">
               All ({counts.all})
@@ -722,9 +700,7 @@ function LeftPane({
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {rows.length === 0 ? (
-          <p className="px-2 py-8 text-center text-xs text-muted-foreground">
-            no sessions
-          </p>
+          <p className="px-2 py-8 text-center text-xs text-muted-foreground">no sessions</p>
         ) : (
           <div className="flex flex-col gap-1.5">
             {rows.map((row) => (
@@ -750,8 +726,8 @@ function RightPaneEmpty() {
       <TerminalSquare className="size-8 opacity-50" />
       <p>Select a session from the list to attach.</p>
       <p className="max-w-xs text-[11px] opacity-75">
-        Switch between sessions by clicking different rows — the terminal here
-        reattaches without a popup or drawer.
+        Switch between sessions by clicking different rows — the terminal here reattaches without a
+        popup or drawer.
       </p>
     </div>
   )
@@ -778,6 +754,11 @@ function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
     row.parsed.scope !== null &&
     row.parsed.slug !== null
   const { command: paneCmd, title: paneTitle } = displayPane(row.pane)
+  const projectTarget: ProjectTarget | null = row.parsed.project
+    ? row.host
+      ? ({ host: row.host, project: row.parsed.project } as ProjectTarget)
+      : row.parsed.project
+    : null
   return (
     <>
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
@@ -795,12 +776,8 @@ function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
             >
               <span className="opacity-60">·</span>
               {paneCmd !== null && <span className="shrink-0">{paneCmd}</span>}
-              {paneCmd !== null && paneTitle !== null && (
-                <span className="opacity-60">·</span>
-              )}
-              {paneTitle !== null && (
-                <span className="min-w-0 truncate">{paneTitle}</span>
-              )}
+              {paneCmd !== null && paneTitle !== null && <span className="opacity-60">·</span>}
+              {paneTitle !== null && <span className="min-w-0 truncate">{paneTitle}</span>}
             </span>
           )}
         </div>
@@ -810,9 +787,7 @@ function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
               variant="outline"
               size="sm"
               className="h-7 shrink-0 px-2 text-[11px]"
-              onClick={() =>
-                window.open(popup, popupTarget(row), 'popup,width=1200,height=800')
-              }
+              onClick={() => window.open(popup, popupTarget(row), 'popup,width=1200,height=800')}
             >
               <ExternalLink className="size-3" />
               Pop out
@@ -827,7 +802,7 @@ function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
         {isMatchable ? (
           <TerminalView
             mode="standard"
-            project={row.parsed.project!}
+            project={projectTarget!}
             scope={row.parsed.scope!}
             slug={row.parsed.slug!}
             agent={row.parsed.agent!}
@@ -836,6 +811,7 @@ function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
         ) : (
           <TerminalView
             mode="raw"
+            {...(row.host ? { host: row.host } : {})}
             sessionName={row.sessionName}
             source="manage"
           />
@@ -846,6 +822,7 @@ function CachedTerminalView({ row }: { row: TmuxSessionRow }) {
 }
 
 interface CacheEntry {
+  host?: string | null
   sessionName: string
   /** Wall-clock millis. Bumped each time the entry becomes the selection. */
   lastSeenAt: number
@@ -865,15 +842,16 @@ export function applySelectionToCache(
   prev: CacheEntry[],
   selected: string,
   cap: number,
+  host: string | null = null,
 ): CacheEntry[] {
   const now = Date.now()
-  const idx = prev.findIndex((e) => e.sessionName === selected)
+  const idx = prev.findIndex((e) => (e.host ?? null) === host && e.sessionName === selected)
   if (idx >= 0) {
     const next = prev.slice()
     next[idx] = { ...next[idx]!, lastSeenAt: now }
     return next
   }
-  const candidate: CacheEntry = { sessionName: selected, lastSeenAt: now }
+  const candidate: CacheEntry = { host, sessionName: selected, lastSeenAt: now }
   if (prev.length < cap) return [...prev, candidate]
   let lruIdx = 0
   for (let i = 1; i < prev.length; i++) {
@@ -883,6 +861,7 @@ export function applySelectionToCache(
 }
 
 import { isManageTmuxNavShortcut, resolveNeighbor } from './keyboard-nav'
+
 // Backwards-compat re-exports — the helpers were defined here originally
 // and have existing test + component imports. They now live in
 // `./keyboard-nav` so `TerminalView` can use them without a circular
@@ -902,8 +881,7 @@ function RightPane({
   // Empty state when nothing has ever been selected (cache empty).
   if (cache.length === 0) return <RightPaneEmpty />
 
-  const selectedRowExists =
-    selectedName !== null && rowsByName.has(selectedName)
+  const selectedRowExists = selectedName !== null && rowsByName.has(selectedName)
   return (
     <div className="relative h-full w-full">
       {cache.map((entry) => {
@@ -912,15 +890,12 @@ function RightPane({
         // killed externally between refetch and the eviction effect
         // firing), render nothing for this slot — the eviction effect
         // on `all` will drop it from the cache shortly.
-        if (!row) return null
+        if (!row || (entry.host ?? null) !== (row.host ?? null)) return null
         const isVisible = entry.sessionName === selectedName
         return (
           <div
-            key={entry.sessionName}
-            className={cn(
-              'absolute inset-0 flex flex-col',
-              isVisible ? '' : 'hidden',
-            )}
+            key={`${entry.host ?? 'standalone'}:${entry.sessionName}`}
+            className={cn('absolute inset-0 flex flex-col', isVisible ? '' : 'hidden')}
             // aria-hidden mirrors the visual hiding so AT users don't
             // see the off-screen terminals as live regions.
             aria-hidden={!isVisible}
@@ -942,6 +917,26 @@ export function TmuxManagePageClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const qc = useQueryClient()
+  const runtimeConfig = useRuntimeConfig()
+  const centralMode = runtimeConfig.role === 'central'
+  const hostSelectors = searchParams.getAll('host')
+  const requestedHost = hostSelectors.length === 1 ? hostSelectors[0]! : null
+  const { data: hostsData } = useQuery({
+    queryKey: ['hosts'],
+    queryFn: fetchHosts,
+    enabled: centralMode,
+    retry: false,
+  })
+  const selectedHost = centralMode
+    ? (hostsData?.hosts.find((host) => host.host === requestedHost) ?? null)
+    : null
+  const selectedHostUsable =
+    !centralMode ||
+    (selectedHost !== null &&
+      (selectedHost.state === 'online' || selectedHost.state === 'update_available') &&
+      selectedHost.capabilities?.tmux === true)
+  const tmuxTarget = selectedHost ? { host: selectedHost.host } : undefined
+  const tmuxQueryKey = ['tmux-sessions', selectedHost?.host ?? 'standalone'] as const
   const [filter, setFilter] = useState<Filter>('all')
   const [killTarget, setKillTarget] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<string | null>(null)
@@ -989,12 +984,17 @@ export function TmuxManagePageClient() {
   }, [])
 
   const { data, isFetching, refetch } = useQuery({
-    queryKey: ['tmux-sessions'],
-    queryFn: listTmuxSessions,
+    queryKey: tmuxQueryKey,
+    queryFn: () => listTmuxSessions(tmuxTarget),
+    enabled: selectedHostUsable,
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
   })
-  const allFromQuery = data?.sessions
+  const allFromQuery = data?.sessions.filter((session) =>
+    selectedHost
+      ? session.host === selectedHost.host
+      : session.host === null || session.host === undefined,
+  )
 
   // Stable client-side ordering: the list order is frozen across the 5s
   // polling so the user can manage sessions without rows jumping around.
@@ -1016,10 +1016,7 @@ export function TmuxManagePageClient() {
   }, [allFromQuery])
 
   const all = allFromQuery ?? []
-  const allByName = useMemo(
-    () => new Map(all.map((s) => [s.sessionName, s])),
-    [all],
-  )
+  const allByName = useMemo(() => new Map(all.map((s) => [s.sessionName, s])), [all])
   const orderedAll = useMemo(() => {
     if (orderedNames === null) return all
     const seen = new Set<string>()
@@ -1052,17 +1049,24 @@ export function TmuxManagePageClient() {
     setOrderedNames(sessions.map((s) => s.sessionName))
   }
 
-  const selectedName = searchParams.get('session')
+  const selectedName = centralMode && !selectedHost ? null : searchParams.get('session')
+
+  const writeSelection = useCallback(
+    (name: string | null) => {
+      const params = new URLSearchParams()
+      if (selectedHost) params.set('host', selectedHost.host)
+      if (name !== null) params.set('session', name)
+      const query = params.toString()
+      router.replace(query ? `/manage/tmux?${query}` : '/manage/tmux')
+    },
+    [router, selectedHost],
+  )
 
   useEffect(() => {
-    if (
-      selectedName &&
-      all.length > 0 &&
-      !all.some((s) => s.sessionName === selectedName)
-    ) {
-      router.replace('/manage/tmux')
+    if (selectedName && all.length > 0 && !all.some((s) => s.sessionName === selectedName)) {
+      writeSelection(null)
     }
-  }, [selectedName, all, router])
+  }, [selectedName, all, writeSelection])
 
   // Right-pane LRU cache. Each entry is a still-mounted <TerminalView>
   // (one absolute-positioned slot per entry; only the selected slot is
@@ -1071,12 +1075,22 @@ export function TmuxManagePageClient() {
   // `selectedName` flips via the during-render-update pattern below;
   // pruned when `all` no longer contains a cached sessionName.
   const [cache, setCache] = useState<CacheEntry[]>([])
-  const [lastSelected, setLastSelected] = useState<string | null>(selectedName)
-  if (selectedName !== lastSelected) {
-    setLastSelected(selectedName)
+  const selectionIdentity = selectedName
+    ? `${selectedHost?.host ?? 'standalone'}\0${selectedName}`
+    : null
+  const [lastSelectionIdentity, setLastSelectionIdentity] = useState<string | null>(
+    selectionIdentity,
+  )
+  if (selectionIdentity !== lastSelectionIdentity) {
+    setLastSelectionIdentity(selectionIdentity)
     if (selectedName !== null && allByName.has(selectedName)) {
       setCache((prev) =>
-        applySelectionToCache(prev, selectedName, MANAGE_TMUX_CACHE_CAP),
+        applySelectionToCache(
+          prev,
+          selectedName,
+          MANAGE_TMUX_CACHE_CAP,
+          selectedHost?.host ?? null,
+        ),
       )
     }
   }
@@ -1089,10 +1103,13 @@ export function TmuxManagePageClient() {
   useEffect(() => {
     if (allFromQuery === undefined) return
     setCache((prev) => {
-      const next = prev.filter((e) => allByName.has(e.sessionName))
+      const expectedHost = selectedHost?.host ?? null
+      const next = prev.filter(
+        (entry) => (entry.host ?? null) === expectedHost && allByName.has(entry.sessionName),
+      )
       return next.length === prev.length ? prev : next
     })
-  }, [allFromQuery, allByName])
+  }, [allFromQuery, allByName, selectedHost])
 
   // Selected-name ref kept in sync via effect so the BroadcastChannel
   // listener (which subscribes ONCE on mount) always reads the latest
@@ -1111,16 +1128,28 @@ export function TmuxManagePageClient() {
     if (typeof BroadcastChannel === 'undefined') return
     const channel = new BroadcastChannel(ATTACH_BROADCAST_CHANNEL)
     const handler = (ev: MessageEvent) => {
-      const data = ev.data as
-        | { sessionName?: unknown; source?: unknown; attachedAt?: unknown }
-        | null
+      const data = ev.data as {
+        host?: unknown
+        sessionName?: unknown
+        source?: unknown
+        attachedAt?: unknown
+      } | null
       if (!data || typeof data !== 'object') return
       if (typeof data.sessionName !== 'string') return
       if (typeof data.source !== 'string') return
+      const incomingHost =
+        typeof data.host === 'string'
+          ? data.host
+          : data.host === null || data.host === undefined
+            ? null
+            : undefined
+      if (incomingHost === undefined || incomingHost !== (selectedHost?.host ?? null)) return
       const incoming = data.sessionName
       if (incoming === selectedNameRef.current) return
       setCache((prev) => {
-        const next = prev.filter((e) => e.sessionName !== incoming)
+        const next = prev.filter(
+          (entry) => (entry.host ?? null) !== incomingHost || entry.sessionName !== incoming,
+        )
         return next.length === prev.length ? prev : next
       })
     }
@@ -1129,15 +1158,7 @@ export function TmuxManagePageClient() {
       channel.removeEventListener('message', handler)
       channel.close()
     }
-  }, [])
-
-  const writeSelection = (name: string | null) => {
-    if (name === null) {
-      router.replace('/manage/tmux')
-      return
-    }
-    router.replace(`/manage/tmux?session=${encodeURIComponent(name)}`)
-  }
+  }, [selectedHost])
 
   // Ctrl+Shift+ArrowUp/Down: move selection to the prev/next row in the
   // currently-visible list. Suppressed while focus is in an editable
@@ -1147,15 +1168,11 @@ export function TmuxManagePageClient() {
     if (typeof window === 'undefined') return
     const handler = (event: KeyboardEvent) => {
       if (!isManageTmuxNavShortcut(event)) return
-      const direction: 'up' | 'down' =
-        event.key === 'ArrowDown' ? 'down' : 'up'
+      const direction: 'up' | 'down' = event.key === 'ArrowDown' ? 'down' : 'up'
 
       const target = event.target as HTMLElement | null
       if (target && typeof target.matches === 'function') {
-        if (
-          target.matches('input, textarea, select') ||
-          target.isContentEditable
-        ) {
+        if (target.matches('input, textarea, select') || target.isContentEditable) {
           return
         }
       }
@@ -1190,17 +1207,22 @@ export function TmuxManagePageClient() {
     // is fine. `visible` / `selectedName` / dialog flags change as the
     // user interacts, so the listener picks up fresh closures each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, selectedName, killTarget, renameTarget, createOpen, router])
+  }, [visible, selectedName, killTarget, renameTarget, createOpen, writeSelection])
 
   const killMutation = useMutation({
-    mutationFn: (name: string) => killTmuxSession(name),
+    mutationFn: (name: string) => killTmuxSession(name, tmuxTarget),
     onSuccess: (_data, name) => {
       toast.success(`killed ${name}`)
-      void qc.invalidateQueries({ queryKey: ['tmux-sessions'] })
+      void qc.invalidateQueries({ queryKey: tmuxQueryKey })
       setKillTarget(null)
       // Eagerly drop the killed session from the cache so its iframe
       // unmounts immediately rather than waiting on the next refetch.
-      setCache((prev) => prev.filter((e) => e.sessionName !== name))
+      setCache((prev) =>
+        prev.filter(
+          (entry) =>
+            (entry.host ?? null) !== (selectedHost?.host ?? null) || entry.sessionName !== name,
+        ),
+      )
       if (selectedName === name) writeSelection(null)
     },
     onError: (err) => {
@@ -1210,14 +1232,13 @@ export function TmuxManagePageClient() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => createTmuxSession({ name }),
+    mutationFn: (name: string) =>
+      createTmuxSession({ name, ...(selectedHost ? { host: selectedHost.host } : {}) }),
     onSuccess: (res) => {
       toast.success(
-        res.alreadyExisted
-          ? `joined existing ${res.sessionName}`
-          : `created ${res.sessionName}`,
+        res.alreadyExisted ? `joined existing ${res.sessionName}` : `created ${res.sessionName}`,
       )
-      void qc.invalidateQueries({ queryKey: ['tmux-sessions'] })
+      void qc.invalidateQueries({ queryKey: tmuxQueryKey })
       setCreateOpen(false)
       setCreateName('')
     },
@@ -1229,11 +1250,15 @@ export function TmuxManagePageClient() {
 
   const renameMutation = useMutation({
     mutationFn: (vars: { oldName: string; newName: string }) =>
-      renameTmuxSession({ name: vars.oldName, newName: vars.newName }),
+      renameTmuxSession({
+        name: vars.oldName,
+        newName: vars.newName,
+        ...(selectedHost ? { host: selectedHost.host } : {}),
+      }),
     onSuccess: (_res, vars) => {
       const { oldName, newName } = vars
       toast.success(`renamed ${oldName} → ${newName}`)
-      void qc.invalidateQueries({ queryKey: ['tmux-sessions'] })
+      void qc.invalidateQueries({ queryKey: tmuxQueryKey })
       // Keep stable ordering: swap oldName -> newName in place so the
       // row doesn't visually jump on the next refetch.
       setOrderedNames((prev) =>
@@ -1244,12 +1269,17 @@ export function TmuxManagePageClient() {
       // so the old iframe is pointing at a gone process. The new name
       // enters the cache via the standard fresh-selection path on the
       // next render after the URL update below.
-      setCache((prev) => prev.filter((e) => e.sessionName !== oldName))
+      setCache((prev) =>
+        prev.filter(
+          (entry) =>
+            (entry.host ?? null) !== (selectedHost?.host ?? null) || entry.sessionName !== oldName,
+        ),
+      )
       // If the renamed row was the selected session, refocus the URL
       // onto the new name. The right-pane cache stack picks up the new
       // sessionName and mounts a fresh entry for it.
       if (selectedName === oldName) {
-        router.replace(`/manage/tmux?session=${encodeURIComponent(newName)}`)
+        writeSelection(newName)
       }
       setRenameTarget(null)
       setRenameInput('')
@@ -1311,55 +1341,88 @@ export function TmuxManagePageClient() {
   }
 
   return (
-    <>
-      <ResizablePanelGroup
-        orientation={isDesktop ? 'horizontal' : 'vertical'}
-        groupRef={groupRef}
-        onLayoutChanged={handleLayoutChanged}
-        className="h-full w-full"
-      >
-        <ResizablePanel
-          id={SPLIT_PANEL_LEFT}
-          defaultSize={isDesktop ? '300px' : '50%'}
-          minSize={isDesktop ? '180px' : 25}
-          maxSize={isDesktop ? '50%' : undefined}
+    <div className="flex h-full min-h-0 flex-col">
+      {centralMode && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+          <Label htmlFor="tmux-host" className="text-xs font-medium">
+            Host
+          </Label>
+          <Select
+            value={selectedHost?.host}
+            onValueChange={(host) => {
+              router.replace(
+                host ? `/manage/tmux?host=${encodeURIComponent(host)}` : '/manage/tmux',
+              )
+            }}
+          >
+            <SelectTrigger id="tmux-host" className="h-7 min-w-40" aria-label="Host">
+              <SelectValue placeholder="Select a Host" />
+            </SelectTrigger>
+            <SelectContent>
+              {(hostsData?.hosts ?? []).map((host) => (
+                <SelectItem key={host.host} value={host.host}>
+                  {host.label ? `${host.label} (${host.host})` : host.host}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedHost && <HostStatusBadge availability={selectedHost} />}
+        </div>
+      )}
+
+      {selectedHostUsable ? (
+        <ResizablePanelGroup
+          orientation={isDesktop ? 'horizontal' : 'vertical'}
+          groupRef={groupRef}
+          onLayoutChanged={handleLayoutChanged}
+          className="h-full w-full"
         >
-          <LeftPane
-            rows={visible}
-            filter={filter}
-            setFilter={setFilter}
-            counts={counts}
-            selectedName={selectedName}
-            onSelect={writeSelection}
-            onAskKill={(name) => setKillTarget(name)}
-            onAskRename={(name) => setRenameTarget(name)}
-            isFetching={isFetching}
-            onRefetch={() => void handleRefresh()}
-            onAskCreate={() => setCreateOpen(true)}
-          />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel
-          id={SPLIT_PANEL_RIGHT}
-          minSize={isDesktop ? 35 : 25}
-        >
-          <RightPane
-            cache={cache}
-            rowsByName={allByName}
-            selectedName={selectedName}
-          />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          <ResizablePanel
+            id={SPLIT_PANEL_LEFT}
+            defaultSize={isDesktop ? '300px' : '50%'}
+            minSize={isDesktop ? '180px' : 25}
+            maxSize={isDesktop ? '50%' : undefined}
+          >
+            <LeftPane
+              rows={visible}
+              filter={filter}
+              setFilter={setFilter}
+              counts={counts}
+              selectedName={selectedName}
+              onSelect={writeSelection}
+              onAskKill={(name) => setKillTarget(name)}
+              onAskRename={(name) => setRenameTarget(name)}
+              isFetching={isFetching}
+              onRefetch={() => void handleRefresh()}
+              onAskCreate={() => setCreateOpen(true)}
+            />
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel id={SPLIT_PANEL_RIGHT} minSize={isDesktop ? 35 : 25}>
+            <RightPane cache={cache} rowsByName={allByName} selectedName={selectedName} />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
+          {!selectedHost
+            ? 'Select one configured Host to manage tmux sessions.'
+            : selectedHost.state !== 'online' && selectedHost.state !== 'update_available'
+              ? (selectedHost.diagnostic ?? 'The selected Host is unavailable.')
+              : selectedHost.capabilities?.tmux !== true
+                ? 'The selected Host does not provide tmux management.'
+                : 'The selected Host is unavailable.'}
+        </div>
+      )}
 
       <Dialog open={killTarget !== null} onOpenChange={(o) => !o && setKillTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Kill tmux session?</DialogTitle>
             <DialogDescription>
-              This runs <code className="rounded bg-muted px-1">tmux kill-session</code> on the host.
-              Any agent / shell running inside terminates. Conversations stored
-              by claude / codex / opencode locally are preserved and the next
-              open of the same combo auto-resumes.
+              This runs <code className="rounded bg-muted px-1">tmux kill-session</code> on the
+              host. Any agent / shell running inside terminates. Conversations stored by claude /
+              codex / opencode locally are preserved and the next open of the same combo
+              auto-resumes.
             </DialogDescription>
           </DialogHeader>
           <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-[11px]">
@@ -1404,9 +1467,8 @@ export function TmuxManagePageClient() {
               <DialogTitle>Rename tmux session</DialogTitle>
               <DialogDescription>
                 Runs <code className="rounded bg-muted px-1">tmux rename-session</code> on the host.
-                The pane and any running program are preserved. If the
-                session has a live ttyd, it is torn down and re-spawned
-                under the new name on next open.
+                The pane and any running program are preserved. If the session has a live ttyd, it
+                is torn down and re-spawned under the new name on next open.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2 py-3">
@@ -1434,8 +1496,8 @@ export function TmuxManagePageClient() {
                 </p>
               )}
               <p className="text-[10px] text-muted-foreground">
-                Must match <code>memon-[A-Za-z0-9._-]+</code>.
-                Renaming does NOT touch on-disk runs or experiments.
+                Must match <code>memon-[A-Za-z0-9._-]+</code>. Renaming does NOT touch on-disk runs
+                or experiments.
               </p>
             </div>
             <DialogFooter>
@@ -1453,11 +1515,7 @@ export function TmuxManagePageClient() {
                 Cancel
               </Button>
               <ViewerGuard reason="Rename tmux session">
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!renameValid || renameMutation.isPending}
-                >
+                <Button type="submit" size="sm" disabled={!renameValid || renameMutation.isPending}>
                   {renameMutation.isPending ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
@@ -1487,8 +1545,7 @@ export function TmuxManagePageClient() {
               <DialogDescription>
                 Creates a manually-named tmux session with cwd =
                 <code className="ml-1 rounded bg-muted px-1">memon serve</code>'s working directory.
-                If the name already exists, joins the existing session
-                instead of erroring.
+                If the name already exists, joins the existing session instead of erroring.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2 py-3">
@@ -1512,8 +1569,8 @@ export function TmuxManagePageClient() {
                 />
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Allowed: letters, digits, <code>.</code>, <code>_</code>, <code>-</code>.
-                No <code>--</code>. Cannot start with <code>memon-</code>.
+                Allowed: letters, digits, <code>.</code>, <code>_</code>, <code>-</code>. No{' '}
+                <code>--</code>. Cannot start with <code>memon-</code>.
               </p>
             </div>
             <DialogFooter>
@@ -1547,6 +1604,6 @@ export function TmuxManagePageClient() {
           </form>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }

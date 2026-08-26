@@ -1,85 +1,52 @@
-// GET /api/log-files?expPath=PATH
-//
-// Lists log-shaped files (.log/.txt/.out/.err) inside an experiment directory
-// plus its `logs/` subdirectory (one level deep). Used by the LogViewer's
-// multi-file tab strip.
+// GET /api/log-files — legacy absolute-directory adapter over shared log discovery.
 
-import type { Dirent } from 'node:fs'
-import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
+import { BackendStreamServiceError } from '@memon/backend'
+import { BackendLogFilesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import { PathSafetyError } from '../../../lib/path-safety'
 import { getRuntime } from '../../../lib/runtime'
-import { PathSafetyError, assertWithinProjectRoots } from '../../../lib/path-safety'
+import { standaloneResource } from '../../../lib/server/standalone-resource'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-const LOG_EXTS = ['.log', '.txt', '.out', '.err'] as const
-
-interface LogFileEntry {
-  name: string
-  path: string
-  size: number
-  mtime: number
-}
-
-async function scan(dir: string, results: LogFileEntry[]): Promise<void> {
-  let entries: Dirent[]
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true, encoding: 'utf-8' })
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw err
+export async function GET(request: NextRequest) {
+  const expPath = new URL(request.url).searchParams.get('expPath')
+  if (!expPath) {
+    return NextResponse.json(
+      { error: { code: 'BAD_REQUEST', message: 'expPath query parameter required' } },
+      { status: 400 },
+    )
   }
-  for (const e of entries) {
-    if (!e.isFile()) continue
-    const name = String(e.name)
-    const lower = name.toLowerCase()
-    if (!LOG_EXTS.some((ext) => lower.endsWith(ext))) continue
-    const full = join(dir, name)
-    try {
-      const st = await fs.stat(full)
-      results.push({ name, path: full, size: st.size, mtime: st.mtimeMs })
-    } catch {
-      /* skip unreadable */
-    }
-  }
-}
-
-export async function GET(req: NextRequest) {
   try {
-    const rt = await getRuntime()
-    const url = new URL(req.url)
-    const expPath = url.searchParams.get('expPath')
-    if (!expPath) {
+    const runtime = await getRuntime()
+    const target = standaloneResource(runtime.config, join(expPath, 'README.md'))
+    const payload = BackendLogFilesResponseSchema.parse(
+      await standaloneServices(runtime.config).streaming.listLogFiles(
+        target.project.name,
+        target.resource,
+      ),
+    )
+    return NextResponse.json({
+      files: payload.files.map(({ resource, ...file }) => ({
+        ...file,
+        path: join(target.project.root, resource),
+      })),
+    })
+  } catch (error) {
+    if (error instanceof PathSafetyError) {
       return NextResponse.json(
-        { error: { code: 'BAD_REQUEST', message: 'expPath query parameter required' } },
-        { status: 400 },
+        { error: { code: 'FORBIDDEN', message: error.message } },
+        { status: 403 },
       )
     }
-    let safePath: string
-    try {
-      safePath = assertWithinProjectRoots(expPath, rt.config)
-    } catch (err) {
-      if (err instanceof PathSafetyError) {
-        return NextResponse.json(
-          { error: { code: 'FORBIDDEN', message: err.message } },
-          { status: 403 },
-        )
-      }
-      throw err
+    if (error instanceof BackendStreamServiceError) {
+      return NextResponse.json(
+        { error: { code: error.code, message: error.message } },
+        { status: error.code === 'INVALID_RESOURCE' ? 400 : 404 },
+      )
     }
-
-    const files: LogFileEntry[] = []
-    await scan(safePath, files)
-    await scan(join(safePath, 'logs'), files)
-
-    files.sort((a, b) => b.mtime - a.mtime)
-
-    return NextResponse.json({ files })
-  } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: 'log discovery failed' } }, { status: 500 })
   }
 }

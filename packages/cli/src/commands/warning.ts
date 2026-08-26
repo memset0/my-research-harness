@@ -24,6 +24,7 @@ import {
   scanProjectRoot,
   WARNING_CATEGORIES,
   WarningOpError,
+  type ApplyWarningOpResult,
   type Warning,
   type WarningCategory,
 } from '@memon/core'
@@ -89,7 +90,7 @@ async function readWithLock(
   expectedMtime?: number,
   expectedHash?: string,
 ): Promise<LockState> {
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(readmePath)
   } catch {
@@ -141,16 +142,16 @@ function nowIso(): string {
 function mapWarningOpError(err: WarningOpError): never {
   switch (err.code) {
     case 'NOT_FOUND':
-      emitErrorAndExit('NOT_FOUND', err.message)
+      return emitErrorAndExit('NOT_FOUND', err.message)
     case 'NOT_TABLE':
-      emitErrorAndExit(
+      return emitErrorAndExit(
         'BAD_REQUEST',
         `Warnings section is non-conforming: ${err.message}. Format the section as a table or rename it.`,
       )
     case 'BAD_REQUEST':
-      emitErrorAndExit('BAD_REQUEST', err.message)
+      return emitErrorAndExit('BAD_REQUEST', err.message)
     default:
-      emitErrorAndExit('GENERIC', err.message)
+      return emitErrorAndExit('GENERIC', err.message)
   }
 }
 
@@ -171,10 +172,7 @@ export interface WarningAddInput {
 
 export async function runWarningAdd(input: WarningAddInput): Promise<void> {
   if (!(WARNING_CATEGORIES as readonly string[]).includes(input.category)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `--category must be one of: ${WARNING_CATEGORIES.join(', ')}`,
-    )
+    emitErrorAndExit('BAD_REQUEST', `--category must be one of: ${WARNING_CATEGORIES.join(', ')}`)
   }
   if (!input.message || input.message.trim() === '') {
     emitErrorAndExit('BAD_REQUEST', '--message is required and must be non-empty')
@@ -193,7 +191,7 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
   const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
   const created = nowIso()
   const rowId = generateRowId(created)
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, {
       op: 'add',
@@ -232,7 +230,7 @@ export interface WarningListInput {
 
 export async function runWarningList(input: WarningListInput): Promise<void> {
   const target = await resolveTarget(input, input.runId)
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(target.readmePath)
   } catch {
@@ -279,7 +277,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
   const target = await resolveTarget(input, input.runId)
   const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
   const resolved = nowIso()
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, {
       op: 'resolve',
@@ -320,7 +318,7 @@ export interface WarningReopenInput {
 export async function runWarningReopen(input: WarningReopenInput): Promise<void> {
   const target = await resolveTarget(input, input.runId)
   const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, { op: 'reopen', rowId: input.rowId })
   } catch (err) {
@@ -356,7 +354,7 @@ export interface WarningDeleteInput {
 export async function runWarningDelete(input: WarningDeleteInput): Promise<void> {
   const target = await resolveTarget(input, input.runId)
   const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, { op: 'delete', rowId: input.rowId })
   } catch (err) {

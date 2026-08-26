@@ -8,22 +8,22 @@
 //
 // Rate-limit: consume one token; refund on success.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { getRuntime } from '@/lib/runtime'
+import { BackendShareValidationRequestSchema, ProjectNameSchema } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
 import {
   buildSetCookieHeader,
   SHARES_COOKIE_NAME,
   SHARES_COOKIE_TTL_SECONDS,
+  signHostQualifiedSharesCookie,
   signSharesCookie,
   verifySharesCookie,
 } from '@/lib/auth/cookies'
-import {
-  clientIpFromHeaders,
-  consume,
-  refund,
-} from '@/lib/auth/rate-limit'
 import { isHttps, publicOrigin } from '@/lib/auth/public-url'
-import { validateShare as coreValidateShare } from '@memon/core'
+import { clientIpFromHeaders, consume, refund } from '@/lib/auth/rate-limit'
+import { validateCentralShare } from '@/lib/central/central-shares'
+import { getCentralFleet } from '@/lib/central/fleet-runtime'
+import { getRuntime } from '@/lib/runtime'
+import { standaloneServices } from '@/lib/server/standalone-services'
 
 interface RouteParams {
   params: Promise<{ project: string; token: string }>
@@ -77,8 +77,6 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   if (!projectName || !token) return notFoundResponse()
 
   const runtime = await getRuntime()
-  const projectCfg = runtime.config.projects.find((p) => p.name === projectName)
-  if (!projectCfg) return notFoundResponse()
   if (!runtime.auth.sessionSecret) {
     // Misconfigured — would not be able to sign the resulting cookie.
     return new NextResponse('Server not initialised', {
@@ -87,8 +85,59 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     })
   }
 
-  const record = await coreValidateShare(projectCfg.root, token).catch(() => null)
-  if (!record) return notFoundResponse()
+  if (runtime.config.central) {
+    const host = runtime.config.central.legacyShareHost
+    const parsedProject = ProjectNameSchema.safeParse(projectName)
+    const parsedToken = BackendShareValidationRequestSchema.safeParse({ token })
+    if (!host || !parsedProject.success || !parsedToken.success) return notFoundResponse()
+    const fleet = await getCentralFleet().catch(() => null)
+    if (!fleet) return notFoundResponse()
+    const valid = await validateCentralShare({
+      registry: fleet.registry,
+      host,
+      project: parsedProject.data,
+      token: parsedToken.data.token,
+      signal: req.signal,
+    })
+    if (!valid) return notFoundResponse()
+    refund(ip)
+
+    const existing = verifySharesCookie(
+      req.cookies.get(SHARES_COOKIE_NAME)?.value ?? null,
+      runtime.auth.sessionSecret,
+    )
+    const entries =
+      existing?.v === 2
+        ? existing.entries.filter(
+            (entry) => entry.host !== host || entry.project !== parsedProject.data,
+          )
+        : []
+    entries.push({ host, project: parsedProject.data, token: parsedToken.data.token })
+    const newCookie = signHostQualifiedSharesCookie(entries, runtime.auth.sessionSecret)
+    const target = new URL(
+      `/h/${encodeURIComponent(host)}/p/${encodeURIComponent(parsedProject.data)}`,
+      publicOrigin(req),
+    )
+    const response = new NextResponse(null, {
+      status: 302,
+      headers: { Location: target.toString(), 'Cache-Control': 'no-store' },
+    })
+    response.headers.append(
+      'Set-Cookie',
+      buildSetCookieHeader({
+        name: SHARES_COOKIE_NAME,
+        value: newCookie,
+        maxAgeSeconds: SHARES_COOKIE_TTL_SECONDS,
+        secure: isHttps(req),
+      }),
+    )
+    return response
+  }
+
+  const valid = await standaloneServices(runtime.config)
+    .shares.validate(projectName, token)
+    .catch(() => false)
+  if (!valid) return notFoundResponse()
 
   refund(ip)
 
@@ -97,9 +146,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   const existing = existingCookie
     ? verifySharesCookie(existingCookie, runtime.auth.sessionSecret)
     : null
-  const entries = existing
-    ? existing.entries.filter((e) => e.project !== projectName)
-    : []
+  const entries = existing?.v === 1 ? existing.entries.filter((e) => e.project !== projectName) : []
   entries.push({ project: projectName, token })
 
   const newCookie = signSharesCookie(entries, runtime.auth.sessionSecret)
@@ -107,10 +154,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   // Build the Location against the PUBLIC origin (X-Forwarded-Host/Proto
   // from Caddy) so the browser navigates to the user-facing hostname,
   // not `http://localhost:3737/p/...` which Next.js sees.
-  const target = new URL(
-    `/p/${encodeURIComponent(projectName)}`,
-    publicOrigin(req),
-  )
+  const target = new URL(`/p/${encodeURIComponent(projectName)}`, publicOrigin(req))
   const res = new NextResponse(null, {
     status: 302,
     headers: { Location: target.toString(), 'Cache-Control': 'no-store' },

@@ -1,136 +1,69 @@
 // @vitest-environment node
-
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../lib/terminal/manager', async () => {
-  const actual = await vi.importActual<typeof import('../../../../lib/terminal/manager')>(
-    '../../../../lib/terminal/manager',
-  )
-  return { ...actual, startHerdrSession: vi.fn() }
-})
-
 vi.mock('../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../lib/server/standalone-terminal', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/server/standalone-terminal')>()),
+  standaloneTerminal: vi.fn(),
+}))
 
 import { getRuntime } from '../../../../lib/runtime'
-import { startHerdrSession, TerminalManagerError } from '../../../../lib/terminal/manager'
+import { standaloneTerminal } from '../../../../lib/server/standalone-terminal'
 import { POST } from './route'
 
-function request(body: unknown): NextRequest {
+const startHerdr = vi.fn()
+const service = { startHerdr, target: () => 'http://127.0.0.1:7684' }
+
+function request(body: unknown) {
   return new NextRequest('http://localhost/api/terminal/herdr', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
   })
 }
 
-function runtime(options: { enabled?: boolean } = {}) {
-  return {
-    config: {
-      projects: [{ name: 'project-a', root: '/repo/project-a' }],
-      terminal: {
-        ...(options.enabled === false ? {} : { herdr: { cli: ['/opt/herdr/bin/herdr'] } }),
-        ttydMaxConcurrent: 16,
-        ttydIdleTtlMinutes: 30,
-      },
-    },
-    index: {
-      list: () => [
-        {
-          id: 'run-a-260814-120000',
-          project: 'project-a',
-          path: '/repo/project-a/runs/run-a-260814-120000',
-        },
-      ],
-    },
-    experiments: new Map([['E0042-routing', { id: 'E0042-routing', project: 'project-a' }]]),
-    // biome-ignore lint/suspicious/noExplicitAny: focused Runtime stub
-  } as any
-}
-
-const SESSION = {
-  backend: 'herdr' as const,
-  sessionName: 'memon-herdr',
-  port: 7682,
-  startedAt: '2026-08-14T00:00:00.000Z',
-  lastActiveAt: '2026-08-14T00:00:00.000Z',
-  agent: 'none' as const,
-  project: '',
-  scope: 'project' as const,
-  slug: 'herdr',
-  warnings: [],
-}
-
-describe('POST /api/terminal/herdr', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    vi.mocked(getRuntime).mockResolvedValue(runtime())
-    vi.mocked(startHerdrSession).mockResolvedValue(SESSION)
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getRuntime).mockResolvedValue({
+    config: { terminal: { herdr: { cli: ['herdr'] } } },
+  } as never)
+  vi.mocked(standaloneTerminal).mockReturnValue(service as never)
+  startHerdr.mockResolvedValue({
+    host: 'standalone',
+    backend: 'herdr',
+    sessionName: 'memon-herdr',
+    url: '/api/terminal/proxy/standalone/memon-herdr/',
+    startedAt: '2026-08-26T00:00:00Z',
+    lastActiveAt: '2026-08-26T00:00:00Z',
+    agent: 'none',
+    project: 'project-a',
+    scope: 'project',
+    slug: 'root',
+    warnings: [],
   })
+})
 
-  it('opens the global Herdr TUI without creating a target', async () => {
-    const response = await POST(request({}))
+describe('POST /api/terminal/herdr shared adapter', () => {
+  it('maps the shared Herdr session to standalone proxy routing', async () => {
+    const input = { project: 'project-a', scope: 'project', slug: 'root' }
+    const response = await POST(request(input))
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
-      sessionName: 'memon-herdr',
+      backend: 'herdr',
       url: '/api/terminal/proxy/memon-herdr/',
-      port: 7682,
+      port: 7684,
     })
-    expect(startHerdrSession).toHaveBeenCalledWith(
-      expect.not.objectContaining({ target: expect.anything() }),
-    )
+    expect(startHerdr).toHaveBeenCalledWith(input)
   })
 
-  it('maps a project target to the project label and root cwd', async () => {
-    const response = await POST(request({ project: 'project-a', scope: 'project', slug: 'root' }))
-    expect(response.status).toBe(200)
-    expect(startHerdrSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        cwd: '/repo/project-a',
-        target: { label: 'project-a', cwd: '/repo/project-a' },
-      }),
-    )
+  it('accepts an empty target and rejects partial target tuples', async () => {
+    expect((await POST(request({}))).status).toBe(200)
+    expect((await POST(request({ project: 'project-a' }))).status).toBe(400)
   })
 
-  it('maps a run target to its run directory', async () => {
-    const response = await POST(
-      request({
-        project: 'project-a',
-        scope: 'run',
-        slug: 'run-a-260814-120000',
-      }),
-    )
-    expect(response.status).toBe(200)
-    expect(startHerdrSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: {
-          label: 'run-a-260814-120000',
-          cwd: '/repo/project-a/runs/run-a-260814-120000',
-        },
-      }),
-    )
-  })
-
-  it('returns 404 without invoking the manager when Herdr is disabled', async () => {
-    vi.mocked(getRuntime).mockResolvedValue(runtime({ enabled: false }))
-    const response = await POST(request({}))
-    expect(response.status).toBe(404)
-    expect((await response.json()).error.code).toBe('INTEGRATION_DISABLED')
-    expect(startHerdrSession).not.toHaveBeenCalled()
-  })
-
-  it('rejects a partial target tuple', async () => {
-    const response = await POST(request({ project: 'project-a' }))
-    expect(response.status).toBe(400)
-    expect(startHerdrSession).not.toHaveBeenCalled()
-  })
-
-  it('maps Herdr manager failures to 503', async () => {
-    vi.mocked(startHerdrSession).mockRejectedValue(
-      new TerminalManagerError('HERDR_UNAVAILABLE', 'socket unavailable'),
-    )
-    const response = await POST(request({}))
-    expect(response.status).toBe(503)
-    expect((await response.json()).error.code).toBe('HERDR_UNAVAILABLE')
+  it('returns 404 when Herdr is not configured', async () => {
+    vi.mocked(getRuntime).mockResolvedValue({ config: { terminal: {} } } as never)
+    expect((await POST(request({}))).status).toBe(404)
   })
 })

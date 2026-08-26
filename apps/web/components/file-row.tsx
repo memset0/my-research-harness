@@ -8,18 +8,20 @@
 // state hides it but the TanStack observer survives), so a collapse +
 // re-expand within the same dialog hits the cache instead of refiring.
 
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
+import { useState } from 'react'
 import {
   fetchGitDiff,
   type GitDiffResponse,
   type GitDiffSide,
   type GitFileEntry,
   type GitFileStatus,
+  type ProjectTarget,
+  projectQueryKey,
 } from '../lib/api'
-import { FileDiff, type FileDiffSkipReason } from './file-diff'
 import { cn } from '../lib/utils'
+import { FileDiff, type FileDiffSkipReason } from './file-diff'
 
 const STATUS_LABEL: Record<GitFileStatus, string> = {
   added: 'A',
@@ -44,7 +46,7 @@ const STATUS_COLOR: Record<GitFileStatus, string> = {
 }
 
 export interface FileRowProps {
-  project: string
+  project: ProjectTarget
   side: GitDiffSide
   entry: GitFileEntry
   /** Required when `side === 'commit'`; ignored otherwise. */
@@ -124,7 +126,7 @@ export function FileRowBody({
   submodule,
   range,
 }: {
-  project: string
+  project: ProjectTarget
   side: GitDiffSide
   entry: GitFileEntry
   sha?: string
@@ -137,7 +139,7 @@ export function FileRowBody({
   // repos and different commit windows during a single dialog session.
   const queryKey = [
     'git-diff',
-    project,
+    ...projectQueryKey(project),
     entry.path,
     side,
     sha,

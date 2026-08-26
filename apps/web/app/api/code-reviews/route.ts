@@ -4,8 +4,11 @@
 // code-review dir, sorted by date desc. Served from the runtime's
 // codeReviewsCache (warmed at boot, refreshed by the shared Poller).
 
+import { BackendCodeReviewsResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
+import { standaloneCodeReview } from '../../../lib/server/standalone-dto'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +28,13 @@ export async function GET(req: NextRequest) {
         { status: 404 },
       )
     }
-    return NextResponse.json({ codeReviews: rt.getCodeReviewsList(projectName) })
+    if (rt.config.projects.some((project) => !Array.isArray(project.include))) {
+      return NextResponse.json({ codeReviews: rt.getCodeReviewsList(projectName) })
+    }
+    const codeReviews = BackendCodeReviewsResponseSchema.parse(
+      await standaloneServices(rt.config).documents.listCodeReviews(projectName),
+    ).codeReviews.map((review) => standaloneCodeReview(rt.config, review))
+    return NextResponse.json({ codeReviews })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }

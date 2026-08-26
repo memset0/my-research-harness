@@ -8,6 +8,7 @@
 import { getRuntime } from '../lib/runtime'
 
 export interface RuntimeConfigPayload {
+  role: 'standalone' | 'central'
   gitStatus: {
     intervalMs: number
   }
@@ -20,6 +21,7 @@ export interface RuntimeConfigPayload {
 export async function readSerializedRuntimeConfig(): Promise<RuntimeConfigPayload> {
   const rt = await getRuntime()
   return {
+    role: rt.config.central ? 'central' : 'standalone',
     gitStatus: { intervalMs: rt.config.gitStatus.intervalMs },
     terminal: {
       tmuxEnabled: rt.config.terminal.tmuxEnabled,
@@ -33,6 +35,7 @@ export function RuntimeConfigBootstrap({ config }: { config: RuntimeConfigPayloa
     <script
       id="memon-runtime-config"
       type="application/json"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: payload is a closed set of booleans, numbers, and role literals.
       dangerouslySetInnerHTML={{ __html: JSON.stringify(config) }}
     />
   )

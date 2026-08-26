@@ -1,71 +1,63 @@
-// GET    /api/tmux-sessions/:name — enriched single-row lookup.
-// DELETE /api/tmux-sessions/:name — kill a tmux session by name.
-//
-// Both verbs share the same name-shape validation. GET reuses the bulk-
-// list helper's pane-info cache so per-button polls don't multiply tmux
-// shell-outs. DELETE runs `tmux kill-session -t <name>` and clears any
-// cached manager entry (the ttyd child exits naturally when its tmux
-// client disconnects, but we send SIGTERM as a belt-and-braces).
+// GET|DELETE /api/tmux-sessions/:name — shared tmux service adapter.
 
+import { BackendTmuxKillResponseSchema, BackendTmuxSessionResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
+import {
+  standaloneTerminal,
+  standaloneTerminalError,
+} from '../../../../lib/server/standalone-terminal'
 
 export const dynamic = 'force-dynamic'
 
-const NAME_RE = /^memon-[A-Za-z0-9._-]+$/
-
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
-  const rt = await getRuntime()
-  if (rt.config.terminal?.tmuxEnabled === false) return tmuxDisabled()
-  const { name: rawName } = await ctx.params
-  const name = decodeURIComponent(rawName)
-
-  if (!NAME_RE.test(name)) {
-    return NextResponse.json(
-      { error: { code: 'BAD_REQUEST', message: `name must match ${NAME_RE}` } },
-      { status: 400 },
-    )
+async function target(context: {
+  params: Promise<{ name: string }>
+}): Promise<
+  | { ok: false; response: NextResponse }
+  | { ok: true; name: string; service: ReturnType<typeof standaloneTerminal> }
+> {
+  const runtime = await getRuntime()
+  if (!runtime.config.terminal.tmuxEnabled) return { ok: false, response: tmuxDisabled() }
+  let name: string
+  try {
+    name = decodeURIComponent((await context.params).name)
+  } catch {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'invalid tmux session name' } },
+        { status: 400 },
+      ),
+    }
   }
-
-  const { getEnrichedSession } = await import('../../../../lib/terminal/tmux-discover')
-  const row = await getEnrichedSession(rt, name)
-  if (!row) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'tmux session not found' } },
-      { status: 404 },
-    )
-  }
-  return NextResponse.json({ row })
+  return { ok: true, name, service: standaloneTerminal(runtime.config) }
 }
 
-export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
-  const rt = await getRuntime()
-  if (rt.config.terminal?.tmuxEnabled === false) return tmuxDisabled()
-  const { name: rawName } = await ctx.params
-  const name = decodeURIComponent(rawName)
-
-  if (!name.startsWith('memon-')) {
-    return NextResponse.json(
-      { error: { code: 'BAD_REQUEST', message: 'name must start with memon-' } },
-      { status: 400 },
-    )
-  }
-
-  const { killTmuxSessionByName, tmuxHasSession } = await import(
-    '../../../../lib/terminal/tmux-discover'
-  )
-  if (!(await tmuxHasSession(name))) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'tmux session not found' } },
-      { status: 404 },
-    )
-  }
-
+export async function GET(_request: NextRequest, context: { params: Promise<{ name: string }> }) {
+  const resolved = await target(context)
+  if (!resolved.ok) return resolved.response
   try {
-    await killTmuxSessionByName(name)
+    const payload = BackendTmuxSessionResponseSchema.parse(
+      await resolved.service.getTmux(resolved.name),
+    )
+    const { host: _host, ...row } = payload.row
+    return NextResponse.json({ row })
+  } catch (error) {
+    return standaloneTerminalError(error)
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  context: { params: Promise<{ name: string }> },
+) {
+  const resolved = await target(context)
+  if (!resolved.ok) return resolved.response
+  try {
+    BackendTmuxKillResponseSchema.parse(await resolved.service.killTmux(resolved.name))
     return NextResponse.json({ ok: true })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  } catch (error) {
+    return standaloneTerminalError(error)
   }
 }
 

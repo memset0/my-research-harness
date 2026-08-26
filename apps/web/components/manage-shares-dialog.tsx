@@ -8,10 +8,12 @@
 // clicking the ID cell). The endpoint is owner-only at the route-class level,
 // so revealing tokens here doesn't widen the threat surface.
 
-import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
+import { type ProjectTarget, projectHost, projectName, projectQueryKey } from '../lib/api'
+import { useSession } from './session-provider'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -23,14 +25,7 @@ import {
 } from './ui/dialog'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
-import { useSession } from './session-provider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 interface ShareRow {
   id: string
@@ -47,24 +42,30 @@ interface CreatedShare extends ShareRow {
 }
 
 interface Props {
-  project: string
+  project: ProjectTarget
 }
 
-async function fetchShares(project: string): Promise<ShareRow[]> {
-  const res = await fetch(
-    `/api/projects/${encodeURIComponent(project)}/shares?reveal=true`,
-    { credentials: 'include' },
-  )
+function sharesUrl(project: ProjectTarget, suffix = '', reveal = false): string {
+  const params = new URLSearchParams()
+  const host = projectHost(project)
+  if (host) params.set('host', host)
+  if (reveal) params.set('reveal', 'true')
+  const query = params.toString()
+  return `/api/projects/${encodeURIComponent(projectName(project))}/shares${suffix}${query ? `?${query}` : ''}`
+}
+
+async function fetchShares(project: ProjectTarget): Promise<ShareRow[]> {
+  const res = await fetch(sharesUrl(project, '', true), { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to list shares (${res.status})`)
   const json = (await res.json()) as { shares: ShareRow[] }
   return json.shares
 }
 
 async function createShare(
-  project: string,
+  project: ProjectTarget,
   body: { label?: string; expires?: string },
 ): Promise<CreatedShare> {
-  const res = await fetch(`/api/projects/${encodeURIComponent(project)}/shares`, {
+  const res = await fetch(sharesUrl(project), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -78,11 +79,11 @@ async function createShare(
   return json.share
 }
 
-async function deleteShare(project: string, id: string): Promise<void> {
-  const res = await fetch(
-    `/api/projects/${encodeURIComponent(project)}/shares/${encodeURIComponent(id)}`,
-    { method: 'DELETE', credentials: 'include' },
-  )
+async function deleteShare(project: ProjectTarget, id: string): Promise<void> {
+  const res = await fetch(sharesUrl(project, `/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
     throw new Error(typeof err.error === 'string' ? err.error : 'failed to delete share')
@@ -102,8 +103,12 @@ function formatCreated(created: string): string {
   return d.toLocaleDateString()
 }
 
-function buildShareUrl(origin: string, project: string, token: string): string {
-  return `${origin}/share/${encodeURIComponent(project)}/${encodeURIComponent(token)}`
+function buildShareUrl(origin: string, project: ProjectTarget, token: string): string {
+  const host = projectHost(project)
+  const prefix = host
+    ? `/share/${encodeURIComponent(host)}/${encodeURIComponent(projectName(project))}`
+    : `/share/${encodeURIComponent(projectName(project))}`
+  return `${origin}${prefix}/${encodeURIComponent(token)}`
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -131,7 +136,7 @@ export function ManageSharesDialog({ project }: Props) {
   const queryClient = useQueryClient()
 
   const { data: shares, isLoading } = useQuery({
-    queryKey: ['project-shares', project],
+    queryKey: ['project-shares', ...projectQueryKey(project)],
     queryFn: () => fetchShares(project),
     enabled: open && role === 'owner',
     staleTime: 5_000,
@@ -154,7 +159,7 @@ export function ManageSharesDialog({ project }: Props) {
       setExpires('never')
       await copyToClipboard(created.share_url)
       toast.success('Share created — URL copied to clipboard')
-      queryClient.invalidateQueries({ queryKey: ['project-shares', project] })
+      queryClient.invalidateQueries({ queryKey: ['project-shares', ...projectQueryKey(project)] })
     },
     onError: (err) => toast.error(`Could not create share: ${(err as Error).message}`),
   })
@@ -163,7 +168,7 @@ export function ManageSharesDialog({ project }: Props) {
     mutationFn: (id: string) => deleteShare(project, id),
     onSuccess: () => {
       toast.success('Share revoked')
-      queryClient.invalidateQueries({ queryKey: ['project-shares', project] })
+      queryClient.invalidateQueries({ queryKey: ['project-shares', ...projectQueryKey(project)] })
       setConfirmId(null)
     },
     onError: (err) => toast.error(`Could not revoke: ${(err as Error).message}`),
@@ -184,10 +189,13 @@ export function ManageSharesDialog({ project }: Props) {
           to that. Force the wider cap at sm+ explicitly. */}
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Share links for {project}</DialogTitle>
+          <DialogTitle>
+            Share links for {projectHost(project) ? `${projectHost(project)}/` : ''}
+            {projectName(project)}
+          </DialogTitle>
           <DialogDescription>
-            Each link grants read-only access to this project only. Revoke any link to
-            terminate that viewer&apos;s access.
+            Each link grants read-only access to this project only. Revoke any link to terminate
+            that viewer&apos;s access.
           </DialogDescription>
         </DialogHeader>
 
@@ -302,8 +310,8 @@ export function ManageSharesDialog({ project }: Props) {
         {confirmId ? (
           <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">
             <p className="mb-2">
-              Revoke share <code className="font-mono text-xs">{confirmId}</code>? Anyone
-              currently holding this link will lose access immediately.
+              Revoke share <code className="font-mono text-xs">{confirmId}</code>? Anyone currently
+              holding this link will lose access immediately.
             </p>
             <div className="flex gap-2">
               <Button

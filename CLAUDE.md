@@ -392,6 +392,32 @@ action, that's a sign the proposer or applier got the boundary wrong —
 fix the tasks.md, don't leave the box unchecked as a fake "remaining work"
 signal.
 
+### Release version → commit → push
+
+OpenSpec changes and releases have independent lifecycles. One active change
+may ship several versions while implementation, rollout, observation, and
+refinements continue. Shipping a version does not archive its change.
+
+Use the canonical memon `MAJOR.MINOR.PATCH` release with these project-wide
+rules:
+
+- `MAJOR` must equal `FS_CONVENTION_VERSION`; changing it requires the matching
+  reviewed filesystem migration and starts at `.0.0`.
+- Any Backend or CLI artifact change increments `MINOR` by one and resets
+  `PATCH` to zero. Affected nodes must reinstall the exact release.
+- A central Web/gateway-only change increments `PATCH` by one and does not
+  reinstall Backend/CLI artifacts.
+- The initial v6-aligned release is `6.0.0`. Later boundaries inside the same
+  active change follow the normal rules (for example `6.0.1`, `6.1.0`,
+  `6.1.1`).
+
+Before every deployment boundary, update the canonical version, validate the
+changed-surface policy, create a versioned commit, and push it. Record the
+exact 40-character commit SHA. Central and every affected node must fetch and
+install that same revision; never independently resolve a moving `latest`.
+Concrete node/domain/token/SSH values remain in Git-ignored or machine-local
+configuration and must not enter the version commit.
+
 ### Archive → commit → push
 
 When the user asks to archive a change and `/opsx:archive` (or the archive

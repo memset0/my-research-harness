@@ -31,6 +31,11 @@ export interface LineRange {
   text: string
 }
 
+export interface LineRangeOptions {
+  /** Abort before a selected line can grow into an unbounded allocation. */
+  maxLineBytes?: number
+}
+
 export interface AppendResult {
   /** Lines added since last build/appendDelta. */
   added: number
@@ -87,15 +92,7 @@ export class LineIndex {
 
     const totalLines = stat.size === 0 ? 0 : lastByte === NEWLINE ? newlineCount : newlineCount + 1
 
-    return new LineIndex(
-      path,
-      stat.size,
-      stat.mtimeMs,
-      stat.ino,
-      totalLines,
-      anchors,
-      anchorEvery,
-    )
+    return new LineIndex(path, stat.size, stat.mtimeMs, stat.ino, totalLines, anchors, anchorEvery)
   }
 
   /**
@@ -201,8 +198,16 @@ export class LineIndex {
    * clamped to the file's actual range. Returns each line with its absolute
    * line number. Trailing newlines are stripped from the returned text.
    */
-  async range(endLine: number, count: number): Promise<LineRange[]> {
+  async range(
+    endLine: number,
+    count: number,
+    options: LineRangeOptions = {},
+  ): Promise<LineRange[]> {
     if (count <= 0 || this.totalLines === 0) return []
+    const maxLineBytes = options.maxLineBytes ?? Number.MAX_SAFE_INTEGER
+    if (!Number.isSafeInteger(maxLineBytes) || maxLineBytes <= 0) {
+      throw new Error('maxLineBytes must be a positive safe integer')
+    }
 
     const last = Math.min(endLine, this.totalLines)
     const first = Math.max(1, last - count + 1)
@@ -219,6 +224,13 @@ export class LineIndex {
     const result: LineRange[] = []
     let currentLine = anchor.lineNumber
     let currentLineParts: Buffer[] = []
+    let currentLineBytes = 0
+
+    const appendPart = (part: Buffer): void => {
+      currentLineBytes += part.byteLength
+      if (currentLineBytes > maxLineBytes) throw new Error('selected log line exceeds byte limit')
+      currentLineParts.push(part)
+    }
 
     for await (const chunk of stream) {
       const buf = chunk as Buffer
@@ -226,13 +238,14 @@ export class LineIndex {
       for (let i = 0; i < buf.length; i++) {
         if (buf[i] === NEWLINE) {
           if (currentLine >= first && currentLine <= last) {
-            currentLineParts.push(buf.subarray(lineStart, i))
+            appendPart(buf.subarray(lineStart, i))
             result.push({
               lineNumber: currentLine,
               text: Buffer.concat(currentLineParts).toString('utf8'),
             })
           }
           currentLineParts = []
+          currentLineBytes = 0
           if (currentLine >= last && currentLine >= first) {
             return result
           }
@@ -242,7 +255,7 @@ export class LineIndex {
       }
       if (lineStart < buf.length) {
         if (currentLine >= first && currentLine <= last) {
-          currentLineParts.push(buf.subarray(lineStart))
+          appendPart(buf.subarray(lineStart))
         }
       }
     }

@@ -1,41 +1,45 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('../../../lib/server/standalone-dto', () => ({
+  standaloneCodeReview: vi.fn((_config, review) => ({ ...review, path: `/root/${review.id}.md` })),
+}))
+vi.mock('@memon/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@memon/core')>()),
+  BackendCodeReviewsResponseSchema: { parse: (value: unknown) => value },
+}))
 
-import { GET } from './route'
 import { getRuntime } from '../../../lib/runtime'
+import { standaloneServices } from '../../../lib/server/standalone-services'
+import { GET } from './route'
 
-describe('GET /api/code-reviews', () => {
-  beforeEach(() => vi.clearAllMocks())
+const listCodeReviews = vi.fn()
 
-  it('returns the aggregated list for a known project', async () => {
-    const rt = {
-      config: { projects: [{ name: 'p', root: '/proj/p' }] },
-      getCodeReviewsList: vi.fn(() => [
-        { id: 'code-review/2026-05-24-x', scope: 'project', experiment: null },
-        { id: 'experiments/E0001-a/code-review/2026-05-20-y', scope: 'experiment', experiment: 'E0001-a' },
-      ]),
-    }
-    vi.mocked(getRuntime).mockResolvedValue(rt as never)
-    const res = await GET(new NextRequest('http://x/api/code-reviews?project=p'))
-    expect(res.status).toBe(200)
-    const j = await res.json()
-    expect(j.codeReviews).toHaveLength(2)
-    expect(rt.getCodeReviewsList).toHaveBeenCalledWith('p')
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getRuntime).mockResolvedValue({
+    config: { projects: [{ name: 'p', root: '/root', include: [], exclude: [] }] },
+  } as never)
+  vi.mocked(standaloneServices).mockReturnValue({ documents: { listCodeReviews } } as never)
+  listCodeReviews.mockResolvedValue({
+    codeReviews: [
+      { id: 'code-review/review', project: 'p', resource: 'docs/code-review/review.md' },
+    ],
+  })
+})
+
+describe('GET /api/code-reviews shared adapter', () => {
+  it('returns shared records with legacy paths', async () => {
+    const response = await GET(new NextRequest('http://x/api/code-reviews?project=p'))
+    expect(response.status).toBe(200)
+    expect((await response.json()).codeReviews[0].path).toBe('/root/code-review/review.md')
   })
 
-  it('400 without a project query param', async () => {
-    vi.mocked(getRuntime).mockResolvedValue({ config: { projects: [] } } as never)
-    const res = await GET(new NextRequest('http://x/api/code-reviews'))
-    expect(res.status).toBe(400)
-  })
-
-  it('404 for an unknown project', async () => {
-    const rt = { config: { projects: [{ name: 'p', root: '/x' }] }, getCodeReviewsList: vi.fn(() => []) }
-    vi.mocked(getRuntime).mockResolvedValue(rt as never)
-    const res = await GET(new NextRequest('http://x/api/code-reviews?project=zzz'))
-    expect(res.status).toBe(404)
+  it('rejects missing and unknown Projects', async () => {
+    expect((await GET(new NextRequest('http://x/api/code-reviews'))).status).toBe(400)
+    expect((await GET(new NextRequest('http://x/api/code-reviews?project=ghost'))).status).toBe(404)
   })
 })

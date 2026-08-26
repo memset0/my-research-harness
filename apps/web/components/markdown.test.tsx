@@ -270,6 +270,15 @@ describe('<Markdown> directory Report resources', () => {
     expect(resolveReportResourceUrl(base, '%2e%2e/secret.json')).toBeNull()
     expect(resolveReportResourceUrl(base, './data/metrics.json')).toBe(`${base}/data/metrics.json`)
   })
+
+  it('keeps central Host selectors after the appended asset path', () => {
+    expect(
+      resolveReportResourceUrl(
+        `${base}?host=host-a&project=research`,
+        'charts/curve.svg?download=1#plot',
+      ),
+    ).toBe(`${base}/charts/curve.svg?host=host-a&project=research&download=1#plot`)
+  })
 })
 
 describe('<Markdown> artifact references', () => {

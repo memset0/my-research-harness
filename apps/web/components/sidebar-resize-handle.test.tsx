@@ -50,7 +50,7 @@ describe('SidebarResizeHandle', () => {
     const { container } = renderInProvider(true)
     const handle = container.querySelector('[data-slot="sidebar-resize-handle"]')
     expect(handle).not.toBeNull()
-    expect(handle?.getAttribute('role')).toBe('separator')
+    expect(handle?.tagName).toBe('HR')
     expect(handle?.getAttribute('aria-orientation')).toBe('vertical')
     expect(handle?.getAttribute('aria-label')).toBe('Resize sidebar')
     expect(handle?.getAttribute('tabindex')).toBe('0')

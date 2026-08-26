@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NextRequest } from 'next/server'
@@ -25,16 +25,42 @@ let resultsPath: string
 beforeEach(async () => {
   vi.clearAllMocks()
   directory = await mkdtemp(join(tmpdir(), 'memon-exp-detail-results-'))
-  resultsPath = join(directory, 'results.yaml')
+  const experimentDirectory = join(directory, 'docs', 'experiments', EXPERIMENT_ID)
+  await mkdir(experimentDirectory, { recursive: true })
+  resultsPath = join(experimentDirectory, 'results.yaml')
   await writeFile(resultsPath, 'schema_version: 1\ncolumns: []\nvariants: []\n')
+  const readmePath = join(experimentDirectory, 'README.md')
+  await writeFile(
+    readmePath,
+    `---
+id: ${EXPERIMENT_ID}
+slug: detail-results-time
+title: Detail results time
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-08-23T00:00:00Z
+updated_at: 2026-08-23T00:00:00Z
+---
+
+## Results
+
+> Managed in [results.yaml](./results.yaml); read and update that file directly.
+`,
+  )
   vi.mocked(getRuntime).mockResolvedValue({
+    config: {
+      projects: [{ name: 'research', root: directory, include: [], exclude: [] }],
+    },
     experiments: new Map([
       [
         EXPERIMENT_ID,
         {
           id: EXPERIMENT_ID,
           project: 'research',
-          path: join(directory, 'README.md'),
+          path: readmePath,
           mtime: 1,
           readmeMtime: 1,
           frontMatter: {
@@ -52,6 +78,7 @@ beforeEach(async () => {
       ],
     ]),
     index: { get: vi.fn() },
+    projectFor: () => ({ name: 'research', root: directory }),
   } as never)
 })
 

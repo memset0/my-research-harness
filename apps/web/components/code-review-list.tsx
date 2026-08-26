@@ -1,18 +1,24 @@
 'use client'
 
-import Link from 'next/link'
+import type { CodeReviewCompletion } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
-import type { CodeReviewSummary } from '@memon/core'
-import { fetchCodeReviews } from '../lib/api'
-import { Card } from './ui/card'
-import { Badge } from './ui/badge'
-import { SuccessBadge } from './colored-badge'
+import Link from 'next/link'
+import {
+  type CodeReviewListItem,
+  fetchCodeReviews,
+  type ProjectTarget,
+  projectQueryKey,
+  projectWebPath,
+} from '../lib/api'
 import { cn } from '../lib/utils'
+import { SuccessBadge } from './colored-badge'
+import { Badge } from './ui/badge'
+import { Card } from './ui/card'
 
 // Encode each path segment but keep the slashes so the catch-all route matches.
 const encId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
 
-function CompletionBadge({ c }: { c: CodeReviewSummary['completion'] }) {
+function CompletionBadge({ c }: { c: CodeReviewCompletion }) {
   if (c.isComplete) return <SuccessBadge>Complete</SuccessBadge>
   return (
     <Badge variant="outline" className="shrink-0 tabular-nums">
@@ -21,9 +27,9 @@ function CompletionBadge({ c }: { c: CodeReviewSummary['completion'] }) {
   )
 }
 
-export function CodeReviewList({ project }: { project: string }) {
+export function CodeReviewList({ project }: { project: ProjectTarget }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['code-reviews', project],
+    queryKey: ['code-reviews', ...projectQueryKey(project)],
     queryFn: () => fetchCodeReviews(project),
   })
   const items = data?.codeReviews ?? []
@@ -36,13 +42,14 @@ export function CodeReviewList({ project }: { project: string }) {
       <div className="p-6 text-sm text-muted-foreground" data-slot="code-review-empty">
         No code reviews yet. They appear here once an agent writes one to
         <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">docs/code-review/</code>
-        or an experiment&apos;s <code className="rounded bg-muted px-1 py-0.5 text-xs">code-review/</code> folder.
+        or an experiment&apos;s{' '}
+        <code className="rounded bg-muted px-1 py-0.5 text-xs">code-review/</code> folder.
       </div>
     )
   }
 
   const projectWide = items.filter((i) => !i.experiment)
-  const byExp = new Map<string, CodeReviewSummary[]>()
+  const byExp = new Map<string, CodeReviewListItem[]>()
   for (const i of items) {
     if (!i.experiment) continue
     const arr = byExp.get(i.experiment) ?? []
@@ -54,7 +61,9 @@ export function CodeReviewList({ project }: { project: string }) {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-4 md:p-6" data-slot="code-review-list">
       <h1 className="text-lg font-semibold">Code reviews</h1>
-      {projectWide.length > 0 && <Group title="Project-wide" items={projectWide} project={project} />}
+      {projectWide.length > 0 && (
+        <Group title="Project-wide" items={projectWide} project={project} />
+      )}
       {expIds.map((eid) => (
         <Group key={eid} title={eid} items={byExp.get(eid)!} project={project} />
       ))}
@@ -68,8 +77,8 @@ function Group({
   project,
 }: {
   title: string
-  items: CodeReviewSummary[]
-  project: string
+  items: CodeReviewListItem[]
+  project: ProjectTarget
 }) {
   return (
     <section className="space-y-2" data-slot="code-review-group">
@@ -78,7 +87,7 @@ function Group({
         {items.map((i) => (
           <Link
             key={i.id}
-            href={`/p/${encodeURIComponent(project)}/code-review/${encId(i.id)}`}
+            href={projectWebPath(project, `/code-review/${encId(i.id)}`)}
             className="block"
             data-slot="code-review-row"
           >
@@ -89,7 +98,9 @@ function Group({
               )}
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-foreground">{i.title || i.id}</div>
+                <div className="truncate text-sm font-medium text-foreground">
+                  {i.title || i.id}
+                </div>
                 <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">{i.date}</div>
               </div>
               <CompletionBadge c={i.completion} />

@@ -90,6 +90,27 @@ describe('resolveArtifactMarkdownHref', () => {
     ).toMatchObject({ kind: 'experiment', id: 'E0018-legacy' })
   })
 
+  it('resolves portable Backend resources without requiring absolute cluster paths', () => {
+    const portable: ArtifactInventory = {
+      project: 'vsqa',
+      host: 'host-a',
+      experiments: [
+        {
+          id: 'E0017-vsqa-fvfa4-inference',
+          path: 'docs/experiments/E0017-vsqa-fvfa4-inference/README.md',
+        },
+      ],
+      reports: [{ id: 'R0003', path: 'docs/reports/R0003-summary.md' }],
+    }
+    expect(
+      resolveArtifactMarkdownHref(
+        '../../reports/R0003-summary.md',
+        portable.experiments[0]!.path,
+        portable,
+      ),
+    ).toMatchObject({ kind: 'report', id: 'R0003' })
+  })
+
   it('resolves exact absolute paths, encoded paths, query strings, and fragments', () => {
     const spaced: ArtifactInventory = {
       ...INVENTORY,
@@ -125,6 +146,20 @@ describe('resolveArtifactMarkdownHref', () => {
       id: 'E0017-vsqa-fvfa4-inference',
       fragment: '#results',
     })
+  })
+
+  it('requires the exact Host on central canonical routes', () => {
+    const central: ArtifactInventory = { ...INVENTORY, host: 'host-a' }
+    expect(
+      resolveArtifactMarkdownHref('/h/host-a/p/vsqa/reports/R0007', experimentSource, central),
+    ).toMatchObject({ kind: 'report', id: 'R0007' })
+    for (const href of [
+      '/h/host-b/p/vsqa/reports/R0007',
+      '/h/host-a/p/other/reports/R0007',
+      '/p/vsqa/reports/R0007',
+    ]) {
+      expect(resolveArtifactMarkdownHref(href, experimentSource, central), href).toBeNull()
+    }
   })
 
   it('rejects external, cross-project, malformed, and unresolved paths', () => {

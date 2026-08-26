@@ -52,7 +52,7 @@ export function useReportWorkspace(): ReportWorkspaceController {
   const project = useMemo(() => projectFromWorkspacePathname(pathname ?? '/'), [pathname])
 
   useEffect(() => {
-    setOptimisticHref(null)
+    if (currentHref !== '') setOptimisticHref(null)
   }, [currentHref])
 
   useEffect(() => {

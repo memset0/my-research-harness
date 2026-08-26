@@ -9,20 +9,17 @@
 // DropdownMenu with enabled agents plus right-split and popup actions.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Bot,
-  ChevronDown,
-  Columns2,
-  Download,
-  ExternalLink,
-  Loader2,
-} from 'lucide-react'
+import { Bot, ChevronDown, Columns2, Download, ExternalLink, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ApiError,
   checkTerminal,
+  fetchHosts,
   installTerminal,
+  type ProjectTarget,
+  projectHost,
+  projectName,
   type TerminalAgentKind,
   type TerminalScopeKind,
 } from '../lib/api'
@@ -77,38 +74,37 @@ function writeDefaultAgent(agent: OpenWithKind): void {
 
 function popupTarget(input: {
   agent: OpenWithKind
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
 }): string {
-  if (input.agent === 'herdr') return `memon-popup-memon-herdr-${input.slug}`
+  const host = projectHost(input.project)
+  const hostSegment = host ? `${host}-` : ''
+  if (input.agent === 'herdr') return `memon-popup-${hostSegment}memon-herdr-${input.slug}`
   const agentSeg = input.agent === 'none' ? 'terminal' : input.agent
-  return `memon-popup-memon-${agentSeg}-${input.project}--${input.scope}--${input.slug}`
+  return `memon-popup-${hostSegment}memon-${agentSeg}-${projectName(input.project)}--${input.scope}--${input.slug}`
 }
 
 function popupUrl(input: {
   agent: OpenWithKind
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
 }): string {
-  if (input.agent === 'herdr') {
-    return (
-      `/terminal-popup?integration=herdr&project=${encodeURIComponent(input.project)}` +
-      `&scope=${encodeURIComponent(input.scope)}` +
-      `&slug=${encodeURIComponent(input.slug)}`
-    )
-  }
-  return (
-    `/terminal-popup?project=${encodeURIComponent(input.project)}` +
-    `&scope=${encodeURIComponent(input.scope)}` +
-    `&slug=${encodeURIComponent(input.slug)}` +
-    `&agent=${encodeURIComponent(input.agent)}`
-  )
+  const params = new URLSearchParams({
+    project: projectName(input.project),
+    scope: input.scope,
+    slug: input.slug,
+  })
+  const host = projectHost(input.project)
+  if (host) params.set('host', host)
+  if (input.agent === 'herdr') params.set('integration', 'herdr')
+  else params.set('agent', input.agent)
+  return `/terminal-popup?${params.toString()}`
 }
 
 export interface OpenWithButtonProps {
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
 }
@@ -117,7 +113,27 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   const drawer = useTerminalDrawer()
   const qc = useQueryClient()
   const { role } = useSession()
-  const { terminal } = useRuntimeConfig()
+  const { terminal, role: runtimeRole } = useRuntimeConfig()
+  const host = projectHost(project)
+  const hostTarget = host ? { host } : undefined
+  const { data: hostsData } = useQuery({
+    queryKey: ['hosts'],
+    queryFn: fetchHosts,
+    enabled: runtimeRole === 'central' && host !== null,
+    retry: false,
+  })
+  const availability = host
+    ? hostsData?.hosts.find((candidate) => candidate.host === host)
+    : undefined
+  const hostUsable = availability?.state === 'online' || availability?.state === 'update_available'
+  const tmuxEnabled =
+    runtimeRole === 'central'
+      ? hostUsable && availability?.capabilities?.tmux === true
+      : terminal.tmuxEnabled
+  const herdrEnabled =
+    runtimeRole === 'central'
+      ? hostUsable && availability?.capabilities?.herdr === true
+      : terminal.herdrEnabled
   const isViewer = role !== 'owner'
   const [defaultAgent, setDefaultAgentState] = useState<OpenWithKind>(DEFAULT_AGENT)
   const [installing, setInstalling] = useState(false)
@@ -125,9 +141,9 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   // Read localStorage AFTER mount to avoid SSR/hydration mismatch.
   useEffect(() => {
     const stored = readDefaultAgent()
-    const enabled = stored === 'herdr' ? terminal.herdrEnabled : terminal.tmuxEnabled
-    setDefaultAgentState(enabled ? stored : terminal.tmuxEnabled ? DEFAULT_AGENT : 'herdr')
-  }, [terminal.herdrEnabled, terminal.tmuxEnabled])
+    const enabled = stored === 'herdr' ? herdrEnabled : tmuxEnabled
+    setDefaultAgentState(enabled ? stored : tmuxEnabled ? DEFAULT_AGENT : 'herdr')
+  }, [herdrEnabled, tmuxEnabled])
 
   const setDefaultAgent = (agent: OpenWithKind) => {
     setDefaultAgentState(agent)
@@ -137,14 +153,28 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   // Viewers can't use the terminal (the API is shell-classed = owner-only).
   // Skip the probe entirely so we don't trigger `401 + WWW-Authenticate`,
   // which would pop the browser's native Basic-auth dialog.
-  const { data: probe } = useQuery({
-    queryKey: ['terminal', 'check'],
-    queryFn: checkTerminal,
+  const { data: probe, isError: probeFailed } = useQuery({
+    queryKey: ['terminal', 'check', host ?? 'standalone'],
+    queryFn: () => checkTerminal(hostTarget),
     staleTime: 10_000,
-    enabled: role === 'owner' && (terminal.tmuxEnabled || terminal.herdrEnabled),
+    enabled: role === 'owner' && (tmuxEnabled || herdrEnabled),
   })
 
-  if (!terminal.tmuxEnabled && !terminal.herdrEnabled) return null
+  if (!tmuxEnabled && !herdrEnabled) return null
+
+  if (role === 'owner' && !probe) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled
+        title={probeFailed ? 'Selected Host terminal is unavailable' : 'Checking terminal'}
+      >
+        {probeFailed ? <Bot className="size-3.5" /> : <Loader2 className="size-3.5 animate-spin" />}
+        Open with…
+      </Button>
+    )
+  }
 
   // ttyd unavailable but auto-installable: render a single Install button
   // with no picker. Once installed, the picker becomes available.
@@ -152,13 +182,13 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
     const onInstall = async () => {
       setInstalling(true)
       try {
-        const res = await installTerminal()
+        const res = await installTerminal(hostTarget)
         toast.success(
           res.alreadyPresent
             ? 'ttyd already cached'
             : `ttyd ${res.version} installed (${(res.durationMs / 1000).toFixed(1)}s)`,
         )
-        await qc.invalidateQueries({ queryKey: ['terminal', 'check'] })
+        await qc.invalidateQueries({ queryKey: ['terminal', 'check', host ?? 'standalone'] })
       } catch (err) {
         const msg = err instanceof ApiError ? err.message : (err as Error).message
         toast.error(`ttyd install failed: ${msg}`)
@@ -239,7 +269,7 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {terminal.tmuxEnabled && (
+          {tmuxEnabled && (
             <>
               <DropdownMenuItem onClick={() => launchInDrawer('none')}>
                 {AGENT_LABEL.none}
@@ -255,7 +285,7 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
               </DropdownMenuItem>
             </>
           )}
-          {terminal.herdrEnabled && (
+          {herdrEnabled && (
             <DropdownMenuItem onClick={() => launchInDrawer('herdr')}>
               {AGENT_LABEL.herdr}
             </DropdownMenuItem>

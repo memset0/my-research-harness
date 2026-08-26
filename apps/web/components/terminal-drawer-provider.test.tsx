@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import { ProjectRefSchema } from '@memon/core'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -71,6 +73,10 @@ function Controls() {
     slug: 'E0042-routing',
     agent: 'codex' as const,
   }
+  const centralTarget = {
+    ...target,
+    project: ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' }),
+  }
   return (
     <main>
       <p>dashboard content</p>
@@ -79,6 +85,9 @@ function Controls() {
       </button>
       <button type="button" onClick={() => terminal.openSplit(target)}>
         Open split test
+      </button>
+      <button type="button" onClick={() => terminal.openSplit(centralTarget)}>
+        Open central split test
       </button>
       <button
         type="button"
@@ -178,6 +187,28 @@ describe('TerminalDrawerProvider presentation surfaces', () => {
     )
     expect(screen.queryByLabelText('Terminal split panel')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Terminal drawer')).not.toBeInTheDocument()
+  })
+
+  it('keeps Host identity in central popup URLs and window cache names', async () => {
+    const openWindow = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const view = renderProvider()
+    await userEvent.click(screen.getByRole('button', { name: 'Open central split test' }))
+    navigation.pathname = '/h/host-b/p/project-a/e/E0043-other'
+    view.rerender(
+      <TerminalDrawerProvider>
+        <header data-testid="shared-header">shared application header</header>
+        <WorkspaceSplitOutlet>
+          <Controls />
+        </WorkspaceSplitOutlet>
+      </TerminalDrawerProvider>,
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Pop out' }))
+
+    expect(openWindow).toHaveBeenCalledWith(
+      '/terminal-popup?project=project-a&scope=exp&slug=E0042-routing&agent=codex&host=host-a',
+      'memon-popup-host-a-memon-codex-project-a--exp--E0042-routing',
+      'popup,width=1200,height=800',
+    )
   })
 
   it('falls back to the drawer when split is requested on mobile', async () => {

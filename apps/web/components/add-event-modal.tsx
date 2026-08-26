@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, appendJournalEvent } from '../lib/api'
+import { ApiError, appendJournalEvent, type ProjectTarget, projectQueryKey } from '../lib/api'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -14,17 +14,11 @@ import {
   DialogTitle,
 } from './ui/dialog'
 import { Label } from './ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Textarea } from './ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
 
 interface BaseProps {
-  project: string
+  project: ProjectTarget
   open: boolean
   onClose: () => void
 }
@@ -67,7 +61,9 @@ export function AddEventModal(props: AddEventModalProps) {
       const finalBody = expId ? `\`${expId}\` ${body}` : body
       await appendJournalEvent({ project: props.project, tag, body: finalBody })
       toast.success(`Appended [${tag}] event`)
-      queryClient.invalidateQueries({ queryKey: ['journal', props.project] })
+      queryClient.invalidateQueries({
+        queryKey: ['journal', ...projectQueryKey(props.project)],
+      })
       props.onClose()
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
@@ -92,7 +88,10 @@ export function AddEventModal(props: AddEventModalProps) {
           <DialogTitle>{title}</DialogTitle>
           {'runId' in props && props.runId && (
             <DialogDescription>
-              Will be appended as <code className="font-mono text-xs">[{tag}] `{props.runId}` …</code>
+              Will be appended as{' '}
+              <code className="font-mono text-xs">
+                [{tag}] `{props.runId}` …
+              </code>
             </DialogDescription>
           )}
         </DialogHeader>
@@ -100,10 +99,7 @@ export function AddEventModal(props: AddEventModalProps) {
           {showTagSelect && (
             <div className="space-y-1.5">
               <Label htmlFor="tag">Tag</Label>
-              <Select
-                value={tag}
-                onValueChange={(v) => setTag(v as 'NOTE' | 'REQUEST')}
-              >
+              <Select value={tag} onValueChange={(v) => setTag(v as 'NOTE' | 'REQUEST')}>
                 <SelectTrigger id="tag">
                   <SelectValue />
                 </SelectTrigger>

@@ -1,13 +1,21 @@
-// GET /api/terminal/list — currently active ttyd entries in the manager.
-// Returns one row per (agent, project, scope, slug) the manager holds.
-// The /manage/tmux page uses GET /api/tmux-sessions for the broader
-// host-level tmux inventory; this endpoint is for in-process state only.
+// GET /api/terminal/list — shared singleton terminal lifecycle state.
 
 import { NextResponse } from 'next/server'
-import { listSessions } from '../../../../lib/terminal/manager'
+import { getRuntime } from '../../../../lib/runtime'
+import {
+  standaloneTerminal,
+  standaloneTerminalError,
+  standaloneTerminalList,
+} from '../../../../lib/server/standalone-terminal'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  return NextResponse.json({ sessions: listSessions() })
+  const runtime = await getRuntime()
+  const service = standaloneTerminal(runtime.config)
+  try {
+    return NextResponse.json(standaloneTerminalList(service, await service.list()))
+  } catch (error) {
+    return standaloneTerminalError(error)
+  }
 }

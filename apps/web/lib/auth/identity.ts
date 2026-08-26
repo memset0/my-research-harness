@@ -17,7 +17,9 @@
 // BEFORE invoking. It returns the resolved identity (or anon-with-reason)
 // plus a `refundToken` flag the caller uses to decide whether to refund.
 
+import type { ProjectRef } from '@memon/core'
 import { parseBasicAuth, verifyBasic } from './basic-auth'
+import type { ShareEntry } from './cookies'
 import {
   OWNER_SESSION_TTL_SECONDS,
   SESSION_COOKIE_NAME,
@@ -27,7 +29,6 @@ import {
   verifySessionCookie,
   verifySharesCookie,
 } from './cookies'
-import type { ShareEntry } from './cookies'
 
 export type IdentityRole = 'owner' | 'viewer' | 'anon'
 
@@ -35,6 +36,8 @@ export interface ResolvedIdentity {
   role: IdentityRole
   /** Owner: empty Set. Viewer: validated project names. Anon: empty Set. */
   scopeProjects: Set<string>
+  /** Central viewer scopes. Legacy standalone viewers keep this empty. */
+  scopeProjectRefs: ProjectRef[]
   /** True if the caller should refund the rate-limit token. */
   refundToken: boolean
   /**
@@ -61,7 +64,7 @@ export interface ShareValidator {
    * Validate that `token` exists in `<projectRoot(project)>/.memon/shares.json`
    * AND is not expired. Returns true on success.
    */
-  validate: (project: string, token: string) => Promise<boolean>
+  validate: (project: string, token: string, host?: string) => Promise<boolean>
 }
 
 export interface AuthInputs {
@@ -109,6 +112,7 @@ export async function resolveIdentity(
       return {
         role: 'owner',
         scopeProjects: new Set(),
+        scopeProjectRefs: [],
         refundToken: true,
         refreshedSessionCookie: refreshed,
         refreshedSharesCookie: null,
@@ -128,6 +132,7 @@ export async function resolveIdentity(
       return {
         role: 'owner',
         scopeProjects: new Set(),
+        scopeProjectRefs: [],
         refundToken: true,
         refreshedSessionCookie: null,
         refreshedSharesCookie: null,
@@ -142,11 +147,16 @@ export async function resolveIdentity(
     if (payload) {
       const validatedEntries: ShareEntry[] = []
       const validatedProjects = new Set<string>()
+      const validatedProjectRefs: ProjectRef[] = []
       for (const entry of payload.entries) {
-        const ok = await shareValidator.validate(entry.project, entry.token)
+        const ok = await shareValidator.validate(entry.project, entry.token, entry.host)
         if (ok) {
           validatedEntries.push(entry)
-          validatedProjects.add(entry.project)
+          if (entry.host) {
+            validatedProjectRefs.push({ host: entry.host, project: entry.project } as ProjectRef)
+          } else {
+            validatedProjects.add(entry.project)
+          }
         }
       }
       if (validatedEntries.length > 0) {
@@ -160,6 +170,7 @@ export async function resolveIdentity(
         return {
           role: 'viewer',
           scopeProjects: validatedProjects,
+          scopeProjectRefs: validatedProjectRefs,
           refundToken: true,
           refreshedSessionCookie: null,
           refreshedSharesCookie,
@@ -171,6 +182,7 @@ export async function resolveIdentity(
       return {
         role: 'anon',
         scopeProjects: new Set(),
+        scopeProjectRefs: [],
         refundToken: false,
         refreshedSessionCookie: null,
         refreshedSharesCookie: null,
@@ -183,6 +195,7 @@ export async function resolveIdentity(
   return {
     role: 'anon',
     scopeProjects: new Set(),
+    scopeProjectRefs: [],
     refundToken: false,
     refreshedSessionCookie: null,
     refreshedSharesCookie: null,

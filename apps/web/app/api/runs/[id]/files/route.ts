@@ -1,105 +1,73 @@
-// GET /api/runs/:id/files?depth=<n> — list files inside a run dir, capped
-// at MAX_ENTRIES (default 200). Used by the per-run panel on the experiment
-// detail page to render an "actual outputs" tree alongside the manual
-// Artifacts section.
-
-import { promises as fs } from 'node:fs'
-import { join, relative } from 'node:path'
+import { BackendProjectServiceError } from '@memon/backend'
+import {
+  BackendRunFilesResponseSchema,
+  type BackendRunFileTreeNode,
+  ProjectNameSchema,
+} from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../../lib/runtime'
+import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
-
 const DEFAULT_DEPTH = 3
-const MAX_DEPTH = 6
-const MAX_ENTRIES = 200
-
-interface FileNode {
-  type: 'file'
-  path: string // relative to run dir
-  size: number
-  mtime: number
-}
-interface DirNode {
-  type: 'dir'
-  path: string
-  children: Array<FileNode | DirNode>
-}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const runtime = await getRuntime()
+  const { id } = await params
+  const url = new URL(req.url)
+  const projects = url.searchParams.getAll('project')
+  const project = projects.length === 1 ? ProjectNameSchema.safeParse(projects[0]) : null
+  if (!project?.success) {
+    return NextResponse.json(
+      { error: { code: 'BAD_REQUEST', message: 'exactly one project selector is required' } },
+      { status: 400 },
+    )
+  }
+  const depthValue = url.searchParams.get('depth')
+  if (depthValue !== null && !/^[1-6]$/.test(depthValue)) {
+    return NextResponse.json(
+      { error: { code: 'BAD_REQUEST', message: 'depth must be an integer from 1 to 6' } },
+      { status: 400 },
+    )
+  }
+  const current = runtime.index.get(id)
+  if (!current || current.project !== project.data) {
+    return NextResponse.json(
+      { error: { code: 'NOT_FOUND', message: `run "${id}" not found` } },
+      { status: 404 },
+    )
+  }
   try {
-    const { id } = await params
-    const rt = await getRuntime()
-    const run = rt.index.get(id)
-    if (!run) {
+    const portable = BackendRunFilesResponseSchema.parse(
+      await standaloneServices(runtime.config).projects.getRunFiles(
+        project.data,
+        id,
+        depthValue === null ? DEFAULT_DEPTH : Number(depthValue),
+      ),
+    )
+    return NextResponse.json({
+      ...portable,
+      runPath: current.path,
+      tree: legacyFileTree(portable.tree),
+    })
+  } catch (error) {
+    if (error instanceof BackendProjectServiceError) {
       return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: `run "${id}" not found` } },
+        { error: { code: 'NOT_FOUND', message: 'run files not found' } },
         { status: 404 },
       )
     }
-    const url = new URL(req.url)
-    const depthParam = Number(url.searchParams.get('depth') ?? DEFAULT_DEPTH)
-    const depth = Math.min(Math.max(1, depthParam | 0), MAX_DEPTH)
+    return NextResponse.json(
+      { error: { code: 'FILES_READ_FAILED', message: 'run files could not be read' } },
+      { status: 500 },
+    )
+  }
+}
 
-    let truncated = false
-    let count = 0
-
-    async function walk(absDir: string, depthLeft: number): Promise<DirNode | null> {
-      if (depthLeft < 0) return null
-      let entries: { name: string; isFile: boolean; isDir: boolean }[]
-      try {
-        const dirents = await fs.readdir(absDir, { withFileTypes: true })
-        entries = dirents.map((d) => ({
-          name: d.name,
-          isFile: d.isFile(),
-          isDir: d.isDirectory(),
-        }))
-      } catch {
-        return null
-      }
-      const children: Array<FileNode | DirNode> = []
-      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-        if (count >= MAX_ENTRIES) {
-          truncated = true
-          break
-        }
-        if (entry.name.startsWith('.')) continue
-        const absChild = join(absDir, entry.name)
-        if (entry.isFile) {
-          let stat
-          try {
-            stat = await fs.stat(absChild)
-          } catch {
-            continue
-          }
-          children.push({
-            type: 'file',
-            path: relative(run!.path, absChild),
-            size: stat.size,
-            mtime: stat.mtimeMs,
-          })
-          count++
-        } else if (entry.isDir) {
-          const sub = await walk(absChild, depthLeft - 1)
-          if (sub) {
-            children.push(sub)
-            count++
-          }
-        }
-      }
-      return { type: 'dir', path: relative(run!.path, absDir) || '.', children }
-    }
-
-    const tree = await walk(run.path, depth)
-    return NextResponse.json({
-      runId: run.id,
-      runPath: run.path,
-      depth,
-      truncated,
-      entries: count,
-      tree: tree ?? { type: 'dir', path: '.', children: [] },
-    })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+function legacyFileTree(node: BackendRunFileTreeNode): BackendRunFileTreeNode & { path: string } {
+  return {
+    ...node,
+    path: node.resource,
+    ...(node.children ? { children: node.children.map(legacyFileTree) } : {}),
   }
 }

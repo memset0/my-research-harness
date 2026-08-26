@@ -10,7 +10,14 @@ import { useQuery } from '@tanstack/react-query'
 import { History } from 'lucide-react'
 import Link from 'next/link'
 import { type CSSProperties, useCallback, useState } from 'react'
-import { fetchGitStatus } from '../lib/api'
+import {
+  fetchGitStatus,
+  type ProjectTarget,
+  projectHost,
+  projectName,
+  projectQueryKey,
+  projectWebPath,
+} from '../lib/api'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitHistoryDialog } from './git-history-dialog'
@@ -18,7 +25,7 @@ import { GitStatusPill } from './git-status-pill'
 import { useWorkspaceSplitWidth } from './terminal-drawer-provider'
 
 export interface ProjectFooterProps {
-  project: string
+  project: ProjectTarget
 }
 
 export function ProjectFooter({ project }: ProjectFooterProps) {
@@ -30,7 +37,7 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
   // Same query key as `<GitStatusPill />` so this read deduplicates with
   // the pill's poll — we don't fire an extra request.
   const { data } = useQuery({
-    queryKey: ['git-status', project],
+    queryKey: ['git-status', ...projectQueryKey(project)],
     queryFn: () => fetchGitStatus(project),
     staleTime: 5_000,
     retry: false,
@@ -61,10 +68,11 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
         )}
       >
         <Link
-          href={`/p/${encodeURIComponent(project)}`}
+          href={projectWebPath(project)}
           className="font-mono font-medium text-foreground hover:underline"
         >
-          {project}
+          {projectHost(project) ? `${projectHost(project)}/` : ''}
+          {projectName(project)}
         </Link>
         <span className="text-muted-foreground/40">·</span>
         {gitEnabled ? (
@@ -73,20 +81,22 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
               type="button"
               onClick={openStatus}
               data-slot="git-diff-dialog-trigger"
-              aria-label={`View git diff for ${project}`}
+              aria-label={`View git diff for ${projectName(project)}`}
               className="inline-flex cursor-pointer items-center rounded px-1 hover:bg-accent hover:text-accent-foreground"
             >
               <GitStatusPill project={project} variant="footer" />
             </button>
-            <button
-              type="button"
-              onClick={openHistory}
-              data-slot="git-history-dialog-trigger"
-              aria-label={`View git history for ${project}`}
-              className="inline-flex cursor-pointer items-center rounded p-1 hover:bg-accent hover:text-accent-foreground"
-            >
-              <History className="size-3.5" aria-hidden />
-            </button>
+            {!projectHost(project) && (
+              <button
+                type="button"
+                onClick={openHistory}
+                data-slot="git-history-dialog-trigger"
+                aria-label={`View git history for ${projectName(project)}`}
+                className="inline-flex cursor-pointer items-center rounded p-1 hover:bg-accent hover:text-accent-foreground"
+              >
+                <History className="size-3.5" aria-hidden />
+              </button>
+            )}
           </>
         ) : (
           <GitStatusPill project={project} variant="footer" />
@@ -100,13 +110,15 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
             project={project}
             open={statusDialogOpen}
             onOpenChange={setStatusDialogOpen}
-            onOpenHistory={openHistory}
+            onOpenHistory={projectHost(project) ? undefined : openHistory}
           />
-          <GitHistoryDialog
-            project={project}
-            open={historyDialogOpen}
-            onOpenChange={setHistoryDialogOpen}
-          />
+          {!projectHost(project) && (
+            <GitHistoryDialog
+              project={projectName(project)}
+              open={historyDialogOpen}
+              onOpenChange={setHistoryDialogOpen}
+            />
+          )}
         </>
       )}
     </>

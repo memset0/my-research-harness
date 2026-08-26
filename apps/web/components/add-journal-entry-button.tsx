@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from './ui/button'
+import type { ProjectTarget } from '../lib/api'
 import { AddEventModal } from './add-event-modal'
+import { Button } from './ui/button'
 import { ViewerGuard } from './viewer-guard'
 
-export function AddJournalEntryButton({ project }: { project: string }) {
+export function AddJournalEntryButton({ project }: { project: ProjectTarget }) {
   const [open, setOpen] = useState(false)
   return (
     <>

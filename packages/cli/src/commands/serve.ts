@@ -1,8 +1,8 @@
 // `memon serve [--config PATH] [--dev] [--port N]`
 //
-// Spawns the Next.js web app with MEMON_CONFIG_PATH set to the resolved config
-// file. The web app uses that env var to know which projects/poll settings to
-// load.
+// Spawns the custom Web entry with MEMON_CONFIG_PATH set to the resolved
+// config file. The custom entry owns terminal HTTP/WebSocket upgrades and the
+// central gateway; invoking `next start` directly would bypass both.
 //
 // MVP scope: only works when invoked from inside a checkout of this repo
 // (because it locates the workspace's `apps/web` via pnpm-workspace.yaml).
@@ -22,7 +22,8 @@ export interface ServeOptions {
   configPath?: string
   cwd: string
   dev: boolean
-  port: number
+  /** Explicit CLI override; omitted lets central.bind_port or standalone 3737 win. */
+  port?: number
 }
 
 export async function runServe(opts: ServeOptions): Promise<void> {
@@ -60,20 +61,25 @@ export async function runServe(opts: ServeOptions): Promise<void> {
     )
   }
 
-  emitHuman(`memon: serving with config ${resolvedConfigPath} on port ${opts.port}`)
-
-  const child = spawn(
-    'pnpm',
-    ['exec', 'next', opts.dev ? 'dev' : 'start', '-p', String(opts.port)],
-    {
-      cwd: webDir,
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        MEMON_CONFIG_PATH: resolvedConfigPath,
-      },
-    },
+  emitHuman(
+    `memon: serving with config ${resolvedConfigPath}` +
+      (opts.port === undefined ? '' : ` on port ${opts.port}`),
   )
+
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    MEMON_CONFIG_PATH: resolvedConfigPath,
+  }
+  // Do not let an unrelated parent PORT silently override the selected
+  // instance. Only an explicit `--port` becomes the Web-entry override.
+  delete childEnv.PORT
+  if (opts.port !== undefined) childEnv.PORT = String(opts.port)
+
+  const child = spawn('pnpm', ['run', opts.dev ? 'dev' : 'start'], {
+    cwd: webDir,
+    stdio: 'inherit',
+    env: childEnv,
+  })
 
   child.on('exit', (code) => process.exit(code ?? 0))
 }

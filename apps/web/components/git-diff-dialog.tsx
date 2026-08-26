@@ -7,27 +7,24 @@
 import { useQuery } from '@tanstack/react-query'
 import { GitBranch } from 'lucide-react'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
-import { Skeleton } from './ui/skeleton'
-import { Button } from './ui/button'
-import {
   fetchGitStatus,
   fetchGitStatusFiles,
   fetchSubmodules,
   type GitDiffSide,
   type GitFileEntry,
   type GitSubmoduleEntry,
+  type ProjectTarget,
+  projectName,
+  projectQueryKey,
 } from '../lib/api'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
 import { FileRow } from './file-row'
+import { Button } from './ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { Skeleton } from './ui/skeleton'
 
 export interface GitDiffDialogProps {
-  project: string
+  project: ProjectTarget
   open: boolean
   onOpenChange: (open: boolean) => void
   /**
@@ -53,7 +50,7 @@ export function GitDiffDialog({
         <DialogHeader className="space-y-1">
           <DialogTitle className="font-mono text-base">
             <span className="text-muted-foreground">git status — </span>
-            {project}
+            {projectName(project)}
             {onOpenHistory && (
               <button
                 type="button"
@@ -79,9 +76,9 @@ export function GitDiffDialog({
   )
 }
 
-function BranchSummary({ project }: { project: string }) {
+function BranchSummary({ project }: { project: ProjectTarget }) {
   const { data } = useQuery({
-    queryKey: ['git-status', project],
+    queryKey: ['git-status', ...projectQueryKey(project)],
     queryFn: () => fetchGitStatus(project),
     staleTime: 5_000,
   })
@@ -147,14 +144,14 @@ function RepoBlock({
   submodule,
   title,
 }: {
-  project: string
+  project: ProjectTarget
   open: boolean
   submodule: string | undefined
   title: string
 }) {
   const queryKey = submodule
-    ? (['git-status-files', project, submodule] as const)
-    : (['git-status-files', project] as const)
+    ? (['git-status-files', ...projectQueryKey(project), submodule] as const)
+    : (['git-status-files', ...projectQueryKey(project)] as const)
   const { data, isPending, isError } = useQuery({
     queryKey,
     queryFn: () => fetchGitStatusFiles(project, submodule),
@@ -214,9 +211,9 @@ function RepoBlock({
   )
 }
 
-function SubmoduleBlocks({ project, open }: { project: string; open: boolean }) {
+function SubmoduleBlocks({ project, open }: { project: ProjectTarget; open: boolean }) {
   const { data } = useQuery({
-    queryKey: ['submodules', project],
+    queryKey: ['submodules', ...projectQueryKey(project)],
     queryFn: () => fetchSubmodules(project),
     enabled: open,
     staleTime: Infinity,
@@ -249,7 +246,7 @@ function Section({
 }: {
   title: string
   entries: GitFileEntry[]
-  project: string
+  project: ProjectTarget
   side: GitDiffSide
   submodule?: string
 }) {
@@ -277,4 +274,3 @@ function Section({
     </section>
   )
 }
-

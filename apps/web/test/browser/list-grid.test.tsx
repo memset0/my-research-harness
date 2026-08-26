@@ -6,6 +6,7 @@
 
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ProjectRefSchema } from '@memon/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentCardGrid } from '../../components/experiment-card-grid'
 import { renderWithQuery } from '../utils'
@@ -123,6 +124,17 @@ describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
     })
     // E0002 has 0 runs — UI must not crash on the empty case.
     expect(screen.getByText('E0002-attention')).toBeInTheDocument()
+  })
+
+  it('uses Host-qualified queries, links, and persistence for a central Project', async () => {
+    const project = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
+    renderWithQuery(<ExperimentCardGrid project={project} />)
+    await waitFor(() => expect(screen.getByText('E0001-fsdp')).toBeInTheDocument())
+
+    expect(fetchExperimentDocs).toHaveBeenCalledWith(project)
+    const links = screen.getAllByRole('link', { name: /E0001-fsdp|FSDP collective overlap study/ })
+    expect(links[0]).toHaveAttribute('href', '/h/host-a/p/project-a/e/E0001-fsdp')
+    expect(localStorage.getItem('memon:list:host-a:project-a:show-archived')).toBe('0')
   })
 })
 

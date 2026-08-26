@@ -1,33 +1,34 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import Link from 'next/link'
 import { useIsDesktop } from '@/hooks/use-is-desktop'
-import { fetchExperiment, type FullExperiment } from '../lib/api'
-import { Badge } from './ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { WarningBadge } from './colored-badge'
-import { StatusEdit } from './status-edit'
-import { EditReadmeButton } from './edit-readme-button'
+import { type FullExperiment, fetchExperiment, projectQueryKey } from '../lib/api'
 import { AddNoteButton } from './add-note-button'
 import { AskClaudeCodeButton } from './ask-claude-code-button'
-import { TerminalButton } from './terminal-button'
-import { DetailSkeleton } from './skeletons'
-import { TimestampLocal } from './timestamp'
-import { Markdown } from './markdown'
+import { WarningBadge } from './colored-badge'
+import { EditReadmeButton } from './edit-readme-button'
 import { LogViewer } from './log-viewer'
+import { Markdown } from './markdown'
 import { ReadmeEditorProvider } from './readme-editor-context'
 import { ReadmeSidePanel } from './readme-side-panel'
+import { DetailSkeleton } from './skeletons'
+import { StatusEdit } from './status-edit'
+import { TerminalButton } from './terminal-button'
+import { TimestampLocal } from './timestamp'
+import { Badge } from './ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { WarningsCard } from './warnings-card'
-import Link from 'next/link'
 
 export function ExperimentDetail({ project, id }: { project: string; id: string }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['run', id],
-    queryFn: () => fetchExperiment(id),
+    queryKey: ['run', ...projectQueryKey(project), id],
+    queryFn: () => fetchExperiment(project, id),
   })
 
   if (isLoading && !data) return <DetailSkeleton />
-  if (error) return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
+  if (error)
+    return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
   if (!data) return null
 
   const exp: FullExperiment = data
@@ -53,135 +54,150 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
     <div className="flex h-[calc(100svh-3rem)] overflow-hidden">
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-4 md:p-6">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle className="font-mono">{exp.id}</CardTitle>
-            {exp.hasReadme ? (
-              <StatusEdit id={exp.id} status={fm.status} stale={exp.stale} expectedMtime={exp.readmeMtime} />
-            ) : (
-              <WarningBadge>no README — status edit unavailable</WarningBadge>
-            )}
-            {exp.parseErrors.length > 0 && (
-              <Badge variant="destructive">{exp.parseErrors.length} parse errors</Badge>
-            )}
-            {exp.parseWarnings.length > 0 && (
-              <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
-            )}
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <TerminalButton runId={exp.id} projectName={exp.project} />
-              <AskClaudeCodeButton experiment={exp} />
-              <AddNoteButton project={exp.project} runId={exp.id} />
-              {exp.hasReadme && <EditReadmeButton path={exp.path} runId={exp.id} />}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-          <Field label="name" value={fm.name} />
-          <Field label="project" value={exp.project} />
-          {fm.project !== '' && fm.project !== exp.project && (
-            <Field label="sub-project" value={fm.project} />
-          )}
-          <Field label="created"><TimestampLocal value={fm.createdAt} variant="long" /></Field>
-          <Field label="finished"><TimestampLocal value={fm.finishedAt} variant="long" /></Field>
-          <Field label="host" value={fm.host ?? '—'} />
-          <Field label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
-          <Field label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />
-          <Field label="entry" value={fm.entry || '—'} />
-          <div className="col-span-2 md:col-span-4 break-all">
-            <FieldLabel>command</FieldLabel>
-            <code className="block rounded bg-muted px-2 py-1 font-mono text-xs">
-              {fm.command || '—'}
-            </code>
-          </div>
-          {fm.wandb && (
-            <div className="col-span-2 md:col-span-4">
-              <FieldLabel>wandb</FieldLabel>
-              <a
-                className="text-xs text-primary underline-offset-4 hover:underline"
-                href={fm.wandb}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {fm.wandb}
-              </a>
-            </div>
-          )}
-          {fm.tags.length > 0 && (
-            <div className="col-span-2 md:col-span-4">
-              <FieldLabel>tags</FieldLabel>
-              <div className="flex flex-wrap gap-1">
-                {fm.tags.map((t) => <Badge key={t} variant="outline">{t}</Badge>)}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="font-mono">{exp.id}</CardTitle>
+                {exp.hasReadme ? (
+                  <StatusEdit
+                    project={project}
+                    id={exp.id}
+                    status={fm.status}
+                    stale={exp.stale}
+                    expectedMtime={exp.readmeMtime}
+                  />
+                ) : (
+                  <WarningBadge>no README — status edit unavailable</WarningBadge>
+                )}
+                {exp.parseErrors.length > 0 && (
+                  <Badge variant="destructive">{exp.parseErrors.length} parse errors</Badge>
+                )}
+                {exp.parseWarnings.length > 0 && (
+                  <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <TerminalButton runId={exp.id} projectName={exp.project} />
+                  <AskClaudeCodeButton experiment={exp} />
+                  <AddNoteButton project={exp.project} runId={exp.id} />
+                  {exp.hasReadme && exp.path && <EditReadmeButton path={exp.path} runId={exp.id} />}
+                </div>
               </div>
-            </div>
-          )}
-          {fm.hypotheses.length > 0 && (
-            <div className="col-span-2 md:col-span-4">
-              <FieldLabel>hypotheses</FieldLabel>
-              <div className="flex flex-wrap gap-1">
-                {fm.hypotheses.map((h) => (
-                  <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
-                    <Badge>{h}</Badge>
-                  </Link>
-                ))}
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+              <Field label="name" value={fm.name} />
+              <Field label="project" value={exp.project} />
+              {fm.project !== '' && fm.project !== exp.project && (
+                <Field label="sub-project" value={fm.project} />
+              )}
+              <Field label="created">
+                <TimestampLocal value={fm.createdAt} variant="long" />
+              </Field>
+              <Field label="finished">
+                <TimestampLocal value={fm.finishedAt} variant="long" />
+              </Field>
+              <Field label="host" value={fm.host ?? '—'} />
+              <Field label="pid" value={fm.pid !== null ? String(fm.pid) : '—'} />
+              <Field label="gpus" value={fm.gpus.length > 0 ? fm.gpus.join(', ') : '—'} />
+              <Field label="entry" value={fm.entry || '—'} />
+              <div className="col-span-2 md:col-span-4 break-all">
+                <FieldLabel>command</FieldLabel>
+                <code className="block rounded bg-muted px-2 py-1 font-mono text-xs">
+                  {fm.command || '—'}
+                </code>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              {fm.wandb && (
+                <div className="col-span-2 md:col-span-4">
+                  <FieldLabel>wandb</FieldLabel>
+                  <a
+                    className="text-xs text-primary underline-offset-4 hover:underline"
+                    href={fm.wandb}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {fm.wandb}
+                  </a>
+                </div>
+              )}
+              {fm.tags.length > 0 && (
+                <div className="col-span-2 md:col-span-4">
+                  <FieldLabel>tags</FieldLabel>
+                  <div className="flex flex-wrap gap-1">
+                    {fm.tags.map((t) => (
+                      <Badge key={t} variant="outline">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {fm.hypotheses.length > 0 && (
+                <div className="col-span-2 md:col-span-4">
+                  <FieldLabel>hypotheses</FieldLabel>
+                  <div className="flex flex-wrap gap-1">
+                    {fm.hypotheses.map((h) => (
+                      <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
+                        <Badge>{h}</Badge>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* v5: 4-section canonical for runs. Motivation is optional (rendered
+          {/* v5: 4-section canonical for runs. Motivation is optional (rendered
           only when populated); Method / Conclusion / Caveats are forbidden
           and surface in the warnings banner below if present. */}
-      <DetailParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-      {exp.sections.motivation && (
-        <SectionCard
-          id="motivation"
-          title="Motivation"
-          body={exp.sections.motivation}
-          project={project}
-        />
-      )}
-      <SectionCard id="setup" title="Setup" body={exp.sections.setup} project={project} />
-      <SectionCard id="result" title="Result" body={exp.sections.result} project={project} />
-      {exp.hasReadme && (
-        <WarningsCard
-          runId={exp.id}
-          readmePath={`${exp.path}/README.md`}
-          initialWarnings={exp.warnings}
-          initialMtime={exp.readmeMtime}
-        />
-      )}
-      <ArtifactsCard artifacts={exp.sections.artifacts} expPath={exp.path} />
-      {exp.sections.newHypotheses && (
-        <SectionCard
-          id="new-hypotheses"
-          title="New Hypotheses"
-          body={exp.sections.newHypotheses}
-          highlight
-          project={project}
-        />
-      )}
+          <DetailParseWarningsBanner warnings={exp.parseWarnings ?? []} />
+          {exp.sections.motivation && (
+            <SectionCard
+              id="motivation"
+              title="Motivation"
+              body={exp.sections.motivation}
+              project={project}
+            />
+          )}
+          <SectionCard id="setup" title="Setup" body={exp.sections.setup} project={project} />
+          <SectionCard id="result" title="Result" body={exp.sections.result} project={project} />
+          {exp.hasReadme && (
+            <WarningsCard
+              project={project}
+              runId={exp.id}
+              readmePath={`${exp.path ?? exp.resource ?? exp.id}/README.md`}
+              initialWarnings={exp.warnings}
+              initialMtime={exp.readmeMtime}
+            />
+          )}
+          <ArtifactsCard
+            artifacts={exp.sections.artifacts}
+            expPath={exp.path ?? exp.resource ?? exp.id}
+          />
+          {exp.sections.newHypotheses && (
+            <SectionCard
+              id="new-hypotheses"
+              title="New Hypotheses"
+              body={exp.sections.newHypotheses}
+              highlight
+              project={project}
+            />
+          )}
 
-      <Card id="resources">
-        <CardHeader>
-          <CardTitle>Resources</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-xs text-muted-foreground italic">
-            not yet available — GPU/disk monitoring is a P1 feature
-          </div>
-        </CardContent>
-      </Card>
+          <Card id="resources">
+            <CardHeader>
+              <CardTitle>Resources</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs text-muted-foreground italic">
+                not yet available — GPU/disk monitoring is a P1 feature
+              </div>
+            </CardContent>
+          </Card>
 
-      {exp.hasReadme && <LogViewer expPath={exp.path} />}
+          {exp.hasReadme && exp.path && <LogViewer project={project} expPath={exp.path} />}
         </div>
       </div>
-      {isDesktop && exp.hasReadme && (
-        <ReadmeSidePanel
-          path={`${exp.path}/README.md`}
-          runId={exp.id}
-        />
+      {isDesktop && exp.hasReadme && exp.path && (
+        <ReadmeSidePanel path={`${exp.path}/README.md`} runId={exp.id} />
       )}
     </div>
   )
@@ -210,8 +226,11 @@ function DetailParseWarningsBanner({
       </CardHeader>
       <CardContent>
         <ul className="list-disc space-y-1 pl-5 text-xs text-amber-950">
-          {relevant.map((w, i) => (
-            <li key={i} className={w.severity === 'info' ? 'opacity-70' : ''}>
+          {relevant.map((w) => (
+            <li
+              key={`${w.severity ?? 'warning'}:${w.message}`}
+              className={w.severity === 'info' ? 'opacity-70' : ''}
+            >
               {w.message}
             </li>
           ))}
@@ -282,12 +301,18 @@ function ArtifactsCard({
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
-  )
+  return <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
 }
 
-function Field({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
+function Field({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value?: string
+  children?: React.ReactNode
+}) {
   return (
     <div className="flex flex-col gap-1">
       <FieldLabel>{label}</FieldLabel>

@@ -1,64 +1,53 @@
-import { readFile, stat } from 'node:fs/promises'
-import { parseResultsYaml } from '@memon/core'
+import { BackendExperimentResultsResponseSchema, ProjectNameSchema } from '@memon/core'
+import { BackendProjectServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../../lib/runtime'
+import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const runtime = await getRuntime()
+  const { id } = await params
+  const projects = new URL(request.url).searchParams.getAll('project')
+  const project = projects.length === 1 ? ProjectNameSchema.safeParse(projects[0]) : null
+  if (!project?.success) {
+    return NextResponse.json(
+      { error: { code: 'BAD_REQUEST', message: 'exactly one project selector is required' } },
+      { status: 400 },
+    )
+  }
   try {
-    const { id } = await params
-    const runtime = await getRuntime()
-    const experiment = runtime.experiments.get(id)
-    if (!experiment) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
-        { status: 404 },
-      )
-    }
-
-    const managedResults = experiment.documents?.results
-    if (!managedResults?.exists) {
-      return NextResponse.json(
-        { error: { code: 'RESULTS_NOT_FOUND', message: 'results.yaml does not exist' } },
-        { status: 404 },
-      )
-    }
-
-    const [raw, fileStat] = await Promise.all([
-      readFile(managedResults.path, 'utf8'),
-      stat(managedResults.path),
-    ])
-    const parsed = parseResultsYaml(raw, managedResults.path)
-    const updatedAt = fileStat.mtime.toISOString()
-    if (!parsed.data) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'INVALID_RESULTS',
-            message: parsed.parseErrors[0]?.message ?? 'results.yaml is invalid',
-          },
-          diagnostics: parsed.parseErrors,
-          updatedAt,
-        },
-        { status: 422 },
-      )
-    }
-
-    return NextResponse.json({
-      document: parsed.data,
-      updatedAt,
-      warnings: parsed.parseWarnings,
-    })
+    return NextResponse.json(
+      BackendExperimentResultsResponseSchema.parse(
+        await standaloneServices(runtime.config).projects.getExperimentResults(project.data, id),
+      ),
+    )
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (error instanceof BackendProjectServiceError) {
+      if (error.code === 'INVALID_RESOURCE') {
+        const details = error.details ?? {}
+        return NextResponse.json(
+          {
+            error: {
+              code: 'INVALID_RESULTS',
+              message:
+                (details.diagnostics as Array<{ message?: string }> | undefined)?.[0]?.message ??
+                'results.yaml is invalid',
+            },
+            diagnostics: details.diagnostics ?? [],
+            updatedAt: details.updatedAt ?? null,
+          },
+          { status: 422 },
+        )
+      }
       return NextResponse.json(
         { error: { code: 'RESULTS_NOT_FOUND', message: 'results.yaml does not exist' } },
         { status: 404 },
       )
     }
     return NextResponse.json(
-      { error: { code: 'RESULTS_READ_FAILED', message: (error as Error).message } },
+      { error: { code: 'RESULTS_READ_FAILED', message: 'results.yaml could not be read' } },
       { status: 500 },
     )
   }

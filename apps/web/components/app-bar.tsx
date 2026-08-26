@@ -2,12 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { PROJECT_SCOPE_SLUG } from '../lib/api'
-import { Button } from './ui/button'
-import { SidebarTrigger } from './ui/sidebar'
+import { PROJECT_SCOPE_SLUG, type ProjectTarget, projectWebPath } from '../lib/api'
+import { ManageSharesDialog } from './manage-shares-dialog'
 import { OpenWithButton } from './open-with-button'
 import { TabBadge, type TabKind } from './tab-badge'
-import { ManageSharesDialog } from './manage-shares-dialog'
+import { Button } from './ui/button'
+import { SidebarTrigger } from './ui/sidebar'
 
 interface TabSpec {
   name: string
@@ -16,9 +16,9 @@ interface TabSpec {
   matches: (p: string) => boolean
 }
 
-export function AppBar({ project }: { project: string }) {
+export function AppBar({ project }: { project: ProjectTarget }) {
   const pathname = usePathname() ?? ''
-  const projectBase = `/p/${encodeURIComponent(project)}`
+  const projectBase = projectWebPath(project)
   const tabs: TabSpec[] = [
     {
       name: 'Experiments',
@@ -99,16 +99,11 @@ export function AppBar({ project }: { project: string }) {
         overflow strategy, so no overflow utility is needed.
       */}
       <div className="flex flex-1 flex-wrap items-center gap-1 min-w-0">
-        <nav className="contents" role="tablist">
+        <div className="contents" role="tablist">
           {tabs.map((t) => {
             const isActive = t.matches(pathname)
             return (
-              <Button
-                key={t.href}
-                asChild
-                size="sm"
-                variant={isActive ? 'default' : 'ghost'}
-              >
+              <Button key={t.href} asChild size="sm" variant={isActive ? 'default' : 'ghost'}>
                 <Link href={t.href} role="tab" aria-selected={isActive}>
                   <span>{t.name}</span>
                   <TabBadge kind={t.kind} project={project} active={isActive} />
@@ -116,7 +111,7 @@ export function AppBar({ project }: { project: string }) {
               </Button>
             )
           })}
-        </nav>
+        </div>
         {/* Right-side controls grouped as one non-splittable unit; ml-auto
             pushes the group to the right edge of its flex line. */}
         <div className="ml-auto flex items-center gap-1">

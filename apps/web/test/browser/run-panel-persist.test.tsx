@@ -21,7 +21,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
     fetchExperiment: vi.fn(),
     fetchRunFiles: vi.fn().mockResolvedValue({
       truncated: false,
-      tree: { type: 'dir' as const, path: '.', children: [] },
+      tree: { type: 'dir' as const, resource: '.', children: [] },
     }),
   }
 })

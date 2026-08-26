@@ -1,31 +1,20 @@
-// POST /api/terminal/install — fetch ttyd from upstream releases (no root).
+// POST /api/terminal/install — standalone adapter over verified SHA256SUMS installation.
 
 import { NextResponse } from 'next/server'
-import { TtydInstallError, installTtyd } from '../../../../lib/terminal/binary'
+import { getRuntime } from '../../../../lib/runtime'
+import {
+  standaloneTerminal,
+  standaloneTerminalError,
+} from '../../../../lib/server/standalone-terminal'
 
 export const dynamic = 'force-dynamic'
 
-const STATUS_BY_CODE: Readonly<Record<TtydInstallError['code'], number>> = {
-  DOWNLOAD_FAILED: 502,
-  INTEGRITY_FAILED: 502,
-  NOT_AUTOFETCHABLE: 501,
-  EXEC_FAILED: 500,
-}
-
 export async function POST() {
+  const runtime = await getRuntime()
+  const service = standaloneTerminal(runtime.config)
   try {
-    const result = await installTtyd()
-    return NextResponse.json(result)
-  } catch (err) {
-    if (err instanceof TtydInstallError) {
-      return NextResponse.json(
-        { ok: false, error: { code: err.code, message: err.message } },
-        { status: STATUS_BY_CODE[err.code] },
-      )
-    }
-    return NextResponse.json(
-      { ok: false, error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json(await service.install())
+  } catch (error) {
+    return standaloneTerminalError(error)
   }
 }

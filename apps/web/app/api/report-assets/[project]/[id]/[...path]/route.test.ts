@@ -38,7 +38,10 @@ beforeAll(async () => {
   await fs.symlink(join(root, 'outside.json'), join(bundle, 'leak.json'))
   await fs.symlink(join(root, 'outside.json'), join(nestedView, 'leak.json'))
   vi.mocked(getRuntime).mockResolvedValue({
-    reportsDir: (project: string) => (project === 'research' ? reportsDir : null),
+    config: {
+      projects: [{ name: 'research', root, include: [], exclude: [] }],
+      slurm: { totalNodes: -1 },
+    },
   } as never)
 })
 

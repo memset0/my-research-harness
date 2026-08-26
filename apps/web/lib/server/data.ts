@@ -10,14 +10,12 @@
 import 'server-only'
 
 import {
+  type CodeReviewSummary,
+  type DigestSummary,
   deriveCompletion,
   isStaleRunning,
   parseCodeReview,
-  type CodeReviewSummary,
-  type DigestSummary,
 } from '@memon/core'
-import { getRuntime } from '../runtime'
-import { discoverReports, findReport, readReport, type WebReportSummary } from './reports'
 import type {
   FullCodeReview,
   FullDigest,
@@ -26,11 +24,16 @@ import type {
   IndexedRun,
   ProjectSummary,
 } from '../api'
+import { getRuntime } from '../runtime'
+import { discoverReports, findReport, readReport, type WebReportSummary } from './reports'
 
 export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }> {
   const rt = await getRuntime()
   return {
     projects: rt.config.projects.map((p) => ({
+      mode: 'standalone' as const,
+      host: null,
+      project: p.name,
       name: p.name,
       root: p.root,
       exclude: p.exclude,
@@ -38,9 +41,7 @@ export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }>
   }
 }
 
-export async function getExperimentsData(
-  project?: string,
-): Promise<{ experiments: IndexedRun[] }> {
+export async function getExperimentsData(project?: string): Promise<{ experiments: IndexedRun[] }> {
   const rt = await getRuntime()
   const experiments = rt.index.list({ project })
   return {
@@ -171,7 +172,7 @@ export async function getCodeReview(project: string, id: string): Promise<FullCo
   if (!path) return null
   const fresh = await rt.codeReviewsCache.getContent(path)
   if (!fresh) return null
-  let parsed
+  let parsed: ReturnType<typeof parseCodeReview>
   try {
     parsed = parseCodeReview(fresh.content)
   } catch {
@@ -195,13 +196,16 @@ export async function getDigestsList(project: string): Promise<{ digests: Digest
   const rt = await getRuntime()
   const dir = rt.digestsDir(project)
   if (!dir) return { digests: [] }
-  const digests = rt.digestsCache.getList(dir).slice().sort((a, b) => {
-    if (a.date > b.date) return -1
-    if (a.date < b.date) return 1
-    if (a.id > b.id) return -1
-    if (a.id < b.id) return 1
-    return 0
-  })
+  const digests = rt.digestsCache
+    .getList(dir)
+    .slice()
+    .sort((a, b) => {
+      if (a.date > b.date) return -1
+      if (a.date < b.date) return 1
+      if (a.id > b.id) return -1
+      if (a.id < b.id) return 1
+      return 0
+    })
   return { digests }
 }
 

@@ -89,7 +89,7 @@ async function readWithLock(
   expectedMtime?: number,
   expectedHash?: string,
 ): Promise<LockState> {
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(path)
   } catch {

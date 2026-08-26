@@ -5,15 +5,14 @@
 // main-repo commit's submodule-pointer entry to review what changed inside
 // the submodule between the two pinned SHAs.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { readGitRange } from '@memon/core'
-import { getRuntime } from '../../../../../lib/runtime'
-import { resolveSubmoduleCwd } from '../../../../../lib/server/resolve-submodule-cwd'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { BackendGitRangeResponseSchema } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
+import {
+  gitServiceError,
+  standaloneGitContext,
+} from '../../../../../lib/server/standalone-git-route'
 
 export const dynamic = 'force-dynamic'
-
-const SAFE_REF_REGEX = /^[A-Za-z0-9_\-/.~^]+$/
 
 interface RouteParams {
   params: Promise<{ project: string }>
@@ -25,49 +24,25 @@ function badRequest(message: string): NextResponse {
 
 export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
   const { project: rawProject } = await ctx.params
-  const project = decodeURIComponent(rawProject)
-
-  const rt = await getRuntime()
-  const entry = rt.config.projects.find((p) => p.name === project)
-  if (!entry) {
-    return NextResponse.json(
-      { error: { message: 'project not found' } },
-      { status: 404 },
-    )
-  }
-
-  const { role, scopeProjects } = readIdentityFromRequest(req)
-  if (role === 'viewer' && !scopeProjects.has(project)) {
-    return NextResponse.json(
-      { error: { message: 'forbidden' } },
-      { status: 403 },
-    )
-  }
+  const context = await standaloneGitContext(req, rawProject)
+  if (context instanceof NextResponse) return context
 
   const url = new URL(req.url)
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')
   if (!from) return badRequest('missing from')
   if (!to) return badRequest('missing to')
-  if (from.length > 200 || !SAFE_REF_REGEX.test(from)) {
-    return badRequest('invalid from')
-  }
-  if (to.length > 200 || !SAFE_REF_REGEX.test(to)) {
-    return badRequest('invalid to')
-  }
-
-  const submoduleParam = url.searchParams.get('submodule')
-  const resolved = await resolveSubmoduleCwd(entry.root, submoduleParam)
-  if (!resolved.ok) {
+  try {
     return NextResponse.json(
-      { error: { message: resolved.message } },
-      { status: resolved.status },
+      BackendGitRangeResponseSchema.parse(
+        await context.git.range(context.project, {
+          from,
+          to,
+          submodule: url.searchParams.get('submodule') ?? undefined,
+        }),
+      ),
     )
+  } catch (error) {
+    return gitServiceError(error)
   }
-
-  const result = await readGitRange(resolved.cwd, { from, to })
-  if (result.enabled) {
-    return NextResponse.json({ ...result, submodule: resolved.submodule })
-  }
-  return NextResponse.json(result)
 }

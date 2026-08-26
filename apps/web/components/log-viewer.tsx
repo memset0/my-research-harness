@@ -1,15 +1,22 @@
 'use client'
 
+import { useQuery } from '@tanstack/react-query'
 import Anser, { type AnserJsonEntry } from 'anser'
 import { ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { fetchLog, fetchLogFiles, type LogFileEntry } from '../lib/api'
+import {
+  fetchLog,
+  fetchLogFiles,
+  type LogFileEntry,
+  logStreamUrl,
+  type ProjectTarget,
+  projectQueryKey,
+} from '../lib/api'
+import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader } from './ui/card'
 import { Input } from './ui/input'
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs'
-import { cn } from '../lib/utils'
 
 const PAGE = 100
 /** Distance (px) from the bottom that still counts as "at the bottom". */
@@ -26,10 +33,24 @@ interface SearchMatch {
   end: number
 }
 
-export function LogViewer({ expPath }: { expPath: string }) {
+function logFileKey(file: LogFileEntry): string {
+  return file.resource ?? file.path ?? file.name
+}
+
+export function LogViewer({
+  project,
+  runResource,
+  expPath,
+}: {
+  project: ProjectTarget
+  runResource?: string
+  expPath?: string
+}) {
+  const selector = runResource ?? expPath
   const { data: filesData } = useQuery({
-    queryKey: ['log-files', expPath],
-    queryFn: () => fetchLogFiles(expPath),
+    queryKey: ['log-files', ...projectQueryKey(project), selector],
+    queryFn: () => fetchLogFiles(project, selector!, expPath),
+    enabled: Boolean(selector),
     staleTime: 30_000,
   })
   const files: LogFileEntry[] = filesData?.files ?? []
@@ -38,7 +59,7 @@ export function LogViewer({ expPath }: { expPath: string }) {
 
   useEffect(() => {
     if (selectedPath) return
-    if (files.length > 0) setSelectedPath(files[0]!.path)
+    if (files.length > 0) setSelectedPath(logFileKey(files[0]!))
   }, [files, selectedPath])
 
   if (files.length === 0 && filesData) {
@@ -65,7 +86,7 @@ export function LogViewer({ expPath }: { expPath: string }) {
         <Tabs value={selectedPath} onValueChange={setSelectedPath}>
           <TabsList>
             {files.map((f) => (
-              <TabsTrigger key={f.path} value={f.path} className="font-mono text-xs">
+              <TabsTrigger key={logFileKey(f)} value={logFileKey(f)} className="font-mono text-xs">
                 {f.name}
               </TabsTrigger>
             ))}
@@ -73,7 +94,14 @@ export function LogViewer({ expPath }: { expPath: string }) {
         </Tabs>
       </CardHeader>
       <CardContent className="p-3">
-        <FileViewer key={selectedPath} path={selectedPath} />
+        <FileViewer
+          key={selectedPath}
+          project={project}
+          resource={
+            files.find((file) => logFileKey(file) === selectedPath)?.resource ?? selectedPath
+          }
+          legacyPath={files.find((file) => logFileKey(file) === selectedPath)?.path}
+        />
       </CardContent>
     </Card>
   )
@@ -81,7 +109,15 @@ export function LogViewer({ expPath }: { expPath: string }) {
 
 // ---------- Single-file viewer (one tab) ----------
 
-function FileViewer({ path }: { path: string }) {
+function FileViewer({
+  project,
+  resource,
+  legacyPath,
+}: {
+  project: ProjectTarget
+  resource: string
+  legacyPath?: string
+}) {
   const [lines, setLines] = useState<Line[]>([])
   const [totalLines, setTotalLines] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -102,7 +138,7 @@ function FileViewer({ path }: { path: string }) {
     setLoading(true)
     setError(null)
     try {
-      const r = await fetchLog(path, { count: PAGE })
+      const r = await fetchLog(project, resource, legacyPath, { count: PAGE })
       setLines(r.lines)
       setTotalLines(r.totalLines)
       setPendingNew(0)
@@ -113,7 +149,7 @@ function FileViewer({ path }: { path: string }) {
     } finally {
       setLoading(false)
     }
-  }, [path])
+  }, [legacyPath, project, resource])
 
   useEffect(() => {
     void loadInitial()
@@ -121,8 +157,7 @@ function FileViewer({ path }: { path: string }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const params = new URLSearchParams({ path })
-    const es = new EventSource(`/api/log/stream?${params.toString()}`)
+    const es = new EventSource(logStreamUrl(project, resource, legacyPath))
     es.addEventListener('ready', (e) => {
       try {
         const data = JSON.parse((e as MessageEvent).data) as { totalLines: number }
@@ -150,15 +185,14 @@ function FileViewer({ path }: { path: string }) {
     return () => {
       es.close()
     }
-  }, [path, loadInitial])
+  }, [legacyPath, loadInitial, project, resource])
 
-  const linesLength = lines.length
   useEffect(() => {
-    if (!follow) return
+    if (!follow || lines.length === 0) return
     const el = containerRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
-  }, [linesLength, follow])
+  }, [lines.length, follow])
 
   const onScroll = useCallback(() => {
     const el = containerRef.current
@@ -181,12 +215,15 @@ function FileViewer({ path }: { path: string }) {
     if (minLine <= 1) return
     const target = Math.max(1, minLine - 1)
     try {
-      const r = await fetchLog(path, { endLine: target, count: PAGE })
+      const r = await fetchLog(project, resource, legacyPath, {
+        endLine: target,
+        count: PAGE,
+      })
       setLines((cur) => [...r.lines, ...cur])
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [lines, path])
+  }, [legacyPath, lines, project, resource])
 
   const jumpToTail = useCallback(() => {
     const el = containerRef.current
@@ -233,23 +270,16 @@ function FileViewer({ path }: { path: string }) {
   )
 
   // ---- line selection + URL hash
-  const setSelectionWithHash = useCallback(
-    (sel: { start: number; end: number } | null) => {
-      setSelection(sel)
-      if (typeof window === 'undefined') return
-      if (!sel) {
-        history.replaceState(null, '', window.location.pathname + window.location.search)
-        return
-      }
-      const hash = sel.start === sel.end ? `#L${sel.start}` : `#L${sel.start}-L${sel.end}`
-      history.replaceState(
-        null,
-        '',
-        window.location.pathname + window.location.search + hash,
-      )
-    },
-    [],
-  )
+  const setSelectionWithHash = useCallback((sel: { start: number; end: number } | null) => {
+    setSelection(sel)
+    if (typeof window === 'undefined') return
+    if (!sel) {
+      history.replaceState(null, '', window.location.pathname + window.location.search)
+      return
+    }
+    const hash = sel.start === sel.end ? `#L${sel.start}` : `#L${sel.start}-L${sel.end}`
+    history.replaceState(null, '', window.location.pathname + window.location.search + hash)
+  }, [])
 
   const onLineNumberClick = (lineNumber: number, shiftKey: boolean) => {
     if (shiftKey && selectAnchor !== null) {
@@ -264,7 +294,7 @@ function FileViewer({ path }: { path: string }) {
 
   // Read URL hash on mount
   useLayoutEffect(() => {
-    if (typeof window === 'undefined') return
+    if (typeof window === 'undefined' || !resource) return
     const hash = window.location.hash
     if (!hash) return
     const m = /^#L(\d+)(?:-L(\d+))?$/.exec(hash)
@@ -273,7 +303,7 @@ function FileViewer({ path }: { path: string }) {
     const b = m[2] ? Number(m[2]) : a
     setSelection({ start: a, end: b })
     setSelectAnchor(a)
-  }, [path])
+  }, [resource])
 
   // After lines load, scroll selection into view (and fetch around it if missing)
   useEffect(() => {
@@ -284,7 +314,10 @@ function FileViewer({ path }: { path: string }) {
       el?.scrollIntoView({ block: 'center' })
       setFollow(false)
     } else if (totalLines !== null && selection.start <= totalLines) {
-      void fetchLog(path, { endLine: selection.end + 50, count: 120 }).then((r) => {
+      void fetchLog(project, resource, legacyPath, {
+        endLine: selection.end + 50,
+        count: 120,
+      }).then((r) => {
         setLines((cur) => {
           const byNum = new Map<number, Line>()
           for (const l of cur) byNum.set(l.lineNumber, l)
@@ -293,8 +326,7 @@ function FileViewer({ path }: { path: string }) {
         })
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection?.start, selection?.end, lines.length === 0])
+  }, [legacyPath, lines, project, resource, selection, totalLines])
 
   return (
     <div className="space-y-2">
@@ -388,9 +420,7 @@ function FileViewer({ path }: { path: string }) {
           )}
           {lines.map((l, i) => {
             const sel =
-              selection !== null &&
-              l.lineNumber >= selection.start &&
-              l.lineNumber <= selection.end
+              selection !== null && l.lineNumber >= selection.start && l.lineNumber <= selection.end
             const lineMatches = matches.filter((m) => m.lineIndex === i)
             return (
               <LogLine

@@ -8,6 +8,8 @@ import {
   fetchHypotheses,
   fetchJournalCount,
   fetchReports,
+  type ProjectTarget,
+  projectQueryKey,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
@@ -44,7 +46,7 @@ export function TabBadge({
   active = false,
 }: {
   kind: TabKind
-  project: string
+  project: ProjectTarget
   active?: boolean
 }) {
   const count = useTabCount(kind, project)
@@ -79,76 +81,27 @@ interface TabCountResult {
   isLoading: boolean
 }
 
-function useTabCount(kind: TabKind, project: string): TabCountResult {
-  switch (kind) {
-    case 'experiments':
-      return useExperimentsCount(project)
-    case 'hypotheses':
-      return useHypothesesCount(project)
-    case 'journal':
-      return useJournalCount(project)
-    case 'reports':
-      return useReportsCount(project)
-    case 'digests':
-      return useDigestsCount(project)
-    case 'code-review':
-      return useCodeReviewsCount(project)
-  }
-}
-
-function useExperimentsCount(project: string): TabCountResult {
-  // The Experiments tab is for v3 exp docs, NOT runs. Use the v3 endpoint
-  // and the canonical v3 query key so this badge shares cache + SSE
-  // invalidations with the project list / detail views.
+function useTabCount(kind: TabKind, project: ProjectTarget): TabCountResult {
+  const cacheKind = kind === 'journal' ? 'journal-count' : kind
   const q = useQuery({
-    queryKey: ['experiments', project],
-    queryFn: () => fetchExperimentDocs(project),
+    queryKey: [cacheKind, ...projectQueryKey(project)],
+    queryFn: async () => {
+      switch (kind) {
+        case 'experiments':
+          return (await fetchExperimentDocs(project)).experiments.length
+        case 'hypotheses':
+          return (await fetchHypotheses(project)).entries.length
+        case 'journal':
+          return (await fetchJournalCount(project)).totalEvents
+        case 'reports':
+          return (await fetchReports(project)).reports.length
+        case 'digests':
+          return (await fetchDigests(project)).digests.length
+        case 'code-review':
+          return (await fetchCodeReviews(project)).codeReviews.length
+      }
+    },
     staleTime: 5_000,
   })
-  return { value: q.data?.experiments.length, isLoading: q.isLoading }
-}
-
-function useHypothesesCount(project: string): TabCountResult {
-  const q = useQuery({
-    queryKey: ['hypotheses', project],
-    queryFn: () => fetchHypotheses(project),
-    staleTime: 5_000,
-  })
-  return { value: q.data?.entries.length, isLoading: q.isLoading }
-}
-
-function useJournalCount(project: string): TabCountResult {
-  const q = useQuery({
-    queryKey: ['journal-count', project],
-    queryFn: () => fetchJournalCount(project),
-    staleTime: 5_000,
-  })
-  return { value: q.data?.totalEvents, isLoading: q.isLoading }
-}
-
-function useReportsCount(project: string): TabCountResult {
-  const q = useQuery({
-    queryKey: ['reports', project],
-    queryFn: () => fetchReports(project),
-    staleTime: 5_000,
-  })
-  return { value: q.data?.reports.length, isLoading: q.isLoading }
-}
-
-function useDigestsCount(project: string): TabCountResult {
-  const q = useQuery({
-    queryKey: ['digests', project],
-    queryFn: () => fetchDigests(project),
-    staleTime: 5_000,
-  })
-  return { value: q.data?.digests.length, isLoading: q.isLoading }
-}
-
-function useCodeReviewsCount(project: string): TabCountResult {
-  const q = useQuery({
-    queryKey: ['code-reviews', project],
-    queryFn: () => fetchCodeReviews(project),
-    staleTime: 5_000,
-  })
-  return { value: q.data?.codeReviews.length, isLoading: q.isLoading }
+  return { value: q.data, isLoading: q.isLoading }
 }

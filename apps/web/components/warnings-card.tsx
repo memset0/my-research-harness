@@ -7,32 +7,28 @@
 // AI may only APPEND `[OPEN]` rows via the CLI / agent path. Resolve, Reopen,
 // and Delete are human-only acts; the controls below are the human path.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import type { ProjectTarget } from '../lib/api'
 import {
   deleteWarningApi,
   fetchWarnings,
   patchWarningApi,
   postWarning,
+  projectQueryKey,
   type WarningRecord,
   type WarningsOpResponse,
 } from '../lib/api'
+import { cn } from '../lib/utils'
+import { SuccessBadge, WarningBadge } from './colored-badge'
+import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from './ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Textarea } from './ui/textarea'
-import { SuccessBadge, WarningBadge } from './colored-badge'
-import { TimestampLocal } from './timestamp'
-import { cn } from '../lib/utils'
 
 // Closed enum mirrored from @memon/core. Kept inline here so client bundles
 // don't pull `@memon/core` JS at runtime (per CLAUDE.md web conventions).
@@ -89,6 +85,7 @@ function clearDraft(key: string): void {
 }
 
 export interface WarningsCardProps {
+  project: ProjectTarget
   runId: string
   readmePath: string
   /** Initial warnings + mtime + hash from the SSR fetch. */
@@ -97,6 +94,7 @@ export interface WarningsCardProps {
 }
 
 export function WarningsCard({
+  project,
   runId,
   readmePath,
   initialWarnings,
@@ -109,30 +107,30 @@ export function WarningsCard({
 
   const refetch = useCallback(async () => {
     try {
-      const r = await fetchWarnings(runId)
+      const r = await fetchWarnings(project, runId)
       setWarnings(r.warnings)
       setMtime(r.mtime)
       setHash(r.hash)
     } catch {
       /* swallow — invalidating the experiment query below will trigger a refresh */
     }
-  }, [runId])
+  }, [project, runId])
 
   const onMutated = useCallback(
     (out: WarningsOpResponse) => {
       setWarnings(out.warnings)
       setMtime(out.mtime)
       setHash(out.hash)
-      qc.invalidateQueries({ queryKey: ['run', runId] })
+      qc.invalidateQueries({ queryKey: ['run', ...projectQueryKey(project), runId] })
     },
-    [runId, qc],
+    [project, runId, qc],
   )
 
   const handleConflict = useCallback(async () => {
     toast.error('Warnings: someone else changed this README — refreshing')
     await refetch()
-    qc.invalidateQueries({ queryKey: ['run', runId] })
-  }, [runId, qc, refetch])
+    qc.invalidateQueries({ queryKey: ['run', ...projectQueryKey(project), runId] })
+  }, [project, runId, qc, refetch])
 
   const openCount = warnings.filter((w) => w.status === 'OPEN').length
   const resolvedCount = warnings.length - openCount
@@ -172,6 +170,7 @@ export function WarningsCard({
               <tbody>
                 {warnings.map((w) => (
                   <WarningRow
+                    project={project}
                     key={w.rowId}
                     w={w}
                     runId={runId}
@@ -187,6 +186,7 @@ export function WarningsCard({
           </div>
         )}
         <AddWarningForm
+          project={project}
           runId={runId}
           readmePath={readmePath}
           mtime={mtime}
@@ -200,6 +200,7 @@ export function WarningsCard({
 }
 
 interface RowProps {
+  project: ProjectTarget
   w: WarningRecord
   runId: string
   readmePath: string
@@ -209,7 +210,16 @@ interface RowProps {
   onConflict: () => Promise<void>
 }
 
-function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }: RowProps) {
+function WarningRow({
+  project,
+  w,
+  runId,
+  readmePath,
+  mtime,
+  hash,
+  onMutated,
+  onConflict,
+}: RowProps) {
   const [editingNote, setEditingNote] = useState(false)
   const draftKey = `${NOTE_DRAFT_PREFIX}${readmePath}:${w.rowId}:${mtime}`
   const [note, setNote] = useState<string>(() => loadDraft<string>(draftKey) ?? w.note ?? '')
@@ -235,7 +245,7 @@ function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }
       }
       setSaving(true)
       try {
-        const out = await patchWarningApi(runId, w.rowId, {
+        const out = await patchWarningApi(project, runId, w.rowId, {
           op: 'resolve',
           note: text,
           expectedMtime: mtime,
@@ -255,13 +265,13 @@ function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }
         setSaving(false)
       }
     },
-    [draftKey, runId, hash, mtime, onConflict, onMutated, w.rowId],
+    [draftKey, project, runId, hash, mtime, onConflict, onMutated, w.rowId],
   )
 
   const submitReopen = useCallback(async () => {
     setSaving(true)
     try {
-      const out = await patchWarningApi(runId, w.rowId, {
+      const out = await patchWarningApi(project, runId, w.rowId, {
         op: 'reopen',
         expectedMtime: mtime,
         expectedHash: hash,
@@ -277,12 +287,12 @@ function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }
     } finally {
       setSaving(false)
     }
-  }, [runId, hash, mtime, onConflict, onMutated, w.rowId])
+  }, [project, runId, hash, mtime, onConflict, onMutated, w.rowId])
 
   const submitDelete = useCallback(async () => {
     setSaving(true)
     try {
-      const out = await deleteWarningApi(runId, w.rowId, {
+      const out = await deleteWarningApi(project, runId, w.rowId, {
         expectedMtime: mtime,
         expectedHash: hash,
       })
@@ -298,10 +308,12 @@ function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }
       setSaving(false)
       setConfirmDelete(false)
     }
-  }, [runId, hash, mtime, onConflict, onMutated, w.rowId])
+  }, [project, runId, hash, mtime, onConflict, onMutated, w.rowId])
 
   return (
-    <tr className={cn('align-top border-b last:border-b-0', w.status === 'RESOLVED' && 'opacity-70')}>
+    <tr
+      className={cn('align-top border-b last:border-b-0', w.status === 'RESOLVED' && 'opacity-70')}
+    >
       <td className="py-2 pr-2">
         {w.status === 'OPEN' ? (
           <WarningBadge data-status="open">OPEN</WarningBadge>
@@ -360,13 +372,23 @@ function WarningRow({ w, runId, readmePath, mtime, hash, onMutated, onConflict }
       <td className="py-2 text-right">
         <div className="flex flex-wrap justify-end gap-1">
           {w.status === 'OPEN' && !editingNote && (
-            <Button size="sm" variant="outline" disabled={saving} onClick={() => setEditingNote(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={saving}
+              onClick={() => setEditingNote(true)}
+            >
               Resolve
             </Button>
           )}
           {w.status === 'RESOLVED' && !editingNote && (
             <>
-              <Button size="sm" variant="outline" disabled={saving} onClick={() => setEditingNote(true)}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                onClick={() => setEditingNote(true)}
+              >
                 Edit note
               </Button>
               <Button size="sm" variant="ghost" disabled={saving} onClick={submitReopen}>
@@ -414,9 +436,9 @@ function DeleteConfirm({
       <DialogContent>
         <DialogTitle>Delete this warning?</DialogTitle>
         <DialogDescription>
-          You're about to delete a <span className="font-mono">{category}</span> warning. The full row
-          content is recorded in docs/journal.md as a `[WARNING]` event with `op=delete`, but the row will
-          be removed from the README's Warnings section.
+          You're about to delete a <span className="font-mono">{category}</span> warning. The full
+          row content is recorded in docs/journal.md as a `[WARNING]` event with `op=delete`, but
+          the row will be removed from the README's Warnings section.
         </DialogDescription>
         <div className="rounded border bg-muted/30 px-3 py-2 text-xs">{message}</div>
         <DialogFooter>
@@ -433,6 +455,7 @@ function DeleteConfirm({
 }
 
 interface AddFormProps {
+  project: ProjectTarget
   runId: string
   readmePath: string
   mtime: number
@@ -446,7 +469,15 @@ interface AddDraft {
   message: string
 }
 
-function AddWarningForm({ runId, readmePath, mtime, hash, onMutated, onConflict }: AddFormProps) {
+function AddWarningForm({
+  project,
+  runId,
+  readmePath,
+  mtime,
+  hash,
+  onMutated,
+  onConflict,
+}: AddFormProps) {
   const draftKey = `${ADD_DRAFT_PREFIX}${readmePath}:${mtime}`
   const initial = loadDraft<AddDraft>(draftKey)
   const [open, setOpen] = useState(initial !== null)
@@ -468,7 +499,7 @@ function AddWarningForm({ runId, readmePath, mtime, hash, onMutated, onConflict 
     if (!message.trim()) return
     setSubmitting(true)
     try {
-      const out = await postWarning(runId, {
+      const out = await postWarning(project, runId, {
         category,
         message,
         expectedMtime: mtime,
@@ -489,19 +520,27 @@ function AddWarningForm({ runId, readmePath, mtime, hash, onMutated, onConflict 
     } finally {
       setSubmitting(false)
     }
-  }, [category, draftKey, runId, hash, message, mtime, onConflict, onMutated])
+  }, [category, draftKey, project, runId, hash, message, mtime, onConflict, onMutated])
 
   if (!open) {
     return (
       <div className="mt-3 flex">
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)} data-slot="warnings-add-button">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setOpen(true)}
+          data-slot="warnings-add-button"
+        >
           + Add warning
         </Button>
       </div>
     )
   }
   return (
-    <div className="mt-3 flex flex-col gap-2 rounded border bg-muted/20 p-3" data-slot="warnings-add-form">
+    <div
+      className="mt-3 flex flex-col gap-2 rounded border bg-muted/20 p-3"
+      data-slot="warnings-add-form"
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">category</span>
         <Select value={category} onValueChange={(v) => setCategory(v)}>
@@ -545,4 +584,3 @@ function AddWarningForm({ runId, readmePath, mtime, hash, onMutated, onConflict 
     </div>
   )
 }
-

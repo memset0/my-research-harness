@@ -4,7 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowUpRight, ChevronDown, PanelRight, PanelRightClose, Rows3, X } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
-import { fetchReport, fetchReports } from '../lib/api'
+import {
+  fetchReport,
+  fetchReports,
+  type ProjectTarget,
+  projectQueryKey,
+  projectWebPath,
+} from '../lib/api'
 import { cn } from '../lib/utils'
 import { RenderedItem, reportResourceBaseUrl } from './inbox-shell'
 import { ListSkeleton } from './skeletons'
@@ -21,7 +27,7 @@ export function ReportPane({
   onSurfaceChange,
   onClose,
 }: {
-  project: string
+  project: ProjectTarget
   reportId: string
   surface: ReportPaneSurface
   onSwitch: (reportId: string) => void
@@ -29,12 +35,12 @@ export function ReportPane({
   onClose: () => void
 }) {
   const list = useQuery({
-    queryKey: ['reports', project],
+    queryKey: ['reports', ...projectQueryKey(project)],
     queryFn: () => fetchReports(project),
     staleTime: 5_000,
   })
   const detail = useQuery({
-    queryKey: ['report', project, reportId],
+    queryKey: ['report', ...projectQueryKey(project), reportId],
     queryFn: () => fetchReport(project, reportId),
   })
   const reports = list.data?.reports ?? []
@@ -87,7 +93,7 @@ export function ReportPane({
           )}
           <Button variant="ghost" size="icon-sm" asChild title="Open full report">
             <Link
-              href={`/p/${encodeURIComponent(project)}/reports/${encodeURIComponent(reportId)}`}
+              href={projectWebPath(project, `/reports/${encodeURIComponent(reportId)}`)}
               aria-label="Open full report"
             >
               <ArrowUpRight className="size-3.5" />
@@ -121,7 +127,7 @@ export function ReportPane({
               kind="reports"
               content={detail.data.content}
               project={project}
-              sourceDocumentPath={detail.data.path}
+              sourceDocumentPath={detail.data.path ?? detail.data.resource}
               sourceSurface="side-report"
               sourceReportId={reportId}
               resourceBaseUrl={
@@ -192,7 +198,7 @@ function ReportPaneSwitcher({
               {reports.map((report) => {
                 const selected = report.id === reportId
                 return (
-                  <li key={`${report.id}:${report.path}`}>
+                  <li key={`${report.id}:${report.path ?? ''}`}>
                     <button
                       type="button"
                       aria-current={selected ? 'page' : undefined}

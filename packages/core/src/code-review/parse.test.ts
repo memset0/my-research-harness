@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  parseCodeReview,
-  deriveCompletion,
-  toggleCommitReviewed,
-  toggleTodoDone,
-} from './parse.js'
+import { parseCodeReview, deriveCompletion, toggleCommitReviewed, toggleTodoDone } from './parse.js'
 import { CODE_REVIEW_FILENAME_REGEX } from '../types.js'
 
 const DOC = `---
@@ -106,8 +101,12 @@ describe('deriveCompletion', () => {
 
   it('all checked → complete', () => {
     const { frontmatter } = parseCodeReview(DOC)
-    frontmatter.commits.forEach((c) => (c.reviewed = true))
-    frontmatter.reviewTodolist.forEach((t) => (t.done = true))
+    frontmatter.commits.forEach((commit) => {
+      commit.reviewed = true
+    })
+    frontmatter.reviewTodolist.forEach((item) => {
+      item.done = true
+    })
     expect(deriveCompletion(frontmatter).isComplete).toBe(true)
   })
 

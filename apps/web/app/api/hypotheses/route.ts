@@ -1,46 +1,43 @@
-// GET /api/hypotheses?project=NAME
-//
-// Returns the parsed docs/hypotheses.md for the given project. Reads exclusively
-// from the runtime's HypothesesCache (populated at warmup; refreshed on
-// mtime change via the shared Poller). No fs.readFile in the hot path.
-
+import { join } from 'node:path'
+import { BackendHypothesesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-const EMPTY = {
-  legendBlock: null,
-  summaryTableBlock: null,
-  entries: [],
-  parseErrors: [],
-  parseWarnings: [],
-} as const
-
-export async function GET(req: NextRequest) {
-  try {
-    const rt = await getRuntime()
-    const url = new URL(req.url)
-    const projectName = url.searchParams.get('project')
-    if (!projectName) {
+export async function GET(request: NextRequest) {
+  const runtime = await getRuntime()
+  const project = new URL(request.url).searchParams.get('project')
+  if (!runtime.config) {
+    if (!project) {
       return NextResponse.json(
         { error: { code: 'BAD_REQUEST', message: 'project query parameter is required' } },
         { status: 400 },
       )
     }
-    const path = rt.hypothesesPath(projectName)
-    if (!path) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: `project "${projectName}" not configured` } },
-        { status: 404 },
-      )
-    }
-    const entry = rt.hypothesesCache.get(path)
-    if (!entry || entry.value === null) {
-      return NextResponse.json({ path, ...EMPTY })
-    }
-    return NextResponse.json({ path, ...entry.value })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+    const path = runtime.hypothesesPath(project)
+    if (!path) return NextResponse.json({ error: { code: 'NOT_FOUND' } }, { status: 404 })
+    const value = runtime.hypothesesCache.get(path)?.value
+    return NextResponse.json({
+      path,
+      legendBlock: null,
+      summaryTableBlock: null,
+      entries: [],
+      parseErrors: [],
+      parseWarnings: [],
+      ...(value ?? {}),
+    })
+  }
+  const entry = runtime.config.projects.find((candidate) => candidate.name === project)
+  if (!project || !entry)
+    return NextResponse.json({ error: { message: 'project not found' } }, { status: 404 })
+  try {
+    const result = BackendHypothesesResponseSchema.parse(
+      await standaloneServices(runtime.config).projects.getHypotheses(project),
+    )
+    return NextResponse.json({ path: join(entry.root, 'docs', 'hypotheses.md'), ...result })
+  } catch {
+    return NextResponse.json({ error: { message: 'hypotheses read failed' } }, { status: 500 })
   }
 }

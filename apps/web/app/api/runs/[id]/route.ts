@@ -1,46 +1,30 @@
+import { BackendRunResponseSchema, BackendRunsResponseSchema } from '@memon/core'
 import { NextResponse } from 'next/server'
-import { isStaleRunning } from '@memon/core'
 import { getRuntime } from '../../../../lib/runtime'
+import { standaloneRun } from '../../../../lib/server/standalone-dto'
+import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  try {
-    const rt = await getRuntime()
-    const { id } = await ctx.params
-    const exp = rt.index.get(id)
-    if (!exp) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
-        { status: 404 },
-      )
-    }
-
-    // User attention — reset backoff so subsequent polls are immediate
-    rt.pokeById(id)
-
-    return NextResponse.json({
-      id: exp.id,
-      project: exp.project,
-      path: exp.path,
-      mtime: exp.mtime,
-      readmeMtime: exp.readmeMtime,
-      hasReadme: exp.hasReadme,
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warnings: exp.warnings,
-      warningsRaw: exp.warningsRaw,
-      body: exp.body,
-      parseErrors: exp.parseErrors,
-      parseWarnings: exp.parseWarnings,
-      stale: isStaleRunning(exp),
-      // Resources hook: returns null in MVP, slot for future GPU/disk monitor
-      resources: null,
-    })
-  } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const runtime = await getRuntime()
+  const id = (await context.params).id
+  const requestedProject = new URL(request.url).searchParams.get('project')
+  const services = standaloneServices(runtime.config)
+  const projects = requestedProject
+    ? runtime.config.projects.filter((project) => project.name === requestedProject)
+    : runtime.config.projects
+  for (const project of projects) {
+    const exists = BackendRunsResponseSchema.parse(
+      await services.projects.listRuns(project.name),
+    ).runs.some((run) => run.id === id)
+    if (!exists) continue
+    const run = BackendRunResponseSchema.parse(await services.projects.getRun(project.name, id))
+    runtime.pokeById(id)
+    return NextResponse.json(standaloneRun(runtime.config, run))
   }
+  return NextResponse.json(
+    { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
+    { status: 404 },
+  )
 }

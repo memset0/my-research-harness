@@ -12,6 +12,7 @@
 // "cookie not present" by callers).
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { HostIdSchema, ProjectNameSchema } from '@memon/core'
 
 // ----- Canonical JSON (sorted keys, compact) -----
 
@@ -88,7 +89,10 @@ export function signCookie(payload: unknown, secret: string): string {
  * failure (no envelope / wrong base64 / wrong signature / missing keys).
  * Safe to feed arbitrary attacker-controlled input.
  */
-export function verifyCookie<T = unknown>(cookieValue: string | undefined | null, secret: string): T | null {
+export function verifyCookie<T = unknown>(
+  cookieValue: string | undefined | null,
+  secret: string,
+): T | null {
   if (!cookieValue || !secret) return null
   const envelopeBuf = b64urlDecode(cookieValue)
   if (!envelopeBuf) return null
@@ -134,19 +138,49 @@ export function verifySessionCookie(
   return payload
 }
 
-export interface ShareEntry {
+export interface LegacyShareEntry {
+  project: string
+  token: string
+  host?: never
+}
+
+export interface HostQualifiedShareEntry {
+  host: string
   project: string
   token: string
 }
 
-export interface SharesPayload {
+export type ShareEntry = LegacyShareEntry | HostQualifiedShareEntry
+
+export interface LegacySharesPayload {
   v: 1
-  entries: ShareEntry[]
+  entries: LegacyShareEntry[]
 }
 
+export interface HostQualifiedSharesPayload {
+  v: 2
+  entries: HostQualifiedShareEntry[]
+}
+
+export type SharesPayload = LegacySharesPayload | HostQualifiedSharesPayload
+
 export function signSharesCookie(entries: ShareEntry[], secret: string): string {
-  const payload: SharesPayload = { v: 1, entries }
+  const hasHost = entries.some((entry) => entry.host !== undefined)
+  const hasLegacy = entries.some((entry) => entry.host === undefined)
+  if (hasHost && hasLegacy) {
+    throw new Error('signSharesCookie: legacy and Host-qualified entries cannot be mixed')
+  }
+  const payload: SharesPayload = hasHost
+    ? { v: 2, entries: entries as HostQualifiedShareEntry[] }
+    : { v: 1, entries: entries as LegacyShareEntry[] }
   return signCookie(payload, secret)
+}
+
+export function signHostQualifiedSharesCookie(
+  entries: HostQualifiedShareEntry[],
+  secret: string,
+): string {
+  return signCookie({ v: 2, entries } satisfies HostQualifiedSharesPayload, secret)
 }
 
 export function verifySharesCookie(
@@ -155,10 +189,31 @@ export function verifySharesCookie(
 ): SharesPayload | null {
   const payload = verifyCookie<SharesPayload>(cookieValue, secret)
   if (!payload) return null
-  if (payload.v !== 1) return null
+  if (payload.v !== 1 && payload.v !== 2) return null
   if (!Array.isArray(payload.entries)) return null
-  for (const e of payload.entries) {
-    if (!e || typeof e.project !== 'string' || typeof e.token !== 'string') return null
+  const seen = new Set<string>()
+  for (const entry of payload.entries) {
+    if (
+      !entry ||
+      !ProjectNameSchema.safeParse(entry.project).success ||
+      typeof entry.token !== 'string' ||
+      entry.token.length === 0
+    ) {
+      return null
+    }
+    if (payload.v === 1) {
+      if ('host' in entry) return null
+      if (Object.keys(entry).sort().join(',') !== 'project,token') return null
+      const key = `${entry.project}\0${entry.token}`
+      if (seen.has(key)) return null
+      seen.add(key)
+      continue
+    }
+    if (!('host' in entry) || !HostIdSchema.safeParse(entry.host).success) return null
+    if (Object.keys(entry).sort().join(',') !== 'host,project,token') return null
+    const key = `${entry.host}\0${entry.project}\0${entry.token}`
+    if (seen.has(key)) return null
+    seen.add(key)
   }
   return payload
 }

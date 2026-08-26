@@ -15,6 +15,7 @@ import {
   readRunDir,
   WARNING_CATEGORIES,
   WarningOpError,
+  type ApplyWarningOpResult,
   type Warning,
   type WarningCategory,
   type WarningOp,
@@ -118,7 +119,7 @@ async function readWithLock(
   expectedMtime?: number,
   expectedHash?: string,
 ): Promise<LockState> {
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(readmePath)
   } catch {
@@ -190,14 +191,14 @@ async function refreshIndex(rt: Runtime, expDir: string, projectName: string): P
   }
 }
 
-async function refreshExpDocIndex(
-  rt: Runtime,
-  expId: string,
-  projectName: string,
-): Promise<void> {
+async function refreshExpDocIndex(rt: Runtime, expId: string, projectName: string): Promise<void> {
   try {
     const { readExperimentDoc } = await import('@memon/core')
-    const updated = await readExperimentDoc(rt.config.projects.find((p) => p.name === projectName)!.root, projectName, expId)
+    const updated = await readExperimentDoc(
+      rt.config.projects.find((p) => p.name === projectName)!.root,
+      projectName,
+      expId,
+    )
     if (updated) {
       rt.experiments.set(expId, updated)
       rt.recomputeAnomalies(projectName)
@@ -218,7 +219,7 @@ export interface ListResult {
 
 export async function listWarnings(rt: Runtime, id: string): Promise<ListResult> {
   const { readmePath } = resolveExp(rt, id)
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(readmePath)
   } catch {
@@ -270,7 +271,7 @@ export async function addWarning(rt: Runtime, id: string, input: AddInput): Prom
     created,
     rowId,
   }
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, op)
   } catch (err) {
@@ -308,7 +309,11 @@ export async function patchWarning(
 ): Promise<OpResult> {
   if (input.op === 'resolve') {
     if (!input.note || input.note.trim() === '') {
-      throw new WarningHttpError(400, 'BAD_REQUEST', 'note is required for resolve and must be non-empty')
+      throw new WarningHttpError(
+        400,
+        'BAD_REQUEST',
+        'note is required for resolve and must be non-empty',
+      )
     }
   }
   const r = resolveExp(rt, id)
@@ -318,7 +323,7 @@ export async function patchWarning(
     input.op === 'resolve'
       ? { op: 'resolve', rowId, resolved: ts, note: input.note! }
       : { op: 'reopen', rowId }
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, op)
   } catch (err) {
@@ -349,7 +354,7 @@ export async function deleteWarning(
 ): Promise<OpResult> {
   const r = resolveExp(rt, id)
   const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, { op: 'delete', rowId })
   } catch (err) {
@@ -381,7 +386,7 @@ export async function deleteWarning(
 
 export async function listExpDocWarnings(rt: Runtime, expId: string): Promise<ListResult> {
   const r = resolveExpDoc(rt, expId)
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(r.readmePath)
   } catch {
@@ -428,7 +433,7 @@ export async function addExpDocWarning(
     rowId,
     run: input.run ?? null,
   }
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, op)
   } catch (err) {
@@ -462,7 +467,11 @@ export async function patchExpDocWarning(
 ): Promise<OpResult> {
   if (input.op === 'resolve') {
     if (!input.note || input.note.trim() === '') {
-      throw new WarningHttpError(400, 'BAD_REQUEST', 'note is required for resolve and must be non-empty')
+      throw new WarningHttpError(
+        400,
+        'BAD_REQUEST',
+        'note is required for resolve and must be non-empty',
+      )
     }
   }
   const r = resolveExpDoc(rt, expId)
@@ -472,7 +481,7 @@ export async function patchExpDocWarning(
     input.op === 'resolve'
       ? { op: 'resolve', rowId, resolved: ts, note: input.note! }
       : { op: 'reopen', rowId }
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, op)
   } catch (err) {
@@ -507,7 +516,7 @@ export async function deleteExpDocWarning(
 ): Promise<OpResult> {
   const r = resolveExpDoc(rt, expId)
   const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
-  let result
+  let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, { op: 'delete', rowId })
   } catch (err) {

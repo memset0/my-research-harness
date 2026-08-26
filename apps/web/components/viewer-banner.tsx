@@ -13,7 +13,7 @@ import { useSession } from './session-provider'
 const DISMISS_KEY = 'memon:viewer-banner:dismissed'
 
 export function ViewerBanner() {
-  const { role, scopeProjects } = useSession()
+  const { role, scopeProjects, scopeProjectRefs } = useSession()
   const pathname = usePathname() ?? '/'
   const [dismissed, setDismissed] = useState(false)
 
@@ -29,7 +29,10 @@ export function ViewerBanner() {
   if (role !== 'viewer') return null
   if (dismissed) return null
 
-  const projects = scopeProjects.join(', ') || '(no projects)'
+  const projects =
+    scopeProjectRefs && scopeProjectRefs.length > 0
+      ? scopeProjectRefs.map((scope) => `${scope.host}/${scope.project}`).join(', ')
+      : scopeProjects.join(', ') || '(no projects)'
   const loginHref = `/login?next=${encodeURIComponent(pathname)}`
 
   const onDismiss = () => {

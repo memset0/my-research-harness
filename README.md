@@ -642,13 +642,18 @@ browser session AND every outstanding share-cookie in one shot.
 
 ```json
 {
-  "fs_convention_version": 3,
+  "fs_convention_version": 6,
   "installed_at": "2026-05-04T10:00:00+08:00",
   "last_migrated_at": null
 }
 ```
 
-The version is an integer, **independent from package semver**. Use
+The marker is separate per-Project state, but its supported value is aligned
+with memon's release Major (`MAJOR === FS_CONVENTION_VERSION`). Minor releases
+identify Backend/CLI reinstall boundaries; Patch releases are central-only.
+One active OpenSpec change may span several such releases. Each deployment
+uses a pushed version commit and pins central plus affected nodes to its exact
+commit SHA. Use
 `memon fs-version check --project-root .` to inspect the state without
 modifying anything; this is also what every skill calls in its
 preflight to refuse running on a project the binary doesn't support.

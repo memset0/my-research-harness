@@ -845,46 +845,89 @@ export interface GitStatusConfig {
   intervalMs: number
 }
 
-/** What a node exposes to the hub. Both default to true. */
-export interface NodeCapabilities {
-  tmux: boolean
-  projects: boolean
+/** The active service token plus an optional bounded-rotation successor. */
+export interface BackendServiceTokens {
+  current: string
+  next?: string
 }
 
-export const DEFAULT_NODE_CAPABILITIES: NodeCapabilities = {
-  tmux: true,
-  projects: true,
+export type BackendSupervisorMode = 'supervised' | 'foreground' | 'external'
+
+export interface BackendStartGuards {
+  /** Shell-glob-like hostname patterns evaluated before runtime state is made. */
+  allowedHostnamePatterns: string[]
+  /** Environment-variable names whose presence forbids a daemon start. */
+  forbiddenEnvironment: string[]
 }
 
-/**
- * Present iff config.yml has a `node:` block. Runs this process as a node —
- * the full backend, headless, dialing OUT to a hub. Mutually exclusive with
- * `hub`. See openspec/specs/hub-node-transport.
- */
-export interface NodeConfig {
-  /** Unique, stable, kebab-case identity shown in the hub UI. */
-  name: string
-  /** Per-node bearer token presented at the hub WS handshake. */
-  authToken: string
-  /** `ws://` (localhost) or `wss://` (remote) URL of the hub to dial. */
-  hubUrl: string
-  capabilities: NodeCapabilities
+export interface BackendDaemonConfig {
+  mode: BackendSupervisorMode
+  stateDir: string
+  releaseDir: string
+  runtimeDir: string
+  guards: BackendStartGuards
+  /** Optional safe argv used to restart an externally supervised worker. */
+  restartArgv?: readonly string[]
 }
 
-/**
- * Present iff config.yml has a `hub:` block. Runs this process as a hub — a
- * thin broker that accepts node WS connections and proxies browser requests
- * to them. Mutually exclusive with `node`.
- */
-export interface HubConfig {
-  /** Bind address for the server (default 127.0.0.1). */
+export interface BackendConfig {
+  /** Stable identity that must match the corresponding central Host entry. */
+  hostId: string
+  /** Backend API listener; defaults to loopback. */
   bindAddr: string
-  /** Port the hub serves on (default 3737). */
   bindPort: number
-  /** Public URL the hub is reached at (display / node docs). */
+  /** Candidate migration gate; defaults to normal read-write behavior. */
+  accessMode: 'read_write' | 'read_only'
+  /** One or two accepted Bearer tokens during a bounded rotation. */
+  tokens: BackendServiceTokens
+  daemon: BackendDaemonConfig
+}
+
+export interface CentralUrlTransportConfig {
+  kind: 'url'
+  baseUrl: string
+  /** Required for an explicitly trusted plain-HTTP private/loopback URL. */
+  allowInsecureHttp: boolean
+}
+
+export interface CentralSshTransportConfig {
+  kind: 'ssh'
+  executable: string
+  target: string
+  knownHostsFile: string
+  identityFile?: string
+  localPort: number
+  remoteHost: string
+  remotePort: number
+}
+
+export type CentralBackendTransportConfig = CentralUrlTransportConfig | CentralSshTransportConfig
+
+/** Optional machine-readable pointers; narrative runbooks remain YAML comments. */
+export interface CentralOperationsHints {
+  sshTarget?: string
+  checkoutPath?: string
+  configPath?: string
+  runtimeBootstrap?: readonly string[]
+  supervisorMode?: BackendSupervisorMode
+}
+
+export interface CentralHostConfig {
+  id: string
+  label?: string
+  /** Central presents `current`; `next` exists only during bounded rotation. */
+  tokens: BackendServiceTokens
+  transport: CentralBackendTransportConfig
+  operations?: CentralOperationsHints
+}
+
+export interface CentralConfig {
+  bindAddr: string
+  bindPort: number
   publicUrl?: string
-  /** Registered nodes: name + bearer token accepted at the WS handshake. */
-  nodes: Array<{ name: string; authToken: string }>
+  /** Optional bounded migration target for legacy `/share/<project>/<token>` links. */
+  legacyShareHost?: string
+  hosts: CentralHostConfig[]
 }
 
 export interface Config {
@@ -895,10 +938,10 @@ export interface Config {
   terminal: TerminalConfig
   slurm: SlurmConfig
   gitStatus: GitStatusConfig
-  /** Present iff config.yml has a `hub:` block (hub mode). */
-  hub?: HubConfig
-  /** Present iff config.yml has a `node:` block (node mode). */
-  node?: NodeConfig
+  /** Present iff config.yml selects the central Web/gateway role. */
+  central?: CentralConfig
+  /** Present iff config.yml selects the cluster Backend role. */
+  backend?: BackendConfig
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [

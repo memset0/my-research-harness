@@ -8,11 +8,12 @@
 // server-side throttle — TanStack `staleTime` on the client is sufficient
 // because this is user-triggered, not polled.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { readGitStatusFiles } from '@memon/core'
-import { getRuntime } from '../../../../../../lib/runtime'
-import { resolveSubmoduleCwd } from '../../../../../../lib/server/resolve-submodule-cwd'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { BackendGitStatusFilesResponseSchema } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
+import {
+  gitServiceError,
+  standaloneGitContext,
+} from '../../../../../../lib/server/standalone-git-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,35 +23,16 @@ interface RouteParams {
 
 export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
   const { project: rawProject } = await ctx.params
-  const project = decodeURIComponent(rawProject)
-
-  const rt = await getRuntime()
-  const entry = rt.config.projects.find((p) => p.name === project)
-  if (!entry) {
+  const context = await standaloneGitContext(req, rawProject)
+  if (context instanceof NextResponse) return context
+  try {
+    const submodule = new URL(req.url).searchParams.get('submodule') ?? undefined
     return NextResponse.json(
-      { error: { message: 'project not found' } },
-      { status: 404 },
+      BackendGitStatusFilesResponseSchema.parse(
+        await context.git.statusFiles(context.project, { submodule }),
+      ),
     )
+  } catch (error) {
+    return gitServiceError(error)
   }
-
-  const { role, scopeProjects } = readIdentityFromRequest(req)
-  if (role === 'viewer' && !scopeProjects.has(project)) {
-    return NextResponse.json(
-      { error: { message: 'forbidden' } },
-      { status: 403 },
-    )
-  }
-
-  const url = new URL(req.url)
-  const submodule = url.searchParams.get('submodule')
-  const resolved = await resolveSubmoduleCwd(entry.root, submodule)
-  if (!resolved.ok) {
-    return NextResponse.json(
-      { error: { message: resolved.message } },
-      { status: resolved.status },
-    )
-  }
-
-  const result = await readGitStatusFiles(resolved.cwd)
-  return NextResponse.json(result)
 }

@@ -5,9 +5,11 @@
 // shared Poller). The mtime stored on each summary comes from the cache's
 // per-file dirent stat; we layer it on here from the cache state.
 
+import { BackendReportsResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
-import { discoverReports } from '../../../lib/server/reports'
+import { standaloneReport } from '../../../lib/server/standalone-dto'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,8 +24,7 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       )
     }
-    const dir = rt.reportsDir(projectName)
-    if (!dir) {
+    if (!rt.config.projects.some((project) => project.name === projectName)) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `project "${projectName}" not configured` } },
         { status: 404 },
@@ -32,7 +33,9 @@ export async function GET(req: NextRequest) {
     // Discover on request so directory bundles and their README changes are
     // visible alongside legacy standalone Markdown reports. The old
     // reportsCache intentionally remains file-only for backward compatibility.
-    const reports = (await discoverReports(dir)).map(({ rootPath: _rootPath, ...summary }) => summary)
+    const reports = BackendReportsResponseSchema.parse(
+      await standaloneServices(rt.config).documents.listReports(projectName),
+    ).reports.map((report) => standaloneReport(rt.config, report))
     return NextResponse.json({ reports })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })

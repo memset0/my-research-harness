@@ -1,30 +1,36 @@
+import { BackendRunsResponseSchema, isStaleRunning } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { isStaleRunning } from '@memon/core'
 import { getRuntime } from '../../../lib/runtime'
+import { standaloneRun } from '../../../lib/server/standalone-dto'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const rt = await getRuntime()
-    const url = new URL(req.url)
-    const project = url.searchParams.get('project') ?? undefined
-    const experiments = rt.index.list({ project })
-    return NextResponse.json({
-      experiments: experiments.map((e) => ({
-        id: e.id,
-        project: e.project,
-        path: e.path,
-        mtime: e.mtime,
-        readmeMtime: e.readmeMtime,
-        hasReadme: e.hasReadme,
-        frontMatter: e.frontMatter,
-        parseErrors: e.parseErrors,
-        parseWarnings: e.parseWarnings,
-        stale: isStaleRunning(e),
-      })),
-    })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+    const runtime = await getRuntime()
+    if (!runtime.config) {
+      const project = new URL(request.url).searchParams.get('project') ?? undefined
+      const experiments = runtime.index.list({ project })
+      return NextResponse.json({
+        experiments: experiments.map((run) => ({ ...run, stale: isStaleRunning(run) })),
+      })
+    }
+    const selected = new URL(request.url).searchParams.get('project')
+    const projects = selected
+      ? runtime.config.projects.filter((project) => project.name === selected)
+      : runtime.config.projects
+    const runs = (
+      await Promise.all(
+        projects.map(async (project) =>
+          BackendRunsResponseSchema.parse(
+            await standaloneServices(runtime.config).projects.listRuns(project.name),
+          ).runs.map((run) => standaloneRun(runtime.config, run)),
+        ),
+      )
+    ).flat()
+    return NextResponse.json({ experiments: runs })
+  } catch {
+    return NextResponse.json({ error: { message: 'Run discovery failed' } }, { status: 500 })
   }
 }

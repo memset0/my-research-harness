@@ -1,77 +1,46 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../lib/runtime', () => ({
-  getRuntime: vi.fn(),
+vi.mock('../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('@memon/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@memon/core')>()),
+  BackendHypothesesResponseSchema: { parse: (value: unknown) => value },
 }))
 
-import { GET } from './route'
 import { getRuntime } from '../../../lib/runtime'
+import { standaloneServices } from '../../../lib/server/standalone-services'
+import { GET } from './route'
 
-function fakeRuntime(overrides: Partial<{ hypothesesPath: (n: string) => string | null; cacheValue: unknown }> = {}) {
-  return {
-    hypothesesPath:
-      overrides.hypothesesPath ??
-      ((n: string) => (n === 'project-a' ? '/p/a/docs/hypotheses.md' : null)),
-    hypothesesCache: {
-      get: () => ({
-        value: overrides.cacheValue ?? {
-          legendBlock: null,
-          summaryTableBlock: null,
-          entries: [
-            {
-              id: 'H0001',
-              slug: 'sparse-deltas',
-              statement: 'param delta is sparse',
-              status: 'CONFIRMED',
-              origin: null,
-              experiments: ['foo-260501-100000'],
-              evidence: [],
-              caveats: [],
-              lastVerified: null,
-            },
-          ],
-          parseErrors: [],
-          parseWarnings: [],
-        },
-      }),
-    },
-  }
-}
+const getHypotheses = vi.fn()
 
-describe('GET /api/hypotheses', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getRuntime).mockResolvedValue({
+    config: { projects: [{ name: 'project-a', root: '/p/a' }] },
+  } as never)
+  vi.mocked(standaloneServices).mockReturnValue({ projects: { getHypotheses } } as never)
+  getHypotheses.mockResolvedValue({
+    project: 'project-a',
+    entries: [],
+    parseErrors: [],
+    parseWarnings: [],
+    legendBlock: null,
+    summaryTableBlock: null,
+  })
+})
+
+describe('GET /api/hypotheses shared adapter', () => {
+  it('returns legacy path around the shared DTO', async () => {
+    const response = await GET(new NextRequest('http://x/api/hypotheses?project=project-a'))
+    expect(response.status).toBe(200)
+    expect((await response.json()).path).toBe('/p/a/docs/hypotheses.md')
+    expect(getHypotheses).toHaveBeenCalledWith('project-a')
   })
 
-  it('400 when project query param is missing', async () => {
-    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime() as never)
-    const res = await GET(new NextRequest('http://localhost/api/hypotheses'))
-    expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(body.error.code).toBe('BAD_REQUEST')
-  })
-
-  it('404 when project not in config', async () => {
-    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime() as never)
-    const res = await GET(
-      new NextRequest('http://localhost/api/hypotheses?project=ghost'),
-    )
-    expect(res.status).toBe(404)
-    const body = await res.json()
-    expect(body.error.code).toBe('NOT_FOUND')
-  })
-
-  it('200 with parsed hypotheses for known project', async () => {
-    vi.mocked(getRuntime).mockResolvedValue(fakeRuntime() as never)
-    const res = await GET(
-      new NextRequest('http://localhost/api/hypotheses?project=project-a'),
-    )
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.path).toBe('/p/a/docs/hypotheses.md')
-    expect(body.entries).toHaveLength(1)
-    expect(body.entries[0]).toMatchObject({ id: 'H0001', status: 'CONFIRMED' })
+  it('rejects unknown and missing Projects', async () => {
+    expect((await GET(new NextRequest('http://x/api/hypotheses'))).status).toBe(404)
+    expect((await GET(new NextRequest('http://x/api/hypotheses?project=ghost'))).status).toBe(404)
   })
 })

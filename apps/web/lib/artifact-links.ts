@@ -19,6 +19,8 @@ export interface ArtifactDocument {
 
 export interface ArtifactInventory {
   project: string
+  /** Null/absent for standalone; required to recognize a central canonical route. */
+  host?: string | null
   experiments: ReadonlyArray<{ id: string; path: string }>
   reports: ReadonlyArray<{ id: string; path: string }>
 }
@@ -106,15 +108,17 @@ export function resolveArtifactMarkdownHref(
   if (routeTarget) return { ...routeTarget, path: '', fragment: split.fragment }
 
   const sourcePath = normalizeInventoryPath(sourceDocumentPath)
-  if (!sourcePath?.startsWith('/')) return null
+  if (!sourcePath) return null
 
   const decodedHrefPath = decodeHrefPath(split.path)
   if (!decodedHrefPath) return null
+  const sourceAbsolute = sourcePath.startsWith('/')
+  const sourceSegments = sourcePath.split('/').filter(Boolean)
   const candidate = decodedHrefPath.absolute
     ? normalizePathSegments(decodedHrefPath.segments, true)
     : normalizePathSegments(
-        [...sourcePath.split('/').slice(0, -1), ...decodedHrefPath.segments],
-        true,
+        [...sourceSegments.slice(0, -1), ...decodedHrefPath.segments],
+        sourceAbsolute,
       )
   if (!candidate) return null
 
@@ -141,11 +145,29 @@ function resolveCanonicalArtifactRoute(
   if (!decoded) return null
   const segments = decoded.segments.slice()
   if (segments.at(-1) === '') segments.pop()
-  if (segments.length !== 4 || segments[0] !== 'p' || segments[1] !== inventory.project) {
+  let collection: string | undefined
+  let id: string | undefined
+  if (
+    !inventory.host &&
+    segments.length === 4 &&
+    segments[0] === 'p' &&
+    segments[1] === inventory.project
+  ) {
+    collection = segments[2]
+    id = segments[3]
+  } else if (
+    inventory.host &&
+    segments.length === 6 &&
+    segments[0] === 'h' &&
+    segments[1] === inventory.host &&
+    segments[2] === 'p' &&
+    segments[3] === inventory.project
+  ) {
+    collection = segments[4]
+    id = segments[5]
+  } else {
     return null
   }
-
-  const [, , collection, id] = segments
   if (collection === 'reports' && id && REPORT_ID_RE.test(id)) {
     return resolveBareArtifactReference(id, inventory)
   }
@@ -185,8 +207,9 @@ function decodeHrefPath(rawPath: string): { absolute: boolean; segments: string[
 }
 
 function normalizeInventoryPath(path: string): string | null {
-  if (!path.startsWith('/') || path.includes('\\') || path.includes('\0')) return null
-  return normalizePathSegments(path.split('/').slice(1), true)
+  if (!path || path.includes('\\') || path.includes('\0')) return null
+  const absolute = path.startsWith('/')
+  return normalizePathSegments(path.split('/').slice(absolute ? 1 : 0), absolute)
 }
 
 function normalizePathSegments(segments: string[], absolute: boolean): string | null {

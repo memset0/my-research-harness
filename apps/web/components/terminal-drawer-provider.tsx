@@ -19,7 +19,13 @@ import {
 import { useIsMobile } from '../hooks/use-mobile'
 import { useReportWorkspace } from '../hooks/use-report-workspace'
 import { useTerminalPanelWidth } from '../hooks/use-terminal-panel-width'
-import type { TerminalAgentKind, TerminalScopeKind } from '../lib/api'
+import {
+  type ProjectTarget,
+  projectHost,
+  projectName,
+  type TerminalAgentKind,
+  type TerminalScopeKind,
+} from '../lib/api'
 import { ReportPane, type ReportPaneSurface } from './report-pane'
 import { TerminalResizeHandle, WorkspaceResizeHandle } from './terminal-resize-handle'
 import { TerminalView } from './terminal-view'
@@ -30,7 +36,7 @@ export type { TerminalScopeKind }
 
 interface StandardDrawerState {
   kind: 'standard'
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
   agent: TerminalAgentKind
@@ -39,12 +45,13 @@ interface StandardDrawerState {
 
 interface RawDrawerState {
   kind: 'raw'
+  host?: string
   sessionName: string
 }
 
 interface HerdrDrawerState {
   kind: 'herdr'
-  project?: string
+  project?: ProjectTarget
   scope?: TerminalScopeKind
   slug?: string
   sessionName: string | null
@@ -61,18 +68,19 @@ type WorkspaceSurface = 'drawer' | 'split'
 type WorkspacePanelState = { kind: 'terminal'; target: TerminalTargetState }
 
 export interface DrawerOpenInput {
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
   agent: TerminalAgentKind
 }
 
 export interface DrawerOpenRawInput {
+  host?: string
   sessionName: string
 }
 
 export interface DrawerOpenHerdrInput {
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
 }
@@ -154,37 +162,51 @@ export function useReportPane(): ReportPaneApi {
 function deriveStandardSessionName(state: StandardDrawerState): string {
   return (
     state.sessionName ??
-    `memon-${state.agent === 'none' ? 'terminal' : state.agent}-${state.project}--${state.scope}--${state.slug}`
+    `memon-${state.agent === 'none' ? 'terminal' : state.agent}-${projectName(state.project)}--${state.scope}--${state.slug}`
   )
 }
 
 function popupUrlFor(state: TerminalTargetState): string {
   if (state.kind === 'standard') {
-    return (
-      `/terminal-popup?project=${encodeURIComponent(state.project)}` +
-      `&scope=${encodeURIComponent(state.scope)}` +
-      `&slug=${encodeURIComponent(state.slug)}` +
-      `&agent=${encodeURIComponent(state.agent)}`
-    )
+    const params = new URLSearchParams({
+      project: projectName(state.project),
+      scope: state.scope,
+      slug: state.slug,
+      agent: state.agent,
+    })
+    const host = projectHost(state.project)
+    if (host) params.set('host', host)
+    return `/terminal-popup?${params.toString()}`
   }
   if (state.kind === 'herdr') {
     const params = new URLSearchParams({ integration: 'herdr' })
     if (state.project && state.scope && state.slug) {
-      params.set('project', state.project)
+      params.set('project', projectName(state.project))
       params.set('scope', state.scope)
       params.set('slug', state.slug)
+      const host = projectHost(state.project)
+      if (host) params.set('host', host)
     }
     return `/terminal-popup?${params.toString()}`
   }
-  return `/terminal-popup?sessionName=${encodeURIComponent(state.sessionName)}`
+  const params = new URLSearchParams({ sessionName: state.sessionName })
+  if (state.host) params.set('host', state.host)
+  return `/terminal-popup?${params.toString()}`
 }
 
 function popupTargetFor(state: TerminalTargetState): string {
-  if (state.kind === 'standard') return `memon-popup-${deriveStandardSessionName(state)}`
+  const host =
+    state.kind === 'raw'
+      ? state.host
+      : state.project
+        ? (projectHost(state.project) ?? undefined)
+        : undefined
+  const prefix = host ? `${host}-` : ''
+  if (state.kind === 'standard') return `memon-popup-${prefix}${deriveStandardSessionName(state)}`
   if (state.kind === 'herdr') {
-    return `memon-popup-memon-herdr${state.slug ? `-${state.slug}` : ''}`
+    return `memon-popup-${prefix}memon-herdr${state.slug ? `-${state.slug}` : ''}`
   }
-  return `memon-popup-${state.sessionName}`
+  return `memon-popup-${prefix}${state.sessionName}`
 }
 
 function titleFor(state: TerminalTargetState): ReactNode {
@@ -291,7 +313,12 @@ function TerminalPanelContent({
             source="drawer"
           />
         ) : state.kind === 'raw' ? (
-          <TerminalView mode="raw" sessionName={state.sessionName} source="drawer" />
+          <TerminalView
+            mode="raw"
+            host={state.host}
+            sessionName={state.sessionName}
+            source="drawer"
+          />
         ) : (
           <TerminalView
             mode="herdr"
@@ -338,7 +365,7 @@ export function TerminalDrawerProvider({ children }: { children: ReactNode }) {
       setSurface('drawer')
       setPanel({
         kind: 'terminal',
-        target: { kind: 'raw', sessionName: input.sessionName },
+        target: { kind: 'raw', ...input },
       })
     },
     [prepareTerminalSurface],
@@ -378,7 +405,7 @@ export function TerminalDrawerProvider({ children }: { children: ReactNode }) {
       setSurface(requestedSplitSurface())
       setPanel({
         kind: 'terminal',
-        target: { kind: 'raw', sessionName: input.sessionName },
+        target: { kind: 'raw', ...input },
       })
     },
     [prepareTerminalSurface, requestedSplitSurface],

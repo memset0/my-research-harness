@@ -1,33 +1,34 @@
-// GET /api/anomalies?project=<name> — current experiment ↔ run binding
-// anomalies (ORPHAN_RUN / PHANTOM_RUN_REF / MISMATCH_EXPERIMENT_REF).
-//
-// Viewer sessions see only anomalies from projects in their scope, even when
-// no `?project=` filter is set.
-
-import type { ExperimentMembershipAnomaly } from '@memon/core'
+import { BackendAnomaliesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../../../lib/runtime'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { getRuntime } from '../../../lib/runtime'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
+  const runtime = await getRuntime()
+  const selected = new URL(request.url).searchParams.get('project')
+  const identity = readIdentityFromRequest(request)
+  const projects = runtime.config.projects.filter(
+    (project) =>
+      (!selected || project.name === selected) &&
+      (identity.role !== 'viewer' || identity.scopeProjects.has(project.name)),
+  )
   try {
-    const rt = await getRuntime()
-    const url = new URL(req.url)
-    const projectFilter = url.searchParams.get('project')
-    const { role, scopeProjects } = readIdentityFromRequest(req)
-
-    const anomalies: ExperimentMembershipAnomaly[] = []
-    for (const [projectName, list] of rt.anomaliesByProject) {
-      if (projectFilter && projectName !== projectFilter) continue
-      if (role === 'viewer' && !scopeProjects.has(projectName)) continue
-      anomalies.push(...list)
-    }
-    // Sort by detectedAt descending.
+    const anomalies = (
+      await Promise.all(
+        projects.map(
+          async (project) =>
+            BackendAnomaliesResponseSchema.parse(
+              await standaloneServices(runtime.config).projects.getAnomalies(project.name),
+            ).anomalies,
+        ),
+      )
+    ).flat()
     anomalies.sort((a, b) => b.detectedAt.localeCompare(a.detectedAt))
     return NextResponse.json({ anomalies })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: { message: 'anomaly read failed' } }, { status: 500 })
   }
 }

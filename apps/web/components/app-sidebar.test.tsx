@@ -1,32 +1,39 @@
 // @vitest-environment jsdom
 
+import { ProjectRefSchema } from '@memon/core'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
+let currentPathname = '/p/project-a'
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/p/project-a',
+  usePathname: () => currentPathname,
 }))
 
-vi.mock('../lib/api', () => ({
-  ApiError: class extends Error {},
-  fetchProjects: vi.fn(),
-  fetchExperimentDocs: vi.fn(),
-  fetchSlurmStatus: vi.fn(),
-  fetchGitStatus: vi.fn(),
-  fetchGitStatusFiles: vi.fn(),
-  fetchGitDiff: vi.fn(),
-  checkTerminal: vi.fn(),
-  startTerminal: vi.fn(),
-  stopTerminal: vi.fn(),
-}))
+vi.mock('../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api')>()
+  return {
+    ...actual,
+    fetchHosts: vi.fn(),
+    fetchProjects: vi.fn(),
+    fetchExperimentDocs: vi.fn(),
+    fetchSlurmStatus: vi.fn(),
+    fetchGitStatus: vi.fn(),
+    fetchGitStatusFiles: vi.fn(),
+    fetchGitDiff: vi.fn(),
+    checkTerminal: vi.fn(),
+    startTerminal: vi.fn(),
+    stopTerminal: vi.fn(),
+  }
+})
 
 import {
   checkTerminal,
   fetchExperimentDocs,
   fetchGitStatus,
   fetchGitStatusFiles,
+  fetchHosts,
   fetchProjects,
   fetchSlurmStatus,
 } from '../lib/api'
@@ -66,16 +73,73 @@ function makeExpDoc(id: string, effectiveUpdatedAt: string) {
   }
 }
 
+function makeHost(
+  host: string,
+  state: 'online' | 'offline' = 'online',
+  label?: string,
+): Awaited<ReturnType<typeof fetchHosts>>['hosts'][number] {
+  return {
+    host,
+    ...(label ? { label } : {}),
+    state,
+    diagnostic: state === 'offline' ? 'Backend is unavailable' : null,
+    lastSuccessfulCheckAt: state === 'online' ? '2026-08-26T17:00:00.000Z' : null,
+    centralRelease: '6.0.0',
+    backendRelease: state === 'online' ? '6.0.0' : null,
+    backendRevision: state === 'online' ? '0123456789abcdef' : null,
+    capabilities:
+      state === 'online'
+        ? {
+            projects: true,
+            mutations: true,
+            events: true,
+            logStreaming: true,
+            reportAssets: true,
+            git: true,
+            shares: true,
+            tmux: true,
+            terminal: true,
+            slurm: false,
+            herdr: false,
+          }
+        : null,
+  } as Awaited<ReturnType<typeof fetchHosts>>['hosts'][number]
+}
+
+function centralProject(host: string, project: string) {
+  return {
+    mode: 'central' as const,
+    ...ProjectRefSchema.parse({ host, project }),
+    name: project,
+  }
+}
+
 describe('AppSidebar', () => {
   beforeEach(() => {
+    currentPathname = '/p/project-a'
     localStorage.clear()
     document.getElementById('memon-runtime-config')?.remove()
     __resetRuntimeConfigForTests()
     vi.clearAllMocks()
+    vi.mocked(fetchHosts).mockRejectedValue(new Error('Host registry unavailable'))
     vi.mocked(fetchProjects).mockResolvedValue({
       projects: [
-        { name: 'project-a', root: '/p/a', exclude: [] },
-        { name: 'project-b', root: '/p/b', exclude: [] },
+        {
+          mode: 'standalone',
+          host: null,
+          project: 'project-a',
+          name: 'project-a',
+          root: '/p/a',
+          exclude: [],
+        },
+        {
+          mode: 'standalone',
+          host: null,
+          project: 'project-b',
+          name: 'project-b',
+          root: '/p/b',
+          exclude: [],
+        },
       ],
     })
     vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments: [] })
@@ -367,7 +431,9 @@ describe('AppSidebar', () => {
       const buttons = screen.getAllByRole('button', { name: /New terminal for E\d+-/ })
       expect(buttons.length).toBe(2)
       // Buttons are enabled when probe.available === true (the default mock).
-      buttons.forEach((b) => expect(b).not.toBeDisabled())
+      buttons.forEach((b) => {
+        expect(b).not.toBeDisabled()
+      })
     })
   })
 
@@ -402,5 +468,115 @@ describe('AppSidebar', () => {
       })
       expect(btn).toBeDisabled()
     })
+  })
+
+  it('central: keeps configured Host order and shows offline Hosts without Projects', async () => {
+    currentPathname = '/h/host-a/p/project-a'
+    vi.mocked(fetchHosts).mockResolvedValue({
+      hosts: [
+        makeHost('host-b', 'offline', 'Cluster B'),
+        makeHost('host-a', 'online', 'Cluster A'),
+      ],
+    })
+    vi.mocked(fetchProjects).mockResolvedValue({
+      projects: [centralProject('host-a', 'project-a')],
+    })
+
+    const { container } = setup()
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-slot="sidebar-host-group"]')).toHaveLength(2)
+    })
+    const groups = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="sidebar-host-group"]'),
+    )
+    expect(groups.map((group) => group.dataset.host)).toEqual(['host-b', 'host-a'])
+    expect(within(groups[0]!).getByText('Cluster B')).toBeInTheDocument()
+    expect(within(groups[0]!).getByText('host-b')).toBeInTheDocument()
+    expect(within(groups[0]!).getByText('Offline')).toHaveAttribute('data-usable', 'false')
+    expect(within(groups[0]!).getByText('No projects available')).toBeInTheDocument()
+    expect(within(groups[1]!).getByText('Online')).toHaveAttribute('data-usable', 'true')
+  })
+
+  it('central: duplicate Project names retain Host-qualified persistence, fetches, and links', async () => {
+    currentPathname = '/h/host-a/p/shared-project/e/E0001-alpha'
+    vi.mocked(fetchHosts).mockResolvedValue({
+      hosts: [makeHost('host-a'), makeHost('host-b')],
+    })
+    vi.mocked(fetchProjects).mockResolvedValue({
+      projects: [
+        centralProject('host-a', 'shared-project'),
+        centralProject('host-b', 'shared-project'),
+      ],
+    })
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00')],
+    })
+
+    const { container } = setup()
+    const hostA = await waitFor(() => {
+      const group = container.querySelector<HTMLElement>('[data-host="host-a"]')
+      expect(group).not.toBeNull()
+      expect(within(group!).getByText('E0001-alpha')).toBeInTheDocument()
+      return group!
+    })
+    const hostB = container.querySelector<HTMLElement>('[data-host="host-b"]')!
+    await userEvent.click(within(hostB).getByText('shared-project'))
+    await waitFor(() => {
+      expect(within(hostB).getByText('E0001-alpha')).toBeInTheDocument()
+    })
+
+    const hostALink = hostA.querySelector('a[href="/h/host-a/p/shared-project/e/E0001-alpha"]')
+    const hostBLink = hostB.querySelector('a[href="/h/host-b/p/shared-project/e/E0001-alpha"]')
+    expect(hostALink).toHaveAttribute('data-active', 'true')
+    expect(hostBLink).toHaveAttribute('data-active', 'false')
+    expect(fetchExperimentDocs).toHaveBeenCalledWith({
+      host: 'host-a',
+      project: 'shared-project',
+    })
+    expect(fetchExperimentDocs).toHaveBeenCalledWith({
+      host: 'host-b',
+      project: 'shared-project',
+    })
+    expect(fetchGitStatus).toHaveBeenCalledWith({ host: 'host-a', project: 'shared-project' })
+    expect(fetchGitStatus).toHaveBeenCalledWith({ host: 'host-b', project: 'shared-project' })
+    await waitFor(() => {
+      const stored = localStorage.getItem(STORAGE_KEY) ?? ''
+      expect(stored).toContain('h:host-a/p:shared-project')
+      expect(stored).toContain('h:host-b/p:shared-project')
+    })
+
+    expect(
+      within(hostA).getByRole('button', { name: /New terminal for E0001-alpha/ }),
+    ).toBeEnabled()
+    expect(
+      within(hostB).getByRole('button', { name: /New terminal for E0001-alpha/ }),
+    ).toBeEnabled()
+    expect(screen.getByRole('link', { name: 'Manage tmux' })).toHaveAttribute(
+      'href',
+      '/manage/tmux',
+    )
+    expect(checkTerminal).toHaveBeenCalledWith({ host: 'host-a' })
+    expect(checkTerminal).toHaveBeenCalledWith({ host: 'host-b' })
+  })
+
+  it('central viewer: displays Host status but does not infer Project authorization by name', async () => {
+    currentPathname = '/'
+    vi.mocked(fetchHosts).mockResolvedValue({
+      hosts: [makeHost('host-a', 'online', 'Cluster A')],
+    })
+    vi.mocked(fetchProjects).mockRejectedValue(
+      new Error('403 Host-qualified viewer scope required'),
+    )
+
+    const { container } = setup({ role: 'viewer', scopeProjects: ['shared-project'] })
+    const host = await waitFor(() => {
+      const group = container.querySelector<HTMLElement>('[data-host="host-a"]')
+      expect(group).not.toBeNull()
+      return group!
+    })
+    expect(within(host).getByText('Cluster A')).toBeInTheDocument()
+    expect(within(host).getByText('Online')).toBeInTheDocument()
+    expect(within(host).getByText('No projects available')).toBeInTheDocument()
+    expect(within(host).queryByText('shared-project')).toBeNull()
   })
 })

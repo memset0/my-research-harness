@@ -9,27 +9,25 @@
 // Soft rule: archive of an already-archived target shows a noop result.
 // Unarchive does NOT emit the soft warning per archive-frontmatter spec.
 
-import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { Archive as ArchiveIcon, ArchiveRestore } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
 import {
   ApiError,
+  type ProjectTarget,
   patchExperimentArchived,
   patchRunArchived,
+  projectQueryKey,
 } from '../lib/api'
 import { Button } from './ui/button'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 type Kind = 'run' | 'exp'
 
 export function ArchiveToggle({
   kind,
+  project,
   id,
   archived,
   runStatus,
@@ -37,6 +35,7 @@ export function ArchiveToggle({
   className,
 }: {
   kind: Kind
+  project?: ProjectTarget
   id: string
   archived: boolean
   /** Run-side only: current status. Used to enforce the cannot-archive-RUNNING rule. */
@@ -46,11 +45,11 @@ export function ArchiveToggle({
 }) {
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
+  const projectKey = project ? projectQueryKey(project) : []
 
   // Hard rule: disable the archive action when targetting a run currently
   // RUNNING. Unarchive is always allowed.
-  const archiveBlockedByStatus =
-    kind === 'run' && !archived && runStatus === 'RUNNING'
+  const archiveBlockedByStatus = kind === 'run' && !archived && runStatus === 'RUNNING'
 
   const target = !archived
   const label = archived ? 'Unarchive' : 'Archive'
@@ -61,7 +60,7 @@ export function ArchiveToggle({
     setBusy(true)
     try {
       const fn = kind === 'run' ? patchRunArchived : patchExperimentArchived
-      const res = await fn({ id, archived: target, expectedMtime })
+      const res = await fn({ ...(project ? { project } : {}), id, archived: target, expectedMtime })
       if ('error' in res && res.error?.code === 'CONFLICT') {
         toast.error('Archive conflicted (someone else just edited this)', {
           description: 'Reload to see the latest content, then try again.',
@@ -69,7 +68,7 @@ export function ArchiveToggle({
             label: 'Reload',
             onClick: () =>
               queryClient.invalidateQueries({
-                queryKey: kind === 'run' ? ['run', id] : ['experiment', id],
+                queryKey: [kind === 'run' ? 'run' : 'experiment', ...projectKey, id],
               }),
           },
         })
@@ -81,11 +80,13 @@ export function ArchiveToggle({
       } else if ('archived' in res) {
         toast.success(target ? `Archived ${id}` : `Unarchived ${id}`)
         if (kind === 'run') {
-          queryClient.invalidateQueries({ queryKey: ['run', id] })
-          queryClient.invalidateQueries({ queryKey: ['runs'] })
+          queryClient.invalidateQueries({ queryKey: ['run', ...projectKey, id] })
+          queryClient.invalidateQueries({ queryKey: ['runs', ...projectKey] })
         } else {
-          queryClient.invalidateQueries({ queryKey: ['experiment', id] })
-          queryClient.invalidateQueries({ queryKey: ['experiments'] })
+          queryClient.invalidateQueries({
+            queryKey: ['experiment', ...projectKey, id],
+          })
+          queryClient.invalidateQueries({ queryKey: ['experiments', ...projectKey] })
         }
       }
     } catch (err) {

@@ -13,16 +13,26 @@ import { TmuxManagePageClient } from './tmux-page.client'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata: Metadata = { title: 'Tmux' }
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ host?: string; session?: string }>
+}): Promise<Metadata> {
+  const { host, session } = await searchParams
+  return {
+    title: host ? `${session ? `${session} · ` : ''}${host} · Tmux` : 'Tmux',
+  }
+}
 
 export default async function TmuxManagePage() {
   const rt = await getRuntime()
-  if (rt.config.terminal.tmuxEnabled === false) notFound()
-  const { listMemonTmuxSessions } = await import('../../../lib/terminal/tmux-discover')
-  const sessions = await listMemonTmuxSessions(rt)
-
   const qc = getQueryClient()
-  qc.setQueryData(['tmux-sessions'], { sessions })
+  if (!rt.config.central) {
+    if (rt.config.terminal.tmuxEnabled === false) notFound()
+    const { listMemonTmuxSessions } = await import('../../../lib/terminal/tmux-discover')
+    const sessions = await listMemonTmuxSessions(rt)
+    qc.setQueryData(['tmux-sessions', 'standalone'], { sessions })
+  }
 
   return (
     <HydrationBoundary state={dehydrate(qc)}>

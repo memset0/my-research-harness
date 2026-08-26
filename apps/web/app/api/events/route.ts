@@ -14,24 +14,32 @@
 //   - anomaly            : fires after the runtime recomputes the membership
 //                          anomaly set for a project. Payload: `{project,count}`.
 //
-// Viewer-mode filtering: viewer sessions receive only events for projects
-// in `req.scopeProjects`. Events for other projects are dropped at the
-// publish site (no need to broadcast them only to drop them client-side).
+// Standalone viewer filtering retains the existing project-name scope. Central
+// viewers use exact Host-qualified ProjectRef scopes; legacy project names
+// alone never authorize cross-Host events.
 
+import type { EventEmitter } from 'node:events'
+import type { ProjectRef } from '@memon/core'
+import { CentralEventSchema, type Run } from '@memon/core'
 import type { NextRequest } from 'next/server'
-import type { Run } from '@memon/core'
-import { getRuntime } from '../../../lib/runtime'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { getRuntime } from '../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
 
-const TOPICS = ['run-change', 'experiment-change', 'anomaly', 'code-reviews-change'] as const
-type Topic = (typeof TOPICS)[number]
+const STANDALONE_TOPICS = [
+  'run-change',
+  'experiment-change',
+  'journal-change',
+  'anomaly',
+  'code-reviews-change',
+] as const
+type StandaloneTopic = (typeof STANDALONE_TOPICS)[number]
 
-function eventProject(topic: Topic, evt: unknown): string | null {
+function eventProject(topic: StandaloneTopic, evt: unknown): string | null {
   if (!evt || typeof evt !== 'object') return null
   const e = evt as Record<string, unknown>
-  if (topic === 'anomaly' || topic === 'code-reviews-change') {
+  if (topic === 'anomaly' || topic === 'code-reviews-change' || topic === 'journal-change') {
     return typeof e.project === 'string' ? e.project : null
   }
   if (topic === 'experiment-change') {
@@ -46,39 +54,94 @@ function eventProject(topic: Topic, evt: unknown): string | null {
   return null
 }
 
-export async function GET(req: NextRequest) {
-  const rt = await getRuntime()
-  const { role, scopeProjects } = readIdentityFromRequest(req)
+export interface EventsReadableStreamOptions {
+  events: EventEmitter
+  central: boolean
+  role: 'owner' | 'viewer' | 'anon'
+  scopeProjects: ReadonlySet<string>
+  scopeProjectRefs?: readonly ProjectRef[]
+}
+
+export function createEventsReadableStream(options: EventsReadableStreamOptions): ReadableStream {
   const encoder = new TextEncoder()
+  const listeners: Array<[string, (event: unknown) => void]> = []
 
-  const handlers = new Map<Topic, (evt: unknown) => void>()
-
-  const stream = new ReadableStream({
+  return new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(`event: ready\ndata: {}\n\n`))
-      const send = (event: string, evt: unknown) => {
+      const send = (event: string, payload: unknown) => {
         try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(evt)}\n\n`))
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`),
+          )
         } catch {
-          // controller closed — listener will be removed by cancel()
+          // controller closed — listener will be removed by cancel().
         }
       }
-      for (const topic of TOPICS) {
-        const h = (evt: unknown) => {
-          if (role === 'viewer') {
-            const proj = eventProject(topic, evt)
-            if (!proj || !scopeProjects.has(proj)) return
+
+      if (options.central) {
+        if (options.role === 'anon') return
+        const listener = (input: unknown) => {
+          const event = CentralEventSchema.safeParse(input)
+          if (!event.success) return
+          const eventData = event.data
+          if (options.role === 'viewer') {
+            const scopes = options.scopeProjectRefs ?? []
+            const authorized =
+              eventData.kind === 'host-resync'
+                ? scopes.some((scope) => scope.host === eventData.host)
+                : scopes.some(
+                    (scope) => scope.host === eventData.host && scope.project === eventData.project,
+                  )
+            if (!authorized) return
           }
-          send(topic, evt)
+          if (eventData.kind === 'host-resync') {
+            send('host-resync', {
+              host: eventData.host,
+              reason: eventData.reason,
+              emittedAt: eventData.emittedAt,
+            })
+            return
+          }
+          send(eventData.topic, {
+            ...eventData.data,
+            host: eventData.host,
+            project: eventData.project,
+          })
         }
-        handlers.set(topic, h)
-        rt.events.on(topic, h)
+        listeners.push(['central-event', listener])
+        options.events.on('central-event', listener)
+        return
+      }
+
+      for (const topic of STANDALONE_TOPICS) {
+        const listener = (event: unknown) => {
+          if (options.role === 'viewer') {
+            const project = eventProject(topic, event)
+            if (!project || !options.scopeProjects.has(project)) return
+          }
+          send(topic, event)
+        }
+        listeners.push([topic, listener])
+        options.events.on(topic, listener)
       }
     },
     cancel() {
-      for (const [topic, h] of handlers) rt.events.off(topic, h)
-      handlers.clear()
+      for (const [topic, listener] of listeners) options.events.off(topic, listener)
+      listeners.length = 0
     },
+  })
+}
+
+export async function GET(req: NextRequest) {
+  const rt = await getRuntime()
+  const { role, scopeProjects, scopeProjectRefs } = readIdentityFromRequest(req)
+  const stream = createEventsReadableStream({
+    events: rt.events,
+    central: rt.config.central !== undefined,
+    role,
+    scopeProjects,
+    scopeProjectRefs,
   })
 
   return new Response(stream, {

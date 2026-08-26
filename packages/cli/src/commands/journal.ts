@@ -49,7 +49,7 @@ export async function runJournalRead(input: JournalReadInput): Promise<void> {
   const root = singleProjectRoot(ctx)
   const journalPath = join(root, 'docs', 'journal.md')
 
-  let parsed
+  let parsed: ReturnType<typeof parseJournal>
   try {
     const content = await fs.readFile(journalPath, 'utf8')
     parsed = parseJournal(content)
@@ -98,10 +98,7 @@ export async function runJournalAppend(input: JournalAppendInput): Promise<void>
     )
   }
   if (!(VALID_TAGS_FOR_APPEND as string[]).includes(input.tag)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `tag must be one of: ${VALID_TAGS_FOR_APPEND.join(', ')}`,
-    )
+    emitErrorAndExit('BAD_REQUEST', `tag must be one of: ${VALID_TAGS_FOR_APPEND.join(', ')}`)
   }
   if (!input.body.trim()) {
     emitErrorAndExit('BAD_REQUEST', 'body is required and must be non-empty')

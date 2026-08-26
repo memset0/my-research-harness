@@ -210,57 +210,154 @@ export const GitStatusConfigRawSchema = z
   })
   .optional()
 
-// ── hub / node federation (openspec/changes/add-hub-node-split) ──────────
-// A process runs as a `hub` (thin broker + frontend) or a `node` (full
-// backend dialing OUT to a hub), selected by which block is present.
-// Mutually exclusive (enforced in config/load.ts); absent both = standalone.
+// ── central / Backend deployment roles ───────────────────────────────
+// One role block selects a split deployment; neither preserves standalone.
+// Mutual exclusion and cross-field role constraints live in config/load.ts.
 
-const NodeNameSchema = z
+export const HostIdRawSchema = z
   .string()
   .min(1)
-  .regex(/^[a-z0-9-]+$/, 'must match [a-z0-9-]+')
+  .max(63)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match [a-z0-9][a-z0-9-]*')
 
-export const NodeCapabilitiesRawSchema = z.object({
-  tmux: z.boolean().optional(),
-  projects: z.boolean().optional(),
-})
+const ServiceTokenRawSchema = z
+  .string()
+  .min(32, 'must contain at least 32 base64url characters')
+  .regex(/^[A-Za-z0-9_-]+$/, 'must be base64url')
 
-export const NodeConfigRawSchema = z
+export const BackendServiceTokensRawSchema = z
   .object({
-    name: NodeNameSchema,
-    auth_token: z.string().min(1),
-    // ws:// (localhost) or wss:// (remote). Non-empty string here; the loader
-    // does no URL-shape check beyond this for now.
-    hub_url: z.string().min(1),
-    capabilities: NodeCapabilitiesRawSchema.optional(),
+    current: ServiceTokenRawSchema,
+    next: ServiceTokenRawSchema.optional(),
   })
-  .optional()
+  .strict()
 
-export const HubNodeEntryRawSchema = z.object({
-  name: NodeNameSchema,
-  auth_token: z.string().min(1),
-})
+export const CentralUrlTransportRawSchema = z
+  .object({
+    kind: z.literal('url'),
+    base_url: z.string().url(),
+    allow_insecure_http: z.boolean().optional(),
+  })
+  .strict()
 
-export const HubConfigRawSchema = z
+const SafeSshTargetRawSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.startsWith('-') && !/\s/.test(value), {
+    message: 'must not start with "-" or contain whitespace',
+  })
+
+export const CentralSshTransportRawSchema = z
+  .object({
+    kind: z.literal('ssh'),
+    executable: z.string().min(1).optional(),
+    target: SafeSshTargetRawSchema,
+    known_hosts_file: z.string().min(1),
+    identity_file: z.string().min(1).optional(),
+    local_port: z.number().int().min(1).max(65535),
+    remote_host: z.string().min(1).optional(),
+    remote_port: z.number().int().min(1).max(65535),
+  })
+  .strict()
+
+export const CentralTransportRawSchema = z.discriminatedUnion('kind', [
+  CentralUrlTransportRawSchema,
+  CentralSshTransportRawSchema,
+])
+
+const RoleArgvRawSchema = z.array(z.string().min(1)).min(1)
+
+export const CentralOperationsHintsRawSchema = z
+  .object({
+    ssh_target: SafeSshTargetRawSchema.optional(),
+    checkout_path: z.string().min(1).optional(),
+    config_path: z.string().min(1).optional(),
+    runtime_bootstrap: RoleArgvRawSchema.optional(),
+    supervisor_mode: z.enum(['supervised', 'foreground', 'external']).optional(),
+  })
+  .strict()
+
+export const CentralHostRawSchema = z
+  .object({
+    id: HostIdRawSchema,
+    label: z.string().min(1).max(128).optional(),
+    tokens: BackendServiceTokensRawSchema,
+    transport: CentralTransportRawSchema,
+    operations: CentralOperationsHintsRawSchema.optional(),
+  })
+  .strict()
+
+export const CentralConfigRawSchema = z
   .object({
     bind_addr: z.string().min(1).optional(),
     bind_port: z.number().int().min(1).max(65535).optional(),
-    public_url: z.string().min(1).optional(),
-    nodes: z.array(HubNodeEntryRawSchema).default([]),
+    public_url: z.string().url().optional(),
+    legacy_share_host: HostIdRawSchema.optional(),
+    hosts: z.array(CentralHostRawSchema).default([]),
   })
+  .strict()
+  .optional()
+
+const HostnameGuardPatternRawSchema = z
+  .string()
+  .min(1)
+  .max(253)
+  .regex(/^[A-Za-z0-9.*?-]+$/, 'must contain only hostname and glob characters')
+
+const EnvironmentNameRawSchema = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'must be an environment-variable name')
+
+export const BackendStartGuardsRawSchema = z
+  .object({
+    allowed_hostnames: z.array(HostnameGuardPatternRawSchema).min(1).optional(),
+    forbidden_env: z.array(EnvironmentNameRawSchema).min(1).optional(),
+  })
+  .strict()
+
+export const BackendDaemonRawSchema = z
+  .object({
+    mode: z.enum(['supervised', 'foreground', 'external']).optional(),
+    state_dir: z.string().min(1),
+    release_dir: z.string().min(1),
+    runtime_dir: z.string().min(1),
+    guards: BackendStartGuardsRawSchema.optional(),
+    restart_argv: RoleArgvRawSchema.optional(),
+  })
+  .strict()
+  .superRefine((daemon, ctx) => {
+    if (daemon.restart_argv && daemon.mode !== 'external') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['restart_argv'],
+        message: 'is valid only when daemon.mode is external',
+      })
+    }
+  })
+
+export const BackendConfigRawSchema = z
+  .object({
+    host_id: HostIdRawSchema,
+    access_mode: z.enum(['read_write', 'read_only']).optional(),
+    bind_addr: z.string().min(1).optional(),
+    bind_port: z.number().int().min(1).max(65535).optional(),
+    tokens: BackendServiceTokensRawSchema,
+    daemon: BackendDaemonRawSchema,
+  })
+  .strict()
   .optional()
 
 export const ConfigRawSchema = z.object({
-  // `.min(1)` relaxed to allow a project-less hub; config/load.ts enforces
-  // ">= 1 project unless hub mode".
+  // Project count is role-dependent and enforced by config/load.ts.
   projects: z.array(ProjectConfigRawSchema).default([]),
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
   terminal: TerminalConfigRawSchema,
   slurm: SlurmConfigRawSchema,
   git_status: GitStatusConfigRawSchema,
-  hub: HubConfigRawSchema,
-  node: NodeConfigRawSchema,
+  central: CentralConfigRawSchema,
+  backend: BackendConfigRawSchema,
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

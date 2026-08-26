@@ -12,10 +12,13 @@
 // POST { label?, expires? } — create a new share; respond 201 with the full
 //                              record plus a constructed `share_url`.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { getRuntime } from '@/lib/runtime'
+import { BackendShareCreateResponseSchema, HostIdSchema } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
 import { publicOrigin } from '@/lib/auth/public-url'
-import { addShare, listShares } from '@memon/core'
+import { proxyCentralApiRequest } from '@/lib/central/backend-proxy'
+import { getCentralFleet } from '@/lib/central/fleet-runtime'
+import { getRuntime } from '@/lib/runtime'
+import { standaloneServices } from '@/lib/server/standalone-services'
 
 interface RouteParams {
   params: Promise<{ project: string }>
@@ -27,28 +30,85 @@ function constructShareUrl(req: NextRequest, project: string, token: string): st
   return `${publicOrigin(req)}/share/${encodeURIComponent(project)}/${encodeURIComponent(token)}`
 }
 
-async function loadProjectRoot(projectName: string): Promise<string | null> {
-  const runtime = await getRuntime()
-  const cfg = runtime.config.projects.find((p) => p.name === projectName)
-  return cfg ? cfg.root : null
+function constructCentralShareUrl(
+  req: NextRequest,
+  host: string,
+  project: string,
+  token: string,
+): string {
+  return `${publicOrigin(req)}/share/${encodeURIComponent(host)}/${encodeURIComponent(project)}/${encodeURIComponent(token)}`
 }
 
-export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
+function exactCentralHost(req: NextRequest): string | null {
+  const values = req.nextUrl.searchParams.getAll('host')
+  if (values.length !== 1) return null
+  const parsed = HostIdSchema.safeParse(values[0])
+  return parsed.success ? parsed.data : null
+}
+
+async function readCentralCreateResponse(response: Response): Promise<unknown> {
+  const maxBytes = 64 * 1024
+  const declared = response.headers.get('content-length')
+  if (declared !== null && Number(declared) > maxBytes) throw new Error('response too large')
+  const text = await response.text()
+  if (Buffer.byteLength(text) > maxBytes) throw new Error('response too large')
+  return JSON.parse(text)
+}
+
+export async function GET(req: NextRequest, ctx: RouteParams): Promise<Response> {
   const { project } = await ctx.params
-  const root = await loadProjectRoot(project)
-  if (!root) {
+  const runtime = await getRuntime()
+  if (runtime.config.central) {
+    const host = exactCentralHost(req)
+    if (!host) {
+      return NextResponse.json({ error: 'exact host query parameter required' }, { status: 400 })
+    }
+    const fleet = await getCentralFleet()
+    return proxyCentralApiRequest(req, {
+      registry: fleet.registry,
+      actor: { role: 'owner' },
+    })
+  }
+  if (!runtime.config.projects.some((candidate) => candidate.name === project)) {
     return NextResponse.json({ error: 'project not configured' }, { status: 404 })
   }
 
   const reveal = req.nextUrl.searchParams.get('reveal') === 'true'
-  const records = await listShares(root, { includeTokens: reveal })
+  const records = await standaloneServices(runtime.config).shares.list(project, reveal)
   return NextResponse.json({ shares: records }, { status: 200 })
 }
 
-export async function POST(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
+export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response> {
   const { project } = await ctx.params
-  const root = await loadProjectRoot(project)
-  if (!root) {
+  const runtime = await getRuntime()
+  if (runtime.config.central) {
+    const host = exactCentralHost(req)
+    if (!host) {
+      return NextResponse.json({ error: 'exact host query parameter required' }, { status: 400 })
+    }
+    const fleet = await getCentralFleet()
+    const backendResponse = await proxyCentralApiRequest(req, {
+      registry: fleet.registry,
+      actor: { role: 'owner' },
+    })
+    if (backendResponse.status !== 201) return backendResponse
+    try {
+      const payload = BackendShareCreateResponseSchema.parse(
+        await readCentralCreateResponse(backendResponse),
+      )
+      const shareUrl = constructCentralShareUrl(req, host, project, payload.share.token)
+      return NextResponse.json(
+        { share: { ...payload.share, share_url: shareUrl } },
+        { status: 201, headers: { 'cache-control': 'no-store' } },
+      )
+    } catch {
+      return NextResponse.json(
+        { error: 'Backend returned an invalid share response' },
+        { status: 502, headers: { 'cache-control': 'no-store' } },
+      )
+    }
+  }
+  if (!runtime.config.projects.some((candidate) => candidate.name === project)) {
     return NextResponse.json({ error: 'project not configured' }, { status: 404 })
   }
 
@@ -71,12 +131,9 @@ export async function POST(req: NextRequest, ctx: RouteParams): Promise<NextResp
   }
 
   try {
-    const record = await addShare(root, { label, expires })
+    const record = await standaloneServices(runtime.config).shares.add(project, { label, expires })
     const shareUrl = constructShareUrl(req, project, record.token)
-    return NextResponse.json(
-      { share: { ...record, share_url: shareUrl } },
-      { status: 201 },
-    )
+    return NextResponse.json({ share: { ...record, share_url: shareUrl } }, { status: 201 })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'failed to create share'
     return NextResponse.json({ error: message }, { status: 400 })

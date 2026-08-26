@@ -42,6 +42,7 @@ export function ReadmeEditorToolbar({
           {dirty && (
             <span
               data-testid="readme-editor-dirty-dot"
+              role="img"
               aria-label="Unsaved changes"
               className="inline-block size-1.5 shrink-0 rounded-full bg-amber-500"
             />
@@ -53,7 +54,9 @@ export function ReadmeEditorToolbar({
             variant={plain ? 'secondary' : 'ghost'}
             aria-pressed={plain}
             aria-label={plain ? 'Switch to Monaco editor' : 'Switch to plain editor'}
-            title={plain ? 'Switch to Monaco editor' : 'Switch to plain editor (monospace textarea)'}
+            title={
+              plain ? 'Switch to Monaco editor' : 'Switch to plain editor (monospace textarea)'
+            }
             disabled={allDisabled}
             onClick={() => onPlainChange(!plain)}
             className={cn(plain && 'ring-1 ring-border')}

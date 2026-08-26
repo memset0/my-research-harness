@@ -1,80 +1,42 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { BackendTtydInstallError } from '@memon/backend'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../lib/terminal/binary', async () => {
-  const actual = await vi.importActual<typeof import('../../../../lib/terminal/binary')>(
-    '../../../../lib/terminal/binary',
-  )
-  return {
-    ...actual,
-    installTtyd: vi.fn(),
-  }
+vi.mock('../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../lib/server/standalone-terminal', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/server/standalone-terminal')>()),
+  standaloneTerminal: vi.fn(),
+}))
+
+import { getRuntime } from '../../../../lib/runtime'
+import { standaloneTerminal } from '../../../../lib/server/standalone-terminal'
+import { POST } from './route'
+
+const install = vi.fn()
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getRuntime).mockResolvedValue({ config: {} } as never)
+  vi.mocked(standaloneTerminal).mockReturnValue({ install } as never)
 })
 
-import { POST } from './route'
-import { TtydInstallError, installTtyd } from '../../../../lib/terminal/binary'
-
-describe('POST /api/terminal/install', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+describe('POST /api/terminal/install shared SHA256SUMS adapter', () => {
+  it('returns successful and already-present results', async () => {
+    install.mockResolvedValue({ ok: true, version: '1.7.7', alreadyPresent: true, durationMs: 0 })
+    const response = await POST()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, alreadyPresent: true })
   })
 
-  it('200 on successful install', async () => {
-    vi.mocked(installTtyd).mockResolvedValue({
-      ok: true,
-      version: '1.7.7',
-      path: '/c/ttyd-1.7.7-x86_64',
-      durationMs: 1234,
-    })
-    const res = await POST()
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body).toMatchObject({ ok: true, version: '1.7.7' })
-  })
-
-  it('200 alreadyPresent passes through', async () => {
-    vi.mocked(installTtyd).mockResolvedValue({
-      ok: true,
-      version: '1.7.7',
-      path: '/c/ttyd',
-      alreadyPresent: true,
-      durationMs: 0,
-    })
-    const res = await POST()
-    expect(res.status).toBe(200)
-    expect((await res.json()).alreadyPresent).toBe(true)
-  })
-
-  it('502 DOWNLOAD_FAILED', async () => {
-    vi.mocked(installTtyd).mockRejectedValue(
-      new TtydInstallError('DOWNLOAD_FAILED', 'network down'),
-    )
-    const res = await POST()
-    expect(res.status).toBe(502)
-    expect((await res.json()).error).toMatchObject({ code: 'DOWNLOAD_FAILED' })
-  })
-
-  it('502 INTEGRITY_FAILED', async () => {
-    vi.mocked(installTtyd).mockRejectedValue(
-      new TtydInstallError('INTEGRITY_FAILED', 'sha mismatch'),
-    )
-    const res = await POST()
-    expect(res.status).toBe(502)
-    expect((await res.json()).error).toMatchObject({ code: 'INTEGRITY_FAILED' })
-  })
-
-  it('501 NOT_AUTOFETCHABLE on macOS', async () => {
-    vi.mocked(installTtyd).mockRejectedValue(
-      new TtydInstallError('NOT_AUTOFETCHABLE', 'use brew'),
-    )
-    const res = await POST()
-    expect(res.status).toBe(501)
-    expect((await res.json()).error).toMatchObject({ code: 'NOT_AUTOFETCHABLE' })
-  })
-
-  it('500 generic error', async () => {
-    vi.mocked(installTtyd).mockRejectedValue(new Error('boom'))
-    const res = await POST()
-    expect(res.status).toBe(500)
+  it.each([
+    ['DOWNLOAD_FAILED', 502],
+    ['INTEGRITY_FAILED', 502],
+    ['NOT_AUTOFETCHABLE', 501],
+    ['EXEC_FAILED', 500],
+  ] as const)('maps %s safely', async (code, status) => {
+    install.mockRejectedValue(new BackendTtydInstallError(code, 'safe failure'))
+    const response = await POST()
+    expect(response.status).toBe(status)
+    expect(await response.json()).toMatchObject({ error: { code } })
   })
 })

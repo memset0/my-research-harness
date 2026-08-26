@@ -1,20 +1,17 @@
 #!/usr/bin/env node
+
 // @memon/cli — `memon` command-line tool entry point.
 
+import { ConfigError, EXPERIMENT_DIR_REGEX, MEMON_RELEASE, RUN_DIR_REGEX } from '@memon/core'
 import { Command } from 'commander'
-import { ConfigError } from '@memon/core'
-import { runList } from './commands/list.js'
-import { runShow } from './commands/show.js'
-import { runSearch } from './commands/search.js'
-import { runHypoList, runHypoShow } from './commands/hypo.js'
-import { runMockSeed } from './commands/mock.js'
-import { runServe } from './commands/serve.js'
-import { runScan } from './commands/scan.js'
+import { runBackendDaemonCommand } from './commands/backend-daemon.js'
 import {
-  runJournalAppend,
-  runJournalDigestMark,
-  runJournalRead,
-} from './commands/journal.js'
+  runBackendPrepare,
+  runBackendRollback,
+  runBackendTokenGenerate,
+} from './commands/backend-update.js'
+import { runBackendServe } from './commands/backend-serve.js'
+import { runDoctorCmd } from './commands/doctor.js'
 import {
   readStdin,
   runArchive,
@@ -33,18 +30,29 @@ import {
   runExperimentUnarchiveDoc,
   runExperimentUnlink,
 } from './commands/experiment-doc.js'
-import { runExperimentRename } from './commands/experiment-rename.js'
 import {
   runExperimentDocumentLint,
   runExperimentDocumentRender,
   runExperimentDocumentShow,
   runExperimentDocumentValidate,
 } from './commands/experiment-document.js'
+import { runExperimentRename } from './commands/experiment-rename.js'
 import { runExperimentResults } from './commands/experiment-results.js'
-import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
+import { runFsVersionCheck } from './commands/fs-version-check.js'
+import { runHypoList, runHypoShow } from './commands/hypo.js'
+import { runHypothesesRead } from './commands/hypotheses.js'
+import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
+import { runJournalAppend, runJournalDigestMark, runJournalRead } from './commands/journal.js'
+import { runList } from './commands/list.js'
+import { runMockSeed } from './commands/mock.js'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
 import { runRunWarningAdd } from './commands/run-warning.js'
+import { runScan } from './commands/scan.js'
+import { runSearch } from './commands/search.js'
+import { runServe } from './commands/serve.js'
+import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
+import { runShow } from './commands/show.js'
 import {
   runWarningAdd,
   runWarningDelete,
@@ -52,20 +60,15 @@ import {
   runWarningReopen,
   runWarningResolve,
 } from './commands/warning.js'
-import { runHypothesesRead } from './commands/hypotheses.js'
-import { runDoctorCmd } from './commands/doctor.js'
-import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
-import { runFsVersionCheck } from './commands/fs-version-check.js'
-import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
+import { emitWarningDeprecationBanner } from './lib/deprecations.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
-import { emitWarningDeprecationBanner } from './lib/deprecations.js'
 
 const program = new Command()
 program
   .name('memon')
   .description('experiment monitoring and management')
-  .version('0.0.0')
+  .version(MEMON_RELEASE)
   .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
   .option('--format <fmt>', 'output format: json | human', 'json')
 
@@ -148,9 +151,12 @@ mock
 program
   .command('serve')
   .description('run the web dashboard (Next.js) on the configured port')
-  .option('--config <path>', 'path to config.yml (default: <cwd>/config.yml or <repo-root>/config.yml)')
+  .option(
+    '--config <path>',
+    'path to config.yml (default: <cwd>/config.yml or <repo-root>/config.yml)',
+  )
   .option('--dev', 'run Next.js in dev mode', false)
-  .option('-p, --port <port>', 'port to bind (default 3737)', '3737')
+  .option('-p, --port <port>', 'override the configured port (standalone default: 3737)')
   .action(async (opts: { config?: string; dev?: boolean; port?: string }) => {
     const g = readGlobals()
     if (g.projectRoot) {
@@ -159,12 +165,125 @@ program
         '--project-root is not supported by `memon serve`; use config.yml',
       )
     }
+    const port = opts.port === undefined ? undefined : Number(opts.port)
+    if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65_535)) {
+      emitErrorAndExit('BAD_REQUEST', '--port must be an integer between 1 and 65535')
+    }
     await runServe({
       configPath: opts.config,
       cwd: g.cwd,
       dev: !!opts.dev,
-      port: Number(opts.port) || 3737,
+      ...(port !== undefined ? { port } : {}),
     })
+  })
+
+const backend = program.command('backend').description('cluster Backend service commands')
+
+backend
+  .command('serve')
+  .description('run the framework-neutral cluster Backend HTTP service')
+  .option('--config <path>', 'path to the Backend instance config (default: <cwd>/config.yml)')
+  .action(async (opts: { config?: string }) => {
+    const g = readGlobals()
+    if (g.projectRoot) {
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        '--project-root is not supported by `memon backend serve`; use a Backend instance config',
+      )
+    }
+    await runBackendServe({ cwd: g.cwd, configPath: opts.config, format: g.format })
+  })
+
+const backendDaemon = backend.command('daemon').description('rootless Backend daemon lifecycle')
+for (const action of ['start', 'stop', 'restart', 'status'] as const) {
+  backendDaemon
+    .command(action)
+    .description(`${action} or inspect the persistent Backend supervisor`)
+    .option('--config <path>', 'path to the Backend instance config (default: <cwd>/config.yml)')
+    .action(async (opts: { config?: string }) => {
+      const g = readGlobals()
+      if (g.projectRoot) {
+        emitErrorAndExit(
+          'BAD_REQUEST',
+          `--project-root is not supported by \`memon backend daemon ${action}\``,
+        )
+      }
+      const result = await runBackendDaemonCommand({
+        action,
+        cwd: g.cwd,
+        configPath: opts.config,
+        format: g.format,
+      })
+      if (
+        'outcome' in result &&
+        [
+          'stale',
+          'mismatch',
+          'crash_loop',
+          'startup_timeout',
+          'restart_required',
+          'use_backend_serve',
+        ].includes(result.outcome)
+      ) {
+        process.exitCode = EXIT.GENERIC
+      }
+    })
+}
+
+backend
+  .command('token')
+  .description('Backend service-token commands')
+  .command('generate')
+  .description('print one new service token')
+  .action(async () => {
+    await runBackendTokenGenerate()
+  })
+for (const action of ['install', 'update'] as const) {
+  backend
+    .command(action)
+    .description(`prepare, activate, and verify a pinned Backend release`)
+    .requiredOption('--revision <sha>', 'exact 40-character commit SHA')
+    .option('--config <path>', 'Backend instance config')
+    .action(async (opts: { revision: string; config?: string }) => {
+      const g = readGlobals()
+      const result = await runBackendPrepare({
+        action,
+        cwd: g.cwd,
+        configPath: opts.config,
+        revision: opts.revision,
+        format: g.format,
+      })
+      if (result.outcome !== 'activated') process.exitCode = EXIT.GENERIC
+    })
+}
+backend
+  .command('rollback')
+  .description('activate and verify the installed previous Backend release')
+  .option('--revision <installed>', 'require this installed previous name or revision')
+  .option('--config <path>', 'Backend instance config')
+  .action(async (opts: { revision?: string; config?: string }) => {
+    const g = readGlobals()
+    const result = await runBackendRollback({
+      cwd: g.cwd,
+      configPath: opts.config,
+      revision: opts.revision,
+      format: g.format,
+    })
+    if (result.outcome !== 'activated') process.exitCode = EXIT.GENERIC
+  })
+
+backendDaemon
+  .command('supervise', { hidden: true })
+  .description('internal persistent supervisor entry')
+  .requiredOption('--config <path>', 'path to the Backend instance config')
+  .action(async (opts: { config: string }) => {
+    const result = await runBackendDaemonCommand({
+      action: 'supervise',
+      cwd: process.cwd(),
+      configPath: opts.config,
+      format: 'json',
+    })
+    if ('outcome' in result && result.outcome === 'crash_loop') process.exitCode = EXIT.GENERIC
   })
 
 // ---------- new agent-shaped read commands ----------
@@ -174,19 +293,27 @@ program
   .description('bulk-read a project root: experiments + hypotheses + journal')
   .option('--include-archived', 'include archived runs in the result', false)
   .option('--archived-only', 'return ONLY archived runs', false)
-  .action(async (positionalRoot: string | undefined, opts: { includeArchived?: boolean; archivedOnly?: boolean }) => {
-    const g = readGlobals()
-    if (opts.includeArchived && opts.archivedOnly) {
-      emitErrorAndExit('BAD_REQUEST', '--include-archived and --archived-only are mutually exclusive')
-    }
-    const root = positionalRoot ?? g.projectRoot ?? g.cwd
-    await runScan({
-      projectRoot: root,
-      includeArchived: !!opts.includeArchived,
-      archivedOnly: !!opts.archivedOnly,
-      format: g.format,
-    })
-  })
+  .action(
+    async (
+      positionalRoot: string | undefined,
+      opts: { includeArchived?: boolean; archivedOnly?: boolean },
+    ) => {
+      const g = readGlobals()
+      if (opts.includeArchived && opts.archivedOnly) {
+        emitErrorAndExit(
+          'BAD_REQUEST',
+          '--include-archived and --archived-only are mutually exclusive',
+        )
+      }
+      const root = positionalRoot ?? g.projectRoot ?? g.cwd
+      await runScan({
+        projectRoot: root,
+        includeArchived: !!opts.includeArchived,
+        archivedOnly: !!opts.archivedOnly,
+        format: g.format,
+      })
+    },
+  )
 
 const journal = program.command('journal').description('docs/journal.md commands')
 journal
@@ -224,12 +351,10 @@ program
   .command('hypotheses')
   .description('hypotheses commands (agent-shaped JSON output)')
   .addCommand(
-    new Command('read')
-      .description('read parsed docs/hypotheses.md (JSON)')
-      .action(async () => {
-        const g = readGlobals()
-        await runHypothesesRead(g)
-      }),
+    new Command('read').description('read parsed docs/hypotheses.md (JSON)').action(async () => {
+      const g = readGlobals()
+      await runHypothesesRead(g)
+    }),
   )
 
 const experiment = program
@@ -258,28 +383,28 @@ experiment
   .option('--title <text>', 'human-readable title')
   .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
   .option('--from-run <run-dir>', 'bind an existing run as the first member')
-  .action(
-    async (
-      slug: string,
-      opts: { title?: string; hypotheses?: string; fromRun?: string },
-    ) => {
-      const g = readGlobals()
-      const hyps = opts.hypotheses
-        ? opts.hypotheses.split(',').map((s) => s.trim()).filter(Boolean)
-        : []
-      await runExperimentCreate({
-        ...g,
-        slug,
-        title: opts.title,
-        hypotheses: hyps,
-        fromRun: opts.fromRun,
-      })
-    },
-  )
+  .action(async (slug: string, opts: { title?: string; hypotheses?: string; fromRun?: string }) => {
+    const g = readGlobals()
+    const hyps = opts.hypotheses
+      ? opts.hypotheses
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
+    await runExperimentCreate({
+      ...g,
+      slug,
+      title: opts.title,
+      hypotheses: hyps,
+      fromRun: opts.fromRun,
+    })
+  })
 
 experiment
   .command('rename <id-or-slug> <new-slug>')
-  .description("rename an experiment's slug (NNNN preserved); cascades through bound runs and hypotheses.md")
+  .description(
+    "rename an experiment's slug (NNNN preserved); cascades through bound runs and hypotheses.md",
+  )
   .action(async (idOrSlug: string, newSlug: string) => {
     const g = readGlobals()
     await runExperimentRename({ ...g, idOrSlug, newSlug })
@@ -338,18 +463,27 @@ resultsCommand
   .option('--status <statuses>', 'comma-separated variant statuses to include (default: all)')
   .option('--column <keys>', 'comma-separated column keys to include (default: all)')
   .option('--group <group>', 'column group filter: parameter | metric | all (default: all)', 'all')
-  .option('--output <fmt>', 'output format: json | human | csv | markdown | yaml (default: json)', 'json')
-  .action(async (idOrSlug: string, opts: { variant?: string; status?: string; column?: string; group?: string; output?: string }) => {
-    await runExperimentResults({
-      ...readGlobals(),
-      idOrSlug,
-      variants: opts.variant,
-      statuses: opts.status,
-      columns: opts.column,
-      columnGroup: opts.group ?? 'all',
-      output: opts.output ?? 'json',
-    })
-  })
+  .option(
+    '--output <fmt>',
+    'output format: json | human | csv | markdown | yaml (default: json)',
+    'json',
+  )
+  .action(
+    async (
+      idOrSlug: string,
+      opts: { variant?: string; status?: string; column?: string; group?: string; output?: string },
+    ) => {
+      await runExperimentResults({
+        ...readGlobals(),
+        idOrSlug,
+        variants: opts.variant,
+        statuses: opts.status,
+        columns: opts.column,
+        columnGroup: opts.group ?? 'all',
+        output: opts.output ?? 'json',
+      })
+    },
+  )
 
 const experimentSection = experiment
   .command('section')
@@ -379,7 +513,9 @@ experiment
 
 experiment
   .command('delete <id-or-slug>')
-  .description("delete an experiment doc; cascade-unlinks runs (requires --force when bound runs exist)")
+  .description(
+    'delete an experiment doc; cascade-unlinks runs (requires --force when bound runs exist)',
+  )
   .option('--force', 'cascade-unlink without prompting', false)
   .action(async (experimentIdOrSlug: string, opts: { force?: boolean }) => {
     const g = readGlobals()
@@ -400,7 +536,10 @@ status
   .description(
     'atomically set status. Run-id: writes [STATUS] event with values PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN. Exp-id: writes [EXP_STATUS] with OPEN|RESOLVED|ABANDONED.',
   )
-  .requiredOption('--to <status>', 'run-side: PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN; exp-side: OPEN|RESOLVED|ABANDONED')
+  .requiredOption(
+    '--to <status>',
+    'run-side: PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN; exp-side: OPEN|RESOLVED|ABANDONED',
+  )
   .requiredOption(
     '--expected-mtime <ms>',
     "expected README mtime (epoch ms; get from 'memon show')",
@@ -440,7 +579,10 @@ readme
     const g = readGlobals()
     const stdinContent = await readStdin()
     if (!stdinContent) {
-      emitErrorAndExit('BAD_REQUEST', 'expected README content on stdin (e.g. cat new.md | memon experiment readme write ...)')
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        'expected README content on stdin (e.g. cat new.md | memon experiment readme write ...)',
+      )
     }
     emitV2DeprecationBanner('experiment readme write', 'run readme write')
     await runReadmeWrite({
@@ -529,33 +671,37 @@ warning
   .description('flip a RESOLVED warning back to OPEN')
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .option('--expected-hash <sha1>', 'optional content sha1 lock')
-  .action(async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
-    emitWarningDeprecationBanner()
-    const g = readGlobals()
-    await runWarningReopen({
-      ...g,
-      runId: id,
-      rowId,
-      expectedMtime: opts.expectedMtime,
-      expectedHash: opts.expectedHash,
-    })
-  })
+  .action(
+    async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
+      emitWarningDeprecationBanner()
+      const g = readGlobals()
+      await runWarningReopen({
+        ...g,
+        runId: id,
+        rowId,
+        expectedMtime: opts.expectedMtime,
+        expectedHash: opts.expectedHash,
+      })
+    },
+  )
 warning
   .command('delete <id> <rowId>')
   .description('remove a warning row (audit kept in JOURNAL)')
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .option('--expected-hash <sha1>', 'optional content sha1 lock')
-  .action(async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
-    emitWarningDeprecationBanner()
-    const g = readGlobals()
-    await runWarningDelete({
-      ...g,
-      runId: id,
-      rowId,
-      expectedMtime: opts.expectedMtime,
-      expectedHash: opts.expectedHash,
-    })
-  })
+  .action(
+    async (id: string, rowId: string, opts: { expectedMtime?: number; expectedHash?: string }) => {
+      emitWarningDeprecationBanner()
+      const g = readGlobals()
+      await runWarningDelete({
+        ...g,
+        runId: id,
+        rowId,
+        expectedMtime: opts.expectedMtime,
+        expectedHash: opts.expectedHash,
+      })
+    },
+  )
 
 experiment
   .command('archive <id>')
@@ -622,7 +768,7 @@ run
 run
   .command('resolve-exp <id-or-dir>')
   .description(
-    "print the parent exp doc id for a run; exit 1 (BAD_STATE) on orphan, exit 4 (NOT_FOUND) on unknown",
+    'print the parent exp doc id for a run; exit 1 (BAD_STATE) on orphan, exit 4 (NOT_FOUND) on unknown',
   )
   .action(async (runIdOrDir: string) => {
     const g = readGlobals()
@@ -633,7 +779,7 @@ const runWarning = run.command('warning').description('run-side warning operatio
 runWarning
   .command('add <id-or-dir>')
   .description(
-    'resolve the run\'s parent exp + dispatch to `experiment warning add <exp> --run <run>`; refuses orphan runs',
+    "resolve the run's parent exp + dispatch to `experiment warning add <exp> --run <run>`; refuses orphan runs",
   )
   .requiredOption('--category <cat>', 'methodology|result|config|data|repro|compare|infra|other')
   .requiredOption('--message <text>', 'free-text description of the warning')
@@ -767,10 +913,7 @@ share
     'origin to prepend to the share path (e.g. https://memon.example.com); falls back to $MEMON_PUBLIC_URL, else path-only output',
   )
   .action(
-    async (
-      projectName: string,
-      opts: { label?: string; expires?: string; urlBase?: string },
-    ) => {
+    async (projectName: string, opts: { label?: string; expires?: string; urlBase?: string }) => {
       const g = readGlobals()
       await runShareCreate({
         ...g,

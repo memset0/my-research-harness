@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  MANAGE_TMUX_CACHE_CAP,
   applySelectionToCache,
+  MANAGE_TMUX_CACHE_CAP,
 } from '../../app/manage/tmux/tmux-page.client'
 
 describe('MANAGE_TMUX_CACHE_CAP', () => {
@@ -90,5 +90,14 @@ describe('applySelectionToCache', () => {
     ]
     const next = applySelectionToCache(prev, 'C', 2)
     expect(next.map((e) => e.sessionName)).toEqual(['B', 'C'])
+  })
+
+  it('keeps equal session names on different Hosts as distinct cache entries', () => {
+    const hostA = applySelectionToCache([], 'memon-manual-same', 4, 'host-a')
+    const both = applySelectionToCache(hostA, 'memon-manual-same', 4, 'host-b')
+    expect(both).toEqual([
+      expect.objectContaining({ host: 'host-a', sessionName: 'memon-manual-same' }),
+      expect.objectContaining({ host: 'host-b', sessionName: 'memon-manual-same' }),
+    ])
   })
 })

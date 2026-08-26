@@ -7,20 +7,21 @@
 //     already matches the requested target (D2 escape hatch)
 //   * archive must still 409 when stale mtime + the on-disk archive
 //     state DIFFERS from the request (negative test for the escape hatch)
+
+import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Run, RunIndex, readRunDir } from '@memon/core'
 import { NextRequest } from 'next/server'
-import { RunIndex, readRunDir, type Run } from '@memon/core'
-import { EventEmitter } from 'node:events'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../../lib/runtime', () => ({
   getRuntime: vi.fn(),
 }))
 
-import { PATCH } from './route'
 import { getRuntime } from '../../../../../lib/runtime'
+import { PATCH } from './route'
 
 const README_BASE = `---
 id: foo-260501-100000
@@ -161,10 +162,9 @@ describe('PATCH /api/runs/:id/archive', () => {
     const initialStat = await fs.stat(readmePath)
 
     // First client wins the race normally.
-    const resA = await PATCH(
-      patchReq({ archived: true, expectedMtime: initialStat.mtimeMs }),
-      { params: Promise.resolve({ id: ID }) },
-    )
+    const resA = await PATCH(patchReq({ archived: true, expectedMtime: initialStat.mtimeMs }), {
+      params: Promise.resolve({ id: ID }),
+    })
     expect(resA.status).toBe(200)
     const bodyA = (await resA.json()) as { archived: boolean; noop?: boolean }
     expect(bodyA.archived).toBe(true)
@@ -172,10 +172,9 @@ describe('PATCH /api/runs/:id/archive', () => {
 
     // Second client has the same view (pre-archive mtime) but the on-disk
     // archived state already matches its target.
-    const resB = await PATCH(
-      patchReq({ archived: true, expectedMtime: initialStat.mtimeMs }),
-      { params: Promise.resolve({ id: ID }) },
-    )
+    const resB = await PATCH(patchReq({ archived: true, expectedMtime: initialStat.mtimeMs }), {
+      params: Promise.resolve({ id: ID }),
+    })
     expect(resB.status).toBe(200)
     const bodyB = (await resB.json()) as { archived: boolean; noop?: boolean }
     expect(bodyB.archived).toBe(true)

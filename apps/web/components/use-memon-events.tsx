@@ -1,10 +1,46 @@
 'use client'
 
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { subscribeMemonEvents } from '../lib/events-client'
 import type { IndexedRun } from '../lib/api'
+import { subscribeMemonEvents } from '../lib/events-client'
+
+function scopedKey(host: string | undefined, root: string, ...parts: unknown[]): unknown[] {
+  return host ? [root, host, ...parts] : [root, ...parts]
+}
+
+export function queryKeyContainsHost(queryKey: readonly unknown[], host: string): boolean {
+  const seen = new Set<object>()
+  const contains = (value: unknown): boolean => {
+    if (value === host) return true
+    if (!value || typeof value !== 'object') return false
+    if (seen.has(value)) return false
+    seen.add(value)
+    if (Array.isArray(value)) return value.some(contains)
+    const record = value as Record<string, unknown>
+    if (record.host === host) return true
+    return Object.values(record).some(contains)
+  }
+  return contains(queryKey)
+}
+
+export function invalidateQueriesForHost(queryClient: QueryClient, host: string): void {
+  void queryClient.invalidateQueries({
+    predicate: (query) => {
+      const root = query.queryKey[0]
+      return root === 'hosts' || root === 'projects' || queryKeyContainsHost(query.queryKey, host)
+    },
+  })
+}
+
+export function invalidateJournalQueries(
+  queryClient: QueryClient,
+  host: string | undefined,
+  project: string,
+): void {
+  void queryClient.invalidateQueries({ queryKey: scopedKey(host, 'journal', project) })
+}
 
 /**
  * Subscribes to /api/events SSE and invalidates the relevant TanStack Query
@@ -16,6 +52,7 @@ import type { IndexedRun } from '../lib/api'
  *                          (parent invalidation only when the run is bound)
  *   - experiment-change  → ['experiments'], ['experiments', project],
  *                          ['experiment', id]
+ *   - journal-change     → ['journal', Host?, project]
  *   - anomaly            → ['anomalies', project]
  *
  * Mount this hook ONCE at the top of the React tree (e.g. inside Providers).
@@ -28,26 +65,32 @@ export function useMemonEvents() {
     const seenExpIds = new Set<string>()
 
     // Pre-populate from any list cache that's already loaded
-    const initialRuns = queryClient.getQueryData<{ experiments: IndexedRun[] }>([
-      'runs',
-    ])
+    const initialRuns = queryClient.getQueryData<{ experiments: IndexedRun[] }>(['runs'])
     if (initialRuns?.experiments) {
       for (const e of initialRuns.experiments) seenRunIds.add(e.id)
     }
 
     const unsubscribe = subscribeMemonEvents((evt) => {
       switch (evt.topic) {
+        case 'host-resync': {
+          invalidateQueriesForHost(queryClient, evt.host)
+          return
+        }
         case 'run-change': {
           if (!evt.id) return
-          queryClient.invalidateQueries({ queryKey: ['runs'] })
-          queryClient.invalidateQueries({ queryKey: ['run', evt.id] })
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'runs') })
+          if (evt.host && evt.project) {
+            queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'runs', evt.project) })
+          }
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'run', evt.id) })
           if (evt.parentExperimentId) {
             queryClient.invalidateQueries({
-              queryKey: ['experiment', evt.parentExperimentId],
+              queryKey: scopedKey(evt.host, 'experiment', evt.parentExperimentId),
             })
           }
-          if (evt.type === 'set' && !seenRunIds.has(evt.id)) {
-            seenRunIds.add(evt.id)
+          const seenId = evt.host ? `${evt.host}:${evt.id}` : evt.id
+          if (evt.type === 'set' && !seenRunIds.has(seenId)) {
+            seenRunIds.add(seenId)
             toast.info(`New run: ${evt.id}`, {
               description: evt.experiment?.frontMatter?.name,
             })
@@ -56,14 +99,19 @@ export function useMemonEvents() {
         }
         case 'experiment-change': {
           // Coarse 'rediscover' signal carries no id — invalidate the lists.
-          queryClient.invalidateQueries({ queryKey: ['experiments'] })
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'experiments') })
           if (evt.project) {
-            queryClient.invalidateQueries({ queryKey: ['experiments', evt.project] })
+            queryClient.invalidateQueries({
+              queryKey: scopedKey(evt.host, 'experiments', evt.project),
+            })
           }
           if (evt.id) {
-            queryClient.invalidateQueries({ queryKey: ['experiment', evt.id] })
-            if (evt.type === 'set' && !seenExpIds.has(evt.id)) {
-              seenExpIds.add(evt.id)
+            queryClient.invalidateQueries({
+              queryKey: scopedKey(evt.host, 'experiment', evt.id),
+            })
+            const seenId = evt.host ? `${evt.host}:${evt.id}` : evt.id
+            if (evt.type === 'set' && !seenExpIds.has(seenId)) {
+              seenExpIds.add(seenId)
               toast.info(`New experiment: ${evt.id}`, {
                 description: evt.experiment?.frontMatter?.title,
               })
@@ -71,17 +119,45 @@ export function useMemonEvents() {
           }
           return
         }
+        case 'journal-change': {
+          invalidateJournalQueries(queryClient, evt.host, evt.project)
+          return
+        }
         case 'anomaly': {
-          queryClient.invalidateQueries({ queryKey: ['anomalies', evt.project] })
-          queryClient.invalidateQueries({ queryKey: ['anomalies'] })
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'anomalies', evt.project),
+          })
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'anomalies') })
           return
         }
         case 'code-reviews-change': {
           if (evt.project) {
-            queryClient.invalidateQueries({ queryKey: ['code-reviews', evt.project] })
+            queryClient.invalidateQueries({
+              queryKey: scopedKey(evt.host, 'code-reviews', evt.project),
+            })
             // Prefix-match invalidates every ['code-review', project, id] too.
-            queryClient.invalidateQueries({ queryKey: ['code-review', evt.project] })
+            queryClient.invalidateQueries({
+              queryKey: scopedKey(evt.host, 'code-review', evt.project),
+            })
           }
+          return
+        }
+        case 'reports-change': {
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'reports', evt.project),
+          })
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'report', evt.project),
+          })
+          return
+        }
+        case 'digests-change': {
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'digests', evt.project),
+          })
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'digest', evt.project),
+          })
           return
         }
       }

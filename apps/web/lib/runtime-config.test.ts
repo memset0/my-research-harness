@@ -33,8 +33,14 @@ describe('readRuntimeConfig', () => {
     expect(config.terminal).toEqual({ tmuxEnabled: false, herdrEnabled: true })
   })
 
+  it('preserves the central role gate used by Host-scoped shell UIs', () => {
+    injectScript({ role: 'central' })
+    expect(readRuntimeConfig().role).toBe('central')
+  })
+
   it('falls back to 10_000 when the script tag is absent', () => {
     expect(readRuntimeConfig()).toEqual({
+      role: 'standalone',
       gitStatus: { intervalMs: 10_000 },
       terminal: { tmuxEnabled: true, herdrEnabled: false },
     })

@@ -1,193 +1,115 @@
-// PUT /api/readme — write a README.md with mtime optimistic locking.
-//
-// Body: { path: string, content: string, expectedMtime: number, expectedHash?: string }
-//
-// Behavior:
-//   - 200 + { mtime } on success; appends a [STATUS] event to docs/journal.md if
-//     the front matter `status` field changed
-//   - 409 + { mtime, content } when on-disk mtime ≠ expectedMtime
-//   - 409 also if mtime matches but content hash differs (defends against
-//     low-resolution mtime on NFS)
-//   - 403 if path escapes any configured project root
+// GET|PUT /api/readme — legacy absolute-path adapter over shared document/mutation services.
 
-import { promises as fs } from 'node:fs'
-import { createHash } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { basename, dirname } from 'node:path'
+import { BackendMutationError } from '@memon/backend'
+import { BackendReadmeResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import {
-  appendJournalEvent,
-  parseReadme,
-  readRunDir,
-  reserializeReadme,
-  type Status,
-} from '@memon/core'
+import { PathSafetyError } from '../../../lib/path-safety'
 import { getRuntime } from '../../../lib/runtime'
-import { PathSafetyError, assertWithinProjectRoots } from '../../../lib/path-safety'
+import { standaloneResource } from '../../../lib/server/standalone-resource'
+import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
+  const path = new URL(request.url).searchParams.get('path')
+  if (!path) return badRequest('path query parameter required')
   try {
-    const rt = await getRuntime()
-    const url = new URL(req.url)
-    const pathParam = url.searchParams.get('path')
-    if (!pathParam) {
-      return NextResponse.json(
-        { error: { code: 'BAD_REQUEST', message: 'path query parameter required' } },
-        { status: 400 },
-      )
-    }
-    let safePath: string
-    try {
-      safePath = assertWithinProjectRoots(pathParam, rt.config)
-    } catch (err) {
-      if (err instanceof PathSafetyError) {
-        return NextResponse.json(
-          { error: { code: 'FORBIDDEN', message: err.message } },
-          { status: 403 },
-        )
-      }
-      throw err
-    }
-    const stat = await fs.stat(safePath)
-    const content = await fs.readFile(safePath, 'utf8')
-    const hash = createHash('sha1').update(content).digest('hex')
-    return NextResponse.json({ path: safePath, content, mtime: stat.mtimeMs, hash })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+    const runtime = await getRuntime()
+    const target = standaloneResource(runtime.config, path)
+    const readme = BackendReadmeResponseSchema.parse(
+      await standaloneServices(runtime.config).documents.getReadme(
+        target.project.name,
+        target.resource,
+      ),
+    )
+    return NextResponse.json({
+      path: target.safePath,
+      content: readme.content,
+      mtime: readme.mtime,
+      hash: readme.hash,
+    })
+  } catch (error) {
+    return readmeError(error)
   }
 }
 
-interface PutBody {
-  path: string
-  content: string
-  expectedMtime: number
-  expectedHash?: string
-}
-
-export async function PUT(req: NextRequest) {
+export async function PUT(request: NextRequest) {
+  let body: { path?: unknown; content?: unknown; expectedMtime?: unknown; expectedHash?: unknown }
   try {
-    const rt = await getRuntime()
-    const body = (await req.json()) as PutBody
-
-    if (!body.path || typeof body.content !== 'string' || typeof body.expectedMtime !== 'number') {
-      return NextResponse.json(
-        { error: { code: 'BAD_REQUEST', message: 'path, content, expectedMtime required' } },
-        { status: 400 },
-      )
-    }
-
-    let safePath: string
-    try {
-      safePath = assertWithinProjectRoots(body.path, rt.config)
-    } catch (err) {
-      if (err instanceof PathSafetyError) {
-        return NextResponse.json({ error: { code: 'FORBIDDEN', message: err.message } }, { status: 403 })
-      }
-      throw err
-    }
-
-    // mtime + content-hash check
-    const stat = await fs.stat(safePath)
-    if (stat.mtimeMs !== body.expectedMtime) {
-      const current = await fs.readFile(safePath, 'utf8')
+    body = await request.json()
+  } catch {
+    return badRequest('invalid JSON body')
+  }
+  if (
+    typeof body.path !== 'string' ||
+    typeof body.content !== 'string' ||
+    typeof body.expectedMtime !== 'number'
+  ) {
+    return badRequest('path, content, expectedMtime required')
+  }
+  try {
+    const runtime = await getRuntime()
+    const target = standaloneResource(runtime.config, body.path)
+    const services = standaloneServices(runtime.config)
+    const current = BackendReadmeResponseSchema.parse(
+      await services.documents.getReadme(target.project.name, target.resource),
+    )
+    const expectedHash = typeof body.expectedHash === 'string' ? body.expectedHash : current.hash
+    const runId = target.resource.endsWith('/README.md') ? basename(dirname(target.resource)) : null
+    const experimentMatch =
+      /(?:^|\/)docs\/experiments\/(E\d{4}-[a-z0-9-]+)(?:\/README\.md|\.md)$/.exec(target.resource)
+    const result = experimentMatch?.[1]
+      ? await services.mutations.writeExperimentReadme(target.project.name, experimentMatch[1], {
+          content: body.content,
+          expectedMtime: body.expectedMtime,
+          expectedHash,
+        })
+      : runId
+        ? await services.mutations.writeRunReadme(target.project.name, runId, {
+            content: body.content,
+            expectedMtime: body.expectedMtime,
+            expectedHash,
+          })
+        : null
+    if (!result) return badRequest('path is not a Run or Experiment README')
+    runtime.pokeByPath(dirname(target.safePath))
+    return NextResponse.json({
+      mtime: result.mtime,
+      hash: result.hash,
+      finalContent: result.finalContent,
+    })
+  } catch (error) {
+    if (error instanceof BackendMutationError && error.code === 'CONFLICT') {
       return NextResponse.json(
         {
-          error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
-          mtime: stat.mtimeMs,
-          content: current,
+          error: { code: 'CONFLICT', message: error.message },
+          mtime: error.current?.mtime,
+          content: error.current?.content,
         },
         { status: 409 },
       )
     }
-    if (body.expectedHash) {
-      const current = await fs.readFile(safePath, 'utf8')
-      if (sha1(current) !== body.expectedHash) {
-        return NextResponse.json(
-          {
-            error: { code: 'CONFLICT', message: 'on-disk content hash differs from expectedHash' },
-            mtime: stat.mtimeMs,
-            content: current,
-          },
-          { status: 409 },
-        )
-      }
-    }
-
-    // Compare prev vs new status to know whether to emit a JOURNAL event
-    const prevContent = await fs.readFile(safePath, 'utf8')
-    const prevStatus = parseReadme(prevContent).frontMatter.status
-    const nextParsed = parseReadme(body.content)
-    const nextStatus = nextParsed.frontMatter.status
-    // Server bumps updated_at and re-serializes for canonical format,
-    // matching the new /api/runs/:id/readme + /api/experiments/:id/readme
-    // contract (task 12.1+12.2). Clients consume `finalContent` from the
-    // response to re-baseline the editor buffer.
-    nextParsed.frontMatter.updatedAt = nowIso()
-    const finalContent = reserializeReadme(nextParsed)
-
-    // Atomic write: temp file → rename
-    const tmpPath = join(dirname(safePath), `.${Date.now()}.${Math.random().toString(36).slice(2)}.readme.tmp`)
-    await fs.writeFile(tmpPath, finalContent, 'utf8')
-    await fs.rename(tmpPath, safePath)
-    const newStat = await fs.stat(safePath)
-    const finalHash = sha1(finalContent)
-
-    // Update index in-memory
-    const expDir = dirname(safePath)
-    const owningProject = rt.projectFor(expDir)
-    if (owningProject) {
-      try {
-        const updatedExp = await readRunDir(expDir, owningProject.name)
-        rt.index.set(updatedExp)
-        rt.events.emit('run-change', {
-          type: 'set',
-          id: updatedExp.id,
-          experiment: updatedExp,
-          parentExperimentId: updatedExp.frontMatter.experiment ?? null,
-        })
-      } catch {
-        // index update is best-effort; the write itself succeeded
-      }
-
-      // Emit [STATUS] event when status changed
-      if (prevStatus !== nextStatus) {
-        const expId = nextParsed.frontMatter.id
-        await appendJournalEvent({
-          path: join(owningProject.root, 'docs', 'journal.md'),
-          event: {
-            timestamp: nowIso(),
-            tag: 'STATUS',
-            body: `\`${expId}\` ${prevStatus} → ${nextStatus}`,
-          },
-        })
-      }
-    }
-
-    return NextResponse.json({ mtime: newStat.mtimeMs, hash: finalHash, finalContent })
-  } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return readmeError(error)
   }
 }
 
-function sha1(s: string): string {
-  return createHash('sha1').update(s).digest('hex')
+function badRequest(message: string) {
+  return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status: 400 })
 }
 
-function nowIso(): string {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  const offsetMin = -d.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const oh = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0')
-  const om = String(Math.abs(offsetMin) % 60).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}${sign}${oh}:${om}`
+function readmeError(error: unknown) {
+  if (error instanceof PathSafetyError) {
+    return NextResponse.json(
+      { error: { code: 'FORBIDDEN', message: error.message } },
+      { status: 403 },
+    )
+  }
+  if (error instanceof BackendMutationError) {
+    return NextResponse.json(
+      { error: { code: error.code, message: error.message } },
+      { status: error.code === 'FORBIDDEN' ? 403 : 404 },
+    )
+  }
+  return NextResponse.json({ error: { message: 'README operation failed' } }, { status: 500 })
 }

@@ -16,24 +16,67 @@ import yaml from 'js-yaml'
 import { ConfigRawSchema } from '../schemas.js'
 import {
   type AuthConfig,
+  type BackendConfig,
+  type BackendServiceTokens,
+  type CentralConfig,
+  type CentralHostConfig,
   type Config,
   DEFAULT_GIT_STATUS,
-  DEFAULT_NODE_CAPABILITIES,
   DEFAULT_POLL,
   DEFAULT_SLURM,
   DEFAULT_TERMINAL,
   type GitStatusConfig,
-  type HubConfig,
   MIN_GIT_STATUS_INTERVAL_MS,
-  type NodeConfig,
   type PollConfig,
   type ProjectConfig,
   type SlurmConfig,
   type TerminalConfig,
 } from '../types.js'
+import { BackendUrlPolicyError, normalizeBackendBaseUrl } from './backend-url.js'
+import { assertOwnerOnlyServiceConfig } from './permissions.js'
 
 const LEGACY_TELEGRAM_CONFIG_WARNING =
   'memon: warning: config key `telegram` is no longer supported; remove the `telegram:` block and delete its stored credentials.\n'
+
+const DEFAULT_CENTRAL_BIND_ADDR = '127.0.0.1'
+const DEFAULT_CENTRAL_BIND_PORT = 3737
+const DEFAULT_BACKEND_BIND_ADDR = '127.0.0.1'
+const DEFAULT_BACKEND_BIND_PORT = 3738
+
+function duplicateValue(values: readonly string[]): string | undefined {
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (seen.has(value)) return value
+    seen.add(value)
+  }
+  return undefined
+}
+
+function assertDistinctTokens(
+  tokens: BackendServiceTokens,
+  label: string,
+  candidate: string,
+): void {
+  if (tokens.next !== undefined && tokens.next === tokens.current) {
+    throw new ConfigError(`${label}.tokens.next must differ from tokens.current`, candidate)
+  }
+}
+
+function parseBackendBaseUrl(
+  rawUrl: string,
+  allowInsecureHttp: boolean,
+  label: string,
+  candidate: string,
+): string {
+  try {
+    return normalizeBackendBaseUrl(rawUrl, { allowInsecureHttp })
+  } catch (error) {
+    if (error instanceof BackendUrlPolicyError) {
+      throw new ConfigError(`${label}.base_url: ${error.message}`, candidate)
+    }
+    throw error
+  }
+}
 
 export class ConfigError extends Error {
   constructor(
@@ -80,6 +123,16 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     raw = yaml.load(content, { schema: yaml.JSON_SCHEMA })
   } catch (err) {
     throw new ConfigError(`invalid YAML: ${(err as Error).message}`, candidate)
+  }
+
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    const legacyRoles = ['hub', 'node'].filter((key) => Object.hasOwn(raw, key))
+    if (legacyRoles.length > 0) {
+      throw new ConfigError(
+        `legacy ${legacyRoles.map((key) => `\`${key}:\``).join(' and ')} role configuration is no longer supported; migrate to mutually exclusive \`central:\` or \`backend:\` blocks`,
+        candidate,
+      )
+    }
   }
 
   if (
@@ -194,53 +247,240 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  // ── hub / node (mutually exclusive; openspec/changes/add-hub-node-split) ──
-  if (cfg.hub && cfg.node) {
+  // ── central / Backend roles ──
+  if (cfg.central && cfg.backend) {
     throw new ConfigError(
-      'config has both `hub:` and `node:` blocks — they are mutually exclusive (a process is either a hub or a node)',
+      'config has both `central:` and `backend:` blocks — they are mutually exclusive',
       candidate,
     )
   }
 
-  let hub: HubConfig | undefined
-  if (cfg.hub) {
-    const nodes = cfg.hub.nodes.map((n) => ({ name: n.name, authToken: n.auth_token }))
-    const names = nodes.map((n) => n.name)
-    const dup = names.find((n, i) => names.indexOf(n) !== i)
-    if (dup) {
-      throw new ConfigError(`hub.nodes has a duplicate node name: ${dup}`, candidate)
+  const rawRecord = raw as Record<string, unknown>
+  const clusterOnlyKeys = ['poll', 'terminal', 'slurm', 'git_status'] as const
+
+  let central: CentralConfig | undefined
+  if (cfg.central) {
+    if (projects.length > 0) {
+      throw new ConfigError(
+        'central role must not define local `projects:`; register an explicit Backend instead',
+        candidate,
+      )
     }
-    hub = {
-      bindAddr: cfg.hub.bind_addr ?? '127.0.0.1',
-      bindPort: cfg.hub.bind_port ?? 3737,
-      nodes,
-      ...(cfg.hub.public_url ? { publicUrl: cfg.hub.public_url } : {}),
+    const incompatibleKey = clusterOnlyKeys.find((key) => Object.hasOwn(rawRecord, key))
+    if (incompatibleKey) {
+      throw new ConfigError(
+        `central role must not define cluster-local \`${incompatibleKey}:\` settings`,
+        candidate,
+      )
+    }
+
+    const hosts: CentralHostConfig[] = cfg.central.hosts.map((host, index) => {
+      const tokens: BackendServiceTokens = {
+        current: host.tokens.current,
+        ...(host.tokens.next ? { next: host.tokens.next } : {}),
+      }
+      assertDistinctTokens(tokens, `central.hosts.${index}`, candidate)
+
+      const transport =
+        host.transport.kind === 'url'
+          ? {
+              kind: 'url' as const,
+              baseUrl: parseBackendBaseUrl(
+                host.transport.base_url,
+                host.transport.allow_insecure_http ?? false,
+                `central.hosts.${index}.transport`,
+                candidate,
+              ),
+              allowInsecureHttp: host.transport.allow_insecure_http ?? false,
+            }
+          : {
+              kind: 'ssh' as const,
+              executable: host.transport.executable ?? 'ssh',
+              target: host.transport.target,
+              knownHostsFile: isAbsolute(host.transport.known_hosts_file)
+                ? host.transport.known_hosts_file
+                : resolve(baseDir, host.transport.known_hosts_file),
+              ...(host.transport.identity_file
+                ? {
+                    identityFile: isAbsolute(host.transport.identity_file)
+                      ? host.transport.identity_file
+                      : resolve(baseDir, host.transport.identity_file),
+                  }
+                : {}),
+              localPort: host.transport.local_port,
+              remoteHost: host.transport.remote_host ?? '127.0.0.1',
+              remotePort: host.transport.remote_port,
+            }
+
+      const operations = host.operations
+        ? {
+            ...(host.operations.ssh_target ? { sshTarget: host.operations.ssh_target } : {}),
+            ...(host.operations.checkout_path
+              ? {
+                  checkoutPath: isAbsolute(host.operations.checkout_path)
+                    ? host.operations.checkout_path
+                    : resolve(baseDir, host.operations.checkout_path),
+                }
+              : {}),
+            ...(host.operations.config_path
+              ? {
+                  configPath: isAbsolute(host.operations.config_path)
+                    ? host.operations.config_path
+                    : resolve(baseDir, host.operations.config_path),
+                }
+              : {}),
+            ...(host.operations.runtime_bootstrap
+              ? { runtimeBootstrap: host.operations.runtime_bootstrap }
+              : {}),
+            ...(host.operations.supervisor_mode
+              ? { supervisorMode: host.operations.supervisor_mode }
+              : {}),
+          }
+        : undefined
+
+      return {
+        id: host.id,
+        ...(host.label ? { label: host.label } : {}),
+        tokens,
+        transport,
+        ...(operations ? { operations } : {}),
+      }
+    })
+
+    const duplicateHost = duplicateValue(hosts.map((host) => host.id))
+    if (duplicateHost) {
+      throw new ConfigError(`central.hosts has a duplicate Host id: ${duplicateHost}`, candidate)
+    }
+
+    const duplicateToken = duplicateValue(
+      hosts.flatMap((host) => [
+        host.tokens.current,
+        ...(host.tokens.next ? [host.tokens.next] : []),
+      ]),
+    )
+    if (duplicateToken) {
+      throw new ConfigError(
+        'central.hosts service tokens must be unique across Hosts and rotation slots',
+        candidate,
+      )
+    }
+    if (
+      cfg.central.legacy_share_host &&
+      !hosts.some((host) => host.id === cfg.central!.legacy_share_host)
+    ) {
+      throw new ConfigError('central.legacy_share_host must name one configured Host', candidate)
+    }
+
+    const centralBindPort = cfg.central.bind_port ?? DEFAULT_CENTRAL_BIND_PORT
+    const sshLocalPorts = hosts.flatMap((host) =>
+      host.transport.kind === 'ssh' ? [host.transport.localPort] : [],
+    )
+    const duplicateLocalPort = duplicateValue(sshLocalPorts.map(String))
+    if (duplicateLocalPort) {
+      throw new ConfigError(
+        `central.hosts has a duplicate SSH local forwarding port: ${duplicateLocalPort}`,
+        candidate,
+      )
+    }
+    if (sshLocalPorts.includes(centralBindPort)) {
+      throw new ConfigError(
+        `central bind port ${centralBindPort} collides with an SSH local forwarding port`,
+        candidate,
+      )
+    }
+
+    central = {
+      bindAddr: cfg.central.bind_addr ?? DEFAULT_CENTRAL_BIND_ADDR,
+      bindPort: centralBindPort,
+      ...(cfg.central.public_url ? { publicUrl: cfg.central.public_url } : {}),
+      ...(cfg.central.legacy_share_host ? { legacyShareHost: cfg.central.legacy_share_host } : {}),
+      hosts,
     }
   }
 
-  let node: NodeConfig | undefined
-  if (cfg.node) {
-    node = {
-      name: cfg.node.name,
-      authToken: cfg.node.auth_token,
-      hubUrl: cfg.node.hub_url,
-      capabilities: {
-        tmux: cfg.node.capabilities?.tmux ?? DEFAULT_NODE_CAPABILITIES.tmux,
-        projects: cfg.node.capabilities?.projects ?? DEFAULT_NODE_CAPABILITIES.projects,
+  let backend: BackendConfig | undefined
+  if (cfg.backend) {
+    if (cfg.auth) {
+      throw new ConfigError(
+        'backend role must not define browser-facing `auth:` credentials',
+        candidate,
+      )
+    }
+    if (projects.length === 0) {
+      throw new ConfigError('backend role must define at least one project', candidate)
+    }
+
+    const tokens: BackendServiceTokens = {
+      current: cfg.backend.tokens.current,
+      ...(cfg.backend.tokens.next ? { next: cfg.backend.tokens.next } : {}),
+    }
+    assertDistinctTokens(tokens, 'backend', candidate)
+
+    const stateDir = isAbsolute(cfg.backend.daemon.state_dir)
+      ? cfg.backend.daemon.state_dir
+      : resolve(baseDir, cfg.backend.daemon.state_dir)
+    const releaseDir = isAbsolute(cfg.backend.daemon.release_dir)
+      ? cfg.backend.daemon.release_dir
+      : resolve(baseDir, cfg.backend.daemon.release_dir)
+    const runtimeDir = isAbsolute(cfg.backend.daemon.runtime_dir)
+      ? cfg.backend.daemon.runtime_dir
+      : resolve(baseDir, cfg.backend.daemon.runtime_dir)
+    const duplicateDaemonDir = duplicateValue([stateDir, releaseDir, runtimeDir])
+    if (duplicateDaemonDir) {
+      throw new ConfigError(
+        'backend.daemon state_dir, release_dir, and runtime_dir must be distinct',
+        candidate,
+      )
+    }
+
+    const allowedHostnamePatterns = cfg.backend.daemon.guards?.allowed_hostnames ?? []
+    const forbiddenEnvironment = cfg.backend.daemon.guards?.forbidden_env ?? []
+    if (duplicateValue(allowedHostnamePatterns)) {
+      throw new ConfigError(
+        'backend.daemon.guards.allowed_hostnames entries must be unique',
+        candidate,
+      )
+    }
+    if (duplicateValue(forbiddenEnvironment)) {
+      throw new ConfigError('backend.daemon.guards.forbidden_env entries must be unique', candidate)
+    }
+
+    backend = {
+      hostId: cfg.backend.host_id,
+      bindAddr: cfg.backend.bind_addr ?? DEFAULT_BACKEND_BIND_ADDR,
+      bindPort: cfg.backend.bind_port ?? DEFAULT_BACKEND_BIND_PORT,
+      accessMode: cfg.backend.access_mode ?? 'read_write',
+      tokens,
+      daemon: {
+        mode: cfg.backend.daemon.mode ?? 'supervised',
+        stateDir,
+        releaseDir,
+        runtimeDir,
+        guards: { allowedHostnamePatterns, forbiddenEnvironment },
+        ...(cfg.backend.daemon.restart_argv
+          ? { restartArgv: cfg.backend.daemon.restart_argv }
+          : {}),
       },
     }
   }
 
-  // A hub has no local projects (they arrive from nodes); every other role
-  // requires at least one project.
-  if (!hub && projects.length === 0) {
-    throw new ConfigError(
-      'config must define at least one project (unless running as a hub)',
-      candidate,
-    )
+  // Standalone retains the existing project requirement.
+  if (!central && !backend && projects.length === 0) {
+    throw new ConfigError('standalone config must define at least one project', candidate)
   }
 
-  return { projects, poll, auth, terminal, slurm, gitStatus, hub, node }
+  if (central || backend) {
+    try {
+      await assertOwnerOnlyServiceConfig(candidate)
+    } catch (error) {
+      throw new ConfigError(
+        `unsafe service-token instance config: ${(error as Error).message}`,
+        candidate,
+      )
+    }
+  }
+
+  return { projects, poll, auth, terminal, slurm, gitStatus, central, backend }
 }
 
 /**

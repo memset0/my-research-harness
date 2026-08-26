@@ -18,6 +18,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ApiError,
   attachTerminal,
+  type ProjectTarget,
+  projectHost,
   startHerdrTerminal,
   startTerminal,
   type TerminalAgentKind,
@@ -31,18 +33,19 @@ export type TerminalViewSource = 'manage' | 'drawer' | 'popup' | 'unknown'
 export type TerminalViewProps = (
   | {
       mode: 'standard'
-      project: string
+      project: ProjectTarget
       scope: TerminalScopeKind
       slug: string
       agent: TerminalAgentKind
     }
   | {
       mode: 'raw'
+      host?: string
       sessionName: string
     }
   | {
       mode: 'herdr'
-      project?: string
+      project?: ProjectTarget
       scope?: TerminalScopeKind
       slug?: string
     }
@@ -63,12 +66,16 @@ export type TerminalViewProps = (
 
 const ATTACH_BROADCAST_CHANNEL = 'memon:terminal-attached'
 
-export function postTerminalAttached(sessionName: string, source: TerminalViewSource): void {
+export function postTerminalAttached(
+  sessionName: string,
+  source: TerminalViewSource,
+  host?: string,
+): void {
   if (typeof BroadcastChannel === 'undefined') return
   let channel: BroadcastChannel | null = null
   try {
     channel = new BroadcastChannel(ATTACH_BROADCAST_CHANNEL)
-    channel.postMessage({ sessionName, source, attachedAt: Date.now() })
+    channel.postMessage({ host: host ?? null, sessionName, source, attachedAt: Date.now() })
   } finally {
     channel?.close()
   }
@@ -99,9 +106,18 @@ export function TerminalView(props: TerminalViewProps) {
   const standardSlug = mode === 'standard' ? props.slug : undefined
   const standardAgent = mode === 'standard' ? props.agent : undefined
   const rawSessionName = mode === 'raw' ? props.sessionName : undefined
+  const rawHost = mode === 'raw' ? props.host : undefined
   const herdrProject = mode === 'herdr' ? props.project : undefined
   const herdrScope = mode === 'herdr' ? props.scope : undefined
   const herdrSlug = mode === 'herdr' ? props.slug : undefined
+  const targetHost =
+    mode === 'standard'
+      ? (projectHost(props.project) ?? undefined)
+      : mode === 'raw'
+        ? props.host
+        : props.project
+          ? (projectHost(props.project) ?? undefined)
+          : undefined
 
   useEffect(() => {
     let cancelled = false
@@ -118,7 +134,7 @@ export function TerminalView(props: TerminalViewProps) {
             agent: standardAgent,
           })
         : mode === 'raw'
-          ? attachTerminal({ sessionName: rawSessionName! })
+          ? attachTerminal({ sessionName: rawSessionName!, ...(rawHost ? { host: rawHost } : {}) })
           : startHerdrTerminal(
               herdrProject && herdrScope && herdrSlug
                 ? { project: herdrProject, scope: herdrScope, slug: herdrSlug }
@@ -127,6 +143,16 @@ export function TerminalView(props: TerminalViewProps) {
     void promise
       .then((res) => {
         if (cancelled) return
+        if (targetHost && res.host !== targetHost) {
+          throw new Error('Terminal response Host does not match the selected Host')
+        }
+        if (
+          targetHost &&
+          res.url !==
+            `/api/terminal/proxy/${encodeURIComponent(targetHost)}/${encodeURIComponent(res.sessionName)}/`
+        ) {
+          throw new Error('Terminal response URL is not bound to the selected Host')
+        }
         setIframeUrl(res.url)
         setWarnings(res.warnings ?? [])
         setPhase('ready')
@@ -134,7 +160,7 @@ export function TerminalView(props: TerminalViewProps) {
           sessionAnnouncedRef.current = res.sessionName
           onSessionReady?.(res.sessionName)
         }
-        postTerminalAttached(res.sessionName, sourceRef.current)
+        postTerminalAttached(res.sessionName, sourceRef.current, targetHost)
       })
       .catch((err) => {
         if (cancelled) return
@@ -152,18 +178,20 @@ export function TerminalView(props: TerminalViewProps) {
     standardSlug,
     standardAgent,
     rawSessionName,
+    rawHost,
     herdrProject,
     herdrScope,
     herdrSlug,
+    targetHost,
     onSessionReady,
   ])
 
   const iframeTitle =
     mode === 'standard'
-      ? `${standardAgent} terminal`
+      ? `${targetHost ? `${targetHost} · ` : ''}${standardAgent} terminal`
       : mode === 'raw'
-        ? `${rawSessionName} terminal`
-        : 'Herdr terminal'
+        ? `${targetHost ? `${targetHost} · ` : ''}${rawSessionName} terminal`
+        : `${targetHost ? `${targetHost} · ` : ''}Herdr terminal`
 
   // The iframe URL is same-origin, so after ttyd loads we install a small
   // capture-phase bridge for reliable native clipboard shortcuts. The
@@ -238,7 +266,7 @@ export function TerminalView(props: TerminalViewProps) {
       iframe.removeEventListener('load', onLoad)
       cleanup?.()
     }
-  }, [phase, source, iframeUrl])
+  }, [phase, source])
 
   return (
     <div className={cn('relative bg-zinc-950', fullscreen ? 'h-svh w-svw' : 'h-full w-full')}>

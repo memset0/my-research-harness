@@ -13,6 +13,9 @@ import type { ExperimentDocSummary, IndexedRun } from './api'
  * alias for run edits has been removed.
  */
 export interface RunChangeEvent {
+  /** Present for central events; absent preserves standalone compatibility. */
+  host?: string
+  project?: string
   type: 'set' | 'delete'
   id: string
   experiment?: IndexedRun
@@ -36,6 +39,8 @@ export interface RunChangeEvent {
  * unambiguous.
  */
 export interface ExperimentDocChangeEvent {
+  /** Present for central events; absent preserves standalone compatibility. */
+  host?: string
   type: 'set' | 'delete' | 'rediscover'
   id?: string
   project?: string
@@ -44,6 +49,8 @@ export interface ExperimentDocChangeEvent {
 
 /** v3 anomaly event — fires after `recomputeAnomalies(project)`. */
 export interface AnomalyEvent {
+  /** Present for central events; absent preserves standalone compatibility. */
+  host?: string
   project: string
   count: number
 }
@@ -53,7 +60,30 @@ export interface AnomalyEvent {
  * project (a doc added/removed/edited, or a progress checkbox toggled).
  */
 export interface CodeReviewsChangeEvent {
+  /** Present for central events; absent preserves standalone compatibility. */
+  host?: string
   project: string
+}
+
+export interface ReportsChangeEvent {
+  host?: string
+  project: string
+}
+
+export interface DigestsChangeEvent {
+  host?: string
+  project: string
+}
+
+export interface JournalChangeEvent {
+  host?: string
+  project: string
+}
+
+export interface HostResyncEvent {
+  host: string
+  reason: 'reconnect' | 'instance_epoch_changed' | 'sequence_gap'
+  emittedAt: string
 }
 
 /**
@@ -64,8 +94,12 @@ export interface CodeReviewsChangeEvent {
 export type MemonEvent =
   | ({ topic: 'run-change' } & RunChangeEvent)
   | ({ topic: 'experiment-change' } & ExperimentDocChangeEvent)
+  | ({ topic: 'journal-change' } & JournalChangeEvent)
   | ({ topic: 'anomaly' } & AnomalyEvent)
   | ({ topic: 'code-reviews-change' } & CodeReviewsChangeEvent)
+  | ({ topic: 'reports-change' } & ReportsChangeEvent)
+  | ({ topic: 'digests-change' } & DigestsChangeEvent)
+  | ({ topic: 'host-resync' } & HostResyncEvent)
 
 /**
  * @deprecated Pre-v3 code used `ExperimentChangeEvent` to mean a run edit.
@@ -91,13 +125,11 @@ function dispatch(evt: MemonEvent) {
   }
 }
 
-function parseAndDispatch<T extends MemonEvent['topic']>(
-  topic: T,
-  raw: string,
-): void {
+function parseAndDispatch<T extends MemonEvent['topic']>(topic: T, raw: string): void {
   try {
     const payload = JSON.parse(raw)
-    dispatch({ topic, ...payload } as MemonEvent)
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
+    dispatch({ ...payload, topic } as MemonEvent)
   } catch {
     // Ignore malformed payloads
   }
@@ -112,11 +144,23 @@ function ensureConnected() {
   source.addEventListener('experiment-change', (e) => {
     parseAndDispatch('experiment-change', (e as MessageEvent).data)
   })
+  source.addEventListener('journal-change', (e) => {
+    parseAndDispatch('journal-change', (e as MessageEvent).data)
+  })
   source.addEventListener('anomaly', (e) => {
     parseAndDispatch('anomaly', (e as MessageEvent).data)
   })
   source.addEventListener('code-reviews-change', (e) => {
     parseAndDispatch('code-reviews-change', (e as MessageEvent).data)
+  })
+  source.addEventListener('reports-change', (e) => {
+    parseAndDispatch('reports-change', (e as MessageEvent).data)
+  })
+  source.addEventListener('digests-change', (e) => {
+    parseAndDispatch('digests-change', (e as MessageEvent).data)
+  })
+  source.addEventListener('host-resync', (e) => {
+    parseAndDispatch('host-resync', (e as MessageEvent).data)
   })
   // EventSource auto-reconnects on network drops; nothing extra to do here.
 }
@@ -135,4 +179,10 @@ export function subscribeMemonEvents(listener: Listener): () => void {
     listeners.delete(listener)
     maybeDisconnect()
   }
+}
+
+export function __resetMemonEventsForTests(): void {
+  source?.close()
+  source = null
+  listeners.clear()
 }

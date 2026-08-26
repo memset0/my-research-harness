@@ -1,17 +1,11 @@
 'use client'
 
-import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, patchExperimentStatus } from '../lib/api'
+import { ApiError, type ProjectTarget, patchExperimentStatus, projectQueryKey } from '../lib/api'
 import { StatusPill } from './status-pill'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { ViewerGuard } from './viewer-guard'
 
 // All v4 status values, used as the type for the incoming `status` prop
@@ -31,23 +25,27 @@ const SELECTABLE_STATUS_VALUES = [
 
 export function StatusEdit({
   id,
+  project,
   status,
   stale,
   expectedMtime,
 }: {
   id: string
+  project?: ProjectTarget
   status: Status
   stale?: boolean
   expectedMtime: number
 }) {
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
+  const projectKey = project ? projectQueryKey(project) : []
 
   const onChange = async (next: string) => {
     if (next === status) return
     setBusy(true)
     try {
       const res = await patchExperimentStatus({
+        ...(project ? { project } : {}),
         id,
         status: next,
         expectedMtime,
@@ -57,7 +55,7 @@ export function StatusEdit({
           description: 'Reload to see the latest content, then try again.',
           action: {
             label: 'Reload',
-            onClick: () => queryClient.invalidateQueries({ queryKey: ['run', id] }),
+            onClick: () => queryClient.invalidateQueries({ queryKey: ['run', ...projectKey, id] }),
           },
         })
       } else if ('error' in res && res.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
@@ -71,8 +69,8 @@ export function StatusEdit({
         if ('warning' in res && res.warning === 'archived') {
           toast.warning(`${id} is archived; modifying anyway`)
         }
-        queryClient.invalidateQueries({ queryKey: ['run', id] })
-        queryClient.invalidateQueries({ queryKey: ['runs'] })
+        queryClient.invalidateQueries({ queryKey: ['run', ...projectKey, id] })
+        queryClient.invalidateQueries({ queryKey: ['runs', ...projectKey] })
       }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message

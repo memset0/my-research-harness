@@ -6,16 +6,21 @@
 // the existing block. Both can be coalesced into a single rewrite when both
 // are needed (first-run fresh install).
 //
-// The plaintext lives in config.yml (mode 0644) so dev agents and curl-based
-// automation can read it from a single canonical source. The threat model is
-// "single user, host fs trust = auth trust" — same as having an SSH key pair
-// or kubectl config in $HOME. We do NOT round-trip config.yml through
-// js-yaml; the `auth:` block is appended as raw text to preserve the
-// operator's comments.
+// The plaintext lives in the selected config.yml so dev agents and curl-based
+// automation can read it from a single canonical source. Central instance
+// configs also carry Backend service tokens and therefore remain owner-only.
+// We do NOT round-trip config.yml through js-yaml; the `auth:` block is spliced
+// as raw text to preserve the operator's comments.
 
 import { randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { type AuthConfig, type Config, isProtectedExampleConfigPath } from '@memon/core'
+import {
+  type AuthConfig,
+  assertOwnerOnlyServiceConfig,
+  type Config,
+  isProtectedExampleConfigPath,
+  SERVICE_CONFIG_FILE_MODE,
+} from '@memon/core'
 
 const DEFAULT_USERNAME = 'admin'
 const PASSWORD_BYTES = 18 // 24 base64url chars, 144 bits of entropy
@@ -110,10 +115,13 @@ async function writeAtomicWithMtimeGuard(
   path: string,
   newText: string,
   expectedMtimeMs: number,
+  targetMode: number,
+  requireOwnerOnly: boolean,
 ): Promise<void> {
   // Defense in depth: callers must reject the template before reading it, but
   // the final persistence boundary independently protects future call sites.
   assertRuntimeWritableConfig(path)
+  if (requireOwnerOnly) await assertOwnerOnlyServiceConfig(path)
   const recheck = await fs.stat(path)
   if (recheck.mtimeMs !== expectedMtimeMs) {
     throw new Error(
@@ -121,9 +129,11 @@ async function writeAtomicWithMtimeGuard(
     )
   }
   const tmp = `${path}.first-run-tmp.${process.pid}.${Date.now()}`
-  await fs.writeFile(tmp, newText, { mode: 0o644 })
   try {
+    await fs.writeFile(tmp, newText, { flag: 'wx', mode: targetMode })
+    if (process.platform !== 'win32') await fs.chmod(tmp, targetMode)
     await fs.rename(tmp, path)
+    if (requireOwnerOnly) await assertOwnerOnlyServiceConfig(path)
   } catch (e) {
     await fs.rm(tmp, { force: true })
     throw e
@@ -156,6 +166,8 @@ export async function ensureAuthInitialised(configPath: string, cfg: Config): Pr
   // The check intentionally precedes every stat/read/write. The example is a
   // source-authored template, never a runtime configuration or write target.
   assertRuntimeWritableConfig(configPath)
+  const requireOwnerOnly = cfg.central !== undefined
+  if (requireOwnerOnly) await assertOwnerOnlyServiceConfig(configPath)
 
   // Case 1: no auth block at all.
   if (!cfg.auth) {
@@ -173,7 +185,13 @@ export async function ensureAuthInitialised(configPath: string, cfg: Config): Pr
     const password = generatePassword()
     const sessionSecret = generateSessionSecret()
     const newText = spliceAuthBlock(text, username, password, sessionSecret)
-    await writeAtomicWithMtimeGuard(configPath, newText, stat.mtimeMs)
+    await writeAtomicWithMtimeGuard(
+      configPath,
+      newText,
+      stat.mtimeMs,
+      requireOwnerOnly ? SERVICE_CONFIG_FILE_MODE : stat.mode & 0o777,
+      requireOwnerOnly,
+    )
     printStdoutBlock(username, password, configPath)
     return { username, password, sessionSecret }
   }
@@ -184,7 +202,13 @@ export async function ensureAuthInitialised(configPath: string, cfg: Config): Pr
     const text = await fs.readFile(configPath, 'utf8')
     const sessionSecret = generateSessionSecret()
     const newText = appendSessionSecretToAuthBlock(text, sessionSecret)
-    await writeAtomicWithMtimeGuard(configPath, newText, stat.mtimeMs)
+    await writeAtomicWithMtimeGuard(
+      configPath,
+      newText,
+      stat.mtimeMs,
+      requireOwnerOnly ? SERVICE_CONFIG_FILE_MODE : stat.mode & 0o777,
+      requireOwnerOnly,
+    )
     return { ...cfg.auth, sessionSecret }
   }
 

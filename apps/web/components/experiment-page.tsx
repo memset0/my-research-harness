@@ -21,6 +21,9 @@ import {
   fetchExperimentResults,
   fetchRunFiles,
   type MemberRunSummary,
+  type ProjectTarget,
+  projectQueryKey,
+  projectWebPath,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 import { AddNoteButton } from './add-note-button'
@@ -43,7 +46,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 
 interface Props {
-  project: string
+  project: ProjectTarget
   experimentId: string
   initialOpenRun: string | null
 }
@@ -54,8 +57,8 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['experiment', experimentId],
-    queryFn: () => fetchExperimentDoc(experimentId),
+    queryKey: ['experiment', ...projectQueryKey(project), experimentId],
+    queryFn: () => fetchExperimentDoc(project, experimentId),
   })
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
@@ -82,7 +85,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   return (
     <DocumentArtifactLinkProvider
       project={project}
-      sourceDocumentPath={exp.path}
+      sourceDocumentPath={exp.path ?? exp.resource}
       sourceSurface="left"
     >
       <div className="flex flex-col gap-4 p-4 md:p-6">
@@ -100,11 +103,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             <div className="flex flex-wrap gap-1 text-xs">
               <span className="text-muted-foreground">Hypotheses:</span>
               {exp.frontMatter.hypotheses.map((h) => (
-                <Link
-                  key={h}
-                  href={`/p/${encodeURIComponent(project)}/hypotheses`}
-                  className="underline"
-                >
+                <Link key={h} href={projectWebPath(project, '/hypotheses')} className="underline">
                   {h}
                 </Link>
               ))}
@@ -112,18 +111,20 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <ExperimentStatusEdit
+              project={project}
               expId={exp.id}
               status={exp.frontMatter.status}
               archived={exp.frontMatter.archived}
               expectedMtime={exp.readmeMtime}
             />
             <ArchiveToggle
+              project={project}
               kind="exp"
               id={exp.id}
               archived={exp.frontMatter.archived}
               expectedMtime={exp.readmeMtime}
             />
-            <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id }} />
+            <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id, project }} />
             {exp.documentReadOnly && (
               <Badge
                 variant="outline"
@@ -186,8 +187,11 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
               </div>
             ) : (
               <ul className="flex flex-col gap-1 text-xs">
-                {aggregatedArtifacts.map((a, i) => (
-                  <li key={i} className="flex flex-wrap items-baseline gap-1">
+                {aggregatedArtifacts.map((a) => (
+                  <li
+                    key={`${a.runId}:${a.path}:${a.description}`}
+                    className="flex flex-wrap items-baseline gap-1"
+                  >
                     <span className="font-mono text-muted-foreground">{a.runId}</span>
                     <code className="font-mono">{a.path}</code>
                     <span className="text-muted-foreground">— {a.description}</span>
@@ -218,7 +222,7 @@ function SectionCard({
   resultsUpdatedAt,
 }: {
   section: ExperimentDisplaySection
-  project: string
+  project: ProjectTarget
   experimentId: string
   documents?: import('@memon/core').ExperimentManagedDocuments | null
   memberRuns: MemberRunSummary[]
@@ -256,7 +260,7 @@ function SectionCard({
     setResultsRefreshing(true)
     setResultsRefreshError(null)
     try {
-      const next = await fetchExperimentResults(experimentId)
+      const next = await fetchExperimentResults(project, experimentId)
       setResultsSnapshot({
         document: next.document,
         updatedAt: next.updatedAt,
@@ -343,8 +347,8 @@ function SectionCard({
         )}
         {section.diagnostics.length > 0 && (hasErrors || !section.supported) && (
           <ul className="mb-3 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-            {section.diagnostics.map((diagnostic, index) => (
-              <li key={`${diagnostic.code}:${index}`}>
+            {section.diagnostics.map((diagnostic) => (
+              <li key={`${diagnostic.code}:${diagnostic.message}`}>
                 <code>{diagnostic.code}</code>: {diagnostic.message}
               </li>
             ))}
@@ -418,7 +422,7 @@ function RunsCard({
   initialOpenRun,
   memberRuns,
 }: {
-  project: string
+  project: ProjectTarget
   experimentId: string
   initialOpenRun: string | null
   memberRuns: MemberRunSummary[]
@@ -463,8 +467,8 @@ function DocumentDiagnosticsBanner({
       </CardHeader>
       <CardContent>
         <ul className="list-disc space-y-1 pl-5 text-xs">
-          {diagnostics.map((diagnostic, index) => (
-            <li key={`${diagnostic.code}:${index}`}>
+          {diagnostics.map((diagnostic) => (
+            <li key={`${diagnostic.code}:${diagnostic.message}`}>
               <code>{diagnostic.code}</code>: {diagnostic.message}
             </li>
           ))}
@@ -534,7 +538,7 @@ function RunPanel({
   initialOpenRun,
   summary,
 }: {
-  project: string
+  project: ProjectTarget
   experimentId: string
   runId: string
   initialOpenRun: string | null
@@ -542,7 +546,7 @@ function RunPanel({
 }) {
   // Default folded; localStorage remembers per-(exp, run) toggle state.
   // Exception: if URL ?run=<this-run> matches, force open on first paint.
-  const storageKey = `memon:exp-page:${experimentId}:${runId}:open`
+  const storageKey = `memon:exp-page:${projectQueryKey(project).join(':')}:${experimentId}:${runId}:open`
   const [open, setOpen] = useState<boolean>(initialOpenRun === runId)
 
   useEffect(() => {
@@ -563,14 +567,14 @@ function RunPanel({
   return (
     <Collapsible open={open} onOpenChange={setOpenAndPersist} className="rounded-md border bg-card">
       <CollapsibleTrigger asChild>
-        <div role="button" tabIndex={0} className="flex cursor-pointer items-center gap-2 p-2">
+        <button type="button" className="flex w-full cursor-pointer items-center gap-2 p-2">
           <StatusPill status={summary.status as never} />
           <span className="font-mono text-sm">{runId}</span>
           <span className="ml-auto text-xs text-muted-foreground">
             {summary.createdAt.slice(0, 16).replace('T', ' ')}
             {summary.host ? ` • ${summary.host}` : ''}
           </span>
-        </div>
+        </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <RunBody project={project} experimentId={experimentId} runId={runId} />
@@ -584,26 +588,28 @@ function RunBody({
   experimentId,
   runId,
 }: {
-  project: string
+  project: ProjectTarget
   experimentId: string
   runId: string
 }) {
   const { data: run, isLoading } = useQuery({
-    queryKey: ['run', runId],
-    queryFn: () => fetchExperiment(runId),
+    queryKey: ['run', ...projectQueryKey(project), runId],
+    queryFn: () => fetchExperiment(project, runId),
   })
   const { data: files } = useQuery({
-    queryKey: ['run-files', runId],
-    queryFn: () => fetchRunFiles(runId, 3),
+    queryKey: ['run-files', ...projectQueryKey(project), runId],
+    queryFn: () => fetchRunFiles(project, runId, 3),
   })
 
   if (isLoading || !run) {
     return <div className="border-t p-3 text-xs text-muted-foreground">Loading run details…</div>
   }
 
-  const runSourceDocumentPath = /\.md$/i.test(run.path)
-    ? run.path
-    : `${run.path.replace(/\/$/, '')}/README.md`
+  const runSourceDocumentPath = run.path
+    ? /\.md$/i.test(run.path)
+      ? run.path
+      : `${run.path.replace(/\/$/, '')}/README.md`
+    : run.resource
 
   return (
     <DocumentArtifactLinkProvider
@@ -613,18 +619,20 @@ function RunBody({
     >
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
-        <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId }} />
+        <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId, project }} />
         <OpenWithButton project={project} scope="run" slug={runId} />
         <AddNoteButton project={project} runId={runId} />
         {run.hasReadme ? (
           <>
             <StatusEdit
+              project={project}
               id={runId}
               status={run.frontMatter.status}
               stale={run.stale}
               expectedMtime={run.readmeMtime}
             />
             <ArchiveToggle
+              project={project}
               kind="run"
               id={runId}
               archived={run.frontMatter.archived}
@@ -656,8 +664,10 @@ function RunBody({
         <RunSection heading="Setup" body={run.sections.setup ?? null} project={project} />
         <RunSection heading="Result" body={run.sections.result ?? null} project={project} />
         <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
-        {run.hasReadme && <LogViewer expPath={run.path} />}
-        {files && files.tree.children && files.tree.children.length > 0 && (
+        {run.hasReadme && (run.resource || run.path) && (
+          <LogViewer project={project} runResource={run.resource} expPath={run.path} />
+        )}
+        {files?.tree.children && files.tree.children.length > 0 && (
           <section>
             <h3 className="mb-1 text-xs font-semibold">
               Files in run dir{' '}
@@ -672,12 +682,14 @@ function RunBody({
   )
 }
 
-function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: string }) {
+function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: ProjectTarget }) {
   const fm = run.frontMatter
   return (
     <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs md:grid-cols-4">
       <FmField label="name" value={fm.name} />
-      {fm.project && fm.project !== project && <FmField label="sub-project" value={fm.project} />}
+      {fm.project && fm.project !== (typeof project === 'string' ? project : project.project) && (
+        <FmField label="sub-project" value={fm.project} />
+      )}
       <FmField label="created">
         <TimestampLocal value={fm.createdAt} variant="long" />
       </FmField>
@@ -724,7 +736,7 @@ function RunFrontmatterStripe({ run, project }: { run: FullExperiment; project: 
           <FmLabel>hypotheses</FmLabel>
           <div className="flex flex-wrap gap-1">
             {fm.hypotheses.map((h) => (
-              <Link key={h} href={`/p/${encodeURIComponent(project)}/hypotheses#${h}`}>
+              <Link key={h} href={`${projectWebPath(project, '/hypotheses')}#${h}`}>
                 <Badge className="text-[10px]">{h}</Badge>
               </Link>
             ))}
@@ -762,8 +774,11 @@ function RunArtifactsBlock({ artifacts }: { artifacts: { path: string; descripti
     <section>
       <h3 className="mb-1 text-xs font-semibold">Artifacts</h3>
       <ul className="flex flex-col gap-0.5 text-xs">
-        {artifacts.map((a, i) => (
-          <li key={i} className="grid grid-cols-1 gap-x-3 md:grid-cols-2">
+        {artifacts.map((a) => (
+          <li
+            key={`${a.path}:${a.description}`}
+            className="grid grid-cols-1 gap-x-3 md:grid-cols-2"
+          >
             <code className="font-mono text-foreground/80">{a.path}</code>
             <span className="text-muted-foreground">{a.description}</span>
           </li>
@@ -780,7 +795,7 @@ function RunSection({
 }: {
   heading: string
   body: string | null
-  project: string
+  project: ProjectTarget
 }) {
   return (
     <section>
@@ -817,8 +832,11 @@ function RunParseWarningsBanner({
     <section className="rounded border border-amber-300 bg-amber-50 p-2 text-xs">
       <div className="mb-1 font-semibold text-amber-900">Section warnings ({relevant.length})</div>
       <ul className="list-disc space-y-0.5 pl-4 text-amber-950">
-        {relevant.map((w, i) => (
-          <li key={i} className={w.severity === 'info' ? 'opacity-70' : ''}>
+        {relevant.map((w) => (
+          <li
+            key={`${w.severity ?? 'warning'}:${w.message}`}
+            className={w.severity === 'info' ? 'opacity-70' : ''}
+          >
             {w.message}
           </li>
         ))}
@@ -829,7 +847,7 @@ function RunParseWarningsBanner({
 
 interface TreeNodeShape {
   type: 'dir' | 'file'
-  path: string
+  resource: string
   size?: number
   mtime?: number
   children?: TreeNodeShape[]
@@ -885,8 +903,8 @@ function FileTreeRow({
   // putting useMemo after the file early-return would violate Rules of
   // Hooks if a position swapped between file and dir on a re-render.
   const childCount = useMemo(() => countDescendants(node), [node])
-  const isRoot = node.path === '.'
-  const label = isRoot ? '(run dir)' : basename(node.path)
+  const isRoot = node.resource === '.'
+  const label = isRoot ? '(run dir)' : basename(node.resource)
   if (node.type === 'file') {
     return (
       <li
@@ -899,26 +917,36 @@ function FileTreeRow({
     )
   }
   const defaultExpanded = isRoot || childCount <= COLLAPSE_THRESHOLD
-  const expanded = isRoot ? true : (overrides[node.path] ?? defaultExpanded)
+  const expanded = isRoot ? true : (overrides[node.resource] ?? defaultExpanded)
   const FolderIcon = expanded ? FolderOpen : Folder
+  const content = (
+    <>
+      <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="truncate font-semibold">{label}</span>
+      {!isRoot && <span className="text-muted-foreground tabular-nums">({childCount})</span>}
+    </>
+  )
   return (
     <>
-      <li
-        className={cn(
-          'flex items-center gap-1.5 font-mono',
-          !isRoot && 'cursor-pointer select-none hover:bg-muted/40 rounded',
+      <li style={{ paddingLeft: depth * INDENT_PX }}>
+        {isRoot ? (
+          <div className="flex items-center gap-1.5 font-mono">{content}</div>
+        ) : (
+          <button
+            type="button"
+            className={cn(
+              'flex w-full cursor-pointer select-none items-center gap-1.5 rounded font-mono text-left hover:bg-muted/40',
+            )}
+            onClick={() => onToggle(node.resource, defaultExpanded)}
+          >
+            {content}
+          </button>
         )}
-        style={{ paddingLeft: depth * INDENT_PX }}
-        onClick={isRoot ? undefined : () => onToggle(node.path, defaultExpanded)}
-      >
-        <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="truncate font-semibold">{label}</span>
-        {!isRoot && <span className="text-muted-foreground tabular-nums">({childCount})</span>}
       </li>
       {expanded &&
-        (node.children ?? []).map((c, i) => (
+        (node.children ?? []).map((c) => (
           <FileTreeRow
-            key={i}
+            key={c.resource}
             node={c}
             depth={depth + 1}
             overrides={overrides}

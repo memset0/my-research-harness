@@ -10,31 +10,102 @@ import type {
   ExperimentDocumentDiagnostic,
   ExperimentManagedDocuments,
   ExperimentRawSection,
+  HostAvailability,
   Hypothesis,
   JournalEvent,
   ParsedHypotheses,
   ParsedJournal,
   ParseIssue,
+  ProjectRef,
   ReportSummary,
   ResultsDocument,
   Run,
   WarningRecord,
 } from '@memon/core'
 
-export interface ProjectSummary {
+export type ProjectTarget = string | ProjectRef
+
+export function projectName(target: ProjectTarget): string {
+  return typeof target === 'string' ? target : target.project
+}
+
+export function projectHost(target: ProjectTarget): string | null {
+  return typeof target === 'string' ? null : target.host
+}
+
+export function projectSearchParams(target: ProjectTarget): URLSearchParams {
+  const params = new URLSearchParams()
+  const host = projectHost(target)
+  if (host) params.set('host', host)
+  params.set('project', projectName(target))
+  return params
+}
+
+export function projectQueryKey(
+  target: ProjectTarget,
+): readonly [project: string] | readonly [host: string, project: string] {
+  const host = projectHost(target)
+  return host ? ([host, projectName(target)] as const) : ([projectName(target)] as const)
+}
+
+/** Canonical browser path for a standalone or Host-qualified Project. */
+export function projectWebPath(target: ProjectTarget, suffix = ''): string {
+  if (suffix !== '' && !suffix.startsWith('/')) {
+    throw new Error('Project path suffix must be empty or start with /')
+  }
+  const project = encodeURIComponent(projectName(target))
+  const host = projectHost(target)
+  const base = host ? `/h/${encodeURIComponent(host)}/p/${project}` : `/p/${project}`
+  return `${base}${suffix}`
+}
+
+function projectQueryUrl(path: string, target: ProjectTarget, extras?: URLSearchParams): string {
+  const host = projectHost(target)
+  const selector = `${host ? `host=${encodeURIComponent(host)}&` : ''}project=${encodeURIComponent(projectName(target))}`
+  const extraQuery = extras?.toString()
+  const query = extraQuery ? `${selector}&${extraQuery}` : selector
+  return `${path}?${query}`
+}
+
+function projectPathUrl(path: string, target: ProjectTarget, extras?: URLSearchParams): string {
+  const host = projectHost(target)
+  const selector = host
+    ? `host=${encodeURIComponent(host)}&project=${encodeURIComponent(projectName(target))}`
+    : ''
+  const extraQuery = extras?.toString() ?? ''
+  const query = [selector, extraQuery].filter(Boolean).join('&')
+  return query ? `${path}?${query}` : path
+}
+
+function projectResourceUrl(path: string, target?: ProjectTarget): string {
+  return target ? projectQueryUrl(path, target) : path
+}
+
+export interface StandaloneProjectSummary {
+  mode: 'standalone'
+  host: null
+  project: string
   name: string
   root: string
   exclude: string[]
-  /** Hub mode only: the node this project came from (set by the hub's fan-out). */
-  node?: string
 }
+
+export type CentralProjectSummary = ProjectRef & {
+  mode: 'central'
+  name: string
+  label?: string
+  description?: string
+  root?: never
+  exclude?: never
+}
+
+export type ProjectSummary = StandaloneProjectSummary | CentralProjectSummary
 
 export interface IndexedRun
   extends Pick<
     Run,
     | 'id'
     | 'project'
-    | 'path'
     | 'mtime'
     | 'readmeMtime'
     | 'hasReadme'
@@ -42,6 +113,9 @@ export interface IndexedRun
     | 'parseErrors'
     | 'parseWarnings'
   > {
+  /** Standalone-only absolute directory; central uses portable resource. */
+  path?: string
+  resource?: string
   stale: boolean
 }
 
@@ -50,7 +124,6 @@ export interface FullExperiment
     Run,
     | 'id'
     | 'project'
-    | 'path'
     | 'mtime'
     | 'readmeMtime'
     | 'hasReadme'
@@ -60,6 +133,9 @@ export interface FullExperiment
     | 'parseErrors'
     | 'parseWarnings'
   > {
+  /** Standalone-only absolute directory; central uses portable resource. */
+  path?: string
+  resource?: string
   stale: boolean
   resources: null
   warnings: WarningRecord[]
@@ -98,36 +174,48 @@ export async function fetchProjects(): Promise<{ projects: ProjectSummary[] }> {
   return jsonFetch('/api/projects')
 }
 
-export async function fetchExperiments(project?: string): Promise<{ experiments: IndexedRun[] }> {
-  const url = project ? `/api/runs?project=${encodeURIComponent(project)}` : '/api/runs'
+export interface HostsResponse {
+  hosts: Array<HostAvailability & { label?: string }>
+}
+
+export async function fetchHosts(): Promise<HostsResponse> {
+  return jsonFetch('/api/hosts')
+}
+
+export async function fetchExperiments(
+  project?: ProjectTarget,
+): Promise<{ experiments: IndexedRun[] }> {
+  const url = project ? projectQueryUrl('/api/runs', project) : '/api/runs'
   return jsonFetch(url)
 }
 
-export async function fetchExperiment(id: string): Promise<FullExperiment> {
-  return jsonFetch(`/api/runs/${encodeURIComponent(id)}`)
+export async function fetchExperiment(project: ProjectTarget, id: string): Promise<FullExperiment> {
+  return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}`, project))
 }
 
 export async function fetchHypotheses(
-  project: string,
-): Promise<{ path: string } & ParsedHypotheses> {
-  return jsonFetch(`/api/hypotheses?project=${encodeURIComponent(project)}`)
+  project: ProjectTarget,
+): Promise<{ path?: string } & ParsedHypotheses> {
+  return jsonFetch(projectQueryUrl('/api/hypotheses', project))
 }
 
 export async function fetchJournal(
-  project: string,
+  project: ProjectTarget,
   options: { limit?: number; before?: string } = {},
-): Promise<{ path: string } & ParsedJournal> {
-  const params = new URLSearchParams({ project })
+): Promise<{ path?: string } & ParsedJournal> {
+  const params = new URLSearchParams()
   if (options.limit !== undefined) params.set('limit', String(options.limit))
   if (options.before) params.set('before', options.before)
-  return jsonFetch(`/api/journal?${params.toString()}`)
+  return jsonFetch(projectQueryUrl('/api/journal', project, params))
 }
 
 /** Just the total event count for a project (used by the AppBar count badge). */
 export async function fetchJournalCount(
-  project: string,
+  project: ProjectTarget,
 ): Promise<{ totalEvents: number; lastDigestAt: string | null }> {
-  return jsonFetch(`/api/journal?project=${encodeURIComponent(project)}&countOnly=1`)
+  return jsonFetch(
+    projectQueryUrl('/api/journal', project, new URLSearchParams({ countOnly: '1' })),
+  )
 }
 
 // ---------- Reports ----------
@@ -135,38 +223,40 @@ export async function fetchJournalCount(
 export interface FullReport {
   id: string
   slug: string
-  path: string
+  /** Standalone-only absolute path; central Backend responses deliberately omit it. */
+  path?: string
+  resource?: string
   mtime: number
   hash: string
   content: string
   format: 'markdown' | 'bundle'
 }
 
-export interface ReportListItem extends ReportSummary {
+export interface ReportListItem extends Omit<ReportSummary, 'path'> {
+  /** Standalone-only absolute path; never crosses the Backend boundary. */
+  path?: string
+  resource?: string
   format: 'markdown' | 'bundle'
 }
 
-export async function fetchReports(project: string): Promise<{ reports: ReportListItem[] }> {
-  return jsonFetch(`/api/reports?project=${encodeURIComponent(project)}`)
+export async function fetchReports(project: ProjectTarget): Promise<{ reports: ReportListItem[] }> {
+  return jsonFetch(projectQueryUrl('/api/reports', project))
 }
 
-export async function fetchReport(project: string, id: string): Promise<FullReport> {
-  return jsonFetch(`/api/reports/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`)
+export async function fetchReport(project: ProjectTarget, id: string): Promise<FullReport> {
+  return jsonFetch(projectQueryUrl(`/api/reports/${encodeURIComponent(id)}`, project))
 }
 
 export async function putReport(
-  project: string,
+  project: ProjectTarget,
   id: string,
   payload: { content: string; expectedMtime: number; expectedHash: string },
 ): Promise<{ ok: true; mtime: number; hash: string }> {
-  return jsonFetch(
-    `/api/reports/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`,
-    {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-  )
+  return jsonFetch(projectQueryUrl(`/api/reports/${encodeURIComponent(id)}`, project), {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 // ---------- Code reviews ----------
@@ -191,30 +281,30 @@ export type CodeReviewProgressPatch =
 const encodeCodeReviewId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
 
 export async function fetchCodeReviews(
-  project: string,
-): Promise<{ codeReviews: CodeReviewSummary[] }> {
-  return jsonFetch(`/api/code-reviews?project=${encodeURIComponent(project)}`)
+  project: ProjectTarget,
+): Promise<{ codeReviews: CodeReviewListItem[] }> {
+  return jsonFetch(projectQueryUrl('/api/code-reviews', project))
 }
 
-export async function fetchCodeReview(project: string, id: string): Promise<FullCodeReview> {
-  return jsonFetch(
-    `/api/code-reviews/${encodeCodeReviewId(id)}?project=${encodeURIComponent(project)}`,
-  )
+export type CodeReviewListItem = Omit<CodeReviewSummary, 'path'> & {
+  path?: string
+  resource?: string
+}
+
+export async function fetchCodeReview(project: ProjectTarget, id: string): Promise<FullCodeReview> {
+  return jsonFetch(projectQueryUrl(`/api/code-reviews/${encodeCodeReviewId(id)}`, project))
 }
 
 export async function patchCodeReviewProgress(
-  project: string,
+  project: ProjectTarget,
   id: string,
   patch: CodeReviewProgressPatch,
 ): Promise<{ ok: true; mtime: number; hash: string; completion: CodeReviewCompletion }> {
-  return jsonFetch(
-    `/api/code-reviews/${encodeCodeReviewId(id)}?project=${encodeURIComponent(project)}`,
-    {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(patch),
-    },
-  )
+  return jsonFetch(projectQueryUrl(`/api/code-reviews/${encodeCodeReviewId(id)}`, project), {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
 }
 
 // ---------- Code preview ----------
@@ -239,9 +329,9 @@ export interface CodePreview {
   reason?: 'too-large' | 'binary'
 }
 
-export async function fetchCodePreview(project: string, url: string): Promise<CodePreview> {
+export async function fetchCodePreview(project: ProjectTarget, url: string): Promise<CodePreview> {
   return jsonFetch(
-    `/api/code-preview?project=${encodeURIComponent(project)}&url=${encodeURIComponent(url)}`,
+    `${projectQueryUrl('/api/code-preview', project)}&url=${encodeURIComponent(url)}`,
   )
 }
 
@@ -250,40 +340,51 @@ export async function fetchCodePreview(project: string, url: string): Promise<Co
 export interface FullDigest {
   id: string
   date: string
-  path: string
+  /** Standalone-only absolute path; central Backend responses deliberately omit it. */
+  path?: string
+  resource?: string
   mtime: number
   hash: string
   content: string
 }
 
-export async function fetchDigests(project: string): Promise<{ digests: DigestSummary[] }> {
-  return jsonFetch(`/api/digests?project=${encodeURIComponent(project)}`)
+export type DigestListItem = Omit<DigestSummary, 'path'> & { path?: string; resource?: string }
+
+export async function fetchDigests(project: ProjectTarget): Promise<{ digests: DigestListItem[] }> {
+  return jsonFetch(projectQueryUrl('/api/digests', project))
 }
 
-export async function fetchDigest(project: string, id: string): Promise<FullDigest> {
-  return jsonFetch(`/api/digests/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`)
+export async function fetchDigest(project: ProjectTarget, id: string): Promise<FullDigest> {
+  return jsonFetch(projectQueryUrl(`/api/digests/${encodeURIComponent(id)}`, project))
 }
 
 export async function putDigest(
-  project: string,
+  project: ProjectTarget,
   id: string,
   payload: { content: string; expectedMtime: number; expectedHash: string },
 ): Promise<{ ok: true; mtime: number; hash: string }> {
-  return jsonFetch(
-    `/api/digests/${encodeURIComponent(id)}?project=${encodeURIComponent(project)}`,
-    {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-  )
+  return jsonFetch(projectQueryUrl(`/api/digests/${encodeURIComponent(id)}`, project), {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function fetchLog(
-  path: string,
+  project: ProjectTarget,
+  resource: string,
+  legacyPath: string | undefined,
   options: { endLine?: number; count?: number } = {},
 ): Promise<{ totalLines: number; lines: { lineNumber: number; text: string }[] }> {
-  const params = new URLSearchParams({ path })
+  const params = new URLSearchParams()
+  const host = projectHost(project)
+  if (host) {
+    params.set('host', host)
+    params.set('project', projectName(project))
+    params.set('resource', resource)
+  } else {
+    params.set('path', legacyPath ?? resource)
+  }
   if (options.endLine !== undefined) params.set('endLine', String(options.endLine))
   if (options.count !== undefined) params.set('count', String(options.count))
   return jsonFetch(`/api/log?${params.toString()}`)
@@ -291,24 +392,50 @@ export async function fetchLog(
 
 export interface LogFileEntry {
   name: string
-  path: string
+  path?: string
+  resource?: string
   size: number
   mtime: number
 }
 
-export async function fetchLogFiles(expPath: string): Promise<{ files: LogFileEntry[] }> {
-  return jsonFetch(`/api/log-files?expPath=${encodeURIComponent(expPath)}`)
+export async function fetchLogFiles(
+  project: ProjectTarget,
+  runResource: string,
+  legacyExpPath?: string,
+): Promise<{ files: LogFileEntry[] }> {
+  const host = projectHost(project)
+  if (host)
+    return jsonFetch(
+      projectQueryUrl('/api/log-files', project, new URLSearchParams({ resource: runResource })),
+    )
+  return jsonFetch(`/api/log-files?expPath=${encodeURIComponent(legacyExpPath ?? runResource)}`)
+}
+
+export function logStreamUrl(
+  project: ProjectTarget,
+  resource: string,
+  legacyPath?: string,
+): string {
+  const host = projectHost(project)
+  if (host) {
+    return projectQueryUrl('/api/log/stream', project, new URLSearchParams({ resource }))
+  }
+  return `/api/log/stream?path=${encodeURIComponent(legacyPath ?? resource)}`
 }
 
 export async function appendJournalEvent(input: {
-  project: string
+  project: ProjectTarget
   tag: string
   body: string
 }): Promise<{ appended: { timestamp: string; tag: string; body: string } }> {
-  return jsonFetch('/api/journal/append', {
+  const endpoint =
+    typeof input.project === 'string'
+      ? '/api/journal/append'
+      : projectQueryUrl('/api/journal/append', input.project)
+  return jsonFetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, project: projectName(input.project) }),
   })
 }
 
@@ -329,63 +456,56 @@ export interface PutReadmeConflict {
 }
 
 export interface FetchedReadme {
-  path: string
+  resource: string
   content: string
   mtime: number
   hash: string
 }
 
 export async function fetchReadme(path: string): Promise<FetchedReadme> {
-  return jsonFetch(`/api/readme?path=${encodeURIComponent(path)}`)
+  const readme = await jsonFetch<Omit<FetchedReadme, 'resource'> & { path: string }>(
+    `/api/readme?path=${encodeURIComponent(path)}`,
+  )
+  return { resource: readme.path, content: readme.content, mtime: readme.mtime, hash: readme.hash }
 }
 
 /**
- * Fetch a v3 run README by id. Mirrors `fetchExpDocReadme`: looks up the
- * run dir via the detail endpoint, joins `/README.md`, then reads via
- * the legacy `/api/readme` endpoint. Needed because `Run.path` is the
- * run DIRECTORY (not the README file) — passing the dir to
- * `/api/readme?path=…` triggers `EISDIR` server-side.
+ * Fetch a v3 run README by its portable Project-scoped id.
  */
-export async function fetchRunReadme(id: string): Promise<FetchedReadme> {
-  const detail = await jsonFetch<{ path: string; mtime: number }>(
-    `/api/runs/${encodeURIComponent(id)}`,
-  )
-  return fetchReadme(`${detail.path}/README.md`)
+export async function fetchRunReadme(project: ProjectTarget, id: string): Promise<FetchedReadme> {
+  return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}/readme`, project))
 }
 
 /**
  * Fetch a v3 experiment doc README by id. Returned shape matches
  * `FetchedReadme` so the editor's load handler stays uniform across modes.
  */
-export async function fetchExpDocReadme(id: string): Promise<FetchedReadme> {
-  // The exp-doc detail endpoint (`/api/experiments/:id`) returns parsed
-  // sections + frontMatter; we want the raw markdown for editing. The
-  // simplest server-side route for raw read is GET /api/readme?path=…,
-  // and we can derive the absolute path from the detail response. To
-  // avoid the round-trip, the GET on /api/experiments/:id/readme could
-  // be added later; for now reuse the detail endpoint to learn the path
-  // and then GET /api/readme.
-  const detail = await jsonFetch<{ path: string; mtime: number }>(
-    `/api/experiments/${encodeURIComponent(id)}`,
-  )
-  return fetchReadme(detail.path)
+export async function fetchExpDocReadme(
+  project: ProjectTarget,
+  id: string,
+): Promise<FetchedReadme> {
+  return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/readme`, project))
 }
 
 export async function putExpDocReadme(input: {
+  project?: ProjectTarget
   id: string
   content: string
   expectedMtime: number
   expectedHash?: string
 }): Promise<PutReadmeResponse | PutReadmeConflict> {
-  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/readme`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      content: input.content,
-      expectedMtime: input.expectedMtime,
-      expectedHash: input.expectedHash,
-    }),
-  })
+  const res = await fetch(
+    projectResourceUrl(`/api/experiments/${encodeURIComponent(input.id)}/readme`, input.project),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: input.content,
+        expectedMtime: input.expectedMtime,
+        expectedHash: input.expectedHash,
+      }),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
@@ -393,20 +513,24 @@ export async function putExpDocReadme(input: {
 }
 
 export async function putRunReadme(input: {
+  project?: ProjectTarget
   id: string
   content: string
   expectedMtime: number
   expectedHash?: string
 }): Promise<PutReadmeResponse | PutReadmeConflict> {
-  const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/readme`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      content: input.content,
-      expectedMtime: input.expectedMtime,
-      expectedHash: input.expectedHash,
-    }),
-  })
+  const res = await fetch(
+    projectResourceUrl(`/api/runs/${encodeURIComponent(input.id)}/readme`, input.project),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: input.content,
+        expectedMtime: input.expectedMtime,
+        expectedHash: input.expectedHash,
+      }),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
@@ -444,20 +568,24 @@ export interface PatchStatusForbidden {
 }
 
 export async function patchExperimentStatus(input: {
+  project?: ProjectTarget
   id: string
   status: string
   expectedMtime: number
   expectedHash?: string
 }): Promise<PatchStatusResponse | PutReadmeConflict | PatchStatusForbidden> {
-  const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/status`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      status: input.status,
-      expectedMtime: input.expectedMtime,
-      expectedHash: input.expectedHash,
-    }),
-  })
+  const res = await fetch(
+    projectResourceUrl(`/api/runs/${encodeURIComponent(input.id)}/status`, input.project),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: input.status,
+        expectedMtime: input.expectedMtime,
+        expectedHash: input.expectedHash,
+      }),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
   if (res.status === 422 && body?.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
@@ -481,15 +609,19 @@ export interface PatchArchiveForbidden {
 }
 
 export async function patchRunArchived(input: {
+  project?: ProjectTarget
   id: string
   archived: boolean
   expectedMtime?: number
 }): Promise<PatchArchiveResponse | PatchArchiveForbidden | PutReadmeConflict> {
-  const res = await fetch(`/api/runs/${encodeURIComponent(input.id)}/archive`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ archived: input.archived, expectedMtime: input.expectedMtime }),
-  })
+  const res = await fetch(
+    projectResourceUrl(`/api/runs/${encodeURIComponent(input.id)}/archive`, input.project),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archived: input.archived, expectedMtime: input.expectedMtime }),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
   if (res.status === 422 && body?.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
@@ -508,15 +640,19 @@ export interface PatchExperimentStatusResponse {
 }
 
 export async function patchExperimentStatusV4(input: {
+  project?: ProjectTarget
   id: string
   status: 'OPEN' | 'RESOLVED' | 'ABANDONED'
   expectedMtime: number
 }): Promise<PatchExperimentStatusResponse | PutReadmeConflict> {
-  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/status`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: input.status, expectedMtime: input.expectedMtime }),
-  })
+  const res = await fetch(
+    projectResourceUrl(`/api/experiments/${encodeURIComponent(input.id)}/status`, input.project),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: input.status, expectedMtime: input.expectedMtime }),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
@@ -524,15 +660,19 @@ export async function patchExperimentStatusV4(input: {
 }
 
 export async function patchExperimentArchived(input: {
+  project?: ProjectTarget
   id: string
   archived: boolean
   expectedMtime?: number
 }): Promise<PatchArchiveResponse | PutReadmeConflict> {
-  const res = await fetch(`/api/experiments/${encodeURIComponent(input.id)}/archive`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ archived: input.archived, expectedMtime: input.expectedMtime }),
-  })
+  const res = await fetch(
+    projectResourceUrl(`/api/experiments/${encodeURIComponent(input.id)}/archive`, input.project),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archived: input.archived, expectedMtime: input.expectedMtime }),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as PutReadmeConflict
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
@@ -553,7 +693,7 @@ export interface TerminalCheckResult {
 export interface TerminalInstallResult {
   ok: true
   version: string
-  path: string
+  path?: string
   alreadyPresent?: boolean
   durationMs: number
 }
@@ -567,23 +707,34 @@ export type TerminalScopeKind = 'exp' | 'run' | 'project'
  *  Render: `memon-<agent>-<project>--project--root`. */
 export const PROJECT_SCOPE_SLUG = 'root' as const
 
+export interface TerminalHostTarget {
+  host: string
+}
+
+function terminalHostUrl(path: string, target?: TerminalHostTarget): string {
+  return target ? `${path}?host=${encodeURIComponent(target.host)}` : path
+}
+
 export interface TerminalSession {
+  host?: string | null
   backend?: 'tmux' | 'herdr'
   sessionName: string
-  port: number
+  port?: number
+  url?: string
   startedAt: string
   lastActiveAt: string
   agent: TerminalAgentKind
-  project: string
-  scope: TerminalScopeKind
-  slug: string
+  project: string | null
+  scope: TerminalScopeKind | null
+  slug: string | null
   warnings: string[]
 }
 
 export interface TerminalStartResponse {
+  host?: string | null
   sessionName: string
   url: string
-  port: number
+  port?: number
   startedAt: string
   warnings: string[]
 }
@@ -610,6 +761,7 @@ export interface TmuxPaneInfo {
 export type TmuxPaneState = 'idle' | 'running' | 'attention' | 'done'
 
 export interface TmuxSessionRow {
+  host?: string | null
   sessionName: string
   parsed: {
     raw: string
@@ -619,7 +771,7 @@ export interface TmuxSessionRow {
     slug: string | null
     legacy: boolean
   }
-  liveEntry: { port: number; lastActiveAt: string } | null
+  liveEntry: { port?: number; lastActiveAt: string } | null
   tmuxCreatedAt: string
   tmuxLastActivity: string
   matchable: boolean
@@ -644,39 +796,48 @@ export interface TmuxSessionRow {
   lastStateChangeAt: string | null
 }
 
-export async function checkTerminal(): Promise<TerminalCheckResult> {
-  const res = await fetch('/api/terminal/check')
+export async function checkTerminal(target?: TerminalHostTarget): Promise<TerminalCheckResult> {
+  const res = await fetch(terminalHostUrl('/api/terminal/check', target))
   return jsonOrThrow<TerminalCheckResult>(res)
 }
 
-export async function installTerminal(): Promise<TerminalInstallResult> {
-  const res = await fetch('/api/terminal/install', { method: 'POST' })
+export async function installTerminal(target?: TerminalHostTarget): Promise<TerminalInstallResult> {
+  const res = await fetch(terminalHostUrl('/api/terminal/install', target), { method: 'POST' })
   return jsonOrThrow<TerminalInstallResult>(res)
 }
 
 export async function startTerminal(input: {
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
   agent?: TerminalAgentKind
 }): Promise<TerminalStartResponse> {
-  const res = await fetch('/api/terminal/start', {
+  const endpoint =
+    typeof input.project === 'string'
+      ? '/api/terminal/start'
+      : projectQueryUrl('/api/terminal/start', input.project)
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, project: projectName(input.project) }),
   })
   return jsonOrThrow<TerminalStartResponse>(res)
 }
 
 export async function startHerdrTerminal(input?: {
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
 }): Promise<TerminalStartResponse> {
-  const res = await fetch('/api/terminal/herdr', {
+  const endpoint =
+    input && typeof input.project !== 'string'
+      ? projectQueryUrl('/api/terminal/herdr', input.project)
+      : '/api/terminal/herdr'
+  const body = input ? { ...input, project: projectName(input.project) } : {}
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input ?? {}),
+    body: JSON.stringify(body),
   })
   return jsonOrThrow<TerminalStartResponse>(res)
 }
@@ -688,31 +849,45 @@ export async function startHerdrTerminal(input?: {
  */
 export async function attachTerminal(input: {
   sessionName: string
+  host?: string
 }): Promise<TerminalStartResponse> {
-  const res = await fetch('/api/terminal/attach', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
+  const res = await fetch(
+    terminalHostUrl('/api/terminal/attach', input.host ? { host: input.host } : undefined),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionName: input.sessionName }),
+    },
+  )
   return jsonOrThrow<TerminalStartResponse>(res)
 }
 
-export async function stopTerminal(sessionName: string): Promise<{ stopped: boolean }> {
-  const res = await fetch('/api/terminal/stop', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionName }),
-  })
+export async function stopTerminal(
+  input: string | { sessionName: string; host?: string },
+): Promise<{ stopped: boolean }> {
+  const target = typeof input === 'string' ? { sessionName: input } : input
+  const res = await fetch(
+    terminalHostUrl('/api/terminal/stop', target.host ? { host: target.host } : undefined),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionName: target.sessionName }),
+    },
+  )
   return jsonOrThrow<{ stopped: boolean }>(res)
 }
 
-export async function listTerminals(): Promise<{ sessions: TerminalSession[] }> {
-  const res = await fetch('/api/terminal/list')
+export async function listTerminals(
+  target?: TerminalHostTarget,
+): Promise<{ sessions: TerminalSession[] }> {
+  const res = await fetch(terminalHostUrl('/api/terminal/list', target))
   return jsonOrThrow<{ sessions: TerminalSession[] }>(res)
 }
 
-export async function listTmuxSessions(): Promise<{ sessions: TmuxSessionRow[] }> {
-  const res = await fetch('/api/tmux-sessions')
+export async function listTmuxSessions(
+  target?: TerminalHostTarget,
+): Promise<{ sessions: TmuxSessionRow[] }> {
+  const res = await fetch(terminalHostUrl('/api/tmux-sessions', target))
   return jsonOrThrow<{ sessions: TmuxSessionRow[] }>(res)
 }
 
@@ -721,38 +896,58 @@ export async function listTmuxSessions(): Promise<{ sessions: TmuxSessionRow[] }
  * `listTmuxSessions().sessions[i]`. Used by per-target indicators that
  * only need to know about one session without polling the whole inventory.
  */
-export async function getTmuxSession(name: string): Promise<{ row: TmuxSessionRow }> {
-  const res = await fetch(`/api/tmux-sessions/${encodeURIComponent(name)}`)
+export async function getTmuxSession(
+  name: string,
+  target?: TerminalHostTarget,
+): Promise<{ row: TmuxSessionRow }> {
+  const res = await fetch(terminalHostUrl(`/api/tmux-sessions/${encodeURIComponent(name)}`, target))
   return jsonOrThrow<{ row: TmuxSessionRow }>(res)
 }
 
-export async function killTmuxSession(name: string): Promise<{ ok: true }> {
-  const res = await fetch(`/api/tmux-sessions/${encodeURIComponent(name)}`, {
-    method: 'DELETE',
-  })
+export async function killTmuxSession(
+  name: string,
+  target?: TerminalHostTarget,
+): Promise<{ ok: true; host?: string; sessionName?: string }> {
+  const res = await fetch(
+    terminalHostUrl(`/api/tmux-sessions/${encodeURIComponent(name)}`, target),
+    {
+      method: 'DELETE',
+    },
+  )
   return jsonOrThrow<{ ok: true }>(res)
 }
 
 export async function createTmuxSession(input: {
   name: string
-}): Promise<{ ok: true; sessionName: string; alreadyExisted: boolean }> {
-  const res = await fetch('/api/tmux-sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
+  host?: string
+}): Promise<{ ok: true; host?: string; sessionName: string; alreadyExisted: boolean }> {
+  const res = await fetch(
+    terminalHostUrl('/api/tmux-sessions', input.host ? { host: input.host } : undefined),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: input.name }),
+    },
+  )
   return jsonOrThrow<{ ok: true; sessionName: string; alreadyExisted: boolean }>(res)
 }
 
 export async function renameTmuxSession(input: {
   name: string
   newName: string
-}): Promise<{ ok: true; sessionName: string }> {
-  const res = await fetch(`/api/tmux-sessions/${encodeURIComponent(input.name)}/rename`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ newName: input.newName }),
-  })
+  host?: string
+}): Promise<{ ok: true; host?: string; sessionName: string }> {
+  const res = await fetch(
+    terminalHostUrl(
+      `/api/tmux-sessions/${encodeURIComponent(input.name)}/rename`,
+      input.host ? { host: input.host } : undefined,
+    ),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newName: input.newName }),
+    },
+  )
   return jsonOrThrow<{ ok: true; sessionName: string }>(res)
 }
 
@@ -789,19 +984,26 @@ export interface WarningsConflict {
   content?: string
 }
 
-export async function fetchWarnings(id: string): Promise<WarningsListResponse> {
-  return jsonFetch(`/api/runs/${encodeURIComponent(id)}/warnings`)
+export async function fetchWarnings(
+  project: ProjectTarget,
+  id: string,
+): Promise<WarningsListResponse> {
+  return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}/warnings`, project))
 }
 
 export async function postWarning(
+  project: ProjectTarget,
   id: string,
   input: { category: string; message: string; expectedMtime?: number; expectedHash?: string },
 ): Promise<WarningsOpResponse | WarningsConflict> {
-  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/warnings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
+  const res = await fetch(
+    projectQueryUrl(`/api/runs/${encodeURIComponent(id)}/warnings`, project),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
   const body = await res.json()
   if (res.status === 409) return body as WarningsConflict
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
@@ -809,12 +1011,16 @@ export async function postWarning(
 }
 
 export async function patchWarningApi(
+  project: ProjectTarget,
   id: string,
   rowId: string,
   input: { op: 'resolve' | 'reopen'; note?: string; expectedMtime?: number; expectedHash?: string },
 ): Promise<WarningsOpResponse | WarningsConflict> {
   const res = await fetch(
-    `/api/runs/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+    projectQueryUrl(
+      `/api/runs/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+      project,
+    ),
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -828,12 +1034,16 @@ export async function patchWarningApi(
 }
 
 export async function deleteWarningApi(
+  project: ProjectTarget,
   id: string,
   rowId: string,
   input: { expectedMtime?: number; expectedHash?: string },
 ): Promise<WarningsOpResponse | WarningsConflict> {
   const res = await fetch(
-    `/api/runs/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+    projectQueryUrl(
+      `/api/runs/${encodeURIComponent(id)}/warnings/${encodeURIComponent(rowId)}`,
+      project,
+    ),
     {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -857,6 +1067,7 @@ export interface MemberRunSummary {
   host: string | null
   gpus: number[]
   path?: string
+  resource?: string
   /** Optional external run dashboard retained by the structured Results table. */
   wandb?: string | null
   /** v4-added — true when the run README's `archived` frontmatter is true. */
@@ -868,7 +1079,9 @@ export interface MemberRunSummary {
 export interface ExperimentDocSummary {
   id: string
   project: string
-  path: string
+  /** Standalone-only absolute path; central Backend responses deliberately omit it. */
+  path?: string
+  resource?: string
   /** Bundle activity mtime (README + managed YAML); display/sorting only. */
   mtime: number
   /** README.md's own mtime; optimistic-lock key for README mutations. */
@@ -933,6 +1146,8 @@ export interface ExperimentDocDetail extends ExperimentDocSummary {
 }
 
 export interface ExperimentResultsSnapshot {
+  project: string
+  resource: string
   document: ResultsDocument
   updatedAt: string
   warnings: ParseIssue[]
@@ -948,47 +1163,136 @@ export interface AnomalyRecord {
 }
 
 export async function fetchExperimentDocs(
-  project?: string,
+  project?: ProjectTarget,
 ): Promise<{ experiments: ExperimentDocSummary[] }> {
-  const url = project
-    ? `/api/experiments?project=${encodeURIComponent(project)}`
-    : '/api/experiments'
+  const url = project ? projectQueryUrl('/api/experiments', project) : '/api/experiments'
   return jsonFetch(url)
 }
 
-export async function fetchExperimentDoc(id: string): Promise<ExperimentDocDetail> {
-  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}`)
+export async function fetchExperimentDoc(
+  project: ProjectTarget,
+  id: string,
+): Promise<ExperimentDocDetail> {
+  return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}`, project))
 }
 
-export async function fetchExperimentResults(id: string): Promise<ExperimentResultsSnapshot> {
-  return jsonFetch(`/api/experiments/${encodeURIComponent(id)}/results`, { cache: 'no-store' })
+export async function createExperimentDoc(
+  project: ProjectTarget,
+  input: {
+    slug: string
+    title?: string
+    hypotheses?: string[]
+    tags?: string[]
+    fromRun?: string | null
+    fromRunExpectedMtime?: number
+    fromRunExpectedHash?: string
+  },
+): Promise<{ ok: true; id: string; resource: string; mtime: number; hash: string }> {
+  return jsonFetch(projectQueryUrl('/api/experiments', project), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ project: projectName(project), ...input }),
+  })
 }
 
-export async function fetchAnomalies(project?: string): Promise<{ anomalies: AnomalyRecord[] }> {
-  const url = project ? `/api/anomalies?project=${encodeURIComponent(project)}` : '/api/anomalies'
+export interface ExperimentBindInput {
+  run: string
+  expectedMtime: number
+  expectedHash: string
+  expectedRunMtime: number
+  expectedRunHash: string
+}
+
+export async function bindExperimentRun(
+  operation: 'link' | 'unlink',
+  project: ProjectTarget,
+  id: string,
+  input: ExperimentBindInput,
+): Promise<{
+  ok: true
+  experimentId: string
+  runId: string
+  experimentMtime: number
+  experimentHash: string
+  runMtime: number
+  runHash: string
+}> {
+  return jsonFetch(
+    projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/${operation}`, project),
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function deleteExperimentDoc(
+  project: ProjectTarget,
+  id: string,
+  input: {
+    force: boolean
+    expectedMtime: number
+    expectedHash: string
+    runLocks: Array<{ run: string; expectedMtime: number; expectedHash: string }>
+  },
+): Promise<{ ok: true; deletedId: string; cascadedRuns: string[] }> {
+  const query = new URLSearchParams({ force: String(input.force) })
+  return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}`, project, query), {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      expectedMtime: input.expectedMtime,
+      expectedHash: input.expectedHash,
+      runLocks: input.runLocks,
+    }),
+  })
+}
+
+export async function fetchExperimentResults(
+  project: ProjectTarget,
+  id: string,
+): Promise<ExperimentResultsSnapshot> {
+  return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/results`, project), {
+    cache: 'no-store',
+  })
+}
+
+export async function fetchAnomalies(
+  project?: ProjectTarget,
+): Promise<{ anomalies: AnomalyRecord[] }> {
+  const url = project ? projectQueryUrl('/api/anomalies', project) : '/api/anomalies'
   return jsonFetch(url)
 }
 
 export interface RunFileTreeNode {
   type: 'file' | 'dir'
-  path: string
+  resource: string
   size?: number
   mtime?: number
   children?: RunFileTreeNode[]
 }
 
 export async function fetchRunFiles(
+  project: ProjectTarget,
   id: string,
   depth = 3,
 ): Promise<{
+  project: string
   runId: string
-  runPath: string
+  resource: string
   depth: number
   truncated: boolean
   entries: number
   tree: RunFileTreeNode
 }> {
-  return jsonFetch(`/api/runs/${encodeURIComponent(id)}/files?depth=${depth}`)
+  return jsonFetch(
+    projectQueryUrl(
+      `/api/runs/${encodeURIComponent(id)}/files`,
+      project,
+      new URLSearchParams({ depth: String(depth) }),
+    ),
+  )
 }
 
 // Slurm widget — one fetch every 30s while the sidebar footer is mounted.
@@ -1061,8 +1365,10 @@ export type GitStatus =
       dirty: boolean
     }
 
-export async function fetchGitStatus(project: string): Promise<GitStatus> {
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-status`)
+export async function fetchGitStatus(project: ProjectTarget): Promise<GitStatus> {
+  return jsonFetch(
+    projectPathUrl(`/api/projects/${encodeURIComponent(projectName(project))}/git-status`, project),
+  )
 }
 
 // Git status — detailed file lists. Fetched lazily once per dialog open.
@@ -1111,14 +1417,17 @@ export type GitStatusFiles =
     }
 
 export async function fetchGitStatusFiles(
-  project: string,
+  project: ProjectTarget,
   submodule?: string,
 ): Promise<GitStatusFiles> {
   const params = new URLSearchParams()
   if (submodule) params.set('submodule', submodule)
-  const qs = params.toString()
   return jsonFetch(
-    `/api/projects/${encodeURIComponent(project)}/git-status/files${qs ? `?${qs}` : ''}`,
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/git-status/files`,
+      project,
+      params,
+    ),
   )
 }
 
@@ -1154,7 +1463,7 @@ export interface FetchGitDiffOpts {
 }
 
 export async function fetchGitDiff(
-  project: string,
+  project: ProjectTarget,
   path: string,
   side: GitDiffSide,
   opts: FetchGitDiffOpts = {},
@@ -1164,7 +1473,13 @@ export async function fetchGitDiff(
   if (opts.submodule) params.set('submodule', opts.submodule)
   if (opts.from) params.set('from', opts.from)
   if (opts.to) params.set('to', opts.to)
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-diff?${params.toString()}`)
+  return jsonFetch(
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/git-diff`,
+      project,
+      params,
+    ),
+  )
 }
 
 // Git range — commit list AND file list for `from..to`. Used by the
@@ -1190,14 +1505,20 @@ export type GitRangeResponse =
     }
 
 export async function fetchGitRange(
-  project: string,
+  project: ProjectTarget,
   from: string,
   to: string,
   submodule?: string,
 ): Promise<GitRangeResponse> {
   const params = new URLSearchParams({ from, to })
   if (submodule) params.set('submodule', submodule)
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-range?${params.toString()}`)
+  return jsonFetch(
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/git-range`,
+      project,
+      params,
+    ),
+  )
 }
 
 // Git history — branches, commit list, single-commit detail. Lazy
@@ -1260,15 +1581,23 @@ export type GitCommitDetail =
       files: GitFileEntry[]
     }
 
-export async function fetchGitBranches(project: string, submodule?: string): Promise<GitBranches> {
+export async function fetchGitBranches(
+  project: ProjectTarget,
+  submodule?: string,
+): Promise<GitBranches> {
   const params = new URLSearchParams()
   if (submodule) params.set('submodule', submodule)
-  const qs = params.toString()
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-branches${qs ? `?${qs}` : ''}`)
+  return jsonFetch(
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/git-branches`,
+      project,
+      params,
+    ),
+  )
 }
 
 export async function fetchGitLog(
-  project: string,
+  project: ProjectTarget,
   ref: string,
   limit?: number,
   submodule?: string,
@@ -1276,17 +1605,29 @@ export async function fetchGitLog(
   const params = new URLSearchParams({ ref })
   if (limit !== undefined) params.set('limit', String(limit))
   if (submodule) params.set('submodule', submodule)
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-log?${params.toString()}`)
+  return jsonFetch(
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/git-log`,
+      project,
+      params,
+    ),
+  )
 }
 
 export async function fetchGitCommit(
-  project: string,
+  project: ProjectTarget,
   sha: string,
   submodule?: string,
 ): Promise<GitCommitDetail> {
   const params = new URLSearchParams({ sha })
   if (submodule) params.set('submodule', submodule)
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/git-commit?${params.toString()}`)
+  return jsonFetch(
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/git-commit`,
+      project,
+      params,
+    ),
+  )
 }
 
 // --- Submodules ---
@@ -1304,8 +1645,10 @@ export type GitSubmodules =
     }
   | { enabled: true; submodules: GitSubmoduleEntry[] }
 
-export async function fetchSubmodules(project: string): Promise<GitSubmodules> {
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/submodules`)
+export async function fetchSubmodules(project: ProjectTarget): Promise<GitSubmodules> {
+  return jsonFetch(
+    projectPathUrl(`/api/projects/${encodeURIComponent(projectName(project))}/submodules`, project),
+  )
 }
 
 // Commit verification marks — per-project CSV stored under `.memon/`.
@@ -1326,18 +1669,24 @@ export interface CommitMarksResponse {
   parseWarnings: string[]
 }
 
-export async function fetchCommitMarks(project: string): Promise<CommitMarksResponse> {
-  return jsonFetch(`/api/projects/${encodeURIComponent(project)}/commit-marks`)
+export async function fetchCommitMarks(project: ProjectTarget): Promise<CommitMarksResponse> {
+  return jsonFetch(
+    projectPathUrl(
+      `/api/projects/${encodeURIComponent(projectName(project))}/commit-marks`,
+      project,
+    ),
+  )
 }
 
-function commitMarkUrl(project: string, sha: string, submodule?: string): string {
-  const base = `/api/projects/${encodeURIComponent(project)}/commit-marks/${encodeURIComponent(sha)}`
-  if (!submodule) return base
-  return `${base}?submodule=${encodeURIComponent(submodule)}`
+function commitMarkUrl(project: ProjectTarget, sha: string, submodule?: string): string {
+  const base = `/api/projects/${encodeURIComponent(projectName(project))}/commit-marks/${encodeURIComponent(sha)}`
+  const qualified = projectPathUrl(base, project)
+  if (!submodule) return qualified
+  return `${qualified}${qualified.includes('?') ? '&' : '?'}submodule=${encodeURIComponent(submodule)}`
 }
 
 export async function setCommitMark(
-  project: string,
+  project: ProjectTarget,
   sha: string,
   input: { status: CommitMarkStatus; note?: string },
   submodule?: string,
@@ -1350,7 +1699,7 @@ export async function setCommitMark(
 }
 
 export async function deleteCommitMark(
-  project: string,
+  project: ProjectTarget,
   sha: string,
   submodule?: string,
 ): Promise<{ deleted: boolean }> {

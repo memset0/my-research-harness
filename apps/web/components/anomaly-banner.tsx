@@ -8,13 +8,20 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Copy } from 'lucide-react'
-import { fetchAnomalies, type AnomalyRecord } from '../lib/api'
+import {
+  fetchAnomalies,
+  type AnomalyRecord,
+  projectHost,
+  projectName,
+  projectQueryKey,
+  type ProjectTarget,
+} from '../lib/api'
 import { Button } from './ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from './ui/card'
 
-export function AnomalyBanner({ project }: { project: string }) {
+export function AnomalyBanner({ project }: { project: ProjectTarget }) {
   const { data } = useQuery({
-    queryKey: ['anomalies', project],
+    queryKey: ['anomalies', ...projectQueryKey(project)],
     queryFn: () => fetchAnomalies(project),
   })
   const anomalies = data?.anomalies ?? []
@@ -49,11 +56,16 @@ export function AnomalyBanner({ project }: { project: string }) {
       </CardHeader>
       <CardContent>
         <ul className="max-h-[20vh] space-y-1 overflow-y-auto text-xs">
-          {anomalies.map((a, i) => (
-            <li key={i} className="font-mono">
+          {anomalies.map((a) => (
+            <li
+              key={`${a.code}:${a.runId ?? ''}:${a.experimentId ?? ''}:${a.detectedAt}:${a.message}`}
+              className="font-mono"
+            >
               <span className="font-semibold">{a.code}</span>
               {a.runId ? <span className="text-muted-foreground"> · run={a.runId}</span> : null}
-              {a.experimentId ? <span className="text-muted-foreground"> · exp={a.experimentId}</span> : null}
+              {a.experimentId ? (
+                <span className="text-muted-foreground"> · exp={a.experimentId}</span>
+              ) : null}
               <span className="text-muted-foreground"> — {a.message}</span>
             </li>
           ))}
@@ -63,13 +75,12 @@ export function AnomalyBanner({ project }: { project: string }) {
   )
 }
 
-function formatForCopy(project: string, anomalies: AnomalyRecord[]): string {
-  const lines = [`Anomalies from project ${project} at ${new Date().toISOString()}:`]
+function formatForCopy(project: ProjectTarget, anomalies: AnomalyRecord[]): string {
+  const host = projectHost(project)
+  const label = host ? `${host}/${projectName(project)}` : projectName(project)
+  const lines = [`Anomalies from project ${label} at ${new Date().toISOString()}:`]
   for (const a of anomalies) {
-    const ids = [
-      a.experimentId ? `exp=${a.experimentId}` : null,
-      a.runId ? `run=${a.runId}` : null,
-    ]
+    const ids = [a.experimentId ? `exp=${a.experimentId}` : null, a.runId ? `run=${a.runId}` : null]
       .filter(Boolean)
       .join(' ')
     lines.push(`- ${a.code}: ${ids} — ${a.message}`)

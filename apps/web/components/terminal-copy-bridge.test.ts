@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  attachTerminalCopyBridge,
-  isTerminalCopyShortcut,
-} from './terminal-copy-bridge'
+import { attachTerminalCopyBridge, isTerminalCopyShortcut } from './terminal-copy-bridge'
 
 interface FrameHarness {
   iframe: HTMLIFrameElement
@@ -28,7 +25,9 @@ function createFrame(): FrameHarness {
 }
 
 afterEach(() => {
-  document.querySelectorAll('iframe').forEach((iframe) => iframe.remove())
+  document.querySelectorAll('iframe').forEach((iframe) => {
+    iframe.remove()
+  })
 })
 
 describe('terminal copy shortcut detection', () => {

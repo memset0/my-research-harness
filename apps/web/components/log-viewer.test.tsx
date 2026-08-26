@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('../lib/api', () => ({
   fetchLog: vi.fn(),
   fetchLogFiles: vi.fn(),
+  logStreamUrl: vi.fn(() => '/api/log/stream?path=%2Fp%2Fa%2Flogs%2Fexp%2Fstdout.log'),
+  projectQueryKey: vi.fn((project: string) => [project]),
 }))
 
 import { fetchLog, fetchLogFiles } from '../lib/api'
@@ -31,7 +33,7 @@ describe('LogViewer search', () => {
   })
 
   it('counter updates with case-insensitive matches', async () => {
-    renderWithQuery(<LogViewer expPath="/p/a/logs/exp" />)
+    renderWithQuery(<LogViewer project="a" expPath="/p/a/logs/exp" />)
     // Wait for log lines to render
     await waitFor(() => expect(screen.getByText(/first line/)).toBeInTheDocument())
 
@@ -45,7 +47,7 @@ describe('LogViewer search', () => {
   })
 
   it('next button advances current match index', async () => {
-    renderWithQuery(<LogViewer expPath="/p/a/logs/exp" />)
+    renderWithQuery(<LogViewer project="a" expPath="/p/a/logs/exp" />)
     await waitFor(() => expect(screen.getByText(/first line/)).toBeInTheDocument())
     await userEvent.type(screen.getByPlaceholderText(/search in log/i), 'hello')
     await waitFor(() => expect(screen.getByText('1 / 3')).toBeInTheDocument())
@@ -53,9 +55,7 @@ describe('LogViewer search', () => {
     // The chevron-down (next) and chevron-up (prev) buttons are size="icon" ghost buttons
     // adjacent to the counter. Find them by aria via role=button after the counter.
     const buttons = screen.getAllByRole('button')
-    const downBtn = buttons.find((b) =>
-      b.querySelector('.lucide-chevron-down'),
-    )
+    const downBtn = buttons.find((b) => b.querySelector('.lucide-chevron-down'))
     expect(downBtn).toBeDefined()
     await userEvent.click(downBtn!)
     await waitFor(() => expect(screen.getByText('2 / 3')).toBeInTheDocument())
@@ -81,7 +81,9 @@ describe('LogViewer SSE append', () => {
         sseInstances.push({ listeners: this.listeners, closed: this.closed })
       }
       addEventListener(type: string, fn: Listener) {
-        ;(this.listeners[type] ??= []).push(fn)
+        const listeners = this.listeners[type] ?? []
+        listeners.push(fn)
+        this.listeners[type] = listeners
       }
       removeEventListener() {}
       close() {
@@ -93,7 +95,7 @@ describe('LogViewer SSE append', () => {
   })
 
   it('"N new lines" badge appears when append events arrive while not following', async () => {
-    renderWithQuery(<LogViewer expPath="/p/a/logs/exp" />)
+    renderWithQuery(<LogViewer project="a" expPath="/p/a/logs/exp" />)
     await waitFor(() => expect(screen.getByText(/first line/)).toBeInTheDocument())
 
     // The component starts in `follow=true`. The pendingNew badge only appears
@@ -102,19 +104,17 @@ describe('LogViewer SSE append', () => {
     // grows + totalLines updates (covers the SSE plumbing).
     expect(sseInstances).toHaveLength(1)
     const inst = sseInstances[0]!
-    const appendListeners = inst.listeners['append'] ?? []
+    const appendListeners = inst.listeners.append ?? []
     expect(appendListeners.length).toBeGreaterThan(0)
 
     // Dispatch an append event with one new line
     const newLine = { lineNumber: 5, text: 'fifth line: appended via SSE' }
-    appendListeners.forEach((l) =>
-      l(new MessageEvent('append', { data: JSON.stringify({ lines: [newLine] }) })),
-    )
+    appendListeners.forEach((listener) => {
+      listener(new MessageEvent('append', { data: JSON.stringify({ lines: [newLine] }) }))
+    })
 
     // The new line shows up in the buffer
-    await waitFor(() =>
-      expect(screen.getByText(/appended via SSE/)).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText(/appended via SSE/)).toBeInTheDocument())
     // totalLines counter shows 5
     expect(screen.getByText(/5 lines/)).toBeInTheDocument()
   })
@@ -135,7 +135,7 @@ describe('LogViewer line selection', () => {
   })
 
   it('clicking a line number updates URL hash to #L<n>', async () => {
-    renderWithQuery(<LogViewer expPath="/p/a/logs/exp" />)
+    renderWithQuery(<LogViewer project="a" expPath="/p/a/logs/exp" />)
     await waitFor(() => expect(screen.getByText(/first line/)).toBeInTheDocument())
     // The line-number button has title="line 2 ..."
     const lineBtn = screen.getByTitle(/line 2/)

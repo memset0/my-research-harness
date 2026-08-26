@@ -1,14 +1,15 @@
 // @vitest-environment node
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { createServer, request as httpRequest, type Server } from 'node:http'
 import { connect, type Socket } from 'node:net'
 import type { AuthConfig } from '@memon/core'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { __resetForTests } from './auth/rate-limit'
 
 vi.mock('./runtime', () => ({ getRuntime: vi.fn() }))
 
-import { createMemonServer } from './server-core'
 import { getRuntime } from './runtime'
+import { createMemonServer } from './server-core'
 
 let auth: AuthConfig
 beforeAll(() => {
@@ -33,6 +34,10 @@ let memonPort: number
 let upstreamPort: number
 let upstreamUpgradeUrls: string[]
 let nextHandleUrls: string[]
+let standaloneTarget: ReturnType<typeof vi.fn>
+let standaloneHttpActivity: ReturnType<typeof vi.fn>
+let standaloneWsConnect: ReturnType<typeof vi.fn>
+let standaloneWsDisconnect: ReturnType<typeof vi.fn>
 
 function basic(u: string, p: string): string {
   return `Basic ${Buffer.from(`${u}:${p}`, 'utf8').toString('base64')}`
@@ -46,7 +51,13 @@ async function httpGet(path: string, headers: Record<string, string> = {}): Prom
         let body = ''
         res.setEncoding('utf8')
         res.on('data', (c) => (body += c))
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers as Record<string, string | string[] | undefined> }))
+        res.on('end', () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            body,
+            headers: res.headers as Record<string, string | string[] | undefined>,
+          }),
+        )
       },
     )
     req.on('error', reject)
@@ -54,7 +65,10 @@ async function httpGet(path: string, headers: Record<string, string> = {}): Prom
   })
 }
 
-async function rawUpgrade(path: string, headers: Record<string, string> = {}): Promise<RawUpgradeResult> {
+async function rawUpgrade(
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<RawUpgradeResult> {
   return new Promise<RawUpgradeResult>((resolve, reject) => {
     const sock: Socket = connect(memonPort, '127.0.0.1')
     let data = ''
@@ -90,6 +104,10 @@ beforeEach(async () => {
   vi.mocked(getRuntime).mockResolvedValue({ auth } as Awaited<ReturnType<typeof getRuntime>>)
   upstreamUpgradeUrls = []
   nextHandleUrls = []
+  standaloneTarget = vi.fn(() => `http://127.0.0.1:${upstreamPort}`)
+  standaloneHttpActivity = vi.fn()
+  standaloneWsConnect = vi.fn()
+  standaloneWsDisconnect = vi.fn()
 
   upstream = createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'X-Upstream': '1' })
@@ -115,7 +133,12 @@ beforeEach(async () => {
       res.writeHead(200, { 'Content-Type': 'text/plain' })
       res.end('NEXT-HANDLED')
     },
-    proxyTarget: `http://127.0.0.1:${upstreamPort}`,
+    standaloneTerminal: {
+      target: standaloneTarget,
+      noteHttpActivity: standaloneHttpActivity,
+      noteWsConnect: standaloneWsConnect,
+      noteWsDisconnect: standaloneWsDisconnect,
+    },
     onProxyError: () => {
       /* swallow in tests */
     },
@@ -151,6 +174,8 @@ describe('createMemonServer — HTTP path', () => {
     expect(r.status).toBe(200)
     expect(r.body).toBe('UPSTREAM-BODY')
     expect(r.headers['x-upstream']).toBe('1')
+    expect(standaloneTarget).toHaveBeenCalledWith('sess')
+    expect(standaloneHttpActivity).toHaveBeenCalledWith('sess')
   })
 
   it('delegates non-prefixed paths to the supplied handle', async () => {
@@ -160,15 +185,63 @@ describe('createMemonServer — HTTP path', () => {
     expect(nextHandleUrls).toContain('/api/projects')
   })
 
+  it('uses an optional central HTTP hook without changing Next or terminal precedence', async () => {
+    await new Promise<void>((resolve) => memon.close(() => resolve()))
+    const centralGateway = vi.fn(async (req, res) => {
+      if (!req.url?.startsWith('/api/runs?host=')) return false
+      res.writeHead(200, { 'Content-Type': 'text/plain' })
+      res.end('CENTRAL-BRIDGE')
+      return true
+    })
+    memon = createMemonServer({
+      handle: (req, res) => {
+        nextHandleUrls.push(req.url ?? '')
+        res.writeHead(200, { 'Content-Type': 'text/plain' })
+        res.end('NEXT-HANDLED')
+      },
+      centralGateway,
+      proxyTarget: `http://127.0.0.1:${upstreamPort}`,
+    })
+    await new Promise<void>((resolve) =>
+      memon.listen(0, '127.0.0.1', () => {
+        memonPort = (memon.address() as { port: number }).port
+        resolve()
+      }),
+    )
+
+    expect((await httpGet('/api/runs?host=host-a&project=project-a')).body).toBe('CENTRAL-BRIDGE')
+    expect((await httpGet('/api/projects')).body).toBe('NEXT-HANDLED')
+    expect(
+      (
+        await httpGet('/api/terminal/proxy/sess/index.html', {
+          authorization: basic('admin', 'secret'),
+        })
+      ).body,
+    ).toBe('UPSTREAM-BODY')
+    expect(centralGateway.mock.calls.map(([request]) => request.url)).not.toContain(
+      '/api/terminal/proxy/sess/index.html',
+    )
+  })
+
   it('returns 502 when the upstream is unreachable', async () => {
     await new Promise<void>((r) => upstream!.close(() => r()))
     upstream = null
-    const r = await httpGet('/api/terminal/proxy/sess/x', { authorization: basic('admin', 'secret') })
+    const r = await httpGet('/api/terminal/proxy/sess/x', {
+      authorization: basic('admin', 'secret'),
+    })
     expect(r.status).toBe(502)
   })
 })
 
 describe('createMemonServer — WebSocket upgrade path', () => {
+  it('does not accept the abandoned Hub/Node connect endpoint', async () => {
+    const r = await rawUpgrade('/api/hub/nodes/connect', {
+      Authorization: 'Bearer obsolete-node-token',
+    })
+    expect(r.statusLine).not.toContain('101 Switching Protocols')
+    expect(r.upstreamHit).toBe(false)
+  })
+
   it('rejects anonymous WS upgrade with 401 + WWW-Authenticate', async () => {
     const r = await rawUpgrade('/api/terminal/proxy/sess/ws')
     expect(r.statusLine).toContain('401 Unauthorized')

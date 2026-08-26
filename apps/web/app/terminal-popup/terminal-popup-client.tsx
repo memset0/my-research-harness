@@ -2,24 +2,25 @@
 
 import { StaleBanner, type StaleReason } from '../../components/stale-banner'
 import { TerminalView } from '../../components/terminal-view'
-import type { TerminalAgentKind, TerminalScopeKind } from '../../lib/api'
+import type { ProjectTarget, TerminalAgentKind, TerminalScopeKind } from '../../lib/api'
 
 export type TerminalPopupClientProps =
   | {
       mode: 'standard'
-      project: string
+      project: ProjectTarget
       scope: TerminalScopeKind
       slug: string
       agent: TerminalAgentKind
     }
   | {
       mode: 'raw'
+      host?: string
       sessionName: string
       staleReason?: StaleReason | null
     }
   | {
       mode: 'herdr'
-      project?: string
+      project?: ProjectTarget
       scope?: TerminalScopeKind
       slug?: string
     }
@@ -47,12 +48,25 @@ export function TerminalPopupClient(props: TerminalPopupClientProps) {
         <div className="flex h-svh w-svw flex-col bg-zinc-950">
           <StaleBanner reason={props.staleReason} sessionName={props.sessionName} />
           <div className="flex min-h-0 flex-1 flex-col">
-            <TerminalView mode="raw" sessionName={props.sessionName} source="popup" />
+            <TerminalView
+              mode="raw"
+              {...(props.host ? { host: props.host } : {})}
+              sessionName={props.sessionName}
+              source="popup"
+            />
           </div>
         </div>
       )
     }
-    return <TerminalView mode="raw" sessionName={props.sessionName} fullscreen source="popup" />
+    return (
+      <TerminalView
+        mode="raw"
+        {...(props.host ? { host: props.host } : {})}
+        sessionName={props.sessionName}
+        fullscreen
+        source="popup"
+      />
+    )
   }
   return (
     <TerminalView

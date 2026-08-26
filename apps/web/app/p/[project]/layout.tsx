@@ -2,6 +2,7 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { AppBar } from '../../../components/app-bar'
 import { AppSidebar } from '../../../components/app-sidebar'
 import { ProjectFooter } from '../../../components/project-footer'
@@ -10,6 +11,10 @@ import { WorkspaceSplitOutlet } from '../../../components/terminal-drawer-provid
 import { SidebarInset } from '../../../components/ui/sidebar'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { getRuntime } from '../../../lib/runtime'
+import { readIdentityFromHeaders } from '../../../lib/auth/request-context'
+import { aggregateCentralProjects } from '../../../lib/central/central-projects'
+import { getCentralFleet } from '../../../lib/central/fleet-runtime'
+import { resolveLegacyProject } from '../../../lib/central/legacy-project'
 import { getExperimentsData, getProjectsData } from '../../../lib/server/data'
 
 export async function generateMetadata({
@@ -43,12 +48,50 @@ export default async function ProjectLayout({
 
   // Validate project exists in config; otherwise 404 instead of letting
   // downstream API calls error.
-  try {
-    const rt = await getRuntime()
-    if (!rt.config.projects.some((p) => p.name === decoded)) notFound()
-  } catch {
+  const rt = await getRuntime().catch(() => null)
+  if (!rt) notFound()
+  if (rt.config.central) {
+    const identity = await readIdentityFromHeaders()
+    if (identity.role === 'anon') notFound()
+    const fleet = await getCentralFleet()
+    const payload = await aggregateCentralProjects({
+      registry: fleet.registry,
+      actor:
+        identity.role === 'viewer'
+          ? { role: 'viewer', scopes: identity.scopeProjectRefs }
+          : { role: 'owner' },
+    })
+    const resolution = resolveLegacyProject(decoded, payload.projects)
+    if (resolution.kind === 'unique') {
+      redirect(
+        `/h/${encodeURIComponent(resolution.project.host)}/p/${encodeURIComponent(resolution.project.project)}`,
+      )
+    }
+    if (resolution.kind === 'ambiguous') {
+      return (
+        <main className="mx-auto flex max-w-lg flex-col gap-3 p-6">
+          <h1 className="text-lg font-semibold">Choose a Host</h1>
+          <p className="text-sm text-muted-foreground">
+            Project <code>{decoded}</code> exists on more than one Host.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {resolution.projects.map((project) => (
+              <li key={project.host}>
+                <a
+                  className="text-sm underline"
+                  href={`/h/${encodeURIComponent(project.host)}/p/${encodeURIComponent(project.project)}`}
+                >
+                  {project.host}/{project.project}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </main>
+      )
+    }
     notFound()
   }
+  if (!rt.config.projects.some((p) => p.name === decoded)) notFound()
 
   // SSR prefetch: populate ['projects'] so the sidebar renders projects in
   // the initial HTML (no "No projects configured" flash). Also prefetch

@@ -1,11 +1,20 @@
-// GET /api/terminal/check — probe ttyd availability (cache → PATH).
+// GET /api/terminal/check — standalone adapter over the shared terminal binary service.
 
 import { NextResponse } from 'next/server'
-import { probeTtyd } from '../../../../lib/terminal/binary'
+import { getRuntime } from '../../../../lib/runtime'
+import {
+  standaloneTerminal,
+  standaloneTerminalError,
+} from '../../../../lib/server/standalone-terminal'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const probe = await probeTtyd()
-  return NextResponse.json(probe)
+  const runtime = await getRuntime()
+  const service = standaloneTerminal(runtime.config)
+  try {
+    return NextResponse.json(await service.check())
+  } catch (error) {
+    return standaloneTerminalError(error)
+  }
 }

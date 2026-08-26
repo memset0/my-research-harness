@@ -1,4 +1,5 @@
-import { waitFor } from '@testing-library/react'
+import { ProjectRefSchema } from '@memon/core'
+import { screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
@@ -20,7 +21,7 @@ vi.mock('../lib/api', async () => {
 
 import { TerminalView } from './terminal-view'
 
-type PostedMsg = { sessionName: string; source: string; attachedAt: number }
+type PostedMsg = { host: string | null; sessionName: string; source: string; attachedAt: number }
 
 interface ChannelInstance {
   name: string
@@ -100,6 +101,7 @@ describe('TerminalView broadcast on ready', () => {
     })
     const all = bc.channels.flatMap((c) => c.posts)
     expect(all[0]).toEqual({
+      host: null,
       sessionName: 'memon-claude-project-a--run--foo-260507-103000',
       source: 'drawer',
       attachedAt: expect.any(Number),
@@ -124,8 +126,72 @@ describe('TerminalView broadcast on ready', () => {
       const posts = bc.channels.flatMap((c) => c.posts)
       expect(posts.length).toBe(1)
       expect(posts[0]?.sessionName).toBe('memon-manual-foo')
+      expect(posts[0]?.host).toBeNull()
       expect(posts[0]?.source).toBe('popup')
     })
+  })
+
+  it('binds central iframe and broadcast state to the selected Host', async () => {
+    const project = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
+    startTerminalMock.mockResolvedValue({
+      host: 'host-a',
+      sessionName: 'memon-codex-project-a--project--root',
+      url: '/api/terminal/proxy/host-a/memon-codex-project-a--project--root/',
+      startedAt: '2026-08-26T19:00:00Z',
+      warnings: [],
+    })
+    renderWithQuery(
+      <TerminalView
+        mode="standard"
+        project={project}
+        scope="project"
+        slug="root"
+        agent="codex"
+        source="drawer"
+      />,
+    )
+
+    expect(await screen.findByTitle('host-a · codex terminal')).toHaveAttribute(
+      'src',
+      '/api/terminal/proxy/host-a/memon-codex-project-a--project--root/',
+    )
+    expect(startTerminalMock).toHaveBeenCalledWith({
+      project,
+      scope: 'project',
+      slug: 'root',
+      agent: 'codex',
+    })
+    expect(bc.channels.flatMap((channel) => channel.posts)[0]).toMatchObject({
+      host: 'host-a',
+      sessionName: 'memon-codex-project-a--project--root',
+    })
+  })
+
+  it('fails closed when a response attempts to retarget another Host', async () => {
+    const project = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
+    startTerminalMock.mockResolvedValue({
+      host: 'host-b',
+      sessionName: 'memon-codex-project-a--project--root',
+      url: '/api/terminal/proxy/host-b/memon-codex-project-a--project--root/',
+      startedAt: '2026-08-26T19:00:00Z',
+      warnings: [],
+    })
+    renderWithQuery(
+      <TerminalView
+        mode="standard"
+        project={project}
+        scope="project"
+        slug="root"
+        agent="codex"
+        source="drawer"
+      />,
+    )
+
+    expect(
+      await screen.findByText('Terminal response Host does not match the selected Host'),
+    ).toBeInTheDocument()
+    expect(screen.queryByTitle('host-a · codex terminal')).not.toBeInTheDocument()
+    expect(bc.channels.flatMap((channel) => channel.posts)).toEqual([])
   })
 
   it('Herdr mode starts the target workspace and renders its shared proxy', async () => {

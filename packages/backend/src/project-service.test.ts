@@ -1,0 +1,204 @@
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import {
+  BackendAnomaliesResponseSchema,
+  BackendExperimentResponseSchema,
+  BackendExperimentResultsResponseSchema,
+  BackendExperimentsResponseSchema,
+  BackendHypothesesResponseSchema,
+  BackendJournalResponseSchema,
+  BackendRunFilesResponseSchema,
+  BackendRunResponseSchema,
+  BackendRunsResponseSchema,
+  type ProjectConfig,
+} from '@memon/core'
+import { describe, expect, it } from 'vitest'
+import { FilesystemProjectService } from './project-service.js'
+
+const fixtureRoot = resolve(process.cwd(), '../../mock/project-a')
+
+function project(name: string, root = fixtureRoot): ProjectConfig {
+  return { name, root, include: [], exclude: [] }
+}
+
+function forbiddenKeys(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value) forbiddenKeys(item, found)
+    return found
+  }
+  if (!value || typeof value !== 'object') return found
+  for (const [key, nested] of Object.entries(value)) {
+    if (['path', 'root', 'cwd', 'projectroot', 'runpath'].includes(key.toLowerCase()))
+      found.push(key)
+    forbiddenKeys(nested, found)
+  }
+  return found
+}
+
+describe('FilesystemProjectService safe reads', () => {
+  it('lists and reads Runs without absolute filesystem fields', async () => {
+    const service = new FilesystemProjectService([project('project-a')])
+    const list = BackendRunsResponseSchema.parse(await service.listRuns('project-a'))
+    expect(list.runs.length).toBeGreaterThan(0)
+    const detail = BackendRunResponseSchema.parse(
+      await service.getRun('project-a', list.runs[0]!.id),
+    )
+    expect(detail.project).toBe('project-a')
+    expect(detail.resource).toMatch(/^(?!\/).+\/README\.md$/)
+    expect(forbiddenKeys(list)).toEqual([])
+    expect(forbiddenKeys(detail)).toEqual([])
+    expect(JSON.stringify(detail)).not.toContain(fixtureRoot)
+  })
+
+  it('lists a bounded, path-free file tree for the exact Run resource', async () => {
+    const service = new FilesystemProjectService([project('project-a')])
+    const files = BackendRunFilesResponseSchema.parse(
+      await service.getRunFiles('project-a', 'foo-260501-100000', 3),
+    )
+    expect(files.resource).toBe('logs/foo-260501-100000')
+    expect(files.entries).toBeLessThanOrEqual(200)
+    expect(files.tree.type).toBe('dir')
+    expect(JSON.stringify(files)).not.toContain(fixtureRoot)
+    expect(forbiddenKeys(files)).toEqual([])
+  })
+
+  it('lists and reads Experiment docs with path-free member Runs', async () => {
+    const service = new FilesystemProjectService([project('project-a')])
+    const list = BackendExperimentsResponseSchema.parse(await service.listExperiments('project-a'))
+    expect(list.experiments.length).toBeGreaterThan(0)
+    const detail = BackendExperimentResponseSchema.parse(
+      await service.getExperiment('project-a', list.experiments[0]!.id),
+    )
+    expect(detail.project).toBe('project-a')
+    expect(detail.resource).toMatch(/^docs\/experiments\/[^/]+\/README\.md$/)
+    expect(detail.memberRuns.every((run) => run.resource.endsWith('/README.md'))).toBe(true)
+    expect(forbiddenKeys(detail)).toEqual([])
+    expect(JSON.stringify(detail)).not.toContain(fixtureRoot)
+  })
+
+  it('returns strict hypotheses, journal, and computed anomaly DTOs', async () => {
+    const service = new FilesystemProjectService([project('project-a')])
+    const hypotheses = BackendHypothesesResponseSchema.parse(
+      await service.getHypotheses('project-a'),
+    )
+    const journal = BackendJournalResponseSchema.parse(await service.getJournal('project-a'))
+    const anomalies = BackendAnomaliesResponseSchema.parse(await service.getAnomalies('project-a'))
+    expect(hypotheses.project).toBe('project-a')
+    expect(journal.project).toBe('project-a')
+    expect(Array.isArray(anomalies.anomalies)).toBe(true)
+    expect(forbiddenKeys({ hypotheses, journal, anomalies })).toEqual([])
+  })
+
+  it('keeps duplicate resource IDs isolated by the selected Project', async () => {
+    const service = new FilesystemProjectService([project('project-a'), project('project-copy')])
+    const [a, copy] = await Promise.all([
+      service.listRuns('project-a'),
+      service.listRuns('project-copy'),
+    ])
+    const runsA = BackendRunsResponseSchema.parse(a).runs
+    const runsCopy = BackendRunsResponseSchema.parse(copy).runs
+    const duplicateId = runsA[0]!.id
+    expect(runsCopy.some((run) => run.id === duplicateId)).toBe(true)
+    const [detailA, detailCopy] = await Promise.all([
+      service.getRun('project-a', duplicateId),
+      service.getRun('project-copy', duplicateId),
+    ])
+    expect(BackendRunResponseSchema.parse(detailA).project).toBe('project-a')
+    expect(BackendRunResponseSchema.parse(detailCopy).project).toBe('project-copy')
+  })
+
+  it('preserves the discovered portable resource for a legacy flat Experiment document', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-flat-experiment-'))
+    try {
+      await fs.mkdir(join(root, 'docs', 'experiments'), { recursive: true })
+      await fs.writeFile(
+        join(root, 'docs', 'experiments', 'E0001-flat.md'),
+        `---
+id: E0001-flat
+slug: flat
+title: Flat fixture
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-08-26T00:00:00Z
+updated_at: 2026-08-26T00:00:00Z
+---
+
+## Motivation
+
+fixture
+`,
+      )
+      const service = new FilesystemProjectService([project('flat-project', root)])
+      const detail = BackendExperimentResponseSchema.parse(
+        await service.getExperiment('flat-project', 'E0001-flat'),
+      )
+      expect(detail.resource).toBe('docs/experiments/E0001-flat.md')
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('returns strict managed results without unknown or absolute provenance fields', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-results-'))
+    try {
+      const directory = join(root, 'docs', 'experiments', 'E0001-results')
+      await fs.mkdir(directory, { recursive: true })
+      await fs.writeFile(
+        join(directory, 'README.md'),
+        `---
+id: E0001-results
+slug: results
+title: Results fixture
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-08-26T00:00:00Z
+updated_at: 2026-08-26T00:00:00Z
+---
+
+## Results
+
+> Managed in [results.yaml](./results.yaml); read and update that file directly.
+`,
+      )
+      await fs.writeFile(
+        join(directory, 'results.yaml'),
+        `schema_version: 1
+columns:
+  - key: score
+    label: Score
+    group: metric
+    type: number
+variants:
+  - id: V0001
+    name: Baseline
+    status: COMPLETED
+    parameters: {}
+    metrics: { score: 1 }
+    runs: []
+    attempts: []
+    provenance:
+      repo: .
+      entry: ./train.sh
+    private_absolute_path: /cluster/secret
+`,
+      )
+      const service = new FilesystemProjectService([project('results-project', root)])
+      const results = BackendExperimentResultsResponseSchema.parse(
+        await service.getExperimentResults('results-project', 'E0001-results'),
+      )
+      expect(results.resource).toBe('docs/experiments/E0001-results/results.yaml')
+      expect(results.document.variants[0]?.provenance?.entry).toBe('train.sh')
+      expect(JSON.stringify(results)).not.toContain('/cluster/secret')
+      expect(JSON.stringify(results)).not.toContain(root)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+})

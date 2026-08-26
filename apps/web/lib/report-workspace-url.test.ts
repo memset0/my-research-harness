@@ -1,3 +1,4 @@
+import { ProjectRefSchema } from '@memon/core'
 import { describe, expect, it } from 'vitest'
 import {
   buildArtifactNavigationHref,
@@ -100,6 +101,7 @@ describe('Report workspace URL state', () => {
 
     expect(isCanonicalFullReportUrl('/p/a/reports')).toBe(false)
     expect(isCanonicalFullReportUrl('/p/a/reports/not-a-report')).toBe(false)
+    expect(canonicalFullReportIdFromPathname('/h/host-a/p/a/reports/R0003')).toBe('R0003')
   })
 
   it('round-trips state like a reload or browser-history traversal', () => {
@@ -125,6 +127,11 @@ describe('canonical artifact hrefs', () => {
       '/p/vision%20qa/e/E0017-vsqa%20inference',
     )
     expect(canonicalReportHref('vision qa', 'R0007')).toBe('/p/vision%20qa/reports/R0007')
+    const central = ProjectRefSchema.parse({ host: 'host-a', project: 'vision-qa' })
+    expect(canonicalExperimentHref(central, 'E0017-vsqa inference')).toBe(
+      '/h/host-a/p/vision-qa/e/E0017-vsqa%20inference',
+    )
+    expect(canonicalReportHref(central, 'R0007')).toBe('/h/host-a/p/vision-qa/reports/R0007')
   })
 })
 

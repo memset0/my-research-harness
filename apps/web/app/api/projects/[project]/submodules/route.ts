@@ -3,10 +3,12 @@
 // Owner + viewer-in-scope can read. Returns the discriminated-union
 // from `readGitSubmodules` directly.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { readGitSubmodules } from '@memon/core'
-import { getRuntime } from '../../../../../lib/runtime'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { BackendGitSubmodulesResponseSchema } from '@memon/core'
+import { type NextRequest, NextResponse } from 'next/server'
+import {
+  gitServiceError,
+  standaloneGitContext,
+} from '../../../../../lib/server/standalone-git-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,25 +18,13 @@ interface RouteParams {
 
 export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextResponse> {
   const { project: rawProject } = await ctx.params
-  const project = decodeURIComponent(rawProject)
-
-  const rt = await getRuntime()
-  const entry = rt.config.projects.find((p) => p.name === project)
-  if (!entry) {
+  const context = await standaloneGitContext(req, rawProject)
+  if (context instanceof NextResponse) return context
+  try {
     return NextResponse.json(
-      { error: { message: 'project not found' } },
-      { status: 404 },
+      BackendGitSubmodulesResponseSchema.parse(await context.git.submodules(context.project)),
     )
+  } catch (error) {
+    return gitServiceError(error)
   }
-
-  const { role, scopeProjects } = readIdentityFromRequest(req)
-  if (role === 'viewer' && !scopeProjects.has(project)) {
-    return NextResponse.json(
-      { error: { message: 'forbidden' } },
-      { status: 403 },
-    )
-  }
-
-  const result = await readGitSubmodules(entry.root)
-  return NextResponse.json(result)
 }

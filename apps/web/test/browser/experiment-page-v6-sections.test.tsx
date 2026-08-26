@@ -239,6 +239,8 @@ describe('ExperimentPage v6 document sections', () => {
 
     const refreshedUpdatedAt = new Date(Date.now() - 60 * 60 * 1_000).toISOString()
     resolveRefresh({
+      project: 'research',
+      resource: `docs/experiments/${EXP_ID}/results.yaml`,
       document: {
         schemaVersion: 1,
         columns: [

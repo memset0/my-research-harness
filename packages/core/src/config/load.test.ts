@@ -1,8 +1,12 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ConfigRawSchema } from '../schemas.js'
 import { ConfigError, implicitCwdProject, loadConfig } from './load.js'
+import { isProtectedExampleConfigPath } from './path-policy.js'
 
 let dir: string
 
@@ -324,94 +328,259 @@ git_status:
   })
 })
 
-describe('loadConfig hub/node blocks', () => {
-  it('parses a node block to camelCase with default capabilities', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-node:
-  name: nvl72
-  auth_token: tok-abc
-  hub_url: ws://localhost:3737
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.node).toEqual({
-      name: 'nvl72',
-      authToken: 'tok-abc',
-      hubUrl: 'ws://localhost:3737',
-      capabilities: { tmux: true, projects: true },
-    })
-    expect(cfg!.hub).toBeUndefined()
-  })
+describe('loadConfig central/backend role blocks', () => {
+  const TOKEN_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const TOKEN_A_NEXT = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+  const TOKEN_B = 'cccccccccccccccccccccccccccccccc'
 
-  it('honors a partial capabilities override', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-node:
-  name: m2
-  auth_token: t
-  hub_url: ws://localhost:3737
-  capabilities:
-    tmux: false
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.node!.capabilities).toEqual({ tmux: false, projects: true })
-  })
+  async function writeProtectedInstance(
+    yaml: string,
+    path = join(dir, 'config.yml'),
+  ): Promise<void> {
+    await fs.writeFile(path, yaml, { mode: 0o600 })
+    await fs.chmod(path, 0o600)
+  }
 
-  it('parses a hub block with defaults and a node registry', async () => {
+  it('parses url and ssh Hosts, token rotation, and operations hints', async () => {
     const yaml = `
-hub:
-  public_url: wss://memon-m2.dev.mem.ac
-  nodes:
-    - { name: m2, auth_token: t1 }
-    - { name: nvl72, auth_token: t2 }
+central:
+  public_url: https://central.example.test
+  hosts:
+    - id: host-a
+      label: Synthetic A
+      tokens:
+        current: ${TOKEN_A}
+        next: ${TOKEN_A_NEXT}
+      transport:
+        kind: url
+        base_url: https://backend-a.example.test
+      operations:
+        ssh_target: operator@host-a.example.test
+        checkout_path: ./checkouts/host-a
+        config_path: ./instances/host-a.yml
+        runtime_bootstrap: [memon, backend, daemon, start]
+        supervisor_mode: supervised
+    - id: host-b
+      tokens:
+        current: ${TOKEN_B}
+      transport:
+        kind: ssh
+        target: tunnel@host-b.example.test
+        known_hosts_file: ./secrets/known_hosts
+        identity_file: ./secrets/id_host_b
+        local_port: 4738
+        remote_port: 3738
 `
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await writeProtectedInstance(yaml)
     const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.hub).toEqual({
+
+    expect(cfg!.projects).toEqual([])
+    expect(cfg!.backend).toBeUndefined()
+    expect(cfg!.central).toEqual({
       bindAddr: '127.0.0.1',
       bindPort: 3737,
-      publicUrl: 'wss://memon-m2.dev.mem.ac',
-      nodes: [
-        { name: 'm2', authToken: 't1' },
-        { name: 'nvl72', authToken: 't2' },
+      publicUrl: 'https://central.example.test',
+      hosts: [
+        {
+          id: 'host-a',
+          label: 'Synthetic A',
+          tokens: { current: TOKEN_A, next: TOKEN_A_NEXT },
+          transport: {
+            kind: 'url',
+            baseUrl: 'https://backend-a.example.test',
+            allowInsecureHttp: false,
+          },
+          operations: {
+            sshTarget: 'operator@host-a.example.test',
+            checkoutPath: resolve(dir, 'checkouts/host-a'),
+            configPath: resolve(dir, 'instances/host-a.yml'),
+            runtimeBootstrap: ['memon', 'backend', 'daemon', 'start'],
+            supervisorMode: 'supervised',
+          },
+        },
+        {
+          id: 'host-b',
+          tokens: { current: TOKEN_B },
+          transport: {
+            kind: 'ssh',
+            executable: 'ssh',
+            target: 'tunnel@host-b.example.test',
+            knownHostsFile: resolve(dir, 'secrets/known_hosts'),
+            identityFile: resolve(dir, 'secrets/id_host_b'),
+            localPort: 4738,
+            remoteHost: '127.0.0.1',
+            remotePort: 3738,
+          },
+        },
       ],
     })
-    expect(cfg!.node).toBeUndefined()
   })
 
-  it('allows a hub with no projects', async () => {
+  it('allows explicit plain HTTP only with the insecure opt-in', async () => {
     const yaml = `
-hub:
-  nodes:
-    - { name: m2, auth_token: t1 }
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A} }
+      transport:
+        kind: url
+        base_url: http://127.0.0.1:4738
+        allow_insecure_http: true
 `
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await writeProtectedInstance(yaml)
     const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.hub).toBeDefined()
-    expect(cfg!.projects).toHaveLength(0)
-  })
-
-  it('rejects a non-hub config with no projects', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: []\n')
-    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
-      message: expect.stringContaining('at least one project'),
+    expect(cfg!.central!.hosts[0]!.transport).toEqual({
+      kind: 'url',
+      baseUrl: 'http://127.0.0.1:4738',
+      allowInsecureHttp: true,
     })
   })
 
-  it('rejects both hub and node present', async () => {
+  it.each([
+    ['http://8.8.8.8:4738', true],
+    ['http://backend.internal:4738', true],
+    ['https://169.254.169.254:4738', false],
+  ])('rejects an unsafe Backend URL transport target %s', async (baseUrl, allowInsecure) => {
+    const yaml = `
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A} }
+      transport:
+        kind: url
+        base_url: ${baseUrl}
+        allow_insecure_http: ${allowInsecure}
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml)
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('parses Backend bind, rotation tokens, daemon paths, and start guards', async () => {
     const yaml = `
 projects:
-  - { name: a, root: ./a }
-hub:
-  nodes: []
-node:
-  name: m2
-  auth_token: t
-  hub_url: ws://localhost:3737
+  - { name: project-a, root: ./project-a }
+backend:
+  host_id: host-a
+  bind_port: 4738
+  tokens:
+    current: ${TOKEN_A}
+    next: ${TOKEN_A_NEXT}
+  daemon:
+    mode: external
+    state_dir: ./state
+    release_dir: ./releases
+    runtime_dir: ./run
+    guards:
+      allowed_hostnames: [login-*.example.test]
+      forbidden_env: [SLURM_JOB_ID, PBS_JOBID]
+    restart_argv: [service-wrapper, restart]
+`
+    await writeProtectedInstance(yaml)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.central).toBeUndefined()
+    expect(cfg!.backend).toEqual({
+      hostId: 'host-a',
+      bindAddr: '127.0.0.1',
+      bindPort: 4738,
+      accessMode: 'read_write',
+      tokens: { current: TOKEN_A, next: TOKEN_A_NEXT },
+      daemon: {
+        mode: 'external',
+        stateDir: resolve(dir, 'state'),
+        releaseDir: resolve(dir, 'releases'),
+        runtimeDir: resolve(dir, 'run'),
+        guards: {
+          allowedHostnamePatterns: ['login-*.example.test'],
+          forbiddenEnvironment: ['SLURM_JOB_ID', 'PBS_JOBID'],
+        },
+        restartArgv: ['service-wrapper', 'restart'],
+      },
+    })
+  })
+
+  it('parses explicit Backend read_only while preserving read_write default', async () => {
+    const source = `
+projects: [{ name: project-a, root: ./project-a }]
+backend:
+  host_id: host-a
+  access_mode: read_only
+  tokens: { current: ${TOKEN_A} }
+  daemon: { state_dir: ./state, release_dir: ./releases, runtime_dir: ./run }
+`
+    await fs.writeFile(join(dir, 'config.yml'), source, { mode: 0o600 })
+    await fs.chmod(join(dir, 'config.yml'), 0o600)
+    expect((await loadConfig({ cwd: dir }))?.backend?.accessMode).toBe('read_only')
+  })
+
+  it('preserves standalone when neither role block is present', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.central).toBeUndefined()
+    expect(cfg!.backend).toBeUndefined()
+    expect(cfg!.projects).toHaveLength(2)
+  })
+
+  it('rejects unsafe service config permissions without echoing tokens', async () => {
+    const yaml = `
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A} }
+      transport: { kind: url, base_url: https://a.example.test }
+`
+    await fs.writeFile(join(dir, 'config.yml'), yaml, { mode: 0o644 })
+    await fs.chmod(join(dir, 'config.yml'), 0o644)
+
+    let error: unknown
+    try {
+      await loadConfig({ cwd: dir })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(ConfigError)
+    expect(String(error)).toContain('mode must be 0600')
+    expect(String(error)).not.toContain(TOKEN_A)
+  })
+
+  it('rejects a service config symlink but leaves ordinary standalone permissions unchanged', async () => {
+    const protectedTarget = join(dir, 'central-target.yml')
+    const central = `
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A} }
+      transport: { kind: url, base_url: https://a.example.test }
+`
+    await writeProtectedInstance(central, protectedTarget)
+    const link = join(dir, 'central-link.yml')
+    await fs.symlink(protectedTarget, link)
+    await expect(loadConfig({ cwd: dir, explicitPath: link })).rejects.toMatchObject({
+      message: expect.stringContaining('regular non-symlink file'),
+    })
+
+    const standaloneDir = join(dir, 'ordinary-standalone')
+    await fs.mkdir(standaloneDir, { mode: 0o755 })
+    await fs.chmod(standaloneDir, 0o755)
+    const standalonePath = join(standaloneDir, 'config.yml')
+    await fs.writeFile(standalonePath, VALID, { mode: 0o644 })
+    await fs.chmod(standalonePath, 0o644)
+    await expect(
+      loadConfig({ cwd: standaloneDir, explicitPath: standalonePath }),
+    ).resolves.toMatchObject({ projects: expect.any(Array) })
+  })
+
+  it('rejects central and backend together', async () => {
+    const yaml = `
+projects:
+  - { name: project-a, root: ./project-a }
+central: { hosts: [] }
+backend:
+  host_id: host-a
+  tokens: { current: ${TOKEN_A} }
+  daemon:
+    state_dir: ./state
+    release_dir: ./releases
+    runtime_dir: ./run
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
     await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
@@ -419,42 +588,156 @@ node:
     })
   })
 
-  it('rejects a node block missing hub_url', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-node:
-  name: m2
-  auth_token: t
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects a node name that is not kebab-case', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-node:
-  name: NVL72
-  auth_token: t
-  hub_url: ws://localhost:3737
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects duplicate node names in the hub registry', async () => {
-    const yaml = `
-hub:
-  nodes:
-    - { name: m2, auth_token: t1 }
-    - { name: m2, auth_token: t2 }
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
+  it.each(['hub', 'node'])('rejects the legacy %s role with a migration error', async (role) => {
+    await fs.writeFile(join(dir, 'config.yml'), `${role}: {}\n`)
     await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
-      message: expect.stringContaining('duplicate node name'),
+      message: expect.stringContaining(`legacy \`${role}:\` role configuration`),
     })
+  })
+
+  it('rejects duplicate Host IDs, tokens, and SSH local ports', async () => {
+    const cases = [
+      `
+central:
+  hosts:
+    - { id: host-a, tokens: { current: ${TOKEN_A} }, transport: { kind: url, base_url: https://a.example.test } }
+    - { id: host-a, tokens: { current: ${TOKEN_B} }, transport: { kind: url, base_url: https://b.example.test } }
+`,
+      `
+central:
+  hosts:
+    - { id: host-a, tokens: { current: ${TOKEN_A} }, transport: { kind: url, base_url: https://a.example.test } }
+    - { id: host-b, tokens: { current: ${TOKEN_A} }, transport: { kind: url, base_url: https://b.example.test } }
+`,
+      `
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A} }
+      transport: { kind: ssh, target: a.example.test, known_hosts_file: ./known, local_port: 4738, remote_port: 3738 }
+    - id: host-b
+      tokens: { current: ${TOKEN_B} }
+      transport: { kind: ssh, target: b.example.test, known_hosts_file: ./known, local_port: 4738, remote_port: 3738 }
+`,
+    ]
+    for (const yaml of cases) {
+      await fs.writeFile(join(dir, 'config.yml'), yaml)
+      await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+    }
+  })
+
+  it('accepts only a configured Host as the legacy share migration target', async () => {
+    const valid = `
+central:
+  legacy_share_host: host-a
+  hosts:
+    - { id: host-a, tokens: { current: ${TOKEN_A} }, transport: { kind: url, base_url: https://a.example.test } }
+`
+    await fs.writeFile(join(dir, 'config.yml'), valid, { mode: 0o600 })
+    await fs.chmod(join(dir, 'config.yml'), 0o600)
+    expect((await loadConfig({ cwd: dir }))?.central?.legacyShareHost).toBe('host-a')
+
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      valid.replace('legacy_share_host: host-a', 'legacy_share_host: missing'),
+      { mode: 0o600 },
+    )
+    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/must name one configured Host/)
+  })
+
+  it('rejects invalid rotation, URL, role fields, guards, and restart argv', async () => {
+    const cases = [
+      `
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A}, next: ${TOKEN_A} }
+      transport: { kind: url, base_url: https://a.example.test }
+`,
+      `
+central:
+  hosts:
+    - id: host-a
+      tokens: { current: ${TOKEN_A} }
+      transport: { kind: url, base_url: http://127.0.0.1:4738 }
+`,
+      `
+projects: [{ name: project-a, root: ./project-a }]
+central: { hosts: [] }
+`,
+      `
+projects: [{ name: project-a, root: ./project-a }]
+auth: { password: human-secret }
+backend:
+  host_id: host-a
+  tokens: { current: ${TOKEN_A} }
+  daemon: { state_dir: ./state, release_dir: ./releases, runtime_dir: ./run }
+`,
+      `
+projects: [{ name: project-a, root: ./project-a }]
+backend:
+  host_id: host-a
+  tokens: { current: ${TOKEN_A} }
+  daemon:
+    state_dir: ./state
+    release_dir: ./releases
+    runtime_dir: ./run
+    guards: { forbidden_env: [NOT-AN-ENV] }
+`,
+      `
+projects: [{ name: project-a, root: ./project-a }]
+backend:
+  host_id: host-a
+  tokens: { current: ${TOKEN_A} }
+  daemon:
+    mode: supervised
+    state_dir: ./state
+    release_dir: ./releases
+    runtime_dir: ./run
+    restart_argv: [service-wrapper, restart]
+`,
+    ]
+    for (const yaml of cases) {
+      await fs.writeFile(join(dir, 'config.yml'), yaml)
+      await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+    }
+  })
+
+  it('rejects missing Projects outside central mode', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: []\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('at least one project'),
+    })
+
+    const backend = `
+backend:
+  host_id: host-a
+  tokens: { current: ${TOKEN_A} }
+  daemon: { state_dir: ./state, release_dir: ./releases, runtime_dir: ./run }
+`
+    await fs.writeFile(join(dir, 'config.yml'), backend)
+    await expect(loadConfig({ cwd: dir })).rejects.toMatchObject({
+      message: expect.stringContaining('at least one project'),
+    })
+  })
+})
+
+describe('tracked config example', () => {
+  it('remains protected and parses as the synthetic standalone template', async () => {
+    const examplePath = fileURLToPath(new URL('../../../../config.example.yml', import.meta.url))
+    expect(isProtectedExampleConfigPath(examplePath)).toBe(true)
+
+    const source = await fs.readFile(examplePath, 'utf8')
+    const parsed = yaml.load(source, { schema: yaml.JSON_SCHEMA })
+    const result = ConfigRawSchema.safeParse(parsed)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    expect(result.data.projects.map((project) => project.name)).toEqual(['project-a', 'project-b'])
+    expect(result.data.central).toBeUndefined()
+    expect(result.data.backend).toBeUndefined()
+    expect(Object.hasOwn(result.data, 'hub')).toBe(false)
+    expect(Object.hasOwn(result.data, 'node')).toBe(false)
   })
 })
 

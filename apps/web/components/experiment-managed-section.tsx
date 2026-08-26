@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { type ProjectTarget, projectWebPath } from '../lib/api'
 import { cn } from '../lib/utils'
 import { Markdown } from './markdown'
 import { Badge } from './ui/badge'
@@ -107,7 +108,7 @@ export function ExperimentManagedSection({
 }: {
   kind: ManagedDocumentKind
   document: ManagedDocument
-  project: string
+  project: ProjectTarget
   experimentId: string
 }) {
   const items = document.items as ManagedItem[]
@@ -174,7 +175,7 @@ function ManagedItemNode({
 }: {
   item: ManagedItem
   kind: ManagedDocumentKind
-  project: string
+  project: ProjectTarget
   experimentId: string
   depth: number
 }) {
@@ -252,7 +253,7 @@ function ImplementationDetails({
   experimentId,
 }: {
   item: ImplementationItem
-  project: string
+  project: ProjectTarget
   experimentId: string
 }) {
   return (
@@ -581,13 +582,13 @@ function shortSha(sha: string): string {
   return sha.length > 8 ? sha.slice(0, 8) : sha
 }
 
-function codeReviewHref(project: string, experimentId: string, review: string): string {
+function codeReviewHref(project: ProjectTarget, experimentId: string, review: string): string {
   const withoutExtension = review.replace(/\.md$/i, '')
   const normalized = withoutExtension.startsWith('code-review/')
     ? `experiments/${experimentId}/${withoutExtension}`
     : withoutExtension
   const encoded = normalized.split('/').map(encodeURIComponent).join('/')
-  return `/p/${encodeURIComponent(project)}/code-review/${encoded}`
+  return projectWebPath(project, `/code-review/${encoded}`)
 }
 
 function withOccurrenceKeys(values: string[]): Array<{ key: string; value: string }> {

@@ -5,9 +5,10 @@
 // config.yml using `crypto.timingSafeEqual` on equal-length buffers (and a
 // dummy compare on length mismatch to keep timing roughly constant). scrypt
 // is intentionally NOT used here: plaintext is on disk anyway (single-user
-// system, file mode 0644 = same trust boundary as the host's shell), so a
-// hashed-on-disk + scrypt-verify path would add latency without adding
-// security. The rate limiter is the secondary defense; see rate-limit.ts.
+// system, host filesystem access defines the trust boundary), so a hashed-on-
+// disk + scrypt-verify path would add latency without adding security. Service-
+// token instance configs are additionally required to be owner-only. The rate
+// limiter is the secondary defense; see rate-limit.ts.
 
 import { timingSafeEqual } from 'node:crypto'
 import type { AuthConfig } from '@memon/core'
@@ -58,10 +59,7 @@ function safeEqualString(a: string, b: string): boolean {
  * The caller MUST gate this behind the rate limiter; even though plaintext
  * compare is fast, the limiter exists to bound brute-force attempts.
  */
-export async function verifyBasic(
-  parsed: ParsedBasic | null,
-  auth: AuthConfig,
-): Promise<boolean> {
+export async function verifyBasic(parsed: ParsedBasic | null, auth: AuthConfig): Promise<boolean> {
   if (!parsed) return false
   const userOk = safeEqualString(parsed.username, auth.username)
   const passOk = safeEqualString(parsed.password, auth.password)

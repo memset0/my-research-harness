@@ -7,6 +7,8 @@
  * request origin into rendered links.
  */
 
+import { type ProjectTarget, projectWebPath } from './api'
+
 export const REPORT_QUERY_PARAM = 'report'
 export const REPORT_SURFACE_QUERY_PARAM = 'reportSurface'
 export const DEFAULT_REPORT_SURFACE = 'split' as const
@@ -27,7 +29,7 @@ export type ArtifactNavigationTarget =
 export interface ArtifactNavigationInput {
   sourceSurface: ArtifactSourceSurface
   target: ArtifactNavigationTarget
-  project: string
+  project: ProjectTarget
   /** The complete current app href. Query and hash are retained where applicable. */
   currentHref: string | URL
   /**
@@ -42,7 +44,7 @@ export interface ArtifactNavigationInput {
 const INTERNAL_URL_BASE = 'http://memon.invalid'
 const REPORT_ID_RE = /^R\d{4}$/
 const EXPERIMENT_ID_RE = /^E\d{4}(?:-[^/?#]+)?$/u
-const CANONICAL_FULL_REPORT_PATH_RE = /^\/p\/[^/]+\/reports\/(R\d{4})\/?$/
+const CANONICAL_FULL_REPORT_PATH_RE = /^(?:\/p\/[^/]+|\/h\/[^/]+\/p\/[^/]+)\/reports\/(R\d{4})\/?$/
 
 function toUrl(input: string | URL): URL {
   return input instanceof URL ? new URL(input.toString()) : new URL(input, INTERNAL_URL_BASE)
@@ -145,14 +147,14 @@ export function removeReportWorkspaceUrl(currentHref: string | URL): string {
   return toAppHref(url)
 }
 
-export function canonicalExperimentHref(project: string, experimentId: string): string {
+export function canonicalExperimentHref(project: ProjectTarget, experimentId: string): string {
   assertExperimentId(experimentId)
-  return `/p/${encodeURIComponent(project)}/e/${encodeURIComponent(experimentId)}`
+  return projectWebPath(project, `/e/${encodeURIComponent(experimentId)}`)
 }
 
-export function canonicalReportHref(project: string, reportId: string): string {
+export function canonicalReportHref(project: ProjectTarget, reportId: string): string {
   assertReportId(reportId)
-  return `/p/${encodeURIComponent(project)}/reports/${encodeURIComponent(reportId)}`
+  return projectWebPath(project, `/reports/${encodeURIComponent(reportId)}`)
 }
 
 function sourceReportIdForNavigation(input: ArtifactNavigationInput, currentUrl: URL): string {

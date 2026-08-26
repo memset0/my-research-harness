@@ -1,21 +1,18 @@
 'use client'
 
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, AlertTriangle } from 'lucide-react'
 import {
   ApiError,
+  type ProjectTarget,
+  projectHost,
   startTerminal,
   stopTerminal,
   type TerminalAgentKind,
   type TerminalScopeKind,
 } from '../lib/api'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from './ui/sheet'
+import { attachTerminalCopyBridge } from './terminal-copy-bridge'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
 
 // Props: TerminalSheet accepts EITHER the legacy `{ runId, projectName }`
 // pair (used by `experiment-detail.tsx` via `TerminalButton`, defaults to
@@ -38,7 +35,7 @@ interface LegacyProps extends CommonProps {
 }
 
 interface ExplicitProps extends CommonProps {
-  project: string
+  project: ProjectTarget
   scope: TerminalScopeKind
   slug: string
   agent: TerminalAgentKind
@@ -56,6 +53,7 @@ export function TerminalSheet(props: TerminalSheetProps) {
   const scope: TerminalScopeKind = props.scope ?? 'run'
   const slug = props.slug ?? props.runId ?? ''
   const agent: TerminalAgentKind = props.agent ?? 'claude'
+  const host = typeof project === 'string' ? undefined : (projectHost(project) ?? undefined)
   const { open, onOpenChange } = props
 
   const [phase, setPhase] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle')
@@ -64,6 +62,7 @@ export function TerminalSheet(props: TerminalSheetProps) {
   const [error, setError] = useState<string | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
   const lastSessionRef = useRef<string | null>(null)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
   // Start the ttyd session whenever the sheet opens (and tear down when closed).
   useEffect(() => {
@@ -71,7 +70,7 @@ export function TerminalSheet(props: TerminalSheetProps) {
       // Sheet closed — fire-and-forget stop. Don't block the unmount.
       const sn = lastSessionRef.current
       if (sn) {
-        void stopTerminal(sn).catch(() => {})
+        void stopTerminal({ sessionName: sn, ...(host ? { host } : {}) }).catch(() => {})
         lastSessionRef.current = null
       }
       // Reset local state so re-opening starts fresh
@@ -90,7 +89,9 @@ export function TerminalSheet(props: TerminalSheetProps) {
       .then((res) => {
         if (cancelled) {
           // Closed before we got a response; ensure we still tear it down
-          void stopTerminal(res.sessionName).catch(() => {})
+          void stopTerminal({ sessionName: res.sessionName, ...(host ? { host } : {}) }).catch(
+            () => {},
+          )
           return
         }
         setIframeUrl(res.url)
@@ -109,7 +110,37 @@ export function TerminalSheet(props: TerminalSheetProps) {
     return () => {
       cancelled = true
     }
-  }, [open, project, scope, slug, agent])
+  }, [open, project, scope, slug, agent, host])
+
+  useEffect(() => {
+    if (phase !== 'ready') return
+    const iframe = iframeRef.current
+    if (!iframe) return
+    let cleanup: (() => void) | null = null
+    const attach = () => {
+      try {
+        const doc = iframe.contentDocument
+        const win = iframe.contentWindow
+        if (!doc || !win || doc.URL === 'about:blank' || doc.readyState === 'loading') return
+        cleanup?.()
+        cleanup = attachTerminalCopyBridge({
+          doc,
+          win,
+          parentWindow: window,
+          source: 'drawer',
+        })
+      } catch {
+        cleanup?.()
+        cleanup = null
+      }
+    }
+    iframe.addEventListener('load', attach)
+    attach()
+    return () => {
+      iframe.removeEventListener('load', attach)
+      cleanup?.()
+    }
+  }, [phase])
 
   // Sheet header label: legacy `claude · memon-claude-<slug>` for the
   // claude-agent shape (to keep the existing copy unchanged), or
@@ -129,12 +160,9 @@ export function TerminalSheet(props: TerminalSheetProps) {
             {agent} · {sessionName ?? fallbackSessionName}
           </SheetTitle>
           <SheetDescription className="text-[11px]">
-            Terminal runs inside tmux. Closing this panel leaves the session
-            detached — re-attach with{' '}
-            <code className="font-mono">
-              tmux attach -t {sessionName ?? fallbackSessionName}
-            </code>
-            .
+            Terminal runs inside tmux. Closing this panel leaves the session detached — re-attach
+            with{' '}
+            <code className="font-mono">tmux attach -t {sessionName ?? fallbackSessionName}</code>.
           </SheetDescription>
           {warnings.length > 0 && (
             <div className="mt-2 flex items-start gap-1 rounded-sm bg-amber-50 p-2 text-[11px] text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
@@ -160,8 +188,10 @@ export function TerminalSheet(props: TerminalSheetProps) {
           {phase === 'ready' && iframeUrl && (
             <iframe
               key={iframeUrl}
+              ref={iframeRef}
               src={iframeUrl}
               title={`${agent} terminal`}
+              allow="clipboard-read; clipboard-write"
               className="h-full w-full border-0"
             />
           )}

@@ -71,13 +71,17 @@ describe('useIsDesktop', () => {
     act(() => {
       setViewport(800)
       // Fire the matchMedia change listeners we registered
-      currentMQL?.listeners.forEach((cb) => cb({ matches: false } as MediaQueryListEvent))
+      currentMQL?.listeners.forEach((cb) => {
+        cb({ matches: false } as MediaQueryListEvent)
+      })
     })
     expect(result.current).toBe(false)
 
     act(() => {
       setViewport(1400)
-      currentMQL?.listeners.forEach((cb) => cb({ matches: true } as MediaQueryListEvent))
+      currentMQL?.listeners.forEach((cb) => {
+        cb({ matches: true } as MediaQueryListEvent)
+      })
     })
     expect(result.current).toBe(true)
   })

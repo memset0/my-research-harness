@@ -1,22 +1,24 @@
 'use client'
 
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { ExternalLink } from 'lucide-react'
 import type { CodeReviewFrontMatter } from '@memon/core'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ExternalLink } from 'lucide-react'
+import { toast } from 'sonner'
 import {
-  fetchCodeReview,
-  patchCodeReviewProgress,
   type CodeReviewProgressPatch,
   type FullCodeReview,
+  fetchCodeReview,
+  type ProjectTarget,
+  patchCodeReviewProgress,
+  projectQueryKey,
 } from '../lib/api'
+import { cn } from '../lib/utils'
+import { SuccessBadge } from './colored-badge'
 import { Markdown } from './markdown'
+import { Badge } from './ui/badge'
 import { Card } from './ui/card'
 import { Checkbox } from './ui/checkbox'
-import { Badge } from './ui/badge'
-import { SuccessBadge } from './colored-badge'
 import { Separator } from './ui/separator'
-import { cn } from '../lib/utils'
 
 // Mirror of core's deriveCompletion (the client can't import @memon/core JS).
 function counts(fm: CodeReviewFrontMatter) {
@@ -29,9 +31,9 @@ function counts(fm: CodeReviewFrontMatter) {
   return { totalCommits, reviewedCommits, totalTodos, doneTodos, isComplete }
 }
 
-export function CodeReviewDetail({ project, id }: { project: string; id: string }) {
+export function CodeReviewDetail({ project, id }: { project: ProjectTarget; id: string }) {
   const qc = useQueryClient()
-  const key = ['code-review', project, id] as const
+  const key = ['code-review', ...projectQueryKey(project), id] as const
   const { data, isLoading } = useQuery({
     queryKey: key,
     queryFn: () => fetchCodeReview(project, id),
@@ -62,7 +64,7 @@ export function CodeReviewDetail({ project, id }: { project: string; id: string 
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: key })
-      qc.invalidateQueries({ queryKey: ['code-reviews', project] })
+      qc.invalidateQueries({ queryKey: ['code-reviews', ...projectQueryKey(project)] })
     },
   })
 
@@ -151,7 +153,7 @@ export function CodeReviewDetail({ project, id }: { project: string; id: string 
         ) : (
           <ul className="space-y-2">
             {fm.reviewTodolist.map((todo, idx) => (
-              <li key={idx} className="flex items-start gap-3">
+              <li key={`${todo.item}:${todo.done}`} className="flex items-start gap-3">
                 <Checkbox
                   checked={todo.done}
                   disabled={pending}

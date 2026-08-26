@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ProjectRefSchema } from '@memon/core'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/api')>()),
   fetchGitStatus: vi.fn(),
   fetchGitStatusFiles: vi.fn(),
   fetchSubmodules: vi.fn(),
@@ -71,6 +73,15 @@ afterEach(() => {
 })
 
 describe('GitDiffDialog', () => {
+  it('passes a Host-qualified ProjectTarget through git queries without rendering an object', async () => {
+    const target = ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })
+    renderWithQuery(<GitDiffDialog project={target} open onOpenChange={() => {}} />)
+    expect(await screen.findByText('project-a')).toBeInTheDocument()
+    await waitFor(() => expect(fetchGitStatus).toHaveBeenCalledWith(target))
+    expect(fetchGitStatusFiles).toHaveBeenCalledWith(target, undefined)
+    expect(fetchSubmodules).toHaveBeenCalledWith(target)
+  })
+
   it('renders sections + counts when open=true', async () => {
     renderWithQuery(
       <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,

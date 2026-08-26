@@ -1,8 +1,8 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,13 +32,38 @@ let resultsPath: string
 beforeEach(async () => {
   vi.clearAllMocks()
   directory = await mkdtemp(join(tmpdir(), 'memon-results-refresh-'))
-  resultsPath = join(directory, 'results.yaml')
+  resultsPath = join(directory, 'docs', 'experiments', EXPERIMENT_ID, 'results.yaml')
+  await mkdir(dirname(resultsPath), { recursive: true })
+  await writeFile(
+    join(dirname(resultsPath), 'README.md'),
+    `---
+id: ${EXPERIMENT_ID}
+slug: refresh-results
+title: Results refresh
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-08-23T00:00:00Z
+updated_at: 2026-08-23T00:00:00Z
+---
+
+## Results
+
+> Managed in [results.yaml](./results.yaml); read and update that file directly.
+`,
+  )
   await writeFile(resultsPath, VALID_RESULTS)
   vi.mocked(getRuntime).mockResolvedValue({
+    config: {
+      projects: [{ name: 'research', root: directory, include: [], exclude: [] }],
+    },
     experiments: new Map([
       [
         EXPERIMENT_ID,
         {
+          project: 'research',
           documents: {
             results: {
               exists: true,
@@ -49,6 +74,7 @@ beforeEach(async () => {
         },
       ],
     ]),
+    projectFor: () => ({ name: 'research', root: directory }),
   } as never)
 })
 
@@ -57,7 +83,7 @@ afterEach(async () => {
 })
 
 function request(id = EXPERIMENT_ID) {
-  return GET(new NextRequest(`http://localhost/api/experiments/${id}/results`), {
+  return GET(new NextRequest(`http://localhost/api/experiments/${id}/results?project=research`), {
     params: Promise.resolve({ id }),
   })
 }
@@ -75,6 +101,10 @@ describe('GET /api/experiments/:id/results', () => {
       variants: [{ id: 'V0001', name: 'Refreshed', metrics: { loss: 0.125 } }],
     })
     expect(body.updatedAt).toBe(modifiedAt.toISOString())
+    expect(body).toMatchObject({
+      project: 'research',
+      resource: `docs/experiments/${EXPERIMENT_ID}/results.yaml`,
+    })
     expect(body).not.toHaveProperty('snapshotAt')
     expect(body.warnings).toEqual([])
   })

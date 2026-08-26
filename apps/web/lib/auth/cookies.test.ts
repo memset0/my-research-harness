@@ -83,10 +83,7 @@ describe('signSessionCookie / verifySessionCookie', () => {
   })
 
   it('returns null on expired session', () => {
-    const cookie = signSessionCookie(
-      { v: 1, role: 'owner', iat: 100, exp: 200 },
-      SECRET,
-    )
+    const cookie = signSessionCookie({ v: 1, role: 'owner', iat: 100, exp: 200 }, SECRET)
     expect(verifySessionCookie(cookie, SECRET, 300)).toBeNull()
   })
 
@@ -118,6 +115,51 @@ describe('signSharesCookie / verifySharesCookie', () => {
         { project: 'b', token: 'tok-b' },
       ],
     })
+  })
+
+  it('round-trips Host-qualified entries as the v2 cookie format', () => {
+    const cookie = signSharesCookie(
+      [
+        { host: 'host-a', project: 'project-x', token: 'tok-a' },
+        { host: 'host-b', project: 'project-x', token: 'tok-b' },
+      ],
+      SECRET,
+    )
+    expect(verifySharesCookie(cookie, SECRET)).toEqual({
+      v: 2,
+      entries: [
+        { host: 'host-a', project: 'project-x', token: 'tok-a' },
+        { host: 'host-b', project: 'project-x', token: 'tok-b' },
+      ],
+    })
+  })
+
+  it('rejects mixed legacy/Host entries, malformed Host identity, extras, and duplicates', () => {
+    expect(() =>
+      signSharesCookie(
+        [
+          { project: 'project-x', token: 'legacy' },
+          { host: 'host-a', project: 'project-x', token: 'qualified' },
+        ],
+        SECRET,
+      ),
+    ).toThrow(/cannot be mixed/)
+    for (const payload of [
+      { v: 2, entries: [{ host: 'Host-A', project: 'project-x', token: 'tok' }] },
+      {
+        v: 2,
+        entries: [{ host: 'host-a', project: 'project-x', token: 'tok', root: '/private' }],
+      },
+      {
+        v: 2,
+        entries: [
+          { host: 'host-a', project: 'project-x', token: 'tok' },
+          { host: 'host-a', project: 'project-x', token: 'tok' },
+        ],
+      },
+    ]) {
+      expect(verifySharesCookie(signCookie(payload, SECRET), SECRET)).toBeNull()
+    }
   })
 
   it('returns null on tampered entries', () => {

@@ -12,8 +12,10 @@
     "dev": "pnpm --filter @memon/web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "biome check .",
+    "lint": "biome lint .",
+    "check": "biome check .",
     "format": "biome format --write .",
+    "validate:release": "pnpm --filter @memon/core build && node scripts/validate-release.mjs",
     "typecheck": "pnpm -r typecheck",
     "memon": "pnpm --filter @memon/cli memon"
   },

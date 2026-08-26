@@ -1,87 +1,82 @@
-// GET    /api/experiments/:id  — v3 experiment-doc detail.
-// DELETE /api/experiments/:id  — delete the exp doc; cascade-unlinks any
-//                                member runs. Pass `?force=true` to allow
-//                                deletion of an exp with members.
-
 import { stat } from 'node:fs/promises'
+import { BackendExperimentResponseSchema } from '@memon/core'
+import { BackendProjectServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
-import { deleteExperiment, ExperimentHttpError } from '../../../../lib/experiments'
 import { getRuntime } from '../../../../lib/runtime'
+import {
+  deleteStandaloneExperiment,
+  standaloneExperimentMutationError,
+} from '../../../../lib/server/standalone-experiment-mutation-route'
+import { standaloneExperiment } from '../../../../lib/server/standalone-dto'
 import { buildExperimentDocumentView } from '../../../../lib/server/experiment-sections'
+import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params
-    const rt = await getRuntime()
-    const exp = rt.experiments.get(id)
-    if (!exp) {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
-        { status: 404 },
-      )
-    }
-    const memberRuns = exp.frontMatter.runs
-      .map((r) => rt.index.get(r))
-      .filter((r): r is NonNullable<typeof r> => Boolean(r))
-    // Compute effective times (task 5.4): the experiment's logical
-    // creation/update window expands to cover all member runs, so the UI
-    // can sort exp docs by activity rather than by exp-doc-edit time.
-    const effective = computeEffective(
-      exp.frontMatter.createdAt,
-      exp.frontMatter.updatedAt,
-      memberRuns,
+  const runtime = await getRuntime()
+  const { id } = await params
+  const cached = runtime.experiments.get(id)
+  if (!cached) {
+    return NextResponse.json(
+      { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
+      { status: 404 },
     )
-    const documentView = buildExperimentDocumentView(exp, {
+  }
+  const project = runtime.projectFor(cached.path)
+  if (!project) {
+    return NextResponse.json(
+      { error: { code: 'NOT_FOUND', message: 'owning project not found' } },
+      { status: 404 },
+    )
+  }
+  try {
+    const portable = BackendExperimentResponseSchema.parse(
+      await standaloneServices(runtime.config).projects.getExperiment(project.name, id),
+    )
+    const legacy = standaloneExperiment(runtime.config, portable)
+    const documentView = buildExperimentDocumentView(cached, {
       runs: Object.fromEntries(
-        memberRuns.map((run) => [
+        legacy.memberRuns.map((run) => [
           run.id,
           {
-            documentUrl: `/p/${encodeURIComponent(exp.project)}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(run.id)}`,
-            wandbUrl: run.frontMatter.wandb,
+            documentUrl: `/p/${encodeURIComponent(portable.project)}/e/${encodeURIComponent(portable.id)}?run=${encodeURIComponent(run.id)}`,
+            wandbUrl: run.wandb,
           },
         ]),
       ),
     })
-    const resultsUpdatedAt = await managedResultsUpdatedAt(exp.documents?.results)
     return NextResponse.json({
-      id: exp.id,
-      project: exp.project,
-      path: exp.path,
-      mtime: exp.mtime,
-      readmeMtime: exp.readmeMtime,
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      rawSections: exp.rawSections,
-      documents: exp.documents,
-      resultsUpdatedAt,
+      ...legacy,
+      rawSections: cached.rawSections,
+      documents: cached.documents,
+      resultsUpdatedAt: await managedResultsUpdatedAt(cached.documents?.results),
       documentSections: documentView.sections,
       documentDiagnostics: documentView.diagnostics,
       documentReadOnly: documentView.readOnly,
-      warningsRaw: exp.warningsRaw,
-      parseErrors: exp.parseErrors,
-      parseWarnings: exp.parseWarnings,
-      effectiveCreatedAt: effective.createdAt,
-      effectiveUpdatedAt: effective.updatedAt,
-      memberRuns: memberRuns.map((r) => ({
-        id: r.id,
-        status: r.frontMatter.status,
-        archived: r.frontMatter.archived,
-        createdAt: r.frontMatter.createdAt,
-        updatedAt: r.frontMatter.updatedAt,
-        finishedAt: r.frontMatter.finishedAt,
-        host: r.frontMatter.host,
-        gpus: r.frontMatter.gpus,
-        path: r.path,
-        wandb: r.frontMatter.wandb,
-        // Per-run artifacts surfaced here so the exp detail page can
-        // aggregate them at experiment level without firing N requests.
-        artifacts: r.sections.artifacts,
-      })),
     })
-  } catch (err) {
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
+  } catch (error) {
+    if (error instanceof BackendProjectServiceError) {
+      return NextResponse.json(
+        { error: { code: 'NOT_FOUND', message: error.message } },
+        { status: 404 },
+      )
+    }
+    return NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const runtime = await getRuntime()
+  const { id } = await params
+  const force = new URL(req.url).searchParams.get('force') === 'true'
+  try {
+    return NextResponse.json(await deleteStandaloneExperiment(runtime, id, force))
+  } catch (error) {
+    return (
+      standaloneExperimentMutationError(error) ??
+      NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
+    )
   }
 }
 
@@ -94,44 +89,5 @@ async function managedResultsUpdatedAt(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
-  }
-}
-
-function computeEffective(
-  expCreatedAt: string,
-  expUpdatedAt: string,
-  members: Array<{ frontMatter: { createdAt: string; updatedAt: string } }>,
-): { createdAt: string; updatedAt: string } {
-  if (members.length === 0) {
-    return { createdAt: expCreatedAt, updatedAt: expUpdatedAt }
-  }
-  const created = [expCreatedAt, ...members.map((m) => m.frontMatter.createdAt)]
-    .filter(Boolean)
-    .sort()
-  const updated = [expUpdatedAt, ...members.map((m) => m.frontMatter.updatedAt)]
-    .filter(Boolean)
-    .sort()
-  return {
-    createdAt: created[0] ?? expCreatedAt,
-    updatedAt: updated[updated.length - 1] ?? expUpdatedAt,
-  }
-}
-
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params
-    const rt = await getRuntime()
-    const url = new URL(req.url)
-    const force = url.searchParams.get('force') === 'true'
-    const out = await deleteExperiment(rt, id, force)
-    return NextResponse.json({ ok: true, ...out })
-  } catch (err) {
-    if (err instanceof ExperimentHttpError) {
-      const payload = err.payload
-        ? { error: { code: err.code, message: err.message }, ...err.payload }
-        : { error: { code: err.code, message: err.message } }
-      return NextResponse.json(payload, { status: err.status })
-    }
-    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

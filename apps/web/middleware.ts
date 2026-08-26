@@ -25,15 +25,8 @@
 // Bypass list (isAuthBypass): /api/auth/check, /api/terminal/proxy/*,
 // /_next/static/*, /_next/image, /favicon.ico — these never hit middleware.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { getRuntime } from './lib/runtime'
-import { UNAUTHORIZED_HEADERS, TOO_MANY_HEADERS } from './lib/auth/basic-auth'
-import {
-  classifyAndExtract,
-  isAuthBypass,
-  type ResolvedProject,
-} from './lib/auth/route-classes'
-import { clientIpFromHeaders, consume, refund } from './lib/auth/rate-limit'
+import { type NextRequest, NextResponse } from 'next/server'
+import { TOO_MANY_HEADERS, UNAUTHORIZED_HEADERS } from './lib/auth/basic-auth'
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
@@ -45,7 +38,13 @@ import {
 import { resolveIdentity, type ShareValidator } from './lib/auth/identity'
 import { makeProjectResolver } from './lib/auth/project-resolver'
 import { isHttps, publicOrigin } from './lib/auth/public-url'
-import { validateShare as coreValidateShare } from '@memon/core'
+import { clientIpFromHeaders, consume, refund } from './lib/auth/rate-limit'
+import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from './lib/auth/request-context'
+import { classifyAndExtract, isAuthBypass, type ResolvedProject } from './lib/auth/route-classes'
+import { validateCentralShare } from './lib/central/central-shares'
+import { getCentralFleet } from './lib/central/fleet-runtime'
+import { getRuntime } from './lib/runtime'
+import { standaloneServices } from './lib/server/standalone-services'
 
 export const config = {
   runtime: 'nodejs',
@@ -98,12 +97,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   const runtime = await getRuntime()
   const ctx = makeProjectResolver(runtime)
   const search = req.nextUrl.searchParams
-  const { class: routeClass, project } = classifyAndExtract(
-    req.method,
-    pathname,
-    search,
-    ctx,
-  )
+  const { class: routeClass, project } = classifyAndExtract(req.method, pathname, search, ctx)
 
   // Anon routes pass without auth (rate-limit still applies via the
   // /api/auth/login handler's own consume).
@@ -121,11 +115,21 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 
   // Build a share validator backed by the runtime's projects.
   const shareValidator: ShareValidator = {
-    validate: async (projectName, token) => {
-      const projectCfg = runtime.config.projects.find((p) => p.name === projectName)
-      if (!projectCfg) return false
-      const record = await coreValidateShare(projectCfg.root, token).catch(() => null)
-      return record !== null
+    validate: async (projectName, token, host) => {
+      if (host !== undefined) {
+        if (!runtime.config.central) return false
+        const fleet = await getCentralFleet().catch(() => null)
+        if (!fleet) return false
+        return validateCentralShare({
+          registry: fleet.registry,
+          host,
+          project: projectName,
+          token,
+        })
+      }
+      return standaloneServices(runtime.config)
+        .shares.validate(projectName, token)
+        .catch(() => false)
     },
   }
 
@@ -146,16 +150,21 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // Build the response we'll return — either a deny or a passthrough with
   // request-context headers + refreshed cookies.
   let response: NextResponse
-  let allow = false
 
   if (identity.role === 'owner') {
-    allow = true
+    // Owner may pass every route class.
   } else if (identity.role === 'viewer') {
     // Viewer can only reach `read` routes (allowViewer was true). Apply
     // scope check against `project`.
-    const scopeOk = checkViewerScope(project, identity.scopeProjects)
+    const scopeOk = checkViewerScope(
+      project,
+      identity.scopeProjects,
+      identity.scopeProjectRefs,
+      hostFromRequest(pathname, search),
+      runtime.config.central !== undefined,
+    )
     if (scopeOk) {
-      allow = true
+      // Exact viewer scope may pass this read route.
     } else {
       response = denyForbidden('Project not in your share scope')
       attachCookieRefreshes(response.headers, identity, isHttps(req))
@@ -171,10 +180,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // Allowed: passthrough with role/scope headers + refreshed cookies.
   const requestHeaders = new Headers(req.headers)
   requestHeaders.set('x-memon-role', identity.role)
-  requestHeaders.set(
-    'x-memon-scope',
-    Array.from(identity.scopeProjects).join(','),
-  )
+  requestHeaders.set('x-memon-scope', Array.from(identity.scopeProjects).join(','))
+  requestHeaders.set(HOST_SCOPE_HEADER, encodeHostScopeHeader(identity.scopeProjectRefs))
   // The class is useful for handlers that want to know "am I a 'multi' route?"
   // without re-classifying — currently optional, costs one header byte to set.
   requestHeaders.set('x-memon-route-class', routeClass)
@@ -184,12 +191,28 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   return response
 }
 
-function checkViewerScope(project: ResolvedProject, scope: Set<string>): boolean {
+function hostFromRequest(pathname: string, search: URLSearchParams): string | null {
+  const queryHost = search.get('host')
+  if (queryHost) return queryHost
+  const match = /^\/h\/([^/]+)(?:\/|$)/.exec(pathname)
+  return match?.[1] ? decodeURIComponent(match[1]) : null
+}
+
+function checkViewerScope(
+  project: ResolvedProject,
+  legacyScope: Set<string>,
+  hostScopes: readonly { host: string; project: string }[],
+  host: string | null,
+  centralMode: boolean,
+): boolean {
   if (project === 'multi') return true // handler filters
   if (project === 'global') return false // owner-only
   if (project === null) return false // fail-closed
-  // project is a string name
-  return scope.has(project)
+  if (centralMode) {
+    if (!host) return false
+    return hostScopes.some((scope) => scope.host === host && scope.project === project)
+  }
+  return legacyScope.has(project)
 }
 
 function attachCookieRefreshes(
@@ -222,4 +245,3 @@ function attachCookieRefreshes(
     appendSetCookie(headers, buildClearCookieHeader(SHARES_COOKIE_NAME, secure))
   }
 }
-

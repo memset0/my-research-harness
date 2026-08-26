@@ -1,96 +1,55 @@
-// POST /api/tmux-sessions/:name/rename — rename a tmux session in place.
-//
-// Body: { newName: string } where newName matches ^memon-[A-Za-z0-9._-]+$.
-// Tears down the manager's ttyd entry for the old name before issuing
-// `tmux rename-session`, so the manager Map doesn't keep a key pointing
-// at a session that no longer exists by that name.
+// POST /api/tmux-sessions/:name/rename — shared tmux service adapter.
 
+import { BackendTmuxRenameRequestSchema, BackendTmuxRenameResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { getRuntime } from '../../../../../lib/runtime'
+import {
+  standaloneTerminal,
+  standaloneTerminalError,
+} from '../../../../../lib/server/standalone-terminal'
 
 export const dynamic = 'force-dynamic'
 
-const NAME_RE = /^memon-[A-Za-z0-9._-]+$/
-
-const BodySchema = z.object({
-  newName: z.string().min(1).regex(NAME_RE, 'newName must match memon-[A-Za-z0-9._-]+'),
-})
-
-export async function POST(req: NextRequest, ctx: { params: Promise<{ name: string }> }) {
-  const rt = await getRuntime()
-  if (rt.config.terminal?.tmuxEnabled === false) {
+export async function POST(request: NextRequest, context: { params: Promise<{ name: string }> }) {
+  const runtime = await getRuntime()
+  if (!runtime.config.terminal.tmuxEnabled) {
     return NextResponse.json(
       { error: { code: 'INTEGRATION_DISABLED', message: 'tmux integration is disabled' } },
       { status: 404 },
     )
   }
-  const { name: rawName } = await ctx.params
-  const oldName = decodeURIComponent(rawName)
-
-  if (!NAME_RE.test(oldName)) {
+  let oldName: string
+  try {
+    oldName = decodeURIComponent((await context.params).name)
+  } catch {
     return NextResponse.json(
-      {
-        error: {
-          code: 'BAD_REQUEST',
-          message: 'name must match memon-[A-Za-z0-9._-]+',
-        },
-      },
+      { error: { code: 'BAD_REQUEST', message: 'invalid tmux session name' } },
       { status: 400 },
     )
   }
-
-  let body: unknown
+  let input: unknown
   try {
-    body = await req.json()
+    input = await request.json()
   } catch {
     return NextResponse.json(
       { error: { code: 'BAD_REQUEST', message: 'invalid JSON body' } },
       { status: 400 },
     )
   }
-
-  const parsed = BodySchema.safeParse(body)
+  const parsed = BackendTmuxRenameRequestSchema.safeParse(input)
   if (!parsed.success) {
     return NextResponse.json(
-      {
-        error: {
-          code: 'BAD_REQUEST',
-          message: parsed.error.issues.map((i) => i.message).join('; '),
-        },
-      },
+      { error: { code: 'BAD_REQUEST', message: 'invalid tmux rename request' } },
       { status: 400 },
     )
   }
-
-  const { newName } = parsed.data
-  if (oldName === newName) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BAD_REQUEST',
-          message: 'newName must differ from oldName',
-        },
-      },
-      { status: 400 },
-    )
-  }
-
+  const service = standaloneTerminal(runtime.config)
   try {
-    const { renameTmuxSession } = await import('../../../../../lib/terminal/tmux-discover')
-    await renameTmuxSession({ oldName, newName })
-    return NextResponse.json({ ok: true, sessionName: newName })
-  } catch (err) {
-    const e = err as Error & { code?: string }
-    if (e.code === 'NOT_FOUND') {
-      return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'tmux session not found' } },
-        { status: 404 },
-      )
-    }
-    if (e.code === 'CONFLICT') {
-      return NextResponse.json({ error: { code: 'CONFLICT', message: e.message } }, { status: 409 })
-    }
-    return NextResponse.json({ error: { message: e.message } }, { status: 500 })
+    const { host: _host, ...result } = BackendTmuxRenameResponseSchema.parse(
+      await service.renameTmux(oldName, parsed.data),
+    )
+    return NextResponse.json(result)
+  } catch (error) {
+    return standaloneTerminalError(error)
   }
 }

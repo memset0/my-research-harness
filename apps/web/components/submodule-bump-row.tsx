@@ -10,15 +10,15 @@
 // The verification mark stays on the OUTER main-repo commit (this row is
 // purely a review aid — see openspec/changes/add-submodule-bump-diff).
 
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
-import { fetchGitRange, type GitFileEntry } from '../lib/api'
-import { FileRow } from './file-row'
+import { useState } from 'react'
+import { fetchGitRange, type GitFileEntry, type ProjectTarget, projectQueryKey } from '../lib/api'
 import { cn } from '../lib/utils'
+import { FileRow } from './file-row'
 
 export interface SubmoduleBumpRowProps {
-  project: string
+  project: ProjectTarget
   /** Submodule name from `.gitmodules` (e.g. `"vendor/foo"`). */
   submodule: string
   /** Main-repo path that mounts this submodule. */
@@ -94,13 +94,13 @@ function SubmoduleBumpBody({
   fromSha,
   toSha,
 }: {
-  project: string
+  project: ProjectTarget
   submodule: string
   fromSha: string
   toSha: string
 }) {
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['git-range', project, submodule, fromSha, toSha] as const,
+    queryKey: ['git-range', ...projectQueryKey(project), submodule, fromSha, toSha] as const,
     queryFn: () => fetchGitRange(project, fromSha, toSha, submodule),
     staleTime: Infinity,
     retry: false,
@@ -193,7 +193,7 @@ function FilesSection({
   from,
   to,
 }: {
-  project: string
+  project: ProjectTarget
   submodule: string
   files: GitFileEntry[]
   from: string

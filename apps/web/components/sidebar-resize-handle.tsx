@@ -27,12 +27,7 @@
 import * as React from 'react'
 import { useSidebar } from './ui/sidebar'
 import { useIsMobile } from '../hooks/use-mobile'
-import {
-  DEFAULT_PX,
-  MAX_PX,
-  MIN_PX,
-  useSidebarWidth,
-} from '../hooks/use-sidebar-width'
+import { DEFAULT_PX, MAX_PX, MIN_PX, useSidebarWidth } from '../hooks/use-sidebar-width'
 import { cn } from '../lib/utils'
 
 const KB_STEP = 16
@@ -56,7 +51,7 @@ export function SidebarResizeHandle({ className }: { className?: string }) {
   const { state } = useSidebar()
   const isMobile = useIsMobile()
   const { widthPx, setWidthPx } = useSidebarWidth()
-  const handleRef = React.useRef<HTMLDivElement | null>(null)
+  const handleRef = React.useRef<HTMLHRElement | null>(null)
   // Drag state lives in refs to avoid re-renders during pointermove.
   const dragStartXRef = React.useRef<number | null>(null)
   const dragStartWidthRef = React.useRef<number>(DEFAULT_PX)
@@ -64,7 +59,7 @@ export function SidebarResizeHandle({ className }: { className?: string }) {
   if (isMobile) return null
   if (state !== 'expanded') return null
 
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLHRElement>) => {
     // Only respond to primary button / touch / pen primary contact.
     if (e.button !== 0 && e.pointerType === 'mouse') return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -73,11 +68,9 @@ export function SidebarResizeHandle({ className }: { className?: string }) {
     e.preventDefault()
   }
 
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLHRElement>) => {
     if (dragStartXRef.current == null) return
-    const next = clamp(
-      dragStartWidthRef.current + (e.clientX - dragStartXRef.current),
-    )
+    const next = clamp(dragStartWidthRef.current + (e.clientX - dragStartXRef.current))
     // Write directly to the wrapper's CSS variable — bypasses React state
     // for smooth dragging. The committed value lands in setWidthPx on
     // pointerup.
@@ -87,11 +80,9 @@ export function SidebarResizeHandle({ className }: { className?: string }) {
     }
   }
 
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerUp = (e: React.PointerEvent<HTMLHRElement>) => {
     if (dragStartXRef.current == null) return
-    const next = clamp(
-      dragStartWidthRef.current + (e.clientX - dragStartXRef.current),
-    )
+    const next = clamp(dragStartWidthRef.current + (e.clientX - dragStartXRef.current))
     dragStartXRef.current = null
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
@@ -104,7 +95,7 @@ export function SidebarResizeHandle({ className }: { className?: string }) {
     setWidthPx(next)
   }
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLHRElement>) => {
     let delta = 0
     const step = e.shiftKey ? KB_STEP_LARGE : KB_STEP
     if (e.key === 'ArrowRight') delta = step
@@ -115,12 +106,14 @@ export function SidebarResizeHandle({ className }: { className?: string }) {
   }
 
   return (
-    <div
+    <hr
       ref={handleRef}
       data-slot="sidebar-resize-handle"
-      role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"
+      aria-valuemin={MIN_PX}
+      aria-valuemax={MAX_PX}
+      aria-valuenow={widthPx}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
-import { runSqueueMe } from '../../../../lib/slurm/squeue'
+import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,17 +17,10 @@ export async function GET() {
     return NextResponse.json({ enabled: false })
   }
 
+  const service = standaloneServices(rt.config).slurm
+  if (!service) return NextResponse.json({ enabled: false })
   try {
-    const jobs = await runSqueueMe()
-    const usedNodes = jobs
-      .filter((j) => j.state === 'R')
-      .reduce((sum, j) => sum + j.numNodes, 0)
-    return NextResponse.json({
-      enabled: true,
-      totalNodes: rt.slurm.totalNodes,
-      usedNodes,
-      jobs,
-    })
+    return NextResponse.json(await service.status())
   } catch (err) {
     return NextResponse.json(
       {

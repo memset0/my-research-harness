@@ -10,12 +10,19 @@ import {
   type ExperimentDocSummary,
   fetchExperimentDocs,
   fetchGitStatus,
+  fetchHosts,
   fetchProjects,
+  type ProjectSummary,
+  type ProjectTarget,
+  projectHost,
+  projectName,
+  projectQueryKey,
 } from '../lib/api'
 import { useRuntimeConfig } from '../lib/runtime-config'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
+import { HostStatusBadge } from './host-status-badge'
 import { useSession } from './session-provider'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
@@ -41,15 +48,55 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
+function decodeSegment(value: string | undefined): string {
+  if (!value) return ''
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return ''
+  }
+}
+
+export function projectSummaryTarget(project: ProjectSummary): ProjectTarget {
+  return project.mode === 'central'
+    ? ({ host: project.host, project: project.project } as ProjectTarget)
+    : project.project
+}
+
+export function sidebarProjectIdentity(target: ProjectTarget): string {
+  const host = projectHost(target)
+  return host
+    ? `h:${encodeURIComponent(host)}/p:${encodeURIComponent(projectName(target))}`
+    : projectName(target)
+}
+
+export function sidebarProjectBasePath(target: ProjectTarget): string {
+  const host = projectHost(target)
+  const project = encodeURIComponent(projectName(target))
+  return host ? `/h/${encodeURIComponent(host)}/p/${project}` : `/p/${project}`
+}
+
+function activeProjectTarget(pathname: string): ProjectTarget | null {
+  const central = pathname.match(/^\/h\/([^/]+)\/p\/([^/]+)/)
+  if (central) {
+    const host = decodeSegment(central[1])
+    const project = decodeSegment(central[2])
+    return host && project ? ({ host, project } as ProjectTarget) : null
+  }
+  const standalone = decodeSegment(pathname.match(/^\/p\/([^/]+)/)?.[1])
+  return standalone || null
+}
+
 export function AppSidebar() {
-  const { role, scopeProjects } = useSession()
+  const { role, scopeProjects, scopeProjectRefs } = useSession()
   const { terminal } = useRuntimeConfig()
   const terminalDrawer = useTerminalDrawer()
   // Which project's git-status dialog (if any) is open, opened from one
   // of the sidebar's compact git pills. `null` = closed.
-  const [diffDialogProject, setDiffDialogProject] = useState<string | null>(null)
+  const [diffDialogProject, setDiffDialogProject] = useState<ProjectTarget | null>(null)
   const pathname = usePathname() ?? ''
-  const activeProject = decodeURIComponent(pathname.match(/^\/p\/([^/]+)/)?.[1] ?? '')
+  const activeTarget = activeProjectTarget(pathname)
+  const activeProjectKey = activeTarget ? sidebarProjectIdentity(activeTarget) : ''
   // v3 exp-doc detail URLs: `/p/<project>/e/<E-id>` (and the alias
   // `/p/<project>/r/<run-id>` already redirects to the same exp page).
   const activeExpDocId = decodeURIComponent(pathname.match(/\/e\/([^/]+)/)?.[1] ?? '')
@@ -59,20 +106,41 @@ export function AppSidebar() {
     queryFn: fetchProjects,
     staleTime: 60_000,
   })
+  const { data: hostsData } = useQuery({
+    queryKey: ['hosts'],
+    queryFn: fetchHosts,
+    staleTime: 10_000,
+    retry: false,
+  })
   const allProjects = projectsData?.projects ?? []
-  // Viewer sessions: restrict to scope-set projects. Owner / anon: full list.
-  const projects =
-    role === 'viewer' ? allProjects.filter((p) => scopeProjects.includes(p.name)) : allProjects
-
-  // Hub mode: when more than one node is connected, label each project with its
-  // node so clusters are distinguishable. Single-node / standalone stays clean.
-  const showNodes = new Set(projects.map((p) => p.node).filter(Boolean)).size > 1
+  const centralMode =
+    hostsData !== undefined || allProjects.some((project) => project.mode === 'central')
+  const standaloneProjects = allProjects.filter(
+    (project) =>
+      project.mode === 'standalone' &&
+      (role !== 'viewer' || scopeProjects.includes(project.project)),
+  )
+  const centralProjects =
+    role === 'owner'
+      ? allProjects.filter((project) => project.mode === 'central')
+      : role === 'viewer'
+        ? allProjects.filter(
+            (project) =>
+              project.mode === 'central' &&
+              (scopeProjectRefs ?? []).some(
+                (scope) => scope.host === project.host && scope.project === project.project,
+              ),
+          )
+        : []
+  const displayProjectKeys = (centralMode ? centralProjects : standaloneProjects).map((project) =>
+    sidebarProjectIdentity(projectSummaryTarget(project)),
+  )
 
   // Default: the active project is open. This means the very first SSR HTML
   // already contains its experiment rows (no skeleton flash on initial nav).
   // Hydration matches because both server and client compute the same default.
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(activeProject ? [activeProject] : []),
+    () => new Set(activeProjectKey ? [activeProjectKey] : []),
   )
   const [hydrated, setHydrated] = useState(false)
 
@@ -80,25 +148,25 @@ export function AppSidebar() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       const stored = raw ? new Set(JSON.parse(raw) as string[]) : new Set<string>()
-      // Always show the active project even if localStorage previously closed it
-      if (activeProject) stored.add(activeProject)
+      // Always show the active Host-qualified project even if storage closed it.
+      if (activeProjectKey) stored.add(activeProjectKey)
       setExpanded(stored)
     } catch {
       /* ignore */
     }
     setHydrated(true)
-  }, [activeProject])
+  }, [activeProjectKey])
 
   useEffect(() => {
     if (!hydrated) return
     try {
-      const validNames = new Set(projects.map((p) => p.name))
+      const validNames = new Set(displayProjectKeys)
       const pruned = Array.from(expanded).filter((n) => validNames.has(n))
       localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned))
     } catch {
       /* ignore */
     }
-  }, [expanded, projects, hydrated])
+  }, [expanded, displayProjectKeys, hydrated])
 
   const onToggle = (name: string, open: boolean) => {
     setExpanded((cur) => {
@@ -149,41 +217,111 @@ export function AppSidebar() {
         intermediate intrinsic-vs-row-size mismatches don't bleed
         into siblings.
       */}
-      <SidebarContent
-        style={{
-          gridTemplateRows: projects
-            .map((p) =>
-              expanded.has(p.name)
-                ? `minmax(var(--sidebar-section-banner-h, 1.75rem), 1fr)`
-                : `minmax(var(--sidebar-section-banner-h, 1.75rem), 0fr)`,
+      {centralMode ? (
+        <SidebarContent className="overflow-y-auto">
+          {(hostsData?.hosts ?? []).map((host) => {
+            const hostProjects = centralProjects.filter((project) => project.host === host.host)
+            return (
+              <SidebarGroup key={host.host} data-slot="sidebar-host-group" data-host={host.host}>
+                <div
+                  data-slot="sidebar-host-header"
+                  className="flex min-h-9 items-center gap-2 border-y border-sidebar-border bg-sidebar-accent/60 px-2 py-1.5 text-sidebar-foreground"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold">{host.label ?? host.host}</div>
+                    {host.label && (
+                      <div className="truncate font-mono text-[10px] text-muted-foreground">
+                        {host.host}
+                      </div>
+                    )}
+                  </div>
+                  <HostStatusBadge availability={host} className="shrink-0" />
+                </div>
+                <SidebarGroupContent>
+                  {hostProjects.map((project) => {
+                    const target = projectSummaryTarget(project)
+                    const identity = sidebarProjectIdentity(target)
+                    return (
+                      <ProjectGroup
+                        key={identity}
+                        target={target}
+                        name={project.name}
+                        basePath={sidebarProjectBasePath(target)}
+                        central
+                        allowTerminal={
+                          (host.state === 'online' || host.state === 'update_available') &&
+                          host.capabilities?.tmux === true
+                        }
+                        isActive={identity === activeProjectKey}
+                        isOpen={expanded.has(identity)}
+                        activeExpDocId={activeExpDocId}
+                        onOpenChange={(open) => onToggle(identity, open)}
+                        onPillClick={() => setDiffDialogProject(target)}
+                      />
+                    )
+                  })}
+                  {hostProjects.length === 0 && (
+                    <div className="px-2 py-2 text-xs text-muted-foreground">
+                      No projects available
+                    </div>
+                  )}
+                </SidebarGroupContent>
+              </SidebarGroup>
             )
-            .join(' '),
-        }}
-        className="!grid !overflow-hidden transition-[grid-template-rows] duration-200 ease-out"
-      >
-        {projects.map((p) => (
-          <ProjectGroup
-            key={p.name}
-            name={p.name}
-            node={showNodes ? p.node : undefined}
-            isActive={p.name === activeProject}
-            isOpen={expanded.has(p.name)}
-            activeExpDocId={activeExpDocId}
-            onOpenChange={(open) => onToggle(p.name, open)}
-            onPillClick={() => setDiffDialogProject(p.name)}
-          />
-        ))}
-        {projects.length === 0 && (
-          <SidebarGroup>
-            <SidebarGroupContent className="px-3 py-2 text-xs text-sidebar-foreground/60">
-              No projects configured
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-      </SidebarContent>
+          })}
+          {(hostsData?.hosts ?? []).length === 0 && (
+            <SidebarGroup>
+              <SidebarGroupContent className="px-3 py-2 text-xs text-sidebar-foreground/60">
+                No Hosts configured
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+        </SidebarContent>
+      ) : (
+        <SidebarContent
+          style={{
+            gridTemplateRows: standaloneProjects
+              .map((project) => {
+                const identity = sidebarProjectIdentity(projectSummaryTarget(project))
+                return expanded.has(identity)
+                  ? `minmax(var(--sidebar-section-banner-h, 1.75rem), 1fr)`
+                  : `minmax(var(--sidebar-section-banner-h, 1.75rem), 0fr)`
+              })
+              .join(' '),
+          }}
+          className="!grid !overflow-hidden transition-[grid-template-rows] duration-200 ease-out"
+        >
+          {standaloneProjects.map((project) => {
+            const target = projectSummaryTarget(project)
+            const identity = sidebarProjectIdentity(target)
+            return (
+              <ProjectGroup
+                key={identity}
+                target={target}
+                name={project.name}
+                basePath={sidebarProjectBasePath(target)}
+                central={false}
+                allowTerminal
+                isActive={identity === activeProjectKey}
+                isOpen={expanded.has(identity)}
+                activeExpDocId={activeExpDocId}
+                onOpenChange={(open) => onToggle(identity, open)}
+                onPillClick={() => setDiffDialogProject(target)}
+              />
+            )
+          })}
+          {standaloneProjects.length === 0 && (
+            <SidebarGroup>
+              <SidebarGroupContent className="px-3 py-2 text-xs text-sidebar-foreground/60">
+                No projects configured
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+        </SidebarContent>
+      )}
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
-          {role !== 'viewer' && (
+          {role !== 'viewer' && !centralMode && (
             <>
               <SlurmStatusWidget />
               {terminal.herdrEnabled && (
@@ -218,6 +356,16 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
             </>
+          )}
+          {role !== 'viewer' && centralMode && (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
+                <Link href="/manage/tmux">
+                  <Terminal className="size-4" />
+                  <span>Manage tmux</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           )}
         </SidebarMenu>
       </SidebarFooter>
@@ -264,16 +412,22 @@ export function AppSidebar() {
  *  experiments list, sorted by `effectiveUpdatedAt` desc. Runs are
  *  reachable through their parent experiment, not via the sidebar. */
 function ProjectGroup({
+  target,
   name,
-  node,
+  basePath,
+  central,
+  allowTerminal,
   isActive,
   isOpen,
   activeExpDocId,
   onOpenChange,
   onPillClick,
 }: {
+  target: ProjectTarget
   name: string
-  node?: string
+  basePath: string
+  central: boolean
+  allowTerminal: boolean
   isActive: boolean
   isOpen: boolean
   activeExpDocId: string
@@ -285,8 +439,8 @@ function ProjectGroup({
   // projects (`enabled: false` or query pending) the pill returns null
   // and we skip the click target so nothing reactable sits in the row.
   const { data: gitStatus } = useQuery({
-    queryKey: ['git-status', name],
-    queryFn: () => fetchGitStatus(name),
+    queryKey: ['git-status', ...projectQueryKey(target)],
+    queryFn: () => fetchGitStatus(target),
     staleTime: 5_000,
     retry: false,
   })
@@ -320,7 +474,10 @@ function ProjectGroup({
     <Collapsible
       open={isOpen}
       onOpenChange={onOpenChange}
-      className="group/collapsible flex min-h-0 flex-col overflow-hidden"
+      className={cn(
+        'group/collapsible flex min-h-0 flex-col overflow-hidden',
+        central && 'flex-none',
+      )}
     >
       <SidebarGroup
         className={cn(
@@ -329,7 +486,7 @@ function ProjectGroup({
           // CollapsibleContent (`flex-1 min-h-0`) can resolve against
           // a known parent height. The flex-1/flex-none decision is
           // entirely up at the <Collapsible> level above.
-          'flex min-h-0 flex-1 flex-col',
+          central ? 'flex flex-col' : 'flex min-h-0 flex-1 flex-col',
         )}
       >
         <SidebarGroupLabel
@@ -367,14 +524,6 @@ function ProjectGroup({
             <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wider">
               {name}
             </span>
-            {node && (
-              <span
-                title={`node: ${node}`}
-                className="shrink-0 rounded bg-sidebar-foreground/10 px-1 text-[9px] font-medium normal-case tracking-normal text-sidebar-foreground/60"
-              >
-                {node}
-              </span>
-            )}
             {gitEnabled ? (
               // The pill is INSIDE the CollapsibleTrigger button, so a
               // bare click bubbles up and toggles the section. Wrap the
@@ -384,30 +533,33 @@ function ProjectGroup({
               // `role="button" + tabIndex` keeps it keyboard-reachable
               // without nesting an actual <button> in another <button>
               // (invalid HTML).
-              <span
-                data-slot="git-status-pill-trigger"
-                role="button"
-                tabIndex={0}
-                aria-label={`View git diff for ${name}`}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onPillClick()
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+              <>
+                {/* biome-ignore lint/a11y/useSemanticElements: an actual button would be invalid inside CollapsibleTrigger's button */}
+                <span
+                  data-slot="git-status-pill-trigger"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View git diff for ${name}`}
+                  onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
                     onPillClick()
-                  }
-                }}
-                className="shrink-0 cursor-pointer rounded px-1 hover:bg-accent hover:text-accent-foreground"
-              >
-                <GitStatusPill project={name} variant="compact" className="shrink-0" />
-              </span>
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      onPillClick()
+                    }
+                  }}
+                  className="shrink-0 cursor-pointer rounded px-1 hover:bg-accent hover:text-accent-foreground"
+                >
+                  <GitStatusPill project={target} variant="compact" className="shrink-0" />
+                </span>
+              </>
             ) : (
-              <GitStatusPill project={name} variant="compact" className="shrink-0" />
+              <GitStatusPill project={target} variant="compact" className="shrink-0" />
             )}
           </CollapsibleTrigger>
         </SidebarGroupLabel>
@@ -436,7 +588,13 @@ function ProjectGroup({
         <CollapsibleContent forceMount className="flex-1 min-h-0 overflow-hidden">
           <div className="h-full overflow-y-auto">
             <SidebarGroupContent>
-              <ProjectExperimentDocs project={name} activeId={activeExpDocId} enabled={isOpen} />
+              <ProjectExperimentDocs
+                project={target}
+                basePath={basePath}
+                activeId={isActive ? activeExpDocId : ''}
+                enabled={isOpen}
+                allowTerminal={allowTerminal}
+              />
             </SidebarGroupContent>
           </div>
         </CollapsibleContent>
@@ -457,12 +615,16 @@ function ProjectGroup({
  *  more" affordance — those were removed in favor of internal scroll. */
 function ProjectExperimentDocs({
   project,
+  basePath,
   activeId,
   enabled,
+  allowTerminal,
 }: {
-  project: string
+  project: ProjectTarget
+  basePath: string
   activeId: string
   enabled: boolean
+  allowTerminal: boolean
 }) {
   // `enabled` mirrors the parent section's open state. When the
   // project section is collapsed we ALSO want the query to stop
@@ -475,7 +637,7 @@ function ProjectExperimentDocs({
   // refetches only mounted+enabled queries, so collapsed sections
   // remain bandwidth-free until the user re-expands them.
   const { data, isLoading } = useQuery({
-    queryKey: ['experiments', project],
+    queryKey: ['experiments', ...projectQueryKey(project)],
     queryFn: () => fetchExperimentDocs(project),
     enabled,
     staleTime: 5_000,
@@ -548,7 +710,7 @@ function ProjectExperimentDocs({
                 className="min-w-0 flex-1 hover:bg-transparent data-[active=true]:bg-transparent"
               >
                 <Link
-                  href={`/p/${encodeURIComponent(project)}/e/${encodeURIComponent(exp.id)}`}
+                  href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
                   title={exp.frontMatter.title}
                 >
                   {/*
@@ -562,6 +724,7 @@ function ProjectExperimentDocs({
                     `bg-sidebar-accent` active backgrounds.
                   */}
                   <span
+                    role="img"
                     aria-label={`${exp.frontMatter.runs.length} runs`}
                     className="flex size-[1.125rem] shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/5 text-[9px] tabular-nums text-sidebar-foreground/60"
                   >
@@ -579,7 +742,11 @@ function ProjectExperimentDocs({
                 check inside the component), ttyd-gated, and opens a
                 right-side TerminalSheet drawer with agent: 'none'.
               */}
-              <ExpRowTerminalButton project={project} expId={exp.id} />
+              <ExpRowTerminalButton
+                project={project}
+                expId={exp.id}
+                allowTerminal={allowTerminal}
+              />
             </div>
           </SidebarMenuItem>
         )
@@ -607,22 +774,34 @@ function ProjectExperimentDocs({
  *
  *  Click handler calls `e.stopPropagation()` so the surrounding row's
  *  link does not also navigate when the icon is clicked. */
-function ExpRowTerminalButton({ project, expId }: { project: string; expId: string }) {
+function ExpRowTerminalButton({
+  project,
+  expId,
+  allowTerminal,
+}: {
+  project: ProjectTarget
+  expId: string
+  allowTerminal: boolean
+}) {
   const { role } = useSession()
   const { terminal } = useRuntimeConfig()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const host = projectHost(project)
+  const hostTarget = host ? { host } : undefined
 
   // Probe only when the user is the owner — viewers can't use the shell
   // API and the probe itself is owner-only (it would 401 + trigger the
   // native Basic-auth dialog otherwise).
   const { data: probe } = useQuery({
-    queryKey: ['terminal', 'check'],
-    queryFn: checkTerminal,
+    queryKey: ['terminal', 'check', host ?? 'standalone'],
+    queryFn: () => checkTerminal(hostTarget),
     staleTime: 10_000,
-    enabled: role === 'owner' && terminal.tmuxEnabled,
+    enabled: allowTerminal && role === 'owner' && terminal.tmuxEnabled,
   })
 
-  if (role === 'viewer' || !terminal.tmuxEnabled) return null
+  if (!allowTerminal || role === 'viewer' || !terminal.tmuxEnabled) {
+    return null
+  }
   if (!probe) return null
 
   const onIconClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -667,6 +846,7 @@ function ExpRowTerminalButton({ project, expId }: { project: string; expId: stri
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
+          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: disabled buttons need a focusable tooltip trigger */}
           <span tabIndex={0} className="inline-flex">
             <Button
               variant="ghost"

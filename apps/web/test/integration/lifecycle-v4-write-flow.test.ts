@@ -44,7 +44,10 @@ const { PATCH: patchRunArchive } = await import('../../app/api/runs/[id]/archive
 const { PATCH: patchRunStatus } = await import('../../app/api/runs/[id]/status/route')
 const { PATCH: patchExpStatus } = await import('../../app/api/experiments/[id]/status/route')
 const { PATCH: patchExpArchive } = await import('../../app/api/experiments/[id]/archive/route')
-const { PUT: putRunReadme } = await import('../../app/api/runs/[id]/readme/route')
+const { GET: getRunReadme, PUT: putRunReadme } = await import(
+  '../../app/api/runs/[id]/readme/route'
+)
+const { GET: getExperimentReadme } = await import('../../app/api/experiments/[id]/readme/route')
 
 const RUN_RUNNING = `---
 id: alpha-260513-100000
@@ -322,6 +325,32 @@ describe('PATCH /api/experiments/:id/archive', () => {
 
     const journal = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
     expect(journal).toContain('`E0001-alpha` op=archive')
+  })
+})
+
+// ---------- GET /api/{runs,experiments}/:id/readme — portable direct reads ----------
+
+describe('GET id-addressed README routes', () => {
+  it('returns only a portable resource id and file content metadata', async () => {
+    const run = await getRunReadme(
+      new NextRequest('http://localhost/api/runs/alpha-260513-100000/readme?project=project-x'),
+      { params: Promise.resolve({ id: 'alpha-260513-100000' }) },
+    )
+    expect(run.status).toBe(200)
+    const runBody = (await run.json()) as Record<string, unknown>
+    expect(Object.keys(runBody).sort()).toEqual(['content', 'hash', 'mtime', 'resource'])
+    expect(runBody.resource).toBe('logs/alpha-260513-100000/README.md')
+    expect(JSON.stringify(runBody)).not.toContain(projectRoot)
+
+    const experiment = await getExperimentReadme(
+      new NextRequest('http://localhost/api/experiments/E0001-alpha/readme?project=project-x'),
+      { params: Promise.resolve({ id: 'E0001-alpha' }) },
+    )
+    expect(experiment.status).toBe(200)
+    const experimentBody = (await experiment.json()) as Record<string, unknown>
+    expect(Object.keys(experimentBody).sort()).toEqual(['content', 'hash', 'mtime', 'resource'])
+    expect(experimentBody.resource).toBe('docs/experiments/E0001-alpha.md')
+    expect(JSON.stringify(experimentBody)).not.toContain(projectRoot)
   })
 })
 

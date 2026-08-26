@@ -145,12 +145,14 @@ describe('runInstallSkills — multi-target install', () => {
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
 
-  async function runDefault(opts: {
-    agents?: AgentName[]
-    target?: string
-    dryRun?: boolean
-    format?: 'json' | 'human'
-  } = {}) {
+  async function runDefault(
+    opts: {
+      agents?: AgentName[]
+      target?: string
+      dryRun?: boolean
+      format?: 'json' | 'human'
+    } = {},
+  ) {
     return runCapturing(async () => {
       await runInstallSkills({
         // Skip projectRoot when an explicit target is supplied — they're
@@ -196,10 +198,7 @@ describe('runInstallSkills — multi-target install', () => {
   it('--agent claude,opencode writes exactly those two', async () => {
     const r = await runDefault({ agents: ['claude', 'opencode'] })
     const json = JSON.parse(r.stdout)
-    expect(json.targets.map((t: { agent: string }) => t.agent)).toEqual([
-      'claude',
-      'opencode',
-    ])
+    expect(json.targets.map((t: { agent: string }) => t.agent)).toEqual(['claude', 'opencode'])
     expect(await dirExists(join(projectRoot, AGENT_TARGETS.codex))).toBe(false)
   })
 
@@ -280,11 +279,7 @@ describe('runInstallSkills — PREFLIGHT.md sibling', () => {
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
 
-  async function runJson(opts: {
-    agents?: AgentName[]
-    target?: string
-    dryRun?: boolean
-  } = {}) {
+  async function runJson(opts: { agents?: AgentName[]; target?: string; dryRun?: boolean } = {}) {
     return runCapturing(async () => {
       await runInstallSkills({
         projectRoot: opts.target ? undefined : projectRoot,
@@ -470,11 +465,7 @@ describe('runInstallSkills — fsVersion marker', () => {
     await fs.rm(projectRoot, { recursive: true, force: true })
   })
 
-  async function runJson(opts: {
-    agents?: AgentName[]
-    target?: string
-    dryRun?: boolean
-  } = {}) {
+  async function runJson(opts: { agents?: AgentName[]; target?: string; dryRun?: boolean } = {}) {
     return runCapturing(async () => {
       await runInstallSkills({
         projectRoot: opts.target ? undefined : projectRoot,
@@ -501,9 +492,7 @@ describe('runInstallSkills — fsVersion marker', () => {
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)$/,
     )
 
-    const onDisk = JSON.parse(
-      await fs.readFile(join(projectRoot, '.memon/version.json'), 'utf8'),
-    )
+    const onDisk = JSON.parse(await fs.readFile(join(projectRoot, '.memon/version.json'), 'utf8'))
     expect(onDisk.fs_convention_version).toBe(json.fsVersion.available)
     expect(onDisk.last_migrated_at).toBeNull()
     expect(typeof onDisk.installed_at).toBe('string')
@@ -592,7 +581,9 @@ function makeStdinStub(line: string) {
   const stub = {
     isTTY: true as const,
     on(event: string, cb: (arg?: unknown) => void) {
-      ;(listeners[event] ??= []).push(cb)
+      const callbacks = listeners[event] ?? []
+      listeners[event] = callbacks
+      callbacks.push(cb)
       if (event === 'data') {
         // Fire synchronously on next microtask
         Promise.resolve().then(() => cb(Buffer.from(line, 'utf8')))

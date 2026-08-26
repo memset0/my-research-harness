@@ -2,20 +2,18 @@
 
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
-import { fetchHypotheses } from '../lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import { fetchHypotheses, type ProjectTarget, projectQueryKey, projectWebPath } from '../lib/api'
 import { ListSkeleton } from './skeletons'
 import { HypothesisStatusPill } from './status-pill'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
-  )
+  return <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{children}</div>
 }
 
-export function HypothesisView({ project }: { project: string }) {
+export function HypothesisView({ project }: { project: ProjectTarget }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['hypotheses', project],
+    queryKey: ['hypotheses', ...projectQueryKey(project)],
     queryFn: () => fetchHypotheses(project),
   })
 
@@ -26,9 +24,7 @@ export function HypothesisView({ project }: { project: string }) {
       </div>
     )
   if (error)
-    return (
-      <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
-    )
+    return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
   if (!data) return null
 
   return (
@@ -68,7 +64,7 @@ export function HypothesisView({ project }: { project: string }) {
                       h.experiments.map((id) => (
                         <Link
                           key={id}
-                          href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(id)}`}
+                          href={projectWebPath(project, `/experiments/${encodeURIComponent(id)}`)}
                           className="truncate font-mono text-primary underline-offset-4 hover:underline"
                         >
                           {id}
@@ -116,7 +112,7 @@ export function HypothesisView({ project }: { project: string }) {
                   {h.experiments.map((id) => (
                     <Link
                       key={id}
-                      href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(id)}`}
+                      href={projectWebPath(project, `/experiments/${encodeURIComponent(id)}`)}
                       className="font-mono text-primary underline-offset-4 hover:underline"
                     >
                       {id}
@@ -148,9 +144,7 @@ export function HypothesisView({ project }: { project: string }) {
               </div>
             )}
             {h.lastVerified && (
-              <div className="text-xs text-muted-foreground">
-                last verified: {h.lastVerified}
-              </div>
+              <div className="text-xs text-muted-foreground">last verified: {h.lastVerified}</div>
             )}
           </CardContent>
         </Card>

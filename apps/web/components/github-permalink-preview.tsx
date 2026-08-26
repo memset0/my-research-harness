@@ -1,10 +1,10 @@
 'use client'
 
-import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
+import * as React from 'react'
 
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
-import { type CodePreview, fetchCodePreview } from '@/lib/api'
+import { type CodePreview, fetchCodePreview, type ProjectTarget, projectQueryKey } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 // Client-side mirror of the server's permalink shape check (see
@@ -35,12 +35,12 @@ export function GithubPermalinkPreview({
   children,
 }: {
   href: string
-  project: string
+  project: ProjectTarget
   children: React.ReactNode
 }) {
   const [open, setOpen] = React.useState(false)
   const query = useQuery<CodePreview>({
-    queryKey: ['code-preview', project, href],
+    queryKey: ['code-preview', ...projectQueryKey(project), href],
     queryFn: () => fetchCodePreview(project, href),
     enabled: open,
     staleTime: 5 * 60_000,
@@ -92,9 +92,7 @@ function PreviewBody({ query }: { query: ReturnType<typeof useQuery<CodePreview>
       ) : query.isError ? (
         <p className="px-3 py-6 text-center text-destructive">
           Couldn&apos;t load preview
-          {query.error instanceof Error && query.error.message
-            ? ` — ${query.error.message}`
-            : ''}
+          {query.error instanceof Error && query.error.message ? ` — ${query.error.message}` : ''}
         </p>
       ) : data && data.reason === 'too-large' ? (
         <p className="px-3 py-6 text-center text-muted-foreground">File too large to preview.</p>

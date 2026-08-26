@@ -9,15 +9,15 @@
 // EditReadmeButton — that one toggles the side panel. This button is the
 // dialog-only path used by exp-doc + run-panel action bars.
 
-import { useState } from 'react'
 import { Pencil } from 'lucide-react'
+import { useState } from 'react'
+import { type EditorTarget, ReadmeEditor } from './readme-editor'
 import { Button } from './ui/button'
-import { ReadmeEditor, type EditorTarget } from './readme-editor'
 import { ViewerGuard } from './viewer-guard'
 
 interface Props {
   /** Path used as the editor's display label (passed through to legacy load — see EditorTarget). */
-  path: string
+  path?: string
   target: EditorTarget
   /** Display label override; defaults based on target.kind. */
   label?: string
@@ -33,6 +33,7 @@ export function EditMarkdownButton({
   size = 'sm',
 }: Props) {
   const [open, setOpen] = useState(false)
+  const displayPath = path ?? target.id
   const text = label ?? (target.kind === 'exp' ? 'Edit markdown (exp)' : 'Edit markdown (run)')
   return (
     <>
@@ -44,7 +45,7 @@ export function EditMarkdownButton({
       </ViewerGuard>
       {open && (
         <ReadmeEditor
-          path={path}
+          path={displayPath}
           runId={target.id}
           onClose={() => setOpen(false)}
           target={target}

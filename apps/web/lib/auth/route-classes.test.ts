@@ -78,6 +78,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/')).toBe('read')
     expect(classify('GET', '/p/project-a')).toBe('read')
     expect(classify('GET', '/p/project-a/e/exp-id')).toBe('read')
+    expect(classify('GET', '/h/host-a/p/project-a/e/exp-id')).toBe('read')
   })
 
   it('classifies /login as anon (NOT read — anon is reachable without identity)', () => {
@@ -111,6 +112,15 @@ describe('classifyAndExtract — project extraction', () => {
     expect(r).toEqual({ class: 'read', project: 'project-a' })
   })
 
+  it('extracts project from a Host-qualified central page and share landing', () => {
+    expect(
+      classifyAndExtract('GET', '/h/host-a/p/project-a/e/E0001-demo', emptySearch(), stubCtx()),
+    ).toEqual({ class: 'read', project: 'project-a' })
+    expect(
+      classifyAndExtract('GET', '/share/host-a/project-a/token-a', emptySearch(), stubCtx()),
+    ).toEqual({ class: 'anon', project: 'project-a' })
+  })
+
   it('returns "global" for / (root)', () => {
     const r = classifyAndExtract('GET', '/', emptySearch(), stubCtx())
     expect(r).toEqual({ class: 'read', project: 'global' })
@@ -118,6 +128,11 @@ describe('classifyAndExtract — project extraction', () => {
 
   it('returns "multi" for /api/projects', () => {
     const r = classifyAndExtract('GET', '/api/projects', emptySearch(), stubCtx())
+    expect(r).toEqual({ class: 'read', project: 'multi' })
+  })
+
+  it('returns "multi" for safe /api/hosts availability', () => {
+    const r = classifyAndExtract('GET', '/api/hosts', emptySearch(), stubCtx())
     expect(r).toEqual({ class: 'read', project: 'multi' })
   })
 

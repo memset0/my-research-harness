@@ -1,66 +1,48 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../lib/runtime', () => ({
-  getRuntime: vi.fn(),
+vi.mock('../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
+vi.mock('../../../lib/server/standalone-dto', () => ({
+  standaloneRun: vi.fn((_config, run) => ({ ...run, path: `/root/${run.id}` })),
+}))
+vi.mock('@memon/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@memon/core')>()),
+  BackendRunsResponseSchema: { parse: (value: unknown) => value },
 }))
 
-// `isStaleRunning` from @memon/core is called for each experiment — stub it
-// deterministically so test assertions don't depend on real time.
-vi.mock('@memon/core', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@memon/core')>()
-  return {
-    ...actual,
-    isStaleRunning: vi.fn(() => false),
-  }
+import { getRuntime } from '../../../lib/runtime'
+import { standaloneServices } from '../../../lib/server/standalone-services'
+import { GET } from './route'
+
+const listRuns = vi.fn()
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getRuntime).mockResolvedValue({
+    config: { projects: [{ name: 'project-a' }, { name: 'project-b' }] },
+  } as never)
+  vi.mocked(standaloneServices).mockReturnValue({ projects: { listRuns } } as never)
+  listRuns.mockImplementation(async (project: string) => ({
+    runs: [
+      { id: `${project}-run`, project, resource: `logs/${project}-run/README.md`, stale: false },
+    ],
+  }))
 })
 
-import { GET } from './route'
-import { getRuntime } from '../../../lib/runtime'
-
-const SAMPLE_EXP = {
-  id: 'foo-260501-100000',
-  path: '/p/a/logs/foo-260501-100000',
-  mtime: 1000,
-  readmeMtime: 1000,
-  hasReadme: true,
-  frontMatter: {
-    name: 'foo',
-    project: 'a',
-    status: 'FINISHED',
-    createdAt: '2026-05-01T10:00:00+08:00',
-  },
-  parseErrors: [],
-  parseWarnings: [],
-}
-
-describe('GET /api/runs', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+describe('GET /api/runs shared standalone adapter', () => {
+  it('aggregates configured Projects and restores legacy path', async () => {
+    const response = await GET(new NextRequest('http://localhost/api/runs'))
+    expect(response.status).toBe(200)
+    expect((await response.json()).experiments).toHaveLength(2)
+    expect(listRuns).toHaveBeenCalledTimes(2)
   })
 
-  it('returns indexed experiments with stale flag attached', async () => {
-    const list = vi.fn(() => [SAMPLE_EXP])
-    vi.mocked(getRuntime).mockResolvedValue({ index: { list } } as never)
-
-    const res = await GET(new NextRequest('http://localhost/api/runs'))
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.experiments).toHaveLength(1)
-    expect(body.experiments[0]).toMatchObject({
-      id: 'foo-260501-100000',
-      stale: false,
-      frontMatter: { status: 'FINISHED' },
-    })
-    expect(list).toHaveBeenCalledWith({ project: undefined })
-  })
-
-  it('passes ?project filter through to index.list', async () => {
-    const list = vi.fn(() => [])
-    vi.mocked(getRuntime).mockResolvedValue({ index: { list } } as never)
-
-    await GET(new NextRequest('http://localhost/api/runs?project=project-a'))
-    expect(list).toHaveBeenCalledWith({ project: 'project-a' })
+  it('selects one Project', async () => {
+    const response = await GET(new NextRequest('http://localhost/api/runs?project=project-a'))
+    expect(response.status).toBe(200)
+    expect(listRuns).toHaveBeenCalledWith('project-a')
+    expect(listRuns).toHaveBeenCalledTimes(1)
   })
 })

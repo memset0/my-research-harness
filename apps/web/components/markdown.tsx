@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import {
   Children,
   cloneElement,
@@ -10,13 +11,13 @@ import {
   useContext,
   useMemo,
 } from 'react'
-import Link from 'next/link'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import 'katex/dist/katex.min.css'
+import type { ProjectTarget } from '../lib/api'
 import {
   type ArtifactInventory,
   type ArtifactTarget,
@@ -115,7 +116,7 @@ export function Markdown({
   // links (code is fetched from the project's mapped LOCAL repo). Omit it
   // and links render as plain external anchors. Threaded from every page
   // that knows which project the markdown belongs to.
-  project?: string
+  project?: ProjectTarget
   /**
    * Base endpoint for relative assets in a directory-style Report. Markdown
    * images are rewritten beneath it; an image whose target ends in .html or
@@ -715,7 +716,15 @@ export function resolveReportResourceUrl(baseUrl: string, source: string): strin
     }
     encoded.push(encodeURIComponent(decoded))
   }
-  return `${baseUrl.replace(/\/$/, '')}/${encoded.join('/')}${suffix}`
+  const base = new URL(baseUrl, 'http://memon.invalid')
+  if (base.origin !== 'http://memon.invalid') return null
+  base.pathname = `${base.pathname.replace(/\/$/, '')}/${encoded.join('/')}`
+  if (suffix) {
+    const source = new URL(suffix, 'http://memon.invalid')
+    for (const [name, value] of source.searchParams) base.searchParams.append(name, value)
+    base.hash = source.hash
+  }
+  return `${base.pathname}${base.search}${base.hash}`
 }
 
 function isHtmlResource(source: string): boolean {

@@ -60,14 +60,11 @@ export interface StatusSetInput {
 
 export async function runStatusSet(input: StatusSetInput): Promise<void> {
   if (!(STATUS_VALUES as readonly string[]).includes(input.to)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `--to must be one of: ${STATUS_VALUES.join(', ')}`,
-    )
+    emitErrorAndExit('BAD_REQUEST', `--to must be one of: ${STATUS_VALUES.join(', ')}`)
   }
   const { runDir, readmePath, projectRoot } = await resolveExperiment(input, input.runId)
 
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(readmePath)
   } catch {
@@ -164,7 +161,7 @@ export interface ReadmeWriteInput {
 export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
   const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
 
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
     stat = await fs.stat(readmePath)
   } catch {
@@ -282,7 +279,7 @@ export interface ArchiveInput {
 export async function runArchive(input: ArchiveInput): Promise<void> {
   const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
   const now = nowIso()
-  let result
+  let result: Awaited<ReturnType<typeof archiveRun>>
   try {
     result = await archiveRun(runDir, { now, id: input.runId })
   } catch (err) {

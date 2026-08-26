@@ -1,35 +1,38 @@
-// POST /api/terminal/stop — kill ttyd; tmux session is left detached.
+// POST /api/terminal/stop — shared singleton terminal lifecycle state.
 
+import { BackendTerminalStopRequestSchema, BackendTerminalStopResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { stopSession } from '../../../../lib/terminal/manager'
+import { getRuntime } from '../../../../lib/runtime'
+import {
+  standaloneTerminal,
+  standaloneTerminalError,
+} from '../../../../lib/server/standalone-terminal'
 
 export const dynamic = 'force-dynamic'
 
-const BodySchema = z.object({ sessionName: z.string().min(1) })
-
-export async function POST(req: NextRequest) {
-  let body: unknown
+export async function POST(request: NextRequest) {
+  let input: unknown
   try {
-    body = await req.json()
+    input = await request.json()
   } catch {
     return NextResponse.json(
       { error: { code: 'BAD_REQUEST', message: 'invalid JSON body' } },
       { status: 400 },
     )
   }
-  const parsed = BodySchema.safeParse(body)
+  const parsed = BackendTerminalStopRequestSchema.safeParse(input)
   if (!parsed.success) {
     return NextResponse.json(
-      {
-        error: {
-          code: 'BAD_REQUEST',
-          message: parsed.error.issues.map((i) => i.message).join('; '),
-        },
-      },
+      { error: { code: 'BAD_REQUEST', message: 'invalid stop request' } },
       { status: 400 },
     )
   }
-  const result = await stopSession(parsed.data.sessionName)
-  return NextResponse.json(result)
+  const service = standaloneTerminal((await getRuntime()).config)
+  try {
+    return NextResponse.json(
+      BackendTerminalStopResponseSchema.parse(await service.stop(parsed.data)),
+    )
+  } catch (error) {
+    return standaloneTerminalError(error)
+  }
 }

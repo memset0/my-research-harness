@@ -3,21 +3,15 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { fetchJournal } from '../lib/api'
+import { fetchJournal, type ProjectTarget, projectQueryKey, projectWebPath } from '../lib/api'
+import { AddJournalEntryButton } from './add-journal-entry-button'
+import { SuccessBadge, WarningBadge } from './colored-badge'
+import { ListSkeleton } from './skeletons'
+import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { SuccessBadge, WarningBadge } from './colored-badge'
-import { AddJournalEntryButton } from './add-journal-entry-button'
-import { TimestampLocal } from './timestamp'
-import { ListSkeleton } from './skeletons'
 import { Input } from './ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 function TagBadge({ tag }: { tag: string }) {
   switch (tag) {
@@ -35,9 +29,9 @@ function TagBadge({ tag }: { tag: string }) {
   }
 }
 
-export function JournalView({ project }: { project: string }) {
+export function JournalView({ project }: { project: ProjectTarget }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['journal', project],
+    queryKey: ['journal', ...projectQueryKey(project)],
     queryFn: () => fetchJournal(project, { limit: 200 }),
   })
 
@@ -62,9 +56,7 @@ export function JournalView({ project }: { project: string }) {
       </div>
     )
   if (error)
-    return (
-      <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
-    )
+    return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
   if (!data) return null
 
   return (
@@ -131,7 +123,7 @@ export function JournalView({ project }: { project: string }) {
                 <div className="text-xs">
                   {e.runId ? (
                     <Link
-                      href={`/p/${encodeURIComponent(project)}/experiments/${encodeURIComponent(e.runId)}`}
+                      href={projectWebPath(project, `/experiments/${encodeURIComponent(e.runId)}`)}
                       className="font-mono text-primary underline-offset-4 hover:underline"
                     >
                       {e.runId}

@@ -119,7 +119,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
 
   // Step 2: rewrite the run README's frontmatter id (and updated_at).
   const readmePath = join(newPath, 'README.md')
-  let stat
+  let stat: Awaited<ReturnType<typeof fs.stat>> | null
   try {
     stat = await fs.stat(readmePath)
   } catch {

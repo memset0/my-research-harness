@@ -6,19 +6,24 @@
 // a right-side Sheet showing the rail; tapping Edit opens a full-viewport
 // bottom Sheet with Monaco.
 
-import type { DigestSummary } from '@memon/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  type DigestListItem,
   type FullDigest,
   type FullReport,
   fetchDigest,
   fetchDigests,
   fetchReport,
   fetchReports,
+  type ProjectTarget,
+  projectHost,
+  projectName,
+  projectQueryKey,
+  projectWebPath,
   putDigest,
   putReport,
   type ReportListItem,
@@ -30,18 +35,19 @@ import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
+import { ReportHtmlZoomProvider } from './report-html-embed'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
-import { ReportHtmlZoomProvider } from './report-html-embed'
 
 export type InboxKind = 'reports' | 'digests'
 
 interface CommonItem {
   id: string
-  path: string
+  path?: string
+  resource?: string
   mtime: number
   title: string | null
   /** For reports it's the slug; for digests it's the ISO date. Sub-label. */
@@ -50,7 +56,8 @@ interface CommonItem {
 
 interface FullItem {
   id: string
-  path: string
+  path?: string
+  resource?: string
   mtime: number
   hash: string
   content: string
@@ -78,7 +85,7 @@ export function InboxShell({
   selectedId,
 }: {
   kind: InboxKind
-  project: string
+  project: ProjectTarget
   selectedId: string | null
 }) {
   const { items, isLoading: itemsLoading } = useItemsList(kind, project)
@@ -160,16 +167,16 @@ export function InboxShell({
 
 function useItemsList(
   kind: InboxKind,
-  project: string,
+  project: ProjectTarget,
 ): { items: CommonItem[]; isLoading: boolean } {
   const reportsQ = useQuery({
-    queryKey: ['reports', project],
+    queryKey: ['reports', ...projectQueryKey(project)],
     queryFn: () => fetchReports(project),
     enabled: kind === 'reports',
     staleTime: 5_000,
   })
   const digestsQ = useQuery({
-    queryKey: ['digests', project],
+    queryKey: ['digests', ...projectQueryKey(project)],
     queryFn: () => fetchDigests(project),
     enabled: kind === 'digests',
     staleTime: 5_000,
@@ -180,15 +187,17 @@ function useItemsList(
       return reports.map((r) => ({
         id: r.id,
         path: r.path,
+        resource: r.resource,
         mtime: r.mtime,
         title: r.title,
         subLabel: r.slug,
       }))
     }
-    const digests: DigestSummary[] = digestsQ.data?.digests ?? []
+    const digests: DigestListItem[] = digestsQ.data?.digests ?? []
     return digests.map((d) => ({
       id: d.id,
       path: d.path,
+      resource: d.resource,
       mtime: d.mtime,
       title: d.title,
       subLabel: d.date,
@@ -202,16 +211,16 @@ function useItemsList(
 
 function useSelectedItem(
   kind: InboxKind,
-  project: string,
+  project: ProjectTarget,
   selectedId: string | null,
 ): { data: FullItem | undefined; isLoading: boolean; error: Error | null } {
   const reportQ = useQuery({
-    queryKey: ['report', project, selectedId],
+    queryKey: ['report', ...projectQueryKey(project), selectedId],
     queryFn: () => fetchReport(project, selectedId!),
     enabled: kind === 'reports' && !!selectedId,
   })
   const digestQ = useQuery({
-    queryKey: ['digest', project, selectedId],
+    queryKey: ['digest', ...projectQueryKey(project), selectedId],
     queryFn: () => fetchDigest(project, selectedId!),
     enabled: kind === 'digests' && !!selectedId,
   })
@@ -284,13 +293,13 @@ function RailList({
   onSelect,
 }: {
   kind: InboxKind
-  project: string
+  project: ProjectTarget
   items: CommonItem[]
   selectedId: string | null
   loading: boolean
   onSelect?: () => void
 }) {
-  const base = `/p/${encodeURIComponent(project)}/${kind}`
+  const base = projectWebPath(project, `/${kind}`)
   if (loading && items.length === 0) {
     return (
       <div className="p-3">
@@ -310,7 +319,7 @@ function RailList({
       {items.map((it) => {
         const active = it.id === selectedId
         return (
-          <li key={`${it.id}:${it.path}`}>
+          <li key={`${it.id}:${it.path ?? ''}`}>
             <Link
               href={`${base}/${encodeURIComponent(it.id)}`}
               onClick={onSelect}
@@ -378,7 +387,7 @@ function SelectedItemPane({
   itemsLoading,
 }: {
   kind: InboxKind
-  project: string
+  project: ProjectTarget
   selectedId: string
   data: FullItem | undefined
   isLoading: boolean
@@ -457,7 +466,7 @@ function SelectedItemPane({
               kind={kind}
               content={data.content}
               project={project}
-              sourceDocumentPath={data.path}
+              sourceDocumentPath={data.path ?? data.resource}
               sourceSurface={kind === 'reports' ? 'full-report' : 'left'}
               sourceReportId={kind === 'reports' ? selectedId : undefined}
               resourceBaseUrl={
@@ -509,7 +518,7 @@ function SelectedArtifactIdentity({
   quickSwitchEnabled,
 }: {
   kind: InboxKind
-  project: string
+  project: ProjectTarget
   data: FullItem
   items: CommonItem[]
   itemsLoading: boolean
@@ -580,7 +589,7 @@ export function RenderedItem({
 }: {
   kind: InboxKind
   content: string
-  project: string
+  project: ProjectTarget
   resourceBaseUrl?: string
   sourceDocumentPath?: string
   sourceSurface?: 'left' | 'full-report' | 'side-report'
@@ -626,8 +635,12 @@ export function RenderedItem({
   )
 }
 
-export function reportResourceBaseUrl(project: string, reportId: string): string {
-  return `/api/report-assets/${encodeURIComponent(project)}/${encodeURIComponent(reportId)}`
+export function reportResourceBaseUrl(project: ProjectTarget, reportId: string): string {
+  const base = `/api/report-assets/${encodeURIComponent(projectName(project))}/${encodeURIComponent(reportId)}`
+  const host = projectHost(project)
+  return host
+    ? `${base}?host=${encodeURIComponent(host)}&project=${encodeURIComponent(projectName(project))}`
+    : base
 }
 
 function InboxEditor({
@@ -637,7 +650,7 @@ function InboxEditor({
   onClose,
 }: {
   kind: InboxKind
-  project: string
+  project: ProjectTarget
   data: FullItem
   onClose: () => void
 }) {
@@ -669,7 +682,9 @@ function InboxEditor({
       setKnownHash(res.hash)
       // Invalidate the detail query so the rendered pane reflects the save.
       const detailKey =
-        kind === 'reports' ? ['report', project, data.id] : ['digest', project, data.id]
+        kind === 'reports'
+          ? ['report', ...projectQueryKey(project), data.id]
+          : ['digest', ...projectQueryKey(project), data.id]
       const listKey = [kind, project]
       queryClient.invalidateQueries({ queryKey: detailKey })
       queryClient.invalidateQueries({ queryKey: listKey })
@@ -683,7 +698,9 @@ function InboxEditor({
             label: 'Refresh',
             onClick: () => {
               const detailKey =
-                kind === 'reports' ? ['report', project, data.id] : ['digest', project, data.id]
+                kind === 'reports'
+                  ? ['report', ...projectQueryKey(project), data.id]
+                  : ['digest', ...projectQueryKey(project), data.id]
               queryClient.invalidateQueries({ queryKey: detailKey })
               onClose()
             },
@@ -725,7 +742,7 @@ function MobileRailDrawer({
   selectedId,
 }: {
   kind: InboxKind
-  project: string
+  project: ProjectTarget
   items: CommonItem[]
   itemsLoading: boolean
   selectedId: string | null
@@ -745,7 +762,9 @@ function MobileRailDrawer({
       <SheetContent side="right" className="w-80 p-0">
         <SheetHeader className="border-b px-3 py-3">
           <SheetTitle className="text-sm">
-            {kind === 'reports' ? 'Reports' : 'Digests'} · {project}
+            {kind === 'reports' ? 'Reports' : 'Digests'} ·{' '}
+            {projectHost(project) ? `${projectHost(project)}/` : ''}
+            {projectName(project)}
           </SheetTitle>
         </SheetHeader>
         <RailList
