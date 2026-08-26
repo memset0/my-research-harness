@@ -49,11 +49,35 @@ export interface CentralFleetRuntimeHandle {
   stop(): Promise<void>
 }
 
-let fleetPromise: Promise<CentralFleetRuntimeHandle> | null = null
+interface CentralFleetProcessState {
+  fleetPromise: Promise<CentralFleetRuntimeHandle> | null
+}
+
+const CENTRAL_FLEET_PROCESS_STATE_KEY = '__memonCentralFleetProcessStateV1' as const
+
+/**
+ * Next compiles route handlers into separate server bundles, so a module-local
+ * singleton can create one SSH tunnel/event fan-in per route. Store the owner
+ * on the process global instead: all bundles execute in the same Node realm
+ * and must share exactly one fleet lifecycle.
+ */
+function centralFleetProcessState(): CentralFleetProcessState {
+  const processGlobal = globalThis as typeof globalThis &
+    Record<typeof CENTRAL_FLEET_PROCESS_STATE_KEY, CentralFleetProcessState | undefined>
+  if (!processGlobal[CENTRAL_FLEET_PROCESS_STATE_KEY]) {
+    Object.defineProperty(processGlobal, CENTRAL_FLEET_PROCESS_STATE_KEY, {
+      configurable: true,
+      value: { fleetPromise: null },
+      writable: false,
+    })
+  }
+  return processGlobal[CENTRAL_FLEET_PROCESS_STATE_KEY]!
+}
 
 export async function getCentralFleet(): Promise<CentralFleetController> {
-  if (!fleetPromise) fleetPromise = initializeFromRuntime()
-  return (await fleetPromise).fleet as CentralFleetController
+  const state = centralFleetProcessState()
+  if (!state.fleetPromise) state.fleetPromise = initializeFromRuntime()
+  return (await state.fleetPromise).fleet as CentralFleetController
 }
 
 async function initializeFromRuntime(): Promise<CentralFleetRuntimeHandle> {
@@ -111,13 +135,14 @@ export async function initializeCentralFleetRuntime(
 }
 
 export async function stopCentralFleet(): Promise<void> {
-  const pending = fleetPromise
-  fleetPromise = null
+  const state = centralFleetProcessState()
+  const pending = state.fleetPromise
+  state.fleetPromise = null
   if (!pending) return
   const runtime = await pending.catch(() => null)
   await runtime?.stop()
 }
 
 export function __resetCentralFleetForTests(): void {
-  fleetPromise = null
+  centralFleetProcessState().fleetPromise = null
 }
