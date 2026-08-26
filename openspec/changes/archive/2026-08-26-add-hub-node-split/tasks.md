@@ -1,5 +1,9 @@
 # Tasks
 
+> **Abandoned on 2026-08-26.** Do not continue the unchecked tasks below. The
+> change is superseded by `decouple-web-and-cluster-backend-deployments` and is
+> archived without applying its deltas to the main specs.
+
 ## 1. Config: hub/node blocks
 - [x] 1.1 Add `HubConfigRawSchema` + `NodeConfigRawSchema` to `packages/core/src/schemas.ts`; wire both (optional) into `ConfigRawSchema` (also relaxed `projects` to allow a project-less hub)
 - [x] 1.2 Add `HubConfig` / `NodeConfig` / `NodeCapabilities` types + `Config.hub?` / `Config.node?` in `packages/core/src/types.ts`

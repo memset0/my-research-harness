@@ -1,3 +1,12 @@
+## Status
+
+**Abandoned on 2026-08-26.** Do not implement the remaining tasks in this
+change. The resident node-to-hub WebSocket architecture has been superseded by
+the proposal-only `decouple-web-and-cluster-backend-deployments` direction,
+which will define a different centralized Web deployment and remote-target
+access model. This change is retained only as implementation history and must
+not update the current main specs.
+
 ## Why
 
 memon runs its frontend + backend as one co-located process per machine, so each GPU cluster's memon is an island. The user runs experiments across multiple clusters (e.g. `m2`, `nvl72`) and needs to watch and manage them from ONE place. The networking reality forces the shape: clusters sit behind firewalls/NAT (a central server can't reach in), but they CAN reach a public server. There is no way today to aggregate several clusters' projects and tmux sessions into a single dashboard.
