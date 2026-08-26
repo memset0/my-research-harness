@@ -23,8 +23,8 @@ import {
   type TerminalAgentKind,
   type TerminalScopeKind,
 } from '../lib/api'
-import { isManageTmuxNavShortcut } from '../app/manage/tmux/keyboard-nav'
 import { cn } from '../lib/utils'
+import { attachTerminalCopyBridge } from './terminal-copy-bridge'
 
 export type TerminalViewSource = 'manage' | 'drawer' | 'popup' | 'unknown'
 
@@ -165,17 +165,10 @@ export function TerminalView(props: TerminalViewProps) {
         ? `${rawSessionName} terminal`
         : 'Herdr terminal'
 
-  // When embedded in /manage/tmux (source === 'manage'), forward the
-  // page-level `Ctrl+Shift+ArrowUp/Down` shortcut from the iframe up to
-  // the parent window. The iframe URL is /api/terminal/proxy/... which
-  // shares origin with the parent app, so we can attach a capture-phase
-  // keydown directly on the iframe's contentDocument and contentWindow.
-  // xterm.js's handlers are inside the iframe (target phase on the
-  // helper textarea) — window/document capture runs first, so
-  // preventDefault + stopPropagation here keeps the key out of the
-  // terminal entirely. We then re-dispatch a synthesized KeyboardEvent
-  // on the parent `window`, which the page-level handler catches and
-  // turns into a row navigation.
+  // The iframe URL is same-origin, so after ttyd loads we install a small
+  // capture-phase bridge for reliable native clipboard shortcuts. The
+  // bridge also retains /manage/tmux's page-level
+  // Ctrl+Shift+ArrowUp/Down forwarding.
   //
   // Critical race condition: when an iframe is inserted into the DOM
   // with `src` set, the browser exposes an initial `about:blank`
@@ -188,7 +181,6 @@ export function TerminalView(props: TerminalViewProps) {
   // on every iframe `load` event.
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
-    if (source !== 'manage') return
     if (phase !== 'ready') return
     const iframe = iframeRef.current
     if (!iframe) return
@@ -210,46 +202,12 @@ export function TerminalView(props: TerminalViewProps) {
         cleanup?.()
         cleanup = null
 
-        const listener = (event: KeyboardEvent) => {
-          if (!isManageTmuxNavShortcut(event)) return
-          event.preventDefault()
-          event.stopPropagation()
-          event.stopImmediatePropagation()
-          window.dispatchEvent(
-            new KeyboardEvent('keydown', {
-              key: event.key,
-              code: event.code,
-              ctrlKey: true,
-              shiftKey: true,
-              altKey: false,
-              metaKey: false,
-              bubbles: true,
-              cancelable: true,
-            }),
-          )
-        }
-
-        // Attach on BOTH the iframe's window AND document at capture
-        // phase. Capture order is window → document → ... → target, so
-        // window-capture fires first and document-capture is a backup
-        // if window somehow misses. Capture beats every listener inside
-        // the iframe (xterm.js's keydown is on the helper textarea,
-        // which is the target phase).
-        win.addEventListener('keydown', listener, { capture: true })
-        doc.addEventListener('keydown', listener, { capture: true })
-
-        cleanup = () => {
-          try {
-            win.removeEventListener('keydown', listener, { capture: true })
-          } catch {
-            // window may already be torn down — ignore
-          }
-          try {
-            doc.removeEventListener('keydown', listener, { capture: true })
-          } catch {
-            // document may already be replaced — ignore
-          }
-        }
+        cleanup = attachTerminalCopyBridge({
+          doc,
+          win,
+          parentWindow: window,
+          source,
+        })
         return true
       } catch {
         // Cross-origin (shouldn't happen for the same-origin proxy URL,
@@ -308,6 +266,7 @@ export function TerminalView(props: TerminalViewProps) {
           ref={iframeRef}
           src={iframeUrl}
           title={iframeTitle}
+          allow="clipboard-read; clipboard-write"
           className="h-full w-full border-0"
         />
       )}

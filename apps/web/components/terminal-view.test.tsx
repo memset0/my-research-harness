@@ -155,6 +155,10 @@ describe('TerminalView broadcast on ready', () => {
         'src',
         '/api/terminal/proxy/memon-herdr/',
       )
+      expect(getByTitle('Herdr terminal')).toHaveAttribute(
+        'allow',
+        'clipboard-read; clipboard-write',
+      )
     })
   })
 
