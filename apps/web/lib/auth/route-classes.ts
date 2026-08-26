@@ -276,7 +276,11 @@ const RULES: Rule[] = [
     class: 'read',
     projectFor: projectQueryOrMulti(),
   },
-  { match: methodIs(['GET'], exact('/api/runs')), class: 'read', projectFor: projectQueryOrMulti() },
+  {
+    match: methodIs(['GET'], exact('/api/runs')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
   {
     match: methodIs(['GET'], startsWith('/api/runs/')),
     class: 'read',
@@ -313,7 +317,7 @@ const RULES: Rule[] = [
     projectFor: projectFromReportId(),
   },
   {
-    match: methodIs(['GET'], startsWith('/api/report-assets/')),
+    match: methodIs(['GET', 'HEAD'], startsWith('/api/report-assets/')),
     class: 'read',
     projectFor: projectFromReportAssetsSegment(),
   },

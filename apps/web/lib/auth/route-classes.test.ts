@@ -55,6 +55,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/slurm/status')).toBe('read')
     expect(classify('GET', '/api/code-preview')).toBe('read')
     expect(classify('GET', '/api/report-assets/project-a/R0001/chart.html')).toBe('read')
+    expect(classify('HEAD', '/api/report-assets/project-a/R0001/chart.html')).toBe('read')
   })
 
   it('classifies non-GET /api/code-preview as mutating (logged-in GET only, fail-closed)', () => {
@@ -245,12 +246,7 @@ describe('classifyAndExtract — project extraction', () => {
   })
 
   it('mutating routes return null project (extraction not relevant)', () => {
-    const r = classifyAndExtract(
-      'POST',
-      '/api/experiments/E0001/readme',
-      emptySearch(),
-      stubCtx(),
-    )
+    const r = classifyAndExtract('POST', '/api/experiments/E0001/readme', emptySearch(), stubCtx())
     // Default rule: class=mutating, project=null. Middleware won't bother
     // resolving project for mutating routes since they're owner-only.
     expect(r.class).toBe('mutating')

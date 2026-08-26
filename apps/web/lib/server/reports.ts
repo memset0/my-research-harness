@@ -207,7 +207,13 @@ export class ReportResourceError extends Error {
 export async function resolveReportResource(
   entry: ReportEntry,
   pathSegments: string[],
-): Promise<{ path: string; contentType: string }> {
+): Promise<{
+  path: string
+  contentType: string
+  mtimeMs: number
+  size: number
+  version: string
+}> {
   if (entry.format !== 'bundle') {
     throw new ReportResourceError('NOT_FOUND', 'standalone Markdown reports have no resource tree')
   }
@@ -283,7 +289,15 @@ export async function resolveReportResource(
   if (!stat.isFile()) {
     throw new ReportResourceError('NOT_A_FILE', 'report resource is not a file')
   }
-  return { path: realTarget, contentType: contentTypeFor(realTarget) }
+  return {
+    path: realTarget,
+    contentType: contentTypeFor(realTarget),
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    // Weak metadata validator: inexpensive enough for low-frequency HEAD
+    // polling and changes whenever the resolved entry's size or mtime changes.
+    version: sha1(`${stat.size}:${stat.mtimeMs}`),
+  }
 }
 
 function isWithin(root: string, target: string): boolean {

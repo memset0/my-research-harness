@@ -10,15 +10,28 @@ import {
 export const dynamic = 'force-dynamic'
 
 const ID_RE = /^R\d{4}$/
+type RouteContext = {
+  params: Promise<{ project: string; id: string; path: string[] | string }>
+}
 
 /**
  * Serve files belonging to a directory-style Report. The project is a path
  * segment (rather than a query parameter) so HTML loaded in an iframe can use
  * ordinary relative fetches such as `fetch('./data/metrics.json')`.
  */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ project: string; id: string; path: string[] | string }> },
+export async function GET(request: NextRequest, context: RouteContext) {
+  return serveReportAsset(request, context, true)
+}
+
+/** Metadata-only path used by the Report embed's low-bandwidth revision poll. */
+export async function HEAD(request: NextRequest, context: RouteContext) {
+  return serveReportAsset(request, context, false)
+}
+
+async function serveReportAsset(
+  _request: NextRequest,
+  { params }: RouteContext,
+  includeBody: boolean,
 ) {
   try {
     const { project: rawProject, id: rawId, path } = await params
@@ -52,11 +65,15 @@ export async function GET(
     }
 
     const resource = await resolveReportResource(report, pathSegments)
-    const bytes = await fs.readFile(resource.path)
-    return new NextResponse(bytes, {
+    const body = includeBody ? await fs.readFile(resource.path) : null
+    return new NextResponse(body, {
       headers: {
         'Content-Type': resource.contentType,
+        'Content-Length': String(resource.size),
         'Cache-Control': 'private, no-cache',
+        ETag: `W/"${resource.version}"`,
+        'Last-Modified': new Date(resource.mtimeMs).toUTCString(),
+        'X-Memon-Resource-Version': resource.version,
         'X-Content-Type-Options': 'nosniff',
       },
     })

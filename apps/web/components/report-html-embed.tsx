@@ -6,6 +6,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  MoreVertical,
   RotateCw,
   ZoomIn,
   ZoomOut,
@@ -22,6 +23,14 @@ import {
 } from 'react'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu'
 
 type EmbedPhase = 'checking' | 'loading' | 'ready' | 'error'
 const EMBED_TIMEOUT_MS = 15_000
@@ -29,6 +38,7 @@ const DEFAULT_ZOOM_PERCENT = 100
 const MIN_ZOOM_PERCENT = 50
 const MAX_ZOOM_PERCENT = 200
 const ZOOM_STEP_PERCENT = 10
+export const REPORT_HTML_CHANGE_POLL_MS = 60_000
 
 interface ReportHtmlZoomValue {
   zoomPercent: number
@@ -66,10 +76,17 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   const [probedSrc, setProbedSrc] = useState<string | null>(null)
   const [phase, setPhase] = useState<EmbedPhase>('checking')
   const [error, setError] = useState<string | null>(null)
-  const [fullscreenNotice, setFullscreenNotice] = useState<string | null>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [hasApproachedViewport, setHasApproachedViewport] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  )
+  const [isEmbedVisible, setIsEmbedVisible] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  )
   const containerRef = useRef<HTMLElement | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const loadedRevisionRef = useRef<string | null>(null)
   const titleId = useId()
 
   useEffect(() => {
@@ -84,15 +101,18 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
     setPhase('checking')
     setError(null)
     setProbedSrc(null)
+    loadedRevisionRef.current = null
 
     void probeReportHtml(src, controller.signal)
-      .then(() => {
+      .then(({ revision }) => {
         if (!cancelled) {
           // Tie the iframe navigation to the exact probe attempt that
           // succeeded. A retry therefore mounts a fresh browsing context even
           // though its canonical URL intentionally stays unchanged.
           setProbedSrc(src)
           setIframeAttempt(attempt)
+          loadedRevisionRef.current = revision
+          setUpdateAvailable(false)
           setPhase('loading')
         }
       })
@@ -116,7 +136,36 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   }, [src, attempt])
 
   useEffect(() => {
-    if (phase !== 'loading') return
+    const container = containerRef.current
+    if (!container || typeof IntersectionObserver === 'undefined') {
+      setHasApproachedViewport(true)
+      setIsEmbedVisible(true)
+      return
+    }
+    setHasApproachedViewport(false)
+    setIsEmbedVisible(false)
+    const proximityObserver = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        setHasApproachedViewport(true)
+        proximityObserver.disconnect()
+      },
+      { rootMargin: '400px 0px' },
+    )
+    const visibilityObserver = new IntersectionObserver((entries) => {
+      const current = entries.find((entry) => entry.target === container) ?? entries[0]
+      setIsEmbedVisible(current?.isIntersecting ?? false)
+    })
+    proximityObserver.observe(container)
+    visibilityObserver.observe(container)
+    return () => {
+      proximityObserver.disconnect()
+      visibilityObserver.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'loading' || !hasApproachedViewport) return
     const iframe = iframeRef.current
     const onLoad = () => setPhase('ready')
     const onError = () => {
@@ -134,39 +183,83 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
       iframe?.removeEventListener('load', onLoad)
       iframe?.removeEventListener('error', onError)
     }
-  }, [phase])
+  }, [hasApproachedViewport, phase])
 
   useEffect(() => {
-    const onFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === containerRef.current)
+    if (phase !== 'ready' || updateAvailable || !isEmbedVisible) return
+    let checking = false
+    const controller = new AbortController()
+    const checkForUpdate = async () => {
+      if (checking || document.visibilityState !== 'visible') return
+      checking = true
+      try {
+        const response = await fetch(src, {
+          method: 'HEAD',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        if (!response.ok) return
+        const revision = reportResourceRevision(response)
+        if (!revision) return
+        if (loadedRevisionRef.current && revision !== loadedRevisionRef.current) {
+          setUpdateAvailable(true)
+        } else if (!loadedRevisionRef.current) {
+          loadedRevisionRef.current = revision
+        }
+      } catch {
+        // Revision polling is advisory. Network/auth transitions keep the
+        // current iframe usable and the next interval can try again.
+      } finally {
+        checking = false
+      }
     }
-    document.addEventListener('fullscreenchange', onFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
-  }, [])
+    const interval = window.setInterval(() => void checkForUpdate(), REPORT_HTML_CHANGE_POLL_MS)
+    return () => {
+      window.clearInterval(interval)
+      controller.abort()
+    }
+  }, [isEmbedVisible, phase, src, updateAvailable])
+
+  useEffect(() => {
+    if (!isExpanded) return
+    const body = document.body
+    const previousBodyOverflow = body.style.overflow
+    const sheetContent = containerRef.current?.closest<HTMLElement>('[data-slot="sheet-content"]')
+    const previousSheetTransform = sheetContent?.style.getPropertyValue('transform') ?? ''
+    const previousSheetTransformPriority =
+      sheetContent?.style.getPropertyPriority('transform') ?? ''
+    body.style.overflow = 'hidden'
+    sheetContent?.style.setProperty('transform', 'none', 'important')
+
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setIsExpanded(false)
+    }
+    window.addEventListener('keydown', exitOnEscape, true)
+    return () => {
+      body.style.overflow = previousBodyOverflow
+      if (sheetContent) {
+        if (previousSheetTransform) {
+          sheetContent.style.setProperty(
+            'transform',
+            previousSheetTransform,
+            previousSheetTransformPriority,
+          )
+        } else {
+          sheetContent.style.removeProperty('transform')
+        }
+      }
+      window.removeEventListener('keydown', exitOnEscape, true)
+    }
+  }, [isExpanded])
 
   const retry = () => {
     setError(null)
     setPhase('checking')
     setAttempt((value) => value + 1)
-  }
-
-  const toggleFullscreen = async () => {
-    setFullscreenNotice(null)
-    const container = containerRef.current
-    try {
-      if (document.fullscreenElement === container && document.exitFullscreen) {
-        await document.exitFullscreen()
-        return
-      }
-      if (container?.requestFullscreen) {
-        await container.requestFullscreen()
-        return
-      }
-      setFullscreenNotice('Fullscreen is unavailable in this browser. Use Open in new tab instead.')
-    } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause)
-      setFullscreenNotice(`Could not enter fullscreen: ${detail}`)
-    }
   }
 
   const changeZoom = (delta: number) => {
@@ -188,24 +281,37 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
     <section
       ref={containerRef}
       data-report-html-wrapper
+      data-expanded={isExpanded ? 'true' : 'false'}
       aria-labelledby={titleId}
       className={cn(
         'not-prose my-4 min-w-0 overflow-hidden rounded-md border bg-background text-foreground',
-        isFullscreen &&
-          'flex h-[100svh] w-screen flex-col rounded-none border-0 supports-[height:100dvh]:h-[100dvh]',
+        isExpanded &&
+          'fixed inset-0 z-[100] m-0 flex h-[100svh] w-screen flex-col rounded-none border-0 shadow-2xl supports-[height:100dvh]:h-[100dvh]',
       )}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-2 py-1.5">
+      <div className="flex min-w-0 items-center gap-2 border-b bg-muted/30 px-2 py-1.5">
         <div id={titleId} className="min-w-0 flex-1 truncate text-xs font-medium">
           {title}
         </div>
-        <span className="text-[0.6875rem] text-muted-foreground" role="status" aria-live="polite">
+        <span
+          className="hidden text-[0.6875rem] text-muted-foreground sm:inline-flex"
+          role="status"
+          aria-live="polite"
+        >
           {statusLabel}
         </span>
-        <div className="flex w-full shrink-0 items-center justify-end gap-1 sm:w-auto">
-          <div
-            className="flex items-center rounded-md border bg-background/70"
-            role="group"
+        <MobileActionsMenu
+          src={src}
+          zoomPercent={zoomPercent}
+          updateAvailable={updateAvailable}
+          isExpanded={isExpanded}
+          onZoom={changeZoom}
+          onReload={retry}
+          onToggleExpanded={() => setIsExpanded((value) => !value)}
+        />
+        <div className="hidden shrink-0 items-center justify-end gap-1 sm:flex">
+          <fieldset
+            className="flex min-w-0 items-center rounded-md border bg-background/70"
             aria-label="Embedded report zoom controls"
           >
             <Button
@@ -234,30 +340,45 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
             >
               <ZoomIn aria-hidden />
             </Button>
-          </div>
+          </fieldset>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="relative"
+            aria-label={
+              updateAvailable
+                ? 'Reload embedded report, updated content available'
+                : 'Reload embedded report'
+            }
+            onClick={retry}
+          >
+            <RotateCw aria-hidden />
+            Reload
+            {updateAvailable && <UpdateAvailableDot />}
+          </Button>
           <Button asChild size="sm" variant="ghost">
             <a href={src} target="_blank" rel="noreferrer noopener">
               <ExternalLink aria-hidden />
               Open in new tab
             </a>
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFullscreen()}>
-            {isFullscreen ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-            {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsExpanded((value) => !value)}
+          >
+            {isExpanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+            {isExpanded ? 'Exit expanded view' : 'Expand'}
           </Button>
         </div>
       </div>
 
-      {fullscreenNotice && (
-        <div className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground" role="status">
-          {fullscreenNotice}
-        </div>
-      )}
-
       <div
         className={cn(
           'relative w-full overflow-hidden bg-background',
-          isFullscreen
+          isExpanded
             ? 'min-h-0 flex-1'
             : [
                 'h-[65svh] max-h-[42rem]',
@@ -323,7 +444,114 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   )
 }
 
-async function probeReportHtml(src: string, signal: AbortSignal): Promise<void> {
+function MobileActionsMenu({
+  src,
+  zoomPercent,
+  updateAvailable,
+  isExpanded,
+  onZoom,
+  onReload,
+  onToggleExpanded,
+}: {
+  src: string
+  zoomPercent: number
+  updateAvailable: boolean
+  isExpanded: boolean
+  onZoom: (delta: number) => void
+  onReload: () => void
+  onToggleExpanded: () => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          className="relative sm:hidden"
+          aria-label="Embedded report actions"
+        >
+          <MoreVertical aria-hidden />
+          {updateAvailable && <UpdateAvailableDot />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="z-[120] w-56 sm:hidden">
+        <DropdownMenuLabel>Zoom</DropdownMenuLabel>
+        <fieldset
+          className="mx-1 mb-1 flex min-w-0 items-center rounded-md border bg-background/70"
+          aria-label="Mobile embedded report zoom controls"
+        >
+          <DropdownMenuItem
+            className="size-7 min-h-0 justify-center p-0"
+            disabled={zoomPercent <= MIN_ZOOM_PERCENT}
+            aria-label="Zoom out embedded reports"
+            onSelect={(event) => {
+              event.preventDefault()
+              onZoom(-ZOOM_STEP_PERCENT)
+            }}
+          >
+            <ZoomOut aria-hidden />
+          </DropdownMenuItem>
+          <output
+            className="min-w-14 flex-1 text-center font-mono text-[0.6875rem] tabular-nums text-muted-foreground"
+            aria-label="Mobile embedded report zoom"
+          >
+            {zoomPercent}%
+          </output>
+          <DropdownMenuItem
+            className="size-7 min-h-0 justify-center p-0"
+            disabled={zoomPercent >= MAX_ZOOM_PERCENT}
+            aria-label="Zoom in embedded reports"
+            onSelect={(event) => {
+              event.preventDefault()
+              onZoom(ZOOM_STEP_PERCENT)
+            }}
+          >
+            <ZoomIn aria-hidden />
+          </DropdownMenuItem>
+        </fieldset>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onReload}>
+          <RotateCw aria-hidden />
+          Reload
+          {updateAvailable && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] text-primary">
+              <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+              Updated
+            </span>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <a href={src} target="_blank" rel="noreferrer noopener">
+            <ExternalLink aria-hidden />
+            Open in new tab
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onToggleExpanded}>
+          {isExpanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+          {isExpanded ? 'Exit expanded view' : 'Expand'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function UpdateAvailableDot() {
+  return (
+    <>
+      <span
+        className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary ring-2 ring-background"
+        aria-hidden
+      />
+      <span className="sr-only">Updated content available</span>
+    </>
+  )
+}
+
+async function probeReportHtml(
+  src: string,
+  signal: AbortSignal,
+): Promise<{ revision: string | null }> {
   const response = await fetch(src, {
     method: 'GET',
     credentials: 'same-origin',
@@ -347,4 +575,13 @@ async function probeReportHtml(src: string, signal: AbortSignal): Promise<void> 
   // The probe only needs status and headers. Do not retain/download a second
   // copy of a potentially large document before the iframe navigates to it.
   await response.body?.cancel().catch(() => undefined)
+  return { revision: reportResourceRevision(response) }
+}
+
+function reportResourceRevision(response: Response): string | null {
+  return (
+    response.headers.get('x-memon-resource-version') ??
+    response.headers.get('etag') ??
+    response.headers.get('last-modified')
+  )
 }

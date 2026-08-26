@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 vi.mock('../../../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
 
 import { getRuntime } from '../../../../../../lib/runtime'
-import { GET } from './route'
+import { GET, HEAD } from './route'
 
 let root: string
 let reportsDir: string
@@ -49,6 +49,13 @@ afterAll(async () => {
 function request(path: string[]) {
   const url = `http://localhost/api/report-assets/research/R0002/${path.join('/')}`
   return GET(new NextRequest(url), {
+    params: Promise.resolve({ project: 'research', id: 'R0002', path }),
+  })
+}
+
+function headRequest(path: string[]) {
+  const url = `http://localhost/api/report-assets/research/R0002/${path.join('/')}`
+  return HEAD(new NextRequest(url, { method: 'HEAD' }), {
     params: Promise.resolve({ project: 'research', id: 'R0002', path }),
   })
 }
@@ -95,6 +102,24 @@ describe('GET directory Report assets', () => {
     const json = await request(['data', 'metrics.json'])
     expect(await json.json()).toEqual({ loss: 1 })
     expect((await request(['views', 'loss-curves', 'leak.json'])).status).toBe(403)
+  })
+
+  it('serves metadata-only HEAD revisions and changes them after an entry edit', async () => {
+    const before = await headRequest(['chart.html'])
+    expect(before.status).toBe(200)
+    expect(await before.text()).toBe('')
+    expect(before.headers.get('content-length')).toBeTruthy()
+    expect(before.headers.get('etag')).toMatch(/^W\/"[a-f0-9]{40}"$/)
+    expect(before.headers.get('last-modified')).toBeTruthy()
+    const beforeVersion = before.headers.get('x-memon-resource-version')
+
+    await fs.writeFile(
+      join(reportsDir, 'R0002-rich', 'chart.html'),
+      '<script type="module">fetch("./data/metrics.json?changed=1")</script>',
+      'utf8',
+    )
+    const after = await headRequest(['chart.html'])
+    expect(after.headers.get('x-memon-resource-version')).not.toBe(beforeVersion)
   })
 
   it('rejects encoded traversal, escaping symlinks, directory roots, and README-as-asset', async () => {
