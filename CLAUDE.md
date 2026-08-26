@@ -411,12 +411,16 @@ rules:
   active change follow the normal rules (for example `6.0.1`, `6.1.0`,
   `6.1.1`).
 
-Before every deployment boundary, update the canonical version, validate the
-changed-surface policy, create a versioned commit, and push it. Record the
-exact 40-character commit SHA. Central and every affected node must fetch and
-install that same revision; never independently resolve a moving `latest`.
-Concrete node/domain/token/SSH values remain in Git-ignored or machine-local
-configuration and must not enter the version commit.
+Before every deployment boundary, commit the reviewed implementation changes
+without a version bump. Then update the canonical version, validate the
+changed-surface policy, and create a separate release commit containing only
+the version and its required release metadata/assertions. Use a stable semantic
+commit message such as `chore: advance release`; do not put the version literal
+in the commit message. Push the release commit and record its exact 40-character
+SHA. Central and every affected node must fetch and install that same revision;
+never independently resolve a moving `latest`. Concrete node/domain/token/SSH
+values remain in Git-ignored or machine-local configuration and must not enter
+the release commit.
 
 ### Archive → commit → push
 
