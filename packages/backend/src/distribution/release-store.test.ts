@@ -9,8 +9,18 @@ let dir: string
 beforeEach(async () => {
   dir = await fs.mkdtemp(join(tmpdir(), 'memon-releases-'))
 })
+
+async function makeFixtureTreeRemovable(path: string): Promise<void> {
+  const stat = await fs.lstat(path).catch(() => null)
+  if (!stat?.isDirectory() || stat.isSymbolicLink()) return
+  await fs.chmod(path, 0o700)
+  for (const child of await fs.readdir(path)) {
+    await makeFixtureTreeRemovable(join(path, child))
+  }
+}
+
 afterEach(async () => {
-  await fs.chmod(dir, 0o700).catch(() => undefined)
+  await makeFixtureTreeRemovable(dir)
   await fs.rm(dir, { recursive: true, force: true })
 })
 
