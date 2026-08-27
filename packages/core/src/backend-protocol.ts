@@ -181,6 +181,21 @@ const BackendOpaqueResourceIdSchema = z
   )
   .brand<'BackendOpaqueResourceId'>()
 
+/** Display-only relative reference; never accepted by a filesystem resolver. */
+const BackendPortableDisplayReferenceSchema = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine(
+    (value) =>
+      !value.startsWith('/') &&
+      !value.includes('\\') &&
+      !value.includes('\0') &&
+      !value.split('/').some((segment) => segment === '..') &&
+      !/%(?:2f|5c)/i.test(value),
+    'display reference must be portable and relative',
+  )
+
 const BackendParseIssueSchema = z
   .object({
     field: z.string().optional(),
@@ -392,7 +407,7 @@ const BackendImplementationItemSchema: z.ZodType<BackendImplementationItemWire> 
         .optional(),
       dependsOn: z.array(z.string().min(1).max(256)).max(10_000),
       acceptanceCriteria: z.array(z.string().max(64 * 1024)).max(10_000),
-      files: z.array(BackendOpaqueResourceIdSchema).max(10_000),
+      files: z.array(BackendPortableDisplayReferenceSchema).max(10_000),
       commits: z
         .array(
           z
