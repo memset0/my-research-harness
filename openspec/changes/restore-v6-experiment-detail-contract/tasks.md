@@ -12,9 +12,9 @@
 
 - [x] 3.1 Update public Experiment types/client validation so supported split Backends require v6 detail fields; verify missing fields fail as compatibility errors instead of invoking legacy fallback.
 - [x] 3.2 Add combined page tests rendering structured Implementation, Investigation, and Results Variants through a Host-qualified ProjectTarget while forbidding legacy Plan/Caveats.
-- [ ] 3.3 Verify live representative Experiment API and desktop/mobile page output contain managed content, no absolute paths, and no silent downgrade.
+- [x] 3.3 Verify live representative Experiment API and desktop/mobile page output contain managed content, no absolute paths, and no silent downgrade.
 
 ## 4. Release
 
-- [ ] 4.1 Run Core/Backend/CLI/Web focused and contract tests, typechecks, lint, production build, and security/path-redaction regression tests.
-- [ ] 4.2 Commit implementation separately, publish the Backend/CLI Minor as `release: vMAJOR.MINOR.PATCH`, update central first, reinstall the exact Backend revision, and retain rollback.
+- [x] 4.1 Run Core/Backend/CLI/Web focused and contract tests, typechecks, lint, production build, and security/path-redaction regression tests.
+- [x] 4.2 Commit implementation separately, publish the Backend/CLI Minor as `release: vMAJOR.MINOR.PATCH`, update central first, reinstall the exact Backend revision, and retain rollback.
