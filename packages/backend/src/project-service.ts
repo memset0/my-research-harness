@@ -267,7 +267,12 @@ export class FilesystemProjectService implements BackendProjectReadService {
   private async readProject(projectName: string): Promise<ProjectData> {
     const project = this.requireProject(projectName)
     const [snapshot, experimentResult] = await Promise.all([
-      scanProjectRoot(project.root, { includeArchived: true, projectName: project.name }),
+      scanProjectRoot(project.root, {
+        includeArchived: true,
+        projectName: project.name,
+        include: project.include,
+        exclude: project.exclude,
+      }),
       discoverExperiments(project.root, project.name),
     ])
     const membership = computeMembership({

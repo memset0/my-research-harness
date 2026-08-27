@@ -3,15 +3,14 @@
 // One call replaces three separate API hits (or three CLI invocations) so
 // skills can take a single snapshot and decide offline.
 
-import { promises as fs } from 'node:fs'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, promises as fs, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { isStaleRunning } from '../discovery/stale.js'
 import { discoverRuns, runArchivedFromRun } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
+import { isStaleRunning } from '../discovery/stale.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
 import { parseJournal } from '../journal/parse.js'
-import type { Run, ParsedHypotheses, ParsedJournal } from '../types.js'
+import type { ParsedHypotheses, ParsedJournal, Run } from '../types.js'
 
 export interface IndexedRun extends Run {
   /**
@@ -36,6 +35,10 @@ export interface ScanOptions {
   includeArchived?: boolean
   /** Optional name to label the synthetic anonymous project. */
   projectName?: string
+  /** Optional discovery globs inherited from a configured Project. */
+  include?: string[]
+  /** Optional discovery exclusions inherited from a configured Project. */
+  exclude?: string[]
 }
 
 export class ScanError extends Error {
@@ -66,8 +69,8 @@ export async function scanProjectRoot(
   const project = {
     name: projectName,
     root: abs,
-    include: [],
-    exclude: [],
+    include: options.include ?? [],
+    exclude: options.exclude ?? [],
   }
 
   // v4: discoverRuns returns ALL paths; archive filtering happens

@@ -37,6 +37,24 @@ function forbiddenKeys(value: unknown, found: string[] = []): string[] {
 }
 
 describe('FilesystemProjectService safe reads', () => {
+  it('uses configured include patterns instead of recursively discovering unrelated Runs', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-includes-'))
+    try {
+      const included = join(root, 'logs', 'included-260826-010203')
+      const unrelated = join(root, 'artifacts', 'unrelated-260826-010204')
+      await fs.mkdir(included, { recursive: true })
+      await fs.mkdir(unrelated, { recursive: true })
+      const service = new FilesystemProjectService([
+        { name: 'scoped', root, include: ['logs/*'], exclude: [] },
+      ])
+
+      const runs = BackendRunsResponseSchema.parse(await service.listRuns('scoped')).runs
+      expect(runs.map((run) => run.id)).toEqual(['included-260826-010203'])
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('lists and reads Runs without absolute filesystem fields', async () => {
     const service = new FilesystemProjectService([project('project-a')])
     const list = BackendRunsResponseSchema.parse(await service.listRuns('project-a'))
