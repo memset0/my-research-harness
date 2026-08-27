@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change structured-experiment-docs-v6. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Experiment structured sidecars are schema-versioned sources of truth
 
 Every v6 experiment SHALL contain `implementation.yaml`, `investigation.yaml`, and `results.yaml` beside `README.md`. Each file SHALL contain integer `schema_version: 1`. Implementation and Investigation SHALL store independent ordered nested trees with stable IDs. Results SHALL store ordered display columns and Variant rows. The YAML files, not generated Markdown, SHALL be authoritative.
@@ -33,8 +35,9 @@ Every Results column with `type: enum` SHALL declare a non-empty unique `options
 
 ### Requirement: Structured sections share deterministic readable projections
 
-Core SHALL expose one normalized model and deterministic Markdown renderers. CLI section reads and the first web UI SHALL use those renderers. A future specialized component SHALL consume the normalized model rather than parse generated Markdown.
+Core SHALL expose one normalized model and deterministic display/Markdown projection. CLI, standalone Web, and central-through-Backend Web SHALL use that same projection. Specialized components SHALL consume sanitized normalized Implementation, Investigation, and Results models rather than parse generated Markdown. A valid current v6 payload MUST NOT be rendered through the legacy Method/Plan/Caveats fallback.
 
 #### Scenario: CLI and web projection agree
-- **WHEN** the same Investigation YAML is read by CLI and web
-- **THEN** both expose equivalent hierarchy, IDs, statuses, dependencies, Variant links, and outcomes
+- **WHEN** the same valid v6 Experiment is read by CLI, standalone Web, and central through a Backend
+- **THEN** all expose equivalent canonical section order, Implementation/Investigation hierarchy, Results Variants, IDs, statuses, dependencies, links, outcomes, and diagnostics
+- **AND** deprecated Plan/Caveats sections are absent unless preserved as explicitly unsupported source content
