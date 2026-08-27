@@ -56,13 +56,19 @@ Backend and central JSON responses remain authenticated `no-store`; browser/prox
 
 ### Existing cache policies remain distinct
 
-- Backend Project snapshot: process lifetime; atomic generations; monitor/mutation invalidation; last-known-good on error.
-- Backend monitor: per Project exponential polling; live configuration currently supplies min/max/factor; no read-triggered full scan.
-- Browser TanStack Query: default 60-second stale/refetch interval with SSE invalidation; per-feature overrides remain explicit.
-- Central Host/Project registry: process memory; metadata/tunnel/events and aggregation update it; it stores only safe summaries.
-- Log indexes: per-process in-flight/index map, with filesystem metadata validation where persisted.
-- Git status and terminal pane state: short feature-specific TTL/poll intervals; unrelated to Project discovery.
-- SSH and daemon backoff: connection/process recovery only; not a data cache.
+| Layer | Key / lifetime | Freshness and invalidation | Failure behavior |
+| --- | --- | --- | --- |
+| Backend Project snapshot | Project name; Backend process lifetime; one atomic generation with Run/Experiment ID maps | Warmed before listen by the initial monitor pass; monitor changes mark/refresh; mutation write-through remains a follow-up task | Retains last-known-good generation and records safe refresh error/timing state |
+| Backend filesystem monitor | Project name; signature snapshot; one timer per Project | Live policy is 1s minimum, factor 2, 300s maximum; change resets to 1s; quiet/error doubles; initial/change refreshes the Project snapshot before events | Keeps prior signatures; does not manufacture deletes |
+| Central Host registry | Host ID; central process-global singleton | SSH metadata acceptance, compatibility, tunnel state, and event failures update status | Safe explicit Host states; no cross-Host fallback |
+| Central Project summaries | `{host, project}`; central process memory | `/api/projects` re-aggregates usable Backends and replaces/clears each Host's summaries | Per-Host failure clears only that Host; no Project bodies retained |
+| Central proxy / HTTP | No response body cache | Every authenticated dynamic request is forwarded/validated with `no-store`; SSH compression reduces wire bytes transparently | Fails closed; no stale cross-Host response |
+| Browser TanStack Query | Host-qualified query key; browser tab/process lifetime | Default stale time 60s, fallback refetch 60s, focus refetch, retry once; feature overrides are 2s/5s/10s/25s/30s/Infinity; SSE invalidates exact Host keys | Keeps observer data per TanStack semantics; incompatible data shapes are prohibited for shared keys |
+| Legacy standalone Runtime | Run ID plus configured file/directory paths; standalone process lifetime only | In-memory `RunIndex`, `FileCache`, and `DirCache`; per-path poll 1s ×2 up to 300s; write-through and attention reset | Keeps last good parsed file/directory entry |
+| Backend document/Git reads | No shared server cache today | Reads/scans or Git commands execute per request; browser queries may have feature-specific stale times | Returns bounded errors; optimization is separate from the Project snapshot |
+| Backend log line indexes | Real log path; Backend process lifetime | One in-flight/index promise per path; failed builds are evicted; byte resources carry metadata/ETag | Rebuilds after failed construction; detailed append invalidation requires separate audit |
+| Terminal/tmux pane state | Host/session or pane target; process lifetime with feature TTL/polling | Active/idle polling and short pane memoization; disabled in read-only deployment | Exact session cleanup; unrelated to Project reads |
+| SSH/daemon reconnect | Not a data cache | Bounded exponential retry/backoff for transport/process recovery | Retains no Project data and cannot satisfy reads from another Host |
 
 ## Risks / Trade-offs
 
