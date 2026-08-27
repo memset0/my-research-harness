@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type ExperimentDisplaySection,
+  type ExperimentManagedDocumentsPayload,
   type FullExperiment,
   fetchExperiment,
   fetchExperimentDoc,
@@ -238,7 +239,7 @@ function SectionCard({
   section: ExperimentDisplaySection
   project: ProjectTarget
   experimentId: string
-  documents?: import('@memon/core').ExperimentManagedDocuments | null
+  documents?: ExperimentManagedDocumentsPayload | null
   memberRuns: MemberRunSummary[]
   resultsUpdatedAt?: string | null
 }) {

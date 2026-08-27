@@ -8,10 +8,11 @@ import type {
   CodeReviewSummary,
   DigestSummary,
   ExperimentDocumentDiagnostic,
-  ExperimentManagedDocuments,
   ExperimentRawSection,
   HostAvailability,
   Hypothesis,
+  ImplementationDocument,
+  InvestigationDocument,
   JournalEvent,
   ParsedHypotheses,
   ParsedJournal,
@@ -1136,13 +1137,33 @@ export interface ExperimentDisplaySection extends ExperimentRawSection {
   diagnostics: ExperimentDocumentDiagnostic[]
 }
 
+export interface ExperimentManagedDocumentPayload<T> {
+  kind: 'implementation' | 'investigation' | 'results'
+  fileName: string
+  resource: string
+  exists: boolean
+  data: T | null
+  parseErrors: ParseIssue[]
+  parseWarnings: ParseIssue[]
+}
+
+export interface ExperimentManagedDocumentsPayload {
+  implementation: ExperimentManagedDocumentPayload<ImplementationDocument> & {
+    kind: 'implementation'
+  }
+  investigation: ExperimentManagedDocumentPayload<InvestigationDocument> & {
+    kind: 'investigation'
+  }
+  results: ExperimentManagedDocumentPayload<ResultsDocument> & { kind: 'results' }
+}
+
 export interface ExperimentDocDetail extends ExperimentDocSummary {
-  rawSections?: ExperimentRawSection[]
-  documents?: ExperimentManagedDocuments | null
-  documentSections?: ExperimentDisplaySection[]
-  documentDiagnostics?: ExperimentDocumentDiagnostic[]
-  documentReadOnly?: boolean
-  resultsUpdatedAt?: string | null
+  rawSections: ExperimentRawSection[]
+  documents: ExperimentManagedDocumentsPayload | null
+  documentSections: ExperimentDisplaySection[]
+  documentDiagnostics: ExperimentDocumentDiagnostic[]
+  documentReadOnly: boolean
+  resultsUpdatedAt: string | null
 }
 
 export interface ExperimentResultsSnapshot {

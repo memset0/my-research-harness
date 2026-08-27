@@ -68,7 +68,7 @@ describe('ExperimentPage — Plan section', () => {
         conclusion: 'What we found',
         caveats: 'What to watch out for',
       },
-    })
+    } as never)
 
     const { container } = renderWithQuery(
       <ExperimentPage project="project-a" experimentId={EXP_ID} initialOpenRun={null} />,
@@ -106,7 +106,7 @@ describe('ExperimentPage — Plan section', () => {
         conclusion: null,
         caveats: null,
       },
-    })
+    } as never)
 
     const { container } = renderWithQuery(
       <ExperimentPage project="project-a" experimentId={EXP_ID} initialOpenRun={null} />,
@@ -135,7 +135,7 @@ describe('ExperimentPage — Plan section', () => {
         conclusion: null,
         caveats: null,
       },
-    })
+    } as never)
 
     renderWithQuery(
       <ExperimentPage project="project-a" experimentId={EXP_ID} initialOpenRun={null} />,

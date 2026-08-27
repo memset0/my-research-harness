@@ -20,6 +20,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
 import { fetchExperimentDoc, fetchExperimentResults, patchExperimentStatusV4 } from '../../lib/api'
 
 const EXP_ID = 'E0001-structured'
+const CENTRAL_PROJECT = ProjectRefSchema.parse({ host: 'host-a', project: 'research' })
 
 describe('ExperimentPage v6 document sections', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -27,11 +28,7 @@ describe('ExperimentPage v6 document sections', () => {
   it('rejects a Host-qualified current payload that is missing the v6 document contract', async () => {
     vi.mocked(fetchExperimentDoc).mockResolvedValue({ id: EXP_ID } as never)
     renderWithQuery(
-      <ExperimentPage
-        project={ProjectRefSchema.parse({ host: 'host-a', project: 'research' })}
-        experimentId={EXP_ID}
-        initialOpenRun={null}
-      />,
+      <ExperimentPage project={CENTRAL_PROJECT} experimentId={EXP_ID} initialOpenRun={null} />,
     )
 
     expect(
@@ -68,6 +65,7 @@ describe('ExperimentPage v6 document sections', () => {
         conclusion: null,
         caveats: null,
       },
+      rawSections: [],
       warningsRaw: null,
       parseErrors: [],
       parseWarnings: [],
@@ -79,9 +77,8 @@ describe('ExperimentPage v6 document sections', () => {
         implementation: {
           kind: 'implementation',
           fileName: 'implementation.yaml',
-          path: `/project/docs/experiments/${EXP_ID}/implementation.yaml`,
+          resource: `docs/experiments/${EXP_ID}/implementation.yaml`,
           exists: true,
-          raw: 'schema_version: 1',
           data: {
             schemaVersion: 1,
             items: [
@@ -104,9 +101,8 @@ describe('ExperimentPage v6 document sections', () => {
         investigation: {
           kind: 'investigation',
           fileName: 'investigation.yaml',
-          path: `/project/docs/experiments/${EXP_ID}/investigation.yaml`,
+          resource: `docs/experiments/${EXP_ID}/investigation.yaml`,
           exists: true,
-          raw: 'schema_version: 1',
           data: null,
           parseErrors: [],
           parseWarnings: [],
@@ -114,9 +110,8 @@ describe('ExperimentPage v6 document sections', () => {
         results: {
           kind: 'results',
           fileName: 'results.yaml',
-          path: `/project/docs/experiments/${EXP_ID}/results.yaml`,
+          resource: `docs/experiments/${EXP_ID}/results.yaml`,
           exists: true,
-          raw: 'schema_version: 1',
           data: {
             schemaVersion: 1,
             columns: [
@@ -140,6 +135,7 @@ describe('ExperimentPage v6 document sections', () => {
         },
       },
       documentReadOnly: true,
+      documentDiagnostics: [],
       documentSections: [
         {
           heading: 'Implementation',
@@ -219,7 +215,7 @@ describe('ExperimentPage v6 document sections', () => {
     )
 
     const { container } = renderWithQuery(
-      <ExperimentPage project="research" experimentId={EXP_ID} initialOpenRun={null} />,
+      <ExperimentPage project={CENTRAL_PROJECT} experimentId={EXP_ID} initialOpenRun={null} />,
     )
 
     await waitFor(() => expect(screen.getByText('Structured experiment')).toBeInTheDocument())
@@ -319,12 +315,14 @@ describe('ExperimentPage v6 document sections', () => {
     await waitFor(() =>
       expect(patchExperimentStatusV4).toHaveBeenCalledWith({
         id: EXP_ID,
-        project: 'research',
+        project: CENTRAL_PROJECT,
         status: 'RESOLVED',
         // `mtime` above is the newer bundle activity timestamp. Mutations
         // must lock against README.md's own timestamp instead.
         expectedMtime: 1,
       }),
     )
+    expect(screen.queryByRole('heading', { name: 'Plan' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Caveats' })).not.toBeInTheDocument()
   })
 })

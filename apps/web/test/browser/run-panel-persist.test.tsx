@@ -120,7 +120,7 @@ describe('ExperimentPage — run panel expand persists across reload', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(fetchExperimentDoc).mockResolvedValue(SAMPLE_EXP)
+    vi.mocked(fetchExperimentDoc).mockResolvedValue(SAMPLE_EXP as never)
     vi.mocked(fetchExperiment).mockResolvedValue(SAMPLE_RUN)
     localStorage.clear()
   })
