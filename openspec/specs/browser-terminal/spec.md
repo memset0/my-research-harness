@@ -3,7 +3,9 @@
 ## Purpose
 
 In-browser xterm terminal backed by `ttyd` + `tmux`, so the user can launch a Claude Code session straight from an experiment detail page and later re-attach to the same `tmux` session from SSH (browser close / crash / offline continuation are all non-destructive). The ttyd binary is self-fetched from upstream releases (no root, no system package manager required); only `tmux` is assumed on PATH.
+
 ## Requirements
+
 ### Requirement: Detect ttyd availability via cache + PATH probe
 
 `GET /api/terminal/check` SHALL probe ttyd in this order: (1) check `~/.cache/memon/bin/ttyd-<version>-<arch>` is present, executable, and `--version` matches the pinned `TTYD_VERSION`; (2) fall back to `which ttyd` (user may have installed it themselves). The response shape SHALL be `{ available: boolean, version?: string, source?: 'cached' | 'path', downloadable?: boolean, suggestion?: string }`.
@@ -28,39 +30,44 @@ When `available: false`, the response SHALL include `downloadable: true` on Linu
 
 ### Requirement: Self-fetch ttyd from upstream releases without root
 
-`POST /api/terminal/install` SHALL download the pinned ttyd version's prebuilt static binary for the current architecture from `https://github.com/tsl0922/ttyd/releases/download/<version>/ttyd.<arch>`, verify its sha256 (when published) against the matching `.sha256` file from the same release, write to `~/.cache/memon/bin/ttyd-<version>-<arch>` via temp-file + rename, and `chmod +x` it. The endpoint SHALL NOT require root or any system package manager.
+`POST /api/terminal/install` SHALL download the pinned ttyd version's prebuilt static binary for the current architecture from `https://github.com/tsl0922/ttyd/releases/download/<version>/ttyd.<arch>`. It SHALL also download the same release's `SHA256SUMS`, require one exact checksum entry for the selected asset, bound both checksum and binary response sizes, and verify the binary before writing it to `~/.cache/memon/bin/ttyd-<version>-<arch>` via temp-file + rename and `chmod +x`. Missing, malformed, oversized, or mismatched checksum data SHALL fail closed. The endpoint SHALL NOT require root or any system package manager and browser/central responses SHALL NOT expose the internal executable path.
 
-The pinned version SHALL be a string constant in source (e.g. `TTYD_VERSION = '1.7.7'`); upgrading is a code change.
+The pinned version SHALL be a string constant in source (for example `TTYD_VERSION = '1.7.7'`); upgrading is a code change.
 
 #### Scenario: First install on linux x86_64
-- **WHEN** ttyd is missing and the user POSTs `/api/terminal/install` on a host where `process.arch === 'x64'`
-- **THEN** memon downloads `https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64`
-- **AND** verifies sha256 against `ttyd.x86_64.sha256` from the same release
+- **WHEN** ttyd is missing and the user POSTs `/api/terminal/install` on a Host where `process.arch === 'x64'`
+- **THEN** the owning Backend downloads `https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64`
+- **AND** verifies sha256 against the exact `ttyd.x86_64` entry in the same release's `SHA256SUMS`
 - **AND** writes the binary to `~/.cache/memon/bin/ttyd-1.7.7-x86_64` with mode 0755
 - **AND** `--version` on that file outputs `ttyd version 1.7.7…`
-- **AND** the response is `{ ok: true, version: "1.7.7", path: "<cache>/ttyd-1.7.7-x86_64", durationMs: <int> }`
+- **AND** the public response contains the version and duration but not the cache path
 
 #### Scenario: Concurrent install calls
 - **WHEN** two install requests fire simultaneously
-- **THEN** memon serializes them (in-process mutex) so only one network download happens; the second returns `{ ok: true, alreadyPresent: true }` after the first completes
-- **AND** the on-disk file is never observed in a partial state (atomic rename)
+- **THEN** memon serializes them so only one network download happens; the second observes the installed cache entry
+- **AND** the on-disk file is never observed in a partial state
 
 #### Scenario: Network failure during download
-- **WHEN** the GitHub release URL is unreachable (404, 5xx, or network error)
-- **THEN** the response is 502 with `{ ok: false, error: { code: 'DOWNLOAD_FAILED', message, fallback: '<manual instructions>' } }`
-- **AND** no partial file remains in the cache directory
+- **WHEN** the release asset is unreachable or returns an error
+- **THEN** installation fails with a safe `DOWNLOAD_FAILED` result
+- **AND** no partial executable remains in the cache directory
+
+#### Scenario: Checksum unavailable or malformed
+- **WHEN** `SHA256SUMS` is unreachable, missing the selected asset, malformed, or exceeds its bound
+- **THEN** installation fails closed with `INTEGRITY_FAILED`
+- **AND** no downloaded binary is executed
 
 #### Scenario: SHA256 mismatch
-- **WHEN** the downloaded binary's sha256 does not match the published `.sha256` file
-- **THEN** the temp file is deleted and the response is 502 with `{ ok: false, error: { code: 'INTEGRITY_FAILED', message } }`
+- **WHEN** the downloaded binary's sha256 does not match the selected `SHA256SUMS` entry
+- **THEN** the temp file is deleted and installation fails with `INTEGRITY_FAILED`
 
 #### Scenario: Install on macOS
-- **WHEN** install is POSTed on `process.platform === 'darwin'` (no upstream prebuilt)
-- **THEN** the response is 501 with `{ ok: false, error: { code: 'NOT_AUTOFETCHABLE', suggestion: 'brew install ttyd' } }`
+- **WHEN** install is requested on `process.platform === 'darwin'` with no supported upstream prebuilt
+- **THEN** installation reports `NOT_AUTOFETCHABLE` with a safe manual suggestion
 
 #### Scenario: Cache hit on subsequent call
 - **WHEN** a valid cached binary already exists at the expected path
-- **THEN** `POST /api/terminal/install` short-circuits — no network — and returns `{ ok: true, alreadyPresent: true, version: "1.7.7" }`
+- **THEN** installation short-circuits without network access and returns a safe `alreadyPresent` result
 
 ### Requirement: Start a ttyd-backed terminal session bound to tmux
 
@@ -1000,3 +1007,30 @@ The view SHALL use xterm's native selection behavior and SHALL NOT expose a sepa
 - **THEN** its ttyd iframe declares clipboard read/write permission
 - **AND** the same native xterm selection and copy shortcut behavior is available
 
+### Requirement: Central terminal targets are Host-qualified
+In central mode, terminal check/install/start/attach/list/stop, drawer/split/popup state, and proxy URLs SHALL identify one Host plus terminal target/session. Standalone behavior SHALL retain its existing local target shape.
+
+#### Scenario: Drawer navigation preserves Host
+- **WHEN** a terminal drawer is open for Host A and page navigation changes
+- **THEN** it remains attached only to Host A unless the user explicitly opens another target
+
+### Requirement: Central and Backend relay both ttyd HTTP and WebSocket
+Central SHALL relay authenticated Host-qualified terminal HTTP and WebSocket traffic to the selected Backend's static relay. Backend SHALL resolve the opaque route to its local ttyd loopback port and perform the final hop. The browser SHALL never learn or address that dynamic port.
+
+#### Scenario: Browser terminal works through public central endpoint
+- **WHEN** an owner starts and opens a remote ttyd terminal
+- **THEN** its assets and interactive WebSocket traverse central and Backend relays with working bidirectional I/O
+
+### Requirement: Terminal credentials stop at their boundary
+Central SHALL reject viewer terminal access, remove browser auth before the Backend hop, and inject only the Host's service token and trusted owner context. Backend SHALL reject browser cookies/Basic auth and a token for any other Host.
+
+#### Scenario: Browser Authorization is not forwarded
+- **WHEN** an owner uses HTTP Basic at central to open a terminal
+- **THEN** the Basic header is consumed by central and the Backend sees only service authentication
+
+### Requirement: Remote relay preserves ttyd semantics and cleanup
+The two-hop relay SHALL preserve binary frames, allowed subprotocol, base-path asset resolution, backpressure, close propagation, copy/mouse behavior, and the existing manager's LRU/TTL/lifecycle semantics. Removed routes SHALL fail without retargeting.
+
+#### Scenario: Idle eviction closes the exact remote route
+- **WHEN** Backend evicts an idle ttyd entry
+- **THEN** central can no longer attach that `{host, route}` and no other Host route is affected
