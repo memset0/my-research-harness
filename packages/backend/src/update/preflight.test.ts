@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { MEMON_RELEASE } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackendReleaseStore } from '../distribution/release-store.js'
 import {
@@ -178,7 +179,10 @@ describe('Backend update preflight', () => {
       assembleArtifact: passthroughArtifact,
       now: () => new Date('2026-08-26T18:00:00.000Z'),
     })
-    expect(prepared).toMatchObject({ outcome: 'installed', name: `6.1.0-${checkout.revision}` })
+    expect(prepared).toMatchObject({
+      outcome: 'installed',
+      name: `${MEMON_RELEASE}-${checkout.revision}`,
+    })
     expect((await store.status()).current).toBeNull()
     expect(prepared.manifest.artifactSha256).toMatch(/^[a-f0-9]{64}$/)
   })
