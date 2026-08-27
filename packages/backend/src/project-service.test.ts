@@ -37,6 +37,69 @@ function forbiddenKeys(value: unknown, found: string[] = []): string[] {
 }
 
 describe('FilesystemProjectService safe reads', () => {
+  it('coalesces cold reads, reuses one snapshot, and atomically refreshes when dirty', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-snapshot-'))
+    try {
+      await fs.mkdir(join(root, 'logs', 'first-260826-010203'), { recursive: true })
+      const service = new FilesystemProjectService([
+        { name: 'snapshot', root, include: ['logs/*'], exclude: [] },
+      ])
+
+      const cold = await Promise.all([
+        service.listRuns('snapshot'),
+        service.listRuns('snapshot'),
+        service.getAnomalies('snapshot'),
+      ])
+      expect(BackendRunsResponseSchema.parse(cold[0]).runs).toHaveLength(1)
+      expect(service.inspectProject('snapshot')).toMatchObject({
+        generation: 1,
+        ready: true,
+        dirty: false,
+        runs: 1,
+      })
+
+      await fs.mkdir(join(root, 'logs', 'second-260826-010204'))
+      expect(BackendRunsResponseSchema.parse(await service.listRuns('snapshot')).runs).toHaveLength(
+        1,
+      )
+      service.invalidateProject('snapshot')
+      await service.refreshProject('snapshot')
+      expect(BackendRunsResponseSchema.parse(await service.listRuns('snapshot')).runs).toHaveLength(
+        2,
+      )
+      expect(service.inspectProject('snapshot')).toMatchObject({ generation: 2, runs: 2 })
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('retains the last-known-good snapshot when an explicit refresh fails', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-last-good-'))
+    try {
+      await fs.mkdir(join(root, 'logs', 'first-260826-010203'), { recursive: true })
+      const service = new FilesystemProjectService([
+        { name: 'last-good', root, include: ['logs/*'], exclude: [] },
+      ])
+      await service.listRuns('last-good')
+      await fs.rename(root, `${root}-unavailable`)
+
+      await expect(service.refreshProject('last-good')).rejects.toThrow()
+      expect(service.inspectProject('last-good')).toMatchObject({
+        generation: 1,
+        ready: true,
+        dirty: true,
+        runs: 1,
+      })
+      expect(
+        BackendRunsResponseSchema.parse(await service.listRuns('last-good')).runs,
+      ).toHaveLength(1)
+      await fs.rename(`${root}-unavailable`, root)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+      await fs.rm(`${root}-unavailable`, { recursive: true, force: true })
+    }
+  })
+
   it('uses configured include patterns instead of recursively discovering unrelated Runs', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-includes-'))
     try {

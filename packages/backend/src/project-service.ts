@@ -48,19 +48,81 @@ export interface BackendProjectReadService {
 interface ProjectData {
   project: ProjectConfig
   runs: Awaited<ReturnType<typeof scanProjectRoot>>['experiments']
+  runsById: ReadonlyMap<string, Awaited<ReturnType<typeof scanProjectRoot>>['experiments'][number]>
   experiments: Experiment[]
+  experimentsById: ReadonlyMap<string, Experiment>
   membership: ReturnType<typeof computeMembership>
   hypotheses: Awaited<ReturnType<typeof scanProjectRoot>>['hypotheses']
   journal: Awaited<ReturnType<typeof scanProjectRoot>>['journal']
 }
 
+interface ProjectSnapshotState {
+  data: ProjectData | null
+  dirty: boolean
+  generation: number
+  refreshPromise: Promise<ProjectData> | null
+  lastRefreshAt: string | null
+  lastRefreshDurationMs: number | null
+  lastError: string | null
+}
+
+export interface ProjectSnapshotInspection {
+  project: string
+  generation: number
+  ready: boolean
+  dirty: boolean
+  refreshing: boolean
+  runs: number
+  experiments: number
+  lastRefreshAt: string | null
+  lastRefreshDurationMs: number | null
+  lastError: string | null
+}
+
 export class FilesystemProjectService implements BackendProjectReadService {
   private readonly projects = new Map<string, ProjectConfig>()
+  private readonly snapshots = new Map<string, ProjectSnapshotState>()
 
   constructor(projects: readonly ProjectConfig[]) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
+      this.snapshots.set(project.name, {
+        data: null,
+        dirty: true,
+        generation: 0,
+        refreshPromise: null,
+        lastRefreshAt: null,
+        lastRefreshDurationMs: null,
+        lastError: null,
+      })
+    }
+  }
+
+  invalidateProject(projectName: string): void {
+    this.requireSnapshot(projectName).dirty = true
+  }
+
+  async refreshProject(projectName: string): Promise<ProjectSnapshotInspection> {
+    const state = this.requireSnapshot(projectName)
+    state.dirty = true
+    await this.refreshSnapshot(projectName, state)
+    return this.inspectProject(projectName)
+  }
+
+  inspectProject(projectName: string): ProjectSnapshotInspection {
+    const state = this.requireSnapshot(projectName)
+    return {
+      project: projectName,
+      generation: state.generation,
+      ready: state.data !== null,
+      dirty: state.dirty,
+      refreshing: state.refreshPromise !== null,
+      runs: state.data?.runs.length ?? 0,
+      experiments: state.data?.experiments.length ?? 0,
+      lastRefreshAt: state.lastRefreshAt,
+      lastRefreshDurationMs: state.lastRefreshDurationMs,
+      lastError: state.lastError,
     }
   }
 
@@ -73,7 +135,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   async getRun(projectName: string, id: string) {
     const data = await this.readProject(projectName)
-    const run = data.runs.find((candidate) => candidate.id === id)
+    const run = data.runsById.get(id)
     if (!run) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     return BackendRunResponseSchema.parse({
       ...safeRunSummary(run, data.project),
@@ -106,7 +168,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   async getExperiment(projectName: string, id: string) {
     const data = await this.readProject(projectName)
-    const experiment = data.experiments.find((candidate) => candidate.id === id)
+    const experiment = data.experimentsById.get(id)
     if (!experiment) {
       throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
     }
@@ -119,7 +181,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   async getExperimentResults(projectName: string, id: string) {
     const data = await this.readProject(projectName)
-    const experiment = data.experiments.find((candidate) => candidate.id === id)
+    const experiment = data.experimentsById.get(id)
     if (!experiment) {
       throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
     }
@@ -164,7 +226,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   async getRunFiles(projectName: string, id: string, depth: number) {
     const data = await this.readProject(projectName)
-    const run = data.runs.find((candidate) => candidate.id === id)
+    const run = data.runsById.get(id)
     if (!run) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const runRoot = await fs.realpath(run.path)
     let truncated = false
@@ -264,7 +326,48 @@ export class FilesystemProjectService implements BackendProjectReadService {
     return project
   }
 
+  private requireSnapshot(projectName: string): ProjectSnapshotState {
+    this.requireProject(projectName)
+    return this.snapshots.get(projectName)!
+  }
+
   private async readProject(projectName: string): Promise<ProjectData> {
+    const state = this.requireSnapshot(projectName)
+    if (state.data) {
+      if (state.dirty && !state.refreshPromise) {
+        void this.refreshSnapshot(projectName, state).catch(() => undefined)
+      }
+      return state.data
+    }
+    return this.refreshSnapshot(projectName, state)
+  }
+
+  private async refreshSnapshot(
+    projectName: string,
+    state: ProjectSnapshotState,
+  ): Promise<ProjectData> {
+    if (state.refreshPromise) return state.refreshPromise
+    const startedAt = Date.now()
+    const pending = this.buildProject(projectName)
+    state.refreshPromise = pending
+    try {
+      const data = await pending
+      state.data = data
+      state.dirty = false
+      state.generation += 1
+      state.lastRefreshAt = new Date().toISOString()
+      state.lastRefreshDurationMs = Date.now() - startedAt
+      state.lastError = null
+      return data
+    } catch (error) {
+      state.lastError = (error as Error).message
+      throw error
+    } finally {
+      if (state.refreshPromise === pending) state.refreshPromise = null
+    }
+  }
+
+  private async buildProject(projectName: string): Promise<ProjectData> {
     const project = this.requireProject(projectName)
     const [snapshot, experimentResult] = await Promise.all([
       scanProjectRoot(project.root, {
@@ -283,7 +386,11 @@ export class FilesystemProjectService implements BackendProjectReadService {
     return {
       project,
       runs: snapshot.experiments,
+      runsById: new Map(snapshot.experiments.map((run) => [run.id, run])),
       experiments: experimentResult.experiments,
+      experimentsById: new Map(
+        experimentResult.experiments.map((experiment) => [experiment.id, experiment]),
+      ),
       membership,
       hypotheses: snapshot.hypotheses,
       journal: snapshot.journal,
@@ -335,7 +442,7 @@ function safeExperimentSummary(
 ): BackendExperimentSummary {
   const memberIds = data.membership.confirmedMembers.get(experiment.id) ?? []
   const members = memberIds.flatMap((id) => {
-    const run = data.runs.find((candidate) => candidate.id === id)
+    const run = data.runsById.get(id)
     if (!run) return []
     return [
       {

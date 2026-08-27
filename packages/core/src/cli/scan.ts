@@ -39,6 +39,8 @@ export interface ScanOptions {
   include?: string[]
   /** Optional discovery exclusions inherited from a configured Project. */
   exclude?: string[]
+  /** Maximum concurrent Run directory reads during a cold scan. */
+  readConcurrency?: number
 }
 
 export class ScanError extends Error {
@@ -77,17 +79,30 @@ export async function scanProjectRoot(
   // post-parse using the README's frontmatter (with sidecar fallback for
   // the migration window).
   const dirs = await discoverRuns(project)
-  const experiments: IndexedRun[] = []
-  for (const d of dirs) {
-    const exp = await readRunDir(d, projectName)
-    const archived = runArchivedFromRun(exp)
-    if (!includeArchived && archived) continue
-    experiments.push({
-      ...exp,
-      archived,
-      stale: isStaleRunning(exp),
-    })
+  const readConcurrency = options.readConcurrency ?? 16
+  if (!Number.isSafeInteger(readConcurrency) || readConcurrency <= 0) {
+    throw new Error('readConcurrency must be a positive safe integer')
   }
+  const discovered = new Array<IndexedRun | null>(dirs.length).fill(null)
+  let cursor = 0
+  await Promise.all(
+    Array.from({ length: Math.min(readConcurrency, dirs.length) }, async () => {
+      while (true) {
+        const index = cursor
+        cursor += 1
+        if (index >= dirs.length) return
+        const exp = await readRunDir(dirs[index]!, projectName)
+        const archived = runArchivedFromRun(exp)
+        if (!includeArchived && archived) continue
+        discovered[index] = {
+          ...exp,
+          archived,
+          stale: isStaleRunning(exp),
+        }
+      }
+    }),
+  )
+  const experiments = discovered.filter((run): run is IndexedRun => run !== null)
 
   // Sort by createdAt desc (matches `memon list` convention)
   experiments.sort((a, b) =>

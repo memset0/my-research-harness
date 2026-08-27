@@ -4,13 +4,13 @@
 - [x] 1.2 Time Run discovery, Run parsing, Experiment discovery, and membership independently on the large live Project; verify the dominant stage and compare broad versus constrained include patterns without changing data.
 - [ ] 1.3 Back up the owner-only Backend config, apply the verified machine-local include patterns, restart the candidate Backend, and verify excluded matches have no README/no unique valid Run while list/detail latency improves and rollback restores the prior config.
 - [ ] 1.4 Inventory every active cache/backoff layer with owner, key, lifetime, freshness trigger, invalidation trigger, and failure behavior; verify the maintained design and runtime evidence agree.
-- [ ] 1.5 Enable compression on the gateway-owned SSH forward after plain/compressed live comparison, restart central, and verify large JSON transfer time improves without changing response bytes or tunnel isolation.
+- [x] 1.5 Enable compression on the gateway-owned SSH forward after plain/compressed live comparison, restart central, and verify large JSON transfer time improves without changing response bytes or tunnel isolation.
 
 ## 2. Shared Backend Project Snapshot
 
-- [ ] 2.1 Implement a framework-neutral per-Project snapshot store containing Runs, Experiments, ID indexes, membership, hypotheses, journal, anomalies, generation metadata, and safe timing/count diagnostics; verify atomic generation tests.
-- [ ] 2.2 Implement single-flight cold/dirty refresh with bounded Run-read concurrency and last-known-good retention; verify concurrent callers cause one refresh and failures never publish partial state.
-- [ ] 2.3 Migrate all Project list/detail/results/files/hypotheses/journal/anomaly reads to the snapshot store and direct indexes; verify warm requests invoke no recursive discovery or unrelated parsing.
+- [x] 2.1 Implement a framework-neutral per-Project snapshot store containing Runs, Experiments, ID indexes, membership, hypotheses, journal, anomalies, generation metadata, and safe timing/count diagnostics; verify atomic generation tests.
+- [x] 2.2 Implement single-flight cold/dirty refresh with bounded Run-read concurrency and last-known-good retention; verify concurrent callers cause one refresh and failures never publish partial state.
+- [x] 2.3 Migrate all Project list/detail/results/files/hypotheses/journal/anomaly reads to the snapshot store and direct indexes; verify warm requests invoke no recursive discovery or unrelated parsing.
 - [ ] 2.4 Add memory/count/refresh/hit/coalescing observability without paths or secrets; verify redaction and bounded diagnostic tests.
 
 ## 3. Freshness, Mutation, and Event Integration

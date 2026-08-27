@@ -84,6 +84,44 @@ function eventFrames(serialized: readonly string[]): BackendEventFrame[] {
 }
 
 describe('BackendFilesystemMonitor', () => {
+  it('refreshes the shared Project snapshot before publishing change events', async () => {
+    const project = {
+      name: 'project-a',
+      root: join(temp, 'project-a'),
+      include: [],
+      exclude: [],
+    } satisfies ProjectConfig
+    let current = snapshot([{ kind: 'run', id: 'run-a', signature: '1' }])
+    const order: string[] = []
+    const eventStream = new BackendEventStream({ instanceEpoch: EPOCH })
+    const unsubscribe = eventStream.subscribe(() => {
+      order.push('event')
+      return true
+    })
+    const refreshProject = vi.fn(async () => {
+      order.push('refresh')
+    })
+    const monitor = new BackendFilesystemMonitor({
+      projects: [project],
+      eventStream,
+      scanner: async () => current,
+      refreshProject,
+      timer: new FakeTimer(),
+      minIntervalMs: 10,
+      maxIntervalMs: 80,
+    })
+
+    await monitor.start()
+    expect(refreshProject).toHaveBeenCalledWith('project-a')
+    order.length = 0
+    current = snapshot([{ kind: 'run', id: 'run-a', signature: '2' }])
+    await monitor.pollNow('project-a')
+    expect(order[0]).toBe('refresh')
+    expect(order).toContain('event')
+    monitor.stop()
+    unsubscribe()
+  })
+
   it('uses a silent initial snapshot then publishes external set/delete changes for every family', async () => {
     const root = join(temp, 'project-a')
     await fs.cp(resolve(process.cwd(), '../../mock/project-a'), root, { recursive: true })

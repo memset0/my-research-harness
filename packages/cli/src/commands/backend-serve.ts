@@ -156,12 +156,14 @@ export async function runBackendServe(
     : undefined
   const instanceEpoch = randomUUID()
   const eventStream = new BackendEventStream({ instanceEpoch })
+  const projectService = new FilesystemProjectService(config.projects)
   const filesystemMonitor = new BackendFilesystemMonitor({
     projects: config.projects,
     eventStream,
     minIntervalMs: config.poll.minIntervalMs,
     maxIntervalMs: config.poll.maxIntervalMs,
     backoffFactor: config.poll.backoffFactor,
+    refreshProject: (projectName) => projectService.refreshProject(projectName),
   })
   const server = (dependencies.serverFactory ?? createBackendServer)({
     hostId: config.backend.hostId,
@@ -180,7 +182,7 @@ export async function runBackendServe(
     projectDiscovery: () => config.projects.map((project) => ({ name: project.name })),
     documentService: new FilesystemDocumentService(config.projects),
     gitService: new FilesystemGitService(config.projects),
-    projectService: new FilesystemProjectService(config.projects),
+    projectService,
     streamService: new FilesystemStreamService(config.projects),
     mutationService: new FilesystemMutationService(config.projects),
     ...(terminalService ? { terminalService } : {}),

@@ -46,6 +46,7 @@ export interface BackendFilesystemMonitorOptions {
   backoffFactor?: number
   scanner?: BackendProjectScanner
   timer?: BackendMonitorTimer
+  refreshProject?: (projectName: string) => Promise<unknown>
 }
 
 export interface BackendFilesystemMonitorControl {
@@ -78,6 +79,7 @@ export class BackendFilesystemMonitor implements BackendFilesystemMonitorControl
   private readonly backoffFactor: number
   private readonly scanner: BackendProjectScanner
   private readonly timer: BackendMonitorTimer
+  private readonly refreshProject: ((projectName: string) => Promise<unknown>) | undefined
   private readonly states = new Map<string, ProjectMonitorState>()
   private started = false
   private stopped = false
@@ -101,6 +103,7 @@ export class BackendFilesystemMonitor implements BackendFilesystemMonitorControl
     }
     this.scanner = options.scanner ?? scanBackendProject
     this.timer = options.timer ?? DEFAULT_TIMER
+    this.refreshProject = options.refreshProject
     for (const project of options.projects) {
       const name = ProjectNameSchema.parse(project.name)
       if (this.states.has(name)) throw new Error(`duplicate Project ${name}`)
@@ -164,10 +167,12 @@ export class BackendFilesystemMonitor implements BackendFilesystemMonitorControl
       const next = await this.scanner(state.project)
       if (this.stopped) return
       if (state.snapshot === null) {
+        await this.refreshProject?.(state.project.name)
         state.snapshot = next
         state.intervalMs = this.minIntervalMs
       } else {
         const changes = diffSnapshots(state.snapshot, next)
+        if (changes.length > 0) await this.refreshProject?.(state.project.name)
         for (const change of changes) {
           this.eventStream.publish({
             project: state.project.name,
