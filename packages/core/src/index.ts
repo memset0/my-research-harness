@@ -124,6 +124,11 @@ export type {
 export { RenameExperimentError, renameExperiment } from './experiments/rename.js'
 export type { SerializeExperimentInput } from './experiments/serialize.js'
 export { serializeExperimentReadme } from './experiments/serialize.js'
+export {
+  buildExperimentDocumentView,
+  type ExperimentDisplaySection,
+  type ExperimentDocumentView,
+} from './experiments/view.js'
 export type { FsVersionRecord, FsVersionStatus } from './fs-version/index.js'
 export {
   computeFsVersionStatus,

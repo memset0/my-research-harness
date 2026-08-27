@@ -11,7 +11,11 @@ import {
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
   BackendRunsResponseSchema,
+  MANAGED_SECTION_POINTERS,
   type ProjectConfig,
+  serializeImplementationYaml,
+  serializeInvestigationYaml,
+  serializeResultsYaml,
 } from '@memon/core'
 import { describe, expect, it } from 'vitest'
 import { FilesystemProjectService } from './project-service.js'
@@ -156,6 +160,172 @@ describe('FilesystemProjectService safe reads', () => {
     expect(detail.memberRuns.every((run) => run.resource.endsWith('/README.md'))).toBe(true)
     expect(forbiddenKeys(detail)).toEqual([])
     expect(JSON.stringify(detail)).not.toContain(fixtureRoot)
+  })
+
+  it('preserves canonical v6 managed documents and display sections only on detail', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-managed-experiment-'))
+    try {
+      const bundle = join(root, 'docs', 'experiments', 'E0001-managed')
+      await fs.mkdir(bundle, { recursive: true })
+      await fs.writeFile(
+        join(bundle, 'README.md'),
+        `---
+id: E0001-managed
+slug: managed
+title: Managed fixture
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-08-26T00:00:00Z
+updated_at: 2026-08-26T00:00:00Z
+---
+
+## Motivation
+
+fixture
+
+## Design
+
+design
+
+## Implementation
+
+${MANAGED_SECTION_POINTERS.implementation}
+
+## Investigation
+
+${MANAGED_SECTION_POINTERS.investigation}
+
+## Results
+
+${MANAGED_SECTION_POINTERS.results}
+
+## Findings
+
+findings
+
+## Limitations
+
+limitations
+
+## Conclusion
+
+conclusion
+`,
+      )
+      await fs.writeFile(
+        join(bundle, 'implementation.yaml'),
+        serializeImplementationYaml({
+          schemaVersion: 1,
+          items: [
+            {
+              id: 'IMP0001',
+              title: 'Implement fixture',
+              status: 'DONE',
+              dependsOn: [],
+              acceptanceCriteria: ['renders'],
+              files: ['src/index.ts'],
+              commits: [],
+              codeReviews: [],
+              children: [],
+            },
+          ],
+        }),
+      )
+      await fs.writeFile(
+        join(bundle, 'investigation.yaml'),
+        serializeInvestigationYaml({
+          schemaVersion: 1,
+          items: [
+            {
+              id: 'INV0001',
+              title: 'Investigate fixture',
+              status: 'ANSWERED',
+              dependsOn: [],
+              successCriteria: ['answered'],
+              variantIds: ['V0001'],
+              children: [],
+            },
+          ],
+        }),
+      )
+      await fs.writeFile(
+        join(bundle, 'results.yaml'),
+        serializeResultsYaml({
+          schemaVersion: 1,
+          columns: [{ key: 'score', label: 'Score', group: 'metric', type: 'number' }],
+          variants: [
+            {
+              id: 'V0001',
+              name: 'Variant one',
+              status: 'COMPLETED',
+              parameters: {},
+              metrics: { score: 1 },
+              runs: [],
+              attempts: [],
+            },
+          ],
+        }),
+      )
+      const service = new FilesystemProjectService([project('managed-project', root)])
+      const list = BackendExperimentsResponseSchema.parse(
+        await service.listExperiments('managed-project'),
+      )
+      expect(list.experiments[0]).not.toHaveProperty('documents')
+      expect(list.experiments[0]).not.toHaveProperty('documentSections')
+
+      const detail = BackendExperimentResponseSchema.parse(
+        await service.getExperiment('managed-project', 'E0001-managed'),
+      )
+      expect(detail.documents?.implementation.data?.items).toHaveLength(1)
+      expect(detail.documents?.investigation.data?.items).toHaveLength(1)
+      expect(detail.documents?.results.data?.variants).toHaveLength(1)
+      expect(detail.documentSections.map((section) => section.heading)).toEqual([
+        'Motivation',
+        'Design',
+        'Implementation',
+        'Investigation',
+        'Results',
+        'Findings',
+        'Limitations',
+        'Conclusion',
+      ])
+      expect(
+        detail.documentSections
+          .filter((section) => section.managed)
+          .every((section) => section.source === 'yaml'),
+      ).toBe(true)
+      expect(forbiddenKeys(detail)).toEqual([])
+      expect(JSON.stringify(detail)).not.toContain(root)
+      expect(() =>
+        BackendExperimentResponseSchema.parse({
+          ...detail,
+          documents: {
+            ...detail.documents,
+            implementation: {
+              ...detail.documents!.implementation,
+              resource: '/private/implementation.yaml',
+            },
+          },
+        }),
+      ).toThrow()
+      expect(() =>
+        BackendExperimentResponseSchema.parse({
+          ...detail,
+          documents: {
+            ...detail.documents,
+            implementation: {
+              ...detail.documents!.implementation,
+              raw: 'schema_version: 1',
+            },
+          },
+        }),
+      ).toThrow()
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
   })
 
   it('returns strict hypotheses, journal, and computed anomaly DTOs', async () => {

@@ -340,14 +340,137 @@ export const BackendExperimentSummarySchema = z
   .strict()
 export type BackendExperimentSummary = z.infer<typeof BackendExperimentSummarySchema>
 
-export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.extend({
-  body: z.string(),
-  warningsRaw: z.string().nullable(),
-}).strict()
 export const BackendExperimentsResponseSchema = z
   .object({ experiments: z.array(BackendExperimentSummarySchema).max(10_000) })
   .strict()
-export const BackendExperimentResponseSchema = BackendExperimentDetailSchema
+
+const BackendExperimentRawSectionSchema = z
+  .object({
+    heading: z.string().min(1).max(256),
+    body: z.string().max(256 * 1024),
+    index: z.number().int().nonnegative(),
+    occurrence: z.number().int().positive(),
+    supported: z.boolean(),
+    managed: z.boolean(),
+    pointerValid: z.boolean().nullable(),
+  })
+  .strict()
+
+const BackendExperimentDocumentDiagnosticSchema = z
+  .object({
+    code: z.string().min(1).max(256),
+    severity: z.enum(['error', 'warning', 'info']),
+    file: z.string().min(1).max(512),
+    field: z.string().max(1024).optional(),
+    message: z.string().max(64 * 1024),
+  })
+  .strict()
+
+export interface BackendImplementationItemWire {
+  id: string
+  title: string
+  status: 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'DROPPED'
+  description?: string
+  dependsOn: string[]
+  acceptanceCriteria: string[]
+  files: string[]
+  commits: Array<{ repo: string; sha: string; url?: string }>
+  codeReviews: string[]
+  outcome?: string
+  children: BackendImplementationItemWire[]
+}
+
+const BackendImplementationItemSchema: z.ZodType<BackendImplementationItemWire> = z.lazy(() =>
+  z
+    .object({
+      id: z.string().min(1).max(256),
+      title: z.string().min(1).max(4096),
+      status: z.enum(['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'DROPPED']),
+      description: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+      dependsOn: z.array(z.string().min(1).max(256)).max(10_000),
+      acceptanceCriteria: z.array(z.string().max(64 * 1024)).max(10_000),
+      files: z.array(BackendOpaqueResourceIdSchema).max(10_000),
+      commits: z
+        .array(
+          z
+            .object({
+              repo: z.string().min(1).max(2048),
+              sha: z.string().min(1).max(256),
+              url: z.string().url().max(4096).optional(),
+            })
+            .strict(),
+        )
+        .max(10_000),
+      codeReviews: z.array(BackendOpaqueResourceIdSchema).max(10_000),
+      outcome: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+      children: z.array(BackendImplementationItemSchema).max(10_000),
+    })
+    .strict(),
+)
+
+export interface BackendInvestigationItemWire {
+  id: string
+  title: string
+  status: 'PLANNED' | 'IN_PROGRESS' | 'BLOCKED' | 'ANSWERED' | 'INCONCLUSIVE' | 'DROPPED'
+  description?: string
+  dependsOn: string[]
+  question?: string
+  rationale?: string
+  successCriteria: string[]
+  variantIds: string[]
+  outcome?: string
+  children: BackendInvestigationItemWire[]
+}
+
+const BackendInvestigationItemSchema: z.ZodType<BackendInvestigationItemWire> = z.lazy(() =>
+  z
+    .object({
+      id: z.string().min(1).max(256),
+      title: z.string().min(1).max(4096),
+      status: z.enum(['PLANNED', 'IN_PROGRESS', 'BLOCKED', 'ANSWERED', 'INCONCLUSIVE', 'DROPPED']),
+      description: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+      dependsOn: z.array(z.string().min(1).max(256)).max(10_000),
+      question: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+      rationale: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+      successCriteria: z.array(z.string().max(64 * 1024)).max(10_000),
+      variantIds: z.array(z.string().min(1).max(256)).max(10_000),
+      outcome: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+      children: z.array(BackendInvestigationItemSchema).max(10_000),
+    })
+    .strict(),
+)
+
+const BackendImplementationDocumentSchema = z
+  .object({
+    schemaVersion: z.number().int().positive(),
+    items: z.array(BackendImplementationItemSchema).max(10_000),
+  })
+  .strict()
+
+const BackendInvestigationDocumentSchema = z
+  .object({
+    schemaVersion: z.number().int().positive(),
+    items: z.array(BackendInvestigationItemSchema).max(10_000),
+  })
+  .strict()
 
 const BackendResultScalarSchema = z.union([
   z.string().max(64 * 1024),
@@ -418,6 +541,65 @@ export const BackendResultsDocumentSchema = z
       .max(10_000),
   })
   .strict()
+
+const BackendParsedManagedDocumentSchema = <T extends z.ZodTypeAny>(
+  kind: 'implementation' | 'investigation' | 'results',
+  data: T,
+) =>
+  z
+    .object({
+      kind: z.literal(kind),
+      fileName: z.string().min(1).max(256),
+      resource: BackendOpaqueResourceIdSchema,
+      exists: z.boolean(),
+      data: data.nullable(),
+      parseErrors: z.array(BackendParseIssueSchema).max(10_000),
+      parseWarnings: z.array(BackendParseIssueSchema).max(10_000),
+    })
+    .strict()
+
+export const BackendExperimentManagedDocumentsSchema = z
+  .object({
+    implementation: BackendParsedManagedDocumentSchema(
+      'implementation',
+      BackendImplementationDocumentSchema,
+    ),
+    investigation: BackendParsedManagedDocumentSchema(
+      'investigation',
+      BackendInvestigationDocumentSchema,
+    ),
+    results: BackendParsedManagedDocumentSchema('results', BackendResultsDocumentSchema),
+  })
+  .strict()
+
+export const BackendExperimentDisplaySectionSchema = z
+  .object({
+    heading: z.string().min(1).max(256),
+    body: z.string().max(512 * 1024),
+    rawBody: z.string().max(256 * 1024),
+    index: z.number().int().nonnegative(),
+    occurrence: z.number().int().positive(),
+    supported: z.boolean(),
+    managed: z.boolean(),
+    pointerValid: z.boolean().nullable(),
+    source: z.enum(['readme', 'yaml', 'diagnostic']),
+    diagnostics: z.array(BackendExperimentDocumentDiagnosticSchema).max(10_000),
+  })
+  .strict()
+
+export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.extend({
+  body: z.string().max(512 * 1024),
+  warningsRaw: z.string().nullable(),
+  rawSections: z.array(BackendExperimentRawSectionSchema).max(1024),
+  documents: BackendExperimentManagedDocumentsSchema.nullable(),
+  resultsUpdatedAt: z.string().nullable(),
+  documentSections: z.array(BackendExperimentDisplaySectionSchema).max(1024),
+  documentDiagnostics: z.array(BackendExperimentDocumentDiagnosticSchema).max(10_000),
+  documentReadOnly: z.boolean(),
+}).strict()
+export const BackendExperimentResponseSchema = BackendExperimentDetailSchema
+export type BackendExperimentDetail = z.infer<typeof BackendExperimentDetailSchema>
+
 export const BackendExperimentResultsResponseSchema = z
   .object({
     project: ProjectNameSchema,

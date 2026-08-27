@@ -1,3 +1,4 @@
+import { ProjectRefSchema } from '@memon/core'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,6 +23,23 @@ const EXP_ID = 'E0001-structured'
 
 describe('ExperimentPage v6 document sections', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('rejects a Host-qualified current payload that is missing the v6 document contract', async () => {
+    vi.mocked(fetchExperimentDoc).mockResolvedValue({ id: EXP_ID } as never)
+    renderWithQuery(
+      <ExperimentPage
+        project={ProjectRefSchema.parse({ host: 'host-a', project: 'research' })}
+        experimentId={EXP_ID}
+        initialOpenRun={null}
+      />,
+    )
+
+    expect(
+      await screen.findByText(/missing the required v6 managed-document contract/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Plan' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Caveats' })).not.toBeInTheDocument()
+  })
 
   it('renders YAML Markdown, unsupported source, and managed conflicts without hiding content', async () => {
     vi.mocked(patchExperimentStatusV4).mockResolvedValue({ mtime: 2 })
@@ -301,6 +319,7 @@ describe('ExperimentPage v6 document sections', () => {
     await waitFor(() =>
       expect(patchExperimentStatusV4).toHaveBeenCalledWith({
         id: EXP_ID,
+        project: 'research',
         status: 'RESOLVED',
         // `mtime` above is the newer bundle activity timestamp. Mutations
         // must lock against README.md's own timestamp instead.

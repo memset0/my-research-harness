@@ -13,11 +13,15 @@ import {
   BackendRunResponseSchema,
   type BackendRunSummary,
   BackendRunsResponseSchema,
+  buildExperimentDocumentView,
   computeMembership,
   discoverExperiments,
   type Experiment,
+  type ImplementationItem,
+  type InvestigationItem,
   type ProjectConfig,
   ResourceIdSchema,
+  type ResultsDocument,
   type Run,
   scanProjectRoot,
 } from '@memon/core'
@@ -172,10 +176,17 @@ export class FilesystemProjectService implements BackendProjectReadService {
     if (!experiment) {
       throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
     }
+    const documentView = buildExperimentDocumentView(experiment)
     return BackendExperimentResponseSchema.parse({
       ...safeExperimentSummary(experiment, data),
       body: experiment.body,
       warningsRaw: experiment.warningsRaw,
+      rawSections: experiment.rawSections ?? [],
+      documents: safeManagedDocuments(experiment, data.project),
+      resultsUpdatedAt: await managedResultsUpdatedAt(experiment.documents?.results),
+      documentSections: documentView.sections,
+      documentDiagnostics: documentView.diagnostics,
+      documentReadOnly: documentView.readOnly,
     })
   }
 
@@ -199,26 +210,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
     return BackendExperimentResultsResponseSchema.parse({
       project: projectName,
       resource: portableProjectResource(data.project, results.path),
-      document: {
-        schemaVersion: results.data.schemaVersion,
-        columns: results.data.columns,
-        variants: results.data.variants.map(({ extra: _extra, provenance, ...variant }) => ({
-          ...variant,
-          ...(provenance
-            ? {
-                provenance: {
-                  ...provenance,
-                  ...(provenance.entry
-                    ? { entry: normalizePortableResultResource(provenance.entry) }
-                    : {}),
-                  ...(provenance.recipe
-                    ? { recipe: normalizePortableResultResource(provenance.recipe) }
-                    : {}),
-                },
-              }
-            : {}),
-        })),
-      },
+      document: safeResultsDocument(results.data),
       updatedAt: fileStat.mtime.toISOString(),
       warnings: results.parseWarnings,
     })
@@ -517,4 +509,119 @@ function portableRunResource(
 
 function normalizePortableResultResource(value: string): string {
   return value.startsWith('./') ? value.slice(2) : value
+}
+
+function safeManagedDocuments(experiment: Experiment, project: ProjectConfig) {
+  const documents = experiment.documents
+  if (!documents) return null
+  return {
+    implementation: {
+      kind: 'implementation' as const,
+      fileName: documents.implementation.fileName,
+      resource: portableProjectResource(project, documents.implementation.path),
+      exists: documents.implementation.exists,
+      data: documents.implementation.data
+        ? {
+            schemaVersion: documents.implementation.data.schemaVersion,
+            items: documents.implementation.data.items.map(safeImplementationItem),
+          }
+        : null,
+      parseErrors: documents.implementation.parseErrors,
+      parseWarnings: documents.implementation.parseWarnings,
+    },
+    investigation: {
+      kind: 'investigation' as const,
+      fileName: documents.investigation.fileName,
+      resource: portableProjectResource(project, documents.investigation.path),
+      exists: documents.investigation.exists,
+      data: documents.investigation.data
+        ? {
+            schemaVersion: documents.investigation.data.schemaVersion,
+            items: documents.investigation.data.items.map(safeInvestigationItem),
+          }
+        : null,
+      parseErrors: documents.investigation.parseErrors,
+      parseWarnings: documents.investigation.parseWarnings,
+    },
+    results: {
+      kind: 'results' as const,
+      fileName: documents.results.fileName,
+      resource: portableProjectResource(project, documents.results.path),
+      exists: documents.results.exists,
+      data: documents.results.data ? safeResultsDocument(documents.results.data) : null,
+      parseErrors: documents.results.parseErrors,
+      parseWarnings: documents.results.parseWarnings,
+    },
+  }
+}
+
+function safeImplementationItem(item: ImplementationItem): Record<string, unknown> {
+  return {
+    id: item.id,
+    title: item.title,
+    status: item.status,
+    ...(item.description === undefined ? {} : { description: item.description }),
+    dependsOn: item.dependsOn,
+    acceptanceCriteria: item.acceptanceCriteria,
+    files: item.files.map(normalizePortableResultResource),
+    commits: item.commits.map(({ repo, sha, url }) => ({
+      repo,
+      sha,
+      ...(url === undefined ? {} : { url }),
+    })),
+    codeReviews: item.codeReviews.map(normalizePortableResultResource),
+    ...(item.outcome === undefined ? {} : { outcome: item.outcome }),
+    children: item.children.map(safeImplementationItem),
+  }
+}
+
+function safeInvestigationItem(item: InvestigationItem): Record<string, unknown> {
+  return {
+    id: item.id,
+    title: item.title,
+    status: item.status,
+    ...(item.description === undefined ? {} : { description: item.description }),
+    dependsOn: item.dependsOn,
+    ...(item.question === undefined ? {} : { question: item.question }),
+    ...(item.rationale === undefined ? {} : { rationale: item.rationale }),
+    successCriteria: item.successCriteria,
+    variantIds: item.variantIds,
+    ...(item.outcome === undefined ? {} : { outcome: item.outcome }),
+    children: item.children.map(safeInvestigationItem),
+  }
+}
+
+function safeResultsDocument(document: ResultsDocument) {
+  return {
+    schemaVersion: document.schemaVersion,
+    columns: document.columns,
+    variants: document.variants.map(({ extra: _extra, provenance, ...variant }) => ({
+      ...variant,
+      ...(provenance
+        ? {
+            provenance: {
+              ...provenance,
+              ...(provenance.entry
+                ? { entry: normalizePortableResultResource(provenance.entry) }
+                : {}),
+              ...(provenance.recipe
+                ? { recipe: normalizePortableResultResource(provenance.recipe) }
+                : {}),
+            },
+          }
+        : {}),
+    })),
+  }
+}
+
+async function managedResultsUpdatedAt(
+  results: NonNullable<Experiment['documents']>['results'] | undefined,
+): Promise<string | null> {
+  if (!results?.exists) return null
+  try {
+    return (await fs.stat(results.path)).mtime.toISOString()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
 }

@@ -1,14 +1,13 @@
 import { stat } from 'node:fs/promises'
-import { BackendExperimentResponseSchema } from '@memon/core'
 import { BackendProjectServiceError } from '@memon/backend'
+import { BackendExperimentResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
+import { standaloneExperiment } from '../../../../lib/server/standalone-dto'
 import {
   deleteStandaloneExperiment,
   standaloneExperimentMutationError,
 } from '../../../../lib/server/standalone-experiment-mutation-route'
-import { standaloneExperiment } from '../../../../lib/server/standalone-dto'
-import { buildExperimentDocumentView } from '../../../../lib/server/experiment-sections'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -35,25 +34,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       await standaloneServices(runtime.config).projects.getExperiment(project.name, id),
     )
     const legacy = standaloneExperiment(runtime.config, portable)
-    const documentView = buildExperimentDocumentView(cached, {
-      runs: Object.fromEntries(
-        legacy.memberRuns.map((run) => [
-          run.id,
-          {
-            documentUrl: `/p/${encodeURIComponent(portable.project)}/e/${encodeURIComponent(portable.id)}?run=${encodeURIComponent(run.id)}`,
-            wandbUrl: run.wandb,
-          },
-        ]),
-      ),
-    })
     return NextResponse.json({
       ...legacy,
-      rawSections: cached.rawSections,
-      documents: cached.documents,
       resultsUpdatedAt: await managedResultsUpdatedAt(cached.documents?.results),
-      documentSections: documentView.sections,
-      documentDiagnostics: documentView.diagnostics,
-      documentReadOnly: documentView.readOnly,
     })
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {

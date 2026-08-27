@@ -67,6 +67,20 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
       <div className="p-6 text-sm text-destructive">Failed to load experiment {experimentId}</div>
     )
   }
+  if (
+    typeof project !== 'string' &&
+    (exp.documentSections === undefined ||
+      exp.documentDiagnostics === undefined ||
+      exp.documentReadOnly === undefined ||
+      exp.documents === undefined)
+  ) {
+    return (
+      <div className="p-6 text-sm text-destructive">
+        Backend Experiment detail is missing the required v6 managed-document contract. Update the
+        selected Host instead of rendering a legacy projection.
+      </div>
+    )
+  }
 
   const aggregatedArtifacts = exp.memberRuns.flatMap((r) =>
     r.artifacts.map((a) => ({ runId: r.id, path: a.path, description: a.description })),
