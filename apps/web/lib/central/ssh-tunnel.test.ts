@@ -82,6 +82,8 @@ describe('buildSshTunnelCommand', () => {
       '-o',
       'BatchMode=yes',
       '-o',
+      'Compression=yes',
+      '-o',
       'IdentitiesOnly=yes',
       '-o',
       'UserKnownHostsFile=/run/memon/known_hosts',

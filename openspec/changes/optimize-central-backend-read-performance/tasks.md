@@ -4,6 +4,7 @@
 - [x] 1.2 Time Run discovery, Run parsing, Experiment discovery, and membership independently on the large live Project; verify the dominant stage and compare broad versus constrained include patterns without changing data.
 - [ ] 1.3 Back up the owner-only Backend config, apply the verified machine-local include patterns, restart the candidate Backend, and verify excluded matches have no README/no unique valid Run while list/detail latency improves and rollback restores the prior config.
 - [ ] 1.4 Inventory every active cache/backoff layer with owner, key, lifetime, freshness trigger, invalidation trigger, and failure behavior; verify the maintained design and runtime evidence agree.
+- [ ] 1.5 Enable compression on the gateway-owned SSH forward after plain/compressed live comparison, restart central, and verify large JSON transfer time improves without changing response bytes or tunnel isolation.
 
 ## 2. Shared Backend Project Snapshot
 

@@ -111,6 +111,8 @@ export function buildSshTunnelCommand(transport: CentralSshTransportConfig): Ssh
     '-o',
     'BatchMode=yes',
     '-o',
+    'Compression=yes',
+    '-o',
     'IdentitiesOnly=yes',
     '-o',
     `UserKnownHostsFile=${transport.knownHostsFile}`,
