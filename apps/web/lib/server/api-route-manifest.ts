@@ -28,7 +28,8 @@ const central = (
   methods: readonly ApiMethod[],
   auth: ApiAuthClass,
   streaming: ApiStreaming = 'none',
-): ApiRouteOwnership => ({ methods, owner: 'central', scope: 'global', auth, streaming })
+  scope: ApiScope = 'global',
+): ApiRouteOwnership => ({ methods, owner: 'central', scope, auth, streaming })
 
 const composed = (
   methods: readonly ApiMethod[],
@@ -64,6 +65,13 @@ export const API_ROUTE_MANIFEST = {
   'digests/[id]/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
   'digests/route.ts': backend(['GET'], 'project-query', 'read'),
   'events/route.ts': composed(['GET'], 'global', 'read', 'sse'),
+  'experiment-results-views/[id]/route.ts': central(
+    ['PATCH', 'DELETE'],
+    'mutating',
+    'none',
+    'project-query',
+  ),
+  'experiment-results-views/route.ts': central(['GET', 'POST'], 'mixed', 'none', 'project-query'),
   'experiments/[id]/archive/route.ts': backend(['PATCH'], 'resource', 'mutating'),
   'experiments/[id]/link/route.ts': backend(['POST'], 'resource', 'mutating'),
   'experiments/[id]/readme/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),

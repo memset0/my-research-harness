@@ -275,6 +275,15 @@ const RULES: Rule[] = [
     projectFor: projectGlobal(),
   },
 
+  // Experiment Results Views are shared central resources. Exact-scope
+  // viewers may list them; every non-GET method falls through to the
+  // fail-closed owner-only mutation class.
+  {
+    match: methodIs(['GET'], exact('/api/experiment-results-views')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+
   // ===== read: GET API endpoints =====
   {
     match: methodIs(['GET'], exact('/api/projects')),

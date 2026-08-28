@@ -17,15 +17,18 @@ import {
   ChartSpline,
   CircleCheck,
   Columns3,
+  CopyPlus,
   Eye,
   EyeOff,
   Filter,
   Minus,
+  Pencil,
   PinOff,
   Plus,
   RotateCcw,
   Rows3,
   Star,
+  Trash2,
   X,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -39,12 +42,19 @@ import {
   useRef,
   useState,
 } from 'react'
-import {
-  type MemberRunSummary,
-  type ProjectTarget,
-  projectQueryKey,
-  projectWebPath,
-} from '../lib/api'
+import { toast } from 'sonner'
+import { type MemberRunSummary, type ProjectTarget, projectWebPath } from '../lib/api'
+import type {
+  ExperimentResultsViewDefinition,
+  ResultsViewPinSide,
+  ResultsViewRowFilter,
+  ResultsViewRowFilterOperator,
+  ResultsViewRowOverride,
+  ResultsViewSortDirection,
+  ResultsViewSortRule,
+  ResultsViewSotaMode,
+} from '../lib/experiment-results-views'
+import { useExperimentResultsViews } from '../lib/use-experiment-results-views'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
@@ -81,10 +91,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Toggle } from './ui/toggle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
-type SortDirection = 'asc' | 'desc'
-type PinSide = 'left' | 'right'
-type RowFilterOperator = 'eq' | 'neq' | 'gt' | 'lt'
-type RowOverride = 'include' | 'exclude'
+type SortDirection = ResultsViewSortDirection
+type PinSide = ResultsViewPinSide
+type RowFilterOperator = ResultsViewRowFilterOperator
+type RowOverride = ResultsViewRowOverride
 type DragKind = 'column' | 'row-filter' | 'sort-rule'
 type DropEdge = 'before' | 'after'
 type ResultValue = ResultScalar | string[] | undefined
@@ -106,32 +116,11 @@ interface ResultTableColumn {
   getValue: (variant: ResultVariant) => ResultValue
 }
 
-type SotaMode = 'off' | 'higher-is-better' | 'lower-is-better'
+type SotaMode = ResultsViewSotaMode
 
-interface ResultsTablePreferences {
-  hiddenColumnIds: string[]
-  columnOrderIds: string[]
-  maxLines: number
-  defaultSortRules: SortRule[]
-  pinnedColumnIds: Record<PinSide, string[]>
-  rowFilters: RowFilter[]
-  rowOverrides: Record<string, RowOverride>
-  sotaModes: Record<string, SotaMode>
-  decimalPlaces: Record<string, number>
-}
-
-interface RowFilter {
-  id: string
-  columnId: string
-  operator: RowFilterOperator
-  value: string
-}
-
-interface SortRule {
-  id: string
-  columnId: string
-  direction: SortDirection
-}
+type ResultsTablePreferences = ExperimentResultsViewDefinition
+type RowFilter = ResultsViewRowFilter
+type SortRule = ResultsViewSortRule
 
 interface PinLayout {
   sticky: boolean
@@ -185,13 +174,11 @@ export function ExperimentResultsTable({
   memberRuns: MemberRunSummary[]
 }) {
   const columns = useMemo(() => buildColumns(document), [document])
-  const projectKey = projectQueryKey(project).join(':')
-  const preferencesKey = `memon:results-table:${projectKey}:${experimentId}:preferences`
+  const projectKey = typeof project === 'string' ? project : `${project.host}:${project.project}`
   const starsKey = `memon:results-table:${projectKey}:starred-column-labels`
-  const [storedPreferences, setStoredPreferences] = useUserPreferenceState(
-    preferencesKey,
-    DEFAULT_PREFERENCES,
-  )
+  const resultsViews = useExperimentResultsViews(project, experimentId, DEFAULT_PREFERENCES)
+  const storedPreferences = resultsViews.definition
+  const setStoredPreferences = resultsViews.updateDefinition
   const [storedStarredLabels, setStoredStarredLabels] = useUserPreferenceState<string[]>(
     starsKey,
     [],
@@ -200,6 +187,11 @@ export function ExperimentResultsTable({
   const [showAllRows, setShowAllRows] = useState(false)
   const [temporarySort, setTemporarySort] = useState<Omit<SortRule, 'id'> | null>(null)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [viewEditorOpen, setViewEditorOpen] = useState(false)
+  const [viewEditorMode, setViewEditorMode] = useState<'create' | 'rename'>('create')
+  const [viewName, setViewName] = useState('')
+  const [viewMutationPending, setViewMutationPending] = useState(false)
+  const [deleteViewDialogOpen, setDeleteViewDialogOpen] = useState(false)
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DragItem | null>(null)
   const rowFilterSequence = useRef(0)
@@ -551,6 +543,63 @@ export function ExperimentResultsTable({
     setTemporarySort(null)
   }
 
+  const selectResultsView = (viewId: string) => {
+    resultsViews.selectView(viewId)
+    setShowAllColumns(false)
+    setShowAllRows(false)
+    setTemporarySort(null)
+  }
+
+  const openCreateView = () => {
+    setViewEditorMode('create')
+    setViewName(resultsViews.activeView ? `${resultsViews.activeView.name} copy` : 'New view')
+    setViewEditorOpen(true)
+  }
+
+  const openRenameView = () => {
+    if (!resultsViews.activeView) return
+    setViewEditorMode('rename')
+    setViewName(resultsViews.activeView.name)
+    setViewEditorOpen(true)
+  }
+
+  const submitViewEditor = async () => {
+    const normalizedName = viewName.trim()
+    if (!normalizedName) return
+    setViewMutationPending(true)
+    try {
+      if (viewEditorMode === 'create') {
+        await resultsViews.createView(normalizedName)
+        setShowAllColumns(false)
+        setShowAllRows(false)
+        setTemporarySort(null)
+      } else if (resultsViews.activeView) {
+        await resultsViews.renameView(resultsViews.activeView.id, normalizedName)
+      }
+      setViewEditorOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save View')
+    } finally {
+      setViewMutationPending(false)
+    }
+  }
+
+  const deleteActiveView = async () => {
+    if (!resultsViews.activeView) return
+    setViewMutationPending(true)
+    try {
+      await resultsViews.deleteView(resultsViews.activeView.id)
+      setShowAllColumns(false)
+      setShowAllRows(false)
+      setTemporarySort(null)
+      setDeleteViewDialogOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete View')
+    } finally {
+      setViewMutationPending(false)
+    }
+  }
+
   useLayoutEffect(() => {
     // The identity changes when pin side, pin order, or visible columns change.
     void pinLayoutKey
@@ -605,7 +654,174 @@ export function ExperimentResultsTable({
   return (
     <div className="min-w-0 space-y-3" data-slot="results-table">
       <div className="space-y-3 rounded-md border bg-muted/20 p-3" data-slot="results-controls">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" data-slot="results-view-controls">
+          <Label htmlFor={`results-view-${experimentId}`} className="text-xs font-medium">
+            View
+          </Label>
+          <Select
+            value={resultsViews.activeView?.id ?? ''}
+            onValueChange={selectResultsView}
+            disabled={resultsViews.loading || resultsViews.views.length === 0}
+          >
+            <SelectTrigger
+              id={`results-view-${experimentId}`}
+              className="h-8 w-56 max-w-full"
+              aria-label="Results view"
+            >
+              <SelectValue
+                placeholder={resultsViews.loading ? 'Loading views…' : 'No saved views'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {resultsViews.views.map((view) => (
+                <SelectItem key={view.id} value={view.id}>
+                  {view.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Badge variant="secondary" className="tabular-nums">
+            {resultsViews.views.length} {resultsViews.views.length === 1 ? 'view' : 'views'}
+          </Badge>
+          {resultsViews.canMutate ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={openCreateView}
+                disabled={viewMutationPending}
+              >
+                {resultsViews.activeView ? (
+                  <CopyPlus data-icon="inline-start" />
+                ) : (
+                  <Plus data-icon="inline-start" />
+                )}
+                {resultsViews.activeView ? 'Duplicate' : 'New view'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={openRenameView}
+                disabled={!resultsViews.activeView || viewMutationPending}
+                aria-label="Rename Results view"
+              >
+                <Pencil aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setDeleteViewDialogOpen(true)}
+                disabled={!resultsViews.activeView || viewMutationPending}
+                aria-label="Delete Results view"
+              >
+                <Trash2 aria-hidden />
+              </Button>
+            </>
+          ) : (
+            <Badge variant="outline">Read-only</Badge>
+          )}
+          {resultsViews.error && (
+            <span className="text-xs text-destructive" role="status">
+              {resultsViews.error}
+            </span>
+          )}
+        </div>
+
+        <Dialog open={viewEditorOpen} onOpenChange={setViewEditorOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {viewEditorMode === 'create'
+                  ? resultsViews.activeView
+                    ? 'Duplicate Results view'
+                    : 'New Results view'
+                  : 'Rename Results view'}
+              </DialogTitle>
+              <DialogDescription>
+                {viewEditorMode === 'create'
+                  ? resultsViews.activeView
+                    ? 'The new View starts with the active filters, checked columns, and layout.'
+                    : 'The new View starts with the default Results table layout.'
+                  : 'The new name is shared with everyone who can open this Experiment.'}
+              </DialogDescription>
+            </DialogHeader>
+            <Label htmlFor={`results-view-name-${experimentId}`}>View name</Label>
+            <Input
+              id={`results-view-name-${experimentId}`}
+              value={viewName}
+              maxLength={96}
+              onChange={(event) => setViewName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && viewName.trim() && !viewMutationPending) {
+                  event.preventDefault()
+                  void submitViewEditor()
+                }
+              }}
+              autoFocus
+            />
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={viewMutationPending}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                type="button"
+                onClick={() => void submitViewEditor()}
+                disabled={!viewName.trim() || viewMutationPending}
+              >
+                {viewMutationPending
+                  ? 'Saving…'
+                  : viewEditorMode === 'create'
+                    ? resultsViews.activeView
+                      ? 'Duplicate'
+                      : 'Create'
+                    : 'Rename'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={deleteViewDialogOpen} onOpenChange={setDeleteViewDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Results view?</DialogTitle>
+              <DialogDescription>
+                {resultsViews.activeView
+                  ? `“${resultsViews.activeView.name}” will be removed for everyone who can open this Experiment.`
+                  : 'This shared View will be removed.'}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={viewMutationPending}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void deleteActiveView()}
+                disabled={!resultsViews.activeView || viewMutationPending}
+              >
+                <Trash2 data-icon="inline-start" />
+                {viewMutationPending ? 'Deleting…' : 'Delete view'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-2',
+            (!resultsViews.canMutate || !resultsViews.activeView) &&
+              'pointer-events-none opacity-70',
+          )}
+          aria-disabled={!resultsViews.canMutate || !resultsViews.activeView}
+        >
           <div className="flex items-center gap-1.5 text-xs font-medium">
             <Columns3 className="size-3.5 text-muted-foreground" aria-hidden />
             Columns
@@ -689,7 +905,14 @@ export function ExperimentResultsTable({
           </div>
         </div>
 
-        <fieldset className="flex flex-wrap gap-1.5">
+        <fieldset
+          className={cn(
+            'flex flex-wrap gap-1.5',
+            (!resultsViews.canMutate || !resultsViews.activeView) &&
+              'pointer-events-none opacity-70',
+          )}
+          aria-disabled={!resultsViews.canMutate || !resultsViews.activeView}
+        >
           <legend className="sr-only">Visible results columns</legend>
           {orderedColumns.map((column, index) => {
             const values = domains.get(column.id) ?? []
@@ -789,7 +1012,15 @@ export function ExperimentResultsTable({
         </fieldset>
         <Separator />
 
-        <div className="space-y-2.5" data-slot="row-filter-controls">
+        <div
+          className={cn(
+            'space-y-2.5',
+            (!resultsViews.canMutate || !resultsViews.activeView) &&
+              'pointer-events-none opacity-70',
+          )}
+          data-slot="row-filter-controls"
+          aria-disabled={!resultsViews.canMutate || !resultsViews.activeView}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs font-medium">
               <Rows3 className="size-3.5 text-muted-foreground" aria-hidden />
@@ -1026,13 +1257,16 @@ export function ExperimentResultsTable({
                       </ContextMenuTrigger>
                       <ContextMenuContent className="w-52">
                         <ContextMenuLabel className="truncate">{column.label}</ContextMenuLabel>
-                        <ContextMenuItem onSelect={() => setColumnVisible(column.id, false)}>
+                        <ContextMenuItem
+                          disabled={!resultsViews.canMutate}
+                          onSelect={() => setColumnVisible(column.id, false)}
+                        >
                           <EyeOff />
                           Hide column
                         </ContextMenuItem>
                         <ContextMenuSeparator />
                         <ContextMenuItem
-                          disabled={pinSide === 'left'}
+                          disabled={!resultsViews.canMutate || pinSide === 'left'}
                           onSelect={() => setColumnPin(column.id, 'left')}
                         >
                           <ArrowLeftToLine />
@@ -1043,7 +1277,7 @@ export function ExperimentResultsTable({
                               : 'Pin left'}
                         </ContextMenuItem>
                         <ContextMenuItem
-                          disabled={pinSide === 'right'}
+                          disabled={!resultsViews.canMutate || pinSide === 'right'}
                           onSelect={() => setColumnPin(column.id, 'right')}
                         >
                           <ArrowRightToLine />
@@ -1054,7 +1288,10 @@ export function ExperimentResultsTable({
                               : 'Pin right'}
                         </ContextMenuItem>
                         {pinSide && (
-                          <ContextMenuItem onSelect={() => setColumnPin(column.id, null)}>
+                          <ContextMenuItem
+                            disabled={!resultsViews.canMutate}
+                            onSelect={() => setColumnPin(column.id, null)}
+                          >
                             <PinOff />
                             Unpin column
                           </ContextMenuItem>
@@ -1068,28 +1305,36 @@ export function ExperimentResultsTable({
                           <>
                             <ContextMenuSeparator />
                             <ContextMenuSub>
-                              <ContextMenuSubTrigger inset>
+                              <ContextMenuSubTrigger inset disabled={!resultsViews.canMutate}>
                                 <ArrowUp className="mr-2 size-4" />
                                 SOTA highlight
                               </ContextMenuSubTrigger>
                               <ContextMenuSubContent className="w-44">
                                 <ContextMenuItem
                                   onSelect={() => cycleSotaMode(column.id)}
-                                  disabled={sotaModes[column.id] === 'off'}
+                                  disabled={
+                                    !resultsViews.canMutate || sotaModes[column.id] === 'off'
+                                  }
                                 >
                                   <Minus className="mr-2 size-4" />
                                   Off
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onSelect={() => cycleSotaMode(column.id)}
-                                  disabled={sotaModes[column.id] === 'higher-is-better'}
+                                  disabled={
+                                    !resultsViews.canMutate ||
+                                    sotaModes[column.id] === 'higher-is-better'
+                                  }
                                 >
                                   <ArrowUp className="mr-2 size-4" />
                                   Higher is better
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onSelect={() => cycleSotaMode(column.id)}
-                                  disabled={sotaModes[column.id] === 'lower-is-better'}
+                                  disabled={
+                                    !resultsViews.canMutate ||
+                                    sotaModes[column.id] === 'lower-is-better'
+                                  }
                                 >
                                   <ArrowDown className="mr-2 size-4" />
                                   Lower is better
@@ -1097,7 +1342,7 @@ export function ExperimentResultsTable({
                               </ContextMenuSubContent>
                             </ContextMenuSub>
                             <ContextMenuSub>
-                              <ContextMenuSubTrigger inset>
+                              <ContextMenuSubTrigger inset disabled={!resultsViews.canMutate}>
                                 <Columns3 className="mr-2 size-4" />
                                 Decimal places
                               </ContextMenuSubTrigger>
@@ -1114,6 +1359,7 @@ export function ExperimentResultsTable({
                                       size="icon"
                                       className="size-5 rounded"
                                       aria-label="Decrease decimal places"
+                                      disabled={!resultsViews.canMutate}
                                       onClick={() =>
                                         setDecimalPlaces(
                                           column.id,
@@ -1129,6 +1375,7 @@ export function ExperimentResultsTable({
                                       size="icon"
                                       className="size-5 rounded"
                                       aria-label="Increase decimal places"
+                                      disabled={!resultsViews.canMutate}
                                       onClick={() =>
                                         setDecimalPlaces(
                                           column.id,
@@ -1214,14 +1461,14 @@ export function ExperimentResultsTable({
                         {variant.id} · {variant.name}
                       </ContextMenuLabel>
                       <ContextMenuItem
-                        disabled={rowOverride === 'include'}
+                        disabled={!resultsViews.canMutate || rowOverride === 'include'}
                         onSelect={() => setRowOverride(variant.id, 'include')}
                       >
                         <CircleCheck />
                         {rowOverride === 'include' ? 'Forced shown' : 'Force show row'}
                       </ContextMenuItem>
                       <ContextMenuItem
-                        disabled={rowOverride === 'exclude'}
+                        disabled={!resultsViews.canMutate || rowOverride === 'exclude'}
                         onSelect={() => setRowOverride(variant.id, 'exclude')}
                       >
                         <Ban />
@@ -1230,7 +1477,10 @@ export function ExperimentResultsTable({
                       {rowOverride && (
                         <>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => setRowOverride(variant.id, null)}>
+                          <ContextMenuItem
+                            disabled={!resultsViews.canMutate}
+                            onSelect={() => setRowOverride(variant.id, null)}
+                          >
                             <X />
                             Clear row override
                           </ContextMenuItem>

@@ -74,6 +74,13 @@ describe('classify (pure class only)', () => {
     expect(classify('PUT', '/api/ui-preferences')).toBe('mutating')
   })
 
+  it('allows scoped reads but keeps Experiment Results View mutations owner-only', () => {
+    expect(classify('GET', '/api/experiment-results-views')).toBe('read')
+    expect(classify('POST', '/api/experiment-results-views')).toBe('mutating')
+    expect(classify('PATCH', '/api/experiment-results-views/view-a')).toBe('mutating')
+    expect(classify('DELETE', '/api/experiment-results-views/view-a')).toBe('mutating')
+  })
+
   it('classifies page routes as read', () => {
     expect(classify('GET', '/')).toBe('read')
     expect(classify('GET', '/p/project-a')).toBe('read')
