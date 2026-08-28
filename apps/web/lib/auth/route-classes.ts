@@ -277,7 +277,8 @@ const RULES: Rule[] = [
 
   // Experiment Results Views are shared central resources. Exact-scope
   // viewers may list them; every non-GET method falls through to the
-  // fail-closed owner-only mutation class.
+  // owner-only mutation class. Middleware recognizes a validated viewer on
+  // just these mutation paths so it can return an explicit 403.
   {
     match: methodIs(['GET'], exact('/api/experiment-results-views')),
     class: 'read',

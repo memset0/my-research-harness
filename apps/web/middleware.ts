@@ -88,6 +88,12 @@ function appendSetCookie(headers: Headers, value: string): void {
   headers.append('Set-Cookie', value)
 }
 
+function isExperimentResultsViewMutation(method: string, pathname: string): boolean {
+  if (method === 'POST') return pathname === '/api/experiment-results-views'
+  if (method !== 'PATCH' && method !== 'DELETE') return false
+  return /^\/api\/experiment-results-views\/[^/]+$/.test(pathname)
+}
+
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl
   if (isAuthBypass(pathname)) return NextResponse.next()
@@ -133,7 +139,11 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     },
   }
 
-  const allowViewer = routeClass === 'read'
+  // These owner-only routes intentionally identify a valid share viewer so
+  // the denial is an explicit 403. Every other mutating/shell route keeps the
+  // cheaper fail-closed behavior that does not parse or validate share state.
+  const resultsViewMutation = isExperimentResultsViewMutation(req.method, pathname)
+  const allowViewer = routeClass === 'read' || resultsViewMutation
   const identity = await resolveIdentity(
     {
       authorizationHeader: req.headers.get('authorization'),
@@ -154,6 +164,11 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   if (identity.role === 'owner') {
     // Owner may pass every route class.
   } else if (identity.role === 'viewer') {
+    if (resultsViewMutation) {
+      response = denyForbidden('Share viewers cannot mutate Experiment Results Views')
+      attachCookieRefreshes(response.headers, identity, isHttps(req))
+      return response
+    }
     // Viewer can only reach `read` routes (allowViewer was true). Apply
     // scope check against `project`.
     const scopeOk = checkViewerScope(

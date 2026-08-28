@@ -1,13 +1,18 @@
 // @vitest-environment node
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NextRequest } from 'next/server'
+
 import type { AuthConfig } from '@memon/core'
+import { NextRequest } from 'next/server'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { signSharesCookie } from './lib/auth/cookies'
 import { __limits, __resetForTests } from './lib/auth/rate-limit'
 
 vi.mock('./lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('./lib/server/standalone-services', () => ({
+  standaloneServices: () => ({ shares: { validate: vi.fn().mockResolvedValue(true) } }),
+}))
 
-import { middleware } from './middleware'
 import { getRuntime } from './lib/runtime'
+import { middleware } from './middleware'
 
 function basic(user: string, pass: string): string {
   return `Basic ${Buffer.from(`${user}:${pass}`, 'utf8').toString('base64')}`
@@ -21,9 +26,9 @@ function jsonApiHeaders(extra: Record<string, string> = {}): Record<string, stri
   return { accept: 'application/json', ...extra }
 }
 
-let auth: AuthConfig
+let auth: AuthConfig & { sessionSecret?: string }
 beforeAll(() => {
-  auth = { username: 'admin', password: 'correct' }
+  auth = { username: 'admin', password: 'correct', sessionSecret: 'test-session-secret' }
 })
 
 beforeEach(() => {
@@ -97,6 +102,41 @@ describe('middleware', () => {
       }),
     )
     expect(res.status).toBe(401)
+  })
+
+  it('returns an explicit 403 when a valid share viewer directly mutates Results Views', async () => {
+    const viewerCookie = signSharesCookie(
+      [{ project: 'project-a', token: 'valid-share-token' }],
+      auth.sessionSecret!,
+    )
+    const requests = [
+      [
+        'POST',
+        'http://localhost/api/experiment-results-views?project=project-a&experiment=E0001-demo',
+      ],
+      [
+        'PATCH',
+        'http://localhost/api/experiment-results-views/view-a?project=project-a&experiment=E0001-demo',
+      ],
+      [
+        'DELETE',
+        'http://localhost/api/experiment-results-views/view-a?project=project-a&experiment=E0001-demo',
+      ],
+    ] as const
+
+    for (const [method, url] of requests) {
+      const response = await middleware(
+        new NextRequest(url, {
+          method,
+          headers: {
+            accept: 'application/json',
+            cookie: `memon-shares=${viewerCookie}`,
+            'x-forwarded-for': '203.0.113.29',
+          },
+        }),
+      )
+      expect(response.status).toBe(403)
+    }
   })
 
   it('bypasses auth for /api/auth/check (own validation)', async () => {
