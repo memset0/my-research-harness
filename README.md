@@ -504,17 +504,19 @@ The button reflects each state and offers one-click install when
 
 ## Production deployment
 
-memon's HTTP server is single-user and protected by HTTP Basic auth.
-There is **no signup flow, no /login page** — the browser's native
-basic-auth dialog collects credentials, which means the browser caches
-them per-origin and the in-page ttyd iframe inherits them automatically.
+memon's HTTP server is single-user. Browsers authenticate through the
+`/login` form and an HTTP-only owner session cookie. HTTP Basic remains a
+preemptive compatibility mode for CLI/curl automation, but 401 responses do
+not advertise a Basic challenge and therefore do not open the browser's native
+credential dialog.
 Three independent gates protect the writable terminal:
 
 1. ttyd binds loopback only.
-2. memon's custom Node entry (`apps/web/server.ts`) verifies HTTP Basic
-   on every `/api/terminal/proxy/*` request **and** WebSocket upgrade
-   before forwarding to ttyd.
-3. Next.js middleware verifies HTTP Basic on every other dashboard route.
+2. memon's custom Node entry (`apps/web/server.ts`) verifies the owner session
+   or an explicitly supplied Basic header on every `/api/terminal/proxy/*`
+   request and WebSocket upgrade before forwarding to ttyd.
+3. Next.js middleware resolves owner session, preemptive Basic, or read-only
+   viewer-share identity on every other protected dashboard route.
 
 Caddy is only a TLS-terminating port forwarder — it does **not**
 participate in auth.
@@ -577,10 +579,13 @@ sudo systemctl reload caddy
 From a different machine:
 
 ```bash
-# Anonymous → 401 with WWW-Authenticate
+# Anonymous page navigation → 302 to the login form
 curl -i https://<host>/
 
-# Authenticated → 200
+# Anonymous API → 401 without a browser Basic challenge
+curl -i -H 'Accept: application/json' https://<host>/api/projects
+
+# Preemptive Basic automation → 200
 curl -i -u admin:<password> https://<host>/
 
 # Anonymous shell access (the prior root-shell vector) → 401

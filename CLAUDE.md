@@ -315,8 +315,9 @@ curl -sS -b viewer.txt http://localhost:3737/p/project-a | head
   design (single-user threat model), but that doesn't make it OK to leak.
 - For HTML page navigation, 401 is rewritten to `302 → /login?next=...` so
   the browser lands on the login form instead of triggering the native
-  Basic-auth dialog. API requests (paths starting with `/api/`) still get
-  the raw 401 + `WWW-Authenticate: Basic` header.
+  Basic-auth dialog. API requests (paths starting with `/api/`) get a raw
+  401 without `WWW-Authenticate`; CLI/curl must send Basic credentials
+  preemptively with `-u`.
 - The ONLY place 403 appears is when a logged-in viewer requests a `read`
   route for a project that is NOT in their share scope. Every other deny
   is 401 (or its HTML 302 rewrite). If you see a 403 in CI / automation,
@@ -397,6 +398,17 @@ signal.
 OpenSpec changes and releases have independent lifecycles. One active change
 may ship several versions while implementation, rollout, observation, and
 refinements continue. Shipping a version does not archive its change.
+
+**Default to completing a verified release automatically.** Once an
+implementation requested by the user is complete and its applicable release
+gates pass, do not stop merely to ask whether to release. Commit only the
+reviewed in-scope implementation, advance the canonical version according to
+the surface rules below, create the separate release commit, push it, update
+the configured central service and every affected Backend to the same exact
+revision, and run post-deployment verification. Stop for user input only when
+the release needs a breaking migration or unresolved product choice, required
+credentials/authority are unavailable, another dirty-worktree change cannot
+be safely isolated, or a validation/deployment/rollback check fails.
 
 Use the canonical memon `MAJOR.MINOR.PATCH` release with these project-wide
 rules:

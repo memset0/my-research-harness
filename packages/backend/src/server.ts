@@ -1933,7 +1933,9 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       resolved.readOnly &&
       method !== 'GET' &&
       method !== 'HEAD' &&
-      route.key !== BACKEND_SHARE_VALIDATE_ROUTE
+      route.key !== BACKEND_SHARE_VALIDATE_ROUTE &&
+      route.key !== BACKEND_SHARES_ROUTE &&
+      route.key !== BACKEND_SHARE_ITEM_ROUTE
     ) {
       writeError(response, 403, 'FORBIDDEN', 'Backend is configured read-only')
       return
@@ -3137,6 +3139,10 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       (route.key === BACKEND_SHARES_ROUTE || route.key === BACKEND_SHARE_ITEM_ROUTE) &&
       route.project
     ) {
+      if (!resolved.capabilities.shares) {
+        writeError(response, 404, 'UNSUPPORTED_CAPABILITY', 'Share service is unavailable')
+        return
+      }
       let actor: ReturnType<typeof decodeBackendActorContext>
       try {
         actor = decodeBackendActorContext({

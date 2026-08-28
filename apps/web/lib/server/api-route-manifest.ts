@@ -35,7 +35,15 @@ const composed = (
   scope: ApiScope,
   auth: ApiAuthClass,
   streaming: ApiStreaming = 'none',
-): ApiRouteOwnership => ({ methods, owner: 'composed', scope, auth, streaming })
+  capability?: ApiCapability,
+): ApiRouteOwnership => ({
+  methods,
+  owner: 'composed',
+  scope,
+  auth,
+  streaming,
+  ...(capability ? { capability } : {}),
+})
 
 const backend = (
   methods: readonly ApiMethod[],
@@ -110,14 +118,14 @@ export const API_ROUTE_MANIFEST = {
     'git',
   ),
   'projects/[project]/git-status/route.ts': backend(['GET'], 'project-path', 'read', 'none', 'git'),
-  'projects/[project]/shares/[id]/route.ts': backend(
+  'projects/[project]/shares/[id]/route.ts': composed(
     ['DELETE'],
     'project-path',
     'mutating',
     'none',
     'shares',
   ),
-  'projects/[project]/shares/route.ts': backend(
+  'projects/[project]/shares/route.ts': composed(
     ['GET', 'POST'],
     'project-path',
     'mutating',

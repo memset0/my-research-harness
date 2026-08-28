@@ -151,8 +151,7 @@ export function OpenWithButton({ project, scope, slug }: OpenWithButtonProps) {
   }
 
   // Viewers can't use the terminal (the API is shell-classed = owner-only).
-  // Skip the probe entirely so we don't trigger `401 + WWW-Authenticate`,
-  // which would pop the browser's native Basic-auth dialog.
+  // Skip the probe entirely because viewers cannot use the owner-only route.
   const { data: probe, isError: probeFailed } = useQuery({
     queryKey: ['terminal', 'check', host ?? 'standalone'],
     queryFn: () => checkTerminal(hostTarget),

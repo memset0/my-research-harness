@@ -168,6 +168,39 @@ describe('central Backend proxy routing and trust boundary', () => {
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
     expect(fetchImpl).not.toHaveBeenCalled()
   })
+
+  it('uses the dedicated shares capability when broad mutations are disabled', async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json(
+        {
+          share: {
+            id: 'shr_abcdefgh',
+            token: 'share_token',
+            created_at: '2026-08-27T12:00:00Z',
+            expires_at: null,
+          },
+        },
+        { status: 201 },
+      ),
+    )
+    const registry = usableRegistry({ ...CAPABILITIES, mutations: false, shares: true })
+    const response = await proxy(
+      new Request(
+        'https://central.example.test/api/projects/project-a/shares?host=host-a',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ expires: 'never' }),
+        },
+      ),
+      fetchImpl,
+      registry,
+    )
+    expect(response.status).toBe(201)
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      'https://backend-a.example.test/api/backend/v1/projects/project-a/shares',
+    )
+  })
 })
 
 describe('central Backend proxy streaming and bounds', () => {

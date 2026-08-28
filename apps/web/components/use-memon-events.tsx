@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 import type { IndexedRun } from '../lib/api'
 import { subscribeMemonEvents } from '../lib/events-client'
+import { useSession } from './session-provider'
 
 function scopedKey(host: string | undefined, root: string, ...parts: unknown[]): unknown[] {
   return host ? [root, host, ...parts] : [root, ...parts]
@@ -59,8 +60,14 @@ export function invalidateJournalQueries(
  */
 export function useMemonEvents() {
   const queryClient = useQueryClient()
+  const { role } = useSession()
 
   useEffect(() => {
+    // The login page shares the root provider tree but has no authenticated
+    // event scope. Avoid a denied background request (and its reconnect loop)
+    // until an owner/viewer navigation remounts the provider.
+    if (role === 'anon') return
+
     const seenRunIds = new Set<string>()
     const seenExpIds = new Set<string>()
 
@@ -164,5 +171,5 @@ export function useMemonEvents() {
     })
 
     return unsubscribe
-  }, [queryClient])
+  }, [queryClient, role])
 }

@@ -179,7 +179,8 @@ poll:
 #
 # backend:
 #   host_id: host-a
-#   access_mode: read_write          # read_only for private shadow verification
+#   access_mode: read_write          # read_only blocks Project-data/shell writes;
+#                                    # owner share-link control remains available
 #   bind_addr: "127.0.0.1"          # optional; default 127.0.0.1
 #   bind_port: 3738                 # optional; default 3738
 #   tokens:

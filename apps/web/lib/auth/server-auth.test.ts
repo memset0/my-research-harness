@@ -39,7 +39,7 @@ describe('authenticateNodeRequest', () => {
     const r = await authenticateNodeRequest(fakeReq())
     expect(r.ok).toBe(false)
     expect(r.status).toBe(401)
-    expect(r.headers?.['WWW-Authenticate']).toBe('Basic realm="memon"')
+    expect(r.headers?.['WWW-Authenticate']).toBeUndefined()
   })
 
   it('rejects with 401 on bad password', async () => {

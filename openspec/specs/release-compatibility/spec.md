@@ -31,6 +31,19 @@ OpenSpec change lifecycle SHALL be independent from release lifecycle. An active
 - **WHEN** the latest boundary is `6.1.0` and the next refinement changes only central Web/gateway bytes
 - **THEN** the next boundary is `6.1.1` and Backends are not reinstalled
 
+### Requirement: Verified work advances through release automatically
+After a user-requested implementation is complete and its applicable release gates pass, the Agent SHALL by default finish the release without requesting a second confirmation. It SHALL commit only reviewed in-scope implementation files, advance the canonical version according to the release-axis rules, create a separate `release: vMAJOR.MINOR.PATCH` commit, push the exact revision, update the configured central service and every affected Backend to that revision, and verify readiness plus the changed behavior. Automatic release SHALL NOT archive the active OpenSpec change.
+
+The Agent SHALL stop before release only when a breaking migration or unresolved product decision requires user choice, required credentials or authority are unavailable, unrelated dirty-worktree changes cannot be safely isolated, or a validation, deployment, or rollback-safety check fails.
+
+#### Scenario: Completed Backend change ships without another prompt
+- **WHEN** an authorized user asks for a Backend-affecting change and its implementation, focused tests, typechecks, and release validation pass
+- **THEN** the Agent commits the implementation, advances the Minor release in a separate release commit, pushes it, updates affected Backends and central to the exact revision, and verifies the rollout without asking “should I release?”
+
+#### Scenario: Unsafe automatic release pauses
+- **WHEN** release preparation detects an unresolved filesystem migration, missing deployment authority, an inseparable unrelated worktree edit, or a failed release gate
+- **THEN** the Agent leaves the last known-good deployment intact and requests only the decision or authority needed to continue
+
 ### Requirement: Major release requires matching filesystem migration
 A release Major change SHALL include and require the matching reviewed filesystem-convention migration. Cross-Major runtime compatibility SHALL NOT be assumed; a mismatch SHALL be reported as `filesystem_migration_required` rather than network failure.
 
@@ -57,7 +70,7 @@ Central SHALL maintain explicit adapters/capability gates for exactly its curren
 - **THEN** central keeps the Host usable but does not offer or call that capability
 
 ### Requirement: Normal Minor rollout is central-first and pinned
-A normal Minor rollout SHALL update central first, then update Backends individually to the exact central target revision through Agent-driven SSH/local CLI operations. It SHALL NOT resolve a moving latest per Host or update the fleet unattended. The initial standalone bootstrap SHALL use its separate side-by-side migration gate.
+A normal Minor rollout SHALL update central first, then update Backends individually to the exact central target revision through authorized Agent-driven SSH/local CLI operations. It SHALL NOT resolve a moving latest per Host. After the user has authorized the implementation/release workflow, the Agent MAY execute the configured rollout automatically under the verified-release requirement; the central product itself SHALL NOT initiate fleet updates. The initial standalone bootstrap SHALL use its separate side-by-side migration gate.
 
 #### Scenario: Rollout uses one revision
 - **WHEN** an Agent updates multiple Backends for a Minor release

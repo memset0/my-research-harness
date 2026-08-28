@@ -72,8 +72,16 @@ async function createShare(
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(typeof err.error === 'string' ? err.error : 'failed to create share')
+    const err = (await res.json().catch(() => null)) as {
+      error?: string | { message?: string }
+    } | null
+    const message =
+      typeof err?.error === 'string'
+        ? err.error
+        : typeof err?.error?.message === 'string'
+          ? err.error.message
+          : `failed to create share (HTTP ${res.status})`
+    throw new Error(message)
   }
   const json = (await res.json()) as { share: CreatedShare }
   return json.share
@@ -85,8 +93,16 @@ async function deleteShare(project: ProjectTarget, id: string): Promise<void> {
     credentials: 'include',
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(typeof err.error === 'string' ? err.error : 'failed to delete share')
+    const err = (await res.json().catch(() => null)) as {
+      error?: string | { message?: string }
+    } | null
+    const message =
+      typeof err?.error === 'string'
+        ? err.error
+        : typeof err?.error?.message === 'string'
+          ? err.error.message
+          : `failed to delete share (HTTP ${res.status})`
+    throw new Error(message)
   }
 }
 

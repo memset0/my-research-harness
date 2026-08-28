@@ -67,7 +67,6 @@ export async function verifyBasic(parsed: ParsedBasic | null, auth: AuthConfig):
 }
 
 export const UNAUTHORIZED_HEADERS = {
-  'WWW-Authenticate': 'Basic realm="memon"',
   'Cache-Control': 'no-store',
 }
 

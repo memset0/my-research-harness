@@ -12,6 +12,8 @@ Central Project pages and individual Run/Experiment detail requests remain multi
 - Define explicit freshness, stale-serving, browser query, central registry, log-index, Git, terminal, and reconnect backoff policies so “cache” and “polling” no longer refer to unrelated mechanisms.
 - Support machine-local Project include patterns as an immediate, reversible way to avoid scanning unrelated tree regions while the shared snapshot is rolled out.
 - Add large-Project benchmarks and production browser checks with latency budgets for cold and warm list/detail navigation.
+- Restore central share creation on read-only data Backends by treating share-link administration as its own `shares` control capability, and return the canonical Host-qualified public URL from the central composition layer.
+- Stop browser-facing 401 responses from advertising a Basic-auth challenge while continuing to accept proactively supplied Basic credentials for CLI/curl compatibility.
 
 ## Capabilities
 
@@ -23,9 +25,11 @@ Central Project pages and individual Run/Experiment detail requests remain multi
 
 - `cluster-backend-api`: Project read routes use the shared snapshot and ID indexes instead of triggering independent full scans.
 - `live-updates`: Filesystem and mutation events refresh/invalidate the same data served by reads while retaining last-known-good state on transient failure.
+- `project-share`: Central share CRUD remains available through the dedicated `shares` capability and returns `/share/<host>/<project>/<token>` links.
+- `auth-system`: Cookie/login flows no longer trigger the browser's native HTTP Basic dialog; preemptive Basic authentication remains accepted.
 
 ## Impact
 
 - Affects Backend Project discovery/read services, filesystem monitor integration, mutation publication, central proxy timing, browser query policies, and machine-local Project include configuration.
-- Does not change Host-qualified identity, Backend token boundaries, public route shapes, filesystem convention v6, or the loopback SSH transport.
+- Does not change Host-qualified identity, Backend token boundaries, filesystem convention v6, or the loopback SSH transport. It restores the already-canonical Host-qualified share route shape at the public response boundary.
 - Backend/CLI artifact changes require a Minor release and exact-revision reinstall under the established release policy.

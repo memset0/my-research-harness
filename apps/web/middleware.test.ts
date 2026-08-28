@@ -58,12 +58,12 @@ describe('middleware', () => {
     expect(res.headers.get('x-middleware-next')).toBe('1')
   })
 
-  it('returns 401 + WWW-Authenticate on anonymous API request', async () => {
+  it('returns 401 without a browser Basic challenge on anonymous API request', async () => {
     const res = await middleware(
       req('http://localhost/api/projects', jsonApiHeaders({ 'x-forwarded-for': '203.0.113.2' })),
     )
     expect(res.status).toBe(401)
-    expect(res.headers.get('www-authenticate')).toBe('Basic realm="memon"')
+    expect(res.headers.get('www-authenticate')).toBeNull()
   })
 
   it('returns 302 to /login on anonymous HTML page request', async () => {

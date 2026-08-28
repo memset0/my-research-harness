@@ -124,7 +124,13 @@ function routeCapabilities(route: MappedBackendRoute, method: string): Capabilit
 
   if (route.manifestRoute === 'log/stream/route.ts') required.add('logStreaming')
   if (route.manifestRoute.startsWith('report-assets/')) required.add('reportAssets')
-  if (method !== 'GET' && route.ownership.auth !== 'shell') required.add('mutations')
+  if (
+    method !== 'GET' &&
+    route.ownership.auth !== 'shell' &&
+    route.ownership.capability !== 'shares'
+  ) {
+    required.add('mutations')
+  }
   return [...required]
 }
 

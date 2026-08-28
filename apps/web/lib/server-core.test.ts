@@ -164,7 +164,7 @@ describe('createMemonServer — HTTP path', () => {
   it('rejects anonymous /api/terminal/proxy/* with 401', async () => {
     const r = await httpGet('/api/terminal/proxy/sess/index.html')
     expect(r.status).toBe(401)
-    expect(r.headers['www-authenticate']).toBe('Basic realm="memon"')
+    expect(r.headers['www-authenticate']).toBeUndefined()
   })
 
   it('forwards authenticated /api/terminal/proxy/* to the upstream', async () => {
@@ -242,10 +242,10 @@ describe('createMemonServer — WebSocket upgrade path', () => {
     expect(r.upstreamHit).toBe(false)
   })
 
-  it('rejects anonymous WS upgrade with 401 + WWW-Authenticate', async () => {
+  it('rejects anonymous WS upgrade without a browser Basic challenge', async () => {
     const r = await rawUpgrade('/api/terminal/proxy/sess/ws')
     expect(r.statusLine).toContain('401 Unauthorized')
-    expect(r.data).toContain('WWW-Authenticate: Basic realm="memon"')
+    expect(r.data).not.toContain('WWW-Authenticate')
     expect(r.upstreamHit).toBe(false)
   })
 

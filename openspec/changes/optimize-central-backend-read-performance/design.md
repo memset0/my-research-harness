@@ -54,6 +54,16 @@ After an optimistic-lock mutation commits, simple resource changes update the in
 
 Backend and central JSON responses remain authenticated `no-store`; browser/proxy caches are not the source of truth. Server-side snapshots are process-local parsed-state caches with filesystem/event invalidation. Optional safe timing data may use aggregate logs, runtime health, or a bounded `Server-Timing` header, but never absolute paths or credentials.
 
+### Share administration is a composed control capability
+
+Share records still live with the owning Backend Project so validation, expiry, and revocation remain authoritative at one Host. Creating or revoking a read-only viewer credential is governed by the dedicated `shares` capability rather than the broad Project-data `mutations` capability. A Backend in `read_only` data mode may therefore update only its `.memon/shares.json` control file while continuing to reject document, Git, terminal, tmux, Slurm, and other Project-data writes.
+
+The public share CRUD routes are `composed`: central authenticates the owner, forwards the exact Host+Project operation once, validates the Backend DTO, and constructs `/share/<host>/<project>/<token>` against the public origin. The custom streaming bridge must leave these routes to Next instead of returning the Backend-only DTO directly.
+
+### Basic credentials are accepted preemptively but never challenged
+
+Owner session cookies remain the browser authentication mechanism. Explicit `Authorization: Basic ...` continues to authenticate CLI/curl and compatibility clients, but a failed HTTP/API/terminal request returns 401 without `WWW-Authenticate`. This prevents browsers from opening a native credential dialog over the login/share UI. The login page also avoids opening the global EventSource while its injected session role is anonymous, eliminating a needless denied background request.
+
 ### Existing cache policies remain distinct
 
 | Layer | Key / lifetime | Freshness and invalidation | Failure behavior |

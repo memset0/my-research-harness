@@ -7,6 +7,7 @@ import {
   type BackendCapabilities,
   type BackendMetadata,
   type CentralConfig,
+  MEMON_RELEASE,
 } from '@memon/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BackendFetch } from './backend-url'
@@ -48,7 +49,7 @@ function registry(): CentralHostRegistry {
   const result = new CentralHostRegistry(config)
   result.acceptMetadata('host-a', {
     host: 'host-a',
-    release: '6.0.0',
+    release: MEMON_RELEASE,
     apiMajor: BACKEND_API_MAJOR,
     revision: '0123456789abcdef',
     instanceEpoch: '123e4567-e89b-42d3-a456-426614174000',
@@ -146,6 +147,11 @@ describe('central HTTP bridge', () => {
 
     expect(await (await fetch(`${origin}/api/runs?project=project-x`)).text()).toBe('NEXT')
     expect(await (await fetch(`${origin}/api/hosts?host=host-a`)).text()).toBe('NEXT')
+    expect(
+      await (
+        await fetch(`${origin}/api/projects/project-x/shares?host=host-a`, { method: 'POST' })
+      ).text(),
+    ).toBe('NEXT')
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 

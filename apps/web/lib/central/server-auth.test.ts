@@ -6,6 +6,7 @@ import {
   type BackendCapabilities,
   type BackendMetadata,
   type CentralConfig,
+  MEMON_RELEASE,
 } from '@memon/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -67,7 +68,7 @@ const config: CentralConfig = {
 function metadata(host: string): BackendMetadata {
   return {
     host: host as BackendMetadata['host'],
-    release: '6.0.0' as BackendMetadata['release'],
+    release: MEMON_RELEASE as BackendMetadata['release'],
     apiMajor: BACKEND_API_MAJOR,
     revision: '0123456789abcdef' as BackendMetadata['revision'],
     instanceEpoch: '123e4567-e89b-42d3-a456-426614174000' as BackendMetadata['instanceEpoch'],
@@ -199,7 +200,7 @@ describe('authorizeCentralServerRequest', () => {
       runtimeAuth,
     })
     expect(unauthorized).toMatchObject({ ok: false, status: 401 })
-    expect(unauthorized.headers).toHaveProperty('WWW-Authenticate')
+    expect(unauthorized.headers).not.toHaveProperty('WWW-Authenticate')
 
     const limited = await authorizeCentralServerRequest({
       request: incoming('/api/runs?host=host-a&project=project-x'),

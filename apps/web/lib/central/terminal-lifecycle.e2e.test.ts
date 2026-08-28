@@ -45,6 +45,7 @@ import {
 } from '../api'
 import { createMemonServer } from '../server-core'
 import { CentralEventFanIn } from './backend-events'
+import { proxyCentralApiRequest } from './backend-proxy'
 import { aggregateCentralProjects } from './central-projects'
 import { CentralHostRegistry } from './host-registry'
 import { createCentralHttpBridge } from './http-bridge'
@@ -642,24 +643,34 @@ describe('central terminal lifecycle to public relay', () => {
       )
       expect((await fetchReport(targetB, 'R0001')).content).toContain('Host B report')
 
-      const shareA = await request(
-        central,
-        '/api/projects/shared/shares?host=host-a&project=shared',
-        { method: 'POST', body: { label: 'same-share' } },
+      const shareA = await proxyCentralApiRequest(
+        new Request(`${centralOrigin}/api/projects/shared/shares?host=host-a&project=shared`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ label: 'same-share' }),
+        }),
+        { registry, actor: { role: 'owner' }, fetchImpl: nativeFetch },
       )
-      const shareB = await request(
-        central,
-        '/api/projects/shared/shares?host=host-b&project=shared',
-        { method: 'POST', body: { label: 'same-share' } },
+      const shareB = await proxyCentralApiRequest(
+        new Request(`${centralOrigin}/api/projects/shared/shares?host=host-b&project=shared`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ label: 'same-share' }),
+        }),
+        { registry, actor: { role: 'owner' }, fetchImpl: nativeFetch },
       )
       expect(shareA.status).toBe(201)
       expect(shareB.status).toBe(201)
-      const shareIdA = (JSON.parse(shareA.body.toString()) as { share: { id: string } }).share.id
-      const shareIdB = (JSON.parse(shareB.body.toString()) as { share: { id: string } }).share.id
+      const shareIdA = ((await shareA.json()) as { share: { id: string } }).share.id
+      const shareIdB = ((await shareB.json()) as { share: { id: string } }).share.id
       expect(shareIdA).not.toBe(shareIdB)
-      await request(central, `/api/projects/shared/shares/${shareIdA}?host=host-a&project=shared`, {
-        method: 'DELETE',
-      })
+      await proxyCentralApiRequest(
+        new Request(
+          `${centralOrigin}/api/projects/shared/shares/${shareIdA}?host=host-a&project=shared`,
+          { method: 'DELETE' },
+        ),
+        { registry, actor: { role: 'owner' }, fetchImpl: nativeFetch },
+      )
       expect(await listShares(rootA)).toHaveLength(0)
       expect(await listShares(rootB)).toHaveLength(1)
 

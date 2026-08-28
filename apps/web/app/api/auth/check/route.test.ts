@@ -44,16 +44,16 @@ describe('GET /api/auth/check', () => {
     expect(body).toEqual({ ok: true, username: 'admin' })
   })
 
-  it('401 with WWW-Authenticate: Basic realm="memon" on missing header', async () => {
+  it('401 without a browser Basic challenge on missing header', async () => {
     const res = await GET(reqWith({ 'x-forwarded-for': '203.0.113.2' }))
     expect(res.status).toBe(401)
-    expect(res.headers.get('www-authenticate')).toBe('Basic realm="memon"')
+    expect(res.headers.get('www-authenticate')).toBeNull()
   })
 
   it('401 on wrong password', async () => {
     const res = await GET(reqWith({ authorization: basic('admin', 'WRONG'), 'x-forwarded-for': '203.0.113.3' }))
     expect(res.status).toBe(401)
-    expect(res.headers.get('www-authenticate')).toBe('Basic realm="memon"')
+    expect(res.headers.get('www-authenticate')).toBeNull()
   })
 
   it('401 on wrong username', async () => {

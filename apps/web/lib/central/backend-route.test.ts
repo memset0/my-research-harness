@@ -26,6 +26,7 @@ describe('mapCentralApiToBackend', () => {
     ['POST', '/api/experiments/E0001-exp/link', 'experiments/[id]/link/route.ts'],
     ['POST', '/api/experiments/E0001-exp/unlink', 'experiments/[id]/unlink/route.ts'],
     ['GET', '/api/projects/project-a/git-status', 'projects/[project]/git-status/route.ts'],
+    ['POST', '/api/projects/project-a/shares', 'projects/[project]/shares/route.ts'],
     [
       'GET',
       '/api/report-assets/project-a/R0001/charts/loss.png',

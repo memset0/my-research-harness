@@ -10,8 +10,8 @@
 //   - Owner identity passes any class.
 //   - Viewer identity passes only `read` whose `projectFor` resolves to a
 //     name in their scope OR returns 'multi' (handler filters).
-//   - Anon on a non-anon route → 401 with WWW-Authenticate (API) or 302 to
-//     /login?next=<path> (HTML pages).
+//   - Anon on a non-anon route → 401 without a browser Basic challenge (API)
+//     or 302 to /login?next=<path> (HTML pages).
 //
 // Rate-limit and refresh details:
 //   - Every non-anon request consumes one token from the shared per-IP bucket.

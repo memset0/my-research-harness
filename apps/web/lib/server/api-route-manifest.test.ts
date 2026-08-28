@@ -7,7 +7,7 @@ import { API_ROUTE_MANIFEST, type ApiMethod, DIRECT_RUNTIME_SURFACES } from './a
 
 const WEB_ROOT = join(__dirname, '..', '..')
 const API_ROOT = join(__dirname, '..', '..', 'app', 'api')
-const METHOD_RE = /^export async function (GET|HEAD|POST|PUT|PATCH|DELETE)/gm
+const METHOD_RE = /^export (?:async function|const) (GET|HEAD|POST|PUT|PATCH|DELETE)/gm
 
 function walkRouteFiles(directory: string): string[] {
   const routes: string[] = []
@@ -68,6 +68,17 @@ describe('API route ownership manifest', () => {
     expect(API_ROUTE_MANIFEST['auth/login/route.ts'].owner).toBe('central')
     expect(API_ROUTE_MANIFEST['runtime/health/route.ts'].owner).toBe('central')
     expect(API_ROUTE_MANIFEST['ui-preferences/route.ts'].owner).toBe('central')
+  })
+
+  it('keeps share CRUD in the central composition layer', () => {
+    expect(API_ROUTE_MANIFEST['projects/[project]/shares/route.ts']).toMatchObject({
+      owner: 'composed',
+      capability: 'shares',
+    })
+    expect(API_ROUTE_MANIFEST['projects/[project]/shares/[id]/route.ts']).toMatchObject({
+      owner: 'composed',
+      capability: 'shares',
+    })
   })
 
   it('inventories every non-API direct Runtime consumer', () => {

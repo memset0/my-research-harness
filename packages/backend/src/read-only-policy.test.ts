@@ -32,6 +32,12 @@ async function start(options: Parameters<typeof createBackendServer>[0]) {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 const owner = Buffer.from(JSON.stringify({ role: 'owner' })).toString('base64url')
+const SHARE_RECORD = {
+  id: 'shr_abcdefgh',
+  token: 'share_token',
+  created_at: '2026-08-27T12:00:00Z',
+  expires_at: null,
+}
 function request(origin: string, path: string, init: RequestInit = {}) {
   return fetch(`${origin}${path}`, {
     ...init,
@@ -69,9 +75,9 @@ describe('Backend read-only migration policy', () => {
     expect((await request(origin, '/api/backend/v1/projects')).status).toBe(200)
   })
 
-  it('rejects document writes and share create/revoke before providers run', async () => {
-    const add = vi.fn()
-    const revoke = vi.fn()
+  it('rejects Project-data writes while allowing dedicated share control writes', async () => {
+    const add = vi.fn(async () => SHARE_RECORD)
+    const revoke = vi.fn(async () => [SHARE_RECORD])
     const putReport = vi.fn()
     const origin = await start({
       hostId: 'host-a',
@@ -109,18 +115,17 @@ describe('Backend read-only migration policy', () => {
           body: '{}',
         })
       ).status,
-    ).toBe(403)
+    ).toBe(201)
     expect(
       (
         await request(origin, '/api/backend/v1/projects/project-a/shares/shr_abcdefgh', {
           method: 'DELETE',
-          body: '{}',
         })
       ).status,
-    ).toBe(403)
+    ).toBe(200)
     expect(putReport).not.toHaveBeenCalled()
-    expect(add).not.toHaveBeenCalled()
-    expect(revoke).not.toHaveBeenCalled()
+    expect(add).toHaveBeenCalledWith('project-a', {})
+    expect(revoke).toHaveBeenCalledWith('project-a', 'shr_abcdefgh')
   })
 
   it('keeps share validation readable but rejects terminal relay even when mis-advertised', async () => {

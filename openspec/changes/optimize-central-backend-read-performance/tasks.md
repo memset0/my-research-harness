@@ -31,3 +31,10 @@
 - [ ] 5.2 Run core/backend/CLI/Web typecheck, lint, focused security tests, snapshot/event/mutation integration tests, and production desktop/mobile browser checks; fix all in-scope failures.
 - [x] 5.3 Commit implementation changes separately, advance the Backend/CLI Minor in a `release: vMAJOR.MINOR.PATCH` commit, push the exact revision, reinstall the Backend, and verify release/revision/digest/readiness.
 - [ ] 5.4 Re-run live cold/warm measurements after deployment, compare with the baseline, observe cache freshness and NFS load, and retain a tested prior-release/config rollback.
+
+## 6. Central Share and Browser Authentication Repair
+
+- [x] 6.1 Route central share CRUD through the composed Next handler, keep Host selection exact, and return the canonical `/share/<host>/<project>/<token>` public URL with useful Backend error propagation.
+- [x] 6.2 Make share create/revoke depend on the dedicated `shares` capability and remain available when Project-data `mutations` are disabled; retain owner-only actor authorization and exact Backend validation.
+- [x] 6.3 Remove `WWW-Authenticate` from browser-facing 401 responses while retaining preemptive Basic credential acceptance, and prevent anonymous login pages from opening the global SSE connection.
+- [x] 6.4 Add focused Backend, central bridge, share route, middleware/auth, and event-subscription regressions; run affected package tests, Web/Backend typecheck, OpenSpec validation, synthetic central e2e, and a production build.
