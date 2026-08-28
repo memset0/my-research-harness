@@ -2,9 +2,7 @@
 
 ## Purpose
 TBD - created by archiving change add-system-auth. Update Purpose after archive.
-
 ## Requirements
-
 ### Requirement: Single-user credentials live in `config.yml` under top-level `auth` block (PLAINTEXT)
 
 The config schema SHALL accept an optional top-level `auth` mapping with keys `username` (string, default `"admin"`) and `password` (string, **plaintext**). When `auth` is missing or `password` is missing/empty, the server SHALL treat the configuration as "uninitialised" and trigger first-run password generation (see "First-run password generation"). CLI commands that do NOT start the HTTP server (e.g. `memon list`, `memon serve --help`) SHALL NOT require `auth` to be present.
@@ -662,3 +660,20 @@ On POSIX, central and Backend instance configurations containing service tokens 
 #### Scenario: First run does not weaken permissions
 - **WHEN** first-run central auth is initialized in an owner-only registry file
 - **THEN** the file remains owner-only and all existing Host/runbook comments remain intact
+
+### Requirement: Experiment View authorization is scope-exact and read-only for viewers
+
+The central authorization layer SHALL classify Experiment View collection reads as exact Project-scoped reads and all View lifecycle or definition mutations as owner-only. In central mode a viewer read SHALL require the exact Host+Project pair carried by its validated share scope; Project-name equality without Host equality SHALL NOT grant access. Route handlers SHALL repeat role and scope validation instead of relying only on disabled UI controls.
+
+#### Scenario: Viewer collection read is allowed in exact scope
+
+- **GIVEN** a validated viewer scope for Host A and Project X
+- **WHEN** the viewer lists Views for an Experiment on Host A and Project X
+- **THEN** the read succeeds
+
+#### Scenario: Viewer View mutation is denied
+
+- **GIVEN** a validated viewer scope for the target Experiment
+- **WHEN** the viewer directly submits a create, update, rename, or delete request
+- **THEN** the request is rejected as forbidden
+- **AND** SQLite remains unchanged

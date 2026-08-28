@@ -21,7 +21,7 @@
 ## 4. Verification and Live Migration
 
 - [x] 4.1 Run focused store, route/auth, hook, Results component, typecheck, lint, and production build gates; strictly validate this OpenSpec change.
-- [ ] 4.2 Take a consistent machine-local backup of the live central SQLite database and record legacy Results source counts plus canonical payload hashes without exposing credentials.
-- [ ] 4.3 Release the central-only Patch in a separate `release: vMAJOR.MINOR.PATCH` commit, push the exact revision, deploy central, and verify release/readiness.
-- [ ] 4.4 Verify every live legacy Results definition exists under the correct Experiment View collection, source rows remain intact, and owner edits survive refresh.
-- [ ] 4.5 Verify a real exact-scope share link lists and switches through every View but exposes no enabled mutation and receives 403 for direct mutation attempts.
+- [x] 4.2 Take a consistent machine-local backup of the live central SQLite database and record legacy Results source counts plus canonical payload hashes without exposing credentials.
+- [x] 4.3 Release the central-only Patch in a separate `release: vMAJOR.MINOR.PATCH` commit, push the exact revision, deploy central, and verify release/readiness.
+- [x] 4.4 Verify every live legacy Results definition exists under the correct Experiment View collection, source rows remain intact, and owner edits survive refresh.
+- [x] 4.5 Verify a real exact-scope share link lists and switches through every View but exposes no enabled mutation and receives 403 for direct mutation attempts.
