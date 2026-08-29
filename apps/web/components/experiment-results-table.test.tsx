@@ -69,6 +69,18 @@ const URL_RESULTS: ResultsDocument = {
   })),
 }
 
+const ANNOTATED_RESULTS: ResultsDocument = {
+  ...RESULTS,
+  columnAnnotations: {
+    lr: {
+      description: 'Controls the **optimizer step size**.',
+      valueDescriptions: {
+        '0.001': 'The **conservative** baseline.',
+      },
+    },
+  },
+}
+
 describe('ExperimentResultsTable', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'localStorage', {
@@ -153,6 +165,40 @@ describe('ExperimentResultsTable', () => {
     expect(within(domainCard).getByText('0.003')).toBeInTheDocument()
     expect(screen.queryByText(/Pale-blue columns are metrics/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Click filter or sort badges/)).not.toBeInTheDocument()
+  })
+
+  it('shows Markdown descriptions when annotated headers and values are hovered', async () => {
+    const user = userEvent.setup()
+    const { container } = renderResults('E0001-annotations', ANNOTATED_RESULTS)
+    const headerButton = container.querySelector<HTMLElement>(
+      '[data-column-id="schema:lr"] button[data-has-description="true"]',
+    )!
+    expect(headerButton).toBeInTheDocument()
+
+    await user.hover(headerButton)
+    const columnTooltip = await screen.findByLabelText('Learning rate column description')
+    expect(
+      within(columnTooltip).getByText('optimizer step size', { exact: false }),
+    ).toBeInTheDocument()
+    expect(columnTooltip.querySelector('strong')).toHaveTextContent('optimizer step size')
+    await user.unhover(headerButton)
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Learning rate column description')).not.toBeInTheDocument()
+    })
+
+    const describedCell = container.querySelector<HTMLElement>(
+      '[data-variant-id="V0001"] [data-column-id="schema:lr"] [data-has-description="true"]',
+    )!
+    expect(describedCell).toHaveAttribute('tabindex', '0')
+    await user.hover(describedCell)
+    const valueTooltip = await screen.findByLabelText('Learning rate value description')
+    expect(within(valueTooltip).getByText('conservative', { exact: false })).toBeInTheDocument()
+    expect(valueTooltip.querySelector('strong')).toHaveTextContent('conservative')
+
+    const undescribedCell = container.querySelector<HTMLElement>(
+      '[data-variant-id="V0002"] [data-column-id="schema:lr"]',
+    )!
+    expect(undescribedCell.querySelector('[data-has-description]')).not.toBeInTheDocument()
   })
 
   it('shares persisted column order between checkbox controls and draggable headers', async () => {
@@ -761,7 +807,9 @@ describe('ExperimentResultsTable', () => {
     const { container, unmount: unmountA } = renderResults('E0001-sota-a')
 
     // Right-click the "Final loss" column header to open the context menu.
-    const lossHeader = container.querySelector<HTMLElement>('[data-column-id="schema:loss"] button')!
+    const lossHeader = container.querySelector<HTMLElement>(
+      '[data-column-id="schema:loss"] button',
+    )!
     fireEvent.contextMenu(lossHeader)
 
     // Context menu content is portaled to document.body; query from there.
@@ -797,27 +845,36 @@ describe('ExperimentResultsTable', () => {
     // SOTA highlighting and decimal formatting apply after the preference-driven
     // re-render; wait for them.
     await waitFor(() => {
-      const v0002After = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
+      const v0002After = table.querySelector(
+        '[data-variant-id="V0002"] [data-column-id="schema:loss"] span',
+      )
       expect(v0002After).toHaveClass('font-bold', 'underline')
     })
-    const v0001LossCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
+    const v0001LossCell = table.querySelector(
+      '[data-variant-id="V0001"] [data-column-id="schema:loss"] span',
+    )
     expect(v0001LossCell).toHaveClass('font-bold')
     expect(v0001LossCell).not.toHaveClass('underline')
 
     // Decimal formatting: 0.1 → "0.10", 0.2 → "0.20"
     expect(v0001LossCell).toHaveTextContent('0.10')
-    const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
+    const v0002LossCell = table.querySelector(
+      '[data-variant-id="V0002"] [data-column-id="schema:loss"] span',
+    )
     expect(v0002LossCell).toHaveTextContent('0.20')
 
     // Non-metric column (Learning rate) should not be affected
-    const lrCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:lr"] span')
+    const lrCell = table.querySelector(
+      '[data-variant-id="V0001"] [data-column-id="schema:lr"] span',
+    )
     expect(lrCell).not.toHaveClass('font-bold', 'underline')
     expect(lrCell).toHaveTextContent('0.001') // no formatting
 
     unmountA()
     await waitFor(() => {
       const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-sota-a:preferences') ?? '{}',
+        window.localStorage.getItem('memon:results-table:research:E0001-sota-a:preferences') ??
+          '{}',
       )
       expect(preferences.sotaModes).toEqual({ 'schema:loss': 'higher-is-better' })
       expect(preferences.decimalPlaces).toEqual({ 'schema:loss': 2 })
@@ -829,7 +886,9 @@ describe('ExperimentResultsTable', () => {
     const user = userEvent.setup()
     const { container, unmount: unmountB } = renderResults('E0001-sota-b')
 
-    const lossHeader = container.querySelector<HTMLElement>('[data-column-id="schema:loss"] button')!
+    const lossHeader = container.querySelector<HTMLElement>(
+      '[data-column-id="schema:loss"] button',
+    )!
     // Start from off, cycle: off → higher → lower
     fireEvent.contextMenu(lossHeader)
     const body = window.document.body
@@ -856,17 +915,22 @@ describe('ExperimentResultsTable', () => {
 
     const table = container.querySelector('table')!
     await waitFor(() => {
-      const v0001After = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span')
+      const v0001After = table.querySelector(
+        '[data-variant-id="V0001"] [data-column-id="schema:loss"] span',
+      )
       expect(v0001After).toHaveClass('font-bold', 'underline')
     })
-    const v0002LossCell = table.querySelector('[data-variant-id="V0002"] [data-column-id="schema:loss"] span')
+    const v0002LossCell = table.querySelector(
+      '[data-variant-id="V0002"] [data-column-id="schema:loss"] span',
+    )
     expect(v0002LossCell).toHaveClass('font-bold')
     expect(v0002LossCell).not.toHaveClass('underline')
 
     unmountB()
     await waitFor(() => {
       const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-sota-b:preferences') ?? '{}',
+        window.localStorage.getItem('memon:results-table:research:E0001-sota-b:preferences') ??
+          '{}',
       )
       expect(preferences.sotaModes).toEqual({ 'schema:loss': 'lower-is-better' })
     })
@@ -879,7 +943,9 @@ describe('ExperimentResultsTable', () => {
 
     // Notes is a string metric column; verify the SOTA submenu exists in its
     // context menu (metric columns get the display submenics).
-    const notesHeader = container.querySelector<HTMLElement>('[data-column-id="schema:notes"] button')!
+    const notesHeader = container.querySelector<HTMLElement>(
+      '[data-column-id="schema:notes"] button',
+    )!
     fireEvent.contextMenu(notesHeader)
     const sotaSubTrigger = screen.getByRole('menuitem', { name: /SOTA highlight/i })
     expect(sotaSubTrigger).toBeInTheDocument()
@@ -891,7 +957,9 @@ describe('ExperimentResultsTable', () => {
 
     // String metric values never receive SOTA rank styling regardless of mode.
     const table = container.querySelector('table') ?? screen.getByRole('table')
-    const v0001NotesCell = table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:notes"]')
+    const v0001NotesCell = table.querySelector(
+      '[data-variant-id="V0001"] [data-column-id="schema:notes"]',
+    )
     expect(v0001NotesCell).not.toHaveClass('font-bold', 'underline')
 
     unmount()

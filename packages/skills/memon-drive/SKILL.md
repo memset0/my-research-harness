@@ -45,6 +45,7 @@ Read fresh state before suggesting work:
 
 ```sh
 memon --project-root . --format json experiment show "$EXP_ID"
+memon --project-root . experiment results summary "$EXP_ID" --output json
 memon --project-root . --format human experiment doc render "$EXP_ID" implementation
 memon --project-root . --format human experiment doc render "$EXP_ID" investigation
 memon --project-root . --format human experiment doc render "$EXP_ID" results
@@ -106,6 +107,14 @@ same Variant and does not need a new design confirmation.
 
 `columns` defines display and validation. Enum columns declare all allowed
 `options`, although not every option needs a row.
+
+When a column label is insufficient to explain its semantics, ask the writer
+to add a Markdown `column_annotations.<key>.description`. When selected values
+have non-obvious meanings, add only the useful
+`column_annotations.<key>.value_descriptions` entries. These annotations are
+optional documentation: never require complete option coverage and never
+treat them as validation constraints. The writer may use the focused
+annotation CLI or edit `results.yaml` directly.
 
 ### 3. Implement only what is necessary
 

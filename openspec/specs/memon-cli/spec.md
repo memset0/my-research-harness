@@ -1052,7 +1052,7 @@ This requirement carries NO behavior change observable from inside the runtime (
 
 The CLI SHALL expose `memon experiment doc show <id> <section>`, `render <id> <section>`, `validate <id>`, and `lint <id>` for v6 Experiment bundles. `section` SHALL be one of `implementation`, `investigation`, or `results`. Human show/render output SHALL use Core's deterministic Markdown projection; JSON output SHALL include structured diagnostics. Validate and lint SHALL exit non-zero when any error diagnostic exists.
 
-The CLI SHALL NOT expose item-level create, update, delete, reorder, or status-mutation commands for the YAML trees or Variants. Agents edit the YAML source files directly.
+The CLI SHALL NOT expose item-level create, update, delete, reorder, or status-mutation commands for the YAML trees or Variants. Agents may edit the YAML source files directly. The focused Results annotation upsert described below is the sole optional metadata-write convenience and SHALL NOT become a required write gate.
 
 #### Scenario: Managed section renders for a human
 - **WHEN** the user runs `memon --project-root . --format human experiment doc render E0001-example results`
@@ -1148,6 +1148,35 @@ Empty filter results are not errors — the command returns zero rows with `meta
 - **WHEN** `memon experiment results table <id>` runs
 - **THEN** stderr contains `{"error":{"code":"NOT_FOUND","message":"results.yaml not found for experiment \"<id>\""}}`
 - **AND** exit code is 4
+
+### Requirement: Results summary exposes table shape without cell values
+
+`memon experiment results summary <id-or-slug> [--output <fmt>]` SHALL return
+declared columns and Variant row identities without returning parameter/metric
+cell values, Runs, Attempts, or provenance. Each column SHALL include its key,
+label, group, type, options when present, and optional column/value
+descriptions. Each row SHALL include only Variant `id`, `name`, and `status`.
+
+#### Scenario: Agent inspects Results shape safely
+- **WHEN** an Agent runs `memon experiment results summary E0001-example --output json`
+- **THEN** stdout contains column and row counts, column schemas, annotations, and Variant identities
+- **AND** stdout contains no `parameters`, `metrics`, `runs`, `attempts`, or provenance
+
+### Requirement: Focused Results annotation commands are optional idempotent helpers
+
+`memon experiment results annotation get <id> [--column <key>] [--value <value>]`
+SHALL read all annotations or one selected description.
+`memon experiment results annotation set <id> <column> [--value <value>]
+--description <markdown>` SHALL atomically add or replace the selected column
+description or value description in `results.yaml`. Set SHALL require a
+declared column but SHALL NOT require `--value` to occur in enum `options`.
+Direct YAML editing SHALL remain supported and documented.
+
+#### Scenario: Existing value description is replaced
+- **GIVEN** column `precision` already describes value `bf16`
+- **WHEN** annotation set targets the same column and value with new Markdown
+- **THEN** exactly that description is replaced atomically
+- **AND** unrelated YAML keys are retained
 
 ### Requirement: Warning compatibility commands remain permanently deprecated
 

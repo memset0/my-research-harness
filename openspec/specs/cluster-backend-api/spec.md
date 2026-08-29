@@ -77,6 +77,11 @@ The Backend event endpoint SHALL provide heartbeats, an instance epoch, and a mo
 ### Requirement: Experiment detail preserves the safe v6 document contract
 The ID-addressed Backend Experiment detail response SHALL include ordered raw section descriptors, sanitized parsed Implementation/Investigation/Results documents, canonical display sections, document diagnostics, read-only state, and Results update metadata. It MUST omit absolute paths and raw filesystem authority. Experiment list responses SHALL NOT include the managed document payload.
 
+Sanitized Results documents SHALL preserve optional `columnAnnotations`,
+including bounded Markdown column descriptions and sparse bounded value
+descriptions, so standalone and central-through-Backend views expose equivalent
+Results annotation behavior.
+
 #### Scenario: Valid v6 detail crosses the Backend boundary
 - **WHEN** central requests an Experiment whose three managed YAML documents parse successfully
 - **THEN** the response runtime-validates and contains the structured data required to render all canonical managed sections and Results Variants

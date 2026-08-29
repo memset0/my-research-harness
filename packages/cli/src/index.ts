@@ -5,12 +5,12 @@
 import { ConfigError, EXPERIMENT_DIR_REGEX, MEMON_RELEASE, RUN_DIR_REGEX } from '@memon/core'
 import { Command } from 'commander'
 import { runBackendDaemonCommand } from './commands/backend-daemon.js'
+import { runBackendServe } from './commands/backend-serve.js'
 import {
   runBackendPrepare,
   runBackendRollback,
   runBackendTokenGenerate,
 } from './commands/backend-update.js'
-import { runBackendServe } from './commands/backend-serve.js'
 import { runDoctorCmd } from './commands/doctor.js'
 import {
   readStdin,
@@ -37,7 +37,12 @@ import {
   runExperimentDocumentValidate,
 } from './commands/experiment-document.js'
 import { runExperimentRename } from './commands/experiment-rename.js'
-import { runExperimentResults } from './commands/experiment-results.js'
+import {
+  runExperimentResults,
+  runExperimentResultsAnnotationGet,
+  runExperimentResultsAnnotationSet,
+  runExperimentResultsSummary,
+} from './commands/experiment-results.js'
 import { runFsVersionCheck } from './commands/fs-version-check.js'
 import { runHypoList, runHypoShow } from './commands/hypo.js'
 import { runHypothesesRead } from './commands/hypotheses.js'
@@ -449,7 +454,9 @@ for (const section of ['implementation', 'investigation'] as const) {
       await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section })
     })
 }
-const resultsCommand = experiment.command('results').description('results.yaml read commands')
+const resultsCommand = experiment
+  .command('results')
+  .description('results.yaml table, summary, and optional annotation commands')
 resultsCommand
   .command('show <id-or-slug>')
   .description('render results.yaml as human-readable Markdown or normalized JSON')
@@ -481,6 +488,51 @@ resultsCommand
         columns: opts.column,
         columnGroup: opts.group ?? 'all',
         output: opts.output ?? 'json',
+      })
+    },
+  )
+
+resultsCommand
+  .command('summary <id-or-slug>')
+  .description('show Results columns and Variant rows without cell values')
+  .option('--output <fmt>', 'output format: json | human | markdown (default: json)', 'json')
+  .action(async (idOrSlug: string, opts: { output?: string }) => {
+    await runExperimentResultsSummary({
+      ...readGlobals(),
+      idOrSlug,
+      output: opts.output ?? 'json',
+    })
+  })
+
+const resultsAnnotationCommand = resultsCommand
+  .command('annotation')
+  .description('read or optionally update sparse Results column annotations')
+resultsAnnotationCommand
+  .command('get <id-or-slug>')
+  .description('read all annotations or select one column/value description')
+  .option('--column <key>', 'select one Results column')
+  .option('--value <value>', 'select one described value (requires --column)')
+  .action(async (idOrSlug: string, opts: { column?: string; value?: string }) => {
+    await runExperimentResultsAnnotationGet({
+      ...readGlobals(),
+      idOrSlug,
+      column: opts.column,
+      value: opts.value,
+    })
+  })
+resultsAnnotationCommand
+  .command('set <id-or-slug> <column>')
+  .description('add or replace a Markdown column/value description in results.yaml')
+  .option('--value <value>', 'describe this value instead of the whole column')
+  .requiredOption('--description <markdown>', 'Markdown description to write')
+  .action(
+    async (idOrSlug: string, column: string, opts: { value?: string; description: string }) => {
+      await runExperimentResultsAnnotationSet({
+        ...readGlobals(),
+        idOrSlug,
+        column,
+        value: opts.value,
+        description: opts.description,
       })
     },
   )

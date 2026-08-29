@@ -8,6 +8,8 @@ import {
   renderExperimentManagedSection,
   renderImplementationMarkdown,
   renderResultsMarkdown,
+  serializeResultsYaml,
+  upsertResultColumnAnnotationYaml,
   validateExperimentManagedDocuments,
 } from './documents.js'
 import { buildExperimentRecord, parseExperimentReadme } from './parse.js'
@@ -88,6 +90,11 @@ items:
 
 const results = parseResultsYaml(`
 schema_version: 1
+column_annotations:
+  precision:
+    description: Controls **numeric precision** during training.
+    value_descriptions:
+      bf16: Uses **bfloat16** arithmetic.
 columns:
   - key: precision
     label: Precision
@@ -150,6 +157,79 @@ variants: []
     ).toBe(true)
   })
 
+  it('parses sparse Markdown column annotations without constraining future values', () => {
+    expect(results.parseErrors).toEqual([])
+    expect(results.data?.columnAnnotations).toEqual({
+      precision: {
+        description: 'Controls **numeric precision** during training.',
+        valueDescriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
+      },
+    })
+
+    const futureValue = parseResultsYaml(`
+schema_version: 1
+column_annotations:
+  precision:
+    value_descriptions:
+      fp4: Planned **future** format.
+columns:
+  - key: precision
+    label: Precision
+    group: parameter
+    type: enum
+    options: [fp32, bf16]
+variants: []
+`)
+    expect(futureValue.parseErrors).toEqual([])
+    expect(
+      validateExperimentManagedDocuments({
+        implementation: parseImplementationYaml('schema_version: 1\nitems: []\n'),
+        investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
+        results: futureValue,
+      }),
+    ).toEqual([])
+  })
+
+  it('serializes annotations near the top and upserts descriptions while retaining unknown keys', () => {
+    const serialized = serializeResultsYaml(results.data!)
+    expect(serialized.indexOf('column_annotations:')).toBeGreaterThan(
+      serialized.indexOf('schema_version:'),
+    )
+    expect(serialized.indexOf('column_annotations:')).toBeLessThan(serialized.indexOf('columns:'))
+
+    const source = `schema_version: 1
+column_annotations:
+  precision:
+    description: Old text
+columns:
+  - key: precision
+    label: Precision
+    group: parameter
+    type: enum
+    options: [fp32, bf16]
+variants: []
+future_top_level: keep-me
+`
+    const column = upsertResultColumnAnnotationYaml(source, 'precision', 'New **Markdown** text')
+    expect(column.replaced).toBe(true)
+    expect(column.changed).toBe(true)
+    expect(column.content).toContain('future_top_level: keep-me')
+    expect(parseResultsYaml(column.content).data?.columnAnnotations?.precision?.description).toBe(
+      'New **Markdown** text',
+    )
+
+    const value = upsertResultColumnAnnotationYaml(
+      column.content,
+      'precision',
+      'May be added later.',
+      'fp4',
+    )
+    expect(value.replaced).toBe(false)
+    expect(
+      parseResultsYaml(value.content).data?.columnAnnotations?.precision?.valueDescriptions,
+    ).toEqual({ fp4: 'May be added later.' })
+  })
+
   it('reports file schema versions as FS-managed compatibility errors', () => {
     const missing = parseImplementationYaml('items: []\n')
     const ahead = parseInvestigationYaml('schema_version: 2\nitems: []\n')
@@ -181,6 +261,9 @@ items:
 
   it('renders Results as a Markdown table with accepted Runs and separate Attempts', () => {
     const markdown = renderResultsMarkdown(results.data!)
+    expect(markdown).toContain('### Column annotations')
+    expect(markdown).toContain('Controls **numeric precision** during training.')
+    expect(markdown).toContain('- `bf16`: Uses **bfloat16** arithmetic.')
     expect(markdown).toContain(
       '| Variant | Status | Precision | Final loss | Entry | Recipe | Commit | Runs | Attempts |',
     )

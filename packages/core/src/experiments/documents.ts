@@ -186,6 +186,13 @@ const InvestigationDocumentRawSchema = z
   .passthrough()
 
 const ResultScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()])
+const ResultColumnAnnotationRawSchema = z
+  .object({
+    description: z.string().min(1).optional(),
+    value_descriptions: z.record(z.string().min(1)).optional(),
+  })
+  .passthrough()
+const ResultColumnAnnotationsRawSchema = z.record(ResultColumnAnnotationRawSchema)
 const ResultColumnRawSchema = z
   .object({
     key: z
@@ -241,6 +248,7 @@ const ResultVariantRawSchema = z
 const ResultsDocumentRawSchema = z
   .object({
     schema_version: z.literal(RESULTS_SCHEMA_VERSION),
+    column_annotations: ResultColumnAnnotationsRawSchema.optional(),
     columns: z.array(ResultColumnRawSchema).default([]),
     variants: z.array(ResultVariantRawSchema).default([]),
   })
@@ -275,6 +283,25 @@ export function serializeInvestigationYaml(document: InvestigationDocument): str
 export function serializeResultsYaml(document: ResultsDocument): string {
   return dumpYaml({
     schema_version: document.schemaVersion,
+    ...(document.columnAnnotations === undefined ||
+    Object.keys(document.columnAnnotations).length === 0
+      ? {}
+      : {
+          column_annotations: Object.fromEntries(
+            Object.entries(document.columnAnnotations).map(([key, annotation]) => [
+              key,
+              {
+                ...(annotation.description === undefined
+                  ? {}
+                  : { description: annotation.description }),
+                ...(annotation.valueDescriptions === undefined ||
+                Object.keys(annotation.valueDescriptions).length === 0
+                  ? {}
+                  : { value_descriptions: annotation.valueDescriptions }),
+              },
+            ]),
+          ),
+        }),
     columns: document.columns.map((column) => ({ ...column })),
     variants: document.variants.map((variant) => ({
       ...(variant.extra ?? {}),
@@ -329,9 +356,91 @@ export function parseResultsYaml(
 ): ParsedManagedDocument<ResultsDocument> {
   return parseYamlDocument('results', path, content, ResultsDocumentRawSchema, (raw) => ({
     schemaVersion: raw.schema_version,
+    ...(raw.column_annotations === undefined
+      ? {}
+      : {
+          columnAnnotations: Object.fromEntries(
+            Object.entries(raw.column_annotations).map(([key, annotation]) => [
+              key,
+              {
+                ...(annotation.description === undefined
+                  ? {}
+                  : { description: annotation.description }),
+                ...(annotation.value_descriptions === undefined
+                  ? {}
+                  : { valueDescriptions: annotation.value_descriptions }),
+              },
+            ]),
+          ),
+        }),
     columns: (raw.columns ?? []).map((column) => ({ ...column })) as ResultColumn[],
     variants: (raw.variants ?? []).map((variant) => normalizeResultVariant(variant)),
   }))
+}
+
+export interface UpsertResultColumnAnnotationResult {
+  content: string
+  replaced: boolean
+  changed: boolean
+}
+
+/**
+ * Add or replace one column description or value description in raw Results
+ * YAML. Unknown YAML keys are retained, and the optional annotation block is
+ * kept immediately after schema_version.
+ *
+ * Value-description keys intentionally are not validated against enum options:
+ * annotations may be sparse and may document values introduced later.
+ */
+export function upsertResultColumnAnnotationYaml(
+  content: string,
+  columnKey: string,
+  description: string,
+  value?: string,
+): UpsertResultColumnAnnotationResult {
+  if (description.trim().length === 0) {
+    throw new Error('description must contain non-whitespace Markdown text')
+  }
+
+  const parsed = parseResultsYaml(content)
+  if (parsed.data === null || parsed.parseErrors.length > 0) {
+    throw new Error(parsed.parseErrors.map((issue) => issue.message).join('; '))
+  }
+  if (!parsed.data.columns.some((column) => column.key === columnKey)) {
+    throw new Error(`Results column "${columnKey}" does not exist`)
+  }
+
+  const loaded = yaml.load(content, { schema: yaml.JSON_SCHEMA }) as Record<string, unknown>
+  const rawAnnotations = (loaded.column_annotations ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >
+  const previousEntry = rawAnnotations[columnKey] ?? {}
+  let previous: unknown
+  let nextEntry: Record<string, unknown>
+  if (value === undefined) {
+    previous = previousEntry.description
+    nextEntry = { ...previousEntry, description }
+  } else {
+    const previousValues = (previousEntry.value_descriptions ?? {}) as Record<string, unknown>
+    previous = previousValues[value]
+    nextEntry = {
+      ...previousEntry,
+      value_descriptions: { ...previousValues, [value]: description },
+    }
+  }
+
+  const remaining = omit(loaded, ['schema_version', 'column_annotations'])
+  const next = dumpYaml({
+    schema_version: loaded.schema_version,
+    column_annotations: { ...rawAnnotations, [columnKey]: nextEntry },
+    ...remaining,
+  })
+  const reparsed = parseResultsYaml(next)
+  if (reparsed.data === null || reparsed.parseErrors.length > 0) {
+    throw new Error(reparsed.parseErrors.map((issue) => issue.message).join('; '))
+  }
+  return { content: next, replaced: previous !== undefined, changed: previous !== description }
 }
 
 export async function readExperimentManagedDocuments(
@@ -359,7 +468,8 @@ export function renderResultsMarkdown(
   document: ResultsDocument,
   context?: ResultsRenderContext,
 ): string {
-  if (document.variants.length === 0) return '_No variants yet._\n'
+  const annotations = renderResultColumnAnnotationsMarkdown(document)
+  if (document.variants.length === 0) return `${annotations}_No variants yet._\n`
   const headers = [
     'Variant',
     'Status',
@@ -388,12 +498,47 @@ export function renderResultsMarkdown(
       ? variant.attempts.map((run) => renderRunReference(run, context)).join('<br>')
       : '—',
   ])
-  return [
+  const table = [
     `| ${headers.map(escapeTable).join(' | ')} |`,
     `| ${headers.map(() => '---').join(' | ')} |`,
     ...rows.map((row) => `| ${row.join(' | ')} |`),
     '',
   ].join('\n')
+  return `${annotations}${table}`
+}
+
+/** Render optional Markdown column/value explanations before the Results table. */
+export function renderResultColumnAnnotationsMarkdown(document: ResultsDocument): string {
+  const annotations = document.columnAnnotations
+  if (!annotations || Object.keys(annotations).length === 0) return ''
+
+  const declaredKeys = document.columns.map((column) => column.key)
+  const orderedKeys = [
+    ...declaredKeys.filter((key) => annotations[key] !== undefined),
+    ...Object.keys(annotations).filter((key) => !declaredKeys.includes(key)),
+  ]
+  const renderedColumns = orderedKeys.flatMap((columnKey) => {
+    const annotation = annotations[columnKey]
+    if (!annotation) return []
+    const values = Object.entries(annotation.valueDescriptions ?? {})
+    if (annotation.description === undefined && values.length === 0) return []
+
+    const column = document.columns.find((candidate) => candidate.key === columnKey)
+    const label = column?.label ?? columnKey
+    const lines = [`#### ${escapeTable(label)} (\`${escapeCode(columnKey)}\`)`, '']
+    if (annotation.description !== undefined) lines.push(annotation.description, '')
+    if (values.length > 0) {
+      lines.push('Value descriptions:', '')
+      for (const [value, description] of values) {
+        const descriptionLines = description.split(/\r?\n/)
+        lines.push(`- \`${escapeCode(value)}\`: ${descriptionLines[0] ?? ''}`)
+        lines.push(...descriptionLines.slice(1).map((line) => `  ${line}`))
+      }
+    }
+    return [lines.join('\n').trimEnd()]
+  })
+  if (renderedColumns.length === 0) return ''
+  return `### Column annotations\n\n${renderedColumns.join('\n\n')}\n\n`
 }
 
 export function renderManagedDocumentMarkdown(

@@ -429,6 +429,17 @@ export interface ResultColumn {
   options?: Array<string | number | boolean>
 }
 
+/** Optional Markdown documentation attached to one Results column. */
+export interface ResultColumnAnnotation {
+  /** Supplemental explanation of the column itself. */
+  description?: string
+  /** Partial explanations keyed by the textual form of selected values. */
+  valueDescriptions?: Record<string, string>
+}
+
+/** Sparse annotations keyed by Results column key. */
+export type ResultColumnAnnotations = Record<string, ResultColumnAnnotation>
+
 export type ResultScalar = string | number | boolean | null
 
 export interface VariantProvenance {
@@ -457,6 +468,7 @@ export interface ResultVariant {
 
 export interface ResultsDocument {
   schemaVersion: number
+  columnAnnotations?: ResultColumnAnnotations
   columns: ResultColumn[]
   variants: ResultVariant[]
 }

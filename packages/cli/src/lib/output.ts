@@ -6,7 +6,14 @@
 // We intentionally avoid pretty-printing by default — agents pipe the output
 // to `jq` or parse it directly, and noise / colors break that.
 
-import { STATUS_EMOJI, type Hypothesis, type ResultColumn, type ResultScalar, type Run } from '@memon/core'
+import {
+  type Hypothesis,
+  type ResultColumn,
+  type ResultColumnAnnotations,
+  type ResultScalar,
+  type Run,
+  STATUS_EMOJI,
+} from '@memon/core'
 
 export type OutputFormat = 'json' | 'human'
 
@@ -25,6 +32,7 @@ export interface TableOutput {
   experimentId: string
   resultsSchemaVersion: number
   columns: ResultColumn[]
+  columnAnnotations?: ResultColumnAnnotations
   rows: TableRow[]
   meta: {
     totalVariants: number
@@ -87,13 +95,16 @@ export function emitMarkdownTable(table: TableOutput): void {
     String(row.attempts.length),
   ])
   const allRows = [headers, ...rows]
-  const widths = allRows[0]!.map((_, i) =>
-    Math.max(...allRows.map((r) => (r[i] ?? '').length)),
-  )
+  const widths = allRows[0]!.map((_, i) => Math.max(...allRows.map((r) => (r[i] ?? '').length)))
   const sep = widths.map((w) => '─'.repeat(w)).join('─┼─')
-  const fmt = (row: string[]) =>
-    '│ ' + row.map((cell, i) => cell.padEnd(widths[i]!)).join(' │ ') + ' │'
-  process.stdout.write([fmt(headers), fmt(sep.split('─┼─').map((s) => s)), ...rows.map(fmt)].join('\n') + '\n')
+  const fmt = (row: string[]) => `│ ${row.map((cell, i) => cell.padEnd(widths[i]!)).join(' │ ')} │`
+  process.stdout.write(
+    `${renderTableAnnotations(table)}${[
+      fmt(headers),
+      fmt(sep.split('─┼─').map((s) => s)),
+      ...rows.map(fmt),
+    ].join('\n')}\n`,
+  )
 }
 
 function renderScalarMd(value: ResultScalar | undefined): string {
@@ -102,14 +113,10 @@ function renderScalarMd(value: ResultScalar | undefined): string {
 }
 
 export function renderHumanTable(table: TableOutput): string {
-  if (table.rows.length === 0) return `experiment: ${table.experimentId}\n\n(no matching variants)\n`
-  const headers = [
-    'Variant',
-    'Status',
-    ...table.columns.map((c) => c.label),
-    'Runs',
-    'Attempts',
-  ]
+  const annotations = renderTableAnnotations(table)
+  if (table.rows.length === 0)
+    return `experiment: ${table.experimentId}\n\n${annotations}(no matching variants)\n`
+  const headers = ['Variant', 'Status', ...table.columns.map((c) => c.label), 'Runs', 'Attempts']
   const rows = table.rows.map((row) => [
     `**${row.variantId}** ${row.variantName}`,
     `\`${row.status}\``,
@@ -122,12 +129,30 @@ export function renderHumanTable(table: TableOutput): string {
     Math.max(...allRows.map((r) => (r[i] ?? '').replace(/\*\*/g, '').replace(/`/g, '').length)),
   )
   const sep = widths.map((w) => '─'.repeat(w)).join('─┼─')
-  const fmt = (row: string[]) =>
-    '│ ' + row.map((cell, i) => cell.padEnd(widths[i]!)).join(' │ ') + ' │'
+  const fmt = (row: string[]) => `│ ${row.map((cell, i) => cell.padEnd(widths[i]!)).join(' │ ')} │`
   const headerLine = fmt(headers)
   const sepLine = fmt(sep.split('─┼─').map((s) => s))
   const body = rows.map(fmt).join('\n')
-  return `experiment: ${table.experimentId}\n\n${headerLine}\n${sepLine}\n${body}\n`
+  return `experiment: ${table.experimentId}\n\n${annotations}${headerLine}\n${sepLine}\n${body}\n`
+}
+
+function renderTableAnnotations(table: TableOutput): string {
+  const annotations = table.columnAnnotations
+  if (!annotations || Object.keys(annotations).length === 0) return ''
+  const lines = ['Column annotations:', '']
+  for (const column of table.columns) {
+    const annotation = annotations[column.key]
+    if (!annotation) continue
+    if (annotation.description !== undefined) {
+      lines.push(`- ${column.label} (\`${column.key}\`): ${annotation.description}`)
+    } else {
+      lines.push(`- ${column.label} (\`${column.key}\`)`)
+    }
+    for (const [value, description] of Object.entries(annotation.valueDescriptions ?? {})) {
+      lines.push(`  - \`${value}\`: ${description}`)
+    }
+  }
+  return `${lines.join('\n')}\n\n`
 }
 
 function renderScalarHuman(value: ResultScalar | undefined): string {
@@ -140,10 +165,18 @@ export function emitYaml(table: TableOutput): void {
     experimentId: table.experimentId,
     resultsSchemaVersion: table.resultsSchemaVersion,
     columns: table.columns.map((c) => {
-      const col: Record<string, unknown> = { key: c.key, label: c.label, group: c.group, type: c.type }
+      const col: Record<string, unknown> = {
+        key: c.key,
+        label: c.label,
+        group: c.group,
+        type: c.type,
+      }
       if (c.options !== undefined) col.options = c.options
       return col
     }),
+    ...(table.columnAnnotations === undefined
+      ? {}
+      : { columnAnnotations: table.columnAnnotations }),
     rows: table.rows.map((r) => ({
       variantId: r.variantId,
       variantName: r.variantName,

@@ -404,6 +404,13 @@ results but no code change. `memon-write-code-review` SHALL be listed among
 
 Before a run, drive SHALL decide from the user's intent whether Variant-table approval is required. Explicit autonomous delegation permits immediate creation/execution; collaborative design prompts require a proposed Markdown table and confirmation. In all cases, the Variant exists before launch.
 
+Official Results-reading guidance SHALL use the structure-only Results summary
+when cell values are unnecessary and SHALL surface optional column/value
+annotations. The Experiment writer SHALL document that annotation get/set is
+an optional focused helper while direct `results.yaml` editing remains valid.
+No skill SHALL require complete annotation coverage or treat value descriptions
+as enum constraints.
+
 #### Scenario: Autonomous experiment still records Variant first
 - **GIVEN** the user explicitly delegates autonomous experimental choices
 - **WHEN** drive launches a run
@@ -536,4 +543,3 @@ Expected domain-state and validation failures SHALL NOT automatically be labeled
 - **WHEN** the skill reports its outcome
 - **THEN** it describes the document diagnostic as project state to fix
 - **AND** it does not claim the CLI itself is buggy without contradictory evidence
-

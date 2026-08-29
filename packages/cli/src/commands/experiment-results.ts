@@ -1,31 +1,36 @@
 // `memon experiment results <id-or-slug>` — read experiment results as a
 // selectable, multi-format table.
 //
-// This is a read-only projection. Agents edit results.yaml directly per
-// the memon-write-experiment-doc skill.
+// Table/summary are read-only projections. Annotation set is an optional,
+// focused convenience; agents may still edit results.yaml directly.
+
+import { promises as fs } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 import {
   type Experiment,
   type ResultColumn,
+  type ResultColumnAnnotations,
   type ResultScalar,
   type ResultsDocument,
   type ResultVariant,
   readExperimentDoc,
+  renderResultColumnAnnotationsMarkdown,
   resolveExperimentId,
+  upsertResultColumnAnnotationYaml,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import {
-  type TableOutput,
-  type TableRow,
   emitCsv,
   emitHuman,
   emitJson,
   emitMarkdownTable,
   emitYaml,
-  renderHumanTable,
   type OutputFormat,
+  renderHumanTable,
+  type TableRow,
 } from '../lib/output.js'
 
 export interface ExperimentResultsInput {
@@ -46,6 +51,44 @@ export interface ExperimentResultsInput {
 }
 
 export async function runExperimentResults(input: ExperimentResultsInput): Promise<void> {
+  const { experiment, document } = await loadResults(input)
+  const selectedColumns = selectColumns(document.columns, input)
+  const selectedVariants = selectRows(document.variants, input)
+  const output = buildTableOutput(experiment.id, document, selectedColumns, selectedVariants, input)
+
+  const fmt = resolveFormat(input.output)
+  switch (fmt) {
+    case 'human':
+      emitHuman(renderHumanTable(output))
+      break
+    case 'csv':
+      emitCsv(output)
+      break
+    case 'markdown':
+      emitMarkdownTable(output)
+      break
+    case 'yaml':
+      emitYaml(output)
+      break
+    default:
+      emitJson(output)
+      break
+  }
+}
+
+interface ResultsBaseInput {
+  projectRoot?: string
+  cwd: string
+  idOrSlug: string
+  format: OutputFormat
+}
+
+async function loadResults(input: ResultsBaseInput): Promise<{
+  experiment: Experiment
+  document: ResultsDocument
+  raw: string
+  path: string
+}> {
   const context = await resolveContext(input)
   const projectRoot = singleProjectRoot(context)
   const projectName = context.config.projects[0]!.name
@@ -71,30 +114,173 @@ export async function runExperimentResults(input: ExperimentResultsInput): Promi
     emitErrorAndExit('NOT_FOUND', `results.yaml has no valid data for experiment "${id}"`)
   }
 
-  const document = resultsDoc.data
-  const selectedColumns = selectColumns(document.columns, input)
-  const selectedVariants = selectRows(document.variants, input)
-  const output = buildTableOutput(experiment.id, document, selectedColumns, selectedVariants, input)
-
-  const fmt = resolveFormat(input.output)
-  switch (fmt) {
-    case 'human':
-      emitHuman(renderHumanTable(output))
-      break
-    case 'csv':
-      emitCsv(output)
-      break
-    case 'markdown':
-      emitMarkdownTable(output)
-      break
-    case 'yaml':
-      emitYaml(output)
-      break
-    case 'json':
-    default:
-      emitJson(output)
-      break
+  if (resultsDoc.raw === null) {
+    emitErrorAndExit('NOT_FOUND', `results.yaml has no readable content for experiment "${id}"`)
   }
+  return {
+    experiment,
+    document: resultsDoc.data,
+    raw: resultsDoc.raw,
+    path: resultsDoc.path,
+  }
+}
+
+// ---------- structure summary ----------
+
+export interface ExperimentResultsSummaryInput extends ResultsBaseInput {
+  output: string
+}
+
+interface ResultsSummary {
+  experimentId: string
+  columns: Array<
+    ResultColumn & { description?: string; valueDescriptions?: Record<string, string> }
+  >
+  rows: Array<{ id: string; name: string; status: string }>
+  meta: { columnCount: number; rowCount: number }
+}
+
+export async function runExperimentResultsSummary(
+  input: ExperimentResultsSummaryInput,
+): Promise<void> {
+  const { experiment, document } = await loadResults(input)
+  const summary: ResultsSummary = {
+    experimentId: experiment.id,
+    columns: document.columns.map((column) => ({
+      ...column,
+      ...(document.columnAnnotations?.[column.key]?.description === undefined
+        ? {}
+        : { description: document.columnAnnotations[column.key]!.description }),
+      ...(document.columnAnnotations?.[column.key]?.valueDescriptions === undefined
+        ? {}
+        : { valueDescriptions: document.columnAnnotations[column.key]!.valueDescriptions }),
+    })),
+    rows: document.variants.map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      status: variant.status,
+    })),
+    meta: { columnCount: document.columns.length, rowCount: document.variants.length },
+  }
+  const format = resolveSummaryFormat(input.output)
+  if (format === 'json') emitJson(summary)
+  else emitHuman(renderResultsSummary(summary, format))
+}
+
+function renderResultsSummary(summary: ResultsSummary, format: 'human' | 'markdown'): string {
+  const lines = [
+    ...(format === 'human' ? [`experiment: ${summary.experimentId}`, ''] : []),
+    `### Columns (${summary.meta.columnCount})`,
+    '',
+  ]
+  if (summary.columns.length === 0) lines.push('_No columns._')
+  for (const column of summary.columns) {
+    const options = column.options?.map(String).join(', ')
+    lines.push(
+      `- \`${column.key}\` — ${column.label} (\`${column.group}\`, \`${column.type}\`${options ? `; options: ${options}` : ''})`,
+    )
+    if (column.description !== undefined) lines.push(`  ${indentContinuation(column.description)}`)
+    for (const [value, description] of Object.entries(column.valueDescriptions ?? {})) {
+      lines.push(`  - \`${value}\`: ${indentContinuation(description)}`)
+    }
+  }
+  lines.push('', `### Rows (${summary.meta.rowCount})`, '')
+  if (summary.rows.length === 0) lines.push('_No rows._')
+  else {
+    lines.push('| Variant | Name | Status |', '|---|---|---|')
+    for (const row of summary.rows) {
+      lines.push(`| \`${row.id}\` | ${escapeTableCell(row.name)} | \`${row.status}\` |`)
+    }
+  }
+  return `${lines.join('\n')}\n`
+}
+
+function indentContinuation(value: string): string {
+  return value.replace(/\r?\n/g, '\n  ')
+}
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
+}
+
+// ---------- annotation read/write ----------
+
+export interface ExperimentResultsAnnotationGetInput extends ResultsBaseInput {
+  column?: string
+  value?: string
+}
+
+export async function runExperimentResultsAnnotationGet(
+  input: ExperimentResultsAnnotationGetInput,
+): Promise<void> {
+  if (input.value !== undefined && input.column === undefined) {
+    emitErrorAndExit('BAD_REQUEST', '--value requires --column')
+  }
+  const { experiment, document } = await loadResults(input)
+  const annotations = document.columnAnnotations ?? {}
+  if (input.column !== undefined && input.value !== undefined) {
+    const description = annotations[input.column]?.valueDescriptions?.[input.value] ?? null
+    if (input.format === 'human') {
+      process.stdout.write(
+        description === null
+          ? `(no description for ${input.column}=${input.value})\n`
+          : `${input.column}=${input.value}\n\n${description}\n`,
+      )
+    } else {
+      emitJson({
+        experimentId: experiment.id,
+        column: input.column,
+        value: input.value,
+        description,
+      })
+    }
+    return
+  }
+
+  const selected: ResultColumnAnnotations =
+    input.column === undefined
+      ? annotations
+      : annotations[input.column] === undefined
+        ? {}
+        : { [input.column]: annotations[input.column]! }
+  if (input.format === 'human') {
+    const markdown = renderResultColumnAnnotationsMarkdown({
+      ...document,
+      columnAnnotations: selected,
+    })
+    process.stdout.write(markdown || '_No column annotations._\n')
+  } else {
+    emitJson({ experimentId: experiment.id, columnAnnotations: selected })
+  }
+}
+
+export interface ExperimentResultsAnnotationSetInput extends ResultsBaseInput {
+  column: string
+  value?: string
+  description: string
+}
+
+export async function runExperimentResultsAnnotationSet(
+  input: ExperimentResultsAnnotationSetInput,
+): Promise<void> {
+  const { experiment, raw, path } = await loadResults(input)
+  let result: ReturnType<typeof upsertResultColumnAnnotationYaml>
+  try {
+    result = upsertResultColumnAnnotationYaml(raw, input.column, input.description, input.value)
+  } catch (error) {
+    emitErrorAndExit('BAD_REQUEST', (error as Error).message)
+  }
+  if (result.changed) await atomicWrite(path, result.content)
+  emitJson({
+    ok: true,
+    experimentId: experiment.id,
+    path,
+    column: input.column,
+    ...(input.value === undefined ? {} : { value: input.value }),
+    description: input.description,
+    replaced: result.replaced,
+    changed: result.changed,
+  })
 }
 
 // ---------- selection helpers ----------
@@ -109,7 +295,12 @@ function selectColumns(columns: ResultColumn[], input: ExperimentResultsInput): 
   }
 
   if (input.columns) {
-    const keys = new Set(input.columns.split(',').map((s) => s.trim()).filter(Boolean))
+    const keys = new Set(
+      input.columns
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    )
     filtered = filtered.filter((c) => keys.has(c.key))
   }
 
@@ -120,13 +311,21 @@ function selectRows(variants: ResultVariant[], input: ExperimentResultsInput): R
   let filtered = variants
 
   if (input.variants) {
-    const ids = new Set(input.variants.split(',').map((s) => s.trim()).filter(Boolean))
+    const ids = new Set(
+      input.variants
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    )
     filtered = filtered.filter((v) => ids.has(v.id))
   }
 
   if (input.statuses) {
     const statuses = new Set(
-      input.statuses.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean),
+      input.statuses
+        .split(',')
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean),
     )
     filtered = filtered.filter((v) => statuses.has(v.status))
   }
@@ -151,6 +350,7 @@ export interface TableOutputFull {
   experimentId: string
   resultsSchemaVersion: number
   columns: ResultColumn[]
+  columnAnnotations?: ResultColumnAnnotations
   rows: TableRow[]
   meta: TableOutputMeta
 }
@@ -162,8 +362,6 @@ function buildTableOutput(
   variants: ResultVariant[],
   input: ExperimentResultsInput,
 ): TableOutputFull {
-  const columnKeys = new Set(columns.map((c) => c.key))
-
   const rows: TableRow[] = variants.map((v) => {
     const values: Record<string, ResultScalar> = {}
     for (const col of columns) {
@@ -185,19 +383,29 @@ function buildTableOutput(
 
   const filters: TableOutputMeta['filters'] = { columnGroup: input.columnGroup }
   if (input.variants) {
-    filters.variants = input.variants.split(',').map((s) => s.trim()).filter(Boolean)
+    filters.variants = input.variants
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   }
   if (input.statuses) {
-    filters.statuses = input.statuses.split(',').map((s) => s.trim()).filter(Boolean)
+    filters.statuses = input.statuses
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   }
   if (input.columns) {
-    filters.columns = input.columns.split(',').map((s) => s.trim()).filter(Boolean)
+    filters.columns = input.columns
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   }
 
   return {
     experimentId,
     resultsSchemaVersion: document.schemaVersion,
     columns,
+    ...filteredAnnotations(document.columnAnnotations, columns),
     rows,
     meta: {
       totalVariants: document.variants.length,
@@ -205,6 +413,19 @@ function buildTableOutput(
       filters,
     },
   }
+}
+
+function filteredAnnotations(
+  annotations: ResultColumnAnnotations | undefined,
+  columns: ResultColumn[],
+): { columnAnnotations?: ResultColumnAnnotations } {
+  if (annotations === undefined) return {}
+  const selected = Object.fromEntries(
+    columns.flatMap((column) =>
+      annotations[column.key] === undefined ? [] : [[column.key, annotations[column.key]!]],
+    ),
+  )
+  return Object.keys(selected).length === 0 ? {} : { columnAnnotations: selected }
 }
 
 // ---------- format resolution ----------
@@ -217,4 +438,23 @@ function resolveFormat(raw: string): TableFormat {
     return normalized as TableFormat
   }
   return 'json'
+}
+
+function resolveSummaryFormat(raw: string): 'json' | 'human' | 'markdown' {
+  const normalized = raw.toLowerCase()
+  return ['human', 'markdown'].includes(normalized) ? (normalized as 'human' | 'markdown') : 'json'
+}
+
+async function atomicWrite(path: string, content: string): Promise<void> {
+  const temporaryPath = join(
+    dirname(path),
+    `.${Date.now()}-${Math.random().toString(36).slice(2)}.results-annotation.tmp`,
+  )
+  try {
+    await fs.writeFile(temporaryPath, content, 'utf8')
+    await fs.rename(temporaryPath, path)
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true }).catch(() => {})
+    throw error
+  }
 }

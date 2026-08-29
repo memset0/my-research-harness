@@ -104,10 +104,12 @@ export {
   renderImplementationMarkdown,
   renderInvestigationMarkdown,
   renderManagedDocumentMarkdown,
+  renderResultColumnAnnotationsMarkdown,
   renderResultsMarkdown,
   serializeImplementationYaml,
   serializeInvestigationYaml,
   serializeResultsYaml,
+  upsertResultColumnAnnotationYaml,
   validateExperimentManagedDocuments,
 } from './experiments/documents.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'

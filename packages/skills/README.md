@@ -107,7 +107,9 @@ approval, but always writes Variants before launching Runs.
 - No filesystem watchers; use polling/recurring wakeups.
 - Use ISO8601 timestamps with timezone offsets.
 - Direct YAML editing is allowed and expected. CLI document commands provide
-  read/render/validate/lint surfaces, not CRUD gates.
+  read/render/validate/lint surfaces, not CRUD gates. The Results summary and
+  focused annotation get/set commands are optional conveniences; they never
+  make direct `results.yaml` editing invalid.
 - Strict linting is tolerant reading: unsupported/duplicate sections and
   managed-section conflicts remain visible and preserved.
 - Never silently upgrade a YAML `schema_version`; FS migration owns conversion.
@@ -125,6 +127,8 @@ memon --project-root . --format json experiment doc show <id> <implementation|in
 memon --project-root . --format human experiment doc render <id> <section>
 memon --project-root . --format json experiment doc validate <id>
 memon --project-root . --format json experiment doc lint <id>
+memon --project-root . experiment results summary <id> --output json
+memon --project-root . --format json experiment results annotation get <id> [--column <key>] [--value <value>]
 ```
 
 ## Files written by each skill

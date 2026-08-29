@@ -33,6 +33,24 @@ Every Results column with `type: enum` SHALL declare a non-empty unique `options
 - **WHEN** Results validates
 - **THEN** validation succeeds
 
+### Requirement: Results columns may carry sparse supplemental Markdown annotations
+
+`results.yaml` schema v1 MAY contain an optional top-level `column_annotations`
+mapping before `columns`. Each declared column key MAY independently provide a
+Markdown `description`, a partial Markdown `value_descriptions` mapping, or
+both. No column or value description is required. Value descriptions SHALL NOT
+define or restrict the allowed domain, SHALL NOT be required to cover enum
+`options`, and MAY name a value that is added later.
+
+This additive optional field SHALL NOT increment `FS_CONVENTION_VERSION` or the
+Results file `schema_version`.
+
+#### Scenario: A future enum value is documented sparsely
+- **GIVEN** a parameter enum currently declares `options: [fp32, bf16]`
+- **WHEN** `column_annotations.precision.value_descriptions` describes only `bf16` and future `fp4`
+- **THEN** Results schema validation succeeds
+- **AND** no description is required for `fp32`
+
 ### Requirement: Structured sections share deterministic readable projections
 
 Core SHALL expose one normalized model and deterministic display/Markdown projection. CLI, standalone Web, and central-through-Backend Web SHALL use that same projection. Specialized components SHALL consume sanitized normalized Implementation, Investigation, and Results models rather than parse generated Markdown. A valid current v6 payload MUST NOT be rendered through the legacy Method/Plan/Caveats fallback.

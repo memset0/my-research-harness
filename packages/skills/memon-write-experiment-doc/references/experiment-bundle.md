@@ -149,6 +149,13 @@ does not automatically imply `ANSWERED`.
 
 ```yaml
 schema_version: 1
+column_annotations:
+  precision:
+    description: |
+      Controls the arithmetic format used during training. Supports **Markdown**.
+    value_descriptions:
+      fp32: Standard single-precision baseline.
+      bf16: Uses **bfloat16** arithmetic.
 columns:
   - key: precision
     label: Precision
@@ -194,6 +201,17 @@ Column fields are `key`, `label`, `group`, `type`, and optionally `options`.
 - `type`: `string | number | boolean | enum`
 - `options` is required for `enum`; a value must belong to the declared
   options. Not every option needs to appear in a Variant.
+
+`column_annotations` is optional supplemental documentation keyed by declared
+column key. Each entry may independently contain a Markdown `description`, a
+partial `value_descriptions` map, or both. The entire block, individual
+columns, and individual values may be omitted. `value_descriptions` is not an
+allowed-values declaration: it need not cover `options`, and it may explain a
+value that will be added later. Quote ambiguous YAML mapping keys when needed.
+
+Agents may edit this block directly. For an isolated upsert they may instead
+use `memon experiment results annotation set`; the CLI is optional and direct
+YAML editing remains supported.
 
 Variant required fields: `id`, `name`, `status`, `parameters`, `metrics`,
 `runs`, and `attempts`. Optional fields: `description`, `provenance`.

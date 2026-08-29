@@ -1,6 +1,7 @@
 'use client'
 
 import type {
+  ResultColumnAnnotation,
   ResultScalar,
   ResultColumn as ResultSchemaColumn,
   ResultsDocument,
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import {
+  type ComponentProps,
   type CSSProperties,
   type DragEvent,
   Fragment,
@@ -57,6 +59,7 @@ import type {
 import { useExperimentResultsViews } from '../lib/use-experiment-results-views'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
+import { Markdown } from './markdown'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
@@ -113,6 +116,7 @@ interface ResultTableColumn {
   label: string
   kind: ColumnKind
   schema?: ResultSchemaColumn
+  annotation?: ResultColumnAnnotation
   getValue: (variant: ResultVariant) => ResultValue
 }
 
@@ -1227,32 +1231,44 @@ export function ExperimentResultsTable({
                           onDragOver={(event) => dragOver(event, { kind: 'column', id: column.id })}
                           onDrop={(event) => drop(event, { kind: 'column', id: column.id })}
                           onDragEnd={endDrag}
-                          title={`Drag ${column.label} to reorder columns`}
+                          title={
+                            column.annotation?.description === undefined
+                              ? `Drag ${column.label} to reorder columns`
+                              : undefined
+                          }
                           data-column-id={column.id}
                           data-column-group={column.schema?.group}
                           data-pinned={pinSide}
                           data-pin-sticky={pinSticky || undefined}
                         >
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => cycleSort(column.id)}
-                            className="min-w-0 justify-start px-1.5"
-                            aria-label={`${column.label}: ${sortActionLabel(direction)}`}
+                          <AnnotationTooltip
+                            description={column.annotation?.description}
+                            label={`${column.label} column description`}
                           >
-                            {metric && (
-                              <ChartSpline
-                                className="size-3 shrink-0 text-sky-600 dark:text-sky-300"
-                                aria-hidden
-                              />
-                            )}
-                            <span className="truncate" data-column-label>
-                              {column.label}
-                            </span>
-                            {metric && <span className="sr-only">Metric column</span>}
-                            <SortIcon direction={direction} />
-                          </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => cycleSort(column.id)}
+                              className="min-w-0 justify-start px-1.5"
+                              aria-label={`${column.label}: ${sortActionLabel(direction)}`}
+                              data-has-description={
+                                column.annotation?.description !== undefined || undefined
+                              }
+                            >
+                              {metric && (
+                                <ChartSpline
+                                  className="size-3 shrink-0 text-sky-600 dark:text-sky-300"
+                                  aria-hidden
+                                />
+                              )}
+                              <span className="truncate" data-column-label>
+                                {column.label}
+                              </span>
+                              {metric && <span className="sr-only">Metric column</span>}
+                              <SortIcon direction={direction} />
+                            </Button>
+                          </AnnotationTooltip>
                         </TableHead>
                       </ContextMenuTrigger>
                       <ContextMenuContent className="w-52">
@@ -1416,6 +1432,7 @@ export function ExperimentResultsTable({
                           const metric = column.schema?.group === 'metric'
                           const pinSide = pinnedColumnSide.get(column.id)
                           const pinSticky = Boolean(pinSide && pinLayout.sticky)
+                          const valueDescription = resultValueDescription(column, variant)
                           return (
                             <TableCell
                               key={column.id}
@@ -1433,24 +1450,34 @@ export function ExperimentResultsTable({
                               data-pinned={pinSide}
                               data-pin-sticky={pinSticky || undefined}
                             >
-                              <CellClamp
-                                maxLines={maxLines}
-                                title={plainCellValue(column, variant)}
+                              <AnnotationTooltip
+                                description={valueDescription}
+                                label={`${column.label} value description`}
                               >
-                                <ResultCell
-                                  column={column}
-                                  variant={variant}
-                                  project={project}
-                                  experimentId={experimentId}
-                                  memberRunsById={memberRunsById}
-                                  sotaRank={
-                                    metric
-                                      ? sotaRanks.get(column.id)?.ranks.get(variant.id)
+                                <CellClamp
+                                  maxLines={maxLines}
+                                  title={
+                                    valueDescription === undefined
+                                      ? plainCellValue(column, variant)
                                       : undefined
                                   }
-                                  decimalPlaces={metric ? decimalPlaces[column.id] : undefined}
-                                />
-                              </CellClamp>
+                                  focusable={valueDescription !== undefined}
+                                >
+                                  <ResultCell
+                                    column={column}
+                                    variant={variant}
+                                    project={project}
+                                    experimentId={experimentId}
+                                    memberRunsById={memberRunsById}
+                                    sotaRank={
+                                      metric
+                                        ? sotaRanks.get(column.id)?.ranks.get(variant.id)
+                                        : undefined
+                                    }
+                                    decimalPlaces={metric ? decimalPlaces[column.id] : undefined}
+                                  />
+                                </CellClamp>
+                              </AnnotationTooltip>
                             </TableCell>
                           )
                         })}
@@ -1923,6 +1950,7 @@ function buildColumns(document: ResultsDocument): ResultTableColumn[] {
         label: schema.label,
         kind: 'schema',
         schema,
+        annotation: document.columnAnnotations?.[schema.key],
         getValue: (variant) =>
           schema.group === 'parameter'
             ? variant.parameters[schema.key]
@@ -2093,22 +2121,68 @@ function ResultCell({
 function CellClamp({
   maxLines,
   title,
+  focusable = false,
   children,
+  className,
+  style,
+  ...triggerProps
 }: {
   maxLines: number
-  title: string
+  title?: string
+  focusable?: boolean
   children: ReactNode
-}) {
+} & Omit<ComponentProps<'div'>, 'children' | 'title'>) {
   return (
     <div
-      className="overflow-hidden whitespace-normal break-words text-xs/5"
-      style={{ maxHeight: `calc(${maxLines} * 1.25rem)` }}
+      {...triggerProps}
+      className={cn('overflow-hidden whitespace-normal break-words text-xs/5', className)}
+      style={{ ...style, maxHeight: `calc(${maxLines} * 1.25rem)` }}
       title={title}
+      tabIndex={focusable ? 0 : undefined}
+      data-has-description={focusable || undefined}
       data-max-lines={maxLines}
     >
       {children}
     </div>
   )
+}
+
+function AnnotationTooltip({
+  description,
+  label,
+  children,
+}: {
+  description?: string
+  label: string
+  children: ReactNode
+}) {
+  if (description === undefined) return <>{children}</>
+  return (
+    <HoverCard openDelay={250} closeDelay={100}>
+      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardContent
+        side="top"
+        align="start"
+        className="w-80 max-w-[calc(100vw-2rem)] p-3"
+        aria-label={label}
+      >
+        <Markdown className="max-w-none text-xs text-popover-foreground [&_p]:my-0">
+          {description}
+        </Markdown>
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
+function resultValueDescription(
+  column: ResultTableColumn,
+  variant: ResultVariant,
+): string | undefined {
+  const descriptions = column.annotation?.valueDescriptions
+  if (!descriptions) return undefined
+  const value = column.getValue(variant)
+  if (value === null || value === undefined || Array.isArray(value)) return undefined
+  return descriptions[String(value)]
 }
 
 function SortIcon({ direction }: { direction: SortDirection | null }) {

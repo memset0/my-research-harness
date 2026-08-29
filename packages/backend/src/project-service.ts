@@ -594,6 +594,9 @@ function safeInvestigationItem(item: InvestigationItem): Record<string, unknown>
 function safeResultsDocument(document: ResultsDocument) {
   return {
     schemaVersion: document.schemaVersion,
+    ...(document.columnAnnotations === undefined
+      ? {}
+      : { columnAnnotations: document.columnAnnotations }),
     columns: document.columns,
     variants: document.variants.map(({ extra: _extra, provenance, ...variant }) => ({
       ...variant,

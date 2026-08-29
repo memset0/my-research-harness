@@ -39,7 +39,8 @@ mislabel an expected validation or domain-state rejection as a CLI bug.
   `Limitations`, `Conclusion`, and `Warnings`.
 - Keep the three managed sections as their exact one-line pointers.
 - Directly edit `implementation.yaml`, `investigation.yaml`, and
-  `results.yaml`; never require CRUD-style CLI calls.
+  `results.yaml` by default. The focused Results annotation CLI is an optional
+  convenience for one column/value description, never a required write gate.
 - Preserve unknown headings, duplicate headings, comments, field order, and
   unknown YAML fields unless the user explicitly asks to change them.
 - Validate and lint the whole bundle after every write.
@@ -90,6 +91,9 @@ Use the routing table in the reference. In particular:
   `investigation.yaml`.
 - Variant definitions, selected Runs, discarded attempts, parameters, metrics,
   and launch provenance go to `results.yaml`.
+- Supplemental Markdown explanations for a Results column or selected values
+  go to the optional `column_annotations` block in `results.yaml`. Keep them
+  sparse; they document meaning and never redefine enum validation.
 - For a Run lifecycle update, the caller supplies the Experiment ID, Variant
   ID, Run ID, event (`launched`, `succeeded`, `failed`, `interrupted`, or
   `superseded`), whether launch conditions are unchanged, and any verified
@@ -105,10 +109,25 @@ Use the routing table in the reference. In particular:
 Keep hierarchy (`children`) distinct from ordering/blocking (`depends_on`).
 Dependencies never replace tree structure.
 
-### 4. Edit the source files directly
+### 4. Edit the source files directly or use the focused annotation helper
 
 Make the smallest coherent edit. Agents are expected to edit YAML directly;
-the CLI is a read/render/check surface, not a write gate.
+the CLI is not a write gate. For an isolated column/value explanation, an
+agent MAY use either of these idempotent upserts instead of rewriting YAML by
+hand:
+
+```sh
+memon --project-root . experiment results annotation set "$EXP_ID" <column> \
+  --description '<Markdown>'
+memon --project-root . experiment results annotation set "$EXP_ID" <column> \
+  --value <value> --description '<Markdown>'
+```
+
+An existing description at the same target is replaced. The helper does not
+require every option to be described and does not require a described value to
+already occur in `options`. Direct `results.yaml` editing remains fully
+supported and is preferable when one coherent change also updates columns,
+Variants, comments, or human ordering.
 
 Before writing, compare the current hashes with the snapshots from step 1. On
 a mismatch, reread and reapply once. If the same file changes again, stop and

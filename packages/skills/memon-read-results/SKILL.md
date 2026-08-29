@@ -5,9 +5,10 @@ description: "Read experiment results from results.yaml as a structured, filtera
 
 # memon-read-results
 
-Read one Experiment's results as a flat table with row/column selection and
-multiple output formats. This is a read-only projection; edits go through
-`memon-write-experiment-doc`.
+Read one Experiment's Results structure or values. Start with the structure
+summary when cell values are unnecessary; use the flat table for actual
+comparison. These are read-only projections. Annotation writes remain an
+optional operation owned by `memon-write-experiment-doc`.
 
 ## Memon CLI issue handoff
 
@@ -34,6 +35,8 @@ Proceed only when `status == "match"`. For every other status, stop and follow
 - Extracting a specific parameter or metric column for analysis
 - Feeding results into `jq`, `csvkit`, pandas, or other tabular tools
 - Getting a human-readable overview of an Experiment's results
+- Discovering declared columns and Variant rows without loading cell values
+- Reading optional Markdown column/value explanations
 
 **Do NOT use this skill** when you need to:
 - Create or update Variants, parameters, metrics, or run assignments → use
@@ -42,6 +45,23 @@ Proceed only when `status == "match"`. For every other status, stop and follow
   via `memon-write-experiment-doc`
 
 ## Command
+
+Structure-only summary (no parameter/metric cell values, Runs, Attempts, or
+provenance):
+
+```sh
+memon --project-root . experiment results summary <id-or-slug> --output json
+```
+
+Read all annotations or one exact description:
+
+```sh
+memon --project-root . --format json experiment results annotation get <id-or-slug>
+memon --project-root . --format json experiment results annotation get <id-or-slug> \
+  --column <key> [--value <value>]
+```
+
+Read actual table values only when needed:
 
 ```
 memon --project-root . experiment results table <id-or-slug> [options]
@@ -76,7 +96,17 @@ consumer prefers YAML.
 
 ## Workflow
 
-### 1. Read all results
+### 1. Inspect structure without cell values
+
+```sh
+memon --project-root . experiment results summary E0001-foo --output json
+```
+
+The summary returns column schemas plus optional `description` and
+`valueDescriptions`, and row identities (`id`, `name`, `status`). It does not
+return parameter/metric values or execution details.
+
+### 2. Read all result values
 
 Quick overview of every Variant:
 
@@ -84,7 +114,7 @@ Quick overview of every Variant:
 memon --project-root . experiment results table E0001-foo --output json | jq '.rows[] | {id: .variantId, name: .variantName, status, metrics: .values}'
 ```
 
-### 2. Filter to specific Variants
+### 3. Filter to specific Variants
 
 Compare two specific Variants:
 
@@ -94,7 +124,7 @@ memon --project-root . experiment results table E0001-foo \
   --output json | jq '.rows[] | {id: .variantId, status, values}'
 ```
 
-### 3. Filter to specific columns
+### 4. Filter to specific columns
 
 Extract only metric columns (exclude parameters):
 
@@ -112,7 +142,7 @@ memon --project-root . experiment results table E0001-foo \
   --output markdown
 ```
 
-### 4. Filter by status
+### 5. Filter by status
 
 Show only completed experiments:
 
@@ -131,7 +161,7 @@ memon --project-root . experiment results table E0001-foo \
   --output csv
 ```
 
-### 5. Pipe to downstream tools
+### 6. Pipe to downstream tools
 
 JSON → `jq`:
 
@@ -169,6 +199,12 @@ print(df[['variant_id', 'accuracy', 'loss']])
     // Schema column definitions (filtered by --column / --group)
     { "key": "accuracy", "label": "Accuracy", "group": "metric", "type": "number" }
   ],
+  "columnAnnotations": {
+    "precision": {
+      "description": "Controls **training precision**.",
+      "valueDescriptions": { "bf16": "Uses **bfloat16** arithmetic." }
+    }
+  },
   "rows": [
     {
       "variantId": "V0001",

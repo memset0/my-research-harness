@@ -784,6 +784,19 @@ An Experiment with unsupported, incomplete, or conflicting document structure SH
 
 The structured Results table SHALL preserve `results.yaml` column order for unpinned columns, with stable built-in Variant/Status and provenance/evidence columns around the declared columns. Every cell SHALL display at most a user-selected positive number of visual lines, defaulting to one line. Literal `<br>`, `<br/>`, `<br />`, and newline boundaries in displayed scalar text SHALL render as line breaks rather than visible markup. The table SHALL use automatic content-based column sizing inside an unbounded horizontal scroll container.
 
+When a declared Results column has an annotation description, hovering or
+keyboard-focusing its rendered table header SHALL show that Markdown in a
+lightweight popup. When a rendered schema cell's textual value has an exact
+`value_descriptions` entry, hovering or focusing that cell SHALL show the
+matching Markdown. Headers and cells without descriptions SHALL retain their
+existing display and interaction behavior.
+
+#### Scenario: Optional Results explanations appear in context
+- **GIVEN** `precision` has a column description and `bf16` has a value description
+- **WHEN** the user hovers the Precision header and then a `bf16` cell
+- **THEN** each popup renders its corresponding Markdown
+- **AND** an undescribed `fp32` cell has no annotation popup
+
 Before the table, the page SHALL render one checkbox control per available column in the original YAML/built-in order, independent of pinning. Each control SHALL show the number of distinct non-empty values present for that column. Hovering or focusing the value-domain affordance SHALL show those values one per list row.
 
 Columns declared with `group: metric` SHALL be visually distinguishable from parameters through a restrained pale-blue treatment in the column controls, table header, and table body. Metric controls SHALL NOT display a redundant `Metric` badge and SHALL NOT open a value-domain preview on hover or focus; their distinct-value count MAY remain visible. Parameter columns SHALL retain the default treatment and value-domain preview. Project-level starred-column highlighting SHALL take visual precedence when a metric column is also starred.

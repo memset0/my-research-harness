@@ -125,6 +125,11 @@ plus inline at the top of each expanded run panel):
   and atomically create the README plus all three schema-v1 YAML documents
 - `memon experiment doc {show,render,validate,lint} <id> [section]` —
   read/check the structured bundle; these commands do not provide YAML CRUD
+- `memon experiment results summary <id>` — show declared Result columns and
+  Variant row identities without parameter/metric cell values or execution details
+- `memon experiment results annotation {get,set} ...` — optional focused
+  read/upsert helpers for sparse Markdown `column_annotations`; direct
+  `results.yaml` editing remains supported
 - `memon experiment link|unlink <exp> <run>` — bidirectional bind
 - `memon experiment delete <exp> [--force]` — cascade-unlink + delete
   the experiment folder. Default ignores the four canonical bundle files but

@@ -3,9 +3,19 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { runExperimentResults } from './experiment-results.js'
+import {
+  runExperimentResults,
+  runExperimentResultsAnnotationGet,
+  runExperimentResultsAnnotationSet,
+  runExperimentResultsSummary,
+} from './experiment-results.js'
 
 const RESULTS_YAML = `schema_version: 1
+column_annotations:
+  precision:
+    description: Controls **training precision**.
+    value_descriptions:
+      bf16: Uses **bfloat16** arithmetic.
 columns:
   - key: precision
     label: Precision
@@ -55,7 +65,11 @@ function spyExit() {
   process.exit = ((code?: number) => {
     throw new ExitCalled(code ?? 0)
   }) as typeof process.exit
-  return { restore: () => { process.exit = real } }
+  return {
+    restore: () => {
+      process.exit = real
+    },
+  }
 }
 
 describe('experiment results CLI', () => {
@@ -158,11 +172,85 @@ foo
     expect(out.experimentId).toBe('E0001-foo')
     expect(out.resultsSchemaVersion).toBe(1)
     expect(out.columns).toHaveLength(3)
+    expect(out.columnAnnotations.precision.description).toContain('**training precision**')
     expect(out.rows).toHaveLength(3)
     expect(out.meta.totalVariants).toBe(3)
     expect(out.meta.filteredVariants).toBe(3)
     expect(out.rows[0]!.values.precision).toBe('bf16')
     expect(out.rows[0]!.values.accuracy).toBe(0.95)
+  })
+
+  it('summarizes columns, annotations, and row identities without exposing cell values', async () => {
+    await create()
+    stdout = ''
+    await runExperimentResultsSummary({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: 'E0001-foo',
+      format: 'json',
+      output: 'json',
+    })
+    const out = JSON.parse(stdout)
+    expect(out.meta).toEqual({ columnCount: 3, rowCount: 3 })
+    expect(out.columns[0]).toMatchObject({
+      key: 'precision',
+      description: 'Controls **training precision**.',
+      valueDescriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
+    })
+    expect(out.rows[0]).toEqual({ id: 'V0001', name: 'BF16', status: 'COMPLETED' })
+    expect(stdout).not.toContain('0.95')
+    expect(stdout).not.toContain('run-a')
+    expect(stdout).not.toContain('parameters')
+    expect(stdout).not.toContain('metrics')
+  })
+
+  it('adds and replaces column/value annotations and reads them without requiring YAML edits', async () => {
+    await create()
+    stdout = ''
+    await runExperimentResultsAnnotationSet({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: 'E0001-foo',
+      format: 'json',
+      column: 'precision',
+      description: 'Expanded **column** explanation.',
+    })
+    expect(JSON.parse(stdout)).toMatchObject({ ok: true, replaced: true, changed: true })
+
+    stdout = ''
+    await runExperimentResultsAnnotationSet({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: 'E0001-foo',
+      format: 'json',
+      column: 'precision',
+      value: 'fp4',
+      description: 'A future value not yet present in `options`.',
+    })
+    expect(JSON.parse(stdout)).toMatchObject({ ok: true, replaced: false, value: 'fp4' })
+
+    const written = await fs.readFile(
+      join(root, 'docs', 'experiments', 'E0001-foo', 'results.yaml'),
+      'utf8',
+    )
+    expect(written.indexOf('column_annotations:')).toBeLessThan(written.indexOf('columns:'))
+    expect(written).toContain('future value not yet present')
+
+    stdout = ''
+    await runExperimentResultsAnnotationGet({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: 'E0001-foo',
+      format: 'json',
+      column: 'precision',
+      value: 'fp4',
+    })
+    expect(JSON.parse(stdout)).toEqual({
+      experimentId: 'E0001-foo',
+      column: 'precision',
+      value: 'fp4',
+      description: 'A future value not yet present in `options`.',
+    })
   })
 
   it('filters by --variant', async () => {
@@ -280,7 +368,9 @@ foo
       output: 'csv',
     })
     const lines = stdout.trim().split('\n')
-    expect(lines[0]).toBe('variant_id,variant_name,status,precision,accuracy,loss,runs_count,attempts_count')
+    expect(lines[0]).toBe(
+      'variant_id,variant_name,status,precision,accuracy,loss,runs_count,attempts_count',
+    )
     expect(lines[1]).toBe('V0001,BF16,COMPLETED,bf16,0.95,0.125,1,0')
   })
 
@@ -297,12 +387,14 @@ foo
       output: 'markdown',
     })
     const lines = stdout.trim().split('\n')
-    expect(lines[0]).toContain('Variant ID')
-    expect(lines[0]).toContain('Variant Name')
-    expect(lines[0]).toContain('Precision')
-    expect(lines[1]).toContain('─')
-    expect(lines[2]).toContain('**V0001**')
-    expect(lines[2]).toContain('COMPLETED')
+    expect(stdout).toContain('Column annotations:')
+    const headerIndex = lines.findIndex((line) => line.includes('Variant ID'))
+    expect(headerIndex).toBeGreaterThanOrEqual(0)
+    expect(lines[headerIndex]).toContain('Variant Name')
+    expect(lines[headerIndex]).toContain('Precision')
+    expect(lines[headerIndex + 1]).toContain('─')
+    expect(lines[headerIndex + 2]).toContain('**V0001**')
+    expect(lines[headerIndex + 2]).toContain('COMPLETED')
   })
 
   it('emits human format', async () => {

@@ -17,6 +17,7 @@ import {
   BackendProjectsResponseSchema,
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
+  BackendResultsDocumentSchema,
   BackendShareCreateRequestSchema,
   BackendShareCreateResponseSchema,
   BackendShareListResponseSchema,
@@ -202,6 +203,31 @@ describe('shared Backend protocol identity schemas', () => {
         pane: { ...row.pane, currentPath: '/private/project' },
       }).success,
     ).toBe(false)
+  })
+})
+
+describe('Backend Results annotations', () => {
+  it('transports optional sparse Markdown column/value descriptions', () => {
+    const document = {
+      schemaVersion: 1,
+      columnAnnotations: {
+        precision: {
+          description: 'Controls **precision**.',
+          valueDescriptions: { bf16: 'Uses **bfloat16**.' },
+        },
+      },
+      columns: [
+        {
+          key: 'precision',
+          label: 'Precision',
+          group: 'parameter' as const,
+          type: 'enum' as const,
+          options: ['fp32', 'bf16'],
+        },
+      ],
+      variants: [],
+    }
+    expect(BackendResultsDocumentSchema.parse(document)).toEqual(document)
   })
 })
 

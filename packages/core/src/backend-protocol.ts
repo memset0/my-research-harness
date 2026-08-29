@@ -496,6 +496,33 @@ const BackendResultScalarSchema = z.union([
 const BackendResultScalarRecordSchema = z
   .record(z.string().min(1).max(256), BackendResultScalarSchema)
   .refine((value) => Object.keys(value).length <= 10_000, 'too many result values')
+const BackendResultValueDescriptionsSchema = z
+  .record(
+    z
+      .string()
+      .min(1)
+      .max(64 * 1024),
+    z
+      .string()
+      .min(1)
+      .max(64 * 1024),
+  )
+  .refine((value) => Object.keys(value).length <= 10_000, 'too many value descriptions')
+const BackendResultColumnAnnotationsSchema = z
+  .record(
+    z.string().min(1).max(256),
+    z
+      .object({
+        description: z
+          .string()
+          .min(1)
+          .max(64 * 1024)
+          .optional(),
+        valueDescriptions: BackendResultValueDescriptionsSchema.optional(),
+      })
+      .strict(),
+  )
+  .refine((value) => Object.keys(value).length <= 10_000, 'too many column annotations')
 const BackendResultProvenanceSchema = z
   .object({
     repo: z.union([z.literal('.'), BackendOpaqueResourceIdSchema]).optional(),
@@ -511,6 +538,7 @@ const BackendResultProvenanceSchema = z
 export const BackendResultsDocumentSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
+    columnAnnotations: BackendResultColumnAnnotationsSchema.optional(),
     columns: z
       .array(
         z

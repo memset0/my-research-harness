@@ -421,6 +421,11 @@ updated_at: 2026-08-26T00:00:00Z
       await fs.writeFile(
         join(directory, 'results.yaml'),
         `schema_version: 1
+column_annotations:
+  score:
+    description: Final **evaluation score**.
+    value_descriptions:
+      '1': Baseline score.
 columns:
   - key: score
     label: Score
@@ -445,6 +450,10 @@ variants:
         await service.getExperimentResults('results-project', 'E0001-results'),
       )
       expect(results.resource).toBe('docs/experiments/E0001-results/results.yaml')
+      expect(results.document.columnAnnotations?.score).toEqual({
+        description: 'Final **evaluation score**.',
+        valueDescriptions: { '1': 'Baseline score.' },
+      })
       expect(results.document.variants[0]?.provenance?.entry).toBe('train.sh')
       expect(JSON.stringify(results)).not.toContain('/cluster/secret')
       expect(JSON.stringify(results)).not.toContain(root)
