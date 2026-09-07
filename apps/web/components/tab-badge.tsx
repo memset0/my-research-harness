@@ -2,14 +2,20 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
+  type CodeReviewsResponse,
+  type DigestsResponse,
+  type ExperimentDocsResponse,
   fetchCodeReviews,
   fetchDigests,
   fetchExperimentDocs,
   fetchHypotheses,
   fetchJournalCount,
   fetchReports,
+  type HypothesesResponse,
+  type JournalCountResponse,
   type ProjectTarget,
   projectQueryKey,
+  type ReportsResponse,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
@@ -82,32 +88,63 @@ interface TabCountResult {
 }
 
 function useTabCount(kind: TabKind, project: ProjectTarget): TabCountResult {
+  // Every tab key except journal's is SHARED with the view that renders the
+  // corresponding list (InboxShell, HypothesisView, ReportPane, the SSR
+  // prefetches in app/p/[project]/*). A shared key is one cache entry, so
+  // this observer MUST cache the list's own DTO and project it to a number
+  // in `select`. Caching a bare count here races the list observer: whichever
+  // queryFn resolves first wins the entry, and when the badge wins, the list
+  // reads `data.reports` off a number, gets undefined, and silently renders
+  // its empty state on a perfectly healthy 200 response.
   const cacheKind = kind === 'journal' ? 'journal-count' : kind
-  type CountQueryData = number | Awaited<ReturnType<typeof fetchExperimentDocs>>
-  const q = useQuery<CountQueryData, Error, number>({
+  const q = useQuery({
     queryKey: [cacheKind, ...projectQueryKey(project)],
-    queryFn: async () => {
-      switch (kind) {
-        case 'experiments':
-          // This key is deliberately shared with ExperimentCardGrid and the
-          // sidebar. Cache the same DTO shape and project only this observer
-          // to a number; storing a number here races the grid's object value
-          // and can make React attempt to render `{ experiments: [...] }`.
-          return fetchExperimentDocs(project)
-        case 'hypotheses':
-          return (await fetchHypotheses(project)).entries.length
-        case 'journal':
-          return (await fetchJournalCount(project)).totalEvents
-        case 'reports':
-          return (await fetchReports(project)).reports.length
-        case 'digests':
-          return (await fetchDigests(project)).digests.length
-        case 'code-review':
-          return (await fetchCodeReviews(project)).codeReviews.length
-      }
-    },
-    select: (data) => (typeof data === 'number' ? data : data.experiments.length),
+    queryFn: () => fetchTabCollection(kind, project),
+    select: countTabCollection,
     staleTime: 5_000,
   })
   return { value: q.data, isLoading: q.isLoading }
+}
+
+type TabCollection =
+  | ExperimentDocsResponse
+  | HypothesesResponse
+  | JournalCountResponse
+  | ReportsResponse
+  | DigestsResponse
+  | CodeReviewsResponse
+
+function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabCollection> {
+  switch (kind) {
+    case 'experiments':
+      return fetchExperimentDocs(project)
+    case 'hypotheses':
+      return fetchHypotheses(project)
+    case 'journal':
+      // Dedicated `journal-count` key + `?countOnly=1` endpoint: the count
+      // must ignore the journal view's page limit, so it cannot share the
+      // view's cache entry.
+      return fetchJournalCount(project)
+    case 'reports':
+      return fetchReports(project)
+    case 'digests':
+      return fetchDigests(project)
+    case 'code-review':
+      return fetchCodeReviews(project)
+  }
+}
+
+/**
+ * Structural narrowing rather than a `kind` switch: the DTO decides the count,
+ * so a future tab that reuses an existing collection shape needs no change
+ * here, and there is no way for the two switches to drift apart.
+ */
+function countTabCollection(data: TabCollection): number {
+  if ('experiments' in data) return data.experiments.length
+  if ('entries' in data) return data.entries.length
+  if ('totalEvents' in data) return data.totalEvents
+  if ('reports' in data) return data.reports.length
+  if ('digests' in data) return data.digests.length
+  if ('codeReviews' in data) return data.codeReviews.length
+  return 0
 }

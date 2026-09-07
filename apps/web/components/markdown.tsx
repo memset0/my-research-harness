@@ -176,6 +176,11 @@ export function Markdown({
               href={artifactHref}
               scroll={false}
               {...rest}
+              // `group/artifact` is what lets the inline badge rendered by
+              // `decorateArtifactText` react to hover on the whole anchor,
+              // which is the only remaining clickability cue now that the
+              // typography underline is suppressed for artifact links.
+              className={cn('group/artifact', rest.className)}
               onClick={(event) => replaceSamePathArtifactHistory(event, artifactHref)}
               data-memon-artifact-kind={artifactTarget.kind}
               data-memon-artifact-id={artifactTarget.id}
@@ -285,6 +290,16 @@ export function Markdown({
         // explicitly so the behaviour does not depend on
         // @tailwindcss/typography version drift.
         '[&_pre]:overflow-x-auto',
+        // Artifact references render their identifier as an inline badge
+        // (see ARTIFACT_BADGE_CLASS). The typography plugin's link underline
+        // would strike through the chip — and text-decoration set on an
+        // ancestor cannot be cancelled by a descendant — so it has to be
+        // dropped on the anchor itself. Scoped to artifact anchors via the
+        // `data-memon-artifact-*` properties, so ordinary Markdown links keep
+        // their underline. Specificity here is 0,2,0 (class + attribute),
+        // strictly higher than the plugin's `.prose :where(a)` at 0,1,0, so
+        // the reset wins independently of layer/source order.
+        '[&_a[data-memon-artifact-kind]]:no-underline',
         className,
       )}
     >
@@ -652,6 +667,31 @@ function decorateArtifactNode(node: ReactNode, shortId: string): ReactNode {
   })
 }
 
+/**
+ * Inline chip for a recognized artifact identifier inside running prose.
+ *
+ * Deliberately a plain `display: inline` <span>, NOT `inline-flex` and NOT
+ * shadcn's <Badge> (which is `inline-flex h-5 text-[0.625rem]`): an
+ * inline-level *block* container contributes its own box height to the line
+ * box, so a fixed-height pill pushes lines apart in a paragraph — the exact
+ * failure mode this styling has to avoid. For a non-replaced inline box, CSS
+ * line-box height is driven by `line-height` alone; horizontal padding,
+ * border and background paint outside that calculation and cannot grow it.
+ * Hence: `px-1` only, no vertical padding, `align-baseline`.
+ *
+ * Sizing is relative (`text-[0.9em]`) so the chip stays proportional both in
+ * full-size prose and in the `text-xs/relaxed` surfaces; with the inherited
+ * unitless prose `line-height`, a smaller font-size yields a *smaller* used
+ * line-height than the paragraph strut, so it can never be the tallest box
+ * on the line.
+ */
+const ARTIFACT_BADGE_CLASS = cn(
+  'rounded-sm border border-border bg-muted px-1 align-baseline',
+  'font-mono text-[0.9em] font-medium whitespace-nowrap text-foreground',
+  'transition-colors group-hover/artifact:border-primary/40',
+  'group-hover/artifact:bg-primary/10 group-hover/artifact:text-primary',
+)
+
 function decorateArtifactText(value: string, shortId: string): ReactNode {
   const parts: ReactNode[] = []
   let cursor = 0
@@ -667,7 +707,11 @@ function decorateArtifactText(value: string, shortId: string): ReactNode {
     }
     if (at > cursor) parts.push(value.slice(cursor, at))
     parts.push(
-      <span key={`${shortId}:${occurrence}`} className="font-bold text-primary">
+      <span
+        key={`${shortId}:${occurrence}`}
+        data-artifact-badge=""
+        className={ARTIFACT_BADGE_CLASS}
+      >
         {shortId}
       </span>,
     )

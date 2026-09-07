@@ -29,6 +29,7 @@ import {
 import { cn } from '../lib/utils'
 import { AddNoteButton } from './add-note-button'
 import { ArchiveToggle } from './archive-toggle'
+import { ClampedBlock } from './clamped-block'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { ExperimentCodeReviews } from './experiment-code-reviews'
@@ -228,6 +229,14 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   )
 }
 
+// Collapsed height budgets for the top-level section cards, in lines of the
+// content's own line-height (see ClampedBlock). Managed Implementation /
+// Investigation cards get the larger budget because they are structured,
+// denser documents — 10 lines cuts them off mid-first-field, whereas 10 lines
+// of ordinary prose is already a readable paragraph.
+const SECTION_PROSE_CLAMP_LINES = 10
+const SECTION_MANAGED_CLAMP_LINES = 20
+
 function SectionCard({
   section,
   project,
@@ -377,16 +386,20 @@ function SectionCard({
             memberRuns={memberRuns}
           />
         ) : section.source === 'yaml' && managedKind && managedDocument ? (
-          <ExperimentManagedSection
-            kind={managedKind}
-            document={managedDocument}
-            project={project}
-            experimentId={experimentId}
-          />
+          <ClampedBlock lines={SECTION_MANAGED_CLAMP_LINES} label={heading}>
+            <ExperimentManagedSection
+              kind={managedKind}
+              document={managedDocument}
+              project={project}
+              experimentId={experimentId}
+            />
+          </ClampedBlock>
         ) : body ? (
-          <div className="prose prose-sm max-w-none text-xs/relaxed">
-            <Markdown project={project}>{body}</Markdown>
-          </div>
+          <ClampedBlock lines={SECTION_PROSE_CLAMP_LINES} label={heading}>
+            <div className="prose prose-sm max-w-none text-xs/relaxed">
+              <Markdown project={project}>{body}</Markdown>
+            </div>
+          </ClampedBlock>
         ) : (
           <div className="text-xs italic text-muted-foreground">to fill</div>
         )}

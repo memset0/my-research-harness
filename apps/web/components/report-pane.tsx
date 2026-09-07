@@ -10,6 +10,7 @@ import {
   type ProjectTarget,
   projectQueryKey,
   projectWebPath,
+  type ReportListItem,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 import { RenderedItem, reportResourceBaseUrl } from './inbox-shell'
@@ -44,6 +45,9 @@ export function ReportPane({
     queryFn: () => fetchReport(project, reportId),
   })
   const reports = list.data?.reports ?? []
+  const listError = list.isError
+    ? ((list.error as Error | null) ?? new Error('request failed'))
+    : null
   const selectedSummary = reports.find((report) => report.id === reportId)
   const identity = detail.data
     ? `${detail.data.id} ${detail.data.slug}`
@@ -64,6 +68,8 @@ export function ReportPane({
           identity={identity}
           reports={reports}
           loading={list.isLoading}
+          error={listError}
+          onRetry={list.refetch}
           onSwitch={onSwitch}
         />
         <div className="flex shrink-0 items-center gap-0.5">
@@ -148,12 +154,16 @@ function ReportPaneSwitcher({
   identity,
   reports,
   loading,
+  error,
+  onRetry,
   onSwitch,
 }: {
   reportId: string
   identity: string
-  reports: Awaited<ReturnType<typeof fetchReports>>['reports']
+  reports: ReportListItem[]
   loading: boolean
+  error?: Error | null
+  onRetry?: () => void
   onSwitch: (reportId: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -191,6 +201,22 @@ function ReportPaneSwitcher({
         <div className="max-h-[min(28rem,65vh)] overflow-y-auto p-2" data-report-pane-switch-list>
           {loading && reports.length === 0 ? (
             <ListSkeleton count={4} />
+          ) : error && reports.length === 0 ? (
+            // Distinguish "the list failed to load" from "this project has no
+            // reports" — otherwise a transient upstream error renders as a
+            // silent empty switcher with no way to retry.
+            <div
+              className={cn('flex flex-col items-center gap-2 px-3 py-5 text-center')}
+              data-report-switch-error=""
+            >
+              <p className={cn('text-xs font-medium text-destructive')}>failed to load reports</p>
+              <p className={cn('break-words text-[10px] text-muted-foreground')}>{error.message}</p>
+              {onRetry && (
+                <Button type="button" size="sm" variant="outline" onClick={() => onRetry()}>
+                  Retry
+                </Button>
+              )}
+            </div>
           ) : reports.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">no reports yet</p>
           ) : (

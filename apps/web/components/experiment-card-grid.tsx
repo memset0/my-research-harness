@@ -39,6 +39,13 @@ import { cn } from '../lib/utils'
 const STORAGE_KEY_SHOW_ARCHIVED = (project: ProjectTarget) =>
   `memon:list:${projectQueryKey(project).join(':')}:show-archived`
 
+// Member-run roster inside a card shows at most this many rows before it
+// starts scrolling. Tailwind v4 cannot see runtime-built class strings, so
+// the two derived literals stay written out below and MUST match this value:
+//   row height   -> `h-7`             (1.75rem per <tr>)
+//   container cap -> `max-h-[8.75rem]` (5 × 1.75rem)
+const RUN_ROSTER_VISIBLE_ROWS = 5
+
 function projectBasePath(project: ProjectTarget): string {
   const name = encodeURIComponent(projectName(project))
   const host = projectHost(project)
@@ -217,26 +224,43 @@ function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: Experim
         </div>
       </header>
       {exp.memberRuns.length > 0 && (
-        <table className="text-xs">
-          <tbody>
-            {exp.memberRuns.map((r) => (
-              <tr key={r.id} className="border-t">
-                <td className="py-1 pr-2">
-                  <StatusPill status={r.status as never} archived={r.archived} />
-                </td>
-                <td className="py-1 pr-2">
-                  <Link
-                    href={`${basePath}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(r.id)}`}
-                    className="font-mono hover:underline"
-                  >
-                    {r.id}
-                  </Link>
-                </td>
-                <td className="py-1 pr-2 text-muted-foreground">{r.createdAt.slice(11, 16)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        // Member-run roster: at most RUN_ROSTER_VISIBLE_ROWS rows are visible,
+        // the rest is reachable by scrolling *inside* the card so the vertical
+        // card stack stays scannable. The full roster stays in the DOM.
+        // overflow-x-hidden alongside overflow-y-auto defeats the CSS Overflow
+        // Module 3 "auto-x trap" (overflow-x: visible computes to auto when
+        // overflow-y is auto, producing a stray horizontal scrollbar).
+        <div
+          data-run-roster=""
+          data-run-roster-overflow={
+            exp.memberRuns.length > RUN_ROSTER_VISIBLE_ROWS ? '' : undefined
+          }
+          className="max-h-[8.75rem] overflow-y-auto overflow-x-hidden"
+        >
+          <table className="text-xs">
+            <tbody>
+              {exp.memberRuns.map((r) => (
+                // h-7 must stay in lockstep with the container's
+                // max-h-[8.75rem] above (5 × 1.75rem); border-t is inside the
+                // row height because box-sizing: border-box is the default.
+                <tr key={r.id} className="h-7 border-t">
+                  <td className="pr-2">
+                    <StatusPill status={r.status as never} archived={r.archived} />
+                  </td>
+                  <td className="pr-2">
+                    <Link
+                      href={`${basePath}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(r.id)}`}
+                      className="font-mono hover:underline"
+                    >
+                      {r.id}
+                    </Link>
+                  </td>
+                  <td className="pr-2 text-muted-foreground">{r.createdAt.slice(11, 16)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <footer className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap gap-1">

@@ -313,20 +313,44 @@ describe('<Markdown> artifact references', () => {
     }
   }
 
-  it('links unique bare short IDs and accents only the literal identifier', () => {
-    const { container } = render(
+  it('links unique bare short IDs and badges only the literal identifier', () => {
+    render(
       <Markdown artifactLinks={artifactLinks()}>
         {'See R0007, E0017, and E0017-vsqa-fvfa4-inference.'}
       </Markdown>,
     )
 
-    const links = container.querySelectorAll('a[data-memon-artifact-id]')
-    expect(links).toHaveLength(3)
-    expect(links[0]).toHaveAttribute('href', '/artifact/report/R0007')
-    expect(links[1]).toHaveAttribute('href', '/artifact/experiment/E0017-vsqa-fvfa4-inference')
-    expect(links[2]).toHaveTextContent('E0017-vsqa-fvfa4-inference')
-    expect(links[2]?.querySelector('span.font-bold.text-primary')).toHaveTextContent('E0017')
-    expect(links[2]?.querySelector('span')?.textContent).not.toContain('-vsqa')
+    const reportLink = screen.getByRole('link', { name: 'R0007' })
+    expect(reportLink).toHaveAttribute('href', '/artifact/report/R0007')
+    expect(reportLink.querySelector('[data-artifact-badge]')).toHaveTextContent('R0007')
+
+    const experimentLinks = screen.getAllByRole('link', { name: /^E0017/ })
+    expect(experimentLinks).toHaveLength(2)
+    for (const link of experimentLinks) {
+      expect(link).toHaveAttribute('href', '/artifact/experiment/E0017-vsqa-fvfa4-inference')
+    }
+    // The long form keeps its full text, but only the `E0017` identifier is
+    // badged — the `-vsqa-…` slug stays plain running text.
+    const longForm = experimentLinks[1]!
+    expect(longForm).toHaveTextContent('E0017-vsqa-fvfa4-inference')
+    const badge = longForm.querySelector('[data-artifact-badge]')
+    expect(badge).toHaveTextContent('E0017')
+    expect(badge?.textContent).not.toContain('-vsqa')
+  })
+
+  it('badges a bare reference but leaves an ordinary Markdown link plain', () => {
+    render(
+      <Markdown artifactLinks={artifactLinks()}>
+        {'See R0007 and [docs](https://example.com/docs).'}
+      </Markdown>,
+    )
+
+    expect(
+      screen.getByRole('link', { name: 'R0007' }).querySelector('[data-artifact-badge]'),
+    ).not.toBeNull()
+    const ordinary = screen.getByRole('link', { name: 'docs' })
+    expect(ordinary).toHaveAttribute('href', 'https://example.com/docs')
+    expect(ordinary.querySelector('[data-artifact-badge]')).toBeNull()
   })
 
   it('supports a nearest provider while allowing a Markdown instance to opt out', () => {
@@ -370,7 +394,7 @@ describe('<Markdown> artifact references', () => {
     expect(container.querySelectorAll('a')).toHaveLength(1)
     expect(link).toHaveAttribute('href', 'https://example.com/R0007.md')
     expect(link).toHaveAttribute('target', '_blank')
-    expect(link?.querySelector('.text-primary')).toBeNull()
+    expect(link?.querySelector('[data-artifact-badge]')).toBeNull()
   })
 
   it('recognizes an explicit relative artifact link before bundle resource rewriting', () => {
@@ -382,8 +406,8 @@ describe('<Markdown> artifact references', () => {
     const link = container.querySelector('a[data-memon-artifact-id="R0007"]')
     expect(link).toHaveAttribute('href', '/artifact/report/R0007')
     expect(link).toHaveTextContent('R0007: learning guide')
-    expect(link?.querySelector('.font-bold.text-primary')).toHaveTextContent('R0007')
-    expect(link?.querySelector('.font-bold.text-primary')?.textContent).not.toContain('learning')
+    expect(link?.querySelector('[data-artifact-badge]')).toHaveTextContent('R0007')
+    expect(link?.querySelector('[data-artifact-badge]')?.textContent).not.toContain('learning')
   })
 
   it('recognizes an explicit absolute artifact link without inventing label emphasis', () => {
@@ -399,7 +423,7 @@ describe('<Markdown> artifact references', () => {
     const link = container.querySelector('a[data-memon-artifact-kind="experiment"]')
     expect(link).toHaveAttribute('href', '/artifact/experiment/E0017-vsqa-fvfa4-inference')
     expect(link).toHaveTextContent('current experiment')
-    expect(link?.querySelector('.text-primary')).toBeNull()
+    expect(link?.querySelector('[data-artifact-badge]')).toBeNull()
   })
 
   it('recognizes canonical project web routes and keeps unresolved files ordinary', () => {

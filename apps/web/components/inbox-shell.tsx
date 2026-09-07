@@ -76,6 +76,11 @@ const EMPTY_COPY = {
   },
 } as const
 
+const ERROR_COPY = {
+  reports: { rail: 'failed to load reports' },
+  digests: { rail: 'failed to load digests' },
+} as const
+
 const REPORT_TIMESTAMP_KEYS = ['created_at', 'updated_at'] as const
 const REPORT_PICKER_PREFERENCE_KEY = 'memon:reports:picker-open'
 
@@ -88,7 +93,12 @@ export function InboxShell({
   project: ProjectTarget
   selectedId: string | null
 }) {
-  const { items, isLoading: itemsLoading } = useItemsList(kind, project)
+  const {
+    items,
+    isLoading: itemsLoading,
+    error: itemsError,
+    refetch: refetchItems,
+  } = useItemsList(kind, project)
   const selected = useSelectedItem(kind, project, selectedId)
   const [storedReportRailOpen, setReportRailOpen] = useUserPreferenceState<boolean>(
     REPORT_PICKER_PREFERENCE_KEY,
@@ -121,6 +131,8 @@ export function InboxShell({
               items={items}
               selectedId={selectedId}
               loading={itemsLoading}
+              error={itemsError}
+              onRetry={refetchItems}
             />
           </div>
         </aside>
@@ -159,6 +171,8 @@ export function InboxShell({
         project={project}
         items={items}
         itemsLoading={itemsLoading}
+        itemsError={itemsError}
+        onRetry={refetchItems}
         selectedId={selectedId}
       />
     </div>
@@ -168,7 +182,7 @@ export function InboxShell({
 function useItemsList(
   kind: InboxKind,
   project: ProjectTarget,
-): { items: CommonItem[]; isLoading: boolean } {
+): { items: CommonItem[]; isLoading: boolean; error: Error | null; refetch: () => void } {
   const reportsQ = useQuery({
     queryKey: ['reports', ...projectQueryKey(project)],
     queryFn: () => fetchReports(project),
@@ -203,9 +217,12 @@ function useItemsList(
       subLabel: d.date,
     }))
   }, [kind, reportsQ.data, digestsQ.data])
+  const active = kind === 'reports' ? reportsQ : digestsQ
   return {
     items,
-    isLoading: kind === 'reports' ? reportsQ.isLoading : digestsQ.isLoading,
+    isLoading: active.isLoading,
+    error: active.isError ? ((active.error as Error | null) ?? new Error('request failed')) : null,
+    refetch: active.refetch,
   }
 }
 
@@ -290,6 +307,8 @@ function RailList({
   items,
   selectedId,
   loading,
+  error,
+  onRetry,
   onSelect,
 }: {
   kind: InboxKind
@@ -297,6 +316,8 @@ function RailList({
   items: CommonItem[]
   selectedId: string | null
   loading: boolean
+  error?: Error | null
+  onRetry?: () => void
   onSelect?: () => void
 }) {
   const base = projectWebPath(project, `/${kind}`)
@@ -304,6 +325,25 @@ function RailList({
     return (
       <div className="p-3">
         <ListSkeleton count={4} />
+      </div>
+    )
+  }
+  // An errored list must not be indistinguishable from a genuinely empty one.
+  // Only blank-slate errors surface here: with stale items cached we keep
+  // rendering them instead of wiping the rail.
+  if (error && items.length === 0) {
+    return (
+      <div
+        className={cn('flex flex-col items-center gap-2 px-3 py-6 text-center')}
+        data-inbox-rail-error=""
+      >
+        <p className={cn('text-xs font-medium text-destructive')}>{ERROR_COPY[kind].rail}</p>
+        <p className={cn('break-words text-[10px] text-muted-foreground')}>{error.message}</p>
+        {onRetry && (
+          <Button type="button" size="sm" variant="outline" onClick={() => onRetry()}>
+            Retry
+          </Button>
+        )}
       </div>
     )
   }
@@ -739,12 +779,16 @@ function MobileRailDrawer({
   project,
   items,
   itemsLoading,
+  itemsError,
+  onRetry,
   selectedId,
 }: {
   kind: InboxKind
   project: ProjectTarget
   items: CommonItem[]
   itemsLoading: boolean
+  itemsError?: Error | null
+  onRetry?: () => void
   selectedId: string | null
 }) {
   const [open, setOpen] = useState(false)
@@ -773,6 +817,8 @@ function MobileRailDrawer({
           items={items}
           selectedId={selectedId}
           loading={itemsLoading}
+          error={itemsError}
+          onRetry={onRetry}
           onSelect={() => setOpen(false)}
         />
       </SheetContent>

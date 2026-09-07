@@ -33,6 +33,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { type ProjectTarget, projectWebPath } from '../lib/api'
 import { cn } from '../lib/utils'
+import { ClampedBlock } from './clamped-block'
 import { Markdown } from './markdown'
 import { Badge } from './ui/badge'
 
@@ -429,14 +430,28 @@ function CriteriaBlock({
         <Icon className="size-3" aria-hidden />
         {label}
       </h4>
-      <ul className="space-y-1.5">
-        {withOccurrenceKeys(items).map(({ key, value: criterion }) => (
-          <li key={key} className="flex items-start gap-2 text-xs leading-relaxed">
-            <span className="mt-[0.45rem] size-1 shrink-0 rounded-full bg-muted-foreground/60" />
-            <RichText className="min-w-0 flex-1">{criterion}</RichText>
-          </li>
-        ))}
-      </ul>
+      {/* Only the list is clamped — the <h4> above stays permanently visible
+          so a collapsed criteria block is still identifiable.
+          `text-xs leading-relaxed` is pinned on ClampedBlock's own wrapper (not
+          just contentClassName) because `max-height: 10lh` resolves against the
+          clamp box's computed line-height; the box only inherits it from an
+          ancestor, so this is what makes "10 lines" exactly 10 criteria rows
+          instead of 10 of the card's lines. */}
+      <ClampedBlock
+        lines={10}
+        label={label}
+        className="text-xs leading-relaxed"
+        contentClassName="text-xs leading-relaxed"
+      >
+        <ul className="space-y-1.5">
+          {withOccurrenceKeys(items).map(({ key, value: criterion }) => (
+            <li key={key} className="flex items-start gap-2 text-xs leading-relaxed">
+              <span className="mt-[0.45rem] size-1 shrink-0 rounded-full bg-muted-foreground/60" />
+              <RichText className="min-w-0 flex-1">{criterion}</RichText>
+            </li>
+          ))}
+        </ul>
+      </ClampedBlock>
     </section>
   )
 }

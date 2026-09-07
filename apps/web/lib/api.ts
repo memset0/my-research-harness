@@ -194,9 +194,20 @@ export async function fetchExperiment(project: ProjectTarget, id: string): Promi
   return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}`, project))
 }
 
-export async function fetchHypotheses(
-  project: ProjectTarget,
-): Promise<{ path?: string } & ParsedHypotheses> {
+/**
+ * Named response contracts for the project-scoped collection endpoints.
+ * The AppBar count badge caches these exact DTOs under the same query keys
+ * as the views that render them, so the shapes are a shared contract rather
+ * than an implementation detail of each fetcher.
+ */
+export type HypothesesResponse = { path?: string } & ParsedHypotheses
+
+export interface JournalCountResponse {
+  totalEvents: number
+  lastDigestAt: string | null
+}
+
+export async function fetchHypotheses(project: ProjectTarget): Promise<HypothesesResponse> {
   return jsonFetch(projectQueryUrl('/api/hypotheses', project))
 }
 
@@ -213,7 +224,7 @@ export async function fetchJournal(
 /** Just the total event count for a project (used by the AppBar count badge). */
 export async function fetchJournalCount(
   project: ProjectTarget,
-): Promise<{ totalEvents: number; lastDigestAt: string | null }> {
+): Promise<JournalCountResponse> {
   return jsonFetch(
     projectQueryUrl('/api/journal', project, new URLSearchParams({ countOnly: '1' })),
   )
@@ -240,7 +251,11 @@ export interface ReportListItem extends Omit<ReportSummary, 'path'> {
   format: 'markdown' | 'bundle'
 }
 
-export async function fetchReports(project: ProjectTarget): Promise<{ reports: ReportListItem[] }> {
+export interface ReportsResponse {
+  reports: ReportListItem[]
+}
+
+export async function fetchReports(project: ProjectTarget): Promise<ReportsResponse> {
   return jsonFetch(projectQueryUrl('/api/reports', project))
 }
 
@@ -281,9 +296,11 @@ export type CodeReviewProgressPatch =
 // but keep the slashes so the catch-all route still matches.
 const encodeCodeReviewId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
 
-export async function fetchCodeReviews(
-  project: ProjectTarget,
-): Promise<{ codeReviews: CodeReviewListItem[] }> {
+export interface CodeReviewsResponse {
+  codeReviews: CodeReviewListItem[]
+}
+
+export async function fetchCodeReviews(project: ProjectTarget): Promise<CodeReviewsResponse> {
   return jsonFetch(projectQueryUrl('/api/code-reviews', project))
 }
 
@@ -351,7 +368,11 @@ export interface FullDigest {
 
 export type DigestListItem = Omit<DigestSummary, 'path'> & { path?: string; resource?: string }
 
-export async function fetchDigests(project: ProjectTarget): Promise<{ digests: DigestListItem[] }> {
+export interface DigestsResponse {
+  digests: DigestListItem[]
+}
+
+export async function fetchDigests(project: ProjectTarget): Promise<DigestsResponse> {
   return jsonFetch(projectQueryUrl('/api/digests', project))
 }
 
@@ -1183,9 +1204,13 @@ export interface AnomalyRecord {
   detectedAt: string
 }
 
+export interface ExperimentDocsResponse {
+  experiments: ExperimentDocSummary[]
+}
+
 export async function fetchExperimentDocs(
   project?: ProjectTarget,
-): Promise<{ experiments: ExperimentDocSummary[] }> {
+): Promise<ExperimentDocsResponse> {
   const url = project ? projectQueryUrl('/api/experiments', project) : '/api/experiments'
   return jsonFetch(url)
 }
