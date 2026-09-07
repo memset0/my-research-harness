@@ -24,6 +24,7 @@ const CAPABILITIES = {
   events: true,
   logStreaming: true,
   reportAssets: true,
+  wikiAssets: true,
   git: true,
   shares: true,
   tmux: false,
@@ -153,7 +154,8 @@ describe('BackendFilesystemMonitor', () => {
     const report = join(root, 'docs', 'reports', 'R0001-zero-snr-brightness.md')
     const digest = join(root, 'docs', 'digests', 'D0001-2026-05-01.md')
     const review = join(root, 'docs', 'code-review', '2026-05-24-fsdp-comm-overlap.md')
-    for (const path of [runReadme, experimentReadme, report, digest, review]) {
+    const wikiPage = join(root, 'docs', 'wiki', 'finding', 'W0001-zero-snr-brightness.md')
+    for (const path of [runReadme, experimentReadme, report, digest, review, wikiPage]) {
       await fs.appendFile(path, '\nexternal monitor edit\n')
       const future = new Date(Date.now() + 2000)
       await fs.utimes(path, future, future)
@@ -169,6 +171,7 @@ describe('BackendFilesystemMonitor', () => {
         'reports-change',
         'digests-change',
         'code-reviews-change',
+        'wiki-change',
         'anomaly',
       ]),
     )

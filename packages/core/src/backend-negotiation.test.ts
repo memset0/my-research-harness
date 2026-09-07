@@ -19,6 +19,7 @@ const CURRENT_CAPABILITIES = {
   events: true,
   logStreaming: true,
   reportAssets: true,
+  wikiAssets: true,
   git: true,
   shares: true,
   tmux: true,
@@ -132,6 +133,22 @@ describe('Backend capability and route guard', () => {
 
     expect(result).toEqual({ ok: true, value: 'previous-minor' })
     expect(invoke).toHaveBeenCalledOnce()
+  })
+
+  it('gates wiki asset proxying on the capability while report assets stay allowed', async () => {
+    const { wikiAssets: _absent, ...previousCapabilities } = CURRENT_CAPABILITIES
+    const negotiated = negotiate(metadata('6.1.0', previousCapabilities))
+    const invoke = vi.fn(() => 'streamed')
+
+    expect(await invokeNegotiatedBackendRoute(negotiated, 'wikiAssets', invoke)).toMatchObject({
+      ok: false,
+      error: { code: 'UNSUPPORTED_CAPABILITY' },
+    })
+    expect(invoke).not.toHaveBeenCalled()
+    expect(await invokeNegotiatedBackendRoute(negotiated, 'reportAssets', invoke)).toEqual({
+      ok: true,
+      value: 'streamed',
+    })
   })
 
   it('fails closed for an unknown capability name', () => {

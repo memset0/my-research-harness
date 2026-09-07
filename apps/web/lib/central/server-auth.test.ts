@@ -32,6 +32,7 @@ const capabilities: BackendCapabilities = {
   events: true,
   logStreaming: true,
   reportAssets: true,
+  wikiAssets: true,
   git: true,
   shares: true,
   tmux: true,
@@ -190,6 +191,21 @@ describe('authorizeCentralServerRequest', () => {
       shareFetchImpl: async () => Response.json({ valid: true }),
     })
     expect(mutation).toMatchObject({ ok: false, status: 403 })
+  })
+
+  it('returns 403 to a valid viewer on shell-class wiki review writes', async () => {
+    const shareFetchImpl = vi.fn<BackendFetch>(async () => Response.json({ valid: true }))
+    const result = await authorizeCentralServerRequest({
+      request: incoming('/api/wiki/review/next?host=host-a&project=project-x', 'POST', {
+        cookie: `${SHARES_COOKIE_NAME}=${viewerCookie()}`,
+      }),
+      route: resolveCentralApiRoute('/api/wiki/review/next'),
+      registry: registry(),
+      runtimeAuth,
+      shareFetchImpl,
+    })
+    expect(result).toMatchObject({ ok: false, status: 403 })
+    expect(shareFetchImpl).toHaveBeenCalledOnce()
   })
 
   it('returns 401 for invalid credentials and 429 before credential work when exhausted', async () => {

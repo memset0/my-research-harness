@@ -11,7 +11,8 @@
 // Used for:
 //   - <projectRoot>/docs/reports/  (filenames R<NNNN>-<slug>.md)
 //   - <projectRoot>/docs/digests/  (filenames D<NNNN>-<YYYY-MM-DD>.md)
-//
+//   - <projectRoot>/docs/wiki/     (depth 2: <kind>/<slug>.md and
+//     <kind>/<slug>/README.md; opt in with `depth: 2`)
 // Lifecycle (per instance):
 //   1. ctor with one or more directories + filename regex + parse callback
 //   2. await warmup(): scandir each dir, parse the matching files' bodies once
@@ -31,8 +32,8 @@
 // the cache entry with the post-write metadata.
 
 import { createHash } from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { type Dirent, promises as fs } from 'node:fs'
+import { join } from 'node:path'
 import type { Poller } from '@memon/core'
 
 export interface DirCacheEntry<T> {
@@ -54,10 +55,28 @@ export interface DirCacheOptions<T> {
    * warmup and on file-mtime change. Receives the absolute path, UTF-8
    * content, and the file's mtime (epoch ms) — typically the metadata type
    * includes an `mtime` field that the callback writes from this argument.
+   * May be async when the metadata needs more of the filesystem (a bundle
+   * asset listing, say).
    */
-  parseFile: (absPath: string, content: string, mtime: number) => T
+  parseFile: (absPath: string, content: string, mtime: number) => T | Promise<T>
   /** Optional callback after a successful list-level change (add / remove / update). */
   onUpdate?: (dir: string) => void
+  /**
+   * Directory nesting under each entry of `dirs`. `1` (the default) lists
+   * matching files directly inside the configured directories. `2` treats the
+   * configured directories as roots whose *subdirectories* hold the content
+   * files, so a subdirectory appearing or disappearing is picked up from the
+   * root's mtime and each subdirectory is watched in its own right.
+   */
+  depth?: 1 | 2
+  /**
+   * Depth-2 only: a subdirectory entry whose name matches this regex and that
+   * contains `bundleFileName` counts as one content file (`<name>/README.md`).
+   * Without it only plain files are surfaced.
+   */
+  bundleDirNameRegex?: RegExp
+  /** Depth-2 only: the file inside a bundle directory that carries the body. */
+  bundleFileName?: string
 }
 
 interface DirState<T> {
@@ -65,6 +84,11 @@ interface DirState<T> {
   byPath: Map<string, DirCacheEntry<T>>
   /** Latest observed dir mtime — advances when files added/removed. */
   dirMtime: number
+  /**
+   * Depth-2 roots hold no files of their own; they own the set of content
+   * subdirectories instead.
+   */
+  root: boolean
 }
 
 export interface PutContentResult {
@@ -92,11 +116,19 @@ export class DirCache<T> {
   private readonly state = new Map<string, DirState<T>>()
   private readonly knownPaths = new Set<string>()
   private readonly knownDirs: Set<string>
+  /**
+   * absPath → the watched directory that lists it. Not derivable from
+   * `dirname` in depth-2 mode, where a bundle's `README.md` is listed by its
+   * grandparent kind directory.
+   */
+  private readonly pathToDir = new Map<string, string>()
+  private readonly depth: 1 | 2
 
   constructor(private readonly opts: DirCacheOptions<T>) {
+    this.depth = opts.depth ?? 1
     this.knownDirs = new Set(opts.dirs)
     for (const d of opts.dirs) {
-      this.state.set(d, { byPath: new Map(), dirMtime: 0 })
+      this.state.set(d, { byPath: new Map(), dirMtime: 0, root: this.depth === 2 })
     }
   }
 
@@ -129,7 +161,7 @@ export class DirCache<T> {
   async addDir(dir: string, poller?: Poller): Promise<void> {
     if (this.knownDirs.has(dir)) return
     this.knownDirs.add(dir)
-    this.state.set(dir, { byPath: new Map(), dirMtime: 0 })
+    this.state.set(dir, { byPath: new Map(), dirMtime: 0, root: false })
     await this.scanDir(dir, poller)
     if (poller) {
       const st = this.state.get(dir)
@@ -145,7 +177,10 @@ export class DirCache<T> {
   removeDir(dir: string): void {
     const st = this.state.get(dir)
     if (st) {
-      for (const p of st.byPath.keys()) this.knownPaths.delete(p)
+      for (const p of st.byPath.keys()) {
+        this.knownPaths.delete(p)
+        this.pathToDir.delete(p)
+      }
       this.state.delete(dir)
     }
     this.knownDirs.delete(dir)
@@ -251,10 +286,10 @@ export class DirCache<T> {
     const newHash = sha1(content)
 
     // Update cache entry in place.
-    const dir = dirname(absPath)
-    const st = this.state.get(dir)
-    if (st && this.knownPaths.has(absPath)) {
-      const meta = this.opts.parseFile(absPath, content, newMtime)
+    const dir = this.pathToDir.get(absPath)
+    const st = dir ? this.state.get(dir) : undefined
+    if (dir && st) {
+      const meta = await this.opts.parseFile(absPath, content, newMtime)
       st.byPath.set(absPath, { meta, mtime: newMtime })
       this.opts.onUpdate?.(dir)
     }
@@ -292,31 +327,60 @@ export class DirCache<T> {
   private async scanDir(dir: string, poller?: Poller): Promise<void> {
     const st = this.state.get(dir)
     if (!st) return
-    let entries: string[]
+    let entries: Dirent[]
     let dirMtime = 0
     try {
       const dirStat = await fs.stat(dir)
       dirMtime = dirStat.mtimeMs
-      entries = await fs.readdir(dir)
+      entries = await fs.readdir(dir, { withFileTypes: true })
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         // Wipe state for an absent dir.
-        for (const p of st.byPath.keys()) this.knownPaths.delete(p)
+        for (const p of st.byPath.keys()) {
+          this.knownPaths.delete(p)
+          this.pathToDir.delete(p)
+        }
         st.byPath.clear()
         st.dirMtime = 0
+        if (st.root) this.dropContentDirs(dir, new Set())
         return
       }
       throw err
     }
 
-    const matched = entries.filter((name) => this.opts.fileNameRegex.test(name))
-    const matchedAbs = new Set(matched.map((name) => join(dir, name)))
+    if (st.root) {
+      // Depth-2 root: the content directories are its children. Their own
+      // scans (below, via addDir) surface the files.
+      const children = new Set(
+        entries.filter((entry) => entry.isDirectory()).map((entry) => join(dir, entry.name)),
+      )
+      this.dropContentDirs(dir, children)
+      for (const child of children) {
+        await this.addDir(child, poller)
+      }
+      st.dirMtime = dirMtime
+      this.opts.onUpdate?.(dir)
+      return
+    }
+
+    const matchedAbs = new Set<string>()
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const { bundleDirNameRegex, bundleFileName } = this.opts
+        if (this.depth === 2 && bundleDirNameRegex?.test(entry.name) && bundleFileName) {
+          matchedAbs.add(join(dir, entry.name, bundleFileName))
+        }
+        continue
+      }
+      if (this.opts.fileNameRegex.test(entry.name)) matchedAbs.add(join(dir, entry.name))
+    }
 
     // Removals: paths in cache but not on disk.
     for (const p of Array.from(st.byPath.keys())) {
       if (!matchedAbs.has(p)) {
         st.byPath.delete(p)
         this.knownPaths.delete(p)
+        this.pathToDir.delete(p)
       }
     }
 
@@ -325,8 +389,9 @@ export class DirCache<T> {
       try {
         const stat = await fs.stat(absPath)
         const content = await fs.readFile(absPath, 'utf8')
-        const meta = this.opts.parseFile(absPath, content, stat.mtimeMs)
+        const meta = await this.opts.parseFile(absPath, content, stat.mtimeMs)
         st.byPath.set(absPath, { meta, mtime: stat.mtimeMs })
+        this.pathToDir.set(absPath, dir)
         if (!this.knownPaths.has(absPath)) {
           this.knownPaths.add(absPath)
           if (poller) poller.watch(absPath, stat.mtimeMs)
@@ -340,21 +405,32 @@ export class DirCache<T> {
     this.opts.onUpdate?.(dir)
   }
 
+  /** Internal: forget every content directory of `root` outside `keep`. */
+  private dropContentDirs(root: string, keep: ReadonlySet<string>): void {
+    const prefix = `${root}/`
+    for (const known of Array.from(this.knownDirs)) {
+      if (!known.startsWith(prefix)) continue
+      if (known.slice(prefix.length).includes('/')) continue
+      if (!keep.has(known)) this.removeDir(known)
+    }
+  }
+
   /** Internal: refresh metadata for a known file. */
   private async refreshFile(absPath: string): Promise<void> {
-    const dir = dirname(absPath)
-    const st = this.state.get(dir)
-    if (!st) return
+    const dir = this.pathToDir.get(absPath)
+    const st = dir ? this.state.get(dir) : undefined
+    if (!dir || !st) return
     try {
       const stat = await fs.stat(absPath)
       const content = await fs.readFile(absPath, 'utf8')
-      const meta = this.opts.parseFile(absPath, content, stat.mtimeMs)
+      const meta = await this.opts.parseFile(absPath, content, stat.mtimeMs)
       st.byPath.set(absPath, { meta, mtime: stat.mtimeMs })
       this.opts.onUpdate?.(dir)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         st.byPath.delete(absPath)
         this.knownPaths.delete(absPath)
+        this.pathToDir.delete(absPath)
         this.opts.onUpdate?.(dir)
       }
     }

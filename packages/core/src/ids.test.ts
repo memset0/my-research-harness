@@ -8,6 +8,7 @@ describe('padId', () => {
     expect(padId('H', 9999)).toBe('H9999')
     expect(padId('D', 7)).toBe('D0007')
     expect(padId('R', 123)).toBe('R0123')
+    expect(padId('W', 7)).toBe('W0007')
   })
 
   it('throws on out-of-range', () => {
@@ -26,6 +27,8 @@ describe('parseId', () => {
     expect(parseId('H9999')).toEqual({ prefix: 'H', n: 9999 })
     expect(parseId('D0007')).toEqual({ prefix: 'D', n: 7 })
     expect(parseId('R0123')).toEqual({ prefix: 'R', n: 123 })
+    expect(parseId('E0002')).toEqual({ prefix: 'E', n: 2 })
+    expect(parseId('W0007')).toEqual({ prefix: 'W', n: 7 })
   })
 
   it('rejects unpadded form', () => {
@@ -99,6 +102,7 @@ describe('isId', () => {
   it('with prefix narrows further', () => {
     expect(isId('H0001', 'H')).toBe(true)
     expect(isId('H0001', 'D')).toBe(false)
-    expect(isId('D0042', 'D')).toBe(true)
+    expect(isId('W0007', 'W')).toBe(true)
+    expect(isId('W0007', 'R')).toBe(false)
   })
 })

@@ -11,11 +11,13 @@ import {
   fetchHypotheses,
   fetchJournalCount,
   fetchReports,
+  fetchWiki,
   type HypothesesResponse,
   type JournalCountResponse,
   type ProjectTarget,
   projectQueryKey,
   type ReportsResponse,
+  type WikiPagesResponse,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
@@ -26,6 +28,7 @@ export type TabKind =
   | 'reports'
   | 'digests'
   | 'code-review'
+  | 'wiki'
 
 /**
  * Small count badge rendered next to AppBar tab labels. Reuses the same
@@ -113,6 +116,7 @@ type TabCollection =
   | ReportsResponse
   | DigestsResponse
   | CodeReviewsResponse
+  | WikiPagesResponse
 
 function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabCollection> {
   switch (kind) {
@@ -131,6 +135,8 @@ function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabC
       return fetchDigests(project)
     case 'code-review':
       return fetchCodeReviews(project)
+    case 'wiki':
+      return fetchWiki(project)
   }
 }
 
@@ -146,5 +152,6 @@ function countTabCollection(data: TabCollection): number {
   if ('reports' in data) return data.reports.length
   if ('digests' in data) return data.digests.length
   if ('codeReviews' in data) return data.codeReviews.length
+  if ('pages' in data) return data.pages.length
   return 0
 }

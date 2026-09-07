@@ -16,6 +16,9 @@ import {
   fetchLog,
   fetchLogFiles,
   fetchReport,
+  fetchWiki,
+  fetchWikiPage,
+  fetchWikiReview,
   fetchReports,
   fetchRunReadme,
   logStreamUrl,
@@ -25,7 +28,10 @@ import {
   projectSearchParams,
   projectWebPath,
   setCommitMark,
+  markWikiReview,
+  putWikiPage,
   startTerminal,
+  unmarkWikiReview,
 } from './api'
 
 const target = ProjectRefSchema.parse({ host: 'host-a', project: 'project-x' })
@@ -72,6 +78,15 @@ describe('standalone ProjectTarget URL compatibility', () => {
 
     await fetchReport('project-x', 'R0001')
     expect(String(lastCall()[0])).toBe('/api/reports/R0001?project=project-x')
+
+    await fetchWiki('project-x')
+    expect(String(lastCall()[0])).toBe('/api/wiki?project=project-x')
+
+    await fetchWikiPage('project-x', 'W0001')
+    expect(String(lastCall()[0])).toBe('/api/wiki/W0001?project=project-x')
+
+    await fetchWikiReview('project-x')
+    expect(String(lastCall()[0])).toBe('/api/wiki/review?project=project-x')
 
     await fetchGitStatus('project-x')
     expect(String(lastCall()[0])).toBe('/api/projects/project-x/git-status')
@@ -128,6 +143,19 @@ describe('central ProjectTarget URL qualification', () => {
     await fetchReport(target, 'R0001')
     expect(String(lastCall()[0])).toBe('/api/reports/R0001?host=host-a&project=project-x')
 
+    await fetchWiki(target)
+    expect(String(lastCall()[0])).toBe('/api/wiki?host=host-a&project=project-x')
+
+    await fetchWikiPage(target, 'W0001')
+    expect(String(lastCall()[0])).toBe(
+      '/api/wiki/W0001?host=host-a&project=project-x',
+    )
+
+    await fetchWikiReview(target)
+    expect(String(lastCall()[0])).toBe(
+      '/api/wiki/review?host=host-a&project=project-x',
+    )
+
     await fetchRunReadme(target, 'run-a')
     expect(String(lastCall()[0])).toBe('/api/runs/run-a/readme?host=host-a&project=project-x')
 
@@ -164,6 +192,27 @@ describe('central ProjectTarget URL qualification', () => {
     expect(String(lastCall()[0])).toBe(
       '/api/projects/project-x/commit-marks/abcdef?host=host-a&project=project-x&submodule=library',
     )
+
+    await putWikiPage(target, 'W0001', {
+      content: '# Finding',
+      expectedMtime: 1,
+      expectedHash: 'a'.repeat(40),
+    })
+    expect(String(lastCall()[0])).toBe(
+      '/api/wiki/W0001?host=host-a&project=project-x',
+    )
+
+    await markWikiReview(target, 'next')
+    expect(String(lastCall()[0])).toBe(
+      '/api/wiki/review/next?host=host-a&project=project-x',
+    )
+    expect(lastCall()[1]?.method).toBe('POST')
+
+    await unmarkWikiReview(target, 'abcdef')
+    expect(String(lastCall()[0])).toBe(
+      '/api/wiki/review/abcdef?host=host-a&project=project-x',
+    )
+    expect(lastCall()[1]?.method).toBe('DELETE')
   })
 
   it('qualifies body-scoped mutations while keeping local Project names in payloads', async () => {

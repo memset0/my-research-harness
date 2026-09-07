@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ArtifactInventory, ArtifactTarget } from '../lib/artifact-links'
+import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
 import {
   Markdown,
   type MarkdownArtifactLinkContext,
   MarkdownArtifactLinkProvider,
-  resolveReportResourceUrl,
 } from './markdown'
 
 afterEach(() => {
@@ -266,14 +266,14 @@ describe('<Markdown> directory Report resources', () => {
   })
 
   it('refuses relative paths with traversal segments', () => {
-    expect(resolveReportResourceUrl(base, '../secret.json')).toBeNull()
-    expect(resolveReportResourceUrl(base, '%2e%2e/secret.json')).toBeNull()
-    expect(resolveReportResourceUrl(base, './data/metrics.json')).toBe(`${base}/data/metrics.json`)
+    expect(resolveDocumentResourceUrl(base, '../secret.json')).toBeNull()
+    expect(resolveDocumentResourceUrl(base, '%2e%2e/secret.json')).toBeNull()
+    expect(resolveDocumentResourceUrl(base, './data/metrics.json')).toBe(`${base}/data/metrics.json`)
   })
 
   it('keeps central Host selectors after the appended asset path', () => {
     expect(
-      resolveReportResourceUrl(
+      resolveDocumentResourceUrl(
         `${base}?host=host-a&project=research`,
         'charts/curve.svg?download=1#plot',
       ),

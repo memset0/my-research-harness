@@ -39,6 +39,9 @@ const MIN_ZOOM_PERCENT = 50
 const MAX_ZOOM_PERCENT = 200
 const ZOOM_STEP_PERCENT = 10
 export const REPORT_HTML_CHANGE_POLL_MS = 60_000
+const AUTO_HEIGHT_PADDING_PX = 16
+const AUTO_HEIGHT_FALLBACK_PX = 320
+const MAX_AUTO_HEIGHT_PX = 4000
 
 interface ReportHtmlZoomValue {
   zoomPercent: number
@@ -54,8 +57,20 @@ export function ReportHtmlZoomProvider({ children }: { children: ReactNode }) {
 }
 
 export interface ReportHtmlEmbedProps {
-  src: string
+  /** Same-origin document URL. Mutually exclusive with `srcDoc`. */
+  src?: string
+  /**
+   * Inline document rendered through `srcdoc`. Used by the `html-embed`
+   * wiki component, whose payload IS the document, so there is nothing to
+   * probe over HTTP. Mutually exclusive with `src`.
+   */
+  srcDoc?: string
   title: string
+  /**
+   * Fixed pixel height, or `auto` to size the frame to its content. Omitted
+   * keeps the responsive viewport-relative height used by Report embeds.
+   */
+  height?: number | 'auto'
 }
 
 /**
@@ -66,7 +81,9 @@ export interface ReportHtmlEmbedProps {
  * approved unsandboxed Report trust model while making 4xx/5xx asset failures
  * visible to the user instead of silently rendering a JSON error page.
  */
-export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
+export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedProps) {
+  const inline = typeof srcDoc === 'string'
+  const documentId = inline ? 'srcdoc' : (src ?? '')
   const sharedZoom = useContext(ReportHtmlZoomContext)
   const [localZoomPercent, setLocalZoomPercent] = useState(DEFAULT_ZOOM_PERCENT)
   const zoomPercent = sharedZoom?.zoomPercent ?? localZoomPercent
@@ -78,6 +95,7 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   const [error, setError] = useState<string | null>(null)
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [autoHeightPx, setAutoHeightPx] = useState<number | null>(null)
   const [hasApproachedViewport, setHasApproachedViewport] = useState(
     () => typeof IntersectionObserver === 'undefined',
   )
@@ -90,6 +108,22 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   const titleId = useId()
 
   useEffect(() => {
+    if (inline) {
+      // An inline document is already in hand: mount it immediately and skip
+      // the probe/revision machinery, which exists for HTTP-served assets.
+      setError(null)
+      setProbedSrc(documentId)
+      setIframeAttempt(attempt)
+      loadedRevisionRef.current = null
+      setUpdateAvailable(false)
+      setPhase('loading')
+      return
+    }
+    if (!src) {
+      setError('No document was supplied for this embed.')
+      setPhase('error')
+      return
+    }
     const controller = new AbortController()
     let cancelled = false
     let timedOut = false
@@ -133,7 +167,7 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [src, attempt])
+  }, [src, srcDoc, inline, documentId, attempt])
 
   useEffect(() => {
     const container = containerRef.current
@@ -186,7 +220,7 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   }, [hasApproachedViewport, phase])
 
   useEffect(() => {
-    if (phase !== 'ready' || updateAvailable || !isEmbedVisible) return
+    if (inline || !src || phase !== 'ready' || updateAvailable || !isEmbedVisible) return
     let checking = false
     const controller = new AbortController()
     const checkForUpdate = async () => {
@@ -219,7 +253,7 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
       window.clearInterval(interval)
       controller.abort()
     }
-  }, [isEmbedVisible, phase, src, updateAvailable])
+  }, [inline, isEmbedVisible, phase, src, updateAvailable])
 
   useEffect(() => {
     if (!isExpanded) return
@@ -256,6 +290,34 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
     }
   }, [isExpanded])
 
+  // `height="auto"` sizes the frame to its document. The document is
+  // same-origin (a Report asset or an inline `srcdoc`), so it can be measured
+  // directly; scripted content that draws after load is picked up by the
+  // ResizeObserver on its body.
+  useEffect(() => {
+    if (height !== 'auto' || phase !== 'ready') return
+    let frameDocument: Document | null = null
+    try {
+      frameDocument = iframeRef.current?.contentDocument ?? null
+    } catch {
+      return
+    }
+    const measured = frameDocument
+    if (!measured) return
+    const measure = () => {
+      const next = Math.max(
+        measured.documentElement?.scrollHeight ?? 0,
+        measured.body?.scrollHeight ?? 0,
+      )
+      if (next > 0) setAutoHeightPx(Math.min(next + AUTO_HEIGHT_PADDING_PX, MAX_AUTO_HEIGHT_PX))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined' || !measured.body) return
+    const observer = new ResizeObserver(measure)
+    observer.observe(measured.body)
+    return () => observer.disconnect()
+  }, [height, phase, iframeAttempt])
+
   const retry = () => {
     setError(null)
     setPhase('checking')
@@ -267,6 +329,13 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
   }
 
   const iframeScale = zoomPercent / 100
+
+  const fixedHeightPx =
+    typeof height === 'number'
+      ? height
+      : height === 'auto'
+        ? (autoHeightPx ?? AUTO_HEIGHT_FALLBACK_PX)
+        : null
 
   const statusLabel =
     phase === 'checking'
@@ -357,12 +426,14 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
             Reload
             {updateAvailable && <UpdateAvailableDot />}
           </Button>
-          <Button asChild size="sm" variant="ghost">
-            <a href={src} target="_blank" rel="noreferrer noopener">
-              <ExternalLink aria-hidden />
-              Open in new tab
-            </a>
-          </Button>
+          {src && (
+            <Button asChild size="sm" variant="ghost">
+              <a href={src} target="_blank" rel="noreferrer noopener">
+                <ExternalLink aria-hidden />
+                Open in new tab
+              </a>
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"
@@ -380,12 +451,15 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
           'relative w-full overflow-hidden bg-background',
           isExpanded
             ? 'min-h-0 flex-1'
-            : [
+            : fixedHeightPx === null && [
                 'h-[65svh] max-h-[42rem]',
                 'supports-[height:100dvh]:h-[65dvh]',
                 'md:h-[70vh] md:max-h-[52rem]',
               ],
         )}
+        style={
+          !isExpanded && fixedHeightPx !== null ? { height: `${fixedHeightPx}px` } : undefined
+        }
         aria-busy={phase === 'checking' || phase === 'loading'}
       >
         {(phase === 'checking' || phase === 'loading') && (
@@ -397,11 +471,12 @@ export function ReportHtmlEmbed({ src, title }: ReportHtmlEmbedProps) {
           </div>
         )}
 
-        {probedSrc === src && (phase === 'loading' || phase === 'ready') && (
+        {probedSrc === documentId && (phase === 'loading' || phase === 'ready') && (
           <iframe
-            key={`${src}:${iframeAttempt}`}
+            key={`${documentId}:${iframeAttempt}`}
             ref={iframeRef}
-            src={src}
+            src={inline ? undefined : src}
+            srcDoc={srcDoc}
             title={title}
             className="border-0 bg-background"
             style={{
@@ -453,7 +528,7 @@ function MobileActionsMenu({
   onReload,
   onToggleExpanded,
 }: {
-  src: string
+  src?: string
   zoomPercent: number
   updateAvailable: boolean
   isExpanded: boolean
@@ -521,12 +596,14 @@ function MobileActionsMenu({
             </span>
           )}
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href={src} target="_blank" rel="noreferrer noopener">
-            <ExternalLink aria-hidden />
-            Open in new tab
-          </a>
-        </DropdownMenuItem>
+        {src && (
+          <DropdownMenuItem asChild>
+            <a href={src} target="_blank" rel="noreferrer noopener">
+              <ExternalLink aria-hidden />
+              Open in new tab
+            </a>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={onToggleExpanded}>
           {isExpanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
           {isExpanded ? 'Exit expanded view' : 'Expand'}

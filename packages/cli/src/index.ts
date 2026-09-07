@@ -65,6 +65,29 @@ import {
   runWarningReopen,
   runWarningResolve,
 } from './commands/warning.js'
+import {
+  runWikiBacklinks,
+  runWikiCommit,
+  runWikiComponentsLs,
+  runWikiComponentsMigrate,
+  runWikiComponentsShow,
+  runWikiCreate,
+  runWikiDelete,
+  runWikiDeprecate,
+  runWikiLint,
+  runWikiLs,
+  runWikiMigrateReport,
+  runWikiMove,
+  runWikiReviewDiff,
+  runWikiReviewLog,
+  runWikiReviewLs,
+  runWikiReviewUnverify,
+  runWikiReviewVerify,
+  runWikiSet,
+  runWikiShow,
+  runWikiStale,
+  runWikiUndeprecate,
+} from './commands/wiki.js'
 import { emitWarningDeprecationBanner } from './lib/deprecations.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
@@ -1002,6 +1025,268 @@ fsVersion
   .action(async () => {
     const g = readGlobals()
     await runFsVersionCheck({ projectRoot: g.projectRoot, cwd: g.cwd, format: g.format })
+  })
+
+// ---------- memon wiki ----------
+
+const wiki = program
+  .command('wiki')
+  .description('wiki commands (docs/wiki/<kind>/W<NNNN>-<slug>{.md,/README.md})')
+
+interface WikiLocalOptions {
+  projectRoot?: string
+  format?: string
+}
+
+/**
+ * Wiki subcommands take `--project-root` / `--format` after the subcommand as
+ * well as before it (`memon --format human wiki ls`) — both forms appear in
+ * the `memon-wiki` skill, and a rejected flag there is an agent dead end.
+ * `--format` is passed through raw; `wiki.ts` validates it (markdown is only
+ * legal on `ls` / `show`).
+ */
+function wikiCommand(parent: Command, spec: string, description: string, markdown = false): Command {
+  return parent
+    .command(spec)
+    .description(description)
+    .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
+    .option(
+      '--format <fmt>',
+      markdown ? 'output format: json | human | markdown' : 'output format: json | human',
+    )
+}
+
+function wikiGlobals(opts: WikiLocalOptions): {
+  projectRoot?: string
+  cwd: string
+  format?: string
+} {
+  const global = program.opts<{ projectRoot?: string; format?: string }>()
+  return {
+    projectRoot: opts.projectRoot ?? global.projectRoot,
+    cwd: process.cwd(),
+    format: opts.format ?? global.format,
+  }
+}
+
+/** Repeatable option collector (`--source E0002 --source E0003`). */
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value]
+}
+
+wikiCommand(wiki, 'ls', 'list wiki pages with optional filters', true)
+  .option('--kind <kind>', 'restrict to one kind directory')
+  .option('--status <status>', 'restrict to one status')
+  .option('--tag <tag>', 'restrict to pages carrying this tag')
+  .option('--stale', 'only pages whose cited evidence moved on', false)
+  .option('--review <state>', 'VERIFIED | CHANGED_SINCE_VERIFY | UNVERIFIED')
+  .option('--source <artifact>', 'only pages citing this Experiment / Variant / Hypothesis / run')
+  .option('--deprecated', 'only deprecated pages')
+  .option('--no-deprecated', 'hide deprecated pages')
+  .option('--no-description', 'suppress the description line (human / markdown)')
+  .action(
+    async (
+      opts: WikiLocalOptions & {
+        kind?: string
+        status?: string
+        tag?: string
+        stale?: boolean
+        review?: string
+        source?: string
+        deprecated?: boolean
+        description?: boolean
+      },
+    ) => {
+      await runWikiLs({ ...wikiGlobals(opts), ...opts })
+    },
+  )
+
+wikiCommand(wiki, 'show <page>', 'print one page (slug or W<NNNN>) with its diagnostics', true)
+  .option('--body-only', 'print only the Markdown body after the frontmatter', false)
+  .action(async (page: string, opts: WikiLocalOptions & { bodyOnly?: boolean }) => {
+    await runWikiShow({ ...wikiGlobals(opts), page, bodyOnly: opts.bodyOnly })
+  })
+
+wikiCommand(wiki, 'create <kind> <slug>', 'allocate the next W<NNNN> and write a page template')
+  .requiredOption('--title <text>', 'page title (also the H1)')
+  .option('--description <text>', 'one to three sentences that stand alone in a listing')
+  .option('--status <status>', "status from the kind's vocabulary (default: its first value)")
+  .option('--date <YYYY-MM-DD>', 'meeting date (required for `meeting`)')
+  .option('--source <artifact>', 'cite an Experiment / Variant / Hypothesis / run (repeatable)', collectOption, [])
+  .option('--tag <tag>', 'add a tag (repeatable)', collectOption, [])
+  .option('--bundle', 'create the bundle form (<slug>/README.md + assets)', false)
+  .action(
+    async (
+      kind: string,
+      slug: string,
+      opts: WikiLocalOptions & {
+        title: string
+        description?: string
+        status?: string
+        date?: string
+        source?: string[]
+        tag?: string[]
+        bundle?: boolean
+      },
+    ) => {
+      await runWikiCreate({ ...wikiGlobals(opts), ...opts, kind, slug })
+    },
+  )
+
+wikiCommand(wiki, 'move <page> <target>', 'relocate a page to <kind> or <kind>/<slug>')
+  .option('--status <status>', 'status to adopt for the new kind')
+  .action(async (page: string, target: string, opts: WikiLocalOptions & { status?: string }) => {
+    await runWikiMove({ ...wikiGlobals(opts), page, target, status: opts.status })
+  })
+
+wikiCommand(wiki, 'set <page>', 'edit frontmatter only, with an optional mtime lock')
+  .option('--status <status>', 'new status')
+  .option('--title <text>', 'new title')
+  .option('--description <text>', 'new description')
+  .option('--date <YYYY-MM-DD>', 'new meeting date')
+  .option('--add-source <artifact>', 'append to `sources` (repeatable)', collectOption, [])
+  .option('--rm-source <artifact>', 'remove from `sources` (repeatable)', collectOption, [])
+  .option('--add-tag <tag>', 'append to `tags` (repeatable)', collectOption, [])
+  .option('--rm-tag <tag>', 'remove from `tags` (repeatable)', collectOption, [])
+  .option('--expected-mtime <ms>', 'refuse the write unless the page mtime matches', (v) => Number(v))
+  .action(
+    async (
+      page: string,
+      opts: WikiLocalOptions & {
+        status?: string
+        title?: string
+        description?: string
+        date?: string
+        addSource?: string[]
+        rmSource?: string[]
+        addTag?: string[]
+        rmTag?: string[]
+        expectedMtime?: number
+      },
+    ) => {
+      await runWikiSet({ ...wikiGlobals(opts), ...opts, page })
+    },
+  )
+
+wikiCommand(wiki, 'lint [page]', 'report diagnostics for one page or the whole wiki')
+  .option('--strict', 'exit 1 when any `error` severity diagnostic exists', false)
+  .option('--central <url>', 'also apply the central component registry lint')
+  .action(async (page: string | undefined, opts: WikiLocalOptions & { strict?: boolean; central?: string }) => {
+    await runWikiLint({ ...wikiGlobals(opts), page, strict: opts.strict, central: opts.central })
+  })
+
+wikiCommand(wiki, 'stale', 'list pages whose cited evidence changed after their `updated_at`').action(
+  async (opts: WikiLocalOptions) => {
+    await runWikiStale(wikiGlobals(opts))
+  },
+)
+
+wikiCommand(wiki, 'backlinks <artifact>', 'list pages citing an artifact (plus Markdown links for R<NNNN>)').action(
+  async (artifact: string, opts: WikiLocalOptions) => {
+    await runWikiBacklinks({ ...wikiGlobals(opts), artifact })
+  },
+)
+
+wikiCommand(wiki, 'migrate-report <report> <kind> [slug]', 'move one docs/reports/R<NNNN> into the wiki')
+  .option('--status <status>', "status from the target kind's vocabulary")
+  .action(
+    async (
+      report: string,
+      kind: string,
+      slug: string | undefined,
+      opts: WikiLocalOptions & { status?: string },
+    ) => {
+      await runWikiMigrateReport({ ...wikiGlobals(opts), report, kind, slug, status: opts.status })
+    },
+  )
+
+wikiCommand(wiki, 'deprecate <page>', 'mark a page outdated without deleting it')
+  .requiredOption('--reason <text>', 'why the page is deprecated')
+  .option('--superseded-by <W-id>', 'the page that replaces this one')
+  .option('--at <iso>', 'deprecation timestamp (default: now with offset)')
+  .action(
+    async (
+      page: string,
+      opts: WikiLocalOptions & { reason: string; supersededBy?: string; at?: string },
+    ) => {
+      await runWikiDeprecate({ ...wikiGlobals(opts), ...opts, page })
+    },
+  )
+
+wikiCommand(wiki, 'undeprecate <page>', 'remove a page-level deprecation').action(
+  async (page: string, opts: WikiLocalOptions) => {
+    await runWikiUndeprecate({ ...wikiGlobals(opts), page })
+  },
+)
+
+wikiCommand(wiki, 'delete <page>', 'delete a page (bundles with assets require --force)')
+  .option('--force', 'delete a bundle that holds more than README.md', false)
+  .action(async (page: string, opts: WikiLocalOptions & { force?: boolean }) => {
+    await runWikiDelete({ ...wikiGlobals(opts), page, force: opts.force })
+  })
+
+wikiCommand(wiki, 'commit', 'stage docs/wiki/ only and commit it as `wiki: <summary>`')
+  .option('-m, --message <summary>', 'commit summary (default: generated from the touched pages)')
+  .option('--allow-empty-message', 'accept an empty -m and fall back to the generated summary', false)
+  .action(async (opts: WikiLocalOptions & { message?: string; allowEmptyMessage?: boolean }) => {
+    await runWikiCommit({ ...wikiGlobals(opts), ...opts })
+  })
+
+const wikiReview = wiki
+  .command('review')
+  .description('commit-ordered human verification of docs/wiki/ (.memon/wiki-review.csv)')
+
+wikiCommand(wikiReview, 'log', 'every wiki commit in order with its verification state').action(
+  async (opts: WikiLocalOptions) => {
+    await runWikiReviewLog(wikiGlobals(opts))
+  },
+)
+
+wikiCommand(wikiReview, 'ls', 'every page with its review state')
+  .option('--state <state>', 'VERIFIED | CHANGED_SINCE_VERIFY | UNVERIFIED')
+  .action(async (opts: WikiLocalOptions & { state?: string }) => {
+    await runWikiReviewLs({ ...wikiGlobals(opts), state: opts.state })
+  })
+
+wikiCommand(wikiReview, 'diff <page>', 'unified diff of a page from `verifiedThrough` to the worktree').action(
+  async (page: string, opts: WikiLocalOptions) => {
+    await runWikiReviewDiff({ ...wikiGlobals(opts), page })
+  },
+)
+
+wikiCommand(wikiReview, 'verify <sha>', 'mark a wiki commit verified (human only; `next` = oldest unmarked)')
+  .option('--note <text>', 'note stored with the mark')
+  .action(async (sha: string, opts: WikiLocalOptions & { note?: string }) => {
+    await runWikiReviewVerify({ ...wikiGlobals(opts), sha, note: opts.note })
+  })
+
+wikiCommand(wikiReview, 'unverify <sha>', 'remove a mark and every newer one (human only)').action(
+  async (sha: string, opts: WikiLocalOptions) => {
+    await runWikiReviewUnverify({ ...wikiGlobals(opts), sha })
+  },
+)
+
+const wikiComponents = wiki
+  .command('components')
+  .description('body component registry, read from a central dashboard over HTTP')
+
+wikiCommand(wikiComponents, 'ls', 'list registered components (name, version, description, outdated)')
+  .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
+  .action(async (opts: WikiLocalOptions & { central?: string }) => {
+    await runWikiComponentsLs({ ...wikiGlobals(opts), central: opts.central })
+  })
+
+wikiCommand(wikiComponents, 'show <name>', 'print one descriptor (`<name>` or `<name>@<N>`)')
+  .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
+  .action(async (name: string, opts: WikiLocalOptions & { central?: string }) => {
+    await runWikiComponentsShow({ ...wikiGlobals(opts), name, central: opts.central })
+  })
+
+wikiCommand(wikiComponents, 'migrate [page]', 'rewrite component blocks to their latest version via central')
+  .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
+  .option('--dry-run', 'report what would change without writing', false)
+  .action(async (page: string | undefined, opts: WikiLocalOptions & { central?: string; dryRun?: boolean }) => {
+    await runWikiComponentsMigrate({ ...wikiGlobals(opts), page, central: opts.central, dryRun: opts.dryRun })
   })
 
 async function main() {

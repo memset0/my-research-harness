@@ -4,10 +4,10 @@
 
 Every memon skill that reads or writes spec files (Experiment bundles, Run
 READMEs, `docs/hypotheses.md`, `docs/journal.md`, anything under
-`docs/digests/` or `docs/reports/`) checks the project root's on-disk schema
-version before doing any work. The check is a single CLI call; the agent
-branches on its result to either proceed, stop with a recommendation, or
-surface a fatal mismatch.
+`docs/digests/`, `docs/reports/`, or `docs/wiki/`) checks the project root's
+on-disk schema version before doing any work. The check is a single CLI call;
+the agent branches on its result to either proceed, stop with a
+recommendation, or surface a fatal mismatch.
 
 This doc is the canonical source for the protocol. Project-aware skills point
 here instead of duplicating the branch table. `memon-migrate-fs` is exempt
@@ -21,6 +21,11 @@ Run, as the first executable step in the skill workflow:
 memon --project-root . --format json fs-version check
 ```
 
+`memon-wiki` may operate on an sshfs-mounted project root; it runs this same
+check through the channel its mode detection selected (`ssh <user@host> 'cd
+<remote root> && memon --project-root . --format json fs-version check'`) and
+branches on the identical status values.
+
 Branch on the `status` field:
 
 - `match` → proceed with the rest of the skill.
@@ -28,7 +33,8 @@ Branch on the `status` field:
   current memon expects v<available>. Please run the `memon-migrate-fs`
   skill to upgrade before continuing." Do NOT read or write any spec file
   (`README.md`, `implementation.yaml`, `investigation.yaml`, `results.yaml`,
-  `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`, `docs/reports/*`).
+  `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`, `docs/reports/*`,
+  `docs/wiki/*`).
 - `uninitialised` → STOP. Tell the user: "This project root has not had
   memon installed yet. Run `memon --project-root . install-skills` first."
   Do NOT read or write any spec file.

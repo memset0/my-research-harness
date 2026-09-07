@@ -35,6 +35,8 @@ export interface ProjectResolverContext {
   resolveByDigestId: (id: string) => string | null
   /** Look up a report by id `R<NNNN>`; returns project. */
   resolveByReportId: (id: string) => string | null
+  /** Look up a wiki page by id `W<NNNN>`; returns project. */
+  resolveByWikiId: (id: string) => string | null
   /** Resolve an absolute (or project-relative) path → owning project name. */
   resolveByPath: (path: string) => string | null
 }
@@ -183,6 +185,26 @@ const projectFromReportId =
     return ctx.resolveByReportId(id)
   }
 
+const projectFromWikiId =
+  () =>
+  (
+    _m: string,
+    p: string,
+    search: URLSearchParams,
+    ctx: ProjectResolverContext,
+  ): ResolvedProject => {
+    const queryProject = projectFromQuery(search)
+    if (queryProject) return queryProject
+    const id = idAfter(p, '/api/wiki/')
+    if (!id) return PROJECT_MULTI
+    return ctx.resolveByWikiId(id)
+  }
+
+/** project from /api/wiki-assets/<project>/... segment. */
+const projectFromWikiAssetsSegment =
+  () =>
+  (_m: string, p: string): ResolvedProject => segmentAfter(p, '/api/wiki-assets/') ?? null
+
 const projectFromPathQuery =
   () =>
   (
@@ -285,6 +307,26 @@ const RULES: Rule[] = [
     projectFor: projectQueryOrMulti(),
   },
 
+  // The wiki component registry is a static, project-independent description
+  // of the shipped components. `lint` and `migrate` are pure functions of the
+  // posted body — they read no project and write nothing — so they are read
+  // class despite being POSTs, which the generic non-GET fallthrough would
+  // otherwise make owner-only.
+  {
+    match: startsWith('/api/wiki/components'),
+    class: 'read',
+    projectFor: projectGlobal(),
+  },
+
+  // Wiki review marks are owner-only shell-class writes. This deliberately
+  // bypasses the generic mutation capability: read-only Backends accept
+  // review marks because `.memon/` is control state, not project content.
+  {
+    match: methodIs(['POST', 'DELETE'], startsWith('/api/wiki/review/')),
+    class: 'shell',
+    projectFor: projectQueryOrMulti(),
+  },
+
   // ===== read: GET API endpoints =====
   {
     match: methodIs(['GET'], exact('/api/projects')),
@@ -340,6 +382,31 @@ const RULES: Rule[] = [
     match: methodIs(['GET', 'HEAD'], startsWith('/api/report-assets/')),
     class: 'read',
     projectFor: projectFromReportAssetsSegment(),
+  },
+  {
+    match: methodIs(['GET'], exact('/api/wiki')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+  {
+    match: methodIs(['GET'], exact('/api/wiki/review')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+  {
+    match: methodIs(['GET'], startsWith('/api/wiki/backlinks/')),
+    class: 'read',
+    projectFor: projectQueryOrMulti(),
+  },
+  {
+    match: methodIs(['GET'], startsWith('/api/wiki/')),
+    class: 'read',
+    projectFor: projectFromWikiId(),
+  },
+  {
+    match: methodIs(['GET', 'HEAD'], startsWith('/api/wiki-assets/')),
+    class: 'read',
+    projectFor: projectFromWikiAssetsSegment(),
   },
   {
     match: methodIs(['GET'], exact('/api/code-reviews')),

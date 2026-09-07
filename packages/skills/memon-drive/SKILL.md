@@ -57,6 +57,14 @@ Also read `Motivation`, `Design`, `Findings`, `Limitations`, `Conclusion`,
 `CLAUDE.md`, or equivalent). Unsupported README sections remain visible context;
 never discard them because lint rejects their names.
 
+Treat wiki pages and Experiment documents as trustworthy by default; when two
+documents contradict each other or a document contradicts fresh Experiment
+data, consult `memon wiki review ls` and `memon wiki review diff <page>` and
+prefer `VERIFIED` content, then content of `CHANGED_SINCE_VERIFY` pages
+outside their `unverifiedRanges`, then `UNVERIFIED` content — and ask the
+user, quoting both passages and their review states, when that ordering does
+not settle it.
+
 If a managed section conflicts with its canonical one-line pointer, preserve and
 surface the real content. Do not write through the conflict outside migration.
 

@@ -1,13 +1,17 @@
 /**
- * Pure helpers for recognizing current-project Experiment and Report
- * references. These helpers deliberately know nothing about React or the
- * Report workspace URL shape: callers resolve an identity here, then hand it
- * to the surface-aware navigation builder.
+ * Pure helpers for recognizing current-project Experiment, Report, and wiki
+ * page references. These helpers deliberately know nothing about React or the
+ * workspace URL shape: callers resolve an identity here, then hand it to the
+ * surface-aware navigation builder.
+ *
+ * Legacy resolution: a bare `R<NNNN>` token targets the Report while one with
+ * that id exists under `docs/reports/`; once the Report is gone (migrated into
+ * the wiki) the same token targets the page carrying `legacy_id: R<NNNN>`.
  */
 
 import type { ArtifactNavigationTarget } from './report-workspace-url'
 
-export type ArtifactKind = 'experiment' | 'report'
+export type ArtifactKind = 'experiment' | 'report' | 'wiki'
 
 export interface ArtifactDocument {
   kind: ArtifactKind
@@ -23,6 +27,12 @@ export interface ArtifactInventory {
   host?: string | null
   experiments: ReadonlyArray<{ id: string; path: string }>
   reports: ReadonlyArray<{ id: string; path: string }>
+  /**
+   * Wiki pages of the project. `path` is the page's `.md` / `README.md`
+   * (project-relative as the API serves it); `legacyId` is the `R<NNNN>` the
+   * page inherited from the Report it replaced.
+   */
+  wiki?: ReadonlyArray<{ id: string; path: string; legacyId?: string | null }>
 }
 
 export type ArtifactTarget = ArtifactNavigationTarget
@@ -34,6 +44,7 @@ export type ResolvedArtifactLink = ArtifactTarget & {
 }
 
 const REPORT_ID_RE = /^R\d{4}$/
+const WIKI_ID_RE = /^W\d{4}$/
 const EXPERIMENT_SHORT_ID_RE = /^E\d{4}$/
 const EXPERIMENT_ID_RE = /^E\d{4}-[a-z0-9][a-z0-9-]*$/
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i
@@ -42,19 +53,42 @@ export function artifactDocuments(inventory: ArtifactInventory): ArtifactDocumen
   return [
     ...inventory.experiments.map((item) => ({ kind: 'experiment' as const, ...item })),
     ...inventory.reports.map((item) => ({ kind: 'report' as const, ...item })),
+    ...(inventory.wiki ?? []).map((item) => ({
+      kind: 'wiki' as const,
+      id: item.id,
+      path: item.path,
+    })),
   ]
 }
 
-/** Resolve a bare canonical Report id, short Experiment id, or full Experiment id. */
+/**
+ * Resolve a bare canonical id: a Report `R<NNNN>` (falling back to the wiki
+ * page that inherited it as `legacy_id`), a wiki `W<NNNN>`, or a short / full
+ * Experiment id.
+ */
 export function resolveBareArtifactReference(
   reference: string,
   inventory: ArtifactInventory,
 ): ArtifactTarget | null {
   if (REPORT_ID_RE.test(reference)) {
-    return uniqueIdentity(
+    const report = uniqueIdentity(
       inventory.reports
         .filter((item) => item.id === reference)
         .map((item) => ({ kind: 'report' as const, id: item.id })),
+    )
+    if (report) return report
+    return uniqueIdentity(
+      (inventory.wiki ?? [])
+        .filter((item) => item.legacyId === reference)
+        .map((item) => ({ kind: 'wiki' as const, id: item.id })),
+    )
+  }
+
+  if (WIKI_ID_RE.test(reference)) {
+    return uniqueIdentity(
+      (inventory.wiki ?? [])
+        .filter((item) => item.id === reference)
+        .map((item) => ({ kind: 'wiki' as const, id: item.id })),
     )
   }
 
@@ -126,6 +160,13 @@ export function resolveArtifactMarkdownHref(
   const pathMatches = documents.filter(
     (document) => normalizeInventoryPath(document.path) === candidate,
   )
+  if (pathMatches.length === 0) {
+    const legacyReportId = reportIdFromProjectPath(candidate, sourcePath)
+    const target = legacyReportId
+      ? resolveBareArtifactReference(legacyReportId, inventory)
+      : null
+    return target ? { ...target, path: candidate, fragment: split.fragment } : null
+  }
   if (pathMatches.length !== 1) return null
   const match = pathMatches[0]!
 
@@ -172,6 +213,9 @@ function resolveCanonicalArtifactRoute(
     return resolveBareArtifactReference(id, inventory)
   }
   if (collection === 'e' && id && EXPERIMENT_ID_RE.test(id)) {
+    return resolveBareArtifactReference(id, inventory)
+  }
+  if (collection === 'wiki' && id && WIKI_ID_RE.test(id)) {
     return resolveBareArtifactReference(id, inventory)
   }
   return null
@@ -224,6 +268,29 @@ function normalizePathSegments(segments: string[], absolute: boolean): string | 
     normalized.push(segment)
   }
   return `${absolute ? '/' : ''}${normalized.join('/')}`
+}
+
+/**
+ * Recover the stable Report id from a canonical current-project Report path.
+ * This keeps old Markdown paths useful after a Report is migrated: a live
+ * Report wins through normal id resolution, otherwise its `legacy_id` wiki
+ * page takes over.
+ */
+function reportIdFromProjectPath(candidate: string, sourcePath: string): string | null {
+  const sourceDocs = projectDocsRoot(sourcePath)
+  const candidateDocs = projectDocsRoot(candidate)
+  if (sourceDocs === null || candidateDocs !== sourceDocs) return null
+  const prefix = `${sourceDocs}/reports/`
+  if (!candidate.startsWith(prefix)) return null
+  const tail = candidate.slice(prefix.length)
+  const match = /^(R\d{4})-[^/]+(?:\.md|\/README\.md)$/.exec(tail)
+  return match?.[1] ?? null
+}
+
+function projectDocsRoot(path: string): string | null {
+  if (path === 'docs' || path.startsWith('docs/')) return 'docs'
+  const marker = path.indexOf('/docs/')
+  return marker < 0 ? null : path.slice(0, marker + '/docs'.length)
 }
 
 function sameIdentity(a: ArtifactTarget, b: ArtifactTarget): boolean {

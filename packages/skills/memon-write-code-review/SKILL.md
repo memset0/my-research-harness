@@ -183,6 +183,10 @@ The body is markdown the dashboard renders as-is (GitHub-flavored + LaTeX math v
 ## Notes
 ```
 
+When a section needs a registered fenced-block component instead of plain
+Markdown, follow `memon-author-components`; do not restate component rules
+here.
+
 ### `## Requirement`
 
 Why this change exists. **These are angles to consider, not fixed fields** — write

@@ -25,6 +25,7 @@ import {
   type Run,
   scanProjectRoot,
 } from '@memon/core'
+import type { BackendWikiArtifacts } from './document-service.js'
 
 export class BackendProjectServiceError extends Error {
   constructor(
@@ -127,6 +128,23 @@ export class FilesystemProjectService implements BackendProjectReadService {
       lastRefreshAt: state.lastRefreshAt,
       lastRefreshDurationMs: state.lastRefreshDurationMs,
       lastError: state.lastError,
+    }
+  }
+
+  /**
+   * Artifacts wiki source resolution needs, served from the warm Project
+   * snapshot so a wiki read costs no extra Run scan.
+   */
+  async readWikiArtifacts(projectName: string): Promise<BackendWikiArtifacts> {
+    const data = await this.readProject(projectName)
+    const hypothesesStat = data.hypotheses.path
+      ? await fs.stat(data.hypotheses.path).catch(() => null)
+      : null
+    return {
+      experiments: data.experiments,
+      runs: data.runs,
+      hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
+      hypothesisIds: data.hypotheses.entries.map((entry) => entry.id),
     }
   }
 

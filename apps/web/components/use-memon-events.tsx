@@ -107,6 +107,14 @@ export function useMemonEvents() {
         case 'experiment-change': {
           // Coarse 'rediscover' signal carries no id — invalidate the lists.
           queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'experiments') })
+          // Cited-Experiment times drive wiki staleness. Older standalone
+          // emitters omit project, so fall back to the wiki-key prefix rather
+          // than constructing the non-matching `['wiki', undefined]`.
+          queryClient.invalidateQueries({
+            queryKey: evt.project
+              ? scopedKey(evt.host, 'wiki', evt.project)
+              : scopedKey(evt.host, 'wiki'),
+          })
           if (evt.project) {
             queryClient.invalidateQueries({
               queryKey: scopedKey(evt.host, 'experiments', evt.project),
@@ -155,6 +163,25 @@ export function useMemonEvents() {
           })
           queryClient.invalidateQueries({
             queryKey: scopedKey(evt.host, 'report', evt.project),
+          })
+          // A removed Report hands its `R<NNNN>` token to a `legacy_id` page.
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'wiki', evt.project) })
+          return
+        }
+        case 'wiki-change': {
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'wiki', evt.project) })
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'wiki-page', evt.project),
+          })
+          return
+        }
+        case 'wiki-review-change': {
+          queryClient.invalidateQueries({ queryKey: scopedKey(evt.host, 'wiki', evt.project) })
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'wiki-page', evt.project),
+          })
+          queryClient.invalidateQueries({
+            queryKey: scopedKey(evt.host, 'wiki-review', evt.project),
           })
           return
         }

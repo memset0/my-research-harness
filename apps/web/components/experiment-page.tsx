@@ -36,6 +36,7 @@ import { ExperimentCodeReviews } from './experiment-code-reviews'
 import { ExperimentManagedSection } from './experiment-managed-section'
 import { ExperimentResultsTable } from './experiment-results-table'
 import { ExperimentStatusEdit } from './experiment-status-edit'
+import { ExperimentWikiCitations } from './experiment-wiki-citations'
 import { LogViewer } from './log-viewer'
 import { Markdown } from './markdown'
 import { OpenWithButton } from './open-with-button'
@@ -152,6 +153,8 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             <OpenWithButton project={project} scope="exp" slug={exp.id} />
           </div>
         </header>
+
+        <ExperimentWikiCitations citedBy={exp.citedBy ?? []} />
 
         {exp.documentReadOnly && (
           <div className="flex gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">

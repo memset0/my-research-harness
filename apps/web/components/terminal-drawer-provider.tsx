@@ -17,8 +17,12 @@ import {
   useState,
 } from 'react'
 import { useIsMobile } from '../hooks/use-mobile'
-import { useReportWorkspace } from '../hooks/use-report-workspace'
+import {
+  type ReportWorkspaceController,
+  useReportWorkspace,
+} from '../hooks/use-report-workspace'
 import { useTerminalPanelWidth } from '../hooks/use-terminal-panel-width'
+import { type WikiWorkspaceController, useWikiWorkspace } from '../hooks/use-wiki-workspace'
 import {
   type ProjectTarget,
   projectHost,
@@ -27,6 +31,7 @@ import {
   type TerminalScopeKind,
 } from '../lib/api'
 import { ReportPane, type ReportPaneSurface } from './report-pane'
+import { WikiPane, type WikiPaneSurface } from './wiki-pane'
 import { TerminalResizeHandle, WorkspaceResizeHandle } from './terminal-resize-handle'
 import { TerminalView } from './terminal-view'
 import { Button } from './ui/button'
@@ -61,9 +66,11 @@ type TerminalTargetState = StandardDrawerState | RawDrawerState | HerdrDrawerSta
 type WorkspaceSurface = 'drawer' | 'split'
 
 /**
- * One active workspace surface owns the drawer/right slot at a time. Keeping
- * the terminal target nested behind a discriminant leaves a single extension
- * point for the Report surface without creating a second competing provider.
+ * One active workspace surface owns the drawer/right slot at a time: the
+ * terminal (component state), a Report, or a wiki page (both URL-encoded and
+ * mutually exclusive in the query string). Keeping the terminal target nested
+ * behind a discriminant keeps that arbitration in one provider instead of
+ * three competing ones.
  */
 type WorkspacePanelState = { kind: 'terminal'; target: TerminalTargetState }
 
@@ -100,12 +107,19 @@ interface ReportPaneApi {
   closeReport: () => void
 }
 
+interface WikiPaneApi {
+  openWiki: (wikiId: string, surface?: WikiPaneSurface) => void
+  closeWiki: () => void
+}
+
 const TerminalDrawerContext = createContext<DrawerApi | null>(null)
 const ReportPaneContext = createContext<ReportPaneApi | null>(null)
+const WikiPaneContext = createContext<WikiPaneApi | null>(null)
 
 interface WorkspaceSplitContextValue {
   panel: WorkspacePanelState | null
-  report: ReturnType<typeof useReportWorkspace>
+  report: ReportWorkspaceController
+  wiki: WikiWorkspaceController
   isSplit: boolean
   splitWidth: ReturnType<typeof useTerminalPanelWidth>
   splitAvailableWidth: number | undefined
@@ -141,6 +155,11 @@ const NOOP_REPORT_API: ReportPaneApi = {
   closeReport: () => {},
 }
 
+const NOOP_WIKI_API: WikiPaneApi = {
+  openWiki: () => {},
+  closeWiki: () => {},
+}
+
 export function useTerminalDrawer(): DrawerApi {
   const ctx = useContext(TerminalDrawerContext)
   if (!ctx) {
@@ -157,6 +176,10 @@ export function useTerminalDrawer(): DrawerApi {
 
 export function useReportPane(): ReportPaneApi {
   return useContext(ReportPaneContext) ?? NOOP_REPORT_API
+}
+
+export function useWikiPane(): WikiPaneApi {
+  return useContext(WikiPaneContext) ?? NOOP_WIKI_API
 }
 
 function deriveStandardSessionName(state: StandardDrawerState): string {
@@ -342,10 +365,13 @@ export function TerminalDrawerProvider({ children }: { children: ReactNode }) {
   const drawerWidth = useTerminalPanelWidth('drawer')
   const splitWidth = useTerminalPanelWidth('split', splitAvailableWidth)
   const report = useReportWorkspace()
+  const wiki = useWikiWorkspace()
 
+  // Opening a terminal evicts whichever document currently owns the slot.
   const prepareTerminalSurface = useCallback(() => {
     if (report.state) report.closeReport()
-  }, [report.closeReport, report.state])
+    if (wiki.state) wiki.closeWiki()
+  }, [report.closeReport, report.state, wiki.closeWiki, wiki.state])
 
   const open = useCallback(
     (input: DrawerOpenInput) => {
@@ -432,23 +458,28 @@ export function TerminalDrawerProvider({ children }: { children: ReactNode }) {
   }, [isMobile, surface])
 
   useEffect(() => {
-    if (report.state) setPanel(null)
-  }, [report.state])
+    if (report.state || wiki.state) setPanel(null)
+  }, [report.state, wiki.state])
 
   const terminalIsSplit = panel !== null && surface === 'split' && !isMobile
   const reportIsSplit =
     report.state !== null && report.project !== null && report.effectiveSurface === 'split'
   const reportIsDrawer =
     report.state !== null && report.project !== null && report.effectiveSurface === 'drawer'
-  const isSplit = reportIsSplit || terminalIsSplit
+  const wikiIsSplit =
+    wiki.state !== null && wiki.project !== null && wiki.effectiveSurface === 'split'
+  const wikiIsDrawer =
+    wiki.state !== null && wiki.project !== null && wiki.effectiveSurface === 'drawer'
+  const isSplit = reportIsSplit || wikiIsSplit || terminalIsSplit
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (next) return
       if (reportIsDrawer) report.closeReport()
+      else if (wikiIsDrawer) wiki.closeWiki()
       else if (!terminalIsSplit) close()
     },
-    [close, report.closeReport, reportIsDrawer, terminalIsSplit],
+    [close, report.closeReport, reportIsDrawer, terminalIsSplit, wiki.closeWiki, wikiIsDrawer],
   )
 
   const handleSessionReady = useCallback((sessionName: string) => {
@@ -489,70 +520,103 @@ export function TerminalDrawerProvider({ children }: { children: ReactNode }) {
       <ReportPaneContext.Provider
         value={{ openReport: report.openReport, closeReport: report.closeReport }}
       >
-        <WorkspaceSplitContext.Provider
-          value={{
-            panel,
-            report,
-            isSplit,
-            splitWidth,
-            splitAvailableWidth,
-            setSplitAvailableWidth,
-            onSessionReady: handleSessionReady,
-            onDrawer: showDrawer,
-            onSplit: showSplit,
-            onPopOut: handlePopOut,
-            onClose: close,
-          }}
+        <WikiPaneContext.Provider
+          value={{ openWiki: wiki.openWiki, closeWiki: wiki.closeWiki }}
         >
-          {children}
-
-          <Sheet
-            open={reportIsDrawer || (panel !== null && !terminalIsSplit)}
-            onOpenChange={handleOpenChange}
+          <WorkspaceSplitContext.Provider
+            value={{
+              panel,
+              report,
+              wiki,
+              isSplit,
+              splitWidth,
+              splitAvailableWidth,
+              setSplitAvailableWidth,
+              onSessionReady: handleSessionReady,
+              onDrawer: showDrawer,
+              onSplit: showSplit,
+              onPopOut: handlePopOut,
+              onClose: close,
+            }}
           >
-            <SheetContent
-              side="right"
-              showCloseButton={false}
-              data-slot="workspace-panel"
-              data-panel-kind={reportIsDrawer ? 'report' : 'terminal'}
-              data-surface="drawer"
-              aria-label={reportIsDrawer ? 'Report drawer' : 'Terminal drawer'}
-              className="flex max-w-none flex-col gap-0 p-0 sm:max-w-none"
-              style={{ width: `${drawerWidth.widthPx}px`, maxWidth: 'none' }}
+            {children}
+
+            <Sheet
+              open={reportIsDrawer || wikiIsDrawer || (panel !== null && !terminalIsSplit)}
+              onOpenChange={handleOpenChange}
             >
-              {reportIsDrawer ? (
-                <WorkspaceResizeHandle surface="drawer" label="report" {...drawerWidth} />
-              ) : (
-                <TerminalResizeHandle surface="drawer" {...drawerWidth} />
-              )}
-              {reportIsDrawer && report.state && report.project ? (
-                <>
-                  <SheetTitle className="sr-only">Report {report.state.reportId}</SheetTitle>
-                  <ReportPane
-                    project={report.project}
-                    reportId={report.state.reportId}
+              <SheetContent
+                side="right"
+                showCloseButton={false}
+                data-slot="workspace-panel"
+                data-panel-kind={
+                  reportIsDrawer ? 'report' : wikiIsDrawer ? 'wiki' : 'terminal'
+                }
+                data-surface="drawer"
+                aria-label={
+                  reportIsDrawer
+                    ? 'Report drawer'
+                    : wikiIsDrawer
+                      ? 'Wiki drawer'
+                      : 'Terminal drawer'
+                }
+                className="flex max-w-none flex-col gap-0 p-0 sm:max-w-none"
+                style={{ width: `${drawerWidth.widthPx}px`, maxWidth: 'none' }}
+              >
+                {reportIsDrawer ? (
+                  <WorkspaceResizeHandle surface="drawer" label="report" {...drawerWidth} />
+                ) : wikiIsDrawer ? (
+                  <WorkspaceResizeHandle surface="drawer" label="wiki page" {...drawerWidth} />
+                ) : (
+                  <TerminalResizeHandle surface="drawer" {...drawerWidth} />
+                )}
+                {reportIsDrawer && report.state && report.project ? (
+                  <>
+                    <SheetTitle className="sr-only">Report {report.state.reportId}</SheetTitle>
+                    <SheetDescription className="sr-only">
+                      Read and switch this Report without leaving the current page.
+                    </SheetDescription>
+                    <ReportPane
+                      project={report.project}
+                      reportId={report.state.reportId}
+                      surface="drawer"
+                      onSwitch={report.switchReport}
+                      onSurfaceChange={report.moveReport}
+                      onClose={report.closeReport}
+                    />
+                  </>
+                ) : wikiIsDrawer && wiki.state && wiki.project ? (
+                  <>
+                    <SheetTitle className="sr-only">Wiki page {wiki.state.wikiId}</SheetTitle>
+                    <SheetDescription className="sr-only">
+                      Read and switch this wiki page without leaving the current page.
+                    </SheetDescription>
+                    <WikiPane
+                      project={wiki.project}
+                      wikiId={wiki.state.wikiId}
+                      surface="drawer"
+                      onSwitch={wiki.switchWiki}
+                      onSurfaceChange={wiki.moveWiki}
+                      onClose={wiki.closeWiki}
+                    />
+                  </>
+                ) : panel ? (
+                  <TerminalPanelContent
+                    state={panel.target}
                     surface="drawer"
-                    onSwitch={report.switchReport}
-                    onSurfaceChange={report.moveReport}
-                    onClose={report.closeReport}
+                    onSessionReady={handleSessionReady}
+                    onDrawer={showDrawer}
+                    onSplit={showSplit}
+                    onPopOut={handlePopOut}
+                    onClose={close}
                   />
-                </>
-              ) : panel ? (
-                <TerminalPanelContent
-                  state={panel.target}
-                  surface="drawer"
-                  onSessionReady={handleSessionReady}
-                  onDrawer={showDrawer}
-                  onSplit={showSplit}
-                  onPopOut={handlePopOut}
-                  onClose={close}
-                />
-              ) : (
-                <SheetTitle className="sr-only">terminal</SheetTitle>
-              )}
-            </SheetContent>
-          </Sheet>
-        </WorkspaceSplitContext.Provider>
+                ) : (
+                  <SheetTitle className="sr-only">terminal</SheetTitle>
+                )}
+              </SheetContent>
+            </Sheet>
+          </WorkspaceSplitContext.Provider>
+        </WikiPaneContext.Provider>
       </ReportPaneContext.Provider>
     </TerminalDrawerContext.Provider>
   )
@@ -563,8 +627,8 @@ export function TerminalDrawerProvider({ children }: { children: ReactNode }) {
  *
  * Layouts mount this below their AppBar/header. Opening or closing a split
  * changes only classes and the terminal aside; the left React subtree stays
- * mounted. A future Report panel can join the `WorkspacePanelState` union and
- * render through this same mutually-exclusive slot.
+ * mounted. The terminal, a Report, and a wiki page all render through this
+ * same mutually-exclusive slot.
  */
 export function WorkspaceSplitOutlet({ children }: { children: ReactNode }) {
   const workspace = useContext(WorkspaceSplitContext)
@@ -600,9 +664,11 @@ export function WorkspaceSplitOutlet({ children }: { children: ReactNode }) {
     throw new Error('WorkspaceSplitOutlet must be used within TerminalDrawerProvider')
   }
 
-  const { panel, report, splitWidth, splitAvailableWidth, ...actions } = workspace
+  const { panel, report, wiki, splitWidth, splitAvailableWidth, ...actions } = workspace
   const showReport =
     report.state !== null && report.project !== null && report.effectiveSurface === 'split'
+  const showWiki =
+    !showReport && wiki.state !== null && wiki.project !== null && wiki.effectiveSurface === 'split'
 
   return (
     <div
@@ -624,12 +690,18 @@ export function WorkspaceSplitOutlet({ children }: { children: ReactNode }) {
       >
         {children}
       </div>
-      {isSplit && (showReport || panel) ? (
+      {isSplit && (showReport || showWiki || panel) ? (
         <aside
           data-slot="workspace-panel"
-          data-panel-kind={showReport ? 'report' : panel?.kind}
+          data-panel-kind={showReport ? 'report' : showWiki ? 'wiki' : panel?.kind}
           data-surface="split"
-          aria-label={showReport ? 'Report split panel' : 'Terminal split panel'}
+          aria-label={
+            showReport
+              ? 'Report split panel'
+              : showWiki
+                ? 'Wiki split panel'
+                : 'Terminal split panel'
+          }
           className="relative z-40 flex h-full min-h-0 shrink-0 flex-col border-l bg-popover text-xs/relaxed text-popover-foreground shadow-lg"
           style={{ width: `${splitWidth.widthPx}px` }}
         >
@@ -648,6 +720,23 @@ export function WorkspaceSplitOutlet({ children }: { children: ReactNode }) {
                 onSwitch={report.switchReport}
                 onSurfaceChange={report.moveReport}
                 onClose={report.closeReport}
+              />
+            </>
+          ) : showWiki ? (
+            <>
+              <WorkspaceResizeHandle
+                surface="split"
+                label="wiki page"
+                {...splitWidth}
+                availableWidth={splitAvailableWidth}
+              />
+              <WikiPane
+                project={wiki.project!}
+                wikiId={wiki.state!.wikiId}
+                surface="split"
+                onSwitch={wiki.switchWiki}
+                onSurfaceChange={wiki.moveWiki}
+                onClose={wiki.closeWiki}
               />
             </>
           ) : panel ? (

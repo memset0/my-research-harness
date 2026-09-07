@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname, useSearchParams } from 'next/navigation'
+import type { ProjectTarget } from '../lib/api'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   moveReportWorkspaceUrl,
@@ -19,7 +20,7 @@ import {
 import { useIsMobile } from './use-mobile'
 
 export interface ReportWorkspaceController {
-  project: string | null
+  project: ProjectTarget | null
   state: ReportWorkspaceUrlState | null
   effectiveSurface: ReportWorkspaceSurface | null
   openReport: (reportId: string, surface?: ReportWorkspaceSurface) => void
@@ -28,11 +29,17 @@ export interface ReportWorkspaceController {
   closeReport: () => void
 }
 
-export function projectFromWorkspacePathname(pathname: string): string | null {
-  const match = /^\/p\/([^/]+)(?:\/|$)/.exec(pathname)
-  if (!match) return null
+export function projectFromWorkspacePathname(pathname: string): ProjectTarget | null {
+  const central = /^\/h\/([^/]+)\/p\/([^/]+)(?:\/|$)/.exec(pathname)
+  const standalone = /^\/p\/([^/]+)(?:\/|$)/.exec(pathname)
   try {
-    return decodeURIComponent(match[1]!)
+    if (central?.[1] && central[2]) {
+      return {
+        host: decodeURIComponent(central[1]),
+        project: decodeURIComponent(central[2]),
+      } as ProjectTarget
+    }
+    return standalone?.[1] ? decodeURIComponent(standalone[1]) : null
   } catch {
     return null
   }

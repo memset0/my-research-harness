@@ -13,6 +13,7 @@ vi.mock('../lib/api', async (importOriginal) => {
     fetchExperimentDocs: vi.fn(),
     fetchAnomalies: vi.fn().mockResolvedValue({ anomalies: [] }),
     fetchReports: vi.fn(),
+    fetchWiki: vi.fn(),
   }
 })
 
@@ -21,7 +22,7 @@ vi.mock('./markdown', () => ({
   MarkdownArtifactLinkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
-import { fetchExperimentDocs, fetchReports } from '../lib/api'
+import { fetchExperimentDocs, fetchReports, fetchWiki } from '../lib/api'
 
 describe('TabBadge shared experiment cache', () => {
   it('selects a numeric count without replacing the grid DTO in React Query', async () => {
@@ -116,5 +117,24 @@ describe('TabBadge shared reports cache', () => {
     })
     expect(screen.queryByText('no reports yet')).not.toBeInTheDocument()
     expect(fetchReports).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TabBadge wiki count', () => {
+  it('counts wiki pages from the shared list projection', async () => {
+    vi.mocked(fetchWiki).mockResolvedValue({
+      pages: [{ id: 'W0001' }, { id: 'W0002' }] as never,
+    })
+
+    renderWithQuery(
+      <span data-testid="wiki-count">
+        <TabBadge kind="wiki" project="project-a" />
+      </span>,
+    )
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId('wiki-count')).getByText('2')).toBeInTheDocument()
+    })
+    expect(fetchWiki).toHaveBeenCalledTimes(1)
   })
 })

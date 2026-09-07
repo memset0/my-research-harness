@@ -92,6 +92,14 @@ import {
   BackendWarningMutationRequestSchema,
   BackendWarningMutationResponseSchema,
   BackendWarningsResponseSchema,
+  BackendWikiBacklinksResponseSchema,
+  BackendWikiConflictResponseSchema,
+  BackendWikiDocumentSchema,
+  BackendWikiPagesResponseSchema,
+  BackendWikiReviewMarkRequestSchema,
+  BackendWikiReviewOrderResponseSchema,
+  BackendWikiReviewResponseSchema,
+  BackendWikiWriteResponseSchema,
   HostIdSchema,
   InstanceEpochSchema,
   MEMON_RELEASE,
@@ -102,6 +110,8 @@ import {
   RevisionSchema,
   ShareNotFoundError,
   TerminalSessionIdSchema,
+  WikiReviewError,
+  WikiReviewOrderError,
 } from '@memon/core'
 import { createProxyServer } from 'http-proxy-3'
 import {
@@ -188,6 +198,12 @@ export const BACKEND_LOG_FILES_ROUTE = `${BACKEND_API_PREFIX}/log-files`
 export const BACKEND_LOG_ROUTE = `${BACKEND_API_PREFIX}/log`
 export const BACKEND_LOG_STREAM_ROUTE = `${BACKEND_API_PREFIX}/log/stream`
 export const BACKEND_REPORT_ASSET_ROUTE = `${BACKEND_API_PREFIX}/report-assets/[project]/[id]/[...path]`
+export const BACKEND_WIKI_ROUTE = `${BACKEND_API_PREFIX}/wiki`
+export const BACKEND_WIKI_PAGE_ROUTE = `${BACKEND_API_PREFIX}/wiki/[id]`
+export const BACKEND_WIKI_BACKLINKS_ROUTE = `${BACKEND_API_PREFIX}/wiki/backlinks/[artifact]`
+export const BACKEND_WIKI_REVIEW_ROUTE = `${BACKEND_API_PREFIX}/wiki/review`
+export const BACKEND_WIKI_REVIEW_MARK_ROUTE = `${BACKEND_API_PREFIX}/wiki/review/[sha]`
+export const BACKEND_WIKI_ASSET_ROUTE = `${BACKEND_API_PREFIX}/wiki-assets/[project]/[id]/[...path]`
 export const BACKEND_ROUTE_ALLOW_LIST = Object.freeze({
   [BACKEND_META_PATH]: Object.freeze(['GET'] as const),
   [BACKEND_EVENTS_PATH]: Object.freeze(['GET'] as const),
@@ -250,6 +266,12 @@ export const BACKEND_ROUTE_ALLOW_LIST = Object.freeze({
   [BACKEND_LOG_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_LOG_STREAM_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_REPORT_ASSET_ROUTE]: Object.freeze(['GET', 'HEAD'] as const),
+  [BACKEND_WIKI_ROUTE]: Object.freeze(['GET'] as const),
+  [BACKEND_WIKI_PAGE_ROUTE]: Object.freeze(['GET', 'PUT'] as const),
+  [BACKEND_WIKI_BACKLINKS_ROUTE]: Object.freeze(['GET'] as const),
+  [BACKEND_WIKI_REVIEW_ROUTE]: Object.freeze(['GET'] as const),
+  [BACKEND_WIKI_REVIEW_MARK_ROUTE]: Object.freeze(['POST', 'DELETE'] as const),
+  [BACKEND_WIKI_ASSET_ROUTE]: Object.freeze(['GET', 'HEAD'] as const),
 })
 export const MAX_BACKEND_CONTROL_JSON_BYTES = 1024 * 1024
 export const MAX_BACKEND_DOCUMENT_BODY_BYTES = 5 * 1024 * 1024
@@ -576,6 +598,9 @@ interface AllowedBackendRoute {
   gitRef?: ReturnType<typeof BackendGitRefSchema.parse>
   warningRowId?: string
   reportId?: string
+  wikiId?: string
+  wikiArtifact?: string
+  wikiSha?: string
   terminalSessionName?: string
 }
 
@@ -781,6 +806,87 @@ function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | nul
       resourceId: resourceId.data,
     }
   }
+  const wikiBacklinksMatch = new RegExp(`^${prefix}/wiki/backlinks/([^/]+)$`).exec(pathname)
+  if (wikiBacklinksMatch?.[1]) {
+    let wikiArtifact: string
+    try {
+      wikiArtifact = decodeURIComponent(wikiBacklinksMatch[1])
+    } catch {
+      return null
+    }
+    if (
+      wikiArtifact.length === 0 ||
+      wikiArtifact.length > 512 ||
+      wikiArtifact.includes('/') ||
+      wikiArtifact.includes('\\') ||
+      wikiArtifact.includes('\0')
+    ) {
+      return null
+    }
+    return {
+      key: BACKEND_WIKI_BACKLINKS_ROUTE,
+      methods: BACKEND_ROUTE_ALLOW_LIST[BACKEND_WIKI_BACKLINKS_ROUTE],
+      wikiArtifact,
+    }
+  }
+  const wikiReviewMarkMatch = new RegExp(`^${prefix}/wiki/review/([^/]+)$`).exec(pathname)
+  if (wikiReviewMarkMatch?.[1]) {
+    let sha: string
+    try {
+      sha = decodeURIComponent(wikiReviewMarkMatch[1])
+    } catch {
+      return null
+    }
+    // `next` is the CLI's "oldest markable commit" alias; core resolves it.
+    if (sha !== 'next' && !/^[0-9a-f]{4,40}$/.test(sha)) return null
+    return {
+      key: BACKEND_WIKI_REVIEW_MARK_ROUTE,
+      methods: BACKEND_ROUTE_ALLOW_LIST[BACKEND_WIKI_REVIEW_MARK_ROUTE],
+      wikiSha: sha,
+    }
+  }
+  const wikiPageMatch = new RegExp(`^${prefix}/wiki/([^/]+)$`).exec(pathname)
+  if (wikiPageMatch?.[1]) {
+    let wikiId: string
+    try {
+      wikiId = decodeURIComponent(wikiPageMatch[1])
+    } catch {
+      return null
+    }
+    // Keep the route addressable so the service can return the specified
+    // 400 BAD_REQUEST for a non-W wiki identifier.
+    return {
+      key: BACKEND_WIKI_PAGE_ROUTE,
+      methods: BACKEND_ROUTE_ALLOW_LIST[BACKEND_WIKI_PAGE_ROUTE],
+      wikiId,
+    }
+  }
+  const wikiAssetMatch = new RegExp(`^${prefix}/wiki-assets/([^/]+)/([^/]+)/(.+)$`).exec(pathname)
+  if (wikiAssetMatch?.[1] && wikiAssetMatch[2] && wikiAssetMatch[3]) {
+    let projectInput: string
+    let wikiId: string
+    let resourceInput: string
+    try {
+      projectInput = decodeURIComponent(wikiAssetMatch[1])
+      wikiId = decodeURIComponent(wikiAssetMatch[2])
+      resourceInput = wikiAssetMatch[3]
+        .split('/')
+        .map((segment) => decodeURIComponent(segment))
+        .join('/')
+    } catch {
+      return null
+    }
+    const project = ProjectNameSchema.safeParse(projectInput)
+    const resourceId = ResourceIdSchema.safeParse(resourceInput)
+    if (!project.success || !/^W\d{4}$/.test(wikiId) || !resourceId.success) return null
+    return {
+      key: BACKEND_WIKI_ASSET_ROUTE,
+      methods: BACKEND_ROUTE_ALLOW_LIST[BACKEND_WIKI_ASSET_ROUTE],
+      project: project.data,
+      wikiId,
+      resourceId: resourceId.data,
+    }
+  }
   const gitProjectRoutes = [
     ['git-status', BACKEND_GIT_STATUS_ROUTE],
     ['git-status/files', BACKEND_GIT_STATUS_FILES_ROUTE],
@@ -898,10 +1004,27 @@ const DOCUMENT_DATA_ROUTE_KEYS: readonly string[] = [
   BACKEND_README_ROUTE,
   BACKEND_RUN_README_ROUTE,
   BACKEND_EXPERIMENT_README_ROUTE,
+  BACKEND_WIKI_ROUTE,
+  BACKEND_WIKI_PAGE_ROUTE,
+  BACKEND_WIKI_BACKLINKS_ROUTE,
 ]
 
 function isDocumentDataRoute(key: string): boolean {
   return DOCUMENT_DATA_ROUTE_KEYS.includes(key)
+}
+
+/**
+ * Wiki review marks live in `.memon/wiki-review.csv`, not in Project
+ * documents, so they are owner-only shell-class writes that a read-only
+ * Backend still accepts.
+ */
+const WIKI_REVIEW_ROUTE_KEYS: readonly string[] = [
+  BACKEND_WIKI_REVIEW_ROUTE,
+  BACKEND_WIKI_REVIEW_MARK_ROUTE,
+]
+
+function isWikiReviewRoute(key: string): boolean {
+  return WIKI_REVIEW_ROUTE_KEYS.includes(key)
 }
 
 const GIT_DATA_ROUTE_KEYS: readonly string[] = [
@@ -927,6 +1050,7 @@ const STREAM_DATA_ROUTE_KEYS: readonly string[] = [
   BACKEND_LOG_ROUTE,
   BACKEND_LOG_STREAM_ROUTE,
   BACKEND_REPORT_ASSET_ROUTE,
+  BACKEND_WIKI_ASSET_ROUTE,
 ]
 
 function isStreamDataRoute(key: string): boolean {
@@ -1145,9 +1269,18 @@ function routeAllowsQuery(
     }
     return keys.every((key) => allowed.has(key))
   }
+  if (isWikiReviewRoute(route.key)) {
+    const projects = search.getAll('project')
+    return (
+      keys.length === 1 &&
+      keys[0] === 'project' &&
+      projects.length === 1 &&
+      ProjectNameSchema.safeParse(projects[0]).success
+    )
+  }
   if (isStreamDataRoute(route.key)) {
     const projects = search.getAll('project')
-    if (route.key === BACKEND_REPORT_ASSET_ROUTE) {
+    if (route.key === BACKEND_REPORT_ASSET_ROUTE || route.key === BACKEND_WIKI_ASSET_ROUTE) {
       return (
         !!route.project &&
         projects.length <= 1 &&
@@ -1935,7 +2068,9 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       method !== 'HEAD' &&
       route.key !== BACKEND_SHARE_VALIDATE_ROUTE &&
       route.key !== BACKEND_SHARES_ROUTE &&
-      route.key !== BACKEND_SHARE_ITEM_ROUTE
+      route.key !== BACKEND_SHARE_ITEM_ROUTE &&
+      // A review mark records human trust in `.memon/`, not Project content.
+      route.key !== BACKEND_WIKI_REVIEW_MARK_ROUTE
     ) {
       writeError(response, 403, 'FORBIDDEN', 'Backend is configured read-only')
       return
@@ -2302,9 +2437,11 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       const capabilityAvailable =
         route.key === BACKEND_REPORT_ASSET_ROUTE
           ? resolved.capabilities.reportAssets
-          : route.key === BACKEND_LOG_STREAM_ROUTE
-            ? resolved.capabilities.logStreaming
-            : resolved.capabilities.projects
+          : route.key === BACKEND_WIKI_ASSET_ROUTE
+            ? resolved.capabilities.wikiAssets
+            : route.key === BACKEND_LOG_STREAM_ROUTE
+              ? resolved.capabilities.logStreaming
+              : resolved.capabilities.projects
       if (!project || !resolved.streamService || !capabilityAvailable) {
         writeError(response, 404, 'NOT_FOUND', 'Backend stream route not found')
         return
@@ -2343,6 +2480,18 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
           }
           const asset = await withStreamControlDeadline(
             resolved.streamService.resolveReportAsset(project, route.reportId, route.resourceId),
+            request,
+            resolved.streamControlDeadlineMs,
+          )
+          await streamByteResource(request, response, resolved.streamService, asset)
+          return
+        }
+        if (route.key === BACKEND_WIKI_ASSET_ROUTE) {
+          if (!route.wikiId || !route.resourceId) {
+            throw new BackendStreamServiceError('INVALID_RESOURCE', '')
+          }
+          const asset = await withStreamControlDeadline(
+            resolved.streamService.resolveWikiAsset(project, route.wikiId, route.resourceId),
             request,
             resolved.streamControlDeadlineMs,
           )
@@ -2567,12 +2716,20 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
               await resolved.projectService.listExperiments(project),
             )
             break
-          case BACKEND_EXPERIMENT_ROUTE:
+          case BACKEND_EXPERIMENT_ROUTE: {
             if (!route.resourceId) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', '')
-            payload = BackendExperimentResponseSchema.parse(
-              await resolved.projectService.getExperiment(project, route.resourceId),
-            )
+            const detail = await resolved.projectService.getExperiment(project, route.resourceId)
+            // Wiki backlinks live with the wiki projection, not the Project
+            // snapshot; a Backend without a document service reports none.
+            const citedBy = resolved.documentService
+              ? await resolved.documentService.wikiBacklinks(project, route.resourceId)
+              : []
+            payload = BackendExperimentResponseSchema.parse({
+              ...(detail as Record<string, unknown>),
+              citedBy,
+            })
             break
+          }
           case BACKEND_RUN_FILES_ROUTE:
             if (!route.resourceId) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', '')
             payload = BackendRunFilesResponseSchema.parse(
@@ -2634,6 +2791,102 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
           return
         }
         writeError(response, 500, 'INTERNAL', 'Backend Project read failed')
+        return
+      }
+    }
+
+    if (isWikiReviewRoute(route.key)) {
+      const project = selectedProject(parsedUrl.searchParams)
+      if (!project || !resolved.documentService) {
+        writeError(response, 404, 'NOT_FOUND', 'Backend route not found')
+        return
+      }
+      try {
+        const actor = decodeBackendActorContext({
+          serviceAuthenticated: true,
+          headerValue: request.headers[BACKEND_ACTOR_CONTEXT_HEADER],
+        })
+        // Shell class: verification is an owner judgement, never a viewer's.
+        const authorization = authorizeBackendActor({
+          actor,
+          target: { host: resolved.host, project },
+          routeClass: 'shell',
+        })
+        if (!authorization.ok) {
+          writeError(response, 403, 'FORBIDDEN', authorization.message)
+          return
+        }
+        if (route.key === BACKEND_WIKI_REVIEW_ROUTE) {
+          writeJson(
+            response,
+            200,
+            BackendWikiReviewResponseSchema.parse(
+              await resolved.documentService.wikiReviewLog(project),
+            ),
+          )
+          return
+        }
+        if (!route.wikiSha) {
+          writeError(response, 400, 'BAD_REQUEST', 'commit sha is required')
+          return
+        }
+        let note: string | undefined
+        if (method === 'POST' && request.headers['content-type'] !== undefined) {
+          note = BackendWikiReviewMarkRequestSchema.parse(
+            await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
+          ).note
+        }
+        const log =
+          method === 'POST'
+            ? await resolved.documentService.markWikiReview(project, route.wikiSha, note)
+            : await resolved.documentService.unmarkWikiReview(project, route.wikiSha)
+        writeJson(response, 200, BackendWikiReviewResponseSchema.parse(log))
+        resolved.eventStream.publish({ project, topic: 'wiki-review-change', data: {} })
+        resolved.eventStream.publish({
+          project,
+          topic: 'wiki-change',
+          data: { type: 'review' },
+        })
+        return
+      } catch (error) {
+        if (error instanceof WikiReviewOrderError) {
+          writeJson(
+            response,
+            409,
+            BackendWikiReviewOrderResponseSchema.parse({
+              error: { code: 'REVIEW_ORDER', message: error.message },
+              nextSha: error.nextSha,
+            }),
+          )
+          return
+        }
+        if (error instanceof WikiReviewError) {
+          writeError(response, 404, 'NOT_FOUND', 'Backend wiki review is unavailable')
+          return
+        }
+        if (error instanceof BackendDocumentServiceError) {
+          writeError(
+            response,
+            error.code === 'INVALID_RESOURCE' ? 400 : 404,
+            error.code === 'INVALID_RESOURCE' ? 'BAD_REQUEST' : 'NOT_FOUND',
+            error.message,
+          )
+          return
+        }
+        if (error instanceof BackendControlBodyError) {
+          writeError(response, error.status, error.code, error.message)
+          return
+        }
+        if (error instanceof BackendActorContextError) {
+          writeError(
+            response,
+            error.status,
+            error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST',
+            error.message,
+          )
+          return
+        }
+        writeError(response, 400, 'BAD_REQUEST', 'Backend wiki review request is invalid')
         return
       }
     }
@@ -2879,6 +3132,58 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
               data: { type: 'set', id: route.resourceId },
             })
             if (journalChanged) publishJournalChange(resolved.eventStream, project)
+            return
+          }
+          case BACKEND_WIKI_ROUTE:
+            writeJson(
+              response,
+              200,
+              BackendWikiPagesResponseSchema.parse(
+                await resolved.documentService.listWiki(project),
+              ),
+            )
+            return
+          case BACKEND_WIKI_BACKLINKS_ROUTE:
+            if (!route.wikiArtifact) {
+              throw new BackendDocumentServiceError('INVALID_RESOURCE', '')
+            }
+            writeJson(
+              response,
+              200,
+              BackendWikiBacklinksResponseSchema.parse({
+                artifact: route.wikiArtifact,
+                pages: await resolved.documentService.wikiBacklinks(project, route.wikiArtifact),
+              }),
+            )
+            return
+          case BACKEND_WIKI_PAGE_ROUTE: {
+            if (!route.wikiId) throw new BackendDocumentServiceError('INVALID_RESOURCE', '')
+            if (method === 'GET') {
+              writeJson(
+                response,
+                200,
+                BackendWikiDocumentSchema.parse(
+                  await resolved.documentService.getWiki(project, route.wikiId),
+                ),
+              )
+              return
+            }
+            const result = await resolved.documentService.putWiki(
+              project,
+              route.wikiId,
+              await readDocumentWriteRequest(request),
+            )
+            const conflict = BackendWikiConflictResponseSchema.safeParse(result)
+            if (conflict.success) {
+              writeJson(response, 409, conflict.data)
+              return
+            }
+            writeJson(response, 200, BackendWikiWriteResponseSchema.parse(result))
+            resolved.eventStream.publish({
+              project,
+              topic: 'wiki-change',
+              data: { type: 'set', id: route.wikiId },
+            })
             return
           }
         }

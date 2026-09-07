@@ -24,11 +24,18 @@ import {
   resolveArtifactMarkdownHref,
   resolveBareArtifactReference,
 } from '../lib/artifact-links'
+import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
+import {
+  markdownHeadingSlug,
+  normalizeHeadingIdPrefix,
+} from '../lib/markdown-outline'
 import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
 import { cn } from '../lib/utils'
+import { resolveComponentBlock } from '../lib/wiki-components/registry'
 import { replaceWorkspaceHistory } from '../lib/workspace-history'
 import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
 import { ReportHtmlEmbed } from './report-html-embed'
+import { hasWikiComponentRenderer, WikiComponentBlockView } from './wiki-components'
 
 export type MarkdownArtifactSourceSurface = ArtifactSourceSurface
 
@@ -50,6 +57,18 @@ export interface MarkdownTableOfContentsOptions {
   title?: string
   minDepth?: number
   maxDepth?: number
+}
+
+export interface MarkdownUnverifiedOptions {
+  /**
+   * Inclusive 1-based line ranges, in SOURCE FILE coordinates, whose content
+   * is not covered by the verified wiki-commit prefix.
+   */
+  ranges: readonly (readonly [number, number])[]
+  /** Source-file line number of the first line of `children`. Defaults to 1. */
+  lineOffset?: number
+  /** Hover title applied to every tinted block. */
+  title?: string
 }
 
 const ArtifactLinkContext = createContext<MarkdownArtifactLinkContext | null>(null)
@@ -109,6 +128,8 @@ export function Markdown({
   resourceBaseUrl,
   artifactLinks,
   tableOfContents,
+  headingIdPrefix,
+  unverified,
 }: {
   children: string
   className?: string
@@ -128,6 +149,14 @@ export function Markdown({
   artifactLinks?: MarkdownArtifactLinkContext | null
   /** Prepends an accessible heading outline and anchors the matching headings. */
   tableOfContents?: MarkdownTableOfContentsOptions
+  /**
+   * Anchors headings without prepending an outline, for surfaces that render
+   * the outline themselves (the wiki reading pane's sticky column).
+   * Ignored when `tableOfContents` is set, which already anchors them.
+   */
+  headingIdPrefix?: string
+  /** Tints the top-level blocks whose source lines are not yet verified. */
+  unverified?: MarkdownUnverifiedOptions
 }) {
   const inheritedArtifactLinks = useContext(ArtifactLinkContext)
   const activeArtifactLinks = artifactLinks === undefined ? inheritedArtifactLinks : artifactLinks
@@ -191,7 +220,7 @@ export function Markdown({
         }
 
         const resolvedHref =
-          href && resourceBaseUrl ? (resolveReportResourceUrl(resourceBaseUrl, href) ?? href) : href
+          href && resourceBaseUrl ? (resolveDocumentResourceUrl(resourceBaseUrl, href) ?? href) : href
         const external = !!resolvedHref && /^https?:\/\//i.test(resolvedHref)
         return (
           <a
@@ -206,7 +235,7 @@ export function Markdown({
       img: ({ node: _node, src, alt, title, ...rest }) => {
         const resolvedSrc =
           typeof src === 'string' && resourceBaseUrl
-            ? resolveReportResourceUrl(resourceBaseUrl, src)
+            ? resolveDocumentResourceUrl(resourceBaseUrl, src)
             : null
         if (resolvedSrc && typeof src === 'string' && isHtmlResource(src)) {
           return (
@@ -214,6 +243,25 @@ export function Markdown({
           )
         }
         return <img src={resolvedSrc ?? src} alt={alt ?? ''} title={title} {...rest} />
+      },
+      // A fenced block whose language names a registered wiki component
+      // renders as that component on every Markdown surface. Anything else —
+      // including an unregistered language and a component block that fails
+      // validation — keeps the ordinary code block, so unknown components
+      // degrade instead of breaking the page.
+      pre: ({ node, children: preChildren, ...rest }) => {
+        const block = wikiComponentBlockFromPre(node)
+        if (block) {
+          return (
+            <WikiComponentBlockView
+              name={block.name}
+              version={block.version}
+              data={block.data}
+              assetBase={resourceBaseUrl ?? null}
+            />
+          )
+        }
+        return <pre {...rest}>{preChildren}</pre>
       },
     }),
     [activeArtifactLinks, project, resourceBaseUrl],
@@ -234,14 +282,38 @@ export function Markdown({
         : null,
     [tableOfContents],
   )
+  const headingIdRemarkPlugin = useMemo(
+    () =>
+      !tableOfContents && headingIdPrefix
+        ? () => (tree: MarkdownAstNode) => {
+            assignHeadingIds(tree, headingIdPrefix, 1, 6)
+          }
+        : null,
+    [headingIdPrefix, tableOfContents],
+  )
+  const unverifiedRemarkPlugin = useMemo(
+    () =>
+      unverified && unverified.ranges.length > 0
+        ? () => (tree: MarkdownAstNode) => transformUnverifiedRegions(tree, unverified)
+        : null,
+    [unverified],
+  )
   const remarkPlugins = useMemo(
     () => [
       remarkGfm,
       remarkMath,
+      remarkFenceMeta,
       ...(artifactRemarkPlugin ? [artifactRemarkPlugin] : []),
       ...(tableOfContentsRemarkPlugin ? [tableOfContentsRemarkPlugin] : []),
+      ...(headingIdRemarkPlugin ? [headingIdRemarkPlugin] : []),
+      ...(unverifiedRemarkPlugin ? [unverifiedRemarkPlugin] : []),
     ],
-    [artifactRemarkPlugin, tableOfContentsRemarkPlugin],
+    [
+      artifactRemarkPlugin,
+      headingIdRemarkPlugin,
+      tableOfContentsRemarkPlugin,
+      unverifiedRemarkPlugin,
+    ],
   )
 
   return (
@@ -341,13 +413,82 @@ function replaceSamePathArtifactHistory(
   replaceWorkspaceHistory(`${destination.pathname}${destination.search}${destination.hash}`)
 }
 
+interface HastCodeElement {
+  type?: string
+  tagName?: string
+  properties?: Record<string, unknown>
+  data?: { meta?: unknown }
+  children?: { value?: unknown }[]
+}
+
+/**
+ * Copy each fenced block's info-string remainder onto the emitted `<code>`
+ * element as `data-fence-meta`. `mdast-util-to-hast` parks it in `data.meta`,
+ * which `rehype-raw` discards when it re-parses the tree, so the attribute is
+ * the only channel that survives to the renderer.
+ */
+function remarkFenceMeta() {
+  return (tree: MarkdownAstNode) => {
+    visitMarkdownNodes(tree, (node) => {
+      if (node.type !== 'code' || typeof node.meta !== 'string' || node.meta.length === 0) return
+      node.data = {
+        ...node.data,
+        hProperties: { ...node.data?.hProperties, 'data-fence-meta': node.meta },
+      }
+    })
+  }
+}
+
+/**
+ * Resolve the `<pre>` produced for a fenced block against the component
+ * registry. The info string is reassembled from the language class and the
+ * preserved fence meta, so `html-embed@1 height=280 title="chart"` keeps its
+ * attributes.
+ *
+ * Returns `null` for a plain code block, an unregistered language, and a
+ * registered block whose payload failed validation — all three render as an
+ * ordinary code block.
+ */
+function wikiComponentBlockFromPre(
+  node: unknown,
+): { name: string; version: number; data: unknown } | null {
+  const children = (node as { children?: unknown[] } | undefined)?.children
+  if (!children || children.length !== 1) return null
+  const code = children[0] as HastCodeElement
+  if (code.type !== 'element' || code.tagName !== 'code') return null
+
+  const classNames = code.properties?.className
+  const language = (Array.isArray(classNames) ? classNames : [])
+    .map(String)
+    .find((entry) => entry.startsWith('language-'))
+    ?.slice('language-'.length)
+  if (!language) return null
+
+  const rawMeta = code.properties?.dataFenceMeta ?? code.data?.meta
+  const meta = typeof rawMeta === 'string' ? rawMeta : ''
+  const payload = (code.children ?? [])
+    .map((child) => (typeof child.value === 'string' ? child.value : ''))
+    .join('')
+    .replace(/\n$/, '')
+  const block = resolveComponentBlock({
+    info: meta ? `${language} ${meta}` : language,
+    payload,
+  })
+  if (!block || block.version === null || block.data === null) return null
+  if (!hasWikiComponentRenderer(block.name, block.version)) return null
+  return { name: block.name, version: block.version, data: block.data }
+}
+
 interface MarkdownAstNode {
   type: string
   value?: string
   alt?: string
   url?: string
   depth?: number
+  /** Info-string remainder of a fenced block, e.g. `height=280 title="x"`. */
+  meta?: string
   children?: MarkdownAstNode[]
+  position?: { start: { line: number }; end: { line: number } }
   data?: { hName?: string; hProperties?: Record<string, unknown> }
 }
 
@@ -357,14 +498,20 @@ interface TableOfContentsEntry {
   label: string
 }
 
-function transformReportTableOfContents(
+/**
+ * Anchor every heading and report the ones inside the requested depth band.
+ *
+ * Ids are assigned to all six levels regardless of the band so the occurrence
+ * counter — and therefore every id — is independent of which levels a caller
+ * chose to list.
+ */
+function assignHeadingIds(
   root: MarkdownAstNode,
-  options: MarkdownTableOfContentsOptions,
-): void {
-  if (!root.children) return
-  const minDepth = Math.max(1, Math.min(6, options.minDepth ?? 2))
-  const maxDepth = Math.max(minDepth, Math.min(6, options.maxDepth ?? 6))
-  const prefix = normalizeHeadingPrefix(options.headingIdPrefix)
+  headingIdPrefix: string,
+  minDepth: number,
+  maxDepth: number,
+): TableOfContentsEntry[] {
+  const prefix = normalizeHeadingIdPrefix(headingIdPrefix)
   const occurrences = new Map<string, number>()
   const entries: TableOfContentsEntry[] = []
 
@@ -388,9 +535,57 @@ function transformReportTableOfContents(
     }
   })
 
+  return entries
+}
+
+function transformReportTableOfContents(
+  root: MarkdownAstNode,
+  options: MarkdownTableOfContentsOptions,
+): void {
+  if (!root.children) return
+  const minDepth = Math.max(1, Math.min(6, options.minDepth ?? 2))
+  const maxDepth = Math.max(minDepth, Math.min(6, options.maxDepth ?? 6))
+  const entries = assignHeadingIds(root, options.headingIdPrefix, minDepth, maxDepth)
+
   if (entries.length === 0) return
   const title = options.title ?? 'Table of contents'
   root.children.unshift(buildTableOfContentsNode(entries, title, minDepth))
+}
+
+/**
+ * Tint the top-level blocks whose source lines intersect an unverified range.
+ *
+ * Only root children are considered: the review data is line-based, and a
+ * whole block is the smallest unit a reader can attribute to a commit.
+ */
+function transformUnverifiedRegions(
+  root: MarkdownAstNode,
+  options: MarkdownUnverifiedOptions,
+): void {
+  const offset = (options.lineOffset ?? 1) - 1
+  for (const child of root.children ?? []) {
+    const start = child.position?.start.line
+    const end = child.position?.end.line
+    if (start === undefined || end === undefined) continue
+    const absoluteStart = start + offset
+    const absoluteEnd = end + offset
+    const intersects = options.ranges.some(
+      ([rangeStart, rangeEnd]) => rangeStart <= absoluteEnd && rangeEnd >= absoluteStart,
+    )
+    if (!intersects) continue
+    child.data = {
+      ...child.data,
+      hProperties: {
+        ...child.data?.hProperties,
+        'data-wiki-unverified': '',
+        ...(options.title ? { title: options.title } : {}),
+        className: mergeClassNames(
+          child.data?.hProperties?.className,
+          'border-l-4 border-l-muted-foreground/40 bg-muted/50 pl-3',
+        ),
+      },
+    }
+  }
 }
 
 function buildTableOfContentsNode(
@@ -489,26 +684,6 @@ function markdownNodeText(node: MarkdownAstNode): string {
   return (node.children ?? []).map(markdownNodeText).join('')
 }
 
-function normalizeHeadingPrefix(value: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return normalized ? `${normalized}-` : 'report-'
-}
-
-function markdownHeadingSlug(value: string): string {
-  const slug = value
-    .normalize('NFKC')
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
-    .replace(/[\s-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug || 'section'
-}
-
 function mergeClassNames(current: unknown, next: string): string[] {
   if (Array.isArray(current)) return [...current.map(String), next]
   if (typeof current === 'string' && current.trim()) return [...current.split(/\s+/), next]
@@ -523,7 +698,7 @@ function tableOfContentsIndentClass(level: number): string {
   return 'ml-12'
 }
 
-const BARE_ARTIFACT_RE = /(?:E\d{4}(?:-[a-z0-9][a-z0-9-]*)?|R\d{4})/g
+const BARE_ARTIFACT_RE = /(?:E\d{4}(?:-[a-z0-9][a-z0-9-]*)?|R\d{4}|W\d{4})/g
 const ARTIFACT_ID_CHARACTER_RE = /[A-Za-z0-9_-]/
 const AST_SKIP_TYPES = new Set([
   'link',
@@ -647,7 +822,12 @@ function generatedArtifactTarget(
   const properties = (node as { properties?: Record<string, unknown> } | undefined)?.properties
   const kind = properties?.dataMemonArtifactKind ?? properties?.['data-memon-artifact-kind']
   const id = properties?.dataMemonArtifactId ?? properties?.['data-memon-artifact-id']
-  if ((kind !== 'experiment' && kind !== 'report') || typeof id !== 'string') return null
+  if (
+    (kind !== 'experiment' && kind !== 'report' && kind !== 'wiki') ||
+    typeof id !== 'string'
+  ) {
+    return null
+  }
   const resolved = resolveBareArtifactReference(id, inventory)
   return resolved?.kind === kind ? resolved : null
 }
@@ -723,54 +903,6 @@ function decorateArtifactText(value: string, shortId: string): ReactNode {
   return parts
 }
 
-/**
- * Convert a safe relative report URL to the report-scoped resource endpoint.
- * Dot-segments are rejected before the browser gets a chance to normalize
- * them out of the endpoint prefix. The server independently performs lexical
- * and realpath containment checks.
- */
-export function resolveReportResourceUrl(baseUrl: string, source: string): string | null {
-  if (
-    source.length === 0 ||
-    source.startsWith('/') ||
-    source.startsWith('#') ||
-    source.startsWith('//') ||
-    /^[a-z][a-z0-9+.-]*:/i.test(source)
-  ) {
-    return null
-  }
-
-  const match = /^([^?#]*)([?#][\s\S]*)?$/.exec(source)
-  const rawPath = match?.[1] ?? source
-  const suffix = match?.[2] ?? ''
-  const rawSegments = rawPath.split('/')
-  while (rawSegments[0] === '.') rawSegments.shift()
-  if (rawSegments.length === 0 || rawSegments.some((segment) => segment.length === 0)) return null
-
-  const encoded: string[] = []
-  for (const raw of rawSegments) {
-    let decoded: string
-    try {
-      decoded = decodeURIComponent(raw)
-    } catch {
-      return null
-    }
-    if (decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
-      return null
-    }
-    encoded.push(encodeURIComponent(decoded))
-  }
-  const base = new URL(baseUrl, 'http://memon.invalid')
-  if (base.origin !== 'http://memon.invalid') return null
-  base.pathname = `${base.pathname.replace(/\/$/, '')}/${encoded.join('/')}`
-  if (suffix) {
-    const source = new URL(suffix, 'http://memon.invalid')
-    for (const [name, value] of source.searchParams) base.searchParams.append(name, value)
-    base.hash = source.hash
-  }
-  return `${base.pathname}${base.search}${base.hash}`
-}
-
 function isHtmlResource(source: string): boolean {
   const path = source.split(/[?#]/, 1)[0] ?? ''
   return /\.html?$/i.test(path)
@@ -793,7 +925,7 @@ function containsReportHtmlImage(node: unknown, resourceBaseUrl?: string): boole
     return (
       typeof source === 'string' &&
       isHtmlResource(source) &&
-      resolveReportResourceUrl(resourceBaseUrl, source) !== null
+      resolveDocumentResourceUrl(resourceBaseUrl, source) !== null
     )
   })
 }

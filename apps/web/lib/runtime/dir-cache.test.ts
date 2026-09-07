@@ -79,3 +79,43 @@ describe('DirCache addDir / removeDir / getAllList', () => {
     expect(cache.getAllList()).toHaveLength(1)
   })
 })
+
+describe('DirCache depth modes', () => {
+  it('keeps depth 1 as the default and ignores nested files', async () => {
+    const directory = join(root, 'reports')
+    await fs.mkdir(join(directory, 'nested'), { recursive: true })
+    await fs.writeFile(join(directory, 'R0001-report.md'), 'top')
+    await fs.writeFile(join(directory, 'nested', 'R0002-hidden.md'), 'nested')
+    const cache = makeCache([directory])
+    await cache.warmup()
+    expect(cache.paths()).toEqual([join(directory, 'R0001-report.md')])
+    expect(cache.dirs()).toEqual([directory])
+  })
+
+  it('opts into child directories and bundle README files at depth 2', async () => {
+    const directory = join(root, 'wiki')
+    await fs.mkdir(join(directory, 'finding'), { recursive: true })
+    await fs.mkdir(join(directory, 'showcase', 'W0002-bundle'), { recursive: true })
+    await fs.writeFile(join(directory, 'finding', 'W0001-page.md'), 'page')
+    await fs.writeFile(join(directory, 'showcase', 'W0002-bundle', 'README.md'), 'bundle')
+    const cache = new DirCache<Meta>({
+      name: 'wiki',
+      dirs: [directory],
+      depth: 2,
+      fileNameRegex: /^W\d{4}-.+\.md$/,
+      bundleDirNameRegex: /^W\d{4}-.+$/,
+      bundleFileName: 'README.md',
+      parseFile: (path, _content, mtime) => ({ path, mtime }),
+    })
+    await cache.warmup()
+    expect(cache.paths().sort()).toEqual(
+      [
+        join(directory, 'finding', 'W0001-page.md'),
+        join(directory, 'showcase', 'W0002-bundle', 'README.md'),
+      ].sort(),
+    )
+    expect(cache.dirs()).toEqual(
+      expect.arrayContaining([directory, join(directory, 'finding'), join(directory, 'showcase')]),
+    )
+  })
+})

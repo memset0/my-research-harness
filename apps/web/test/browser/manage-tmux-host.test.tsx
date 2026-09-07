@@ -51,6 +51,7 @@ function host(host: string, state: 'online' | 'offline' = 'online') {
             events: true,
             logStreaming: true,
             reportAssets: true,
+            wikiAssets: true,
             git: true,
             shares: true,
             tmux: true,

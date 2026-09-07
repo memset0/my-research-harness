@@ -1,7 +1,9 @@
 # commit-verification Specification
 
 ## Purpose
-TBD - created by archiving change add-commit-verification-marks. Update Purpose after archive.
+Per-commit verification marks (`.memon/commit-marks.csv`, `verified|suspicious|issue`) surfaced in the git history dialog.
+
+**Deprecated** since change `wiki-system`: wiki trust is now recorded by *wiki review* (`.memon/wiki-review.csv`, commit-ordered, see `wiki-store`). Commit marks keep working unchanged but their UI entry points are labelled "(deprecated)" and nothing consults them for wiki trust; removal is a later change.
 ## Requirements
 ### Requirement: CSV file format under `.memon/commit-marks.csv`
 

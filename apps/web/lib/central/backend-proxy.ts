@@ -2,12 +2,14 @@ import {
   type BackendCapabilities,
   type BackendErrorCode,
   BackendErrorResponseSchema,
+  BackendWikiDocumentSchema,
   HostIdSchema,
   ProjectNameSchema,
 } from '@memon/core'
 import type { ApiMethod } from '../server/api-route-manifest'
 import { normalizeBackendUpstream } from './backend-client'
 import { buildBackendRequestHeaders, buildBrowserResponseHeaders } from './backend-headers'
+import { wikiComponentProjection } from '../server/wiki-route'
 import { type MappedBackendRoute, mapCentralApiToBackend } from './backend-route'
 import {
   type BackendFetch,
@@ -17,6 +19,7 @@ import {
 import type { CentralHostRegistry } from './host-registry'
 
 export const MAX_BACKEND_CONTROL_BODY_BYTES = 1024 * 1024
+export const MAX_BACKEND_WIKI_PAGE_BYTES = 5 * 1024 * 1024
 export const DEFAULT_BACKEND_HEADER_TIMEOUT_MS = 30_000
 
 export const CENTRAL_BACKEND_PROXY_ERROR_CODES = [
@@ -124,6 +127,7 @@ function routeCapabilities(route: MappedBackendRoute, method: string): Capabilit
 
   if (route.manifestRoute === 'log/stream/route.ts') required.add('logStreaming')
   if (route.manifestRoute.startsWith('report-assets/')) required.add('reportAssets')
+  if (route.manifestRoute.startsWith('wiki-assets/')) required.add('wikiAssets')
   if (
     method !== 'GET' &&
     route.ownership.auth !== 'shell' &&
@@ -222,6 +226,81 @@ function safeGatewayError(status: number, code: BackendErrorCode, message: strin
   })
 }
 
+async function readBoundedJsonResponse(response: Response, maxBytes: number): Promise<unknown> {
+  const declaredLength = response.headers.get('content-length')
+  if (declaredLength !== null) {
+    const declared = Number(declaredLength)
+    if (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBytes) {
+      await response.body?.cancel().catch(() => undefined)
+      throw new Error('Backend wiki page exceeds the response limit')
+    }
+  }
+  if (!response.body) throw new Error('Backend wiki page has no response body')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      total += next.value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw new Error('Backend wiki page exceeds the response limit')
+      }
+      chunks.push(next.value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return JSON.parse(new TextDecoder().decode(bytes))
+}
+
+async function projectBackendWikiPage(
+  response: Response,
+  headers: Headers,
+  registry: CentralHostRegistry,
+  host: string,
+): Promise<Response> {
+  let payload: unknown
+  try {
+    payload = await readBoundedJsonResponse(response, MAX_BACKEND_WIKI_PAGE_BYTES)
+  } catch {
+    registry.markFailure(host, 'misconfigured', 'Backend wiki page response is invalid')
+    return safeGatewayError(502, 'UNAVAILABLE', 'Host Backend returned an invalid wiki page')
+  }
+  const parsed = BackendWikiDocumentSchema.safeParse(payload)
+  if (!parsed.success) {
+    registry.markFailure(host, 'misconfigured', 'Backend wiki page response is invalid')
+    return safeGatewayError(502, 'UNAVAILABLE', 'Host Backend returned an invalid wiki page')
+  }
+  const projected = wikiComponentProjection(parsed.data.content)
+  for (const name of [
+    'accept-ranges',
+    'content-encoding',
+    'content-length',
+    'content-range',
+    'etag',
+    'last-modified',
+  ]) {
+    headers.delete(name)
+  }
+  return Response.json(
+    {
+      ...parsed.data,
+      diagnostics: [...parsed.data.diagnostics, ...projected.diagnostics],
+      components: projected.components,
+    },
+    { status: response.status, statusText: response.statusText, headers },
+  )
+}
+
 /**
  * Proxy one already-human-authenticated central API request to exactly one
  * usable Backend. The function performs no retries, so a mutation is issued at
@@ -257,14 +336,32 @@ export async function proxyCentralApiRequest(
   )
   deadlineTimer.unref?.()
   const upstreamSignal = AbortSignal.any([request.signal, deadline.signal])
+  const backendHeaders = buildBackendRequestHeaders(request.headers, {
+    serviceToken: upstream.serviceToken,
+    actor: options.actor,
+    ...(options.requestId ? { requestId: options.requestId } : {}),
+  })
+  const projectsBackendWikiPage =
+    request.method === 'GET' && route.manifestRoute === 'wiki/[id]/route.ts'
+  if (projectsBackendWikiPage) {
+    // Central changes the representation by appending registry-backed fields;
+    // do not let the Backend answer a conditional request with an unusable
+    // 304, and do not ask it for a byte range of the source JSON.
+    for (const name of [
+      'if-match',
+      'if-none-match',
+      'if-modified-since',
+      'if-unmodified-since',
+      'if-range',
+      'range',
+    ]) {
+      backendHeaders.delete(name)
+    }
+  }
   const init: RequestInitWithDuplex = {
     method: request.method as ApiMethod,
     cache: 'no-store',
-    headers: buildBackendRequestHeaders(request.headers, {
-      serviceToken: upstream.serviceToken,
-      actor: options.actor,
-      ...(options.requestId ? { requestId: options.requestId } : {}),
-    }),
+    headers: backendHeaders,
     redirect: 'manual',
     signal: upstreamSignal,
     ...(body === null ? {} : { body, duplex: 'half' }),
@@ -304,6 +401,14 @@ export async function proxyCentralApiRequest(
     await backendResponse.body?.cancel().catch(() => undefined)
     options.registry.markFailure(host, 'misconfigured', 'Backend response headers are invalid')
     return safeGatewayError(502, 'UNAVAILABLE', 'Host Backend returned an invalid response')
+  }
+
+  if (
+    backendResponse.ok &&
+    request.method === 'GET' &&
+    route.manifestRoute === 'wiki/[id]/route.ts'
+  ) {
+    return projectBackendWikiPage(backendResponse, browserHeaders, options.registry, host)
   }
 
   return new Response(backendResponse.body, {

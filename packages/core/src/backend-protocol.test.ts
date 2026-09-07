@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ActorContextSchema,
   BACKEND_API_MAJOR,
+  BACKEND_DOCUMENT_KINDS,
   BackendCapabilitiesSchema,
   BackendCodeReviewPatchRequestSchema,
   BackendDocumentConflictResponseSchema,
@@ -27,6 +28,10 @@ import {
   BackendTerminalSessionSchema,
   BackendTerminalStartRequestSchema,
   BackendTmuxSessionRowSchema,
+  BackendWikiBacklinksResponseSchema,
+  BackendWikiDocumentSchema,
+  BackendWikiPagesResponseSchema,
+  BackendWikiReviewResponseSchema,
   CentralEventSchema,
   HostAvailabilitySchema,
   HostAvailabilityStateSchema,
@@ -45,6 +50,7 @@ const capabilities = {
   events: true,
   logStreaming: true,
   reportAssets: true,
+  wikiAssets: true,
   git: true,
   shares: true,
   tmux: true,
@@ -583,6 +589,152 @@ describe('shared Backend actor, event, and error schemas', () => {
         currentContent: 'must not cross the trust boundary',
       }).success,
     ).toBe(false)
+  })
+
+  it('carries wiki pages as its own document kind without bodies or cluster paths', () => {
+    const summary = {
+      id: 'W0004',
+      project: 'project-x',
+      resource: 'docs/wiki/finding/attention-tail-latency.md',
+      slug: 'attention-tail-latency',
+      kind: 'finding',
+      title: 'Attention tail latency',
+      description: 'Where the tail comes from',
+      status: 'VERIFIED',
+      date: null,
+      tags: ['attention'],
+      sources: ['E0017', 'E0017/V3'],
+      legacyId: 'R0004',
+      entry: 'scripts/bench/tail.sh',
+      deprecated: null,
+      deprecatedSections: [],
+      stale: true,
+      staleSources: ['E0017/V3'],
+      review: {
+        state: 'CHANGED_SINCE_VERIFY',
+        verifiedThrough: 'a'.repeat(40),
+        verifiedAt: '2026-08-26T15:00:00+08:00',
+        unverifiedCommits: ['b'.repeat(40)],
+        unverifiedRanges: [[12, 18]],
+        dirty: true,
+      },
+      format: 'markdown',
+      mtime: 1,
+      createdAt: '2026-08-20T09:00:00+08:00',
+      updatedAt: '2026-08-26T15:00:00+08:00',
+      diagnostics: [
+        { code: 'WIKI_SOURCE_UNRESOLVED', severity: 'warn', message: 'E0017/V3', line: 6 },
+      ],
+    }
+    expect(BackendWikiPagesResponseSchema.parse({ pages: [summary] })).toEqual({ pages: [summary] })
+    // A list entry never carries the body; only the single-page envelope does.
+    expect(
+      BackendWikiPagesResponseSchema.safeParse({ pages: [{ ...summary, content: '# x' }] }).success,
+    ).toBe(false)
+    const page = { ...summary, hash: 'c'.repeat(40), content: '---\nid: W0004\n---\n' }
+    expect(BackendWikiDocumentSchema.parse(page)).toEqual(page)
+    expect(
+      BackendWikiDocumentSchema.safeParse({ ...page, path: '/srv/private/docs/wiki/f.md' }).success,
+    ).toBe(false)
+    expect(
+      BackendWikiDocumentSchema.safeParse({ ...page, resource: '/srv/private/docs/wiki/f.md' })
+        .success,
+    ).toBe(false)
+    expect(BackendWikiDocumentSchema.safeParse({ ...page, id: 'R0004' }).success).toBe(false)
+
+    // Unknown kind directories stay readable; the mismatch is a diagnostic.
+    expect(
+      BackendWikiPagesResponseSchema.safeParse({
+        pages: [{ ...summary, kind: 'retro', review: null }],
+      }).success,
+    ).toBe(true)
+
+    expect(
+      BackendWikiBacklinksResponseSchema.parse({
+        artifact: 'E0017',
+        pages: [
+          {
+            id: 'W0004',
+            slug: summary.slug,
+            kind: summary.kind,
+            title: summary.title,
+            status: summary.status,
+            stale: summary.stale,
+            deprecated: false,
+            reviewState: summary.review.state,
+            updatedAt: summary.updatedAt,
+          },
+        ],
+      }).pages,
+    ).toHaveLength(1)
+    expect(BACKEND_DOCUMENT_KINDS).toContain('wiki')
+    expect(
+      BackendDocumentSchema.safeParse({
+        id: 'W0004',
+        project: 'project-x',
+        kind: 'wiki',
+        title: 'Attention tail latency',
+        mtime: 1,
+        hash: 'a'.repeat(40),
+        content: '# Finding',
+      }).success,
+    ).toBe(true)
+  })
+
+  it('reports wiki review as an ordered commit log with a verified prefix', () => {
+    const log = {
+      verifiedThrough: 'a'.repeat(40),
+      commits: [
+        {
+          sha: 'a'.repeat(40),
+          authoredAt: '2026-08-20T09:00:00+08:00',
+          subject: 'wiki: record attention finding',
+          pages: ['W0004'],
+          verified: true,
+          verifiedAt: '2026-08-26T15:00:00+08:00',
+          note: 'checked against E0017',
+        },
+        {
+          sha: 'b'.repeat(40),
+          authoredAt: '2026-08-26T18:00:00+08:00',
+          subject: 'wiki: revise tail analysis',
+          pages: ['W0004', 'W0009'],
+          verified: false,
+        },
+      ],
+    }
+    expect(BackendWikiReviewResponseSchema.parse(log)).toEqual(log)
+    expect(BackendWikiReviewResponseSchema.parse({ ...log, verifiedThrough: null })).toMatchObject({
+      verifiedThrough: null,
+    })
+    expect(
+      BackendWikiReviewResponseSchema.safeParse({
+        verifiedThrough: 'abc1234',
+        commits: [],
+      }).success,
+    ).toBe(false)
+    expect(
+      BackendWikiReviewResponseSchema.safeParse({
+        verifiedThrough: null,
+        commits: [{ ...log.commits[1], pages: ['R0004'] }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('accepts wiki event topics on Backend frames', () => {
+    for (const topic of ['wiki-change', 'wiki-review-change']) {
+      expect(
+        BackendEventFrameSchema.parse({
+          kind: 'event',
+          instanceEpoch: epoch,
+          sequence: 4,
+          emittedAt,
+          project: 'project-x',
+          topic,
+          data: topic === 'wiki-change' ? { id: 'W0004', type: 'set' } : {},
+        }),
+      ).toMatchObject({ topic })
+    }
   })
 
   it('rejects Git option injection, absolute file IDs, and unsafe submodule metadata', () => {

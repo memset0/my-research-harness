@@ -172,6 +172,23 @@ export const API_ROUTE_MANIFEST = {
   'tmux-sessions/[name]/route.ts': backend(['GET', 'DELETE'], 'global', 'shell', 'none', 'tmux'),
   'tmux-sessions/route.ts': backend(['GET', 'POST'], 'global', 'shell', 'none', 'tmux'),
   'ui-preferences/route.ts': central(['GET', 'PUT'], 'mixed'),
+  'wiki-assets/[project]/[id]/[...path]/route.ts': backend(
+    ['GET', 'HEAD'],
+    'project-path',
+    'read',
+    'bytes',
+  ),
+  'wiki/[id]/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
+  // Backlinks are derived from the central wiki cache; a Host-scoped client
+  // reads the same rows from the Experiment detail projection's `citedBy`.
+  'wiki/backlinks/[artifact]/route.ts': central(['GET'], 'read', 'none', 'project-query'),
+  'wiki/components/[name]/route.ts': central(['GET'], 'read'),
+  'wiki/components/lint/route.ts': central(['POST'], 'read'),
+  'wiki/components/migrate/route.ts': central(['POST'], 'read'),
+  'wiki/components/route.ts': central(['GET'], 'read'),
+  'wiki/review/[sha]/route.ts': backend(['DELETE', 'POST'], 'project-query', 'shell'),
+  'wiki/review/route.ts': backend(['GET'], 'project-query', 'read'),
+  'wiki/route.ts': backend(['GET'], 'project-query', 'read'),
 } as const satisfies Record<string, ApiRouteOwnership>
 
 export type TrackedApiRoute = keyof typeof API_ROUTE_MANIFEST

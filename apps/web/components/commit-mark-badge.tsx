@@ -61,6 +61,8 @@ export function CommitMarkBadge({ mark, size = 'sm', className }: CommitMarkBadg
         {mark && (
           <TooltipContent side="right" align="start">
             <div className="grid grid-cols-[max-content_1fr] gap-x-2 gap-y-0.5 font-mono text-xs">
+              <span>commit mark</span>
+              <span className="font-medium">(deprecated)</span>
               <span>status</span>
               <span className="font-medium">{STATUS_LABEL[mark.status]}</span>
               {mark.note && (

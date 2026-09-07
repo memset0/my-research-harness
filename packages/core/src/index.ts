@@ -326,3 +326,4 @@ export {
   parseMemonReleaseMajor,
   VERSION,
 } from './version.js'
+export * from './wiki/index.js'

@@ -8,9 +8,24 @@
  */
 
 import { type ProjectTarget, projectWebPath } from './api'
+import {
+  canonicalFullWikiIdFromPathname,
+  canonicalWikiHref,
+  DEFAULT_WIKI_SURFACE,
+  isWikiId,
+  parseWikiWorkspaceUrl,
+  setWikiWorkspaceUrl,
+} from './wiki-workspace-url'
+import {
+  REPORT_QUERY_PARAM,
+  REPORT_SURFACE_QUERY_PARAM,
+  toWorkspaceAppHref,
+  toWorkspaceUrl,
+  WIKI_QUERY_PARAM,
+  WIKI_SURFACE_QUERY_PARAM,
+} from './workspace-url-params'
 
-export const REPORT_QUERY_PARAM = 'report'
-export const REPORT_SURFACE_QUERY_PARAM = 'reportSurface'
+export { REPORT_QUERY_PARAM, REPORT_SURFACE_QUERY_PARAM }
 export const DEFAULT_REPORT_SURFACE = 'split' as const
 
 export type ReportWorkspaceSurface = 'split' | 'drawer'
@@ -20,11 +35,17 @@ export interface ReportWorkspaceUrlState {
   surface: ReportWorkspaceSurface
 }
 
-export type ArtifactSourceSurface = 'left' | 'full-report' | 'side-report'
+export type ArtifactSourceSurface =
+  | 'left'
+  | 'full-report'
+  | 'side-report'
+  | 'full-wiki'
+  | 'side-wiki'
 
 export type ArtifactNavigationTarget =
   | { kind: 'experiment'; id: string }
   | { kind: 'report'; id: string }
+  | { kind: 'wiki'; id: string }
 
 export interface ArtifactNavigationInput {
   sourceSurface: ArtifactSourceSurface
@@ -37,22 +58,19 @@ export interface ArtifactNavigationInput {
    * from a canonical full-Report pathname or the side-workspace query.
    */
   sourceReportId?: string
+  /**
+   * The wiki page containing the activated link. Optional when it can be
+   * derived from a canonical full-page wiki pathname or the side-workspace
+   * query.
+   */
+  sourceWikiId?: string
   /** Presentation used when a full Report first creates a paired workspace. */
   defaultReportSurface?: ReportWorkspaceSurface
 }
 
-const INTERNAL_URL_BASE = 'http://memon.invalid'
 const REPORT_ID_RE = /^R\d{4}$/
 const EXPERIMENT_ID_RE = /^E\d{4}(?:-[^/?#]+)?$/u
 const CANONICAL_FULL_REPORT_PATH_RE = /^(?:\/p\/[^/]+|\/h\/[^/]+\/p\/[^/]+)\/reports\/(R\d{4})\/?$/
-
-function toUrl(input: string | URL): URL {
-  return input instanceof URL ? new URL(input.toString()) : new URL(input, INTERNAL_URL_BASE)
-}
-
-function toAppHref(url: URL): string {
-  return `${url.pathname}${url.search}${url.hash}`
-}
 
 export function isReportId(value: string | null | undefined): value is string {
   return typeof value === 'string' && REPORT_ID_RE.test(value)
@@ -69,7 +87,7 @@ export function canonicalFullReportIdFromPathname(pathname: string): string | nu
 }
 
 export function isCanonicalFullReportUrl(input: string | URL): boolean {
-  return canonicalFullReportIdFromPathname(toUrl(input).pathname) !== null
+  return canonicalFullReportIdFromPathname(toWorkspaceUrl(input).pathname) !== null
 }
 
 /**
@@ -81,8 +99,11 @@ export function isCanonicalFullReportUrl(input: string | URL): boolean {
  * side workspace, even if stale workspace parameters are present.
  */
 export function parseReportWorkspaceUrl(input: string | URL): ReportWorkspaceUrlState | null {
-  const url = toUrl(input)
+  const url = toWorkspaceUrl(input)
   if (canonicalFullReportIdFromPathname(url.pathname)) return null
+  // The shared right-side slot gives a valid wiki identity precedence when a
+  // hand-authored/stale URL contains both document parameters.
+  if (isWikiId(url.searchParams.get(WIKI_QUERY_PARAM))) return null
 
   const reportId = url.searchParams.get(REPORT_QUERY_PARAM)
   if (!isReportId(reportId)) return null
@@ -106,7 +127,7 @@ function assertExperimentId(experimentId: string): void {
   }
 }
 
-/** Open or replace the side Report and explicitly select its presentation. */
+/** Open or replace the side Report, evicting any wiki page from the slot. */
 export function setReportWorkspaceUrl(
   currentHref: string | URL,
   reportId: string,
@@ -117,10 +138,12 @@ export function setReportWorkspaceUrl(
     throw new TypeError(`Invalid Report workspace surface: ${surface}`)
   }
 
-  const url = toUrl(currentHref)
+  const url = toWorkspaceUrl(currentHref)
+  url.searchParams.delete(WIKI_QUERY_PARAM)
+  url.searchParams.delete(WIKI_SURFACE_QUERY_PARAM)
   url.searchParams.set(REPORT_QUERY_PARAM, reportId)
   url.searchParams.set(REPORT_SURFACE_QUERY_PARAM, surface)
-  return toAppHref(url)
+  return toWorkspaceAppHref(url)
 }
 
 /** Switch only the Report identity, retaining its requested presentation. */
@@ -135,16 +158,16 @@ export function moveReportWorkspaceUrl(
   surface: ReportWorkspaceSurface,
 ): string {
   const current = parseReportWorkspaceUrl(currentHref)
-  if (!current) return toAppHref(toUrl(currentHref))
+  if (!current) return toWorkspaceAppHref(toWorkspaceUrl(currentHref))
   return setReportWorkspaceUrl(currentHref, current.reportId, surface)
 }
 
 /** Close the side Report while preserving every unrelated query value and hash. */
 export function removeReportWorkspaceUrl(currentHref: string | URL): string {
-  const url = toUrl(currentHref)
+  const url = toWorkspaceUrl(currentHref)
   url.searchParams.delete(REPORT_QUERY_PARAM)
   url.searchParams.delete(REPORT_SURFACE_QUERY_PARAM)
-  return toAppHref(url)
+  return toWorkspaceAppHref(url)
 }
 
 export function canonicalExperimentHref(project: ProjectTarget, experimentId: string): string {
@@ -169,17 +192,33 @@ function sourceReportIdForNavigation(input: ArtifactNavigationInput, currentUrl:
   return reportId
 }
 
+function sourceWikiIdForNavigation(input: ArtifactNavigationInput, currentUrl: URL): string {
+  const derived =
+    input.sourceSurface === 'full-wiki'
+      ? canonicalFullWikiIdFromPathname(currentUrl.pathname)
+      : parseWikiWorkspaceUrl(currentUrl)?.wikiId
+  const wikiId = input.sourceWikiId ?? derived
+  if (!isWikiId(wikiId)) {
+    throw new TypeError(`${input.sourceSurface} navigation requires a valid sourceWikiId`)
+  }
+  return wikiId
+}
+
 /**
- * Build the canonical destination for the six source-surface/target-kind cells.
+ * Build the canonical destination for every source-surface/target-kind cell.
  *
- * Same-left-document Report changes retain its complete query/hash. A target
- * Experiment gets a new canonical left pathname and carries only workspace
- * state; path-specific state such as another Experiment's `run` parameter or
- * heading hash is deliberately not leaked to the new document.
+ * Same-left-document side changes retain the left page's complete query/hash.
+ * A target Experiment gets a new canonical left pathname and carries only
+ * workspace state; path-specific state such as another Experiment's `run`
+ * parameter or heading hash is deliberately not leaked to the new document.
+ * Because the right slot holds one document, carrying workspace state forward
+ * prefers whichever of Report/wiki is currently active — the URL writers
+ * guarantee at most one of them is.
  */
 export function buildArtifactNavigationHref(input: ArtifactNavigationInput): string {
-  const currentUrl = toUrl(input.currentHref)
-  const currentWorkspace = parseReportWorkspaceUrl(currentUrl)
+  const currentUrl = toWorkspaceUrl(input.currentHref)
+  const currentReport = parseReportWorkspaceUrl(currentUrl)
+  const currentWiki = parseWikiWorkspaceUrl(currentUrl)
   const defaultSurface = input.defaultReportSurface ?? DEFAULT_REPORT_SURFACE
 
   if (input.sourceSurface === 'left') {
@@ -187,40 +226,100 @@ export function buildArtifactNavigationHref(input: ArtifactNavigationInput): str
       return setReportWorkspaceUrl(
         currentUrl,
         input.target.id,
-        currentWorkspace?.surface ?? defaultSurface,
+        currentReport?.surface ?? currentWiki?.surface ?? defaultSurface,
+      )
+    }
+    if (input.target.kind === 'wiki') {
+      return setWikiWorkspaceUrl(
+        currentUrl,
+        input.target.id,
+        currentWiki?.surface ?? currentReport?.surface ?? DEFAULT_WIKI_SURFACE,
       )
     }
 
     const targetHref = canonicalExperimentHref(input.project, input.target.id)
-    return currentWorkspace
-      ? setReportWorkspaceUrl(targetHref, currentWorkspace.reportId, currentWorkspace.surface)
-      : targetHref
+    if (currentReport) {
+      return setReportWorkspaceUrl(targetHref, currentReport.reportId, currentReport.surface)
+    }
+    if (currentWiki) {
+      return setWikiWorkspaceUrl(targetHref, currentWiki.wikiId, currentWiki.surface)
+    }
+    return targetHref
   }
 
-  const sourceReportId = sourceReportIdForNavigation(input, currentUrl)
+  if (input.sourceSurface === 'full-report' || input.sourceSurface === 'side-report') {
+    const sourceReportId = sourceReportIdForNavigation(input, currentUrl)
 
-  if (input.sourceSurface === 'full-report') {
+    if (input.sourceSurface === 'full-report') {
+      if (input.target.kind === 'report') {
+        return canonicalReportHref(input.project, input.target.id)
+      }
+      // A wiki target from a canonical full Report is a document switch, not a
+      // pairing: the Report already owns the whole viewport.
+      if (input.target.kind === 'wiki') {
+        return canonicalWikiHref(input.project, input.target.id)
+      }
+      return setReportWorkspaceUrl(
+        canonicalExperimentHref(input.project, input.target.id),
+        sourceReportId,
+        defaultSurface,
+      )
+    }
+
     if (input.target.kind === 'report') {
-      return canonicalReportHref(input.project, input.target.id)
+      return setReportWorkspaceUrl(
+        currentUrl,
+        input.target.id,
+        currentReport?.surface ?? defaultSurface,
+      )
+    }
+    if (input.target.kind === 'wiki') {
+      return setWikiWorkspaceUrl(
+        currentUrl,
+        input.target.id,
+        currentReport?.surface ?? DEFAULT_WIKI_SURFACE,
+      )
     }
     return setReportWorkspaceUrl(
       canonicalExperimentHref(input.project, input.target.id),
       sourceReportId,
-      defaultSurface,
+      currentReport?.surface ?? defaultSurface,
     )
   }
 
+  const sourceWikiId = sourceWikiIdForNavigation(input, currentUrl)
+
+  if (input.sourceSurface === 'full-wiki') {
+    if (input.target.kind === 'wiki') {
+      return canonicalWikiHref(input.project, input.target.id)
+    }
+    if (input.target.kind === 'report') {
+      return canonicalReportHref(input.project, input.target.id)
+    }
+    return setWikiWorkspaceUrl(
+      canonicalExperimentHref(input.project, input.target.id),
+      sourceWikiId,
+      DEFAULT_WIKI_SURFACE,
+    )
+  }
+
+  if (input.target.kind === 'wiki') {
+    return setWikiWorkspaceUrl(
+      currentUrl,
+      input.target.id,
+      currentWiki?.surface ?? DEFAULT_WIKI_SURFACE,
+    )
+  }
   if (input.target.kind === 'report') {
     return setReportWorkspaceUrl(
       currentUrl,
       input.target.id,
-      currentWorkspace?.surface ?? defaultSurface,
+      currentWiki?.surface ?? defaultSurface,
     )
   }
-
-  return setReportWorkspaceUrl(
+  return setWikiWorkspaceUrl(
     canonicalExperimentHref(input.project, input.target.id),
-    sourceReportId,
-    currentWorkspace?.surface ?? defaultSurface,
+    sourceWikiId,
+    currentWiki?.surface ?? DEFAULT_WIKI_SURFACE,
   )
 }

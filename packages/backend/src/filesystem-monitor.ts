@@ -6,6 +6,7 @@ import {
   BackendReportsResponseSchema,
   discoverExperiments,
   discoverRuns,
+  discoverWikiPages,
   type ProjectConfig,
   ProjectNameSchema,
   ResourceIdSchema,
@@ -23,6 +24,7 @@ export type BackendMonitoredResourceKind =
   | 'report'
   | 'digest'
   | 'code-review'
+  | 'wiki'
 
 export interface BackendMonitorSnapshotEntry {
   kind: BackendMonitoredResourceKind
@@ -209,12 +211,15 @@ export class BackendFilesystemMonitor implements BackendFilesystemMonitorControl
 export async function scanBackendProject(project: ProjectConfig): Promise<BackendMonitorSnapshot> {
   ProjectNameSchema.parse(project.name)
   const documents = new FilesystemDocumentService([project])
-  const [runPaths, experimentResult, reports, digests, codeReviews] = await Promise.all([
+  const [runPaths, experimentResult, reports, digests, codeReviews, wikiPages] = await Promise.all([
     discoverRuns(project, { includeArchived: true }),
     discoverExperiments(project.root, project.name),
     documents.listReports(project.name),
     documents.listDigests(project.name),
     documents.listCodeReviews(project.name),
+    // Discovery only: the derived wiki projection (git review, source
+    // resolution) is far too expensive for the poll loop.
+    discoverWikiPages(project.root),
   ])
   const grouped = new Map<
     string,
@@ -252,6 +257,9 @@ export async function scanBackendProject(project: ProjectConfig): Promise<Backen
   }
   for (const review of BackendCodeReviewsResponseSchema.parse(codeReviews).codeReviews) {
     add('code-review', review.id, `${review.resource}:${review.mtime}`)
+  }
+  for (const page of wikiPages) {
+    add('wiki', page.id, `${page.path}:${page.mtime}`)
   }
 
   return new Map(
@@ -303,6 +311,8 @@ function topicFor(kind: BackendMonitoredResourceKind) {
       return 'digests-change' as const
     case 'code-review':
       return 'code-reviews-change' as const
+    case 'wiki':
+      return 'wiki-change' as const
   }
 }
 

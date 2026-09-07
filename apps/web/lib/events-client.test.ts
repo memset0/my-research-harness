@@ -63,6 +63,12 @@ describe('events-client singleton', () => {
       emittedAt: '2026-08-26T17:00:00.000Z',
     })
     source.emit('reports-change', { host: 'host-b', project: 'project-x' })
+    source.emit('wiki-change', {
+      host: 'host-c',
+      project: 'project-y',
+      id: 'W0001',
+      type: 'set',
+    })
     source.emit('anomaly', 'not-json')
 
     expect(first).toEqual([
@@ -80,6 +86,13 @@ describe('events-client singleton', () => {
         emittedAt: '2026-08-26T17:00:00.000Z',
       },
       { topic: 'reports-change', host: 'host-b', project: 'project-x' },
+      {
+        topic: 'wiki-change',
+        host: 'host-c',
+        project: 'project-y',
+        id: 'W0001',
+        type: 'set',
+      },
     ])
     expect(second).toEqual(first)
 

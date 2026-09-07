@@ -235,6 +235,64 @@ phone as well as a desktop. The first version intentionally does not sandbox
 Agent-authored iframe content; local asset requests are nevertheless confined
 to that Report bundle.
 
+### Wiki
+
+The wiki is the project's living knowledge base. Reports stay as they are;
+new narrative content goes to `docs/wiki/`, one directory per kind:
+
+```text
+docs/wiki/finding/W0001-zero-snr-brightness.md        # single-file page
+docs/wiki/showcase/W0006-edm2-precond-explorer/       # bundle page
+├── README.md
+├── data/fid.csv
+└── views/explorer/index.html
+```
+
+| Kind | What it holds | `status` vocabulary |
+|---|---|---|
+| `meeting` | who met, what was decided, action items (`date:` required) | none |
+| `finding` | a claim with its evidence and limits (`sources:` required) | `TENTATIVE` / `VERIFIED` / `RETRACTED` |
+| `bottleneck` | the current blocker, impact, candidates | `OPEN` / `MITIGATED` / `RESOLVED` |
+| `showcase` | something presentable, how to reproduce it | `DRAFT` / `READY` / `OUTDATED` |
+| `question` | an open question with context and eventual answer | `OPEN` / `ANSWERED` / `DROPPED` |
+| `decision` | a decision, its rationale and consequences | `PROPOSED` / `ACCEPTED` / `SUPERSEDED` |
+| `note` | anything else (migrated Reports land here with `legacy_id`) | none |
+| `harness-feedback` | a proposal to improve this harness, filed by the agent | `PROPOSED` / `ACCEPTED` / `SHIPPED` / `REJECTED` |
+
+Every page has YAML frontmatter (`id: W<NNNN>`, `kind`, `title`,
+`description`, `created_at`, `updated_at`, plus kind-specific keys) and three
+independent trust axes:
+
+- **evidence** — `sources:` lists the Experiments / Variants (`E0017/V0068`) /
+  Hypotheses / runs the page rests on; when one changes after `updated_at`
+  the page is `stale`.
+- **author judgement** — the kind's `status`.
+- **human review** — humans verify *wiki commits* oldest to newest
+  (`memon wiki review verify next`); each page derives `VERIFIED`,
+  `CHANGED_SINCE_VERIFY` (with the exact unverified line ranges) or
+  `UNVERIFIED`. Agents never write review marks; they commit each wiki change
+  separately with `memon wiki commit`.
+
+Inside a body, `@W0001`, `@E0017`, `@E0017/V0068`, `@H0003` and
+`@<run-dir>` are links. Two fenced components render on every dashboard
+Markdown surface: ```` ```memon-data@1 ```` (a table with the command,
+commit and time that produced it) and ```` ```html-embed@1 ```` (an HTML
+block in an iframe). Unknown fences degrade to plain code blocks.
+
+```
+memon wiki ls [--kind K] [--status S] [--stale] [--review STATE]
+memon wiki show|create|move|set|delete <page>
+memon wiki lint [--strict] [--central URL]      # component diagnostics need a central dashboard
+memon wiki stale | backlinks <artifact>
+memon wiki review log|ls|diff <page>|verify <sha|next>|unverify <sha>
+memon wiki commit [-m SUMMARY]                  # stages only docs/wiki/
+memon wiki migrate-report <R-id> <kind> [<slug>]
+memon wiki components ls|show|migrate --central URL
+```
+
+Migration is editorial and one Report at a time (`migrate-report`); a
+migrated page keeps `legacy_id: R<NNNN>` so old `R` links keep resolving.
+
 ## CLI
 
 ```

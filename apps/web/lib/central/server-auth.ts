@@ -85,6 +85,18 @@ function effectiveAuthClass(
   return 'mutating'
 }
 
+/**
+ * Wiki review is shell-class so it bypasses the Backend's document-mutation
+ * capability, but a valid viewer is still resolved solely to return the
+ * contractually explicit 403 denial.
+ */
+function isViewerVisibleWikiReview(route: MappedBackendRoute, method: string): boolean {
+  return (
+    route.manifestRoute === 'wiki/review/[sha]/route.ts' &&
+    (method.toUpperCase() === 'POST' || method.toUpperCase() === 'DELETE')
+  )
+}
+
 function exactSelector(search: URLSearchParams, name: string): string | null {
   const values = search.getAll(name)
   return values.length === 1 ? values[0]! : null
@@ -185,11 +197,13 @@ export async function authorizeCentralServerRequest(
       authorizationHeader: firstHeader(options.request.headers.authorization) ?? null,
       sessionCookieValue: readCookie(options.request, SESSION_COOKIE_NAME),
       sharesCookieValue: readCookie(options.request, SHARES_COOKIE_NAME),
-      // Ordinary data routes resolve viewers so writes can return an explicit
-      // 403. Shell relays set ownerOnly and never decode/validate share state.
+      // Ordinary data mutations and wiki review resolve viewers so writes can
+      // return an explicit 403. Other shell relays set ownerOnly and never
+      // decode or validate share state.
       allowViewer:
         options.ownerOnly !== true &&
-        effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'shell',
+        (effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'shell' ||
+          isViewerVisibleWikiReview(options.route, options.request.method ?? 'GET')),
     },
     options.runtimeAuth,
     shareValidator,

@@ -33,13 +33,21 @@ const STANDALONE_TOPICS = [
   'journal-change',
   'anomaly',
   'code-reviews-change',
+  'wiki-change',
+  'wiki-review-change',
 ] as const
 type StandaloneTopic = (typeof STANDALONE_TOPICS)[number]
 
 function eventProject(topic: StandaloneTopic, evt: unknown): string | null {
   if (!evt || typeof evt !== 'object') return null
   const e = evt as Record<string, unknown>
-  if (topic === 'anomaly' || topic === 'code-reviews-change' || topic === 'journal-change') {
+  if (
+    topic === 'anomaly' ||
+    topic === 'code-reviews-change' ||
+    topic === 'journal-change' ||
+    topic === 'wiki-change' ||
+    topic === 'wiki-review-change'
+  ) {
     return typeof e.project === 'string' ? e.project : null
   }
   if (topic === 'experiment-change') {

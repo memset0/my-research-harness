@@ -95,6 +95,7 @@ function makeHost(
             events: true,
             logStreaming: true,
             reportAssets: true,
+            wikiAssets: true,
             git: true,
             shares: true,
             tmux: true,

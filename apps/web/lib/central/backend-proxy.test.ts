@@ -25,6 +25,7 @@ const CAPABILITIES = {
   events: true,
   logStreaming: true,
   reportAssets: true,
+  wikiAssets: true,
   git: true,
   shares: true,
   tmux: true,
@@ -79,6 +80,52 @@ function proxy(
     fetchImpl,
     ...overrides,
   })
+}
+
+function backendWikiDocument() {
+  const content = [
+    '---',
+    'id: W0001',
+    'kind: finding',
+    'title: Finding',
+    'created_at: 2026-05-01T10:00:00+08:00',
+    'updated_at: 2026-05-01T10:00:00+08:00',
+    '---',
+    '```memon-data@1',
+    'script: x',
+    'captured_at: 2026-05-04T13:00:00+08:00',
+    'captured_commit: null',
+    'columns: [a, b]',
+    'rows: [[1]]',
+    '```',
+  ].join('\n')
+  return {
+    id: 'W0001',
+    project: 'project-a',
+    resource: 'docs/wiki/finding/W0001-finding.md',
+    slug: 'finding',
+    kind: 'finding',
+    title: 'Finding',
+    description: null,
+    status: 'TENTATIVE',
+    date: null,
+    tags: [],
+    sources: ['E0001'],
+    legacyId: null,
+    entry: null,
+    deprecated: null,
+    deprecatedSections: [],
+    stale: false,
+    staleSources: [],
+    review: null,
+    format: 'markdown',
+    mtime: 1,
+    createdAt: '2026-05-01T10:00:00+08:00',
+    updatedAt: '2026-05-01T10:00:00+08:00',
+    diagnostics: [],
+    hash: 'a'.repeat(40),
+    content,
+  }
 }
 
 describe('central Backend proxy routing and trust boundary', () => {
@@ -202,6 +249,79 @@ describe('central Backend proxy routing and trust boundary', () => {
     )
   })
 })
+
+describe('central Wiki proxy projection', () => {
+  it('adds central component diagnostics to a Backend-served wiki page', async () => {
+    const encoded = JSON.stringify(backendWikiDocument())
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(encoded, {
+        headers: {
+          'content-type': 'application/json',
+          'content-encoding': 'gzip',
+          'content-length': String(Buffer.byteLength(encoded)),
+          etag: '\"backend-page\"',
+          'last-modified': 'Mon, 01 May 2026 02:00:00 GMT',
+        },
+      }),
+    )
+    const response = await proxy(
+      new Request(
+        'https://central.example.test/api/wiki/W0001?host=host-a&project=project-a',
+        { headers: { 'if-none-match': '\"backend-page\"', range: 'bytes=0-10' } },
+      ),
+      fetchImpl,
+    )
+    expect(response.status).toBe(200)
+    const payload = await response.json()
+    expect(payload.components).toEqual([
+      { index: 0, name: 'memon-data', version: 1, line: 8, outdated: false },
+    ])
+    expect(payload.diagnostics).toEqual([
+      expect.objectContaining({ code: 'WIKI_DATA_BLOCK_INVALID', line: 8 }),
+    ])
+    expect(response.headers.get('content-encoding')).toBeNull()
+    expect(response.headers.get('content-length')).toBeNull()
+    expect(response.headers.get('etag')).toBeNull()
+    const forwarded = new Headers(fetchImpl.mock.calls[0]?.[1]?.headers)
+    expect(forwarded.has('if-none-match')).toBe(false)
+    expect(forwarded.has('range')).toBe(false)
+  })
+
+  it('gates wiki assets on wikiAssets without affecting report assets', async () => {
+    const fetchImpl = vi.fn()
+    const registry = usableRegistry({ ...CAPABILITIES, wikiAssets: false })
+    await expect(
+      proxy(
+        new Request(
+          'https://central.example.test/api/wiki-assets/project-a/W0001/view.html?host=host-a',
+        ),
+        fetchImpl,
+        registry,
+      ),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('forwards shell-class review marks to a read-only Backend', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({ verifiedThrough: null, commits: [] }),
+    )
+    const registry = usableRegistry({ ...CAPABILITIES, mutations: false })
+    const response = await proxy(
+      new Request(
+        'https://central.example.test/api/wiki/review/next?host=host-a&project=project-a',
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+      ),
+      fetchImpl,
+      registry,
+    )
+    expect(response.status).toBe(200)
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      'https://backend-a.example.test/api/backend/v1/wiki/review/next?project=project-a',
+    )
+  })
+})
+
 
 describe('central Backend proxy streaming and bounds', () => {
   it('passes a non-control request body and cancellation signal through without buffering', async () => {

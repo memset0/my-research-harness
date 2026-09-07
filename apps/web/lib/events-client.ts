@@ -75,6 +75,20 @@ export interface DigestsChangeEvent {
   project: string
 }
 
+/** Wiki list-level change (page added / removed / edited). */
+export interface WikiChangeEvent {
+  project: string
+  host?: string
+  /** Present when exactly one page changed. */
+  id?: string
+}
+
+/** Review snapshot change (a mark written / removed, or HEAD moved). */
+export interface WikiReviewChangeEvent {
+  project: string
+  host?: string
+}
+
 export interface JournalChangeEvent {
   host?: string
   project: string
@@ -99,6 +113,8 @@ export type MemonEvent =
   | ({ topic: 'code-reviews-change' } & CodeReviewsChangeEvent)
   | ({ topic: 'reports-change' } & ReportsChangeEvent)
   | ({ topic: 'digests-change' } & DigestsChangeEvent)
+  | ({ topic: 'wiki-change' } & WikiChangeEvent)
+  | ({ topic: 'wiki-review-change' } & WikiReviewChangeEvent)
   | ({ topic: 'host-resync' } & HostResyncEvent)
 
 /**
@@ -158,6 +174,12 @@ function ensureConnected() {
   })
   source.addEventListener('digests-change', (e) => {
     parseAndDispatch('digests-change', (e as MessageEvent).data)
+  })
+  source.addEventListener('wiki-change', (e) => {
+    parseAndDispatch('wiki-change', (e as MessageEvent).data)
+  })
+  source.addEventListener('wiki-review-change', (e) => {
+    parseAndDispatch('wiki-review-change', (e as MessageEvent).data)
   })
   source.addEventListener('host-resync', (e) => {
     parseAndDispatch('host-resync', (e as MessageEvent).data)

@@ -67,6 +67,12 @@ export function AppBar({ project }: { project: ProjectTarget }) {
       href: `${projectBase}/code-review`,
       matches: (p) => p.startsWith(`${projectBase}/code-review`),
     },
+    {
+      name: 'Wiki',
+      kind: 'wiki',
+      href: `${projectBase}/wiki`,
+      matches: (p) => p.startsWith(`${projectBase}/wiki`),
+    },
   ]
 
   return (

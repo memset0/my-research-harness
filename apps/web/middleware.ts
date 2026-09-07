@@ -88,8 +88,19 @@ function appendSetCookie(headers: Headers, value: string): void {
   headers.append('Set-Cookie', value)
 }
 
-function isExperimentResultsViewMutation(method: string, pathname: string): boolean {
-  if (method === 'POST') return pathname === '/api/experiment-results-views'
+/**
+ * Owner-only writes that intentionally identify a valid share viewer so the
+ * denial is an explicit 403 instead of the cheaper fail-closed 401: the
+ * Results-View CRUD and the wiki review marks.
+ */
+function isViewerVisibleMutation(method: string, pathname: string): boolean {
+  if (method === 'POST' && pathname === '/api/experiment-results-views') return true
+  if (
+    (method === 'POST' || method === 'DELETE') &&
+    /^\/api\/wiki\/review\/[^/]+$/.test(pathname)
+  ) {
+    return true
+  }
   if (method !== 'PATCH' && method !== 'DELETE') return false
   return /^\/api\/experiment-results-views\/[^/]+$/.test(pathname)
 }
@@ -142,8 +153,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // These owner-only routes intentionally identify a valid share viewer so
   // the denial is an explicit 403. Every other mutating/shell route keeps the
   // cheaper fail-closed behavior that does not parse or validate share state.
-  const resultsViewMutation = isExperimentResultsViewMutation(req.method, pathname)
-  const allowViewer = routeClass === 'read' || resultsViewMutation
+  const viewerVisibleMutation = isViewerVisibleMutation(req.method, pathname)
+  const allowViewer = routeClass === 'read' || viewerVisibleMutation
   const identity = await resolveIdentity(
     {
       authorizationHeader: req.headers.get('authorization'),
@@ -164,8 +175,8 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   if (identity.role === 'owner') {
     // Owner may pass every route class.
   } else if (identity.role === 'viewer') {
-    if (resultsViewMutation) {
-      response = denyForbidden('Share viewers cannot mutate Experiment Results Views')
+    if (viewerVisibleMutation) {
+      response = denyForbidden('Share viewers cannot perform this action')
       attachCookieRefreshes(response.headers, identity, isHttps(req))
       return response
     }

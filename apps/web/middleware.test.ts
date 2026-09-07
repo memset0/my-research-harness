@@ -104,7 +104,7 @@ describe('middleware', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns an explicit 403 when a valid share viewer directly mutates Results Views', async () => {
+  it('returns an explicit 403 when a valid share viewer invokes a viewer-visible write', async () => {
     const viewerCookie = signSharesCookie(
       [{ project: 'project-a', token: 'valid-share-token' }],
       auth.sessionSecret!,
@@ -122,6 +122,7 @@ describe('middleware', () => {
         'DELETE',
         'http://localhost/api/experiment-results-views/view-a?project=project-a&experiment=E0001-demo',
       ],
+      ['POST', 'http://localhost/api/wiki/review/next?project=project-a'],
     ] as const
 
     for (const [method, url] of requests) {

@@ -65,6 +65,14 @@ memon --project-root . --format json experiment doc lint "$EXP_ID"
 Do not rely on a caller's stale copy. Record a content hash for every file that
 may be touched so a concurrent writer cannot be overwritten silently.
 
+Treat wiki pages and Experiment documents as trustworthy by default; when two
+documents contradict each other or a document contradicts fresh Experiment
+data, consult `memon wiki review ls` and `memon wiki review diff <page>` and
+prefer `VERIFIED` content, then content of `CHANGED_SINCE_VERIFY` pages
+outside their `unverifiedRanges`, then `UNVERIFIED` content — and ask the
+user, quoting both passages and their review states, when that ordering does
+not settle it.
+
 ### 2. Refuse destructive normalization
 
 Lint is strict; reading is tolerant.
@@ -140,6 +148,10 @@ Preserve:
 - unknown keys for forward compatibility;
 - all README bytes outside the intended canonical section;
 - the exact managed pointers.
+
+When a README section needs a registered fenced-block component instead of
+plain Markdown, follow `memon-author-components`; do not restate component
+rules here.
 
 Never copy Markdown produced by `doc render` back into README. It is a read-only
 projection of YAML.

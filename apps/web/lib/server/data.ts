@@ -23,9 +23,12 @@ import type {
   FullReport,
   IndexedRun,
   ProjectSummary,
+  WikiListItem,
+  WikiPageDetail,
 } from '../api'
 import { getRuntime } from '../runtime'
 import { discoverReports, findReport, readReport, type WebReportSummary } from './reports'
+import { wikiPageDto, wikiSummaryDto } from './wiki-route'
 
 export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }> {
   const rt = await getRuntime()
@@ -157,6 +160,26 @@ export async function getReport(project: string, id: string): Promise<FullReport
     content: fresh.content,
     format: fresh.format,
   }
+}
+
+// ---------- Wiki ----------
+
+export async function getWikiList(project: string): Promise<{ pages: WikiListItem[] }> {
+  const rt = await getRuntime()
+  const pages = rt.wikiCache
+    .getWikiList(project)
+    .map((summary) => wikiSummaryDto(project, summary))
+  return { pages }
+}
+
+export async function getWikiPage(project: string, id: string): Promise<WikiPageDetail | null> {
+  const rt = await getRuntime()
+  const page = await rt.wikiCache.getWikiPage(project, id)
+  if (!page) return null
+  const assets = new Set(rt.wikiCache.getPageRecord(project, id)?.assets ?? [])
+  return wikiPageDto(project, page.summary, page.content, page.hash, {
+    fileExists: (relativePath) => assets.has(relativePath.replace(/^\.\//, '')),
+  })
 }
 
 export async function getCodeReviewsList(

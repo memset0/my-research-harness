@@ -27,6 +27,7 @@ const capabilities = {
   events: true,
   logStreaming: true,
   reportAssets: true,
+  wikiAssets: true,
   git: false,
   shares: false,
   tmux: false,

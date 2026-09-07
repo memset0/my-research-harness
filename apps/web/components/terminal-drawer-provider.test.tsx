@@ -41,9 +41,37 @@ vi.mock('./report-pane', () => ({
   ),
 }))
 
+vi.mock('./wiki-pane', () => ({
+  WikiPane: ({
+    project,
+    wikiId,
+    onClose,
+    onSwitch,
+  }: {
+    project: string | { host: string; project: string }
+    wikiId: string
+    onClose: () => void
+    onSwitch: (wikiId: string) => void
+  }) => (
+    <div
+      data-testid="wiki-pane"
+      data-project={typeof project === 'string' ? project : `${project.host}/${project.project}`}
+    >
+      {wikiId}
+      <button type="button" onClick={() => onSwitch('W0008')}>
+        Switch mocked wiki
+      </button>
+      <button type="button" onClick={onClose}>
+        Close mocked wiki
+      </button>
+    </div>
+  ),
+}))
+
 import {
   TerminalDrawerProvider,
   useTerminalDrawer,
+  useWikiPane,
   WorkspaceSplitOutlet,
 } from './terminal-drawer-provider'
 
@@ -67,6 +95,7 @@ function setViewport(width: number) {
 
 function Controls() {
   const terminal = useTerminalDrawer()
+  const wiki = useWikiPane()
   const target = {
     project: 'project-a',
     scope: 'exp' as const,
@@ -100,6 +129,9 @@ function Controls() {
         }
       >
         Open Herdr split test
+      </button>
+      <button type="button" onClick={() => wiki.openWiki('W0007')}>
+        Open wiki test
       </button>
     </main>
   )
@@ -299,6 +331,78 @@ describe('TerminalDrawerProvider presentation surfaces', () => {
     expect(screen.getByText('dashboard content')).toBe(dashboard)
     expect(`${window.location.pathname}${window.location.search}`).toBe(
       '/p/project-a/e/E0042-routing?run=sample&report=R0008&reportSurface=split',
+    )
+  })
+
+  it('opens a wiki page in the shared slot and preserves the mounted left document', async () => {
+    navigation.search = 'run=sample&report=R0007&reportSurface=split'
+    window.history.replaceState(
+      {},
+      '',
+      '/p/project-a/e/E0042-routing?run=sample&report=R0007&reportSurface=split',
+    )
+    renderProvider()
+    const dashboard = screen.getByText('dashboard content')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open wiki test' }))
+
+    expect(await screen.findByLabelText('Wiki split panel')).toBeInTheDocument()
+    expect(screen.getByTestId('wiki-pane')).toHaveTextContent('W0007')
+    expect(screen.getByText('dashboard content')).toBe(dashboard)
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      '/p/project-a/e/E0042-routing?run=sample&wiki=W0007&wikiSurface=split',
+    )
+    expect(screen.queryByLabelText('Report drawer')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Report split panel')).not.toBeInTheDocument()
+  })
+
+  it('gives wiki precedence and normalizes a stale URL containing both identities', async () => {
+    navigation.search =
+      'run=sample&report=R0007&reportSurface=split&wiki=W0004&wikiSurface=drawer'
+    window.history.replaceState(
+      {},
+      '',
+      `/p/project-a/e/E0042-routing?${navigation.search}`,
+    )
+
+    renderProvider()
+
+    expect(screen.getByLabelText('Wiki drawer')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Report split panel')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(`${window.location.pathname}${window.location.search}`).toBe(
+        '/p/project-a/e/E0042-routing?run=sample&wiki=W0004&wikiSurface=drawer',
+      )
+    })
+  })
+
+  it('restores a Host-qualified wiki split without dropping Host identity', () => {
+    navigation.pathname = '/h/host-a/p/project-a/e/E0042-routing'
+    navigation.search = 'wiki=W0007&wikiSurface=split'
+    window.history.replaceState({}, '', `${navigation.pathname}?${navigation.search}`)
+
+    renderProvider()
+
+    expect(screen.getByLabelText('Wiki split panel')).toBeInTheDocument()
+    expect(screen.getByTestId('wiki-pane')).toHaveAttribute('data-project', 'host-a/project-a')
+  })
+
+  it('switches only the side wiki identity and retains unrelated left-page state', async () => {
+    navigation.search = 'run=sample&wiki=W0007&wikiSurface=split'
+    window.history.replaceState(
+      {},
+      '',
+      '/p/project-a/e/E0042-routing?run=sample&wiki=W0007&wikiSurface=split',
+    )
+    renderProvider()
+    const dashboard = screen.getByText('dashboard content')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Switch mocked wiki' }))
+
+    expect(screen.getByTestId('wiki-pane')).toHaveTextContent('W0008')
+    expect(screen.getByText('dashboard content')).toBe(dashboard)
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      '/p/project-a/e/E0042-routing?run=sample&wiki=W0008&wikiSurface=split',
     )
   })
 })

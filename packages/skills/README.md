@@ -24,6 +24,8 @@ CLI issue handoff used by every bundled skill.
 | Append one cross-project event | `memon-append-journal` | One Journal event |
 | Periodic integrity sweep and digest | `memon-digest-journal` | Digest + `last_digest_at`; semantic Experiment fixes through the writer |
 | Write a theme Report | `memon-write-report` | Markdown by default; explicit HTML/interactive/dashboard requests use a static bundle, optionally with a delegated visualization/frontend skill |
+| Record durable project knowledge in the wiki | `memon-wiki` | Wiki pages under `docs/wiki/` via `memon wiki` plus direct Markdown edits |
+| Author a registered fenced-block component | `memon-author-components` | Nothing of its own; it shapes blocks inside the calling skill's document |
 | Write a human code-review guide | `memon-write-code-review` | Project/Experiment code-review doc; optional Implementation link through writer |
 | Brainstorm next research work | `memon-propose` | Read-only |
 | Upgrade the FS convention | `memon-migrate-fs` | Staged migration + final FS marker; explicit user invocation only |
@@ -89,6 +91,30 @@ normal Markdown link remains a link. New views must be responsive and touch
 usable at 390 px and desktop widths. Existing bundle layouts remain compatible;
 there is no required manifest or iframe auto-height protocol.
 
+## Wiki forms
+
+```text
+docs/wiki/finding/W0001-topic.md
+
+docs/wiki/showcase/W0006-interactive-topic/
+├── README.md
+├── data/*.json
+└── views/<slug>/
+    ├── index.html
+    └── assets/*
+```
+
+The wiki is the durable knowledge layer beside the Reports. One directory per
+kind — `meeting`, `finding`, `bottleneck`, `showcase`, `question`, `decision`,
+`note`, `harness-feedback` — each holding `W<NNNN>-<slug>.md` or the same
+bundle container the Reports use, served through the wiki asset route. The
+slug is the primary human address; `memon wiki` allocates every id, path, and
+slug. Pages cite Experiments, Variants, and runs in `sources`, so the system
+can derive staleness and backlinks; `memon wiki commit` isolates each wiki
+change in its own commit, and a human — never an agent — records verification
+against those commits. Reports stay where they are and move into the wiki only
+when the user names one.
+
 ## Invocation policy
 
 `memon-migrate-fs` carries `disable-model-invocation: true`; the user must
@@ -143,6 +169,8 @@ memon --project-root . --format json experiment results annotation get <id> [--c
 | `memon-append-journal` | one Journal event | Experiment/Run docs |
 | `memon-digest-journal` | digest + cursor | Reports; Experiment fixes are delegated |
 | `memon-write-report` | one Report file or bundle | digests, cursor, Experiment docs |
+| `memon-wiki` | wiki pages under `docs/wiki/` (via `memon wiki` and direct Markdown edits) | Experiment bundles, Run READMEs, digests, Reports, review marks (`.memon/wiki-review.csv`), the journal cursor |
+| `memon-author-components` | no files of its own | every document; it only shapes blocks the calling skill writes |
 | `memon-write-code-review` | one code-review doc | Experiment bundle directly |
 | `memon-propose` | nothing | everything |
 | `memon-migrate-fs` | guide-defined staged/final paths + marker | unrelated work |

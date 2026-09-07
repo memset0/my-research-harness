@@ -47,8 +47,10 @@ import {
 } from '@memon/core'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
+import { WikiCache } from './runtime/wiki-cache'
 import { ensureAuthInitialised } from './auth/first-run'
 import { resolveRuntimeConfigPath } from './runtime-config-path'
+import { listComponents } from './wiki-components/registry'
 import { probeSqueue } from './slurm/probe'
 
 export interface ExperimentChangeEvent {
@@ -83,6 +85,7 @@ export class Runtime {
     public readonly reportsCache: DirCache<ReportSummary>,
     public readonly digestsCache: DirCache<DigestSummary>,
     public readonly codeReviewsCache: DirCache<CodeReviewSummary>,
+    public readonly wikiCache: WikiCache,
     public readonly auth: AuthConfig,
     /**
      * v3 experiment-doc index, keyed by `E<NNNN>-<slug>`. Shared by reference
@@ -238,6 +241,14 @@ async function init(): Promise<Runtime> {
     name: 'hypotheses',
     paths: hypothesesPaths,
     parse: parseHypotheses,
+    onUpdate: (path) => {
+      const project = config.projects.find(
+        (candidate) => path === join(candidate.root, 'docs', 'hypotheses.md'),
+      )
+      if (!project) return
+      wikiCache.invalidate(project.name)
+      events.emit('wiki-change', { project: project.name })
+    },
   })
   const journalCache = new FileCache<ParsedJournal>({
     name: 'journal',
@@ -266,7 +277,10 @@ async function init(): Promise<Runtime> {
     },
     onUpdate: (dir) => {
       const project = projectForDir(config, dir)
-      if (project) events.emit('reports-change', { project })
+      if (!project) return
+      events.emit('reports-change', { project })
+      // Legacy `R<NNNN>` resolution depends on which reports still exist.
+      wikiCache.invalidate(project)
     },
   })
   const digestsCache = new DirCache<DigestSummary>({
@@ -343,6 +357,33 @@ async function init(): Promise<Runtime> {
     events.emit('anomaly', { project: projectName, count: result.anomalies.length })
   }
 
+  // Wiki pages (docs/wiki/<kind>/…). The projection needs the Experiment
+  // index, the run index, the hypotheses file, and the report id set, so the
+  // cache pulls them through this closure on every rebuild — never from disk.
+  const wikiComponentNames = Array.from(
+    new Set(listComponents().map((descriptor) => descriptor.name)),
+  )
+  const wikiCache = new WikiCache({
+    projects: config.projects.map((p) => ({ name: p.name, root: p.root })),
+    context: (project) => {
+      const hypotheses = hypothesesCache.get(join(project.root, 'docs', 'hypotheses.md'))
+      return {
+        experiments: Array.from(sharedExperiments.values()).filter(
+          (e) => e.project === project.name,
+        ),
+        runs: index.list({ project: project.name }),
+        hypothesesMtime: hypotheses?.mtime ? hypotheses.mtime : null,
+        hypothesisIds: (hypotheses?.value?.entries ?? []).map((entry) => entry.id),
+        reportIds: reportsCache
+          .getList(join(project.root, 'docs', 'reports'))
+          .map((report) => report.id),
+        componentNames: wikiComponentNames,
+      }
+    },
+    onChange: (project) => events.emit('wiki-change', { project }),
+    onReviewChange: (project) => events.emit('wiki-review-change', { project }),
+  })
+
   // Single Poller instance dispatched by path-membership to the right handler.
   const poller = new Poller(
     {
@@ -358,6 +399,8 @@ async function init(): Promise<Runtime> {
       if (reportsCache.handlePollChange(path, poller)) return
       if (digestsCache.handlePollChange(path, poller)) return
       if (codeReviewsCache.handlePollChange(path, poller)) return
+      // Wiki tree, `.memon/wiki-review.csv`, and the git HEAD/ref pair.
+      if (wikiCache.handlePollChange(path, poller)) return
 
       // v3: docs/experiments/ directory mtime advance → rediscover the
       // exp-doc set for the owning project. Individual file changes are
@@ -405,6 +448,8 @@ async function init(): Promise<Runtime> {
           }
           events.emit('code-reviews-change', { project: expDirMatch.name })
           recomputeAnomalies(expDirMatch.name)
+          // Cited-Experiment times drive `stale` / `citedBy`.
+          wikiCache.invalidate(expDirMatch.name)
           events.emit('experiment-change', { type: 'rediscover', project: expDirMatch.name })
         } catch {
           // Best-effort — keep existing state on transient errors.
@@ -432,6 +477,7 @@ async function init(): Promise<Runtime> {
               sharedExperiments.delete(expId)
             }
             recomputeAnomalies(expFileMatch.name)
+            wikiCache.invalidate(expFileMatch.name)
             events.emit('experiment-change', {
               type: updated ? 'set' : 'delete',
               id: expId,
@@ -452,6 +498,8 @@ async function init(): Promise<Runtime> {
       try {
         const exp = await readRunDir(path, projectMatch.name)
         index.set(exp)
+        // A cited run's own update time feeds page staleness.
+        wikiCache.invalidate(projectMatch.name)
         events.emit('run-change', {
           type: 'set',
           id: exp.id,
@@ -474,6 +522,7 @@ async function init(): Promise<Runtime> {
     reportsCache.warmup(),
     digestsCache.warmup(),
     codeReviewsCache.warmup(),
+    wikiCache.warmup(),
     (async () => {
       for (const project of config.projects) {
         const dirs = await discoverRuns(project)
@@ -546,6 +595,15 @@ async function init(): Promise<Runtime> {
   for (const filePath of codeReviewsCache.paths()) {
     poller.watch(filePath, await fileMtimeOrZero(filePath))
   }
+  // Wiki: `docs/wiki/` itself, every kind directory, every page file, plus
+  // the git HEAD / branch ref / review-store trio that invalidates review.
+  for (const dir of wikiCache.dirs()) {
+    poller.watch(dir, await dirMtimeOrZero(dir))
+  }
+  for (const filePath of wikiCache.paths()) {
+    poller.watch(filePath, await fileMtimeOrZero(filePath))
+  }
+  await wikiCache.watchGitPaths(poller)
 
   const expDocCount = Array.from(experimentsByProject.values()).reduce(
     (n, list) => n + list.length,
@@ -558,7 +616,8 @@ async function init(): Promise<Runtime> {
       `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
       `${journalCache.populated()}/${journalPaths.length} journal files, ` +
       `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests, ` +
-      `${codeReviewsCache.paths().length} code-reviews`,
+      `${codeReviewsCache.paths().length} code-reviews, ` +
+      `${wikiCache.paths().length} wiki pages`,
   )
 
   // Seed shared maps (used by both the poller closure and the Runtime
@@ -566,6 +625,10 @@ async function init(): Promise<Runtime> {
   for (const [, docs] of experimentsByProject) {
     for (const doc of docs) sharedExperiments.set(doc.id, doc)
   }
+  // Wiki warmup runs alongside Experiment/Run discovery. Rebuild once more
+  // after those in-memory indexes are fully seeded so the first request sees
+  // final staleness/backlink state without doing projection work itself.
+  wikiCache.invalidateAll()
 
   const runtime = new Runtime(
     config,
@@ -578,6 +641,7 @@ async function init(): Promise<Runtime> {
     reportsCache,
     digestsCache,
     codeReviewsCache,
+    wikiCache,
     auth,
     sharedExperiments,
     sharedAnomalies,

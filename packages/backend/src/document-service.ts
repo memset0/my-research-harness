@@ -12,15 +12,44 @@ import {
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
   BackendReportsResponseSchema,
+  BackendWikiBacklinksSchema,
+  BackendWikiConflictResponseSchema,
+  type BackendWikiConflictResponse,
+  BackendWikiDocumentSchema,
+  BackendWikiPagesResponseSchema,
+  BackendWikiReviewResponseSchema,
+  type BackendWikiWriteResponse,
+  BackendWikiWriteResponseSchema,
+  buildWikiProject,
   type CodeReviewCompletion,
   type CodeReviewFrontMatter,
   deriveCompletion,
+  deriveWikiReview,
+  discoverExperiments,
+  discoverWikiPages,
+  type Experiment,
   extractTitle,
-  type ProjectConfig,
+  formatIsoLocal,
+  listWikiCommits,
   parseCodeReview,
+  parseWikiFrontmatter,
+  type ProjectConfig,
+  readWikiReviewMarks,
+  removeWikiReviewMark,
   ResourceIdSchema,
+  type Run,
+  scanProjectRoot,
+  serializeWikiPage,
   toggleCommitReviewed,
   toggleTodoDone,
+  updateWikiFrontmatter,
+  verifiedThroughMark,
+  type WikiCommit,
+  WIKI_ID_REGEX,
+  type WikiProjectProjection,
+  type WikiReviewMark,
+  type WikiSummary,
+  writeWikiReviewMark,
 } from '@memon/core'
 
 export class BackendDocumentServiceError extends Error {
@@ -40,6 +69,8 @@ export class BackendDocumentServiceError extends Error {
 export type BackendDocumentWriteResult =
   | ReturnType<typeof BackendDocumentWriteResponseSchema.parse>
   | ReturnType<typeof BackendDocumentConflictResponseSchema.parse>
+
+export type BackendWikiWriteResult = BackendWikiWriteResponse | BackendWikiConflictResponse
 
 export interface BackendDocumentService {
   listReports(project: string): Promise<unknown>
@@ -65,6 +96,13 @@ export interface BackendDocumentService {
     resource: string,
     input: DocumentWriteInput,
   ): Promise<BackendDocumentWriteResult>
+  listWiki(project: string): Promise<unknown>
+  getWiki(project: string, id: string): Promise<unknown>
+  putWiki(project: string, id: string, input: DocumentWriteInput): Promise<BackendWikiWriteResult>
+  wikiBacklinks(project: string, artifact: string): Promise<unknown>
+  wikiReviewLog(project: string): Promise<unknown>
+  markWikiReview(project: string, sha: string, note?: string): Promise<unknown>
+  unmarkWikiReview(project: string, sha: string): Promise<unknown>
 }
 
 export interface DocumentWriteInput {
@@ -96,14 +134,64 @@ interface DocumentEntry {
   }
 }
 
+/**
+ * Project artifacts a wiki page's `sources` are resolved against. Supplied by
+ * the caller so a Backend with a warm Project snapshot does not rescan every
+ * Run directory on each wiki read; the default provider scans on demand.
+ */
+export interface BackendWikiArtifacts {
+  experiments: readonly Experiment[]
+  runs: readonly Run[]
+  /** `docs/hypotheses.md` mtime in epoch ms; null when the file is absent. */
+  hypothesesMtime: number | null
+  hypothesisIds: readonly string[]
+}
+
+export type BackendWikiArtifactProvider = (
+  project: ProjectConfig,
+) => Promise<BackendWikiArtifacts>
+
+export interface FilesystemDocumentServiceOptions {
+  /** Override for the on-demand Project scan behind wiki source resolution. */
+  wikiArtifacts?: BackendWikiArtifactProvider
+}
+
+/** Scan a Project for the artifacts wiki source resolution needs. */
+export async function scanBackendWikiArtifacts(
+  project: ProjectConfig,
+): Promise<BackendWikiArtifacts> {
+  const [snapshot, experiments, hypothesesStat] = await Promise.all([
+    scanProjectRoot(project.root, {
+      includeArchived: true,
+      projectName: project.name,
+      include: [...project.include],
+      exclude: [...project.exclude],
+    }),
+    discoverExperiments(project.root, project.name),
+    fs.stat(join(project.root, 'docs', 'hypotheses.md')).catch(() => null),
+  ])
+  return {
+    experiments: experiments.experiments,
+    runs: snapshot.experiments,
+    hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
+    hypothesisIds: snapshot.hypotheses.entries.map((entry) => entry.id),
+  }
+}
+
 export class FilesystemDocumentService implements BackendDocumentService {
   private readonly projects = new Map<string, ProjectConfig>()
 
-  constructor(projects: readonly ProjectConfig[]) {
+  private readonly wikiArtifacts: BackendWikiArtifactProvider
+
+  constructor(
+    projects: readonly ProjectConfig[],
+    options: FilesystemDocumentServiceOptions = {},
+  ) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
     }
+    this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
   }
 
   async listReports(projectName: string) {
@@ -217,6 +305,140 @@ export class FilesystemDocumentService implements BackendDocumentService {
     return this.write(project, await this.readmeEntry(project, resource), input)
   }
 
+  /**
+   * Project-wide wiki projection: discovery, source resolution, lint, and
+   * derived review. Component blocks stay opaque here — the central dashboard
+   * owns the registry, so no `WIKI_COMPONENT_*` diagnostic beyond the
+   * structural unpinned check is produced.
+   */
+  async discoverWiki(projectName: string): Promise<WikiProjectProjection> {
+    return this.wikiProjection(this.requireProject(projectName))
+  }
+
+  async listWiki(projectName: string) {
+    const project = this.requireProject(projectName)
+    const projection = await this.wikiProjection(project)
+    return BackendWikiPagesResponseSchema.parse({
+      pages: projection.summaries.map((summary) => wikiSummary(project, summary)),
+    })
+  }
+
+  async getWiki(projectName: string, id: string) {
+    const project = this.requireProject(projectName)
+    const projection = await this.wikiProjection(project)
+    const summary = requireWikiPage(projection, id)
+    return BackendWikiDocumentSchema.parse(await this.readWikiPage(project, summary))
+  }
+
+  async putWiki(
+    projectName: string,
+    id: string,
+    input: DocumentWriteInput,
+  ): Promise<BackendWikiWriteResult> {
+    const project = this.requireProject(projectName)
+    const projection = await this.wikiProjection(project)
+    const summary = requireWikiPage(projection, id)
+    const absolutePath = wikiAbsolutePath(project, summary)
+    await assertWithin(project.root, absolutePath)
+    const [current, stat] = await Promise.all([
+      fs.readFile(absolutePath, 'utf8'),
+      fs.stat(absolutePath),
+    ])
+    const currentHash = sha1(current)
+    if (stat.mtimeMs !== input.expectedMtime || currentHash !== input.expectedHash) {
+      return BackendWikiConflictResponseSchema.parse({
+        error: { code: 'CONFLICT', message: 'on-disk wiki page changed' },
+        currentMtime: stat.mtimeMs,
+        currentHash,
+        currentContent: current,
+      })
+    }
+    const content = nextWikiContent(input.content, current, summary)
+    await writeFileAtomically(absolutePath, content, stat.mode)
+    // Re-project so the response carries the staleness, diagnostics, and
+    // review state the write just produced.
+    const next = requireWikiPage(await this.wikiProjection(project), id)
+    const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
+    return BackendWikiWriteResponseSchema.parse({
+      ok: true,
+      mtime: page.mtime,
+      hash: page.hash,
+      page,
+    })
+  }
+
+  async wikiBacklinks(projectName: string, artifact: string) {
+    const project = this.requireProject(projectName)
+    const projection = await this.wikiProjection(project)
+    return BackendWikiBacklinksSchema.parse(projection.backlinks.get(artifact) ?? [])
+  }
+
+  async wikiReviewLog(projectName: string) {
+    return this.wikiReviewResponse(this.requireProject(projectName))
+  }
+
+  async markWikiReview(projectName: string, sha: string, note?: string) {
+    const project = this.requireProject(projectName)
+    await writeWikiReviewMark(project.root, sha, note)
+    return this.wikiReviewResponse(project)
+  }
+
+  async unmarkWikiReview(projectName: string, sha: string) {
+    const project = this.requireProject(projectName)
+    await removeWikiReviewMark(project.root, sha)
+    return this.wikiReviewResponse(project)
+  }
+
+  private async wikiReviewResponse(project: ProjectConfig) {
+    const commits = await listWikiCommits(project.root)
+    if (commits === null) {
+      throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Project is not a git worktree')
+    }
+    const marks = await readWikiReviewMarks(project.root)
+    return BackendWikiReviewResponseSchema.parse(wikiReviewProjection(commits, marks))
+  }
+
+  private async wikiProjection(project: ProjectConfig): Promise<WikiProjectProjection> {
+    const pages = await discoverWikiPages(project.root)
+    // An empty wiki must not cost a Project scan or a git invocation.
+    if (pages.length === 0) {
+      return buildWikiProject([], { experiments: [], runs: [], hypothesesMtime: null })
+    }
+    const [artifacts, reports, marks] = await Promise.all([
+      this.wikiArtifacts(project),
+      this.discoverReports(project),
+      readWikiReviewMarks(project.root),
+    ])
+    const reviews = await deriveWikiReview(
+      project.root,
+      pages.map((page) => page.path),
+      marks,
+    )
+    return buildWikiProject(pages, {
+      experiments: artifacts.experiments,
+      runs: artifacts.runs,
+      hypothesesMtime: artifacts.hypothesesMtime,
+      hypothesisIds: artifacts.hypothesisIds,
+      reportIds: reports.map((entry) => entry.id),
+      reviews,
+    })
+  }
+
+  private async readWikiPage(project: ProjectConfig, summary: WikiSummary) {
+    const absolutePath = wikiAbsolutePath(project, summary)
+    await assertWithin(project.root, absolutePath)
+    const [content, stat] = await Promise.all([
+      fs.readFile(absolutePath, 'utf8'),
+      fs.stat(absolutePath),
+    ])
+    return {
+      ...wikiSummary(project, summary),
+      mtime: stat.mtimeMs,
+      hash: sha1(content),
+      content,
+    }
+  }
+
   private requireProject(name: string): ProjectConfig {
     const project = this.projects.get(name)
     if (!project) throw new BackendDocumentServiceError('PROJECT_NOT_FOUND', 'Project not found')
@@ -266,18 +488,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
         currentHash: current.hash,
       })
     }
-    const temp = join(
-      dirname(entry.absolutePath),
-      `.${basename(entry.absolutePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
-    )
     const original = await fs.stat(entry.absolutePath)
-    try {
-      await fs.writeFile(temp, input.content, { encoding: 'utf8', mode: original.mode })
-      await fs.rename(temp, entry.absolutePath)
-    } catch (error) {
-      await fs.unlink(temp).catch(() => undefined)
-      throw error
-    }
+    await writeFileAtomically(entry.absolutePath, input.content, original.mode)
     const stat = await fs.stat(entry.absolutePath)
     return BackendDocumentWriteResponseSchema.parse({
       ok: true,
@@ -397,6 +609,102 @@ export class FilesystemDocumentService implements BackendDocumentService {
       } catch {}
     }
     return out.sort((a, b) => b.id.localeCompare(a.id))
+  }
+}
+
+/**
+ * Backend list/detail envelope: the core projection minus its project-local
+ * `path`, which crosses the boundary as the opaque `resource`.
+ */
+function wikiSummary(project: ProjectConfig, summary: WikiSummary) {
+  const { path, ...rest } = summary
+  return { ...rest, project: project.name, resource: path }
+}
+
+function requireWikiPage(projection: WikiProjectProjection, id: string): WikiSummary {
+  if (!WIKI_ID_REGEX.test(id)) {
+    throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Wiki id must match W<NNNN>')
+  }
+  const summary = projection.byId.get(id)
+  if (!summary) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Wiki page not found')
+  return summary
+}
+
+function wikiAbsolutePath(project: ProjectConfig, summary: WikiSummary): string {
+  return join(project.root, ...summary.path.split('/'))
+}
+
+/**
+ * Validate an incoming page against the one on disk and stamp `updated_at`.
+ * Identity (`id`, `kind`) moves only through `memon wiki move`, and the
+ * deprecated per-page review columns are never client-writable.
+ */
+function nextWikiContent(content: string, current: string, summary: WikiSummary): string {
+  const next = parseWikiFrontmatter(content)
+  if (!next.frontmatter) {
+    throw new BackendDocumentServiceError(
+      'INVALID_RESOURCE',
+      'Wiki page frontmatter is missing or unreadable',
+    )
+  }
+  const previous = parseWikiFrontmatter(current).frontmatter
+  const previousId = typeof previous?.id === 'string' ? previous.id : summary.id
+  const previousKind = typeof previous?.kind === 'string' ? previous.kind : summary.kind
+  if (next.frontmatter.id !== previousId || next.frontmatter.kind !== previousKind) {
+    throw new BackendDocumentServiceError(
+      'INVALID_RESOURCE',
+      'Wiki page identity changes only through a move',
+    )
+  }
+  for (const key of ['reviewed_at', 'reviewed_hash'] as const) {
+    if (next.frontmatter[key] !== previous?.[key]) {
+      throw new BackendDocumentServiceError(
+        'INVALID_RESOURCE',
+        `Wiki page write must not change ${key}`,
+      )
+    }
+  }
+  return serializeWikiPage(
+    updateWikiFrontmatter(next.frontmatter, { updated_at: formatIsoLocal(new Date()) }),
+    next.body,
+  )
+}
+
+function wikiReviewProjection(commits: WikiCommit[], marks: WikiReviewMark[]) {
+  const marksBySha = new Map(marks.map((mark) => [mark.sha, mark]))
+  return {
+    verifiedThrough: verifiedThroughMark(commits, marks)?.sha ?? null,
+    commits: commits.map((commit) => {
+      const mark = marksBySha.get(commit.sha)
+      return {
+        sha: commit.sha,
+        authoredAt: commit.authoredAt,
+        subject: commit.subject,
+        pages: commit.pages,
+        verified: mark !== undefined,
+        ...(mark ? { verifiedAt: mark.verifiedAt } : {}),
+        ...(mark?.note ? { note: mark.note } : {}),
+      }
+    }),
+  }
+}
+
+/** Replace a file through a `.tmp` sibling + rename, preserving its mode. */
+async function writeFileAtomically(
+  absolutePath: string,
+  content: string,
+  mode: number,
+): Promise<void> {
+  const temp = join(
+    dirname(absolutePath),
+    `.${basename(absolutePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
+  )
+  try {
+    await fs.writeFile(temp, content, { encoding: 'utf8', mode })
+    await fs.rename(temp, absolutePath)
+  } catch (error) {
+    await fs.unlink(temp).catch(() => undefined)
+    throw error
   }
 }
 

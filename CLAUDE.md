@@ -43,6 +43,39 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 
 ## Repo-specific conventions
 
+### Local deployment info lives in LOCAL.md (gitignored)
+
+This repo is public-facing code for a generic tool. **Nothing about the
+operator's actual research projects or the concrete deployment may enter
+git**: no real project names, dataset/experiment keywords, hostnames,
+domains, IPs, mesh addresses, SSH targets, cluster/node names, absolute
+paths on real machines, usernames, or secret values. That includes
+commits, commit messages, PR text, OpenSpec `proposal.md`/`design.md`/
+`specs/`/`tasks.md`, test fixtures, mock data, and code comments. Tracked
+examples use the neutral placeholders already in the repo (`project-a`,
+`project-b`, `./mock/`, `localhost:3737`).
+
+All of that machine/operator-specific information goes in **`LOCAL.md` at
+the project root**, which is listed in `.gitignore`. Rules:
+
+1. **Read `LOCAL.md` at the start of any session that touches deployment,
+   release, Backend hosts, Caddy, systemd, or the central instance.** It
+   is the only place the real hostnames, ports, paths, and config-file
+   locations are recorded.
+2. **Write new deployment facts to `LOCAL.md`, never to CLAUDE.md, README,
+   or OpenSpec.** If you learn something local while working (a new host,
+   a moved config path, a changed port), update `LOCAL.md` in the same
+   turn and bump its `Last verified:` line.
+3. **`LOCAL.md` holds pointers to secrets, not secrets.** Passwords,
+   session secrets, and Backend tokens stay in `config.yml` /
+   `~/.config/memon/*.yml`; `LOCAL.md` only records which file holds what.
+4. Before committing, if the diff mentions anything that belongs in
+   `LOCAL.md`, move it there and scrub the tracked file. `git diff
+   --cached | grep -iE '<a real host/project name>'` is a cheap last check.
+5. `LOCAL.md` missing on a fresh clone is expected; recreate it from the
+   structure above (Operator / central node / Backend hosts / dev server /
+   where secrets live) rather than inlining the facts elsewhere.
+
 ### Stack
 
 - pnpm monorepo: `packages/core` (TypeScript types, parsers, polling, indexing, LineIndex), `packages/cli` (memon CLI), `apps/web` (Next.js 15 App Router + Tailwind v4 + shadcn/ui)
@@ -88,6 +121,21 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
   - Hypotheses live in `docs/hypotheses.md`; per-H entries can
     reference experiments (`Experiments:` field listing E IDs) and/or
     specific runs (`Runs:` field listing run dir base names).
+  - **Wiki** = `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>.md` or
+    `…/W<NNNN>-<slug>/README.md` (bundle). Kinds: `meeting`, `finding`,
+    `bottleneck`, `showcase`, `question`, `decision`, `note`,
+    `harness-feedback` (unknown kind dirs tolerated, `WIKI_UNKNOWN_KIND`).
+    Frontmatter `id`, `kind`, `title`, `description`, `status` (per-kind
+    vocabulary), `date` (meeting), `sources[]` (finding required),
+    `tags[]`, `legacy_id`, `entry`, `deprecated{at,reason,superseded_by}`,
+    `created_at`, `updated_at`. Derived, never written: `stale` /
+    `staleSources` (from `sources`) and `review` (from git: marks in
+    `.memon/wiki-review.csv`, commit-ordered; `VERIFIED` /
+    `CHANGED_SINCE_VERIFY` / `UNVERIFIED` with `unverifiedRanges`).
+    Body components are fenced blocks `memon-data@1` / `html-embed@1`;
+    the registry lives ONLY in `apps/web/lib/wiki-components/` (central),
+    Backends/CLI treat them as opaque code. Reports remain; the old
+    commit-marks system is deprecated in favour of wiki review.
   - TS internal naming: `Run` = run dir record; `Experiment` = exp
     doc record. `discoverRuns` / `RunIndex` / `archiveRun` are
     run-side; `discoverExperiments` / `parseExperimentReadme` /
@@ -146,6 +194,14 @@ plus inline at the top of each expanded run panel):
   legacy aliases. Each emits a one-line `[deprecation]` banner to
   stderr. Use `memon run {status set,readme write,archive,unarchive}`
   in new code. Set `MEMON_QUIET_DEPRECATIONS=1` to silence the banner.
+- `memon wiki ls|show|create|move|set|delete|lint|stale|backlinks|migrate-report`
+  — page lifecycle (see `openspec/specs/wiki-cli`). Exit 2 bad request,
+  4 not found, 9 conflict, 1 `lint --strict` failure
+- `memon wiki review log|ls|diff <page>|verify <sha|next>|unverify <sha>` —
+  human verification of wiki commits; `verify`/`unverify` are human-only
+- `memon wiki commit [-m S]` — stages only `docs/wiki/`, subject `wiki: S`
+- `memon wiki components ls|show|migrate --central <url>` — registry lives
+  on central; `MEMON_CENTRAL_URL` / `MEMON_CENTRAL_TOKEN` also accepted
 
 **Web endpoints**:
 - `GET /api/experiments[?project=…]` — exp doc list with effective times
@@ -167,6 +223,15 @@ plus inline at the top of each expanded run panel):
   experiment folder. Returns a copy-paste command, does NOT spawn.
 - `GET /api/anomalies?project=…` — membership anomalies (orphan runs,
   phantom refs, mismatch refs, slug-uniqueness violations).
+- `GET /api/wiki?project=…` — `{ pages: WikiSummary[] }` (kind order,
+  deprecated last, `updatedAt` desc); `GET|PUT /api/wiki/:id` — page with
+  `components[]` + diagnostics (PUT: `{content, expectedMtime,
+  expectedHash}`, 409 on mismatch, 400 on id/kind change)
+- `GET /api/wiki/review`, `POST|DELETE /api/wiki/review/:sha` — wiki
+  review marks (owner-only, sequential, 409 `REVIEW_ORDER`)
+- `GET /api/wiki/backlinks/:artifact`, `GET /api/wiki/components[/:name]`,
+  `POST /api/wiki/components/lint|migrate`
+- `GET|HEAD /api/wiki-assets/:project/:id/*` — bundle assets
 
 **SSE wire topics**:
 - `run-change` — fires on RUN edits (frontmatter / body / status).
@@ -175,11 +240,15 @@ plus inline at the top of each expanded run panel):
 - `experiment-change` — fires on EXP-DOC edits/creates/deletes/binds.
   This topic name MEANS exp-doc events only.
 - `anomaly` — `{project, count}` after `recomputeAnomalies(project)`.
+- `wiki-change` — `{project, id?}` on wiki page add/edit/delete.
+- `wiki-review-change` — `{project}` after a review mark changes.
 
 **TanStack query keys** (matched to SSE topics for invalidation):
 - Run-side: `['runs', project]`, `['run', id]`
 - Exp-doc-side: `['experiments', project]`, `['experiment', id]`
 - Anomalies: `['anomalies', project]`, `['anomalies']`
+- Wiki: `['wiki', project]`, `['wiki-page', id]`, `['wiki-review', project]`
+  (`experiment-change` and `reports-change` also invalidate `['wiki', project]`)
 
 ### Hard rules baked into the spec
 

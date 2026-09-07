@@ -22,6 +22,9 @@ import type {
   ResultsDocument,
   Run,
   WarningRecord,
+  WikiBacklink,
+  WikiPage,
+  WikiSummary,
 } from '@memon/core'
 
 export type ProjectTarget = string | ProjectRef
@@ -273,6 +276,119 @@ export async function putReport(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   })
+}
+
+// ---------- Wiki ----------
+
+/**
+ * Standalone serves the core projection (with its project-relative `path`)
+ * plus the `project` / `resource` pair; a Host-scoped Backend response omits
+ * `path` and carries `resource` only. Read the location as
+ * `page.resource ?? page.path`.
+ */
+export type WikiListItem = Omit<WikiSummary, 'path'> & {
+  project: string
+  path?: string
+  resource?: string
+}
+
+export type WikiPageDetail = Omit<WikiPage, 'path'> & {
+  project: string
+  path?: string
+  resource?: string
+}
+
+export interface WikiPagesResponse {
+  pages: WikiListItem[]
+}
+
+export interface WikiPutResponse {
+  ok: true
+  mtime: number
+  hash: string
+  page: WikiPageDetail
+  /** Content as written — the editor re-baselines its buffer from this. */
+  finalContent: string
+}
+
+export interface WikiReviewCommit {
+  sha: string
+  authoredAt: string
+  subject: string
+  /** Page ids the commit touched. */
+  pages: string[]
+  verified: boolean
+  verifiedAt: string | null
+  note: string | null
+}
+
+export interface WikiReviewResponse {
+  /** Newest sequentially verified wiki commit, or null when none is marked. */
+  verifiedThrough: string | null
+  /** Wiki commits, oldest first. */
+  commits: WikiReviewCommit[]
+}
+
+export interface WikiBacklinksResponse {
+  artifact: string
+  pages: WikiBacklink[]
+}
+
+export async function fetchWiki(project: ProjectTarget): Promise<WikiPagesResponse> {
+  return jsonFetch(projectQueryUrl('/api/wiki', project))
+}
+
+export async function fetchWikiPage(
+  project: ProjectTarget,
+  id: string,
+): Promise<WikiPageDetail> {
+  return jsonFetch(projectQueryUrl(`/api/wiki/${encodeURIComponent(id)}`, project))
+}
+
+export async function putWikiPage(
+  project: ProjectTarget,
+  id: string,
+  payload: { content: string; expectedMtime: number; expectedHash: string },
+): Promise<WikiPutResponse> {
+  return jsonFetch(projectQueryUrl(`/api/wiki/${encodeURIComponent(id)}`, project), {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchWikiReview(project: ProjectTarget): Promise<WikiReviewResponse> {
+  return jsonFetch(projectQueryUrl('/api/wiki/review', project))
+}
+
+export async function markWikiReview(
+  project: ProjectTarget,
+  sha: string,
+  note?: string,
+): Promise<WikiReviewResponse> {
+  return jsonFetch(projectQueryUrl(`/api/wiki/review/${encodeURIComponent(sha)}`, project), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(note === undefined ? {} : { note }),
+  })
+}
+
+export async function unmarkWikiReview(
+  project: ProjectTarget,
+  sha: string,
+): Promise<WikiReviewResponse> {
+  return jsonFetch(projectQueryUrl(`/api/wiki/review/${encodeURIComponent(sha)}`, project), {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchWikiBacklinks(
+  project: ProjectTarget,
+  artifact: string,
+): Promise<WikiBacklinksResponse> {
+  return jsonFetch(
+    projectQueryUrl(`/api/wiki/backlinks/${encodeURIComponent(artifact)}`, project),
+  )
 }
 
 // ---------- Code reviews ----------
@@ -1185,6 +1301,8 @@ export interface ExperimentDocDetail extends ExperimentDocSummary {
   documentDiagnostics: ExperimentDocumentDiagnostic[]
   documentReadOnly: boolean
   resultsUpdatedAt: string | null
+  /** Wiki pages citing this Experiment, newest `updated_at` first. */
+  citedBy: WikiBacklink[]
 }
 
 export interface ExperimentResultsSnapshot {

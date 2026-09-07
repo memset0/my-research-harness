@@ -141,7 +141,9 @@ export function CommitMarkEditor({
       className="space-y-2 rounded border border-border bg-muted/30 p-2 text-xs"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground">mark:</span>
+        <span className="text-muted-foreground" title="Superseded by wiki review; kept for compatibility.">
+          mark (deprecated):
+        </span>
         <div className="inline-flex overflow-hidden rounded-md border">
           {STATUS_OPTIONS.map((opt) => {
             const active = status === opt.value

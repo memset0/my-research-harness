@@ -46,6 +46,7 @@ describe('ExperimentPage v6 document sections', () => {
       path: `/project/docs/experiments/${EXP_ID}/README.md`,
       mtime: 9,
       readmeMtime: 1,
+      citedBy: [],
       frontMatter: {
         id: EXP_ID,
         slug: 'structured',

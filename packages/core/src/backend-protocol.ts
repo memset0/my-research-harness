@@ -630,6 +630,64 @@ export const BackendExperimentDisplaySectionSchema = z
   })
   .strict()
 
+/**
+ * Wiki primitives shared by the Experiment detail (`citedBy`) and the wiki
+ * envelopes further down; declared here so the Experiment schema can reference
+ * them at module evaluation time.
+ */
+const BackendWikiIdSchema = z.string().regex(/^W\d{4}$/)
+const BackendWikiSlugSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9][a-z0-9-]*$/)
+/**
+ * Frontmatter-derived timestamps stay bounded strings rather than strict
+ * datetimes: an unparseable `updated_at` is a lint diagnostic on the page, not
+ * a reason to make the page unreadable across the boundary.
+ */
+const BackendWikiTimestampSchema = z.string().max(128)
+
+export const BACKEND_WIKI_REVIEW_STATES = [
+  'VERIFIED',
+  'CHANGED_SINCE_VERIFY',
+  'UNVERIFIED',
+] as const
+export const BackendWikiReviewStateSchema = z.enum(BACKEND_WIKI_REVIEW_STATES)
+export type BackendWikiReviewState = z.infer<typeof BackendWikiReviewStateSchema>
+
+/** One wiki page citing an artifact, as carried by `citedBy`. */
+export const BackendWikiBacklinkSchema = z
+  .object({
+    id: BackendWikiIdSchema,
+    slug: BackendWikiSlugSchema,
+    // Unknown kind directories stay readable, so this is a bounded string.
+    kind: z.string().min(1).max(128),
+    title: z.string().max(512),
+    status: z.string().max(64).nullable(),
+    stale: z.boolean(),
+    deprecated: z.boolean(),
+    reviewState: BackendWikiReviewStateSchema.nullable(),
+    updatedAt: BackendWikiTimestampSchema,
+  })
+  .strict()
+export type BackendWikiBacklink = z.infer<typeof BackendWikiBacklinkSchema>
+export const BackendWikiBacklinksSchema = z.array(BackendWikiBacklinkSchema).max(10_000)
+export const BackendWikiBacklinksResponseSchema = z
+  .object({
+    artifact: z
+      .string()
+      .min(1)
+      .max(512)
+      .refine(
+        (value) => !value.includes('/') && !value.includes('\\') && !value.includes('\0'),
+        'artifact selector must be one portable segment',
+      ),
+    pages: BackendWikiBacklinksSchema,
+  })
+  .strict()
+export type BackendWikiBacklinksResponse = z.infer<typeof BackendWikiBacklinksResponseSchema>
+
 export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.extend({
   body: z.string().max(512 * 1024),
   warningsRaw: z.string().nullable(),
@@ -639,6 +697,8 @@ export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.exte
   documentSections: z.array(BackendExperimentDisplaySectionSchema).max(1024),
   documentDiagnostics: z.array(BackendExperimentDocumentDiagnosticSchema).max(10_000),
   documentReadOnly: z.boolean(),
+  /** Wiki pages citing this Experiment, newest `updated_at` first. */
+  citedBy: z.array(BackendWikiBacklinkSchema).max(10_000).default([]),
 }).strict()
 export const BackendExperimentResponseSchema = BackendExperimentDetailSchema
 export type BackendExperimentDetail = z.infer<typeof BackendExperimentDetailSchema>
@@ -756,7 +816,7 @@ export const BackendAnomaliesResponseSchema = z
   .object({ anomalies: z.array(BackendAnomalySchema).max(100_000) })
   .strict()
 
-export const BACKEND_DOCUMENT_KINDS = ['report', 'digest', 'code-review', 'readme'] as const
+export const BACKEND_DOCUMENT_KINDS = ['report', 'digest', 'code-review', 'readme', 'wiki'] as const
 const BackendSha1Schema = z.string().regex(/^[a-f0-9]{40}$/)
 export const BackendDocumentSummarySchema = z
   .object({
@@ -796,6 +856,126 @@ export const BackendReportsResponseSchema = z
   .object({ reports: z.array(BackendReportSummarySchema).max(10_000) })
   .strict()
 export const BackendReportResponseSchema = BackendReportDocumentSchema
+
+/**
+ * Wiki page templates, relative to the versioned Backend namespace. Central
+ * addresses a page by its `W<NNNN>` id; bundle assets keep the Report asset
+ * shape so both kinds proxy through the same streaming path.
+ */
+export const BACKEND_WIKI_ROUTE = '/wiki'
+export const BACKEND_WIKI_PAGE_ROUTE = '/wiki/:id'
+export const BACKEND_WIKI_BACKLINKS_ROUTE = '/wiki/backlinks/:artifact'
+export const BACKEND_WIKI_REVIEW_ROUTE = '/wiki/review'
+export const BACKEND_WIKI_REVIEW_MARK_ROUTE = '/wiki/review/:sha'
+export const BACKEND_WIKI_ASSET_ROUTE = '/wiki-assets/:project/:id/*'
+
+// `BackendWikiIdSchema`, `BackendWikiSlugSchema`, `BackendWikiTimestampSchema`,
+// and the review-state enum are declared beside `BackendWikiBacklinkSchema`
+// above, which the Experiment detail needs.
+const BackendWikiDiagnosticSchema = z
+  .object({
+    code: z.string().min(1).max(128),
+    severity: z.enum(['error', 'warn']),
+    message: z.string().max(4096),
+    line: z.number().int().positive().optional(),
+  })
+  .strict()
+
+/** Derived per-page verification; `null` when the Project is not a git worktree. */
+const BackendWikiReviewSchema = z
+  .object({
+    state: BackendWikiReviewStateSchema,
+    verifiedThrough: BackendSha1Schema.nullable(),
+    verifiedAt: BackendWikiTimestampSchema.nullable(),
+    unverifiedCommits: z.array(BackendSha1Schema).max(10_000),
+    unverifiedRanges: z
+      .array(z.tuple([z.number().int().positive(), z.number().int().positive()]))
+      .max(10_000),
+    dirty: z.boolean(),
+  })
+  .strict()
+
+const BackendWikiDeprecationSchema = z
+  .object({
+    at: BackendWikiTimestampSchema,
+    reason: z.string().max(4096),
+    superseded_by: z.string().max(512).optional(),
+  })
+  .strict()
+
+export const BackendWikiSummarySchema = z
+  .object({
+    id: BackendWikiIdSchema,
+    project: ProjectNameSchema,
+    resource: BackendOpaqueResourceIdSchema,
+    slug: BackendWikiSlugSchema,
+    // Unknown kind directories stay readable, so this is a bounded string and
+    // not an enum; `WIKI_UNKNOWN_KIND` reports the mismatch as a diagnostic.
+    kind: z.string().min(1).max(128),
+    title: z.string().max(512),
+    description: z.string().max(4096).nullable(),
+    status: z.string().max(64).nullable(),
+    date: z.string().max(64).nullable(),
+    tags: z.array(z.string().min(1).max(128)).max(1024),
+    sources: z.array(z.string().min(1).max(512)).max(1024),
+    legacyId: z.string().max(128).nullable(),
+    entry: BackendPortableDisplayReferenceSchema.nullable(),
+    deprecated: BackendWikiDeprecationSchema.nullable(),
+    deprecatedSections: z.array(z.string().min(1).max(512)).max(1024),
+    stale: z.boolean(),
+    staleSources: z.array(z.string().min(1).max(512)).max(1024),
+    review: BackendWikiReviewSchema.nullable(),
+    format: z.enum(['markdown', 'bundle']),
+    mtime: z.number().finite().nonnegative(),
+    createdAt: BackendWikiTimestampSchema,
+    updatedAt: BackendWikiTimestampSchema,
+    diagnostics: z.array(BackendWikiDiagnosticSchema).max(10_000),
+  })
+  .strict()
+export type BackendWikiSummary = z.infer<typeof BackendWikiSummarySchema>
+
+/** Body-carrying projection; body component blocks are resolved centrally. */
+export const BackendWikiDocumentSchema = BackendWikiSummarySchema.extend({
+  hash: BackendSha1Schema,
+  content: z.string().max(4 * 1024 * 1024),
+}).strict()
+export type BackendWikiDocument = z.infer<typeof BackendWikiDocumentSchema>
+
+export const BackendWikiPagesResponseSchema = z
+  .object({ pages: z.array(BackendWikiSummarySchema).max(10_000) })
+  .strict()
+
+export const BackendWikiReviewCommitSchema = z
+  .object({
+    sha: BackendSha1Schema,
+    authoredAt: BackendWikiTimestampSchema,
+    subject: z.string().max(1024),
+    pages: z.array(BackendWikiIdSchema).max(10_000),
+    verified: z.boolean(),
+    verifiedAt: BackendWikiTimestampSchema.optional(),
+    note: z.string().max(4096).optional(),
+  })
+  .strict()
+
+/** Wiki commits oldest first; `verifiedThrough` is the newest sequential mark. */
+export const BackendWikiReviewResponseSchema = z
+  .object({
+    verifiedThrough: BackendSha1Schema.nullable(),
+    commits: z.array(BackendWikiReviewCommitSchema).max(100_000),
+  })
+  .strict()
+
+/** Out-of-order verification; `nextSha` is the oldest markable wiki commit. */
+export const BackendWikiReviewOrderResponseSchema = z
+  .object({
+    error: z.object({ code: z.literal('REVIEW_ORDER'), message: z.string().max(256) }).strict(),
+    nextSha: BackendSha1Schema.nullable(),
+  })
+  .strict()
+
+export const BackendWikiReviewMarkRequestSchema = z
+  .object({ note: z.string().max(4096).optional() })
+  .strict()
 
 export const BackendDigestSummarySchema = z
   .object({
@@ -938,6 +1118,22 @@ export const BackendDocumentConflictResponseSchema = z
     currentHash: BackendSha1Schema,
   })
   .strict()
+
+/**
+ * A successful wiki write. `page` already carries the final content and its
+ * hash, so central re-baselines its editor from `page.content` instead of a
+ * second copy of the same bytes.
+ */
+export const BackendWikiWriteResponseSchema = BackendDocumentWriteResponseSchema.extend({
+  page: BackendWikiDocumentSchema,
+}).strict()
+export type BackendWikiWriteResponse = z.infer<typeof BackendWikiWriteResponseSchema>
+
+/** Wiki conflicts add the current content so the editor can offer a merge. */
+export const BackendWikiConflictResponseSchema = BackendDocumentConflictResponseSchema.extend({
+  currentContent: z.string().max(4 * 1024 * 1024),
+}).strict()
+export type BackendWikiConflictResponse = z.infer<typeof BackendWikiConflictResponseSchema>
 
 export const BackendCodeReviewPatchRequestSchema = z.union([
   z
@@ -1577,6 +1773,7 @@ export const BackendCapabilitiesSchema = z
     events: z.boolean(),
     logStreaming: z.boolean(),
     reportAssets: z.boolean(),
+    wikiAssets: z.boolean(),
     git: z.boolean(),
     shares: z.boolean(),
     tmux: z.boolean(),
@@ -1931,6 +2128,8 @@ export const BACKEND_EVENT_TOPICS = [
   'code-reviews-change',
   'reports-change',
   'digests-change',
+  'wiki-change',
+  'wiki-review-change',
 ] as const
 
 export const BackendEventTopicSchema = z.enum(BACKEND_EVENT_TOPICS)

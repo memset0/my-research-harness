@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { subscribeMemonEvents } from '../lib/events-client'
 import { SessionProvider, type SessionRole } from './session-provider'
@@ -11,6 +11,10 @@ vi.mock('../lib/events-client', () => ({
   subscribeMemonEvents: vi.fn(() => vi.fn()),
 }))
 
+let listener:
+  | ((event: Parameters<Parameters<typeof subscribeMemonEvents>[0]>[0]) => void)
+  | null = null
+
 function Probe() {
   useMemonEvents()
   return null
@@ -18,16 +22,18 @@ function Probe() {
 
 function renderWithRole(role: SessionRole) {
   const client = new QueryClient()
-  return render(
+  const view = render(
     <SessionProvider value={{ role, scopeProjects: [], scopeProjectRefs: [] }}>
       <QueryClientProvider client={client}>
         <Probe />
       </QueryClientProvider>
     </SessionProvider>,
   )
+  return { client, view }
 }
 
 afterEach(() => {
+  listener = null
   cleanup()
   vi.clearAllMocks()
 })
@@ -41,5 +47,24 @@ describe('useMemonEvents authentication lifecycle', () => {
   it.each(['owner', 'viewer'] as const)('subscribes for an authenticated %s', (role) => {
     renderWithRole(role)
     expect(subscribeMemonEvents).toHaveBeenCalledOnce()
+  })
+
+  it('invalidates the matching wiki prefix when an Experiment event omits Project', () => {
+    vi.mocked(subscribeMemonEvents).mockImplementationOnce((next) => {
+      listener = next
+      return vi.fn()
+    })
+    const { client } = renderWithRole('owner')
+    const hostA = ['wiki', 'host-a', 'project-a'] as const
+    const hostB = ['wiki', 'host-b', 'project-a'] as const
+    client.setQueryData(hostA, { wiki: [] })
+    client.setQueryData(hostB, { wiki: [] })
+
+    act(() => {
+      listener?.({ topic: 'experiment-change', host: 'host-a' })
+    })
+
+    expect(client.getQueryState(hostA)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(hostB)?.isInvalidated).toBe(false)
   })
 })

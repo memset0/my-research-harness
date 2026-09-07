@@ -126,6 +126,10 @@ Run READMEs do not use Experiment sections such as `Design`, `Implementation`,
 `Warnings`. Per-Run method belongs in `Setup`; per-Run observed outcome belongs
 in `Result`.
 
+When a Run README section needs a registered fenced-block component instead of
+plain Markdown, follow `memon-author-components`; do not restate component
+rules here.
+
 Bind through the canonical Experiment-link CLI, then invoke
 `memon-write-experiment-doc` to append `$RUN_ID` to this Variant's `runs`, set
 the Variant to `RUNNING`, and update actual launch provenance if needed.

@@ -43,6 +43,13 @@ export function makeProjectResolver(runtime: Runtime): ProjectResolverContext {
     return null
   }
 
+  const resolveByWikiId = (id: string): string | null => {
+    for (const project of runtime.config.projects) {
+      if (runtime.wikiCache.getWikiSummary(project.name, id)) return project.name
+    }
+    return null
+  }
+
   const resolveByPath = (path: string): string | null => {
     if (!path) return null
     // Try absolute path first.
@@ -57,6 +64,7 @@ export function makeProjectResolver(runtime: Runtime): ProjectResolverContext {
     resolveByExperimentId,
     resolveByDigestId,
     resolveByReportId,
+    resolveByWikiId,
     resolveByPath,
   }
 }

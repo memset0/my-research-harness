@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, promises as fs } from 'node:fs'
+import { createReadStream, type Dirent, promises as fs } from 'node:fs'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import type { Readable } from 'node:stream'
 import {
@@ -13,6 +13,7 @@ import {
 
 const LOG_EXTENSIONS = new Set(['.log', '.txt', '.out', '.err'])
 const REPORT_BUNDLE_PATTERN = /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/
+const WIKI_BUNDLE_PATTERN = /^W(\d{4})-([a-z0-9][a-z0-9-]*)$/
 const DEFAULT_LOG_STREAM_POLL_MS = 1500
 const MAX_LOG_STREAM_LINES = 2000
 
@@ -67,6 +68,7 @@ export interface BackendStreamService {
     reportId: string,
     resource: string,
   ): Promise<BackendByteResource>
+  resolveWikiAsset(project: string, wikiId: string, resource: string): Promise<BackendByteResource>
   openByteStream(resource: BackendByteResource, range?: ByteRangeInput): Readable
 }
 
@@ -189,13 +191,7 @@ export class FilesystemStreamService implements BackendStreamService {
     if (resource.toLowerCase() === 'readme.md') {
       throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Report README is not an asset')
     }
-    const reportsDirectory = join(project.root, 'docs', 'reports')
-    const entries = await fs
-      .readdir(reportsDirectory, { withFileTypes: true, encoding: 'utf8' })
-      .catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return []
-        throw error
-      })
+    const entries = await readDirectoryEntries(join(project.root, 'docs', 'reports'))
     const matches = entries.filter((entry) => {
       const match = entry.isDirectory() ? REPORT_BUNDLE_PATTERN.exec(entry.name) : null
       return match && `R${match[1]}` === reportId
@@ -206,7 +202,46 @@ export class FilesystemStreamService implements BackendStreamService {
     if (matches.length > 1) {
       throw new BackendStreamServiceError('AMBIGUOUS_RESOURCE', 'Report bundle is ambiguous')
     }
-    const bundleResource = `docs/reports/${matches[0]!.name}`
+    return this.resolveBundleAsset(project, `docs/reports/${matches[0]!.name}`, resource)
+  }
+
+  /**
+   * Wiki bundle asset. Pages live two levels deep (`docs/wiki/<kind>/<page>/`)
+   * and the id is unique across kinds, so every kind directory is searched.
+   */
+  async resolveWikiAsset(projectName: string, wikiId: string, resourceInput: string) {
+    const project = this.requireProject(projectName)
+    if (!/^W\d{4}$/.test(wikiId)) invalid()
+    const resource = parseResource(resourceInput)
+    if (resource.toLowerCase() === 'readme.md') {
+      throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Wiki README is not an asset')
+    }
+    const wikiDirectory = join(project.root, 'docs', 'wiki')
+    const kinds = await readDirectoryEntries(wikiDirectory)
+    const matches: string[] = []
+    for (const kind of kinds) {
+      if (!kind.isDirectory()) continue
+      for (const entry of await readDirectoryEntries(join(wikiDirectory, kind.name))) {
+        const match = entry.isDirectory() ? WIKI_BUNDLE_PATTERN.exec(entry.name) : null
+        if (match && `W${match[1]}` === wikiId) {
+          matches.push(`docs/wiki/${kind.name}/${entry.name}`)
+        }
+      }
+    }
+    if (matches.length === 0) {
+      throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Wiki bundle not found')
+    }
+    if (matches.length > 1) {
+      throw new BackendStreamServiceError('AMBIGUOUS_RESOURCE', 'Wiki bundle is ambiguous')
+    }
+    return this.resolveBundleAsset(project, matches[0]!, resource)
+  }
+
+  private async resolveBundleAsset(
+    project: ProjectConfig,
+    bundleResource: string,
+    resource: string,
+  ): Promise<BackendByteResource> {
     const bundle = await this.resolveContained(project, bundleResource, 'directory')
     const assetResource = `${bundleResource}/${resource}`
     const resolved = await this.resolveContained(project, assetResource, 'file')
@@ -223,7 +258,7 @@ export class FilesystemStreamService implements BackendStreamService {
       mtimeMs: resolved.stat.mtimeMs,
       etag: `W/"${version}"`,
       version,
-    } satisfies BackendByteResource
+    }
   }
 
   openByteStream(resource: BackendByteResource, range?: ByteRangeInput): Readable {
@@ -317,6 +352,14 @@ function parseLogResource(input: string): ReturnType<typeof ResourceIdSchema.par
   const resource = parseResource(input)
   if (!LOG_EXTENSIONS.has(extname(resource).toLowerCase())) invalid()
   return resource
+}
+
+/** Directory listing that treats a missing directory as empty. */
+async function readDirectoryEntries(directory: string): Promise<Dirent[]> {
+  return fs.readdir(directory, { withFileTypes: true, encoding: 'utf8' }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  })
 }
 
 function invalid(): never {

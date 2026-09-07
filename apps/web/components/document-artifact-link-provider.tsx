@@ -6,6 +6,7 @@ import { type ReactNode, useCallback, useMemo } from 'react'
 import {
   fetchExperimentDocs,
   fetchReports,
+  fetchWiki,
   type ProjectTarget,
   projectHost,
   projectName,
@@ -40,6 +41,11 @@ export function DocumentArtifactLinkProvider({
     queryFn: () => fetchExperimentDocs(project),
     staleTime: 5_000,
   })
+  const wikiQuery = useQuery({
+    queryKey: ['wiki', ...projectQueryKey(project)],
+    queryFn: () => fetchWiki(project),
+    staleTime: 5_000,
+  })
   const currentHref = useMemo(() => {
     const search = searchParams?.toString() ?? ''
     return `${pathname ?? '/'}${search ? `?${search}` : ''}`
@@ -54,8 +60,15 @@ export function DocumentArtifactLinkProvider({
       reports: (reportsQuery.data?.reports ?? []).flatMap(({ id, path, resource }) =>
         (path ?? resource) ? [{ id, path: (path ?? resource)! }] : [],
       ),
+      // `legacyId` carries the `R<NNNN>` of the Report this page replaced, so a
+      // stale `R` token still resolves once the Report itself is gone.
+      wiki: (wikiQuery.data?.pages ?? []).map(({ id, path, resource, legacyId }) => ({
+        id,
+        path: path ?? resource ?? '',
+        legacyId,
+      })),
     }),
-    [experimentsQuery.data, project, reportsQuery.data],
+    [experimentsQuery.data, project, reportsQuery.data, wikiQuery.data],
   )
   const getArtifactHref = useCallback(
     (target: ArtifactTarget, activeSourceSurface: MarkdownArtifactSourceSurface) => {
