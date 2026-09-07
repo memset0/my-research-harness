@@ -44,12 +44,12 @@
 
 - [x] 7.1 README.md: add `### Wiki` (layout, kinds table, trust axes, bundle form, CLI cheatsheet, migration path) and the skills table row; verify grep for `memon-wiki` in README
 - [x] 7.2 CLAUDE.md: add wiki to the file model, Web endpoints, SSE topics, query keys, CLI subcommands lists; verify grep for `docs/wiki` in CLAUDE.md
-- [ ] 7.3 Bump `MEMON_RELEASE` to `6.7.0` in `version.ts` per the release policy; verify `version.test.ts`/`release-policy.test.ts` pass
+- [x] 7.3 Bump `MEMON_RELEASE` to `6.7.0` in `version.ts` per the release policy; verify `version.test.ts`/`release-policy.test.ts` pass
 
 ## 8. Verification
 
 - [x] 8.1 `pnpm -r typecheck` and `pnpm -r test` green
-- [ ] 8.2 Prod build + HTTP smoke on `/p/project-a/wiki` and `/p/project-a/wiki/W0001`: markup contains flat card rail, kind/status/stale/review badges and right TOC; CSS tokens present; `/p/project-a/reports` unchanged
+- [x] 8.2 Prod build + HTTP smoke on `/p/project-a/wiki` and `/p/project-a/wiki/W0001`: markup contains flat card rail, kind/status/stale/review badges and right TOC; CSS tokens present; `/p/project-a/reports` unchanged
 - [x] 8.4 Migration dry-run: copy one Report from `a real mounted project's `docs/reports` (path in LOCAL.md)` into a temp project with a stub experiment, run `memon wiki migrate-report`, confirm the page lints, `backlinks R<id>` lists the stub's link, and the original copy is removed
 
 ## 9. Body component library and deprecation (added mid-proposal)
