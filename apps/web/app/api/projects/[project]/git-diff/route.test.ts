@@ -34,8 +34,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -58,8 +58,8 @@ describe('GET /api/projects/[project]/git-diff', () => {
       oldContent: 'old\n',
       newContent: 'new\n',
     })
-    expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'index', 'app.ts')
-    expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'working', 'app.ts')
+    expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'index', 'app.ts', { exec: undefined })
+    expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'working', 'app.ts', { exec: undefined })
   })
 
   it('untracked: oldContent=null, newContent from working', async () => {
@@ -215,8 +215,8 @@ describe('GET /api/projects/[project]/git-diff', () => {
         oldContent: 'parent\n',
         newContent: 'commit\n',
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'abc1234^', 'app.ts')
-      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'abc1234', 'app.ts')
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'abc1234^', 'app.ts', { exec: undefined })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'abc1234', 'app.ts', { exec: undefined })
     })
 
     it('root commit: parent not-found → oldContent="" status=added', async () => {
@@ -303,8 +303,8 @@ describe('GET /api/projects/[project]/git-diff', () => {
         oldContent: 'old\n',
         newContent: 'new\n',
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'aaa', 'app.ts')
-      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'bbb', 'app.ts')
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'aaa', 'app.ts', { exec: undefined })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'bbb', 'app.ts', { exec: undefined })
     })
 
     it('400 missing from', async () => {

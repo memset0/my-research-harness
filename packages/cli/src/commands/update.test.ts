@@ -47,7 +47,7 @@ async function seedCheckout(
   await writeFile(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n")
   await writeFile(
     join(dir, 'package.json'),
-    `${JSON.stringify({ name: 'memon-fixture', private: true }, null, 2)}\n`,
+    `${JSON.stringify({ name: 'memon-fixture', private: true, packageManager: 'pnpm@10.33.2' }, null, 2)}\n`,
   )
   for (const name of ['core', 'cli'] as const) {
     await writeFile(
@@ -154,7 +154,7 @@ describe('memon update', () => {
       options({ skills: true, skillsRoots: [skillsRoot] }),
     )
 
-    expect(result.outcome).toBe('updated')
+    expect(result.outcome, JSON.stringify(result.steps)).toBe('updated')
     expect(result.selectedRevision).toBe(target)
     expect(git(install, 'rev-parse', 'HEAD').trim()).toBe(target)
     expect(await readFile(join(install, 'marker.txt'), 'utf8')).toBe('v2\n')

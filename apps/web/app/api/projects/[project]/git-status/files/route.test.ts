@@ -48,8 +48,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -64,7 +64,7 @@ describe('GET /api/projects/[project]/git-status/files', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
-    expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   it('404 for unknown project', async () => {
@@ -97,7 +97,7 @@ describe('GET /api/projects/[project]/git-status/files', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   describe('?submodule=<name>', () => {
@@ -112,7 +112,7 @@ describe('GET /api/projects/[project]/git-status/files', () => {
       )
       const res = await GET(r, paramsFor('project-a'))
       expect(res.status).toBe(200)
-      expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a/vendor/foo')
+      expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a/vendor/foo', { exec: undefined })
     })
 
     it('400 for an unknown submodule name', async () => {

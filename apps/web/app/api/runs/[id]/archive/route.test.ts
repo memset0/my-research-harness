@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type Run, RunIndex, readRunDir } from '@memon/core'
+import { type Run, RunIndex, readRunDir, readJournalInvocations } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -62,8 +62,8 @@ interface FakeRuntime {
 
 async function setupRuntime(): Promise<FakeRuntime> {
   root = await fs.mkdtemp(join(tmpdir(), 'memon-archive-api-'))
-  runDir = join(root, 'foo-260501-100000')
-  await fs.mkdir(runDir)
+  runDir = join(root, 'logs', 'foo-260501-100000')
+  await fs.mkdir(runDir, { recursive: true })
   readmePath = join(runDir, 'README.md')
   await fs.writeFile(readmePath, README_BASE)
   await fs.mkdir(join(root, 'docs'), { recursive: true })
@@ -131,8 +131,9 @@ describe('PATCH /api/runs/:id/archive', () => {
 
     const onDisk = await fs.readFile(readmePath, 'utf8')
     expect(onDisk).toMatch(/^archived:\s+true$/m)
-    const journal = await fs.readFile(journalPath, 'utf8')
-    expect(journal).toMatch(/\[ARCHIVE\] `foo-260501-100000` op=archive/)
+    expect(await readJournalInvocations(root)).toContainEqual(expect.objectContaining({
+      command: 'run archive set', outcome: 'success', parameters: { run: ID, archived: true },
+    }))
   })
 
   it('returns noop 200 when on-disk archived already matches the target, even on stale expectedMtime', async () => {
@@ -153,12 +154,13 @@ describe('PATCH /api/runs/:id/archive', () => {
     expect(body.archived).toBe(true)
     expect(body.noop).toBe(true)
 
-    // No new journal entry on noop.
-    const journal = await fs.readFile(journalPath, 'utf8').catch(() => '')
-    expect(journal).not.toMatch(/\[ARCHIVE\]/)
+    expect(await readJournalInvocations(root)).toEqual([expect.objectContaining({
+      command: 'run archive set', outcome: 'noop', parameters: { run: ID, archived: true },
+    })])
+    await expect(fs.readFile(journalPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('double-archive race: two PATCHes with same target → one write, one noop, only one JOURNAL entry', async () => {
+  it('double-archive race: two PATCHes with same target → one write, one noop, two receipts', async () => {
     const initialStat = await fs.stat(readmePath)
 
     // First client wins the race normally.
@@ -180,10 +182,10 @@ describe('PATCH /api/runs/:id/archive', () => {
     expect(bodyB.archived).toBe(true)
     expect(bodyB.noop).toBe(true)
 
-    // Exactly one `[ARCHIVE] op=archive` line in JOURNAL.
-    const journal = await fs.readFile(journalPath, 'utf8')
-    const matches = journal.match(/\[ARCHIVE\] `foo-260501-100000` op=archive/g)
-    expect(matches).toHaveLength(1)
+    const records = await readJournalInvocations(root)
+    expect(records.filter((record) => record.outcome === 'success')).toHaveLength(1)
+    expect(records.filter((record) => record.outcome === 'noop')).toHaveLength(1)
+    await expect(fs.readFile(journalPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('still returns 409 when expectedMtime is stale AND target differs from on-disk', async () => {

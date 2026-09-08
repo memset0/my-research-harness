@@ -4,7 +4,7 @@
 // Covers:
 //   - PATCH /api/runs/:id/archive — hard rule (RUNNING -> 422), happy path
 //   - PATCH /api/runs/:id/status  — soft warning when target is archived
-//   - PATCH /api/experiments/:id/status — exp-side status set + EXP_STATUS journal
+//   - PATCH /api/experiments/:id/status — exp-side status set + invocation receipt
 //   - PATCH /api/experiments/:id/archive — exp-side archive
 //   - PUT /api/runs/:id/readme — status-and-archive transition lands in non-RUNNING
 //
@@ -36,6 +36,8 @@ auth:
 `,
 )
 process.env.MEMON_CONFIG_PATH = configPath
+
+import { readJournalInvocations } from '@memon/core'
 
 import { NextRequest } from 'next/server'
 
@@ -254,7 +256,7 @@ describe('PATCH /api/runs/:id/status', () => {
 // ---------- PATCH /api/experiments/:id/status ----------
 
 describe('PATCH /api/experiments/:id/status', () => {
-  it('writes status + appends [EXP_STATUS] journal event on transition', async () => {
+  it('writes status and records a successful invocation', async () => {
     const id = 'E0001-alpha'
     const res = await patchExpStatus(
       new NextRequest(`http://localhost/api/experiments/${id}/status`, {
@@ -279,9 +281,10 @@ describe('PATCH /api/experiments/:id/status', () => {
     expect(exp).toContain('first unsupported occurrence')
     expect(exp).toContain('second unsupported occurrence')
 
-    const journal = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
-    expect(journal).toContain('[EXP_STATUS]')
-    expect(journal).toContain('`E0001-alpha` OPEN → RESOLVED')
+    expect(await readJournalInvocations(projectRoot)).toContainEqual(expect.objectContaining({
+      command: 'experiment status set', outcome: 'success',
+      parameters: { experiment: id, status: 'RESOLVED' },
+    }))
   })
 
   it('noop when status unchanged', async () => {
@@ -303,7 +306,7 @@ describe('PATCH /api/experiments/:id/status', () => {
 // ---------- PATCH /api/experiments/:id/archive ----------
 
 describe('PATCH /api/experiments/:id/archive', () => {
-  it('archives the exp doc + appends [ARCHIVE] op=archive event', async () => {
+  it('archives the exp doc and records a successful invocation', async () => {
     const id = 'E0001-alpha'
     const res = await patchExpArchive(
       new NextRequest(`http://localhost/api/experiments/${id}/archive`, {
@@ -323,8 +326,10 @@ describe('PATCH /api/experiments/:id/archive', () => {
     expect(exp).toContain('first unsupported occurrence')
     expect(exp).toContain('second unsupported occurrence')
 
-    const journal = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
-    expect(journal).toContain('`E0001-alpha` op=archive')
+    expect(await readJournalInvocations(projectRoot)).toContainEqual(expect.objectContaining({
+      command: 'experiment archive set', outcome: 'success',
+      parameters: { experiment: id, archived: true },
+    }))
   })
 })
 
@@ -393,22 +398,17 @@ describe('PUT /api/runs/:id/readme', () => {
     expect(after).toContain('status: INTERRUPTED')
     expect(after).toContain('archived: true')
 
-    // Both events appended to the journal.
-    const journal = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
-    expect(journal).toContain('[STATUS]')
-    expect(journal).toContain('RUNNING → INTERRUPTED')
-    expect(journal).toContain('[ARCHIVE]')
-    expect(journal).toContain('`alpha-260513-100000` op=archive')
+    expect(await readJournalInvocations(projectRoot)).toContainEqual(expect.objectContaining({
+      command: 'run readme write', outcome: 'success', parameters: { run: id },
+    }))
   })
 
   // fix-run-readme-mtime-lock-vs-dir-mtime D3: stale expectedMtime + content
-  // that is canonically identical to disk → 200 noop (no write, no journal).
+  // that is canonically identical to disk → 200 noop (no rewrite, noop receipt).
   it('stale expectedMtime + identical canonical content → 200 noop', async () => {
     const id = 'beta-260513-110000' // FINISHED + archived: true (from fixture; doesn't matter for this test)
     const before = await readReadme(id)
-    const journalBefore = await fs
-      .readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
-      .catch(() => '')
+    const receiptsBefore = await readJournalInvocations(projectRoot)
     const mtimeBefore = await readmeMtime(id)
 
     // Send the SAME content (no changes) but with a stale expectedMtime.
@@ -433,9 +433,12 @@ describe('PUT /api/runs/:id/readme', () => {
     expect(body.mtime).toBe(mtimeBefore) // no rewrite
     expect(body.finalContent).toBe(before)
 
-    // No new journal entries from this noop call.
-    const journalAfter = await fs.readFile(join(projectRoot, 'docs', 'journal.md'), 'utf8')
-    expect(journalAfter).toBe(journalBefore)
+    const receiptsAfter = await readJournalInvocations(projectRoot)
+    const added = receiptsAfter.filter((record) => !receiptsBefore.some((before) => before.id === record.id))
+    expect(added).toEqual([expect.objectContaining({
+      command: 'run readme write', outcome: 'noop', parameters: { run: id },
+    })])
+    await expect(fs.readFile(join(projectRoot, 'docs', 'journal.md'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   // Negative: stale expectedMtime + DIFFERENT canonical content → 409.

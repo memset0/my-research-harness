@@ -2,6 +2,7 @@
 
 import {
   BACKEND_API_MAJOR,
+  MEMON_RELEASE,
   type BackendCapabilities,
   type BackendMetadata,
   type CentralConfig,
@@ -60,7 +61,7 @@ const config: CentralConfig = {
   ],
 }
 
-function metadata(host: string, release = '6.1.0'): BackendMetadata {
+function metadata(host: string, release: string = MEMON_RELEASE): BackendMetadata {
   return {
     host: host as BackendMetadata['host'],
     release: release as BackendMetadata['release'],

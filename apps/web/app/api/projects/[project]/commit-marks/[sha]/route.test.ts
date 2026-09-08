@@ -56,8 +56,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)

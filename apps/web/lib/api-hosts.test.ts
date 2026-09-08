@@ -24,6 +24,6 @@ describe('fetchHosts', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchHosts()).resolves.toEqual({ hosts: [host] })
-    expect(fetchMock).toHaveBeenCalledWith('/api/hosts', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/hosts', { headers: expect.any(Headers) })
   })
 })

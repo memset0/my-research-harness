@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type Run, RunIndex, readRunDir } from '@memon/core'
+import { type Run, RunIndex, readRunDir, readJournalInvocations } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -60,8 +60,8 @@ interface FakeRuntime {
 
 async function setupRuntime(): Promise<FakeRuntime> {
   root = await fs.mkdtemp(join(tmpdir(), 'memon-warn-api-'))
-  runDir = join(root, 'foo-260501-100000')
-  await fs.mkdir(runDir)
+  runDir = join(root, 'logs', 'foo-260501-100000')
+  await fs.mkdir(runDir, { recursive: true })
   readmePath = join(runDir, 'README.md')
   await fs.writeFile(readmePath, README_BASE)
   const exp = await readRunDir(runDir, 'p')
@@ -212,7 +212,7 @@ describe('PATCH/DELETE /api/runs/:id/warnings/:rowId', () => {
     expect(res.status).toBe(404)
   })
 
-  it('DELETE removes the row + audit JOURNAL [WARNING] event', async () => {
+  it('DELETE removes the row and records an invocation receipt', async () => {
     const rowId = await addOne()
     const req = new NextRequest('http://x/', {
       method: 'DELETE',
@@ -222,9 +222,9 @@ describe('PATCH/DELETE /api/runs/:id/warnings/:rowId', () => {
     expect(res.status).toBe(200)
     const md = await fs.readFile(readmePath, 'utf8')
     expect(md).not.toContain(rowId)
-    const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
-    expect(journal).toContain('[WARNING]')
-    expect(journal).toContain('op=delete')
-    expect(journal).toContain('first')
+    expect(await readJournalInvocations(root)).toContainEqual(expect.objectContaining({
+      command: 'run warning delete', outcome: 'success',
+    }))
+    await expect(fs.readFile(join(root, 'docs', 'journal.md'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

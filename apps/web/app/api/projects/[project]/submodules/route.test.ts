@@ -39,8 +39,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -55,7 +55,7 @@ describe('GET /api/projects/[project]/submodules', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
-    expect(readGitSubmodules).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitSubmodules).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   it('200 for viewer in scope', async () => {

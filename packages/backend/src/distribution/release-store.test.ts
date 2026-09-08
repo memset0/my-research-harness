@@ -184,6 +184,7 @@ describe('immutable Backend release store', () => {
   it('rejects a group-readable or symlinked release root', async () => {
     const root = join(dir, 'unsafe')
     await fs.mkdir(root, { mode: 0o755 })
+    await fs.chmod(root, 0o755)
     await expect(new BackendReleaseStore(root).initialize()).rejects.toThrow(/owner-only/)
     await fs.rm(root, { recursive: true })
     await fs.symlink(dir, root)

@@ -49,8 +49,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -64,7 +64,7 @@ describe('GET /api/projects/[project]/git-log', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitLog).toHaveBeenCalledWith('/tmp/a', { ref: 'main', limit: 100 })
+    expect(readGitLog).toHaveBeenCalledWith('/tmp/a', { ref: 'main', limit: 100 }, { exec: undefined })
   })
 
   it('200 with custom limit', async () => {
@@ -73,7 +73,7 @@ describe('GET /api/projects/[project]/git-log', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitLog).toHaveBeenCalledWith('/tmp/a', { ref: 'main', limit: 25 })
+    expect(readGitLog).toHaveBeenCalledWith('/tmp/a', { ref: 'main', limit: 25 }, { exec: undefined })
   })
 
   it('400 missing ref', async () => {

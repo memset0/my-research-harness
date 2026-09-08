@@ -26,6 +26,7 @@ function rt() {
       projects: [
         {
           name: 'p',
+          execution: { kind: 'local' },
           root: '/proj/p',
           include: [],
           exclude: [],
@@ -51,7 +52,7 @@ describe('GET /api/code-preview', () => {
     expect(j).toMatchObject({ owner: 'acme', repo: 'demo', sha: 'abc123', path: 'src/foo.ts', startLine: 10, endLine: 10 })
     expect(j.lines.find((l: { n: number }) => l.n === 10).target).toBe(true)
     expect(j.lines.find((l: { n: number }) => l.n === 9).target).toBe(false)
-    expect(vi.mocked(readGitFileContents)).toHaveBeenCalledWith('/proj/p', 'abc123', 'src/foo.ts')
+    expect(vi.mocked(readGitFileContents)).toHaveBeenCalledWith('/proj/p', 'abc123', 'src/foo.ts', { exec: undefined })
   })
 
   it('200 range preview marks the whole range as target', async () => {

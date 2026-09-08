@@ -48,8 +48,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
       gitStatus: { intervalMs: 10_000 },
     },
@@ -70,7 +70,7 @@ describe('GET /api/projects/[project]/git-status', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(CLEAN_STATUS)
     expect(readGitStatus).toHaveBeenCalledTimes(1)
-    expect(readGitStatus).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitStatus).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   it('404 for an unknown project', async () => {
@@ -99,7 +99,7 @@ describe('GET /api/projects/[project]/git-status', () => {
     )
     expect(res.status).toBe(200)
     expect(readGitStatus).toHaveBeenCalledTimes(1)
-    expect(readGitStatus).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitStatus).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   it('two requests within intervalMs use the throttle cache (single reader call)', async () => {
@@ -145,13 +145,13 @@ describe('GET /api/projects/[project]/git-status', () => {
     // a 2s gap is enough to bust the cache.
     vi.mocked(getRuntime).mockResolvedValueOnce({
       config: {
-        projects: [{ name: 'project-a', root: '/tmp/a', exclude: [] }],
+        projects: [{ name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } }],
         gitStatus: { intervalMs: 1_000 },
       },
     } as unknown as Awaited<ReturnType<typeof getRuntime>>)
     vi.mocked(getRuntime).mockResolvedValueOnce({
       config: {
-        projects: [{ name: 'project-a', root: '/tmp/a', exclude: [] }],
+        projects: [{ name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } }],
         gitStatus: { intervalMs: 1_000 },
       },
     } as unknown as Awaited<ReturnType<typeof getRuntime>>)

@@ -1,7 +1,10 @@
 // @vitest-environment node
 
 import { NextRequest } from 'next/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 vi.mock('../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
 
@@ -53,7 +56,14 @@ const wikiCache = {
   getPageRecord: vi.fn(() => null),
 }
 
-beforeEach(() => {
+let root: string
+
+afterEach(async () => {
+  await fs.rm(root, { recursive: true, force: true })
+})
+
+beforeEach(async () => {
+  root = await fs.mkdtemp(join(tmpdir(), 'memon-wiki-route-'))
   vi.clearAllMocks()
   wikiCache.getWikiPage.mockResolvedValue({
     summary,
@@ -64,7 +74,7 @@ beforeEach(() => {
   wikiCache.getWikiSummary.mockReturnValue(summary)
   wikiCache.putWikiPage.mockResolvedValue({ ok: true, mtime: 2, hash: 'b'.repeat(40) })
   vi.mocked(getRuntime).mockResolvedValue({
-    config: { projects: [{ name: 'project-a', root: '/tmp/project-a' }] },
+    config: { projects: [{ name: 'project-a', root }] },
     wikiCache,
   } as never)
 })

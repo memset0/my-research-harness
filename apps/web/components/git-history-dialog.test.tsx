@@ -3,7 +3,8 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithQuery } from '../test/utils'
 
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/api')>(),
   fetchGitBranches: vi.fn(),
   fetchGitLog: vi.fn(),
   fetchGitCommit: vi.fn(),

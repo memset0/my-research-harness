@@ -42,7 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
-      projects: [{ name: 'project-a', root: '/tmp/a', exclude: [] }],
+      projects: [{ name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } }],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
   vi.mocked(readGitRange).mockResolvedValue(PAYLOAD)
@@ -59,7 +59,7 @@ describe('GET /api/projects/[project]/git-range', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitRange).toHaveBeenCalledWith('/tmp/a', { from: 'aaa', to: 'bbb' })
+    expect(readGitRange).toHaveBeenCalledWith('/tmp/a', { from: 'aaa', to: 'bbb' }, { exec: undefined })
     const body = await res.json()
     expect(body).toMatchObject({ enabled: true, submodule: '' })
   })
@@ -75,6 +75,7 @@ describe('GET /api/projects/[project]/git-range', () => {
     expect(readGitRange).toHaveBeenCalledWith(
       '/tmp/a/vendor/foo',
       { from: 'aaa', to: 'bbb' },
+      { exec: undefined },
     )
     const body = await res.json()
     expect(body.submodule).toBe('vendor/foo')

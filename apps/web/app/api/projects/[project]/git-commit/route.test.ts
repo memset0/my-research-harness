@@ -47,8 +47,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -63,7 +63,7 @@ describe('GET /api/projects/[project]/git-commit', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
-    expect(readGitCommit).toHaveBeenCalledWith('/tmp/a', 'abc1234')
+    expect(readGitCommit).toHaveBeenCalledWith('/tmp/a', 'abc1234', { exec: undefined })
   })
 
   it('400 missing sha', async () => {

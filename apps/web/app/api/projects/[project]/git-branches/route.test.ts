@@ -45,8 +45,8 @@ beforeEach(() => {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
-        { name: 'project-a', root: '/tmp/a', exclude: [] },
-        { name: 'project-b', root: '/tmp/b', exclude: [] },
+        { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        { name: 'project-b', root: '/tmp/b', exclude: [], execution: { kind: 'local' } },
       ],
     },
   } as unknown as Awaited<ReturnType<typeof getRuntime>>)
@@ -61,7 +61,7 @@ describe('GET /api/projects/[project]/git-branches', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
-    expect(readGitBranches).toHaveBeenCalledWith('/tmp/a')
+    expect(readGitBranches).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   it('404 unknown project', async () => {
