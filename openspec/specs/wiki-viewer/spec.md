@@ -34,7 +34,7 @@ An id that does not match `^W\d{4}$` SHALL render the standard not-found respons
 
 ### Requirement: Desktop wiki layout: page list, reading surface, outline
 
-On viewports at the `md` breakpoint or wider, the wiki surface SHALL render three regions left to right: a left rail (~280–320 px) holding the scrollable page card list; a centre reading surface for the selected page (or the empty state); and a right outline column (~220–260 px) holding the selected page's table of contents, sticky while the body scrolls, hidden when the page has no eligible headings or nothing is selected. The active page in the rail SHALL be visually highlighted.
+On viewports at the `md` breakpoint or wider, the wiki surface SHALL render three regions left to right: a left rail (~280–320 px) holding the scrollable page card list; a centre reading surface for the selected page (or the empty state); and a right outline column (~220–260 px) holding the selected page's table of contents, sticky while the body scrolls, hidden when the page has no eligible headings or nothing is selected. Document content SHALL be at most 720px wide. The reading document and its immediately adjacent outline SHALL be centered as one group within the space remaining after the rail; without an outline the document SHALL be centered alone. The active page in the rail SHALL be visually highlighted.
 
 The desktop rail SHALL include an accessible control that hides it, letting the reading surface reclaim the width, and a corresponding accessible control SHALL remain visible in the reading surface to show it again. When the user activates Edit, the layout SHALL replace the outline column with a Monaco editor pane to the right of the rendered Markdown. Closing the editor through Save or Cancel SHALL restore the outline column and preserve the current rail visibility.
 
@@ -305,7 +305,7 @@ When the desktop rail is shown, the identity SHALL remain ordinary toolbar metad
 
 ### Requirement: Mobile wiki layout uses a single column and a page Sheet
 
-On viewports narrower than the `md` breakpoint, the wiki surface SHALL render a single column showing the selected page's reading surface, or the empty state when none is selected. A floating action button anchored at `bottom-right` SHALL be visible only on mobile. Activating it SHALL open a Sheet drawer from the right edge containing the same grouped, filterable page list. Selecting an entry SHALL navigate to that page's URL and close the drawer.
+On viewports narrower than the `md` breakpoint, the wiki surface SHALL render a single column showing the selected page's reading surface, or the empty state when none is selected. Both the right outline and the inline table of contents SHALL be hidden. A floating action button anchored at `bottom-right` SHALL be visible only on mobile. Activating it SHALL open a Sheet drawer from the right edge containing the same grouped, filterable page list. Selecting an entry SHALL navigate to that page's URL and close the drawer.
 
 #### Scenario: Mobile default view
 - **WHEN** the user opens a wiki URL at viewport width below `md`
@@ -373,7 +373,7 @@ The wiki surface SHALL expose an owner-only "History" panel listing every wiki c
 
 ### Requirement: Rendered pages distinguish unverified content
 
-The reading pane SHALL render a review badge (`VERIFIED` / `CHANGED_SINCE_VERIFY` / `UNVERIFIED`) in the frontmatter panel with `verifiedThrough` and a "changes since verification" link that opens the page diff from `verifiedThrough` to the working tree. For `CHANGED_SINCE_VERIFY` pages the body blocks intersecting `unverifiedRanges` SHALL be rendered with a distinct left border and tinted background and a hover title naming the commit(s) (or "uncommitted") that introduced them; `UNVERIFIED` pages SHALL show the tint on the whole body; `VERIFIED` pages SHALL render without tint. The tint SHALL use theme tokens (never hard-coded colours) and SHALL be present in both light and dark themes.
+The reading pane SHALL render a review badge (`VERIFIED` / `CHANGED_SINCE_VERIFY` / `UNVERIFIED`) in the frontmatter panel with `verifiedThrough` and a "changes since verification" link that opens the page diff from `verifiedThrough` to the working tree. For `CHANGED_SINCE_VERIFY` pages the body blocks intersecting `unverifiedRanges` SHALL be rendered with a distinct left border and tinted background and a hover title naming the commit(s) (or "uncommitted") that introduced them; `UNVERIFIED` pages SHALL keep their review badge and explanatory hover title but SHALL NOT wrap the whole body in a tinted background, left border, rounded quote box, or quote-like padding; `VERIFIED` pages SHALL render without tint. The tint SHALL use theme tokens (never hard-coded colours) and SHALL be present in both light and dark themes.
 
 #### Scenario: Partially verified page
 - **GIVEN** `W0004` with `unverifiedRanges: [[12,18]]`
@@ -384,6 +384,10 @@ The reading pane SHALL render a review badge (`VERIFIED` / `CHANGED_SINCE_VERIFY
 - **GIVEN** `W0001` is `VERIFIED`
 - **WHEN** the page renders
 - **THEN** no block carries the tint and the badge reads `VERIFIED`
+
+#### Scenario: Unverified page remains plain prose
+- **WHEN** an entirely unverified page renders
+- **THEN** its body has no whole-page quote decoration and its UNVERIFIED review badge remains visible
 
 ### Requirement: Empty wiki state points at the skill and CLI
 

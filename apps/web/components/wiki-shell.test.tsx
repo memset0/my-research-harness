@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { WikiListItem, WikiPageDetail } from '../lib/api'
 import { renderWithQuery } from '../test/utils'
-import { WikiShell } from './wiki-shell'
+import { WikiDocumentView, WikiShell } from './wiki-shell'
 
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>()
@@ -23,7 +23,9 @@ vi.mock('./document-artifact-link-provider', () => ({
   DocumentArtifactLinkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 vi.mock('./markdown', () => ({
-  Markdown: ({ children }: { children: string }) => <div data-testid="wiki-markdown">{children}</div>,
+  Markdown: ({ children }: { children: string }) => (
+    <div data-testid="wiki-markdown">{children}</div>
+  ),
 }))
 vi.mock('./readme-monaco', () => ({ ReadmeMonaco: () => <div>editor</div> }))
 vi.mock('./wiki-review-panel', () => ({
@@ -76,6 +78,34 @@ function detail(base: WikiListItem, content: string): WikiPageDetail {
 }
 
 describe('WikiShell', () => {
+  it('keeps unverified prose plain and width-limited without an inline mobile outline', () => {
+    const page = detail(
+      summary('W0002', '2026-05-04T08:00:00+00:00', {
+        review: {
+          state: 'UNVERIFIED',
+          verifiedThrough: null,
+          verifiedAt: null,
+          unverifiedCommits: [],
+          unverifiedRanges: [],
+          dirty: false,
+        },
+      }),
+      '## Evidence\nPlain prose.',
+    )
+    const { container } = renderWithQuery(
+      <WikiDocumentView project="project-a" page={page} sourceSurface="side-wiki" />,
+    )
+    const body = container.querySelector('[data-wiki-unverified-body]')
+    expect(body).toHaveClass('mx-auto', 'w-full', 'max-w-[720px]')
+    expect(body).not.toHaveClass('rounded-md', 'border-l-4', 'bg-muted/50', 'py-2', 'pl-3')
+    expect(body).toHaveAttribute('title', 'no line of this page is verified')
+    expect(container.querySelector('[data-wiki-review-summary]')).toHaveAttribute(
+      'data-review-state',
+      'UNVERIFIED',
+    )
+    expect(container.querySelector('[data-wiki-inline-toc]')).toBeNull()
+  })
+
   it('renders the flat newest-first card rail, selected document, and sticky outline', async () => {
     const older = summary('W0002', '2026-05-04T08:00:00+00:00', {
       title: 'Kernel evidence',
@@ -113,6 +143,15 @@ describe('WikiShell', () => {
     expect(cards[1]).toHaveAttribute('aria-current', 'page')
     const outline = container.querySelector('[data-wiki-outline]')
     expect(outline).toHaveClass('sticky')
+    expect(outline).toHaveClass('hidden', 'md:block', 'self-start')
+    const layout = container.querySelector('[data-wiki-reading-layout]')
+    expect(layout).toHaveClass('justify-center', 'gap-6')
+    expect(outline?.parentElement).toBe(layout)
+    expect(container.querySelector('[data-wiki-document-column]')).toHaveClass(
+      'max-w-[720px]',
+      'min-w-0',
+    )
+    expect(container.querySelector('[data-wiki-inline-toc]')).toBeNull()
     expect(outline).toHaveTextContent('Evidence')
     expect(outline).toHaveTextContent('Limits')
     expect(outline?.querySelector('a')).toHaveAttribute('href', '#wiki-w0002-evidence')

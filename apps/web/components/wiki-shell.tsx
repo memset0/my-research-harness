@@ -492,27 +492,29 @@ function WikiSelectedPane({
           className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-card"
           data-wiki-reading-surface=""
         >
-          <div className="p-4 md:p-6">
-            <WikiDocumentView project={project} page={page} sourceSurface="full-wiki" />
+          <div className="flex justify-center gap-6 p-4 md:p-6" data-wiki-reading-layout="">
+            <div className="min-w-0 max-w-[720px] flex-1" data-wiki-document-column="">
+              <WikiDocumentView project={project} page={page} sourceSurface="full-wiki" />
+            </div>
+            {!editing && outline.length > 0 && (
+              <nav
+                aria-label="Table of contents"
+                className="sticky top-6 hidden max-h-[calc(100svh-12rem)] w-60 shrink-0 self-start overflow-y-auto overflow-x-hidden border-l p-3 md:block"
+                data-wiki-outline=""
+              >
+                <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  On this page
+                </p>
+                <WikiOutlineList entries={outline} />
+              </nav>
+            )}
           </div>
         </div>
 
-        {editing ? (
+        {editing && (
           <div className="hidden md:flex md:w-[28rem] md:flex-col md:border-l">
             <WikiEditor project={project} page={page} onClose={() => setEditing(false)} />
           </div>
-        ) : (
-          outline.length > 0 && (
-            <nav
-              className="sticky top-0 hidden h-full w-60 shrink-0 overflow-y-auto overflow-x-hidden border-l p-3 md:block"
-              data-wiki-outline=""
-            >
-              <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                On this page
-              </p>
-              <WikiOutlineList entries={outline} />
-            </nav>
-          )
         )}
       </div>
 
@@ -629,15 +631,13 @@ export function WikiDocumentView({
   sourceSurface: 'full-wiki' | 'side-wiki'
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(page.content), [page.content])
-  const outline = useMemo(
-    () => extractMarkdownOutline(body, { headingIdPrefix: `wiki-${page.id}` }),
-    [body, page.id],
-  )
   const unverified = useMemo(() => {
     if (!page.review || page.review.state !== 'CHANGED_SINCE_VERIFY') return undefined
     // `unverifiedRanges` are file lines; the body starts after the
     // frontmatter block, so tell the renderer where its line 1 lands.
-    const bodyStartLine = page.content.slice(0, page.content.length - body.length).split('\n').length
+    const bodyStartLine = page.content
+      .slice(0, page.content.length - body.length)
+      .split('\n').length
     return {
       ranges: page.review.unverifiedRanges,
       lineOffset: bodyStartLine,
@@ -685,21 +685,8 @@ export function WikiDocumentView({
       <WikiReviewSummary project={project} page={page} />
       <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
 
-      {outline.length > 0 && (
-        <nav
-          aria-label="Table of contents"
-          className="mb-6 rounded-lg border bg-muted/30 p-4 text-sm md:hidden"
-          data-wiki-inline-toc=""
-        >
-          <WikiOutlineList entries={outline} />
-        </nav>
-      )}
-
       <div
-        className={cn(
-          wholeBodyUnverified &&
-            'rounded-md border-l-4 border-l-muted-foreground/40 bg-muted/50 py-2 pl-3',
-        )}
+        className="mx-auto w-full max-w-[720px]"
         title={wholeBodyUnverified ? 'no line of this page is verified' : undefined}
         data-wiki-unverified-body={wholeBodyUnverified ? '' : undefined}
       >
