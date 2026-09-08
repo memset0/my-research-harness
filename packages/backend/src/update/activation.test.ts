@@ -12,10 +12,7 @@ const capabilities: BackendCapabilities = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: false,
-  terminal: false,
   slurm: false,
-  herdr: false,
 }
 const entry = (name: string, release: string, revision: string) => ({
   name,

@@ -129,6 +129,44 @@ describe('runResolveExp', () => {
     expect(stderrChunks.join('')).toBe('')
   })
 
+  it('preserves newest-created-at selection for duplicate Run directory ids', async () => {
+    const duplicate = join(root, 'outputs', 'foo-260501-100000')
+    await fs.mkdir(duplicate, { recursive: true })
+    await fs.writeFile(
+      join(duplicate, 'README.md'),
+      RUN_README_BOUND
+        .replace('experiment: E0001-foo', 'experiment: E0002-newer')
+        .replace(
+          "created_at: '2026-05-01T10:00:00+08:00'",
+          "created_at: '2026-05-01T12:00:00+08:00'",
+        ),
+    )
+
+    await runResolveExp({
+      projectRoot: root,
+      cwd: root,
+      runIdOrDir: 'foo-260501-100000',
+    })
+
+    expect(stdoutChunks.join('')).toBe('E0002-newer\n')
+  })
+
+  it('does not read unrelated Run READMEs or hypotheses while resolving one target', async () => {
+    const unrelated = join(root, 'outputs', 'broken-260503-100000')
+    await fs.mkdir(join(unrelated, 'README.md'), { recursive: true })
+    await fs.mkdir(join(root, 'docs', 'hypotheses.md'), { recursive: true })
+
+    await runResolveExp({
+      projectRoot: root,
+      cwd: root,
+      runIdOrDir: 'foo-260501-100000',
+    })
+
+    expect(exitSpy.code).toBeNull()
+    expect(stdoutChunks.join('')).toBe('E0001-foo\n')
+    expect(stderrChunks.join('')).toBe('')
+  })
+
   it('exits BAD_STATE (1) on orphan run with stderr naming experiment link', async () => {
     let caught: ExitCalled | null = null
     try {

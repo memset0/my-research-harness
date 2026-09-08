@@ -1,23 +1,26 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import * as core from '@memon/core'
 import {
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
   BackendExperimentResultsResponseSchema,
   BackendExperimentsResponseSchema,
+  BackendResourceInventoryResponseSchema,
   BackendHypothesesResponseSchema,
   BackendJournalResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
   BackendRunsResponseSchema,
+  type FileOperationMetrics,
   MANAGED_SECTION_POINTERS,
   type ProjectConfig,
   serializeImplementationYaml,
   serializeInvestigationYaml,
   serializeResultsYaml,
 } from '@memon/core'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FilesystemProjectService } from './project-service.js'
 
 const fixtureRoot = resolve(process.cwd(), '../../mock/project-a')
@@ -41,66 +44,55 @@ function forbiddenKeys(value: unknown, found: string[] = []): string[] {
 }
 
 describe('FilesystemProjectService safe reads', () => {
-  it('coalesces cold reads, reuses one snapshot, and atomically refreshes when dirty', async () => {
-    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-snapshot-'))
+  it('rebuilds each request from the current filesystem instead of a cached payload', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-compose-'))
     try {
       await fs.mkdir(join(root, 'logs', 'first-260826-010203'), { recursive: true })
       const service = new FilesystemProjectService([
-        { name: 'snapshot', root, include: ['logs/*'], exclude: [] },
+        { name: 'compose', root, include: ['logs/*'], exclude: [] },
       ])
 
       const cold = await Promise.all([
-        service.listRuns('snapshot'),
-        service.listRuns('snapshot'),
-        service.getAnomalies('snapshot'),
+        service.listRuns('compose'),
+        service.listRuns('compose'),
+        service.getAnomalies('compose'),
       ])
       expect(BackendRunsResponseSchema.parse(cold[0]).runs).toHaveLength(1)
-      expect(service.inspectProject('snapshot')).toMatchObject({
-        generation: 1,
-        ready: true,
-        dirty: false,
-        runs: 1,
-      })
+      expect(service.inspectProject('compose')).toMatchObject({ ready: true, runs: 1 })
 
+      // No second domain cache: a new Run appears on the next request without
+      // any invalidation call.
       await fs.mkdir(join(root, 'logs', 'second-260826-010204'))
-      expect(BackendRunsResponseSchema.parse(await service.listRuns('snapshot')).runs).toHaveLength(
-        1,
-      )
-      service.invalidateProject('snapshot')
-      await service.refreshProject('snapshot')
-      expect(BackendRunsResponseSchema.parse(await service.listRuns('snapshot')).runs).toHaveLength(
+      expect(BackendRunsResponseSchema.parse(await service.listRuns('compose')).runs).toHaveLength(
         2,
       )
-      expect(service.inspectProject('snapshot')).toMatchObject({ generation: 2, runs: 2 })
+      expect(service.inspectProject('compose')).toMatchObject({ runs: 2 })
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
   })
 
-  it('retains the last-known-good snapshot when an explicit refresh fails', async () => {
-    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-last-good-'))
+  it('propagates an unreadable Project instead of reporting an empty one', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-unavailable-'))
     try {
       await fs.mkdir(join(root, 'logs', 'first-260826-010203'), { recursive: true })
       const service = new FilesystemProjectService([
-        { name: 'last-good', root, include: ['logs/*'], exclude: [] },
+        { name: 'unavailable', root, include: ['logs/*'], exclude: [] },
       ])
-      await service.listRuns('last-good')
-      await fs.rename(root, `${root}-unavailable`)
-
-      await expect(service.refreshProject('last-good')).rejects.toThrow()
-      expect(service.inspectProject('last-good')).toMatchObject({
-        generation: 1,
-        ready: true,
-        dirty: true,
-        runs: 1,
-      })
       expect(
-        BackendRunsResponseSchema.parse(await service.listRuns('last-good')).runs,
+        BackendRunsResponseSchema.parse(await service.listRuns('unavailable')).runs,
       ).toHaveLength(1)
-      await fs.rename(`${root}-unavailable`, root)
+      await fs.rename(root, `${root}-gone`)
+
+      await expect(service.refreshProject('unavailable')).rejects.toThrow()
+      // A vanished root is an error, never a successful empty list that would
+      // read as "every Run was deleted".
+      await expect(service.listRuns('unavailable')).rejects.toThrow()
+      expect(service.inspectProject('unavailable').lastError).not.toBeNull()
+      await fs.rename(`${root}-gone`, root)
     } finally {
       await fs.rm(root, { recursive: true, force: true })
-      await fs.rm(`${root}-unavailable`, { recursive: true, force: true })
+      await fs.rm(`${root}-gone`, { recursive: true, force: true })
     }
   })
 
@@ -136,6 +128,53 @@ describe('FilesystemProjectService safe reads', () => {
     expect(JSON.stringify(detail)).not.toContain(fixtureRoot)
   })
 
+  it('discovers Run and Experiment identities without opening their poisoned documents', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-project-inventory-'))
+    const runId = 'poisoned-run-260908-010203'
+    const experimentId = 'E0001-poisoned'
+    try {
+      await Promise.all([
+        fs.mkdir(join(root, 'logs', runId), { recursive: true }),
+        fs.mkdir(join(root, 'docs', 'experiments', experimentId), { recursive: true }),
+      ])
+      await Promise.all([
+        fs.symlink('README.md', join(root, 'logs', runId, 'README.md')),
+        fs.symlink(
+          'README.md',
+          join(root, 'docs', 'experiments', experimentId, 'README.md'),
+        ),
+      ])
+      const service = new FilesystemProjectService([
+        { name: 'inventory', root, include: [], exclude: [] },
+      ])
+
+      const runs = BackendResourceInventoryResponseSchema.parse(
+        await service.listRuns('inventory', {}, { inventoryOnly: true }),
+      )
+      const experiments = BackendResourceInventoryResponseSchema.parse(
+        await service.listExperiments('inventory', { inventoryOnly: true }),
+      )
+      expect(runs.items).toEqual([
+        {
+          id: runId,
+          slug: 'poisoned-run',
+          resource: `logs/${runId}/README.md`,
+        },
+      ])
+      expect(experiments.items).toEqual([
+        {
+          id: experimentId,
+          slug: 'poisoned',
+          resource: `docs/experiments/${experimentId}/README.md`,
+        },
+      ])
+      await expect(service.getRun('inventory', runId)).rejects.toThrow()
+      await expect(service.getExperiment('inventory', experimentId)).rejects.toThrow()
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('lists a bounded, path-free file tree for the exact Run resource', async () => {
     const service = new FilesystemProjectService([project('project-a')])
     const files = BackendRunFilesResponseSchema.parse(
@@ -148,7 +187,7 @@ describe('FilesystemProjectService safe reads', () => {
     expect(forbiddenKeys(files)).toEqual([])
   })
 
-  it('lists and reads Experiment docs with path-free member Runs', async () => {
+  it('lists Experiment docs and reads one document without absolute filesystem fields', async () => {
     const service = new FilesystemProjectService([project('project-a')])
     const list = BackendExperimentsResponseSchema.parse(await service.listExperiments('project-a'))
     expect(list.experiments.length).toBeGreaterThan(0)
@@ -157,9 +196,163 @@ describe('FilesystemProjectService safe reads', () => {
     )
     expect(detail.project).toBe('project-a')
     expect(detail.resource).toMatch(/^docs\/experiments\/[^/]+\/README\.md$/)
-    expect(detail.memberRuns.every((run) => run.resource.endsWith('/README.md'))).toBe(true)
     expect(forbiddenKeys(detail)).toEqual([])
     expect(JSON.stringify(detail)).not.toContain(fixtureRoot)
+  })
+
+  it('keeps Run lookup and Experiment eligibility inventories behind automatic priority', async () => {
+    const storageGroup = `detail-inventories-${process.pid}`
+    const service = new FilesystemProjectService([project('project-a')])
+    const activity = (
+      metrics: FileOperationMetrics,
+      origin: 'human' | 'automatic',
+    ) =>
+      metrics.series
+        .filter((series) => series.storageGroup === storageGroup && series.origin === origin)
+        .reduce((total, series) => total + series.samples + series.cacheHits, 0)
+
+    const beforeRun = core.getFileOperationMetrics()
+    await core.withProjectFileContext(
+      { root: fixtureRoot, storageGroup, reason: 'manual', attentionId: 'detail-tab' },
+      () => service.getRun('project-a', 'foo-260501-100000'),
+    )
+    const afterRun = core.getFileOperationMetrics()
+    expect(activity(afterRun, 'automatic')).toBeGreaterThan(activity(beforeRun, 'automatic'))
+    expect(activity(afterRun, 'human')).toBeGreaterThan(activity(beforeRun, 'human'))
+
+    const beforeExperiment = core.getFileOperationMetrics()
+    await core.withProjectFileContext(
+      { root: fixtureRoot, storageGroup, reason: 'manual', attentionId: 'detail-tab' },
+      () => service.getExperiment('project-a', 'E0001-vpred-convergence'),
+    )
+    const afterExperiment = core.getFileOperationMetrics()
+    expect(activity(afterExperiment, 'automatic')).toBeGreaterThan(
+      activity(beforeExperiment, 'automatic'),
+    )
+    expect(activity(afterExperiment, 'human')).toBeGreaterThan(activity(beforeExperiment, 'human'))
+  })
+
+  it('lists Experiment docs while every Run read is denied', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-lean-experiment-list-'))
+    try {
+      const bundle = join(root, 'docs', 'experiments', 'E0001-lean')
+      await fs.mkdir(bundle, { recursive: true })
+      await fs.writeFile(
+        join(bundle, 'README.md'),
+        `---
+id: E0001-lean
+slug: lean
+title: Lean list fixture
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-08-26T00:00:00Z
+updated_at: 2026-08-27T00:00:00Z
+---
+
+## Motivation
+
+fixture
+
+## Conclusion
+
+conclusion
+`,
+      )
+      // A Run whose README is a symlink loop: reading the Run tree fails with
+      // ELOOP for every user, root included.
+      const runDir = join(root, 'logs', 'denied-260826-010203')
+      await fs.mkdir(runDir, { recursive: true })
+      await fs.symlink('README.md', join(runDir, 'README.md'))
+      const service = new FilesystemProjectService([
+        { name: 'lean', root, include: ['logs/*'], exclude: [] },
+      ])
+
+      // The Run reads really are denied...
+      await expect(service.listRuns('lean')).rejects.toThrow()
+      // ...and the Experiment list is unaffected, because it never reaches a
+      // Run: it projects each Experiment document's own timestamps and ships
+      // no member roster at all.
+      const list = BackendExperimentsResponseSchema.parse(await service.listExperiments('lean'))
+      expect(list.experiments.map((experiment) => experiment.id)).toEqual(['E0001-lean'])
+      expect(list.experiments[0]).not.toHaveProperty('memberRuns')
+      expect(list.experiments[0]).toMatchObject({
+        effectiveCreatedAt: '2026-08-26T00:00:00Z',
+        effectiveUpdatedAt: '2026-08-27T00:00:00Z',
+      })
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reports unreadable eligibility and preserves the declared roster after metadata recovery', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-declared-members-'))
+    const id = 'E0001-declared'
+    const declared = [
+      'unreadable-260826-010203',
+      'absent-260826-010204',
+      'mismatched-260826-010205',
+    ]
+    try {
+      const bundle = join(root, 'docs', 'experiments', id)
+      await fs.mkdir(bundle, { recursive: true })
+      await fs.writeFile(
+        join(bundle, 'README.md'),
+        `---
+id: ${id}
+slug: declared
+title: Declared roster
+status: OPEN
+archived: false
+runs: ${JSON.stringify(declared)}
+hypotheses: []
+tags: []
+created_at: 2026-08-26T00:00:00Z
+updated_at: 2026-08-27T00:00:00Z
+---
+## Motivation
+fixture
+`,
+      )
+      // First declared member: README is a symlink loop, so every read of it
+      // fails with ELOOP for every user, root included.
+      const unreadable = join(root, 'logs', declared[0]!)
+      await fs.mkdir(unreadable, { recursive: true })
+      await fs.symlink('README.md', join(unreadable, 'README.md'))
+      // Second declared member has no directory at all; the third exists but
+      // is bound to a different Experiment.
+      const mismatched = join(root, 'logs', declared[2]!)
+      await fs.mkdir(mismatched, { recursive: true })
+      await fs.writeFile(
+        join(mismatched, 'README.md'),
+        '---\nexperiment: E0002-other\n---\nmember\n',
+      )
+      const service = new FilesystemProjectService([project('declared', root)])
+
+      await expect(service.getExperiment('declared', id)).rejects.toMatchObject({
+        code: 'INVALID_RESOURCE',
+      })
+      await fs.unlink(join(unreadable, 'README.md'))
+      await fs.writeFile(
+        join(unreadable, 'README.md'),
+        `---\nid: ${declared[0]}\nstatus: FINISHED\ncreated_at: 2026-08-26T01:02:03Z\ndeprecated: true\n---\nLOWER_BODY_CANARY\n`,
+      )
+      const detail = BackendExperimentResponseSchema.parse(
+        await service.getExperiment('declared', id),
+      )
+      expect(detail.frontMatter.runs).toEqual(declared)
+      expect(detail.deprecatedRuns).toEqual([declared[0]])
+      expect(JSON.stringify(detail)).not.toContain('LOWER_BODY_CANARY')
+      // Effective window is the document's own, exactly as on the list.
+      expect(detail).toMatchObject({
+        effectiveCreatedAt: '2026-08-26T00:00:00Z',
+        effectiveUpdatedAt: '2026-08-27T00:00:00Z',
+      })
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
   })
 
   it('preserves canonical v6 managed documents and display sections only on detail', async () => {

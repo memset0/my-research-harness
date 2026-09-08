@@ -3,15 +3,7 @@
 // @memon/cli — `memon` command-line tool entry point.
 
 import { ConfigError, EXPERIMENT_DIR_REGEX, MEMON_RELEASE, RUN_DIR_REGEX } from '@memon/core'
-import { Command } from 'commander'
-import { runBackendDaemonCommand } from './commands/backend-daemon.js'
-import { runBackendServe } from './commands/backend-serve.js'
-import {
-  runBackendPrepare,
-  runBackendRollback,
-  runBackendTokenGenerate,
-} from './commands/backend-update.js'
-import { runDoctorCmd } from './commands/doctor.js'
+import { Command, CommanderError } from 'commander'
 import {
   readStdin,
   runArchive,
@@ -34,7 +26,6 @@ import {
   runExperimentDocumentLint,
   runExperimentDocumentRender,
   runExperimentDocumentShow,
-  runExperimentDocumentValidate,
 } from './commands/experiment-document.js'
 import { runExperimentRename } from './commands/experiment-rename.js'
 import {
@@ -47,9 +38,13 @@ import { runFsVersionCheck } from './commands/fs-version-check.js'
 import { runHypoList, runHypoShow } from './commands/hypo.js'
 import { runHypothesesRead } from './commands/hypotheses.js'
 import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
-import { runJournalAppend, runJournalDigestMark, runJournalRead } from './commands/journal.js'
+import { runJournalRead } from './commands/journal.js'
+import { runJournalSubmit } from './commands/journal-submit.js'
 import { runList } from './commands/list.js'
 import { runMockSeed } from './commands/mock.js'
+import { runRunDeprecate, runRunUndeprecate } from './commands/run-deprecate.js'
+import { runRunLint } from './commands/run-lint.js'
+import { runRunRecord } from './commands/run-record.js'
 import { runRunRename } from './commands/run-rename.js'
 import { runResolveExp } from './commands/run-resolve-exp.js'
 import { runRunWarningAdd } from './commands/run-warning.js'
@@ -58,6 +53,7 @@ import { runSearch } from './commands/search.js'
 import { runServe } from './commands/serve.js'
 import { runShareCreate, runShareList, runShareRevoke } from './commands/share.js'
 import { runShow } from './commands/show.js'
+import { runUpdate, updateFailed } from './commands/update.js'
 import {
   runWarningAdd,
   runWarningDelete,
@@ -80,17 +76,20 @@ import {
   runWikiMove,
   runWikiReviewDiff,
   runWikiReviewLog,
-  runWikiReviewLs,
   runWikiReviewUnverify,
   runWikiReviewVerify,
   runWikiSet,
   runWikiShow,
-  runWikiStale,
   runWikiUndeprecate,
 } from './commands/wiki.js'
 import { emitWarningDeprecationBanner } from './lib/deprecations.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
+import {
+  beginCliInvocation,
+  finishCliInvocation,
+  recordCliInvocationFailureSync,
+} from './lib/invocation.js'
 
 const program = new Command()
 program
@@ -99,6 +98,25 @@ program
   .version(MEMON_RELEASE)
   .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
   .option('--format <fmt>', 'output format: json | human', 'json')
+
+let parsingCommand = program
+let actionStarted = false
+// Journal invocation ledger. Interception lives here, once, so no command
+// author has to remember to record anything: `lib/invocation.ts` classifies
+// the resolved command path and only records non-readonly, project-scoped
+// ones. Error and signal exits are flushed from the emitters and the process
+// guards, because `emitErrorAndExit` never returns to this hook.
+program.hook('preAction', async (_thisCommand, actionCommand) => {
+  actionStarted = true
+  await beginCliInvocation({
+    command: actionCommand,
+    globalProjectRoot: program.opts<{ projectRoot?: string }>().projectRoot,
+    cwd: process.cwd(),
+  })
+})
+program.hook('postAction', async () => {
+  await finishCliInvocation()
+})
 
 interface Globals {
   projectRoot?: string
@@ -116,23 +134,58 @@ function readGlobals(): Globals {
   }
 }
 
+/**
+ * Deprecation is orthogonal to archival: a run may be archived, deprecated,
+ * both, or neither, so the two flag pairs are validated independently.
+ * Deprecated runs are excluded from every enumerating read by default;
+ * `--include-deprecated` / `--deprecated-only` are the explicit inspection
+ * paths, and explicit-id lookups (`show`, `run *`) are never filtered.
+ */
+function assertDeprecationFlags(opts: {
+  includeDeprecated?: boolean
+  deprecatedOnly?: boolean
+}): void {
+  if (opts.includeDeprecated && opts.deprecatedOnly) {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      '--include-deprecated and --deprecated-only are mutually exclusive',
+    )
+  }
+}
+
 // ---------- read commands (existing) ----------
 
 program
   .command('list')
   .description('list experiments across configured projects')
   .option('--project <name>', 'restrict to a single project')
-  .action(async (opts: { project?: string }) => {
-    const g = readGlobals()
-    if (g.projectRoot && opts.project) {
-      emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
-    }
-    await runList({ ...g, project: opts.project })
-  })
+  .option('--include-deprecated', 'also list runs marked deprecated', false)
+  .option('--deprecated-only', 'list ONLY runs marked deprecated', false)
+  .action(
+    async (opts: {
+      project?: string
+      includeDeprecated?: boolean
+      deprecatedOnly?: boolean
+    }) => {
+      const g = readGlobals()
+      if (g.projectRoot && opts.project) {
+        emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
+      }
+      assertDeprecationFlags(opts)
+      await runList({
+        ...g,
+        project: opts.project,
+        includeDeprecated: !!opts.includeDeprecated,
+        deprecatedOnly: !!opts.deprecatedOnly,
+      })
+    },
+  )
 
 program
   .command('show <id>')
-  .description('show a single experiment by directory id')
+  .description(
+    'show a single experiment by directory id. Explicit-id inspection: resolves archived and deprecated runs too, carrying their markers.',
+  )
   .action(async (id: string) => {
     const g = readGlobals()
     await runShow({ ...g, id })
@@ -142,11 +195,25 @@ program
   .command('search <query>')
   .description('substring search across experiments')
   .option('--in <scope>', 'search scope: all | body | fm', 'all')
-  .action(async (query: string, opts: { in?: string }) => {
-    const g = readGlobals()
-    const scope = opts.in === 'body' ? 'body' : opts.in === 'fm' ? 'fm' : 'all'
-    await runSearch({ ...g, query, scope })
-  })
+  .option('--include-deprecated', 'also match runs marked deprecated', false)
+  .option('--deprecated-only', 'match ONLY runs marked deprecated', false)
+  .action(
+    async (
+      query: string,
+      opts: { in?: string; includeDeprecated?: boolean; deprecatedOnly?: boolean },
+    ) => {
+      const g = readGlobals()
+      const scope = opts.in === 'body' ? 'body' : opts.in === 'fm' ? 'fm' : 'all'
+      assertDeprecationFlags(opts)
+      await runSearch({
+        ...g,
+        query,
+        scope,
+        includeDeprecated: !!opts.includeDeprecated,
+        deprecatedOnly: !!opts.deprecatedOnly,
+      })
+    },
+  )
 
 const hypo = program.command('hypo').description('hypothesis registry commands (human-friendly)')
 hypo
@@ -205,126 +272,70 @@ program
     })
   })
 
-const backend = program.command('backend').description('cluster Backend service commands')
-
-backend
-  .command('serve')
-  .description('run the framework-neutral cluster Backend HTTP service')
-  .option('--config <path>', 'path to the Backend instance config (default: <cwd>/config.yml)')
-  .action(async (opts: { config?: string }) => {
-    const g = readGlobals()
-    if (g.projectRoot) {
-      emitErrorAndExit(
-        'BAD_REQUEST',
-        '--project-root is not supported by `memon backend serve`; use a Backend instance config',
-      )
-    }
-    await runBackendServe({ cwd: g.cwd, configPath: opts.config, format: g.format })
-  })
-
-const backendDaemon = backend.command('daemon').description('rootless Backend daemon lifecycle')
-for (const action of ['start', 'stop', 'restart', 'status'] as const) {
-  backendDaemon
-    .command(action)
-    .description(`${action} or inspect the persistent Backend supervisor`)
-    .option('--config <path>', 'path to the Backend instance config (default: <cwd>/config.yml)')
-    .action(async (opts: { config?: string }) => {
+program
+  .command('update')
+  .description(
+    'fast-forward this installation from its configured trusted upstream, rebuild the CLI, and refresh managed skills',
+  )
+  .option('--source <path>', 'source checkout to update (default: the checkout this CLI runs from)')
+  .option('--remote <name>', 'configured remote name (default: the branch upstream remote)')
+  .option('--branch <name>', 'upstream branch name (default: the branch upstream merge ref)')
+  .option(
+    '--skills-root <path>',
+    'refresh managed skills under this project root (repeatable; default: cwd)',
+    (value: string, previous: string[]) => [...previous, value],
+    [] as string[],
+  )
+  .option('--no-skills', 'skip the managed-skill refresh')
+  .option('--dry-run', 'report the selected revision and planned actions, change nothing', false)
+  .action(
+    async (opts: {
+      source?: string
+      remote?: string
+      branch?: string
+      skillsRoot: string[]
+      skills?: boolean
+      dryRun?: boolean
+    }) => {
       const g = readGlobals()
       if (g.projectRoot) {
         emitErrorAndExit(
           'BAD_REQUEST',
-          `--project-root is not supported by \`memon backend daemon ${action}\``,
+          '--project-root is not supported by `memon update`; use --skills-root',
         )
       }
-      const result = await runBackendDaemonCommand({
-        action,
+      const result = await runUpdate({
         cwd: g.cwd,
-        configPath: opts.config,
         format: g.format,
+        ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.remote ? { remote: opts.remote } : {}),
+        ...(opts.branch ? { branch: opts.branch } : {}),
+        skillsRoots: opts.skillsRoot,
+        skills: opts.skills !== false,
+        dryRun: opts.dryRun === true,
       })
-      if (
-        'outcome' in result &&
-        [
-          'stale',
-          'mismatch',
-          'crash_loop',
-          'startup_timeout',
-          'restart_required',
-          'use_backend_serve',
-        ].includes(result.outcome)
-      ) {
-        process.exitCode = EXIT.GENERIC
-      }
-    })
-}
-
-backend
-  .command('token')
-  .description('Backend service-token commands')
-  .command('generate')
-  .description('print one new service token')
-  .action(async () => {
-    await runBackendTokenGenerate()
-  })
-for (const action of ['install', 'update'] as const) {
-  backend
-    .command(action)
-    .description(`prepare, activate, and verify a pinned Backend release`)
-    .requiredOption('--revision <sha>', 'exact 40-character commit SHA')
-    .option('--config <path>', 'Backend instance config')
-    .action(async (opts: { revision: string; config?: string }) => {
-      const g = readGlobals()
-      const result = await runBackendPrepare({
-        action,
-        cwd: g.cwd,
-        configPath: opts.config,
-        revision: opts.revision,
-        format: g.format,
-      })
-      if (result.outcome !== 'activated') process.exitCode = EXIT.GENERIC
-    })
-}
-backend
-  .command('rollback')
-  .description('activate and verify the installed previous Backend release')
-  .option('--revision <installed>', 'require this installed previous name or revision')
-  .option('--config <path>', 'Backend instance config')
-  .action(async (opts: { revision?: string; config?: string }) => {
-    const g = readGlobals()
-    const result = await runBackendRollback({
-      cwd: g.cwd,
-      configPath: opts.config,
-      revision: opts.revision,
-      format: g.format,
-    })
-    if (result.outcome !== 'activated') process.exitCode = EXIT.GENERIC
-  })
-
-backendDaemon
-  .command('supervise', { hidden: true })
-  .description('internal persistent supervisor entry')
-  .requiredOption('--config <path>', 'path to the Backend instance config')
-  .action(async (opts: { config: string }) => {
-    const result = await runBackendDaemonCommand({
-      action: 'supervise',
-      cwd: process.cwd(),
-      configPath: opts.config,
-      format: 'json',
-    })
-    if ('outcome' in result && result.outcome === 'crash_loop') process.exitCode = EXIT.GENERIC
-  })
+      if (updateFailed(result)) process.exitCode = EXIT.GENERIC
+    },
+  )
 
 // ---------- new agent-shaped read commands ----------
 
 program
   .command('scan [project-root]')
-  .description('bulk-read a project root: experiments + hypotheses + journal')
+  .description('bulk-read a project root: experiments + hypotheses')
   .option('--include-archived', 'include archived runs in the result', false)
   .option('--archived-only', 'return ONLY archived runs', false)
+  .option('--include-deprecated', 'include runs marked deprecated in the result', false)
+  .option('--deprecated-only', 'return ONLY runs marked deprecated', false)
   .action(
     async (
       positionalRoot: string | undefined,
-      opts: { includeArchived?: boolean; archivedOnly?: boolean },
+      opts: {
+        includeArchived?: boolean
+        archivedOnly?: boolean
+        includeDeprecated?: boolean
+        deprecatedOnly?: boolean
+      },
     ) => {
       const g = readGlobals()
       if (opts.includeArchived && opts.archivedOnly) {
@@ -333,46 +344,65 @@ program
           '--include-archived and --archived-only are mutually exclusive',
         )
       }
+      assertDeprecationFlags(opts)
       const root = positionalRoot ?? g.projectRoot ?? g.cwd
       await runScan({
         projectRoot: root,
         includeArchived: !!opts.includeArchived,
         archivedOnly: !!opts.archivedOnly,
+        includeDeprecated: !!opts.includeDeprecated,
+        deprecatedOnly: !!opts.deprecatedOnly,
         format: g.format,
       })
     },
   )
 
-const journal = program.command('journal').description('docs/journal.md commands')
+const journal = program
+  .command('journal')
+  .description('diagnostic invocation history and direct-maintenance submission')
 journal
   .command('read')
-  .description('read parsed events from docs/journal.md (JSON)')
-  .option('--since <iso>', 'filter events with timestamp >= this ISO string')
-  .option('--tag <tag>', 'filter by tag (NOTE / REQUEST / STATUS / CREATE / ARCHIVE / ERROR)')
-  .option('--experiment-id <id>', 'filter to events touching this experiment id')
-  .option('--limit <n>', 'cap returned events (default 200, max 1000)', (v) => parseInt(v, 10), 200)
-  .action(async (opts: { since?: string; tag?: string; runId?: string; limit?: number }) => {
-    const g = readGlobals()
-    await runJournalRead({ ...g, ...opts })
-  })
+  .description(
+    'explicit diagnostic query over merged Journal history: preserved legacy docs/journal.md lines plus typed invocation receipts. Not a research input: no manual append and no digest cursor.',
+  )
+  .option('--since <iso>', 'only events at/after this ISO8601 instant (offset required)')
+  .option('--tag <tag>', 'only events carrying this tag (e.g. STATUS / BIND / INVOCATION)')
+  .option('--experiment-id <id>', 'only events associated with this experiment (E<NNNN>[-<slug>])')
+  .option('--run-id <id>', 'only events associated with this run (<slug>-<YYMMDD>-<HHMMSS>)')
+  .option('--origin <origin>', 'legacy | invocation')
+  .option(
+    '--outcome <outcome>',
+    'only invocation receipts with this outcome: running | success | failure | conflict | noop | partial',
+  )
+  .option('--limit <n>', 'cap returned events (default 200, max 1000)')
+  .option('--cursor <cursor>', "opaque cursor from a previous read's nextCursor")
+  .action(
+    async (opts: {
+      since?: string
+      tag?: string
+      experimentId?: string
+      runId?: string
+      origin?: string
+      outcome?: string
+      limit?: string
+      cursor?: string
+    }) => {
+      const g = readGlobals()
+      await runJournalRead({ ...g, ...opts })
+    },
+  )
 journal
-  .command('append')
-  .description('append a single [NOTE]/[REQUEST]/[ERROR]/[ARCHIVE]/[CREATE] event (no STATUS)')
-  .requiredOption('--tag <tag>', 'event tag')
-  .requiredOption('--body <body>', 'event body text')
-  .option('--experiment-id <id>', 'optional id to prefix in the body')
-  .option('--at <iso>', 'override the event timestamp (default: now)')
-  .action(async (opts: { tag: string; body: string; runId?: string; at?: string }) => {
+  .command('submit')
+  .description(
+    'record a direct-maintenance receipt for managed Experiment / Wiki files you edited yourself. Verifies paths and records current digests without modifying submitted documents. Carries no prose and is not a git commit.',
+  )
+  .requiredOption(
+    '--files <paths...>',
+    'project-root-relative paths under docs/experiments/E<NNNN>-<slug>/ or docs/wiki/',
+  )
+  .action(async (opts: { files: string[] }) => {
     const g = readGlobals()
-    await runJournalAppend({ ...g, ...opts })
-  })
-journal
-  .command('digest-mark')
-  .description('update last_digest_at in docs/journal.md frontmatter (digest skill only)')
-  .requiredOption('--at <iso>', 'ISO8601 timestamp with offset')
-  .action(async (opts: { at: string }) => {
-    const g = readGlobals()
-    await runJournalDigestMark({ ...g, at: opts.at })
+    await runJournalSubmit({ ...g, files: opts.files })
   })
 
 program
@@ -454,14 +484,10 @@ experimentDoc
     await runExperimentDocumentRender({ ...readGlobals(), idOrSlug, section })
   })
 experimentDoc
-  .command('validate <id-or-slug>')
-  .description('validate the three managed YAML schemas and cross-references')
-  .action(async (idOrSlug: string) => {
-    await runExperimentDocumentValidate({ ...readGlobals(), idOrSlug })
-  })
-experimentDoc
   .command('lint <id-or-slug>')
-  .description('strictly lint README sections, managed pointers, YAML, and references')
+  .description(
+    'lint the Experiment document package for format and structure: README sections, managed pointers, YAML schemas, and cross-references. Includes the schema validation that `doc validate` used to perform. Never judges research state.',
+  )
   .action(async (idOrSlug: string) => {
     await runExperimentDocumentLint({ ...readGlobals(), idOrSlug })
   })
@@ -609,7 +635,7 @@ const status = experiment
 status
   .command('set <id>')
   .description(
-    'atomically set status. Run-id: writes [STATUS] event with values PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN. Exp-id: writes [EXP_STATUS] with OPEN|RESOLVED|ABANDONED.',
+    'atomically set status and record the invocation. Run: PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN. Experiment: OPEN|RESOLVED|ABANDONED.',
   )
   .requiredOption(
     '--to <status>',
@@ -761,7 +787,7 @@ warning
   )
 warning
   .command('delete <id> <rowId>')
-  .description('remove a warning row (audit kept in JOURNAL)')
+  .description('remove a warning row and record the invocation')
   .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
   .option('--expected-hash <sha1>', 'optional content sha1 lock')
   .action(
@@ -884,6 +910,44 @@ runWarning
   )
 
 run
+  .command('record <id-or-dir>')
+  .description(
+    'write the minimal README for an execution directory that already exists (id or path). Records only: never launches, schedules, or creates a run directory. Emits id/status/created_at plus the execution facts you pass — no narrative placeholders, no Experiment metadata. Optional free-form body from stdin. Refuses to overwrite an existing README. Bind it afterwards with `experiment link`.',
+  )
+  .option('--status <status>', 'PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN', 'PENDING')
+  .option('--name <text>', 'short human label for this run')
+  .option('--created-at <iso>', 'ISO8601 with offset (default: the timestamp in the directory name)')
+  .option('--finished-at <iso>', 'ISO8601 with offset')
+  .option('--host <name>', 'execution host')
+  .option('--pid <n>', 'process id', (v) => Number(v))
+  .option('--gpus <list>', 'comma-separated GPU indices')
+  .option('--entry <path>', 'entry script')
+  .option('--command <text>', 'command line as launched')
+  .option('--wandb <url>', 'run URL in the tracking service')
+  .option('--body', 'read a free-form body from stdin', false)
+  .action(
+    async (
+      idOrDir: string,
+      opts: {
+        status?: string
+        name?: string
+        createdAt?: string
+        finishedAt?: string
+        host?: string
+        pid?: number
+        gpus?: string
+        entry?: string
+        command?: string
+        wandb?: string
+        body?: boolean
+      },
+    ) => {
+      const g = readGlobals()
+      const body = opts.body ? await readStdin() : undefined
+      await runRunRecord({ ...g, ...opts, target: idOrDir, body })
+    },
+  )
+run
   .command('archive <id>')
   .description('mark a run as archived (writes archived: true to README frontmatter)')
   .action(async (id: string) => {
@@ -896,6 +960,37 @@ run
   .action(async (id: string) => {
     const g = readGlobals()
     await runUnarchive({ ...g, runId: id })
+  })
+run
+  .command('lint <id-or-dir>')
+  .description(
+    'structural lint of one run: README frontmatter schema, id/directory agreement, timestamp and reference formats. Reads only; never journaled.',
+  )
+  .action(async (id: string) => {
+    const g = readGlobals()
+    await runRunLint({ ...g, runId: id })
+  })
+run
+  .command('deprecate <id-or-dir>')
+  .description(
+    'mark a run deprecated (writes deprecated: true to README frontmatter). Orthogonal to status and archival: no signal, no artifact deletion, RUNNING runs may be deprecated. Idempotent.',
+  )
+  .option(
+    '--expected-mtime <ms>',
+    "optional README mtime lock (get from 'memon show'); omit for an unconditional write",
+    (v) => Number(v),
+  )
+  .action(async (id: string, opts: { expectedMtime?: number }) => {
+    const g = readGlobals()
+    await runRunDeprecate({ ...g, runId: id, expectedMtime: opts.expectedMtime })
+  })
+run
+  .command('undeprecate <id-or-dir>')
+  .description('clear the deprecated marker on a run. Idempotent.')
+  .option('--expected-mtime <ms>', 'optional README mtime lock', (v) => Number(v))
+  .action(async (id: string, opts: { expectedMtime?: number }) => {
+    const g = readGlobals()
+    await runRunUndeprecate({ ...g, runId: id, expectedMtime: opts.expectedMtime })
   })
 
 const runStatus = run.command('status').description('run status field operations')
@@ -930,21 +1025,6 @@ runReadme
       expectedMtime: opts.expectedMtime,
       expectedHash: opts.expectedHash,
       stdinContent,
-    })
-  })
-
-program
-  .command('doctor')
-  .description('scan a project root for issues (FINISHED w/ no Result, stale RUNNING, etc.)')
-  .option('--include-archived', 'include archived runs', false)
-  .option('--severity <level>', 'min severity to report: info | warn | error', 'info')
-  .action(async (opts: { includeArchived?: boolean; severity?: string }) => {
-    const g = readGlobals()
-    const sev = opts.severity === 'warn' ? 'warn' : opts.severity === 'error' ? 'error' : 'info'
-    await runDoctorCmd({
-      ...g,
-      includeArchived: !!opts.includeArchived,
-      severity: sev as 'info' | 'warn' | 'error',
     })
   })
 
@@ -1045,7 +1125,12 @@ interface WikiLocalOptions {
  * `--format` is passed through raw; `wiki.ts` validates it (markdown is only
  * legal on `ls` / `show`).
  */
-function wikiCommand(parent: Command, spec: string, description: string, markdown = false): Command {
+function wikiCommand(
+  parent: Command,
+  spec: string,
+  description: string,
+  markdown = false,
+): Command {
   return parent
     .command(spec)
     .description(description)
@@ -1078,9 +1163,7 @@ wikiCommand(wiki, 'ls', 'list wiki pages with optional filters', true)
   .option('--kind <kind>', 'restrict to one kind directory')
   .option('--status <status>', 'restrict to one status')
   .option('--tag <tag>', 'restrict to pages carrying this tag')
-  .option('--stale', 'only pages whose cited evidence moved on', false)
-  .option('--review <state>', 'VERIFIED | CHANGED_SINCE_VERIFY | UNVERIFIED')
-  .option('--source <artifact>', 'only pages citing this Experiment / Variant / Hypothesis / run')
+  .option('--source <artifact>', 'only pages declaring this source token')
   .option('--deprecated', 'only deprecated pages')
   .option('--no-deprecated', 'hide deprecated pages')
   .option('--no-description', 'suppress the description line (human / markdown)')
@@ -1090,8 +1173,6 @@ wikiCommand(wiki, 'ls', 'list wiki pages with optional filters', true)
         kind?: string
         status?: string
         tag?: string
-        stale?: boolean
-        review?: string
         source?: string
         deprecated?: boolean
         description?: boolean
@@ -1112,7 +1193,12 @@ wikiCommand(wiki, 'create <kind> <slug>', 'allocate the next W<NNNN> and write a
   .option('--description <text>', 'one to three sentences that stand alone in a listing')
   .option('--status <status>', "status from the kind's vocabulary (default: its first value)")
   .option('--date <YYYY-MM-DD>', 'meeting date (required for `meeting`)')
-  .option('--source <artifact>', 'cite an Experiment / Variant / Hypothesis / run (repeatable)', collectOption, [])
+  .option(
+    '--source <artifact>',
+    'cite an Experiment / Variant / Hypothesis / run (repeatable)',
+    collectOption,
+    [],
+  )
   .option('--tag <tag>', 'add a tag (repeatable)', collectOption, [])
   .option('--bundle', 'create the bundle form (<slug>/README.md + assets)', false)
   .action(
@@ -1148,7 +1234,9 @@ wikiCommand(wiki, 'set <page>', 'edit frontmatter only, with an optional mtime l
   .option('--rm-source <artifact>', 'remove from `sources` (repeatable)', collectOption, [])
   .option('--add-tag <tag>', 'append to `tags` (repeatable)', collectOption, [])
   .option('--rm-tag <tag>', 'remove from `tags` (repeatable)', collectOption, [])
-  .option('--expected-mtime <ms>', 'refuse the write unless the page mtime matches', (v) => Number(v))
+  .option('--expected-mtime <ms>', 'refuse the write unless the page mtime matches', (v) =>
+    Number(v),
+  )
   .action(
     async (
       page: string,
@@ -1171,23 +1259,27 @@ wikiCommand(wiki, 'set <page>', 'edit frontmatter only, with an optional mtime l
 wikiCommand(wiki, 'lint [page]', 'report diagnostics for one page or the whole wiki')
   .option('--strict', 'exit 1 when any `error` severity diagnostic exists', false)
   .option('--central <url>', 'also apply the central component registry lint')
-  .action(async (page: string | undefined, opts: WikiLocalOptions & { strict?: boolean; central?: string }) => {
-    await runWikiLint({ ...wikiGlobals(opts), page, strict: opts.strict, central: opts.central })
-  })
+  .action(
+    async (
+      page: string | undefined,
+      opts: WikiLocalOptions & { strict?: boolean; central?: string },
+    ) => {
+      await runWikiLint({ ...wikiGlobals(opts), page, strict: opts.strict, central: opts.central })
+    },
+  )
 
-wikiCommand(wiki, 'stale', 'list pages whose cited evidence changed after their `updated_at`').action(
-  async (opts: WikiLocalOptions) => {
-    await runWikiStale(wikiGlobals(opts))
-  },
-)
 
-wikiCommand(wiki, 'backlinks <artifact>', 'list pages citing an artifact (plus Markdown links for R<NNNN>)').action(
+wikiCommand(wiki, 'backlinks <artifact>', 'list pages declaring an artifact source').action(
   async (artifact: string, opts: WikiLocalOptions) => {
     await runWikiBacklinks({ ...wikiGlobals(opts), artifact })
   },
 )
 
-wikiCommand(wiki, 'migrate-report <report> <kind> [slug]', 'move one docs/reports/R<NNNN> into the wiki')
+wikiCommand(
+  wiki,
+  'migrate-report <report> <kind> [slug]',
+  'move one docs/reports/R<NNNN> into the wiki',
+)
   .option('--status <status>', "status from the target kind's vocabulary")
   .action(
     async (
@@ -1227,7 +1319,11 @@ wikiCommand(wiki, 'delete <page>', 'delete a page (bundles with assets require -
 
 wikiCommand(wiki, 'commit', 'stage docs/wiki/ only and commit it as `wiki: <summary>`')
   .option('-m, --message <summary>', 'commit summary (default: generated from the touched pages)')
-  .option('--allow-empty-message', 'accept an empty -m and fall back to the generated summary', false)
+  .option(
+    '--allow-empty-message',
+    'accept an empty -m and fall back to the generated summary',
+    false,
+  )
   .action(async (opts: WikiLocalOptions & { message?: string; allowEmptyMessage?: boolean }) => {
     await runWikiCommit({ ...wikiGlobals(opts), ...opts })
   })
@@ -1242,19 +1338,19 @@ wikiCommand(wikiReview, 'log', 'every wiki commit in order with its verification
   },
 )
 
-wikiCommand(wikiReview, 'ls', 'every page with its review state')
-  .option('--state <state>', 'VERIFIED | CHANGED_SINCE_VERIFY | UNVERIFIED')
-  .action(async (opts: WikiLocalOptions & { state?: string }) => {
-    await runWikiReviewLs({ ...wikiGlobals(opts), state: opts.state })
-  })
+wikiCommand(
+  wikiReview,
+  'diff',
+  'one whole-wiki diff from the verified commit to HEAD (committed changes only)',
+).action(async (opts: WikiLocalOptions) => {
+  await runWikiReviewDiff(wikiGlobals(opts))
+})
 
-wikiCommand(wikiReview, 'diff <page>', 'unified diff of a page from `verifiedThrough` to the worktree').action(
-  async (page: string, opts: WikiLocalOptions) => {
-    await runWikiReviewDiff({ ...wikiGlobals(opts), page })
-  },
+wikiCommand(
+  wikiReview,
+  'verify <sha>',
+  'mark a wiki commit verified (human only; `next` = oldest unmarked)',
 )
-
-wikiCommand(wikiReview, 'verify <sha>', 'mark a wiki commit verified (human only; `next` = oldest unmarked)')
   .option('--note <text>', 'note stored with the mark')
   .action(async (sha: string, opts: WikiLocalOptions & { note?: string }) => {
     await runWikiReviewVerify({ ...wikiGlobals(opts), sha, note: opts.note })
@@ -1270,7 +1366,11 @@ const wikiComponents = wiki
   .command('components')
   .description('body component registry, read from a central dashboard over HTTP')
 
-wikiCommand(wikiComponents, 'ls', 'list registered components (name, version, description, outdated)')
+wikiCommand(
+  wikiComponents,
+  'ls',
+  'list registered components (name, version, description, outdated)',
+)
   .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
   .action(async (opts: WikiLocalOptions & { central?: string }) => {
     await runWikiComponentsLs({ ...wikiGlobals(opts), central: opts.central })
@@ -1282,17 +1382,55 @@ wikiCommand(wikiComponents, 'show <name>', 'print one descriptor (`<name>` or `<
     await runWikiComponentsShow({ ...wikiGlobals(opts), name, central: opts.central })
   })
 
-wikiCommand(wikiComponents, 'migrate [page]', 'rewrite component blocks to their latest version via central')
+wikiCommand(
+  wikiComponents,
+  'migrate [page]',
+  'rewrite component blocks to their latest version via central',
+)
   .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
   .option('--dry-run', 'report what would change without writing', false)
-  .action(async (page: string | undefined, opts: WikiLocalOptions & { central?: string; dryRun?: boolean }) => {
-    await runWikiComponentsMigrate({ ...wikiGlobals(opts), page, central: opts.central, dryRun: opts.dryRun })
+  .action(
+    async (
+      page: string | undefined,
+      opts: WikiLocalOptions & { central?: string; dryRun?: boolean },
+    ) => {
+      await runWikiComponentsMigrate({
+        ...wikiGlobals(opts),
+        page,
+        central: opts.central,
+        dryRun: opts.dryRun,
+      })
+    },
+  )
+
+function interceptParserExits(command: Command): void {
+  command.exitOverride()
+  command.hook('preSubcommand', (_parent, child) => {
+    parsingCommand = child
   })
+  for (const child of command.commands) interceptParserExits(child)
+}
+
+interceptParserExits(program)
 
 async function main() {
   try {
     await program.parseAsync(process.argv)
   } catch (err) {
+    if (err instanceof CommanderError) {
+      if (err.exitCode !== 0 && parsingCommand.commands.length === 0) {
+        if (!actionStarted) {
+          await beginCliInvocation({
+            command: parsingCommand,
+            globalProjectRoot: program.opts<{ projectRoot?: string }>().projectRoot,
+            cwd: process.cwd(),
+            parserFailure: true,
+          })
+        }
+        recordCliInvocationFailureSync('BAD_REQUEST')
+      }
+      process.exit(err.exitCode)
+    }
     if (err instanceof ConfigError) {
       process.stderr.write(`${JSON.stringify({ error: { message: err.message } })}\n`)
       process.exit(EXIT.GENERIC)

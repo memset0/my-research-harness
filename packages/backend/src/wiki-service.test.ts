@@ -1,19 +1,31 @@
 import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import {
   BackendWikiConflictResponseSchema,
   BackendWikiDocumentSchema,
+  BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
   BackendWikiReviewResponseSchema,
   BackendWikiWriteResponseSchema,
+  getFileOperationMetrics,
+  invalidateGitOperations,
   parseWikiFrontmatter,
+  type ProjectConfig,
+  WikiReviewError,
   WikiReviewOrderError,
+  withProjectFileContext,
 } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type BackendDocumentServiceError, FilesystemDocumentService } from './document-service.js'
+import type {
+  BackendExecutionProvider,
+  ExecutionBytesResult,
+  ExecutionCommandOptions,
+  ExecutionCommandResult,
+} from './execution-service.js'
 
 const exec = promisify(execFile)
 
@@ -99,7 +111,16 @@ views/map/index.html
 let root = ''
 let service: FilesystemDocumentService
 
-const project = () => ({ name: 'research', root, include: [], exclude: [] })
+// These fixtures are this host's own files, so git may run here: a Project
+// says so explicitly, exactly as a deployed single-host Project does.
+const project = () =>
+  ({
+    name: 'research',
+    root,
+    include: [],
+    exclude: [],
+    execution: { kind: 'local' },
+  }) satisfies ProjectConfig
 
 async function writeWikiFixtures(target: string): Promise<void> {
   await Promise.all([
@@ -133,6 +154,127 @@ afterEach(async () => {
 })
 
 describe('FilesystemDocumentService wiki reads', () => {
+  it('builds navigation identities without reading source targets or resolving staleness', async () => {
+    await fs.writeFile(
+      join(root, 'docs', 'wiki', 'finding', 'W0001-alpha.md'),
+      FINDING.replace('kind: finding', 'kind: finding\nlegacy_id: R0042'),
+    )
+    const inventory = BackendWikiInventoryResponseSchema.parse(
+      await service.listWiki('research', { inventoryOnly: true }),
+    )
+    expect(inventory.pages[0]).toEqual({
+      id: 'W0001',
+      resource: 'docs/wiki/finding/W0001-alpha.md',
+      legacyId: 'R0042',
+    })
+  })
+
+  it('lists and serves pages without reading an uncited Run', async () => {
+    // An unreadable README no page cites: reading it would fail the request,
+    // so a successful list is proof the Run was never opened. Its directory
+    // name still comes from the walk, so an `@` mention of it resolves.
+    const uncited = 'unrelated-260901-010203'
+    await fs.mkdir(join(root, 'logs', uncited), { recursive: true })
+    await fs.symlink('README.md', join(root, 'logs', uncited, 'README.md'))
+    await fs.writeFile(
+      join(root, 'docs', 'wiki', 'note', 'W0002-beta.md'),
+      NOTE.replace('See W0001.', `See W0001, @${uncited} and @E0001-alpha.`),
+    )
+
+    const listed = BackendWikiPagesResponseSchema.parse(await service.listWiki('research'))
+    const note = listed.pages.find((page) => page.id === 'W0002')!
+    expect(note.diagnostics.filter((entry) => entry.code === 'WIKI_LINK_UNRESOLVED')).toEqual([])
+    // The cited Experiment is still resolved, so staleness stays real.
+    expect(listed.pages.find((page) => page.id === 'W0001')).toMatchObject({
+      stale: true,
+      staleSources: ['E0001-alpha'],
+    })
+    const page = BackendWikiDocumentSchema.parse(await service.getWiki('research', 'W0002'))
+    expect(page.id).toBe('W0002')
+  })
+
+  it('keeps W0002 composition automatic while refreshing its selected body manually', async () => {
+    const storageGroup = `wiki-detail-${root}`
+    const context = { root, storageGroup, persistentCache: true, attentionId: 'wiki-tab' }
+    await withProjectFileContext({ ...context, reason: 'automatic' }, () =>
+      service.getWiki('research', 'W0002'),
+    )
+    await fs.writeFile(
+      join(root, 'docs', 'wiki', 'note', 'W0002-beta.md'),
+      NOTE.replace('title: Beta note', 'title: Changed inventory title').replace(
+        'See W0001.',
+        'Changed selected body.',
+      ),
+    )
+    const before = getFileOperationMetrics()
+    const page = BackendWikiDocumentSchema.parse(
+      await withProjectFileContext({ ...context, reason: 'manual' }, () =>
+        service.getWiki('research', 'W0002'),
+      ),
+    )
+    await expect.poll(async () => {
+      const refreshed = BackendWikiDocumentSchema.parse(
+        await withProjectFileContext({ ...context, reason: 'automatic' }, () =>
+          service.getWiki('research', 'W0002'),
+        ),
+      )
+      return refreshed.content
+    }).toContain('Changed selected body.')
+    const after = getFileOperationMetrics()
+    const counters = (origin: 'human' | 'automatic', metrics = after) =>
+      metrics.series
+        .filter((series) => series.storageGroup === storageGroup && series.origin === origin)
+        .reduce(
+          (total, series) => ({
+            samples: total.samples + series.samples,
+            cacheHits: total.cacheHits + series.cacheHits,
+          }),
+          { samples: 0, cacheHits: 0 },
+        )
+
+    // Manual refresh serves the current cache while scheduling verification.
+    // Inventory composition stays automatic; the selected body becomes fresh
+    // after that priority check completes, without another manual refresh.
+    expect(page.title).toBe('Beta note')
+    expect(counters('automatic').cacheHits).toBeGreaterThan(counters('automatic', before).cacheHits)
+    expect(counters('human').samples).toBeGreaterThan(counters('human', before).samples)
+  })
+
+  it('resolves member evidence without archive-sidecar policy reads', async () => {
+    const runId = 'cited-260906-010203'
+    const runDir = join(root, 'logs', runId)
+    await fs.mkdir(runDir, { recursive: true })
+    await fs.writeFile(
+      join(runDir, 'README.md'),
+      `---
+id: ${runId}
+name: cited member
+entry: script.py
+command: python script.py
+status: FINISHED
+archived: false
+experiment: E0001-alpha
+updated_at: 2026-09-06T01:02:03+00:00
+---
+evidence
+`,
+    )
+    await fs.symlink('.archived', join(runDir, '.archived'))
+    await fs.writeFile(
+      join(root, 'docs', 'experiments', 'E0001-alpha', 'README.md'),
+      EXPERIMENT.replace('runs: []', `runs: [${runId}]`),
+    )
+    await fs.writeFile(
+      join(root, 'docs', 'wiki', 'finding', 'W0001-alpha.md'),
+      FINDING.replace('2026-09-02T10:00:00+08:00', '2026-09-05T12:00:00+08:00'),
+    )
+    const listed = BackendWikiPagesResponseSchema.parse(await service.listWiki('research'))
+    expect(listed.pages.find((page) => page.id === 'W0001')).toMatchObject({
+      stale: true,
+      staleSources: ['E0001-alpha'],
+    })
+  })
+
   it('lists pages in canonical order with staleness, review, and no cluster paths', async () => {
     const listed = BackendWikiPagesResponseSchema.parse(await service.listWiki('research'))
     expect(listed.pages.map((page) => page.id)).toEqual(['W0001', 'W0003', 'W0002'])
@@ -266,15 +408,20 @@ describe('FilesystemDocumentService wiki review', () => {
     await git('commit', '-m', 'wiki: initial pages')
     commits = [await git('rev-parse', 'HEAD')]
     for (const [index, page] of ['W0001-alpha.md', 'W0002-beta.md'].entries()) {
-      const relativePath =
-        index === 0 ? `docs/wiki/finding/${page}` : `docs/wiki/note/${page}`
+      const relativePath = index === 0 ? `docs/wiki/finding/${page}` : `docs/wiki/note/${page}`
       await fs.appendFile(join(repoRoot, relativePath), `\nEdit ${index}.\n`)
       await git('add', relativePath)
       await git('commit', '-m', `wiki: edit ${index}`)
       commits.push(await git('rev-parse', 'HEAD'))
     }
     repoService = new FilesystemDocumentService([
-      { name: 'research', root: repoRoot, include: [], exclude: [] },
+      {
+        name: 'research',
+        root: repoRoot,
+        include: [],
+        exclude: [],
+        execution: { kind: 'local' },
+      } satisfies ProjectConfig,
     ])
   })
 
@@ -332,5 +479,214 @@ describe('FilesystemDocumentService wiki review', () => {
     const page = pages.pages.find((candidate) => candidate.id === 'W0001')!
     expect(page.review?.dirty).toBe(true)
     expect(page.review?.state).toBe('CHANGED_SINCE_VERIFY')
+  })
+
+  it('leaves review unchecked for a Project with no execution target', async () => {
+    // `repoRoot` is a real worktree, so a local `git` would answer here. A
+    // Project that has not said its files are local must not be asked: a
+    // mounted root looks exactly like this and reports another machine's git.
+    const unconfigured = new FilesystemDocumentService([
+      { name: 'research', root: repoRoot, include: [], exclude: [] } satisfies ProjectConfig,
+    ])
+    const pages = BackendWikiPagesResponseSchema.parse(await unconfigured.listWiki('research'))
+    expect(pages.pages.map((page) => page.id)).toEqual(['W0001', 'W0003', 'W0002'])
+    expect(pages.pages.every((page) => page.review === null)).toBe(true)
+
+    for (const operation of [
+      unconfigured.wikiReviewLog('research'),
+      unconfigured.markWikiReview('research', commits[0]!),
+      unconfigured.unmarkWikiReview('research', commits[0]!),
+    ]) {
+      const error = await operation.catch((thrown: unknown) => thrown)
+      expect((error as BackendDocumentServiceError).code).toBe('EXECUTION_UNAVAILABLE')
+    }
+    expect(await fs.readdir(join(repoRoot, '.memon')).catch(() => [])).not.toContain(
+      'wiki-review.csv',
+    )
+  })
+})
+
+/** What an unreachable SSH target reports back for every argv. */
+const TRANSPORT_FAILURE = 'ssh: connect to host cluster port 22: Connection timed out'
+
+/**
+ * Stands in for a configured SSH target: the same argv, run in the target's
+ * own copy of the Project at the translated path, never at the mounted path
+ * the Backend sees. `unanswerable` argv report a transport failure instead,
+ * which is how a dropped connection or a dead target arrives.
+ */
+function executionTarget(
+  mountRoot: string,
+  targetRoot: string,
+  unanswerable: (args: readonly string[]) => boolean = () => false,
+): { provider: BackendExecutionProvider; cwds: string[] } {
+  const cwds: string[] = []
+  const resolvePath = (absoluteLocalPath: string): string => {
+    const rel = relative(mountRoot, absoluteLocalPath)
+    if (rel === '') return targetRoot
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      throw new Error(`path escapes the Project root: ${absoluteLocalPath}`)
+    }
+    return join(targetRoot, rel)
+  }
+  const run = async (
+    bin: string,
+    args: readonly string[],
+    options?: ExecutionCommandOptions,
+  ): Promise<ExecutionCommandResult> => {
+    const cwd = resolvePath(options?.cwd ?? mountRoot)
+    cwds.push(cwd)
+    if (unanswerable(args)) {
+      return {
+        stdout: '',
+        stderr: TRANSPORT_FAILURE,
+        code: 255,
+        timedOut: true,
+        spawnFailed: false,
+      }
+    }
+    try {
+      const { stdout, stderr } = await exec(bin, [...args], { cwd, maxBuffer: 4_194_304 })
+      return { stdout, stderr, code: 0, timedOut: false, spawnFailed: false }
+    } catch (error) {
+      const failure = error as { stdout?: string; stderr?: string; code?: number }
+      return {
+        stdout: failure.stdout ?? '',
+        stderr: failure.stderr ?? '',
+        code: typeof failure.code === 'number' ? failure.code : 1,
+        timedOut: false,
+        spawnFailed: false,
+      }
+    }
+  }
+  return {
+    cwds,
+    provider: {
+      target: { kind: 'ssh', target: 'cluster', remoteRoot: targetRoot },
+      run,
+      // The review store reads text only; these fixtures carry no binary blob.
+      runBytes: async (bin, args, options): Promise<ExecutionBytesResult> => {
+        const result = await run(bin, args, options)
+        return { ...result, stdout: Buffer.from(result.stdout, 'utf8') }
+      },
+      resolvePath,
+    },
+  }
+}
+
+describe('FilesystemDocumentService wiki review on a remote execution target', () => {
+  let mountRoot = ''
+  let targetRoot = ''
+  let commit = ''
+
+  const remoteProject = () =>
+    ({
+      name: 'research',
+      root: mountRoot,
+      include: [],
+      exclude: [],
+      execution: { kind: 'ssh', target: 'cluster', remoteRoot: targetRoot },
+    }) satisfies ProjectConfig
+
+  beforeEach(async () => {
+    // The target owns the worktree; the Backend sees the same files through a
+    // mount that is no repository at all — a local `git` there answers nothing.
+    targetRoot = await fs.mkdtemp(join(tmpdir(), 'memon-backend-wiki-target-'))
+    mountRoot = await fs.mkdtemp(join(tmpdir(), 'memon-backend-wiki-mount-'))
+    await Promise.all([writeWikiFixtures(targetRoot), writeWikiFixtures(mountRoot)])
+    for (const args of [
+      ['init'],
+      ['config', 'user.email', 'backend@example.test'],
+      ['config', 'user.name', 'Backend Test'],
+      ['add', '.'],
+      ['commit', '-m', 'wiki: initial pages'],
+    ]) {
+      await exec('git', args, { cwd: targetRoot })
+    }
+    commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: targetRoot })).stdout.trim()
+  })
+
+  afterEach(async () => {
+    await Promise.all([
+      fs.rm(mountRoot, { recursive: true, force: true }),
+      fs.rm(targetRoot, { recursive: true, force: true }),
+    ])
+  })
+
+  it('derives review from the target repository, keeping marks beside mounted files', async () => {
+    const { provider, cwds } = executionTarget(mountRoot, targetRoot)
+    const remote = new FilesystemDocumentService([remoteProject()], {
+      execution: () => provider,
+    })
+
+    const listed = BackendWikiPagesResponseSchema.parse(await remote.listWiki('research'))
+    const before = new Map(listed.pages.map((page) => [page.id, page]))
+    expect(before.get('W0001')?.review?.state).toBe('UNVERIFIED')
+    expect(before.get('W0001')?.review?.unverifiedCommits).toEqual([commit])
+
+    const log = BackendWikiReviewResponseSchema.parse(await remote.wikiReviewLog('research'))
+    expect(log.commits.map((entry) => entry.sha)).toEqual([commit])
+
+    await remote.markWikiReview('research', commit, 'read on the cluster')
+    const verified = BackendWikiPagesResponseSchema.parse(await remote.listWiki('research'))
+    expect(verified.pages.every((page) => page.review?.state === 'VERIFIED')).toBe(true)
+
+    // Marks are Project files, so they land on the mount; git never ran there.
+    expect(await fs.readdir(join(mountRoot, '.memon'))).toContain('wiki-review.csv')
+    expect(await fs.readdir(join(targetRoot, '.memon')).catch(() => [])).not.toContain(
+      'wiki-review.csv',
+    )
+    expect(cwds.length).toBeGreaterThan(0)
+    expect(cwds.every((cwd) => cwd === targetRoot || cwd.startsWith(`${targetRoot}/`))).toBe(true)
+    expect(cwds.some((cwd) => cwd.startsWith(mountRoot))).toBe(false)
+  })
+
+  it('reports review as unchecked, never verified, when the target stops answering', async () => {
+    const reachable = executionTarget(mountRoot, targetRoot)
+    const marker = new FilesystemDocumentService([remoteProject()], {
+      execution: () => reachable.provider,
+    })
+    await marker.markWikiReview('research', commit)
+
+    // The target's earlier answers are gone: in production a Project write or
+    // an observed filesystem change flushes them, and the shared git read
+    // cache keeps a success for seconds at most. What is under test is the
+    // verdict with nothing saved, so start from nothing saved.
+    invalidateGitOperations()
+    const unreachable = executionTarget(mountRoot, targetRoot, () => true)
+    const stranded = new FilesystemDocumentService([remoteProject()], {
+      execution: () => unreachable.provider,
+    })
+    const pages = BackendWikiPagesResponseSchema.parse(await stranded.listWiki('research'))
+    expect(pages.pages.map((page) => page.id)).toEqual(['W0001', 'W0003', 'W0002'])
+    expect(pages.pages.every((page) => page.review === null)).toBe(true)
+
+    const error = await stranded.wikiReviewLog('research').catch((thrown: unknown) => thrown)
+    expect(error).toBeInstanceOf(WikiReviewError)
+    expect((error as WikiReviewError).code).toBe('GIT_UNAVAILABLE')
+  })
+
+  it('keeps a verified page unchecked when only the dirty-state read fails', async () => {
+    const reachable = executionTarget(mountRoot, targetRoot)
+    const marker = new FilesystemDocumentService([remoteProject()], {
+      execution: () => reachable.provider,
+    })
+    await marker.markWikiReview('research', commit)
+    expect(
+      BackendWikiPagesResponseSchema.parse(await marker.listWiki('research')).pages.every(
+        (page) => page.review?.state === 'VERIFIED',
+      ),
+    ).toBe(true)
+
+    // History and blame still answer; only the working-tree state is lost. A
+    // page whose uncommitted edits cannot be seen is not a verified page.
+    // `git` argv carry global flags ahead of the subcommand, so match on it.
+    invalidateGitOperations()
+    const partial = executionTarget(mountRoot, targetRoot, (args) => args.includes('status'))
+    const degraded = new FilesystemDocumentService([remoteProject()], {
+      execution: () => partial.provider,
+    })
+    const pages = BackendWikiPagesResponseSchema.parse(await degraded.listWiki('research'))
+    expect(pages.pages.every((page) => page.review === null)).toBe(true)
   })
 })

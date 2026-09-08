@@ -59,7 +59,7 @@ All of that machine/operator-specific information goes in **`LOCAL.md` at
 the project root**, which is listed in `.gitignore`. Rules:
 
 1. **Read `LOCAL.md` at the start of any session that touches deployment,
-   release, Backend hosts, Caddy, systemd, or the central instance.** It
+   release, CLI nodes, Caddy, systemd, or the central instance.** It
    is the only place the real hostnames, ports, paths, and config-file
    locations are recorded.
 2. **Write new deployment facts to `LOCAL.md`, never to CLAUDE.md, README,
@@ -67,13 +67,13 @@ the project root**, which is listed in `.gitignore`. Rules:
    a moved config path, a changed port), update `LOCAL.md` in the same
    turn and bump its `Last verified:` line.
 3. **`LOCAL.md` holds pointers to secrets, not secrets.** Passwords,
-   session secrets, and Backend tokens stay in `config.yml` /
+   session secrets, and service tokens stay in `config.yml` /
    `~/.config/memon/*.yml`; `LOCAL.md` only records which file holds what.
 4. Before committing, if the diff mentions anything that belongs in
    `LOCAL.md`, move it there and scrub the tracked file. `git diff
    --cached | grep -iE '<a real host/project name>'` is a cheap last check.
 5. `LOCAL.md` missing on a fresh clone is expected; recreate it from the
-   structure above (Operator / central node / Backend hosts / dev server /
+   structure above (Operator / central node / CLI nodes / dev server /
    where secrets live) rather than inlining the facts elsewhere.
 
 ### Stack
@@ -128,13 +128,14 @@ the project root**, which is listed in `.gitignore`. Rules:
     Frontmatter `id`, `kind`, `title`, `description`, `status` (per-kind
     vocabulary), `date` (meeting), `sources[]` (finding required),
     `tags[]`, `legacy_id`, `entry`, `deprecated{at,reason,superseded_by}`,
-    `created_at`, `updated_at`. Derived, never written: `stale` /
-    `staleSources` (from `sources`) and `review` (from git: marks in
-    `.memon/wiki-review.csv`, commit-ordered; `VERIFIED` /
-    `CHANGED_SINCE_VERIFY` / `UNVERIFIED` with `unverifiedRanges`).
+    `created_at`, `updated_at`. Derived, never written, and **Web/backend
+    only**: `stale` / `staleSources` (from `sources`) and `review` (from git:
+    marks in `.memon/wiki-review.csv`, commit-ordered; `VERIFIED` /
+    `CHANGED_SINCE_VERIFY` / `UNVERIFIED` with `unverifiedRanges`). The CLI
+    derives neither — page commands run no git at all.
     Body components are fenced blocks `memon-data@1` / `html-embed@1`;
     the registry lives ONLY in `apps/web/lib/wiki-components/` (central),
-    Backends/CLI treat them as opaque code. Reports remain; the old
+    the CLI treats them as opaque code. Reports remain; the old
     commit-marks system is deprecated in favour of wiki review.
   - TS internal naming: `Run` = run dir record; `Experiment` = exp
     doc record. `discoverRuns` / `RunIndex` / `archiveRun` are
@@ -155,15 +156,6 @@ plus inline at the top of each expanded run panel):
   underlying call hits `PUT /api/experiments/:id/readme` or
   `PUT /api/runs/:id/readme`. Component: `EditMarkdownButton` in
   `apps/web/components/edit-markdown-button.tsx`.
-- `Open Claude Code` — calls `POST /api/open-claude-code` and copies
-  the suggested `cd <dir> && claude` command to clipboard. For
-  `kind: 'exp'` the `cwd` is the experiment folder (`docs/experiments/
-  E<NNNN>-<slug>/`), so the spawned agent lands inside the sanctioned
-  scratch space alongside any local launchers / analysis utils.
-  Component: `OpenClaudeCodeButton` in
-  `apps/web/components/open-claude-code-button.tsx`. Distinct from
-  `TerminalButton` (which spawns ttyd+tmux+claude in the browser via
-  `/api/terminal/start`).
 
 **CLI subcommands**:
 - `memon experiment ls` — list exp docs in the project
@@ -197,14 +189,35 @@ plus inline at the top of each expanded run panel):
 - `memon wiki ls|show|create|move|set|delete|lint|stale|backlinks|migrate-report`
   — page lifecycle (see `openspec/specs/wiki-cli`). Exit 2 bad request,
   4 not found, 9 conflict, 1 `lint --strict` failure
-- `memon wiki review log|ls|diff <page>|verify <sha|next>|unverify <sha>` —
-  human verification of wiki commits; `verify`/`unverify` are human-only
-- `memon wiki commit [-m S]` — stages only `docs/wiki/`, subject `wiki: S`
+- `memon wiki review log|diff|verify <sha|next>|unverify <sha>` — human
+  verification of wiki commits. `diff` takes no page argument: one
+  `git diff <last verified commit | empty tree> HEAD -- docs/wiki` for the
+  whole wiki, uncommitted work excluded; `verify`/`unverify` are human-only.
+  Page-lifecycle subcommands run no git and report no review state
+- `memon wiki commit [-m S]` — stages only `docs/wiki/`, subject `wiki: S`;
+  it uses git for staging/commit safety but derives no review state and marks
+  nothing verified
 - `memon wiki components ls|show|migrate --central <url>` — registry lives
   on central; `MEMON_CENTRAL_URL` / `MEMON_CENTRAL_TOKEN` also accepted
+- `memon update [--source <checkout>] [--remote <name>] [--branch <name>]
+  [--skills-root <p>]… [--no-skills] [--dry-run]` — maintain this
+  installation: fast-forward-only pull from the checkout's configured trusted
+  remote (remote **name** only, never a URL), `pnpm install
+  --frozen-lockfile --filter @memon/cli...` (CLI closure only, no Web deps),
+  build `@memon/core` + `@memon/cli`, self-check the new binary, then refresh
+  managed skills through `install-skills`. Refuses a dirty or divergent
+  checkout instead of resetting/stashing. On install/build/self-check failure
+  it rolls back with `git reset --keep` (never `--hard`, and only while HEAD is
+  still the revision it installed), restores the previous `dist/` trees,
+  reinstalls the previous dependencies and verifies the restored binary runs
+  (`rolled_back`); if a concurrently edited file blocks that, nothing is moved
+  and it reports `failed` / `rollback_failed` with the retained `backup` path.
+  Never builds the Web app, runs tests/lint/typecheck, starts a service, or
+  compares revisions with central
 
 **Web endpoints**:
-- `GET /api/experiments[?project=…]` — exp doc list with effective times
+- `GET /api/experiments[?project=…]` — exp doc list; each row is one exp doc
+  with its own effective times and no `memberRuns[]` (the list never walks Runs)
 - `GET /api/experiments/:id` — exp doc detail incl. `memberRuns[]` and
   `effectiveCreatedAt` / `effectiveUpdatedAt`, ordered raw sections, managed
   documents/projections, diagnostics, and separate bundle/readme mtimes
@@ -218,9 +231,6 @@ plus inline at the top of each expanded run panel):
 - `PUT /api/runs/:id/readme` — id-addressed write for run README;
   bumps `updated_at` server-side and returns `finalContent` so the
   editor re-baselines its buffer
-- `POST /api/open-claude-code` — `{kind: 'exp'|'run', id, projectName}`
-  → `{command, cwd, hint}`. For `kind: 'exp'` the `cwd` is the
-  experiment folder. Returns a copy-paste command, does NOT spawn.
 - `GET /api/anomalies?project=…` — membership anomalies (orphan runs,
   phantom refs, mismatch refs, slug-uniqueness violations).
 - `GET /api/wiki?project=…` — `{ pages: WikiSummary[] }` (kind order,
@@ -484,34 +494,43 @@ refinements continue. Shipping a version does not archive its change.
 implementation requested by the user is complete and its applicable release
 gates pass, do not stop merely to ask whether to release. Commit only the
 reviewed in-scope implementation, advance the canonical version according to
-the surface rules below, create the separate release commit, push it, update
-the configured central service and every affected Backend to the same exact
-revision, and run post-deployment verification. Stop for user input only when
+the surface rules below, create the separate release commit, push it, deploy
+the configured central service when central artifacts changed, and run
+post-deployment verification. Stop for user input only when
 the release needs a breaking migration or unresolved product choice, required
 credentials/authority are unavailable, another dirty-worktree change cannot
 be safely isolated, or a validation/deployment/rollback check fails.
+
+A release never waits on distributed CLI installations. Each CLI node pulls
+and installs on its own schedule with `memon update` (fast-forward-only pull
+from its configured trusted remote, then CLI build + managed-skill refresh);
+there is no fleet SHA equality, no per-node deployment gate, and no remote
+test or Backend startup step in release completion.
 
 Use the canonical memon `MAJOR.MINOR.PATCH` release with these project-wide
 rules:
 
 - `MAJOR` must equal `FS_CONVENTION_VERSION`; changing it requires the matching
   reviewed filesystem migration and starts at `.0.0`.
-- Any Backend or CLI artifact change increments `MINOR` by one and resets
-  `PATCH` to zero. Affected nodes must reinstall the exact release.
-- A central Web/gateway-only change increments `PATCH` by one and does not
-  reinstall Backend/CLI artifacts.
+- Any distributed-artifact change — the `memon` CLI or the bundled managed
+  skills — increments `MINOR` by one and resets `PATCH` to zero. Nodes pick it
+  up through `memon update`; the release does not install it for them.
+- A central Web/gateway-only change increments `PATCH` by one and requires no
+  CLI/skills reinstall anywhere.
 - The initial v6-aligned release is `6.0.0`. Later boundaries inside the same
   active change follow the normal rules (for example `6.0.1`, `6.1.0`,
   `6.1.1`).
 
 Before every deployment boundary, commit the reviewed implementation changes
 without a version bump. Then update the canonical version, validate the
-changed-surface policy, and create a separate release commit containing only
+changed-surface policy (`node scripts/validate-release.mjs`, with
+`MEMON_CHANGED_SURFACES` drawn from `central` / `cli` / `skills` /
+`filesystem`), and create a separate release commit containing only
 the version and its required release metadata/assertions. Use a stable semantic
 commit message in the exact form `release: vMAJOR.MINOR.PATCH` (for example,
 `release: v2.8.0`). Push the release commit and record its exact 40-character
-SHA. Central and every affected node must fetch and install that same revision;
-never independently resolve a moving `latest`. Concrete node/domain/token/SSH
+SHA so central installs that exact revision instead of a moving `latest`.
+Concrete node/domain/token/SSH
 values remain in Git-ignored or machine-local configuration and must not enter
 the release commit.
 

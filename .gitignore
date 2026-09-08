@@ -11,6 +11,7 @@ out/
 config.yml
 mock-runtime/
 memon-ui-preferences.sqlite3*
+.memon-cache/
 
 # Machine-local deployment notes (hostnames, paths, project names, secret
 # locations). See CLAUDE.md "Local deployment info lives in LOCAL.md".

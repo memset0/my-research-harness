@@ -7,11 +7,19 @@
 // - `readGitCommit(cwd, sha)` — one commit's metadata + per-file status
 //   list (no contents — those come through `readGitFileContents`).
 //
-// All readers shell out via `execFile` (no shell). Callers MUST validate
-// any user-provided ref / sha before invoking — the readers pass them
-// verbatim to git.
+// All readers go through the shared git command seam (argv arrays, no
+// shell) wrapped in `cachedGitCommand`, so repeated dialog reads of the
+// same repository reuse one short-lived result. Callers MUST validate any
+// user-provided ref / sha before invoking — the readers pass them verbatim
+// to git.
 
-import { execFile, type ExecFileException } from 'node:child_process'
+import {
+  cachedGitCommand,
+  gitCommandStdoutText,
+  isGitCommandFailure,
+  toGitExecFailure,
+  type GitCommandRunner,
+} from './command.js'
 
 import type { GitFileEntry, GitFileStatus } from './files.js'
 
@@ -93,6 +101,11 @@ export type GitCommitDetail =
 export interface ReadGitHistoryOptions {
   timeoutMs?: number
   gitBin?: string
+  /**
+   * The command runner used for every git invocation. Defaults to the local
+   * transport; either way the readers wrap it in the shared read cache.
+   */
+  exec?: GitCommandRunner
 }
 
 // --- exec helper ---------------------------------------------------------
@@ -104,48 +117,28 @@ interface ExecOk {
 }
 interface ExecFail {
   ok: false
-  err: ExecFileException & { code?: string | number; killed?: boolean }
+  err: { code?: string | number; killed?: boolean; message: string }
   stderr: string
 }
 
-function runGit(
+async function runGit(
+  exec: GitCommandRunner,
   bin: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
 ): Promise<ExecOk | ExecFail> {
-  return new Promise((resolveP) => {
-    execFile(
-      bin,
-      args,
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 8 * 1024 * 1024,
-        windowsHide: true,
-      },
-      (err, stdout, stderr) => {
-        if (err) {
-          resolveP({
-            ok: false,
-            err: err as ExecFail['err'],
-            stderr: String(stderr ?? ''),
-          })
-          return
-        }
-        resolveP({
-          ok: true,
-          stdout: String(stdout ?? ''),
-          stderr: String(stderr ?? ''),
-        })
-      },
-    )
-  })
+  const result = await exec(bin, args, { cwd, timeoutMs, maxBuffer: 8 * 1024 * 1024 })
+  if (isGitCommandFailure(result)) {
+    return { ok: false, ...toGitExecFailure(result) }
+  }
+  return { ok: true, stdout: gitCommandStdoutText(result), stderr: result.stderr }
 }
 
-function classifyEnabledFalseError(
-  fail: ExecFail,
-): { reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'; message?: string } {
+function classifyEnabledFalseError(fail: ExecFail): {
+  reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+  message?: string
+} {
   if (fail.err.code === 'ENOENT') return { reason: 'git-not-found' }
   if (fail.err.killed) return { reason: 'timeout' }
   if (/not a git repository/i.test(fail.stderr)) return { reason: 'not-a-repo' }
@@ -179,15 +172,16 @@ export async function readGitBranches(
 ): Promise<GitBranches> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
-  const headSha = await runGit(bin, ['rev-parse', '--short', 'HEAD'], cwd, timeoutMs)
+  const headSha = await runGit(exec, bin, ['rev-parse', '--short', 'HEAD'], cwd, timeoutMs)
   if (!headSha.ok) {
     return { enabled: false, ...classifyEnabledFalseError(headSha) }
   }
   const sha = headSha.stdout.trim()
 
   // symbolic-ref exits non-zero when detached; that's not an error.
-  const sym = await runGit(bin, ['symbolic-ref', '--short', '-q', 'HEAD'], cwd, timeoutMs)
+  const sym = await runGit(exec, bin, ['symbolic-ref', '--short', '-q', 'HEAD'], cwd, timeoutMs)
   let current: string | null = null
   let detached = false
   if (sym.ok) {
@@ -199,12 +193,9 @@ export async function readGitBranches(
   }
 
   const branchesRes = await runGit(
+    exec,
     bin,
-    [
-      'for-each-ref',
-      'refs/heads',
-      '--format=%(refname:short)%00%(objectname:short)%00%(HEAD)',
-    ],
+    ['for-each-ref', 'refs/heads', '--format=%(refname:short)%00%(objectname:short)%00%(HEAD)'],
     cwd,
     timeoutMs,
   )
@@ -239,15 +230,12 @@ export async function readGitLog(
 ): Promise<GitLog> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
   const res = await runGit(
+    exec,
     bin,
-    [
-      'log',
-      options.ref,
-      `--max-count=${options.limit}`,
-      `--format=${LOG_FORMAT}`,
-    ],
+    ['log', options.ref, `--max-count=${options.limit}`, `--format=${LOG_FORMAT}`],
     cwd,
     timeoutMs,
   )
@@ -262,8 +250,15 @@ export async function readGitLog(
     if (!rec) continue
     const parts = rec.split('\0')
     if (parts.length < 7) continue
-    const [sha, shortSha, authorName, authorEmail, authorDate, parentsRaw, subject] =
-      parts as [string, string, string, string, string, string, string]
+    const [sha, shortSha, authorName, authorEmail, authorDate, parentsRaw, subject] = parts as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ]
     commits.push({
       sha,
       shortSha,
@@ -289,8 +284,10 @@ export async function readGitCommit(
 ): Promise<GitCommitDetail> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
   const metaRes = await runGit(
+    exec,
     bin,
     ['show', '--no-patch', `--format=${COMMIT_FORMAT}`, sha],
     cwd,
@@ -310,21 +307,14 @@ export async function readGitCommit(
       message: 'git show output unparseable',
     }
   }
-  const [
-    fullSha,
-    shortSha,
-    authorName,
-    authorEmail,
-    authorDate,
-    parentsRaw,
-    subject,
-    bodyTail,
-  ] = parts as [string, string, string, string, string, string, string, string]
+  const [fullSha, shortSha, authorName, authorEmail, authorDate, parentsRaw, subject, bodyTail] =
+    parts as [string, string, string, string, string, string, string, string]
 
   // The %b body ends with the trailing newline git appends after %b; strip it.
   const body = bodyTail.replace(/\n+$/, '')
 
   const filesRes = await runGit(
+    exec,
     bin,
     ['diff-tree', '-r', '--root', '--raw', '-M', sha],
     cwd,
@@ -461,15 +451,11 @@ export async function readGitRange(
 ): Promise<GitRange> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
   const range = `${options.from}..${options.to}`
 
-  const logRes = await runGit(
-    bin,
-    ['log', range, `--format=${LOG_FORMAT}`],
-    cwd,
-    timeoutMs,
-  )
+  const logRes = await runGit(exec, bin, ['log', range, `--format=${LOG_FORMAT}`], cwd, timeoutMs)
   if (!logRes.ok) {
     if (isUnknownRevisionStderr(logRes.stderr)) {
       return { enabled: false, reason: 'error', message: 'unknown revision' }
@@ -483,8 +469,15 @@ export async function readGitRange(
     if (!rec) continue
     const parts = rec.split('\0')
     if (parts.length < 7) continue
-    const [sha, shortSha, authorName, authorEmail, authorDate, parentsRaw, subject] =
-      parts as [string, string, string, string, string, string, string]
+    const [sha, shortSha, authorName, authorEmail, authorDate, parentsRaw, subject] = parts as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ]
     commits.push({
       sha,
       shortSha,
@@ -497,6 +490,7 @@ export async function readGitRange(
   }
 
   const filesRes = await runGit(
+    exec,
     bin,
     ['diff-tree', '-r', '--root', '--raw', '-M', range],
     cwd,

@@ -1,13 +1,15 @@
-import { promises as fs } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { basename, join, relative, sep } from 'node:path'
 import {
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
+  type BackendResourceInventoryItem,
+  BackendResourceInventoryResponseSchema,
   BackendExperimentResultsResponseSchema,
   type BackendExperimentSummary,
   BackendExperimentSummarySchema,
   BackendExperimentsResponseSchema,
   BackendHypothesesResponseSchema,
+  BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
@@ -16,16 +18,39 @@ import {
   buildExperimentDocumentView,
   computeMembership,
   discoverExperiments,
+  discoverRuns,
   type Experiment,
+  getProjectFileStatus,
   type ImplementationItem,
+  type IndexedRun,
   type InvestigationItem,
+  invalidateProjectFile,
+  isRunDeprecated,
+  isStaleRunning,
+  listExperimentIds,
+  listExperimentPaths,
+  matchesRunDeprecationFilter,
+  type MembershipResult,
+  type ParsedHypotheses,
+  parseHypotheses,
   type ProjectConfig,
+  projectFs as fs,
+  projectResultsRunEligibility,
+  readExperimentDoc,
+  readJournalActivity,
+  readProjectJournal,
+  readRunDir,
   ResourceIdSchema,
   type ResultsDocument,
+  type ResultsVariantEligibility,
   type Run,
+  runArchivedFromRun,
+  listDeprecatedRunIds,
   scanProjectRoot,
 } from '@memon/core'
-import type { BackendWikiArtifacts } from './document-service.js'
+import type { BackendWikiArtifactReferences, BackendWikiArtifacts } from './document-service.js'
+import { missingOrThrow } from './missing-path.js'
+import { withAutomaticProjectFileContext } from './project-file-context.js'
 
 export class BackendProjectServiceError extends Error {
   constructor(
@@ -38,37 +63,72 @@ export class BackendProjectServiceError extends Error {
   }
 }
 
+/** The shape `docs/hypotheses.md` projects to when the file does not exist. */
+const EMPTY_HYPOTHESES: ParsedHypotheses = {
+  legendBlock: null,
+  summaryTableBlock: null,
+  entries: [],
+  parseErrors: [],
+  parseWarnings: [],
+}
+
+/**
+ * Explicit-inspection selector for a Run collection. Absent means the
+ * research default: deprecated Runs are not part of the collection.
+ */
+export interface RunCollectionFilter {
+  includeDeprecated?: boolean
+  deprecatedOnly?: boolean
+}
+
+export interface InventoryListOptions {
+  inventoryOnly?: boolean
+}
+
 export interface BackendProjectReadService {
-  listRuns(project: string): Promise<unknown>
+  listRuns(
+    project: string,
+    filter?: RunCollectionFilter,
+    options?: InventoryListOptions,
+  ): Promise<unknown>
   getRun(project: string, id: string): Promise<unknown>
-  listExperiments(project: string): Promise<unknown>
+  listExperiments(project: string, options?: InventoryListOptions): Promise<unknown>
   getExperiment(project: string, id: string): Promise<unknown>
   getExperimentResults(project: string, id: string): Promise<unknown>
   getRunFiles(project: string, id: string, depth: number): Promise<unknown>
   getHypotheses(project: string): Promise<unknown>
   getJournal(project: string): Promise<unknown>
+  getJournalHistory(project: string, limit?: number): Promise<unknown>
   getAnomalies(project: string): Promise<unknown>
 }
 
+/**
+ * One request's domain composition. Built fresh per request from the Project
+ * file store's cached bytes and listings — there is no second, long-lived
+ * domain payload cache here. A warm store makes a rebuild cheap and, unlike a
+ * snapshot, it can never serve a payload the file layer already knows is gone.
+ */
 interface ProjectData {
   project: ProjectConfig
-  runs: Awaited<ReturnType<typeof scanProjectRoot>>['experiments']
-  runsById: ReadonlyMap<string, Awaited<ReturnType<typeof scanProjectRoot>>['experiments'][number]>
+  runs: IndexedRun[]
+  runsById: ReadonlyMap<string, IndexedRun>
   experiments: Experiment[]
-  experimentsById: ReadonlyMap<string, Experiment>
-  membership: ReturnType<typeof computeMembership>
-  hypotheses: Awaited<ReturnType<typeof scanProjectRoot>>['hypotheses']
-  journal: Awaited<ReturnType<typeof scanProjectRoot>>['journal']
+  membership: MembershipResult
 }
 
-interface ProjectSnapshotState {
-  data: ProjectData | null
-  dirty: boolean
+/**
+ * Bookkeeping about the last composition attempt: counts, timings and the last
+ * error. Deliberately no domain objects — this is diagnostic metadata, and the
+ * freshness itself comes from the file store's own status.
+ */
+interface ProjectCompositionState {
   generation: number
-  refreshPromise: Promise<ProjectData> | null
+  composed: boolean
   lastRefreshAt: string | null
   lastRefreshDurationMs: number | null
   lastError: string | null
+  runs: number
+  experiments: number
 }
 
 export interface ProjectSnapshotInspection {
@@ -86,81 +146,168 @@ export interface ProjectSnapshotInspection {
 
 export class FilesystemProjectService implements BackendProjectReadService {
   private readonly projects = new Map<string, ProjectConfig>()
-  private readonly snapshots = new Map<string, ProjectSnapshotState>()
+  private readonly compositions = new Map<string, ProjectCompositionState>()
 
   constructor(projects: readonly ProjectConfig[]) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
-      this.snapshots.set(project.name, {
-        data: null,
-        dirty: true,
+      this.compositions.set(project.name, {
         generation: 0,
-        refreshPromise: null,
+        composed: false,
         lastRefreshAt: null,
         lastRefreshDurationMs: null,
         lastError: null,
+        runs: 0,
+        experiments: 0,
       })
     }
   }
 
+  /**
+   * Drop this Project's cached file observations. The next domain request
+   * re-reads whatever it needs; nothing is recomputed eagerly.
+   */
   invalidateProject(projectName: string): void {
-    this.requireSnapshot(projectName).dirty = true
+    invalidateProjectFile(this.requireProject(projectName).root)
   }
 
+  /**
+   * Compose once now and report what that observed. Kept for the callers that
+   * used to force a snapshot rebuild; it no longer installs a payload, so a
+   * failure surfaces to this caller instead of poisoning later reads.
+   */
   async refreshProject(projectName: string): Promise<ProjectSnapshotInspection> {
-    const state = this.requireSnapshot(projectName)
-    state.dirty = true
-    await this.refreshSnapshot(projectName, state)
+    await this.readProject(projectName)
     return this.inspectProject(projectName)
   }
 
   inspectProject(projectName: string): ProjectSnapshotInspection {
-    const state = this.requireSnapshot(projectName)
+    const project = this.requireProject(projectName)
+    const state = this.requireComposition(projectName)
+    const status = getProjectFileStatus(project.root)
     return {
       project: projectName,
       generation: state.generation,
-      ready: state.data !== null,
-      dirty: state.dirty,
-      refreshing: state.refreshPromise !== null,
-      runs: state.data?.runs.length ?? 0,
-      experiments: state.data?.experiments.length ?? 0,
+      ready: state.composed,
+      // Freshness is the file layer's property now: unverified or missing
+      // dependencies are what "dirty" means for a request-time composition.
+      dirty: status.incomplete,
+      refreshing: status.queued + status.checking > 0,
+      runs: state.runs,
+      experiments: state.experiments,
       lastRefreshAt: state.lastRefreshAt,
       lastRefreshDurationMs: state.lastRefreshDurationMs,
-      lastError: state.lastError,
+      lastError: state.lastError ?? status.error,
     }
   }
 
   /**
-   * Artifacts wiki source resolution needs, served from the warm Project
-   * snapshot so a wiki read costs no extra Run scan.
+   * Evidence metadata for the artifacts a wiki actually cites.
+   *
+   * Identity comes from directory entries — every Experiment id and Run
+   * directory name, so an `@` reference still resolves against the whole
+   * project — while metadata is read only for the cited targets and the member
+   * Runs whose times widen a cited Experiment's effective window. An
+   * uncited Run's README is therefore never opened, and never breaks a wiki
+   * read by being unreadable.
    */
-  async readWikiArtifacts(projectName: string): Promise<BackendWikiArtifacts> {
-    const data = await this.readProject(projectName)
-    const hypothesesStat = data.hypotheses.path
-      ? await fs.stat(data.hypotheses.path).catch(() => null)
-      : null
-    return {
-      experiments: data.experiments,
-      runs: data.runs,
-      hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
-      hypothesisIds: data.hypotheses.entries.map((entry) => entry.id),
-    }
-  }
+  async readWikiArtifacts(
+    projectName: string,
+    references: BackendWikiArtifactReferences,
+  ): Promise<BackendWikiArtifacts> {
+    const project = this.requireProject(projectName)
+    return withAutomaticProjectFileContext(async () => {
+      const hypothesesPath = join(project.root, 'docs', 'hypotheses.md')
+      const [experimentIds, runPaths, content, hypothesesStat] = await Promise.all([
+        listExperimentIds(project.root),
+        discoverRuns(project, { includeArchived: true }),
+        missingOrThrow(fs.readFile(hypothesesPath, 'utf8')),
+        missingOrThrow(fs.stat(hypothesesPath)),
+      ])
 
-  async listRuns(projectName: string) {
-    const data = await this.readProject(projectName)
-    return BackendRunsResponseSchema.parse({
-      runs: data.runs.map((run) => safeRunSummary(run, data.project)),
+      // A citation may name an Experiment by its numeric id alone; resolution
+      // then picks the first document with that prefix, as the projection does.
+      const cited: string[] = []
+      for (const numericId of references.experiments) {
+        const id = experimentIds.find((candidate) => candidate.slice(0, 5) === numericId)
+        if (id !== undefined) cited.push(id)
+      }
+      const experiments = (
+        await Promise.all(cited.map((id) => readExperimentDoc(project.root, project.name, id)))
+      ).filter((experiment): experiment is Experiment => experiment !== null)
+
+      // A cited Experiment's effective updated time joins its members', so those
+      // Runs — and only those — are read alongside the directly cited ones.
+      const wantedRuns = new Set(references.runs)
+      for (const experiment of experiments) {
+        for (const runId of experiment.frontMatter.runs) wantedRuns.add(runId)
+      }
+      const pathsById = new Map(runPaths.map((path) => [basename(path), path]))
+      const wantedPaths: string[] = []
+      for (const runId of wantedRuns) {
+        const path = pathsById.get(runId)
+        if (path !== undefined) wantedPaths.push(path)
+      }
+      const runs = await Promise.all(wantedPaths.map((path) => readRunDir(path, project.name)))
+
+      return {
+        experiments,
+        runs,
+        experimentIds,
+        runIds: [...pathsById.keys()],
+        hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
+        hypothesisIds:
+          content === null ? [] : parseHypotheses(content).entries.map((entry) => entry.id),
+      }
     })
   }
 
-  async getRun(projectName: string, id: string) {
+  /**
+   * The Project's Run collection. Deprecated Runs are excluded by default:
+   * they are outside normal research collections, aggregation and counts. The
+   * filter is the explicit-inspection path, and `getRun` stays unfiltered so
+   * an id always resolves.
+   */
+  async listRuns(
+    projectName: string,
+    filter: RunCollectionFilter = {},
+    options: InventoryListOptions = {},
+  ) {
+    if (options.inventoryOnly) {
+      const project = this.requireProject(projectName)
+      const paths = await withAutomaticProjectFileContext(() =>
+        discoverRuns(project, { includeArchived: true }),
+      )
+      return BackendResourceInventoryResponseSchema.parse({
+        items: paths.map((path): BackendResourceInventoryItem => {
+          const id = basename(path)
+          return {
+            id,
+            slug: id.replace(/-\d{6}-\d{6}$/, ''),
+            resource: portableProjectResource(project, join(path, 'README.md')),
+          }
+        }),
+      })
+    }
     const data = await this.readProject(projectName)
-    const run = data.runsById.get(id)
-    if (!run) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
+    return BackendRunsResponseSchema.parse({
+      runs: data.runs
+        .filter((run) => matchesRunDeprecationFilter(run.deprecated, filter))
+        .map((run) => safeRunSummary(run, data.project)),
+    })
+  }
+
+  /**
+   * One Run's own document. The dependencies are this Run's README plus the
+   * directory listings that locate it — never every other Run's body, so an
+   * open Run page's freshness and attention describe only what it displays.
+   */
+  async getRun(projectName: string, id: string) {
+    const project = this.requireProject(projectName)
+    const run = await this.readRun(project, id)
     return BackendRunResponseSchema.parse({
-      ...safeRunSummary(run, data.project),
+      ...safeRunSummary(run, project),
       sections: {
         motivation: run.sections.motivation,
         setup: run.sections.setup,
@@ -181,26 +328,54 @@ export class FilesystemProjectService implements BackendProjectReadService {
     })
   }
 
-  async listExperiments(projectName: string) {
-    const data = await this.readProject(projectName)
+  /**
+   * Every Experiment document in this Project, and nothing else.
+   *
+   * The list reads `docs/experiments/` only — no Run walk, no membership
+   * join — so a huge, cold or unreadable Run tree can no longer stop the
+   * Experiment list from rendering. Each row's effective window is therefore
+   * its own document's; the member roster and the window widened over it are
+   * the detail projection's job.
+   */
+  async listExperiments(
+    projectName: string,
+    options: InventoryListOptions = {},
+  ) {
+    const project = this.requireProject(projectName)
+    if (options.inventoryOnly) {
+      const paths = await withAutomaticProjectFileContext(() => listExperimentPaths(project.root))
+      return BackendResourceInventoryResponseSchema.parse({
+        items: [...paths].map(([id, resource]) => ({
+          id,
+          slug: id.slice('E0000-'.length),
+          resource: ResourceIdSchema.parse(resource),
+        })),
+      })
+    }
+    const { experiments } = await discoverExperiments(project.root, project.name)
     return BackendExperimentsResponseSchema.parse({
-      experiments: data.experiments.map((experiment) => safeExperimentSummary(experiment, data)),
+      experiments: experiments.map((experiment) => safeExperimentSummary(experiment, project)),
     })
   }
 
+  /**
+   * The Experiment bundle plus read-time deprecation metadata for its roster.
+   * Run bodies and logs arrive only from explicit Run endpoints.
+   */
   async getExperiment(projectName: string, id: string) {
-    const data = await this.readProject(projectName)
-    const experiment = data.experimentsById.get(id)
-    if (!experiment) {
-      throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
-    }
-    const documentView = buildExperimentDocumentView(experiment)
+    const project = this.requireProject(projectName)
+    const experiment = await this.readExperimentDocument(project, id)
+    const eligibility = await experimentRunEligibility(project, experiment)
+    const documentView = buildExperimentDocumentView(experiment, {
+      deprecatedRuns: eligibility.deprecatedRuns,
+    })
     return BackendExperimentResponseSchema.parse({
-      ...safeExperimentSummary(experiment, data),
+      ...safeExperimentSummary(experiment, project),
       body: experiment.body,
+      deprecatedRuns: eligibility.deprecatedRuns,
       warningsRaw: experiment.warningsRaw,
       rawSections: experiment.rawSections ?? [],
-      documents: safeManagedDocuments(experiment, data.project),
+      documents: safeManagedDocuments(experiment, project, eligibility.variantEligibility),
       resultsUpdatedAt: await managedResultsUpdatedAt(experiment.documents?.results),
       documentSections: documentView.sections,
       documentDiagnostics: documentView.diagnostics,
@@ -209,11 +384,8 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   async getExperimentResults(projectName: string, id: string) {
-    const data = await this.readProject(projectName)
-    const experiment = data.experimentsById.get(id)
-    if (!experiment) {
-      throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
-    }
+    const project = this.requireProject(projectName)
+    const experiment = await this.readExperimentDocument(project, id)
     const results = experiment.documents?.results
     if (!results?.exists) {
       throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment results not found')
@@ -225,20 +397,22 @@ export class FilesystemProjectService implements BackendProjectReadService {
         updatedAt: fileStat.mtime.toISOString(),
       })
     }
+    const eligibility = await experimentRunEligibility(project, experiment)
     return BackendExperimentResultsResponseSchema.parse({
       project: projectName,
-      resource: portableProjectResource(data.project, results.path),
+      resource: portableProjectResource(project, results.path),
       document: safeResultsDocument(results.data),
+      ...eligibility,
       updatedAt: fileStat.mtime.toISOString(),
       warnings: results.parseWarnings,
     })
   }
 
   async getRunFiles(projectName: string, id: string, depth: number) {
-    const data = await this.readProject(projectName)
-    const run = data.runsById.get(id)
-    if (!run) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
-    const runRoot = await fs.realpath(run.path)
+    const project = this.requireProject(projectName)
+    const runPath = (await this.runPaths(project)).get(id)
+    if (!runPath) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
+    const runRoot = await fs.realpath(runPath)
     let truncated = false
     let count = 0
 
@@ -251,14 +425,15 @@ export class FilesystemProjectService implements BackendProjectReadService {
       children: Array<Record<string, unknown>>
     } | null> => {
       if (depthLeft < 0) return null
-      const realDirectory = await fs.realpath(absoluteDirectory).catch(() => null)
+      const realDirectory = await missingOrThrow(fs.realpath(absoluteDirectory))
       if (
         !realDirectory ||
         (realDirectory !== runRoot && !realDirectory.startsWith(`${runRoot}${sep}`))
       ) {
         return null
       }
-      const entries = await fs.readdir(realDirectory, { withFileTypes: true }).catch(() => [])
+      const entries =
+        (await missingOrThrow(fs.readdir(realDirectory, { withFileTypes: true }))) ?? []
       const children: Array<Record<string, unknown>> = []
       for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
         if (count >= 200) {
@@ -267,7 +442,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
         }
         if (entry.name.startsWith('.') || entry.isSymbolicLink()) continue
         const child = join(realDirectory, entry.name)
-        const childStat = await fs.lstat(child).catch(() => null)
+        const childStat = await missingOrThrow(fs.lstat(child))
         if (!childStat || childStat.isSymbolicLink()) continue
         if (childStat.isFile()) {
           children.push({
@@ -296,8 +471,8 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const tree = await walk(runRoot, depth)
     return BackendRunFilesResponseSchema.parse({
       project: projectName,
-      runId: run.id,
-      resource: portableProjectResource(data.project, runRoot),
+      runId: id,
+      resource: portableProjectResource(project, runRoot),
       depth,
       truncated,
       entries: count,
@@ -305,19 +480,67 @@ export class FilesystemProjectService implements BackendProjectReadService {
     })
   }
 
+  /** Depends on `docs/hypotheses.md` alone. */
   async getHypotheses(projectName: string) {
-    const data = await this.readProject(projectName)
-    const { path: _path, ...hypotheses } = data.hypotheses
-    return BackendHypothesesResponseSchema.parse({ project: projectName, ...hypotheses })
+    const project = this.requireProject(projectName)
+    const content = await missingOrThrow(
+      fs.readFile(join(project.root, 'docs', 'hypotheses.md'), 'utf8'),
+    )
+    const hypotheses = content === null ? EMPTY_HYPOTHESES : parseHypotheses(content)
+    return BackendHypothesesResponseSchema.parse({
+      project: projectName,
+      legendBlock: hypotheses.legendBlock,
+      summaryTableBlock: hypotheses.summaryTableBlock,
+      entries: hypotheses.entries,
+      parseErrors: hypotheses.parseErrors,
+      parseWarnings: hypotheses.parseWarnings,
+    })
   }
 
+  /**
+   * Legacy `docs/journal.md` only. This is the read a share-scoped viewer may
+   * already reach, so it never grows to include invocation receipts.
+   */
   async getJournal(projectName: string) {
-    const data = await this.readProject(projectName)
-    const { path: _path, events, ...journal } = data.journal
+    const project = this.requireProject(projectName)
+    const {
+      path: _path,
+      lastDigestAt: _cursor,
+      events,
+      ...journal
+    } = await readProjectJournal(project.root)
     return BackendJournalResponseSchema.parse({
       project: projectName,
       ...journal,
       events: [...events].reverse(),
+    })
+  }
+
+  /**
+   * Owner-only merged diagnostics: preserved legacy Markdown history plus the
+   * typed invocation receipts, newest first, each labelled by its own origin.
+   * Receipts are read from disk on every call — a diagnostic query reports the
+   * current ledger, not a polled research snapshot — and undecodable receipt
+   * files are surfaced instead of silently shrinking the history.
+   */
+  async getJournalHistory(projectName: string, limit?: number) {
+    const project = this.requireProject(projectName)
+    const [journal, activity] = await Promise.all([
+      readProjectJournal(project.root),
+      readJournalActivity(project.root),
+    ])
+    const legacyEvents = [...journal.events].reverse()
+    const invocations = [...activity.records].reverse()
+    return BackendJournalHistoryResponseSchema.parse({
+      project: projectName,
+      legacy: {
+        present: journal.path !== null,
+        events: limit === undefined ? legacyEvents : legacyEvents.slice(0, limit),
+        parseErrors: journal.parseErrors,
+        parseWarnings: journal.parseWarnings,
+      },
+      invocations: limit === undefined ? invocations : invocations.slice(0, limit),
+      unreadableReceipts: activity.unreadable,
     })
   }
 
@@ -336,82 +559,109 @@ export class FilesystemProjectService implements BackendProjectReadService {
     return project
   }
 
-  private requireSnapshot(projectName: string): ProjectSnapshotState {
+  private requireComposition(projectName: string): ProjectCompositionState {
     this.requireProject(projectName)
-    return this.snapshots.get(projectName)!
+    return this.compositions.get(projectName)!
   }
 
-  private async readProject(projectName: string): Promise<ProjectData> {
-    const state = this.requireSnapshot(projectName)
-    if (state.data) {
-      if (state.dirty && !state.refreshPromise) {
-        void this.refreshSnapshot(projectName, state).catch(() => undefined)
-      }
-      return state.data
+  /**
+   * Run id -> directory, from the composite Run walk. The walk consults
+   * directory listings only: no Run README is read to answer "where is this
+   * Run", and a warm listing cache makes the mapping free.
+   */
+  private async runPaths(project: ProjectConfig): Promise<ReadonlyMap<string, string>> {
+    return withAutomaticProjectFileContext(async () => {
+      const paths = await discoverRuns(project, { includeArchived: true })
+      return new Map(paths.map((path) => [basename(path), path]))
+    })
+  }
+
+  /** One Run's own README, located through the walk and parsed for this request. */
+  private async readRun(project: ProjectConfig, id: string): Promise<IndexedRun> {
+    const path = (await this.runPaths(project)).get(id)
+    if (!path) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
+    const run = await readRunDir(path, project.name)
+    return {
+      ...run,
+      archived: await runArchivedFromRun(run),
+      // Orthogonal to archival and status: an explicit-id Run read always
+      // resolves, and carries the flag so a viewer can mark it deprecated.
+      deprecated: isRunDeprecated(run),
+      stale: isStaleRunning(run),
     }
-    return this.refreshSnapshot(projectName, state)
   }
 
-  private async refreshSnapshot(
-    projectName: string,
-    state: ProjectSnapshotState,
-  ): Promise<ProjectData> {
-    if (state.refreshPromise) return state.refreshPromise
+  /** One Experiment bundle, without touching any other Experiment. */
+  private async readExperimentDocument(project: ProjectConfig, id: string): Promise<Experiment> {
+    const experiment = await readExperimentDoc(project.root, project.name, id)
+    if (!experiment) {
+      throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment not found')
+    }
+    return experiment
+  }
+
+  /**
+   * Compose this Project's domain records for the current request.
+   *
+   * Every call re-runs the projection. The cost is CPU over already-observed
+   * file bytes and listings: only dependencies the file store considers due or
+   * unknown reach the filesystem. A failure propagates to this request — a
+   * cold or broken mount must surface as an error, never as an empty Project.
+   */
+  private async readProject(projectName: string): Promise<ProjectData> {
+    const state = this.requireComposition(projectName)
     const startedAt = Date.now()
-    const pending = this.buildProject(projectName)
-    state.refreshPromise = pending
     try {
-      const data = await pending
-      state.data = data
-      state.dirty = false
+      const data = await this.buildProject(projectName)
       state.generation += 1
+      state.composed = true
       state.lastRefreshAt = new Date().toISOString()
       state.lastRefreshDurationMs = Date.now() - startedAt
       state.lastError = null
+      state.runs = data.runs.length
+      state.experiments = data.experiments.length
       return data
     } catch (error) {
       state.lastError = (error as Error).message
       throw error
-    } finally {
-      if (state.refreshPromise === pending) state.refreshPromise = null
     }
   }
 
+  /**
+   * The project-wide composition the aggregate list endpoints need: every Run
+   * and Experiment document plus their membership join. Detail endpoints do not
+   * use this — they resolve their own bundle and its declared Runs instead.
+   */
   private async buildProject(projectName: string): Promise<ProjectData> {
     const project = this.requireProject(projectName)
     const [snapshot, experimentResult] = await Promise.all([
       scanProjectRoot(project.root, {
+        // The composition is the full Run set on purpose: membership must see
+        // a deprecated Run to avoid reporting it as a phantom reference, and
+        // `listRuns` applies the research default on top of this.
         includeArchived: true,
+        includeDeprecated: true,
         projectName: project.name,
         include: project.include,
         exclude: project.exclude,
       }),
       discoverExperiments(project.root, project.name),
     ])
-    const membership = computeMembership({
-      experiments: experimentResult.experiments,
-      runs: snapshot.experiments,
-      project: project.name,
-    })
     return {
       project,
       runs: snapshot.experiments,
       runsById: new Map(snapshot.experiments.map((run) => [run.id, run])),
       experiments: experimentResult.experiments,
-      experimentsById: new Map(
-        experimentResult.experiments.map((experiment) => [experiment.id, experiment]),
-      ),
-      membership,
-      hypotheses: snapshot.hypotheses,
-      journal: snapshot.journal,
+      membership: computeMembership({
+        experiments: experimentResult.experiments,
+        runs: snapshot.experiments,
+        project: project.name,
+      }),
     }
   }
 }
 
-function safeRunSummary(
-  run: Run & { stale: boolean; archived: boolean },
-  project: ProjectConfig,
-): BackendRunSummary {
+function safeRunSummary(run: IndexedRun, project: ProjectConfig): BackendRunSummary {
   const frontMatter = run.frontMatter
   return BackendRunsResponseSchema.shape.runs.element.parse({
     id: run.id,
@@ -422,6 +672,7 @@ function safeRunSummary(
     hasReadme: run.hasReadme,
     stale: run.stale,
     archived: run.archived,
+    deprecated: run.deprecated,
     frontMatter: {
       id: frontMatter.id,
       name: frontMatter.name,
@@ -440,45 +691,26 @@ function safeRunSummary(
       hypotheses: frontMatter.hypotheses,
       tags: frontMatter.tags,
       archived: frontMatter.archived,
+      deprecated: frontMatter.deprecated,
     },
     parseErrors: run.parseErrors,
     parseWarnings: run.parseWarnings,
   })
 }
 
+/**
+ * The Experiment document's own projection, used by both the list and the
+ * detail. Effective timestamps are the document's: no projection reads a member
+ * Run, so neither widens the window over one.
+ */
 function safeExperimentSummary(
   experiment: Experiment,
-  data: ProjectData,
+  project: ProjectConfig,
 ): BackendExperimentSummary {
-  const memberIds = data.membership.confirmedMembers.get(experiment.id) ?? []
-  const members = memberIds.flatMap((id) => {
-    const run = data.runsById.get(id)
-    if (!run) return []
-    return [
-      {
-        id: run.id,
-        resource: runReadmeResource(data.project, run),
-        status: run.frontMatter.status,
-        archived: run.frontMatter.archived,
-        createdAt: run.frontMatter.createdAt,
-        updatedAt: run.frontMatter.updatedAt,
-        finishedAt: run.frontMatter.finishedAt,
-        host: run.frontMatter.host,
-        gpus: run.frontMatter.gpus,
-        wandb: run.frontMatter.wandb,
-        artifacts: run.sections.artifacts.flatMap((artifact) => {
-          const path = ResourceIdSchema.safeParse(artifact.path)
-          return path.success ? [{ path: path.data, description: artifact.description }] : []
-        }),
-      },
-    ]
-  })
-  const created = [experiment.frontMatter.createdAt, ...members.map((run) => run.createdAt)].sort()
-  const updated = [experiment.frontMatter.updatedAt, ...members.map((run) => run.updatedAt)].sort()
   return BackendExperimentSummarySchema.parse({
     id: experiment.id,
     project: experiment.project,
-    resource: portableReadmeResource(data.project, experiment.path),
+    resource: portableReadmeResource(project, experiment.path),
     mtime: experiment.mtime,
     readmeMtime: experiment.readmeMtime,
     frontMatter: { ...experiment.frontMatter },
@@ -486,9 +718,8 @@ function safeExperimentSummary(
     warningsRaw: experiment.warningsRaw,
     parseErrors: experiment.parseErrors,
     parseWarnings: experiment.parseWarnings,
-    effectiveCreatedAt: created[0] ?? experiment.frontMatter.createdAt,
-    effectiveUpdatedAt: updated.at(-1) ?? experiment.frontMatter.updatedAt,
-    memberRuns: members,
+    effectiveCreatedAt: experiment.frontMatter.createdAt,
+    effectiveUpdatedAt: experiment.frontMatter.updatedAt,
   })
 }
 
@@ -529,7 +760,42 @@ function normalizePortableResultResource(value: string): string {
   return value.startsWith('./') ? value.slice(2) : value
 }
 
-function safeManagedDocuments(experiment: Experiment, project: ProjectConfig) {
+/** Resolve only declared/cited eligibility flags, never hydrated Run records. */
+async function experimentRunEligibility(
+  project: ProjectConfig,
+  experiment: Experiment,
+): Promise<{ deprecatedRuns: string[]; variantEligibility: ResultsVariantEligibility[] }> {
+  const results = experiment.documents?.results.data ?? null
+  let deprecatedRuns: string[]
+  try {
+    deprecatedRuns = await withAutomaticProjectFileContext(() =>
+      listDeprecatedRunIds(project.root, {
+        projectName: project.name,
+        include: project.include,
+        exclude: project.exclude,
+        ids: [
+          ...experiment.frontMatter.runs,
+          ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
+        ],
+      }),
+    )
+  } catch {
+    throw new BackendProjectServiceError(
+      'INVALID_RESOURCE',
+      'Run eligibility metadata could not be read',
+    )
+  }
+  return {
+    deprecatedRuns,
+    variantEligibility: projectResultsRunEligibility(results, deprecatedRuns),
+  }
+}
+
+function safeManagedDocuments(
+  experiment: Experiment,
+  project: ProjectConfig,
+  variantEligibility: ResultsVariantEligibility[],
+) {
   const documents = experiment.documents
   if (!documents) return null
   return {
@@ -569,6 +835,7 @@ function safeManagedDocuments(experiment: Experiment, project: ProjectConfig) {
       data: documents.results.data ? safeResultsDocument(documents.results.data) : null,
       parseErrors: documents.results.parseErrors,
       parseWarnings: documents.results.parseWarnings,
+      variantEligibility,
     },
   }
 }
@@ -639,10 +906,6 @@ async function managedResultsUpdatedAt(
   results: NonNullable<Experiment['documents']>['results'] | undefined,
 ): Promise<string | null> {
   if (!results?.exists) return null
-  try {
-    return (await fs.stat(results.path)).mtime.toISOString()
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
+  const stat = await missingOrThrow(fs.stat(results.path))
+  return stat?.mtime.toISOString() ?? null
 }

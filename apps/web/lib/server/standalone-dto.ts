@@ -19,17 +19,12 @@ export function standaloneRun<T extends ResourceDto>(config: Config, run: T) {
   return { ...run, path: dirname(absolute(config, run.project, run.resource)) }
 }
 
-export function standaloneExperiment<
-  T extends ResourceDto & { memberRuns: Array<{ resource: string } & Record<string, unknown>> },
->(config: Config, experiment: T) {
+/** Adds the absolute bundle path to an Experiment DTO. */
+export function standaloneExperiment<T extends ResourceDto>(config: Config, experiment: T) {
   const path = absolute(config, experiment.project, experiment.resource)
   return {
     ...experiment,
     path: experiment.resource.endsWith('/README.md') ? dirname(path) : path,
-    memberRuns: experiment.memberRuns.map((run) => ({
-      ...run,
-      path: dirname(absolute(config, experiment.project, run.resource)),
-    })),
   }
 }
 

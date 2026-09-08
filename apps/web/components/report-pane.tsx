@@ -1,16 +1,16 @@
 'use client'
 
+import type { BackendResourceInventoryItem } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpRight, ChevronDown, PanelRight, PanelRightClose, Rows3, X } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   fetchReport,
-  fetchReports,
+  fetchReportsInventory,
   type ProjectTarget,
   projectQueryKey,
   projectWebPath,
-  type ReportListItem,
 } from '../lib/api'
 import { cn } from '../lib/utils'
 import { RenderedItem, reportResourceBaseUrl } from './inbox-shell'
@@ -36,15 +36,21 @@ export function ReportPane({
   onClose: () => void
 }) {
   const list = useQuery({
-    queryKey: ['reports', ...projectQueryKey(project)],
-    queryFn: () => fetchReports(project),
+    queryKey: ['reports-inventory', ...projectQueryKey(project)],
+    queryFn: () => fetchReportsInventory(project),
     staleTime: 5_000,
   })
   const detail = useQuery({
     queryKey: ['report', ...projectQueryKey(project), reportId],
     queryFn: () => fetchReport(project, reportId),
   })
-  const reports = list.data?.reports ?? []
+  const reports = useMemo(
+    () =>
+      (list.data?.items ?? [])
+        .slice()
+        .sort((a, b) => a.slug.localeCompare(b.slug) || a.id.localeCompare(b.id)),
+    [list.data],
+  )
   const listError = list.isError
     ? ((list.error as Error | null) ?? new Error('request failed'))
     : null
@@ -123,7 +129,7 @@ export function ReportPane({
           <div className="p-4">
             <ListSkeleton count={4} />
           </div>
-        ) : detail.error ? (
+        ) : detail.error && !detail.data ? (
           <ReportPaneError reportId={reportId} message={(detail.error as Error).message} />
         ) : !detail.data ? (
           <ReportPaneError reportId={reportId} message="Report not found" />
@@ -160,7 +166,7 @@ function ReportPaneSwitcher({
 }: {
   reportId: string
   identity: string
-  reports: ReportListItem[]
+  reports: BackendResourceInventoryItem[]
   loading: boolean
   error?: Error | null
   onRetry?: () => void
@@ -224,7 +230,7 @@ function ReportPaneSwitcher({
               {reports.map((report) => {
                 const selected = report.id === reportId
                 return (
-                  <li key={`${report.id}:${report.path ?? ''}`}>
+                  <li key={`${report.id}:${report.resource}`}>
                     <button
                       type="button"
                       aria-current={selected ? 'page' : undefined}
@@ -244,11 +250,6 @@ function ReportPaneSwitcher({
                         <span className="truncate text-[10px] text-muted-foreground">
                           {report.slug}
                         </span>
-                      </span>
-                      <span className="mt-0.5 block truncate text-[11px]">
-                        {report.title ?? (
-                          <span className="italic text-muted-foreground/60">(no title)</span>
-                        )}
                       </span>
                     </button>
                   </li>

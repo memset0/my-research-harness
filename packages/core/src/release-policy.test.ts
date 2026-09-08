@@ -19,9 +19,9 @@ describe('memon release policy', () => {
       }),
     ).toBe('central-patch')
     for (const changedSurfaces of [
-      ['central', 'backend'],
+      ['central', 'skills'],
       ['central', 'cli'],
-      ['backend'],
+      ['skills'],
       ['cli'],
     ] as const) {
       expect(() =>
@@ -32,12 +32,12 @@ describe('memon release policy', () => {
           nextFsConvention: 6,
           changedSurfaces,
         }),
-      ).toThrow(/Backend\/CLI release/)
+      ).toThrow(/CLI\/skills release/)
     }
   })
 
-  it('requires Backend or CLI changes to increment Minor and reset Patch', () => {
-    for (const changedSurfaces of [['backend'], ['cli'], ['central', 'backend', 'cli']] as const) {
+  it('requires CLI or bundled-skill changes to increment Minor and reset Patch', () => {
+    for (const changedSurfaces of [['cli'], ['skills'], ['central', 'cli', 'skills']] as const) {
       expect(
         validateReleaseTransition({
           previousRelease: '6.1.7',
@@ -46,7 +46,7 @@ describe('memon release policy', () => {
           nextFsConvention: 6,
           changedSurfaces,
         }),
-      ).toBe('backend-cli-minor')
+      ).toBe('cli-minor')
     }
     expect(() =>
       validateReleaseTransition({
@@ -54,7 +54,7 @@ describe('memon release policy', () => {
         nextRelease: '6.2.1',
         previousFsConvention: 6,
         nextFsConvention: 6,
-        changedSurfaces: ['backend'],
+        changedSurfaces: ['skills'],
       }),
     ).toThrow(/reset Patch/)
   })
@@ -66,7 +66,7 @@ describe('memon release policy', () => {
         nextRelease: '7.0.0',
         previousFsConvention: 6,
         nextFsConvention: 7,
-        changedSurfaces: ['filesystem', 'backend', 'cli', 'central'],
+        changedSurfaces: ['filesystem', 'cli', 'skills', 'central'],
       }),
     ).toBe('filesystem-major')
     expect(() =>
@@ -105,9 +105,9 @@ describe('memon release policy', () => {
         nextRelease: '6.1.0',
         previousFsConvention: 6,
         nextFsConvention: 6,
-        changedSurfaces: ['central', 'backend', 'cli'],
+        changedSurfaces: ['central', 'cli', 'skills'],
       }),
-    ).toBe('backend-cli-minor')
+    ).toBe('cli-minor')
     expect(
       validateReleaseTransition({
         previousRelease: '6.1.0',

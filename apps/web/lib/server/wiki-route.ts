@@ -9,6 +9,8 @@
 import { NextResponse } from 'next/server'
 import {
   parseWikiFrontmatter,
+  JournalRecordingError,
+  withJournalInvocation,
   WIKI_ID_REGEX,
   type WikiDiagnostic,
   type WikiPage,
@@ -49,6 +51,35 @@ export function wikiProjectTarget(
     return { error: wikiError(404, 'NOT_FOUND', `project "${project}" not configured`) }
   }
   return { project }
+}
+
+/** One standalone Wiki mutation, including returned validation/conflict errors. */
+export async function withWikiInvocation(
+  runtime: Runtime,
+  project: string,
+  command: string,
+  parameters: Record<string, unknown>,
+  action: () => Promise<NextResponse>,
+): Promise<NextResponse> {
+  const root = runtime.config.projects.find((entry) => entry.name === project)?.root
+  if (!root) return wikiError(404, 'NOT_FOUND', 'project is not configured')
+  try {
+    return await withJournalInvocation(root, { command, origin: 'web', parameters }, async (ctx) => {
+      const response = await action()
+      if (response.status >= 400) {
+        ctx.markOutcome(response.status === 409 ? 'conflict' : 'failure',
+          response.status === 409 ? 'CONFLICT' : response.status === 404 ? 'NOT_FOUND' :
+            response.status === 400 ? 'BAD_REQUEST' : 'INTERNAL')
+      }
+      return response
+    }, { standalone: true })
+  } catch (error) {
+    if (error instanceof JournalRecordingError) {
+      return wikiError(500, error.code,
+        'Journal recording failed; inspect the current document state before retrying.')
+    }
+    return wikiError(500, 'INTERNAL', 'Wiki operation failed')
+  }
 }
 
 export function wikiSummaryDto(project: string, summary: WikiSummary): WikiSummaryDto {

@@ -17,8 +17,10 @@
 // `submodule = ''`. The writer always emits the 5-column form, so the
 // first write after deployment upgrades the file in place.
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { projectFs } from '../project-file-store.js'
 import { dirname, join } from 'node:path'
+
+const { mkdir, readFile, rename, rm, writeFile } = projectFs
 
 export const COMMIT_MARKS_RELPATH = '.memon/commit-marks.csv'
 

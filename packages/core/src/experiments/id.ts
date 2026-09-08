@@ -9,7 +9,7 @@
 // `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md` so allocation stays
 // monotonic when both shapes coexist briefly.
 
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import * as path from 'node:path'
 
 import { padId, parseId } from '../ids.js'

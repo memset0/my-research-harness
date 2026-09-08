@@ -17,7 +17,11 @@ export {
   type WikiDeprecationResult,
   type WikiSectionDeprecationResult,
 } from './deprecation.js'
-export { discoverWikiPages, type DiscoveredWikiPage } from './discover.js'
+export {
+  discoverWikiPages,
+  type DiscoveredWikiPage,
+  type DiscoverWikiPagesOptions,
+} from './discover.js'
 export {
   parseWikiFrontmatter,
   serializeWikiPage,
@@ -38,6 +42,7 @@ export {
 } from './lint.js'
 export * from './review.js'
 export {
+  collectWikiSourceReferences,
   experimentEffectiveUpdatedAtMs,
   resolveWikiSources,
   runLastChangedAtMs,
@@ -46,7 +51,9 @@ export {
   type WikiSourceContext,
   type WikiSourceIndex,
   type WikiSourceKind,
+  wikiSourceKind,
   type WikiSourcePage,
+  type WikiSourceReferences,
   type WikiSourceResolution,
 } from './staleness.js'
 export {
@@ -58,6 +65,7 @@ export {
   wikiContentHash,
   wikiDisplayTitle,
   type BuildWikiSummaryInput,
+  type WikiLocalProjectContext,
   type WikiProjectContext,
   type WikiProjectProjection,
   type WikiSummaryLocation,

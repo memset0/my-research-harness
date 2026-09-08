@@ -108,7 +108,7 @@ describe('integration: v3 read flow against mock fixtures', () => {
   })
 
   describe('GET /api/experiments/[id]', () => {
-    it('returns full detail with member runs + effective times for E0001-vpred-convergence', async () => {
+    it('returns the Experiment document detail with its declared roster and effective times', async () => {
       const id = 'E0001-vpred-convergence'
       const res = await getExperimentDetail(
         new NextRequest(`http://localhost/api/experiments/${id}`),
@@ -120,17 +120,16 @@ describe('integration: v3 read flow against mock fixtures', () => {
         mtime: number
         readmeMtime: number
         frontMatter: { runs: string[]; title: string }
-        memberRuns: Array<{ id: string; status: string }>
         effectiveCreatedAt: string
         effectiveUpdatedAt: string
       }
       expect(body.id).toBe(id)
       expect(body.readmeMtime).toBeGreaterThan(0)
       expect(body.mtime).toBeGreaterThanOrEqual(body.readmeMtime)
+      // The roster is the document's own `runs` list; detail never walks the
+      // member Runs, so no composed member projection comes back with it.
       expect(body.frontMatter.runs.length).toBeGreaterThan(0)
-      // memberRuns is the cross-join — every confirmed member run shows up
-      expect(body.memberRuns.length).toBeGreaterThan(0)
-      expect(body.memberRuns[0]!.status).toBeDefined()
+      expect(body).not.toHaveProperty('memberRuns')
       expect(body.effectiveCreatedAt).toBeTruthy()
       expect(body.effectiveUpdatedAt).toBeTruthy()
     })
@@ -192,8 +191,8 @@ describe('integration: v3 read flow against mock fixtures', () => {
         new NextRequest(`http://localhost/api/experiments/E0001-vpred-convergence`),
         { params: Promise.resolve({ id: 'E0001-vpred-convergence' }) },
       )
-      const expBody = (await expRes.json()) as { memberRuns: Array<{ id: string }> }
-      const runId = expBody.memberRuns[0]?.id
+      const expBody = (await expRes.json()) as { frontMatter: { runs: string[] } }
+      const runId = expBody.frontMatter.runs[0]
       expect(runId).toBeTruthy()
 
       const res = await getRunDetail(new NextRequest(`http://localhost/api/runs/${runId}`), {

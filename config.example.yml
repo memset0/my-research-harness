@@ -15,6 +15,8 @@ projects:
     # Default excludes (.git, node_modules, __pycache__, .venv, venv, .cache)
     # are always applied. Entries below ADD to that set.
     exclude: []
+    # Run discovery walks only logs/, outputs/, and experiments/ below root.
+    # Missing entries are skipped; nested groups inside them are supported.
 
     # Optional: map GitHub owner/repo -> a LOCAL git checkout so that GitHub
     # blob line-permalinks in rendered markdown (code-review docs, run/exp
@@ -36,6 +38,50 @@ projects:
   - name: project-b
     root: ./mock/project-b
 
+# ── host-qualified Projects (direct central role) ────────────────────
+# A Project MAY name the Host namespace it belongs to. Declaring `host:` on
+# every Project selects the central Web role and serves those Projects
+# straight from this instance's filesystem — an ordinary directory or a mount
+# of another machine — with no peer memon service, service token, or
+# availability probe. Public routes, share scopes and `{host, project}`
+# identity are unchanged. `poll:` is rejected in this mode: file access is
+# scheduled by `fileAccess:` below instead of a whole-project scanner.
+#
+#   projects:
+#     - name: project-a
+#       root: /example/mounts/project-a
+#       host: host-a           # same id rule as central.hosts[].id
+#       storage_group: mount-a # shared I/O budget for one mount
+#       read_only: true        # refuse every write to this Project's data
+#       persistent_cache: true # opt-in dumped LRU; actual SSHFS roots only
+#       # Command capabilities (Git and Slurm) require an explicit execution
+#       # context. Absent means "no execution provider": those routes answer
+#       # 501 instead of running against the mounted root.
+#       execution:
+#         kind: ssh            # or `kind: local` for a genuinely local root
+#         target: user@example-host
+#         remote_root: /example/remote/project-a
+#         # port: 22
+#         # identity_file: ./secrets/example_ed25519
+#         # known_hosts_file: ./secrets/known_hosts
+#
+# Optional local dump for the bounded in-memory observation LRU. Relative paths
+# resolve beside the selected instance config. Keep the dump on LOCAL storage
+# and ignored by Git. Only explicitly opted-in SSHFS projects use it; ordinary
+# local projects remain memory-only.
+# file_cache:
+#   dump_path: ./.memon-cache/project-file-cache.dump
+#   dump_interval_seconds: 30
+#   wiki_ttl_seconds: 30
+#   default_ttl_seconds: 1800
+# Valid completed observations load at startup with their original observed
+# timestamps. The cache can lag the latest completed observation by one dump
+# interval because dumps are asynchronous, periodic, and atomically renamed.
+# Opening/focusing uses valid cached observations without forcing remote I/O.
+# Manual refresh bypasses the period; successful writes invalidate exact paths.
+# Queues, in-flight work, Promises, waiters, leases, failures/retry scheduling
+# and metrics are NEVER stored in the LRU values or dump.
+
 # Polling policy. Each watched directory has its own per-path interval that
 # doubles after each unchanged check, capped between min and max. Defaults
 # below match the spec.
@@ -44,37 +90,7 @@ poll:
   max_interval_ms: 300000
   backoff_factor: 2
 
-# Browser-terminal integrations and ttyd tuning. Every field is optional;
-# omit the block (or any individual field) to use the defaults shown below.
-# Tmux stays enabled by default for compatibility; Herdr is opt-in.
-# `pane_info_idle_poll_ms` MUST be >= `pane_info_active_poll_ms`.
-#
-# The `commands` sub-map overrides what gets pushed into the tmux pane after
-# `tmux new-session -A -s <name> -c <cwd>`. Keys are agent kinds
-# (`none | claude | codex | opencode`); values are argv arrays. Omit any
-# agent key to inherit its default. `commands.none: []` keeps the legacy
-# "no trailing command — just tmux's default shell" behaviour; for every
-# other agent the array must be non-empty.
-#
-# NOTE: the resume tail (e.g. `["--continue"]` for claude when a prior
-# conversation exists at <cwd>) is appended AFTER the user's argv. If you
-# wrap with `bash -lc "exec claude"`, that resume tail becomes a bash
-# positional arg rather than a claude flag, so auto-resume effectively
-# disables itself for wrapped forms.
-#
-# terminal:
-#   tmux_enabled: true               # set false to skip all tmux UI and commands
-#   herdr:                           # omit this block to disable Herdr
-#     cli: ["herdr"]                 # executable/wrapper argv; no shell parsing
-#   ttyd_max_concurrent: 16          # soft LRU cap on concurrent ttyd procs
-#   ttyd_idle_ttl_minutes: 30        # kill ttyd after this many idle minutes; 0 disables
-#   pane_info_active_poll_ms: 5000   # per-target poll interval when ttyd is bound
-#   pane_info_idle_poll_ms: 60000    # per-target poll interval otherwise; >= active
-#   commands:
-#     none: []                       # plain shell; tmux picks the default
-#     claude: ["claude"]
-#     codex: ["codex"]
-#     opencode: ["opencode"]
+
 
 # Slurm cluster-status widget in the sidebar footer. Opt-in: set
 # `total_nodes` to the cluster's node total to enable; the widget then
@@ -122,6 +138,38 @@ poll:
 #                                   # auto-generated on first run alongside
 #                                   # `password`. Rotate to log everyone out.
 
+# ── project file access (scheduled filesystem I/O) ───────────────────
+# Bounded, shared I/O for Project files: one logical task per operation, human
+# requests ahead of background checks, exponential backoff per path, and a
+# concurrency budget per `storage_group`. Every key is optional and applies at
+# startup only; the owner-only File access settings page writes this block.
+# camelCase here is deliberate — the keys mirror the API payload exactly.
+#
+# Relationships validated at load time: `leaseMs` >= 3 x `heartbeatMs`,
+# each `*MaxMs` >= its `*MinMs`, `backoffFactor` > 1. The heartbeat is
+# independent of the file periods: a page asks every `heartbeatMs`, the Store
+# decides how often a file is actually re-checked.
+#
+# fileAccess:
+#   concurrency: 10                 # actual operations per storage group
+#   heartbeatMs: 30000              # foreground attention heartbeat
+#   leaseMs: 90000                  # attention lease (>= 2 missed heartbeats)
+#   fileMinMs: 5000
+#   fileMaxMs: 30000
+#   directoryMinMs: 15000
+#   directoryMaxMs: 60000
+#   maintenanceMinMs: 300000        # unobserved known operations
+#   maintenanceMaxMs: 900000
+#   failureMinMs: 15000
+#   failureMaxMs: 300000
+#   backoffFactor: 2
+#
+# Saving settings never restarts or hot-applies. The owner-only restart action
+# invokes exactly this configured argv and nothing else; without it the API
+# honestly reports restart_required. Never a browser-supplied command.
+#
+# fileAccessRestart: ["example-service-wrapper", "restart", "memon-candidate"]
+
 # ── central / Backend roles (multi-Host) ──────────────────────
 # No role block means standalone (the default represented by this file).
 # A split deployment uses separate instance files: one with `central:` and no
@@ -134,8 +182,12 @@ poll:
 # strings. During rotation, add `next` to the Backend first, then central,
 # switch `current`, verify, and finally remove the old token.
 #
-# Central instance (remove the top-level `projects`, polling, terminal, Slurm,
-# and Git-status blocks when creating this separate instance):
+# Central instance. Two shapes are supported and may be combined:
+#   - Projects served directly (top-level `projects:` with `host:`, above);
+#     `hosts:` may then be empty or omitted entirely.
+#   - Registered peer Backends listed under `hosts:` (proxied transport).
+# Remove polling when serving Projects directly; keep Slurm/Git-status blocks
+# only for capabilities this instance can actually execute.
 #
 # central:
 #   bind_addr: "127.0.0.1"          # optional; default 127.0.0.1
@@ -143,7 +195,8 @@ poll:
 #   public_url: "https://central.example.test"
 #   # Optional temporary migration target for legacy name-only share links.
 #   # legacy_share_host: host-a
-#   hosts:
+#   hosts: []                       # no peer Backend; Projects are local/mounted
+#   # hosts:
 #     - id: host-a
 #       label: "Synthetic URL Host"
 #       tokens:
@@ -158,7 +211,7 @@ poll:
 #         ssh_target: "operator@host-a.example.test"
 #         checkout_path: "/example/checkouts/memon"
 #         config_path: "/example/config/backend.yml"
-#         runtime_bootstrap: ["memon", "backend", "daemon", "start"]
+#         runtime_bootstrap: ["example-service-wrapper", "restart"]
 #         supervisor_mode: supervised
 #
 #     - id: host-b

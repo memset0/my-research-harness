@@ -24,7 +24,6 @@ import {
   projectName,
   projectQueryKey,
   projectWebPath,
-  putDigest,
   putReport,
   type ReportListItem,
 } from '../lib/api'
@@ -72,7 +71,7 @@ const EMPTY_COPY = {
   },
   digests: {
     rail: 'no digests yet',
-    body: 'No digests yet. Digests are written by `memon-digest-journal` and snapshot a date range from docs/journal.md.',
+    body: 'No digests. Digests are historical documents under docs/digests/; memon no longer generates or edits them, and existing files stay readable here.',
   },
 } as const
 
@@ -436,6 +435,9 @@ function SelectedItemPane({
   items: CommonItem[]
   itemsLoading: boolean
 }) {
+  // Reports remain editable; historical digests are read-only after the
+  // managed digest-authoring retirement, so no Edit control is offered.
+  const editable = kind === 'reports'
   const [editing, setEditing] = useState(false)
 
   if (isLoading && !data) {
@@ -448,7 +450,7 @@ function SelectedItemPane({
       </div>
     )
   }
-  if (error) {
+  if (error && !data) {
     return (
       <div className="flex h-full flex-col">
         {onShowReports && <ClosedReportRailToolbar onShowReports={onShowReports} />}
@@ -484,14 +486,16 @@ function SelectedItemPane({
             <TimestampLocal value={new Date(data.mtime).toISOString()} />
           </div>
         </div>
-        <Button
-          size="sm"
-          variant={editing ? 'secondary' : 'outline'}
-          onClick={() => setEditing((v) => !v)}
-        >
-          {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-          {editing ? 'Cancel' : 'Edit'}
-        </Button>
+        {editable ? (
+          <Button
+            size="sm"
+            variant={editing ? 'secondary' : 'outline'}
+            onClick={() => setEditing((v) => !v)}
+          >
+            {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+            {editing ? 'Cancel' : 'Edit'}
+          </Button>
+        ) : null}
       </div>
       <div className={cn('flex flex-1 overflow-hidden', editing ? 'md:divide-x' : '')}>
         <div
@@ -517,31 +521,21 @@ function SelectedItemPane({
             />
           </div>
         </div>
-        {editing && (
+        {editable && editing && (
           <div className="hidden md:flex md:w-[28rem] md:flex-col">
-            <InboxEditor
-              kind={kind}
-              project={project}
-              data={data}
-              onClose={() => setEditing(false)}
-            />
+            <InboxEditor project={project} data={data} onClose={() => setEditing(false)} />
           </div>
         )}
       </div>
 
       {/* Mobile: Edit takes over a full-viewport Sheet */}
-      {editing && (
+      {editable && editing && (
         <Sheet open={editing} onOpenChange={setEditing}>
           <SheetContent side="bottom" className="h-[100svh] p-0 md:hidden">
             <SheetHeader className="sr-only">
               <SheetTitle>Edit {data.id}</SheetTitle>
             </SheetHeader>
-            <InboxEditor
-              kind={kind}
-              project={project}
-              data={data}
-              onClose={() => setEditing(false)}
-            />
+            <InboxEditor project={project} data={data} onClose={() => setEditing(false)} />
           </SheetContent>
         </Sheet>
       )}
@@ -683,13 +677,12 @@ export function reportResourceBaseUrl(project: ProjectTarget, reportId: string):
     : base
 }
 
+/** Report editor. Digests have no managed writer, so this is reports-only. */
 function InboxEditor({
-  kind,
   project,
   data,
   onClose,
 }: {
-  kind: InboxKind
   project: ProjectTarget
   data: FullItem
   onClose: () => void
@@ -709,9 +702,9 @@ function InboxEditor({
 
   async function save() {
     setSaving(true)
+    const detailKey = ['report', ...projectQueryKey(project), data.id]
     try {
-      const put = kind === 'reports' ? putReport : putDigest
-      const res = await put(project, data.id, {
+      const res = await putReport(project, data.id, {
         content: buffer,
         expectedMtime: knownMtime,
         expectedHash: knownHash,
@@ -721,13 +714,8 @@ function InboxEditor({
       setKnownMtime(res.mtime)
       setKnownHash(res.hash)
       // Invalidate the detail query so the rendered pane reflects the save.
-      const detailKey =
-        kind === 'reports'
-          ? ['report', ...projectQueryKey(project), data.id]
-          : ['digest', ...projectQueryKey(project), data.id]
-      const listKey = [kind, project]
       queryClient.invalidateQueries({ queryKey: detailKey })
-      queryClient.invalidateQueries({ queryKey: listKey })
+      queryClient.invalidateQueries({ queryKey: ['reports', project] })
       toast.success('saved')
       onClose()
     } catch (err) {
@@ -737,10 +725,6 @@ function InboxEditor({
           action: {
             label: 'Refresh',
             onClick: () => {
-              const detailKey =
-                kind === 'reports'
-                  ? ['report', ...projectQueryKey(project), data.id]
-                  : ['digest', ...projectQueryKey(project), data.id]
               queryClient.invalidateQueries({ queryKey: detailKey })
               onClose()
             },

@@ -14,7 +14,7 @@
 // This shortcut does NOT support the legacy "write to run README" path —
 // in v3 every warning lands on a parent exp doc.
 
-import { scanProjectRoot } from '@memon/core'
+import { resolveRunTarget } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { runWarningAdd } from './warning.js'
@@ -33,8 +33,7 @@ export async function runRunWarningAdd(input: RunWarningAddInput): Promise<void>
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
 
-  const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const target = snap.experiments.find((e) => e.id === input.runIdOrDir)
+  const target = await resolveRunTarget(projectRoot, input.runIdOrDir)
   if (!target) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found in ${projectRoot}`)
   }

@@ -1,10 +1,13 @@
 'use client'
 
 // VSCode-style fixed bottom bar shown on every `/p/<project>/**` page.
-// Initially just hosts the per-project git pill, with reserved right-side
-// space for future widgets. The bar is `position: fixed` and on desktop
-// indents from the left by `--sidebar-width` so it doesn't sit over the
-// sidebar; on mobile the sidebar is off-canvas, so full-width is correct.
+// Bottom-left carries the current page's dependency freshness (see
+// `<PageFreshness />`); bottom-right carries the existing Git/version
+// affordances. The bar is `position: fixed` and on desktop indents from the
+// left by `--sidebar-width` so it doesn't sit over the sidebar; on mobile the
+// sidebar is off-canvas, so full-width is correct. Both halves stay reachable
+// at phone width: the freshness text truncates and its secondary detail hides,
+// while the Git pill and history control keep their own row space.
 
 import { useQuery } from '@tanstack/react-query'
 import { History } from 'lucide-react'
@@ -22,7 +25,8 @@ import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitHistoryDialog } from './git-history-dialog'
 import { GitStatusPill } from './git-status-pill'
-import { useWorkspaceSplitWidth } from './terminal-drawer-provider'
+import { PageFreshness } from './page-freshness'
+import { useWorkspaceSplitWidth } from './workspace-pane-provider'
 
 export interface ProjectFooterProps {
   project: ProjectTarget
@@ -63,46 +67,46 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
           } as CSSProperties
         }
         className={cn(
-          'fixed bottom-0 left-0 right-[var(--workspace-split-width,0px)] z-40 flex h-7 items-center gap-3 border-t bg-card px-3 text-xs text-muted-foreground',
+          'fixed bottom-0 left-0 right-[var(--workspace-split-width,0px)] z-40 flex h-7 items-center gap-2 border-t bg-card px-3 text-xs text-muted-foreground',
           'md:left-[var(--sidebar-width)]',
         )}
       >
-        <Link
-          href={projectWebPath(project)}
-          className="font-mono font-medium text-foreground hover:underline"
-        >
-          {projectHost(project) ? `${projectHost(project)}/` : ''}
-          {projectName(project)}
-        </Link>
-        <span className="text-muted-foreground/40">·</span>
-        {gitEnabled ? (
-          <>
-            <button
-              type="button"
-              onClick={openStatus}
-              data-slot="git-diff-dialog-trigger"
-              aria-label={`View git diff for ${projectName(project)}`}
-              className="inline-flex cursor-pointer items-center rounded px-1 hover:bg-accent hover:text-accent-foreground"
-            >
-              <GitStatusPill project={project} variant="footer" />
-            </button>
-            {!projectHost(project) && (
+        <PageFreshness />
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          <Link
+            href={projectWebPath(project)}
+            className="hidden truncate font-mono font-medium text-foreground hover:underline sm:inline"
+          >
+            {projectHost(project) ? `${projectHost(project)}/` : ''}
+            {projectName(project)}
+          </Link>
+          {gitEnabled ? (
+            <>
               <button
                 type="button"
-                onClick={openHistory}
-                data-slot="git-history-dialog-trigger"
-                aria-label={`View git history for ${projectName(project)}`}
-                className="inline-flex cursor-pointer items-center rounded p-1 hover:bg-accent hover:text-accent-foreground"
+                onClick={openStatus}
+                data-slot="git-diff-dialog-trigger"
+                aria-label={`View git diff for ${projectName(project)}`}
+                className="inline-flex cursor-pointer items-center rounded px-1 hover:bg-accent hover:text-accent-foreground"
               >
-                <History className="size-3.5" aria-hidden />
+                <GitStatusPill project={project} variant="footer" />
               </button>
-            )}
-          </>
-        ) : (
-          <GitStatusPill project={project} variant="footer" />
-        )}
-        {/* Spacer reserved for future widgets (build state, monitor, etc.). */}
-        <div className="ml-auto" />
+              {!projectHost(project) && (
+                <button
+                  type="button"
+                  onClick={openHistory}
+                  data-slot="git-history-dialog-trigger"
+                  aria-label={`View git history for ${projectName(project)}`}
+                  className="inline-flex cursor-pointer items-center rounded p-1 hover:bg-accent hover:text-accent-foreground"
+                >
+                  <History className="size-3.5" aria-hidden />
+                </button>
+              )}
+            </>
+          ) : (
+            <GitStatusPill project={project} variant="footer" />
+          )}
+        </div>
       </footer>
       {gitEnabled && (
         <>

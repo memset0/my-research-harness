@@ -3,10 +3,12 @@
 import { ProjectRefSchema } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  appendJournalEvent,
   bindExperimentRun,
   createExperimentDoc,
   deleteExperimentDoc,
+  fetchCodeReviewsInventory,
+  fetchDigestsInventory,
+  fetchExperimentsInventory,
   fetchCodePreview,
   fetchExpDocReadme,
   fetchGitDiff,
@@ -20,6 +22,8 @@ import {
   fetchWikiPage,
   fetchWikiReview,
   fetchReports,
+  fetchReportsInventory,
+  fetchRunsInventory,
   fetchRunReadme,
   logStreamUrl,
   projectHost,
@@ -30,7 +34,7 @@ import {
   setCommitMark,
   markWikiReview,
   putWikiPage,
-  startTerminal,
+  fetchWikiInventory,
   unmarkWikiReview,
 } from './api'
 
@@ -115,27 +119,31 @@ describe('standalone ProjectTarget URL compatibility', () => {
       '/api/projects/project-x/commit-marks/abcdef?submodule=sub%20module',
     )
   })
-
-  it('keeps standalone body-scoped mutation URLs and project strings unchanged', async () => {
-    await appendJournalEvent({ project: 'project-x', tag: 'NOTE', body: 'text' })
-    expect(String(lastCall()[0])).toBe('/api/journal/append')
-    expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({
-      project: 'project-x',
-      tag: 'NOTE',
-      body: 'text',
-    })
-
-    await startTerminal({ project: 'project-x', scope: 'project', slug: 'root' })
-    expect(String(lastCall()[0])).toBe('/api/terminal/start')
-    expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({
-      project: 'project-x',
-      scope: 'project',
-      slug: 'root',
-    })
-  })
 })
 
 describe('central ProjectTarget URL qualification', () => {
+  it('requests portable inventories without dropping Host qualification', async () => {
+    await fetchExperimentsInventory(target)
+    expect(String(lastCall()[0])).toBe('/api/experiments?host=host-a&project=project-x&inventory=1')
+
+    await fetchRunsInventory(target)
+    expect(String(lastCall()[0])).toBe('/api/runs?host=host-a&project=project-x&inventory=1')
+
+    await fetchReportsInventory(target)
+    expect(String(lastCall()[0])).toBe('/api/reports?host=host-a&project=project-x&inventory=1')
+
+    await fetchDigestsInventory(target)
+    expect(String(lastCall()[0])).toBe('/api/digests?host=host-a&project=project-x&inventory=1')
+
+    await fetchCodeReviewsInventory(target)
+    expect(String(lastCall()[0])).toBe(
+      '/api/code-reviews?host=host-a&project=project-x&inventory=1',
+    )
+
+    await fetchWikiInventory(target)
+    expect(String(lastCall()[0])).toBe('/api/wiki?host=host-a&project=project-x&inventory=1')
+  })
+
   it('adds Host and Project to query-scoped reads', async () => {
     await fetchReports(target)
     expect(String(lastCall()[0])).toBe('/api/reports?host=host-a&project=project-x')
@@ -147,14 +155,10 @@ describe('central ProjectTarget URL qualification', () => {
     expect(String(lastCall()[0])).toBe('/api/wiki?host=host-a&project=project-x')
 
     await fetchWikiPage(target, 'W0001')
-    expect(String(lastCall()[0])).toBe(
-      '/api/wiki/W0001?host=host-a&project=project-x',
-    )
+    expect(String(lastCall()[0])).toBe('/api/wiki/W0001?host=host-a&project=project-x')
 
     await fetchWikiReview(target)
-    expect(String(lastCall()[0])).toBe(
-      '/api/wiki/review?host=host-a&project=project-x',
-    )
+    expect(String(lastCall()[0])).toBe('/api/wiki/review?host=host-a&project=project-x')
 
     await fetchRunReadme(target, 'run-a')
     expect(String(lastCall()[0])).toBe('/api/runs/run-a/readme?host=host-a&project=project-x')
@@ -198,40 +202,18 @@ describe('central ProjectTarget URL qualification', () => {
       expectedMtime: 1,
       expectedHash: 'a'.repeat(40),
     })
-    expect(String(lastCall()[0])).toBe(
-      '/api/wiki/W0001?host=host-a&project=project-x',
-    )
+    expect(String(lastCall()[0])).toBe('/api/wiki/W0001?host=host-a&project=project-x')
 
     await markWikiReview(target, 'next')
-    expect(String(lastCall()[0])).toBe(
-      '/api/wiki/review/next?host=host-a&project=project-x',
-    )
+    expect(String(lastCall()[0])).toBe('/api/wiki/review/next?host=host-a&project=project-x')
     expect(lastCall()[1]?.method).toBe('POST')
 
     await unmarkWikiReview(target, 'abcdef')
-    expect(String(lastCall()[0])).toBe(
-      '/api/wiki/review/abcdef?host=host-a&project=project-x',
-    )
+    expect(String(lastCall()[0])).toBe('/api/wiki/review/abcdef?host=host-a&project=project-x')
     expect(lastCall()[1]?.method).toBe('DELETE')
   })
 
-  it('qualifies body-scoped mutations while keeping local Project names in payloads', async () => {
-    await appendJournalEvent({ project: target, tag: 'NOTE', body: 'text' })
-    expect(String(lastCall()[0])).toBe('/api/journal/append?host=host-a&project=project-x')
-    expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({
-      project: 'project-x',
-      tag: 'NOTE',
-      body: 'text',
-    })
-
-    await startTerminal({ project: target, scope: 'project', slug: 'root' })
-    expect(String(lastCall()[0])).toBe('/api/terminal/start?host=host-a&project=project-x')
-    expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({
-      project: 'project-x',
-      scope: 'project',
-      slug: 'root',
-    })
-
+  it('keeps local Project names in qualified mutation payloads', async () => {
     await createExperimentDoc(target, { slug: 'created' })
     expect(String(lastCall()[0])).toBe('/api/experiments?host=host-a&project=project-x')
     expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({

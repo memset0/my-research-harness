@@ -15,6 +15,7 @@ import {
   BackendDocumentWriteResponseSchema,
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
+  BackendResourceInventoryResponseSchema,
   BackendReportsResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
@@ -34,10 +35,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 const CODE_REVIEW = `---
@@ -198,6 +196,26 @@ describe('Backend document routes', () => {
     }
   })
 
+  it('dispatches document inventories without changing rich collection routes', async () => {
+    const paths = [
+      '/api/backend/v1/reports?project=research&inventory=1',
+      '/api/backend/v1/digests?project=research&inventory=1',
+      '/api/backend/v1/code-reviews?project=research&inventory=1',
+    ]
+    const responses = await Promise.all(paths.map((path) => request(path, { actor: owner })))
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
+    const inventories = await Promise.all(
+      responses.map(async (response) =>
+        BackendResourceInventoryResponseSchema.parse(await response.json()),
+      ),
+    )
+    expect(inventories.map(({ items }) => items.map(({ id }) => id))).toEqual([
+      ['R0001'],
+      ['D0001'],
+      ['code-review/2026-08-26-route'],
+    ])
+  })
+
   it('applies strict optimistic writes and does not return current content on conflict', async () => {
     const frames: string[] = []
     const unsubscribe = eventStream.subscribe((frame) => {
@@ -236,23 +254,17 @@ describe('Backend document routes', () => {
     BackendDocumentWriteResponseSchema.parse(await write.json())
     expect(eventStream.currentSequence).toBe(1)
 
-    const digest = BackendDigestResponseSchema.parse(
-      await (
-        await request('/api/backend/v1/digests/D0001?project=research', { actor: owner })
-      ).json(),
-    )
     const digestWrite = await request('/api/backend/v1/digests/D0001?project=research', {
       actor: owner,
       method: 'PUT',
       body: {
         content: '# Updated route digest\n',
-        expectedMtime: digest.mtime,
-        expectedHash: digest.hash,
+        expectedMtime: 1,
+        expectedHash: 'a'.repeat(40),
       },
     })
-    expect(digestWrite.status).toBe(200)
-    BackendDocumentWriteResponseSchema.parse(await digestWrite.json())
-    expect(eventStream.currentSequence).toBe(2)
+    expect(digestWrite.status).toBe(405)
+    expect(eventStream.currentSequence).toBe(1)
 
     const review = BackendCodeReviewResponseSchema.parse(
       await (
@@ -279,7 +291,7 @@ describe('Backend document routes', () => {
     expect(patch.status).toBe(200)
     const patched = BackendCodeReviewPatchResponseSchema.parse(await patch.json())
     expect(patched.completion.reviewedCommits).toBe(1)
-    expect(eventStream.currentSequence).toBe(3)
+    expect(eventStream.currentSequence).toBe(2)
 
     const readme = BackendReadmeResponseSchema.parse(
       await (
@@ -303,9 +315,9 @@ describe('Backend document routes', () => {
     )
     expect(readmeWrite.status).toBe(200)
     BackendDocumentWriteResponseSchema.parse(await readmeWrite.json())
-    expect(eventStream.currentSequence).toBe(4)
+    expect(eventStream.currentSequence).toBe(3)
     expect(frames.join('\n')).toContain('"topic":"reports-change"')
-    expect(frames.join('\n')).toContain('"topic":"digests-change"')
+    expect(frames.join('\n')).not.toContain('"topic":"digests-change"')
     expect(frames.join('\n')).toContain('"topic":"code-reviews-change"')
     expect(frames.join('\n')).toContain('"topic":"run-change"')
     unsubscribe()
@@ -374,7 +386,7 @@ describe('Backend document routes', () => {
       ).status,
     ).toBe(404)
 
-    const malformed = await request('/api/backend/v1/digests/D0001?project=research', {
+    const malformed = await request('/api/backend/v1/reports/R0001?project=research', {
       actor: owner,
       method: 'PUT',
       body: {

@@ -4,9 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { type ReactNode, useCallback, useMemo } from 'react'
 import {
-  fetchExperimentDocs,
-  fetchReports,
-  fetchWiki,
+  fetchExperimentsInventory,
+  fetchReportsInventory,
+  fetchWikiInventory,
   type ProjectTarget,
   projectHost,
   projectName,
@@ -32,18 +32,18 @@ export function DocumentArtifactLinkProvider({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const reportsQuery = useQuery({
-    queryKey: ['reports', ...projectQueryKey(project)],
-    queryFn: () => fetchReports(project),
+    queryKey: ['reports-inventory', ...projectQueryKey(project)],
+    queryFn: () => fetchReportsInventory(project),
     staleTime: 5_000,
   })
   const experimentsQuery = useQuery({
-    queryKey: ['experiments', ...projectQueryKey(project)],
-    queryFn: () => fetchExperimentDocs(project),
+    queryKey: ['experiments-inventory', ...projectQueryKey(project)],
+    queryFn: () => fetchExperimentsInventory(project),
     staleTime: 5_000,
   })
   const wikiQuery = useQuery({
-    queryKey: ['wiki', ...projectQueryKey(project)],
-    queryFn: () => fetchWiki(project),
+    queryKey: ['wiki-inventory', ...projectQueryKey(project)],
+    queryFn: () => fetchWikiInventory(project),
     staleTime: 5_000,
   })
   const currentHref = useMemo(() => {
@@ -54,17 +54,19 @@ export function DocumentArtifactLinkProvider({
     () => ({
       project: projectName(project),
       host: projectHost(project),
-      experiments: (experimentsQuery.data?.experiments ?? []).flatMap(({ id, path, resource }) =>
-        (path ?? resource) ? [{ id, path: (path ?? resource)! }] : [],
-      ),
-      reports: (reportsQuery.data?.reports ?? []).flatMap(({ id, path, resource }) =>
-        (path ?? resource) ? [{ id, path: (path ?? resource)! }] : [],
-      ),
+      experiments: (experimentsQuery.data?.items ?? []).map(({ id, resource }) => ({
+        id,
+        path: resource,
+      })),
+      reports: (reportsQuery.data?.items ?? []).map(({ id, resource }) => ({
+        id,
+        path: resource,
+      })),
       // `legacyId` carries the `R<NNNN>` of the Report this page replaced, so a
       // stale `R` token still resolves once the Report itself is gone.
-      wiki: (wikiQuery.data?.pages ?? []).map(({ id, path, resource, legacyId }) => ({
+      wiki: (wikiQuery.data?.pages ?? []).map(({ id, resource, legacyId }) => ({
         id,
-        path: path ?? resource ?? '',
+        path: resource,
         legacyId,
       })),
     }),

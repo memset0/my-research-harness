@@ -18,10 +18,7 @@ import { dirname, join } from 'node:path'
 
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme, serializeReadme } from '../readme/serialize.js'
-import {
-  parseExperimentReadme,
-  type ParsedExperiment,
-} from '../experiments/parse.js'
+import { parseExperimentReadme, type ParsedExperiment } from '../experiments/parse.js'
 import { serializeExperimentReadme } from '../experiments/serialize.js'
 import { ARCHIVED_SIDECAR } from './../discovery/archive.js'
 
@@ -42,21 +39,21 @@ export interface RewriteV3RunResult {
 }
 
 /**
- * Transform a single v3 run README into v4 shape. Reads the existing
- * frontmatter; if `archived` is missing, inserts it from `hadSidecar`.
- * Returns `unchanged: true` when the README was already v4-shaped (no
- * `MISSING_ARCHIVED_FIELD` warning surfaced and nothing else changed).
+ * Transform a v3 run into its historical v4 target, which requires an
+ * explicit archive flag. New v6 records may omit false defaults, but that
+ * does not change the schema of this migration's intermediate output.
  */
 export function rewriteV3RunReadme(input: RewriteV3RunInput): RewriteV3RunResult {
   const parsed = parseReadme(input.v3Content)
-  const hadMissingWarning = parsed.parseWarnings.some((w) =>
-    w.message.startsWith('MISSING_ARCHIVED_FIELD'),
-  )
-  if (!hadMissingWarning) {
-    // Already v4-shaped; no rewrite, no updated_at bump.
+  // v6: an absent `archived` key is reported through `frontMatterKeys`
+  // rather than a parse warning.
+  const fieldMissing = !parsed.frontMatterKeys.includes('archived')
+  if (!fieldMissing) {
+    // Preserve an explicit flag, including false in the presence of a sidecar.
     return { content: input.v3Content, unchanged: true }
   }
   parsed.frontMatter.archived = input.hadSidecar
+  parsed.frontMatterKeys.push('archived')
   parsed.frontMatter.updatedAt = input.migrationTime
   return { content: reserializeReadme(parsed), unchanged: false }
 }
@@ -83,9 +80,7 @@ export interface RewriteV3ExpResult {
  */
 export function rewriteV3ExpDoc(input: RewriteV3ExpInput): RewriteV3ExpResult {
   const parsed = parseExperimentReadme(input.v3Content, input.filenameStem)
-  const missingStatus = parsed.parseWarnings.some((w) =>
-    w.message.startsWith('MISSING_EXP_STATUS'),
-  )
+  const missingStatus = parsed.parseWarnings.some((w) => w.message.startsWith('MISSING_EXP_STATUS'))
   const missingArchived = parsed.parseWarnings.some((w) =>
     w.message.startsWith('MISSING_ARCHIVED_FIELD'),
   )
@@ -209,10 +204,7 @@ export async function migrateV3ToV4(options: MigrateV3ToV4Options): Promise<Migr
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(
-    dirname(path),
-    `.${Date.now()}-${Math.random().toString(36).slice(2)}.v3v4.tmp`,
-  )
+  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.v3v4.tmp`)
   await fs.writeFile(tmp, content, 'utf8')
   await fs.rename(tmp, path)
 }

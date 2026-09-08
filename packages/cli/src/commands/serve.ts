@@ -1,8 +1,8 @@
 // `memon serve [--config PATH] [--dev] [--port N]`
 //
 // Spawns the custom Web entry with MEMON_CONFIG_PATH set to the resolved
-// config file. The custom entry owns terminal HTTP/WebSocket upgrades and the
-// central gateway; invoking `next start` directly would bypass both.
+// config file. The custom entry owns the central gateway; invoking `next
+// start` directly would bypass it.
 //
 // MVP scope: only works when invoked from inside a checkout of this repo
 // (because it locates the workspace's `apps/web` via pnpm-workspace.yaml).

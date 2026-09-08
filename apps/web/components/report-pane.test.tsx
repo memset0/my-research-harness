@@ -1,38 +1,41 @@
+import { BackendResourceInventoryResponseSchema } from '@memon/core'
+import type * as ApiModule from '../lib/api'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchReport, fetchReports } from '../lib/api'
+import { fetchReport, fetchReports, fetchReportsInventory } from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 import { ReportPane } from './report-pane'
 
 vi.mock('../lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../lib/api')>()
-  return { ...actual, fetchReports: vi.fn(), fetchReport: vi.fn() }
+  const actual = await importOriginal<typeof ApiModule>()
+  return {
+    ...actual,
+    fetchReports: vi.fn(),
+    fetchReportsInventory: vi.fn(),
+    fetchReport: vi.fn(),
+  }
 })
 
 describe('<ReportPane>', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(fetchReports).mockResolvedValue({
-      reports: [
-        {
-          id: 'R0001',
-          slug: 'first-report',
-          title: 'First report',
-          path: '/repo/docs/reports/R0001-first-report.md',
-          mtime: 1,
-          format: 'markdown',
-        },
-        {
-          id: 'R0002',
-          slug: 'second-report',
-          title: 'Second report',
-          path: '/repo/docs/reports/R0002-second-report/README.md',
-          mtime: 2,
-          format: 'bundle',
-        },
-      ],
-    })
+    vi.mocked(fetchReportsInventory).mockResolvedValue(
+      BackendResourceInventoryResponseSchema.parse({
+        items: [
+          {
+            id: 'R0001',
+            slug: 'first-report',
+            resource: 'docs/reports/R0001-first-report.md',
+          },
+          {
+            id: 'R0002',
+            slug: 'second-report',
+            resource: 'docs/reports/R0002-second-report/README.md',
+          },
+        ],
+      }),
+    )
     vi.mocked(fetchReport).mockResolvedValue({
       id: 'R0001',
       slug: 'first-report',
@@ -65,8 +68,9 @@ describe('<ReportPane>', () => {
       expect(node).not.toBeNull()
       return node as HTMLElement
     })
-    await user.click(within(popover).getByRole('button', { name: /R0002.*Second report/s }))
+    await user.click(within(popover).getByRole('button', { name: /R0002.*second-report/s }))
     expect(onSwitch).toHaveBeenCalledWith('R0002')
+    expect(fetchReports).not.toHaveBeenCalled()
   })
 
   it('moves surfaces and closes with accessible controls', async () => {

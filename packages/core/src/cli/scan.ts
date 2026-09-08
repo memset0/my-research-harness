@@ -1,16 +1,20 @@
-// Bulk read of a project root: experiments + hypotheses + journal.
+// Bulk read of a project root: runs + hypotheses.
 //
-// One call replaces three separate API hits (or three CLI invocations) so
-// skills can take a single snapshot and decide offline.
+// One call replaces separate API hits (or separate CLI invocations) so skills
+// can take a single snapshot and decide offline.
+//
+// Diagnostic Journal history is deliberately NOT part of this snapshot: it is
+// neither read nor returned here. Callers that want legacy history call
+// `readProjectJournal` explicitly.
 
-import { existsSync, promises as fs, statSync } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { join, resolve } from 'node:path'
 import { discoverRuns, runArchivedFromRun } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
+import { matchesRunDeprecationFilter } from '../discovery/index.js'
 import { isStaleRunning } from '../discovery/stale.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
-import { parseJournal } from '../journal/parse.js'
-import type { ParsedHypotheses, ParsedJournal, Run } from '../types.js'
+import type { ParsedHypotheses, Run } from '../types.js'
 
 export interface IndexedRun extends Run {
   /**
@@ -19,6 +23,11 @@ export interface IndexedRun extends Run {
    * missing). Always set on scan output.
    */
   archived: boolean
+  /**
+   * v6: True iff the run is deprecated (research-ineligible). Orthogonal to
+   * `archived` and to `frontMatter.status`; always set on scan output.
+   */
+  deprecated: boolean
   /** Mirrors backend's stale-RUNNING flag. */
   stale: boolean
 }
@@ -28,11 +37,18 @@ export interface ProjectSnapshot {
   scannedAt: string
   experiments: IndexedRun[]
   hypotheses: { path: string | null } & ParsedHypotheses
-  journal: { path: string | null } & ParsedJournal
 }
 
 export interface ScanOptions {
   includeArchived?: boolean
+  /**
+   * v6: include deprecated runs in the snapshot. Default false — deprecated
+   * runs are outside normal research collections, aggregation, and counts.
+   * Orthogonal to `includeArchived`.
+   */
+  includeDeprecated?: boolean
+  /** v6: return ONLY deprecated runs; implies inclusion. */
+  deprecatedOnly?: boolean
   /** Optional name to label the synthetic anonymous project. */
   projectName?: string
   /** Optional discovery globs inherited from a configured Project. */
@@ -58,10 +74,13 @@ export async function scanProjectRoot(
   options: ScanOptions = {},
 ): Promise<ProjectSnapshot> {
   const abs = resolve(projectRoot)
-  if (!existsSync(abs)) {
-    throw new ScanError('NOT_FOUND', `project root does not exist: ${abs}`)
-  }
-  if (!statSync(abs).isDirectory()) {
+  const rootStat = await fs.stat(abs).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+      throw new ScanError('NOT_FOUND', `project root does not exist: ${abs}`)
+    }
+    throw error
+  })
+  if (!rootStat.isDirectory()) {
     throw new ScanError('NOT_FOUND', `project root is not a directory: ${abs}`)
   }
 
@@ -92,11 +111,16 @@ export async function scanProjectRoot(
         cursor += 1
         if (index >= dirs.length) return
         const exp = await readRunDir(dirs[index]!, projectName)
-        const archived = runArchivedFromRun(exp)
+        const archived = await runArchivedFromRun(exp)
         if (!includeArchived && archived) continue
+        // v6: deprecation is orthogonal to archival and to status — a
+        // deprecated RUNNING or FAILED run is filtered the same way.
+        const deprecated = exp.frontMatter.deprecated
+        if (!matchesRunDeprecationFilter(deprecated, options)) continue
         discovered[index] = {
           ...exp,
           archived,
+          deprecated,
           stale: isStaleRunning(exp),
         }
       }
@@ -112,15 +136,11 @@ export async function scanProjectRoot(
   const hypothesesPath = join(abs, 'docs', 'hypotheses.md')
   const hypotheses = await tryParseHypotheses(hypothesesPath)
 
-  const journalPath = join(abs, 'docs', 'journal.md')
-  const journal = await tryParseJournal(journalPath)
-
   return {
     projectRoot: abs,
     scannedAt: new Date().toISOString(),
     experiments,
     hypotheses: { path: hypotheses ? hypothesesPath : null, ...emptyOr(hypotheses, EMPTY_HYP) },
-    journal: { path: journal ? journalPath : null, ...emptyOr(journal, EMPTY_JOURNAL) },
   }
 }
 
@@ -128,13 +148,6 @@ const EMPTY_HYP: ParsedHypotheses = {
   legendBlock: null,
   summaryTableBlock: null,
   entries: [],
-  parseErrors: [],
-  parseWarnings: [],
-}
-
-const EMPTY_JOURNAL: ParsedJournal = {
-  lastDigestAt: null,
-  events: [],
   parseErrors: [],
   parseWarnings: [],
 }
@@ -147,16 +160,6 @@ async function tryParseHypotheses(path: string): Promise<ParsedHypotheses | null
   try {
     const content = await fs.readFile(path, 'utf8')
     return parseHypotheses(content)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
-  }
-}
-
-async function tryParseJournal(path: string): Promise<ParsedJournal | null> {
-  try {
-    const content = await fs.readFile(path, 'utf8')
-    return parseJournal(content)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw err

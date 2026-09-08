@@ -12,16 +12,16 @@ export interface RuntimeConfigPayload {
   gitStatus: {
     intervalMs: number
   }
-  terminal: {
-    tmuxEnabled: boolean
-    herdrEnabled: boolean
+  /** Foreground resource heartbeat cadence, from config `fileAccess`. */
+  fileAccess: {
+    heartbeatMs: number
   }
 }
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfigPayload = {
   role: 'standalone',
   gitStatus: { intervalMs: 10_000 },
-  terminal: { tmuxEnabled: true, herdrEnabled: false },
+  fileAccess: { heartbeatMs: 30_000 },
 }
 
 let cached: RuntimeConfigPayload | null = null
@@ -44,6 +44,7 @@ export function readRuntimeConfig(): RuntimeConfigPayload {
   try {
     const parsed = JSON.parse(text) as Partial<RuntimeConfigPayload>
     const intervalMs = parsed.gitStatus?.intervalMs
+    const heartbeatMs = parsed.fileAccess?.heartbeatMs
     cached = {
       role: parsed.role === 'central' ? 'central' : 'standalone',
       gitStatus: {
@@ -52,15 +53,11 @@ export function readRuntimeConfig(): RuntimeConfigPayload {
             ? intervalMs
             : DEFAULT_RUNTIME_CONFIG.gitStatus.intervalMs,
       },
-      terminal: {
-        tmuxEnabled:
-          typeof parsed.terminal?.tmuxEnabled === 'boolean'
-            ? parsed.terminal.tmuxEnabled
-            : DEFAULT_RUNTIME_CONFIG.terminal.tmuxEnabled,
-        herdrEnabled:
-          typeof parsed.terminal?.herdrEnabled === 'boolean'
-            ? parsed.terminal.herdrEnabled
-            : DEFAULT_RUNTIME_CONFIG.terminal.herdrEnabled,
+      fileAccess: {
+        heartbeatMs:
+          typeof heartbeatMs === 'number' && Number.isFinite(heartbeatMs) && heartbeatMs > 0
+            ? heartbeatMs
+            : DEFAULT_RUNTIME_CONFIG.fileAccess.heartbeatMs,
       },
     }
     return cached

@@ -28,24 +28,6 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/share/project-a/abcd1234')).toBe('anon')
   })
 
-  it('classifies all /api/terminal/* as shell, regardless of method', () => {
-    expect(classify('GET', '/api/terminal/check')).toBe('shell')
-    expect(classify('POST', '/api/terminal/start')).toBe('shell')
-    expect(classify('POST', '/api/terminal/stop')).toBe('shell')
-    expect(classify('GET', '/api/terminal/list')).toBe('shell')
-    expect(classify('GET', '/api/terminal/proxy/sess/')).toBe('shell')
-    expect(classify('PUT', '/api/terminal/anything')).toBe('shell')
-  })
-
-  it('classifies tmux + manage as shell', () => {
-    expect(classify('GET', '/api/tmux-sessions')).toBe('shell')
-    expect(classify('GET', '/api/tmux-sessions/memon-manual-foo')).toBe('shell')
-    expect(classify('DELETE', '/api/tmux-sessions/foo')).toBe('shell')
-    expect(classify('POST', '/api/tmux-sessions/memon-manual-foo/rename')).toBe('shell')
-    expect(classify('GET', '/manage/tmux')).toBe('shell')
-    expect(classify('GET', '/terminal-popup')).toBe('shell')
-  })
-
   it('classifies known GET /api/* read endpoints as read', () => {
     expect(classify('GET', '/api/projects')).toBe('read')
     expect(classify('GET', '/api/runs')).toBe('read')
@@ -290,7 +272,7 @@ describe('classifyAndExtract — project extraction', () => {
   })
 
   it('shell routes return "global" project', () => {
-    const r = classifyAndExtract('POST', '/api/terminal/start', emptySearch(), stubCtx())
+    const r = classifyAndExtract('POST', '/api/file-access/restart', emptySearch(), stubCtx())
     expect(r).toEqual({ class: 'shell', project: 'global' })
   })
 })

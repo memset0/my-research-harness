@@ -12,7 +12,6 @@ vi.mock('./tab-badge', () => ({
   TabBadge: ({ kind }: { kind: string }) => <span data-kind={kind}>1</span>,
 }))
 vi.mock('./manage-shares-dialog', () => ({ ManageSharesDialog: () => null }))
-vi.mock('./open-with-button', () => ({ OpenWithButton: () => null }))
 vi.mock('./ui/sidebar', () => ({ SidebarTrigger: () => <button type="button">Sidebar</button> }))
 
 describe('AppBar Wiki tab', () => {

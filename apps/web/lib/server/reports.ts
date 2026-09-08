@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Dirent } from 'node:fs'
-import { promises as fs } from 'node:fs'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
-import { extractTitle } from '@memon/core'
+import { extractTitle, projectFs as fs } from '@memon/core'
 import { splitFrontmatter } from '../frontmatter'
 
 const REPORT_FILE_RE = /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/

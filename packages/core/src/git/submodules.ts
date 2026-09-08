@@ -6,7 +6,13 @@
 // is the value between the leading `submodule.` and the trailing
 // `.path`; the path is the value after the space.
 
-import { execFile, type ExecFileException } from 'node:child_process'
+import {
+  cachedGitCommand,
+  gitCommandStdoutText,
+  isGitCommandFailure,
+  toGitExecFailure,
+  type GitCommandRunner,
+} from './command.js'
 
 const DEFAULT_TIMEOUT_MS = 5000
 
@@ -20,12 +26,7 @@ export interface GitSubmoduleEntry {
 export type GitSubmodules =
   | {
       enabled: false
-      reason:
-        | 'not-a-repo'
-        | 'no-gitmodules'
-        | 'git-not-found'
-        | 'timeout'
-        | 'error'
+      reason: 'not-a-repo' | 'no-gitmodules' | 'git-not-found' | 'timeout' | 'error'
       message?: string
     }
   | {
@@ -36,6 +37,11 @@ export type GitSubmodules =
 export interface ReadGitSubmodulesOptions {
   timeoutMs?: number
   gitBin?: string
+  /**
+   * The command runner used for every git invocation. Defaults to the local
+   * transport; either way the reader wraps it in the shared read cache.
+   */
+  exec?: GitCommandRunner
 }
 
 interface ExecOk {
@@ -45,43 +51,22 @@ interface ExecOk {
 }
 interface ExecFail {
   ok: false
-  err: ExecFileException & { code?: string | number; killed?: boolean }
+  err: { code?: string | number; killed?: boolean; message: string }
   stderr: string
 }
 
-function runGit(
+async function runGit(
+  exec: GitCommandRunner,
   bin: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
 ): Promise<ExecOk | ExecFail> {
-  return new Promise((resolveP) => {
-    execFile(
-      bin,
-      args,
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 4 * 1024 * 1024,
-        windowsHide: true,
-      },
-      (err, stdout, stderr) => {
-        if (err) {
-          resolveP({
-            ok: false,
-            err: err as ExecFail['err'],
-            stderr: String(stderr ?? ''),
-          })
-          return
-        }
-        resolveP({
-          ok: true,
-          stdout: String(stdout ?? ''),
-          stderr: String(stderr ?? ''),
-        })
-      },
-    )
-  })
+  const result = await exec(bin, args, { cwd, timeoutMs, maxBuffer: 4 * 1024 * 1024 })
+  if (isGitCommandFailure(result)) {
+    return { ok: false, ...toGitExecFailure(result) }
+  }
+  return { ok: true, stdout: gitCommandStdoutText(result), stderr: result.stderr }
 }
 
 export async function readGitSubmodules(
@@ -90,10 +75,12 @@ export async function readGitSubmodules(
 ): Promise<GitSubmodules> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
   // First verify this is a git repo at all — `git config --file` doesn't
   // care about cwd's git state, so we need this probe up front.
   const probe = await runGit(
+    exec,
     bin,
     ['rev-parse', '--is-inside-work-tree'],
     projectRoot,
@@ -104,14 +91,9 @@ export async function readGitSubmodules(
   }
 
   const res = await runGit(
+    exec,
     bin,
-    [
-      'config',
-      '--file',
-      '.gitmodules',
-      '--get-regexp',
-      '^submodule\\..+\\.path$',
-    ],
+    ['config', '--file', '.gitmodules', '--get-regexp', '^submodule\\..+\\.path$'],
     projectRoot,
     timeoutMs,
   )

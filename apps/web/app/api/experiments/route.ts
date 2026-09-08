@@ -1,4 +1,7 @@
-import { BackendExperimentsResponseSchema } from '@memon/core'
+import {
+  BackendExperimentsResponseSchema,
+  BackendResourceInventoryResponseSchema,
+} from '@memon/core'
 import { BackendProjectServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
@@ -13,16 +16,27 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   const runtime = await getRuntime()
-  const projectFilter = new URL(req.url).searchParams.get('project')
+  const search = new URL(req.url).searchParams
+  const projectFilter = search.get('project')
   const projects = projectFilter
     ? runtime.config.projects.filter((project) => project.name === projectFilter)
     : runtime.config.projects
   try {
+    const inventoryOnly = search.get('inventory') === '1'
     const responses = await Promise.all(
       projects.map((project) =>
-        standaloneServices(runtime.config).projects.listExperiments(project.name),
+        standaloneServices(runtime.config).projects.listExperiments(project.name, {
+          inventoryOnly,
+        }),
       ),
     )
+    if (inventoryOnly) {
+      return NextResponse.json({
+        items: responses.flatMap(
+          (response) => BackendResourceInventoryResponseSchema.parse(response).items,
+        ),
+      })
+    }
     const experiments = responses.flatMap(
       (response) => BackendExperimentsResponseSchema.parse(response).experiments,
     )

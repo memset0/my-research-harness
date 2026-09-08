@@ -9,6 +9,10 @@ export interface ListOptions {
   format: OutputFormat
   projectRoot?: string
   cwd: string
+  /** Include runs marked deprecated (default: excluded). */
+  includeDeprecated?: boolean
+  /** Return only runs marked deprecated. */
+  deprecatedOnly?: boolean
 }
 
 export async function runList(opts: ListOptions): Promise<void> {
@@ -17,7 +21,13 @@ export async function runList(opts: ListOptions): Promise<void> {
     cwd: opts.cwd,
   })
   const idx = await buildIndex(config, { project: opts.project })
-  const experiments = idx.list({ project: opts.project })
+  // Deprecation filtering lives in the index so "excluded by default" means
+  // the same thing in the CLI, the scan and the web backend.
+  const experiments = idx.list({
+    project: opts.project,
+    includeDeprecated: opts.includeDeprecated,
+    deprecatedOnly: opts.deprecatedOnly,
+  })
 
   if (opts.format === 'human') {
     emitHuman(formatExperimentTable(experiments))
@@ -30,6 +40,7 @@ export async function runList(opts: ListOptions): Promise<void> {
       path: e.path,
       mtime: e.mtime,
       hasReadme: e.hasReadme,
+      deprecated: e.frontMatter.deprecated,
       frontMatter: e.frontMatter,
       parseErrors: e.parseErrors,
       parseWarnings: e.parseWarnings,

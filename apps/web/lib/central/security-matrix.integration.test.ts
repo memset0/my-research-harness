@@ -9,6 +9,7 @@ import {
   BACKEND_API_MAJOR,
   type BackendCapabilities,
   type BackendMetadata,
+  MEMON_RELEASE,
   type CentralConfig,
   resolveProjectResource,
 } from '@memon/core'
@@ -31,10 +32,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
-  slurm: false,
-  herdr: false,
+  slurm: true,
 } satisfies BackendCapabilities
 
 const servers = new Set<Server>()
@@ -65,7 +63,7 @@ async function listen(server: Server): Promise<number> {
 function metadata(host: string): BackendMetadata {
   return {
     host: host as BackendMetadata['host'],
-    release: '6.0.0' as BackendMetadata['release'],
+    release: MEMON_RELEASE as BackendMetadata['release'],
     apiMajor: BACKEND_API_MAJOR,
     revision: '0123456789abcdef' as BackendMetadata['revision'],
     instanceEpoch: '123e4567-e89b-42d3-a456-426614174000' as BackendMetadata['instanceEpoch'],
@@ -181,11 +179,13 @@ describe('central and Backend security matrix', () => {
 
     const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ sessions: [] }))
     const central = await startBridge(fetchImpl)
-    expect((await request(central, '/api/tmux-sessions?host=host-a')).status).toBe(401)
+    expect((await request(central, '/api/slurm/status?host=host-a&project=project-a')).status).toBe(
+      401,
+    )
     expect(fetchImpl).not.toHaveBeenCalled()
     expect(
       (
-        await request(central, '/api/tmux-sessions?host=host-b', {
+        await request(central, '/api/slurm/status?host=host-b&project=project-a', {
           headers: { authorization: basic() },
         })
       ).status,
@@ -217,20 +217,28 @@ describe('central and Backend security matrix', () => {
       ).toString('base64url'),
     }
     expect(
-      (await request(central, '/api/tmux-sessions?host=host-a', { headers: ownerHeaders })).status,
+      (
+        await request(central, '/api/slurm/status?host=host-a&project=project-a', {
+          headers: ownerHeaders,
+        })
+      ).status,
     ).toBe(200)
 
     fetchImpl.mockClear()
-    const duplicate = await request(central, '/api/terminal/stop?host=host-a&host=host-b', {
-      method: 'POST',
-      headers: { authorization: basic(), 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionName: 'memon-manual-same' }),
-    })
+    const duplicate = await request(
+      central,
+      '/api/experiments?host=host-a&host=host-b&project=project-a',
+      {
+        method: 'POST',
+        headers: { authorization: basic(), 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
     expect(duplicate.status).toBeGreaterThanOrEqual(400)
     expect(fetchImpl).not.toHaveBeenCalled()
 
     const oversizedBody = JSON.stringify({ value: 'x'.repeat(1024 * 1024 + 1) })
-    const oversized = await request(central, '/api/terminal/stop?host=host-a', {
+    const oversized = await request(central, '/api/experiments?host=host-a&project=project-a', {
       method: 'POST',
       headers: {
         authorization: basic(),
@@ -245,9 +253,13 @@ describe('central and Backend security matrix', () => {
     expect(oversized.status).toBeGreaterThanOrEqual(400)
     expect(fetchImpl).not.toHaveBeenCalled()
 
-    const oversizedHeader = await request(central, '/api/tmux-sessions?host=host-a', {
-      headers: { authorization: basic(), 'x-request-id': `r${'x'.repeat(8_192)}` },
-    }).catch((error: NodeJS.ErrnoException) => {
+    const oversizedHeader = await request(
+      central,
+      '/api/slurm/status?host=host-a&project=project-a',
+      {
+        headers: { authorization: basic(), 'x-request-id': `r${'x'.repeat(8_192)}` },
+      },
+    ).catch((error: NodeJS.ErrnoException) => {
       expect(error.code).toBe('ECONNRESET')
       return { status: 499, body: Buffer.alloc(0) }
     })
@@ -287,21 +299,21 @@ describe('central and Backend security matrix', () => {
     const central = await startBridge(fetchImpl, registry(true))
     expect(
       (
-        await request(central, '/api/tmux-sessions?host=host-unsafe', {
+        await request(central, '/api/slurm/status?host=host-unsafe&project=project-a', {
           headers: { authorization: basic() },
         })
       ).status,
     ).toBeGreaterThanOrEqual(400)
     expect(
       (
-        await request(central, '/api/tmux-sessions?host=host-a', {
+        await request(central, '/api/slurm/status?host=host-a&project=project-a', {
           headers: { authorization: basic() },
         })
       ).status,
     ).toBeGreaterThanOrEqual(400)
     expect(
       (
-        await request(central, '/api/tmux-sessions?host=host-b', {
+        await request(central, '/api/slurm/status?host=host-b&project=project-a', {
           headers: { authorization: basic() },
         })
       ).status,
@@ -388,7 +400,7 @@ describe('central and Backend security matrix', () => {
     await vi.waitFor(() => expect(cancelled).toHaveBeenCalled())
     expect(
       (
-        await request(central, '/api/tmux-sessions?host=host-b', {
+        await request(central, '/api/slurm/status?host=host-b&project=project-a', {
           headers: { authorization: basic() },
         })
       ).status,

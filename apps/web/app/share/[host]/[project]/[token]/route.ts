@@ -15,6 +15,8 @@ import {
 import { isHttps, publicOrigin } from '@/lib/auth/public-url'
 import { clientIpFromHeaders, consume, refund } from '@/lib/auth/rate-limit'
 import { validateCentralShare } from '@/lib/central/central-shares'
+import { servesProjectsDirectly } from '@/lib/central/direct-projects'
+import { directCentralRuntime } from '@/lib/central/direct-runtime'
 import { getCentralFleet } from '@/lib/central/fleet-runtime'
 import { getRuntime } from '@/lib/runtime'
 
@@ -63,15 +65,24 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
       headers: { 'Cache-Control': 'no-store' },
     })
   }
-  const fleet = await getCentralFleet().catch(() => null)
-  if (!fleet) return notFoundResponse()
-  const valid = await validateCentralShare({
-    registry: fleet.registry,
-    host: host.data,
-    project: project.data,
-    token: token.data.token,
-    signal: req.signal,
-  })
+  // A directly served Host owns the Project's share file; only a registered
+  // peer Host needs its Backend asked.
+  const direct = servesProjectsDirectly(runtime.config)
+    ? directCentralRuntime(runtime.config)
+    : null
+  const valid = direct?.registry.hasHost(host.data)
+    ? await direct.validateShare(host.data, project.data, token.data.token)
+    : await (async () => {
+        const fleet = await getCentralFleet().catch(() => null)
+        if (!fleet) return false
+        return validateCentralShare({
+          registry: fleet.registry,
+          host: host.data,
+          project: project.data,
+          token: token.data.token,
+          signal: req.signal,
+        })
+      })()
   if (!valid) return notFoundResponse()
   refund(ip)
 

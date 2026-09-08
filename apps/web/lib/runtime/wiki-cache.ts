@@ -29,6 +29,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import {
   buildWikiProject,
   deriveWikiReview,
+  invalidateGitOperations,
   isGitWorktree,
   listWikiCommits,
   readWikiReviewMarks,
@@ -364,9 +365,7 @@ export class WikiCache {
   // --- internals ---------------------------------------------------------
 
   private stateForDir(dir: string): ProjectState | undefined {
-    return this.states.find(
-      (state) => dir === state.wikiDir || dir.startsWith(`${state.wikiDir}/`),
-    )
+    return this.states.find((state) => dir === state.wikiDir || dir.startsWith(`${state.wikiDir}/`))
   }
 
   private projectionFor(project: string): WikiProjectProjection | null {
@@ -412,6 +411,14 @@ export class WikiCache {
   private async runReviewRefresh(state: ProjectState): Promise<void> {
     this.stats.reviewRefreshes += 1
     const root = state.project.root
+    // Every trigger of this refresh means "something moved": warmup, a wiki
+    // write, a mark write, HEAD landing on a new commit, or an explicit
+    // request. The shared git read cache keeps a working-copy answer for
+    // seconds, which is right for the request path (which reads this snapshot,
+    // never git) but wrong here — a refresh must observe the repository after
+    // the change that woke it, or the snapshot stays a commit behind until the
+    // next trigger.
+    invalidateGitOperations(root)
     try {
       if (!(await this.git.isGitWorktree(root))) {
         const changed = state.commits !== null || state.reviews !== null
@@ -462,9 +469,7 @@ export class WikiCache {
     content: string,
     mtime: number,
   ): Promise<DiscoveredWikiPage> {
-    const state = this.states.find((candidate) =>
-      absPath.startsWith(`${candidate.wikiDir}/`),
-    )
+    const state = this.states.find((candidate) => absPath.startsWith(`${candidate.wikiDir}/`))
     if (!state) throw new Error(`wiki page outside every configured wiki dir: ${absPath}`)
     const relative = absPath.slice(state.wikiDir.length + 1)
     const segments = relative.split('/')
@@ -478,9 +483,7 @@ export class WikiCache {
     const match = WIKI_PAGE_NAME_REGEX.exec(pageName)
     if (!match) throw new Error(`unexpected wiki page name: ${absPath}`)
     const bundleDir = bundle ? join(state.wikiDir, kind, name) : null
-    const listing = bundleDir
-      ? await listBundleAssets(bundleDir)
-      : { assets: [] as string[], newestMtime: mtime }
+    const assets = bundleDir ? await listBundleAssets(bundleDir) : []
     return {
       id: match[1]!,
       slug: match[2]!,
@@ -491,8 +494,10 @@ export class WikiCache {
       bundleDir,
       content,
       mtime,
-      bundleMtime: Math.max(mtime, listing.newestMtime),
-      assets: listing.assets,
+      // The page's own README mtime. Attachment mtimes are not collected here;
+      // see `listBundleAssets`.
+      bundleMtime: mtime,
+      assets,
     }
   }
 }
@@ -562,6 +567,7 @@ async function resolveGitDirs(projectRoot: string): Promise<GitDirectories | nul
   }
 }
 
+/** Poller baseline for the git plumbing paths; a missing path starts at 0. */
 async function fileMtimeOrZero(path: string): Promise<number> {
   try {
     const stat = await fs.stat(path)
@@ -571,20 +577,20 @@ async function fileMtimeOrZero(path: string): Promise<number> {
   }
 }
 
-/** Bundle assets, bundle-relative, plus the newest mtime among them. */
-export interface WikiBundleListing {
-  assets: string[]
-  newestMtime: number
-}
-
 /**
- * Depth-limited listing of a bundle directory, mirroring core discovery:
- * bundle-relative POSIX paths (README.md included), symlinked directories not
- * followed.
+ * Depth-limited *name* listing of a bundle directory, mirroring core
+ * discovery: bundle-relative POSIX paths (README.md included), symlinked
+ * directories not followed.
+ *
+ * Names only, deliberately. Showing a page needs to know which bundle-relative
+ * paths exist (component payload probes, `entry` validation, the asset route's
+ * containment check) — it does not need each attachment's metadata, and one
+ * `stat` per attachment turned opening a page into a burst of filesystem calls
+ * against a possibly remote mount. Asset metadata is read by the asset route
+ * when a byte range is actually served.
  */
-async function listBundleAssets(bundleDir: string): Promise<WikiBundleListing> {
+async function listBundleAssets(bundleDir: string): Promise<string[]> {
   const assets: string[] = []
-  let newestMtime = 0
   const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
     if (depth > BUNDLE_ASSET_MAX_DEPTH || assets.length >= BUNDLE_ASSET_MAX_FILES) return
     let entries: Dirent[]
@@ -595,19 +601,15 @@ async function listBundleAssets(bundleDir: string): Promise<WikiBundleListing> {
     }
     for (const entry of entries) {
       if (assets.length >= BUNDLE_ASSET_MAX_FILES) return
-      const child = join(dir, entry.name)
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
-        await walk(child, rel, depth + 1)
+        await walk(join(dir, entry.name), rel, depth + 1)
         continue
       }
       if (!entry.isFile()) continue
       assets.push(rel)
-      const mtime = await fileMtimeOrZero(child)
-      if (mtime > newestMtime) newestMtime = mtime
     }
   }
   await walk(bundleDir, '', 1)
-  assets.sort((a, b) => a.localeCompare(b))
-  return { assets, newestMtime }
+  return assets.sort((a, b) => a.localeCompare(b))
 }

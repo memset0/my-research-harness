@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { readIdentityFromHeaders } from '../lib/auth/request-context'
 import { aggregateCentralProjects } from '../lib/central/central-projects'
 import { getCentralFleet } from '../lib/central/fleet-runtime'
+import { servesProjectsDirectly } from '../lib/central/direct-projects'
+import { directCentralRuntime } from '../lib/central/direct-runtime'
 import { getRuntime } from '../lib/runtime'
 
 export const dynamic = 'force-dynamic'
@@ -15,15 +17,27 @@ export default async function Home() {
     centralMode = rt.config.central !== undefined
     if (centralMode) {
       const identity = await readIdentityFromHeaders()
-      const fleet = await getCentralFleet()
-      const payload = await aggregateCentralProjects({
-        registry: fleet.registry,
-        actor:
-          identity.role === 'viewer'
-            ? { role: 'viewer', scopes: identity.scopeProjectRefs }
-            : { role: 'owner' },
-      })
-      const first = payload.projects[0]
+      const direct = servesProjectsDirectly(rt.config)
+        ? directCentralRuntime(rt.config).registry.listProjects()
+        : []
+      let first = direct.find(
+        (project) =>
+          identity.role === 'owner' ||
+          (identity.role === 'viewer' &&
+            identity.scopeProjectRefs.some(
+              (scope) => scope.host === project.host && scope.project === project.project,
+            )),
+      )
+      if (!first && identity.role !== 'anon' && (rt.config.central?.hosts.length ?? 0) > 0) {
+        const payload = await aggregateCentralProjects({
+          registry: (await getCentralFleet()).registry,
+          actor:
+            identity.role === 'viewer'
+              ? { role: 'viewer', scopes: identity.scopeProjectRefs }
+              : { role: 'owner' },
+        })
+        first = payload.projects[0]
+      }
       firstProject = first ? { host: first.host, project: first.project } : null
     } else {
       const first = rt.config.projects[0]

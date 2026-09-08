@@ -67,7 +67,7 @@ export async function writeStandaloneReadme(
         : await target.services.mutations.writeExperimentReadme(target.project, target.id, input)
     if (kind === 'run') await refreshStandaloneRun(target.runtime, target.project, target.id)
     else await refreshStandaloneExperiment(target.runtime, target.project, target.id)
-    if (result.journalChanged) await refreshStandaloneJournal(target.runtime, target.project)
+    if (result.activityRecorded) await refreshStandaloneJournal(target.runtime, target.project)
     return NextResponse.json(result)
   } catch (error) {
     if (error instanceof BackendMutationError && error.code === 'CONFLICT') {

@@ -1,19 +1,24 @@
 // appendJournalEvent — append a new event line to docs/journal.md without ever
-// modifying the frontmatter (which only the digest agent may touch).
+// modifying the frontmatter.
 //
 // Strategy:
-//   1. Read file (or seed if missing)
-//   2. Locate the closing `---` of the frontmatter block; preserve everything
-//      up to and including the blank line after it
-//   3. Append new line(s) at end
-//   4. Write atomically via temp-file rename
+//   1. If an invocation ledger scope is active, the event is absorbed into
+//      that receipt as typed metadata and NO bytes are written: the preserved
+//      legacy file must not grow a second, duplicate history alongside the
+//      receipt that already records the same operation.
+//   2. Otherwise (an unscoped native caller) the historical behaviour is
+//      unchanged: read file (or seed if missing), append at end, write
+//      atomically via temp-file rename. No receipt is fabricated for a call
+//      that no invocation claimed.
 //
-// If the file lacks a frontmatter block, we add `last_digest_at: null` first
-// so subsequent reads have a deterministic shape.
+// If the file lacks a frontmatter block, we add `last_digest_at: null` first so
+// subsequent reads of the legacy file have a deterministic shape. The cursor is
+// retired: no supported code path writes a value into it.
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { JournalEvent, JournalEventTag } from '../types.js'
+import { captureLegacyJournalEvent } from './invocation.js'
 import { formatJournalEvent } from './serialize.js'
 
 export interface AppendJournalInput {
@@ -27,6 +32,7 @@ const SEED = '---\nlast_digest_at: null\n---\n\n'
 
 export async function appendJournalEvent(input: AppendJournalInput): Promise<void> {
   const { path, event } = input
+  if (captureLegacyJournalEvent(event)) return
   const line = formatJournalEvent(event)
   let existing: string
   try {
@@ -51,19 +57,6 @@ export async function appendJournalEvent(input: AppendJournalInput): Promise<voi
   await atomicWrite(path, updated)
 }
 
-/**
- * For the digest agent: rewrite ONLY the `last_digest_at` field, preserving the
- * body verbatim. Throws if no frontmatter is present.
- */
-export async function updateLastDigestAt(path: string, isoTimestamp: string): Promise<void> {
-  const existing = await fs.readFile(path, 'utf8')
-  if (!hasFrontmatter(existing)) {
-    throw new Error(`cannot update last_digest_at: ${path} has no frontmatter`)
-  }
-  const replaced = replaceLastDigestAt(existing, isoTimestamp)
-  await atomicWrite(path, replaced)
-}
-
 // ---------- internals ----------
 
 function hasFrontmatter(content: string): boolean {
@@ -77,26 +70,6 @@ function appendAfterFrontmatter(content: string, line: string): string {
     return `${content}${line}\n`
   }
   return `${content}\n${line}\n`
-}
-
-function replaceLastDigestAt(content: string, isoTimestamp: string): string {
-  const closing = content.indexOf('\n---', 4)
-  if (closing === -1) return content
-  const fmBlock = content.slice(4, closing)
-  const rest = content.slice(closing)
-  const fmLines = fmBlock.split('\n')
-  let replaced = false
-  const newLines = fmLines.map((l) => {
-    if (l.startsWith('last_digest_at:')) {
-      replaced = true
-      return `last_digest_at: ${isoTimestamp}`
-    }
-    return l
-  })
-  if (!replaced) {
-    newLines.push(`last_digest_at: ${isoTimestamp}`)
-  }
-  return `---\n${newLines.join('\n')}${rest}`
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {

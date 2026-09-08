@@ -21,7 +21,6 @@ import type {
   FullDigest,
   FullExperiment,
   FullReport,
-  IndexedRun,
   ProjectSummary,
   WikiListItem,
   WikiPageDetail,
@@ -40,25 +39,6 @@ export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }>
       name: p.name,
       root: p.root,
       exclude: p.exclude,
-    })),
-  }
-}
-
-export async function getExperimentsData(project?: string): Promise<{ experiments: IndexedRun[] }> {
-  const rt = await getRuntime()
-  const experiments = rt.index.list({ project })
-  return {
-    experiments: experiments.map((e) => ({
-      id: e.id,
-      project: e.project,
-      path: e.path,
-      mtime: e.mtime,
-      readmeMtime: e.readmeMtime,
-      hasReadme: e.hasReadme,
-      frontMatter: e.frontMatter,
-      parseErrors: e.parseErrors,
-      parseWarnings: e.parseWarnings,
-      stale: isStaleRunning(e),
     })),
   }
 }
@@ -112,11 +92,11 @@ export async function getJournalData(
   const rt = await getRuntime()
   const path = rt.journalPath(project)
   if (!path) {
-    return { path: '', lastDigestAt: null, events: [], parseErrors: [], parseWarnings: [] }
+    return { path: '', events: [], parseErrors: [], parseWarnings: [] }
   }
   const entry = rt.journalCache.get(path)
   if (!entry || entry.value === null) {
-    return { path, lastDigestAt: null, events: [], parseErrors: [], parseWarnings: [] }
+    return { path, events: [], parseErrors: [], parseWarnings: [] }
   }
   const parsed = entry.value
   let events = [...parsed.events].reverse()
@@ -126,7 +106,6 @@ export async function getJournalData(
   if (Number.isFinite(limit)) events = events.slice(0, limit)
   return {
     path,
-    lastDigestAt: parsed.lastDigestAt,
     events,
     parseErrors: parsed.parseErrors,
     parseWarnings: parsed.parseWarnings,

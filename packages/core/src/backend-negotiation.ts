@@ -25,10 +25,7 @@ export const BACKEND_CAPABILITY_NAMES = [
   'wikiAssets',
   'git',
   'shares',
-  'tmux',
-  'terminal',
   'slurm',
-  'herdr',
 ] as const satisfies readonly (keyof BackendCapabilities)[]
 
 export const BackendCapabilityNameSchema = z.enum(BACKEND_CAPABILITY_NAMES)
@@ -60,10 +57,7 @@ const DISABLED_CAPABILITIES = Object.freeze({
   wikiAssets: false,
   git: false,
   shares: false,
-  tmux: false,
-  terminal: false,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities)
 
 export interface BackendNegotiationInput {

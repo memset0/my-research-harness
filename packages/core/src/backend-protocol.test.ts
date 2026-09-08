@@ -16,6 +16,7 @@ import {
   BackendMetadataSchema,
   BackendProjectDiscoverySchema,
   BackendProjectsResponseSchema,
+  BackendResourceInventoryResponseSchema,
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
   BackendResultsDocumentSchema,
@@ -25,9 +26,6 @@ import {
   BackendShareRevokeResponseSchema,
   BackendShareValidationRequestSchema,
   BackendShareValidationResponseSchema,
-  BackendTerminalSessionSchema,
-  BackendTerminalStartRequestSchema,
-  BackendTmuxSessionRowSchema,
   BackendWikiBacklinksResponseSchema,
   BackendWikiDocumentSchema,
   BackendWikiPagesResponseSchema,
@@ -40,9 +38,11 @@ import {
   isUsableHostAvailabilityState,
   ProjectRefSchema,
   ResourceIdSchema,
-  TerminalSessionRefSchema,
 } from './backend-protocol.js'
-import { HostIdSchema as PublicHostIdSchema } from './index.js'
+import {
+  BackendResourceInventoryResponseSchema as PublicBackendResourceInventoryResponseSchema,
+  HostIdSchema as PublicHostIdSchema,
+} from './index.js'
 
 const capabilities = {
   projects: true,
@@ -53,10 +53,7 @@ const capabilities = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 }
 
 const epoch = '9c64885c-6671-4eb5-9648-d03e04987464'
@@ -136,80 +133,28 @@ describe('shared Backend protocol identity schemas', () => {
     }
   })
 
-  it('requires Host in a terminal session reference', () => {
-    expect(TerminalSessionRefSchema.parse({ host: 'host-a', session: 'memon-codex-demo' })).toEqual(
-      { host: 'host-a', session: 'memon-codex-demo' },
+  it('validates portable name/path inventories on the public Core surface', () => {
+    expect(PublicBackendResourceInventoryResponseSchema).toBe(
+      BackendResourceInventoryResponseSchema,
     )
-    expect(TerminalSessionRefSchema.safeParse({ session: 'memon-codex-demo' }).success).toBe(false)
+    expect(
+      BackendResourceInventoryResponseSchema.parse({
+        items: [
+          {
+            id: 'E0001-demo',
+            slug: 'demo',
+            resource: 'docs/experiments/E0001-demo/README.md',
+          },
+        ],
+      }).items[0]?.slug,
+    ).toBe('demo')
+    expect(
+      BackendResourceInventoryResponseSchema.safeParse({
+        items: [{ id: 'E0001-demo', slug: 'demo', resource: '../outside.md' }],
+      }).success,
+    ).toBe(false)
   })
 
-  it('binds terminal lifecycle DTOs to an exact Host-qualified public URL', () => {
-    expect(
-      BackendTerminalStartRequestSchema.parse({
-        project: 'project-x',
-        scope: 'run',
-        slug: 'train-260826-150000',
-        agent: 'codex',
-      }),
-    ).toMatchObject({ project: 'project-x', scope: 'run', agent: 'codex' })
-    const session = {
-      host: 'host-a',
-      backend: 'tmux',
-      sessionName: 'memon-codex-project-x--run--train-260826-150000',
-      url: '/api/terminal/proxy/host-a/memon-codex-project-x--run--train-260826-150000/',
-      startedAt: '2026-08-26T15:00:00.000Z',
-      lastActiveAt: '2026-08-26T15:00:01.000Z',
-      agent: 'codex',
-      project: 'project-x',
-      scope: 'run',
-      slug: 'train-260826-150000',
-      warnings: [],
-    }
-    expect(BackendTerminalSessionSchema.parse(session)).toEqual(session)
-    expect(
-      BackendTerminalSessionSchema.safeParse({
-        ...session,
-        url: '/api/terminal/proxy/host-b/memon-codex-project-x--run--train-260826-150000/',
-      }).success,
-    ).toBe(false)
-    expect(BackendTerminalSessionSchema.safeParse({ ...session, port: 7682 }).success).toBe(false)
-  })
-
-  it('keeps tmux inventory Host-qualified without dynamic ports or pane cwd', () => {
-    const row = {
-      host: 'host-a',
-      sessionName: 'memon-manual-same',
-      parsed: {
-        raw: 'memon-manual-same',
-        agent: null,
-        project: null,
-        scope: null,
-        slug: null,
-        legacy: false,
-      },
-      liveEntry: { lastActiveAt: '2026-08-26T19:00:00.000Z' },
-      tmuxCreatedAt: '',
-      tmuxLastActivity: '',
-      matchable: false,
-      staleReason: null,
-      pane: { title: 'idle', currentCommand: 'bash', currentPath: null },
-      state: 'idle',
-      lastStateChangeAt: null,
-    }
-    expect(BackendTmuxSessionRowSchema.parse(row)).toEqual(row)
-    expect(
-      BackendTmuxSessionRowSchema.safeParse({
-        ...row,
-        liveEntry: { ...row.liveEntry, port: 7682 },
-      }).success,
-    ).toBe(false)
-    expect(
-      BackendTmuxSessionRowSchema.safeParse({
-        ...row,
-        pane: { ...row.pane, currentPath: '/private/project' },
-      }).success,
-    ).toBe(false)
-  })
 })
 
 describe('Backend Results annotations', () => {
@@ -330,7 +275,7 @@ describe('shared Backend protocol metadata and availability schemas', () => {
 
   it('validates a complete, closed capability set', () => {
     expect(BackendCapabilitiesSchema.parse(capabilities)).toEqual(capabilities)
-    expect(BackendCapabilitiesSchema.safeParse({ projects: true, tmux: true }).success).toBe(false)
+    expect(BackendCapabilitiesSchema.safeParse({ projects: true }).success).toBe(false)
     expect(
       BackendCapabilitiesSchema.safeParse({ ...capabilities, arbitraryShell: true }).success,
     ).toBe(false)

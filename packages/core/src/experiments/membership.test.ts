@@ -59,6 +59,7 @@ function run(id: string, experiment: string | null): Run {
       hypotheses: [],
       tags: [],
       archived: false,
+      deprecated: false,
     },
     sections: {
       motivation: null,
@@ -75,6 +76,7 @@ function run(id: string, experiment: string | null): Run {
     body: '',
     parseErrors: [],
     parseWarnings: [],
+    frontMatterKeys: [],
   }
 }
 

@@ -22,8 +22,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@memon/core": "workspace:*",
-    "http-proxy-3": "^1.23.2"
+    "@memon/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

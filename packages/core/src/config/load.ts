@@ -13,6 +13,7 @@
 import { promises as fs } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import yaml from 'js-yaml'
+import { DEFAULT_FILE_ACCESS_OPTIONS, type FileAccessOptions } from '../project-file-store.js'
 import { ConfigRawSchema } from '../schemas.js'
 import {
   type AuthConfig,
@@ -24,19 +25,19 @@ import {
   DEFAULT_GIT_STATUS,
   DEFAULT_POLL,
   DEFAULT_SLURM,
-  DEFAULT_TERMINAL,
   type GitStatusConfig,
   MIN_GIT_STATUS_INTERVAL_MS,
   type PollConfig,
   type ProjectConfig,
   type SlurmConfig,
-  type TerminalConfig,
 } from '../types.js'
 import { BackendUrlPolicyError, normalizeBackendBaseUrl } from './backend-url.js'
 import { assertOwnerOnlyServiceConfig } from './permissions.js'
 
 const LEGACY_TELEGRAM_CONFIG_WARNING =
   'memon: warning: config key `telegram` is no longer supported; remove the `telegram:` block and delete its stored credentials.\n'
+const LEGACY_INTERACTIVE_CONFIG_WARNING =
+  'memon: warning: config keys `terminal`, `tmux`, and `herdr` are no longer supported and are ignored.\n'
 
 const DEFAULT_CENTRAL_BIND_ADDR = '127.0.0.1'
 const DEFAULT_CENTRAL_BIND_PORT = 3737
@@ -143,6 +144,14 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   ) {
     process.stderr.write(LEGACY_TELEGRAM_CONFIG_WARNING)
   }
+  const rawRecord: Record<string, unknown> =
+    typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {}
+  const hasLegacyInteractiveConfig = ['terminal', 'tmux', 'herdr'].some((key) =>
+    Object.hasOwn(rawRecord, key),
+  )
+  if (hasLegacyInteractiveConfig) process.stderr.write(LEGACY_INTERACTIVE_CONFIG_WARNING)
 
   const validated = ConfigRawSchema.safeParse(raw)
   if (!validated.success) {
@@ -155,13 +164,51 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   const baseDir = dirname(resolve(candidate))
   const cfg = validated.data
 
+  // A Project that names a Host namespace makes the instance host-qualified.
+  // Execution defaults are role-dependent and resolved after role selection.
   const projects: ProjectConfig[] = cfg.projects.map((p) => {
     const root = isAbsolute(p.root) ? p.root : resolve(baseDir, p.root)
+    const storageGroup = p.storage_group ?? p.storageGroup
+    const readOnly = p.read_only ?? p.readOnly
     return {
       name: p.name,
       root,
       include: p.include ?? [],
       exclude: p.exclude ?? [],
+      ...(p.host ? { host: p.host } : {}),
+      // Either spelling is accepted; the schema rejects supplying both.
+      ...(storageGroup === undefined ? {} : { storageGroup }),
+      ...(readOnly === undefined ? {} : { readOnly }),
+      ...(p.persistent_cache === undefined ? {} : { persistentCache: p.persistent_cache }),
+      ...(p.execution
+        ? {
+            execution:
+              p.execution.kind === 'local'
+                ? { kind: 'local' as const }
+                : {
+                    kind: 'ssh' as const,
+                    target: p.execution.target,
+                    // Remote roots are absolute on the remote machine and are
+                    // never resolved against a local mount path.
+                    remoteRoot: p.execution.remote_root,
+                    ...(p.execution.port === undefined ? {} : { port: p.execution.port }),
+                    ...(p.execution.identity_file
+                      ? {
+                          identityFile: isAbsolute(p.execution.identity_file)
+                            ? p.execution.identity_file
+                            : resolve(baseDir, p.execution.identity_file),
+                        }
+                      : {}),
+                    ...(p.execution.known_hosts_file
+                      ? {
+                          knownHostsFile: isAbsolute(p.execution.known_hosts_file)
+                            ? p.execution.known_hosts_file
+                            : resolve(baseDir, p.execution.known_hosts_file),
+                        }
+                      : {}),
+                  },
+          }
+        : {}),
       // Resolve each github mapping's path against the project root (absolute).
       ...(p.github
         ? {
@@ -174,6 +221,29 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
         : {}),
     }
   })
+
+  const duplicateProject = duplicateValue(projects.map((p) => `${p.host ?? ''}/${p.name}`))
+  if (duplicateProject) {
+    throw new ConfigError(
+      `projects has a duplicate Project identity: ${duplicateProject}`,
+      candidate,
+    )
+  }
+
+  const hostQualifiedProjects = projects.filter((p) => p.host !== undefined)
+  if (hostQualifiedProjects.length > 0 && hostQualifiedProjects.length !== projects.length) {
+    throw new ConfigError(
+      'projects must either all declare `host:` (host-qualified identity) or none of them (project-only identity)',
+      candidate,
+    )
+  }
+  /**
+   * Host-qualified Projects served directly from this instance's own
+   * filesystem (ordinary directories or mounts). Such an instance is the
+   * central Web role by construction: it answers host-qualified routes without
+   * any peer Backend, service token, or availability probe.
+   */
+  const directProjects = hostQualifiedProjects.length > 0
 
   const poll: PollConfig = {
     minIntervalMs: cfg.poll?.min_interval_ms ?? DEFAULT_POLL.minIntervalMs,
@@ -201,29 +271,6 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     if (cfg.auth.session_secret !== undefined) auth.sessionSecret = cfg.auth.session_secret
   }
 
-  const cmds = cfg.terminal?.commands
-  const terminal: TerminalConfig = {
-    tmuxEnabled: cfg.terminal?.tmux_enabled ?? DEFAULT_TERMINAL.tmuxEnabled,
-    ...(cfg.terminal?.herdr ? { herdr: { cli: cfg.terminal.herdr.cli } } : {}),
-    ttydMaxConcurrent: cfg.terminal?.ttyd_max_concurrent ?? DEFAULT_TERMINAL.ttydMaxConcurrent,
-    ttydIdleTtlMinutes: cfg.terminal?.ttyd_idle_ttl_minutes ?? DEFAULT_TERMINAL.ttydIdleTtlMinutes,
-    paneInfoActivePollMs:
-      cfg.terminal?.pane_info_active_poll_ms ?? DEFAULT_TERMINAL.paneInfoActivePollMs,
-    paneInfoIdlePollMs: cfg.terminal?.pane_info_idle_poll_ms ?? DEFAULT_TERMINAL.paneInfoIdlePollMs,
-    commands: {
-      none: cmds?.none ?? DEFAULT_TERMINAL.commands.none,
-      claude: cmds?.claude ?? DEFAULT_TERMINAL.commands.claude,
-      codex: cmds?.codex ?? DEFAULT_TERMINAL.commands.codex,
-      opencode: cmds?.opencode ?? DEFAULT_TERMINAL.commands.opencode,
-    },
-  }
-
-  if (terminal.paneInfoIdlePollMs < terminal.paneInfoActivePollMs) {
-    throw new ConfigError(
-      `terminal.pane_info_idle_poll_ms (${terminal.paneInfoIdlePollMs}) must be >= terminal.pane_info_active_poll_ms (${terminal.paneInfoActivePollMs})`,
-      candidate,
-    )
-  }
 
   const slurm: SlurmConfig = {
     totalNodes: cfg.slurm?.total_nodes ?? DEFAULT_SLURM.totalNodes,
@@ -255,26 +302,45 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
-  const rawRecord = raw as Record<string, unknown>
-  const clusterOnlyKeys = ['poll', 'terminal', 'slurm', 'git_status'] as const
+  // `poll` is the retired whole-project scanner; the direct central role never
+  // runs it. The remaining keys stay cluster-local for a Backend-fronted
+  // central, but a direct central owns the same local capabilities a
+  // standalone instance does.
+  const clusterOnlyKeys = ['poll', 'slurm', 'git_status'] as const
 
   let central: CentralConfig | undefined
-  if (cfg.central) {
-    if (projects.length > 0) {
+  if (cfg.central || directProjects) {
+    if (cfg.backend) {
       throw new ConfigError(
-        'central role must not define local `projects:`; register an explicit Backend instead',
+        'backend role must not declare per-project `host:`; the Host namespace comes from `backend.host_id`',
         candidate,
       )
     }
-    const incompatibleKey = clusterOnlyKeys.find((key) => Object.hasOwn(rawRecord, key))
+    if (projects.length > 0 && !directProjects) {
+      throw new ConfigError(
+        'central role must not define local `projects:` without a `host:` namespace; add `host:` to serve them directly or register an explicit Backend',
+        candidate,
+      )
+    }
+    if ((cfg.central?.hosts.length ?? 0) === 0 && projects.length === 0) {
+      throw new ConfigError(
+        'central role must define either `central.hosts` or host-qualified `projects:`',
+        candidate,
+      )
+    }
+    const incompatibleKey = (
+      directProjects ? (['poll'] as const) : clusterOnlyKeys
+    ).find((key) => Object.hasOwn(rawRecord, key))
     if (incompatibleKey) {
       throw new ConfigError(
-        `central role must not define cluster-local \`${incompatibleKey}:\` settings`,
+        directProjects
+          ? `central role serving Projects directly must not define \`${incompatibleKey}:\`; file access is scheduled by \`fileAccess:\``
+          : `central role must not define cluster-local \`${incompatibleKey}:\` settings`,
         candidate,
       )
     }
 
-    const hosts: CentralHostConfig[] = cfg.central.hosts.map((host, index) => {
+    const hosts: CentralHostConfig[] = (cfg.central?.hosts ?? []).map((host, index) => {
       const tokens: BackendServiceTokens = {
         current: host.tokens.current,
         ...(host.tokens.next ? { next: host.tokens.next } : {}),
@@ -364,14 +430,12 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
         candidate,
       )
     }
-    if (
-      cfg.central.legacy_share_host &&
-      !hosts.some((host) => host.id === cfg.central!.legacy_share_host)
-    ) {
+    const legacyShareHost = cfg.central?.legacy_share_host
+    if (legacyShareHost && !hosts.some((host) => host.id === legacyShareHost)) {
       throw new ConfigError('central.legacy_share_host must name one configured Host', candidate)
     }
 
-    const centralBindPort = cfg.central.bind_port ?? DEFAULT_CENTRAL_BIND_PORT
+    const centralBindPort = cfg.central?.bind_port ?? DEFAULT_CENTRAL_BIND_PORT
     const sshLocalPorts = hosts.flatMap((host) =>
       host.transport.kind === 'ssh' ? [host.transport.localPort] : [],
     )
@@ -389,11 +453,23 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       )
     }
 
+    // Host ids must be unique across peer Backends and directly served
+    // Projects: one Host namespace resolves to exactly one source.
+    const collidingHost = hostQualifiedProjects.find((project) =>
+      hosts.some((host) => host.id === project.host),
+    )
+    if (collidingHost) {
+      throw new ConfigError(
+        `Host ${JSON.stringify(collidingHost.host)} is both a registered Backend and a directly served Project namespace`,
+        candidate,
+      )
+    }
+
     central = {
-      bindAddr: cfg.central.bind_addr ?? DEFAULT_CENTRAL_BIND_ADDR,
+      bindAddr: cfg.central?.bind_addr ?? DEFAULT_CENTRAL_BIND_ADDR,
       bindPort: centralBindPort,
-      ...(cfg.central.public_url ? { publicUrl: cfg.central.public_url } : {}),
-      ...(cfg.central.legacy_share_host ? { legacyShareHost: cfg.central.legacy_share_host } : {}),
+      ...(cfg.central?.public_url ? { publicUrl: cfg.central.public_url } : {}),
+      ...(legacyShareHost ? { legacyShareHost } : {}),
       hosts,
     }
   }
@@ -480,7 +556,92 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     }
   }
 
-  return { projects, poll, auth, terminal, slurm, gitStatus, central, backend }
+  // Execution context. A project-only instance (standalone CLI/web or a
+  // Backend) keeps today's local command execution. A directly served
+  // host-qualified Project must declare `execution:` explicitly, because its
+  // root may be a mount of another machine where local Git/Slurm commands
+  // would silently run against the wrong host.
+  const resolvedProjects: ProjectConfig[] = projects.map((project) =>
+    project.execution || directProjects
+      ? project
+      : { ...project, execution: { kind: 'local' as const } },
+  )
+
+  const fileAccess = resolveFileAccess(cfg.fileAccess, candidate)
+  const fileCache = cfg.file_cache
+    ? {
+        dumpPath: resolve(baseDir, cfg.file_cache.dump_path),
+        dumpIntervalMs: cfg.file_cache.dump_interval_seconds * 1000,
+        wikiTtlMs: cfg.file_cache.wiki_ttl_seconds * 1000,
+        defaultTtlMs: cfg.file_cache.default_ttl_seconds * 1000,
+      }
+    : undefined
+  if (!fileCache && resolvedProjects.some((project) => project.persistentCache)) {
+    throw new ConfigError('persistent_cache requires file_cache.dump_path in the instance config', candidate)
+  }
+
+  return {
+    projects: resolvedProjects,
+    poll,
+    auth,
+    slurm,
+    gitStatus,
+    central,
+    backend,
+    ...(fileAccess ? { fileAccess } : {}),
+    ...(fileCache ? { fileCache } : {}),
+    ...(cfg.fileAccessRestart ? { fileAccessRestart: cfg.fileAccessRestart } : {}),
+  }
+}
+
+/**
+ * Validate saved scheduler overrides against the effective (default-merged)
+ * value set. The loader and the settings API enforce the same relationships,
+ * so a saved file always loads back.
+ */
+function resolveFileAccess(
+  raw: Partial<FileAccessOptions> | undefined,
+  candidate: string,
+): Partial<FileAccessOptions> | undefined {
+  if (!raw) return undefined
+  const overrides: Partial<FileAccessOptions> = {}
+  for (const [key, value] of Object.entries(raw) as [keyof FileAccessOptions, unknown][]) {
+    if (value === undefined) continue
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      throw new ConfigError(`fileAccess.${key} must be a finite positive number`, candidate)
+    }
+    overrides[key] = value
+  }
+  if (Object.keys(overrides).length === 0) return undefined
+
+  const effective: FileAccessOptions = { ...DEFAULT_FILE_ACCESS_OPTIONS, ...overrides }
+  const pairs: [keyof FileAccessOptions, keyof FileAccessOptions][] = [
+    ['fileMinMs', 'fileMaxMs'],
+    ['directoryMinMs', 'directoryMaxMs'],
+    ['maintenanceMinMs', 'maintenanceMaxMs'],
+    ['failureMinMs', 'failureMaxMs'],
+  ]
+  for (const [min, max] of pairs) {
+    if (effective[max] < effective[min]) {
+      throw new ConfigError(
+        `fileAccess.${max} (${effective[max]}) must be >= fileAccess.${min} (${effective[min]})`,
+        candidate,
+      )
+    }
+  }
+  if (effective.leaseMs < 3 * effective.heartbeatMs) {
+    throw new ConfigError(
+      `fileAccess.leaseMs (${effective.leaseMs}) must tolerate at least two missed heartbeats (>= ${3 * effective.heartbeatMs})`,
+      candidate,
+    )
+  }
+  if (effective.backoffFactor <= 1) {
+    throw new ConfigError(
+      `fileAccess.backoffFactor (${effective.backoffFactor}) must be > 1 to back off`,
+      candidate,
+    )
+  }
+  return overrides
 }
 
 /**
@@ -499,10 +660,10 @@ export function implicitCwdProject(cwd: string, name = '(cwd)'): Config {
         root: resolve(cwd),
         include: [],
         exclude: [],
+        execution: { kind: 'local' },
       },
     ],
     poll: { ...DEFAULT_POLL },
-    terminal: { ...DEFAULT_TERMINAL },
     slurm: { ...DEFAULT_SLURM },
     gitStatus: { ...DEFAULT_GIT_STATUS },
   }

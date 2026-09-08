@@ -1,6 +1,6 @@
 ---
 name: memon-wiki
-description: "Maintain a project's memon wiki under docs/wiki/: meeting notes, findings, bottlenecks, showcases, questions, decisions, notes, and harness feedback. Use when the user wants durable project knowledge recorded, corrected, promoted from Experiment Results, or migrated out of a Report — whether the project root is the current directory or an sshfs-mounted remote project."
+description: "Maintain a project's memon wiki under docs/wiki/: meetings, roadmaps, findings, bottlenecks, showcases, questions, decisions, notes, and harness feedback. Use when the user wants durable project knowledge recorded, corrected, promoted from Experiment Results, or migrated out of a Report — whether the project root is the current directory or an sshfs-mounted remote project."
 ---
 
 # memon-wiki
@@ -14,10 +14,61 @@ A wiki page is never the source of a number. Every factual statement traces
 back to an Experiment, a Variant row, or a Run README, and every wiki change
 lands in its own commit so a human can verify it line by line.
 
+## Authoring language
+
+Maintain wiki content in English: titles, descriptions, headings, body prose,
+tables, and newly authored annotations. This applies to every page kind,
+including roadmaps.
+
+User-facing discussion and handoffs may remain in the user's language. Translate
+agreed content into English when recording it; preserve artifact identifiers,
+code, paths, and verbatim source quotations. Do not translate or rewrite
+unrelated historical pages as part of a routine update.
+
+## Human-readable knowledge
+
+Optimize wiki pages for human readers, not machine bookkeeping. Explain the
+research goal, reasoning, relationships between experiments, what is known,
+what remains uncertain, and the next decisions in concise English prose.
+Use headings, nested lists, and small tables only when they improve readability.
+
+Experiment documents remain the maintained source of detailed designs, Results,
+Variant metrics, execution state, and experiment-local tasks. Link to that
+evidence instead of duplicating raw results, run logs, machine-oriented schemas,
+or exhaustive status tables in the wiki. A small cited result may be included
+when it is necessary to explain a conclusion.
+
+A roadmap is a content-first research tree: every node is a goal, research
+question, or direction, and the nesting expresses how those refine one another.
+Nodes are not experiment slots — never impose one experiment per node, and never
+let the tree degrade into an inventory of Experiments. A node that is an
+explicitly proposed goal or open question needs no evidence at all.
+The roadmap page and its nodes carry no status vocabulary. Express whether a
+direction is proposed, active, blocked, or complete in the prose when that
+distinction helps the reader; do not turn it into page-level bookkeeping.
+
+Cite experiments inline as supporting evidence wherever they bear on a node, and
+state the evidentiary role at that citation instead of duplicating the
+experiment's content. The relationship is many-to-many: one Experiment or
+Variant may support several nodes and several roadmaps, and one node may cite
+several experiments. Distinguish proposed work from established evidence; do not
+invent Experiment ids for uncreated work. Do not make the roadmap a second
+experiment task tracker. If discussion exposes an outdated Experiment document,
+route the correction through its authoring workflow rather than keeping the
+corrected truth only in the wiki.
+
+Represent user feedback faithfully. Preserve the user's priorities, corrections,
+constraints, and unresolved disagreements in the relevant narrative, not merely
+in a generic acknowledgement. Distinguish agreed decisions from suggestions and
+open questions; never turn feedback into an unsupported experimental finding.
+When feedback changes direction, explain the change and retain the historical
+context rather than silently rewriting earlier conclusions. Translate meaning
+faithfully into English without adding goals or commitments the user did not make.
+
 ## When to use
 
-- The user wants a conclusion, decision, meeting, open question, or bottleneck
-  written down where the whole project can find it.
+- The user wants a roadmap, conclusion, decision, meeting, open question, or
+  bottleneck written down where the whole project can find it.
 - An Experiment produced a result worth promoting into shared knowledge.
 - An existing page is wrong, outdated, or contradicts newer Results.
 - The user asks to move a Report into the wiki.
@@ -30,7 +81,8 @@ lands in its own commit so a human can verify it line by line.
 - Writing a Run README or launching work — `memon-run-experiment`.
 - A theme-driven narrative Report — `memon-write-report` stays the Report
   writer, and existing Reports are migrated only on explicit request.
-- Digests and the journal cursor — `memon-digest-journal`.
+- Manipulating a Journal file, or writing a digest/summary of one — neither is
+  work any skill does; see `../PREFLIGHT.md`.
 - Verifying a page. Verification is the human's job (see below).
 
 ## Step 1 — Detect the operating mode
@@ -94,6 +146,7 @@ mislabel an expected validation or domain-state rejection as a CLI bug.
 ```text
 docs/wiki/
 ├── meeting/W0004-2026-05-04-weekly.md
+├── roadmap/W0009-research-directions.md
 ├── finding/W0001-zero-snr-brightness.md
 ├── bottleneck/W0002-edm2-nan-crash.md
 ├── decision/W0003-adopt-bf16-flow-matching.md
@@ -115,8 +168,9 @@ exactly two levels deep — never place a page directly under `docs/wiki/`.
 Read [references/page-kinds.md](references/page-kinds.md) for every kind's
 purpose, status vocabulary, required frontmatter, recommended H2 sections, and
 authoring guidance. Pick the kind with the user, or infer it when the request
-is unambiguous (a pasted meeting transcript is a `meeting`; "record that X is
-now our approach" is a `decision`). When two kinds both fit, ask:
+is unambiguous (a research tree is a `roadmap`; a pasted meeting transcript is
+a `meeting`; "record that X is now our approach" is a `decision`). When two
+kinds both fit, ask:
 
 > 这条内容我打算记成 `finding`(有 Results 支撑的结论),也可以记成 `note`(暂时的观察)。
 > 你倾向哪一个?
@@ -172,8 +226,8 @@ When the user asserts something no Experiment supports:
    that stand alone in a listing. `meeting` additionally requires `--date`.
    Add `--bundle` only when the page will carry assets.
 3. Write the body by editing the Markdown file directly (through the local
-   mount path in mounted mode). Fill the kind's recommended H2 sections; add
-   more when the content needs them.
+   mount path in mounted mode). Fill the kind's recommended H2 sections when it
+   has any; shape a roadmap around the research tree rather than fixed headings.
 4. Frontmatter-only changes go through `memon wiki set` — status, title,
    description, tags, sources — never by hand-editing YAML:
 
@@ -188,9 +242,31 @@ When the user asserts something no Experiment supports:
    memon --project-root . wiki lint zero-snr-brightness
    ```
 
-   `warn` severity (a missing recommended section, an unresolved source) is
-   acceptable only when you say why in the handoff.
-6. When updating an existing page, preserve prior claims or mark the
+   Explain remaining warnings, such as missing recommended sections, in the
+   handoff. CLI lint checks content and syntax only: it does not open source
+   targets, check their existence, compute staleness, or consult git — it
+   never reports whether a page or a finding has been reviewed. Inspect those
+   target-derived checks in Web, which reuses the central file cache.
+6. Submit the direct page edits to the Journal. Body edits made in the editor
+   are invisible to the invocation ledger, while `wiki create`, `wiki set`,
+   `wiki deprecate` and `wiki migrate-report` already record themselves. After
+   lint passes, close the whole batch with exactly one submission naming only
+   the page files you hand-edited:
+
+   ```sh
+   memon --project-root . --format json journal submit \
+     --files docs/wiki/finding/W0001-zero-snr-brightness.md
+   ```
+
+   In mounted mode this runs through `ssh` like every other `memon` command,
+   with paths relative to the remote project root. Follow the full contract in
+   `../PREFLIGHT.md`: one submission per batch, no prose input, all-or-nothing
+   validation, and no second submission for a change a `wiki` subcommand
+   already made. It is not a commit — `memon wiki commit` still runs
+   separately. Keep the returned `invocationId` for the handoff; if the
+   submission is rejected, keep the page edit and report the maintenance as
+   unrecorded with the exact command and error.
+7. When updating an existing page, preserve prior claims or mark the
    correction explicitly. Never quietly rewrite history.
 
 Kind-specific requirements: a `meeting` records decisions and action items as
@@ -237,8 +313,9 @@ Outdated content stays visible and marked.
   ```
 
 Add the current numbers in a new section; never edit an old claim to make the
-page look like it was always right. Do not run `memon wiki delete` on a page
-that has ever been reviewed unless the user asks for deletion by id.
+page look like it was always right. Run `memon wiki delete` only when the user
+asks for deletion by id — the CLI cannot tell you whether a page has already
+been reviewed, so assume it has.
 
 ## Review is a human boundary
 
@@ -248,8 +325,37 @@ is that a human read the diff. Never run `memon wiki review verify` or
 call `POST` or `DELETE` on `/api/wiki/review/*` — not even when the user says
 "it's fine, mark it". Ask them to do it in the dashboard or the CLI.
 
-Reading review state is fine and expected: `memon wiki review ls`,
-`memon wiki review log`, `memon wiki review diff <page>`.
+Ordinary wiki commands — `ls`, `show`, `create`, `set`, `move`, `deprecate`,
+`undeprecate`, `delete`, `lint`, `backlinks`, `migrate-report`, `components` —
+carry no review information at all and never inspect git. Do not expect a
+`review` field in their output, and do not read the review trail "just to be
+safe" after ordinary wiki work. Only `wiki commit` and the `review`
+subcommands touch git, and `wiki commit` marks nothing verified.
+
+Read the review trail only when the user explicitly asks for it, through the
+`review` subcommands:
+
+```sh
+memon --project-root . wiki review log
+memon --project-root . wiki review diff
+```
+
+`review log` lists the wiki commits in order and where human verification
+currently stops. `review diff` takes no page argument: it is one diff of the
+whole `docs/wiki/` tree from the last human-verified commit (`base`) to current
+`HEAD`. There is no per-page CLI diff. When nothing has been verified yet,
+`base` is the git empty tree and the diff covers all committed wiki content.
+Uncommitted edits are never included — commit them first if the user wants to
+review what you just wrote.
+
+When `review diff` fails — a git failure, or `REVIEW_STALE_BASELINE` because a
+recorded mark no longer exists in the wiki history — report the error verbatim
+and stop. Never "fix" it by unverifying a mark; that is the user's call.
+
+Per-page review state (`VERIFIED` / `CHANGED_SINCE_VERIFY` / `UNVERIFIED`, the
+exact unverified line ranges, `verifiedThrough`) is a **Web-only** surface, as
+are resolved sources and staleness. Point the user at the dashboard for it;
+the CLI does not derive it.
 
 ## Commit every wiki change separately
 
@@ -265,32 +371,40 @@ already holds non-wiki paths. Collector scripts and any other non-wiki file go
 in their own separate commit — one wiki commit per change is what makes the
 change individually verifiable.
 
-The closing message names the new wiki commit SHA(s) and, for every touched
-page, its `review.state` afterwards:
+The closing message names the new wiki commit SHA(s) and asks the user to
+review them. Committing never marks anything verified, and a change that is
+not committed cannot appear in `memon wiki review diff`:
 
 > 已提交 `wiki: record zero-SNR brightness finding`(`a1b2c3d`)。
-> @W0001 现在是 `CHANGED_SINCE_VERIFY`(上次校验到 `9f2c4e1`),@W0009 是 `UNVERIFIED`。
-> 需要你在 dashboard 上逐条 review 后标记。
+> 本次改动涉及 @W0001、@W0009,尚未有人 review。
+> 需要的话可以用 `memon wiki review diff` 看自上次人工校验以来 docs/wiki 的整体改动,
+> 或在 dashboard 上逐条 review 后标记;单页的 review 状态只在 Web 上显示。
 
 ## Trust and conflict resolution
 
 Wiki pages and Experiment documents are trustworthy by default; do not re-derive
 what a document already states. When two documents contradict each other, or a
-document contradicts fresh Experiment data, run `memon wiki review ls` and
-`memon wiki review diff <page>` and prefer, in order:
+document contradicts fresh Experiment data, prefer, in order:
 
-1. content whose lines are `VERIFIED`;
-2. content in `CHANGED_SINCE_VERIFY` pages that falls **outside** their
-   `unverifiedRanges`;
-3. `UNVERIFIED` content.
+1. content a human has verified;
+2. content of a partly verified page that falls **outside** its unverified
+   line ranges;
+3. content nobody has verified yet.
+
+That ordering needs per-page review state, which only Web derives: the review
+badge, `verifiedThrough`, and the tinted unverified blocks in the reading pane.
+Ask the user to read it there, or — when they ask for it — run
+`memon wiki review diff` for the whole-wiki diff since the last verified
+commit. Never infer a page's review state from an ordinary `wiki` command or
+from `wiki lint`; they do not report one.
 
 Use the winning number, note the conflict in the handoff, and flag the losing
-page for correction. When that ordering does not settle it — two `UNVERIFIED`
-pages, or a verified passage contradicted by fresh Results — stop and ask,
-quoting both passages and their review states:
+page for correction. When that ordering does not settle it — nothing verified
+on either side, or a verified passage contradicted by fresh Results — stop and
+ask, quoting both passages and whatever is known about their review state:
 
 > 两处说法冲突,而且都还没被校验:
-> @W0009(UNVERIFIED)写「提升 12%」,@E0017/V0031 的 Results 是 20%。
+> @W0009 写「提升 12%」,@E0017/V0031 的 Results 是 20%。
 > 以哪一个为准?
 
 ## Migrating a Report
@@ -308,10 +422,13 @@ Then:
 1. Reorganise the body into the kind's recommended sections without dropping
    content. Reshaping is editorial work; deletion is not.
 2. Derive `sources` from the Experiments, Variants, and runs the Report cited.
-3. Fix every Markdown link the `backlinks` output listed so it targets the new
-   page path.
-4. Lint, commit with `memon wiki commit`, and hand the page over as
-   `UNVERIFIED` — a migrated page has never been reviewed in its new form.
+3. Review the declared Wiki source references returned by `backlinks`.
+   The CLI does not scan Markdown links or resolve targets; inspect resolved
+   backlinks in Web and update affected Markdown links to the new page path.
+4. Lint, submit the reorganised page with one `journal submit --files` call
+   (the `migrate-report` invocation is already recorded; the body rewrite is
+   not), commit with `memon wiki commit`, and hand the page over as never yet
+   reviewed — a migrated page carries no verification from its Report life.
 
 ## Harness feedback — always the last step
 
@@ -351,8 +468,10 @@ Report:
 
 - the detected mode (and remote root when mounted);
 - pages created/updated with ids, slugs, and kinds;
-- the wiki commit SHA(s);
-- each touched page's `review.state`, and an explicit ask for human review;
+- the wiki commit SHA(s), and the `journal submit` `invocationId` for the
+  direct page edits (or the reason the maintenance is unrecorded);
+- an explicit ask for human review of those commits; do not report a per-page
+  review state — the CLI derives none, and Web is where the user reads it;
 - remaining lint diagnostics and why they are acceptable;
 - harness-feedback candidates, or the one-sentence "none" statement;
 - any suspected CLI issue, per `../PREFLIGHT.md`.
@@ -362,9 +481,12 @@ Report:
 - Never derive a host from `LOCAL.md` or any prose file; `findmnt` only.
 - Never write a number that is not in an Experiment, Variant row, or Run
   README you read during this task.
-- Never edit an Experiment bundle, a Run README, a digest, a Report, or the
-  journal cursor.
+- Never edit an Experiment bundle, a Run README, or a Report.
+- Never read, write, or repair a Journal file; the only contact with the
+  Journal is the single `journal submit` in step 6.
 - Never set or clear a review mark, and never touch `.memon/wiki-review.csv`.
+- Never run a `memon wiki review` command unless the user asked for the review
+  trail; ordinary wiki work ends at `memon wiki commit`.
 - Never mix wiki and non-wiki paths in one commit.
 - Never delete or silently rewrite a historical claim; deprecate it.
 - Never invent an id, path, or slug — `memon wiki create` and

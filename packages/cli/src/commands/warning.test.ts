@@ -90,8 +90,8 @@ function spyExit() {
 
 beforeEach(async () => {
   root = await fs.mkdtemp(join(tmpdir(), 'memon-warning-'))
-  runDir = join(root, 'foo-260501-100000')
-  await fs.mkdir(runDir)
+  runDir = join(root, 'logs', 'foo-260501-100000')
+  await fs.mkdir(runDir, { recursive: true })
   readmePath = join(runDir, 'README.md')
   await fs.writeFile(readmePath, README_BASE)
   exitSpy = spyExit()

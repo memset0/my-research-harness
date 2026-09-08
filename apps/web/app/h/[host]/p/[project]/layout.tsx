@@ -1,4 +1,4 @@
-import { isUsableHostAvailabilityState, ProjectRefSchema } from '@memon/core'
+import { type HostAvailability, isUsableHostAvailabilityState, ProjectRefSchema } from '@memon/core'
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
@@ -7,12 +7,15 @@ import { AppSidebar } from '../../../../../components/app-sidebar'
 import { CentralProjectUnavailable } from '../../../../../components/central-project-unavailable'
 import { ProjectFooter } from '../../../../../components/project-footer'
 import { ResizableSidebarProvider } from '../../../../../components/resizable-sidebar-provider'
-import { WorkspaceSplitOutlet } from '../../../../../components/terminal-drawer-provider'
+import { WorkspaceSplitOutlet } from '../../../../../components/workspace-pane-provider'
 import { SidebarInset, SidebarTrigger } from '../../../../../components/ui/sidebar'
 import { readIdentityFromHeaders } from '../../../../../lib/auth/request-context'
 import { aggregateCentralProjects } from '../../../../../lib/central/central-projects'
 import { getCentralFleet } from '../../../../../lib/central/fleet-runtime'
 import { centralProjectTitle } from '../../../../../lib/central/project-metadata'
+import { servesProjectsDirectly } from '../../../../../lib/central/direct-projects'
+import { directCentralRuntime } from '../../../../../lib/central/direct-runtime'
+import { getRuntime } from '../../../../../lib/runtime'
 
 interface Params {
   host: string
@@ -55,29 +58,37 @@ export default async function CentralProjectLayout({
   ) {
     notFound()
   }
-  const fleet = await getCentralFleet().catch(() => null)
-  if (!fleet) notFound()
-  const projects = await aggregateCentralProjects({
-    registry: fleet.registry,
-    actor:
-      identity.role === 'viewer'
-        ? { role: 'viewer', scopes: identity.scopeProjectRefs }
-        : { role: 'owner' },
-  })
-  const availability = fleet.registry.getAvailability(parsed.data.host)
-  if (!availability) notFound()
-  const usable = isUsableHostAvailabilityState(availability.state)
-  if (
-    usable &&
-    !projects.projects.some(
-      (project) => project.host === parsed.data.host && project.project === parsed.data.project,
+  const runtime = await getRuntime()
+  const directProject = servesProjectsDirectly(runtime.config)
+    ? directCentralRuntime(runtime.config).registry.resolve(parsed.data.host, parsed.data.project)
+    : null
+  let availability: HostAvailability | null = null
+  let usable = directProject !== null
+  if (!directProject) {
+    const fleet = await getCentralFleet().catch(() => null)
+    if (!fleet) notFound()
+    const projects = await aggregateCentralProjects({
+      registry: fleet.registry,
+      actor:
+        identity.role === 'viewer'
+          ? { role: 'viewer', scopes: identity.scopeProjectRefs }
+          : { role: 'owner' },
+    })
+    availability = fleet.registry.getAvailability(parsed.data.host)
+    if (!availability) notFound()
+    usable = isUsableHostAvailabilityState(availability.state)
+    if (
+      usable &&
+      !projects.projects.some(
+        (project) => project.host === parsed.data.host && project.project === parsed.data.project,
+      )
     )
-  )
-    notFound()
+      notFound()
+  }
 
   const cookieStore = await cookies()
   const defaultOpen = cookieStore.get('sidebar_state')?.value !== 'false'
-  if (!usable) {
+  if (!usable && availability) {
     return (
       <ResizableSidebarProvider defaultOpen={defaultOpen} className="h-svh min-h-0 overflow-hidden">
         <AppSidebar />

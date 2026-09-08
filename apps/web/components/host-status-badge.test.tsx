@@ -12,10 +12,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 }
 
 function availability(state: HostAvailabilityState): HostAvailability {

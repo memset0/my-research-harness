@@ -8,7 +8,7 @@ describe('projectFromWorkspacePathname', () => {
   })
 
   it('rejects non-project and malformed routes', () => {
-    expect(projectFromWorkspacePathname('/manage/tmux')).toBeNull()
+    expect(projectFromWorkspacePathname('/manage/file-access')).toBeNull()
     expect(projectFromWorkspacePathname('/p/%ZZ/e/E0017')).toBeNull()
   })
 })

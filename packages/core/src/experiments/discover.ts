@@ -17,7 +17,8 @@
 // manually). A `MIGRATION_COLLISION` warning surfaces on the record so the
 // user can see and resolve.
 
-import { promises as fs } from 'node:fs'
+import type { Dirent } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import * as path from 'node:path'
 
 import type { Experiment } from '../types.js'
@@ -29,6 +30,44 @@ const EXPERIMENTS_SUBDIR = 'docs/experiments'
 
 export interface DiscoverExperimentsResult {
   experiments: Experiment[]
+}
+
+/**
+ * Experiment ids under `docs/experiments/`, from the directory listing alone —
+ * no document is opened. Canonical `E<NNNN>-<slug>/` folders and the tolerated
+ * legacy `E<NNNN>-<slug>.md` files both count, deduplicated and sorted. Use
+ * this where only identity matters (link resolution, membership checks);
+ * `readExperimentDoc` loads the one document a caller needs metadata for.
+ */
+export async function listExperimentIds(projectRoot: string): Promise<string[]> {
+  return [...(await listExperimentPaths(projectRoot)).keys()]
+}
+
+/** Canonical Markdown paths from one listing; folders win over legacy files. */
+export async function listExperimentPaths(projectRoot: string): Promise<Map<string, string>> {
+  const dir = path.join(projectRoot, EXPERIMENTS_SUBDIR)
+  let entries: Dirent[]
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Map()
+    throw err
+  }
+  const paths = new Map<string, string>()
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const folder = entry.name.match(EXPERIMENT_DIR_REGEX)
+      if (folder) paths.set(entry.name, `${EXPERIMENTS_SUBDIR}/${entry.name}/README.md`)
+      continue
+    }
+    if (!entry.isFile()) continue
+    const legacy = entry.name.match(EXPERIMENT_FILENAME_REGEX)
+    if (legacy) {
+      const id = `E${legacy[1]}-${legacy[2]}`
+      if (!paths.has(id)) paths.set(id, `${EXPERIMENTS_SUBDIR}/${entry.name}`)
+    }
+  }
+  return new Map([...paths].sort(([left], [right]) => left.localeCompare(right)))
 }
 
 /**

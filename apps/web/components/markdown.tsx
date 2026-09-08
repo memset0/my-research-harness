@@ -41,7 +41,7 @@ export type MarkdownArtifactSourceSurface = ArtifactSourceSurface
 
 export interface MarkdownArtifactLinkContext {
   inventory: ArtifactInventory
-  /** Absolute source Markdown path returned by the Experiment/Report API. */
+  /** Absolute or project-relative source Markdown path returned by the detail API. */
   sourceDocumentPath: string
   sourceSurface: MarkdownArtifactSourceSurface
   /** Surface-aware wrapper around `buildArtifactNavigationHref`. */

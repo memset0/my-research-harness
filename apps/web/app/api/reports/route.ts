@@ -5,7 +5,10 @@
 // shared Poller). The mtime stored on each summary comes from the cache's
 // per-file dirent stat; we layer it on here from the cache state.
 
-import { BackendReportsResponseSchema } from '@memon/core'
+import {
+  BackendReportsResponseSchema,
+  BackendResourceInventoryResponseSchema,
+} from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
 import { standaloneReport } from '../../../lib/server/standalone-dto'
@@ -30,12 +33,19 @@ export async function GET(req: NextRequest) {
         { status: 404 },
       )
     }
+    const inventoryOnly = url.searchParams.get('inventory') === '1'
+    const result = await standaloneServices(rt.config).documents.listReports(projectName, {
+      inventoryOnly,
+    })
+    if (inventoryOnly) {
+      return NextResponse.json(BackendResourceInventoryResponseSchema.parse(result))
+    }
     // Discover on request so directory bundles and their README changes are
     // visible alongside legacy standalone Markdown reports. The old
     // reportsCache intentionally remains file-only for backward compatibility.
-    const reports = BackendReportsResponseSchema.parse(
-      await standaloneServices(rt.config).documents.listReports(projectName),
-    ).reports.map((report) => standaloneReport(rt.config, report))
+    const reports = BackendReportsResponseSchema.parse(result).reports.map((report) =>
+      standaloneReport(rt.config, report),
+    )
     return NextResponse.json({ reports })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })

@@ -6,187 +6,88 @@ description: "Read experiment results from results.yaml as a structured, filtera
 # memon-read-results
 
 Read one Experiment's Results structure or values. Start with the structure
-summary when cell values are unnecessary; use the flat table for actual
-comparison. These are read-only projections. Annotation writes remain an
-optional operation owned by `memon-write-experiment-doc`.
-
-## Memon CLI issue handoff
-
-For every `memon` command used by this skill, follow the CLI issue handoff in
-`../PREFLIGHT.md`. After safely finishing the requested task, report any CLI
-crash, valid-input rejection, malformed/inconsistent output, or required CLI
-workaround. Do not mislabel an expected validation or domain-state rejection as
-a CLI bug.
+summary when cell values are unnecessary; use the flat table for real
+comparison. Both are read-only projections.
 
 ## Preflight
 
-Run this first:
+Follow `../PREFLIGHT.md` — FS-version check, deprecated Runs, CLI issue
+handoff.
+
+## Use it for
+
+Comparing metrics across Variants, extracting a parameter or metric column,
+feeding `jq`/`csvkit`/pandas, a human-readable overview, discovering declared
+columns and Variant rows without cell values, and reading optional Markdown
+column/value explanations.
+
+Not for writing: Variants, parameters, metrics, run assignments, comments, and
+field order all go through `memon-write-experiment-doc`.
+
+## Commands
 
 ```sh
-memon --project-root . --format json fs-version check
-```
-
-Proceed only when `status == "match"`. For every other status, stop and follow
-`../PREFLIGHT.md`.
-
-## When to use this skill
-
-- Comparing metrics across Variants (`V0001`, `V0002`, ...)
-- Extracting a specific parameter or metric column for analysis
-- Feeding results into `jq`, `csvkit`, pandas, or other tabular tools
-- Getting a human-readable overview of an Experiment's results
-- Discovering declared columns and Variant rows without loading cell values
-- Reading optional Markdown column/value explanations
-
-**Do NOT use this skill** when you need to:
-- Create or update Variants, parameters, metrics, or run assignments → use
-  `memon-write-experiment-doc`
-- Edit results.yaml comments or field ordering → edit the YAML file directly
-  via `memon-write-experiment-doc`
-
-## Command
-
-Structure-only summary (no parameter/metric cell values, Runs, Attempts, or
-provenance):
-
-```sh
+# structure only: columns, annotations, row identities — no cell values
 memon --project-root . experiment results summary <id-or-slug> --output json
-```
 
-Read all annotations or one exact description:
-
-```sh
-memon --project-root . --format json experiment results annotation get <id-or-slug>
-memon --project-root . --format json experiment results annotation get <id-or-slug> \
-  --column <key> [--value <value>]
-```
-
-Read actual table values only when needed:
-
-```
+# actual values
 memon --project-root . experiment results table <id-or-slug> [options]
+
+# column/value explanations
+memon --project-root . --format json experiment results annotation get <id-or-slug> \
+  [--column <key>] [--value <value>]
 ```
 
-### Options
+### `results table` options
 
 | Flag | Purpose | Default |
 |------|---------|---------|
-| `--variant <ids>` | Comma-separated Variant IDs to include | all |
-| `--status <statuses>` | Comma-separated statuses to include (`PLANNED`, `RUNNING`, `COMPLETED`, `FAILED`, `INCONCLUSIVE`, `DROPPED`) | all |
-| `--column <keys>` | Comma-separated column keys to include | all |
-| `--group <group>` | Column group filter: `parameter`, `metric`, or `all` | `all` |
-| `--output <fmt>` | Output format: `json` (default), `human`, `csv`, `markdown`, `yaml` | `json` |
+| `--variant <ids>` | Comma-separated Variant IDs | all |
+| `--status <statuses>` | `PLANNED`, `RUNNING`, `COMPLETED`, `FAILED`, `INCONCLUSIVE`, `DROPPED` | all |
+| `--column <keys>` | Comma-separated column keys | all |
+| `--group <group>` | `parameter`, `metric`, or `all` | `all` |
+| `--output <fmt>` | `json`, `human`, `csv`, `markdown`, `yaml` | `json` |
 
-### Output formats
+Filters are AND-composed, and an empty result is not an error — it returns zero
+rows with `meta.filteredVariants: 0`.
 
-**`json`** (default) — structured object with `columns`, `rows`, and `meta`.
-Best for programmatic processing with `jq` or direct parsing.
+`json` suits programmatic use, `human` a terminal, `csv` (RFC 4180, with
+integer `runs_count`/`attempts_count`) downstream tools, `markdown` embedding in
+a document, `yaml` a YAML consumer.
 
-**`human`** — aligned terminal table with `─` separators. Best for quick
-terminal inspection.
+## Metrics validity
 
-**`csv`** — RFC 4180 CSV with header row. `runs_count` and `attempts_count`
-are integer counts; pipe to `csvkit` or `pandas.read_csv()`.
+Every row carries `metricsValidity` (`valid`, `partial`, `unavailable`) and the
+`deprecatedRuns` behind it; `json`/`yaml` add a top-level `variantEligibility`
+array. It is computed at read time from the Run frontmatter `deprecated`
+boolean, so `results.yaml` holds no eligibility state and its stored numbers are
+never rewritten or masked.
 
-**`markdown`** — GFM table with bold Variant IDs. Best for embedding in
-reports or Markdown documents.
+A `partial` or `unavailable` row is not comparable. Report it as such — never
+average it in, never carry the old number forward as if current, and never
+compute a substitute (`../PREFLIGHT.md`).
 
-**`yaml`** — structured YAML mirroring the JSON structure. Best when the
-consumer prefers YAML.
+Filtered result references are not the full Variant history. Deprecated Runs
+remain associated and can be inspected by execution/recovery work for scripts,
+setup and prior problems, not included in this skill's result comparison.
+Current qualification checks all `Variant.runs`, not separate current-metric
+lineage: after a rerun, a `partial` label may reflect retained history. Report
+that limitation; neither treat new measurements as automatically qualified nor
+remove old associations to clear it.
 
-## Workflow
-
-### 1. Inspect structure without cell values
-
-```sh
-memon --project-root . experiment results summary E0001-foo --output json
-```
-
-The summary returns column schemas plus optional `description` and
-`valueDescriptions`, and row identities (`id`, `name`, `status`). It does not
-return parameter/metric values or execution details.
-
-### 2. Read all result values
-
-Quick overview of every Variant:
+## Examples
 
 ```sh
-memon --project-root . experiment results table E0001-foo --output json | jq '.rows[] | {id: .variantId, name: .variantName, status, metrics: .values}'
-```
-
-### 3. Filter to specific Variants
-
-Compare two specific Variants:
-
-```sh
-memon --project-root . experiment results table E0001-foo \
-  --variant V0001,V0002 \
-  --output json | jq '.rows[] | {id: .variantId, status, values}'
-```
-
-### 4. Filter to specific columns
-
-Extract only metric columns (exclude parameters):
-
-```sh
-memon --project-root . experiment results table E0001-foo \
-  --group metric \
-  --output csv
-```
-
-Extract specific columns:
-
-```sh
-memon --project-root . experiment results table E0001-foo \
-  --column precision,accuracy \
-  --output markdown
-```
-
-### 5. Filter by status
-
-Show only completed experiments:
-
-```sh
-memon --project-root . experiment results table E0001-foo \
-  --status COMPLETED \
-  --output human
-```
-
-Combine status and column filters:
-
-```sh
-memon --project-root . experiment results table E0001-foo \
-  --status COMPLETED,FAILED \
-  --group metric \
-  --output csv
-```
-
-### 6. Pipe to downstream tools
-
-JSON → `jq`:
-
-```sh
+# every Variant, id/name/status/values
 memon --project-root . experiment results table E0001-foo --output json \
-  | jq '[.rows[] | {id: .variantId, loss: .values.loss}] | sort_by(.loss)'
-```
+  | jq '.rows[] | {id: .variantId, name: .variantName, status, metricsValidity, values}'
 
-CSV → `csvkit`:
+# two Variants side by side
+memon --project-root . experiment results table E0001-foo --variant V0001,V0002 --output human
 
-```sh
-memon --project-root . experiment results table E0001-foo --output csv \
-  | csvstat
-```
-
-CSV → `pandas` (Python):
-
-```python
-import pandas as pd, json, subprocess
-result = subprocess.run(
-    ['memon', '--project-root', '.', 'experiment', 'results', 'table', 'E0001-foo', '--output', 'csv'],
-    capture_output=True, text=True, check=True
-)
-df = pd.read_csv(pd.io.common.StringIO(result.stdout))
-print(df[['variant_id', 'accuracy', 'loss']])
+# metric columns of completed Variants, for csvkit or pandas
+memon --project-root . experiment results table E0001-foo \
+  --status COMPLETED --group metric --output csv | csvstat
 ```
 
 ## Output structure (JSON)
@@ -196,7 +97,6 @@ print(df[['variant_id', 'accuracy', 'loss']])
   "experimentId": "E0001-foo",
   "resultsSchemaVersion": 1,
   "columns": [
-    // Schema column definitions (filtered by --column / --group)
     { "key": "accuracy", "label": "Accuracy", "group": "metric", "type": "number" }
   ],
   "columnAnnotations": {
@@ -210,33 +110,37 @@ print(df[['variant_id', 'accuracy', 'loss']])
       "variantId": "V0001",
       "variantName": "BF16",
       "status": "COMPLETED",
-      "runs": ["run-a"],       // accepted evidence runs
-      "attempts": [],           // failed / superseded attempts
-      "values": {               // one entry per selected column
-        "accuracy": 0.95
-      }
+      "runs": ["run-a"],            // selected evidence
+      "attempts": [],               // failed / superseded
+      "deprecatedRuns": [],         // withdrawn from evidence
+      "metricsValidity": "valid",
+      "values": { "accuracy": 0.95 }
+    }
+  ],
+  "variantEligibility": [
+    {
+      "variantId": "V0001",
+      "runs": ["run-a"],
+      "deprecatedRuns": [],
+      "eligibleRuns": ["run-a"],
+      "hasMetrics": true,
+      "metricsValidity": "valid"
     }
   ],
   "meta": {
-    "totalVariants": 3,         // total in results.yaml
-    "filteredVariants": 1,      // after applying --variant / --status
-    "filters": {
-      "columnGroup": "metric",
-      "variants": ["V0001"],
-      "columns": ["accuracy"]
-    }
+    "totalVariants": 3,
+    "filteredVariants": 1,
+    "filters": { "columnGroup": "metric", "variants": ["V0001"], "columns": ["accuracy"] }
   }
 }
 ```
 
 ## Notes
 
-- `null` values (unset metrics) render as `—` in human/markdown, empty string in
-  CSV, and `null` in JSON/YAML.
-- The `runs` and `attempts` arrays contain raw Run directory basenames. Use
-  `memon experiment link` or the experiment detail API to resolve them to full
-  Run documents.
-- Filtering is AND-composed: `--variant V0001 --status COMPLETED` returns only
-  Variants that match both criteria.
-- Empty filter results are not errors — the command returns zero rows with
-  `meta.filteredVariants: 0`.
+- Unset values render `—` in human/markdown, empty in CSV, `null` in
+  JSON/YAML.
+- `runs`, `attempts`, and `deprecatedRuns` hold Run directory basenames. They
+  are identities for citation; resolving one to its record is execution-level
+  work that belongs to the caller's task, not to a comparison read.
+- This skill is read-only and never touches a Journal file. `results.yaml` plus
+  read-time eligibility is the only source of Variant facts.

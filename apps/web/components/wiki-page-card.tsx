@@ -17,6 +17,7 @@ import { Badge } from './ui/badge'
 // fast-glob → fs). Mirrors WIKI_KINDS.
 export const WIKI_KIND_ORDER = [
   'meeting',
+  'roadmap',
   'finding',
   'bottleneck',
   'showcase',
@@ -103,7 +104,19 @@ export function WikiReviewBadge({
   state: ReviewState | null | undefined
   verifiedAt?: string | null
 }) {
-  if (!state) return null
+  if (!state) {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 font-mono text-[10px] text-muted-foreground"
+        data-slot="wiki-review-badge"
+        data-review-state="UNKNOWN"
+        title="Git review state is unavailable or has not been checked"
+      >
+        NOT_CHECKED
+      </Badge>
+    )
+  }
   const description = verifiedAt
     ? `${REVIEW_DESCRIPTION[state]} (verified ${verifiedAt})`
     : REVIEW_DESCRIPTION[state]
@@ -134,9 +147,7 @@ export function WikiDeprecatedBadge({
 }) {
   if (!deprecated) return null
   const label =
-    deprecated === true
-      ? 'deprecated'
-      : `deprecated ${deprecated.at}: ${deprecated.reason}`
+    deprecated === true ? 'deprecated' : `deprecated ${deprecated.at}: ${deprecated.reason}`
   return (
     <Badge
       variant="outline"

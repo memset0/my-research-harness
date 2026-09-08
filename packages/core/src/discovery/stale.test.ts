@@ -28,6 +28,7 @@ function makeExp(overrides: Partial<Run> = {}): Run {
       hypotheses: [],
       tags: [],
       archived: false,
+      deprecated: false,
     },
     sections: {
       motivation: null,
@@ -44,6 +45,7 @@ function makeExp(overrides: Partial<Run> = {}): Run {
     body: '',
     parseErrors: [],
     parseWarnings: [],
+    frontMatterKeys: [],
     ...overrides,
   }
 }

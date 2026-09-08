@@ -50,7 +50,6 @@ const BASE_EXP = {
   parseWarnings: [],
   effectiveCreatedAt: '2026-05-01T08:00:00+08:00',
   effectiveUpdatedAt: '2026-05-01T08:00:00+08:00',
-  memberRuns: [],
 }
 
 describe('ExperimentPage — Plan section', () => {

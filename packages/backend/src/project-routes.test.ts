@@ -9,8 +9,10 @@ import {
   BackendExperimentsResponseSchema,
   BackendHypothesesResponseSchema,
   BackendJournalCountResponseSchema,
+  BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
   BackendRunResponseSchema,
+  BackendResourceInventoryResponseSchema,
   BackendRunsResponseSchema,
 } from '@memon/core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -29,10 +31,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 const service = new FilesystemProjectService([
@@ -138,6 +137,25 @@ describe('Backend initial Project data routes', () => {
     )
   }, 30_000)
 
+  it('dispatches Run and Experiment inventories through their listing-only contracts', async () => {
+    const [runsResponse, experimentsResponse] = await Promise.all([
+      request('/api/backend/v1/runs?project=project-a&inventory=1', { actor: owner }),
+      request('/api/backend/v1/experiments?project=project-a&inventory=1', { actor: owner }),
+    ])
+    expect(runsResponse.status).toBe(200)
+    expect(experimentsResponse.status).toBe(200)
+    const runs = BackendResourceInventoryResponseSchema.parse(await runsResponse.json())
+    const experiments = BackendResourceInventoryResponseSchema.parse(
+      await experimentsResponse.json(),
+    )
+    expect(runs.items.length).toBeGreaterThan(0)
+    expect(experiments.items.length).toBeGreaterThan(0)
+    expect(
+      (await request('/api/backend/v1/runs?project=project-a&inventory=0', { actor: owner }))
+        .status,
+    ).toBe(404)
+  }, 30_000)
+
   it('requires service auth, a Project selector, and exact viewer tuple scope', async () => {
     const exactViewer = ActorContextSchema.parse({
       role: 'viewer',
@@ -161,6 +179,38 @@ describe('Backend initial Project data routes', () => {
     expect(
       (await request('/api/backend/v1/runs?project=project-copy', { actor: exactViewer })).status,
     ).toBe(403)
+  }, 30_000)
+
+  it('keeps merged Journal history owner-only while the legacy read stays viewer-scoped', async () => {
+    const exactViewer = ActorContextSchema.parse({
+      role: 'viewer',
+      scopes: [{ host: 'host-a', project: 'project-a' }],
+    })
+    expect(
+      (await request('/api/backend/v1/journal?project=project-a', { actor: exactViewer })).status,
+    ).toBe(200)
+    const denied = await request('/api/backend/v1/journal/history?project=project-a', {
+      actor: exactViewer,
+    })
+    expect(denied.status).toBe(403)
+    expect(await denied.text()).not.toContain('.memon/activity')
+
+    const history = BackendJournalHistoryResponseSchema.parse(
+      await (
+        await request('/api/backend/v1/journal/history?project=project-a', { actor: owner })
+      ).json(),
+    )
+    expect(history.project).toBe('project-a')
+    expect(history.legacy.present).toBe(true)
+    expect(history.invocations).toEqual([])
+    // Receipt diagnostics never travel on the legacy read.
+    const legacy = BackendJournalResponseSchema.parse(
+      await (
+        await request('/api/backend/v1/journal?project=project-a', { actor: owner })
+      ).json(),
+    )
+    expect(legacy).not.toHaveProperty('invocations')
+    expect(legacy).not.toHaveProperty('lastDigestAt')
   }, 30_000)
 
   it('keeps duplicate IDs Project-scoped and leaves mutations unavailable', async () => {

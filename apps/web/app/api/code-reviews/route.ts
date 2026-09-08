@@ -1,10 +1,12 @@
 // GET /api/code-reviews?project=NAME -> { codeReviews: CodeReviewSummary[] }
 //
-// Aggregated across the flat docs/code-review/ dir and every per-experiment
-// code-review dir, sorted by date desc. Served from the runtime's
-// codeReviewsCache (warmed at boot, refreshed by the shared Poller).
+// Rich responses preserve the runtime-cache projection where configured.
+// `inventory=1` performs direct name/path discovery instead.
 
-import { BackendCodeReviewsResponseSchema } from '@memon/core'
+import {
+  BackendCodeReviewsResponseSchema,
+  BackendResourceInventoryResponseSchema,
+} from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
 import { standaloneCodeReview } from '../../../lib/server/standalone-dto'
@@ -15,7 +17,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   try {
     const rt = await getRuntime()
-    const projectName = new URL(req.url).searchParams.get('project')
+    const search = new URL(req.url).searchParams
+    const projectName = search.get('project')
     if (!projectName) {
       return NextResponse.json(
         { error: { code: 'BAD_REQUEST', message: 'project query parameter is required' } },
@@ -26,6 +29,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `project "${projectName}" not configured` } },
         { status: 404 },
+      )
+    }
+    const inventoryOnly = search.get('inventory') === '1'
+    if (inventoryOnly) {
+      return NextResponse.json(
+        BackendResourceInventoryResponseSchema.parse(
+          await standaloneServices(rt.config).documents.listCodeReviews(projectName, {
+            inventoryOnly: true,
+          }),
+        ),
       )
     }
     if (rt.config.projects.some((project) => !Array.isArray(project.include))) {

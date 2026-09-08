@@ -1,15 +1,18 @@
 'use client'
 
 // v3 list page — a vertical stack of full-width experiment cards (one per
-// docs/experiments/E<NNNN>-<slug>.md). Each card embeds its member runs
-// as a compact table.
+// docs/experiments/E<NNNN>-<slug>/README.md).
+//
+// The list contract is deliberately Run-free: the summary DTO carries no
+// member runs, so this page never triggers a project-wide Run walk. Run
+// members (and their statuses) are shown on the experiment detail page,
+// which is the only surface that composes them. For the same reason the
+// experiment links opt out of Next's route prefetch — hovering a card
+// must not warm the detail route's Run composition.
 //
 // v4 (lifecycle-frontmatter-v4):
-//   - Card pill renders the manual ExperimentStatus from frontmatter, NOT
-//     the aggregate of member-run statuses.
-//   - Secondary line under the title summarises the run roster ("2 running
-//     · 5 done · 1 interrupted") instead of the old <finished>/<total>.
-//   - Archived items get a desaturated overlay + Archive icon prefix.
+//   - Card pill renders the manual ExperimentStatus from frontmatter.
+//   - Archived items get a desaturated overlay.
 //   - "Show archived" checkbox above the grid; default unchecked. Two
 //     listing modes per archive-frontmatter spec:
 //       * unchecked → active items first, then a bottom-of-list reveal
@@ -17,34 +20,24 @@
 //       * checked → archived + active interleaved in a single sort.
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, Pencil } from 'lucide-react'
 import {
-  fetchAnomalies,
   fetchExperimentDocs,
   type ExperimentDocSummary,
-  type MemberRunSummary,
   projectHost,
   projectName,
   projectQueryKey,
   type ProjectTarget,
 } from '../lib/api'
-import { AnomalyBanner } from './anomaly-banner'
 import { Badge } from './ui/badge'
 import { Checkbox } from './ui/checkbox'
-import { ExperimentStatusPill, StatusPill } from './status-pill'
+import { ExperimentStatusPill } from './status-pill'
 import { cn } from '../lib/utils'
 
 const STORAGE_KEY_SHOW_ARCHIVED = (project: ProjectTarget) =>
   `memon:list:${projectQueryKey(project).join(':')}:show-archived`
-
-// Member-run roster inside a card shows at most this many rows before it
-// starts scrolling. Tailwind v4 cannot see runtime-built class strings, so
-// the two derived literals stay written out below and MUST match this value:
-//   row height   -> `h-7`             (1.75rem per <tr>)
-//   container cap -> `max-h-[8.75rem]` (5 × 1.75rem)
-const RUN_ROSTER_VISIBLE_ROWS = 5
 
 function projectBasePath(project: ProjectTarget): string {
   const name = encodeURIComponent(projectName(project))
@@ -56,10 +49,6 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
   const { data: expData, isLoading: expLoading } = useQuery({
     queryKey: ['experiments', ...projectQueryKey(project)],
     queryFn: () => fetchExperimentDocs(project),
-  })
-  const { data: anomalyData } = useQuery({
-    queryKey: ['anomalies', ...projectQueryKey(project)],
-    queryFn: () => fetchAnomalies(project),
   })
 
   const [showArchived, setShowArchived] = useState(false)
@@ -126,8 +115,6 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
         </label>
       </div>
 
-      <AnomalyBanner project={project} />
-
       {showArchived ? (
         <CardList project={project} exps={integrated} />
       ) : (
@@ -146,11 +133,6 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
 
       {experiments.length === 0 && (
         <div className="text-sm text-muted-foreground">(no experiments yet)</div>
-      )}
-      {anomalyData?.anomalies.length === 0 && experiments.length > 0 && (
-        <div className="text-xs text-muted-foreground">
-          No anomalies — all runs bound consistently.
-        </div>
       )}
     </div>
   )
@@ -210,58 +192,23 @@ function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: Experim
         <div className="flex flex-col gap-0.5 min-w-0">
           <Link
             href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
+            prefetch={false}
             className="truncate font-mono text-xs text-muted-foreground hover:underline"
           >
             {exp.id}
           </Link>
-          <Link href={`${basePath}/e/${encodeURIComponent(exp.id)}`} className="hover:underline">
+          <Link
+            href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
+            prefetch={false}
+            className="hover:underline"
+          >
             <h3 className="truncate text-sm font-medium">{exp.frontMatter.title}</h3>
           </Link>
-          <div className="text-xs text-muted-foreground">{summariseRoster(exp.memberRuns)}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <ExperimentStatusPill status={exp.frontMatter.status} archived={archived} />
         </div>
       </header>
-      {exp.memberRuns.length > 0 && (
-        // Member-run roster: at most RUN_ROSTER_VISIBLE_ROWS rows are visible,
-        // the rest is reachable by scrolling *inside* the card so the vertical
-        // card stack stays scannable. The full roster stays in the DOM.
-        // overflow-x-hidden alongside overflow-y-auto defeats the CSS Overflow
-        // Module 3 "auto-x trap" (overflow-x: visible computes to auto when
-        // overflow-y is auto, producing a stray horizontal scrollbar).
-        <div
-          data-run-roster=""
-          data-run-roster-overflow={
-            exp.memberRuns.length > RUN_ROSTER_VISIBLE_ROWS ? '' : undefined
-          }
-          className="max-h-[8.75rem] overflow-y-auto overflow-x-hidden"
-        >
-          <table className="text-xs">
-            <tbody>
-              {exp.memberRuns.map((r) => (
-                // h-7 must stay in lockstep with the container's
-                // max-h-[8.75rem] above (5 × 1.75rem); border-t is inside the
-                // row height because box-sizing: border-box is the default.
-                <tr key={r.id} className="h-7 border-t">
-                  <td className="pr-2">
-                    <StatusPill status={r.status as never} archived={r.archived} />
-                  </td>
-                  <td className="pr-2">
-                    <Link
-                      href={`${basePath}/e/${encodeURIComponent(exp.id)}?run=${encodeURIComponent(r.id)}`}
-                      className="font-mono hover:underline"
-                    >
-                      {r.id}
-                    </Link>
-                  </td>
-                  <td className="pr-2 text-muted-foreground">{r.createdAt.slice(11, 16)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
       <footer className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap gap-1">
           {exp.frontMatter.tags.map((t) => (
@@ -271,17 +218,11 @@ function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: Experim
           ))}
         </div>
         <div className="ml-auto flex shrink-0 gap-3 font-mono">
-          <span
-            className="flex items-center gap-1"
-            title="Effective created (min over member runs)"
-          >
+          <span className="flex items-center gap-1" title="Created">
             <CalendarDays className="size-3" aria-hidden />
             {formatTimestamp(exp.effectiveCreatedAt)}
           </span>
-          <span
-            className="flex items-center gap-1"
-            title="Effective updated (max over member runs)"
-          >
+          <span className="flex items-center gap-1" title="Updated">
             <Pencil className="size-3" aria-hidden />
             {formatTimestamp(exp.effectiveUpdatedAt)}
           </span>
@@ -289,50 +230,6 @@ function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: Experim
       </footer>
     </article>
   )
-}
-
-/**
- * v4: secondary-line summary of the run roster. Returns a string like
- * "2 running · 5 done · 1 interrupted" omitting zero-count categories.
- * "no runs yet" when the experiment has no member runs.
- */
-function summariseRoster(runs: MemberRunSummary[]): string {
-  if (runs.length === 0) return 'no runs yet'
-  const counts: Record<string, number> = {
-    running: 0,
-    done: 0,
-    interrupted: 0,
-    failed: 0,
-    pending: 0,
-    unparseable: 0,
-  }
-  for (const r of runs) {
-    switch (r.status) {
-      case 'RUNNING':
-        counts.running!++
-        break
-      case 'FINISHED':
-        counts.done!++
-        break
-      case 'INTERRUPTED':
-        counts.interrupted!++
-        break
-      case 'FAILED':
-        counts.failed!++
-        break
-      case 'PENDING':
-        counts.pending!++
-        break
-      default:
-        counts.unparseable!++
-        break
-    }
-  }
-  const parts: string[] = []
-  for (const [label, n] of Object.entries(counts)) {
-    if (n > 0) parts.push(`${n} ${label}`)
-  }
-  return parts.join(' · ')
 }
 
 /**

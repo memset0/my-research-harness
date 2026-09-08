@@ -24,6 +24,7 @@ function makeExp(
     hypotheses: [],
     tags: [],
     archived: false,
+    deprecated: false,
     ...fmOverrides,
   }
   const sections: RunSections = {
@@ -50,6 +51,7 @@ function makeExp(
     body: '',
     parseErrors: [],
     parseWarnings: [],
+    frontMatterKeys: [],
     ...topOverrides,
   }
 }

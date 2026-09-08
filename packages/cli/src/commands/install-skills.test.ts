@@ -18,10 +18,27 @@ let prevSkillsEnv: string | undefined
 const FAKE_SKILLS = ['memon-foo', 'memon-bar'] as const
 const FAKE_PREFLIGHT = '# fake preflight\nbody\n'
 
+// A retired name plus the exact bytes one release shipped under it. The
+// digest literal is `sha256("SKILL.md\0" + sha256(RETIRED_SHIPPED_BODY) +
+// "\n")` — computed independently of the installer so these tests pin the
+// provenance contract, not the implementation's own arithmetic.
+const RETIRED_SKILL = 'memon-legacy'
+const RETIRED_SHIPPED_BODY = '# retired legacy skill\n'
+const RETIRED_SHIPPED_DEPOSIT =
+  '6a27e74d68d2ecb7026cbdf60e40e03dae0771a280121bb193d0e56307b87502'
+// A second released shape for the same name: `SKILL.md` plus a nested
+// `references/legacy.md`, the layout real skill deposits use. Digest literal is
+// `sha256` over the two sorted `<rel path>\0<sha256 of bytes>\n` lines,
+// computed independently of the installer.
+const RETIRED_NESTED_BODY = '# legacy reference\n'
+const RETIRED_NESTED_DEPOSIT =
+  'b196b8cc9ce1cc1e77e4efc2fe2bb057668e865693814da68c425f520eb6181b'
+
 beforeEach(async () => {
   // Build a fake @memon/skills source directory so tests don't depend on the
   // real bundled skills. Each fake skill has a single SKILL.md file, plus a
-  // sibling PREFLIGHT.md the synchroniser deposits as a sibling per target.
+  // sibling PREFLIGHT.md the synchroniser deposits as a sibling per target,
+  // plus the retirement registry it reads to classify no-longer-shipped dirs.
   skillsSrc = await fs.mkdtemp(join(tmpdir(), 'memon-skills-src-'))
   for (const name of FAKE_SKILLS) {
     const dir = join(skillsSrc, name)
@@ -29,6 +46,9 @@ beforeEach(async () => {
     await fs.writeFile(join(dir, 'SKILL.md'), `# ${name}\n`)
   }
   await fs.writeFile(join(skillsSrc, 'PREFLIGHT.md'), FAKE_PREFLIGHT)
+  await writeRegistry(skillsSrc, [
+    { name: RETIRED_SKILL, deposit_digests: [RETIRED_SHIPPED_DEPOSIT] },
+  ])
   prevSkillsEnv = process.env.MEMON_SKILLS_DIR
   process.env.MEMON_SKILLS_DIR = skillsSrc
 })
@@ -222,19 +242,22 @@ describe('runInstallSkills — multi-target install', () => {
     expect(await dirExists(explicit)).toBe(true)
   })
 
-  it('removes stale memon-* dirs independently in each target', async () => {
-    const stale = 'memon-notify'
+  it('replaces every still-shipped memon-* dir in each target', async () => {
     for (const sub of Object.values(AGENT_TARGETS)) {
-      await fs.mkdir(join(projectRoot, sub, stale), { recursive: true })
-      await fs.writeFile(join(projectRoot, sub, stale, 'SKILL.md'), '# old\n')
+      const dir = join(projectRoot, sub, FAKE_SKILLS[0])
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(join(dir, 'SKILL.md'), '# outdated\n')
+      await fs.writeFile(join(dir, 'gone-in-this-release.md'), 'stale\n')
     }
     const r = await runDefault()
     const json = JSON.parse(r.stdout)
     for (const t of json.targets) {
-      expect(t.removed).toContain(stale)
+      expect(t.removed).toContain(FAKE_SKILLS[0])
     }
     for (const sub of Object.values(AGENT_TARGETS)) {
-      expect(await dirExists(join(projectRoot, sub, stale))).toBe(false)
+      const dir = join(projectRoot, sub, FAKE_SKILLS[0])
+      expect(await fs.readFile(join(dir, 'SKILL.md'), 'utf8')).toBe(`# ${FAKE_SKILLS[0]}\n`)
+      expect(await pathExists(join(dir, 'gone-in-this-release.md'))).toBe(false)
     }
   })
 
@@ -264,6 +287,172 @@ describe('runInstallSkills — multi-target install', () => {
     for (const sub of Object.values(AGENT_TARGETS)) {
       expect(await dirExists(join(projectRoot, sub))).toBe(false)
     }
+  })
+})
+
+// ----- runInstallSkills: retirement of no-longer-shipped dirs -----
+
+describe('runInstallSkills — retirement provenance', () => {
+  let projectRoot: string
+  let claudeSkills: string
+  let retiredDir: string
+
+  beforeEach(async () => {
+    projectRoot = await fs.mkdtemp(join(tmpdir(), 'memon-retire-'))
+    claudeSkills = join(projectRoot, AGENT_TARGETS.claude)
+    retiredDir = join(claudeSkills, RETIRED_SKILL)
+  })
+  afterEach(async () => {
+    await fs.rm(projectRoot, { recursive: true, force: true })
+  })
+
+  async function run(opts: { dryRun?: boolean } = {}) {
+    return runCapturing(async () => {
+      await runInstallSkills({
+        projectRoot,
+        cwd: projectRoot,
+        format: 'json',
+        agents: ['claude'],
+        dryRun: opts.dryRun,
+      })
+    })
+  }
+
+  async function seedRetired(files: Record<string, string>) {
+    await fs.mkdir(retiredDir, { recursive: true })
+    for (const [name, body] of Object.entries(files)) {
+      await fs.writeFile(join(retiredDir, name), body)
+    }
+  }
+
+  function unshipped(stdout: string, name: string) {
+    const json = JSON.parse(stdout)
+    return json.targets[0].unshipped.find((d: { name: string }) => d.name === name)
+  }
+
+  it('deletes a retired dir whose tree matches a shipped deposit', async () => {
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'retired' })
+    expect(JSON.parse(r.stdout).targets[0].removed).toContain(RETIRED_SKILL)
+    expect(await dirExists(retiredDir)).toBe(false)
+  })
+
+  it('keeps a retired name whose SKILL.md was edited locally', async () => {
+    const customized = `${RETIRED_SHIPPED_BODY}\nlocal team addition\n`
+    await seedRetired({ 'SKILL.md': customized })
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'kept-modified' })
+    expect(JSON.parse(r.stdout).targets[0].removed).not.toContain(RETIRED_SKILL)
+    expect(await fs.readFile(join(retiredDir, 'SKILL.md'), 'utf8')).toBe(customized)
+  })
+
+  it('keeps a retired name that gained an extra local file', async () => {
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY, 'helper.sh': 'echo hi\n' })
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'kept-modified' })
+    expect(await fs.readFile(join(retiredDir, 'helper.sh'), 'utf8')).toBe('echo hi\n')
+    expect(await fs.readFile(join(retiredDir, 'SKILL.md'), 'utf8')).toBe(RETIRED_SHIPPED_BODY)
+  })
+
+  it('keeps a memon-* dir the harness never shipped', async () => {
+    const custom = join(claudeSkills, 'memon-team-deploy')
+    await fs.mkdir(custom, { recursive: true })
+    await fs.writeFile(join(custom, 'SKILL.md'), '# team skill\n')
+    const r = await run()
+    expect(unshipped(r.stdout, 'memon-team-deploy')).toMatchObject({ action: 'kept-unmanaged' })
+    expect(await fs.readFile(join(custom, 'SKILL.md'), 'utf8')).toBe('# team skill\n')
+  })
+
+  it('--dry-run reports the retirement decision without deleting', async () => {
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    const r = await run({ dryRun: true })
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'retired' })
+    expect(await dirExists(retiredDir)).toBe(true)
+  })
+
+  it('retires nothing and says so when the source carries no registry', async () => {
+    await fs.rm(join(skillsSrc, 'retired-skills.json'), { force: true })
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    const r = await run()
+    const json = JSON.parse(r.stdout)
+    expect(json.retirementRegistry.available).toBe(false)
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'kept-unmanaged' })
+    expect(await dirExists(retiredDir)).toBe(true)
+  })
+
+  it('rejects a malformed registry instead of retiring nothing silently', async () => {
+    await writeRegistry(skillsSrc, null)
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    const r = await run()
+    expect(r.exitCode).toBe(2)
+    expect(JSON.parse(r.stderr).error.code).toBe('BAD_REQUEST')
+    expect(await dirExists(retiredDir)).toBe(true)
+  })
+
+  it('rejects an unsupported registry version before removing a skill', async () => {
+    const registryPath = join(skillsSrc, 'retired-skills.json')
+    const registry = JSON.parse(await fs.readFile(registryPath, 'utf8'))
+    await fs.writeFile(registryPath, JSON.stringify({ ...registry, schema_version: 2 }))
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    const r = await run()
+    expect(r.exitCode).toBe(2)
+    expect(await fs.readFile(join(retiredDir, 'SKILL.md'), 'utf8')).toBe(RETIRED_SHIPPED_BODY)
+  })
+
+  it('retires a deposit whose released tree has nested files', async () => {
+    // Real deposits carry a `references/` subdirectory. A digest that skipped
+    // sub-directories, or that recorded non-normalised paths, would never
+    // match a shipped nested tree — every such install would then survive
+    // forever as `kept-modified`.
+    await writeRegistry(skillsSrc, [
+      { name: RETIRED_SKILL, deposit_digests: [RETIRED_NESTED_DEPOSIT] },
+    ])
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    await fs.mkdir(join(retiredDir, 'references'), { recursive: true })
+    await fs.writeFile(join(retiredDir, 'references', 'legacy.md'), RETIRED_NESTED_BODY)
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'retired' })
+    expect(await dirExists(retiredDir)).toBe(false)
+  })
+
+  it('matches any deposit in a name list, not only the first', async () => {
+    // A retired name accumulates one digest per release it shipped. Comparing
+    // against only the newest would leave every older untouched install
+    // undeleted forever.
+    await writeRegistry(skillsSrc, [
+      {
+        name: RETIRED_SKILL,
+        deposit_digests: [RETIRED_NESTED_DEPOSIT, RETIRED_SHIPPED_DEPOSIT],
+      },
+    ])
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'retired' })
+    expect(await dirExists(retiredDir)).toBe(false)
+  })
+
+  it('keeps a retired dir that gained a symlink', async () => {
+    // No released deposit ever contained a link. Treating one as absent would
+    // make the tree digest equal to the shipped tree and delete an operator's
+    // customization along with it.
+    await seedRetired({ 'SKILL.md': RETIRED_SHIPPED_BODY })
+    await fs.symlink('../memon-foo/SKILL.md', join(retiredDir, 'local-notes.md'))
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'kept-modified' })
+    expect(await pathExists(join(retiredDir, 'local-notes.md'))).toBe(true)
+  })
+
+  it('preserves and reports a retired name linked to an external skill', async () => {
+    await fs.mkdir(claudeSkills, { recursive: true })
+    const external = join(projectRoot, 'external-skill')
+    await fs.mkdir(external)
+    await fs.writeFile(join(external, 'SKILL.md'), RETIRED_SHIPPED_BODY)
+    await fs.symlink(external, retiredDir)
+    const r = await run()
+    expect(unshipped(r.stdout, RETIRED_SKILL)).toMatchObject({ action: 'kept-modified' })
+    expect((await fs.lstat(retiredDir)).isSymbolicLink()).toBe(true)
+    expect(await fs.readFile(join(external, 'SKILL.md'), 'utf8')).toBe(RETIRED_SHIPPED_BODY)
   })
 })
 
@@ -352,14 +541,15 @@ describe('runInstallSkills — PREFLIGHT.md sibling', () => {
   it('PREFLIGHT.md is NOT included in removed[] under the memon-* replacement scope', async () => {
     const claudeDir = join(projectRoot, AGENT_TARGETS.claude)
     await fs.mkdir(claudeDir, { recursive: true })
-    // Pre-populate a stale memon-* dir AND a stale PREFLIGHT.md.
-    await fs.mkdir(join(claudeDir, 'memon-renamed-old'), { recursive: true })
-    await fs.writeFile(join(claudeDir, 'memon-renamed-old', 'SKILL.md'), '# old\n')
+    // Pre-populate a stale copy of a still-shipped memon-* dir AND a stale
+    // PREFLIGHT.md.
+    await fs.mkdir(join(claudeDir, FAKE_SKILLS[0]), { recursive: true })
+    await fs.writeFile(join(claudeDir, FAKE_SKILLS[0], 'SKILL.md'), '# old\n')
     await fs.writeFile(join(claudeDir, 'PREFLIGHT.md'), 'STALE\n')
     const r = await runJson({ agents: ['claude'] })
     const json = JSON.parse(r.stdout)
     // memon-* is in removed[]; PREFLIGHT.md is NOT.
-    expect(json.targets[0].removed).toContain('memon-renamed-old')
+    expect(json.targets[0].removed).toContain(FAKE_SKILLS[0])
     expect(json.targets[0].removed).not.toContain('PREFLIGHT.md')
   })
 })
@@ -561,6 +751,19 @@ async function dirExists(p: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * Write the retirement registry into a fake source dir. `entries === null`
+ * writes a structurally invalid registry so the malformed-input path can be
+ * exercised.
+ */
+async function writeRegistry(
+  src: string,
+  entries: { name: string; deposit_digests: string[] }[] | null,
+): Promise<void> {
+  const payload = entries === null ? { schema_version: 1 } : { schema_version: 1, retired: entries }
+  await fs.writeFile(join(src, 'retired-skills.json'), `${JSON.stringify(payload)}\n`)
 }
 
 async function pathExists(p: string): Promise<boolean> {

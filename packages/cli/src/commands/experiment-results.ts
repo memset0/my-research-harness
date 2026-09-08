@@ -13,6 +13,7 @@ import {
   type ResultColumnAnnotations,
   type ResultScalar,
   type ResultsDocument,
+  type ResultsVariantEligibility,
   type ResultVariant,
   readExperimentDoc,
   renderResultColumnAnnotationsMarkdown,
@@ -32,6 +33,7 @@ import {
   renderHumanTable,
   type TableRow,
 } from '../lib/output.js'
+import { loadResultsEligibility, type ResultsEligibility } from '../lib/results-eligibility.js'
 
 export interface ExperimentResultsInput {
   projectRoot?: string
@@ -51,10 +53,18 @@ export interface ExperimentResultsInput {
 }
 
 export async function runExperimentResults(input: ExperimentResultsInput): Promise<void> {
-  const { experiment, document } = await loadResults(input)
+  const { experiment, document, projectRoot } = await loadResults(input)
   const selectedColumns = selectColumns(document.columns, input)
   const selectedVariants = selectRows(document.variants, input)
-  const output = buildTableOutput(experiment.id, document, selectedColumns, selectedVariants, input)
+  const eligibility = await loadResultsEligibility(projectRoot, document)
+  const output = buildTableOutput(
+    experiment.id,
+    document,
+    selectedColumns,
+    selectedVariants,
+    input,
+    eligibility,
+  )
 
   const fmt = resolveFormat(input.output)
   switch (fmt) {
@@ -83,12 +93,15 @@ interface ResultsBaseInput {
   format: OutputFormat
 }
 
-async function loadResults(input: ResultsBaseInput): Promise<{
+interface LoadedResults {
   experiment: Experiment
   document: ResultsDocument
   raw: string
   path: string
-}> {
+  projectRoot: string
+}
+
+async function loadResults(input: ResultsBaseInput): Promise<LoadedResults> {
   const context = await resolveContext(input)
   const projectRoot = singleProjectRoot(context)
   const projectName = context.config.projects[0]!.name
@@ -122,6 +135,7 @@ async function loadResults(input: ResultsBaseInput): Promise<{
     document: resultsDoc.data,
     raw: resultsDoc.raw,
     path: resultsDoc.path,
+    projectRoot,
   }
 }
 
@@ -136,14 +150,21 @@ interface ResultsSummary {
   columns: Array<
     ResultColumn & { description?: string; valueDescriptions?: Record<string, string> }
   >
-  rows: Array<{ id: string; name: string; status: string }>
+  rows: Array<{
+    id: string
+    name: string
+    status: string
+    metricsValidity: 'valid' | 'partial' | 'unavailable'
+    deprecatedRuns: string[]
+  }>
   meta: { columnCount: number; rowCount: number }
 }
 
 export async function runExperimentResultsSummary(
   input: ExperimentResultsSummaryInput,
 ): Promise<void> {
-  const { experiment, document } = await loadResults(input)
+  const { experiment, document, projectRoot } = await loadResults(input)
+  const eligibility = await loadResultsEligibility(projectRoot, document)
   const summary: ResultsSummary = {
     experimentId: experiment.id,
     columns: document.columns.map((column) => ({
@@ -155,11 +176,16 @@ export async function runExperimentResultsSummary(
         ? {}
         : { valueDescriptions: document.columnAnnotations[column.key]!.valueDescriptions }),
     })),
-    rows: document.variants.map((variant) => ({
-      id: variant.id,
-      name: variant.name,
-      status: variant.status,
-    })),
+    rows: document.variants.map((variant) => {
+      const row = eligibility.byVariant[variant.id]
+      return {
+        id: variant.id,
+        name: variant.name,
+        status: variant.status,
+        metricsValidity: row?.metricsValidity ?? 'valid',
+        deprecatedRuns: row?.deprecatedRuns ?? [],
+      }
+    }),
     meta: { columnCount: document.columns.length, rowCount: document.variants.length },
   }
   const format = resolveSummaryFormat(input.output)
@@ -187,9 +213,11 @@ function renderResultsSummary(summary: ResultsSummary, format: 'human' | 'markdo
   lines.push('', `### Rows (${summary.meta.rowCount})`, '')
   if (summary.rows.length === 0) lines.push('_No rows._')
   else {
-    lines.push('| Variant | Name | Status |', '|---|---|---|')
+    lines.push('| Variant | Name | Status | Metrics |', '|---|---|---|---|')
     for (const row of summary.rows) {
-      lines.push(`| \`${row.id}\` | ${escapeTableCell(row.name)} | \`${row.status}\` |`)
+      lines.push(
+        `| \`${row.id}\` | ${escapeTableCell(row.name)} | \`${row.status}\` | ${row.metricsValidity}${row.deprecatedRuns.length > 0 ? ` (deprecated: ${row.deprecatedRuns.join(', ')})` : ''} |`,
+      )
     }
   }
   return `${lines.join('\n')}\n`
@@ -353,6 +381,10 @@ export interface TableOutputFull {
   columnAnnotations?: ResultColumnAnnotations
   rows: TableRow[]
   meta: TableOutputMeta
+  /** Per-Variant evidence state, projected from Run deprecation at read time. */
+  variantEligibility: ResultsVariantEligibility[]
+  /** Deprecated Run ids cited by these Variants, for qualification provenance. */
+  deprecatedRuns: string[]
 }
 
 function buildTableOutput(
@@ -361,7 +393,9 @@ function buildTableOutput(
   columns: ResultColumn[],
   variants: ResultVariant[],
   input: ExperimentResultsInput,
+  eligibility: ResultsEligibility,
 ): TableOutputFull {
+  const deprecatedRuns = new Set(eligibility.deprecatedRuns)
   const rows: TableRow[] = variants.map((v) => {
     const values: Record<string, ResultScalar> = {}
     for (const col of columns) {
@@ -371,13 +405,18 @@ function buildTableOutput(
         values[col.key] = v.metrics[col.key] ?? null
       }
     }
+    const row = eligibility.byVariant[v.id]
     return {
       variantId: v.id,
       variantName: v.name,
       status: v.status,
-      runs: v.runs,
-      attempts: v.attempts,
+      runs: row?.eligibleRuns ?? v.runs,
+      attempts: deprecatedRuns.size
+        ? v.attempts.filter((id) => !deprecatedRuns.has(id))
+        : v.attempts,
       values,
+      metricsValidity: row?.metricsValidity ?? 'valid',
+      deprecatedRuns: row?.deprecatedRuns ?? [],
     }
   })
 
@@ -412,6 +451,8 @@ function buildTableOutput(
       filteredVariants: rows.length,
       filters,
     },
+    variantEligibility: eligibility.variants,
+    deprecatedRuns: eligibility.deprecatedRuns,
   }
 }
 

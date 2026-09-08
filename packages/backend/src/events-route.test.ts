@@ -27,10 +27,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 class TrackingTimer implements BackendEventTimer {

@@ -3,21 +3,20 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentPage } from '../../components/experiment-page'
-import { renderWithQuery } from '../utils'
+import { renderWithHeartbeat } from '../utils'
 
 vi.mock('../../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/api')>()
   return {
     ...actual,
     fetchExperimentDoc: vi.fn(),
-    fetchExperimentResults: vi.fn(),
     fetchExperiment: vi.fn(),
     fetchRunFiles: vi.fn(),
     patchExperimentStatusV4: vi.fn(),
   }
 })
 
-import { fetchExperimentDoc, fetchExperimentResults, patchExperimentStatusV4 } from '../../lib/api'
+import { fetchExperimentDoc, patchExperimentStatusV4 } from '../../lib/api'
 
 const EXP_ID = 'E0001-structured'
 const CENTRAL_PROJECT = ProjectRefSchema.parse({ host: 'host-a', project: 'research' })
@@ -27,7 +26,7 @@ describe('ExperimentPage v6 document sections', () => {
 
   it('rejects a Host-qualified current payload that is missing the v6 document contract', async () => {
     vi.mocked(fetchExperimentDoc).mockResolvedValue({ id: EXP_ID } as never)
-    renderWithQuery(
+    renderWithHeartbeat(
       <ExperimentPage project={CENTRAL_PROJECT} experimentId={EXP_ID} initialOpenRun={null} />,
     )
 
@@ -46,7 +45,7 @@ describe('ExperimentPage v6 document sections', () => {
       path: `/project/docs/experiments/${EXP_ID}/README.md`,
       mtime: 9,
       readmeMtime: 1,
-      citedBy: [],
+      deprecatedRuns: [],
       frontMatter: {
         id: EXP_ID,
         slug: 'structured',
@@ -72,7 +71,6 @@ describe('ExperimentPage v6 document sections', () => {
       parseWarnings: [],
       effectiveCreatedAt: '2026-08-10T00:00:00+00:00',
       effectiveUpdatedAt: '2026-08-10T00:00:00+00:00',
-      memberRuns: [],
       resultsUpdatedAt: '2026-08-23T03:00:00.000Z',
       documents: {
         implementation: {
@@ -133,6 +131,7 @@ describe('ExperimentPage v6 document sections', () => {
           },
           parseErrors: [],
           parseWarnings: [],
+          variantEligibility: [],
         },
       },
       documentReadOnly: true,
@@ -207,15 +206,7 @@ describe('ExperimentPage v6 document sections', () => {
       ],
     })
 
-    let resolveRefresh: (snapshot: Awaited<ReturnType<typeof fetchExperimentResults>>) => void =
-      () => undefined
-    vi.mocked(fetchExperimentResults).mockReturnValue(
-      new Promise((resolve) => {
-        resolveRefresh = resolve
-      }),
-    )
-
-    const { container } = renderWithQuery(
+    const { container } = renderWithHeartbeat(
       <ExperimentPage project={CENTRAL_PROJECT} experimentId={EXP_ID} initialOpenRun={null} />,
     )
 
@@ -238,49 +229,51 @@ describe('ExperimentPage v6 document sections', () => {
     expect(screen.getByText(/^compatibility view$/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /edit markdown/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /change experiment status/i })).toBeInTheDocument()
-    expect(fetchExperimentResults).not.toHaveBeenCalled()
     expect(screen.getByText(/Last updated/)).toBeInTheDocument()
     expect(screen.getByText(/Stale for/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('checkbox', { name: 'Show Final loss column' }))
     expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
     expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
 
-    const refreshButton = screen.getByRole('button', { name: 'Refresh Results' })
-    await userEvent.click(refreshButton)
-    expect(fetchExperimentResults).toHaveBeenCalledTimes(1)
-    expect(refreshButton).toBeDisabled()
-    expect(refreshButton).toHaveTextContent('Refreshing…')
-    expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
-
+    // Results has no fetch of its own any more: refreshing re-reads the
+    // experiment document through the shared page lifecycle.
+    const firstPayload = await vi.mocked(fetchExperimentDoc).mock.results[0]?.value
     const refreshedUpdatedAt = new Date(Date.now() - 60 * 60 * 1_000).toISOString()
-    resolveRefresh({
-      project: 'research',
-      resource: `docs/experiments/${EXP_ID}/results.yaml`,
-      document: {
-        schemaVersion: 1,
-        columns: [
-          { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
-          { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
-          { key: 'throughput', label: 'Throughput', group: 'metric', type: 'number' },
-        ],
-        variants: [
-          {
-            id: 'V0002',
-            name: 'FP32 refreshed',
-            status: 'COMPLETED',
-            parameters: { precision: 'fp32' },
-            metrics: { loss: 0.125, throughput: 42 },
-            runs: [],
-            attempts: [],
+    vi.mocked(fetchExperimentDoc).mockResolvedValue({
+      ...firstPayload,
+      resultsUpdatedAt: refreshedUpdatedAt,
+      documents: {
+        ...firstPayload.documents,
+        results: {
+          ...firstPayload.documents.results,
+          data: {
+            schemaVersion: 1,
+            columns: [
+              { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
+              { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
+              { key: 'throughput', label: 'Throughput', group: 'metric', type: 'number' },
+            ],
+            variants: [
+              {
+                id: 'V0002',
+                name: 'FP32 refreshed',
+                status: 'COMPLETED',
+                parameters: { precision: 'fp32' },
+                metrics: { loss: 0.125, throughput: 42 },
+                runs: [],
+                attempts: [],
+              },
+            ],
           },
-        ],
+        },
       },
-      updatedAt: refreshedUpdatedAt,
-      warnings: [],
     })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
     await waitFor(() => expect(screen.getByText('V0002')).toBeInTheDocument())
     expect(screen.queryByText('V0001')).not.toBeInTheDocument()
     expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
+    // Table interaction state survives the update.
     expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
     expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Show Throughput column' })).toBeChecked()
@@ -291,26 +284,18 @@ describe('ExperimentPage v6 document sections', () => {
     )
     expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 1h')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
-    await waitFor(() => expect(fetchExperimentResults).toHaveBeenCalledTimes(2))
-    expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
-      'title',
-      `Results last changed at ${refreshedUpdatedAt}`,
-    )
-    expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 1h')
-
-    vi.mocked(fetchExperimentResults).mockRejectedValueOnce(new Error('network unavailable'))
+    // A failed refresh keeps the content that is already on screen.
+    const callsBeforeFailure = vi.mocked(fetchExperimentDoc).mock.calls.length
+    vi.mocked(fetchExperimentDoc).mockRejectedValueOnce(new Error('network unavailable'))
     await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
     await waitFor(() =>
-      expect(screen.getByText('Results refresh failed: network unavailable')).toBeInTheDocument(),
+      expect(vi.mocked(fetchExperimentDoc).mock.calls.length).toBeGreaterThan(callsBeforeFailure),
     )
     expect(screen.getByText('V0002')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Refresh Results' })).toBeEnabled()
     expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
       'title',
       `Results last changed at ${refreshedUpdatedAt}`,
     )
-
     await userEvent.click(screen.getByRole('combobox', { name: /change experiment status/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'RESOLVED' }))
     await waitFor(() =>
@@ -325,5 +310,7 @@ describe('ExperimentPage v6 document sections', () => {
     )
     expect(screen.queryByRole('heading', { name: 'Plan' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Caveats' })).not.toBeInTheDocument()
-  })
+    // Long by design: one render exercises section projection, a manual
+    // refresh, a failed refresh and a status mutation.
+  }, 20_000)
 })

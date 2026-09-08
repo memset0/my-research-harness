@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -30,5 +30,37 @@ describe('SKILL_NAMES', () => {
     for (const name of SKILL_NAMES) {
       expect(statSync(join(packageRoot, name, 'SKILL.md')).isFile()).toBe(true)
     }
+  })
+})
+
+describe('retired-skills.json', () => {
+  const registry = JSON.parse(readFileSync(join(packageRoot, 'retired-skills.json'), 'utf8'))
+  const entries: { name: string; deposit_digests: string[] }[] = registry.retired
+
+  it('never lists a name the bundle still ships', () => {
+    // A shipped name in the registry would let `install-skills` treat a live
+    // skill as retirable.
+    for (const entry of entries) {
+      expect(SKILL_NAMES).not.toContain(entry.name)
+      expect(bundledDirs).not.toContain(entry.name)
+    }
+  })
+
+  it('gives every retired name at least one full-length sha256 deposit', () => {
+    // An empty or malformed digest list matches nothing, so a stale managed
+    // copy would silently survive every future install.
+    expect(entries.length).toBeGreaterThan(0)
+    for (const entry of entries) {
+      expect(entry.deposit_digests.length).toBeGreaterThan(0)
+      for (const digest of entry.deposit_digests) {
+        expect(digest).toMatch(/^[0-9a-f]{64}$/)
+      }
+    }
+  })
+
+  it('covers the two skills this release retired', () => {
+    const names = entries.map((e) => e.name)
+    expect(names).toContain('memon-append-journal')
+    expect(names).toContain('memon-digest-journal')
   })
 })

@@ -16,10 +16,7 @@ const caps: BackendCapabilities = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: false,
-  terminal: false,
   slurm: false,
-  herdr: false,
 }
 const servers: ReturnType<typeof createBackendServer>[] = []
 afterEach(async () => {
@@ -64,17 +61,14 @@ function service(): BackendMutationService {
       mtime: 2,
       hash: 'a'.repeat(40),
       finalContent: input.content,
-      journalChanged: false,
+      activityRecorded: false,
     })),
     writeExperimentReadme: vi.fn(async (_project, _id, input) => ({
       ok: true as const,
       mtime: 2,
       hash: 'a'.repeat(40),
       finalContent: input.content,
-      journalChanged: true,
-    })),
-    appendJournal: vi.fn(async (_p, input) => ({
-      appended: { timestamp: '2026-08-26T00:00:00Z', ...input },
+      activityRecorded: true,
     })),
     createExperiment: vi.fn(async () => ({
       ok: true as const,
@@ -160,7 +154,7 @@ describe('Backend mutation route family', () => {
     })
     expect(stream.currentSequence).toBe(1)
   })
-  it('routes journal append and returns no filesystem path', async () => {
+  it('rejects the retired manual journal append route', async () => {
     const s = service()
     const stream = new BackendEventStream({
       instanceEpoch: '123e4567-e89b-42d3-a456-426614174000',
@@ -172,10 +166,8 @@ describe('Backend mutation route family', () => {
       'POST',
       { tag: 'NOTE', body: 'safe' },
     )
-    expect(response.status).toBe(200)
-    expect(JSON.stringify(await response.json())).not.toContain('/')
-    expect(s.appendJournal).toHaveBeenCalledOnce()
-    expect(stream.currentSequence).toBe(1)
+    expect(response.status).toBe(404)
+    expect(stream.currentSequence).toBe(0)
   })
   it('returns bounded path-free conflict without retry', async () => {
     const s = service()

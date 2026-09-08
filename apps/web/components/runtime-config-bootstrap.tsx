@@ -2,31 +2,22 @@
 // needs at mount-time) and emit an inline JSON script that the client
 // reads during hydration. Mirrors `session-bootstrap.tsx`.
 //
-// Currently exposes only the git-status polling cadence; future fields
-// (other client-relevant config knobs) can extend `RuntimeConfigPayload`.
+// The payload shape lives in `lib/runtime-config.ts` next to its reader.
 
+import { DEFAULT_FILE_ACCESS_OPTIONS } from '@memon/core'
 import { getRuntime } from '../lib/runtime'
+import type { RuntimeConfigPayload } from '../lib/runtime-config'
 
-export interface RuntimeConfigPayload {
-  role: 'standalone' | 'central'
-  gitStatus: {
-    intervalMs: number
-  }
-  terminal: {
-    tmuxEnabled: boolean
-    herdrEnabled: boolean
-  }
-}
+export type { RuntimeConfigPayload }
 
 export async function readSerializedRuntimeConfig(): Promise<RuntimeConfigPayload> {
   const rt = await getRuntime()
+  const heartbeatMs = rt.config.fileAccess?.heartbeatMs
   return {
     role: rt.config.central ? 'central' : 'standalone',
     gitStatus: { intervalMs: rt.config.gitStatus.intervalMs },
-    terminal: {
-      tmuxEnabled: rt.config.terminal.tmuxEnabled,
-      herdrEnabled: rt.config.terminal.herdr !== undefined,
-    },
+    // Absent config keys fall back to the store's own default cadence.
+    fileAccess: { heartbeatMs: heartbeatMs ?? DEFAULT_FILE_ACCESS_OPTIONS.heartbeatMs },
   }
 }
 

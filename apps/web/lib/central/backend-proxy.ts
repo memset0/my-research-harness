@@ -87,7 +87,11 @@ function projectFromPath(route: MappedBackendRoute, pathname: string): string {
   return pathSegments[projectIndex]!
 }
 
-function validateSelectors(
+/**
+ * Validate the Host/Project selectors a Backend-owned route requires and
+ * return the upstream query with the central-only `host` selector removed.
+ */
+export function resolveBackendSelectors(
   route: MappedBackendRoute,
   publicUrl: URL,
 ): { host: string; backendSearch: URLSearchParams } {
@@ -119,7 +123,24 @@ function validateSelectors(
   return { host: host.data, backendSearch }
 }
 
-function routeCapabilities(route: MappedBackendRoute, method: string): CapabilityName[] {
+/** Exact Project name a route selects, or null for a Host-global route. */
+export function selectedBackendProject(route: MappedBackendRoute, publicUrl: URL): string | null {
+  switch (route.ownership.scope) {
+    case 'project-query':
+    case 'resource':
+      return exactlyOneSelector(publicUrl.searchParams, 'project')
+    case 'project-path':
+      return projectFromPath(route, publicUrl.pathname)
+    case 'global':
+      return null
+  }
+}
+
+/** Capabilities a Host must advertise before a route may execute. */
+export function backendRouteCapabilities(
+  route: MappedBackendRoute,
+  method: string,
+): CapabilityName[] {
   const required = new Set<CapabilityName>()
   if (route.ownership.capability) required.add(route.ownership.capability)
   else if (route.manifestRoute === 'events/route.ts') required.add('events')
@@ -138,17 +159,16 @@ function routeCapabilities(route: MappedBackendRoute, method: string): Capabilit
   return [...required]
 }
 
-function requireRouteCapabilities(
-  registry: CentralHostRegistry,
-  host: string,
+/** Reject a route whose required capabilities the Host does not advertise. */
+export function assertRouteCapabilities(
+  capabilities: BackendCapabilities | null | undefined,
   route: MappedBackendRoute,
   method: string,
 ): void {
-  const capabilities = registry.getAvailability(host)?.capabilities
   if (!capabilities) {
     proxyError('UNSUPPORTED_CAPABILITY', 'Backend capabilities are unavailable')
   }
-  for (const capability of routeCapabilities(route, method)) {
+  for (const capability of backendRouteCapabilities(route, method)) {
     if (!capabilities[capability]) {
       proxyError(
         'UNSUPPORTED_CAPABILITY',
@@ -312,9 +332,13 @@ export async function proxyCentralApiRequest(
 ): Promise<Response> {
   const publicUrl = new URL(request.url)
   const route = mapCentralApiToBackend(request.method, publicUrl.pathname)
-  const { host, backendSearch } = validateSelectors(route, publicUrl)
+  const { host, backendSearch } = resolveBackendSelectors(route, publicUrl)
   const hostConfig = options.registry.requireUsableHost(host)
-  requireRouteCapabilities(options.registry, host, route, request.method)
+  assertRouteCapabilities(
+    options.registry.getAvailability(host)?.capabilities,
+    route,
+    request.method,
+  )
 
   const maxControlBodyBytes = options.maxControlBodyBytes ?? MAX_BACKEND_CONTROL_BODY_BYTES
   if (!Number.isSafeInteger(maxControlBodyBytes) || maxControlBodyBytes <= 0) {

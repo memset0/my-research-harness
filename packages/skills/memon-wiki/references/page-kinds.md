@@ -8,6 +8,7 @@ The canonical reference for `memon-wiki`. One directory per kind under
 - [Choosing a kind](#choosing-a-kind)
 - [Shared frontmatter](#shared-frontmatter)
 - [`meeting`](#meeting)
+- [`roadmap`](#roadmap)
 - [`finding`](#finding)
 - [`bottleneck`](#bottleneck)
 - [`question`](#question)
@@ -25,6 +26,8 @@ Ask what the page *is for*, not what it contains:
 
 - Something happened at a point in time and people agreed things →
   `meeting`.
+- Goals, research questions, and directions need a navigable research tree →
+  `roadmap`.
 - Something is now known, with data behind it → `finding`.
 - Something is holding the project back → `bottleneck`.
 - Something is not known and someone should find out → `question`.
@@ -65,12 +68,14 @@ not recognise.
 `E<NNNN>/V<NNNN>` (a Variant row in that Experiment's `results.yaml`),
 `H<NNNN>`, `W<NNNN>`, and a run directory base name
 (`zero-snr-eval-260502-110000`). The Variant form is the preferred citation
-for a `finding` — it addresses the exact Results row. A source that cannot be
-resolved lints `WIKI_SOURCE_UNRESOLVED` and is ignored for staleness.
+for a `finding` — it addresses the exact Results row. CLI operations preserve
+these references and validate their syntax without opening their targets.
+Target existence and `WIKI_SOURCE_UNRESOLVED` checks belong to the Web view.
 
-**Staleness** is derived, not authored: a page is `stale` when any cited
-artifact changed after the page's `updated_at`. `memon wiki stale` lists them.
-Re-read the source and either update the page or explain why it still holds.
+**Staleness** is derived in Web, not authored: a page is `stale` when any cited
+artifact changed after the page's `updated_at`. Inspect source freshness in Web;
+the CLI does not resolve targets or offer a source-staleness scan. Re-read the
+source and either update the page or explain why it still holds.
 
 ## `meeting`
 
@@ -86,6 +91,25 @@ settled outcome, an action item has an owner and is not done yet. Cite every
 Experiment discussed in `sources`. Do not paraphrase away disagreement; a
 meeting page that records only the consensus loses the reason the consensus
 was reached.
+
+## `roadmap`
+
+A content-first research tree connecting goals, questions, and directions.
+
+- Status: none. Describe relevant node state in prose; there is no page-level
+  lifecycle.
+- Recommended H2s: none — the content determines the tree's shape.
+
+Use headings and nested lists to show how questions and directions refine a
+larger goal. Nodes are not Experiment slots: do not require one Experiment per
+node or turn the page into an Experiment inventory. Proposed goals and open
+questions need no evidence.
+
+Cite an Experiment or Variant inline wherever its evidence bears on a node,
+and say what role that evidence plays. The relationship is many-to-many: one
+artifact can support multiple nodes or roadmaps, and one node can cite multiple
+artifacts. Keep detailed designs, metrics, execution state, and experiment-local
+tasks in the Experiment document rather than duplicating them here.
 
 ## `finding`
 
@@ -202,6 +226,7 @@ canonical kind rather than deleting anything.
 | kind | status vocabulary | required | recommended H2s |
 |---|---|---|---|
 | `meeting` | — | `date` | Attendees, Notes, Decisions, Action items |
+| `roadmap` | — | — | content-defined research tree |
 | `finding` | `TENTATIVE` / `VERIFIED` / `RETRACTED` | non-empty `sources` | Claim, Evidence, Limits |
 | `bottleneck` | `OPEN` / `MITIGATED` / `RESOLVED` | — | Problem, Impact, Status, Candidates |
 | `question` | `OPEN` / `ANSWERED` / `DROPPED` | — | Question, Context, Answer |

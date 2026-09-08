@@ -4,6 +4,7 @@
 // payload without importing the other role's implementation.
 
 import { z } from 'zod'
+import { JournalInvocationRecordSchema } from './journal/invocation.js'
 
 export const BACKEND_API_MAJOR = 1 as const
 
@@ -11,7 +12,6 @@ const HOST_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9-]+$/
 const RELEASE_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const REVISION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-const TERMINAL_SESSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 /** Durable configured Host identity. It is never derived from an OS hostname. */
 export const HostIdSchema = z
@@ -223,6 +223,9 @@ const BackendRunFrontMatterSchema = z
     hypotheses: z.array(z.string()),
     tags: z.array(z.string()),
     archived: z.boolean(),
+    // v6: research-eligibility flag, orthogonal to `archived` and status.
+    // Defaulted so payloads produced before v6 still validate.
+    deprecated: z.boolean().default(false),
   })
   .strict()
 
@@ -236,6 +239,8 @@ export const BackendRunSummarySchema = z
     hasReadme: z.boolean(),
     stale: z.boolean(),
     archived: z.boolean(),
+    /** v6: mirrors `frontMatter.deprecated`; excluded from research by default. */
+    deprecated: z.boolean().default(false),
     frontMatter: BackendRunFrontMatterSchema,
     parseErrors: z.array(BackendParseIssueSchema),
     parseWarnings: z.array(BackendParseIssueSchema),
@@ -302,24 +307,6 @@ const BackendExperimentFrontMatterSchema = z
   })
   .strict()
 
-const BackendMemberRunSchema = z
-  .object({
-    id: BackendOpaqueResourceIdSchema,
-    resource: BackendOpaqueResourceIdSchema,
-    status: z.string(),
-    archived: z.boolean(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-    finishedAt: z.string().nullable(),
-    host: z.string().nullable(),
-    gpus: z.array(z.number().int()),
-    wandb: z.string().nullable(),
-    artifacts: z
-      .array(z.object({ path: BackendOpaqueResourceIdSchema, description: z.string() }).strict())
-      .max(1024),
-  })
-  .strict()
-
 const BackendExperimentSectionsSchema = z
   .object({
     motivation: z.string().nullable(),
@@ -336,6 +323,12 @@ const BackendExperimentSectionsSchema = z
   })
   .strict()
 
+/**
+ * The Experiment document projection, shared by the list and the detail. One
+ * Experiment document and nothing else: no projection depends on the Run walk,
+ * so the effective timestamps here are always the document's own. A Run's own
+ * metadata is served by the Run endpoint, when that Run is actually requested.
+ */
 export const BackendExperimentSummarySchema = z
   .object({
     id: BackendOpaqueResourceIdSchema,
@@ -350,7 +343,6 @@ export const BackendExperimentSummarySchema = z
     parseWarnings: z.array(BackendParseIssueSchema),
     effectiveCreatedAt: z.string(),
     effectiveUpdatedAt: z.string(),
-    memberRuns: z.array(BackendMemberRunSchema).max(10_000),
   })
   .strict()
 export type BackendExperimentSummary = z.infer<typeof BackendExperimentSummarySchema>
@@ -585,6 +577,26 @@ export const BackendResultsDocumentSchema = z
   })
   .strict()
 
+/**
+ * v6 read-time projection of Run deprecation onto a Variant's materialized
+ * metrics. Never persisted alongside results.yaml — the served document
+ * keeps its stored numbers, and this array tells the reader which of them
+ * lost their evidence. Mirrors `ResultsVariantEligibility` in core.
+ */
+export const BackendResultsVariantEligibilitySchema = z
+  .object({
+    variantId: z.string().min(1).max(256),
+    runs: z.array(BackendOpaqueResourceIdSchema).max(10_000),
+    deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000),
+    eligibleRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000),
+    hasMetrics: z.boolean(),
+    metricsValidity: z.enum(['valid', 'partial', 'unavailable']),
+  })
+  .strict()
+export type BackendResultsVariantEligibility = z.infer<
+  typeof BackendResultsVariantEligibilitySchema
+>
+
 const BackendParsedManagedDocumentSchema = <T extends z.ZodTypeAny>(
   kind: 'implementation' | 'investigation' | 'results',
   data: T,
@@ -611,7 +623,13 @@ export const BackendExperimentManagedDocumentsSchema = z
       'investigation',
       BackendInvestigationDocumentSchema,
     ),
-    results: BackendParsedManagedDocumentSchema('results', BackendResultsDocumentSchema),
+    results: BackendParsedManagedDocumentSchema('results', BackendResultsDocumentSchema).extend({
+      /**
+       * One row per Variant, in document order. Empty when the caller did
+       * not resolve deprecation state.
+       */
+      variantEligibility: z.array(BackendResultsVariantEligibilitySchema).max(10_000).default([]),
+    }),
   })
   .strict()
 
@@ -631,9 +649,8 @@ export const BackendExperimentDisplaySectionSchema = z
   .strict()
 
 /**
- * Wiki primitives shared by the Experiment detail (`citedBy`) and the wiki
- * envelopes further down; declared here so the Experiment schema can reference
- * them at module evaluation time.
+ * Wiki primitives used by the independently loaded backlink and Wiki
+ * envelopes.
  */
 const BackendWikiIdSchema = z.string().regex(/^W\d{4}$/)
 const BackendWikiSlugSchema = z
@@ -656,7 +673,7 @@ export const BACKEND_WIKI_REVIEW_STATES = [
 export const BackendWikiReviewStateSchema = z.enum(BACKEND_WIKI_REVIEW_STATES)
 export type BackendWikiReviewState = z.infer<typeof BackendWikiReviewStateSchema>
 
-/** One wiki page citing an artifact, as carried by `citedBy`. */
+/** One wiki page citing an artifact. */
 export const BackendWikiBacklinkSchema = z
   .object({
     id: BackendWikiIdSchema,
@@ -688,8 +705,15 @@ export const BackendWikiBacklinksResponseSchema = z
   .strict()
 export type BackendWikiBacklinksResponse = z.infer<typeof BackendWikiBacklinksResponseSchema>
 
+/**
+ * One Experiment page: the Experiment document itself, its raw sections and its
+ * managed documents. Carries no member roster — the declared roster is
+ * `frontMatter.runs`, and a Run's content is fetched from the Run endpoint only
+ * when that Run is opened.
+ */
 export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.extend({
   body: z.string().max(512 * 1024),
+  deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000).default([]),
   warningsRaw: z.string().nullable(),
   rawSections: z.array(BackendExperimentRawSectionSchema).max(1024),
   documents: BackendExperimentManagedDocumentsSchema.nullable(),
@@ -697,8 +721,6 @@ export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.exte
   documentSections: z.array(BackendExperimentDisplaySectionSchema).max(1024),
   documentDiagnostics: z.array(BackendExperimentDocumentDiagnosticSchema).max(10_000),
   documentReadOnly: z.boolean(),
-  /** Wiki pages citing this Experiment, newest `updated_at` first. */
-  citedBy: z.array(BackendWikiBacklinkSchema).max(10_000).default([]),
 }).strict()
 export const BackendExperimentResponseSchema = BackendExperimentDetailSchema
 export type BackendExperimentDetail = z.infer<typeof BackendExperimentDetailSchema>
@@ -708,6 +730,8 @@ export const BackendExperimentResultsResponseSchema = z
     project: ProjectNameSchema,
     resource: BackendOpaqueResourceIdSchema,
     document: BackendResultsDocumentSchema,
+    deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000).default([]),
+    variantEligibility: z.array(BackendResultsVariantEligibilitySchema).max(10_000).default([]),
     updatedAt: z.string().max(128),
     warnings: z.array(BackendParseIssueSchema).max(10_000),
   })
@@ -789,17 +813,48 @@ const BackendJournalEventSchema = z
   })
   .strict()
 
+/**
+ * Legacy Journal read DTO. `docs/journal.md` is preserved history only: memon
+ * appends nothing to it after the activity-ledger cutover, so the retired
+ * `last_digest_at` cursor is not projected here.
+ */
 export const BackendJournalResponseSchema = z
   .object({
     project: ProjectNameSchema,
-    lastDigestAt: z.string().nullable(),
     events: z.array(BackendJournalEventSchema).max(100_000),
     parseErrors: z.array(BackendParseIssueSchema),
     parseWarnings: z.array(BackendParseIssueSchema),
   })
   .strict()
 export const BackendJournalCountResponseSchema = z
-  .object({ totalEvents: z.number().int().nonnegative(), lastDigestAt: z.string().nullable() })
+  .object({ totalEvents: z.number().int().nonnegative() })
+  .strict()
+
+const BackendUnreadableReceiptSchema = z
+  .object({ file: z.string().min(1).max(512), reason: z.string().max(1024) })
+  .strict()
+
+/**
+ * Owner-only diagnostic history: preserved legacy Markdown events and typed
+ * invocation receipts side by side, each labelled by origin. Receipts can name
+ * operation paths and error codes, so this DTO is never served to a viewer
+ * whose share scope only grants the legacy read.
+ */
+export const BackendJournalHistoryResponseSchema = z
+  .object({
+    project: ProjectNameSchema,
+    legacy: z
+      .object({
+        present: z.boolean(),
+        events: z.array(BackendJournalEventSchema).max(100_000),
+        parseErrors: z.array(BackendParseIssueSchema),
+        parseWarnings: z.array(BackendParseIssueSchema),
+      })
+      .strict(),
+    invocations: z.array(JournalInvocationRecordSchema).max(100_000),
+    /** Receipt files that exist but do not decode; reported, never guessed. */
+    unreadableReceipts: z.array(BackendUnreadableReceiptSchema).max(1_000),
+  })
   .strict()
 
 const BackendAnomalySchema = z
@@ -944,6 +999,22 @@ export type BackendWikiDocument = z.infer<typeof BackendWikiDocumentSchema>
 export const BackendWikiPagesResponseSchema = z
   .object({ pages: z.array(BackendWikiSummarySchema).max(10_000) })
   .strict()
+
+/** Navigation identity only; no source-resolution, staleness or review claims. */
+export const BackendWikiInventoryResponseSchema = z
+  .object({
+    pages: z
+      .array(
+        BackendWikiSummarySchema.pick({
+          id: true,
+          resource: true,
+          legacyId: true,
+        }),
+      )
+      .max(10_000),
+  })
+  .strict()
+export type BackendWikiInventoryResponse = z.infer<typeof BackendWikiInventoryResponseSchema>
 
 export const BackendWikiReviewCommitSchema = z
   .object({
@@ -1532,6 +1603,25 @@ export const ResourceIdSchema = z
 
 export type ResourceId = z.infer<typeof ResourceIdSchema>
 
+/** Name/path identity used by navigation, counts, and reference inventories. */
+export const BackendResourceInventoryItemSchema = z
+  .object({
+    id: z.string(),
+    slug: z.string(),
+    resource: ResourceIdSchema,
+  })
+  .strict()
+
+export type BackendResourceInventoryItem = z.infer<typeof BackendResourceInventoryItemSchema>
+
+export const BackendResourceInventoryResponseSchema = z
+  .object({ items: z.array(BackendResourceInventoryItemSchema) })
+  .strict()
+
+export type BackendResourceInventoryResponse = z.infer<
+  typeof BackendResourceInventoryResponseSchema
+>
+
 /** A Project resource that cannot be addressed without its owning Host. */
 export const HostQualifiedResourceRefSchema = ProjectRefSchema.extend({
   kind: ResourceKindSchema,
@@ -1543,223 +1633,6 @@ export type HostQualifiedResourceRef = z.infer<typeof HostQualifiedResourceRefSc
 export const ResourceRefSchema = HostQualifiedResourceRefSchema
 export type ResourceRef = HostQualifiedResourceRef
 
-export const TerminalSessionIdSchema = z
-  .string()
-  .min(1)
-  .max(256)
-  .regex(TERMINAL_SESSION_PATTERN, 'must contain only letters, digits, dot, underscore, or hyphen')
-  .brand<'TerminalSessionId'>()
-
-export type TerminalSessionId = z.infer<typeof TerminalSessionIdSchema>
-
-/** Trusted central -> Backend hint used only to preserve ttyd's public base path. */
-export const BACKEND_TERMINAL_PUBLIC_PATH_HEADER = 'x-memon-terminal-public-path'
-
-/** Host-level terminal identity; a manual tmux session need not own a Project. */
-export const TerminalSessionRefSchema = z
-  .object({
-    host: HostIdSchema,
-    session: TerminalSessionIdSchema,
-  })
-  .strict()
-
-export type TerminalSessionRef = z.infer<typeof TerminalSessionRefSchema>
-
-export const TerminalAgentKindSchema = z.enum(['none', 'claude', 'codex', 'opencode'])
-export const TerminalScopeKindSchema = z.enum(['exp', 'run', 'project'])
-
-export const BackendTerminalCheckResponseSchema = z
-  .object({
-    available: z.boolean(),
-    version: z.string().min(1).max(128).optional(),
-    source: z.enum(['cached', 'path']).optional(),
-    downloadable: z.boolean().optional(),
-    suggestion: z.string().min(1).max(512).optional(),
-  })
-  .strict()
-export type BackendTerminalCheckResponse = z.infer<typeof BackendTerminalCheckResponseSchema>
-
-export const BackendTerminalInstallResponseSchema = z
-  .object({
-    ok: z.literal(true),
-    version: z.string().min(1).max(128),
-    alreadyPresent: z.boolean().optional(),
-    durationMs: z.number().finite().nonnegative(),
-  })
-  .strict()
-export type BackendTerminalInstallResponse = z.infer<typeof BackendTerminalInstallResponseSchema>
-
-export const BackendTerminalStartRequestSchema = z
-  .object({
-    project: ProjectNameSchema,
-    scope: TerminalScopeKindSchema,
-    slug: z
-      .string()
-      .min(1)
-      .max(256)
-      .regex(/^[A-Za-z0-9._-]+$/)
-      .refine((value) => !value.includes('--'), "slug must not contain '--'"),
-    agent: TerminalAgentKindSchema.optional(),
-  })
-  .strict()
-export type BackendTerminalStartRequest = z.infer<typeof BackendTerminalStartRequestSchema>
-
-export const BackendTerminalAttachRequestSchema = z
-  .object({ sessionName: TerminalSessionIdSchema.refine((value) => value.startsWith('memon-')) })
-  .strict()
-export type BackendTerminalAttachRequest = z.infer<typeof BackendTerminalAttachRequestSchema>
-
-export const BackendTerminalStopRequestSchema = BackendTerminalAttachRequestSchema
-
-export const BackendHerdrStartRequestSchema = z
-  .object({
-    project: ProjectNameSchema.optional(),
-    scope: TerminalScopeKindSchema.optional(),
-    slug: z
-      .string()
-      .min(1)
-      .max(256)
-      .regex(/^[A-Za-z0-9._-]+$/)
-      .optional(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    const supplied = [input.project, input.scope, input.slug].filter(
-      (value) => value !== undefined,
-    ).length
-    if (supplied !== 0 && supplied !== 3) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'project, scope, and slug must be supplied together',
-      })
-    }
-  })
-
-export type BackendHerdrStartRequest = z.infer<typeof BackendHerdrStartRequestSchema>
-
-export const BackendTerminalSessionSchema = z
-  .object({
-    host: HostIdSchema,
-    backend: z.enum(['tmux', 'herdr']).optional(),
-    sessionName: TerminalSessionIdSchema,
-    url: z.string().min(1).max(1024),
-    startedAt: z.string().datetime({ offset: true }),
-    lastActiveAt: z.string().datetime({ offset: true }),
-    agent: TerminalAgentKindSchema,
-    project: ProjectNameSchema.nullable(),
-    scope: TerminalScopeKindSchema.nullable(),
-    slug: z.string().min(1).max(256).nullable(),
-    warnings: z.array(z.string().max(512)).max(32),
-  })
-  .strict()
-  .superRefine((session, context) => {
-    const expected = `/api/terminal/proxy/${session.host}/${session.sessionName}/`
-    if (session.url !== expected) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['url'],
-        message: 'terminal URL must contain the exact Host and session route',
-      })
-    }
-  })
-export type BackendTerminalSession = z.infer<typeof BackendTerminalSessionSchema>
-
-export const BackendTerminalStartResponseSchema = BackendTerminalSessionSchema
-
-export const BackendTerminalListResponseSchema = z
-  .object({ sessions: z.array(BackendTerminalSessionSchema).max(1024) })
-  .strict()
-export type BackendTerminalListResponse = z.infer<typeof BackendTerminalListResponseSchema>
-
-export const BackendTerminalStopResponseSchema = z.object({ stopped: z.boolean() }).strict()
-
-export const BackendTmuxParsedSessionSchema = z
-  .object({
-    raw: TerminalSessionIdSchema,
-    agent: TerminalAgentKindSchema.nullable(),
-    project: ProjectNameSchema.nullable(),
-    scope: TerminalScopeKindSchema.nullable(),
-    slug: z.string().min(1).max(256).nullable(),
-    legacy: z.boolean(),
-  })
-  .strict()
-
-export const BackendTmuxPaneSchema = z
-  .object({
-    title: z.string().max(257).nullable(),
-    currentCommand: z.string().max(256).nullable(),
-    // Absolute pane cwd is deliberately absent across the service boundary.
-    currentPath: z.null(),
-  })
-  .strict()
-
-export const BackendTmuxSessionRowSchema = z
-  .object({
-    host: HostIdSchema,
-    sessionName: TerminalSessionIdSchema,
-    parsed: BackendTmuxParsedSessionSchema,
-    liveEntry: z
-      .object({ lastActiveAt: z.string().datetime({ offset: true }) })
-      .strict()
-      .nullable(),
-    tmuxCreatedAt: z.union([z.literal(''), z.string().datetime({ offset: true })]),
-    tmuxLastActivity: z.union([z.literal(''), z.string().datetime({ offset: true })]),
-    matchable: z.boolean(),
-    staleReason: z.enum(['unknown-project', 'unknown-target']).nullable(),
-    pane: BackendTmuxPaneSchema.nullable(),
-    state: z.enum(['idle', 'running', 'attention', 'done']),
-    lastStateChangeAt: z.string().datetime({ offset: true }).nullable(),
-  })
-  .strict()
-
-export type BackendTmuxSessionRow = z.infer<typeof BackendTmuxSessionRowSchema>
-
-export const BackendTmuxSessionsResponseSchema = z
-  .object({ sessions: z.array(BackendTmuxSessionRowSchema).max(4096) })
-  .strict()
-export type BackendTmuxSessionsResponse = z.infer<typeof BackendTmuxSessionsResponseSchema>
-
-export const BackendTmuxSessionResponseSchema = z
-  .object({ row: BackendTmuxSessionRowSchema })
-  .strict()
-export type BackendTmuxSessionResponse = z.infer<typeof BackendTmuxSessionResponseSchema>
-
-export const BackendTmuxCreateRequestSchema = z
-  .object({
-    name: z
-      .string()
-      .min(1)
-      .max(128)
-      .regex(/^[A-Za-z0-9._-]+$/)
-      .refine((name) => !name.includes('--') && !name.startsWith('memon-')),
-  })
-  .strict()
-export type BackendTmuxCreateRequest = z.infer<typeof BackendTmuxCreateRequestSchema>
-
-export const BackendTmuxCreateResponseSchema = z
-  .object({
-    ok: z.literal(true),
-    host: HostIdSchema,
-    sessionName: TerminalSessionIdSchema,
-    alreadyExisted: z.boolean(),
-  })
-  .strict()
-export type BackendTmuxCreateResponse = z.infer<typeof BackendTmuxCreateResponseSchema>
-
-export const BackendTmuxRenameRequestSchema = z
-  .object({
-    newName: TerminalSessionIdSchema.refine((name) => name.startsWith('memon-')),
-  })
-  .strict()
-export type BackendTmuxRenameRequest = z.infer<typeof BackendTmuxRenameRequestSchema>
-
-export const BackendTmuxRenameResponseSchema = z
-  .object({ ok: z.literal(true), host: HostIdSchema, sessionName: TerminalSessionIdSchema })
-  .strict()
-
-export const BackendTmuxKillResponseSchema = z
-  .object({ ok: z.literal(true), host: HostIdSchema, sessionName: TerminalSessionIdSchema })
-  .strict()
 
 /**
  * Capabilities are explicit booleans rather than an open string array. This
@@ -1776,10 +1649,7 @@ export const BackendCapabilitiesSchema = z
     wikiAssets: z.boolean(),
     git: z.boolean(),
     shares: z.boolean(),
-    tmux: z.boolean(),
-    terminal: z.boolean(),
     slurm: z.boolean(),
-    herdr: z.boolean(),
   })
   .strict()
 
@@ -1820,16 +1690,6 @@ export const BackendStatusMutationRequestSchema = z
 export const BackendArchiveMutationRequestSchema = z
   .object({ archived: z.boolean(), expectedMtime: z.number().nonnegative().optional() })
   .strict()
-export const BackendJournalAppendRequestSchema = z
-  .object({
-    tag: z
-      .string()
-      .min(1)
-      .max(32)
-      .regex(/^[A-Z_]+$/),
-    body: z.string().max(64 * 1024),
-  })
-  .strict()
 export const BackendMutationResponseSchema = z
   .object({
     ok: z.literal(true),
@@ -1839,11 +1699,6 @@ export const BackendMutationResponseSchema = z
     prevStatus: z.string().optional(),
     nextStatus: z.string().optional(),
     warning: z.literal('archived').optional(),
-  })
-  .strict()
-export const BackendJournalAppendResponseSchema = z
-  .object({
-    appended: z.object({ timestamp: z.string(), tag: z.string(), body: z.string() }).strict(),
   })
   .strict()
 export const BackendExperimentCreateRequestSchema = z
@@ -2215,8 +2070,15 @@ export const BACKEND_ERROR_CODES = [
   'INVALID_RESOURCE',
   'UNSUPPORTED_CAPABILITY',
   'INTEGRATION_DISABLED',
+  'EXECUTION_UNAVAILABLE',
+  'DOWNLOAD_FAILED',
+  'INTEGRITY_FAILED',
+  'NOT_AUTOFETCHABLE',
+  'EXEC_FAILED',
   'TIMEOUT',
   'UNAVAILABLE',
+  'PARTIAL',
+  'JOURNAL_RECORD_INCOMPLETE',
   'INTERNAL',
 ] as const
 

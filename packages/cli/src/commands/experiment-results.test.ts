@@ -3,6 +3,8 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { runExperimentDocumentRender } from './experiment-document.js'
+
 import {
   runExperimentResults,
   runExperimentResultsAnnotationGet,
@@ -180,6 +182,52 @@ foo
     expect(out.rows[0]!.values.accuracy).toBe(0.95)
   })
 
+  it('excludes deprecated Run and Attempt references without rewriting source evidence', async () => {
+    const id = await create()
+    const path = join(root, 'docs', 'experiments', id, 'results.yaml')
+    const selected = 'selected-260901-100000'
+    const attempt = 'attempt-260901-100001'
+    const source = RESULTS_YAML.replace('run-a', selected).replace('run-b', attempt)
+    await fs.writeFile(path, source)
+    for (const run of [selected, attempt]) {
+      const dir = join(root, 'logs', run)
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(join(dir, 'README.md'), '---\ndeprecated: true\n---\n')
+    }
+    stdout = ''
+    await runExperimentResults({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: id,
+      format: 'json',
+      columnGroup: 'all',
+      output: 'json',
+    })
+    const out = JSON.parse(stdout)
+    expect(out.rows[0]).toMatchObject({
+      runs: [],
+      values: { accuracy: 0.95 },
+      metricsValidity: 'unavailable',
+    })
+    expect(out.rows[1]).toMatchObject({ attempts: [], metricsValidity: 'valid' })
+    expect(out.variantEligibility[0].runs).toEqual([selected])
+    stdout = ''
+    await runExperimentDocumentRender({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: id,
+      format: 'json',
+      section: 'results',
+    })
+    const rendered = JSON.parse(stdout).markdown as string
+    const rows = rendered.split('\n').filter((line) => line.startsWith('| **V'))
+    expect(rows[0]).toContain('0.95')
+    expect(rows[0]).toContain('unavailable')
+    expect(rows.join('\n')).not.toContain(selected)
+    expect(rows.join('\n')).not.toContain(attempt)
+    expect(await fs.readFile(path, 'utf8')).toBe(source)
+  })
+
   it('summarizes columns, annotations, and row identities without exposing cell values', async () => {
     await create()
     stdout = ''
@@ -197,11 +245,17 @@ foo
       description: 'Controls **training precision**.',
       valueDescriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
     })
-    expect(out.rows[0]).toEqual({ id: 'V0001', name: 'BF16', status: 'COMPLETED' })
+    expect(out.rows[0]).toEqual({
+      id: 'V0001',
+      name: 'BF16',
+      status: 'COMPLETED',
+      metricsValidity: 'valid',
+      deprecatedRuns: [],
+    })
     expect(stdout).not.toContain('0.95')
     expect(stdout).not.toContain('run-a')
-    expect(stdout).not.toContain('parameters')
-    expect(stdout).not.toContain('metrics')
+    expect(stdout).not.toContain('"parameters"')
+    expect(stdout).not.toContain('"metrics"')
   })
 
   it('adds and replaces column/value annotations and reads them without requiring YAML edits', async () => {
@@ -369,9 +423,9 @@ foo
     })
     const lines = stdout.trim().split('\n')
     expect(lines[0]).toBe(
-      'variant_id,variant_name,status,precision,accuracy,loss,runs_count,attempts_count',
+      'variant_id,variant_name,status,precision,accuracy,loss,runs_count,attempts_count,metrics_validity,deprecated_runs',
     )
-    expect(lines[1]).toBe('V0001,BF16,COMPLETED,bf16,0.95,0.125,1,0')
+    expect(lines[1]).toBe('V0001,BF16,COMPLETED,bf16,0.95,0.125,1,0,valid,')
   })
 
   it('emits markdown format', async () => {

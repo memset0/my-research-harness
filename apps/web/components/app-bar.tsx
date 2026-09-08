@@ -2,9 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { PROJECT_SCOPE_SLUG, type ProjectTarget, projectWebPath } from '../lib/api'
+import { type ProjectTarget, projectWebPath } from '../lib/api'
 import { ManageSharesDialog } from './manage-shares-dialog'
-import { OpenWithButton } from './open-with-button'
 import { TabBadge, type TabKind } from './tab-badge'
 import { Button } from './ui/button'
 import { SidebarTrigger } from './ui/sidebar'
@@ -110,7 +109,7 @@ export function AppBar({ project }: { project: ProjectTarget }) {
             const isActive = t.matches(pathname)
             return (
               <Button key={t.href} asChild size="sm" variant={isActive ? 'default' : 'ghost'}>
-                <Link href={t.href} role="tab" aria-selected={isActive}>
+                <Link href={t.href} prefetch={false} role="tab" aria-selected={isActive}>
                   <span>{t.name}</span>
                   <TabBadge kind={t.kind} project={project} active={isActive} />
                 </Link>
@@ -122,7 +121,6 @@ export function AppBar({ project }: { project: ProjectTarget }) {
             pushes the group to the right edge of its flex line. */}
         <div className="ml-auto flex items-center gap-1">
           <ManageSharesDialog project={project} />
-          <OpenWithButton project={project} scope="project" slug={PROJECT_SCOPE_SLUG} />
         </div>
       </div>
     </header>

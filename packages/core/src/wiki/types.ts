@@ -8,6 +8,7 @@
 
 export const WIKI_KINDS = [
   'meeting',
+  'roadmap',
   'finding',
   'bottleneck',
   'showcase',
@@ -26,11 +27,12 @@ export function isWikiKind(value: unknown): value is WikiKind {
 
 /**
  * Allowed `status` values per kind. An empty list means the kind carries no
- * status at all (`meeting`, `note`) — a `status` key there is ignored, and a
- * missing one is not a diagnostic.
+ * status at all (`meeting`, `roadmap`, `note`) — a `status` key there is
+ * ignored, and a missing one is not a diagnostic.
  */
 export const WIKI_STATUS_BY_KIND: Record<WikiKind, readonly string[]> = {
   meeting: [],
+  roadmap: [],
   finding: ['TENTATIVE', 'VERIFIED', 'RETRACTED'],
   bottleneck: ['OPEN', 'MITIGATED', 'RESOLVED'],
   showcase: ['DRAFT', 'READY', 'OUTDATED'],
@@ -43,6 +45,7 @@ export const WIKI_STATUS_BY_KIND: Record<WikiKind, readonly string[]> = {
 /** Advisory H2 sections per kind; a missing one is a `warn`, never an error. */
 export const WIKI_RECOMMENDED_SECTIONS: Record<WikiKind, readonly string[]> = {
   meeting: ['Attendees', 'Notes', 'Decisions', 'Action items'],
+  roadmap: [],
   finding: ['Claim', 'Evidence', 'Limits'],
   bottleneck: ['Problem', 'Impact', 'Status', 'Candidates'],
   showcase: ['What to show', 'How to reproduce', 'Assets'],

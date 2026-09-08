@@ -11,6 +11,7 @@ import {
   BackendExperimentResponseSchema,
   BackendWikiConflictResponseSchema,
   BackendWikiDocumentSchema,
+  BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
   BackendWikiReviewOrderResponseSchema,
   BackendWikiReviewResponseSchema,
@@ -36,10 +37,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: false,
-  terminal: false,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 const EXPERIMENT = `---
@@ -186,9 +184,19 @@ beforeAll(async () => {
     await git(target, 'commit', '-m', 'wiki: extend the finding')
   }
   commits = (await git(root, 'log', '--format=%H', '--reverse', '--', 'docs/wiki')).split('\n')
-  const projects = [{ name: 'research', root, include: [], exclude: [] }] satisfies ProjectConfig[]
+  // Both roots are this host's own worktrees, so git may run against them —
+  // the Project says so, the same way a deployed single-host Project does.
+  const projects = [
+    { name: 'research', root, include: [], exclude: [], execution: { kind: 'local' } },
+  ] satisfies ProjectConfig[]
   const readOnlyProjects = [
-    { name: 'research', root: readOnlyRoot, include: [], exclude: [] },
+    {
+      name: 'research',
+      root: readOnlyRoot,
+      include: [],
+      exclude: [],
+      execution: { kind: 'local' },
+    },
   ] satisfies ProjectConfig[]
   server = createBackendServer({
     hostId: 'host-a',
@@ -258,29 +266,53 @@ describe('Backend wiki routes', () => {
     )
     expect(listed.pages.map((page) => page.id)).toEqual(['W0001', 'W0002'])
     expect(JSON.stringify(listed)).not.toContain(root)
+    const inventory = BackendWikiInventoryResponseSchema.parse(
+      await (
+        await request('/api/backend/v1/wiki?project=research&inventory=1', { actor: owner })
+      ).json(),
+    )
+    expect(inventory.pages.map((page) => page.id)).toEqual(['W0001', 'W0002'])
 
     const page = BackendWikiDocumentSchema.parse(
-      await (
-        await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })
-      ).json(),
+      await (await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })).json(),
     )
     expect(page.content).toContain('## Claim')
     expect(page.review?.state).toBe('UNVERIFIED')
 
     // A legacy Report id is not a wiki address, and neither is a missing page.
-    expect((await request('/api/backend/v1/wiki/R0001?project=research', { actor: owner })).status)
-      .toBe(400)
-    expect((await request('/api/backend/v1/wiki/W9999?project=research', { actor: owner })).status)
-      .toBe(404)
+    expect(
+      (await request('/api/backend/v1/wiki/R0001?project=research', { actor: owner })).status,
+    ).toBe(400)
+    expect(
+      (await request('/api/backend/v1/wiki/W9999?project=research', { actor: owner })).status,
+    ).toBe(404)
   })
 
-  it('carries the citing wiki pages on the Experiment detail', async () => {
-    const detail = BackendExperimentResponseSchema.parse(
-      await (
-        await request('/api/backend/v1/experiments/E0001-alpha?project=research', { actor: owner })
-      ).json(),
-    )
-    expect(detail.citedBy).toEqual([
+  it('serves Experiment detail and wiki backlinks past an unreadable unrelated Run', async () => {
+    const dir = join(root, 'logs', 'unrelated-260901-010203')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.symlink('README.md', join(dir, 'README.md'))
+    try {
+      const response = await request('/api/backend/v1/experiments/E0001-alpha?project=research', {
+        actor: owner,
+      })
+      expect(response.status).toBe(200)
+      expect(BackendExperimentResponseSchema.parse(await response.json()).id).toBe('E0001-alpha')
+      // No page cites that Run, so resolving evidence never opens it.
+      const backlinks = await request(
+        '/api/backend/v1/wiki/backlinks/E0001-alpha?project=research',
+        { actor: owner },
+      )
+      expect(backlinks.status).toBe(200)
+      const cited = (await backlinks.json()) as { pages: Array<{ id: string }> }
+      expect(cited.pages.map((entry) => entry.id)).toEqual(['W0001'])
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('serves the citing wiki pages independently of Experiment detail', async () => {
+    const pages = [
       {
         id: 'W0001',
         slug: 'alpha',
@@ -292,24 +324,21 @@ describe('Backend wiki routes', () => {
         reviewState: 'UNVERIFIED',
         updatedAt: '2026-09-02T10:00:00+08:00',
       },
-    ])
+    ]
 
-    const backlinks = await request(
-      '/api/backend/v1/wiki/backlinks/E0001-alpha?project=research',
-      { actor: owner },
-    )
+    const backlinks = await request('/api/backend/v1/wiki/backlinks/E0001-alpha?project=research', {
+      actor: owner,
+    })
     expect(backlinks.status).toBe(200)
     expect(await backlinks.json()).toEqual({
       artifact: 'E0001-alpha',
-      pages: detail.citedBy,
+      pages,
     })
   })
 
   it('keeps a Backend page opaque to component payloads', async () => {
     const page = BackendWikiDocumentSchema.parse(
-      await (
-        await request('/api/backend/v1/wiki/W0002?project=research', { actor: owner })
-      ).json(),
+      await (await request('/api/backend/v1/wiki/W0002?project=research', { actor: owner })).json(),
     )
     // The block crosses the boundary verbatim; central resolves `components`.
     expect(page.content).toContain('{ "rows": [[1, 2], [3]] }')
@@ -324,9 +353,7 @@ describe('Backend wiki routes', () => {
 
   it('writes under the optimistic lock and emits wiki-change', async () => {
     const before = BackendWikiDocumentSchema.parse(
-      await (
-        await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })
-      ).json(),
+      await (await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })).json(),
     )
     const frames: string[] = []
     const unsubscribe = eventStream.subscribe((frame) => {
@@ -364,9 +391,7 @@ describe('Backend wiki routes', () => {
     expect(envelope.currentContent).toContain('Alpha holds narrowly.')
 
     const current = BackendWikiDocumentSchema.parse(
-      await (
-        await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })
-      ).json(),
+      await (await request('/api/backend/v1/wiki/W0001?project=research', { actor: owner })).json(),
     )
     const identity = await request('/api/backend/v1/wiki/W0001?project=research', {
       actor: owner,
@@ -381,19 +406,18 @@ describe('Backend wiki routes', () => {
   })
 
   it('serves bundle assets with range metadata and refuses escapes', async () => {
-    const asset = await request(
-      '/api/backend/v1/wiki-assets/research/W0002/views/map/index.html',
-      { actor: owner },
-    )
+    const asset = await request('/api/backend/v1/wiki-assets/research/W0002/views/map/index.html', {
+      actor: owner,
+    })
     expect(asset.status).toBe(200)
     expect(asset.headers.get('content-type')).toContain('text/html')
     expect(asset.headers.get('accept-ranges')).toBe('bytes')
     expect(await asset.text()).toBe('<p>map</p>\n')
 
-    const head = await request(
-      '/api/backend/v1/wiki-assets/research/W0002/views/map/index.html',
-      { actor: owner, method: 'HEAD' },
-    )
+    const head = await request('/api/backend/v1/wiki-assets/research/W0002/views/map/index.html', {
+      actor: owner,
+      method: 'HEAD',
+    })
     expect(head.status).toBe(200)
     expect(await head.text()).toBe('')
 
@@ -429,42 +453,38 @@ describe('Backend wiki routes', () => {
     expect(log.verifiedThrough).toBeNull()
 
     // A viewer may read the wiki but never record trust in it.
+    expect((await request('/api/backend/v1/wiki?project=research', { actor: viewer })).status).toBe(
+      200,
+    )
     expect(
-      (await request('/api/backend/v1/wiki?project=research', { actor: viewer })).status,
-    ).toBe(200)
-    expect(
-      (
-        await request('/api/backend/v1/wiki/review?project=research', { actor: viewer })
-      ).status,
+      (await request('/api/backend/v1/wiki/review?project=research', { actor: viewer })).status,
     ).toBe(403)
-    const viewerMark = await request(
-      `/api/backend/v1/wiki/review/${commits[0]}?project=research`,
-      { actor: viewer, method: 'POST' },
-    )
+    const viewerMark = await request(`/api/backend/v1/wiki/review/${commits[0]}?project=research`, {
+      actor: viewer,
+      method: 'POST',
+    })
     expect(viewerMark.status).toBe(403)
-    expect(await fs.readdir(join(root, '.memon')).catch(() => [])).not.toContain(
-      'wiki-review.csv',
-    )
+    expect(await fs.readdir(join(root, '.memon')).catch(() => [])).not.toContain('wiki-review.csv')
 
-    const outOfOrder = await request(
-      `/api/backend/v1/wiki/review/${commits[1]}?project=research`,
-      { actor: owner, method: 'POST' },
-    )
+    const outOfOrder = await request(`/api/backend/v1/wiki/review/${commits[1]}?project=research`, {
+      actor: owner,
+      method: 'POST',
+    })
     expect(outOfOrder.status).toBe(409)
     const order = BackendWikiReviewOrderResponseSchema.parse(await outOfOrder.json())
     expect(order.error.code).toBe('REVIEW_ORDER')
     expect(order.nextSha).toBe(commits[0])
-
 
     const frames: string[] = []
     const unsubscribe = eventStream.subscribe((frame) => {
       frames.push(frame)
       return true
     })
-    const marked = await request(
-      `/api/backend/v1/wiki/review/${commits[0]}?project=research`,
-      { actor: owner, method: 'POST', body: { note: 'read it all' } },
-    )
+    const marked = await request(`/api/backend/v1/wiki/review/${commits[0]}?project=research`, {
+      actor: owner,
+      method: 'POST',
+      body: { note: 'read it all' },
+    })
     expect(marked.status).toBe(200)
     expect(BackendWikiReviewResponseSchema.parse(await marked.json()).verifiedThrough).toBe(
       commits[0],
@@ -472,10 +492,10 @@ describe('Backend wiki routes', () => {
     unsubscribe()
     expect(frames.some((frame) => frame.includes('wiki-review-change'))).toBe(true)
     expect(frames.some((frame) => frame.includes('wiki-change'))).toBe(true)
-    const removed = await request(
-      `/api/backend/v1/wiki/review/${commits[0]}?project=research`,
-      { actor: owner, method: 'DELETE' },
-    )
+    const removed = await request(`/api/backend/v1/wiki/review/${commits[0]}?project=research`, {
+      actor: owner,
+      method: 'DELETE',
+    })
     expect(removed.status).toBe(200)
     expect(BackendWikiReviewResponseSchema.parse(await removed.json()).verifiedThrough).toBeNull()
   })

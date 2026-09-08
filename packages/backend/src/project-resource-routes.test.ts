@@ -30,10 +30,7 @@ const capabilities = {
   wikiAssets: true,
   git: false,
   shares: false,
-  tmux: false,
-  terminal: false,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 let directory = ''
 let projectRoot = ''

@@ -89,10 +89,15 @@ describe('parseReadme', () => {
     expect(parsed.parseErrors.some((e) => e.field === 'status')).toBe(true)
   })
 
-  it('errors when required field is missing', () => {
-    const missing = VALID_README.replace(/^command:.*$/m, '')
-    const parsed = parseReadme(missing)
-    expect(parsed.parseErrors.some((e) => e.field === 'command')).toBe(true)
+  it('accepts a record without command/entry and still errors on a missing id', () => {
+    // v6 minimal record: `id` is the only hard requirement; execution facts
+    // are written when they exist.
+    const noCommand = parseReadme(VALID_README.replace(/^command:.*$/m, ''))
+    expect(noCommand.parseErrors).toEqual([])
+    expect(noCommand.frontMatter.command).toBe('')
+
+    const noId = parseReadme(VALID_README.replace(/^id:.*$/m, ''))
+    expect(noId.parseErrors.some((e) => e.field === 'id')).toBe(true)
   })
 
   it('handles missing optional fields gracefully', () => {
@@ -117,12 +122,6 @@ TBD
     expect(parsed.frontMatter.host).toBeNull()
     expect(parsed.frontMatter.wandb).toBeNull()
     expect(parsed.frontMatter.gpus).toEqual([])
-  })
-
-  it('warns on unknown sections', () => {
-    const withExtra = `${VALID_README}\n## Extra Section\nbody\n`
-    const parsed = parseReadme(withExtra)
-    expect(parsed.parseWarnings.some((w) => w.field === 'section.Extra Section')).toBe(true)
   })
 
   it('reports unparseable front matter as error and recovers body', () => {

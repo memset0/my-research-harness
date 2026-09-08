@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readJournalInvocations } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { BackendMutationError, FilesystemMutationService } from './mutation-service.js'
 
@@ -22,7 +23,7 @@ afterEach(async () => {
 })
 
 describe('FilesystemMutationService', () => {
-  it('atomically updates Run status with mtime/hash conflict and journal pairing', async () => {
+  it('atomically updates Run status and records the invocation without touching legacy history', async () => {
     const service = new FilesystemMutationService(
       [{ name: 'project-a', root: projectRoot, include: [], exclude: [] }],
       () => new Date('2026-08-26T19:00:00Z'),
@@ -30,6 +31,8 @@ describe('FilesystemMutationService', () => {
     const path = join(projectRoot, 'logs/foo-260501-100000/README.md')
     const content = await fs.readFile(path, 'utf8')
     const stat = await fs.stat(path)
+    const legacyPath = join(projectRoot, 'docs/journal.md')
+    const legacyBefore = await fs.readFile(legacyPath, 'utf8')
     const result = await service.setRunStatus('project-a', 'foo-260501-100000', {
       status: 'FINISHED',
       expectedMtime: stat.mtimeMs,
@@ -37,15 +40,35 @@ describe('FilesystemMutationService', () => {
     })
     expect(result.nextStatus).toBe('FINISHED')
     expect(await fs.readFile(path, 'utf8')).toContain('status: FINISHED')
-    expect(await fs.readFile(join(projectRoot, 'docs/journal.md'), 'utf8')).toContain(
-      'foo-260501-100000',
+    expect(await fs.readFile(legacyPath, 'utf8')).toBe(legacyBefore)
+
+    const [receipt, ...rest] = await readJournalInvocations(projectRoot)
+    expect(rest).toEqual([])
+    expect(receipt).toMatchObject({
+      command: 'run status set',
+      origin: 'web',
+      outcome: 'success',
+      parameters: { run: 'foo-260501-100000', status: 'FINISHED' },
+    })
+    expect(receipt?.details).toEqual(
+      expect.arrayContaining([
+        { kind: 'target', type: 'run', id: 'foo-260501-100000' },
+        expect.objectContaining({
+          kind: 'file-change',
+          path: 'logs/foo-260501-100000/README.md',
+        }),
+      ]),
     )
+    expect(JSON.stringify(receipt)).not.toContain(projectRoot)
+
     await expect(
       service.setRunStatus('project-a', 'foo-260501-100000', {
         status: 'FAILED',
         expectedMtime: stat.mtimeMs,
       }),
     ).rejects.toBeInstanceOf(BackendMutationError)
+    const outcomes = (await readJournalInvocations(projectRoot)).map((r) => r.outcome)
+    expect(outcomes).toEqual(['success', 'conflict'])
   })
   it('updates Experiment archive without exposing filesystem paths', async () => {
     const service = new FilesystemMutationService([
@@ -60,16 +83,37 @@ describe('FilesystemMutationService', () => {
     expect(result.archived).toBe(true)
     expect(JSON.stringify(result)).not.toContain(projectRoot)
   })
-  it('appends allowed journal events and rejects DIGEST', async () => {
+  it('records no-op and rejected invocations, never a manual journal append', async () => {
     const service = new FilesystemMutationService([
       { name: 'project-a', root: projectRoot, include: [], exclude: [] },
     ])
+    const path = join(projectRoot, 'logs/foo-260501-100000/README.md')
+    const stat = await fs.stat(path)
+    const noop = await service.setRunArchived('project-a', 'foo-260501-100000', {
+      archived: false,
+      expectedMtime: stat.mtimeMs,
+    })
+    expect(noop.unchanged).toBe(true)
     await expect(
-      service.appendJournal('project-a', { tag: 'NOTE', body: 'hello' }),
-    ).resolves.toMatchObject({ appended: { tag: 'NOTE' } })
+      service.setRunStatus('project-a', 'missing-260501-100000', {
+        status: 'FINISHED',
+        expectedMtime: stat.mtimeMs,
+      }),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' })
+    // A project that cannot be attributed has nowhere to record, and must not
+    // invent history for another project.
     await expect(
-      service.appendJournal('project-a', { tag: 'DIGEST', body: 'no' }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      service.setRunStatus('missing-project', 'foo-260501-100000', {
+        status: 'FINISHED',
+        expectedMtime: stat.mtimeMs,
+      }),
+    ).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' })
+
+    const records = await readJournalInvocations(projectRoot)
+    expect(records.map((record) => [record.command, record.outcome])).toEqual([
+      ['run archive set', 'noop'],
+      ['run status set', 'failure'],
+    ])
   })
 
   it('applies warning operations with mtime+hash locking and returns portable records', async () => {
@@ -220,7 +264,7 @@ describe('FilesystemMutationService', () => {
       ok: true,
       prevStatus: 'OPEN',
       nextStatus: 'RESOLVED',
-      journalChanged: true,
+      activityRecorded: true,
     })
     expect(result.finalContent).toContain('status: RESOLVED')
     await expect(

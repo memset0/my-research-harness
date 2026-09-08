@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { BackendMutationError } from '@memon/backend'
+import { JournalRecordingError } from '@memon/core'
 import { NextResponse } from 'next/server'
 import type { Runtime } from '../runtime'
 import {
@@ -106,7 +107,29 @@ export async function deleteStandaloneExperiment(runtime: Runtime, id: string, f
 }
 
 export function standaloneExperimentMutationError(error: unknown): NextResponse | null {
+  if (error instanceof JournalRecordingError) {
+    return NextResponse.json(
+      {
+        error: {
+          code: error.code,
+          message: 'Journal recording failed; inspect current documents before retrying.',
+        },
+      },
+      { status: 500 },
+    )
+  }
   if (!(error instanceof BackendMutationError)) return null
+  if (error.code === 'PARTIAL') {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'PARTIAL',
+          message: 'Mutation partially applied; inspect current documents before retrying.',
+        },
+      },
+      { status: 500 },
+    )
+  }
   if (error.code === 'CONFLICT') {
     return NextResponse.json(
       {

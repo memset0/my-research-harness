@@ -14,7 +14,8 @@
   "files": [
     "dist",
     "memon-*",
-    "PREFLIGHT.md"
+    "PREFLIGHT.md",
+    "retired-skills.json"
   ],
   "scripts": {
     "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",

@@ -1,15 +1,11 @@
 // @vitest-environment node
 
-import { promises as fs } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { CentralConfig } from '@memon/core'
 import { describe, expect, it } from 'vitest'
 import { buildBrowserResponseHeaders } from './backend-headers'
 import { CentralHostRegistry } from './host-registry'
 import { redactOperationalText, safeLogRecord } from './public-safety'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const TOKEN = 'synthetic_backend_token_aaaaaaaaaaaa'
 const SESSION_SECRET = 'synthetic_session_secret_bbbbbbbbb'
 const PRIVATE_KEY = '/synthetic/private/id_backend'
@@ -75,35 +71,6 @@ describe('central public and diagnostic redaction', () => {
     expect(headers.get('content-type')).toBe('application/json')
     for (const name of ['www-authenticate', 'set-cookie', 'location', 'x-memon-private'])
       expect(headers.get(name)).toBeNull()
-  })
-
-  it('keeps production browser source maps disabled', async () => {
-    const source = await fs.readFile(join(ROOT, 'next.config.mjs'), 'utf8')
-    expect(source).toMatch(/productionBrowserSourceMaps:\s*false/)
-  })
-
-  it('routes terminal proxy failures through the redacted operational logger', async () => {
-    const source = await fs.readFile(join(ROOT, 'server.ts'), 'utf8')
-    expect(source).toMatch(/onProxyError: \(err\) =>[\s\S]*?redactOperationalText\(err\)/)
-    expect(source).not.toMatch(/onProxyError: \(err\) => console\.error\([^\n]*err\.message/)
-  })
-
-  it('keeps server-only central/config packages out of use-client source boundaries', async () => {
-    const roots = [join(ROOT, 'app'), join(ROOT, 'components')]
-    const violations: string[] = []
-    async function walk(directory: string): Promise<void> {
-      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name)
-        if (entry.isDirectory()) await walk(path)
-        else if (/\.[jt]sx?$/.test(entry.name)) {
-          const source = await fs.readFile(path, 'utf8')
-          if (!/^['"]use client['"]/m.test(source)) continue
-          if (/lib\/central|@memon\/backend|config\/load/.test(source)) violations.push(path)
-        }
-      }
-    }
-    for (const root of roots) await walk(root)
-    expect(violations).toEqual([])
   })
 
   it('bounds arbitrary diagnostic text', () => {

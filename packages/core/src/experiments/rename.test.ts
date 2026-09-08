@@ -125,7 +125,7 @@ async function seedProject(root: string, opts: {
     await fs.writeFile(join(dir, 'README.md'), expReadme(e))
   }
   for (const r of opts.runs ?? []) {
-    const dir = join(root, r.id)
+    const dir = join(root, 'logs', r.id)
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(join(dir, 'README.md'), runReadme(r))
   }
@@ -155,6 +155,13 @@ describe('renameExperiment', () => {
       ],
       hypotheses: HYPOTHESES_BASE,
     })
+    // A whole-project Run scan would try to read this unrelated README and
+    // fail with EISDIR. Rename must resolve and read only the two named
+    // members.
+    await fs.mkdir(
+      join(root, 'outputs', 'unrelated-260503-120000', 'README.md'),
+      { recursive: true },
+    )
 
     const r = await renameExperiment(root, PROJECT_NAME, 'E0001-foo', 'zero-snr', { now })
 
@@ -176,8 +183,8 @@ describe('renameExperiment', () => {
     expect(newReadme).toContain(`updated_at: "${FIXED_NOW}"`)
 
     // Bound runs rewritten.
-    const run1 = await fs.readFile(join(root, 'foo-260501-100000', 'README.md'), 'utf8')
-    const run2 = await fs.readFile(join(root, 'foo-260502-110000', 'README.md'), 'utf8')
+    const run1 = await fs.readFile(join(root, 'logs', 'foo-260501-100000', 'README.md'), 'utf8')
+    const run2 = await fs.readFile(join(root, 'logs', 'foo-260502-110000', 'README.md'), 'utf8')
     expect(run1).toContain('experiment: E0001-zero-snr')
     expect(run2).toContain('experiment: E0001-zero-snr')
     expect(run1).not.toContain('experiment: E0001-foo')

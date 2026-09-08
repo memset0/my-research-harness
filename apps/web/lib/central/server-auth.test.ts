@@ -1,13 +1,6 @@
 // @vitest-environment node
 
 import type { IncomingMessage } from 'node:http'
-import {
-  BACKEND_API_MAJOR,
-  type BackendCapabilities,
-  type BackendMetadata,
-  type CentralConfig,
-  MEMON_RELEASE,
-} from '@memon/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   SESSION_COOKIE_NAME,
@@ -17,72 +10,15 @@ import {
 } from '../auth/cookies'
 import { __resetForTests } from '../auth/rate-limit'
 import { resolveCentralApiRoute } from './backend-route'
-import type { BackendFetch } from './backend-url'
-import { CentralHostRegistry } from './host-registry'
 import { authorizeCentralServerRequest } from './server-auth'
 
-const SERVICE_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-const SERVICE_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 const SESSION_SECRET = 'session-secret-abcdefghijklmnopqrstuvwxyz'
 const SHARE_TOKEN = 'share_token_A'
 
-const capabilities: BackendCapabilities = {
-  projects: true,
-  mutations: true,
-  events: true,
-  logStreaming: true,
-  reportAssets: true,
-  wikiAssets: true,
-  git: true,
-  shares: true,
-  tmux: true,
-  terminal: true,
-  slurm: false,
-  herdr: false,
-}
-
-const config: CentralConfig = {
-  bindAddr: '127.0.0.1',
-  bindPort: 3737,
-  hosts: [
-    {
-      id: 'host-a',
-      tokens: { current: SERVICE_A },
-      transport: {
-        kind: 'url',
-        baseUrl: 'https://a.example.test',
-        allowInsecureHttp: false,
-      },
-    },
-    {
-      id: 'host-b',
-      tokens: { current: SERVICE_B },
-      transport: {
-        kind: 'url',
-        baseUrl: 'https://b.example.test',
-        allowInsecureHttp: false,
-      },
-    },
-  ],
-}
-
-function metadata(host: string): BackendMetadata {
+function validator(valid = true) {
   return {
-    host: host as BackendMetadata['host'],
-    release: MEMON_RELEASE as BackendMetadata['release'],
-    apiMajor: BACKEND_API_MAJOR,
-    revision: '0123456789abcdef' as BackendMetadata['revision'],
-    instanceEpoch: '123e4567-e89b-42d3-a456-426614174000' as BackendMetadata['instanceEpoch'],
-    ready: true,
-    capabilities,
+    validate: vi.fn(async (_project: string, _token: string, _host?: string) => valid),
   }
-}
-
-function registry(): CentralHostRegistry {
-  const result = new CentralHostRegistry(config)
-  result.acceptMetadata('host-a', metadata('host-a'))
-  result.acceptMetadata('host-b', metadata('host-b'))
-  return result
 }
 
 function incoming(
@@ -126,7 +62,7 @@ describe('authorizeCentralServerRequest', () => {
       authorizeCentralServerRequest({
         request,
         route: resolveCentralApiRoute('/api/runs'),
-        registry: registry(),
+        shareValidator: validator(),
         runtimeAuth,
       }),
     ).resolves.toMatchObject({ ok: true, actor: { role: 'owner' } })
@@ -140,7 +76,7 @@ describe('authorizeCentralServerRequest', () => {
         'x-forwarded-proto': 'https',
       }),
       route: resolveCentralApiRoute('/api/runs'),
-      registry: registry(),
+      shareValidator: validator(),
       runtimeAuth,
       nowSeconds: 200,
     })
@@ -150,26 +86,22 @@ describe('authorizeCentralServerRequest', () => {
   })
 
   it('allows a v2 viewer only for the exact Host+Project read scope', async () => {
-    const shareFetchImpl = vi.fn<BackendFetch>(async () => Response.json({ valid: true }))
+    const shareValidator = validator()
     const result = await authorizeCentralServerRequest({
       request: incoming('/api/runs?host=host-a&project=project-x', 'GET', {
         cookie: `${SHARES_COOKIE_NAME}=${viewerCookie()}`,
       }),
       route: resolveCentralApiRoute('/api/runs'),
-      registry: registry(),
+      shareValidator,
       runtimeAuth,
-      shareFetchImpl,
     })
     expect(result).toMatchObject({
       ok: true,
       actor: { role: 'viewer', scopes: [{ host: 'host-a', project: 'project-x' }] },
     })
-    expect(String(shareFetchImpl.mock.calls[0]![0])).toBe(
-      'https://a.example.test/api/backend/v1/projects/project-x/shares/validate',
-    )
-    expect(JSON.parse(String(shareFetchImpl.mock.calls[0]![1]?.body))).toEqual({
-      token: SHARE_TOKEN,
-    })
+    // The exact Host, Project, and token are what authorize the viewer; how a
+    // Host resolves them (Backend call or local share file) is the caller's.
+    expect(shareValidator.validate).toHaveBeenCalledWith('project-x', SHARE_TOKEN, 'host-a')
   })
 
   it('rejects viewer access to another Host and all mutations', async () => {
@@ -177,42 +109,39 @@ describe('authorizeCentralServerRequest', () => {
     const otherHost = await authorizeCentralServerRequest({
       request: incoming('/api/runs?host=host-b&project=project-x', 'GET', { cookie }),
       route: resolveCentralApiRoute('/api/runs'),
-      registry: registry(),
+      shareValidator: validator(),
       runtimeAuth,
-      shareFetchImpl: async () => Response.json({ valid: true }),
     })
     expect(otherHost).toMatchObject({ ok: false, status: 403 })
 
     const mutation = await authorizeCentralServerRequest({
-      request: incoming('/api/journal/append?host=host-a&project=project-x', 'POST', { cookie }),
-      route: resolveCentralApiRoute('/api/journal/append'),
-      registry: registry(),
+      request: incoming('/api/reports/R0001?host=host-a&project=project-x', 'PUT', { cookie }),
+      route: resolveCentralApiRoute('/api/reports/R0001'),
+      shareValidator: validator(),
       runtimeAuth,
-      shareFetchImpl: async () => Response.json({ valid: true }),
     })
     expect(mutation).toMatchObject({ ok: false, status: 403 })
   })
 
   it('returns 403 to a valid viewer on shell-class wiki review writes', async () => {
-    const shareFetchImpl = vi.fn<BackendFetch>(async () => Response.json({ valid: true }))
+    const shareValidator = validator()
     const result = await authorizeCentralServerRequest({
       request: incoming('/api/wiki/review/next?host=host-a&project=project-x', 'POST', {
         cookie: `${SHARES_COOKIE_NAME}=${viewerCookie()}`,
       }),
       route: resolveCentralApiRoute('/api/wiki/review/next'),
-      registry: registry(),
+      shareValidator,
       runtimeAuth,
-      shareFetchImpl,
     })
     expect(result).toMatchObject({ ok: false, status: 403 })
-    expect(shareFetchImpl).toHaveBeenCalledOnce()
+    expect(shareValidator.validate).toHaveBeenCalledOnce()
   })
 
   it('returns 401 for invalid credentials and 429 before credential work when exhausted', async () => {
     const unauthorized = await authorizeCentralServerRequest({
       request: incoming('/api/runs?host=host-a&project=project-x'),
       route: resolveCentralApiRoute('/api/runs'),
-      registry: registry(),
+      shareValidator: validator(),
       runtimeAuth,
     })
     expect(unauthorized).toMatchObject({ ok: false, status: 401 })
@@ -221,7 +150,7 @@ describe('authorizeCentralServerRequest', () => {
     const limited = await authorizeCentralServerRequest({
       request: incoming('/api/runs?host=host-a&project=project-x'),
       route: resolveCentralApiRoute('/api/runs'),
-      registry: registry(),
+      shareValidator: validator(),
       runtimeAuth,
       rateLimit: {
         consume: () => ({ ok: false, retryAfter: 7 }),
@@ -232,22 +161,5 @@ describe('authorizeCentralServerRequest', () => {
     })
     expect(limited).toMatchObject({ ok: false, status: 429 })
     expect(limited.headers['Retry-After']).toBe('7')
-  })
-
-  it('never decodes or validates viewer shares for owner-only tmux shell routes', async () => {
-    const cookie = `${SHARES_COOKIE_NAME}=${signHostQualifiedSharesCookie(
-      [{ host: 'host-a', project: 'project-x', token: SHARE_TOKEN }],
-      SESSION_SECRET,
-    )}`
-    const shareFetchImpl = vi.fn<BackendFetch>()
-    const result = await authorizeCentralServerRequest({
-      request: incoming('/api/tmux-sessions?host=host-a', 'GET', { cookie }),
-      route: resolveCentralApiRoute('/api/tmux-sessions'),
-      registry: registry(),
-      runtimeAuth,
-      shareFetchImpl,
-    })
-    expect(result).toMatchObject({ ok: false, status: 401 })
-    expect(shareFetchImpl).not.toHaveBeenCalled()
   })
 })

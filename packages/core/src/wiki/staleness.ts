@@ -20,6 +20,45 @@ const RUN_SOURCE_REGEX = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
 
 export type WikiSourceKind = 'experiment' | 'variant' | 'hypothesis' | 'wiki' | 'run'
 
+/** Classify source syntax without looking up the referenced target. */
+export function wikiSourceKind(source: string): WikiSourceKind | null {
+  const experiment = EXPERIMENT_SOURCE_REGEX.exec(source)
+  if (experiment) return experiment[3] === undefined ? 'experiment' : 'variant'
+  if (HYPOTHESIS_SOURCE_REGEX.test(source)) return 'hypothesis'
+  if (WIKI_ID_REGEX.test(source)) return 'wiki'
+  if (RUN_SOURCE_REGEX.test(source)) return 'run'
+  return null
+}
+
+/** The artifact lookups a set of declared `sources` actually needs. */
+export interface WikiSourceReferences {
+  /** Numeric `E<NNNN>` prefix of every cited Experiment or Variant. */
+  experiments: string[]
+  /** Cited Run directory base names. */
+  runs: string[]
+}
+
+/**
+ * Partition declared sources into the lookups `resolveWikiSources` performs,
+ * so a caller can load metadata for exactly the cited targets instead of
+ * every Experiment and Run in the project. Hypotheses and wiki pages are
+ * absent by design: those resolve against one file's mtime and the pages the
+ * caller already holds.
+ */
+export function collectWikiSourceReferences(sources: Iterable<string>): WikiSourceReferences {
+  const experiments = new Set<string>()
+  const runs = new Set<string>()
+  for (const source of sources) {
+    const experiment = EXPERIMENT_SOURCE_REGEX.exec(source)
+    if (experiment) {
+      experiments.add(experiment[1]!)
+      continue
+    }
+    if (RUN_SOURCE_REGEX.test(source)) runs.add(source)
+  }
+  return { experiments: [...experiments], runs: [...runs] }
+}
+
 export interface WikiSourceContext {
   experiments: readonly Experiment[]
   runs: readonly Run[]

@@ -8,7 +8,7 @@ These rules supplement `CLAUDE.md` and take precedence over conflicting deployme
 - Do not run the full unit-test suite routinely during development, release, or deployment.
 - Once implementation is complete and the user confirms it is ready to archive, run the full unit-test suite locally before archiving. If it fails, interrupt the archive workflow, report the failures, and resolve them before proceeding; do not archive a failing change.
 - If the user explicitly asks to archive directly, the pre-archive full unit-test suite may be skipped. State that it was skipped; never claim an unexecuted suite passed.
-- Never run unit tests on remote clusters. Remote deployment is limited to installation, necessary builds, startup, and lightweight service-readiness checks.
+- Never run unit tests on remote clusters. A remote node is a CLI/skills installation only: `memon update` pulls its configured trusted remote fast-forward-only, builds and installs the CLI, and refreshes the managed skills. No remote service is deployed, started, or health-gated, and central releases never wait on remote nodes.
 
 ## Local deployment
 

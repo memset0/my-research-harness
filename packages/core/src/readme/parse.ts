@@ -4,18 +4,20 @@
 //   1. Split front matter (YAML between `---`) from body via gray-matter
 //   2. Validate front matter shape with zod (loose) and convert snake_case → camelCase
 //   3. Normalize status via normalizeStatus
-//   4. Split body into ## H2 sections; capture standard 8 sections
-//   5. Parse the Artifacts section body into structured entries
-//   6. Collect all parse issues (errors prevent indexing as "valid"; warnings don't)
+//   4. Record which top-level frontmatter keys the file actually declared
+//   5. Split the body into ## H2 sections, capturing the legacy run-side
+//      section set when present (a v6 minimal Run has none)
+//   6. Parse the Artifacts section body into structured entries
+//   7. Collect all parse issues (errors prevent indexing as "valid"; warnings don't)
+//
+// v6: a Run README is minimal by default — identity, state, timestamps,
+// association, and this run's own execution facts. Identity and status are
+// validated; optional facts default silently and the body is free-form.
+// Legacy rich documents keep parsing losslessly.
 
 import matter from 'gray-matter'
 import { ZodError } from 'zod'
-import type {
-  RunFrontMatter,
-  RunSections,
-  ParseIssue,
-  ParsedReadme,
-} from '../types.js'
+import type { RunFrontMatter, RunSections, ParseIssue, ParsedReadme } from '../types.js'
 import { RunFrontMatterRawSchema } from '../schemas.js'
 import { isId } from '../ids.js'
 import { normalizeStatus } from '../status.js'
@@ -23,26 +25,6 @@ import { matterOptions } from '../yaml-engine.js'
 import { parseArtifacts } from './artifacts.js'
 import { splitH2Sections } from './sections.js'
 import { parseWarningsBody } from './warnings.js'
-
-// v5 canonical run-side section list (four sections). `Motivation` is the
-// only optional section (rendered when populated). `Setup` absorbs the role
-// of methodology on the run side; `Result` absorbs the role of per-run
-// conclusion. Sections that look like they belong here but were removed:
-//   - `Method`     → forbidden; content folds into `## Setup` of this run
-//   - `Conclusion` → forbidden; content folds into `## Result` of this run
-//   - `Caveats`    → forbidden; content relocates to parent exp doc
-// Each removed heading produces a distinct `RUN_HAS_*` warning at parse.
-// The legacy v2/v3 sections `Warnings` and `New Hypotheses` keep their
-// `LEGACY_SECTION_IN_RUN` treatment.
-const STANDARD_SECTIONS = ['Motivation', 'Setup', 'Result', 'Artifacts'] as const
-
-const FORBIDDEN_RUN_SECTIONS: ReadonlyMap<string, { code: string; target: string }> = new Map([
-  ['Method', { code: 'RUN_HAS_METHOD', target: "this run's `## Setup`" }],
-  ['Conclusion', { code: 'RUN_HAS_CONCLUSION', target: "this run's `## Result`" }],
-  ['Caveats', { code: 'RUN_HAS_CAVEATS', target: "the parent experiment doc's `## Caveats`" }],
-])
-
-const LEGACY_RUN_SECTIONS: ReadonlySet<string> = new Set(['Warnings', 'New Hypotheses'])
 
 export function parseReadme(content: string): ParsedReadme {
   const errors: ParseIssue[] = []
@@ -99,25 +81,20 @@ export function parseReadme(content: string): ParsedReadme {
     }
   }
 
-  // v4-added: archived flag. Missing → false with parse warning so callers
-  // (discovery layer) can fall back to the legacy `<runDir>/.archived`
-  // sidecar per archive-frontmatter spec.
-  let archived = false
-  if (raw.archived === undefined) {
-    warnings.push({
-      field: 'archived',
-      message: `MISSING_ARCHIVED_FIELD: archived flag missing from frontmatter; defaulting to false (sidecar fallback may apply)`,
-      severity: 'warning',
-    })
-  } else if (typeof raw.archived === 'boolean') {
-    archived = raw.archived
-  } else {
-    warnings.push({
-      field: 'archived',
-      message: `archived must be a boolean; received ${typeof raw.archived}; defaulting to false`,
-      severity: 'warning',
-    })
-  }
+  // Declared top-level frontmatter keys, in source order. Readers use this
+  // (not a parse warning per absent key) to tell "never written" from
+  // "explicitly false": the v6 minimal Run record omits every default.
+  const frontMatterKeys =
+    rawData && typeof rawData === 'object' ? Object.keys(rawData as Record<string, unknown>) : []
+
+  // v4-added: archive flag. Absence is normal for a v6 minimal record and
+  // is NOT a warning; `frontMatterKeys` carries the "field missing" signal
+  // that the discovery layer's legacy `<runDir>/.archived` sidecar fallback
+  // needs. Only a wrong-typed value is reported.
+  const archived = booleanFlag(raw.archived, 'archived', warnings)
+  // v6-added: research-eligibility flag, orthogonal to status and to
+  // `archived`. Absent → false.
+  const deprecated = booleanFlag(raw.deprecated, 'deprecated', warnings)
 
   const createdAt = stringOr(raw.created_at, '')
   const frontMatter: RunFrontMatter = {
@@ -140,6 +117,7 @@ export function parseReadme(content: string): ParsedReadme {
     hypotheses: validatedHypothesisRefs(raw.hypotheses, warnings),
     tags: stringArray(raw.tags),
     archived,
+    deprecated,
   }
 
   // Split body into sections
@@ -147,16 +125,10 @@ export function parseReadme(content: string): ParsedReadme {
   const sections: RunSections = {
     motivation: getSection(split.sections, 'Motivation'),
     setup: getSection(split.sections, 'Setup'),
-    // v5: Method is forbidden on the run side. Always null in sections;
-    // presence on disk produces RUN_HAS_METHOD below.
-    method: null,
+    method: getSection(split.sections, 'Method'),
     result: getSection(split.sections, 'Result'),
-    // v5: Conclusion is forbidden on the run side. Always null; presence
-    // on disk produces RUN_HAS_CONCLUSION below.
-    conclusion: null,
-    // v5: Caveats is forbidden on the run side. Always null; presence on
-    // disk produces RUN_HAS_CAVEATS below.
-    caveats: null,
+    conclusion: getSection(split.sections, 'Conclusion'),
+    caveats: getSection(split.sections, 'Caveats'),
     artifacts: parseArtifacts(getSection(split.sections, 'Artifacts') ?? ''),
     newHypotheses: getSection(split.sections, 'New Hypotheses'),
   }
@@ -168,53 +140,16 @@ export function parseReadme(content: string): ParsedReadme {
   const warningsParse = parseWarningsBody(warningsSection)
   for (const w of warningsParse.parseWarnings) warnings.push(w)
 
-  // Surface v5-specific section-policy warnings per heading observed:
-  //   - `Method`     → RUN_HAS_METHOD     (target: this run's Setup)
-  //   - `Conclusion` → RUN_HAS_CONCLUSION (target: this run's Result)
-  //   - `Caveats`    → RUN_HAS_CAVEATS    (target: parent exp doc's Caveats)
-  //   - `Warnings` / `New Hypotheses` → LEGACY_SECTION_IN_RUN
-  //   - anything else not in STANDARD_SECTIONS → UNKNOWN_H2_SECTION
-  // Each forbidden heading: severity 'warning' for non-empty body, 'info'
-  // for empty (the migration script auto-cleans dangling empties).
-  for (const heading of split.order) {
-    const forbidden = FORBIDDEN_RUN_SECTIONS.get(heading)
-    if (forbidden) {
-      const sectionBody = (getSection(split.sections, heading) ?? '').trim()
-      warnings.push({
-        field: `section.${heading}`,
-        message:
-          sectionBody === ''
-            ? `${forbidden.code}: empty \`## ${heading}\` heading on a run README; remove it (content belongs in ${forbidden.target})`
-            : `${forbidden.code}: \`## ${heading}\` content on a run README; relocate the text to ${forbidden.target}`,
-        severity: sectionBody === '' ? 'info' : 'warning',
-      })
-      continue
-    }
-    if (LEGACY_RUN_SECTIONS.has(heading)) {
-      warnings.push({
-        field: `section.${heading}`,
-        message: `LEGACY_SECTION_IN_RUN: \`## ${heading}\` is a pre-v3 legacy run-side section; relocate any content to the parent experiment doc`,
-        severity: 'warning',
-      })
-      continue
-    }
-    if (!STANDARD_SECTIONS.includes(heading as (typeof STANDARD_SECTIONS)[number])) {
-      warnings.push({
-        field: `section.${heading}`,
-        message: `UNKNOWN_H2_SECTION: heading "## ${heading}" is not in the canonical run README section list; content is preserved verbatim but not categorised`,
-        severity: 'warning',
-      })
-    }
-  }
-
   return {
     frontMatter,
     sections,
     warnings: warningsParse.warnings,
     warningsRaw: warningsParse.raw,
+    frontMatterSource: content.slice(0, content.length - body.length),
     body,
     parseErrors: errors,
     parseWarnings: warnings,
+    frontMatterKeys,
   }
 }
 
@@ -240,6 +175,7 @@ function emptyResult(errors: ParseIssue[], warnings: ParseIssue[], body: string)
       hypotheses: [],
       tags: [],
       archived: false,
+      deprecated: false,
     },
     sections: {
       motivation: null,
@@ -256,7 +192,24 @@ function emptyResult(errors: ParseIssue[], warnings: ParseIssue[], body: string)
     body,
     parseErrors: errors,
     parseWarnings: warnings,
+    frontMatterKeys: [],
   }
+}
+
+/**
+ * Read an optional boolean frontmatter flag. Absence is silent (v6 minimal
+ * records omit defaults); a wrong-typed value defaults to false and is
+ * reported as a parse warning.
+ */
+function booleanFlag(value: unknown, field: string, warnings: ParseIssue[]): boolean {
+  if (value === undefined) return false
+  if (typeof value === 'boolean') return value
+  warnings.push({
+    field,
+    message: `${field} must be a boolean; received ${typeof value}; defaulting to false`,
+    severity: 'warning',
+  })
+  return false
 }
 
 function stringOr(v: unknown, fallback: string): string {

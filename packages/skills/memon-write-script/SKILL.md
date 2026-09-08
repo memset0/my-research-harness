@@ -5,43 +5,29 @@ description: Write or update a portable shell launcher for a memon Run, includin
 
 # memon-write-script
 
-Author a launcher script. The script creates a fresh timestamped Run directory;
-`memon-run-experiment` owns the Run README and lifecycle around it.
+Author a launcher script. It creates a fresh timestamped Run directory;
+`memon-run-experiment` owns the execution and the Run record around it.
 
 ## Preflight and context
 
-Run `memon --project-root . --format json fs-version check` first and follow
-`../PREFLIGHT.md` unless the status is `match`.
+Follow `../PREFLIGHT.md` — FS-version check, secrets, Journal, CLI issue
+handoff. Read project instructions and nearby launchers, then determine the
+Experiment and optional Variant this launcher serves, whether a meaningful
+Implementation item already exists, the entry command, recipe, env, output path
+and resume behavior, and the project's Python environment, scheduler, GPU, and
+logs conventions.
 
-## Memon CLI issue handoff
-
-For every `memon` command used by this skill or a delegated skill, follow the
-CLI issue handoff in `../PREFLIGHT.md`. After safely finishing the requested
-task, report any CLI crash, valid-input rejection, malformed/inconsistent
-output, or required CLI workaround; if it blocks completion, report it in the
-blocked handoff. Do not mislabel an expected validation or domain-state
-rejection as a CLI bug.
-
-Read project instructions and nearby launchers before writing. Determine:
-
-- the Experiment and optional Variant this launcher serves;
-- whether a meaningful Implementation item already exists;
-- the entry command, training recipe, environment variables, output path, and
-  resume behavior;
-- the project's Python environment, scheduler, GPU, and logs conventions.
-
-Do not create an Implementation item merely because a script is being added.
-If the script implements part of an existing engineering item, hand its path
-back to `memon-write-experiment-doc`; otherwise record it as Variant/Run
-provenance.
+Do not create an Implementation item merely because a script is being added. If
+the script implements part of an existing engineering item, hand its path back
+to `memon-write-experiment-doc`; otherwise record it as Variant/Run provenance.
 
 ## Placement
 
 - Cross-Experiment and portable launcher → `scripts/<area>/`.
 - Experiment-specific scheduler wrapper, smoke launcher, or sweep helper → the
-  Experiment directory next to its bundle.
-- One-shot CPU analysis producing a plot/table → write it as an
-  Experiment-local utility, not through this skill and not as a Run.
+  Experiment directory beside its bundle.
+- One-shot CPU analysis producing a plot/table → an Experiment-local utility,
+  not this skill and not a Run.
 
 Keep generated Run data out of the launcher directory.
 
@@ -52,8 +38,8 @@ Every launcher must:
 1. Start with a functional one-line description and strict shell mode.
 2. Derive `PROJECT_ROOT` portably; never hard-code a user's absolute path.
 3. Accept caller-overridable `RUN_NAME` and `RUN_DIR`.
-4. Create a fresh directory named `<RUN_NAME>-<YYMMDD>-<HHMMSS>` unless an
-   existing `RUN_DIR` is explicitly supplied for a supported resume.
+4. Create a fresh `<RUN_NAME>-<YYMMDD>-<HHMMSS>` directory unless an existing
+   `RUN_DIR` is explicitly supplied for a supported resume.
 5. Emit these lines immediately after directory creation:
 
    ```text
@@ -63,9 +49,9 @@ Every launcher must:
    ```
 
 6. Append stdout/stderr to `"$RUN_DIR/run.log"` with `tee -a`.
-7. Never call `memon`, write `README.md`, or mutate the Experiment bundle.
-8. Remain runnable with bash and the project's actual dependencies even when
-   memon is not installed on the execution host.
+7. Never call `memon`, write a Run record, or mutate the Experiment bundle.
+8. Stay runnable with bash and the project's real dependencies even when memon
+   is not installed on the execution host.
 
 Default template:
 
@@ -90,55 +76,46 @@ python -m my_module \
   2>&1 | tee -a "$RUN_DIR/run.log"
 ```
 
-Use bash arrays for a large argument surface. Use thin wrappers that set env
-vars and delegate when a stable core launcher already exists. A sweep wrapper
-must let the core derive a separate Run directory per Variant/setting.
-
-Inline environment activation only when the repository has a clear precedent.
-Do not guess a conda/venv name.
+Use bash arrays for a large argument surface, and thin wrappers that set env
+vars and delegate when a stable core launcher exists. A sweep wrapper lets the
+core derive a separate Run directory per setting. Inline environment activation
+only with a clear repository precedent — never guess a conda/venv name.
 
 ## Variant alignment
 
-When this script is part of an imminent Run:
+When the script is part of an imminent Run: confirm the Variant already exists
+in `results.yaml`; make entry, recipe, and injected env match its provenance;
+never silently broaden one invocation into undeclared Variants; expose
+comparison parameters as explicit env vars/flags so the actual command can be
+audited against Results.
 
-- confirm the Variant already exists in `results.yaml` before launch;
-- make entry, recipe, and injected env match that Variant's provenance;
-- do not silently broaden one launcher invocation into undeclared Variants;
-- expose comparison parameters as explicit env vars/flags so the actual command
-  can be audited against Results.
-
-This skill may prepare the launcher before the Variant is finalized, but it must
-not launch it. `memon-run-experiment` enforces the pre-launch Variant check.
+This skill may prepare a launcher before the Variant is final, but it never
+launches. `memon-run-experiment` enforces the pre-launch check.
 
 ## Workflow
 
 1. Inspect instructions, sibling scripts, entry code, and recipe.
-2. Choose placement and whether to extend a core launcher or add a standalone
+2. Choose placement, and whether to extend a core launcher or add a standalone
    script.
 3. Implement the smallest auditable launcher.
-4. Run `bash -n <script>` and the repository's shell formatter/linter if
-   configured.
-5. Perform only a cheap dry/smoke invocation when it is safe and explicitly
-   supported. Do not accidentally start the full training job.
-6. Return a provenance handoff. If Experiment bundle metadata must change,
-   invoke `memon-write-experiment-doc` rather than editing it here.
+4. Run `bash -n <script>`, plus the repository's shell linter if configured.
+5. Only a cheap dry/smoke invocation, and only when it is safe and explicitly
+   supported. Never start the real training job by accident.
+6. For a launcher written inside `docs/experiments/E<NNNN>-<slug>/`, close the
+   direct maintenance with one submission (`../PREFLIGHT.md`):
 
-Handoff shape:
+   ```sh
+   memon --project-root . --format json journal submit \
+     --files docs/experiments/E0007-bf16-numerics/smoke_bf16.sh
+   ```
 
-```json
-{
-  "files": ["scripts/train/run_bf16.sh"],
-  "entry": "scripts/train/run_bf16.sh",
-  "recipe": "recipes/bf16.yaml",
-  "env": {"PRECISION": "bf16"},
-  "experiment": "E0007-bf16-numerics",
-  "variant": "V0002",
-  "implementation_item": null,
-  "verification": ["bash -n scripts/train/run_bf16.sh"]
-}
-```
-
-Use actual values and omit irrelevant optional fields.
+   A launcher under `scripts/` is outside the accepted scope — do not submit it.
+7. Hand back provenance: the files written, the `entry`, `recipe`, and `env` the
+   Experiment writer needs, the Experiment/Variant it serves, the existing
+   Implementation item or `null`, the verification commands you ran, and the
+   `invocationId` from step 6 when there was one. Invoke
+   `memon-write-experiment-doc` for any bundle metadata change instead of
+   editing it here.
 
 ## Guardrails
 
@@ -149,4 +126,6 @@ Use actual values and omit irrelevant optional fields.
   recipes, provenance env, or logs.
 - Do not overwrite an existing script without reading and preserving its
   supported interfaces.
-- Do not use a timestamp-free directory for a fresh Run.
+- Do not use a timestamp-free directory for a fresh Run, and do not truncate an
+  existing `run.log`.
+- Do not read, write, or repair a Journal file beyond the step 6 submission.

@@ -23,10 +23,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 const openServers = new Set<ReturnType<typeof createBackendServer>>()

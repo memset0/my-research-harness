@@ -15,10 +15,7 @@ const base: BackendCapabilities = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: false,
-  terminal: false,
   slurm: true,
-  herdr: false,
 }
 const servers: ReturnType<typeof createBackendServer>[] = []
 afterEach(async () => {

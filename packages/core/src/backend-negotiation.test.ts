@@ -22,10 +22,7 @@ const CURRENT_CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: true,
-  herdr: true,
 } satisfies BackendCapabilities
 
 function metadata(
@@ -66,7 +63,7 @@ describe('Backend protocol adapter negotiation', () => {
   })
 
   it('selects the previous-Minor adapter and normalizes absent known capabilities to false', () => {
-    const { herdr: _newCapability, ...previousCapabilities } = CURRENT_CAPABILITIES
+    const { slurm: _newCapability, ...previousCapabilities } = CURRENT_CAPABILITIES
     const result = negotiate(metadata('6.1.7', previousCapabilities))
     expect(result).toMatchObject({
       ok: true,
@@ -75,7 +72,7 @@ describe('Backend protocol adapter negotiation', () => {
     })
     if (!result.ok) return
     expect(result.metadata.capabilities.projects).toBe(true)
-    expect(result.metadata.capabilities.herdr).toBe(false)
+    expect(result.metadata.capabilities.slurm).toBe(false)
     expect(BackendMetadataSchema.safeParse(result.metadata).success).toBe(true)
   })
 
@@ -91,7 +88,7 @@ describe('Backend protocol adapter negotiation', () => {
   })
 
   it('does not apply previous-Minor defaults to malformed current-Minor metadata', () => {
-    const { herdr: _missing, ...incompleteCapabilities } = CURRENT_CAPABILITIES
+    const { slurm: _missing, ...incompleteCapabilities } = CURRENT_CAPABILITIES
     expect(negotiate(metadata('6.2.0', incompleteCapabilities))).toMatchObject({
       ok: false,
       state: 'misconfigured',
@@ -99,7 +96,7 @@ describe('Backend protocol adapter negotiation', () => {
   })
 
   it('rejects malformed and unknown previous-Minor capability entries', () => {
-    expect(negotiate(metadata('6.1.0', { ...CURRENT_CAPABILITIES, herdr: 'yes' }))).toMatchObject({
+    expect(negotiate(metadata('6.1.0', { ...CURRENT_CAPABILITIES, slurm: 'yes' }))).toMatchObject({
       ok: false,
       state: 'misconfigured',
     })
@@ -111,11 +108,11 @@ describe('Backend protocol adapter negotiation', () => {
 
 describe('Backend capability and route guard', () => {
   it('never invokes a route whose capability is absent from the previous Minor fixture', async () => {
-    const { herdr: _newCapability, ...previousCapabilities } = CURRENT_CAPABILITIES
+    const { slurm: _newCapability, ...previousCapabilities } = CURRENT_CAPABILITIES
     const negotiated = negotiate(metadata('6.1.0', previousCapabilities))
     const invoke = vi.fn(() => 'must-not-run')
 
-    const result = await invokeNegotiatedBackendRoute(negotiated, 'herdr', invoke)
+    const result = await invokeNegotiatedBackendRoute(negotiated, 'slurm', invoke)
 
     expect(result).toMatchObject({
       ok: false,
@@ -125,7 +122,7 @@ describe('Backend capability and route guard', () => {
   })
 
   it('invokes a supported previous-Minor route with the explicit adapter', async () => {
-    const { herdr: _newCapability, ...previousCapabilities } = CURRENT_CAPABILITIES
+    const { slurm: _newCapability, ...previousCapabilities } = CURRENT_CAPABILITIES
     const negotiated = negotiate(metadata('6.1.0', previousCapabilities))
     const invoke = vi.fn((route: { adapter: string }) => route.adapter)
 

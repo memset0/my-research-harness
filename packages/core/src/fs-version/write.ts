@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { dirname } from 'node:path'
 import { resolveVersionFilePath } from './paths.js'
 import { validateFsVersionRecord } from './schema.js'

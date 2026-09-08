@@ -60,8 +60,9 @@ rendered as human-readable Markdown only when the stored pointer is valid. If
 the pointer conflicts with real README content, render the real content with a
 diagnostic; never hide it behind the YAML projection.
 
-Unknown or duplicated H2 sections are unsupported and linted, but remain
-visible and byte-preserved. Strict validation must never become lossy reading.
+Unknown or duplicated H2 sections are unsupported by the canonical order but
+remain visible and byte-preserved. Strict validation must never become lossy
+reading.
 
 ## `implementation.yaml` schema v1
 
@@ -87,25 +88,16 @@ items:
     children: []
 ```
 
-Required node fields: `id`, `title`, `status`. Optional fields are
-`description`, `depends_on`, `acceptance_criteria`, `files`, `commits`,
-`code_reviews`, `outcome`, and recursive `children`.
+Required node fields: `id`, `title`, `status`. Optional: `description`,
+`depends_on`, `acceptance_criteria`, `files`, `commits`, `code_reviews`,
+`outcome`, recursive `children`. Statuses:
+`TODO | IN_PROGRESS | BLOCKED | DONE | DROPPED`.
 
-Statuses:
-
-```text
-TODO | IN_PROGRESS | BLOCKED | DONE | DROPPED
-```
-
-Use `TODO` when meaningful engineering work is recorded before it starts, and
-change it to `IN_PROGRESS` only when implementation has actually begun. A
-successful Run does not by itself make an Implementation item `DONE`; check
-its acceptance criteria and engineering outcome.
-
-Do not create an Implementation item merely because a launcher or analysis
-script exists. Create one only for meaningful engineering work. Link a script
-to an existing item when appropriate; otherwise the Variant/Run provenance is
-enough.
+`TODO` records meaningful engineering work before it starts; `IN_PROGRESS` once
+implementation actually began. A successful Run does not by itself make an item
+`DONE` — check its acceptance criteria and engineering outcome. Do not create an
+item merely because a launcher or analysis script exists; link a script to an
+existing item, or leave it as Variant/Run provenance.
 
 ## `investigation.yaml` schema v1
 
@@ -126,24 +118,17 @@ items:
     children: []
 ```
 
-Required node fields: `id`, `title`, `status`. Optional fields are
-`description`, `depends_on`, `question`, `rationale`, `success_criteria`,
-`variant_ids`, `outcome`, and recursive `children`.
+Required node fields: `id`, `title`, `status`. Optional: `description`,
+`depends_on`, `question`, `rationale`, `success_criteria`, `variant_ids`,
+`outcome`, recursive `children`. Statuses:
+`PLANNED | IN_PROGRESS | BLOCKED | ANSWERED | INCONCLUSIVE | DROPPED`.
 
-Statuses:
-
-```text
-PLANNED | IN_PROGRESS | BLOCKED | ANSWERED | INCONCLUSIVE | DROPPED
-```
-
-Use `PLANNED` before empirical work begins and `IN_PROGRESS` once evidence is
-being collected or analyzed. Do not invent a question, success criterion, or
-answer that the Experiment record and caller did not establish.
-
-`Investigation` and `Results` are independent peers. Investigation nodes may
-link Variants through `variant_ids`, but must not embed Variant definitions.
-One Variant may be referenced by more than one Investigation. Run completion
-does not automatically imply `ANSWERED`.
+`PLANNED` before empirical work begins, `IN_PROGRESS` once evidence is being
+collected or analyzed. Do not invent a question, criterion, or answer the record
+and caller did not establish. `Investigation` and `Results` are independent
+peers: nodes link Variants through `variant_ids` and never embed Variant
+definitions, one Variant may serve several Investigations, and Run completion
+never implies `ANSWERED`.
 
 ## `results.yaml` schema v1
 
@@ -203,41 +188,46 @@ Column fields are `key`, `label`, `group`, `type`, and optionally `options`.
   options. Not every option needs to appear in a Variant.
 
 `column_annotations` is optional supplemental documentation keyed by declared
-column key. Each entry may independently contain a Markdown `description`, a
-partial `value_descriptions` map, or both. The entire block, individual
-columns, and individual values may be omitted. `value_descriptions` is not an
-allowed-values declaration: it need not cover `options`, and it may explain a
-value that will be added later. Quote ambiguous YAML mapping keys when needed.
-
-Agents may edit this block directly. For an isolated upsert they may instead
-use `memon experiment results annotation set`; the CLI is optional and direct
-YAML editing remains supported.
+column key; each entry may carry a Markdown `description`, a partial
+`value_descriptions` map, or both, and the block, a column, or a value may be
+omitted. `value_descriptions` is not an allowed-values declaration: it need not
+cover `options` and may explain a value added later. Quote ambiguous YAML keys.
+Agents edit the block directly, or use
+`memon experiment results annotation set` for an isolated upsert.
 
 Variant required fields: `id`, `name`, `status`, `parameters`, `metrics`,
-`runs`, and `attempts`. Optional fields: `description`, `provenance`.
-
-Statuses:
-
-```text
-PLANNED | RUNNING | COMPLETED | FAILED | INCONCLUSIVE | DROPPED
-```
+`runs`, `attempts`. Optional: `description`, `provenance`. Statuses:
+`PLANNED | RUNNING | COMPLETED | FAILED | INCONCLUSIVE | DROPPED`.
 
 Run-list semantics:
 
-- `runs`: Runs accepted as evidence for the Variant and used for metrics and
-  Findings. A newly launched Run enters `runs` by default.
-- `attempts`: failed, interrupted, invalid, or superseded executions retained
-  for provenance. Move a Run from `runs` here when it becomes unusable.
+- `runs`: associated executions, including newly launched Runs and retained
+  deprecated history. Membership alone does not establish current evidence:
+  use non-deprecated, appropriate executions when analyzing results.
+- `attempts`: the existing category for executions not selected as evidence;
+  these also retain their Variant association. Deprecation is not a reason to
+  move an existing Run between lists. Keep historical metric dependencies.
 - A Run may occur in exactly one of these lists for a Variant.
 - A Variant may exist with zero Runs; it must exist before any Run starts.
 - Same-condition retries remain on the same Variant. A changed comparison
-  condition requires a new or explicitly revised Variant before launch.
+  condition requires a new or explicitly revised Variant before launch. Prove a
+  same-condition retry from the recorded launch command, entry point, recipe,
+  environment, and comparison parameters; a shared Variant ID is not proof.
+- Deprecation is independent of list placement: keep the existing association
+  and mark the Run deprecated. Its results do not participate in current
+  analysis, but execution work may inspect its scripts, configuration and
+  recovery history. Do not infer that a deprecated Run is unreadable.
+- Historical membership and current metric evidence are distinct concepts.
+  Verified replacement results should become valid without deleting or
+  restoring old deprecated Runs. Current projections still check all `runs`;
+  they do not yet model that distinction. Do not invent a YAML field, silently
+  upgrade the schema, or remove history to bypass the conservative result.
+  Preserve old measurements and identify the actual source of new ones using
+  supported provenance and the execution handoff.
 
-Prove a same-condition retry from the Run Setup or launch command together
-with the recorded entry point, recipe, environment, and comparison parameters;
-sharing a Variant ID alone is not proof. Mark a Variant `COMPLETED` only when
-its intended evidence set is complete. Keep it `RUNNING` while an accepted Run
-or planned retry is still outstanding.
+Mark a Variant `COMPLETED` only when its intended evidence set is complete.
+Use `RUNNING` for active execution and `PLANNED` for a retry not yet launched;
+neither status determines whether the Investigation is answered.
 
 W&B URLs and memon Run-document URLs are derived from Run metadata and IDs;
 do not duplicate them in `results.yaml`.
@@ -247,8 +237,8 @@ string-only provenance fields such as `commit`.
 
 ## Warnings table
 
-`Warnings` remains a parser-compatible GFM table, even though the dedicated
-warning skill is removed and its CLI is deprecated:
+`Warnings` remains a parser-compatible GFM table; the dedicated warning skill
+is removed and its CLI deprecated:
 
 ```markdown
 ## Warnings
@@ -292,11 +282,14 @@ display order; there is no separate `order` field.
 | Generalization boundary, confound, missing coverage | `Limitations` |
 | Final answer or decision after user-approved resolution | `Conclusion` |
 | Actionable anomaly requiring attention | `Warnings` |
-| Cross-project observation or request | `docs/journal.md` |
+| Successor/predecessor relationship after an approved decision | `Findings` or `Conclusion` prose naming the other Experiment ID |
+| Cross-project observation, request, or decision | the project wiki through `memon-wiki` |
 
-`Results` records what happened. `Findings` explains what it means.
-`Conclusion` records the final decision. Do not duplicate the Results matrix in
-Findings or Conclusion.
+`Results` records what happened, `Findings` explains what it means, and
+`Conclusion` records the final decision — never duplicate the Results matrix in
+either. Nothing in the bundle derives from the Journal; the writer's only
+contact with it is the one `journal submit` that closes a batch of direct edits
+(`../../PREFLIGHT.md`).
 
 ## Versioning and rendering
 
@@ -310,9 +303,12 @@ Canonical CLI surfaces:
 ```sh
 memon --project-root . --format json experiment doc show <id> <implementation|investigation|results>
 memon --project-root . --format human experiment doc render <id> <section>
-memon --project-root . --format json experiment doc validate <id>
 memon --project-root . --format json experiment doc lint <id>
 ```
+
+`doc lint` includes schema validation; `experiment doc validate` and
+`memon doctor` no longer exist. Run structure is checked separately with
+`memon run lint <run>`.
 
 The CLI, section fetch, and first-version frontend share the same Markdown
 renderer. Future rich components should consume the normalized tree/model, not

@@ -42,7 +42,7 @@ describe('GET /api/projects role composition', () => {
   it('returns Host-qualified safe aggregation for a central owner', async () => {
     const registry = { marker: 'registry' }
     vi.mocked(getRuntime).mockResolvedValue({
-      config: { central: { hosts: [] }, projects: [] },
+      config: { central: { hosts: [{ id: 'host-a' }] }, projects: [] },
     } as never)
     vi.mocked(getCentralFleet).mockResolvedValue({ registry } as never)
     vi.mocked(aggregateCentralProjects).mockResolvedValue({
@@ -99,7 +99,7 @@ describe('GET /api/projects role composition', () => {
   it('aggregates a central viewer with exact Host-qualified scopes', async () => {
     const registry = { marker: 'registry' }
     vi.mocked(getRuntime).mockResolvedValue({
-      config: { central: { hosts: [] }, projects: [] },
+      config: { central: { hosts: [{ id: 'host-a' }] }, projects: [] },
     } as never)
     vi.mocked(getCentralFleet).mockResolvedValue({ registry } as never)
     vi.mocked(aggregateCentralProjects).mockResolvedValue({
@@ -166,7 +166,7 @@ describe('GET /api/projects role composition', () => {
 
   it('redacts central aggregation failures', async () => {
     vi.mocked(getRuntime).mockResolvedValue({
-      config: { central: { hosts: [] }, projects: [] },
+      config: { central: { hosts: [{ id: 'host-a' }] }, projects: [] },
     } as never)
     vi.mocked(getCentralFleet).mockRejectedValue(
       new Error('private tunnel /srv/private token=secret'),

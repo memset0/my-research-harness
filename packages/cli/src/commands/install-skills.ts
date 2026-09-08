@@ -1,16 +1,27 @@
 // memon install-skills — sync bundled SKILL.md trees into a project's per-agent
 // skills directories. By default writes to `.claude/skills/`, `.codex/skills/`,
 // and `.opencode/skills/` under <projectRoot>; opt out via `--agent <list>`.
-// Replaces every `memon-*` directory in each target so removed/renamed skills
-// disappear cleanly. Skills not starting with `memon-` are left untouched.
+// Every `memon-*` directory the current bundle still ships is replaced, so its
+// stale files disappear cleanly. Skills not starting with `memon-` are left
+// untouched.
+//
+// A `memon-*` directory the bundle no longer ships is NOT wiped blindly. It is
+// deleted only when its name is in `RETIRED_SKILLS` (a bundled name this
+// harness intentionally stopped shipping) AND the directory's exact file tree
+// matches a deposit this harness released under that name. A retired name whose
+// tree was edited, extended, or replaced locally is preserved and reported as
+// `kept-modified`; an unrecognized `memon-*` directory is preserved and
+// reported as `kept-unmanaged`. Both classifications are computed in `--dry-run`
+// too, so an operator can see what a real run would retire before syncing.
 //
 // After the copy loop, the command optionally offers to symlink
 // AGENTS.md → CLAUDE.md so non-Claude agent CLIs pick up the same project
 // guidance. Prompt only fires on a TTY in `--format human` non-dry-run runs;
 // every other path reports a `skipped-*` action without blocking.
 
+import { createHash } from 'node:crypto'
 import { existsSync as fsExistsSync, promises as fs } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   FS_CONVENTION_VERSION,
@@ -33,6 +44,14 @@ export type AgentName = keyof typeof AGENT_TARGETS
 
 const ALL_AGENTS: readonly AgentName[] = ['claude', 'codex', 'opencode']
 
+/**
+ * Retirement registry shipped beside the skill dirs in the source tree, read
+ * the same way `PREFLIGHT.md` is. Kept as a literal here (not imported) so a
+ * hand-curated `MEMON_SKILLS_DIR` only has to carry the file, not a matching
+ * build of `@memon/skills`.
+ */
+export const RETIRED_SKILLS_FILE = 'retired-skills.json'
+
 export interface InstallSkillsInput {
   /** When set, target = `<projectRoot>/<agent-subpath>` for each requested agent. Mutually exclusive with `target`. */
   projectRoot?: string
@@ -45,11 +64,42 @@ export interface InstallSkillsInput {
   format: OutputFormat
 }
 
+/**
+ * What happened to a `memon-*` directory whose name the current bundle does
+ * not ship:
+ * - `retired` — the name is in the retirement registry and the installed tree
+ *   is byte-identical to a tree this harness released, so it was deleted
+ *   (reported without deleting under `--dry-run`).
+ * - `kept-modified` — registered retired name, but the installed tree differs
+ *   from every released tree (edited, extended, or replaced locally).
+ * - `kept-unmanaged` — the bundle never shipped this name; it is somebody
+ *   else's skill living in the same namespace.
+ */
+export type UnshippedAction = 'retired' | 'kept-modified' | 'kept-unmanaged'
+
+export interface UnshippedDir {
+  name: string
+  action: UnshippedAction
+  /** Tree digest observed on disk; `null` when the directory holds no files. */
+  depositDigest: string | null
+}
+
 export interface InstalledTarget {
   agent: AgentName | null
   path: string
+  /** Bundled skill dirs replaced from source, plus retired dirs deleted. */
   removed: string[]
   installed: string[]
+  /** Every `memon-*` dir in the target that the current bundle does not ship. */
+  unshipped: UnshippedDir[]
+}
+
+export interface RetirementRegistryReport {
+  /** Absolute path of the registry read from the resolved source tree. */
+  path: string
+  /** False when the source tree carries no registry; nothing is then retired. */
+  available: boolean
+  names: string[]
 }
 
 export interface FsVersionReport {
@@ -171,21 +221,146 @@ function resolveTargets(input: InstallSkillsInput): ResolvedTargets {
   }
 }
 
+/**
+ * Load the retirement registry that ships beside the skill dirs.
+ *
+ * A source tree without the file is legal (older bundle, hand-curated sync
+ * dir): the registry is then empty, so no directory is ever retired and the
+ * report says `available: false` instead of pretending the target is clean.
+ * A malformed registry is a hard error — silently degrading to "retire
+ * nothing" would hide a broken release.
+ */
+async function loadRetirementRegistry(src: string): Promise<{
+  report: RetirementRegistryReport
+  deposits: Map<string, Set<string>>
+}> {
+  const path = join(src, RETIRED_SKILLS_FILE)
+  let raw: string
+  try {
+    raw = await fs.readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return { report: { path, available: false, names: [] }, deposits: new Map() }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    emitErrorAndExit('BAD_REQUEST', `malformed retirement registry at ${path}: ${String(err)}`)
+  }
+  if (!(parsed && typeof parsed === 'object' && 'retired' in parsed && Array.isArray(parsed.retired))) {
+    emitErrorAndExit('BAD_REQUEST', `retirement registry at ${path} has no "retired" array`)
+  }
+  if (!('schema_version' in parsed) || parsed.schema_version !== 1) {
+    emitErrorAndExit('BAD_REQUEST', `unsupported retirement registry schema at ${path}`)
+  }
+  const deposits = new Map<string, Set<string>>()
+  for (const entry of parsed.retired) {
+    const named = entry && typeof entry === 'object' && 'name' in entry && 'deposit_digests' in entry
+    if (!named || typeof entry.name !== 'string' || !/^memon-[a-z0-9-]+$/.test(entry.name) || !Array.isArray(entry.deposit_digests) || deposits.has(entry.name)) {
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        `retirement registry at ${path} has an entry without a name and deposit_digests`,
+      )
+    }
+    const digests = new Set<string>()
+    for (const digest of entry.deposit_digests) {
+      if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) {
+        emitErrorAndExit(
+          'BAD_REQUEST',
+          `retirement registry at ${path}: ${entry.name} has an invalid deposit digest`,
+        )
+      }
+      digests.add(digest)
+    }
+    deposits.set(entry.name, digests)
+  }
+  return {
+    report: { path, available: true, names: [...deposits.keys()].sort() },
+    deposits,
+  }
+}
+
+/**
+ * Digest of a whole installed skill tree: `sha256` over the path-sorted
+ * `<relative path>\0<sha256 of bytes>\n` lines of every file below `dir`.
+ * Any edited file, added helper, or removed reference changes the result, so
+ * an equal digest means the tree is exactly one this harness released.
+ * Returns `null` for a directory that contains no files at all.
+ */
+export async function computeDepositDigest(dir: string): Promise<string | null> {
+  if (!(await fs.lstat(dir)).isDirectory()) return null
+  const lines: string[] = []
+  const walk = async (current: string): Promise<void> => {
+    const entries = await fs.readdir(current, { withFileTypes: true })
+    for (const entry of entries) {
+      const abs = join(current, entry.name)
+      if (entry.isDirectory()) {
+        await walk(abs)
+      } else if (entry.isFile()) {
+        const bytes = await fs.readFile(abs)
+        const rel = relative(dir, abs).split('\\').join('/')
+        lines.push(`${rel}\0${createHash('sha256').update(bytes).digest('hex')}\n`)
+      } else {
+        // A symlink or device node was never part of a released deposit; mark
+        // the tree as foreign so it is preserved rather than deleted.
+        lines.push(`${relative(dir, abs).split('\\').join('/')}\0<non-file>\n`)
+      }
+    }
+  }
+  await walk(dir)
+  if (lines.length === 0) return null
+  lines.sort()
+  return createHash('sha256').update(lines.join('')).digest('hex')
+}
+
+async function classifyUnshipped(
+  targetPath: string,
+  names: string[],
+  deposits: Map<string, Set<string>>,
+): Promise<UnshippedDir[]> {
+  const out: UnshippedDir[] = []
+  for (const name of names) {
+    const shipped = deposits.get(name)
+    if (!shipped) {
+      out.push({ name, action: 'kept-unmanaged', depositDigest: null })
+      continue
+    }
+    const digest = await computeDepositDigest(join(targetPath, name))
+    out.push({
+      name,
+      action: digest !== null && shipped.has(digest) ? 'retired' : 'kept-modified',
+      depositDigest: digest,
+    })
+  }
+  return out
+}
+
 async function installOne(
   target: { agent: AgentName | null; path: string },
   src: string,
   sourceSkills: string[],
+  deposits: Map<string, Set<string>>,
   dryRun: boolean,
 ): Promise<InstalledTarget> {
   let existingMemonInTarget: string[] = []
   if (await pathExists(target.path)) {
     existingMemonInTarget = (await fs.readdir(target.path, { withFileTypes: true }))
-      .filter((d) => d.isDirectory() && d.name.startsWith('memon-'))
+      .filter((d) => (d.isDirectory() || d.isSymbolicLink()) && d.name.startsWith('memon-'))
       .map((d) => d.name)
       .sort()
   }
 
-  const removed = existingMemonInTarget // every memon-* gets wiped before reinstall
+  const shippedNames = new Set(sourceSkills)
+  // Dirs the bundle still ships are replaced wholesale so their stale files go.
+  const replaced = existingMemonInTarget.filter((name) => shippedNames.has(name))
+  const unshipped = await classifyUnshipped(
+    target.path,
+    existingMemonInTarget.filter((name) => !shippedNames.has(name)),
+    deposits,
+  )
+  const retired = unshipped.filter((d) => d.action === 'retired').map((d) => d.name)
+  const removed = [...replaced, ...retired].sort()
   // installed[]: skill dir basenames + the PREFLIGHT.md sibling.
   const installed = [...sourceSkills, 'PREFLIGHT.md']
 
@@ -203,7 +378,7 @@ async function installOne(
     await fs.copyFile(join(src, 'PREFLIGHT.md'), join(target.path, 'PREFLIGHT.md'))
   }
 
-  return { agent: target.agent, path: target.path, removed, installed }
+  return { agent: target.agent, path: target.path, removed, installed, unshipped }
 }
 
 export async function runInstallSkills(input: InstallSkillsInput): Promise<void> {
@@ -225,9 +400,13 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
     .map((d) => d.name)
     .sort()
 
+  const registry = await loadRetirementRegistry(src)
+
   const installed: InstalledTarget[] = []
   for (const target of resolved.targets) {
-    installed.push(await installOne(target, src, sourceSkills, !!input.dryRun))
+    installed.push(
+      await installOne(target, src, sourceSkills, registry.deposits, !!input.dryRun),
+    )
   }
 
   const agentsLink = await maybeOfferAgentsLink({
@@ -238,10 +417,15 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
 
   if (input.format === 'human') {
     const lines: string[] = [`source: ${src}`]
+    if (!registry.report.available) {
+      lines.push(`retirement registry: absent (${RETIRED_SKILLS_FILE} missing) — nothing retired`)
+    }
     for (const t of installed) {
       const label = t.agent ? `target [${t.agent}]: ${t.path}` : `target: ${t.path}`
       lines.push(label)
-      lines.push(`  replaced ${t.removed.length} memon-* dir(s); installed ${t.installed.length}`)
+      const replacedCount = t.removed.length - t.unshipped.filter((d) => d.action === 'retired').length
+      lines.push(`  replaced ${replacedCount} memon-* dir(s); installed ${t.installed.length}`)
+      for (const line of formatUnshippedLines(t.unshipped)) lines.push(line)
     }
     lines.push(formatAgentsLinkLine(agentsLink, resolved.projectRootForLink))
     if (fsVersion) lines.push(formatFsVersionLine(fsVersion))
@@ -257,12 +441,38 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
     emitJson({
       ok: true,
       source: src,
+      retirementRegistry: registry.report,
       targets: installed,
       agentsLink,
       fsVersion,
       dryRun: !!input.dryRun,
     })
   }
+}
+
+/**
+ * One human line per outcome group, so an operator can see before syncing
+ * which directories a real run deletes and which ones it deliberately leaves
+ * behind for review.
+ */
+function formatUnshippedLines(unshipped: UnshippedDir[]): string[] {
+  const lines: string[] = []
+  const group = (action: UnshippedAction): string[] =>
+    unshipped.filter((d) => d.action === action).map((d) => d.name)
+
+  const retired = group('retired')
+  if (retired.length > 0) lines.push(`  retired ${retired.length}: ${retired.join(', ')}`)
+  const modified = group('kept-modified')
+  if (modified.length > 0) {
+    lines.push(
+      `  kept ${modified.length} modified retired dir(s), review manually: ${modified.join(', ')}`,
+    )
+  }
+  const unmanaged = group('kept-unmanaged')
+  if (unmanaged.length > 0) {
+    lines.push(`  kept ${unmanaged.length} unmanaged memon-* dir(s): ${unmanaged.join(', ')}`)
+  }
+  return lines
 }
 
 /**

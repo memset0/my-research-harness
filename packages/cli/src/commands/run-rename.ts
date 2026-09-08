@@ -17,10 +17,9 @@ import {
   appendJournalEvent,
   parseReadme,
   parseSlugFromRunDir,
-  parseTimestampFromRunDir,
   readExperimentDoc,
   reserializeReadme,
-  scanProjectRoot,
+  RunTargetIndex,
   serializeExperimentReadme,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -51,8 +50,11 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
 
-  const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const target = snap.experiments.find((e) => e.id === input.runIdOrDir)
+  // One bounded discovery pass: the rename needs the target's README (for
+  // its `experiment:` claim) plus a dir-name collision check, and the index
+  // answers the latter without reading any other run.
+  const index = await RunTargetIndex.open(projectRoot, { projectName })
+  const target = await index.read(input.runIdOrDir)
   if (!target) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found in ${projectRoot}`)
   }
@@ -75,8 +77,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   // is FINE (run slugs MAY repeat across attempts) — what we reject is
   // a full dir-name clash, which can only happen if another run already
   // happens to have both this slug AND this exact timestamp suffix.
-  const collide = snap.experiments.find((e) => e.id !== oldId && e.id === newId)
-  if (collide) {
+  if (index.has(newId)) {
     emitErrorAndExit(
       'BAD_REQUEST',
       `DUPLICATE_RUN_DIR: another run already has dir name "${newId}"`,
@@ -117,15 +118,16 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   const newPath = join(dirname(target.path), newId)
   await fs.rename(target.path, newPath)
 
-  // Step 2: rewrite the run README's frontmatter id (and updated_at).
+  // Preserve the pre-existing post-rename existence check: a concurrently
+  // removed README is skipped rather than synthesized or overwritten.
   const readmePath = join(newPath, 'README.md')
-  let stat: Awaited<ReturnType<typeof fs.stat>> | null
+  let hasReadme = true
   try {
-    stat = await fs.stat(readmePath)
+    await fs.stat(readmePath)
   } catch {
-    stat = null
+    hasReadme = false
   }
-  if (stat) {
+  if (hasReadme) {
     const content = await fs.readFile(readmePath, 'utf8')
     const parsed = parseReadme(content)
     parsed.frontMatter.id = newId
@@ -134,7 +136,9 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
     await atomicWrite(readmePath, reserializeReadme(parsed))
   }
 
-  // Step 3: update the parent experiment's runs[] entry atomically.
+  // Step 3: update the parent experiment's runs[] entry atomically. Re-read
+  // after the directory mutation so concurrent exp-doc edits are not replaced
+  // with the older pre-flight snapshot.
   if (claimedExpId) {
     const exp = await readExperimentDoc(projectRoot, projectName, claimedExpId)
     if (exp) {
@@ -174,7 +178,6 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
     },
   })
 
-  void parseTimestampFromRunDir // silence unused import (kept for future use)
   emitJson({ ok: true, oldId, newId })
 }
 

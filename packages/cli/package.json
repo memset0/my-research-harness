@@ -17,7 +17,6 @@
     "memon": "node ./dist/index.js"
   },
   "dependencies": {
-    "@memon/backend": "workspace:*",
     "@memon/core": "workspace:*",
     "@memon/skills": "workspace:*",
     "commander": "^12.1.0"

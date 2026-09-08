@@ -4,6 +4,8 @@
 // YAML on disk uses snake_case; we convert to camelCase at the parse boundary
 // so internal code is idiomatic TypeScript.
 
+import type { FileAccessOptions, FileCacheOptions } from './project-file-store.js'
+
 export type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
 
 export const STATUS_VALUES: readonly Status[] = [
@@ -176,10 +178,23 @@ export interface RunFrontMatter {
    * Replaces the legacy `<runDir>/.archived` sidecar file. Per
    * `archive-frontmatter` spec: human-only writes; cannot be set to `true`
    * while `status === 'RUNNING'`; soft warning on writes-to-archived.
-   * Parser falls back to `false` when missing (with `MISSING_ARCHIVED_FIELD`
-   * parse warning) or to the sidecar's presence in the migration window.
+   * Absent from frontmatter means `false` (v6 minimal records omit it); the
+   * migration-window sidecar fallback keys off `frontMatterKeys` instead.
    */
   archived: boolean
+  /**
+   * v6-added: human-managed research-eligibility flag, ORTHOGONAL to
+   * `status` and to `archived`. A deprecated Run is one whose evidence the
+   * project no longer trusts (bad config, corrupted data, superseded
+   * setup); it is excluded from research collections, aggregation, and
+   * counts by default while remaining fully readable by explicit id.
+   *
+   * Deprecating is a bookkeeping act only: it never kills a running
+   * process, never deletes artifacts, and never implies FAILED or
+   * archived. A RUNNING run may be deprecated. Missing from frontmatter
+   * means `false` (no parse warning — new minimal Run records omit it).
+   */
+  deprecated: boolean
 }
 
 export interface ArtifactEntry {
@@ -223,8 +238,18 @@ export interface ParsedReadme {
   /** Raw bytes of the warnings section when its body is non-conforming; null otherwise. */
   warningsRaw: string | null
   body: string // body without front matter, raw
+  /** Original leading YAML block, retained for lossless metadata-only writes. */
+  frontMatterSource?: string
   parseErrors: ParseIssue[]
   parseWarnings: ParseIssue[]
+  /**
+   * Top-level frontmatter keys actually present in the source YAML, in
+   * declaration order. Lets readers distinguish "key absent" from
+   * "explicitly false/null" without a parse warning per absent key —
+   * required by the v6 minimal Run record, which omits every default.
+   * Empty when the document has no frontmatter block.
+   */
+  frontMatterKeys: string[]
 }
 
 /**
@@ -270,6 +295,8 @@ export interface Run {
   body: string
   parseErrors: ParseIssue[]
   parseWarnings: ParseIssue[]
+  /** See `ParsedReadme.frontMatterKeys`. */
+  frontMatterKeys: string[]
 }
 
 // ---------- Experiment Doc (v6 — README + managed YAML documents) ----------
@@ -533,17 +560,6 @@ export interface Experiment {
   parseWarnings: ParseIssue[]
 }
 
-/**
- * Effective times computed at API serialization by joining the doc's stored
- * `created_at` / `updated_at` with the corresponding fields of every
- * confirmed member run. Surfaced alongside the stored times; never written
- * back to disk.
- */
-export interface ExperimentEffectiveTimes {
-  effectiveCreatedAt: string
-  effectiveUpdatedAt: string
-}
-
 // ---------- Experiment ↔ Run binding anomalies ----------
 
 export type ExperimentMembershipAnomalyCode =
@@ -750,11 +766,49 @@ export interface GithubRepoMapping {
   path: string
 }
 
+/**
+ * Where the memon process may run commands for a Project. Absent means no
+ * execution provider is available: Git/Slurm operations MUST be refused
+ * rather than executed against the configured root, which for a
+ * mounted remote Project would run on the wrong machine.
+ */
+export type ProjectExecutionConfig =
+  | { kind: 'local' }
+  | {
+      kind: 'ssh'
+      /** `user@host` or a `~/.ssh/config` alias; never a shell string. */
+      target: string
+      /** Absolute Project root on the remote machine. */
+      remoteRoot: string
+      port?: number
+      identityFile?: string
+      knownHostsFile?: string
+    }
+
 export interface ProjectConfig {
   name: string
   root: string // absolute path
   include: string[]
   exclude: string[]
+  /**
+   * Host namespace this Project belongs to. Present iff the instance serves
+   * host-qualified `{host, project}` identity; absent for the standalone
+   * project-only identity. It is a namespace (and optional execution target),
+   * not an upstream memon service.
+   */
+  host?: string
+  /**
+   * Shared-storage bucket used for I/O scheduling. Projects on one mount name
+   * the same group so an unavailable mount cannot starve unrelated roots.
+   * Defaults to the Project name when absent.
+   */
+  storageGroup?: string
+  /** Application-level write refusal for this Project's data. */
+  readOnly?: boolean
+  /** Opt in to dumped LRU observations; only actual SSHFS roots are eligible. Default false. */
+  persistentCache?: boolean
+  /** Explicit command-execution context; see ProjectExecutionConfig. */
+  execution?: ProjectExecutionConfig
   /** GitHub repo -> local path mappings for code-preview (optional). */
   github?: GithubRepoMapping[]
 }
@@ -777,65 +831,6 @@ export interface AuthConfig {
   sessionSecret?: string
 }
 
-/**
- * Closed enum of agent kinds that the browser-terminal feature knows how
- * to spawn inside a tmux pane. `'none'` means "no agent CLI — just shell".
- *
- * The session-name format (`memon-<agent>-...`) encodes the agent kind,
- * NOT the user-configured argv. Adding a new entry here requires:
- *  - extending `DEFAULT_TERMINAL.commands` below with a default argv,
- *  - widening the `apps/web/lib/api.ts` mirror `TerminalAgentKind` (the
- *    client-side string-literal union we keep separate so the web client
- *    doesn't pull `@memon/core` runtime),
- *  - and the agent-prefix table in `apps/web/lib/terminal/manager.ts`.
- */
-export const AGENT_KINDS = ['none', 'claude', 'codex', 'opencode'] as const
-
-export type AgentKind = (typeof AGENT_KINDS)[number]
-
-export interface HerdrTerminalConfig {
-  /**
-   * CLI argv used both to launch the Herdr TUI and to append workspace
-   * control subcommands. Invoked directly; no shell interpolation.
-   */
-  cli: readonly string[]
-}
-
-export interface TerminalConfig {
-  /** Existing tmux-backed terminal integration. Default true for compatibility. */
-  tmuxEnabled: boolean
-  /** Present only when the Herdr terminal integration is enabled. */
-  herdr?: HerdrTerminalConfig
-  /** Soft cap on concurrent ttyd processes; LRU evicts beyond this. */
-  ttydMaxConcurrent: number
-  /** Kill ttyd after this many minutes with no connected client. `0` disables. */
-  ttydIdleTtlMinutes: number
-  /**
-   * Recommended client poll interval (ms) for `GET /api/tmux-sessions/:name`
-   * when the named session has a live ttyd entry (the user is actively
-   * watching). Default `5000`. Consumed by per-target indicators (future
-   * change wires this into the UI).
-   */
-  paneInfoActivePollMs: number
-  /**
-   * Recommended client poll interval (ms) when the named session has NO live
-   * ttyd entry (no ttyd bound, or the session does not exist on the host).
-   * Default `60000`. MUST be `>= paneInfoActivePollMs` (validated at load).
-   */
-  paneInfoIdlePollMs: number
-  /**
-   * Per-agent argv pushed into the tmux pane after `tmux new-session -A -s
-   * <name> -c <cwd>`. The resume probe's tail (e.g. `['--continue']` for
-   * claude) is appended AFTER this argv unchanged. When the value is `[]`
-   * (only legal for `'none'`), no trailing command is pushed.
-   *
-   * Defaults: `none: []`, `claude: ['claude']`, `codex: ['codex']`,
-   * `opencode: ['opencode']` — reproducing the legacy hard-coded behaviour.
-   * Per-agent partial override: any agent key absent from `config.yml`
-   * inherits its default.
-   */
-  commands: Record<AgentKind, readonly string[]>
-}
 
 export interface SlurmConfig {
   /**
@@ -939,6 +934,11 @@ export interface CentralConfig {
   publicUrl?: string
   /** Optional bounded migration target for legacy `/share/<project>/<token>` links. */
   legacyShareHost?: string
+  /**
+   * Registered peer Backends. Empty for a central instance that serves every
+   * configured Project directly from its own filesystem (local directories or
+   * mounts), which needs no peer service, token, or availability probe.
+   */
   hosts: CentralHostConfig[]
 }
 
@@ -947,13 +947,27 @@ export interface Config {
   poll: PollConfig
   /** Present iff config.yml has a complete `auth` block; absent triggers first-run init in the HTTP server. */
   auth?: AuthConfig
-  terminal: TerminalConfig
   slurm: SlurmConfig
   gitStatus: GitStatusConfig
   /** Present iff config.yml selects the central Web/gateway role. */
   central?: CentralConfig
   /** Present iff config.yml selects the cluster Backend role. */
   backend?: BackendConfig
+  /**
+   * Saved overrides for the project-file-store I/O scheduler. Applied once at
+   * startup; absent keys keep `DEFAULT_FILE_ACCESS_OPTIONS`. Written by the
+   * owner-only File access settings surface.
+   */
+  fileAccess?: Partial<FileAccessOptions>
+  /** Bounded local observation LRU with periodic dumps; runtime work is never persisted. */
+  fileCache?: FileCacheOptions
+  /**
+   * Machine-configured supervisor argv invoked by the owner-only restart
+   * action. Absent means no restart adapter exists and the settings surface
+   * reports `restart_required` instead of pretending success. Never accepts
+   * browser-supplied arguments.
+   */
+  fileAccessRestart?: readonly string[]
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [
@@ -971,19 +985,6 @@ export const DEFAULT_POLL: PollConfig = {
   backoffFactor: 2,
 }
 
-export const DEFAULT_TERMINAL: TerminalConfig = {
-  tmuxEnabled: true,
-  ttydMaxConcurrent: 16,
-  ttydIdleTtlMinutes: 30,
-  paneInfoActivePollMs: 5_000,
-  paneInfoIdlePollMs: 60_000,
-  commands: {
-    none: [] as const,
-    claude: ['claude'] as const,
-    codex: ['codex'] as const,
-    opencode: ['opencode'] as const,
-  },
-}
 
 export const DEFAULT_SLURM: SlurmConfig = {
   totalNodes: -1,

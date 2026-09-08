@@ -22,10 +22,10 @@ import {
   parseReadme,
   type Run,
   readExperimentDoc,
-  readRunDir,
   reserializeReadme,
   resolveExperimentId,
-  scanProjectRoot,
+  resolveRunTarget,
+  RunTargetIndex,
   serializeExperimentReadme,
   serializeImplementationYaml,
   serializeInvestigationYaml,
@@ -163,6 +163,15 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     }
   }
 
+  // Resolve `--from-run` ONCE, up front: the id-allocation retry loop below
+  // must not re-resolve it, and no run other than this one is ever read.
+  const importedRun = input.fromRun
+    ? await resolveRunTarget(projectRoot, input.fromRun, { projectName })
+    : null
+  if (input.fromRun && !importedRun) {
+    emitErrorAndExit('NOT_FOUND', `run "${input.fromRun}" not found`)
+  }
+
   // Allocate next id with a retry loop on EEXIST (lock-free allocator).
   let id: string | null = null
   let lastErr: Error | null = null
@@ -175,22 +184,16 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     const filepath = join(expDir, 'README.md')
     const now = nowIso()
     const initialRuns: string[] = []
-    let importedRun: Run | null = null
-    if (input.fromRun) {
-      // Validate the run exists and is unbound (or already claims this exp;
-      // in the normal flow the run hasn't been written yet).
-      const runRecord = await findRunByDirOrId(projectRoot, projectName, input.fromRun)
-      if (!runRecord) {
-        emitErrorAndExit('NOT_FOUND', `run "${input.fromRun}" not found`)
-      }
-      if (runRecord.frontMatter.experiment && runRecord.frontMatter.experiment !== fullId) {
+    if (importedRun) {
+      // The run must be unbound, or already claim this exp (in the normal
+      // flow the run hasn't been written yet).
+      if (importedRun.frontMatter.experiment && importedRun.frontMatter.experiment !== fullId) {
         emitErrorAndExit(
           'BAD_STATE',
-          `run "${input.fromRun}" already claims experiment ${runRecord.frontMatter.experiment}; unlink first`,
+          `run "${input.fromRun}" already claims experiment ${importedRun.frontMatter.experiment}; unlink first`,
         )
       }
-      initialRuns.push(runRecord.id)
-      importedRun = runRecord
+      initialRuns.push(importedRun.id)
     }
     const content = serializeExperimentReadme({
       frontMatter: {
@@ -278,8 +281,8 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     }
     id = fullId
     // If --from-run, also write the run's `experiment:` back-reference.
-    if (input.fromRun) {
-      await setRunExperiment(projectRoot, projectName, input.fromRun, fullId)
+    if (importedRun) {
+      await setRunExperiment(importedRun, fullId)
     }
     // [EXPERIMENT] op=create journal event
     await appendJournalEvent({
@@ -344,7 +347,7 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
   const exp = await readExperimentDoc(projectRoot, projectName, expId)
   if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
 
-  const run = await findRunByDirOrId(projectRoot, projectName, input.runIdOrDir)
+  const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
   if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
 
   if (run.frontMatter.experiment && run.frontMatter.experiment !== expId) {
@@ -382,7 +385,7 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
     }),
   )
   if (run.frontMatter.experiment !== expId) {
-    await setRunExperiment(projectRoot, projectName, run.id, expId)
+    await setRunExperiment(run, expId)
   }
 
   await appendJournalEvent({
@@ -411,7 +414,7 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
   const exp = await readExperimentDoc(projectRoot, projectName, expId)
   if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
 
-  const run = await findRunByDirOrId(projectRoot, projectName, input.runIdOrDir)
+  const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
   if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
 
   exp.frontMatter.runs = exp.frontMatter.runs.filter((r) => r !== run.id)
@@ -427,7 +430,7 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
     }),
   )
   if (run.frontMatter.experiment === expId) {
-    await setRunExperiment(projectRoot, projectName, run.id, null)
+    await setRunExperiment(run, null)
   }
 
   await appendJournalEvent({
@@ -613,11 +616,17 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
     )
   }
 
-  // Cascade-unlink each member run.
-  for (const runDir of memberRuns) {
-    const run = await findRunByDirOrId(projectRoot, projectName, runDir)
-    if (run && run.frontMatter.experiment === expId) {
-      await setRunExperiment(projectRoot, projectName, runDir, null)
+  // Cascade-unlink each member run. One bounded discovery pass, then reads of
+  // the named members only — the old code re-scanned the whole project twice
+  // per member (once to find it, once inside the write helper).
+  if (memberRuns.length > 0) {
+    const index = await RunTargetIndex.open(projectRoot, { projectName })
+    const members = await index.runs(memberRuns)
+    for (const runId of new Set(memberRuns)) {
+      const run = members.get(runId)
+      if (run && run.frontMatter.experiment === expId) {
+        await setRunExperiment(run, null)
+      }
     }
   }
 
@@ -682,36 +691,20 @@ async function resolveOrFail(projectRoot: string, idOrSlug: string): Promise<str
   return resolved
 }
 
-async function findRunByDirOrId(
-  projectRoot: string,
-  _projectName: string,
-  needle: string,
-): Promise<Run | null> {
-  const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const match = snap.experiments.find((e) => e.id === needle)
-  if (!match) return null
-  return match
-}
-
-async function setRunExperiment(
-  projectRoot: string,
-  projectName: string,
-  runId: string,
-  experiment: string | null,
-): Promise<void> {
-  const run = await findRunByDirOrId(projectRoot, projectName, runId)
-  if (!run) return
-  const readmePath = join(run.path, 'README.md')
-  if (run.hasReadme) {
-    const content = await fs.readFile(readmePath, 'utf8')
-    const parsed = parseReadme(content)
-    parsed.frontMatter.experiment = experiment
-    parsed.frontMatter.updatedAt = nowIso()
-    await atomicWrite(readmePath, reserializeReadme(parsed))
-  }
+async function setRunExperiment(run: Run, experiment: string | null): Promise<void> {
   // If the run has no README, the membership join will surface this as a
   // parse-issue rather than fail silently. We don't synthesize a README here.
-  void readRunDir // silence unused import (kept for future-need consumers)
+  if (!run.hasReadme) return
+  // Re-read immediately before the write: the resolution read is a snapshot,
+  // and the atomic rewrite must be based on the current bytes (the parsed
+  // record carries backfilled `id` / `created_at` that must never be
+  // persisted).
+  const readmePath = join(run.path, 'README.md')
+  const content = await fs.readFile(readmePath, 'utf8')
+  const parsed = parseReadme(content)
+  parsed.frontMatter.experiment = experiment
+  parsed.frontMatter.updatedAt = nowIso()
+  await atomicWrite(readmePath, reserializeReadme(parsed))
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {

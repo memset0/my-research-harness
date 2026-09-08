@@ -21,8 +21,9 @@
 import type { EventEmitter } from 'node:events'
 import type { ProjectRef } from '@memon/core'
 import { CentralEventSchema, type Run } from '@memon/core'
-import type { NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
+import { servesProjectsDirectly } from '../../../lib/central/direct-projects'
 import { getRuntime } from '../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
@@ -143,6 +144,20 @@ export function createEventsReadableStream(options: EventsReadableStreamOptions)
 
 export async function GET(req: NextRequest) {
   const rt = await getRuntime()
+  // Projects served through the project file store have no event source: the
+  // browser learns changes from its own scheduled polling. Answering with an
+  // idle stream would look live while never emitting, so refuse explicitly.
+  if (servesProjectsDirectly(rt.config)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'UNSUPPORTED',
+          message: 'This instance has no event stream; poll the resource endpoints instead',
+        },
+      },
+      { status: 501, headers: { 'cache-control': 'no-store' } },
+    )
+  }
   const { role, scopeProjects, scopeProjectRefs } = readIdentityFromRequest(req)
   const stream = createEventsReadableStream({
     events: rt.events,

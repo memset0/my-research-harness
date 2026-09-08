@@ -1,6 +1,7 @@
 import {
   FS_CONVENTION_VERSION,
   MEMON_RELEASE,
+  RELEASE_CHANGE_SURFACES,
   validateInitialRelease,
   validateReleaseTransition,
 } from '../packages/core/dist/index.js'
@@ -17,6 +18,16 @@ const surfaces = (process.env.MEMON_CHANGED_SURFACES ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean)
+
+const unknown = surfaces.filter((surface) => !RELEASE_CHANGE_SURFACES.includes(surface))
+if (unknown.length > 0) {
+  // `backend` was a surface until the remote Backend hosting model was
+  // retired; distributed artifacts are now `cli` and `skills`.
+  process.stderr.write(
+    `memon release: unknown changed surface(s) ${unknown.join(', ')}; accepted: ${RELEASE_CHANGE_SURFACES.join(', ')}\n`,
+  )
+  process.exit(1)
+}
 
 const classification = validateReleaseTransition({
   previousRelease,

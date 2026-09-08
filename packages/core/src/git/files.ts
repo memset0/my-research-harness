@@ -5,8 +5,16 @@
 // `readGitFileContents` reads the bytes at a specific side of a diff (HEAD,
 // index, or working tree) with a 1024 KB cap and binary detection.
 
-import { execFile, type ExecFileException } from 'node:child_process'
-import { promises as fs } from 'node:fs'
+import {
+  cachedGitCommand,
+  gitCommandStdoutBytes,
+  gitCommandStdoutText,
+  isGitCommandFailure,
+  toGitExecFailure,
+  type GitCommandRunner,
+  type GitExecFailure,
+} from './command.js'
+import { projectFs as fs } from '../project-file-store.js'
 import { resolve, sep } from 'node:path'
 
 export const MAX_DIFF_BYTES = 1024 * 1024
@@ -65,12 +73,22 @@ export type ReadGitFileContentsResult =
 export interface ReadGitStatusFilesOptions {
   timeoutMs?: number
   gitBin?: string
+  /**
+   * The command runner used for every git invocation. Defaults to the local
+   * transport; either way the reader wraps it in the shared read cache.
+   */
+  exec?: GitCommandRunner
 }
 
 export interface ReadGitFileContentsOptions {
   maxBytes?: number
   timeoutMs?: number
   gitBin?: string
+  /**
+   * The command runner used for every git invocation. Defaults to the local
+   * transport; either way the reader wraps it in the shared read cache.
+   */
+  exec?: GitCommandRunner
 }
 
 const DEFAULT_TIMEOUT_MS = 3000
@@ -83,47 +101,38 @@ export async function readGitStatusFiles(
 ): Promise<GitStatusFiles> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
-  return new Promise<GitStatusFiles>((resolveP) => {
-    execFile(
-      bin,
-      ['status', '--porcelain=v2', '--branch', '--ignore-submodules=all'],
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 4 * 1024 * 1024,
-        windowsHide: true,
-      },
-      (err, stdout, stderr) => {
-        if (err) {
-          resolveP(classifyStatusExecError(err, String(stderr ?? '')))
-          return
-        }
-        try {
-          resolveP(parsePorcelainV2WithFiles(String(stdout ?? '')))
-        } catch (parseErr) {
-          resolveP({
-            enabled: false,
-            reason: 'error',
-            message: truncate((parseErr as Error).message ?? String(parseErr), 200),
-          })
-        }
-      },
-    )
-  })
+  const result = await exec(
+    bin,
+    ['status', '--porcelain=v2', '--branch', '--ignore-submodules=all'],
+    { cwd, timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+  )
+  if (isGitCommandFailure(result)) {
+    return classifyStatusExecError(toGitExecFailure(result))
+  }
+  try {
+    return parsePorcelainV2WithFiles(gitCommandStdoutText(result))
+  } catch (parseErr) {
+    return {
+      enabled: false,
+      reason: 'error',
+      message: truncate((parseErr as Error).message ?? String(parseErr), 200),
+    }
+  }
 }
 
-function classifyStatusExecError(err: unknown, stderr: string): GitStatusFiles {
-  const e = err as ExecFileException & { code?: string | number; killed?: boolean }
-  if (e.code === 'ENOENT') return { enabled: false, reason: 'git-not-found' }
-  if (e.killed) return { enabled: false, reason: 'timeout' }
+function classifyStatusExecError(failure: GitExecFailure): GitStatusFiles {
+  const { err, stderr } = failure
+  if (err.code === 'ENOENT') return { enabled: false, reason: 'git-not-found' }
+  if (err.killed) return { enabled: false, reason: 'timeout' }
   if (/not a git repository/i.test(stderr)) {
     return { enabled: false, reason: 'not-a-repo' }
   }
   return {
     enabled: false,
     reason: 'error',
-    message: truncate(stderr.trim() || e.message || 'git failed', 200),
+    message: truncate(stderr.trim() || err.message || 'git failed', 200),
   }
 }
 
@@ -266,6 +275,7 @@ export async function readGitFileContents(
   const maxBytes = opts.maxBytes ?? MAX_DIFF_BYTES
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
   if (ref === 'working') {
     // Path-safety: the resolved absolute path must stay under `cwd`.
@@ -291,7 +301,7 @@ export async function readGitFileContents(
   const arg = ref === 'index' ? `:${filePath}` : `${ref}:${filePath}`
 
   // Probe size first so over-cap blobs never hit `maxBuffer`.
-  const sizeRes = await catFileSize(bin, arg, cwd, timeoutMs)
+  const sizeRes = await catFileSize(exec, bin, arg, cwd, timeoutMs)
   if (!sizeRes.ok) {
     return sizeRes.reason === 'not-found'
       ? { ok: false, reason: 'not-found' }
@@ -301,47 +311,30 @@ export async function readGitFileContents(
     return { ok: false, reason: 'too-large', sizeBytes: sizeRes.size, maxBytes }
   }
 
-  return new Promise<ReadGitFileContentsResult>((resolveP) => {
-    execFile(
-      bin,
-      ['show', arg],
-      {
-        cwd,
-        timeout: timeoutMs,
-        encoding: 'buffer',
-        maxBuffer: maxBytes + 8 * 1024,
-        windowsHide: true,
-      },
-      (err, stdoutBuf, stderr) => {
-        if (err) {
-          const stderrStr = String(stderr ?? '')
-          const e = err as ExecFileException & { code?: string | number; killed?: boolean }
-          if (e.code === 'ENOENT') {
-            return resolveP({
-              ok: false,
-              reason: 'error',
-              message: 'git binary not found',
-            })
-          }
-          if (e.killed) {
-            return resolveP({ ok: false, reason: 'error', message: 'timeout' })
-          }
-          if (isNotFoundStderr(stderrStr)) {
-            return resolveP({ ok: false, reason: 'not-found' })
-          }
-          return resolveP({
-            ok: false,
-            reason: 'error',
-            message: truncate(stderrStr.trim() || e.message || 'git failed', 200),
-          })
-        }
-        const buf = Buffer.isBuffer(stdoutBuf)
-          ? stdoutBuf
-          : Buffer.from(String(stdoutBuf), 'utf8')
-        resolveP(classifyBuffer(buf, maxBytes))
-      },
-    )
+  const result = await exec(bin, ['show', arg], {
+    cwd,
+    timeoutMs,
+    encoding: 'buffer',
+    maxBuffer: maxBytes + 8 * 1024,
   })
+  if (isGitCommandFailure(result)) {
+    const { err, stderr } = toGitExecFailure(result)
+    if (err.code === 'ENOENT') {
+      return { ok: false, reason: 'error', message: 'git binary not found' }
+    }
+    if (err.killed) {
+      return { ok: false, reason: 'error', message: 'timeout' }
+    }
+    if (isNotFoundStderr(stderr)) {
+      return { ok: false, reason: 'not-found' }
+    }
+    return {
+      ok: false,
+      reason: 'error',
+      message: truncate(stderr.trim() || err.message || 'git failed', 200),
+    }
+  }
+  return classifyBuffer(gitCommandStdoutBytes(result), maxBytes)
 }
 
 interface SizeResultOk {
@@ -356,41 +349,36 @@ interface SizeResultFail {
 type SizeResult = SizeResultOk | SizeResultFail
 
 function catFileSize(
+  exec: GitCommandRunner,
   bin: string,
   arg: string,
   cwd: string,
   timeoutMs: number,
 ): Promise<SizeResult> {
-  return new Promise<SizeResult>((resolveS) => {
-    execFile(
-      bin,
-      ['cat-file', '-s', arg],
-      { cwd, timeout: timeoutMs, windowsHide: true },
-      (err, stdout, stderr) => {
-        if (err) {
-          const stderrStr = String(stderr ?? '')
-          if (isNotFoundStderr(stderrStr)) {
-            return resolveS({ ok: false, reason: 'not-found', message: 'not-found' })
-          }
-          const e = err as ExecFileException & { killed?: boolean }
-          return resolveS({
-            ok: false,
-            reason: 'error',
-            message: truncate(stderrStr.trim() || e.message || 'git failed', 200),
-          })
+  return exec(bin, ['cat-file', '-s', arg], { cwd, timeoutMs, maxBuffer: 1_048_576 }).then(
+    (result) => {
+      if (isGitCommandFailure(result)) {
+        const { err, stderr } = toGitExecFailure(result)
+        if (isNotFoundStderr(stderr)) {
+          return { ok: false, reason: 'not-found', message: 'not-found' }
         }
-        const n = parseInt(String(stdout).trim(), 10)
-        if (!Number.isFinite(n)) {
-          return resolveS({
-            ok: false,
-            reason: 'error',
-            message: 'cat-file size unparseable',
-          })
+        return {
+          ok: false,
+          reason: 'error',
+          message: truncate(stderr.trim() || err.message || 'git failed', 200),
         }
-        resolveS({ ok: true, size: n })
-      },
-    )
-  })
+      }
+      const n = parseInt(gitCommandStdoutText(result).trim(), 10)
+      if (!Number.isFinite(n)) {
+        return {
+          ok: false,
+          reason: 'error',
+          message: 'cat-file size unparseable',
+        }
+      }
+      return { ok: true, size: n }
+    },
+  )
 }
 
 function isNotFoundStderr(stderr: string): boolean {

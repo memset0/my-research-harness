@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
-import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { readExperimentDoc, readRunDir } from '@memon/core'
+import { projectFs as fs, readExperimentDoc, readRunDir } from '@memon/core'
 import type { Runtime } from '../runtime'
 
 export async function refreshStandaloneRun(

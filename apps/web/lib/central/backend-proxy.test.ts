@@ -28,10 +28,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: true,
-  herdr: true,
 } satisfies BackendCapabilities
 
 const CONFIG: CentralConfig = {
@@ -164,7 +161,7 @@ describe('central Backend proxy routing and trust boundary', () => {
   it('maps the allow-listed route, removes Host, and rebuilds trusted headers', async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(String(input)).toBe(
-        'https://backend-a.example.test/api/backend/v1/runs?project=project-a&limit=2',
+        'https://backend-a.example.test/api/backend/v1/runs?project=project-a&inventory=1',
       )
       const headers = new Headers(init?.headers)
       expect(headers.get('authorization')).toBe(`Bearer ${TOKEN}`)
@@ -175,7 +172,7 @@ describe('central Backend proxy routing and trust boundary', () => {
       return Response.json({ ok: true })
     })
     const request = new Request(
-      'https://central.example.test/api/runs?host=host-a&project=project-a&limit=2',
+      'https://central.example.test/api/runs?host=host-a&project=project-a&inventory=1',
       {
         headers: {
           authorization: 'Basic browser-secret',
@@ -232,14 +229,11 @@ describe('central Backend proxy routing and trust boundary', () => {
     )
     const registry = usableRegistry({ ...CAPABILITIES, mutations: false, shares: true })
     const response = await proxy(
-      new Request(
-        'https://central.example.test/api/projects/project-a/shares?host=host-a',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ expires: 'never' }),
-        },
-      ),
+      new Request('https://central.example.test/api/projects/project-a/shares?host=host-a', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expires: 'never' }),
+      }),
       fetchImpl,
       registry,
     )
@@ -253,22 +247,22 @@ describe('central Backend proxy routing and trust boundary', () => {
 describe('central Wiki proxy projection', () => {
   it('adds central component diagnostics to a Backend-served wiki page', async () => {
     const encoded = JSON.stringify(backendWikiDocument())
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      new Response(encoded, {
-        headers: {
-          'content-type': 'application/json',
-          'content-encoding': 'gzip',
-          'content-length': String(Buffer.byteLength(encoded)),
-          etag: '\"backend-page\"',
-          'last-modified': 'Mon, 01 May 2026 02:00:00 GMT',
-        },
-      }),
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(encoded, {
+          headers: {
+            'content-type': 'application/json',
+            'content-encoding': 'gzip',
+            'content-length': String(Buffer.byteLength(encoded)),
+            etag: '\"backend-page\"',
+            'last-modified': 'Mon, 01 May 2026 02:00:00 GMT',
+          },
+        }),
     )
     const response = await proxy(
-      new Request(
-        'https://central.example.test/api/wiki/W0001?host=host-a&project=project-a',
-        { headers: { 'if-none-match': '\"backend-page\"', range: 'bytes=0-10' } },
-      ),
+      new Request('https://central.example.test/api/wiki/W0001?host=host-a&project=project-a', {
+        headers: { 'if-none-match': '\"backend-page\"', range: 'bytes=0-10' },
+      }),
       fetchImpl,
     )
     expect(response.status).toBe(200)
@@ -322,7 +316,6 @@ describe('central Wiki proxy projection', () => {
   })
 })
 
-
 describe('central Backend proxy streaming and bounds', () => {
   it('passes a non-control request body and cancellation signal through without buffering', async () => {
     const stream = new ReadableStream<Uint8Array>({
@@ -333,7 +326,7 @@ describe('central Backend proxy streaming and bounds', () => {
       },
     })
     const request = new Request(
-      'https://central.example.test/api/terminal/start?host=host-a&project=project-a',
+      'https://central.example.test/api/experiments?host=host-a&project=project-a',
       {
         method: 'POST',
         headers: { 'content-type': 'application/octet-stream' },

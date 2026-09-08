@@ -3,9 +3,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { type RuntimeConfigPayload, RuntimeConfigProvider } from '../lib/runtime-config'
+import { ResourceHeartbeatProvider } from './resource-heartbeat-provider'
 import { type SessionInfo, SessionProvider } from './session-provider'
-import { TerminalDrawerProvider } from './terminal-drawer-provider'
-import { useMemonEvents } from './use-memon-events'
+import { WorkspacePaneProvider } from './workspace-pane-provider'
 
 interface ProvidersProps {
   children: React.ReactNode
@@ -19,14 +19,13 @@ export function Providers({ children, session, runtimeConfig }: ProvidersProps) 
       new QueryClient({
         defaultOptions: {
           queries: {
-            // SSE drives invalidation now. Background refetch is a fallback in
-            // case SSE drops or backend's poller misses something — set it slow
-            // to avoid load when SSE is healthy. Aligned with the server-side
-            // prefetch staleTime (lib/get-query-client.ts) so SSR-hydrated data
-            // is not refetched on mount.
+            // No per-query polling and no refetch-on-focus: the single
+            // <ResourceHeartbeatProvider /> below drives every automatic
+            // refresh, so a hidden or unfocused tab issues no requests and
+            // one shared batch replaces N independent timers. `staleTime`
+            // still matches the SSR prefetch (lib/get-query-client.ts) so
+            // hydrated data is not refetched on mount.
             staleTime: 60_000,
-            refetchInterval: 60_000,
-            refetchOnWindowFocus: true,
             retry: 1,
           },
         },
@@ -36,19 +35,11 @@ export function Providers({ children, session, runtimeConfig }: ProvidersProps) 
     <SessionProvider value={session}>
       <RuntimeConfigProvider value={runtimeConfig}>
         <QueryClientProvider client={client}>
-          <MemonEventsBridge />
-          <TerminalDrawerProvider>{children}</TerminalDrawerProvider>
+          <ResourceHeartbeatProvider>
+            <WorkspacePaneProvider>{children}</WorkspacePaneProvider>
+          </ResourceHeartbeatProvider>
         </QueryClientProvider>
       </RuntimeConfigProvider>
     </SessionProvider>
   )
-}
-
-/**
- * Tiny child component so `useMemonEvents()` runs INSIDE the QueryClientProvider.
- * (Hooks called directly in <Providers> would not see the QueryClient context.)
- */
-function MemonEventsBridge() {
-  useMemonEvents()
-  return null
 }

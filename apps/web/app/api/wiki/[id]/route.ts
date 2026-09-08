@@ -6,7 +6,7 @@
 // optimistic lock; a write that would change `id` or `kind` is rejected,
 // because identity moves only through `memon wiki move`.
 
-import { WIKI_ID_REGEX } from '@memon/core'
+import { markJournalInvocationOutcome, WIKI_ID_REGEX } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime, type Runtime } from '../../../../lib/runtime'
 import {
@@ -15,6 +15,7 @@ import {
   wikiPageDto,
   wikiProjectTarget,
   wikiWriteIdentityError,
+  withWikiInvocation,
 } from '../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'
@@ -43,6 +44,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   const target = wikiProjectTarget(runtime, new URL(request.url).searchParams)
   if ('error' in target) return target.error
   const id = (await context.params).id
+  return withWikiInvocation(runtime, target.project, 'wiki write', { id }, async () => {
   if (!WIKI_ID_REGEX.test(id)) {
     return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
   }
@@ -85,6 +87,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return wikiError(500, 'INTERNAL', result.message ?? 'wiki write failed')
   }
 
+  if (write.expectedHash && result.hash === write.expectedHash) {
+    markJournalInvocationOutcome('noop')
+  }
   const written = runtime.wikiCache.getWikiSummary(target.project, id) ?? summary
   return NextResponse.json({
     ok: true,
@@ -94,6 +99,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       fileExists: bundleProbe(runtime, target.project, id),
     }),
     finalContent: write.content,
+  })
   })
 }
 

@@ -5,8 +5,7 @@
 // honor the sidecar only as a narrow fallback when the README lacks the
 // canonical `archived` field entirely.
 
-import { promises as fs } from 'node:fs'
-import { existsSync } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { dirname, join } from 'node:path'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme } from '../readme/serialize.js'
@@ -27,9 +26,7 @@ export interface ArchiveResult {
 export class ArchiveRunningForbiddenError extends Error {
   code = 'ARCHIVE_RUNNING_FORBIDDEN'
   constructor(public id: string) {
-    super(
-      `cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first`,
-    )
+    super(`cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first`)
     this.name = 'ArchiveRunningForbiddenError'
   }
 }
@@ -97,13 +94,20 @@ async function atomicWrite(path: string, content: string): Promise<void> {
 
 /**
  * Legacy sidecar fallback: returns true iff `<runDir>/.archived` exists.
- * v4 readers SHALL only consult this when the README's frontmatter lacks
- * the canonical `archived` field (covered by `MISSING_ARCHIVED_FIELD` parse
- * warning). Production discovery should call `runArchivedFromFrontmatter`
+ * v4 readers SHALL only consult this when the README's frontmatter never
+ * declared the canonical `archived` field (see `frontMatterKeys`).
+ * Production discovery should call `runArchivedFromRun`
  * below, not this directly.
  */
-export function isArchivedSidecar(runDir: string): boolean {
-  return existsSync(join(runDir, ARCHIVED_SIDECAR))
+export async function isArchivedSidecar(runDir: string): Promise<boolean> {
+  try {
+    await fs.access(join(runDir, ARCHIVED_SIDECAR))
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false
+    throw error
+  }
 }
 
 /**

@@ -1,33 +1,34 @@
 // `memon wiki` — the wiki command group over
 // `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>{.md,/README.md}`.
 //
-// Every projection (summary, staleness, backlinks, diagnostics, review) comes
-// from `@memon/core`'s wiki module — discover → parse → resolve sources → lint
-// → project — so the CLI, the Backend, and the dashboard agree by construction
-// instead of drifting through three re-implementations.
+// CLI projection deliberately stops at Wiki files: source-target resolution,
+// staleness, and target existence checks belong to the Web runtime. The CLI
+// preserves and validates source syntax without walking unrelated artifacts.
 //
 // Two deliberate boundaries:
 //   - Component descriptors live ONLY in the central dashboard. `components`
 //     and `lint --central` reach them over HTTP; nothing about a component is
 //     compiled into the CLI artifact.
-//   - git is invoked only through `execFile` with an argv array (never a shell
-//     string), and only by `review` / `commit`.
+//   - git is invoked only through the shared core command seam with an argv
+//     array (never a shell string), and only by `commit` and the `review`
+//     subcommands. Every other command is a pure Wiki-file read — no worktree
+//     probe, no marks, no log/status/blame — so it behaves identically
+//     outside a git worktree.
 //
 // Exit codes: 0 ok, 1 `lint --strict` failure / generic, 2 BAD_REQUEST,
 // 4 NOT_FOUND (incl. NOT_A_GIT_PROJECT), 9 CONFLICT / REVIEW_ORDER /
 // MIXED_INDEX. Errors are one `{"error":{"code","message"}}` object on stderr.
 
-import { execFile } from 'node:child_process'
 import { type Dirent, promises as fs } from 'node:fs'
-import { dirname, join, resolve as resolvePath } from 'node:path'
-import { promisify } from 'node:util'
+import { dirname, join } from 'node:path'
 
 import {
   buildWikiProject,
-  deriveWikiReview,
-  discoverExperiments,
+  cachedGitCommand,
   discoverWikiPages,
   formatIsoLocal,
+  gitCommandStdoutText,
+  isGitCommandFailure,
   isGitWorktree,
   listWikiCommits,
   padId,
@@ -36,7 +37,6 @@ import {
   readWikiReviewMarks,
   removeWikiReviewMark,
   REPORT_FILENAME_REGEX,
-  scanProjectRoot,
   serializeWikiPage,
   updateWikiFrontmatter,
   verifiedThroughMark,
@@ -47,6 +47,7 @@ import {
   WIKI_RESERVED_KINDS,
   WIKI_SLUG_REGEX,
   WIKI_STATUS_BY_KIND,
+  WIKI_PAGE_NAME_REGEX,
   WIKI_TIMESTAMP_REGEX,
   wikiContentHash,
   WikiReviewError,
@@ -54,15 +55,11 @@ import {
   wikiStringList,
   writeWikiReviewMark,
   type DiscoveredWikiPage,
-  type Experiment,
-  type Run,
-  type WikiBacklink,
   type WikiCommit,
   type WikiDiagnostic,
   type WikiFrontmatter,
   type WikiKind,
   type WikiProjectProjection,
-  type WikiReview,
   type WikiReviewMark,
   type WikiSummary,
 } from '@memon/core'
@@ -72,23 +69,19 @@ import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
 import { emitJson } from '../lib/output.js'
 
-const execFileAsync = promisify(execFile)
-
 const REPORT_DIR_REGEX = /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/
 const REPORTS_SUBDIR = 'docs/reports'
 /** Evidence tokens a migrated Report body can supply as `sources`. */
 const EVIDENCE_TOKEN_REGEX =
   /\b(E\d{4}(?:-[a-z0-9][a-z0-9-]*)?(?:\/V\d{4})?|H\d{4}|[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6})\b/g
-/** Markdown inline-link destinations, used by the `R<NNNN>` backlink scan. */
-const MARKDOWN_LINK_REGEX = /\]\(\s*(<[^>]+>|[^)\s]+)/g
-const MARKDOWN_SCAN_MAX_DEPTH = 8
 const GIT_TIMEOUT_MS = 30_000
 const GIT_MAX_BUFFER = 64 * 1024 * 1024
-/** `git`'s empty tree, so a never-verified page diffs as wholly added. */
+const WIKI_BUNDLE_MAX_DEPTH = 8
+const WIKI_BUNDLE_MAX_FILES = 5000
+/** `git`'s empty tree: the baseline when no wiki commit has been verified. */
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 export type WikiFormat = 'json' | 'human' | 'markdown'
-export type ReviewStateFilter = 'VERIFIED' | 'CHANGED_SINCE_VERIFY' | 'UNVERIFIED'
 
 /** Flags every `memon wiki` subcommand takes. */
 export interface WikiCommonInput {
@@ -113,75 +106,28 @@ function readFormat(input: WikiCommonInput, allowMarkdown = false): WikiFormat {
 
 interface WikiContext {
   projectRoot: string
-  projectName: string
   pages: DiscoveredWikiPage[]
   byPath: Map<string, DiscoveredWikiPage>
   projection: WikiProjectProjection
-  experiments: Experiment[]
-  runs: Run[]
-  reports: DiscoveredReport[]
-  /** null outside a git worktree. */
-  reviews: Map<string, WikiReview> | null
-  marks: WikiReviewMark[]
+}
+
+function projectWiki(projectRoot: string, pages: DiscoveredWikiPage[]): WikiContext {
+  return {
+    projectRoot,
+    pages,
+    byPath: new Map(pages.map((page) => [page.path, page])),
+    projection: buildWikiProject(pages, { resolveSourceTargets: false }),
+  }
 }
 
 /**
- * One pass over the project: wiki pages, the artifacts their `sources` point
- * at, the Reports (for `migrate-report` / `WIKI_LINK_UNRESOLVED`), and the
- * derived review state when the root is a git worktree.
+ * Load Wiki files — the only loader an ordinary command has. No git process
+ * runs, so no page carries a review claim: human verification is whole-wiki
+ * and commit-scoped, and `memon wiki review diff` is its only reader.
  */
 async function loadWiki(input: WikiCommonInput): Promise<WikiContext> {
-  const ctx = await resolveContext(input)
-  const projectRoot = singleProjectRoot(ctx)
-  const projectName = ctx.config.projects[0]!.name
-
-  const [pages, experimentsResult, snapshot, reports, hypothesesMtime] = await Promise.all([
-    discoverWikiPages(projectRoot),
-    discoverExperiments(projectRoot, projectName),
-    scanProjectRoot(projectRoot, { includeArchived: true, projectName }),
-    discoverReports(projectRoot),
-    fileMtime(join(projectRoot, 'docs', 'hypotheses.md')),
-  ])
-
-  const runs: Run[] = snapshot.experiments
-  const marks = (await isGitWorktree(projectRoot))
-    ? await readWikiReviewMarks(projectRoot)
-    : []
-  const reviews = await deriveWikiReview(
-    projectRoot,
-    pages.map((page) => page.path),
-    marks,
-  )
-
-  const projection = buildWikiProject(pages, {
-    experiments: experimentsResult.experiments,
-    runs,
-    hypothesesMtime,
-    hypothesisIds: snapshot.hypotheses.entries.map((entry) => entry.id),
-    reportIds: reports.map((report) => report.id),
-    reviews,
-  })
-
-  return {
-    projectRoot,
-    projectName,
-    pages,
-    byPath: new Map(pages.map((page) => [page.path, page])),
-    projection,
-    experiments: experimentsResult.experiments,
-    runs,
-    reports,
-    reviews,
-    marks,
-  }
-}
-
-async function fileMtime(path: string): Promise<number | null> {
-  try {
-    return (await fs.stat(path)).mtimeMs
-  } catch {
-    return null
-  }
+  const projectRoot = singleProjectRoot(await resolveContext(input))
+  return projectWiki(projectRoot, await discoverWikiPages(projectRoot))
 }
 
 interface DiscoveredReport {
@@ -195,44 +141,45 @@ interface DiscoveredReport {
   bundleDir: string | null
 }
 
-/** `docs/reports/R<NNNN>-<slug>.md` and `docs/reports/R<NNNN>-<slug>/README.md`. */
-async function discoverReports(projectRoot: string): Promise<DiscoveredReport[]> {
+/** Locate one explicitly requested Report without reading unrelated Reports. */
+async function discoverReport(
+  projectRoot: string,
+  reportId: string,
+): Promise<DiscoveredReport | null> {
   const dir = join(projectRoot, REPORTS_SUBDIR)
   let entries: Dirent[]
   try {
     entries = await fs.readdir(dir, { withFileTypes: true })
   } catch {
-    return []
+    return null
   }
-  const out: DiscoveredReport[] = []
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const match = REPORT_DIR_REGEX.exec(entry.name)
-      if (!match) continue
+      if (!match || `R${match[1]}` !== reportId) continue
       const readme = join(dir, entry.name, 'README.md')
       if (!(await exists(readme))) continue
-      out.push({
-        id: `R${match[1]}`,
+      return {
+        id: reportId,
         slug: match[2]!,
         format: 'bundle',
         path: `${REPORTS_SUBDIR}/${entry.name}/README.md`,
         absolutePath: readme,
         bundleDir: join(dir, entry.name),
-      })
-      continue
+      }
     }
     const match = REPORT_FILENAME_REGEX.exec(entry.name)
-    if (!match) continue
-    out.push({
-      id: `R${match[1]}`,
+    if (!match || `R${match[1]}` !== reportId) continue
+    return {
+      id: reportId,
       slug: match[2]!,
       format: 'markdown',
       path: `${REPORTS_SUBDIR}/${entry.name}`,
       absolutePath: join(dir, entry.name),
       bundleDir: null,
-    })
+    }
   }
-  return out.sort((left, right) => (left.id < right.id ? -1 : 1))
+  return null
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -313,11 +260,10 @@ function assertSlug(slug: string): string {
 function assertSlugFree(ctx: WikiContext, slug: string, allowId?: string): void {
   const taken = ctx.projection.bySlug.get(slug)
   if (taken && taken.id !== allowId) {
-    emitErrorAndExit(
-      'CONFLICT',
-      `slug "${slug}" is already used by ${taken.id} at ${taken.path}`,
-      { id: taken.id, path: taken.path },
-    )
+    emitErrorAndExit('CONFLICT', `slug "${slug}" is already used by ${taken.id} at ${taken.path}`, {
+      id: taken.id,
+      path: taken.path,
+    })
   }
 }
 
@@ -339,18 +285,34 @@ function nextWikiId(ctx: WikiContext): string {
 
 /** Temp-file + rename, so a reader never observes a half-written page. */
 async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(
-    dirname(path),
-    `.${Date.now()}-${Math.random().toString(36).slice(2)}.wiki.tmp`,
-  )
+  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.wiki.tmp`)
   await fs.writeFile(tmp, content, 'utf8')
   await fs.rename(tmp, path)
 }
 
-/** The list projection `ls` prints: the summary minus its `mtime`. */
-function listEntry(summary: WikiSummary): Omit<WikiSummary, 'mtime'> {
-  const { mtime: _mtime, ...rest } = summary
+type CliWikiSummary = Omit<WikiSummary, 'mtime' | 'stale' | 'staleSources' | 'review'>
+
+/**
+ * CLI summary: target-derived staleness is Web-only, and review is neither
+ * derived nor reported per page — it is whole-wiki (`wiki review diff`).
+ */
+function listEntry(summary: WikiSummary): CliWikiSummary {
+  const {
+    mtime: _mtime,
+    stale: _stale,
+    staleSources: _staleSources,
+    review: _review,
+    ...rest
+  } = summary
   return rest
+}
+
+/** Raw source aliases derivable from syntax alone, without target lookup. */
+function sourceKeys(source: string): string[] {
+  const match = /^(E\d{4})(?:-([a-z0-9][a-z0-9-]*))?(?:\/V\d{4})?$/.exec(source)
+  if (!match) return [source]
+  const head = source.split('/')[0]!
+  return [...new Set([source, head, match[1]!])]
 }
 
 // ---------- memon wiki ls ----------
@@ -359,8 +321,6 @@ export interface WikiLsInput extends WikiCommonInput {
   kind?: string
   status?: string
   tag?: string
-  stale?: boolean
-  review?: string
   source?: string
   deprecated?: boolean
   description?: boolean
@@ -368,23 +328,20 @@ export interface WikiLsInput extends WikiCommonInput {
 
 export async function runWikiLs(input: WikiLsInput): Promise<void> {
   const format = readFormat(input, true)
-  const reviewFilter = input.review === undefined ? undefined : assertReviewState(input.review)
   const ctx = await loadWiki(input)
-
-  const sourceMatches =
-    input.source === undefined
-      ? null
-      : new Set((ctx.projection.backlinks.get(input.source) ?? []).map((row) => row.id))
 
   const pages = ctx.projection.summaries.filter((summary) => {
     if (input.kind !== undefined && summary.kind !== input.kind) return false
     if (input.status !== undefined && summary.status !== input.status) return false
     if (input.tag !== undefined && !summary.tags.includes(input.tag)) return false
-    if (input.stale === true && !summary.stale) return false
-    if (reviewFilter !== undefined && summary.review?.state !== reviewFilter) return false
     if (input.deprecated === true && summary.deprecated === null) return false
     if (input.deprecated === false && summary.deprecated !== null) return false
-    if (sourceMatches && !sourceMatches.has(summary.id)) return false
+    if (
+      input.source !== undefined &&
+      !summary.sources.some((source) => sourceKeys(source).includes(input.source!))
+    ) {
+      return false
+    }
     return true
   })
 
@@ -406,8 +363,6 @@ export async function runWikiLs(input: WikiLsInput): Promise<void> {
   for (const page of pages) {
     const badges = [
       page.status ? `[${page.status}]` : null,
-      page.review ? `[${page.review.state}]` : null,
-      page.stale ? '[stale]' : null,
       page.deprecated ? '[deprecated]' : null,
     ].filter((badge): badge is string => badge !== null)
     lines.push(`${page.id}  ${page.path}  ${badges.join(' ')}  ${page.title}`.replace(/\s+$/, ''))
@@ -428,32 +383,22 @@ function renderLsMarkdown(pages: readonly WikiSummary[], showDescription: boolea
       if (currentKind !== null) out.push('')
       currentKind = page.kind
       out.push(`## ${page.kind}`, '')
-      out.push('| id | path | status | review | stale | updated_at | title | description |')
-      out.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
+      out.push('| id | path | status | updated_at | title | description |')
+      out.push('| --- | --- | --- | --- | --- | --- |')
     }
     const cells = [
       page.id,
       `\`${page.path}\``,
       page.status ?? '—',
-      page.review?.state ?? '—',
-      page.stale ? 'yes' : 'no',
       page.updatedAt,
       page.deprecated ? `${page.title} [deprecated]` : page.title,
       showDescription ? (page.description ?? '') : '',
     ]
-    out.push(`| ${cells.map((cell) => cell.replace(/\|/g, '\\|').replace(/\n+/g, ' ')).join(' | ')} |`)
+    out.push(
+      `| ${cells.map((cell) => cell.replace(/\|/g, '\\|').replace(/\n+/g, ' ')).join(' | ')} |`,
+    )
   }
   return `${out.join('\n')}\n`
-}
-
-function assertReviewState(value: string): ReviewStateFilter {
-  if (value === 'VERIFIED' || value === 'CHANGED_SINCE_VERIFY' || value === 'UNVERIFIED') {
-    return value
-  }
-  emitErrorAndExit(
-    'BAD_REQUEST',
-    `--review must be one of VERIFIED, CHANGED_SINCE_VERIFY, UNVERIFIED; got "${value}"`,
-  )
 }
 
 // ---------- memon wiki show ----------
@@ -472,7 +417,7 @@ export async function runWikiShow(input: WikiShowInput): Promise<void> {
   const content = input.bodyOnly === true ? body : page.content
 
   if (format === 'json') {
-    emitJson({ ...summary, content, hash: wikiContentHash(page.content) })
+    emitJson({ ...listEntry(summary), content, hash: wikiContentHash(page.content) })
     return
   }
   if (input.bodyOnly === true) {
@@ -495,17 +440,14 @@ function renderShowHeader(summary: WikiSummary): string {
     `description: ${summary.description ?? '—'}`,
     `status: ${summary.status ?? '—'}  date: ${summary.date ?? '—'}  updated_at: ${summary.updatedAt}`,
     `tags: ${summary.tags.join(', ') || '—'}  sources: ${summary.sources.join(', ') || '—'}`,
-    `stale: ${summary.stale}${summary.stale ? ` (${summary.staleSources.join(', ')})` : ''}`,
-    `review: ${
-      summary.review
-        ? `${summary.review.state} (verifiedThrough: ${summary.review.verifiedThrough ?? 'none'}, dirty: ${summary.review.dirty})`
-        : '— (not a git worktree)'
-    }`,
+    'source resolution: Web only',
   ]
   if (summary.deprecated) {
     lines.push(
       `deprecated: ${summary.deprecated.at} — ${summary.deprecated.reason}${
-        summary.deprecated.superseded_by ? ` (superseded by ${summary.deprecated.superseded_by})` : ''
+        summary.deprecated.superseded_by
+          ? ` (superseded by ${summary.deprecated.superseded_by})`
+          : ''
       }`,
     )
   }
@@ -589,7 +531,10 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
   const absolute = join(ctx.projectRoot, relative)
   await fs.mkdir(input.bundle === true ? join(kindDir, name) : kindDir, { recursive: true })
   try {
-    await fs.writeFile(absolute, serializeWikiPage(frontmatter, body), { encoding: 'utf8', flag: 'wx' })
+    await fs.writeFile(absolute, serializeWikiPage(frontmatter, body), {
+      encoding: 'utf8',
+      flag: 'wx',
+    })
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
       emitErrorAndExit('CONFLICT', `${relative} already exists`)
@@ -597,24 +542,76 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     throw err
   }
 
-  await emitPageResult(input, format, relative, { absolutePath: absolute })
+  await emitPageResult(ctx, format, relative, { absolutePath: absolute })
 }
 
-/**
- * Re-read the project so the printed summary carries the same staleness,
- * lint, and review facts every other surface would compute for the page.
- */
+async function readWikiPageAt(
+  projectRoot: string,
+  relative: string,
+): Promise<DiscoveredWikiPage | null> {
+  const parts = relative.split('/')
+  if (parts[0] !== 'docs' || parts[1] !== 'wiki' || parts.length < 4) return null
+  const format = relative.endsWith('/README.md') ? 'bundle' : 'markdown'
+  const name = format === 'bundle' ? parts.at(-2)! : parts.at(-1)!.replace(/\.md$/, '')
+  const match = WIKI_PAGE_NAME_REGEX.exec(name)
+  if (!match) return null
+  const absolutePath = join(projectRoot, relative)
+  try {
+    const [content, stat] = await Promise.all([
+      fs.readFile(absolutePath, 'utf8'),
+      fs.stat(absolutePath),
+    ])
+    const bundleDir = format === 'bundle' ? dirname(absolutePath) : null
+    const assets = bundleDir === null ? [] : await listWikiBundleFiles(bundleDir)
+    return {
+      id: match[1]!,
+      slug: match[2]!,
+      kind: parts[2]!,
+      format,
+      path: relative,
+      absolutePath,
+      bundleDir,
+      content,
+      mtime: stat.mtimeMs,
+      bundleMtime: stat.mtimeMs,
+      assets,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function listWikiBundleFiles(root: string, prefix = '', depth = 1): Promise<string[]> {
+  if (depth > WIKI_BUNDLE_MAX_DEPTH) return []
+  const entries = await fs.readdir(join(root, prefix), { withFileTypes: true })
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+      if (entry.isDirectory()) {
+        return depth < WIKI_BUNDLE_MAX_DEPTH ? listWikiBundleFiles(root, relative, depth + 1) : []
+      }
+      return entry.isFile() ? [relative] : []
+    }),
+  )
+  return nested.flat().sort().slice(0, WIKI_BUNDLE_MAX_FILES)
+}
+
+async function changedPageSummary(ctx: WikiContext, path: string): Promise<WikiSummary> {
+  const page = await readWikiPageAt(ctx.projectRoot, path)
+  if (!page) emitErrorAndExit('NOT_FOUND', `wiki page at ${path} could not be re-read`)
+  const projection = buildWikiProject([page], { resolveSourceTargets: false })
+  return projection.summaries[0]!
+}
+
 async function emitPageResult(
-  input: WikiCommonInput,
+  ctx: WikiContext,
   format: WikiFormat,
   path: string,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  const ctx = await loadWiki(input)
-  const summary = ctx.projection.summaries.find((entry) => entry.path === path)
-  if (!summary) emitErrorAndExit('NOT_FOUND', `wiki page at ${path} could not be re-read`)
+  const summary = await changedPageSummary(ctx, path)
   if (format === 'json') {
-    emitJson({ ...summary, ...extra })
+    emitJson({ ...listEntry(summary), ...extra })
     return
   }
   process.stdout.write(renderShowHeader(summary))
@@ -635,7 +632,10 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
   const format = readFormat(input)
   const [rawKind, rawSlug, ...rest] = input.target.split('/')
   if (rest.length > 0 || rawKind === undefined || rawKind === '') {
-    emitErrorAndExit('BAD_REQUEST', `target must be "<kind>" or "<kind>/<slug>"; got "${input.target}"`)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `target must be "<kind>" or "<kind>/<slug>"; got "${input.target}"`,
+    )
   }
   const kind = assertKind(rawKind)
 
@@ -689,10 +689,13 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
     const patch: Record<string, unknown> = { kind, updated_at: formatIsoLocal(new Date()) }
     if (vocabulary.length === 0) patch.status = undefined
     else if (status !== undefined) patch.status = status
-    await atomicWrite(readme, serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body))
+    await atomicWrite(
+      readme,
+      serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body),
+    )
   }
 
-  await emitPageResult(input, format, newRelative, { oldPath: summary.path, newPath: newRelative })
+  await emitPageResult(ctx, format, newRelative, { oldPath: summary.path, newPath: newRelative })
 }
 
 // ---------- memon wiki set ----------
@@ -745,7 +748,10 @@ export async function runWikiSet(input: WikiSetInput): Promise<void> {
 
   const parsed = parseWikiFrontmatter(page.content)
   if (!parsed.frontmatter) {
-    emitErrorAndExit('BAD_REQUEST', `${summary.path} has no readable YAML frontmatter; fix it by hand first`)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `${summary.path} has no readable YAML frontmatter; fix it by hand first`,
+    )
   }
 
   const patch: Record<string, unknown> = { updated_at: formatIsoLocal(new Date()) }
@@ -762,7 +768,7 @@ export async function runWikiSet(input: WikiSetInput): Promise<void> {
     page.absolutePath,
     serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body),
   )
-  await emitPageResult(input, format, summary.path)
+  await emitPageResult(ctx, format, summary.path)
 }
 
 function applyListEdit(
@@ -803,23 +809,29 @@ export async function runWikiDeprecate(input: WikiDeprecateInput): Promise<void>
     emitErrorAndExit('BAD_REQUEST', '--reason is required')
   }
   if (input.at !== undefined && !WIKI_TIMESTAMP_REGEX.test(input.at)) {
-    emitErrorAndExit('BAD_REQUEST', `--at must be ISO8601 with an explicit offset; got "${input.at}"`)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `--at must be ISO8601 with an explicit offset; got "${input.at}"`,
+    )
   }
   const ctx = await loadWiki(input)
   const summary = resolvePage(ctx, input.page)
   const page = discovered(ctx, summary)
   if (input.supersededBy !== undefined) {
     if (!WIKI_ID_REGEX.test(input.supersededBy)) {
-      emitErrorAndExit('BAD_REQUEST', `--superseded-by must be a canonical W<NNNN> id; got "${input.supersededBy}"`)
-    }
-    if (!ctx.projection.byId.has(input.supersededBy)) {
-      emitErrorAndExit('NOT_FOUND', `--superseded-by ${input.supersededBy} is not a wiki page in this project`)
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        `--superseded-by must be a canonical W<NNNN> id; got "${input.supersededBy}"`,
+      )
     }
   }
 
   const parsed = parseWikiFrontmatter(page.content)
   if (!parsed.frontmatter) {
-    emitErrorAndExit('BAD_REQUEST', `${summary.path} has no readable YAML frontmatter; fix it by hand first`)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `${summary.path} has no readable YAML frontmatter; fix it by hand first`,
+    )
   }
   const now = formatIsoLocal(new Date())
   const deprecated: Record<string, unknown> = {
@@ -834,7 +846,7 @@ export async function runWikiDeprecate(input: WikiDeprecateInput): Promise<void>
       parsed.body,
     ),
   )
-  await emitPageResult(input, format, summary.path)
+  await emitPageResult(ctx, format, summary.path)
 }
 
 export interface WikiUndeprecateInput extends WikiCommonInput {
@@ -848,7 +860,10 @@ export async function runWikiUndeprecate(input: WikiUndeprecateInput): Promise<v
   const page = discovered(ctx, summary)
   const parsed = parseWikiFrontmatter(page.content)
   if (!parsed.frontmatter) {
-    emitErrorAndExit('BAD_REQUEST', `${summary.path} has no readable YAML frontmatter; fix it by hand first`)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `${summary.path} has no readable YAML frontmatter; fix it by hand first`,
+    )
   }
   await atomicWrite(
     page.absolutePath,
@@ -860,7 +875,7 @@ export async function runWikiUndeprecate(input: WikiUndeprecateInput): Promise<v
       parsed.body,
     ),
   )
-  await emitPageResult(input, format, summary.path)
+  await emitPageResult(ctx, format, summary.path)
 }
 
 // ---------- memon wiki delete ----------
@@ -911,6 +926,8 @@ export interface WikiLintInput extends WikiCommonInput {
 
 export async function runWikiLint(input: WikiLintInput): Promise<void> {
   const format = readFormat(input)
+  // A pure Wiki-file read: no CLI diagnostic depends on review state, so lint
+  // never spawns git — not even for a `status: VERIFIED` finding.
   const ctx = await loadWiki(input)
   const targets =
     input.page === undefined ? ctx.projection.summaries : [resolvePage(ctx, input.page)]
@@ -925,16 +942,18 @@ export async function runWikiLint(input: WikiLintInput): Promise<void> {
 
   if (input.central !== undefined) {
     const central = resolveCentral(input.central)
-    for (const row of rows) {
-      const page = ctx.byPath.get(row.path)
-      if (!page) continue
-      const result = await centralRequest<{ diagnostics?: WikiDiagnostic[] }>(central, {
-        path: '/api/wiki/components/lint',
-        method: 'POST',
-        body: { content: page.content },
-      })
-      row.diagnostics.push(...(result.diagnostics ?? []))
-    }
+    await Promise.all(
+      rows.map(async (row) => {
+        const page = ctx.byPath.get(row.path)
+        if (!page) return
+        const result = await centralRequest<{ diagnostics?: WikiDiagnostic[] }>(central, {
+          path: '/api/wiki/components/lint',
+          method: 'POST',
+          body: { content: page.content },
+        })
+        row.diagnostics.push(...(result.diagnostics ?? []))
+      }),
+    )
   }
 
   const errors = rows.reduce(
@@ -949,7 +968,13 @@ export async function runWikiLint(input: WikiLintInput): Promise<void> {
   if (format === 'json') {
     emitJson({
       pages: rows,
-      summary: { pages: rows.length, errors, warnings, strict: input.strict === true },
+      summary: {
+        pages: rows.length,
+        errors,
+        warnings,
+        strict: input.strict === true,
+        sourceResolution: 'web-only',
+      },
     })
   } else {
     const lines: string[] = []
@@ -959,42 +984,11 @@ export async function runWikiLint(input: WikiLintInput): Promise<void> {
       for (const diagnostic of row.diagnostics) lines.push(formatDiagnostic(diagnostic))
     }
     lines.push(`${rows.length} page(s), ${errors} error(s), ${warnings} warning(s)`)
+    lines.push('source target resolution: Web only')
     process.stdout.write(`${lines.join('\n')}\n`)
   }
 
   if (input.strict === true && errors > 0) process.exitCode = EXIT.GENERIC
-}
-
-// ---------- memon wiki stale ----------
-
-export async function runWikiStale(input: WikiCommonInput): Promise<void> {
-  const format = readFormat(input)
-  const ctx = await loadWiki(input)
-  const pages = ctx.projection.summaries
-    .filter((summary) => summary.stale)
-    .map((summary) => ({
-      id: summary.id,
-      slug: summary.slug,
-      kind: summary.kind,
-      path: summary.path,
-      title: summary.title,
-      updatedAt: summary.updatedAt,
-      staleSources: summary.staleSources,
-    }))
-
-  if (format === 'json') {
-    emitJson({ pages })
-    return
-  }
-  if (pages.length === 0) {
-    process.stdout.write('(no stale pages)\n')
-    return
-  }
-  process.stdout.write(
-    `${pages
-      .map((page) => `${page.id}  ${page.path}  ${page.staleSources.join(', ')}  ${page.title}`)
-      .join('\n')}\n`,
-  )
 }
 
 // ---------- memon wiki backlinks ----------
@@ -1003,128 +997,51 @@ export interface WikiBacklinksInput extends WikiCommonInput {
   artifact: string
 }
 
-interface MarkdownReference {
-  /** Project-relative POSIX path of the referencing file. */
-  path: string
-  /** Link destination as written. */
-  target: string
-  line: number
+interface CliWikiBacklink {
+  id: string
+  slug: string
+  kind: string
+  title: string
+  status: string | null
+  deprecated: boolean
+  updatedAt: string
 }
 
 export async function runWikiBacklinks(input: WikiBacklinksInput): Promise<void> {
   const format = readFormat(input)
   const ctx = await loadWiki(input)
-  const result = await collectBacklinks(ctx, input.artifact)
+  const pages: CliWikiBacklink[] = ctx.projection.summaries
+    .filter((summary) =>
+      summary.sources.some((source) => sourceKeys(source).includes(input.artifact)),
+    )
+    .sort((left, right) => {
+      const updated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      return updated !== 0 ? updated : left.id.localeCompare(right.id)
+    })
+    .map((summary) => ({
+      id: summary.id,
+      slug: summary.slug,
+      kind: summary.kind,
+      title: summary.title,
+      status: summary.status,
+      deprecated: summary.deprecated !== null,
+      updatedAt: summary.updatedAt,
+    }))
 
   if (format === 'json') {
-    emitJson(result)
+    emitJson({ artifact: input.artifact, pages })
     return
   }
-  const lines = [`artifact: ${result.artifact}`]
-  if (result.pages.length === 0) lines.push('(no citing pages)')
-  for (const row of result.pages) {
+  const lines = [`artifact: ${input.artifact}`]
+  if (pages.length === 0) lines.push('(no citing pages)')
+  for (const row of pages) {
     const badges = [
       row.status ? `[${row.status}]` : null,
-      row.reviewState ? `[${row.reviewState}]` : null,
-      row.stale ? '[stale]' : null,
       row.deprecated ? '[deprecated]' : null,
     ].filter((badge): badge is string => badge !== null)
     lines.push(`${row.id}  ${row.kind}  ${badges.join(' ')}  ${row.title}`)
   }
-  if (result.markdownReferences) {
-    lines.push('markdownReferences:')
-    if (result.markdownReferences.length === 0) lines.push('  (none)')
-    for (const reference of result.markdownReferences) {
-      lines.push(`  ${reference.path}:${reference.line}  ${reference.target}`)
-    }
-  }
   process.stdout.write(`${lines.join('\n')}\n`)
-}
-
-interface BacklinksResult {
-  artifact: string
-  pages: WikiBacklink[]
-  markdownReferences?: MarkdownReference[]
-}
-
-async function collectBacklinks(ctx: WikiContext, artifact: string): Promise<BacklinksResult> {
-  if (/^[Rr]\d+$/.test(artifact) && !/^R\d{4}$/.test(artifact)) {
-    emitErrorAndExit('BAD_REQUEST', `"${artifact}" is not a canonical Report id (R<NNNN>)`)
-  }
-  const pages = [...(ctx.projection.backlinks.get(artifact) ?? [])]
-  if (!/^R\d{4}$/.test(artifact)) return { artifact, pages }
-  return {
-    artifact,
-    pages,
-    markdownReferences: await scanReportReferences(ctx, artifact),
-  }
-}
-
-/**
- * Every Markdown file under `docs/` and every run `README.md` carrying a
- * relative link that resolves to `docs/reports/<R-id>-…`. Existence of the
- * Report is irrelevant — the point is to find links a migration broke.
- */
-async function scanReportReferences(
-  ctx: WikiContext,
-  reportId: string,
-): Promise<MarkdownReference[]> {
-  const candidates = new Set<string>()
-  for (const file of await listMarkdownFiles(join(ctx.projectRoot, 'docs'))) candidates.add(file)
-  for (const run of ctx.runs) candidates.add(join(run.path, 'README.md'))
-
-  const targetRegex = new RegExp(`^docs/reports/${reportId}(?:-[^/]*)?(?:/.*|\\.md)?$`)
-  const references: MarkdownReference[] = []
-  for (const absolute of [...candidates].sort()) {
-    let content: string
-    try {
-      content = await fs.readFile(absolute, 'utf8')
-    } catch {
-      continue
-    }
-    const fileDir = dirname(absolute)
-    const lines = content.split('\n')
-    for (const [index, line] of lines.entries()) {
-      for (const match of line.matchAll(MARKDOWN_LINK_REGEX)) {
-        const raw = match[1]!.replace(/^<|>$/g, '')
-        const target = raw.split('#')[0]!.split('?')[0]!
-        if (target === '' || /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('@')) continue
-        const resolved = toProjectRelative(ctx.projectRoot, resolvePath(fileDir, target))
-        if (!targetRegex.test(resolved)) continue
-        references.push({
-          path: toProjectRelative(ctx.projectRoot, absolute),
-          target: raw,
-          line: index + 1,
-        })
-      }
-    }
-  }
-  return references
-}
-
-async function listMarkdownFiles(root: string, depth = 0): Promise<string[]> {
-  if (depth > MARKDOWN_SCAN_MAX_DEPTH) return []
-  let entries: Dirent[]
-  try {
-    entries = await fs.readdir(root, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const out: string[] = []
-  for (const entry of entries) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
-    const absolute = join(root, entry.name)
-    if (entry.isDirectory()) out.push(...(await listMarkdownFiles(absolute, depth + 1)))
-    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(absolute)
-  }
-  return out
-}
-
-function toProjectRelative(projectRoot: string, absolute: string): string {
-  const relative = absolute.startsWith(projectRoot)
-    ? absolute.slice(projectRoot.length).replace(/^[/\\]+/, '')
-    : absolute
-  return relative.split(/[/\\]/).join('/')
 }
 
 // ---------- memon wiki migrate-report ----------
@@ -1145,17 +1062,13 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
   }
 
   const ctx = await loadWiki(input)
-  const report = ctx.reports.find((entry) => entry.id === input.report)
+  const report = await discoverReport(ctx.projectRoot, input.report)
   if (!report) {
     emitErrorAndExit('NOT_FOUND', `report "${input.report}" not found under ${REPORTS_SUBDIR}/`)
   }
   const slug = assertSlug(input.slug ?? report.slug)
   assertSlugFree(ctx, slug)
   const id = nextWikiId(ctx)
-
-  // Collected before the copy so the migrated page cannot show up as its own
-  // referrer.
-  const backlinks = await collectBacklinks(ctx, report.id)
 
   const name = `${id}-${slug}`
   const newRelative =
@@ -1209,9 +1122,6 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
       const created = typeof patch.created_at === 'string' ? patch.created_at : existing.created_at
       if (typeof created === 'string') patch.date = created.slice(0, 10)
     }
-    // `finding` requires evidence and a Report carries no `sources`, so the
-    // tokens its body cites are the only honest seed. The migrating agent
-    // curates them right after (see the `memon-wiki` skill).
     if (kind === 'finding' && wikiStringList(existing.sources).length === 0) {
       const derived = deriveSources(body)
       if (derived.length > 0) patch.sources = derived
@@ -1219,11 +1129,10 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
 
     await atomicWrite(readme, serializeWikiPage(updateWikiFrontmatter(existing, patch), body))
 
-    // Lint the page in its new home before the Report is destroyed.
-    const after = await loadWiki(input)
-    const summary = after.projection.summaries.find((entry) => entry.path === newRelative)
-    const errors = (summary?.diagnostics ?? []).filter((d) => d.severity === 'error')
-    if (!summary || errors.length > 0) {
+    // Lint only the page in its new home before the Report is destroyed.
+    const summary = await changedPageSummary(ctx, newRelative)
+    const errors = summary.diagnostics.filter((d) => d.severity === 'error')
+    if (errors.length > 0) {
       aborted = true
       await rollback()
       emitErrorAndExit(
@@ -1244,21 +1153,13 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
       emitJson({
         oldPath: report.path,
         newPath: newRelative,
-        page: summary,
-        backlinks,
+        page: listEntry(summary),
       })
       return
     }
     process.stdout.write(
       `${report.id} ${report.path} -> ${summary.id} ${newRelative}\n${renderShowHeader(summary)}`,
     )
-    if (backlinks.markdownReferences && backlinks.markdownReferences.length > 0) {
-      process.stdout.write(
-        `markdownReferences to fix:\n${backlinks.markdownReferences
-          .map((reference) => `  ${reference.path}:${reference.line}  ${reference.target}`)
-          .join('\n')}\n`,
-      )
-    }
   } catch (err) {
     if (!aborted) await rollback()
     throw err
@@ -1290,58 +1191,69 @@ interface GitResult {
   stderr: string
 }
 
-async function git(projectRoot: string, args: string[]): Promise<GitResult> {
-  try {
-    const { stdout, stderr } = await execFileAsync('git', args, {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      timeout: GIT_TIMEOUT_MS,
-      maxBuffer: GIT_MAX_BUFFER,
-    })
-    return { ok: true, stdout, stderr }
-  } catch (err) {
-    const failure = err as { stdout?: string; stderr?: string; message?: string }
-    return {
-      ok: false,
-      stdout: failure.stdout ?? '',
-      stderr: failure.stderr ?? failure.message ?? '',
-    }
+/**
+ * Every git invocation of `commit` and the `review` subcommands, through the
+ * shared read cache: one `review diff` reads HEAD, the mark history and the
+ * patch, and `commit` reads the index on both sides of its own staging.
+ * Staging and committing are mutations, which the cache runs uncached and
+ * fences with an invalidation, so no read here can observe a pre-staging
+ * index afterwards.
+ */
+const gitCommand = cachedGitCommand()
+
+/**
+ * `cache: 'bypass'` is for the reads a decision is made from — the mixed-index
+ * preflight and the sha of the commit just written — which must observe the
+ * repository as it is, not as it was when something else read it.
+ */
+async function git(
+  projectRoot: string,
+  args: string[],
+  cache: 'use' | 'bypass' = 'use',
+): Promise<GitResult> {
+  const result = await gitCommand('git', args, {
+    cwd: projectRoot,
+    timeoutMs: GIT_TIMEOUT_MS,
+    maxBuffer: GIT_MAX_BUFFER,
+    cache,
+  })
+  const stdout = gitCommandStdoutText(result)
+  if (!isGitCommandFailure(result)) return { ok: true, stdout, stderr: result.stderr }
+  // `rev-parse --verify --quiet HEAD` tells an unborn HEAD (exit 1, *empty*
+  // stderr) from a real failure by this field, so a plain non-zero exit keeps
+  // git's own stderr verbatim. Only a command that never ran — missing binary,
+  // killed by our timeout — reports the transport diagnostic instead.
+  const silentTransportFailure =
+    (result.spawnFailed === true || result.timedOut === true) && result.stderr === ''
+  return {
+    ok: false,
+    stdout,
+    stderr: silentTransportFailure ? (result.message ?? 'git failed') : result.stderr,
   }
 }
 
-function requireGit(ctx: WikiContext): void {
-  if (ctx.reviews === null) {
+/** `commit` and every `review` subcommand need a usable git worktree. */
+async function requireGitWorktree(projectRoot: string): Promise<void> {
+  if (!(await isGitWorktree(projectRoot))) {
     emitErrorAndExit(
       'NOT_A_GIT_PROJECT',
-      `${ctx.projectRoot} is not inside a git worktree; wiki review and commit need git`,
+      `${projectRoot} is not inside a git worktree; wiki review and commit need git`,
       undefined,
       EXIT.NOT_FOUND,
     )
   }
-}
-
-function reviewOf(ctx: WikiContext, summary: WikiSummary): WikiReview {
-  const review = summary.review ?? ctx.reviews?.get(summary.path)
-  if (!review) {
-    emitErrorAndExit(
-      'NOT_A_GIT_PROJECT',
-      `no review state for ${summary.path}`,
-      undefined,
-      EXIT.NOT_FOUND,
-    )
-  }
-  return review
 }
 
 // ---------- memon wiki review ----------
 
 export async function runWikiReviewLog(input: WikiCommonInput): Promise<void> {
   const format = readFormat(input)
-  const ctx = await loadWiki(input)
-  requireGit(ctx)
-  const commits = (await listWikiCommits(ctx.projectRoot)) ?? []
-  const marksBySha = new Map(ctx.marks.map((mark) => [mark.sha, mark]))
-  const verifiedThrough = verifiedThroughMark(commits, ctx.marks)?.sha ?? null
+  const projectRoot = singleProjectRoot(await resolveContext(input))
+  await requireGitWorktree(projectRoot)
+  const commits = (await listWikiCommits(projectRoot)) ?? []
+  const marks = await readWikiReviewMarks(projectRoot)
+  const marksBySha = new Map(marks.map((mark) => [mark.sha, mark]))
+  const verifiedThrough = verifiedThroughMark(commits, marks)?.sha ?? null
 
   const rows = commits.map((commit: WikiCommit) => {
     const mark = marksBySha.get(commit.sha)
@@ -1375,85 +1287,183 @@ export async function runWikiReviewLog(input: WikiCommonInput): Promise<void> {
   process.stdout.write(`${lines.join('\n')}\n`)
 }
 
-export interface WikiReviewLsInput extends WikiCommonInput {
-  state?: string
-}
-
-export async function runWikiReviewLs(input: WikiReviewLsInput): Promise<void> {
+/**
+ * One whole-wiki diff from the last human-verified wiki commit to HEAD.
+ *
+ * Review is commit-scoped and whole-wiki: no page argument, no per-page state,
+ * no blame, and exactly one `git diff` for the whole of `docs/wiki/`. The
+ * baseline is the newest mark in `.memon/wiki-review.csv` reachable from the
+ * captured HEAD; with no mark at all it is git's empty tree, so the whole
+ * committed wiki reads as added. Uncommitted work is deliberately absent —
+ * only what is committed can be verified. Every git call is checked: a
+ * failure is reported, never rendered as a clean diff.
+ */
+export async function runWikiReviewDiff(input: WikiCommonInput): Promise<void> {
   const format = readFormat(input)
-  const stateFilter = input.state === undefined ? undefined : assertReviewState(input.state)
-  const ctx = await loadWiki(input)
-  requireGit(ctx)
+  const projectRoot = singleProjectRoot(await resolveContext(input))
+  await requireGitWorktree(projectRoot)
 
-  const rows = ctx.projection.summaries
-    .map((summary) => {
-      const review = reviewOf(ctx, summary)
-      return {
-        id: summary.id,
-        slug: summary.slug,
-        kind: summary.kind,
-        path: summary.path,
-        title: summary.title,
-        state: review.state,
-        verifiedThrough: review.verifiedThrough,
-        unverifiedCommits: review.unverifiedCommits.length,
-        unverifiedRanges: review.unverifiedRanges,
-        dirty: review.dirty,
-      }
-    })
-    .filter((row) => stateFilter === undefined || row.state === stateFilter)
+  // HEAD first: `--verify --quiet` fails with an empty stderr exactly for an
+  // unborn HEAD (nothing committed, so nothing reviewable). Anything on
+  // stderr is a real git failure.
+  const head = await git(projectRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'])
+  if (!head.ok && head.stderr.trim() !== '') {
+    emitErrorAndExit(
+      'GIT_FAILED',
+      `git rev-parse HEAD failed: ${head.stderr.trim()}`,
+      undefined,
+      EXIT.GENERIC,
+    )
+  }
+  const headSha = head.ok ? head.stdout.trim() : null
 
-  if (format === 'json') {
-    emitJson({ pages: rows })
-    return
-  }
-  if (rows.length === 0) {
-    process.stdout.write('(no matching pages)\n')
-    return
-  }
-  process.stdout.write(
-    `${rows
-      .map(
-        (row) =>
-          `${row.id}  ${row.state.padEnd(21)} ${String(row.unverifiedCommits).padStart(3)} commit(s)${
-            row.dirty ? '  dirty' : ''
-          }  ${row.path}`,
+  // Baseline resolution deliberately avoids the wiki-commit projection: that
+  // helper maps a failing `git log` to "no commits", which here would mean a
+  // silent empty-tree diff or a bogus stale-baseline verdict. One checked
+  // `rev-list` over the captured HEAD answers both questions instead.
+  const marks = await readWikiReviewMarks(projectRoot)
+  let verified: WikiReviewMark | null = null
+  let stale = marks.map((mark) => mark.sha)
+  if (marks.length > 0 && headSha !== null) {
+    const history = await git(projectRoot, ['rev-list', '--topo-order', headSha])
+    if (!history.ok) {
+      emitErrorAndExit(
+        'GIT_FAILED',
+        `git rev-list failed: ${history.stderr.trim()}`,
+        undefined,
+        EXIT.GENERIC,
       )
-      .join('\n')}\n`,
-  )
-}
+    }
+    const marksBySha = new Map(marks.map((mark) => [mark.sha, mark]))
+    const reachable = new Set<string>()
+    for (const sha of history.stdout.split('\n')) {
+      const mark = marksBySha.get(sha)
+      if (mark === undefined) continue
+      reachable.add(sha)
+      // `--topo-order` never lists a commit before its descendants, so the
+      // first marked commit reached is the last verified one.
+      if (verified === null) verified = mark
+    }
+    stale = marks.filter((mark) => !reachable.has(mark.sha)).map((mark) => mark.sha)
+  }
 
-export interface WikiReviewDiffInput extends WikiCommonInput {
-  page: string
-}
+  // A mark naming a commit unreachable from HEAD (amend, rebase, dropped
+  // branch) is not a baseline: falling back to the empty tree would silently
+  // discard the human's verification.
+  if (stale.length > 0) {
+    emitErrorAndExit(
+      'REVIEW_STALE_BASELINE',
+      `${stale.length} review mark(s) name commits unreachable from HEAD; drop them with \`memon wiki review unverify <sha>\``,
+      { staleMarks: stale },
+      EXIT.CONFLICT,
+    )
+  }
 
-export async function runWikiReviewDiff(input: WikiReviewDiffInput): Promise<void> {
-  const format = readFormat(input)
-  const ctx = await loadWiki(input)
-  requireGit(ctx)
-  const summary = resolvePage(ctx, input.page)
-  const review = reviewOf(ctx, summary)
-  if (review.state === 'VERIFIED') return
-
-  const page = discovered(ctx, summary)
-  const pathspec = page.bundleDir === null ? summary.path : summary.path.slice(0, -'/README.md'.length)
-  const from = review.verifiedThrough ?? EMPTY_TREE_SHA
-  const result = await git(ctx.projectRoot, ['diff', from, '--', pathspec])
-  if (!result.ok) {
-    emitErrorAndExit('GIT_FAILED', `git diff failed: ${result.stderr.trim()}`, undefined, EXIT.GENERIC)
+  const base = verified?.sha ?? EMPTY_TREE_SHA
+  let files: string[] = []
+  let diff = ''
+  if (headSha !== null) {
+    // One invocation carries both the file list and the patch: `--raw -z`
+    // emits NUL-terminated records (never quoted, so spaces, unicode and
+    // rename pairs survive verbatim), an empty record closes them, and the
+    // patch follows byte for byte. `--binary` (implying `--full-index`) makes
+    // a changed bundle asset a complete patch, while the `-c` overrides,
+    // `--no-ext-diff` and `--no-textconv` keep a user's diff configuration,
+    // external differ and textconv filters out of a review diff.
+    const result = await git(projectRoot, [
+      '-c',
+      'core.quotePath=false',
+      '-c',
+      'diff.external=',
+      '-c',
+      'diff.noprefix=false',
+      '-c',
+      'diff.mnemonicPrefix=false',
+      'diff',
+      '--raw',
+      '-z',
+      '--patch',
+      '--binary',
+      '--find-renames',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-color',
+      base,
+      headSha,
+      '--',
+      WIKI_DIR_RELPATH,
+    ])
+    if (!result.ok) {
+      emitErrorAndExit(
+        'GIT_FAILED',
+        `git diff failed: ${result.stderr.trim()}`,
+        undefined,
+        EXIT.GENERIC,
+      )
+    }
+    const parsed = parseRawDiff(result.stdout)
+    files = parsed.files
+    diff = parsed.diff
   }
 
   if (format === 'json') {
     emitJson({
-      id: summary.id,
-      path: summary.path,
-      state: review.state,
-      from: review.verifiedThrough,
-      diff: result.stdout,
+      verifiedThrough: verified?.sha ?? null,
+      verifiedAt: verified?.verifiedAt ?? null,
+      base,
+      baseIsEmptyTree: verified === null,
+      head: headSha,
+      pathspec: WIKI_DIR_RELPATH,
+      files,
+      diff,
     })
     return
   }
-  process.stdout.write(result.stdout)
+  const lines = [
+    verified === null
+      ? `base: ${base.slice(0, 10)} (empty tree; no verified wiki commit)`
+      : `base: ${base.slice(0, 10)} (verified ${verified.verifiedAt})`,
+    `head: ${headSha === null ? '(unborn)' : headSha.slice(0, 10)}`,
+  ]
+  if (headSha === null) {
+    lines.push('(no wiki commits yet)')
+  } else if (files.length === 0) {
+    lines.push('(no committed wiki changes since base)')
+  } else {
+    lines.push(`${files.length} file(s) changed under ${WIKI_DIR_RELPATH}/`)
+  }
+  process.stdout.write(`${lines.join('\n')}\n${diff}`)
+}
+
+/**
+ * Split one `git diff --raw -z --patch` output into changed paths and the
+ * patch. A raw record is `:<modes> <shas> <status>` followed by one path, or
+ * two for a rename/copy; an empty record terminates the raw section and the
+ * remainder is the patch, returned untouched.
+ */
+function parseRawDiff(stdout: string): { files: string[]; diff: string } {
+  const files: string[] = []
+  let cursor = 0
+  while (cursor < stdout.length) {
+    const end = stdout.indexOf('\0', cursor)
+    if (end === -1) break
+    const record = stdout.slice(cursor, end)
+    cursor = end + 1
+    if (record === '') break
+    if (!record.startsWith(':')) continue
+    const status = record.slice(record.lastIndexOf(' ') + 1)
+    const pathCount = status.startsWith('R') || status.startsWith('C') ? 2 : 1
+    for (let index = 0; index < pathCount; index += 1) {
+      const stop = stdout.indexOf('\0', cursor)
+      if (stop === -1) {
+        cursor = stdout.length
+        break
+      }
+      if (stop > cursor) files.push(stdout.slice(cursor, stop))
+      cursor = stop + 1
+    }
+  }
+  return { files, diff: stdout.slice(cursor) }
 }
 
 export interface WikiReviewVerifyInput extends WikiCommonInput {
@@ -1463,20 +1473,15 @@ export interface WikiReviewVerifyInput extends WikiCommonInput {
 
 export async function runWikiReviewVerify(input: WikiReviewVerifyInput): Promise<void> {
   const format = readFormat(input)
-  const ctx = await loadWiki(input)
-  requireGit(ctx)
+  const projectRoot = singleProjectRoot(await resolveContext(input))
+  await requireGitWorktree(projectRoot)
 
   let mark: WikiReviewMark
   try {
-    mark = await writeWikiReviewMark(ctx.projectRoot, input.sha, input.note)
+    mark = await writeWikiReviewMark(projectRoot, input.sha, input.note)
   } catch (err) {
     if (err instanceof WikiReviewOrderError) {
-      emitErrorAndExit(
-        'REVIEW_ORDER',
-        err.message,
-        { nextSha: err.nextSha },
-        EXIT.CONFLICT,
-      )
+      emitErrorAndExit('REVIEW_ORDER', err.message, { nextSha: err.nextSha }, EXIT.CONFLICT)
     }
     if (err instanceof WikiReviewError) {
       emitErrorAndExit(
@@ -1489,8 +1494,8 @@ export async function runWikiReviewVerify(input: WikiReviewVerifyInput): Promise
     throw err
   }
 
-  const commits = (await listWikiCommits(ctx.projectRoot)) ?? []
-  const marks = await readWikiReviewMarks(ctx.projectRoot)
+  const commits = (await listWikiCommits(projectRoot)) ?? []
+  const marks = await readWikiReviewMarks(projectRoot)
   const marked = new Set(marks.map((entry) => entry.sha))
   const next = commits.find((commit) => !marked.has(commit.sha)) ?? null
 
@@ -1514,9 +1519,9 @@ export interface WikiReviewUnverifyInput extends WikiCommonInput {
 
 export async function runWikiReviewUnverify(input: WikiReviewUnverifyInput): Promise<void> {
   const format = readFormat(input)
-  const ctx = await loadWiki(input)
-  requireGit(ctx)
-  const result = await removeWikiReviewMark(ctx.projectRoot, input.sha)
+  const projectRoot = singleProjectRoot(await resolveContext(input))
+  await requireGitWorktree(projectRoot)
+  const result = await removeWikiReviewMark(projectRoot, input.sha)
   if (result.removed.length === 0) {
     emitErrorAndExit('NOT_FOUND', `no review mark matches "${input.sha}"`)
   }
@@ -1540,14 +1545,15 @@ export interface WikiCommitInput extends WikiCommonInput {
 
 export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   const format = readFormat(input)
-  const ctx = await loadWiki(input)
-  requireGit(ctx)
+  const projectRoot = singleProjectRoot(await resolveContext(input))
+  await requireGitWorktree(projectRoot)
 
-  const prefix = (await git(ctx.projectRoot, ['rev-parse', '--show-prefix'])).stdout.trim()
+  const prefix = (await git(projectRoot, ['rev-parse', '--show-prefix'])).stdout.trim()
   const wikiPrefix = `${prefix}${WIKI_DIR_RELPATH}/`
 
+  // Refusing a mixed index is a safety decision about the index as it is now.
   const alreadyStaged = (
-    await git(ctx.projectRoot, ['diff', '--cached', '--name-only', '-z'])
+    await git(projectRoot, ['diff', '--cached', '--name-only', '-z'], 'bypass')
   ).stdout
     .split('\0')
     .filter((entry) => entry !== '')
@@ -1561,15 +1567,20 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
     )
   }
 
-  if (await exists(join(ctx.projectRoot, WIKI_DIR_RELPATH))) {
-    const staged = await git(ctx.projectRoot, ['add', '-A', '--', WIKI_DIR_RELPATH])
+  if (await exists(join(projectRoot, WIKI_DIR_RELPATH))) {
+    const staged = await git(projectRoot, ['add', '-A', '--', WIKI_DIR_RELPATH])
     if (!staged.ok) {
-      emitErrorAndExit('GIT_FAILED', `git add failed: ${staged.stderr.trim()}`, undefined, EXIT.GENERIC)
+      emitErrorAndExit(
+        'GIT_FAILED',
+        `git add failed: ${staged.stderr.trim()}`,
+        undefined,
+        EXIT.GENERIC,
+      )
     }
   }
 
   const statusRows = parseNameStatus(
-    (await git(ctx.projectRoot, ['diff', '--cached', '--name-status', '-z'])).stdout,
+    (await git(projectRoot, ['diff', '--cached', '--name-status', '-z'])).stdout,
   )
   if (statusRows.length === 0) {
     emitErrorAndExit('BAD_REQUEST', `nothing to commit under ${WIKI_DIR_RELPATH}/`)
@@ -1599,7 +1610,7 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   }
   const subject = `wiki: ${summary === '' ? generated : summary}`
 
-  const committed = await git(ctx.projectRoot, ['commit', '-m', subject])
+  const committed = await git(projectRoot, ['commit', '-m', subject])
   if (!committed.ok) {
     emitErrorAndExit(
       'GIT_FAILED',
@@ -1608,22 +1619,15 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
       EXIT.GENERIC,
     )
   }
-  const sha = (await git(ctx.projectRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+  const sha = (await git(projectRoot, ['rev-parse', 'HEAD'], 'bypass')).stdout.trim()
 
-  // Post-commit review state per touched page — the handoff message the
-  // `memon-wiki` skill has to report.
-  const after = await loadWiki(input)
-  const pages = pageIds.map((id) => {
-    const entry = changes.get(id)!
-    const page = after.projection.byId.get(id)
-    return {
-      id,
-      change: verbFor(entry.change),
-      paths: entry.paths,
-      reviewState: page?.review?.state ?? null,
-      verifiedThrough: page?.review?.verifiedThrough ?? null,
-    }
-  })
+  // No review state is derived here: verification is whole-wiki and belongs to
+  // `wiki review diff` / `wiki review verify`, never to a per-page claim.
+  const pages = pageIds.map((id) => ({
+    id,
+    change: verbFor(changes.get(id)!.change),
+    paths: changes.get(id)!.paths,
+  }))
 
   if (format === 'json') {
     emitJson({ sha, shortSha: sha.slice(0, 10), subject, pages, files })
@@ -1631,7 +1635,7 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   }
   process.stdout.write(
     `${sha.slice(0, 10)}  ${subject}\n${pages
-      .map((page) => `  ${page.change} ${page.id}  ${page.reviewState ?? '—'}`)
+      .map((page) => `  ${page.change} ${page.id}`)
       .join('\n')}\n`,
   )
 }
@@ -1676,7 +1680,10 @@ interface CentralTarget {
   headers: Record<string, string>
 }
 
-function resolveCentral(explicit: string | undefined, env: NodeJS.ProcessEnv = process.env): CentralTarget {
+function resolveCentral(
+  explicit: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): CentralTarget {
   const raw = explicit ?? env.MEMON_CENTRAL_URL
   if (!raw || raw.trim() === '') {
     emitErrorAndExit(
@@ -1736,7 +1743,11 @@ async function centralRequest<T>(target: CentralTarget, request: CentralRequest)
       code,
       message,
       undefined,
-      response.status === 404 ? EXIT.NOT_FOUND : response.status === 400 ? EXIT.USAGE : EXIT.GENERIC,
+      response.status === 404
+        ? EXIT.NOT_FOUND
+        : response.status === 400
+          ? EXIT.USAGE
+          : EXIT.GENERIC,
     )
   }
   if (text.trim() === '') return {} as T
@@ -1781,11 +1792,10 @@ export async function runWikiComponentsLs(input: WikiComponentsLsInput): Promise
   }
   process.stdout.write(
     `${components
-      .map(
-        (component) =>
-          `${`${component.name}@${component.version}`.padEnd(24)} ${
-            component.outdated === true ? '[outdated]' : '          '
-          } ${component.description ?? ''}`.trimEnd(),
+      .map((component) =>
+        `${`${component.name}@${component.version}`.padEnd(24)} ${
+          component.outdated === true ? '[outdated]' : '          '
+        } ${component.description ?? ''}`.trimEnd(),
       )
       .join('\n')}\n`,
   )
@@ -1830,40 +1840,52 @@ export async function runWikiComponentsMigrate(input: WikiComponentsMigrateInput
   const summaries =
     input.page === undefined ? ctx.projection.summaries : [resolvePage(ctx, input.page)]
 
-  const results: { id: string; path: string; changed: boolean; written: boolean }[] = []
-  for (const summary of summaries) {
-    const page = ctx.byPath.get(summary.path)
-    if (!page) continue
-    const parsed = parseWikiFrontmatter(page.content)
-    const response = await centralRequest<{ content?: string }>(target, {
-      path: '/api/wiki/components/migrate',
-      method: 'POST',
-      body: { content: parsed.body },
-    })
-    if (typeof response.content !== 'string') {
-      emitErrorAndExit(
-        'CENTRAL_ERROR',
-        'central component migration response did not contain a Markdown body',
-        undefined,
-        EXIT.GENERIC,
-      )
-    }
-    const nextBody = response.content
-    const changed = nextBody !== parsed.body
-    if (changed && input.dryRun !== true) {
-      // The central registry owns component bodies, not wiki frontmatter.
-      // Preserve the original frontmatter bytes exactly (including custom
-      // keys, key order, quoting, and comments) and replace only the body.
+  const migrationResults = await Promise.all(
+    summaries.map(async (summary) => {
+      const page = ctx.byPath.get(summary.path)
+      if (!page) return null
+      const parsed = parseWikiFrontmatter(page.content)
+      const response = await centralRequest<{ content?: string }>(target, {
+        path: '/api/wiki/components/migrate',
+        method: 'POST',
+        body: { content: parsed.body },
+      })
+      if (typeof response.content !== 'string') {
+        emitErrorAndExit(
+          'CENTRAL_ERROR',
+          'central component migration response did not contain a Markdown body',
+          undefined,
+          EXIT.GENERIC,
+        )
+      }
+      const changed = response.content !== parsed.body
       const bodyOffset = page.content.length - parsed.body.length
-      await atomicWrite(page.absolutePath, `${page.content.slice(0, bodyOffset)}${nextBody}`)
-    }
-    results.push({
-      id: summary.id,
-      path: summary.path,
-      changed,
-      written: changed && input.dryRun !== true,
-    })
+      return {
+        summary,
+        page,
+        changed,
+        content: `${page.content.slice(0, bodyOffset)}${response.content}`,
+      }
+    }),
+  )
+  const migrations = migrationResults.flatMap((migration) =>
+    migration === null ? [] : [migration],
+  )
+
+  if (input.dryRun !== true) {
+    await Promise.all(
+      migrations
+        .filter((migration) => migration.changed)
+        .map((migration) => atomicWrite(migration.page.absolutePath, migration.content)),
+    )
   }
+
+  const results = migrations.map(({ summary, changed }) => ({
+    id: summary.id,
+    path: summary.path,
+    changed,
+    written: changed && input.dryRun !== true,
+  }))
 
   if (format === 'json') {
     emitJson({ dryRun: input.dryRun === true, pages: results })

@@ -40,61 +40,8 @@ Confirmed.
 - \`./out\` — output dir
 `
 
-describe('serializeReadme', () => {
-  it('round-trips through parse+reserialize+parse with stable structure', () => {
-    const parsed1 = parseReadme(SAMPLE)
-    expect(parsed1.parseErrors).toEqual([])
-    const serialized = reserializeReadme(parsed1)
-    const parsed2 = parseReadme(serialized)
-    expect(parsed2.parseErrors).toEqual([])
-    expect(parsed2.frontMatter).toEqual(parsed1.frontMatter)
-    expect(parsed2.sections.artifacts).toEqual(parsed1.sections.artifacts)
-    expect(parsed2.sections.motivation).toBe(parsed1.sections.motivation)
-  })
-
-  it('emits the four v5 canonical run-side sections in canonical order', () => {
-    const parsed = parseReadme(SAMPLE)
-    const out = reserializeReadme(parsed)
-    // v5: 4 canonical sections; Method/Conclusion/Caveats forbidden on run side.
-    const order = ['Motivation', 'Setup', 'Result', 'Artifacts']
-    let prev = -1
-    for (const heading of order) {
-      const idx = out.indexOf(`## ${heading}`)
-      expect(idx).toBeGreaterThan(prev)
-      prev = idx
-    }
-    // None of the forbidden run-side headings appear after re-serialization.
-    expect(out).not.toContain('## Method')
-    expect(out).not.toContain('## Conclusion')
-    expect(out).not.toContain('## Caveats')
-  })
-
-  it('omits optional New Hypotheses section when empty by default', () => {
-    const parsed = parseReadme(SAMPLE)
-    const out = reserializeReadme(parsed)
-    expect(out).not.toContain('## New Hypotheses')
-  })
-
-  it('emits New Hypotheses when content present', () => {
-    const parsed = parseReadme(SAMPLE)
-    parsed.sections.newHypotheses = 'H0007: warmup matters.'
-    const out = serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections })
-    expect(out).toContain('## New Hypotheses')
-    expect(out).toContain('H0007: warmup matters.')
-  })
-
-  it('throws on non-canonical hypothesis ref in frontmatter', () => {
-    const parsed = parseReadme(SAMPLE)
-    parsed.frontMatter.hypotheses = ['H0001', 'H3']
-    expect(() => reserializeReadme(parsed)).toThrowError(/H3/)
-  })
-
-  it('v3 task 4.2: legacy v2 fields (project / hypotheses / tags) are dropped from new writes', () => {
-    // Feed a v2-shaped SAMPLE through parse then serialize — the output
-    // should contain `experiment:` + `updated_at:` and NOT contain the
-    // dropped fields. This ensures the writer pretty-prints to the v3
-    // canonical shape regardless of input shape.
-    const v2Sample = `---
+// v2 shape: carries the Experiment-inherited keys that v3+ stopped writing.
+const V2_SAMPLE = `---
 id: legacy-260101-000000
 name: legacy
 project: old-sub-project
@@ -114,12 +61,91 @@ tags: [old, legacy]
 ## Motivation
 Old run.
 `
-    const parsed = parseReadme(v2Sample)
+
+describe('serializeReadme', () => {
+  it('round-trips through parse+reserialize+parse with stable structure', () => {
+    const parsed1 = parseReadme(SAMPLE)
+    expect(parsed1.parseErrors).toEqual([])
+    const serialized = reserializeReadme(parsed1)
+    const parsed2 = parseReadme(serialized)
+    expect(parsed2.parseErrors).toEqual([])
+    expect(parsed2.frontMatter).toEqual(parsed1.frontMatter)
+    expect(parsed2.sections.artifacts).toEqual(parsed1.sections.artifacts)
+    expect(parsed2.sections.motivation).toBe(parsed1.sections.motivation)
+  })
+
+  it('emits present sections in canonical order and preserves legacy chapters', () => {
+    const parsed = parseReadme(SAMPLE)
     const out = reserializeReadme(parsed)
+    const order = ['Motivation', 'Setup', 'Method', 'Result', 'Conclusion', 'Artifacts']
+    let prev = -1
+    for (const heading of order) {
+      const idx = out.indexOf(`## ${heading}`)
+      expect(idx).toBeGreaterThan(prev)
+      prev = idx
+    }
+    // Legacy chapters are content: an unrelated edit must not delete them.
+    expect(out).toContain('Train.')
+    expect(out).toContain('Confirmed.')
+    // Absent chapters are not invented.
+    expect(out).not.toContain('## Caveats')
+  })
+
+  it('omits optional New Hypotheses section when empty by default', () => {
+    const parsed = parseReadme(SAMPLE)
+    const out = reserializeReadme(parsed)
+    expect(out).not.toContain('## New Hypotheses')
+  })
+
+  it('emits New Hypotheses when content present', () => {
+    const parsed = parseReadme(SAMPLE)
+    parsed.sections.newHypotheses = 'H0007: warmup matters.'
+    const out = serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections })
+    expect(out).toContain('## New Hypotheses')
+    expect(out).toContain('H0007: warmup matters.')
+  })
+
+  it('throws on non-canonical hypothesis ref when building a document', () => {
+    const parsed = parseReadme(SAMPLE)
+    parsed.frontMatter.hypotheses = ['H0001', 'H3']
+    expect(() =>
+      serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections }),
+    ).toThrowError(/H3/)
+  })
+
+  it('drops legacy v2 fields (project / hypotheses / tags) when building a document', () => {
+    const parsed = parseReadme(V2_SAMPLE)
+    const out = serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections })
     expect(out).toContain('experiment:')
     expect(out).toContain('updated_at:')
     expect(out).not.toContain('project:')
     expect(out).not.toContain('hypotheses:')
     expect(out).not.toContain('tags:')
+  })
+})
+
+describe('reserializeReadme', () => {
+  it('preserves declared legacy keys and the body across a metadata mutation', () => {
+    const parsed = parseReadme(V2_SAMPLE)
+    parsed.frontMatter.status = 'FAILED'
+    const out = reserializeReadme(parsed)
+
+    expect(out).toContain('status: FAILED')
+    // A v2 document keeps the keys it declared — an unrelated status edit is
+    // not a migration, and dropping them would silently rewrite history.
+    expect(out).toContain('project: old-sub-project')
+    expect(out).toContain('hypotheses: [H0001, H0002]')
+    expect(out).toContain('tags: [old, legacy]')
+    // Body verbatim: no invented headings, nothing reordered.
+    expect(out.slice(out.indexOf('## Motivation'))).toBe(
+      V2_SAMPLE.slice(V2_SAMPLE.indexOf('## Motivation')),
+    )
+    expect(out).not.toContain('## Setup')
+  })
+
+  it('does not reject a legacy document with a malformed hypothesis ref', () => {
+    const parsed = parseReadme(V2_SAMPLE.replace('[H0001, H0002]', '[H0001, H3]'))
+    parsed.frontMatter.archived = true
+    expect(() => reserializeReadme(parsed)).not.toThrow()
   })
 })

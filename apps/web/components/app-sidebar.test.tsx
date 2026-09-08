@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as ApiModule from '../lib/api'
 import { ProjectRefSchema } from '@memon/core'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -12,65 +13,41 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('../lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../lib/api')>()
+  const actual = await importOriginal<typeof ApiModule>()
   return {
     ...actual,
     fetchHosts: vi.fn(),
     fetchProjects: vi.fn(),
-    fetchExperimentDocs: vi.fn(),
+    fetchExperimentsInventory: vi.fn(),
     fetchSlurmStatus: vi.fn(),
     fetchGitStatus: vi.fn(),
     fetchGitStatusFiles: vi.fn(),
     fetchGitDiff: vi.fn(),
-    checkTerminal: vi.fn(),
-    startTerminal: vi.fn(),
-    stopTerminal: vi.fn(),
   }
 })
 
 import {
-  checkTerminal,
-  fetchExperimentDocs,
+  fetchExperimentsInventory,
   fetchGitStatus,
   fetchGitStatusFiles,
   fetchHosts,
   fetchProjects,
   fetchSlurmStatus,
 } from '../lib/api'
-import { __resetRuntimeConfigForTests } from '../lib/runtime-config'
 import { AppSidebar } from './app-sidebar'
 import { type SessionInfo, SessionProvider } from './session-provider'
 import { SidebarProvider } from './ui/sidebar'
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
-function makeExpDoc(id: string, effectiveUpdatedAt: string) {
+function makeInventoryItem(
+  id: string,
+): Awaited<ReturnType<typeof fetchExperimentsInventory>>['items'][number] {
   return {
     id,
-    project: 'project-a',
-    path: `/p/a/docs/experiments/${id}/README.md`,
-    mtime: 0,
-    readmeMtime: 0,
-    frontMatter: {
-      id,
-      slug: id.replace(/^E\d+-/, ''),
-      title: id,
-      status: 'OPEN' as const,
-      archived: false,
-      runs: [],
-      hypotheses: [],
-      tags: [],
-      createdAt: effectiveUpdatedAt,
-      updatedAt: effectiveUpdatedAt,
-    },
-    sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
-    warningsRaw: null,
-    parseErrors: [],
-    parseWarnings: [],
-    effectiveCreatedAt: effectiveUpdatedAt,
-    effectiveUpdatedAt,
-    memberRuns: [],
-  }
+    slug: id.replace(/^E\d+-/, ''),
+    resource: `docs/experiments/${id}/README.md`,
+  } as Awaited<ReturnType<typeof fetchExperimentsInventory>>['items'][number]
 }
 
 function makeHost(
@@ -98,10 +75,7 @@ function makeHost(
             wikiAssets: true,
             git: true,
             shares: true,
-            tmux: true,
-            terminal: true,
             slurm: false,
-            herdr: false,
           }
         : null,
   } as Awaited<ReturnType<typeof fetchHosts>>['hosts'][number]
@@ -119,8 +93,6 @@ describe('AppSidebar', () => {
   beforeEach(() => {
     currentPathname = '/p/project-a'
     localStorage.clear()
-    document.getElementById('memon-runtime-config')?.remove()
-    __resetRuntimeConfigForTests()
     vi.clearAllMocks()
     vi.mocked(fetchHosts).mockRejectedValue(new Error('Host registry unavailable'))
     vi.mocked(fetchProjects).mockResolvedValue({
@@ -143,7 +115,7 @@ describe('AppSidebar', () => {
         },
       ],
     })
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments: [] })
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({ items: [] })
     // SlurmStatusWidget + GitStatusPill render `null` when their query
     // returns `enabled: false`, so default both to that path to keep the
     // sidebar tests focused on project / experiment rendering.
@@ -151,13 +123,6 @@ describe('AppSidebar', () => {
     vi.mocked(fetchGitStatus).mockResolvedValue({
       enabled: false,
       reason: 'not-a-repo',
-    })
-    // Default terminal probe = available. Tests that need viewer or
-    // unavailable can override.
-    vi.mocked(checkTerminal).mockResolvedValue({
-      available: true,
-      version: '1.7.7',
-      source: 'cached',
     })
     // Default git-status-files mock — used by the GitDiffDialog when the
     // sidebar pill-trigger tests open it.
@@ -173,23 +138,6 @@ describe('AppSidebar', () => {
       unstaged: [],
       untracked: [],
     })
-  })
-
-  it('shows Herdr and hides Manage tmux when only Herdr is enabled', async () => {
-    const script = document.createElement('script')
-    script.id = 'memon-runtime-config'
-    script.type = 'application/json'
-    script.textContent = JSON.stringify({
-      gitStatus: { intervalMs: 10_000 },
-      terminal: { tmuxEnabled: false, herdrEnabled: true },
-    })
-    document.head.appendChild(script)
-    __resetRuntimeConfigForTests()
-
-    setup()
-    expect(await screen.findByText('Open Herdr')).toBeInTheDocument()
-    expect(screen.queryByText('Manage tmux')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Herdr in new window' })).toBeInTheDocument()
   })
 
   function setup(session: SessionInfo = { role: 'owner', scopeProjects: [] }) {
@@ -229,14 +177,12 @@ describe('AppSidebar', () => {
     })
   })
 
-  it('renders experiment rows in effectiveUpdatedAt-descending order', async () => {
-    // Three exps deliberately served out of order; the sidebar must sort
-    // by effectiveUpdatedAt desc so B (newest) renders first, then C, then A.
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({
-      experiments: [
-        makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00'),
-        makeExpDoc('E0002-bravo', '2026-05-06T08:00:00+08:00'),
-        makeExpDoc('E0003-charlie', '2026-05-05T15:00:00+08:00'),
+  it('renders experiment navigation in slug order', async () => {
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
+      items: [
+        makeInventoryItem('E0003-charlie'),
+        makeInventoryItem('E0001-alpha'),
+        makeInventoryItem('E0002-bravo'),
       ],
     })
 
@@ -253,7 +199,7 @@ describe('AppSidebar', () => {
       container.querySelectorAll<HTMLAnchorElement>('a[href*="/p/project-a/e/"]'),
     )
     const ids = links.map((a) => within(a).getByText(/^E\d+-/).textContent)
-    expect(ids).toEqual(['E0002-bravo', 'E0003-charlie', 'E0001-alpha'])
+    expect(ids).toEqual(['E0001-alpha', 'E0002-bravo', 'E0003-charlie'])
   })
 
   it('renders a compact git pill per project row when git status is available', async () => {
@@ -402,14 +348,10 @@ describe('AppSidebar', () => {
   })
 
   it('renders all 12 experiments (no "View more" cap)', async () => {
-    const experiments = Array.from({ length: 12 }, (_, i) =>
-      makeExpDoc(
-        `E${String(i + 1).padStart(4, '0')}-x${i}`,
-        // descending ISO timestamps so order is predictable
-        `2026-05-${String(20 - i).padStart(2, '0')}T10:00:00+08:00`,
-      ),
+    const items = Array.from({ length: 12 }, (_, i) =>
+      makeInventoryItem(`E${String(i + 1).padStart(4, '0')}-x${i}`),
     )
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments })
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({ items })
     const { container } = setup()
     await waitFor(() => {
       const links = container.querySelectorAll('a[href*="/p/project-a/e/"]')
@@ -420,55 +362,23 @@ describe('AppSidebar', () => {
     expect(screen.queryByText(/Show fewer/i)).toBeNull()
   })
 
-  it('owner: terminal icon button is present on each experiment row', async () => {
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({
-      experiments: [
-        makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00'),
-        makeExpDoc('E0002-bravo', '2026-05-06T08:00:00+08:00'),
-      ],
-    })
-    setup({ role: 'owner', scopeProjects: [] })
-    await waitFor(() => {
-      const buttons = screen.getAllByRole('button', { name: /New terminal for E\d+-/ })
-      expect(buttons.length).toBe(2)
-      // Buttons are enabled when probe.available === true (the default mock).
-      buttons.forEach((b) => {
-        expect(b).not.toBeDisabled()
-      })
-    })
-  })
+  it('off-project routes do not read experiment inventories for persisted expanded sections', async () => {
+    // Settings-style route: no project owns it, but storage says project-a's
+    // section was left open. Rendering its chrome must not discover its docs.
+    currentPathname = '/manage/file-access'
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(['project-a']))
 
-  it('viewer: no terminal icon button is rendered on rows', async () => {
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({
-      experiments: [
-        makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00'),
-        makeExpDoc('E0002-bravo', '2026-05-06T08:00:00+08:00'),
-      ],
-    })
-    setup({ role: 'viewer', scopeProjects: ['project-a'] })
-    // Rows still render; just the icon button is absent.
-    await waitFor(() => {
-      expect(screen.getByText('E0001-alpha')).toBeInTheDocument()
-    })
-    expect(screen.queryAllByRole('button', { name: /New terminal for E\d+-/ }).length).toBe(0)
-  })
+    setup()
+    await waitFor(() => expect(screen.getByText('project-a')).toBeInTheDocument())
+    expect(fetchExperimentsInventory).not.toHaveBeenCalled()
 
-  it('owner + ttyd unavailable: terminal button is disabled with tooltip suggestion', async () => {
-    vi.mocked(checkTerminal).mockResolvedValue({
-      available: false,
-      downloadable: false,
-      suggestion: 'brew install ttyd',
+    // Expanding a section in this session IS an explicit read intent.
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
+      items: [makeInventoryItem('E0001-alpha')],
     })
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({
-      experiments: [makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00')],
-    })
-    setup({ role: 'owner', scopeProjects: [] })
-    await waitFor(() => {
-      const btn = screen.getByRole('button', {
-        name: /New terminal for E0001-alpha \(ttyd unavailable\)/,
-      })
-      expect(btn).toBeDisabled()
-    })
+    await userEvent.click(screen.getByText('project-b'))
+    await waitFor(() => expect(fetchExperimentsInventory).toHaveBeenCalledWith('project-b'))
+    expect(fetchExperimentsInventory).not.toHaveBeenCalledWith('project-a')
   })
 
   it('central: keeps configured Host order and shows offline Hosts without Projects', async () => {
@@ -509,8 +419,8 @@ describe('AppSidebar', () => {
         centralProject('host-b', 'shared-project'),
       ],
     })
-    vi.mocked(fetchExperimentDocs).mockResolvedValue({
-      experiments: [makeExpDoc('E0001-alpha', '2026-05-04T10:00:00+08:00')],
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
+      items: [makeInventoryItem('E0001-alpha')],
     })
 
     const { container } = setup()
@@ -530,11 +440,11 @@ describe('AppSidebar', () => {
     const hostBLink = hostB.querySelector('a[href="/h/host-b/p/shared-project/e/E0001-alpha"]')
     expect(hostALink).toHaveAttribute('data-active', 'true')
     expect(hostBLink).toHaveAttribute('data-active', 'false')
-    expect(fetchExperimentDocs).toHaveBeenCalledWith({
+    expect(fetchExperimentsInventory).toHaveBeenCalledWith({
       host: 'host-a',
       project: 'shared-project',
     })
-    expect(fetchExperimentDocs).toHaveBeenCalledWith({
+    expect(fetchExperimentsInventory).toHaveBeenCalledWith({
       host: 'host-b',
       project: 'shared-project',
     })
@@ -545,19 +455,6 @@ describe('AppSidebar', () => {
       expect(stored).toContain('h:host-a/p:shared-project')
       expect(stored).toContain('h:host-b/p:shared-project')
     })
-
-    expect(
-      within(hostA).getByRole('button', { name: /New terminal for E0001-alpha/ }),
-    ).toBeEnabled()
-    expect(
-      within(hostB).getByRole('button', { name: /New terminal for E0001-alpha/ }),
-    ).toBeEnabled()
-    expect(screen.getByRole('link', { name: 'Manage tmux' })).toHaveAttribute(
-      'href',
-      '/manage/tmux',
-    )
-    expect(checkTerminal).toHaveBeenCalledWith({ host: 'host-a' })
-    expect(checkTerminal).toHaveBeenCalledWith({ host: 'host-b' })
   })
 
   it('central viewer: displays Host status but does not infer Project authorization by name', async () => {

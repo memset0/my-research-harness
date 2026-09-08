@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ReleaseVersionSchema } from './backend-protocol.js'
 
-export const RELEASE_CHANGE_SURFACES = ['central', 'backend', 'cli', 'filesystem'] as const
+export const RELEASE_CHANGE_SURFACES = ['central', 'cli', 'skills', 'filesystem'] as const
 export type ReleaseChangeSurface = (typeof RELEASE_CHANGE_SURFACES)[number]
 
 export interface ReleasePolicyTransition {
@@ -12,11 +12,7 @@ export interface ReleasePolicyTransition {
   changedSurfaces: readonly ReleaseChangeSurface[]
 }
 
-export type ReleaseChangeClass =
-  | 'initial'
-  | 'central-patch'
-  | 'backend-cli-minor'
-  | 'filesystem-major'
+export type ReleaseChangeClass = 'initial' | 'central-patch' | 'cli-minor' | 'filesystem-major'
 
 interface NumericRelease {
   major: number
@@ -46,7 +42,10 @@ function uniqueSurfaces(values: readonly ReleaseChangeSurface[]): Set<ReleaseCha
 /**
  * Enforce memon's release axes before a release build is allowed to publish.
  * The release tool supplies changed surfaces from its scoped artifact/diff
- * audit; this function makes a Backend/CLI change in a Patch impossible.
+ * audit; this function makes a change to a distributed artifact (the CLI or
+ * the bundled managed skills) inside a Patch impossible. Distributed nodes
+ * install those artifacts independently through `memon update`, so no
+ * fleet-revision equality is part of this policy.
  */
 export function validateReleaseTransition(transition: ReleasePolicyTransition): ReleaseChangeClass {
   assertFsConvention(transition.previousFsConvention, 'previousFsConvention')
@@ -63,7 +62,7 @@ export function validateReleaseTransition(transition: ReleasePolicyTransition): 
   }
 
   const filesystemChanged = surfaces.has('filesystem')
-  const backendOrCliChanged = surfaces.has('backend') || surfaces.has('cli')
+  const distributedChanged = surfaces.has('cli') || surfaces.has('skills')
 
   if (filesystemChanged) {
     if (transition.nextFsConvention !== transition.previousFsConvention + 1) {
@@ -82,15 +81,17 @@ export function validateReleaseTransition(transition: ReleasePolicyTransition): 
     throw new Error('release Major cannot change without a filesystem migration')
   }
 
-  if (backendOrCliChanged) {
+  if (distributedChanged) {
     if (next.minor !== previous.minor + 1 || next.patch !== 0) {
-      throw new Error('Backend/CLI release must increment Minor by exactly one and reset Patch')
+      throw new Error(
+        'CLI/skills release must increment Minor by exactly one and reset Patch',
+      )
     }
-    return 'backend-cli-minor'
+    return 'cli-minor'
   }
 
   if (!surfaces.has('central')) {
-    throw new Error('non-filesystem release must change central, Backend, or CLI')
+    throw new Error('non-filesystem release must change central, the CLI, or bundled skills')
   }
   if (next.minor !== previous.minor || next.patch !== previous.patch + 1) {
     throw new Error('central-only release must increment Patch by exactly one')

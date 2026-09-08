@@ -113,7 +113,7 @@ describe('lintWikiPage', () => {
     expect(codes(invalid)).toContain('WIKI_STATUS_INVALID')
   })
 
-  it('requires no status for `note` and `meeting`', () => {
+  it('requires no status for `meeting`, `roadmap`, and `note`', () => {
     const note = `---
 id: W0001
 kind: note
@@ -125,6 +125,10 @@ updated_at: "2026-09-01T09:00:00+08:00"
 text
 `
     expect(lintWikiPage(makePage(note, { kind: 'note' }))).toEqual([])
+    const roadmap = note
+      .replace('kind: note', 'kind: roadmap')
+      .replace('title: Scratch', 'title: Research plan')
+    expect(lintWikiPage(makePage(roadmap, { kind: 'roadmap' }))).toEqual([])
   })
 
   it('requires `date` on a meeting', () => {
@@ -156,6 +160,22 @@ updated_at: "2026-09-01T09:00:00+08:00"
       makePage(VALID_FINDING.replace(/^sources: .*$/m, 'sources: []')),
     )
     expect(codes(diagnostics)).toContain('WIKI_SOURCES_REQUIRED')
+  })
+
+  it('validates source reference syntax and list member types without target lookup', () => {
+    const diagnostics = lintWikiPage(
+      makePage(VALID_FINDING.replace(/^sources: .*$/m, 'sources: [invalid/source, 42]')),
+    ).filter((entry) => entry.code === 'WIKI_SOURCE_UNRESOLVED')
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        message: expect.stringContaining('invalid/source'),
+      }),
+      expect.objectContaining({
+        severity: 'error',
+        message: expect.stringContaining('must be strings'),
+      }),
+    ])
   })
 
   it('requires ISO8601 timestamps with an explicit offset', () => {

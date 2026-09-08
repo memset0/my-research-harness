@@ -14,10 +14,7 @@ const capabilities: BackendCapabilities = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: true,
-  herdr: true,
 }
 const servers: ReturnType<typeof createBackendServer>[] = []
 afterEach(async () => {
@@ -68,10 +65,7 @@ describe('Backend read-only migration policy', () => {
     expect(meta.capabilities).toMatchObject({
       projects: true,
       mutations: false,
-      tmux: false,
-      terminal: false,
       slurm: false,
-      herdr: false,
     })
     expect((await request(origin, '/api/backend/v1/projects')).status).toBe(200)
   })
@@ -129,24 +123,4 @@ describe('Backend read-only migration policy', () => {
     expect(revoke).toHaveBeenCalledWith('project-a', 'shr_abcdefgh')
   })
 
-  it('keeps share validation readable but rejects terminal relay even when mis-advertised', async () => {
-    const resolver = vi.fn(() => 'http://127.0.0.1:12345')
-    const origin = await start({
-      hostId: 'host-a',
-      serviceTokens: { current: TOKEN },
-      capabilities,
-      readOnly: true,
-      revision: 'revision-a',
-      shareValidator: () => true,
-      terminalTargetResolver: resolver,
-    })
-    const validation = await request(origin, '/api/backend/v1/projects/project-a/shares/validate', {
-      method: 'POST',
-      body: JSON.stringify({ token: 's'.repeat(24) }),
-    })
-    expect(validation.status).toBe(200)
-    const relay = await request(origin, '/api/backend/v1/terminal/proxy/session-a/')
-    expect(relay.status).toBe(403)
-    expect(resolver).not.toHaveBeenCalled()
-  })
 })

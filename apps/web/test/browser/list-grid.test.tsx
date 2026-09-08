@@ -16,7 +16,6 @@ vi.mock('../../lib/api', async (importOriginal) => {
   return {
     ...actual,
     fetchExperimentDocs: vi.fn(),
-    fetchAnomalies: vi.fn().mockResolvedValue({ anomalies: [] }),
   }
 })
 
@@ -48,28 +47,6 @@ const SAMPLE_DOCS = {
       parseWarnings: [],
       effectiveCreatedAt: '2026-05-01T08:00:00+08:00',
       effectiveUpdatedAt: '2026-05-02T18:00:00+08:00',
-      memberRuns: [
-        {
-          id: 'fsdp-260501-100000',
-          status: 'FINISHED',
-          createdAt: '2026-05-01T10:00:00+08:00',
-          updatedAt: '2026-05-01T11:30:00+08:00',
-          finishedAt: '2026-05-01T11:30:00+08:00',
-          host: 'gpu-04',
-          gpus: [0, 1, 2, 3],
-          artifacts: [] as Array<{ path: string; description: string }>,
-        },
-        {
-          id: 'fsdp-260502-150000',
-          status: 'RUNNING',
-          createdAt: '2026-05-02T15:00:00+08:00',
-          updatedAt: '2026-05-02T18:00:00+08:00',
-          finishedAt: null,
-          host: 'gpu-04',
-          gpus: [0],
-          artifacts: [] as Array<{ path: string; description: string }>,
-        },
-      ],
     },
     {
       id: 'E0002-attention',
@@ -95,7 +72,6 @@ const SAMPLE_DOCS = {
       parseWarnings: [],
       effectiveCreatedAt: '2026-05-03T08:00:00+08:00',
       effectiveUpdatedAt: '2026-05-03T08:00:00+08:00',
-      memberRuns: [],
     },
   ],
 }
@@ -117,13 +93,18 @@ describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
     expect(screen.getByText('Attention cache study')).toBeInTheDocument()
   })
 
-  it('renders both exps even when one has zero runs', async () => {
+  it('renders no Run counts, Run ids, or roster rows', async () => {
     renderWithQuery(<ExperimentCardGrid project="project-a" />)
     await waitFor(() => {
       expect(screen.getByText('E0001-fsdp')).toBeInTheDocument()
     })
-    // E0002 has 0 runs — UI must not crash on the empty case.
-    expect(screen.getByText('E0002-attention')).toBeInTheDocument()
+    // The list contract carries no member runs: frontmatter run ids must not
+    // leak into the card, and no per-run link may exist on the list page.
+    expect(screen.queryByText('fsdp-260501-100000')).toBeNull()
+    expect(screen.queryByText('fsdp-260502-150000')).toBeNull()
+    expect(document.querySelectorAll('a[href*="?run="]').length).toBe(0)
+    expect(screen.queryByText(/no runs yet/)).toBeNull()
+    expect(screen.queryByText(/\d+ running/)).toBeNull()
   })
 
   it('uses Host-qualified queries, links, and persistence for a central Project', async () => {
@@ -164,7 +145,6 @@ const ARCHIVED_DOC = {
   parseWarnings: [],
   effectiveCreatedAt: '2026-04-01T00:00:00+08:00',
   effectiveUpdatedAt: '2026-04-15T00:00:00+08:00',
-  memberRuns: [],
 }
 
 const RESOLVED_DOC = {
@@ -179,10 +159,9 @@ const RESOLVED_DOC = {
     archived: false,
   },
   effectiveUpdatedAt: '2026-05-04T00:00:00+08:00',
-  memberRuns: [],
 }
 
-describe('ExperimentCardGrid — v4 manual status pill + secondary line', () => {
+describe('ExperimentCardGrid — v4 manual status pill', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -197,15 +176,6 @@ describe('ExperimentCardGrid — v4 manual status pill + secondary line', () => 
     // Pill text mirrors the enum values; both are exposed.
     expect(screen.getAllByText('OPEN').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('RESOLVED').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('secondary roster line summarises run statuses with non-zero counts', async () => {
-    vi.mocked(fetchExperimentDocs).mockResolvedValue(SAMPLE_DOCS)
-    renderWithQuery(<ExperimentCardGrid project="project-a" />)
-    // E0001-fsdp: 1 RUNNING + 1 FINISHED -> "1 running · 1 done"
-    await waitFor(() => expect(screen.getByText(/1 running.*1 done/)).toBeInTheDocument())
-    // E0002-attention has 0 runs -> "no runs yet"
-    expect(screen.getByText('no runs yet')).toBeInTheDocument()
   })
 })
 

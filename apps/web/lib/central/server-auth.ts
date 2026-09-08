@@ -12,20 +12,18 @@ import {
 import { type RuntimeAuth, resolveIdentity, type ShareValidator } from '../auth/identity'
 import { type ConsumeResult, clientIpFromHeaders, consume, refund } from '../auth/rate-limit'
 import type { MappedBackendRoute } from './backend-route'
-import type { BackendFetch } from './backend-url'
-import { validateCentralShare } from './central-shares'
-import type { CentralHostRegistry } from './host-registry'
 
 export interface CentralServerAuthOptions {
   request: IncomingMessage
   route: MappedBackendRoute
-  registry: CentralHostRegistry
+  /**
+   * Resolves viewer share tokens for the selected Host+Project. A registered
+   * peer Host validates over the Backend API; a directly served Project
+   * validates against its own share file.
+   */
+  shareValidator: ShareValidator
   runtimeAuth: RuntimeAuth
-  signal?: AbortSignal
-  shareFetchImpl?: BackendFetch
   nowSeconds?: number
-  /** Shell relays skip viewer-cookie decoding and Backend share validation entirely. */
-  ownerOnly?: boolean
   rateLimit?: {
     consume(key: string): ConsumeResult
     refund(key: string): void
@@ -179,34 +177,19 @@ export async function authorizeCentralServerRequest(
     }
   }
 
-  const shareValidator: ShareValidator = {
-    validate: async (project, token, host) => {
-      if (!host) return false
-      return validateCentralShare({
-        registry: options.registry,
-        host,
-        project,
-        token,
-        ...(options.signal ? { signal: options.signal } : {}),
-        ...(options.shareFetchImpl ? { fetchImpl: options.shareFetchImpl } : {}),
-      })
-    },
-  }
   const identity = await resolveIdentity(
     {
       authorizationHeader: firstHeader(options.request.headers.authorization) ?? null,
       sessionCookieValue: readCookie(options.request, SESSION_COOKIE_NAME),
       sharesCookieValue: readCookie(options.request, SHARES_COOKIE_NAME),
       // Ordinary data mutations and wiki review resolve viewers so writes can
-      // return an explicit 403. Other shell relays set ownerOnly and never
-      // decode or validate share state.
+      // return an explicit 403. Other privileged routes reject them before validation.
       allowViewer:
-        options.ownerOnly !== true &&
-        (effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'shell' ||
-          isViewerVisibleWikiReview(options.route, options.request.method ?? 'GET')),
+        effectiveAuthClass(options.route, options.request.method ?? 'GET') !== 'shell' ||
+        isViewerVisibleWikiReview(options.route, options.request.method ?? 'GET'),
     },
     options.runtimeAuth,
-    shareValidator,
+    options.shareValidator,
     options.nowSeconds,
   )
   if (identity.refundToken) limiter.refund(ip)

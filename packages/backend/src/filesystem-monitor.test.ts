@@ -27,10 +27,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: false,
-  terminal: false,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 interface FakeTimerHandle {

@@ -36,6 +36,11 @@ export const BROWSER_RESPONSE_PASSTHROUGH_HEADERS = [
   'expires',
   'last-modified',
   'x-content-type-options',
+  // Freshness contract the browser polls with. Central sets these for the
+  // Projects it serves directly; a peer Backend that reports them must not
+  // have them stripped on the way out.
+  'x-memon-epoch',
+  'x-memon-file-status',
   'x-memon-resource-version',
 ] as const
 

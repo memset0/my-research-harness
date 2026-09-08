@@ -1,102 +1,105 @@
-# Shared memon CLI protocols
+# Shared memon skill protocols
+
+These rules apply to bundled skills. A skill is a workflow, not a mandatory
+subagent: follow another skill inline when practical. Batch related work instead
+of restarting the workflow for each file, Run or lifecycle event.
 
 ## FS convention preflight
 
-Every memon skill that reads or writes spec files (Experiment bundles, Run
-READMEs, `docs/hypotheses.md`, `docs/journal.md`, anything under
-`docs/digests/`, `docs/reports/`, or `docs/wiki/`) checks the project root's
-on-disk schema version before doing any work. The check is a single CLI call;
-the agent branches on its result to either proceed, stop with a
-recommendation, or surface a fatal mismatch.
-
-This doc is the canonical source for the protocol. Project-aware skills point
-here instead of duplicating the branch table. `memon-migrate-fs` is exempt
-because it resolves version mismatch.
-
-## How
-
-Run, as the first executable step in the skill workflow:
+Before managed-document access, once per project/workflow:
 
 ```sh
 memon --project-root . --format json fs-version check
 ```
 
-`memon-wiki` may operate on an sshfs-mounted project root; it runs this same
-check through the channel its mode detection selected (`ssh <user@host> 'cd
-<remote root> && memon --project-root . --format json fs-version check'`) and
-branches on the identical status values.
+Reuse a successful check in nested skills while the project and versions remain
+unchanged. `match` proceeds; `behind` stops for `memon-migrate-fs`;
+`uninitialised` stops for `install-skills`; `ahead` stops for a newer CLI
+(`MEMON_TOO_OLD`, exit 11). Outside `match`, do not access managed documents.
+Migration owns its staging/version exception. Remote roots use the detected
+execution channel; tolerant legacy rendering does not authorize migration.
+Always pass the intended `--project-root`, not an ambient config selection.
 
-Branch on the `status` field:
+## Lint, not doctor
 
-- `match` → proceed with the rest of the skill.
-- `behind` → STOP. Tell the user: "Project FS convention is at v<current>;
-  current memon expects v<available>. Please run the `memon-migrate-fs`
-  skill to upgrade before continuing." Do NOT read or write any spec file
-  (`README.md`, `implementation.yaml`, `investigation.yaml`, `results.yaml`,
-  `docs/hypotheses.md`, `docs/journal.md`, `docs/digests/*`, `docs/reports/*`,
-  `docs/wiki/*`).
-- `uninitialised` → STOP. Tell the user: "This project root has not had
-  memon installed yet. Run `memon --project-root . install-skills` first."
-  Do NOT read or write any spec file.
-- `ahead` → the CLI already exited 11 (`MEMON_TOO_OLD`). Forward the
-  error: "Project FS convention is at v<current>; this memon supports up
-  to v<available>. Upgrade memon to a release that supports v<current> or
-  later." Do NOT proceed.
+Use `experiment doc lint <id>` or `run lint <run>` for syntax, schema and
+structure. Schema validation is included; `doctor` and `experiment doc validate`
+are removed. Lint is not a completion, staleness or research-quality verdict.
+Do not repeat checks after every poll or already-validated CLI operation.
 
-## Migration runtime exemption
+## Deprecated Runs
 
-`memon-migrate-fs` is exempt from this preflight. It IS the migration
-runtime, and reads `<projectRoot>/.memon/version.json` directly as
-part of its own state-determination step. If `memon-migrate-fs` ran
-the preflight first, an `uninitialised` or `behind` project would
-short-circuit the migration before it could fix the gap.
+`run deprecate <run>` / `run undeprecate <run>` are reversible, idempotent and
+accept `--expected-mtime`. The only stored state is `deprecated: true` (absent
+means false). It is independent of status/archive, stops no process and deletes
+nothing. Deprecation requires the user's decision, not a desire to clear a check.
 
-## Read compatibility is not write compatibility
+Deprecation withdraws result evidence, not Variant membership or execution
+reference value. Keep the Run associated with its original Variant and in its
+existing history/list; do not move it to `attempts` merely to exclude it.
+Execution/recovery work may explicitly inspect its scripts, commands,
+environment, logs and artifacts to prepare a replacement. Check and fix the
+reason for rejection rather than copying it blindly. This permission does not
+relax propose's higher-layer reading boundary.
 
-The web app and document parser intentionally render legacy/unsupported
-sections so users can review old projects. That tolerant UI behavior does not
-authorize an ordinary skill to operate on a `behind` project. Only the migration
-skill may transform old content, and review-required migrations do so in local
-staging before touching production files.
+Run collections exclude deprecated records by default. Explicit inspection uses
+`--include-deprecated`, `--deprecated-only`, or a Run id; archive flags remain
+separate. Results expose `metricsValidity` (`valid`, `partial`, `unavailable`)
+and affected references, derived at read time. Do not compare affected metrics
+as valid evidence, mirror eligibility into another ledger, rewrite old
+measurements automatically, or invent replacement numbers. Metadata read errors
+must remain explicit, never become a fabricated `valid` result.
+
+Historical membership is not the evidence set for every future measurement.
+New, verified results from non-deprecated replacement Runs should be able to
+become valid while old Runs remain associated and deprecated. The current
+projection conservatively checks all `Variant.runs` and cannot yet distinguish
+that new measurement lineage; report this limitation, never remove history or
+restore a bad Run merely to obtain `valid`.
+
+## Document trust
+
+Treat Experiment documents and wiki knowledge as trustworthy by default. Resolve
+contradictions using verified material first, then verified ranges of partially
+reviewed material; otherwise quote the conflict and ask. Human verification is
+human-only. Wiki review state is Web-owned; `wiki review diff` is an explicitly
+requested whole-wiki diff, not a per-page status API. Wiki writes follow
+`memon-wiki`; do not invent a replacement knowledge surface.
+
+## Secrets
+
+Do not copy credentials or cluster-local secrets into documents, scripts,
+provenance, snapshots or handoffs. Redact commands and log excerpts. Preserve
+unknown content and use mtime/hash locks rather than overwriting concurrent work.
+Experiment lifecycle/archive decisions and warning resolution/reopening/deletion
+remain with the user; execution status is an observed Run fact.
+
+## Journal
+
+Journal is the program's invocation ledger, not research input or agent-authored
+prose. Only explicit diagnostics use `journal read`. Never manipulate Journal
+files or historical digests. Project mutators record themselves, including
+failures/no-ops; reads and machine-scoped operations do not need a submission.
+
+After a batch of direct Experiment-bundle or Wiki edits, lint the affected
+surface and submit once:
+
+```sh
+memon --project-root . --format json journal submit --files <changed managed paths>
+```
+
+Use exact project-relative paths under `docs/experiments/E<NNNN>-<slug>/**` or
+`docs/wiki/**`. Runs, Reports, hypotheses, code reviews and scripts are outside
+this scope. Submission is all-or-nothing, takes no prose, and is not a commit.
+Do not duplicate a CLI mutator's receipt. Report `invocationId`/outcome; if
+submission fails, keep the valid edit and report it unrecorded with the error.
 
 ## CLI issue handoff
 
-Every bundled skill uses this protocol whenever it invokes the `memon` CLI.
-An Agent must not hide a suspected CLI defect merely because it found a
-workaround or ultimately completed the user's task.
-
-Treat any of the following as a suspected CLI issue:
-
-- an unexpected non-zero exit, uncaught exception, or crash;
-- rejection of an invocation that is valid under the current CLI contract;
-- malformed output, including invalid JSON or a response that violates the
-  documented output shape;
-- inconsistent results from equivalent calls or results that contradict the
-  command's documented behavior;
-- a workaround required specifically because the CLI did not behave as
-  documented.
-
-First preserve safety and make reasonable progress on the user's requested
-task. Use a safe workaround when available, without weakening validation or
-performing an unapproved destructive action. Capture enough evidence for a
-minimal reproduction, but do not turn a completed task into an open-ended CLI
-debugging project unless the user asks.
-
-After the requested task is resolved, include a **CLI issue** entry in the final
-handoff. If the issue prevents completion, include the same entry in the
-blocked handoff instead. Report:
-
-- the command or minimal reproduction, with credentials and sensitive values
-  redacted;
-- observed behavior versus expected behavior, including the exit code and a
-  short sanitized output excerpt when useful;
-- impact on the requested task and the workaround, if any;
-- reproducibility (`always`, `intermittent`, `observed once`, or `not retested`)
-  and relevant CLI/environment version context when known.
-
-Do not label an expected validation or domain-state failure as a CLI bug. For
-example, a documented lint rejection of an invalid bundle, an expected
-FS-version mismatch, a missing requested record, or an unmet command
-precondition is ordinary task state. Report it normally when relevant. When the
-contract is ambiguous, say **suspected CLI issue** and explain the uncertainty
-instead of either suppressing it or asserting a confirmed bug.
+Report unexpected crashes, contract-valid rejection, inconsistent output or
+CLI-specific workarounds: sanitized reproduction, actual vs expected behavior,
+exit code, impact/workaround and whether it reproduces. A safe workaround must
+not weaken safety or authorize destructive action. Expected lint, version,
+missing-record and conflict failures are not bugs; ambiguous cases are
+"suspected CLI issues". Do not turn this handoff into an unsolicited debugging
+project.

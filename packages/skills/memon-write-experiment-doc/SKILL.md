@@ -1,207 +1,71 @@
 ---
 name: memon-write-experiment-doc
-description: "Maintain a memon Experiment document bundle: the canonical README sections plus implementation.yaml, investigation.yaml, and results.yaml. Use whenever an agent or another memon skill needs to create or change Experiment-level motivation, design, implementation work, investigations, variants/results, findings, limitations, conclusions, or warnings while preserving unsupported content."
+description: Apply targeted, concurrency-safe updates to an Experiment README and its implementation, investigation and results YAML. Preserve unsupported content, batch related changes, lint once and record direct maintenance without mandatory subagents or Run prose.
 ---
 
 # memon-write-experiment-doc
 
-Maintain one complete Experiment document bundle. This is the shared writer
-workflow for all official memon skills; callers provide semantic intent, and
-this skill routes it to the correct README section or YAML file.
+The shared writing workflow, not a required new agent. Follow `../PREFLIGHT.md`
+and read the relevant part of [the bundle reference](references/experiment-bundle.md).
+Use the caller's intent and verified evidence; decide no research direction,
+launch nothing and write no Run record.
 
-Before editing, read [references/experiment-bundle.md](references/experiment-bundle.md)
-in full. It is the canonical schema and routing reference. Do not recreate a
-second schema in a caller skill.
+## Read and route
 
-## Preflight
+Read the current files you will change and capture their hashes. Do not trust a
+stale caller copy or read every Run to justify a bundle edit. An execution
+handoff supplies IDs, outcome, verified measurements/provenance and whether
+conditions changed. If incomplete or contradictory, request recovery of that
+specific fact; never infer retry equivalence from a Variant ID.
 
-Run this first:
+| Change | Source |
+|---|---|
+| Engineering work/evidence | `implementation.yaml` |
+| Questions, criteria, empirical progress/outcomes | `investigation.yaml` |
+| Variants, parameters, Run/attempt associations, metrics/provenance | `results.yaml` |
+| Interpretation / scope limits / final answer | Findings / Limitations / Conclusion |
+| Actionable anomaly | Canonical Warnings table, preserving stable row IDs |
 
-```sh
-memon --project-root . --format json fs-version check
-```
+`children` is hierarchy; `depends_on` is blocking. An annotation explains a
+column/value, not its validation schema. Predeclare Variants before launch;
+never retrospectively relabel an execution, put a Run in both lists, or infer
+`ANSWERED` from execution status.
 
-Proceed only when `status == "match"`. For every other status, stop and follow
-`../PREFLIGHT.md`. Migration staging is the sole exception; in that case the
-`memon-migrate-fs` skill owns the destination and version rules.
+## Edit one coherent batch
 
-## Memon CLI issue handoff
+Preserve comments, unknown keys/sections, duplicate occurrences, ordering and
+all bytes outside the intended change. Keep managed pointers exact; never paste
+rendered projections into README. Conflicting pointers, invalid/newer schemas
+or duplicate managed sections are gaps to report, not permission to overwrite
+content. Migration alone relocates unsupported material under user approval.
 
-For every `memon` command used by this skill, follow the CLI issue handoff in
-`../PREFLIGHT.md`. After safely finishing the requested task, report any CLI
-crash, valid-input rejection, malformed/inconsistent output, or required CLI
-workaround; if it blocks completion, report it in the blocked handoff. Do not
-mislabel an expected validation or domain-state rejection as a CLI bug.
+Recheck hashes before writing. On conflict, reread/reapply once, then surface an
+unresolved conflict; never force over another writer. Direct YAML editing is
+normal. Use the optional annotation helper only when useful and
+`memon-author-components` only for a registered fenced block.
 
-## Responsibilities
+Keep original measurements, Run identities and provenance. Deprecation produces
+read-time validity, not a document mirror or an automatic metric rewrite.
+Preserve Variant membership when a Run is deprecated, regardless of whether its
+old metrics were published; do not move it into `attempts` just to exclude it.
+For reruns, distinguish historical membership from the actual source Runs of
+new measurements in supported provenance and the handoff, preserving old
+evidence. The current projection cannot yet express separate current-metric
+lineage; report this limitation rather than inventing fields, erasing history
+or promising that a writeback automatically restores `valid`.
+New claims must cite their evidence and predecessor; supersession/narrowing
+changes only affected claims. Experiment lifecycle/archive changes, warning
+resolution and final resolution require user authority.
 
-- Create or update canonical README prose: `Motivation`, `Design`, `Findings`,
-  `Limitations`, `Conclusion`, and `Warnings`.
-- Keep the three managed sections as their exact one-line pointers.
-- Directly edit `implementation.yaml`, `investigation.yaml`, and
-  `results.yaml` by default. The focused Results annotation CLI is an optional
-  convenience for one column/value description, never a required write gate.
-- Preserve unknown headings, duplicate headings, comments, field order, and
-  unknown YAML fields unless the user explicitly asks to change them.
-- Validate and lint the whole bundle after every write.
-- Return a concise handoff naming changed files and stable IDs.
+## Check and close
 
-This skill does not decide research direction, launch jobs, write Run READMEs,
-or mark an Experiment resolved without the user's confirmation. Those decisions
-belong to the caller, normally `memon-drive`.
+After the batch, run `experiment doc lint "$EXP_ID"` with explicit
+`--project-root` and inspect the affected rendering, not every document again.
+Fix newly introduced structural errors. Preserve and report pre-existing
+unsupported content; a lint diagnostic never licenses deleting it.
 
-## Workflow
-
-### 1. Resolve and read fresh state
-
-Resolve the Experiment ID and directory. Read `README.md` and all three YAML
-files completely from disk immediately before planning the edit. Also inspect:
-
-```sh
-memon --project-root . --format json experiment doc validate "$EXP_ID"
-memon --project-root . --format json experiment doc lint "$EXP_ID"
-```
-
-Do not rely on a caller's stale copy. Record a content hash for every file that
-may be touched so a concurrent writer cannot be overwritten silently.
-
-Treat wiki pages and Experiment documents as trustworthy by default; when two
-documents contradict each other or a document contradicts fresh Experiment
-data, consult `memon wiki review ls` and `memon wiki review diff <page>` and
-prefer `VERIFIED` content, then content of `CHANGED_SINCE_VERIFY` pages
-outside their `unverifiedRanges`, then `UNVERIFIED` content — and ask the
-user, quoting both passages and their review states, when that ordering does
-not settle it.
-
-### 2. Refuse destructive normalization
-
-Lint is strict; reading is tolerant.
-
-- Unknown H2 sections are lint errors but remain user-owned content. Preserve
-  and render them; never delete, rename, or hide them as incidental cleanup.
-- If a managed section does not contain its exact pointer, treat it as a
-  managed-section conflict. Preserve its real body, surface the lint error, and
-  do not replace it automatically.
-- If a managed section is duplicated, preserve every occurrence and stop the
-  affected write.
-- If a YAML file is missing, invalid, or newer than the supported schema, do
-  not invent a lossy repair. Report the diagnostic or hand off to migration.
-
-Only `memon-migrate-fs`, working on an isolated candidate and with user
-approval, may relocate unsupported or conflicting legacy content.
-
-### 3. Route the semantic change
-
-Use the routing table in the reference. In particular:
-
-- Engineering work and its code evidence go to `implementation.yaml`.
-- Research questions, progress, criteria, and local outcomes go to
-  `investigation.yaml`.
-- Variant definitions, selected Runs, discarded attempts, parameters, metrics,
-  and launch provenance go to `results.yaml`.
-- Supplemental Markdown explanations for a Results column or selected values
-  go to the optional `column_annotations` block in `results.yaml`. Keep them
-  sparse; they document meaning and never redefine enum validation.
-- For a Run lifecycle update, the caller supplies the Experiment ID, Variant
-  ID, Run ID, event (`launched`, `succeeded`, `failed`, `interrupted`, or
-  `superseded`), whether launch conditions are unchanged, and any verified
-  metrics or provenance. Reread the Run README before moving an ID between
-  `runs` and `attempts`; never infer retry equivalence from the Variant ID.
-- Factual cross-Variant interpretation goes to `Findings` and cites stable
-  `INV...` or `V...` IDs.
-- The final answer goes to `Conclusion`; do not use it as a run log or matrix.
-- Known evidence boundaries go to `Limitations`; actionable anomalies go to
-  `Warnings`. Keep the canonical Warnings GFM table, stable row IDs, categories,
-  human resolution state, and notes; never replace it with free-form prose.
-
-Keep hierarchy (`children`) distinct from ordering/blocking (`depends_on`).
-Dependencies never replace tree structure.
-
-### 4. Edit the source files directly or use the focused annotation helper
-
-Make the smallest coherent edit. Agents are expected to edit YAML directly;
-the CLI is not a write gate. For an isolated column/value explanation, an
-agent MAY use either of these idempotent upserts instead of rewriting YAML by
-hand:
-
-```sh
-memon --project-root . experiment results annotation set "$EXP_ID" <column> \
-  --description '<Markdown>'
-memon --project-root . experiment results annotation set "$EXP_ID" <column> \
-  --value <value> --description '<Markdown>'
-```
-
-An existing description at the same target is replaced. The helper does not
-require every option to be described and does not require a described value to
-already occur in `options`. Direct `results.yaml` editing remains fully
-supported and is preferable when one coherent change also updates columns,
-Variants, comments, or human ordering.
-
-Before writing, compare the current hashes with the snapshots from step 1. On
-a mismatch, reread and reapply once. If the same file changes again, stop and
-surface the conflict rather than looping.
-
-Preserve:
-
-- YAML comments and human ordering where the editor permits it;
-- list order, which is presentation order;
-- unknown keys for forward compatibility;
-- all README bytes outside the intended canonical section;
-- the exact managed pointers.
-
-When a README section needs a registered fenced-block component instead of
-plain Markdown, follow `memon-author-components`; do not restate component
-rules here.
-
-Never copy Markdown produced by `doc render` back into README. It is a read-only
-projection of YAML.
-
-### 5. Validate, lint, and inspect the render
-
-Run all of the following after writing:
-
-```sh
-memon --project-root . --format json experiment doc validate "$EXP_ID"
-memon --project-root . --format json experiment doc lint "$EXP_ID"
-memon --project-root . --format human experiment doc render "$EXP_ID" implementation
-memon --project-root . --format human experiment doc render "$EXP_ID" investigation
-memon --project-root . --format human experiment doc render "$EXP_ID" results
-```
-
-`validate` must pass. Do not claim completion while a newly introduced lint
-error remains. Pre-existing unsupported-section diagnostics may remain only
-when their content was preserved and the caller explicitly reports them.
-
-Inspect rendered Markdown for broken hierarchy, missing values, invalid links,
-or a misleading Results table.
-
-### 6. Return a structured handoff
-
-Report:
-
-```json
-{
-  "experiment": "E0007-example",
-  "changed_files": ["docs/experiments/E0007-example/results.yaml"],
-  "changed_ids": ["V0003"],
-  "summary": "Added the planned BF16 variant before launch",
-  "diagnostics": []
-}
-```
-
-Use actual values; this object is an interaction contract, not a required CLI
-serialization.
-
-## Guardrails
-
-- Do not create a Variant after its Run has already launched. Define it first.
-- Do not move a failed or superseded Run into `attempts` without preserving its
-  Run README and identity.
-- Do not infer that a completed Run makes an Investigation `ANSWERED`; evaluate
-  its `success_criteria` separately.
-- Do not mark `Conclusion` final or change the Experiment to `RESOLVED` without
-  explicit user confirmation.
-- Do not use the deprecated warning CLI. Maintain `Warnings` through this
-  bundle writer.
-- Do not silently upgrade `schema_version`; schema upgrades belong to the FS
-  migration guide and its deterministic conversion script.
+Submit direct managed-file changes once with `journal submit --files ...` per
+the shared protocol; do not duplicate CLI-generated receipts or touch Journal
+files. Return changed files/IDs, the substantive change, lint/render outcome,
+submission id/outcome, and remaining conflicts or gaps. Do not silently upgrade
+`schema_version` or resolve the Experiment.

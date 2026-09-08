@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
-import { promises as fs } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import {
+  addJournalInvocationDetail,
   BackendCodeReviewPatchResponseSchema,
+  type BackendResourceInventoryItem,
+  BackendResourceInventoryResponseSchema,
   BackendCodeReviewResponseSchema,
   BackendCodeReviewsResponseSchema,
   BackendDigestResponseSchema,
@@ -16,29 +18,33 @@ import {
   BackendWikiConflictResponseSchema,
   type BackendWikiConflictResponse,
   BackendWikiDocumentSchema,
+  BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
   BackendWikiReviewResponseSchema,
   type BackendWikiWriteResponse,
   BackendWikiWriteResponseSchema,
   buildWikiProject,
+  collectWikiSourceReferences,
   type CodeReviewCompletion,
   type CodeReviewFrontMatter,
   deriveCompletion,
   deriveWikiReview,
-  discoverExperiments,
+  type DiscoveredWikiPage,
   discoverWikiPages,
+  effectiveWikiId,
   type Experiment,
   extractTitle,
   formatIsoLocal,
   listWikiCommits,
+  markJournalInvocationOutcome,
   parseCodeReview,
   parseWikiFrontmatter,
   type ProjectConfig,
+  projectFs as fs,
   readWikiReviewMarks,
   removeWikiReviewMark,
   ResourceIdSchema,
   type Run,
-  scanProjectRoot,
   serializeWikiPage,
   toggleCommitReviewed,
   toggleTodoDone,
@@ -46,11 +52,27 @@ import {
   verifiedThroughMark,
   type WikiCommit,
   WIKI_ID_REGEX,
+  WIKI_LEGACY_ID_REGEX,
   type WikiProjectProjection,
+  type WikiReview,
+  WikiReviewError,
   type WikiReviewMark,
+  type WikiReviewStoreOptions,
+  type WikiSourceReferences,
   type WikiSummary,
+  wikiStringList,
+  withJournalInvocation,
   writeWikiReviewMark,
 } from '@memon/core'
+import {
+  BackendExecutionError,
+  type BackendExecutionResolver,
+  gitCommandRunnerFor,
+  resolveProjectExecution,
+} from './execution-service.js'
+import { missingOrThrow } from './missing-path.js'
+import { withAutomaticProjectFileContext } from './project-file-context.js'
+import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
 
 export class BackendDocumentServiceError extends Error {
   constructor(
@@ -58,7 +80,9 @@ export class BackendDocumentServiceError extends Error {
       | 'PROJECT_NOT_FOUND'
       | 'RESOURCE_NOT_FOUND'
       | 'INVALID_RESOURCE'
-      | 'AMBIGUOUS_RESOURCE',
+      | 'AMBIGUOUS_RESOURCE'
+      /** The Project has no usable execution target for its git reads. */
+      | 'EXECUTION_UNAVAILABLE',
     message: string,
   ) {
     super(message)
@@ -73,21 +97,17 @@ export type BackendDocumentWriteResult =
 export type BackendWikiWriteResult = BackendWikiWriteResponse | BackendWikiConflictResponse
 
 export interface BackendDocumentService {
-  listReports(project: string): Promise<unknown>
+  listReports(project: string, options?: InventoryListOptions): Promise<unknown>
   getReport(project: string, id: string): Promise<unknown>
   putReport(
     project: string,
     id: string,
     input: DocumentWriteInput,
   ): Promise<BackendDocumentWriteResult>
-  listDigests(project: string): Promise<unknown>
+  /** Historical digests are read-only after the managed-authoring retirement. */
+  listDigests(project: string, options?: InventoryListOptions): Promise<unknown>
   getDigest(project: string, id: string): Promise<unknown>
-  putDigest(
-    project: string,
-    id: string,
-    input: DocumentWriteInput,
-  ): Promise<BackendDocumentWriteResult>
-  listCodeReviews(project: string): Promise<unknown>
+  listCodeReviews(project: string, options?: InventoryListOptions): Promise<unknown>
   getCodeReview(project: string, id: string): Promise<unknown>
   patchCodeReview(project: string, id: string, input: CodeReviewPatchInput): Promise<unknown>
   getReadme(project: string, resource: string): Promise<unknown>
@@ -96,7 +116,7 @@ export interface BackendDocumentService {
     resource: string,
     input: DocumentWriteInput,
   ): Promise<BackendDocumentWriteResult>
-  listWiki(project: string): Promise<unknown>
+  listWiki(project: string, options?: { inventoryOnly?: boolean }): Promise<unknown>
   getWiki(project: string, id: string): Promise<unknown>
   putWiki(project: string, id: string, input: DocumentWriteInput): Promise<BackendWikiWriteResult>
   wikiBacklinks(project: string, artifact: string): Promise<unknown>
@@ -135,47 +155,54 @@ interface DocumentEntry {
 }
 
 /**
- * Project artifacts a wiki page's `sources` are resolved against. Supplied by
- * the caller so a Backend with a warm Project snapshot does not rescan every
- * Run directory on each wiki read; the default provider scans on demand.
+ * Project artifacts a wiki page's `sources` are resolved against.
+ *
+ * Identity and metadata are separate on purpose: the id lists come from
+ * directory entries and cover the whole project, while `experiments` / `runs`
+ * carry loaded metadata for the cited targets only. A page that cites two Runs
+ * costs two Run README reads, not one per Run in the project.
  */
 export interface BackendWikiArtifacts {
+  /** Loaded metadata for the cited Experiments. */
   experiments: readonly Experiment[]
+  /** Loaded metadata for the cited Runs and cited Experiments' members. */
   runs: readonly Run[]
+  /** Every Experiment id under `docs/experiments/`. */
+  experimentIds: readonly string[]
+  /** Every Run directory name the discovery walk found. */
+  runIds: readonly string[]
   /** `docs/hypotheses.md` mtime in epoch ms; null when the file is absent. */
   hypothesesMtime: number | null
   hypothesisIds: readonly string[]
 }
 
+/** What the wiki's declared sources ask the artifact provider to load. */
+export type BackendWikiArtifactReferences = WikiSourceReferences
+
 export type BackendWikiArtifactProvider = (
   project: ProjectConfig,
+  references: BackendWikiArtifactReferences,
 ) => Promise<BackendWikiArtifacts>
 
 export interface FilesystemDocumentServiceOptions {
-  /** Override for the on-demand Project scan behind wiki source resolution. */
+  /** Override for the on-demand artifact reads behind wiki source resolution. */
   wikiArtifacts?: BackendWikiArtifactProvider
+  /**
+   * Resolves where a Project's wiki git reads run — the same seam the git
+   * capability uses, so review history comes from the machine that owns the
+   * working copy. Defaults to the Project's own `execution` configuration; a
+   * Project without one has no readable review state rather than a local
+   * `git` run against a mounted copy that belongs to another machine.
+   */
+  execution?: BackendExecutionResolver
 }
 
-/** Scan a Project for the artifacts wiki source resolution needs. */
+/** Read the cited artifacts' metadata without unrelated archive-policy reads. */
 export async function scanBackendWikiArtifacts(
   project: ProjectConfig,
+  references: BackendWikiArtifactReferences,
 ): Promise<BackendWikiArtifacts> {
-  const [snapshot, experiments, hypothesesStat] = await Promise.all([
-    scanProjectRoot(project.root, {
-      includeArchived: true,
-      projectName: project.name,
-      include: [...project.include],
-      exclude: [...project.exclude],
-    }),
-    discoverExperiments(project.root, project.name),
-    fs.stat(join(project.root, 'docs', 'hypotheses.md')).catch(() => null),
-  ])
-  return {
-    experiments: experiments.experiments,
-    runs: snapshot.experiments,
-    hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
-    hypothesisIds: snapshot.hypotheses.entries.map((entry) => entry.id),
-  }
+  return new FilesystemProjectService([project]).readWikiArtifacts(project.name, references)
 }
 
 export class FilesystemDocumentService implements BackendDocumentService {
@@ -183,19 +210,24 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   private readonly wikiArtifacts: BackendWikiArtifactProvider
 
-  constructor(
-    projects: readonly ProjectConfig[],
-    options: FilesystemDocumentServiceOptions = {},
-  ) {
+  private readonly resolveExecution: BackendExecutionResolver
+
+  constructor(projects: readonly ProjectConfig[], options: FilesystemDocumentServiceOptions = {}) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
     }
     this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
+    this.resolveExecution = options.execution ?? resolveProjectExecution
   }
 
-  async listReports(projectName: string) {
+  async listReports(projectName: string, options: InventoryListOptions = {}) {
     const project = this.requireProject(projectName)
+    if (options.inventoryOnly) {
+      return BackendResourceInventoryResponseSchema.parse({
+        items: await withAutomaticProjectFileContext(() => this.discoverReportInventory(project)),
+      })
+    }
     const reports = await this.discoverReports(project)
     return BackendReportsResponseSchema.parse({
       reports: reports.map((entry) => reportSummary(project, entry)),
@@ -204,7 +236,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async getReport(projectName: string, id: string) {
     const project = this.requireProject(projectName)
-    const entry = exactEntry(await this.discoverReports(project), id)
+    const reports = await withAutomaticProjectFileContext(() => this.discoverReports(project))
+    const entry = exactEntry(reports, id)
     return BackendReportResponseSchema.parse({
       ...reportSummary(project, entry),
       ...(await this.read(project, entry)),
@@ -213,12 +246,20 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async putReport(projectName: string, id: string, input: DocumentWriteInput) {
     const project = this.requireProject(projectName)
-    const entry = exactEntry(await this.discoverReports(project), id)
-    return this.write(project, entry, input)
+    return this.record(project, 'report write', { report: id }, async () => {
+      const entry = exactEntry(await this.discoverReports(project), id)
+      addJournalInvocationDetail({ kind: 'target', type: 'project', id: project.name })
+      return this.write(project, entry, input)
+    })
   }
 
-  async listDigests(projectName: string) {
+  async listDigests(projectName: string, options: InventoryListOptions = {}) {
     const project = this.requireProject(projectName)
+    if (options.inventoryOnly) {
+      return BackendResourceInventoryResponseSchema.parse({
+        items: await withAutomaticProjectFileContext(() => this.discoverDigestInventory(project)),
+      })
+    }
     const digests = await this.discoverDigests(project)
     return BackendDigestsResponseSchema.parse({
       digests: digests.map((entry) => digestSummary(project, entry)),
@@ -227,21 +268,23 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async getDigest(projectName: string, id: string) {
     const project = this.requireProject(projectName)
-    const entry = exactEntry(await this.discoverDigests(project), id)
+    const digests = await withAutomaticProjectFileContext(() => this.discoverDigests(project))
+    const entry = exactEntry(digests, id)
     return BackendDigestResponseSchema.parse({
       ...digestSummary(project, entry),
       ...(await this.read(project, entry)),
     })
   }
 
-  async putDigest(projectName: string, id: string, input: DocumentWriteInput) {
+  async listCodeReviews(projectName: string, options: InventoryListOptions = {}) {
     const project = this.requireProject(projectName)
-    const entry = exactEntry(await this.discoverDigests(project), id)
-    return this.write(project, entry, input)
-  }
-
-  async listCodeReviews(projectName: string) {
-    const project = this.requireProject(projectName)
+    if (options.inventoryOnly) {
+      return BackendResourceInventoryResponseSchema.parse({
+        items: await withAutomaticProjectFileContext(() =>
+          this.discoverCodeReviewInventory(project),
+        ),
+      })
+    }
     const reviews = await this.discoverCodeReviews(project)
     return BackendCodeReviewsResponseSchema.parse({
       codeReviews: reviews.map((entry) => codeReviewSummary(project, entry)),
@@ -250,7 +293,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async getCodeReview(projectName: string, id: string) {
     const project = this.requireProject(projectName)
-    const entry = exactEntry(await this.discoverCodeReviews(project), id)
+    const reviews = await withAutomaticProjectFileContext(() => this.discoverCodeReviews(project))
+    const entry = exactEntry(reviews, id)
     const raw = await this.read(project, entry)
     const parsed = parseCodeReview(raw.content)
     const metadata = codeReviewMetadata(entry.id, parsed.frontmatter, parsed.body)
@@ -266,28 +310,43 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async patchCodeReview(projectName: string, id: string, input: CodeReviewPatchInput) {
     const project = this.requireProject(projectName)
-    const entry = exactEntry(await this.discoverCodeReviews(project), id)
-    const current = await this.read(project, entry)
-    if (current.mtime !== input.expectedMtime || current.hash !== input.expectedHash) {
-      return BackendDocumentConflictResponseSchema.parse({
-        error: { code: 'CONFLICT', message: 'on-disk document changed' },
-        currentMtime: current.mtime,
-        currentHash: current.hash,
-      })
-    }
-    const now = new Date().toISOString()
-    const next =
-      input.op === 'commit'
-        ? toggleCommitReviewed(current.content, input.sha, input.reviewed, now)
-        : toggleTodoDone(current.content, input.index, input.done, now)
-    if (next === null) throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Invalid patch')
-    const result = await this.write(project, entry, { ...input, content: next })
-    const conflict = BackendDocumentConflictResponseSchema.safeParse(result)
-    if (conflict.success) return conflict.data
-    return BackendCodeReviewPatchResponseSchema.parse({
-      ...result,
-      completion: deriveCompletion(parseCodeReview(next).frontmatter),
-    })
+    return this.record(
+      project,
+      `code-review ${input.op} set`,
+      {
+        codeReview: id,
+        op: input.op,
+        ...(input.op === 'commit'
+          ? { sha: input.sha, reviewed: input.reviewed }
+          : { index: input.index, done: input.done }),
+      },
+      async () => {
+        const entry = exactEntry(await this.discoverCodeReviews(project), id)
+        const current = await this.read(project, entry)
+        if (current.mtime !== input.expectedMtime || current.hash !== input.expectedHash) {
+          markJournalInvocationOutcome('conflict', 'DOCUMENT_CHANGED')
+          return BackendDocumentConflictResponseSchema.parse({
+            error: { code: 'CONFLICT', message: 'on-disk document changed' },
+            currentMtime: current.mtime,
+            currentHash: current.hash,
+          })
+        }
+        const now = new Date().toISOString()
+        const next =
+          input.op === 'commit'
+            ? toggleCommitReviewed(current.content, input.sha, input.reviewed, now)
+            : toggleTodoDone(current.content, input.index, input.done, now)
+        if (next === null)
+          throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Invalid patch')
+        const result = await this.write(project, entry, { ...input, content: next })
+        const conflict = BackendDocumentConflictResponseSchema.safeParse(result)
+        if (conflict.success) return conflict.data
+        return BackendCodeReviewPatchResponseSchema.parse({
+          ...result,
+          completion: deriveCompletion(parseCodeReview(next).frontmatter),
+        })
+      },
+    )
   }
 
   async getReadme(projectName: string, resource: string) {
@@ -302,7 +361,9 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async putReadme(projectName: string, resource: string, input: DocumentWriteInput) {
     const project = this.requireProject(projectName)
-    return this.write(project, await this.readmeEntry(project, resource), input)
+    return this.record(project, 'readme write', { resource }, async () =>
+      this.write(project, await this.readmeEntry(project, resource), input),
+    )
   }
 
   /**
@@ -315,8 +376,27 @@ export class FilesystemDocumentService implements BackendDocumentService {
     return this.wikiProjection(this.requireProject(projectName))
   }
 
-  async listWiki(projectName: string) {
+  async listWiki(projectName: string, options: { inventoryOnly?: boolean } = {}) {
     const project = this.requireProject(projectName)
+    if (options.inventoryOnly) {
+      const pages = await withAutomaticProjectFileContext(() =>
+        discoverWikiPages(project.root, { inventoryOnly: true }),
+      )
+      return BackendWikiInventoryResponseSchema.parse({
+        pages: pages.map((page) => {
+          const { frontmatter } = parseWikiFrontmatter(page.content)
+          const legacyId = frontmatter?.legacy_id
+          return {
+            id: effectiveWikiId(page.id, frontmatter),
+            resource: ResourceIdSchema.parse(page.path),
+            legacyId:
+              typeof legacyId === 'string' && WIKI_LEGACY_ID_REGEX.test(legacyId)
+                ? legacyId
+                : null,
+          }
+        }),
+      })
+    }
     const projection = await this.wikiProjection(project)
     return BackendWikiPagesResponseSchema.parse({
       pages: projection.summaries.map((summary) => wikiSummary(project, summary)),
@@ -325,8 +405,9 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async getWiki(projectName: string, id: string) {
     const project = this.requireProject(projectName)
-    const projection = await this.wikiProjection(project)
-    const summary = requireWikiPage(projection, id)
+    const summary = await withAutomaticProjectFileContext(() =>
+      this.wikiPageSummary(project, id),
+    )
     return BackendWikiDocumentSchema.parse(await this.readWikiPage(project, summary))
   }
 
@@ -336,34 +417,43 @@ export class FilesystemDocumentService implements BackendDocumentService {
     input: DocumentWriteInput,
   ): Promise<BackendWikiWriteResult> {
     const project = this.requireProject(projectName)
-    const projection = await this.wikiProjection(project)
-    const summary = requireWikiPage(projection, id)
-    const absolutePath = wikiAbsolutePath(project, summary)
-    await assertWithin(project.root, absolutePath)
-    const [current, stat] = await Promise.all([
-      fs.readFile(absolutePath, 'utf8'),
-      fs.stat(absolutePath),
-    ])
-    const currentHash = sha1(current)
-    if (stat.mtimeMs !== input.expectedMtime || currentHash !== input.expectedHash) {
-      return BackendWikiConflictResponseSchema.parse({
-        error: { code: 'CONFLICT', message: 'on-disk wiki page changed' },
-        currentMtime: stat.mtimeMs,
-        currentHash,
-        currentContent: current,
+    return this.record(project, 'wiki write', { wiki: id }, async () => {
+      const summary = await this.wikiPageSummary(project, id)
+      addJournalInvocationDetail({ kind: 'target', type: 'wiki', id })
+      const absolutePath = wikiAbsolutePath(project, summary)
+      await assertWithin(project.root, absolutePath)
+      const [current, stat] = await Promise.all([
+        fs.readFile(absolutePath, 'utf8'),
+        fs.stat(absolutePath),
+      ])
+      const currentHash = sha1(current)
+      if (stat.mtimeMs !== input.expectedMtime || currentHash !== input.expectedHash) {
+        markJournalInvocationOutcome('conflict', 'DOCUMENT_CHANGED')
+        return BackendWikiConflictResponseSchema.parse({
+          error: { code: 'CONFLICT', message: 'on-disk wiki page changed' },
+          currentMtime: stat.mtimeMs,
+          currentHash,
+          currentContent: current,
+        })
+      }
+      const content = nextWikiContent(input.content, current, summary)
+      await writeFileAtomically(absolutePath, content, stat.mode)
+      addJournalInvocationDetail({
+        kind: 'file-change',
+        path: relative(project.root, absolutePath).split(sep).join('/'),
+        before: currentHash,
+        after: sha1(content),
       })
-    }
-    const content = nextWikiContent(input.content, current, summary)
-    await writeFileAtomically(absolutePath, content, stat.mode)
-    // Re-project so the response carries the staleness, diagnostics, and
-    // review state the write just produced.
-    const next = requireWikiPage(await this.wikiProjection(project), id)
-    const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
-    return BackendWikiWriteResponseSchema.parse({
-      ok: true,
-      mtime: page.mtime,
-      hash: page.hash,
-      page,
+      // Re-project so the response carries the staleness, diagnostics, and
+      // review state the write just produced.
+      const next = await this.wikiPageSummary(project, id)
+      const page = BackendWikiDocumentSchema.parse(await this.readWikiPage(project, next))
+      return BackendWikiWriteResponseSchema.parse({
+        ok: true,
+        mtime: page.mtime,
+        hash: page.hash,
+        page,
+      })
     })
   }
 
@@ -374,23 +464,34 @@ export class FilesystemDocumentService implements BackendDocumentService {
   }
 
   async wikiReviewLog(projectName: string) {
-    return this.wikiReviewResponse(this.requireProject(projectName))
+    const project = this.requireProject(projectName)
+    return this.wikiReviewResponse(project, this.wikiGitOptions(project))
   }
 
   async markWikiReview(projectName: string, sha: string, note?: string) {
     const project = this.requireProject(projectName)
-    await writeWikiReviewMark(project.root, sha, note)
-    return this.wikiReviewResponse(project)
+    // The reviewed-commit marker lives in `.memon/`, not in a document, so the
+    // receipt records the commit identity only — never the reviewer's note.
+    return this.record(project, 'wiki review mark', { sha }, async () => {
+      const options = this.wikiGitOptions(project)
+      await writeWikiReviewMark(project.root, sha, note, options)
+      return this.wikiReviewResponse(project, options)
+    })
   }
 
   async unmarkWikiReview(projectName: string, sha: string) {
     const project = this.requireProject(projectName)
-    await removeWikiReviewMark(project.root, sha)
-    return this.wikiReviewResponse(project)
+    return this.record(project, 'wiki review unmark', { sha }, async () => {
+      const options = this.wikiGitOptions(project)
+      await removeWikiReviewMark(project.root, sha, options)
+      return this.wikiReviewResponse(project, options)
+    })
   }
 
-  private async wikiReviewResponse(project: ProjectConfig) {
-    const commits = await listWikiCommits(project.root)
+  private async wikiReviewResponse(project: ProjectConfig, options: WikiReviewStoreOptions) {
+    // An explicit review request answers with git's state or with a failure:
+    // an unreachable target must never look like an unverified-but-known log.
+    const commits = await listWikiCommits(project.root, options)
     if (commits === null) {
       throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', 'Project is not a git worktree')
     }
@@ -398,28 +499,116 @@ export class FilesystemDocumentService implements BackendDocumentService {
     return BackendWikiReviewResponseSchema.parse(wikiReviewProjection(commits, marks))
   }
 
+  /**
+   * Git command seam for this Project's wiki review reads and writes.
+   * `{ exec: undefined }` means core runs git itself, which is correct only
+   * for a Project that declares local execution.
+   */
+  private wikiGitOptions(project: ProjectConfig): WikiReviewStoreOptions {
+    try {
+      return { exec: gitCommandRunnerFor(this.resolveExecution(project)) }
+    } catch (error) {
+      if (error instanceof BackendExecutionError) {
+        throw new BackendDocumentServiceError('EXECUTION_UNAVAILABLE', error.message)
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Derived review for the projection, or `null` — reported as
+   * `review: null`, "not checked" — when this Project's git state cannot be
+   * read at all: no execution target, or a target that failed to answer.
+   *
+   * Neither failure may reach the client as a review: a page with no history
+   * to compare against is not a verified page, and a wiki whose git is
+   * unreachable is still worth reading.
+   */
+  private async wikiReviews(
+    project: ProjectConfig,
+    pagePaths: string[],
+    marks: WikiReviewMark[],
+  ): Promise<Map<string, WikiReview> | null> {
+    try {
+      return await deriveWikiReview(project.root, pagePaths, marks, this.wikiGitOptions(project))
+    } catch (error) {
+      if (
+        (error instanceof BackendDocumentServiceError && error.code === 'EXECUTION_UNAVAILABLE') ||
+        (error instanceof WikiReviewError && error.code === 'GIT_UNAVAILABLE')
+      ) {
+        return null
+      }
+      throw error
+    }
+  }
+
+  /**
+   * The Project-wide wiki projection: the pages themselves, plus exactly the
+   * artifact facts their `sources` and `@` references need. Metadata is loaded
+   * for cited targets only; existence of everything else comes from directory
+   * entries, so listing a wiki never costs a Run or Report body.
+   */
   private async wikiProjection(project: ProjectConfig): Promise<WikiProjectProjection> {
     const pages = await discoverWikiPages(project.root)
+    return this.projectWiki(project, pages, pages)
+  }
+
+  /**
+   * One page's summary, projected with the same lint and identity inventories
+   * as the list but with evidence loaded for this page's own citations only:
+   * opening a page must not cost every other page's evidence. Only the
+   * requested summary leaves this method — the sibling summaries in the
+   * underlying projection were built without their sources and would
+   * understate staleness.
+   */
+  private async wikiPageSummary(project: ProjectConfig, id: string): Promise<WikiSummary> {
+    if (!WIKI_ID_REGEX.test(id)) {
+      throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Wiki id must match W<NNNN>')
+    }
+    const pages = await discoverWikiPages(project.root)
+    const cited = pages.filter(
+      (page) => effectiveWikiId(page.id, parseWikiFrontmatter(page.content).frontmatter) === id,
+    )
+    return requireWikiPage(await this.projectWiki(project, pages, cited), id)
+  }
+
+  /**
+   * Shared projection body. `cited` selects whose declared sources are
+   * resolved against loaded metadata; every page is still parsed, linted and
+   * ordered, and identity inventories always cover the whole Project.
+   */
+  private async projectWiki(
+    project: ProjectConfig,
+    pages: readonly DiscoveredWikiPage[],
+    cited: readonly DiscoveredWikiPage[],
+  ): Promise<WikiProjectProjection> {
     // An empty wiki must not cost a Project scan or a git invocation.
     if (pages.length === 0) {
       return buildWikiProject([], { experiments: [], runs: [], hypothesesMtime: null })
     }
-    const [artifacts, reports, marks] = await Promise.all([
-      this.wikiArtifacts(project),
-      this.discoverReports(project),
+    const references = collectWikiSourceReferences(
+      cited.flatMap((page) =>
+        wikiStringList(parseWikiFrontmatter(page.content).frontmatter?.sources),
+      ),
+    )
+    const [artifacts, reportIds, marks] = await Promise.all([
+      this.wikiArtifacts(project, references),
+      this.listReportIds(project),
       readWikiReviewMarks(project.root),
     ])
-    const reviews = await deriveWikiReview(
-      project.root,
+    const reviews = await this.wikiReviews(
+      project,
       pages.map((page) => page.path),
       marks,
     )
     return buildWikiProject(pages, {
       experiments: artifacts.experiments,
       runs: artifacts.runs,
+      experimentIds: artifacts.experimentIds,
+      runIds: artifacts.runIds,
       hypothesesMtime: artifacts.hypothesesMtime,
       hypothesisIds: artifacts.hypothesisIds,
-      reportIds: reports.map((entry) => entry.id),
+      reportIds,
       reviews,
     })
   }
@@ -454,7 +643,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
     const absolutePath = resolve(project.root, resource)
     await assertWithin(project.root, absolutePath)
-    const stat = await fs.stat(absolutePath).catch(() => null)
+    const stat = await missingOrThrow(fs.stat(absolutePath))
     if (!stat?.isFile()) throw notFound()
     return {
       id: id.data,
@@ -479,9 +668,16 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
   }
 
+  /**
+   * Shared managed-document write. It runs inside the caller's ledger
+   * invocation and reports what actually happened through the ambient
+   * invocation: a stale optimistic lock is a `conflict` receipt, a completed
+   * write contributes its typed file change.
+   */
   private async write(project: ProjectConfig, entry: DocumentEntry, input: DocumentWriteInput) {
     const current = await this.read(project, entry)
     if (current.mtime !== input.expectedMtime || current.hash !== input.expectedHash) {
+      markJournalInvocationOutcome('conflict', 'DOCUMENT_CHANGED')
       return BackendDocumentConflictResponseSchema.parse({
         error: { code: 'CONFLICT', message: 'on-disk document changed' },
         currentMtime: current.mtime,
@@ -491,6 +687,12 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const original = await fs.stat(entry.absolutePath)
     await writeFileAtomically(entry.absolutePath, input.content, original.mode)
     const stat = await fs.stat(entry.absolutePath)
+    addJournalInvocationDetail({
+      kind: 'file-change',
+      path: entry.resource,
+      before: current.hash,
+      after: sha1(input.content),
+    })
     return BackendDocumentWriteResponseSchema.parse({
       ok: true,
       mtime: stat.mtimeMs,
@@ -498,9 +700,133 @@ export class FilesystemDocumentService implements BackendDocumentService {
     })
   }
 
+  /**
+   * The invocation-ledger boundary for document writes. One receipt per
+   * service invocation — including the ones that conflict or fail — with
+   * identities and enums as parameters, never document bodies.
+   */
+  private record<T>(
+    project: ProjectConfig,
+    command: string,
+    parameters: Record<string, unknown>,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    // One request, one receipt: never absorbed into an outer long-lived scope.
+    return withJournalInvocation(project.root, { command, origin: 'web', parameters }, action, {
+      standalone: true,
+    })
+  }
+
+  private async discoverReportInventory(
+    project: ProjectConfig,
+  ): Promise<BackendResourceInventoryItem[]> {
+    const directory = join(project.root, 'docs', 'reports')
+    if (!(await isWithin(project.root, directory))) return []
+    const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
+    const items: BackendResourceInventoryItem[] = []
+    for (const entry of entries) {
+      const file = entry.isFile()
+        ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
+        : null
+      const bundle = entry.isDirectory()
+        ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/.exec(entry.name)
+        : null
+      const match = file ?? bundle
+      if (!match) continue
+      items.push({
+        id: `R${match[1]}`,
+        slug: match[2]!,
+        resource: ResourceIdSchema.parse(
+          `docs/reports/${entry.name}${bundle ? '/README.md' : ''}`,
+        ),
+      })
+    }
+    return items.sort(
+      (left, right) =>
+        right.id.localeCompare(left.id) || left.resource.localeCompare(right.resource),
+    )
+  }
+
+  private async discoverDigestInventory(
+    project: ProjectConfig,
+  ): Promise<BackendResourceInventoryItem[]> {
+    const directory = join(project.root, 'docs', 'digests')
+    if (!(await isWithin(project.root, directory))) return []
+    const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
+    const items: BackendResourceInventoryItem[] = []
+    for (const entry of entries) {
+      const match = entry.isFile()
+        ? /^D(\d{4})-(\d{4}-\d{2}-\d{2})\.md$/.exec(entry.name)
+        : null
+      if (!match) continue
+      items.push({
+        id: `D${match[1]}`,
+        slug: match[2]!,
+        resource: ResourceIdSchema.parse(`docs/digests/${entry.name}`),
+      })
+    }
+    return items.sort((left, right) => right.id.localeCompare(left.id))
+  }
+
+  private async discoverCodeReviewInventory(
+    project: ProjectConfig,
+  ): Promise<BackendResourceInventoryItem[]> {
+    const docs = join(project.root, 'docs')
+    if (!(await isWithin(project.root, docs))) return []
+    const candidates: Array<{ relativePath: string; slug: string }> = []
+    const flatDirectory = join(docs, 'code-review')
+    if (await isWithin(project.root, flatDirectory)) {
+      const flat =
+        (await missingOrThrow(fs.readdir(flatDirectory, { withFileTypes: true }))) ?? []
+      for (const entry of flat) {
+        const match = entry.isFile()
+          ? /^\d{4}-\d{2}-\d{2}-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
+          : null
+        if (match) candidates.push({ relativePath: `code-review/${entry.name}`, slug: match[1]! })
+      }
+    }
+    const experimentsDirectory = join(docs, 'experiments')
+    if (await isWithin(project.root, experimentsDirectory)) {
+      const experiments =
+        (await missingOrThrow(fs.readdir(experimentsDirectory, { withFileTypes: true }))) ?? []
+      for (const experiment of experiments) {
+        if (!experiment.isDirectory() || !/^E\d{4}-[a-z0-9-]+$/.test(experiment.name)) continue
+        const reviewsDirectory = join(experimentsDirectory, experiment.name, 'code-review')
+        if (!(await isWithin(project.root, reviewsDirectory))) continue
+        const entries =
+          (await missingOrThrow(fs.readdir(reviewsDirectory, { withFileTypes: true }))) ?? []
+        for (const entry of entries) {
+          const match = entry.isFile()
+            ? /^\d{4}-\d{2}-\d{2}-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
+            : null
+          if (match) {
+            candidates.push({
+              relativePath: `experiments/${experiment.name}/code-review/${entry.name}`,
+              slug: match[1]!,
+            })
+          }
+        }
+      }
+    }
+    return candidates.map(({ relativePath, slug }) => ({
+      id: relativePath.replace(/\.md$/, ''),
+      slug,
+      resource: ResourceIdSchema.parse(`docs/${relativePath}`),
+    })).sort((left, right) => right.id.localeCompare(left.id))
+  }
+
+  /**
+   * Report ids only, for `@R<NNNN>` reference resolution. Canonically named
+   * files and bundle directories provide identities without opening them;
+   * the detail reader validates the selected document when requested.
+   */
+  private async listReportIds(project: ProjectConfig): Promise<string[]> {
+    return (await this.discoverReportInventory(project)).map((item) => item.id)
+  }
+
   private async discoverReports(project: ProjectConfig): Promise<DocumentEntry[]> {
     const directory = join(project.root, 'docs', 'reports')
-    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => [])
+    const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
     const out: DocumentEntry[] = []
     for (const entry of entries) {
       const file = entry.isFile() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name) : null
@@ -510,8 +836,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
         ? join(directory, entry.name, 'README.md')
         : join(directory, entry.name)
       if (!(await isWithin(project.root, absolutePath))) continue
-      const content = await fs.readFile(absolutePath, 'utf8').catch(() => null)
-      const stat = await fs.stat(absolutePath).catch(() => null)
+      const content = await missingOrThrow(fs.readFile(absolutePath, 'utf8'))
+      const stat = await missingOrThrow(fs.stat(absolutePath))
       if (content === null || !stat?.isFile()) continue
       out.push({
         id: `R${(file ?? bundle)![1]}`,
@@ -529,7 +855,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   private async discoverDigests(project: ProjectConfig): Promise<DocumentEntry[]> {
     const directory = join(project.root, 'docs', 'digests')
-    const names = await fs.readdir(directory).catch(() => [])
+    const names = (await missingOrThrow(fs.readdir(directory))) ?? []
     return (
       await Promise.all(
         names.flatMap(async (name) => {
@@ -538,8 +864,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
           const absolutePath = join(directory, name)
           if (!(await isWithin(project.root, absolutePath))) return []
           const [content, stat] = await Promise.all([
-            fs.readFile(absolutePath, 'utf8').catch(() => null),
-            fs.stat(absolutePath).catch(() => null),
+            missingOrThrow(fs.readFile(absolutePath, 'utf8')),
+            missingOrThrow(fs.stat(absolutePath)),
           ])
           if (content === null || !stat?.isFile()) return []
           return [
@@ -563,18 +889,18 @@ export class FilesystemDocumentService implements BackendDocumentService {
   private async discoverCodeReviews(project: ProjectConfig): Promise<DocumentEntry[]> {
     const docs = join(project.root, 'docs')
     const paths: string[] = []
-    const flat = await fs.readdir(join(docs, 'code-review')).catch(() => [])
+    const flat = (await missingOrThrow(fs.readdir(join(docs, 'code-review')))) ?? []
     for (const name of flat) {
       if (/^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(name)) {
         paths.push(`code-review/${name}`)
       }
     }
-    const experiments = await fs.readdir(join(docs, 'experiments')).catch(() => [])
+    const experiments = (await missingOrThrow(fs.readdir(join(docs, 'experiments')))) ?? []
     for (const experiment of experiments) {
       if (!/^E\d{4}-[a-z0-9-]+$/.test(experiment)) continue
-      const names = await fs
-        .readdir(join(docs, 'experiments', experiment, 'code-review'))
-        .catch(() => [])
+      const names =
+        (await missingOrThrow(fs.readdir(join(docs, 'experiments', experiment, 'code-review')))) ??
+        []
       for (const name of names) {
         if (/^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(name)) {
           paths.push(`experiments/${experiment}/code-review/${name}`)
@@ -585,8 +911,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
     for (const relativePath of paths) {
       const absolutePath = join(docs, relativePath)
       if (!(await isWithin(project.root, absolutePath))) continue
-      const content = await fs.readFile(absolutePath, 'utf8').catch(() => null)
-      const stat = await fs.stat(absolutePath).catch(() => null)
+      const content = await missingOrThrow(fs.readFile(absolutePath, 'utf8'))
+      const stat = await missingOrThrow(fs.stat(absolutePath))
       if (content === null || !stat?.isFile()) continue
       let title: string | null = null
       try {
@@ -768,19 +1094,27 @@ function codeReviewSummary(project: ProjectConfig, entry: DocumentEntry) {
 
 async function assertWithin(projectRoot: string, target: string): Promise<void> {
   const [realRoot, realTarget] = await Promise.all([fs.realpath(projectRoot), fs.realpath(target)])
-  const rel = relative(realRoot, realTarget)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || rel.startsWith(sep)) {
+  if (!contains(realRoot, realTarget)) {
     throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Resource escapes Project')
   }
 }
 
+/**
+ * Containment check for discovery, where a path that vanished between listing
+ * and resolution is simply skipped. An unreadable path is not skipped: only
+ * absence yields `false`, everything else propagates.
+ */
 async function isWithin(projectRoot: string, target: string): Promise<boolean> {
-  try {
-    await assertWithin(projectRoot, target)
-    return true
-  } catch {
-    return false
-  }
+  const [realRoot, realTarget] = await Promise.all([
+    fs.realpath(projectRoot),
+    missingOrThrow(fs.realpath(target)),
+  ])
+  return realTarget !== null && contains(realRoot, realTarget)
+}
+
+function contains(realRoot: string, realTarget: string): boolean {
+  const rel = relative(realRoot, realTarget)
+  return !(rel === '..' || rel.startsWith(`..${sep}`) || rel.startsWith(sep))
 }
 
 function notFound(): BackendDocumentServiceError {

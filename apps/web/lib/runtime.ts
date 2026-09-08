@@ -1,10 +1,10 @@
-// Module-level singleton holding the live experiment index, file caches,
+// Process-wide singleton holding the live experiment index, file caches,
 // poller, and event bus shared across all API routes.
 //
 // Lifecycle:
 //   - Initialized lazily on first request (so importing the module is cheap)
 //   - Eagerly warmed up via apps/web/instrumentation.ts on server start
-//   - Kept across requests in the Next.js dev server (module state persists)
+//   - Shared across separately bundled routes and Next.js dev reloads
 //
 // Production model: `memon serve` spawns Next.js with MEMON_CONFIG_PATH set;
 // in dev `pnpm --filter @memon/web dev` we walk up to find the repo's
@@ -17,6 +17,8 @@ import { EventEmitter } from 'node:events'
 import {
   CODE_REVIEW_FILENAME_REGEX,
   computeMembership,
+  configureProjectFileStore,
+  configureProjectFileCache,
   deriveCompletion,
   DIGEST_FILENAME_REGEX,
   discoverExperiments,
@@ -45,6 +47,7 @@ import {
   type ReportSummary,
   type Run,
 } from '@memon/core'
+import { servesProjectsDirectly } from './central/direct-projects'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { WikiCache } from './runtime/wiki-cache'
@@ -183,11 +186,13 @@ export class Runtime {
   }
 }
 
-let runtimePromise: Promise<Runtime> | null = null
+// Next can bundle this module separately for multiple routes. Startup config
+// and the shared Store/cache state must still be initialized once.
+const RUNTIME_KEY = Symbol.for('memon.web-runtime.v1')
 
 export async function getRuntime(): Promise<Runtime> {
-  if (!runtimePromise) runtimePromise = init()
-  return runtimePromise
+  const shared = globalThis as typeof globalThis & { [RUNTIME_KEY]?: Promise<Runtime> }
+  return (shared[RUNTIME_KEY] ??= init())
 }
 
 async function init(): Promise<Runtime> {
@@ -229,13 +234,25 @@ async function init(): Promise<Runtime> {
     slurm = { enabled: true, totalNodes: config.slurm.totalNodes, supported: true }
   }
 
+  // Startup-only scheduler configuration for the project file store. Saved
+  // settings apply at boot; nothing hot-applies mid-process.
+  configureProjectFileStore(config.fileAccess ?? {})
+  await configureProjectFileCache(config.fileCache)
+
+  // Projects served directly through the project file store are read on
+  // demand, per request, with bounded scheduled I/O. They must never enter
+  // the legacy warm caches or the poller: that is exactly the continuous
+  // whole-project scan this deployment mode removes. The legacy runtime stays
+  // intact for project-only (standalone) instances.
+  const legacyProjects = servesProjectsDirectly(config) ? [] : config.projects
+
   const index = new RunIndex()
   const events = new EventEmitter()
   events.setMaxListeners(50)
 
   // Per-project file caches for docs/hypotheses.md / docs/journal.md
-  const hypothesesPaths = config.projects.map((p) => join(p.root, 'docs', 'hypotheses.md'))
-  const journalPaths = config.projects.map((p) => join(p.root, 'docs', 'journal.md'))
+  const hypothesesPaths = legacyProjects.map((p) => join(p.root, 'docs', 'hypotheses.md'))
+  const journalPaths = legacyProjects.map((p) => join(p.root, 'docs', 'journal.md'))
 
   const hypothesesCache = new FileCache<ParsedHypotheses>({
     name: 'hypotheses',
@@ -257,8 +274,8 @@ async function init(): Promise<Runtime> {
   })
 
   // Per-project directory caches for docs/reports/ and docs/digests/.
-  const reportsDirs = config.projects.map((p) => join(p.root, 'docs', 'reports'))
-  const digestsDirs = config.projects.map((p) => join(p.root, 'docs', 'digests'))
+  const reportsDirs = legacyProjects.map((p) => join(p.root, 'docs', 'reports'))
+  const digestsDirs = legacyProjects.map((p) => join(p.root, 'docs', 'digests'))
 
   const reportsCache = new DirCache<ReportSummary>({
     name: 'reports',
@@ -309,7 +326,7 @@ async function init(): Promise<Runtime> {
   // scoped, seeded after experiment discovery below).
   const codeReviewsCache = new DirCache<CodeReviewSummary>({
     name: 'code-reviews',
-    dirs: config.projects.map((p) => join(p.root, 'docs', 'code-review')),
+    dirs: legacyProjects.map((p) => join(p.root, 'docs', 'code-review')),
     fileNameRegex: CODE_REVIEW_FILENAME_REGEX,
     parseFile: (absPath, content, mtime): CodeReviewSummary => {
       const { frontmatter: fm } = parseCodeReview(content)
@@ -351,7 +368,10 @@ async function init(): Promise<Runtime> {
   const sharedAnomalies: Map<string, ExperimentMembershipAnomaly[]> = new Map()
   const recomputeAnomalies = (projectName: string) => {
     const exps = Array.from(sharedExperiments.values()).filter((e) => e.project === projectName)
-    const runs = index.list({ project: projectName })
+    // Membership needs the full Run set: a deprecated Run is still bound to
+    // its Experiment, and hiding it here would report it as a phantom
+    // reference. Deprecation filtering belongs to the collection endpoints.
+    const runs = index.list({ project: projectName, includeDeprecated: true })
     const result = computeMembership({ experiments: exps, runs, project: projectName })
     sharedAnomalies.set(projectName, result.anomalies)
     events.emit('anomaly', { project: projectName, count: result.anomalies.length })
@@ -364,14 +384,14 @@ async function init(): Promise<Runtime> {
     new Set(listComponents().map((descriptor) => descriptor.name)),
   )
   const wikiCache = new WikiCache({
-    projects: config.projects.map((p) => ({ name: p.name, root: p.root })),
+    projects: legacyProjects.map((p) => ({ name: p.name, root: p.root })),
     context: (project) => {
       const hypotheses = hypothesesCache.get(join(project.root, 'docs', 'hypotheses.md'))
       return {
         experiments: Array.from(sharedExperiments.values()).filter(
           (e) => e.project === project.name,
         ),
-        runs: index.list({ project: project.name }),
+        runs: index.list({ project: project.name, includeDeprecated: true }),
         hypothesesMtime: hypotheses?.mtime ? hypotheses.mtime : null,
         hypothesisIds: (hypotheses?.value?.entries ?? []).map((entry) => entry.id),
         reportIds: reportsCache
@@ -432,9 +452,7 @@ async function init(): Promise<Runtime> {
           // Reconcile the dynamic set of experiment-scoped code-review dirs:
           // add subdirs for newly-seen experiments, drop those for vanished
           // ones. The flat docs/code-review/ dir is never touched here.
-          const desiredCrDirs = new Set(
-            discovered.map((e) => join(dirname(e.path), 'code-review')),
-          )
+          const desiredCrDirs = new Set(discovered.map((e) => join(dirname(e.path), 'code-review')))
           const expsRoot = join(expDirMatch.root, 'docs', 'experiments') + '/'
           for (const d of codeReviewsCache.dirs()) {
             if (d.startsWith(expsRoot) && !desiredCrDirs.has(d)) {
@@ -460,8 +478,8 @@ async function init(): Promise<Runtime> {
       // Individual Experiment bundle change: README.md, any managed YAML
       // sidecar, or the bundle directory itself. Also tolerate the legacy v4
       // file form (`docs/experiments/E*.md`) during migration.
-      const expFileMatch = config.projects.find(
-        (p) => path.startsWith(join(p.root, 'docs', 'experiments') + '/'),
+      const expFileMatch = config.projects.find((p) =>
+        path.startsWith(join(p.root, 'docs', 'experiments') + '/'),
       )
       if (expFileMatch) {
         const expId = experimentIdForWatchedPath(expFileMatch.root, path)
@@ -524,7 +542,7 @@ async function init(): Promise<Runtime> {
     codeReviewsCache.warmup(),
     wikiCache.warmup(),
     (async () => {
-      for (const project of config.projects) {
+      for (const project of legacyProjects) {
         const dirs = await discoverRuns(project)
         for (const dir of dirs) {
           try {
@@ -538,7 +556,7 @@ async function init(): Promise<Runtime> {
       }
     })(),
     (async () => {
-      for (const project of config.projects) {
+      for (const project of legacyProjects) {
         const { experiments: docs } = await discoverExperiments(project.root, project.name)
         experimentsByProject.set(project.name, docs)
         // Register the docs/experiments/ dir for poll tracking + each
@@ -690,17 +708,17 @@ async function fileMtimeOrZero(path: string): Promise<number> {
 
 const MANAGED_EXPERIMENT_FILE_NAMES = Object.values(MANAGED_DOCUMENT_FILE_NAMES)
 
-export function experimentIdForWatchedPath(projectRoot: string, watchedPath: string): string | null {
+export function experimentIdForWatchedPath(
+  projectRoot: string,
+  watchedPath: string,
+): string | null {
   const experimentsRoot = join(projectRoot, 'docs', 'experiments')
   if (!watchedPath.startsWith(`${experimentsRoot}/`)) return null
   const filename = basename(watchedPath)
   if (EXPERIMENT_DIR_REGEX.test(filename) && dirname(watchedPath) === experimentsRoot) {
     return filename
   }
-  if (
-    filename === 'README.md' ||
-    MANAGED_EXPERIMENT_FILE_NAMES.includes(filename)
-  ) {
+  if (filename === 'README.md' || MANAGED_EXPERIMENT_FILE_NAMES.includes(filename)) {
     const parent = basename(dirname(watchedPath))
     return EXPERIMENT_DIR_REGEX.test(parent) ? parent : null
   }

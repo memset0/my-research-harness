@@ -23,7 +23,7 @@ export function HypothesisView({ project }: { project: ProjectTarget }) {
         <ListSkeleton count={4} />
       </div>
     )
-  if (error)
+  if (error && !data)
     return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
   if (!data) return null
 

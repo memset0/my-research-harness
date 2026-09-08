@@ -29,6 +29,7 @@ function makeRun(id: string, updatedAt: string, readmeMtime = 0): Run {
       hypotheses: [],
       tags: [],
       archived: false,
+      deprecated: false,
     },
     sections: {
       motivation: null,
@@ -45,6 +46,7 @@ function makeRun(id: string, updatedAt: string, readmeMtime = 0): Run {
     body: '',
     parseErrors: [],
     parseWarnings: [],
+    frontMatterKeys: [],
   }
 }
 

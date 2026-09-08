@@ -254,6 +254,7 @@ Notes.
       hypothesisIds: ['H0003'],
     })
 
+    expect(projection.sourceTargetsResolved).toBe(true)
     expect(projection.summaries.map((entry) => entry.id)).toEqual(['W0001', 'W0002'])
     const finding = projection.byId.get('W0001')!
     expect(finding.stale).toBe(true)
@@ -281,6 +282,33 @@ Notes.
         reviewState: null,
         updatedAt: '2026-09-01T10:00:00+08:00',
       },
+    ])
+  })
+
+  it('can lint source syntax without resolving source targets', async () => {
+    await write(
+      'docs/wiki/note/W0003-local.md',
+      `---
+id: W0003
+kind: note
+title: Local
+sources: [E9999-not-on-disk/V0001, invalid/source]
+created_at: "2026-09-01T09:00:00+08:00"
+updated_at: "2026-09-01T10:00:00+08:00"
+---
+
+See @E9999-not-on-disk.
+`,
+    )
+    const projection = buildWikiProject(await discoverWikiPages(root), {
+      resolveSourceTargets: false,
+    })
+    const summary = projection.summaries[0]!
+    expect(projection.sourceTargetsResolved).toBe(false)
+    expect(projection.backlinks.size).toBe(0)
+    expect(summary.stale).toBe(false)
+    expect(summary.diagnostics.map((entry) => entry.message)).toEqual([
+      expect.stringContaining('invalid/source'),
     ])
   })
 

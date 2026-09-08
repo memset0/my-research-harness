@@ -12,6 +12,7 @@ import {
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
   BackendReportsResponseSchema,
+  BackendResourceInventoryResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -113,6 +114,53 @@ describe('FilesystemDocumentService', () => {
     }
   })
 
+  it('lists document identities from names without parsing their bodies', async () => {
+    await fs.writeFile(
+      join(root, 'docs', 'code-review', '2026-08-26-review.md'),
+      '---\n[unterminated\n---\n',
+    )
+
+    const reports = BackendResourceInventoryResponseSchema.parse(
+      await service.listReports('research', { inventoryOnly: true }),
+    )
+    const digests = BackendResourceInventoryResponseSchema.parse(
+      await service.listDigests('research', { inventoryOnly: true }),
+    )
+    const reviews = BackendResourceInventoryResponseSchema.parse(
+      await service.listCodeReviews('research', { inventoryOnly: true }),
+    )
+
+    expect(reports.items).toEqual([
+      {
+        id: 'R0002',
+        slug: 'bundle',
+        resource: 'docs/reports/R0002-bundle/README.md',
+      },
+      {
+        id: 'R0001',
+        slug: 'report',
+        resource: 'docs/reports/R0001-report.md',
+      },
+    ])
+    expect(digests.items).toEqual([
+      {
+        id: 'D0001',
+        slug: '2026-08-26',
+        resource: 'docs/digests/D0001-2026-08-26.md',
+      },
+    ])
+    expect(reviews.items).toEqual([
+      {
+        id: 'code-review/2026-08-26-review',
+        slug: 'review',
+        resource: 'docs/code-review/2026-08-26-review.md',
+      },
+    ])
+    expect(
+      BackendCodeReviewsResponseSchema.parse(await service.listCodeReviews('research')).codeReviews,
+    ).toEqual([])
+  })
+
   it('uses both mtime and hash for optimistic document writes', async () => {
     const report = BackendReportResponseSchema.parse(await service.getReport('research', 'R0001'))
     const conflict = BackendDocumentConflictResponseSchema.parse(
@@ -136,14 +184,9 @@ describe('FilesystemDocumentService', () => {
       BackendReportResponseSchema.parse(await service.getReport('research', 'R0001')).content,
     ).toBe('# Updated report\n')
 
-    const digest = BackendDigestResponseSchema.parse(await service.getDigest('research', 'D0001'))
-    BackendDocumentWriteResponseSchema.parse(
-      await service.putDigest('research', 'D0001', {
-        content: '# Updated digest\n',
-        expectedMtime: digest.mtime,
-        expectedHash: digest.hash,
-      }),
-    )
+    // Historical digests stay readable; the managed digest writer is retired.
+    BackendDigestResponseSchema.parse(await service.getDigest('research', 'D0001'))
+    expect('putDigest' in service).toBe(false)
 
     const readme = BackendReadmeResponseSchema.parse(
       await service.getReadme('research', 'logs/run-one/README.md'),

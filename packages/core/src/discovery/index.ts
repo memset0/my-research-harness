@@ -15,6 +15,30 @@ export type SearchScope = 'all' | 'body' | 'fm'
 
 export interface ListFilter {
   project?: string
+  /**
+   * v6: include deprecated runs in the collection. Default false — a
+   * deprecated Run is excluded from every research listing, search result,
+   * and count, while `get`/`has` keep serving it by explicit id.
+   */
+  includeDeprecated?: boolean
+  /**
+   * v6: return ONLY deprecated runs (the "what did we throw out" view).
+   * Implies inclusion; takes precedence over `includeDeprecated`.
+   */
+  deprecatedOnly?: boolean
+}
+
+/**
+ * Does this run pass the deprecation half of a filter? Shared by the index,
+ * the project scan, and CLI/service listings so "excluded by default" means
+ * the same thing everywhere.
+ */
+export function matchesRunDeprecationFilter(
+  deprecated: boolean,
+  filter: Pick<ListFilter, 'includeDeprecated' | 'deprecatedOnly'> = {},
+): boolean {
+  if (filter.deprecatedOnly) return deprecated
+  return filter.includeDeprecated === true || !deprecated
 }
 
 export class RunIndex {
@@ -36,8 +60,27 @@ export class RunIndex {
     return this.byId.has(id)
   }
 
+  /**
+   * Number of runs currently indexed, regardless of deprecation. This is
+   * index cardinality, not a research count — use `count(filter)` for the
+   * latter.
+   */
   size(): number {
     return this.byId.size
+  }
+
+  /**
+   * Research count: how many runs a `list(filter)` would return. Deprecated
+   * runs are excluded unless the filter asks for them.
+   */
+  count(filter: ListFilter = {}): number {
+    let total = 0
+    for (const run of this.byId.values()) {
+      if (filter.project !== undefined && run.project !== filter.project) continue
+      if (!matchesRunDeprecationFilter(run.frontMatter.deprecated, filter)) continue
+      total += 1
+    }
+    return total
   }
 
   clear(): void {
@@ -45,21 +88,28 @@ export class RunIndex {
   }
 
   /**
-   * List experiments. Default sort: createdAt desc (most recent first).
-   * Empty createdAt sorts to the end.
+   * List runs. Default sort: createdAt desc (most recent first); empty
+   * createdAt sorts to the end. Deprecated runs are excluded unless the
+   * filter opts in.
    */
   list(filter: ListFilter = {}): Run[] {
-    const all = Array.from(this.byId.values())
-    const filtered = filter.project
-      ? all.filter((e) => e.project === filter.project)
-      : all
+    const filtered: Run[] = []
+    for (const run of this.byId.values()) {
+      if (filter.project !== undefined && run.project !== filter.project) continue
+      if (!matchesRunDeprecationFilter(run.frontMatter.deprecated, filter)) continue
+      filtered.push(run)
+    }
     return filtered.sort(byCreatedAtDesc)
   }
 
-  search(query: string, scope: SearchScope = 'all'): Run[] {
-    if (query === '') return this.list()
+  /**
+   * Search runs. Inherits `list`'s deprecation policy: deprecated runs stay
+   * out of results unless the filter opts in.
+   */
+  search(query: string, scope: SearchScope = 'all', filter: ListFilter = {}): Run[] {
+    if (query === '') return this.list(filter)
     const needle = query.toLowerCase()
-    return this.list().filter((exp) => matchesQuery(exp, needle, scope))
+    return this.list(filter).filter((exp) => matchesQuery(exp, needle, scope))
   }
 }
 

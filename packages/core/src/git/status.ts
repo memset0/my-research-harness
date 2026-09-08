@@ -1,12 +1,25 @@
 // Git working-tree status reader.
 //
-// Polls `git status --porcelain=v2 --branch --ignore-submodules=all` via
-// `execFile` and reduces the output to a small, stable struct. All failure
-// modes (missing git, non-repo cwd, timeout, parse failure) collapse to a
-// `{ enabled: false, reason }` shape so callers can early-return without
-// special-casing exceptions.
+// Polls `git status --porcelain=v2 --branch --ignore-submodules=all` through
+// the shared git command seam and reduces the output to a small, stable
+// struct. All failure modes (missing git, non-repo cwd, timeout, parse
+// failure) collapse to a `{ enabled: false, reason }` shape so callers can
+// early-return without special-casing exceptions.
+//
+// Every invocation goes through `cachedGitCommand`, so repeated polls of the
+// same repository share one short-lived read instead of respawning git (or
+// crossing an SSH boundary) per caller.
 
-import { execFile, type ExecFileException } from 'node:child_process'
+import {
+  cachedGitCommand,
+  gitCommandStdoutText,
+  isGitCommandFailure,
+  toGitExecFailure,
+  type GitCommandRunner,
+  type GitExecFailure,
+} from './command.js'
+
+const DEFAULT_TIMEOUT_MS = 3000
 
 export type GitStatus =
   | {
@@ -33,9 +46,12 @@ export interface ReadGitStatusOptions {
   timeoutMs?: number
   /** Override the git binary path (used by tests). Defaults to 'git'. */
   gitBin?: string
+  /**
+   * The command runner used for every git invocation. Defaults to the local
+   * transport; either way the reader wraps it in the shared read cache.
+   */
+  exec?: GitCommandRunner
 }
-
-const DEFAULT_TIMEOUT_MS = 3000
 
 export async function readGitStatus(
   cwd: string,
@@ -43,50 +59,36 @@ export async function readGitStatus(
 ): Promise<GitStatus> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const bin = opts.gitBin ?? 'git'
+  const exec = cachedGitCommand(opts.exec)
 
-  return new Promise<GitStatus>((resolve) => {
-    execFile(
-      bin,
-      [
-        'status',
-        '--porcelain=v2',
-        '--branch',
-        '--ignore-submodules=all',
-      ],
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 1_048_576,
-        windowsHide: true,
-      },
-      (err, stdout, stderr) => {
-        if (err) {
-          resolve(classifyExecError(err, String(stderr ?? '')))
-          return
-        }
-        try {
-          resolve(parsePorcelainV2(String(stdout ?? '')))
-        } catch (parseErr) {
-          resolve({
-            enabled: false,
-            reason: 'error',
-            message: truncate((parseErr as Error).message ?? String(parseErr), 200),
-          })
-        }
-      },
-    )
-  })
+  const result = await exec(
+    bin,
+    ['status', '--porcelain=v2', '--branch', '--ignore-submodules=all'],
+    { cwd, timeoutMs, maxBuffer: 1_048_576 },
+  )
+  if (isGitCommandFailure(result)) {
+    return classifyExecError(toGitExecFailure(result))
+  }
+  try {
+    return parsePorcelainV2(gitCommandStdoutText(result))
+  } catch (parseErr) {
+    return {
+      enabled: false,
+      reason: 'error',
+      message: truncate((parseErr as Error).message ?? String(parseErr), 200),
+    }
+  }
 }
 
-function classifyExecError(err: unknown, stderr: string): GitStatus {
-  const e = err as ExecFileException & { code?: string | number; killed?: boolean }
+function classifyExecError(failure: GitExecFailure): GitStatus {
+  const { err, stderr } = failure
   // Spawn-level failure: ENOENT means the git binary wasn't found.
-  if (e.code === 'ENOENT') {
+  if (err.code === 'ENOENT') {
     return { enabled: false, reason: 'git-not-found' }
   }
   // Timeout: execFile sets `killed = true` when SIGTERM kills the child
   // because the timeout fired.
-  if (e.killed) {
+  if (err.killed) {
     return { enabled: false, reason: 'timeout' }
   }
   // Otherwise it's a non-zero exit. Git emits "fatal: not a git repository"
@@ -97,7 +99,7 @@ function classifyExecError(err: unknown, stderr: string): GitStatus {
   return {
     enabled: false,
     reason: 'error',
-    message: truncate(stderr.trim() || e.message || 'git failed', 200),
+    message: truncate(stderr.trim() || err.message || 'git failed', 200),
   }
 }
 

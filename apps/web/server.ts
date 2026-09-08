@@ -6,12 +6,10 @@
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import next from 'next'
-import type { CentralGatewayHandler } from './lib/central/http-bridge'
-import { redactOperationalText } from './lib/central/public-safety'
-import type { CentralTerminalRelay } from './lib/central/terminal-relay'
+import { servesProjectsDirectly } from './lib/central/direct-projects'
+import type { CentralGatewayHandler } from './lib/central/node-http'
 import { prewarmRoutes } from './lib/route-prewarm'
 import { getRuntime } from './lib/runtime'
-import { standaloneServices } from './lib/server/standalone-services'
 import { createMemonServer } from './lib/server-core'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -26,7 +24,7 @@ const warmupStartedAt = Date.now()
 const runtime = await getRuntime()
 if (runtime.config.backend) {
   throw new Error(
-    'memon: Backend instance config cannot run the Web entry; use `memon backend serve`',
+    'memon: Backend instance config cannot run the Web entry; serve its Projects from a central instance',
   )
 }
 const port = Number(process.env.PORT ?? runtime.config.central?.bindPort ?? 3737)
@@ -52,38 +50,53 @@ const upgradeHandler =
   typeof getUpgradeHandler === 'function' ? getUpgradeHandler.call(app) : undefined
 
 let centralGateway: CentralGatewayHandler | undefined
-let centralTerminalRelay: CentralTerminalRelay | undefined
 let stopFleet: (() => Promise<void>) | undefined
 if (runtime.config.central) {
-  const [
-    { getCentralFleet, stopCentralFleet },
-    { createCentralHttpBridge },
-    { createCentralTerminalRelay },
-  ] = await Promise.all([
-    import('./lib/central/fleet-runtime'),
-    import('./lib/central/http-bridge'),
-    import('./lib/central/terminal-relay'),
-  ])
-  const fleet = await getCentralFleet()
-  centralGateway = createCentralHttpBridge({ registry: fleet.registry, runtimeAuth: runtime.auth })
-  centralTerminalRelay = createCentralTerminalRelay({
-    registry: fleet.registry,
-    runtimeAuth: runtime.auth,
-    onProxyError: (err) => console.error('[central-terminal-proxy]', redactOperationalText(err)),
-  })
-  stopFleet = stopCentralFleet
-}
-const standaloneTerminal = runtime.config.central
-  ? undefined
-  : standaloneServices(runtime.config).terminal()
+  const gateways: CentralGatewayHandler[] = []
 
+  // Projects this instance owns on its own filesystem are answered in
+  // process: no peer service, no service token, no availability probe.
+  if (servesProjectsDirectly(runtime.config)) {
+    const [{ directCentralRuntime }, { createDirectCentralGateway }] = await Promise.all([
+      import('./lib/central/direct-runtime'),
+      import('./lib/central/direct-gateway'),
+    ])
+    gateways.push(
+      createDirectCentralGateway({
+        runtime: directCentralRuntime(runtime.config),
+        runtimeAuth: runtime.auth,
+      }),
+    )
+  }
+
+  // Registered peer Backends keep the HTTP bridge. A configuration with no
+  // registered Host starts no fleet.
+  if (runtime.config.central.hosts.length > 0) {
+    const [{ getCentralFleet, stopCentralFleet }, { createCentralHttpBridge }] = await Promise.all([
+      import('./lib/central/fleet-runtime'),
+      import('./lib/central/http-bridge'),
+    ])
+    const fleet = await getCentralFleet()
+    gateways.push(createCentralHttpBridge({ registry: fleet.registry, runtimeAuth: runtime.auth }))
+    stopFleet = stopCentralFleet
+  }
+
+  centralGateway =
+    gateways.length === 0
+      ? undefined
+      : gateways.length === 1
+        ? gateways[0]
+        : async (request, response) => {
+            for (const gateway of gateways) {
+              if (await gateway(request, response)) return true
+            }
+            return false
+          }
+}
 const server = createMemonServer({
   handle,
   upgradeHandler,
   ...(centralGateway ? { centralGateway } : {}),
-  ...(centralTerminalRelay ? { centralTerminalRelay } : {}),
-  ...(standaloneTerminal ? { standaloneTerminal } : {}),
-  onProxyError: (err) => console.error('[ttyd-proxy]', redactOperationalText(err)),
 })
 
 if (stopFleet) {

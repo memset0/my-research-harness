@@ -38,10 +38,7 @@ const CAPABILITIES = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 } satisfies BackendCapabilities
 
 let root = ''
@@ -92,6 +89,8 @@ beforeAll(async () => {
       include: [],
       exclude: [],
       github: [{ owner: 'acme', repo: 'demo', path: root }],
+      // This host owns the fixture worktree, so git is allowed to run here.
+      execution: { kind: 'local' },
     },
     {
       name: 'research-copy',
@@ -99,6 +98,7 @@ beforeAll(async () => {
       include: [],
       exclude: [],
       github: [{ owner: 'acme', repo: 'demo', path: root }],
+      execution: { kind: 'local' },
     },
   ] satisfies ProjectConfig[]
   server = createBackendServer({

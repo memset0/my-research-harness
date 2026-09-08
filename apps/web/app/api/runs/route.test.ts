@@ -24,11 +24,24 @@ beforeEach(() => {
     config: { projects: [{ name: 'project-a' }, { name: 'project-b' }] },
   } as never)
   vi.mocked(standaloneServices).mockReturnValue({ projects: { listRuns } } as never)
-  listRuns.mockImplementation(async (project: string) => ({
-    runs: [
-      { id: `${project}-run`, project, resource: `logs/${project}-run/README.md`, stale: false },
-    ],
-  }))
+  listRuns.mockImplementation(
+    async (project: string, _filter: unknown, options: { inventoryOnly?: boolean }) =>
+      options.inventoryOnly
+        ? {
+            items: [
+              {
+                id: `${project}-run-260908-010203`,
+                slug: `${project}-run`,
+                resource: `logs/${project}-run-260908-010203/README.md`,
+              },
+            ],
+          }
+        : {
+            runs: [
+              { id: `${project}-run`, project, resource: `logs/${project}-run/README.md`, stale: false },
+            ],
+          },
+  )
 })
 
 describe('GET /api/runs shared standalone adapter', () => {
@@ -42,7 +55,32 @@ describe('GET /api/runs shared standalone adapter', () => {
   it('selects one Project', async () => {
     const response = await GET(new NextRequest('http://localhost/api/runs?project=project-a'))
     expect(response.status).toBe(200)
-    expect(listRuns).toHaveBeenCalledWith('project-a')
+    expect(listRuns).toHaveBeenCalledWith(
+      'project-a',
+      { includeDeprecated: false, deprecatedOnly: false },
+      { inventoryOnly: false },
+    )
     expect(listRuns).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards inventory mode without projecting rich Run records', async () => {
+    const response = await GET(
+      new NextRequest('http://localhost/api/runs?project=project-a&inventory=1'),
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      items: [
+        {
+          id: 'project-a-run-260908-010203',
+          slug: 'project-a-run',
+          resource: 'logs/project-a-run-260908-010203/README.md',
+        },
+      ],
+    })
+    expect(listRuns).toHaveBeenCalledWith(
+      'project-a',
+      { includeDeprecated: false, deprecatedOnly: false },
+      { inventoryOnly: true },
+    )
   })
 })

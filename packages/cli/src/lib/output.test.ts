@@ -28,8 +28,10 @@ function makeExp(overrides: Partial<Run['frontMatter']> = {}): Run {
       hypotheses: ['H0001'],
       tags: ['t'],
       archived: false,
+      deprecated: false,
       ...overrides,
     },
+    frontMatterKeys: [],
     sections: {
       motivation: null,
       setup: null,

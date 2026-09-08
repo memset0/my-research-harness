@@ -17,9 +17,7 @@ describe('Backend package boundary', () => {
     expect(packageJson.main).toBe('./dist/index.js')
     expect(packageJson.exports?.['.']?.import).toBe('./dist/index.js')
     expect(packageJson.files).toEqual(['dist'])
-    expect(Object.keys(packageJson.dependencies ?? {})).toEqual(
-      expect.arrayContaining(['@memon/core', 'http-proxy-3']),
-    )
+    expect(Object.keys(packageJson.dependencies ?? {})).toContain('@memon/core')
     expect(Object.keys(packageJson.dependencies ?? {})).not.toEqual(
       expect.arrayContaining(['next', 'react', '@memon/web']),
     )

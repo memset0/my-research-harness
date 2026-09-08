@@ -117,7 +117,7 @@ export function WikiPane({
           <div className="p-4">
             <ListSkeleton count={4} />
           </div>
-        ) : detail.error ? (
+        ) : detail.error && !detail.data ? (
           <WikiPaneError wikiId={wikiId} message={(detail.error as Error).message} />
         ) : !detail.data ? (
           <WikiPaneError wikiId={wikiId} message="Wiki page not found" />

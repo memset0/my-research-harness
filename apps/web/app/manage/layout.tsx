@@ -1,14 +1,12 @@
 // Layout for top-level cross-project management pages under `/manage/*`.
-// Mirrors the project layout's sidebar wrapping but does NOT mount
-// `<AppBar>` (that's project-scoped). The active-highlight on the
-// sidebar's `Manage tmux` footer link surfaces here automatically
-// because `<AppSidebar>` is now in the tree.
+// Mirrors the project layout's sidebar wrapping but does not mount the
+// project-scoped AppBar.
 
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import { cookies } from 'next/headers'
 import { AppSidebar } from '../../components/app-sidebar'
 import { ResizableSidebarProvider } from '../../components/resizable-sidebar-provider'
-import { WorkspaceSplitOutlet } from '../../components/terminal-drawer-provider'
+import { WorkspaceSplitOutlet } from '../../components/workspace-pane-provider'
 import { SidebarInset, SidebarTrigger } from '../../components/ui/sidebar'
 import { getQueryClient } from '../../lib/get-query-client'
 import { getProjectsData } from '../../lib/server/data'

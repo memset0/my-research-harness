@@ -1,10 +1,9 @@
 // List / detail projections.
 //
 // `buildWikiSummary` turns one discovered page plus its derived facts into the
-// `WikiSummary` every surface consumes; `buildWikiProject` runs the whole
-// pipeline (parse -> resolve sources -> lint -> project -> sort) so the CLI,
-// the Backend, and the dashboard cache share one implementation instead of
-// three that drift.
+// `WikiSummary` every surface consumes. `buildWikiProject` shares parsing,
+// linting, and ordering across callers while letting CLI explicitly omit the
+// source-target resolution/staleness pipeline owned by Web.
 
 import { createHash } from 'node:crypto'
 
@@ -14,8 +13,13 @@ import { WIKI_STRUCTURAL_COMPONENT_NAMES } from './components.js'
 import type { DiscoveredWikiPage } from './discover.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation } from './deprecation.js'
 import { parseWikiFrontmatter, wikiStringList } from './frontmatter.js'
-import { lintWikiPage, lintWikiProject, type WikiArtifactInventory, type WikiLintPage } from './lint.js'
-import { resolveWikiSources, type WikiPageStaleness, type WikiSourcePage } from './staleness.js'
+import {
+  lintWikiPage,
+  lintWikiProject,
+  type WikiArtifactInventory,
+  type WikiLintPage,
+} from './lint.js'
+import { resolveWikiSources, wikiSourceKind, type WikiPageStaleness } from './staleness.js'
 import {
   WIKI_ID_REGEX,
   WIKI_KINDS,
@@ -120,7 +124,15 @@ export function sortWikiSummaries<T extends WikiSummary>(summaries: readonly T[]
   })
 }
 
-export interface WikiProjectContext {
+interface WikiProjectionContext {
+  /** Page path -> derived review, as produced by `deriveWikiReview`. */
+  reviews?: ReadonlyMap<string, WikiReview> | null
+  /** Component names for the unpinned check; defaults to the structural set. */
+  componentNames?: readonly string[]
+}
+
+export interface WikiProjectContext extends WikiProjectionContext {
+  /** Metadata for the cited artifacts; unreferenced ones need not be loaded. */
   experiments: readonly Experiment[]
   runs: readonly Run[]
   /** `docs/hypotheses.md` mtime in epoch ms; null when the file is absent. */
@@ -128,10 +140,20 @@ export interface WikiProjectContext {
   hypothesisIds?: readonly string[]
   /** Report ids that still exist under `docs/reports/`. */
   reportIds?: readonly string[]
-  /** Page path -> derived review, as produced by `deriveWikiReview`. */
-  reviews?: ReadonlyMap<string, WikiReview> | null
-  /** Component names for the unpinned check; defaults to the structural set. */
-  componentNames?: readonly string[]
+  /**
+   * Every Experiment id the project holds, for `@` reference resolution.
+   * Defaults to the ids of the supplied metadata, which is right only when
+   * the caller loaded every Experiment.
+   */
+  experimentIds?: readonly string[]
+  /** Every Run directory name the project holds, same contract as above. */
+  runIds?: readonly string[]
+  resolveSourceTargets?: true
+}
+
+/** Target-independent projection for CLI and document navigation inventories. */
+export interface WikiLocalProjectContext extends WikiProjectionContext {
+  resolveSourceTargets: false
 }
 
 export interface WikiProjectProjection {
@@ -141,16 +163,26 @@ export interface WikiProjectProjection {
   bySlug: Map<string, WikiSummary>
   /** Artifact key -> citing pages, newest `updated_at` first. */
   backlinks: Map<string, WikiBacklink[]>
+  /** Whether staleness and backlinks were derived from target metadata. */
+  sourceTargetsResolved: boolean
 }
 
 /**
- * Full project projection from discovered pages. Frontmatter is parsed once,
- * sources are resolved once, and every page is linted with the resulting
- * inventory, so a caller only decides where the pages came from.
+ * Project projection from discovered pages. Web/backend callers provide the
+ * artifact context for source resolution; CLI callers explicitly opt out and
+ * receive page-only lint/projection without fabricated staleness or backlinks.
  */
 export function buildWikiProject(
   pages: readonly DiscoveredWikiPage[],
   ctx: WikiProjectContext,
+): WikiProjectProjection
+export function buildWikiProject(
+  pages: readonly DiscoveredWikiPage[],
+  ctx: WikiLocalProjectContext,
+): WikiProjectProjection
+export function buildWikiProject(
+  pages: readonly DiscoveredWikiPage[],
+  ctx: WikiProjectContext | WikiLocalProjectContext,
 ): WikiProjectProjection {
   const parsed = pages.map((page) => {
     const { frontmatter, body, raw } = parseWikiFrontmatter(page.content)
@@ -165,33 +197,46 @@ export function buildWikiProject(
     }
   })
 
-  const inventory: WikiArtifactInventory = {
-    wikiIds: parsed.map((entry) => entry.id),
-    wikiSlugs: parsed.map((entry) => entry.page.slug),
-    wikiLegacyIds: parsed.flatMap((entry) => {
-      const legacyId = entry.frontmatter?.legacy_id
-      return typeof legacyId === 'string' && WIKI_LEGACY_ID_REGEX.test(legacyId) ? [legacyId] : []
-    }),
-    experimentIds: ctx.experiments.map((experiment) => experiment.id),
-    runIds: ctx.runs.map((run) => run.id),
-    hypothesisIds: ctx.hypothesisIds ?? [],
-    reportIds: ctx.reportIds ?? [],
-  }
+  const sourceContext = ctx.resolveSourceTargets === false ? null : ctx
+  const sourceTargetsResolved = sourceContext !== null
+  const inventory: WikiArtifactInventory | undefined = sourceContext
+    ? {
+        wikiIds: parsed.map((entry) => entry.id),
+        wikiSlugs: parsed.map((entry) => entry.page.slug),
+        wikiLegacyIds: parsed.flatMap((entry) => {
+          const legacyId = entry.frontmatter?.legacy_id
+          return typeof legacyId === 'string' && WIKI_LEGACY_ID_REGEX.test(legacyId)
+            ? [legacyId]
+            : []
+        }),
+        experimentIds:
+          sourceContext.experimentIds ??
+          sourceContext.experiments.map((experiment) => experiment.id),
+        runIds: sourceContext.runIds ?? sourceContext.runs.map((run) => run.id),
+        hypothesisIds: sourceContext.hypothesisIds ?? [],
+        reportIds: sourceContext.reportIds ?? [],
+      }
+    : undefined
 
-  const sourcePages: WikiSourcePage[] = parsed.map((entry) => ({
-    id: entry.id,
-    slug: entry.page.slug,
-    kind: entry.page.kind,
-    sources: wikiStringList(entry.frontmatter?.sources),
-    updatedAt: typeof entry.frontmatter?.updated_at === 'string' ? entry.frontmatter.updated_at : '',
-    deprecated: entry.deprecated,
-  }))
-  const resolved = resolveWikiSources(sourcePages, {
-    experiments: ctx.experiments,
-    runs: ctx.runs,
-    hypothesesMtime: ctx.hypothesesMtime,
-    ...(ctx.hypothesisIds ? { hypothesisIds: ctx.hypothesisIds } : {}),
-  })
+  const resolved = sourceContext
+    ? resolveWikiSources(
+        parsed.map((entry) => ({
+          id: entry.id,
+          slug: entry.page.slug,
+          kind: entry.page.kind,
+          sources: wikiStringList(entry.frontmatter?.sources),
+          updatedAt:
+            typeof entry.frontmatter?.updated_at === 'string' ? entry.frontmatter.updated_at : '',
+          deprecated: entry.deprecated,
+        })),
+        {
+          experiments: sourceContext.experiments,
+          runs: sourceContext.runs,
+          hypothesesMtime: sourceContext.hypothesesMtime,
+          ...(sourceContext.hypothesisIds ? { hypothesisIds: sourceContext.hypothesisIds } : {}),
+        },
+      )
+    : null
 
   const lintPages: WikiLintPage[] = parsed.map((entry) => ({
     id: entry.page.id,
@@ -214,12 +259,18 @@ export function buildWikiProject(
 
   const componentNames = ctx.componentNames ?? WIKI_STRUCTURAL_COMPONENT_NAMES
   const summaries = parsed.map((entry, index) => {
-    const staleness = resolved.pages.get(entry.id) ?? null
+    const staleness = resolved?.pages.get(entry.id) ?? null
     const review = ctx.reviews?.get(entry.page.path) ?? null
     const diagnostics = [
       ...lintWikiPage(lintPages[index]!, {
-        inventory,
-        unresolvedSources: staleness?.unresolvedSources ?? [],
+        ...(inventory === undefined ? {} : { inventory }),
+        ...(staleness === null
+          ? {}
+          : {
+              unresolvedSources: staleness.unresolvedSources.filter(
+                (source) => wikiSourceKind(source) !== null,
+              ),
+            }),
         review,
         componentNames,
       }),
@@ -239,7 +290,7 @@ export function buildWikiProject(
   const byId = new Map(sorted.map((summary) => [summary.id, summary]))
   const bySlug = new Map(sorted.map((summary) => [summary.slug, summary]))
   const backlinks = new Map<string, WikiBacklink[]>()
-  for (const [artifact, pageIds] of resolved.backlinks) {
+  for (const [artifact, pageIds] of resolved?.backlinks ?? []) {
     const rows = pageIds.flatMap((pageId) => {
       const summary = byId.get(pageId)
       if (!summary) return []
@@ -260,7 +311,7 @@ export function buildWikiProject(
     backlinks.set(artifact, rows)
   }
 
-  return { summaries: sorted, byId, bySlug, backlinks }
+  return { summaries: sorted, byId, bySlug, backlinks, sourceTargetsResolved }
 }
 
 /** Frontmatter id when it is well-formed, else the id from the file name. */

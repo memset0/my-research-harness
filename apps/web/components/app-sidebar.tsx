@@ -1,14 +1,12 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { ExternalLink, Loader2, PanelsTopLeft, Plus, Terminal } from 'lucide-react'
+import { Gauge, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
-  checkTerminal,
-  type ExperimentDocSummary,
-  fetchExperimentDocs,
+  fetchExperimentsInventory,
   fetchGitStatus,
   fetchHosts,
   fetchProjects,
@@ -18,7 +16,6 @@ import {
   projectName,
   projectQueryKey,
 } from '../lib/api'
-import { useRuntimeConfig } from '../lib/runtime-config'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
@@ -26,10 +23,7 @@ import { HostStatusBadge } from './host-status-badge'
 import { useSession } from './session-provider'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
-import { useTerminalDrawer } from './terminal-drawer-provider'
-import { TerminalSheet } from './terminal-sheet'
 import { ThemeToggle } from './theme-toggle'
-import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
   Sidebar,
@@ -44,7 +38,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from './ui/sidebar'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 const STORAGE_KEY = 'memon:sidebar:expanded'
 
@@ -89,8 +82,6 @@ function activeProjectTarget(pathname: string): ProjectTarget | null {
 
 export function AppSidebar() {
   const { role, scopeProjects, scopeProjectRefs } = useSession()
-  const { terminal } = useRuntimeConfig()
-  const terminalDrawer = useTerminalDrawer()
   // Which project's git-status dialog (if any) is open, opened from one
   // of the sidebar's compact git pills. `null` = closed.
   const [diffDialogProject, setDiffDialogProject] = useState<ProjectTarget | null>(null)
@@ -168,8 +159,22 @@ export function AppSidebar() {
     }
   }, [expanded, displayProjectKeys, hydrated])
 
+  // Restored-from-storage expansion renders the section chrome, but it must
+  // NOT fetch that project's experiment docs: on a non-project route
+  // (`/manage/*`) every persisted section would otherwise fire a project
+  // data read on mount — a cross-project fetch storm for pages that show no
+  // project data. Only the active route's project and sections the user
+  // opened in THIS session express intent to read project data.
+  const [requested, setRequested] = useState<Set<string>>(new Set())
+
   const onToggle = (name: string, open: boolean) => {
     setExpanded((cur) => {
+      const next = new Set(cur)
+      if (open) next.add(name)
+      else next.delete(name)
+      return next
+    })
+    setRequested((cur) => {
       const next = new Set(cur)
       if (open) next.add(name)
       else next.delete(name)
@@ -248,12 +253,9 @@ export function AppSidebar() {
                         name={project.name}
                         basePath={sidebarProjectBasePath(target)}
                         central
-                        allowTerminal={
-                          (host.state === 'online' || host.state === 'update_available') &&
-                          host.capabilities?.tmux === true
-                        }
                         isActive={identity === activeProjectKey}
                         isOpen={expanded.has(identity)}
+                        readDocs={identity === activeProjectKey || requested.has(identity)}
                         activeExpDocId={activeExpDocId}
                         onOpenChange={(open) => onToggle(identity, open)}
                         onPillClick={() => setDiffDialogProject(target)}
@@ -301,9 +303,9 @@ export function AppSidebar() {
                 name={project.name}
                 basePath={sidebarProjectBasePath(target)}
                 central={false}
-                allowTerminal
                 isActive={identity === activeProjectKey}
                 isOpen={expanded.has(identity)}
+                readDocs={identity === activeProjectKey || requested.has(identity)}
                 activeExpDocId={activeExpDocId}
                 onOpenChange={(open) => onToggle(identity, open)}
                 onPillClick={() => setDiffDialogProject(target)}
@@ -321,48 +323,13 @@ export function AppSidebar() {
       )}
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
-          {role !== 'viewer' && !centralMode && (
-            <>
-              <SlurmStatusWidget />
-              {terminal.herdrEnabled && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton size="sm" onClick={() => terminalDrawer.openHerdr()}>
-                    <PanelsTopLeft className="size-4" />
-                    <span>Open Herdr</span>
-                  </SidebarMenuButton>
-                  <SidebarMenuAction
-                    aria-label="Open Herdr in new window"
-                    title="Open Herdr in new window"
-                    onClick={() => {
-                      window.open(
-                        '/terminal-popup?integration=herdr',
-                        'memon-popup-memon-herdr',
-                        'popup,width=1200,height=800',
-                      )
-                    }}
-                  >
-                    <ExternalLink className="size-3.5" />
-                  </SidebarMenuAction>
-                </SidebarMenuItem>
-              )}
-              {terminal.tmuxEnabled && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
-                    <Link href="/manage/tmux">
-                      <Terminal className="size-4" />
-                      <span>Manage tmux</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-            </>
-          )}
-          {role !== 'viewer' && centralMode && (
+          {role !== 'viewer' && !centralMode && <SlurmStatusWidget />}
+          {role === 'owner' && (
             <SidebarMenuItem>
-              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/tmux'}>
-                <Link href="/manage/tmux">
-                  <Terminal className="size-4" />
-                  <span>Manage tmux</span>
+              <SidebarMenuButton asChild size="sm" isActive={pathname === '/manage/file-access'}>
+                <Link href="/manage/file-access">
+                  <Gauge className="size-4" />
+                  <span>File access</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -408,17 +375,17 @@ export function AppSidebar() {
  *  section bounds. When collapsed, only the header row consumes height
  *  (`flex-none`).
  *
- *  Renders exactly one sub-section per expanded project — the v3
- *  experiments list, sorted by `effectiveUpdatedAt` desc. Runs are
- *  reachable through their parent experiment, not via the sidebar. */
+ *  Renders exactly one sub-section per expanded project — the Experiment
+ *  inventory sorted by slug. Runs remain reachable through their parent
+ *  Experiment, not via the sidebar. */
 function ProjectGroup({
   target,
   name,
   basePath,
   central,
-  allowTerminal,
   isActive,
   isOpen,
+  readDocs,
   activeExpDocId,
   onOpenChange,
   onPillClick,
@@ -427,9 +394,12 @@ function ProjectGroup({
   name: string
   basePath: string
   central: boolean
-  allowTerminal: boolean
   isActive: boolean
   isOpen: boolean
+  /** True when this project's docs may be read: it owns the current route,
+   *  or the user expanded its section in this session. Persisted expansion
+   *  alone renders chrome without issuing a project data read. */
+  readDocs: boolean
   activeExpDocId: string
   onOpenChange: (open: boolean) => void
   onPillClick: () => void
@@ -592,8 +562,7 @@ function ProjectGroup({
                 project={target}
                 basePath={basePath}
                 activeId={isActive ? activeExpDocId : ''}
-                enabled={isOpen}
-                allowTerminal={allowTerminal}
+                enabled={isOpen && readDocs}
               />
             </SidebarGroupContent>
           </div>
@@ -603,55 +572,34 @@ function ProjectGroup({
   )
 }
 
-/** v3 experiment-doc list, one entry per
- *  `<projectRoot>/docs/experiments/E*-<slug>/README.md`. The only sub-section
- *  rendered under each project group. Sorted by `effectiveUpdatedAt`
- *  descending so the most recently active experiment is at the top —
- *  matching the default sort on `experiment-card-grid.tsx`.
- *
- *  All active (non-archived) experiments are rendered unconditionally;
- *  long lists scroll inside the parent section (see `ProjectGroup`'s
- *  `<CollapsibleContent>` `overflow-y-auto`). No 5-item cap, no "View
- *  more" affordance — those were removed in favor of internal scroll. */
+/** Experiment navigation, one entry per discovered Experiment document.
+ * Inventory responses deliberately contain names and paths only, so the
+ * sidebar orders by slug and does not imply lifecycle or recency metadata. */
 function ProjectExperimentDocs({
   project,
   basePath,
   activeId,
   enabled,
-  allowTerminal,
 }: {
   project: ProjectTarget
   basePath: string
   activeId: string
   enabled: boolean
-  allowTerminal: boolean
 }) {
-  // `enabled` mirrors the parent section's open state. When the
-  // project section is collapsed we ALSO want the query to stop
-  // polling (the global QueryClient `refetchInterval: 60_000` would
-  // otherwise tick on every cached query). TanStack Query v5 only
-  // runs `refetchInterval` for queries in the "active" state, and a
-  // disabled query is not active — so `enabled: false` transitively
-  // disables the interval. SSE-driven invalidation
-  // (`['experiments', project]` via `MemonEventsBridge`) also
-  // refetches only mounted+enabled queries, so collapsed sections
-  // remain bandwidth-free until the user re-expands them.
+  // `enabled` mirrors the parent section's open state AND its read intent
+  // (own route / opened in this session). A disabled query is not "active",
+  // and the shared foreground heartbeat only refetches active queries — so a
+  // collapsed section, or a section merely restored from persisted state on a
+  // non-project route, stays bandwidth-free until the user expands it.
   const { data, isLoading } = useQuery({
-    queryKey: ['experiments', ...projectQueryKey(project)],
-    queryFn: () => fetchExperimentDocs(project),
+    queryKey: ['experiments-inventory', ...projectQueryKey(project)],
+    queryFn: () => fetchExperimentsInventory(project),
     enabled,
     staleTime: 5_000,
   })
-  const docs: ExperimentDocSummary[] = data?.experiments ?? []
-  // v4: sidebar shows ACTIVE experiments only. Archived items are not
-  // surfaced here at all — they live exclusively on the main grid (which
-  // has the "Show archived" checkbox + bottom-of-list bucket).
+  const docs = data?.items ?? []
   const sorted = useMemo(
-    () =>
-      docs
-        .filter((e) => !e.frontMatter.archived)
-        .slice()
-        .sort((a, b) => b.effectiveUpdatedAt.localeCompare(a.effectiveUpdatedAt)),
+    () => docs.slice().sort((a, b) => a.slug.localeCompare(b.slug) || a.id.localeCompare(b.id)),
     [docs],
   )
   // First-fetch state: section just expanded, no cached data yet.
@@ -682,18 +630,14 @@ function ProjectExperimentDocs({
           <SidebarMenuItem key={exp.id} className="flex w-full items-center">
             {/*
               Active-state wrapper. Carries the highlight background for
-              the currently-open experiment and stretches across BOTH the
-              link button and the trailing per-row "+" terminal button so
-              the highlight covers everything to the right edge of the
-              row. The inner SidebarMenuButton's own bg classes are
-              suppressed (hover:bg-transparent /
+              the currently-open experiment across the full row. The inner
+              SidebarMenuButton's own background classes are suppressed
+              (hover:bg-transparent /
               data-[active=true]:bg-transparent) so this wrapper is the
               single source of background truth.
 
-              No separate left-side indent gutter — the leading run-count
-              badge (rendered as the first child of the link below) IS
-              the row's left-side visual; it doubles as a numeric badge
-              AND as the per-row indentation cue.
+              Inventory rows show only the discovered id and slug. Run
+              membership and document metadata belong on the detail page.
             */}
             <div
               className={cn(
@@ -711,158 +655,18 @@ function ProjectExperimentDocs({
               >
                 <Link
                   href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
-                  title={exp.frontMatter.title}
+                  prefetch={false}
+                  title={exp.id}
                 >
-                  {/*
-                    Leading run-count badge: a small circle showing how
-                    many runs are bound to this experiment. Always
-                    rendered (even when count is 0) so every row's
-                    leading edge sits at the same column — the badge
-                    plays the role the indent gutter used to play.
-                    `bg-sidebar-foreground/10 text-sidebar-foreground/70`
-                    stays legible against both the resting and the
-                    `bg-sidebar-accent` active backgrounds.
-                  */}
-                  <span
-                    role="img"
-                    aria-label={`${exp.frontMatter.runs.length} runs`}
-                    className="flex size-[1.125rem] shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/5 text-[9px] tabular-nums text-sidebar-foreground/60"
-                  >
-                    {exp.frontMatter.runs.length}
+                  <span className="min-w-0 flex-1 truncate text-xs">
+                    <span className="font-mono">{exp.id}</span>
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{exp.id}</span>
                 </Link>
               </SidebarMenuButton>
-              {/*
-                Per-row plain-shell terminal launcher. Sibling of the
-                <Link>-wrapped <SidebarMenuButton> so a click on the icon
-                does not also navigate. Renders as a "+" (new terminal)
-                to read as "create something new" rather than "this row
-                is a terminal". Owner-only (hidden for viewers via session
-                check inside the component), ttyd-gated, and opens a
-                right-side TerminalSheet drawer with agent: 'none'.
-              */}
-              <ExpRowTerminalButton
-                project={project}
-                expId={exp.id}
-                allowTerminal={allowTerminal}
-              />
             </div>
           </SidebarMenuItem>
         )
       })}
     </SidebarMenu>
-  )
-}
-
-/** Per-experiment-row "new terminal" launcher (plain shell, owner-only).
- *
- *  Renders as a Plus icon — semantically "create a new terminal" rather
- *  than "this row is itself a terminal". Always-visible icon-only button
- *  that opens a right-side `<TerminalSheet>` drawer with `agent: 'none'`
- *  for a plain bash session scoped to the experiment's folder. Reuses
- *  the existing `['terminal','check']` probe (same key as `TerminalButton`)
- *  so the cache hit is free when the page already renders an experiment-
- *  detail terminal button.
- *
- *  Three states:
- *  - Viewer session → renders null (hidden).
- *  - Owner + probe pending → renders nothing (avoid first-paint flicker).
- *  - Owner + probe.available === true → enabled button opens the sheet.
- *  - Owner + probe.available === false → disabled button with tooltip
- *    surfacing `probe.suggestion ?? 'ttyd unavailable'`.
- *
- *  Click handler calls `e.stopPropagation()` so the surrounding row's
- *  link does not also navigate when the icon is clicked. */
-function ExpRowTerminalButton({
-  project,
-  expId,
-  allowTerminal,
-}: {
-  project: ProjectTarget
-  expId: string
-  allowTerminal: boolean
-}) {
-  const { role } = useSession()
-  const { terminal } = useRuntimeConfig()
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const host = projectHost(project)
-  const hostTarget = host ? { host } : undefined
-
-  // Probe only when the user is the owner — viewers can't use the shell
-  // API and the probe itself is owner-only (it would 401 + trigger the
-  // native Basic-auth dialog otherwise).
-  const { data: probe } = useQuery({
-    queryKey: ['terminal', 'check', host ?? 'standalone'],
-    queryFn: () => checkTerminal(hostTarget),
-    staleTime: 10_000,
-    enabled: allowTerminal && role === 'owner' && terminal.tmuxEnabled,
-  })
-
-  if (!allowTerminal || role === 'viewer' || !terminal.tmuxEnabled) {
-    return null
-  }
-  if (!probe) return null
-
-  const onIconClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // Defence in depth: the icon button is a sibling of the <Link>, not
-    // nested inside it, but tooltip wrappers occasionally bubble events
-    // in unexpected ways across browsers — stop propagation explicitly.
-    e.stopPropagation()
-    e.preventDefault()
-    setSheetOpen(true)
-  }
-
-  // State A — ttyd available
-  if (probe.available) {
-    return (
-      <>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-6 shrink-0"
-          aria-label={`New terminal for ${expId}`}
-          onClick={onIconClick}
-        >
-          <Plus className="size-3.5" />
-        </Button>
-        <TerminalSheet
-          open={sheetOpen}
-          onOpenChange={setSheetOpen}
-          project={project}
-          scope="exp"
-          slug={expId}
-          agent="none"
-        />
-      </>
-    )
-  }
-
-  // State B / C — ttyd unavailable (downloadable or manual). Render a
-  // disabled button with a tooltip surfacing the suggestion. The install
-  // affordance for `downloadable` lives on the existing TerminalButton
-  // (experiment-detail page); the sidebar icon stays passive here.
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: disabled buttons need a focusable tooltip trigger */}
-          <span tabIndex={0} className="inline-flex">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6 shrink-0"
-              aria-label={`New terminal for ${expId} (ttyd unavailable)`}
-              disabled
-            >
-              <Plus className="size-3.5" />
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          <span className="font-mono text-[11px]">{probe.suggestion ?? 'ttyd unavailable'}</span>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   )
 }

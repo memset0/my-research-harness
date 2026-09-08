@@ -9,7 +9,8 @@
 // still discovered (kind = directory name); the lint pass turns that into
 // WIKI_UNKNOWN_KIND.
 
-import { type Dirent, promises as fs } from 'node:fs'
+import type { Dirent } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import * as path from 'node:path'
 
 import { WIKI_DIR_RELPATH, WIKI_PAGE_NAME_REGEX, type WikiPageFormat } from './types.js'
@@ -47,12 +48,20 @@ export interface DiscoveredWikiPage {
   assets: string[]
 }
 
+export interface DiscoverWikiPagesOptions {
+  /** Read page identity/frontmatter without walking bundle attachments. */
+  inventoryOnly?: boolean
+}
+
 /**
  * Scan a project's wiki. Returns the pages ordered by kind directory then
  * page name so callers get a stable list without re-sorting. Missing
  * `docs/wiki/` yields an empty array.
  */
-export async function discoverWikiPages(projectRoot: string): Promise<DiscoveredWikiPage[]> {
+export async function discoverWikiPages(
+  projectRoot: string,
+  options: DiscoverWikiPagesOptions = {},
+): Promise<DiscoveredWikiPage[]> {
   const wikiDir = path.join(projectRoot, WIKI_DIR_RELPATH)
   let kindEntries: Dirent[]
   try {
@@ -62,26 +71,31 @@ export async function discoverWikiPages(projectRoot: string): Promise<Discovered
     throw err
   }
 
-  const pages: DiscoveredWikiPage[] = []
-  for (const kindEntry of [...kindEntries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    // Level 1 must be a directory: loose files under docs/wiki/ are ignored.
-    if (!kindEntry.isDirectory()) continue
-    const kind = kindEntry.name
-    const kindDir = path.join(wikiDir, kind)
-    let pageEntries: Dirent[]
-    try {
-      pageEntries = await fs.readdir(kindDir, { withFileTypes: true })
-    } catch {
-      continue
-    }
-    for (const pageEntry of [...pageEntries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      const page = pageEntry.isDirectory()
-        ? await readBundlePage(projectRoot, kind, kindDir, pageEntry.name)
-        : await readMarkdownPage(projectRoot, kind, kindDir, pageEntry.name)
-      if (page) pages.push(page)
-    }
-  }
-  return pages
+  const discovered = await Promise.all(
+    [...kindEntries]
+      .filter((entry) => entry.isDirectory())
+      .sort((a, b) => (a.name < b.name ? -1 : 1))
+      .map(async (kindEntry) => {
+        const kind = kindEntry.name
+        const kindDir = path.join(wikiDir, kind)
+        let pageEntries: Dirent[]
+        try {
+          pageEntries = await fs.readdir(kindDir, { withFileTypes: true })
+        } catch {
+          return []
+        }
+        return Promise.all(
+          [...pageEntries]
+            .sort((a, b) => (a.name < b.name ? -1 : 1))
+            .map((pageEntry) =>
+              pageEntry.isDirectory()
+                ? readBundlePage(projectRoot, kind, kindDir, pageEntry.name, options.inventoryOnly)
+                : readMarkdownPage(projectRoot, kind, kindDir, pageEntry.name),
+            ),
+        )
+      }),
+  )
+  return discovered.flat(2).filter((page): page is DiscoveredWikiPage => page !== null)
 }
 
 async function readMarkdownPage(
@@ -116,6 +130,7 @@ async function readBundlePage(
   kind: string,
   kindDir: string,
   entryName: string,
+  inventoryOnly = false,
 ): Promise<DiscoveredWikiPage | null> {
   const match = WIKI_PAGE_NAME_REGEX.exec(entryName)
   if (!match) return null
@@ -123,7 +138,9 @@ async function readBundlePage(
   const absolutePath = path.join(bundleDir, 'README.md')
   const read = await readPageFile(absolutePath)
   if (!read) return null
-  const { assets, newestMtime } = await listBundleAssets(bundleDir)
+  const { assets, newestMtime } = inventoryOnly
+    ? { assets: [], newestMtime: read.mtime }
+    : await listBundleAssets(bundleDir)
   return {
     id: match[1]!,
     slug: match[2]!,
@@ -172,24 +189,35 @@ async function listBundleAssets(
     } catch {
       continue
     }
+    const directories: { dir: string; prefix: string; depth: number }[] = []
+    const files: { absolute: string; relative: string }[] = []
     for (const entry of entries) {
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
         if (depth < BUNDLE_ASSET_MAX_DEPTH) {
-          queue.push({ dir: path.join(dir, entry.name), prefix: relative, depth: depth + 1 })
+          directories.push({
+            dir: path.join(dir, entry.name),
+            prefix: relative,
+            depth: depth + 1,
+          })
         }
-        continue
-      }
-      if (!entry.isFile()) continue
-      if (assets.length >= BUNDLE_ASSET_MAX_FILES) return { assets, newestMtime }
-      assets.push(relative)
-      try {
-        const stat = await fs.stat(path.join(dir, entry.name))
-        if (stat.mtimeMs > newestMtime) newestMtime = stat.mtimeMs
-      } catch {
-        // Vanished between readdir and stat — ignore, the next poll sees it.
+      } else if (entry.isFile() && assets.length + files.length < BUNDLE_ASSET_MAX_FILES) {
+        files.push({ absolute: path.join(dir, entry.name), relative })
       }
     }
+    queue.push(...directories)
+    const mtimes = await Promise.all(
+      files.map(async (file) => {
+        try {
+          return (await fs.stat(file.absolute)).mtimeMs
+        } catch {
+          return 0
+        }
+      }),
+    )
+    assets.push(...files.map((file) => file.relative))
+    newestMtime = Math.max(newestMtime, ...mtimes)
+    if (assets.length >= BUNDLE_ASSET_MAX_FILES) return { assets, newestMtime }
   }
   assets.sort()
   return { assets, newestMtime }

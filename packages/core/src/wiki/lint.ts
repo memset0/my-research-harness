@@ -8,6 +8,7 @@
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation, validateWikiEntry } from './deprecation.js'
 import { wikiStringList } from './frontmatter.js'
+import { wikiSourceKind } from './staleness.js'
 import {
   isWikiKind,
   WIKI_DATE_REGEX,
@@ -98,6 +99,8 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
   lintIdentity(page, frontmatter, diagnostics)
   lintStatusAndDates(page, frontmatter, diagnostics)
   lintSections(page, masked, diagnostics, offset)
+  lintSourceSyntax(frontmatter, diagnostics)
+
 
   const deprecation = validateWikiDeprecation(frontmatter?.deprecated)
   diagnostics.push(...deprecation.diagnostics)
@@ -350,6 +353,33 @@ function lintStatusAndDates(
     }
   }
 }
+function lintSourceSyntax(
+  frontmatter: WikiFrontmatter | null,
+  diagnostics: WikiDiagnostic[],
+): void {
+  const sources = frontmatter?.sources
+  if (sources === undefined) return
+  if (!Array.isArray(sources)) {
+    diagnostics.push({
+      code: 'WIKI_SOURCE_UNRESOLVED',
+      severity: 'error',
+      message: '`sources` must be a list of source reference strings',
+    })
+    return
+  }
+  for (const source of sources) {
+    if (typeof source === 'string' && wikiSourceKind(source) !== null) continue
+    diagnostics.push({
+      code: 'WIKI_SOURCE_UNRESOLVED',
+      severity: 'error',
+      message:
+        typeof source === 'string'
+          ? `source "${source}" is not a valid Experiment, Variant, Hypothesis, wiki page, or run reference`
+          : `source entries must be strings; got ${JSON.stringify(source)}`,
+    })
+  }
+}
+
 
 function lintSections(
   page: WikiLintPage,

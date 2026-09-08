@@ -112,6 +112,12 @@ const defaultExec: UpdateExec = async (command, args, options) => {
   }
 }
 
+/**
+ * One release-gate git read. These run uncached — not through the shared git
+ * read cache — on purpose: the gate's whole job is to observe the checkout as
+ * it is right now, and this runs inside the long-lived Backend process where
+ * a saved observation could pass a checkout that has since moved.
+ */
 async function git(exec: UpdateExec, cwd: string, args: readonly string[]): Promise<string> {
   try {
     return (await exec('git', args, { cwd })).stdout.trim()

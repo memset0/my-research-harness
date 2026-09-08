@@ -7,7 +7,7 @@ import { AppBar } from '../../../components/app-bar'
 import { AppSidebar } from '../../../components/app-sidebar'
 import { ProjectFooter } from '../../../components/project-footer'
 import { ResizableSidebarProvider } from '../../../components/resizable-sidebar-provider'
-import { WorkspaceSplitOutlet } from '../../../components/terminal-drawer-provider'
+import { WorkspaceSplitOutlet } from '../../../components/workspace-pane-provider'
 import { SidebarInset } from '../../../components/ui/sidebar'
 import { getQueryClient } from '../../../lib/get-query-client'
 import { getRuntime } from '../../../lib/runtime'
@@ -15,7 +15,7 @@ import { readIdentityFromHeaders } from '../../../lib/auth/request-context'
 import { aggregateCentralProjects } from '../../../lib/central/central-projects'
 import { getCentralFleet } from '../../../lib/central/fleet-runtime'
 import { resolveLegacyProject } from '../../../lib/central/legacy-project'
-import { getExperimentsData, getProjectsData } from '../../../lib/server/data'
+import { getProjectsData } from '../../../lib/server/data'
 
 export async function generateMetadata({
   params,
@@ -94,17 +94,11 @@ export default async function ProjectLayout({
   if (!rt.config.projects.some((p) => p.name === decoded)) notFound()
 
   // SSR prefetch: populate ['projects'] so the sidebar renders projects in
-  // the initial HTML (no "No projects configured" flash). Also prefetch
-  // ['experiments', decoded] for whichever expanded project the sidebar
-  // shows — most users expect the active project to be expanded.
+  // the initial HTML (no "No projects configured" flash). Nothing here
+  // prefetches the Run index: no mounted shell surface reads it, and doing
+  // so would walk every Run folder on each project page render.
   const queryClient = getQueryClient()
-  await Promise.all([
-    queryClient.prefetchQuery({ queryKey: ['projects'], queryFn: getProjectsData }),
-    queryClient.prefetchQuery({
-      queryKey: ['runs', decoded],
-      queryFn: () => getExperimentsData(decoded),
-    }),
-  ])
+  await queryClient.prefetchQuery({ queryKey: ['projects'], queryFn: getProjectsData })
 
   // shadcn pattern: read the `sidebar_state` cookie on the server so the
   // initial SSR HTML renders in the user's persisted open/collapsed state

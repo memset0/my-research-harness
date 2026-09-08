@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "comment": "Bundled memon-* skill names this harness used to ship and has retired. deposit_digests[] holds sha256 over the sorted '<relative path>\\0<sha256 of file bytes>\\n' lines of every file tree released under that name; `memon install-skills` deletes an installed directory only when the digest of its own tree matches one of them, and preserves anything else.",
+  "retired": [
+    {
+      "name": "memon-append-journal",
+      "deposit_digests": [
+        "0fa08004006ce79c06f86ba83289e27778bd73497b5d5e1b0a98777336fe16a1",
+        "8a6492186f89ff64a6c6c50805cfe229ce601a53dfd3924028cdfcc3bf9e0cb7",
+        "8fe550301e5a11dc6d8e659a40d553816156c9a991171113854c441ea679ef57",
+        "b9b0c26ae9d8e53fcf7c790cc03f330cec1699faf2756a973ac483731bb1a35d",
+        "bd0df69ef26b9209b786133b1b2c9186a6bf76b395bd7676cc73d1a6a297c809",
+        "c7f71cf4ed8f02dfeb269c97da7382208fa93a55222ce0cb43be30165f400366",
+        "ca7db3041e05c2227a2534d2e5e9344bf0cf0f6cad70899b5b2a7e575e769e96",
+        "d89f7baccee62152ccc17af72edbadf7c86606d8d54f4bd84527605b3490cede",
+        "da4b1ef62a2974d1bc90604ac2fdb3ebf4749aa14a45e77fda2e51ed771ac3e7"
+      ]
+    },
+    {
+      "name": "memon-digest-journal",
+      "deposit_digests": [
+        "0f7b420024c98a2758f0752ad9c36e0394062e525725cac489465d52d6f493d9",
+        "2f296263caccd92a6081afdf784c7b5ab1f5a686f2e1328332e573c5ab47e589",
+        "366089c9f2f413a28df3113829fb4992e51c47715ff4a24dd12a5edbba79082b",
+        "3e9312786c706f9bedbb26acba084ed68a328090cf7be21cadf9022e93221284",
+        "5d0ac2f3e3f75731b5450531d405c97b46b60747a7836929d9f01b86c4fbca47",
+        "658f1b0c8f9974d58658297408a7d69926edc61053747418733f6dd0f7207411",
+        "707ab5ee78028d1be2c7899668736cd879d1faeb705170f3c3248aa97ae72113",
+        "87122dad686d170c115e2f827de1f26269bf3bfe146b766df3ab7612126c23b5",
+        "a60cee1d125e94488399a31d6dccf56c57a3e94619f16d9e99e9f2f00085cda8",
+        "bed48535581b520dfaec13c2c316489879cebb0453f4d4048deb97fbed4206a4",
+        "e1dbf556bacdaa73892649035f5096ed731b2a8c34814c0b391c85b6b3fb3e28",
+        "e5e12f0920ddb83893a573c5c6d1dba5eca59a235586b867aab469bc83bc5aa7",
+        "f0772ea715a2e2281283b767fed95767567d13b614e7e8ae458b7a4cf62706e7",
+        "f7f9fda3f30dce69ee164e7ec1d72cc5ec19d04f00e25a1b851326e4f5b19b07"
+      ]
+    },
+    {
+      "name": "memon-append-warning",
+      "deposit_digests": [
+        "0db3a5cf8247c81f9ee89cfd939aa4375646c456421497e169886626f7d17451",
+        "2da871bbe06057f2cb883ccab4b487a24a267ca2bd9fe48583b60d89ca02480a",
+        "3376e2d9b2ff342f67175e836b36a596bc2700b0e03258f309a53c8cc4520250",
+        "8a706df9fc7ee923233a53b2a1eca1ef4cff0e2d278d1750f7d9bd5c81d3bd37",
+        "c6bcb0275a8d041bb0ee388edc640be500ac822be9248a09e8f0be64c0008ec9"
+      ]
+    },
+    {
+      "name": "memon-doctor",
+      "deposit_digests": [
+        "3871db4f8d5065b412baadeb1515aab6516c1774b99598eee6cf1e0e0a49ba68"
+      ]
+    },
+    {
+      "name": "memon-notify",
+      "deposit_digests": [
+        "45c7540fd745909f525426f2454e9d65dc7e4eb35c70eeb0f429ffc1b80bf6bf",
+        "5ec9c1774a3db7feee92e32a1367db2b339523e6102b811f8a0766f82b789949",
+        "8b0859aa25dbdd063ed831ef3f2ab1df6f21811acc3f96f70289c75e4e819f15"
+      ]
+    },
+    {
+      "name": "memon-update-journal",
+      "deposit_digests": [
+        "d0c2eeeba19d26c6db972e5f8adc7df0692b14558c6901a609288c3137de2029"
+      ]
+    }
+  ]
+}

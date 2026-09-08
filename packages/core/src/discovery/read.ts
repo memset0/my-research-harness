@@ -9,7 +9,7 @@
 //
 // hasReadme=false is the signal for "no README" — frontend renders a grayed-out card.
 
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { basename, join } from 'node:path'
 import { parseReadme } from '../readme/parse.js'
 import { parseTimestampFromRunDir } from '../time.js'
@@ -80,6 +80,7 @@ export async function readRunDir(
     body: parsed.body,
     parseErrors: parsed.parseErrors,
     parseWarnings: parsed.parseWarnings,
+    frontMatterKeys: parsed.frontMatterKeys,
   }
 }
 
@@ -128,6 +129,8 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
       // Default to false; the discovery layer's sidecar fallback (when the
       // dir contains <runDir>/.archived) is applied separately if needed.
       archived: false,
+      // Likewise unknowable without a README; absent means not deprecated.
+      deprecated: false,
     },
     sections: {
       motivation: null,
@@ -146,6 +149,8 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
     parseWarnings: [
       { message: 'no README.md (synthesized id/name/created_at from directory name)', severity: 'warning' },
     ],
+    // No frontmatter block at all, so no declared keys.
+    frontMatterKeys: [],
   }
 }
 

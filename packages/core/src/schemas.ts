@@ -12,14 +12,23 @@ import { z } from 'zod'
 // these "run READMEs" in v3.
 
 /**
- * Permissive schema: every required field is checked, but the schema does NOT
- * enforce the status enum (we apply our own normalization in normalizeStatus
- * to produce parse warnings/errors instead of throwing).
+ * Permissive schema: `id` is the only hard requirement, and the schema does
+ * NOT enforce the status enum (we apply our own normalization in
+ * normalizeStatus to produce parse warnings/errors instead of throwing).
+ *
+ * v6 minimal Run record: a new Run README carries execution identity,
+ * state, timestamps, association, and its own execution facts — nothing
+ * inherited from the parent Experiment. Every key except `id` is therefore
+ * optional at the schema level; the parser fills defaults (and `name` /
+ * `created_at` are backfilled from the run directory name downstream).
+ * Legacy v2/v3 keys (`project`, `hypotheses`, `tags`) still validate so old
+ * rich READMEs keep parsing losslessly.
  */
 export const RunFrontMatterRawSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
-  // Legacy v2 sub-project label. Ignored by the v3 parser; kept on the
+  // v6: optional — falls back to the run directory name's slug.
+  name: z.string().optional(),
+  // Legacy v2 sub-project label. Ignored by the v3+ parser; kept on the
   // schema so existing v2 READMEs still validate.
   project: z.string().optional(),
   status: z.unknown(), // checked by normalizeStatus
@@ -32,15 +41,19 @@ export const RunFrontMatterRawSchema = z.object({
   host: z.union([z.string(), z.null()]).optional(),
   pid: z.union([z.number().int(), z.null()]).optional(),
   gpus: z.array(z.number().int()).optional(),
-  entry: z.string().min(1),
-  command: z.string().min(1),
+  // v6: optional — a run may be launched without a tracked entry/command.
+  entry: z.string().optional(),
+  command: z.string().optional(),
   wandb: z.union([z.string(), z.null()]).optional(),
   hypotheses: z.array(z.string()).optional(),
   tags: z.array(z.string()).optional(),
-  // v4-added: human-managed archive flag. Optional at the schema level so
-  // the parser can distinguish "missing entirely" from "explicitly false"
-  // for the MISSING_ARCHIVED_FIELD parse warning + sidecar fallback.
+  // v4-added: human-managed archive flag. Optional; absence means false
+  // (the parser reports the declared-key set so the migration-window
+  // sidecar fallback can still detect "field never written").
   archived: z.boolean().optional(),
+  // v6-added: research-eligibility flag, orthogonal to status/archived.
+  // Absence means false; new minimal records omit it unless true.
+  deprecated: z.boolean().optional(),
 })
 
 export type RunFrontMatterRaw = z.infer<typeof RunFrontMatterRawSchema>
@@ -114,10 +127,48 @@ export type CodeReviewFrontMatterRaw = z.infer<typeof CodeReviewFrontMatterRawSc
 
 // ---------- Config (camelCase keys after YAML parse normalize) ----------
 
+// ── shared identity / execution primitives ───────────────────────────
+// Declared before the Project schema because a Project may name its Host
+// namespace and its own SSH execution target.
+
+export const HostIdRawSchema = z
+  .string()
+  .min(1)
+  .max(63)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match [a-z0-9][a-z0-9-]*')
+
+const SafeSshTargetRawSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.startsWith('-') && !/\s/.test(value), {
+    message: 'must not start with "-" or contain whitespace',
+  })
+
+export const ProjectExecutionRawSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }).strict(),
+  z
+    .object({
+      kind: z.literal('ssh'),
+      target: SafeSshTargetRawSchema,
+      remote_root: z.string().min(1),
+      port: z.number().int().min(1).max(65535).optional(),
+      identity_file: z.string().min(1).optional(),
+      known_hosts_file: z.string().min(1).optional(),
+    })
+    .strict(),
+])
+
+const StorageGroupRawSchema = z
+  .string()
+  .min(1)
+  .max(63)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'must be a safe storage-group name')
+
+
 export const ProjectConfigRawSchema = z.object({
-  // Project names appear in tmux session names (per browser-terminal /
-  // tmux-session-rework) and in URL paths. Restrict to letters, digits,
-  // and hyphens.
+  // Project names appear in URL paths and Host-qualified identifiers.
+  // Restrict to letters, digits, and hyphens.
   name: z
     .string()
     .min(1)
@@ -136,7 +187,41 @@ export const ProjectConfigRawSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * Host namespace for host-qualified `{host, project}` identity. Validated
+   * with the same rule as `central.hosts[].id` so one instance can serve a
+   * namespace directly and another can register it as a peer without any
+   * identity migration.
+   */
+  host: HostIdRawSchema.optional(),
+  /**
+   * `storage_group` / `read_only` are the canonical snake_case spellings used
+   * by every other Project key. The camelCase aliases are accepted because
+   * these two fields also appear camelCased in the settings/API payloads, and
+   * silently ignoring a misspelled `readOnly` would turn a read-only mount
+   * into a writable one. Supplying both spellings is an error.
+   */
+  storage_group: StorageGroupRawSchema.optional(),
+  storageGroup: StorageGroupRawSchema.optional(),
+  read_only: z.boolean().optional(),
+  readOnly: z.boolean().optional(),
+  persistent_cache: z.boolean().optional(),
+  execution: ProjectExecutionRawSchema.optional(),
 })
+  .superRefine((project, ctx) => {
+    for (const [snake, camel] of [
+      ['storage_group', 'storageGroup'],
+      ['read_only', 'readOnly'],
+    ] as const) {
+      if (project[snake] !== undefined && project[camel] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [camel],
+          message: `duplicates \`${snake}\`; keep exactly one spelling`,
+        })
+      }
+    }
+  })
 
 export const PollConfigRawSchema = z
   .object({
@@ -162,42 +247,6 @@ export const AuthConfigRawSchema = z
   })
   .optional()
 
-// Per-agent tmux argv. `none` may be empty (preserves the legacy
-// "no trailing command — just shell" semantics); every other agent kind
-// must be a non-empty array of non-empty strings.
-const NonEmptyArgvSchema = z.array(z.string().min(1)).min(1)
-const NoneArgvSchema = z.array(z.string().min(1))
-
-// `.strict()` causes unknown agent keys (e.g. `commands.aider`) to fail
-// parsing with Zod's default `Unrecognized key(s)` message. The closed
-// set of valid keys mirrors `AGENT_KINDS` in `./types.js`; widen this
-// object whenever a new agent kind is added there.
-export const TerminalCommandsRawSchema = z
-  .object({
-    none: NoneArgvSchema.optional(),
-    claude: NonEmptyArgvSchema.optional(),
-    codex: NonEmptyArgvSchema.optional(),
-    opencode: NonEmptyArgvSchema.optional(),
-  })
-  .strict()
-
-export const TerminalConfigRawSchema = z
-  .object({
-    tmux_enabled: z.boolean().optional(),
-    herdr: z
-      .object({
-        cli: z.array(z.string().min(1)).min(1),
-      })
-      .strict()
-      .optional(),
-    ttyd_max_concurrent: z.number().int().min(1).optional(),
-    ttyd_idle_ttl_minutes: z.number().int().min(0).optional(),
-    pane_info_active_poll_ms: z.number().int().positive().optional(),
-    pane_info_idle_poll_ms: z.number().int().positive().optional(),
-    commands: TerminalCommandsRawSchema.optional(),
-  })
-  .optional()
-
 export const SlurmConfigRawSchema = z
   .object({
     total_nodes: z.number().int(),
@@ -213,12 +262,6 @@ export const GitStatusConfigRawSchema = z
 // ── central / Backend deployment roles ───────────────────────────────
 // One role block selects a split deployment; neither preserves standalone.
 // Mutual exclusion and cross-field role constraints live in config/load.ts.
-
-export const HostIdRawSchema = z
-  .string()
-  .min(1)
-  .max(63)
-  .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match [a-z0-9][a-z0-9-]*')
 
 const ServiceTokenRawSchema = z
   .string()
@@ -239,14 +282,6 @@ export const CentralUrlTransportRawSchema = z
     allow_insecure_http: z.boolean().optional(),
   })
   .strict()
-
-const SafeSshTargetRawSchema = z
-  .string()
-  .min(1)
-  .max(255)
-  .refine((value) => !value.startsWith('-') && !/\s/.test(value), {
-    message: 'must not start with "-" or contain whitespace',
-  })
 
 export const CentralSshTransportRawSchema = z
   .object({
@@ -348,16 +383,60 @@ export const BackendConfigRawSchema = z
   .strict()
   .optional()
 
+/**
+ * Project-file-store scheduler overrides. camelCase by deliberate exception:
+ * these keys are written back by the owner-only settings surface and mirror
+ * `FileAccessOptions` field-for-field, so one spelling avoids a mapping table
+ * between the API payload and the file.
+ */
+const PositiveMsRawSchema = z.number().int().min(1).max(86_400_000)
+
+export const FileAccessRawSchema = z
+  .object({
+    concurrency: z.number().int().min(1).max(1024).optional(),
+    heartbeatMs: PositiveMsRawSchema.optional(),
+    leaseMs: PositiveMsRawSchema.optional(),
+    fileMinMs: PositiveMsRawSchema.optional(),
+    fileMaxMs: PositiveMsRawSchema.optional(),
+    directoryMinMs: PositiveMsRawSchema.optional(),
+    directoryMaxMs: PositiveMsRawSchema.optional(),
+    maintenanceMinMs: PositiveMsRawSchema.optional(),
+    maintenanceMaxMs: PositiveMsRawSchema.optional(),
+    failureMinMs: PositiveMsRawSchema.optional(),
+    failureMaxMs: PositiveMsRawSchema.optional(),
+    backoffFactor: z.number().min(1.01).max(100).optional(),
+  })
+  .strict()
+  .optional()
+
+const MAX_NODE_TIMER_SECONDS = 2_147_483.647
+
+const FileCacheRawSchema = z.object({
+  dump_path: z.string().trim().min(1).refine((path) => !path.includes('\0'), 'Invalid dump path'),
+  dump_interval_seconds: z.number().finite().positive().max(MAX_NODE_TIMER_SECONDS).default(30),
+  wiki_ttl_seconds: z.number().int().positive().max(2_592_000).default(30),
+  default_ttl_seconds: z.number().int().positive().max(2_592_000).default(1800),
+}).strict().refine(
+  (cache) => cache.wiki_ttl_seconds <= cache.default_ttl_seconds,
+  'Wiki cache period must not exceed the default cache period',
+)
+
 export const ConfigRawSchema = z.object({
   // Project count is role-dependent and enforced by config/load.ts.
   projects: z.array(ProjectConfigRawSchema).default([]),
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
-  terminal: TerminalConfigRawSchema,
+  // Accepted without validation for startup compatibility; loadConfig warns and ignores it.
+  terminal: z.unknown().optional(),
+  tmux: z.unknown().optional(),
+  herdr: z.unknown().optional(),
   slurm: SlurmConfigRawSchema,
   git_status: GitStatusConfigRawSchema,
   central: CentralConfigRawSchema,
   backend: BackendConfigRawSchema,
+  fileAccess: FileAccessRawSchema,
+  file_cache: FileCacheRawSchema.optional(),
+  fileAccessRestart: RoleArgvRawSchema.optional(),
 })
 
 export type ConfigRaw = z.infer<typeof ConfigRawSchema>

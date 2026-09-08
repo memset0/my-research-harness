@@ -26,14 +26,12 @@ describe('readRuntimeConfig', () => {
   it('returns the injected intervalMs when the script tag is present', () => {
     injectScript({
       gitStatus: { intervalMs: 30_000 },
-      terminal: { tmuxEnabled: false, herdrEnabled: true },
     })
     const config = readRuntimeConfig()
     expect(config.gitStatus.intervalMs).toBe(30_000)
-    expect(config.terminal).toEqual({ tmuxEnabled: false, herdrEnabled: true })
   })
 
-  it('preserves the central role gate used by Host-scoped shell UIs', () => {
+  it('preserves the central role gate used by Host-scoped UIs', () => {
     injectScript({ role: 'central' })
     expect(readRuntimeConfig().role).toBe('central')
   })
@@ -42,8 +40,16 @@ describe('readRuntimeConfig', () => {
     expect(readRuntimeConfig()).toEqual({
       role: 'standalone',
       gitStatus: { intervalMs: 10_000 },
-      terminal: { tmuxEnabled: true, herdrEnabled: false },
+      fileAccess: { heartbeatMs: 30_000 },
     })
+  })
+
+  it('reads the foreground heartbeat cadence and rejects a non-positive one', () => {
+    injectScript({ fileAccess: { heartbeatMs: 2_500 } })
+    expect(readRuntimeConfig().fileAccess.heartbeatMs).toBe(2_500)
+    __resetRuntimeConfigForTests()
+    injectScript({ fileAccess: { heartbeatMs: 0 } })
+    expect(readRuntimeConfig().fileAccess.heartbeatMs).toBe(30_000)
   })
 
   it('falls back to 10_000 when the script tag holds invalid JSON', () => {

@@ -13,6 +13,10 @@ export interface SearchOptions {
   format: OutputFormat
   projectRoot?: string
   cwd: string
+  /** Include runs marked deprecated (default: excluded). */
+  includeDeprecated?: boolean
+  /** Match only runs marked deprecated. */
+  deprecatedOnly?: boolean
 }
 
 export async function runSearch(opts: SearchOptions): Promise<void> {
@@ -21,7 +25,10 @@ export async function runSearch(opts: SearchOptions): Promise<void> {
     cwd: opts.cwd,
   })
   const idx = await buildIndex(config)
-  const matches = idx.search(opts.query, opts.scope)
+  const matches = idx.search(opts.query, opts.scope, {
+    includeDeprecated: opts.includeDeprecated,
+    deprecatedOnly: opts.deprecatedOnly,
+  })
 
   if (opts.format === 'human') {
     emitHuman(formatExperimentTable(matches))
@@ -43,6 +50,7 @@ export async function runSearch(opts: SearchOptions): Promise<void> {
           ? e.frontMatter.project
           : null,
       status: e.frontMatter.status,
+      deprecated: e.frontMatter.deprecated,
       name: e.frontMatter.name,
       snippet: snippet(e.body, opts.query),
     })),

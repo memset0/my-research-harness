@@ -17,7 +17,7 @@ export interface ArtifactDocument {
   kind: ArtifactKind
   /** Full Experiment id (`E0001-slug`) or Report id (`R0001`). */
   id: string
-  /** Absolute path of the artifact's canonical Markdown source. */
+  /** Absolute or project-relative path of the artifact's canonical Markdown source. */
   path: string
 }
 
@@ -28,9 +28,9 @@ export interface ArtifactInventory {
   experiments: ReadonlyArray<{ id: string; path: string }>
   reports: ReadonlyArray<{ id: string; path: string }>
   /**
-   * Wiki pages of the project. `path` is the page's `.md` / `README.md`
-   * (project-relative as the API serves it); `legacyId` is the `R<NNNN>` the
-   * page inherited from the Report it replaced.
+   * Wiki pages of the project. `path` is the page's project-relative `.md` /
+   * `README.md`; `legacyId` is the `R<NNNN>` the page inherited from the
+   * Report it replaced.
    */
   wiki?: ReadonlyArray<{ id: string; path: string; legacyId?: string | null }>
 }

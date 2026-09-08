@@ -152,7 +152,7 @@ describe('runExperimentRename', () => {
   }
 
   async function seedRun(id: string, slug: string, expId: string): Promise<void> {
-    const dir = join(root, id)
+    const dir = join(root, 'logs', id)
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(join(dir, 'README.md'), RUN_README_BASE(id, slug, expId))
   }

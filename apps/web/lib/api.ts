@@ -3,6 +3,8 @@
 // the client bundle (it transitively pulls in fast-glob → fs).
 
 import type {
+  BackendResourceInventoryResponse,
+  BackendWikiInventoryResponse,
   CodeReviewCompletion,
   CodeReviewFrontMatter,
   CodeReviewSummary,
@@ -26,6 +28,11 @@ import type {
   WikiPage,
   WikiSummary,
 } from '@memon/core'
+import {
+  beginResourceRequest,
+  recordResourceResponse,
+  resolveNotModified,
+} from './resource-protocol'
 
 export type ProjectTarget = string | ProjectRef
 
@@ -146,8 +153,20 @@ export interface FullExperiment
   warningsRaw: string | null
 }
 
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+async function jsonFetch<T>(url: string, init?: RequestInit, conditional = true): Promise<T> {
+  const resource = beginResourceRequest(url, init, conditional)
+  const headers = new Headers(init?.headers)
+  for (const [name, value] of Object.entries(resource.headers)) headers.set(name, value)
+  const res = await fetch(url, { ...init, headers })
+  if (res.status === 304 && resource.conditional) {
+    const reuse = resolveNotModified(resource, res)
+    // Returning the very same object keeps TanStack Query's data reference
+    // stable, so an unchanged resource re-renders nothing at all.
+    if (reuse.hit) return reuse.body as T
+    // Our bounded body cache dropped the entry the server is answering
+    // about; ask again without a known version.
+    return jsonFetch<T>(url, init, false)
+  }
   const text = await res.text()
   let body: unknown
   try {
@@ -161,6 +180,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
       (body as { error?: { message?: string } })?.error?.message ?? text,
     )
   }
+  recordResourceResponse(resource, res, body)
   return body as T
 }
 
@@ -186,6 +206,12 @@ export async function fetchHosts(): Promise<HostsResponse> {
   return jsonFetch('/api/hosts')
 }
 
+export async function fetchRunsInventory(
+  project: ProjectTarget,
+): Promise<BackendResourceInventoryResponse> {
+  return jsonFetch(projectQueryUrl('/api/runs', project, new URLSearchParams({ inventory: '1' })))
+}
+
 export async function fetchExperiments(
   project?: ProjectTarget,
 ): Promise<{ experiments: IndexedRun[] }> {
@@ -197,37 +223,68 @@ export async function fetchExperiment(project: ProjectTarget, id: string): Promi
   return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}`, project))
 }
 
-/**
- * Named response contracts for the project-scoped collection endpoints.
- * The AppBar count badge caches these exact DTOs under the same query keys
- * as the views that render them, so the shapes are a shared contract rather
- * than an implementation detail of each fetcher.
- */
+/** Named response contracts for content-bearing project collections. */
 export type HypothesesResponse = { path?: string } & ParsedHypotheses
 
 export interface JournalCountResponse {
   totalEvents: number
-  lastDigestAt: string | null
+}
+
+export interface JournalInvocationRecordView {
+  version: number
+  id: string
+  startedAt: string
+  finishedAt: string | null
+  command: string
+  origin: 'cli' | 'web'
+  parameters: Record<string, unknown>
+  outcome: 'running' | 'success' | 'failure' | 'conflict' | 'noop' | 'partial'
+  errorCode?: string
+  details?: Array<Record<string, unknown>>
+}
+
+export interface JournalHistoryResponse {
+  project: string
+  legacy: {
+    present: boolean
+    events: JournalEvent[]
+    parseErrors: ParsedJournal['parseErrors']
+    parseWarnings: ParsedJournal['parseWarnings']
+  }
+  invocations: JournalInvocationRecordView[]
+  unreadableReceipts: Array<{ file: string; reason: string }>
 }
 
 export async function fetchHypotheses(project: ProjectTarget): Promise<HypothesesResponse> {
   return jsonFetch(projectQueryUrl('/api/hypotheses', project))
 }
 
+/** Preserved legacy `docs/journal.md` history. Read-only after the cutover. */
 export async function fetchJournal(
   project: ProjectTarget,
   options: { limit?: number; before?: string } = {},
-): Promise<{ path?: string } & ParsedJournal> {
+): Promise<{ path?: string } & Omit<ParsedJournal, 'lastDigestAt'>> {
   const params = new URLSearchParams()
   if (options.limit !== undefined) params.set('limit', String(options.limit))
   if (options.before) params.set('before', options.before)
   return jsonFetch(projectQueryUrl('/api/journal', project, params))
 }
 
-/** Just the total event count for a project (used by the AppBar count badge). */
-export async function fetchJournalCount(
+/**
+ * Owner-only merged diagnostics. Viewers get 401/403 from the route class, so
+ * callers must treat a rejection as "not available to me", not as an outage.
+ */
+export async function fetchJournalHistory(
   project: ProjectTarget,
-): Promise<JournalCountResponse> {
+  options: { limit?: number } = {},
+): Promise<JournalHistoryResponse> {
+  const params = new URLSearchParams()
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  return jsonFetch(projectQueryUrl('/api/journal/history', project, params))
+}
+
+/** Just the total event count for a project (used by the AppBar count badge). */
+export async function fetchJournalCount(project: ProjectTarget): Promise<JournalCountResponse> {
   return jsonFetch(
     projectQueryUrl('/api/journal', project, new URLSearchParams({ countOnly: '1' })),
   )
@@ -256,6 +313,14 @@ export interface ReportListItem extends Omit<ReportSummary, 'path'> {
 
 export interface ReportsResponse {
   reports: ReportListItem[]
+}
+
+export async function fetchReportsInventory(
+  project: ProjectTarget,
+): Promise<BackendResourceInventoryResponse> {
+  return jsonFetch(
+    projectQueryUrl('/api/reports', project, new URLSearchParams({ inventory: '1' })),
+  )
 }
 
 export async function fetchReports(project: ProjectTarget): Promise<ReportsResponse> {
@@ -338,10 +403,13 @@ export async function fetchWiki(project: ProjectTarget): Promise<WikiPagesRespon
   return jsonFetch(projectQueryUrl('/api/wiki', project))
 }
 
-export async function fetchWikiPage(
+export async function fetchWikiInventory(
   project: ProjectTarget,
-  id: string,
-): Promise<WikiPageDetail> {
+): Promise<BackendWikiInventoryResponse> {
+  return jsonFetch(projectQueryUrl('/api/wiki', project, new URLSearchParams({ inventory: '1' })))
+}
+
+export async function fetchWikiPage(project: ProjectTarget, id: string): Promise<WikiPageDetail> {
   return jsonFetch(projectQueryUrl(`/api/wiki/${encodeURIComponent(id)}`, project))
 }
 
@@ -386,9 +454,7 @@ export async function fetchWikiBacklinks(
   project: ProjectTarget,
   artifact: string,
 ): Promise<WikiBacklinksResponse> {
-  return jsonFetch(
-    projectQueryUrl(`/api/wiki/backlinks/${encodeURIComponent(artifact)}`, project),
-  )
+  return jsonFetch(projectQueryUrl(`/api/wiki/backlinks/${encodeURIComponent(artifact)}`, project))
 }
 
 // ---------- Code reviews ----------
@@ -414,6 +480,14 @@ const encodeCodeReviewId = (id: string) => id.split('/').map(encodeURIComponent)
 
 export interface CodeReviewsResponse {
   codeReviews: CodeReviewListItem[]
+}
+
+export async function fetchCodeReviewsInventory(
+  project: ProjectTarget,
+): Promise<BackendResourceInventoryResponse> {
+  return jsonFetch(
+    projectQueryUrl('/api/code-reviews', project, new URLSearchParams({ inventory: '1' })),
+  )
 }
 
 export async function fetchCodeReviews(project: ProjectTarget): Promise<CodeReviewsResponse> {
@@ -488,24 +562,20 @@ export interface DigestsResponse {
   digests: DigestListItem[]
 }
 
+export async function fetchDigestsInventory(
+  project: ProjectTarget,
+): Promise<BackendResourceInventoryResponse> {
+  return jsonFetch(
+    projectQueryUrl('/api/digests', project, new URLSearchParams({ inventory: '1' })),
+  )
+}
+
 export async function fetchDigests(project: ProjectTarget): Promise<DigestsResponse> {
   return jsonFetch(projectQueryUrl('/api/digests', project))
 }
 
 export async function fetchDigest(project: ProjectTarget, id: string): Promise<FullDigest> {
   return jsonFetch(projectQueryUrl(`/api/digests/${encodeURIComponent(id)}`, project))
-}
-
-export async function putDigest(
-  project: ProjectTarget,
-  id: string,
-  payload: { content: string; expectedMtime: number; expectedHash: string },
-): Promise<{ ok: true; mtime: number; hash: string }> {
-  return jsonFetch(projectQueryUrl(`/api/digests/${encodeURIComponent(id)}`, project), {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
 }
 
 export async function fetchLog(
@@ -559,22 +629,6 @@ export function logStreamUrl(
     return projectQueryUrl('/api/log/stream', project, new URLSearchParams({ resource }))
   }
   return `/api/log/stream?path=${encodeURIComponent(legacyPath ?? resource)}`
-}
-
-export async function appendJournalEvent(input: {
-  project: ProjectTarget
-  tag: string
-  body: string
-}): Promise<{ appended: { timestamp: string; tag: string; body: string } }> {
-  const endpoint =
-    typeof input.project === 'string'
-      ? '/api/journal/append'
-      : projectQueryUrl('/api/journal/append', input.project)
-  return jsonFetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...input, project: projectName(input.project) }),
-  })
 }
 
 export interface PutReadmeResponse {
@@ -817,278 +871,6 @@ export async function patchExperimentArchived(input: {
   return body as PatchArchiveResponse
 }
 
-// ---------- Browser terminal (ttyd + tmux) ----------
-
-export interface TerminalCheckResult {
-  available: boolean
-  version?: string
-  source?: 'cached' | 'path'
-  path?: string
-  downloadable?: boolean
-  suggestion?: string
-}
-
-export interface TerminalInstallResult {
-  ok: true
-  version: string
-  path?: string
-  alreadyPresent?: boolean
-  durationMs: number
-}
-
-export type TerminalAgentKind = 'none' | 'claude' | 'codex' | 'opencode'
-export type TerminalScopeKind = 'exp' | 'run' | 'project'
-
-/** Slug carried in `(scope: 'project')` calls. Project scope has no
- *  per-target slug — the project name itself disambiguates — but the
- *  session-name format reserves a slug segment, so we use this sentinel.
- *  Render: `memon-<agent>-<project>--project--root`. */
-export const PROJECT_SCOPE_SLUG = 'root' as const
-
-export interface TerminalHostTarget {
-  host: string
-}
-
-function terminalHostUrl(path: string, target?: TerminalHostTarget): string {
-  return target ? `${path}?host=${encodeURIComponent(target.host)}` : path
-}
-
-export interface TerminalSession {
-  host?: string | null
-  backend?: 'tmux' | 'herdr'
-  sessionName: string
-  port?: number
-  url?: string
-  startedAt: string
-  lastActiveAt: string
-  agent: TerminalAgentKind
-  project: string | null
-  scope: TerminalScopeKind | null
-  slug: string | null
-  warnings: string[]
-}
-
-export interface TerminalStartResponse {
-  host?: string | null
-  sessionName: string
-  url: string
-  port?: number
-  startedAt: string
-  warnings: string[]
-}
-
-/**
- * Active-pane info sourced from `tmux list-panes -a`. All fields are
- * possibly null — `pane: null` (parent-level) means tmux didn't surface
- * a usable active pane; individual nulls mean tmux returned an empty
- * string for that field.
- */
-export interface TmuxPaneInfo {
-  /** OSC-set PTY window title from the foreground program. Truncated to ≤257 chars. */
-  title: string | null
-  /** Basename of the foreground process (e.g. `claude`, `bash`, `node`). */
-  currentCommand: string | null
-  /** Absolute cwd of the foreground process. */
-  currentPath: string | null
-}
-
-/**
- * Card-footer liveness state derived server-side from `pane.title` plus the
- * unacknowledged-running memo. See `apps/web/lib/terminal/pane-state.ts`.
- */
-export type TmuxPaneState = 'idle' | 'running' | 'attention' | 'done'
-
-export interface TmuxSessionRow {
-  host?: string | null
-  sessionName: string
-  parsed: {
-    raw: string
-    agent: TerminalAgentKind | null
-    project: string | null
-    scope: TerminalScopeKind | null
-    slug: string | null
-    legacy: boolean
-  }
-  liveEntry: { port?: number; lastActiveAt: string } | null
-  tmuxCreatedAt: string
-  tmuxLastActivity: string
-  matchable: boolean
-  /**
-   * Stale = parses to the standard `memon-<agent>-<project>--<scope>--<slug>`
-   * format AND the project / target lookup failed. Manual rows (legacy or
-   * arbitrary names like `memon-manual-foo`) have `staleReason: null` AND
-   * `matchable: false` — they are not stale, just not addressable as a
-   * standard project/run/exp target.
-   */
-  staleReason: 'unknown-project' | 'unknown-target' | null
-  /** Pane info from `tmux list-panes -a`; null when tmux didn't surface a usable active pane. */
-  pane: TmuxPaneInfo | null
-  /** Liveness state derived server-side from pane.title plus an
-   *  unacknowledged-running memo. Drives the card footer's bg tint. */
-  state: TmuxPaneState
-  /** ISO8601 of the most recent server-observed state transition for this
-   *  sessionName, or `null` when none has been observed since the memo
-   *  was last reset (fresh first-seen row, or right after the user
-   *  opened the ttyd). The card displays
-   *  `max(lastStateChangeAt, tmuxLastActivity)` as the relative time. */
-  lastStateChangeAt: string | null
-}
-
-export async function checkTerminal(target?: TerminalHostTarget): Promise<TerminalCheckResult> {
-  const res = await fetch(terminalHostUrl('/api/terminal/check', target))
-  return jsonOrThrow<TerminalCheckResult>(res)
-}
-
-export async function installTerminal(target?: TerminalHostTarget): Promise<TerminalInstallResult> {
-  const res = await fetch(terminalHostUrl('/api/terminal/install', target), { method: 'POST' })
-  return jsonOrThrow<TerminalInstallResult>(res)
-}
-
-export async function startTerminal(input: {
-  project: ProjectTarget
-  scope: TerminalScopeKind
-  slug: string
-  agent?: TerminalAgentKind
-}): Promise<TerminalStartResponse> {
-  const endpoint =
-    typeof input.project === 'string'
-      ? '/api/terminal/start'
-      : projectQueryUrl('/api/terminal/start', input.project)
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...input, project: projectName(input.project) }),
-  })
-  return jsonOrThrow<TerminalStartResponse>(res)
-}
-
-export async function startHerdrTerminal(input?: {
-  project: ProjectTarget
-  scope: TerminalScopeKind
-  slug: string
-}): Promise<TerminalStartResponse> {
-  const endpoint =
-    input && typeof input.project !== 'string'
-      ? projectQueryUrl('/api/terminal/herdr', input.project)
-      : '/api/terminal/herdr'
-  const body = input ? { ...input, project: projectName(input.project) } : {}
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  return jsonOrThrow<TerminalStartResponse>(res)
-}
-
-/**
- * Raw-attach by sessionName. Used by /manage/tmux's manual-row Drawer
- * and Popup buttons where the session name doesn't parse to the standard
- * `memon-<agent>-<project>--<scope>--<slug>` format.
- */
-export async function attachTerminal(input: {
-  sessionName: string
-  host?: string
-}): Promise<TerminalStartResponse> {
-  const res = await fetch(
-    terminalHostUrl('/api/terminal/attach', input.host ? { host: input.host } : undefined),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionName: input.sessionName }),
-    },
-  )
-  return jsonOrThrow<TerminalStartResponse>(res)
-}
-
-export async function stopTerminal(
-  input: string | { sessionName: string; host?: string },
-): Promise<{ stopped: boolean }> {
-  const target = typeof input === 'string' ? { sessionName: input } : input
-  const res = await fetch(
-    terminalHostUrl('/api/terminal/stop', target.host ? { host: target.host } : undefined),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionName: target.sessionName }),
-    },
-  )
-  return jsonOrThrow<{ stopped: boolean }>(res)
-}
-
-export async function listTerminals(
-  target?: TerminalHostTarget,
-): Promise<{ sessions: TerminalSession[] }> {
-  const res = await fetch(terminalHostUrl('/api/terminal/list', target))
-  return jsonOrThrow<{ sessions: TerminalSession[] }>(res)
-}
-
-export async function listTmuxSessions(
-  target?: TerminalHostTarget,
-): Promise<{ sessions: TmuxSessionRow[] }> {
-  const res = await fetch(terminalHostUrl('/api/tmux-sessions', target))
-  return jsonOrThrow<{ sessions: TmuxSessionRow[] }>(res)
-}
-
-/**
- * Enriched single-row lookup. Returns the same row shape as
- * `listTmuxSessions().sessions[i]`. Used by per-target indicators that
- * only need to know about one session without polling the whole inventory.
- */
-export async function getTmuxSession(
-  name: string,
-  target?: TerminalHostTarget,
-): Promise<{ row: TmuxSessionRow }> {
-  const res = await fetch(terminalHostUrl(`/api/tmux-sessions/${encodeURIComponent(name)}`, target))
-  return jsonOrThrow<{ row: TmuxSessionRow }>(res)
-}
-
-export async function killTmuxSession(
-  name: string,
-  target?: TerminalHostTarget,
-): Promise<{ ok: true; host?: string; sessionName?: string }> {
-  const res = await fetch(
-    terminalHostUrl(`/api/tmux-sessions/${encodeURIComponent(name)}`, target),
-    {
-      method: 'DELETE',
-    },
-  )
-  return jsonOrThrow<{ ok: true }>(res)
-}
-
-export async function createTmuxSession(input: {
-  name: string
-  host?: string
-}): Promise<{ ok: true; host?: string; sessionName: string; alreadyExisted: boolean }> {
-  const res = await fetch(
-    terminalHostUrl('/api/tmux-sessions', input.host ? { host: input.host } : undefined),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: input.name }),
-    },
-  )
-  return jsonOrThrow<{ ok: true; sessionName: string; alreadyExisted: boolean }>(res)
-}
-
-export async function renameTmuxSession(input: {
-  name: string
-  newName: string
-  host?: string
-}): Promise<{ ok: true; host?: string; sessionName: string }> {
-  const res = await fetch(
-    terminalHostUrl(
-      `/api/tmux-sessions/${encodeURIComponent(input.name)}/rename`,
-      input.host ? { host: input.host } : undefined,
-    ),
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ newName: input.newName }),
-    },
-  )
-  return jsonOrThrow<{ ok: true; sessionName: string }>(res)
-}
-
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   const body = await res.json()
   if (!res.ok) {
@@ -1194,25 +976,7 @@ export async function deleteWarningApi(
   return body as WarningsOpResponse
 }
 
-// ---------- v3 experiment-doc + anomalies ----------
-
-export interface MemberRunSummary {
-  id: string
-  status: string
-  createdAt: string
-  updatedAt: string
-  finishedAt: string | null
-  host: string | null
-  gpus: number[]
-  path?: string
-  resource?: string
-  /** Optional external run dashboard retained by the structured Results table. */
-  wandb?: string | null
-  /** v4-added — true when the run README's `archived` frontmatter is true. */
-  archived?: boolean
-  /** The run README's manually-described Artifacts (path + description). */
-  artifacts: { path: string; description: string }[]
-}
+// ---------- v3 experiment-doc ----------
 
 export interface ExperimentDocSummary {
   id: string
@@ -1256,15 +1020,8 @@ export interface ExperimentDocSummary {
   parseWarnings: { message: string }[]
   effectiveCreatedAt: string
   effectiveUpdatedAt: string
-  memberRuns: MemberRunSummary[]
 }
 
-/**
- * v3 detail (`/api/experiments/:id`). Mirrors the summary plus a per-run
- * artifact aggregate. As of Slice δ (task 5.4) the detail endpoint also
- * returns `effectiveCreatedAt` / `effectiveUpdatedAt` so this type now
- * extends the summary directly.
- */
 export interface ExperimentDisplaySection extends ExperimentRawSection {
   /** Human-readable Markdown; a valid managed section is rendered from YAML. */
   body: string
@@ -1284,6 +1041,15 @@ export interface ExperimentManagedDocumentPayload<T> {
   parseWarnings: ParseIssue[]
 }
 
+export interface ResultsVariantEligibilityPayload {
+  variantId: string
+  runs: string[]
+  deprecatedRuns: string[]
+  eligibleRuns: string[]
+  hasMetrics: boolean
+  metricsValidity: 'valid' | 'partial' | 'unavailable'
+}
+
 export interface ExperimentManagedDocumentsPayload {
   implementation: ExperimentManagedDocumentPayload<ImplementationDocument> & {
     kind: 'implementation'
@@ -1291,39 +1057,54 @@ export interface ExperimentManagedDocumentsPayload {
   investigation: ExperimentManagedDocumentPayload<InvestigationDocument> & {
     kind: 'investigation'
   }
-  results: ExperimentManagedDocumentPayload<ResultsDocument> & { kind: 'results' }
+  results: ExperimentManagedDocumentPayload<ResultsDocument> & {
+    kind: 'results'
+    /**
+     * Read-time evidence state per Variant, projected from Run deprecation.
+     * `partial` / `unavailable` metrics are the recorded numbers, unchanged
+     * and unreplaced, but they are NOT current evidence: a view must not
+     * present them as comparable or as a best result.
+     */
+    variantEligibility: ResultsVariantEligibilityPayload[]
+  }
 }
 
+/**
+ * Detail (`/api/experiments/:id`). The Experiment document and its managed
+ * documents only — the member roster is `frontMatter.runs`, and each Run's
+ * own content is read from the Run endpoints when its panel is opened.
+ */
 export interface ExperimentDocDetail extends ExperimentDocSummary {
+  /** Read-time visibility metadata; the declared frontmatter roster stays intact. */
+  deprecatedRuns: string[]
   rawSections: ExperimentRawSection[]
   documents: ExperimentManagedDocumentsPayload | null
   documentSections: ExperimentDisplaySection[]
   documentDiagnostics: ExperimentDocumentDiagnostic[]
   documentReadOnly: boolean
   resultsUpdatedAt: string | null
-  /** Wiki pages citing this Experiment, newest `updated_at` first. */
-  citedBy: WikiBacklink[]
 }
 
 export interface ExperimentResultsSnapshot {
   project: string
   resource: string
   document: ResultsDocument
+  deprecatedRuns: string[]
+  variantEligibility: ResultsVariantEligibilityPayload[]
   updatedAt: string
   warnings: ParseIssue[]
 }
 
-export interface AnomalyRecord {
-  code: 'ORPHAN_RUN' | 'PHANTOM_RUN_REF' | 'MISMATCH_EXPERIMENT_REF'
-  project: string
-  runId: string | null
-  experimentId: string | null
-  message: string
-  detectedAt: string
-}
-
 export interface ExperimentDocsResponse {
   experiments: ExperimentDocSummary[]
+}
+
+export async function fetchExperimentsInventory(
+  project: ProjectTarget,
+): Promise<BackendResourceInventoryResponse> {
+  return jsonFetch(
+    projectQueryUrl('/api/experiments', project, new URLSearchParams({ inventory: '1' })),
+  )
 }
 
 export async function fetchExperimentDocs(
@@ -1420,13 +1201,6 @@ export async function fetchExperimentResults(
   return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/results`, project), {
     cache: 'no-store',
   })
-}
-
-export async function fetchAnomalies(
-  project?: ProjectTarget,
-): Promise<{ anomalies: AnomalyRecord[] }> {
-  const url = project ? projectQueryUrl('/api/anomalies', project) : '/api/anomalies'
-  return jsonFetch(url)
 }
 
 export interface RunFileTreeNode {

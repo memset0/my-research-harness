@@ -8,7 +8,7 @@
 // JOURNAL append. No automatic rollback; the user resolves partial
 // failures via git.
 
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { dirname, join } from 'node:path'
 
 import { padId, parseId } from '../ids.js'
@@ -16,7 +16,7 @@ import { appendJournalEvent } from '../journal/append.js'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme } from '../readme/serialize.js'
 import { parseSlugFromRunDir } from '../time.js'
-import { scanProjectRoot } from '../cli/scan.js'
+import { RunTargetIndex } from '../cli/resolve-run.js'
 import { discoverExperiments, readExperimentDoc } from './discover.js'
 import { resolveExperimentId } from './id.js'
 import { serializeExperimentReadme } from './serialize.js'
@@ -173,9 +173,13 @@ export async function renameExperiment(
   // ── Step 3: bound-run rewrites ───────────────────────────────────
   const warnings: RenameExperimentWarning[] = []
   if (exp.frontMatter.runs.length > 0) {
-    const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-    for (const runId of exp.frontMatter.runs) {
-      const run = snap.experiments.find((r) => r.id === runId)
+    // Bounded discovery once, then reads of the bound members only — an
+    // unrelated Run's README is never opened, and `docs/hypotheses.md` is
+    // read once below rather than as scan collateral.
+    const index = await RunTargetIndex.open(projectRoot, { projectName })
+    const members = await index.runs(exp.frontMatter.runs)
+    for (const runId of new Set(exp.frontMatter.runs)) {
+      const run = members.get(runId)
       if (!run) continue
       // Soft prefix-violation: warn when the run slug no longer starts
       // with the new exp slug.

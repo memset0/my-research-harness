@@ -69,6 +69,8 @@ beforeEach(async () => {
     include: [],
     exclude: [],
     github: [{ owner: 'acme', repo: 'demo', path: root }],
+    // This host owns the fixture worktree, so git is allowed to run here.
+    execution: { kind: 'local' },
   } satisfies ProjectConfig
   service = new FilesystemGitService([project])
 })

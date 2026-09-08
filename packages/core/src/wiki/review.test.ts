@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { execFileGitCommand, type GitCommandRunner } from '../git/command.js'
 import {
   WIKI_REVIEW_RELPATH,
   deriveWikiReview,
@@ -412,5 +413,96 @@ describe('outside a git worktree', () => {
     await expect(writeWikiReviewMark(plain, 'a'.repeat(40))).rejects.toMatchObject({
       code: 'NOT_GIT',
     })
+  })
+})
+
+describe('configured execution runner', () => {
+  /** Wraps the local runner so the argv of every wiki git read is observable. */
+  function recordingRunner(): { exec: GitCommandRunner; argvs: string[][] } {
+    const argvs: string[][] = []
+    const exec: GitCommandRunner = (bin, args, execOpts) => {
+      argvs.push([...args])
+      return execFileGitCommand(bin, args, execOpts)
+    }
+    return { exec, argvs }
+  }
+
+  it('routes every wiki git read through the runner and derives the same review', async () => {
+    const { c1, c2, c3, c4 } = await buildFixture()
+    for (const sha of [c1, c2, c3]) await writeWikiReviewMark(root, sha)
+    const marks = await readWikiReviewMarks(root)
+    await rewriteLines(BETA, 10, 10, 'beta uncommitted')
+
+    const { exec, argvs } = recordingRunner()
+    const review = (await deriveWikiReview(root, [ALPHA, BETA, DEMO], marks, { exec }))!
+
+    // Same verdicts the local path produces: ALPHA is covered through c3,
+    // DEMO's asset moved in c4, BETA carries an uncommitted edit.
+    expect(review.get(ALPHA)!.state).toBe('VERIFIED')
+    expect(review.get(DEMO)!.state).toBe('CHANGED_SINCE_VERIFY')
+    expect(review.get(DEMO)!.unverifiedCommits).toEqual([c4])
+    expect(review.get(BETA)!.dirty).toBe(true)
+    expect(review.get(BETA)!.unverifiedRanges).toEqual([[1, 20]])
+
+    // Nothing bypassed the runner: the worktree probe, the wiki log, blame,
+    // the dirty check and the bundle listing all arrived here, and every
+    // invocation asks git not to take optional locks on the target.
+    expect(new Set(argvs.map((argv) => argv[3]))).toEqual(
+      new Set(['rev-parse', 'log', 'blame', 'status', 'ls-files']),
+    )
+    expect(argvs.every((argv) => argv[0] === '--no-optional-locks')).toBe(true)
+  })
+
+  it('refuses to certify a marked page when the dirty-state check fails', async () => {
+    const { c1, c2, c3, c4 } = await buildFixture()
+    for (const sha of [c1, c2, c3, c4]) await writeWikiReviewMark(root, sha)
+    const marks = await readWikiReviewMarks(root)
+
+    // Baseline: with a working status check the marked pages read VERIFIED.
+    const clean = (await deriveWikiReview(root, [ALPHA, DEMO], marks))!
+    expect(clean.get(ALPHA)!.state).toBe('VERIFIED')
+    expect(clean.get(DEMO)!.state).toBe('VERIFIED')
+
+    const statusBroken: GitCommandRunner = (bin, args, execOpts) =>
+      args.includes('status')
+        ? Promise.resolve({
+            stdout: '',
+            stderr: 'fatal: unable to read index file\n',
+            code: 128,
+          })
+        : execFileGitCommand(bin, args, execOpts)
+
+    await expect(
+      deriveWikiReview(root, [ALPHA, DEMO], marks, { exec: statusBroken }),
+    ).rejects.toMatchObject({ code: 'GIT_UNAVAILABLE' })
+  })
+
+  it('reports git as unavailable when the execution target cannot answer', async () => {
+    await buildFixture()
+    const unreachable: GitCommandRunner = () =>
+      Promise.resolve({
+        stdout: '',
+        stderr: 'ssh: connect to host cluster port 22: Connection refused\r\n',
+        code: 255,
+      })
+    const timedOut: GitCommandRunner = () =>
+      Promise.resolve({ stdout: '', stderr: '', code: -1, timedOut: true })
+
+    for (const exec of [unreachable, timedOut]) {
+      await expect(listWikiCommits(root, { exec })).rejects.toMatchObject({
+        code: 'GIT_UNAVAILABLE',
+      })
+      await expect(deriveWikiReview(root, [ALPHA], [], { exec })).rejects.toMatchObject({
+        code: 'GIT_UNAVAILABLE',
+      })
+      await expect(
+        writeWikiReviewMark(root, 'next', undefined, { exec }),
+      ).rejects.toMatchObject({ code: 'GIT_UNAVAILABLE' })
+      await expect(removeWikiReviewMark(root, 'a'.repeat(40), { exec })).rejects.toMatchObject({
+        code: 'GIT_UNAVAILABLE',
+      })
+      // The tolerant boolean probe answers without claiming a worktree.
+      expect(await isGitWorktree(root, { exec })).toBe(false)
+    }
   })
 })

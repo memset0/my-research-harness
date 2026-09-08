@@ -1,13 +1,14 @@
-import { execFile as nodeExecFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import {
   type BackendSlurmJob,
   BackendSlurmJobSchema,
   type BackendSlurmStatus,
   BackendSlurmStatusSchema,
 } from '@memon/core'
+import {
+  type BackendExecutionProvider,
+  createLocalExecutionProvider,
+} from './execution-service.js'
 
-const execFile = promisify(nodeExecFile)
 const SQUEUE_FORMAT = 'JobID:|,Partition:|,Name:|,StateCompact:|,TimeUsed:|,NumNodes:|,NodeList:|'
 export type SlurmJobsProvider = () => Promise<readonly BackendSlurmJob[]>
 export interface BackendSlurmService {
@@ -37,19 +38,47 @@ export function parseSqueueOutput(stdout: string): BackendSlurmJob[] {
   }
   return jobs
 }
-export async function runSqueueMe(): Promise<BackendSlurmJob[]> {
-  const { stdout } = await execFile('squeue', ['--me', '--noheader', '-O', SQUEUE_FORMAT], {
-    timeout: 10_000,
+/**
+ * `squeue --me` on an execution target. Local targets keep the historical
+ * behaviour; a remote Project runs the same argv over its configured SSH
+ * target instead of against a mounted filesystem that has no Slurm.
+ */
+export async function runSqueueMe(
+  execution: BackendExecutionProvider = createLocalExecutionProvider(),
+): Promise<BackendSlurmJob[]> {
+  const result = await execution.run('squeue', ['--me', '--noheader', '-O', SQUEUE_FORMAT], {
+    timeoutMs: 10_000,
     maxBuffer: 262_144,
   })
-  return parseSqueueOutput(stdout)
+  if (result.code !== 0) {
+    throw new Error(
+      result.spawnFailed
+        ? 'squeue is not available on the execution target'
+        : result.timedOut
+          ? 'squeue timed out'
+          : result.stderr.trim() || 'squeue failed',
+    )
+  }
+  return parseSqueueOutput(result.stdout)
 }
-export function createBackendSlurmService(options: {
+
+export interface BackendSlurmServiceOptions {
   totalNodes: number
   provider?: SlurmJobsProvider
-}): BackendSlurmService | null {
+  /**
+   * Execution target for the default `squeue` reader. Omitted means local,
+   * preserving today's single-node behaviour; a provider that refuses (a
+   * Project with no execution configuration) surfaces its refusal from
+   * `status()` rather than being silently run locally.
+   */
+  execution?: BackendExecutionProvider
+}
+
+export function createBackendSlurmService(
+  options: BackendSlurmServiceOptions,
+): BackendSlurmService | null {
   if (options.totalNodes <= 0) return null
-  const provider = options.provider ?? runSqueueMe
+  const provider = options.provider ?? (() => runSqueueMe(options.execution))
   return {
     enabled: true,
     async status() {

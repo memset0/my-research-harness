@@ -6,7 +6,6 @@ import {
   FilesystemMutationService,
   FilesystemProjectService,
   FilesystemStreamService,
-  LocalBackendTerminalService,
 } from '@memon/backend'
 import {
   addShare,
@@ -15,6 +14,7 @@ import {
   revokeShare,
   type ShareRecord,
   validateShare,
+  withJournalInvocation,
 } from '@memon/core'
 import { runSqueueMe } from '../slurm/squeue'
 
@@ -29,9 +29,6 @@ export const STANDALONE_SERVICE_MIGRATION = {
   runtimeCaches: 'legacy-runtime-required',
   runtimePoller: 'legacy-runtime-required',
   runtimeSse: 'legacy-runtime-required',
-  terminalBinary: 'shared',
-  tmux: 'shared',
-  herdr: 'shared',
 } as const
 
 export interface StandaloneServices {
@@ -41,7 +38,6 @@ export interface StandaloneServices {
   git: FilesystemGitService
   streaming: FilesystemStreamService
   slurm: BackendSlurmService | null
-  terminal(): LocalBackendTerminalService
   shares: {
     list(project: string, includeTokens: boolean): Promise<ShareRecord[]>
     add(project: string, input: { label?: string; expires?: string }): Promise<ShareRecord>
@@ -66,7 +62,6 @@ export function standaloneServices(config: Config): StandaloneServices {
     if (!project) throw new Error('Project is not configured')
     return project.root
   }
-  let terminalService: LocalBackendTerminalService | null = null
   const services: StandaloneServices = {
     projects: new FilesystemProjectService(config.projects),
     documents: new FilesystemDocumentService(config.projects),
@@ -77,20 +72,26 @@ export function standaloneServices(config: Config): StandaloneServices {
       totalNodes: config.slurm?.totalNodes ?? -1,
       provider: runSqueueMe,
     }),
-    terminal: () => {
-      terminalService ??= new LocalBackendTerminalService({
-        hostId: 'standalone',
-        projects: config.projects,
-        terminal: config.terminal,
-        standaloneProxyPaths: true,
-        standaloneTargetFallback: true,
-      })
-      return terminalService
-    },
     shares: {
       list: (project, includeTokens) => listShares(projectRoot(project), { includeTokens }),
-      add: (project, input) => addShare(projectRoot(project), input),
-      revoke: (project, id) => revokeShare(projectRoot(project), id),
+      add: (project, input) => {
+        const root = projectRoot(project)
+        return withJournalInvocation(
+          root,
+          { command: 'share create', origin: 'web', parameters: { project } },
+          () => addShare(root, input),
+          { standalone: true },
+        )
+      },
+      revoke: (project, id) => {
+        const root = projectRoot(project)
+        return withJournalInvocation(
+          root,
+          { command: 'share revoke', origin: 'web', parameters: { project, id } },
+          () => revokeShare(root, id),
+          { standalone: true },
+        )
+      },
       validate: async (project, token) =>
         (await validateShare(projectRoot(project), token).catch(() => null)) !== null,
     },

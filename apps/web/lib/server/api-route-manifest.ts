@@ -12,8 +12,8 @@ export type ApiMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export type ApiOwner = 'central' | 'backend' | 'composed'
 export type ApiScope = 'global' | 'project-query' | 'project-path' | 'resource'
 export type ApiAuthClass = 'anon' | 'read' | 'mutating' | 'shell' | 'mixed'
-export type ApiStreaming = 'none' | 'sse' | 'bytes' | 'terminal'
-export type ApiCapability = 'projects' | 'git' | 'shares' | 'slurm' | 'tmux' | 'terminal' | 'herdr'
+export type ApiStreaming = 'none' | 'sse' | 'bytes'
+export type ApiCapability = 'projects' | 'git' | 'shares' | 'slurm'
 
 export interface ApiRouteOwnership {
   methods: readonly ApiMethod[]
@@ -62,7 +62,7 @@ export const API_ROUTE_MANIFEST = {
   'code-preview/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'git'),
   'code-reviews/[...id]/route.ts': backend(['GET', 'PATCH'], 'resource', 'mixed'),
   'code-reviews/route.ts': backend(['GET'], 'project-query', 'read'),
-  'digests/[id]/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
+  'digests/[id]/route.ts': backend(['GET'], 'resource', 'read'),
   'digests/route.ts': backend(['GET'], 'project-query', 'read'),
   'events/route.ts': composed(['GET'], 'global', 'read', 'sse'),
   'experiment-results-views/[id]/route.ts': central(
@@ -86,9 +86,11 @@ export const API_ROUTE_MANIFEST = {
   ),
   'experiments/[id]/warnings/route.ts': backend(['GET', 'POST'], 'resource', 'mixed'),
   'experiments/route.ts': backend(['GET', 'POST'], 'project-query', 'mixed'),
+  'file-access/restart/route.ts': central(['POST'], 'shell'),
+  'file-access/route.ts': central(['GET', 'PUT'], 'mutating'),
   'hypotheses/route.ts': backend(['GET'], 'project-query', 'read'),
   'hosts/route.ts': central(['GET'], 'read'),
-  'journal/append/route.ts': backend(['POST'], 'project-query', 'mutating'),
+  'journal/history/route.ts': backend(['GET'], 'project-query', 'shell'),
   'journal/route.ts': backend(['GET'], 'project-query', 'read'),
   'log-files/route.ts': backend(['GET'], 'project-query', 'read'),
   'log/route.ts': backend(['GET'], 'resource', 'read', 'bytes'),
@@ -161,16 +163,6 @@ export const API_ROUTE_MANIFEST = {
   'runs/route.ts': backend(['GET'], 'project-query', 'read'),
   'runtime/health/route.ts': central(['GET'], 'read'),
   'slurm/status/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'slurm'),
-  'terminal/attach/route.ts': backend(['POST'], 'global', 'shell', 'terminal', 'terminal'),
-  'terminal/check/route.ts': backend(['GET'], 'global', 'shell', 'none', 'terminal'),
-  'terminal/herdr/route.ts': backend(['POST'], 'resource', 'shell', 'terminal', 'herdr'),
-  'terminal/install/route.ts': backend(['POST'], 'global', 'shell', 'none', 'terminal'),
-  'terminal/list/route.ts': backend(['GET'], 'global', 'shell', 'none', 'terminal'),
-  'terminal/start/route.ts': backend(['POST'], 'resource', 'shell', 'terminal', 'terminal'),
-  'terminal/stop/route.ts': backend(['POST'], 'global', 'shell', 'terminal', 'terminal'),
-  'tmux-sessions/[name]/rename/route.ts': backend(['POST'], 'global', 'shell', 'none', 'tmux'),
-  'tmux-sessions/[name]/route.ts': backend(['GET', 'DELETE'], 'global', 'shell', 'none', 'tmux'),
-  'tmux-sessions/route.ts': backend(['GET', 'POST'], 'global', 'shell', 'none', 'tmux'),
   'ui-preferences/route.ts': central(['GET', 'PUT'], 'mixed'),
   'wiki-assets/[project]/[id]/[...path]/route.ts': backend(
     ['GET', 'HEAD'],
@@ -179,8 +171,8 @@ export const API_ROUTE_MANIFEST = {
     'bytes',
   ),
   'wiki/[id]/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
-  // Backlinks are derived from the central wiki cache; a Host-scoped client
-  // reads the same rows from the Experiment detail projection's `citedBy`.
+  // Backlinks have their own resource lifecycle so Wiki source resolution
+  // never delays the Experiment detail response.
   'wiki/backlinks/[artifact]/route.ts': central(['GET'], 'read', 'none', 'project-query'),
   'wiki/components/[name]/route.ts': central(['GET'], 'read'),
   'wiki/components/lint/route.ts': central(['POST'], 'read'),
@@ -206,7 +198,11 @@ export interface DirectRuntimeSurface {
  */
 export const DIRECT_RUNTIME_SURFACES = {
   'app/login/page.tsx': { owner: 'central', scope: 'global', purpose: 'auth' },
-  'app/manage/tmux/page.tsx': { owner: 'backend', scope: 'global', purpose: 'shell' },
+  'app/h/[host]/p/[project]/layout.tsx': {
+    owner: 'composed',
+    scope: 'project-path',
+    purpose: 'project-data',
+  },
   'app/p/[project]/e/[id]/page.tsx': {
     owner: 'composed',
     scope: 'resource',
@@ -243,7 +239,6 @@ export const DIRECT_RUNTIME_SURFACES = {
     scope: 'global',
     purpose: 'bootstrap',
   },
-  'lib/auth/server-auth.ts': { owner: 'central', scope: 'global', purpose: 'auth' },
   'lib/central/fleet-runtime.ts': {
     owner: 'central',
     scope: 'global',

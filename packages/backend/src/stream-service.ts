@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, type Dirent, promises as fs } from 'node:fs'
+import { createReadStream, type Dirent } from 'node:fs'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import type { Readable } from 'node:stream'
 import {
@@ -8,8 +8,10 @@ import {
   BackendLogStreamEventSchema,
   LineIndex,
   type ProjectConfig,
+  projectFs as fs,
   ResourceIdSchema,
 } from '@memon/core'
+import { missingOrThrow } from './missing-path.js'
 
 const LOG_EXTENSIONS = new Set(['.log', '.txt', '.out', '.err'])
 const REPORT_BUNDLE_PATTERN = /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/
@@ -354,12 +356,9 @@ function parseLogResource(input: string): ReturnType<typeof ResourceIdSchema.par
   return resource
 }
 
-/** Directory listing that treats a missing directory as empty. */
+/** Directory listing that treats a missing directory as empty, nothing else. */
 async function readDirectoryEntries(directory: string): Promise<Dirent[]> {
-  return fs.readdir(directory, { withFileTypes: true, encoding: 'utf8' }).catch((error) => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  })
+  return (await missingOrThrow(fs.readdir(directory, { withFileTypes: true, encoding: 'utf8' }))) ?? []
 }
 
 function invalid(): never {

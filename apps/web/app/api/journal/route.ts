@@ -6,6 +6,12 @@ import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Legacy `docs/journal.md` read. memon never appends to that file any more, so
+ * this route is pure preserved history: no cursor is projected and no
+ * invocation receipt is exposed here. Merged owner diagnostics live at
+ * `/api/journal/history`.
+ */
 export async function GET(request: NextRequest) {
   const runtime = await getRuntime()
   const search = new URL(request.url).searchParams
@@ -18,10 +24,7 @@ export async function GET(request: NextRequest) {
       await standaloneServices(runtime.config).projects.getJournal(project),
     )
     if (search.get('countOnly') === '1') {
-      return NextResponse.json({
-        totalEvents: result.events.length,
-        lastDigestAt: result.lastDigestAt,
-      })
+      return NextResponse.json({ totalEvents: result.events.length })
     }
     const before = search.get('before')
     const limit = Number(search.get('limit') ?? Number.POSITIVE_INFINITY)

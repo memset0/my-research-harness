@@ -1,4 +1,5 @@
-import { BackendRunResponseSchema, BackendRunsResponseSchema } from '@memon/core'
+import { BackendProjectServiceError } from '@memon/backend'
+import { BackendRunResponseSchema } from '@memon/core'
 import { NextResponse } from 'next/server'
 import { getRuntime } from '../../../../lib/runtime'
 import { standaloneRun } from '../../../../lib/server/standalone-dto'
@@ -15,13 +16,16 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     ? runtime.config.projects.filter((project) => project.name === requestedProject)
     : runtime.config.projects
   for (const project of projects) {
-    const exists = BackendRunsResponseSchema.parse(
-      await services.projects.listRuns(project.name),
-    ).runs.some((run) => run.id === id)
-    if (!exists) continue
-    const run = BackendRunResponseSchema.parse(await services.projects.getRun(project.name, id))
-    runtime.pokeById(id)
-    return NextResponse.json(standaloneRun(runtime.config, run))
+    // An explicit id resolves directly, including deprecated/archived Runs.
+    // An existence check must not load every other Run's metadata first.
+    try {
+      const run = BackendRunResponseSchema.parse(await services.projects.getRun(project.name, id))
+      runtime.pokeById(id)
+      return NextResponse.json(standaloneRun(runtime.config, run))
+    } catch (error) {
+      if (error instanceof BackendProjectServiceError && error.code === 'RESOURCE_NOT_FOUND') continue
+      throw error
+    }
   }
   return NextResponse.json(
     { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },

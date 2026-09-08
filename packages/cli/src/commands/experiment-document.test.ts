@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   runExperimentCreate,
+  runExperimentDelete,
   runExperimentLs,
   runExperimentShow,
   runExperimentStatusSet,
@@ -12,7 +13,6 @@ import {
 import {
   runExperimentDocumentLint,
   runExperimentDocumentRender,
-  runExperimentDocumentValidate,
 } from './experiment-document.js'
 
 const IMPORTED_RUN_ID = 'baseline-260810-120000'
@@ -126,7 +126,7 @@ describe('v6 Experiment document CLI', () => {
     expect(JSON.parse(stdout)).toMatchObject({ ok: true, nextStatus: 'ABANDONED' })
   })
 
-  it('renders Results from YAML and validates enum values/read references read-only', async () => {
+  it('renders Results from YAML and lints enum values/read references read-only', async () => {
     const id = await create()
     const resultsPath = join(root, 'docs', 'experiments', id, 'results.yaml')
     await fs.writeFile(
@@ -163,7 +163,7 @@ variants:
     expect(stdout).toContain('**V0001** BF16')
 
     stdout = ''
-    await runExperimentDocumentValidate({
+    await runExperimentDocumentLint({
       projectRoot: root,
       cwd: root,
       idOrSlug: id,
@@ -192,6 +192,47 @@ variants:
     stdout = ''
     await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
     expect(JSON.parse(stdout)).toMatchObject({ ok: true, summary: { errors: 0 } })
+  })
+
+  it('force-delete resolves members once and ignores unrelated broken Run READMEs', async () => {
+    const runDirectory = join(root, 'logs', IMPORTED_RUN_ID)
+    await fs.mkdir(runDirectory, { recursive: true })
+    await fs.writeFile(join(runDirectory, 'README.md'), IMPORTED_RUN_README)
+
+    stdout = ''
+    await runExperimentCreate({
+      projectRoot: root,
+      cwd: root,
+      slug: 'delete-members',
+      fromRun: IMPORTED_RUN_ID,
+    })
+    const id = JSON.parse(stdout).id as string
+
+    // `readFile()` on a directory fails. A whole-project scan would therefore
+    // abort, while targeted member resolution must never open this README.
+    await fs.mkdir(
+      join(root, 'outputs', 'unrelated-260811-120000', 'README.md'),
+      { recursive: true },
+    )
+
+    stdout = ''
+    await runExperimentDelete({
+      projectRoot: root,
+      cwd: root,
+      experimentIdOrSlug: id,
+      force: true,
+    })
+
+    expect(JSON.parse(stdout)).toMatchObject({
+      ok: true,
+      deletedId: id,
+      cascadedRuns: [IMPORTED_RUN_ID],
+    })
+    const runReadme = await fs.readFile(join(runDirectory, 'README.md'), 'utf8')
+    expect(runReadme).toContain('experiment: null')
+    await expect(fs.stat(join(root, 'docs', 'experiments', id))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 
   it('lint reports a managed-section conflict without hiding its real README content', async () => {

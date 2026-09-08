@@ -4,17 +4,16 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useIsDesktop } from '@/hooks/use-is-desktop'
 import { type FullExperiment, fetchExperiment, projectQueryKey } from '../lib/api'
-import { AddNoteButton } from './add-note-button'
-import { AskClaudeCodeButton } from './ask-claude-code-button'
 import { WarningBadge } from './colored-badge'
+import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { EditReadmeButton } from './edit-readme-button'
 import { LogViewer } from './log-viewer'
+import { ManualRefreshButton } from './manual-refresh-button'
 import { Markdown } from './markdown'
 import { ReadmeEditorProvider } from './readme-editor-context'
 import { ReadmeSidePanel } from './readme-side-panel'
 import { DetailSkeleton } from './skeletons'
 import { StatusEdit } from './status-edit'
-import { TerminalButton } from './terminal-button'
 import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -27,7 +26,9 @@ export function ExperimentDetail({ project, id }: { project: string; id: string 
   })
 
   if (isLoading && !data) return <DetailSkeleton />
-  if (error)
+  // Only report the failure when there is nothing cached to show; a failed
+  // refresh leaves the last good README on screen.
+  if (error && !data)
     return <div className="p-4 text-sm text-destructive">error: {(error as Error).message}</div>
   if (!data) return null
 
@@ -69,6 +70,9 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
                 ) : (
                   <WarningBadge>no README — status edit unavailable</WarningBadge>
                 )}
+                {fm.deprecated && (
+                  <Badge variant="outline">deprecated — excluded from research</Badge>
+                )}
                 {exp.parseErrors.length > 0 && (
                   <Badge variant="destructive">{exp.parseErrors.length} parse errors</Badge>
                 )}
@@ -76,9 +80,12 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
                   <WarningBadge>{exp.parseWarnings.length} warnings</WarningBadge>
                 )}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
-                  <TerminalButton runId={exp.id} projectName={exp.project} />
-                  <AskClaudeCodeButton experiment={exp} />
-                  <AddNoteButton project={exp.project} runId={exp.id} />
+                  {/* Run bodies never refresh on their own — this is the
+                      only way to pull new content for this README. */}
+                  <ManualRefreshButton
+                    label="Reload this run from disk"
+                    queryKeys={[['run', ...projectQueryKey(project), exp.id]]}
+                  />
                   {exp.hasReadme && exp.path && <EditReadmeButton path={exp.path} runId={exp.id} />}
                 </div>
               </div>
@@ -145,41 +152,34 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
             </CardContent>
           </Card>
 
-          {/* v5: 4-section canonical for runs. Motivation is optional (rendered
-          only when populated); Method / Conclusion / Caveats are forbidden
-          and surface in the warnings banner below if present. */}
-          <DetailParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-          {exp.sections.motivation && (
-            <SectionCard
-              id="motivation"
-              title="Motivation"
-              body={exp.sections.motivation}
+          {exp.body.trim() && (
+            <DocumentArtifactLinkProvider
               project={project}
-            />
+              sourceDocumentPath={`${exp.path ?? exp.resource ?? exp.id}/README.md`}
+              sourceSurface="left"
+            >
+              <Card>
+                <CardContent className="pt-6">
+                  <Markdown className="text-xs" project={project}>
+                    {exp.body}
+                  </Markdown>
+                </CardContent>
+              </Card>
+            </DocumentArtifactLinkProvider>
           )}
-          <SectionCard id="setup" title="Setup" body={exp.sections.setup} project={project} />
-          <SectionCard id="result" title="Result" body={exp.sections.result} project={project} />
           {exp.hasReadme && (
-            <WarningsCard
-              project={project}
-              runId={exp.id}
-              readmePath={`${exp.path ?? exp.resource ?? exp.id}/README.md`}
-              initialWarnings={exp.warnings}
-              initialMtime={exp.readmeMtime}
-            />
-          )}
-          <ArtifactsCard
-            artifacts={exp.sections.artifacts}
-            expPath={exp.path ?? exp.resource ?? exp.id}
-          />
-          {exp.sections.newHypotheses && (
-            <SectionCard
-              id="new-hypotheses"
-              title="New Hypotheses"
-              body={exp.sections.newHypotheses}
-              highlight
-              project={project}
-            />
+            <details>
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                Legacy warning controls
+              </summary>
+              <WarningsCard
+                project={project}
+                runId={exp.id}
+                readmePath={`${exp.path ?? exp.resource ?? exp.id}/README.md`}
+                initialWarnings={exp.warnings}
+                initialMtime={exp.readmeMtime}
+              />
+            </details>
           )}
 
           <Card id="resources">
@@ -200,103 +200,6 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
         <ReadmeSidePanel path={`${exp.path}/README.md`} runId={exp.id} />
       )}
     </div>
-  )
-}
-
-/**
- * v5: surface run-side parse warnings flagging forbidden sections (Method /
- * Conclusion / Caveats) and any unknown H2 in the README body. Severity-info
- * warnings (empty dangling headings) render with reduced emphasis.
- */
-function DetailParseWarningsBanner({
-  warnings,
-}: {
-  warnings: Array<{ message: string; severity?: 'error' | 'warning' | 'info' }>
-}) {
-  const relevant = warnings.filter((w) =>
-    /^(RUN_HAS_METHOD|RUN_HAS_CONCLUSION|RUN_HAS_CAVEATS|UNKNOWN_H2_SECTION|LEGACY_SECTION_IN_RUN)/.test(
-      w.message,
-    ),
-  )
-  if (relevant.length === 0) return null
-  return (
-    <Card className="border-amber-400/60 bg-amber-50/40">
-      <CardHeader>
-        <CardTitle className="text-sm">Section warnings ({relevant.length})</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="list-disc space-y-1 pl-5 text-xs text-amber-950">
-          {relevant.map((w) => (
-            <li
-              key={`${w.severity ?? 'warning'}:${w.message}`}
-              className={w.severity === 'info' ? 'opacity-70' : ''}
-            >
-              {w.message}
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  )
-}
-
-function SectionCard({
-  id,
-  title,
-  body,
-  highlight,
-  project,
-}: {
-  id: string
-  title: string
-  body: string | null
-  highlight?: boolean
-  project: string
-}) {
-  return (
-    <Card id={id} className={highlight ? 'border-amber-400/60' : undefined}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {body ? (
-          <Markdown className="text-xs" project={project}>
-            {body}
-          </Markdown>
-        ) : (
-          <div className="text-xs italic text-muted-foreground/70">to fill</div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function ArtifactsCard({
-  artifacts,
-  expPath,
-}: {
-  artifacts: { path: string; description: string }[]
-  expPath: string
-}) {
-  if (artifacts.length === 0) return null
-  return (
-    <Card id="artifacts">
-      <CardHeader>
-        <CardTitle>Artifacts</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-1.5 text-xs">
-          {artifacts.map((a) => (
-            <li key={a.path} className="grid grid-cols-1 gap-x-3 md:grid-cols-2">
-              <code className="font-mono text-foreground/80" title={`${expPath}/${a.path}`}>
-                {a.path}
-              </code>
-              <span className="text-muted-foreground">{a.description}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
   )
 }
 

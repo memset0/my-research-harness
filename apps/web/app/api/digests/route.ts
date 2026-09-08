@@ -3,7 +3,10 @@
 // Returns the list of digests for a project — id, date, path, mtime, title.
 // Reads from the runtime's digestsCache. Sorted by date desc.
 
-import { BackendDigestsResponseSchema } from '@memon/core'
+import {
+  BackendDigestsResponseSchema,
+  BackendResourceInventoryResponseSchema,
+} from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
 import { standaloneDigest } from '../../../lib/server/standalone-dto'
@@ -28,9 +31,16 @@ export async function GET(req: NextRequest) {
         { status: 404 },
       )
     }
-    const digests = BackendDigestsResponseSchema.parse(
-      await standaloneServices(rt.config).documents.listDigests(projectName),
-    ).digests.map((digest) => standaloneDigest(rt.config, digest))
+    const inventoryOnly = url.searchParams.get('inventory') === '1'
+    const result = await standaloneServices(rt.config).documents.listDigests(projectName, {
+      inventoryOnly,
+    })
+    if (inventoryOnly) {
+      return NextResponse.json(BackendResourceInventoryResponseSchema.parse(result))
+    }
+    const digests = BackendDigestsResponseSchema.parse(result).digests.map((digest) =>
+      standaloneDigest(rt.config, digest),
+    )
     return NextResponse.json({ digests })
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })

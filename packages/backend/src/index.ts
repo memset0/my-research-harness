@@ -33,6 +33,19 @@ export {
   DEFAULT_MAX_BACKEND_EVENT_FRAME_BYTES,
 } from './event-stream.js'
 export {
+  BackendExecutionError,
+  type BackendExecutionErrorCode,
+  type BackendExecutionProvider,
+  type BackendExecutionResolver,
+  type ExecutionBytesResult,
+  type ExecutionCommandOptions,
+  type ExecutionCommandResult,
+  createLocalExecutionProvider,
+  createSshExecutionProvider,
+  projectExecutionConfig,
+  resolveProjectExecution,
+} from './execution-service.js'
+export {
   BackendFilesystemMonitor,
   type BackendFilesystemMonitorControl,
   type BackendFilesystemMonitorOptions,
@@ -89,6 +102,7 @@ export {
   BACKEND_GIT_STATUS_ROUTE,
   BACKEND_GIT_SUBMODULES_ROUTE,
   BACKEND_HYPOTHESES_ROUTE,
+  BACKEND_JOURNAL_HISTORY_ROUTE,
   BACKEND_JOURNAL_ROUTE,
   BACKEND_LOG_FILES_ROUTE,
   BACKEND_LOG_ROUTE,
@@ -107,17 +121,6 @@ export {
   BACKEND_SHARE_ITEM_ROUTE,
   BACKEND_SHARE_VALIDATE_ROUTE,
   BACKEND_SHARES_ROUTE,
-  BACKEND_TERMINAL_ATTACH_ROUTE,
-  BACKEND_TERMINAL_CHECK_ROUTE,
-  BACKEND_TERMINAL_HERDR_ROUTE,
-  BACKEND_TERMINAL_INSTALL_ROUTE,
-  BACKEND_TERMINAL_LIST_ROUTE,
-  BACKEND_TERMINAL_PROXY_PREFIX,
-  BACKEND_TERMINAL_START_ROUTE,
-  BACKEND_TERMINAL_STOP_ROUTE,
-  BACKEND_TMUX_RENAME_ROUTE,
-  BACKEND_TMUX_SESSION_ROUTE,
-  BACKEND_TMUX_SESSIONS_ROUTE,
   BACKEND_WIKI_ASSET_ROUTE,
   BACKEND_WIKI_BACKLINKS_ROUTE,
   BACKEND_WIKI_PAGE_ROUTE,
@@ -129,7 +132,6 @@ export {
   type BackendServiceTokenSet,
   type BackendShareProviders,
   type BackendShareValidator,
-  type BackendTerminalTargetResolver,
   createBackendHandler,
   createBackendServer,
   MAX_BACKEND_CONTROL_JSON_BYTES,
@@ -165,6 +167,4 @@ export {
   type FilesystemStreamServiceOptions,
   type LogLinesInput,
 } from './stream-service.js'
-export * from './terminal-binary.js'
-export * from './terminal-service.js'
 export * from './update/index.js'

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { discoverExperiments, readExperimentDoc } from './discover.js'
+import { discoverExperiments, listExperimentIds, listExperimentPaths, readExperimentDoc } from './discover.js'
 
 const EXPERIMENT_ID = 'E0001-foo'
 const README = `---
@@ -109,5 +109,26 @@ describe('v6 Experiment bundle mtimes', () => {
     const legacy = experiments.find((experiment) => experiment.id === 'E0003-legacy')
     expect(missing?.readmeMtime).toBe(0)
     expect(legacy?.readmeMtime).toBe(legacy?.mtime)
+  })
+
+  it('lists ids from directory entries alone, past an unreadable document', async () => {
+    await fs.mkdir(join(root, 'docs', 'experiments', 'E0002-missing'))
+    await fs.writeFile(
+      join(root, 'docs', 'experiments', 'E0003-legacy.md'),
+      README.replaceAll(EXPERIMENT_ID, 'E0003-legacy'),
+    )
+    await fs.writeFile(join(root, 'docs', 'experiments', 'notes.md'), '# not an experiment\n')
+    await fs.writeFile(join(root, 'docs', 'experiments', `${EXPERIMENT_ID}.md`), '# leftover legacy')
+    // A document that cannot be read at all still has an identity on disk.
+    await fs.rm(join(directory, 'README.md'))
+    await fs.symlink('README.md', join(directory, 'README.md'))
+
+    expect(await listExperimentIds(root)).toEqual([EXPERIMENT_ID, 'E0002-missing', 'E0003-legacy'])
+    expect(await listExperimentIds(join(root, 'nowhere'))).toEqual([])
+    expect([...(await listExperimentPaths(root))]).toEqual([
+      [EXPERIMENT_ID, `docs/experiments/${EXPERIMENT_ID}/README.md`],
+      ['E0002-missing', 'docs/experiments/E0002-missing/README.md'],
+      ['E0003-legacy', 'docs/experiments/E0003-legacy.md'],
+    ])
   })
 })

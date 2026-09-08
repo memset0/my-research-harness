@@ -3,20 +3,15 @@
 // Re-exports types, parsers, serializers. Discovery, polling, log tail, and
 // config loaders are added by phases 3-5.
 
+export * from './project-file-store.js'
 export * from './backend-negotiation.js'
 export * from './backend-protocol.js'
 export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'
 // CLI helpers (callable from the @memon/cli package and from skills written
 // in TypeScript that link directly against @memon/core).
 export { CliContextError, loadCliContext } from './cli/context.js'
-export type {
-  DoctorIssue,
-  DoctorOptions,
-  DoctorReport,
-  IssueCode,
-  IssueSeverity,
-} from './cli/doctor.js'
-export { runDoctor } from './cli/doctor.js'
+export type { RunTargetOptions } from './cli/resolve-run.js'
+export { RunTargetIndex, resolveRunTarget } from './cli/resolve-run.js'
 export type { IndexedRun, ProjectSnapshot, ScanOptions } from './cli/scan.js'
 export { ScanError, scanProjectRoot } from './cli/scan.js'
 export type { ParsedCodeReview, SplitCodeReview } from './code-review/parse.js'
@@ -63,8 +58,21 @@ export {
   mergeExcludes,
   runArchivedFromRun,
 } from './discovery/discover.js'
+export type {
+  DeprecationResult,
+  ListDeprecatedRunIdsOptions,
+  SetRunDeprecatedOptions,
+} from './discovery/deprecation.js'
+export {
+  deprecateRun,
+  isRunDeprecated,
+  listDeprecatedRunIds,
+  RunWriteConflictError,
+  setRunDeprecated,
+  undeprecateRun,
+} from './discovery/deprecation.js'
 export type { ListFilter, SearchScope } from './discovery/index.js'
-export { RunIndex } from './discovery/index.js'
+export { matchesRunDeprecationFilter, RunIndex } from './discovery/index.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
 export { Poller } from './discovery/poller.js'
 export { readRunDir } from './discovery/read.js'
@@ -75,7 +83,12 @@ export {
   staleAgeMs,
 } from './discovery/stale.js'
 export type { DiscoverExperimentsResult } from './experiments/discover.js'
-export { discoverExperiments, readExperimentDoc } from './experiments/discover.js'
+export {
+  discoverExperiments,
+  listExperimentIds,
+  listExperimentPaths,
+  readExperimentDoc,
+} from './experiments/discover.js'
 export type {
   ExperimentDocumentDiagnostic,
   RenderManagedSectionResult,
@@ -112,6 +125,14 @@ export {
   upsertResultColumnAnnotationYaml,
   validateExperimentManagedDocuments,
 } from './experiments/documents.js'
+export type {
+  ResultsMetricsValidity,
+  ResultsVariantEligibility,
+} from './experiments/results-eligibility.js'
+export {
+  projectResultsRunEligibility,
+  variantHasMetrics,
+} from './experiments/results-eligibility.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
 export type { MembershipInput, MembershipResult } from './experiments/membership.js'
 export { computeMembership } from './experiments/membership.js'
@@ -189,6 +210,13 @@ export {
   readGitLog,
   readGitRange,
 } from './git/history.js'
+export type { GitCommandRunner, GitCommandOptions, GitCommandResult } from './git/command.js'
+export {
+  cachedGitCommand,
+  gitCommandStdoutText,
+  invalidateGitOperations,
+  isGitCommandFailure,
+} from './git/command.js'
 export type { GitStatus, ReadGitStatusOptions } from './git/status.js'
 export { parsePorcelainV2, readGitStatus } from './git/status.js'
 export type {
@@ -209,8 +237,44 @@ export {
   padId,
   parseId,
 } from './ids.js'
-export { appendJournalEvent, updateLastDigestAt } from './journal/append.js'
+export { appendJournalEvent } from './journal/append.js'
+export type {
+  JournalActivitySnapshot,
+  JournalInvocationContext,
+  JournalInvocationDetail,
+  JournalInvocationHandle,
+  JournalInvocationInput,
+  JournalInvocationOptions,
+  JournalInvocationOrigin,
+  JournalInvocationOutcome,
+  JournalInvocationRecord,
+  JournalInvocationTerminalOutcome,
+  JournalRecordingFailure,
+  UnreadableJournalReceipt,
+} from './journal/invocation.js'
+export {
+  addJournalInvocationDetail,
+  beginJournalInvocation,
+  classifyError as classifyJournalInvocationError,
+  currentJournalInvocation,
+  JOURNAL_ACTIVITY_RELDIR,
+  JOURNAL_INVOCATION_OUTCOMES,
+  JOURNAL_INVOCATION_MAX_DETAILS,
+  JOURNAL_INVOCATION_RECORD_VERSION,
+  JournalRecordingError,
+  JournalInvocationDetailSchema,
+  JournalInvocationOriginSchema,
+  JournalInvocationOutcomeSchema,
+  JournalInvocationRecordSchema,
+  markJournalInvocationOutcome,
+  readJournalActivity,
+  readJournalInvocations,
+  sanitizeInvocationParameters,
+  withJournalInvocation,
+} from './journal/invocation.js'
 export { parseJournal } from './journal/parse.js'
+export type { JournalSnapshot } from './journal/read.js'
+export { JOURNAL_RELPATH, readProjectJournal } from './journal/read.js'
 export {
   formatJournalEvent,
   reserializeJournal,
@@ -249,7 +313,23 @@ export { parseArtifacts } from './readme/artifacts.js'
 export { parseReadme } from './readme/parse.js'
 export type { H2SectionEntry, SectionSplit } from './readme/sections.js'
 export { splitH2Sections } from './readme/sections.js'
-export { reserializeReadme, serializeReadme } from './readme/serialize.js'
+export type {
+  PatchableRunFrontMatterKey,
+  RunFrontMatterPatch,
+} from './readme/frontmatter-patch.js'
+export {
+  patchRunFrontMatter,
+  RunFrontMatterPatchError,
+} from './readme/frontmatter-patch.js'
+export type { RunLintDiagnostic } from './readme/lint.js'
+export { lintRun } from './readme/lint.js'
+export type { SerializeMinimalRunInput, SerializeReadmeInput } from './readme/serialize.js'
+export {
+  MINIMAL_RUN_FRONT_MATTER_KEYS,
+  reserializeReadme,
+  serializeMinimalRun,
+  serializeReadme,
+} from './readme/serialize.js'
 export { extractTitle } from './readme/title.js'
 export type {
   ApplyWarningOpResult,
@@ -273,9 +353,16 @@ export {
 } from './readme/warnings.js'
 export * from './release-compatibility.js'
 export * from './release-policy.js'
-export * from './rollout-policy.js'
-export type { CodeReviewFrontMatterRaw, ExperimentFrontMatterRaw } from './schemas.js'
-export { CodeReviewFrontMatterRawSchema, ExperimentFrontMatterRawSchema } from './schemas.js'
+export type {
+  CodeReviewFrontMatterRaw,
+  ExperimentFrontMatterRaw,
+  RunFrontMatterRaw,
+} from './schemas.js'
+export {
+  CodeReviewFrontMatterRawSchema,
+  ExperimentFrontMatterRawSchema,
+  RunFrontMatterRawSchema,
+} from './schemas.js'
 export type {
   AddShareOptions,
   RevokeShareOptions,
@@ -307,7 +394,6 @@ export {
 // v3 experiment doc types (sed-renamed from Experiment* during rename pass)
 export type {
   Experiment,
-  ExperimentEffectiveTimes,
   ExperimentFrontMatter,
   ExperimentMembershipAnomaly,
   ExperimentMembershipAnomalyCode,

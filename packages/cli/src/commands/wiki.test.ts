@@ -11,11 +11,10 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { parseWikiFrontmatter } from '@memon/core'
 
-import { runExperimentCreate } from './experiment-doc.js'
 import {
   runWikiBacklinks,
   runWikiCommit,
@@ -31,12 +30,10 @@ import {
   runWikiMove,
   runWikiReviewDiff,
   runWikiReviewLog,
-  runWikiReviewLs,
   runWikiReviewUnverify,
   runWikiReviewVerify,
   runWikiSet,
   runWikiShow,
-  runWikiStale,
   runWikiUndeprecate,
 } from './wiki.js'
 
@@ -50,6 +47,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true })
+  vi.restoreAllMocks()
 })
 
 class ExitCalled extends Error {
@@ -143,6 +141,39 @@ async function initGit(): Promise<void> {
   await git('config', 'commit.gpgsign', 'false')
 }
 
+/** One row per linted page: its id and the diagnostic codes it reported. */
+function lintRows(run: CapturedRun): { id: string; codes: string[] }[] {
+  return jsonAs<{ pages: { id: string; diagnostics: { code: string }[] }[] }>(run.stdout).pages.map(
+    (entry) => ({ id: entry.id, codes: entry.diagnostics.map((diagnostic) => diagnostic.code) }),
+  )
+}
+
+/**
+ * Run `fn` with a recording stub as the only `git` on PATH, so git is both
+ * unavailable and observable: `calls` lists the argv of every invocation.
+ * `script` replaces the stub's body when a case needs specific git answers.
+ */
+async function withStubbedGit<T>(
+  fn: () => Promise<T>,
+  script = 'exit 1\n',
+): Promise<{ result: T; calls: string[] }> {
+  const bin = await fs.mkdtemp(join(tmpdir(), 'memon-wiki-git-stub-'))
+  const log = join(bin, 'calls.log')
+  await fs.writeFile(join(bin, 'git'), `#!/bin/sh\necho "$@" >> '${log}'\n${script}`, {
+    mode: 0o755,
+  })
+  const priorPath = process.env.PATH
+  process.env.PATH = bin
+  try {
+    const result = await fn()
+    const recorded = await fs.readFile(log, 'utf8').catch(() => '')
+    return { result, calls: recorded.split('\n').filter((line) => line !== '') }
+  } finally {
+    process.env.PATH = priorPath
+    await fs.rm(bin, { recursive: true, force: true })
+  }
+}
+
 const globals = (): { projectRoot: string; cwd: string } => ({ projectRoot: root, cwd: root })
 
 // ---------- ls / show ----------
@@ -209,6 +240,7 @@ describe('memon wiki ls', () => {
       kind: 'finding',
       description: 'Why the C256 wrapper round-trips.',
     })
+    expect(parsed.pages[0]).not.toHaveProperty('stale')
   })
 
   it('prints the description under each page and suppresses it on demand', async () => {
@@ -227,7 +259,7 @@ describe('memon wiki ls', () => {
   it('renders one markdown table per kind', async () => {
     const run = await runCapturing(() => runWikiLs({ ...globals(), format: 'markdown' }))
     expect(run.stdout).toContain('## finding')
-    expect(run.stdout).toContain('| id | path | status | review | stale | updated_at | title | description |')
+    expect(run.stdout).toContain('| id | path | status | updated_at | title | description |')
     expect(run.stdout).toContain('| W0003 | `docs/wiki/retro/W0003-gamma.md` |')
   })
 
@@ -258,28 +290,31 @@ describe('memon wiki ls', () => {
     expect(parsed.pages.map((entry) => entry.id)).toEqual(['W0011', 'W0012'])
   })
 
-  it('--stale keeps only pages whose evidence moved on', async () => {
-    // W0001 cites W0002, whose `updated_at` is newer.
-    const run = await runCapturing(() => runWikiLs({ ...globals(), stale: true }))
-    const parsed = jsonAs<{ pages: { id: string; staleSources: string[] }[] }>(run.stdout)
-    expect(parsed.pages).toHaveLength(1)
-    expect(parsed.pages[0]).toMatchObject({ id: 'W0001', staleSources: ['W0002'] })
+  it('--source matches normalized declared tokens without resolving the target', async () => {
+    await write(
+      'docs/wiki/note/W0010-external.md',
+      page(
+        [
+          'id: W0010',
+          'kind: note',
+          'title: External',
+          'sources: [E0099-missing-experiment/V0004]',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+      ),
+    )
+    const run = await runCapturing(() => runWikiLs({ ...globals(), source: 'E0099' }))
+    const parsed = jsonAs<{ pages: { id: string }[] }>(run.stdout)
+    expect(parsed.pages.map((entry) => entry.id)).toEqual(['W0010'])
   })
 
-  it('rejects an unknown --review state and an unknown --format', async () => {
-    const review = await runCapturing(() => runWikiLs({ ...globals(), review: 'MAYBE' }))
-    expect(review.exitCode).toBe(2)
-    expect(errorOf(review).code).toBe('BAD_REQUEST')
-
+  it('rejects an unknown --format', async () => {
     const format = await runCapturing(() => runWikiLs({ ...globals(), format: 'yaml' }))
     expect(format.exitCode).toBe(2)
+    expect(errorOf(format).code).toBe('BAD_REQUEST')
   })
 
-  it('reports stale pages through `stale` too', async () => {
-    const run = await runCapturing(() => runWikiStale(globals()))
-    const parsed = jsonAs<{ pages: { id: string; staleSources: string[] }[] }>(run.stdout)
-    expect(parsed.pages.map((entry) => entry.id)).toEqual(['W0001'])
-  })
 })
 
 describe('memon wiki show and addressing', () => {
@@ -331,6 +366,23 @@ describe('memon wiki show and addressing', () => {
     expect(human.stdout.startsWith('\n# VSA common-path debt')).toBe(true)
   })
 
+  it('--body-only never scans source-target directories', async () => {
+    await Promise.all([
+      fs.mkdir(join(root, 'logs'), { recursive: true }),
+      fs.mkdir(join(root, 'docs/experiments'), { recursive: true }),
+      fs.mkdir(join(root, 'docs/reports'), { recursive: true }),
+    ])
+    const readdir = vi.spyOn(fs, 'readdir')
+    const run = await runCapturing(() =>
+      runWikiShow({ ...globals(), page: 'W0004', bodyOnly: true, format: 'human' }),
+    )
+    expect(run.exitCode).toBeNull()
+    const visited = readdir.mock.calls.map(([path]) => String(path))
+    expect(visited.some((path) => /(?:logs|docs\/experiments|docs\/reports)$/.test(path))).toBe(
+      false,
+    )
+  })
+
   it('exits 4 for an unknown page and 2 for an unpadded id', async () => {
     const unknown = await runCapturing(() => runWikiShow({ ...globals(), page: 'nope' }))
     expect(unknown.exitCode).toBe(4)
@@ -361,12 +413,11 @@ describe('memon wiki create', () => {
     const summary = jsonAs<{
       id: string
       path: string
-      stale: boolean
       absolutePath: string
     }>(run.stdout)
     expect(summary.id).toBe('W0001')
     expect(summary.path).toBe('docs/wiki/finding/W0001-vsa-debt.md')
-    expect(summary.stale).toBe(false)
+    expect(summary).not.toHaveProperty('stale')
     expect(summary.absolutePath).toBe(join(root, summary.path))
 
     const content = await readFile(summary.path)
@@ -424,6 +475,33 @@ describe('memon wiki create', () => {
     )
     expect(withDate.exitCode).toBeNull()
     expect(await readFile('docs/wiki/meeting/W0002-weekly.md')).toContain('date: 2026-05-04')
+  })
+
+  it('creates a roadmap without status or fixed section scaffolding', async () => {
+    const run = await runCapturing(() =>
+      runWikiCreate({
+        ...globals(),
+        kind: 'roadmap',
+        slug: 'research-plan',
+        title: 'Research plan',
+      }),
+    )
+    const summary = jsonAs<{
+      id: string
+      kind: string
+      status: null
+      path: string
+    }>(run.stdout)
+    expect(summary).toMatchObject({
+      id: 'W0001',
+      kind: 'roadmap',
+      status: null,
+      path: 'docs/wiki/roadmap/W0001-research-plan.md',
+    })
+    const content = await readFile(summary.path)
+    expect(content).toContain('kind: roadmap')
+    expect(content).not.toMatch(/^status:/m)
+    expect(content).not.toMatch(/^## /m)
   })
 
   it('refuses a slug already used by another kind', async () => {
@@ -519,6 +597,27 @@ describe('memon wiki move', () => {
     expect(content).toContain('created_at: 2026-09-01T09:00:00+08:00')
     expect(jsonAs<{ createdAt: string }>(run.stdout).createdAt).toBe('2026-09-01T09:00:00+08:00')
     expect(await pathExists('docs/wiki/note/W0012-kernel-questions.md')).toBe(false)
+  })
+
+  it('reclassifies a note as a statusless roadmap without changing its id or slug', async () => {
+    const run = await runCapturing(() =>
+      runWikiMove({ ...globals(), page: 'W0012', target: 'roadmap' }),
+    )
+    const summary = jsonAs<{
+      id: string
+      slug: string
+      status: null
+      newPath: string
+    }>(run.stdout)
+    expect(summary).toMatchObject({
+      id: 'W0012',
+      slug: 'kernel-questions',
+      status: null,
+      newPath: 'docs/wiki/roadmap/W0012-kernel-questions.md',
+    })
+    const content = await readFile(summary.newPath)
+    expect(content).toContain('kind: roadmap')
+    expect(content).not.toMatch(/^status:/m)
   })
 
   it('renames the slug when the target carries one', async () => {
@@ -623,15 +722,16 @@ describe('memon wiki set', () => {
       runWikiSet({
         ...globals(),
         page: 'vsa-debt',
-        addSource: ['E0003'],
+        addSource: ['E9999-never-loaded/V0042'],
         rmSource: ['E0001'],
         addTag: ['perf'],
         rmTag: ['debt'],
       }),
     )
     const summary = jsonAs<{ sources: string[]; tags: string[] }>(run.stdout)
-    expect(summary.sources).toEqual(['E0003'])
+    expect(summary.sources).toEqual(['E9999-never-loaded/V0042'])
     expect(summary.tags).toEqual(['vsa', 'perf'])
+    expect(await readFile(relative)).toContain('- E9999-never-loaded/V0042')
   })
 
   it('refuses a stale --expected-mtime and leaves the file alone', async () => {
@@ -652,6 +752,35 @@ describe('memon wiki set', () => {
       runWikiSet({ ...globals(), page: 'vsa-debt', status: 'OPEN' }),
     )
     expect(badStatus.exitCode).toBe(2)
+  })
+})
+
+describe('memon wiki local file scope', () => {
+  it('create, set, and ls never scan source-target directories', async () => {
+    await Promise.all([
+      fs.mkdir(join(root, 'logs'), { recursive: true }),
+      fs.mkdir(join(root, 'docs/experiments'), { recursive: true }),
+      fs.mkdir(join(root, 'docs/reports'), { recursive: true }),
+    ])
+    const readdir = vi.spyOn(fs, 'readdir')
+    await runCapturing(() =>
+      runWikiCreate({
+        ...globals(),
+        kind: 'note',
+        slug: 'local-only',
+        title: 'Local only',
+        source: ['E9999-does-not-exist'],
+      }),
+    )
+    await runCapturing(() =>
+      runWikiSet({ ...globals(), page: 'local-only', addSource: ['H9999'] }),
+    )
+    await runCapturing(() => runWikiLs(globals()))
+
+    const visited = readdir.mock.calls.map(([path]) => String(path))
+    expect(visited.some((path) => /(?:logs|docs\/experiments|docs\/reports)$/.test(path))).toBe(
+      false,
+    )
   })
 })
 
@@ -712,6 +841,36 @@ describe('memon wiki lint', () => {
     }
   })
 
+  it('validates source syntax without checking target existence', async () => {
+    await write(
+      'docs/wiki/note/W0003-sources.md',
+      page(
+        [
+          'id: W0003',
+          'kind: note',
+          'title: Sources',
+          'sources: [E9999-missing/V0042, W9999, malformed/source]',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+      ),
+    )
+    const run = await runCapturing(() => runWikiLint({ ...globals(), page: 'sources' }))
+    const diagnostics = jsonAs<{
+      pages: { diagnostics: { code: string; message: string }[] }[]
+    }>(run.stdout).pages[0]!.diagnostics
+    expect(diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'WIKI_SOURCE_UNRESOLVED',
+          message: expect.stringContaining('malformed/source'),
+        }),
+      ]),
+    )
+    expect(diagnostics.some((entry) => entry.message.includes('E9999-missing'))).toBe(false)
+    expect(diagnostics.some((entry) => entry.message.includes('W9999'))).toBe(false)
+  })
+
   it('lints only the addressed page when one is given', async () => {
     await write(
       'docs/wiki/note/W0001-a.md',
@@ -740,6 +899,84 @@ describe('memon wiki lint', () => {
     const run = await runCapturing(() => runWikiLint({ ...globals(), page: 'b' }))
     const parsed = jsonAs<{ pages: { id: string }[] }>(run.stdout)
     expect(parsed.pages.map((entry) => entry.id)).toEqual(['W0002'])
+  })
+
+  it('never spawns git for an ordinary command, a VERIFIED finding included', async () => {
+    // No ordinary command makes a review claim, so a missing, slow, or hanging
+    // git must not be reached at all — not even by a `status: VERIFIED` page.
+    await write(
+      'docs/wiki/note/W0001-a.md',
+      page(
+        [
+          'id: W0001',
+          'kind: note',
+          'title: A',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+      ),
+    )
+    await write(
+      'docs/wiki/finding/W0002-verified.md',
+      page(
+        [
+          'id: W0002',
+          'kind: finding',
+          'title: Verified',
+          'status: VERIFIED',
+          'sources: [E0001]',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+        '\n# Verified\n\n## Claim\n\nE0001 shows it.\n',
+      ),
+    )
+
+    const linted = await withStubbedGit(() => runCapturing(() => runWikiLint(globals())))
+    expect(linted.calls).toEqual([])
+    expect(lintRows(linted.result).map((row) => row.id).sort()).toEqual(['W0001', 'W0002'])
+    expect(lintRows(linted.result).flatMap((row) => row.codes)).not.toContain(
+      'WIKI_UNREVIEWED_VERIFIED',
+    )
+
+    const listed = await withStubbedGit(() => runCapturing(() => runWikiLs(globals())))
+    expect(listed.calls).toEqual([])
+    expect(
+      jsonAs<{ pages: Record<string, unknown>[] }>(listed.result.stdout).pages[0],
+    ).not.toHaveProperty('review')
+
+    const shown = await withStubbedGit(() =>
+      runCapturing(() => runWikiShow({ ...globals(), page: 'W0002' })),
+    )
+    expect(shown.calls).toEqual([])
+    expect(jsonAs<Record<string, unknown>>(shown.result.stdout)).not.toHaveProperty('review')
+
+    const backlinks = await withStubbedGit(() =>
+      runCapturing(() => runWikiBacklinks({ ...globals(), artifact: 'E0001' })),
+    )
+    expect(backlinks.calls).toEqual([])
+    expect(
+      jsonAs<{ pages: Record<string, unknown>[] }>(backlinks.result.stdout).pages[0],
+    ).not.toHaveProperty('reviewState')
+  })
+
+  it('reports a bundle `entry` missing from the page assets', async () => {
+    await write(
+      'docs/wiki/showcase/W0007-demo/README.md',
+      page(
+        [
+          'id: W0007',
+          'kind: showcase',
+          'title: Demo',
+          'status: READY',
+          'entry: view.html',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+      ),
+    )
+    const run = await runCapturing(() => runWikiLint({ ...globals(), page: 'demo' }))
+    expect(lintRows(run)[0]!.codes).toContain('WIKI_ENTRY_MISSING')
   })
 })
 
@@ -794,13 +1031,14 @@ describe('memon wiki deprecate and delete', () => {
     expect(await readFile('docs/wiki/note/W0004-old-claim.md')).not.toContain('deprecated:')
   })
 
-  it('exits 4 for an unknown successor and leaves the file unchanged', async () => {
-    const before = await readFile('docs/wiki/note/W0004-old-claim.md')
-    const run = await runCapturing(() =>
+  it('validates successor syntax without checking whether the page exists', async () => {
+    const accepted = await runCapturing(() =>
       runWikiDeprecate({ ...globals(), page: 'W0004', reason: 'x', supersededBy: 'W9999' }),
     )
-    expect(run.exitCode).toBe(4)
-    expect(await readFile('docs/wiki/note/W0004-old-claim.md')).toBe(before)
+    expect(accepted.exitCode).toBeNull()
+    expect(await readFile('docs/wiki/note/W0004-old-claim.md')).toContain(
+      'superseded_by: W9999',
+    )
   })
 
   it('refuses a bundle holding more than README.md without --force', async () => {
@@ -846,14 +1084,6 @@ describe('memon wiki deprecate and delete', () => {
 
 describe('memon wiki backlinks', () => {
   it('lists every page citing an experiment, newest first', async () => {
-    await runCapturing(() =>
-      runExperimentCreate({
-        projectRoot: root,
-        cwd: root,
-        slug: 'fused-attention',
-        title: 'Fused attention',
-      }),
-    )
     await write(
       'docs/wiki/finding/W0004-alpha.md',
       page(
@@ -895,21 +1125,24 @@ describe('memon wiki backlinks', () => {
     expect(JSON.parse(run.stdout)).toMatchObject({ pages: [] })
   })
 
-  it('adds markdownReferences for a Report id, run READMEs included', async () => {
+  it('does not resolve ordinary Markdown links or scan run READMEs', async () => {
     await write('docs/reports/R0007-bf16-drift.md', '# bf16 drift\n\ntext\n')
     await write(
       'logs/bf16-260501-100000/README.md',
-      `---\nid: bf16-260501-100000\nname: bf16\nstatus: FINISHED\narchived: false\nexperiment: null\ncreated_at: '2026-05-01T10:00:00+08:00'\nupdated_at: '2026-05-01T11:00:00+08:00'\nhost: test\npid: null\ngpus: []\nentry: ./train.sh\ncommand: ./train.sh\nwandb: null\n---\n\n## Setup\n\nsee [the report](../../docs/reports/R0007-bf16-drift.md)\n\n## Result\n\nx\n\n## Artifacts\n`,
+      '# Run\n\nsee [the report](../../docs/reports/R0007-bf16-drift.md)\n',
     )
-    await write('docs/digests/D0001-2026-05-02.md', '# digest\n\n[report](../reports/R0007-bf16-drift.md)\n')
-    await write('docs/digests/D0002-2026-05-03.md', '# digest\n\n[other](../reports/R0008-other.md)\n')
-
-    const run = await runCapturing(() => runWikiBacklinks({ ...globals(), artifact: 'R0007' }))
-    const parsed = jsonAs<{ markdownReferences: { path: string }[] }>(run.stdout)
-    expect(parsed.markdownReferences.map((entry) => entry.path)).toEqual([
+    await write(
       'docs/digests/D0001-2026-05-02.md',
-      'logs/bf16-260501-100000/README.md',
-    ])
+      '# digest\n\n[report](../reports/R0007-bf16-drift.md)\n',
+    )
+
+    const run = await runCapturing(() =>
+      runWikiBacklinks({ ...globals(), artifact: 'R0007' }),
+    )
+    expect(jsonAs<{ pages: unknown[] }>(run.stdout)).toEqual({
+      artifact: 'R0007',
+      pages: [],
+    })
   })
 })
 
@@ -941,6 +1174,7 @@ describe('memon wiki migrate-report', () => {
       status: 'TENTATIVE',
       title: 'bf16 drift',
     })
+    expect(result).not.toHaveProperty('backlinks')
 
     const content = await readFile(result.newPath)
     expect(content).toContain('id: W0001')
@@ -1045,8 +1279,7 @@ describe('memon wiki review and commit outside git', () => {
     )
     for (const run of [
       await runCapturing(() => runWikiReviewLog(globals())),
-      await runCapturing(() => runWikiReviewLs(globals())),
-      await runCapturing(() => runWikiReviewDiff({ ...globals(), page: 'W0001' })),
+      await runCapturing(() => runWikiReviewDiff(globals())),
       await runCapturing(() => runWikiCommit(globals())),
     ]) {
       expect(run.exitCode).toBe(4)
@@ -1136,48 +1369,204 @@ describe('memon wiki review', () => {
     )
     expect(missing.exitCode).toBe(4)
   })
+})
 
-  it('diffs from verifiedThrough to the worktree, and prints nothing when VERIFIED', async () => {
-    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
-    const partial = await runCapturing(() =>
-      runWikiReviewLs({ ...globals(), state: 'CHANGED_SINCE_VERIFY' }),
+// ---------- review diff (one whole-wiki, commit-scoped diff) ----------
+
+interface ReviewDiff {
+  verifiedThrough: string | null
+  verifiedAt: string | null
+  base: string
+  baseIsEmptyTree: boolean
+  head: string | null
+  pathspec: string
+  files: string[]
+  diff: string
+}
+
+const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+describe('memon wiki review diff', () => {
+  let seed: string
+
+  const notePage = (id: string, slug: string, body: string): string =>
+    page(
+      [
+        `id: ${id}`,
+        'kind: note',
+        `title: ${slug}`,
+        'created_at: "2026-09-01T09:00:00+08:00"',
+        'updated_at: "2026-09-01T09:00:00+08:00"',
+      ].join('\n'),
+      `\n# ${slug}\n\n${body}\n`,
     )
-    expect((jsonAs<{ pages: { id: string }[] }>(partial.stdout)).pages).toHaveLength(1)
 
-    const diff = await runCapturing(() =>
-      runWikiReviewDiff({ ...globals(), page: 'W0001', format: 'human' }),
-    )
-    expect(diff.exitCode).toBeNull()
-    expect(diff.stdout).toContain('line three')
-    expect(diff.stdout).toContain(`--- a/docs/wiki/note/W0001-a.md`)
-
-    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
-    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
-    const verified = await runCapturing(() => runWikiReviewLs({ ...globals(), state: 'VERIFIED' }))
-    expect((jsonAs<{ pages: { id: string }[] }>(verified.stdout)).pages).toHaveLength(1)
-
-    const empty = await runCapturing(() =>
-      runWikiReviewDiff({ ...globals(), page: 'W0001', format: 'human' }),
-    )
-    expect(empty.exitCode).toBeNull()
-    expect(empty.stdout).toBe('')
+  beforeEach(async () => {
+    await initGit()
+    await write('docs/wiki/note/W0001-a.md', notePage('W0001', 'a', 'alpha alpha alpha'))
+    await write('docs/wiki/note/W0002-b.md', notePage('W0002', 'b', 'beta beta beta'))
+    await write('docs/wiki/note/W0003-c.md', notePage('W0003', 'c', 'gamma gamma gamma'))
+    await git('add', '-A', '--', 'docs')
+    await git('commit', '-m', 'wiki: seed')
+    seed = (await git('rev-parse', 'HEAD')).trim()
   })
 
-  it('exposes the same review object through ls --review and show', async () => {
-    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
-    const listed = await runCapturing(() =>
-      runWikiLs({ ...globals(), review: 'CHANGED_SINCE_VERIFY' }),
-    )
-    const pages = (jsonAs<{ pages: { id: string; review: unknown }[] }>(listed.stdout)).pages
-    expect(pages.map((entry) => entry.id)).toEqual(['W0001'])
-
-    const shown = await runCapturing(() => runWikiShow({ ...globals(), page: 'W0001' }))
-    expect((jsonAs<{ review: unknown }>(shown.stdout)).review).toEqual(pages[0]!.review)
+  it('diffs the whole committed wiki from the empty tree when nothing is verified', async () => {
+    const run = await runCapturing(() => runWikiReviewDiff(globals()))
+    const parsed = jsonAs<ReviewDiff>(run.stdout)
+    expect(parsed.verifiedThrough).toBeNull()
+    expect(parsed.verifiedAt).toBeNull()
+    expect(parsed.base).toBe(EMPTY_TREE_SHA)
+    expect(parsed.baseIsEmptyTree).toBe(true)
+    expect(parsed.head).toBe(seed)
+    expect(parsed.files).toEqual([
+      'docs/wiki/note/W0001-a.md',
+      'docs/wiki/note/W0002-b.md',
+      'docs/wiki/note/W0003-c.md',
+    ])
+    expect(parsed.diff).toContain('new file mode')
+    expect(parsed.diff).toContain('+alpha alpha alpha')
   })
 
-  it('exits 4 for review diff on an unknown page', async () => {
-    const run = await runCapturing(() => runWikiReviewDiff({ ...globals(), page: 'nope' }))
-    expect(run.exitCode).toBe(4)
+  it('covers every committed wiki change since the verified commit, worktree excluded', async () => {
+    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
+
+    await fs.appendFile(join(root, 'docs/wiki/note/W0001-a.md'), 'committed edit\n', 'utf8')
+    await fs.rm(join(root, 'docs/wiki/note/W0002-b.md'))
+    await fs.mkdir(join(root, 'docs/wiki/retro'), { recursive: true })
+    await git('mv', 'docs/wiki/note/W0003-c.md', 'docs/wiki/retro/W0003-c.md')
+    await write(
+      'docs/wiki/showcase/W0004-d/README.md',
+      page(
+        [
+          'id: W0004',
+          'kind: showcase',
+          'title: d',
+          'status: READY',
+          'entry: plot ünicode.png',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+        '\n# d\n\ndelta showcase bundle over a binary asset\n',
+      ),
+    )
+    await fs.writeFile(
+      join(root, 'docs/wiki/showcase/W0004-d/plot ünicode.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03]),
+    )
+    await write('src/train.py', 'print(1)\n')
+    await git('add', '-A')
+    await git('commit', '-m', 'wiki: reshape')
+    const head = (await git('rev-parse', 'HEAD')).trim()
+    // Only committed work can be verified, so this never reaches the diff.
+    await fs.appendFile(join(root, 'docs/wiki/note/W0001-a.md'), 'worktree only\n', 'utf8')
+
+    const run = await runCapturing(() => runWikiReviewDiff(globals()))
+    const parsed = jsonAs<ReviewDiff>(run.stdout)
+    expect(parsed.verifiedThrough).toBe(seed)
+    expect(parsed.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+    expect(parsed.base).toBe(seed)
+    expect(parsed.baseIsEmptyTree).toBe(false)
+    expect(parsed.head).toBe(head)
+    expect(parsed.pathspec).toBe('docs/wiki')
+    // `--raw -z` never quotes a path, so a rename reports both sides and a
+    // space / non-ASCII asset name survives verbatim.
+    for (const path of [
+      'docs/wiki/note/W0001-a.md',
+      'docs/wiki/note/W0002-b.md',
+      'docs/wiki/note/W0003-c.md',
+      'docs/wiki/retro/W0003-c.md',
+      'docs/wiki/showcase/W0004-d/README.md',
+      'docs/wiki/showcase/W0004-d/plot ünicode.png',
+    ]) {
+      expect(parsed.files).toContain(path)
+    }
+    // Non-wiki paths are outside the pathspec, committed in the same commit or not.
+    expect(parsed.files.every((path) => path.startsWith('docs/wiki/'))).toBe(true)
+    expect(parsed.diff).toContain('+committed edit')
+    expect(parsed.diff).toContain('a/docs/wiki/note/W0002-b.md')
+    expect(parsed.diff).toContain('docs/wiki/retro/W0003-c.md')
+    // `--binary`, so a changed bundle asset is a complete patch.
+    expect(parsed.diff).toContain('GIT binary patch')
+    expect(parsed.diff).not.toContain('worktree only')
+    expect(parsed.diff).not.toContain('src/train.py')
+  })
+
+  it('reports no committed change when HEAD is the verified commit', async () => {
+    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
+    const run = await runCapturing(() => runWikiReviewDiff(globals()))
+    const parsed = jsonAs<ReviewDiff>(run.stdout)
+    expect(parsed.base).toBe(seed)
+    expect(parsed.head).toBe(seed)
+    expect(parsed.files).toEqual([])
+    expect(parsed.diff).toBe('')
+
+    const human = await runCapturing(() => runWikiReviewDiff({ ...globals(), format: 'human' }))
+    expect(human.stdout).toContain(`base: ${seed.slice(0, 10)} (verified `)
+    expect(human.stdout).toContain('(no committed wiki changes since base)')
+  })
+
+  it('refuses a verified baseline that is no longer in the wiki history', async () => {
+    await runCapturing(() => runWikiReviewVerify({ ...globals(), sha: 'next' }))
+    // History rewrite: the marked commit is unreachable. Falling back to the
+    // empty tree would silently discard the human's verification.
+    await git('commit', '--amend', '-m', 'wiki: seed amended')
+
+    const run = await runCapturing(() => runWikiReviewDiff(globals()))
+    expect(run.exitCode).toBe(9)
+    expect(errorOf(run).code).toBe('REVIEW_STALE_BASELINE')
+    expect(run.stdout).toBe('')
+    expect(
+      jsonAs<{ error: { details: { staleMarks: string[] } } }>(run.stderr).error.details.staleMarks,
+    ).toEqual([seed])
+  })
+})
+
+describe('memon wiki review diff without usable history', () => {
+  beforeEach(async () => {
+    await write(
+      'docs/wiki/note/W0001-a.md',
+      page(
+        [
+          'id: W0001',
+          'kind: note',
+          'title: A',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+      ),
+    )
+  })
+
+  it('reports an unborn HEAD as no committed wiki history', async () => {
+    await initGit()
+    const run = await runCapturing(() => runWikiReviewDiff(globals()))
+    expect(run.exitCode).toBeNull()
+    const parsed = jsonAs<ReviewDiff>(run.stdout)
+    expect(parsed.head).toBeNull()
+    expect(parsed.base).toBe(EMPTY_TREE_SHA)
+    expect(parsed.baseIsEmptyTree).toBe(true)
+    expect(parsed.files).toEqual([])
+    expect(parsed.diff).toBe('')
+
+    const human = await runCapturing(() => runWikiReviewDiff({ ...globals(), format: 'human' }))
+    expect(human.stdout).toContain('head: (unborn)')
+    expect(human.stdout).toContain('(no wiki commits yet)')
+  })
+
+  it('surfaces a failing git diff instead of a clean one', async () => {
+    const stub = [
+      'case "$*" in',
+      '  *--is-inside-work-tree*) echo true; exit 0;;',
+      '  *--verify*) echo 1111111111111111111111111111111111111111; exit 0;;',
+      '  *) echo "fatal: bad object" >&2; exit 128;;',
+      'esac',
+      '',
+    ].join('\n')
+    const run = await withStubbedGit(() => runCapturing(() => runWikiReviewDiff(globals())), stub)
+    expect(run.result.exitCode).toBe(1)
+    expect(errorOf(run.result).code).toBe('GIT_FAILED')
+    expect(run.result.stdout).toBe('')
   })
 })
 
@@ -1202,19 +1591,14 @@ describe('memon wiki commit', () => {
     const result = jsonAs<{
       sha: string
       subject: string
-      pages: { id: string; change: string; reviewState: string }[]
+      pages: { id: string; change: string; paths: string[] }[]
       files: string[]
     }>(run.stdout)
     expect(result.subject).toBe('wiki: tighten W0001 limits')
     expect(result.files).toEqual(['docs/wiki/note/W0001-alpha.md'])
+    // No review claim survives a commit: verification is whole-wiki.
     expect(result.pages).toEqual([
-      {
-        id: 'W0001',
-        change: 'create',
-        paths: ['docs/wiki/note/W0001-alpha.md'],
-        reviewState: 'UNVERIFIED',
-        verifiedThrough: null,
-      },
+      { id: 'W0001', change: 'create', paths: ['docs/wiki/note/W0001-alpha.md'] },
     ])
 
     expect((await git('log', '-1', '--format=%s')).trim()).toBe('wiki: tighten W0001 limits')

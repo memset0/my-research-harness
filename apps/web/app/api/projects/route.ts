@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { readIdentityFromRequest } from '@/lib/auth/request-context'
 import { aggregateCentralProjects } from '../../../lib/central/central-projects'
+import { servesProjectsDirectly } from '../../../lib/central/direct-projects'
+import { directCentralRuntime } from '../../../lib/central/direct-runtime'
 import { getCentralFleet } from '../../../lib/central/fleet-runtime'
 import { getRuntime } from '../../../lib/runtime'
 
@@ -19,14 +21,29 @@ export async function GET(req: NextRequest) {
           { status: 403, headers: { 'cache-control': 'no-store' } },
         )
       }
-      const fleet = await getCentralFleet()
-      const payload = await aggregateCentralProjects({
-        registry: fleet.registry,
-        actor: role === 'viewer' ? { role: 'viewer', scopes: scopeProjectRefs } : { role: 'owner' },
-      })
+      const inScope = (project: { host: string; project: string }) =>
+        role !== 'viewer' ||
+        scopeProjectRefs.some(
+          (scope) => scope.host === project.host && scope.project === project.project,
+        )
+      // Directly served Projects are configured, not discovered: listing them
+      // reads configuration only and touches no Project filesystem.
+      const direct = servesProjectsDirectly(rt.config)
+        ? directCentralRuntime(rt.config).registry.listProjects().filter(inScope)
+        : []
+      const remote =
+        (rt.config.central?.hosts.length ?? 0) > 0
+          ? (
+              await aggregateCentralProjects({
+                registry: (await getCentralFleet()).registry,
+                actor:
+                  role === 'viewer' ? { role: 'viewer', scopes: scopeProjectRefs } : { role: 'owner' },
+              })
+            ).projects
+          : []
       return NextResponse.json(
         {
-          projects: payload.projects.map((project) => ({
+          projects: [...direct, ...remote].map((project) => ({
             mode: 'central' as const,
             ...project,
             name: project.project,

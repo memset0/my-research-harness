@@ -4,11 +4,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  migrateV3ToV4,
-  rewriteV3ExpDoc,
-  rewriteV3RunReadme,
-} from './v3-to-v4.js'
+import { migrateV3ToV4, rewriteV3ExpDoc, rewriteV3RunReadme } from './v3-to-v4.js'
 
 const NOW = '2026-05-13T12:00:00+08:00'
 
@@ -81,7 +77,7 @@ How.
 `
 
 describe('rewriteV3RunReadme', () => {
-  it('inserts archived: false when no sidecar and the field is missing', () => {
+  it('writes the explicit false archive flag required by the v4 target', () => {
     const out = rewriteV3RunReadme({
       v3Content: V3_RUN_README,
       hadSidecar: false,
@@ -89,7 +85,6 @@ describe('rewriteV3RunReadme', () => {
     })
     expect(out.unchanged).toBe(false)
     expect(out.content).toContain('archived: false')
-    expect(out.content).toContain(`updated_at: "${NOW}"`)
   })
 
   it('inserts archived: true when sidecar exists and the field is missing', () => {

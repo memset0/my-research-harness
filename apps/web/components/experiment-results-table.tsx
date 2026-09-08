@@ -5,6 +5,7 @@ import type {
   ResultScalar,
   ResultColumn as ResultSchemaColumn,
   ResultsDocument,
+  ResultsVariantEligibility,
   ResultVariant,
   VariantStatus,
 } from '@memon/core'
@@ -45,7 +46,7 @@ import {
   useState,
 } from 'react'
 import { toast } from 'sonner'
-import { type MemberRunSummary, type ProjectTarget, projectWebPath } from '../lib/api'
+import { type ProjectTarget, projectWebPath } from '../lib/api'
 import type {
   ExperimentResultsViewDefinition,
   ResultsViewPinSide,
@@ -170,14 +171,34 @@ export function ExperimentResultsTable({
   document,
   project,
   experimentId,
-  memberRuns,
+  runIds,
+  variantEligibility,
+  deprecatedRuns,
 }: {
   document: ResultsDocument
   project: ProjectTarget
   experimentId: string
-  memberRuns: MemberRunSummary[]
+  /** Run ids declared by the Experiment's `runs` frontmatter. */
+  runIds: string[]
+  variantEligibility?: readonly ResultsVariantEligibility[]
+  deprecatedRuns?: readonly string[]
 }) {
-  const columns = useMemo(() => buildColumns(document), [document])
+  const excludedRuns = useMemo(() => {
+    const ids = new Set(deprecatedRuns)
+    for (const row of variantEligibility ?? []) {
+      for (const id of row.deprecatedRuns) ids.add(id)
+    }
+    return ids
+  }, [deprecatedRuns, variantEligibility])
+  const columns = useMemo(() => buildColumns(document, excludedRuns), [document, excludedRuns])
+  const eligibilityByVariant = useMemo(
+    () => new Map(variantEligibility?.map((row) => [row.variantId, row])),
+    [variantEligibility],
+  )
+  const affectedEligibility = useMemo(
+    () => variantEligibility?.filter((row) => row.metricsValidity !== 'valid') ?? [],
+    [variantEligibility],
+  )
   const projectKey = typeof project === 'string' ? project : `${project.host}:${project.project}`
   const starsKey = `memon:results-table:${projectKey}:starred-column-labels`
   const resultsViews = useExperimentResultsViews(project, experimentId, DEFAULT_PREFERENCES)
@@ -250,10 +271,7 @@ export function ExperimentResultsTable({
   const pinLayoutKey = orderedVisibleColumns
     .map((column) => `${pinnedColumnSide.get(column.id) ?? 'center'}:${column.id}`)
     .join('|')
-  const memberRunsById = useMemo(
-    () => new Map(memberRuns.map((run) => [run.id, run] as const)),
-    [memberRuns],
-  )
+  const declaredRunIds = useMemo(() => new Set(runIds), [runIds])
 
   const domains = useMemo(
     () =>
@@ -263,8 +281,8 @@ export function ExperimentResultsTable({
     [columns, document.variants],
   )
   const sotaRanks = useMemo(
-    () => computeSotaRanks(document.variants, columns, sotaModes),
-    [document.variants, columns, sotaModes],
+    () => computeSotaRanks(document.variants, columns, sotaModes, eligibilityByVariant),
+    [document.variants, columns, sotaModes, eligibilityByVariant],
   )
   const filteredVariants = useMemo(
     () => filterVariants(document.variants, columns, rowFilters, rowOverrides, showAllRows),
@@ -657,6 +675,14 @@ export function ExperimentResultsTable({
 
   return (
     <div className="min-w-0 space-y-3" data-slot="results-table">
+      {affectedEligibility.length > 0 && (
+        <p role="note" className="text-xs text-muted-foreground">
+          Deprecated Runs affect stored metrics (
+          {affectedEligibility.map((row) => `${row.variantId}: ${row.metricsValidity}`).join(', ')}
+          ). Original values are preserved, not recomputed; affected rows are excluded from
+          best-value highlighting.
+        </p>
+      )}
       <div className="space-y-3 rounded-md border bg-muted/20 p-3" data-slot="results-controls">
         <div className="flex flex-wrap items-center gap-2" data-slot="results-view-controls">
           <Label htmlFor={`results-view-${experimentId}`} className="text-xs font-medium">
@@ -1468,7 +1494,8 @@ export function ExperimentResultsTable({
                                     variant={variant}
                                     project={project}
                                     experimentId={experimentId}
-                                    memberRunsById={memberRunsById}
+                                    declaredRunIds={declaredRunIds}
+                                    eligibility={eligibilityByVariant.get(variant.id)}
                                     sotaRank={
                                       metric
                                         ? sotaRanks.get(column.id)?.ranks.get(variant.id)
@@ -1930,7 +1957,10 @@ function ColumnOptionSummary({
   )
 }
 
-function buildColumns(document: ResultsDocument): ResultTableColumn[] {
+function buildColumns(
+  document: ResultsDocument,
+  excludedRuns: ReadonlySet<string>,
+): ResultTableColumn[] {
   return [
     {
       id: 'variant',
@@ -1979,13 +2009,17 @@ function buildColumns(document: ResultsDocument): ResultTableColumn[] {
       id: 'runs',
       label: 'Runs',
       kind: 'runs',
-      getValue: (variant) => variant.runs,
+      getValue: (variant) =>
+        excludedRuns.size === 0 ? variant.runs : variant.runs.filter((id) => !excludedRuns.has(id)),
     },
     {
       id: 'attempts',
       label: 'Attempts',
       kind: 'attempts',
-      getValue: (variant) => variant.attempts,
+      getValue: (variant) =>
+        excludedRuns.size === 0
+          ? variant.attempts
+          : variant.attempts.filter((id) => !excludedRuns.has(id)),
     },
   ]
 }
@@ -1995,18 +2029,21 @@ function ResultCell({
   variant,
   project,
   experimentId,
-  memberRunsById,
+  declaredRunIds,
   sotaRank,
   decimalPlaces,
+  eligibility,
 }: {
   column: ResultTableColumn
   variant: ResultVariant
   project: ProjectTarget
   experimentId: string
-  memberRunsById: ReadonlyMap<string, MemberRunSummary>
+  declaredRunIds: ReadonlySet<string>
   sotaRank?: number
   decimalPlaces?: number
+  eligibility?: ResultsVariantEligibility
 }) {
+  const invalidMetrics = eligibility && eligibility.metricsValidity !== 'valid'
   if (column.kind === 'variant') {
     return (
       <span className="inline-flex items-baseline gap-1.5">
@@ -2014,6 +2051,7 @@ function ResultCell({
           {variant.id}
         </span>
         <span className="font-medium text-foreground">{renderTextWithBreaks(variant.name)}</span>
+        {invalidMetrics && <Badge variant="outline">metrics {eligibility.metricsValidity}</Badge>}
       </span>
     )
   }
@@ -2025,13 +2063,15 @@ function ResultCell({
     )
   }
   if (column.kind === 'runs' || column.kind === 'attempts') {
-    const runIds = column.kind === 'runs' ? variant.runs : variant.attempts
+    const runIds = column.getValue(variant) as string[]
     if (runIds.length === 0) return <EmptyValue />
     return (
       <div className="space-y-0.5">
-        {runIds.map((runId) => {
-          const memberRun = memberRunsById.get(runId)
-          return memberRun ? (
+        {runIds.map((runId) =>
+          // A declared member links into the Experiment page's Run panel;
+          // an id the Experiment does not declare is shown as plain text
+          // rather than a link that would open an empty panel.
+          declaredRunIds.has(runId) ? (
             <span key={runId} className="block whitespace-nowrap font-mono text-[10px]">
               <Link
                 href={`${projectWebPath(project, `/e/${encodeURIComponent(experimentId)}`)}?run=${encodeURIComponent(runId)}`}
@@ -2039,26 +2079,13 @@ function ResultCell({
               >
                 {runId}
               </Link>
-              {memberRun.wandb && (
-                <>
-                  <span className="text-muted-foreground"> · </span>
-                  <a
-                    href={memberRun.wandb}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-primary underline-offset-2 hover:underline"
-                  >
-                    W&amp;B
-                  </a>
-                </>
-              )}
             </span>
           ) : (
             <code key={runId} className="block font-mono text-[10px]">
               {runId}
             </code>
-          )
-        })}
+          ),
+        )}
       </div>
     )
   }
@@ -2112,6 +2139,12 @@ function ResultCell({
       )}
     >
       {content}
+      {column.schema?.group === 'metric' && invalidMetrics && (
+        <span title={`Excluded Runs: ${eligibility.deprecatedRuns.join(', ')}`}>
+          {' '}
+          [{eligibility.metricsValidity}]
+        </span>
+      )}
     </span>
   ) : (
     <code className="font-mono text-[10px]">{content}</code>
@@ -2708,6 +2741,7 @@ function computeSotaRanks(
   variants: ResultVariant[],
   columns: ResultTableColumn[],
   modes: Record<string, SotaMode>,
+  eligibilityByVariant: ReadonlyMap<string, ResultsVariantEligibility>,
 ): Map<string, SotaRanking> {
   const result = new Map<string, SotaRanking>()
   for (const column of columns) {
@@ -2718,6 +2752,8 @@ function computeSotaRanks(
     // Collect finite numeric values for this column, preserving variant order.
     const entries: Array<{ variantId: string; value: number }> = []
     for (const variant of variants) {
+      const eligibility = eligibilityByVariant.get(variant.id)
+      if (eligibility && eligibility.metricsValidity !== 'valid') continue
       const raw = column.getValue(variant)
       if (typeof raw === 'number' && Number.isFinite(raw)) {
         entries.push({ variantId: variant.id, value: raw })

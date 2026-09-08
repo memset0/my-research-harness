@@ -21,7 +21,7 @@ import {
   discoverExperiments,
   generateRowId,
   parseReadme,
-  scanProjectRoot,
+  RunTargetIndex,
   WARNING_CATEGORIES,
   WarningOpError,
   type ApplyWarningOpResult,
@@ -61,10 +61,12 @@ async function resolveTarget(
     }
     return { readmePath: exp.path, projectRoot, targetId: idOrSlug, isExpDoc: true }
   }
-  // Legacy v2 form: id is a run dir base name. Resolve via the runtime index.
-  const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const exp = snap.experiments.find((e) => e.id === idOrSlug)
-  if (!exp) {
+  // Legacy v2 form: id is a run dir base name. Resolve the DIRECTORY only —
+  // `readWithLock` below reads and locks the README itself, and no other run
+  // is touched.
+  const index = await RunTargetIndex.open(projectRoot)
+  const runDir = await index.dir(idOrSlug)
+  if (!runDir) {
     emitErrorAndExit(
       'NOT_FOUND',
       `target "${idOrSlug}" not found — must be either a v3 experiment id ` +
@@ -72,7 +74,7 @@ async function resolveTarget(
     )
   }
   return {
-    readmePath: join(exp.path, 'README.md'),
+    readmePath: join(runDir, 'README.md'),
     projectRoot,
     targetId: idOrSlug,
     isExpDoc: false,

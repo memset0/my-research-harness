@@ -9,7 +9,7 @@ import {
   ArchiveRunningForbiddenError,
   parseReadme,
   reserializeReadme,
-  scanProjectRoot,
+  RunTargetIndex,
   unarchiveRun,
   type Status,
 } from '@memon/core'
@@ -38,14 +38,16 @@ async function resolveExperiment(
 ): Promise<ResolveExpResult> {
   const r = await resolveContext(ctx)
   const projectRoot = singleProjectRoot(r)
-  // Find run dir by id (must include archived too — user may want to operate
-  // on archived runs through `unarchive`, etc.)
-  const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const exp = snap.experiments.find((e) => e.id === runId)
-  if (!exp) {
+  // Locate the run DIRECTORY only: every caller below reads (and locks) the
+  // README itself, so resolving the target must not read it a second time,
+  // nor touch any other run. Archived runs resolve too — the user may want
+  // to operate on them through `unarchive`, etc.
+  const index = await RunTargetIndex.open(projectRoot)
+  const runDir = await index.dir(runId)
+  if (!runDir) {
     emitErrorAndExit('NOT_FOUND', `experiment "${runId}" not found in ${projectRoot}`)
   }
-  return { runDir: exp.path, readmePath: join(exp.path, 'README.md'), projectRoot }
+  return { runDir, readmePath: join(runDir, 'README.md'), projectRoot }
 }
 
 // ---------- status set ----------

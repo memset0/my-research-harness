@@ -1,12 +1,11 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import type { Duplex } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { TextDecoder } from 'node:util'
 import {
   AmbiguousShareError,
+  JournalRecordingError,
   BACKEND_API_MAJOR,
-  BACKEND_TERMINAL_PUBLIC_PATH_HEADER,
   BackendAnomaliesResponseSchema,
   BackendArchiveMutationRequestSchema,
   type BackendCapabilities,
@@ -45,11 +44,9 @@ import {
   BackendGitStatusFilesResponseSchema,
   BackendGitStatusResponseSchema,
   BackendGitSubmodulesResponseSchema,
-  BackendHerdrStartRequestSchema,
   BackendHypothesesResponseSchema,
-  BackendJournalAppendRequestSchema,
-  BackendJournalAppendResponseSchema,
   BackendJournalCountResponseSchema,
+  BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
   BackendLogFilesResponseSchema,
   BackendLogLinesResponseSchema,
@@ -61,6 +58,7 @@ import {
   BackendReadmeMutationResponseSchema,
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
+  BackendResourceInventoryResponseSchema,
   BackendReportsResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
@@ -74,27 +72,13 @@ import {
   BackendShareValidationResponseSchema,
   BackendSlurmStatusSchema,
   BackendStatusMutationRequestSchema,
-  BackendTerminalAttachRequestSchema,
-  BackendTerminalCheckResponseSchema,
-  BackendTerminalInstallResponseSchema,
-  BackendTerminalListResponseSchema,
-  BackendTerminalStartRequestSchema,
-  BackendTerminalStartResponseSchema,
-  BackendTerminalStopRequestSchema,
-  BackendTerminalStopResponseSchema,
-  BackendTmuxCreateRequestSchema,
-  BackendTmuxCreateResponseSchema,
-  BackendTmuxKillResponseSchema,
-  BackendTmuxRenameRequestSchema,
-  BackendTmuxRenameResponseSchema,
-  BackendTmuxSessionResponseSchema,
-  BackendTmuxSessionsResponseSchema,
   BackendWarningMutationRequestSchema,
   BackendWarningMutationResponseSchema,
   BackendWarningsResponseSchema,
   BackendWikiBacklinksResponseSchema,
   BackendWikiConflictResponseSchema,
   BackendWikiDocumentSchema,
+  BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
   BackendWikiReviewMarkRequestSchema,
   BackendWikiReviewOrderResponseSchema,
@@ -109,11 +93,9 @@ import {
   ResourceIdSchema,
   RevisionSchema,
   ShareNotFoundError,
-  TerminalSessionIdSchema,
   WikiReviewError,
   WikiReviewOrderError,
 } from '@memon/core'
-import { createProxyServer } from 'http-proxy-3'
 import {
   authorizeBackendActor,
   BACKEND_ACTOR_CONTEXT_HEADER,
@@ -132,24 +114,11 @@ import {
   type BackendStreamService,
   BackendStreamServiceError,
 } from './stream-service.js'
-import { type BackendTerminalService, BackendTerminalServiceError } from './terminal-service.js'
 
 export const BACKEND_API_PREFIX = '/api/backend/v1'
 export const BACKEND_META_PATH = `${BACKEND_API_PREFIX}/meta`
 export const BACKEND_EVENTS_PATH = `${BACKEND_API_PREFIX}/events`
 export const BACKEND_PROJECTS_PATH = `${BACKEND_API_PREFIX}/projects`
-export const BACKEND_TERMINAL_PROXY_PREFIX = `${BACKEND_API_PREFIX}/terminal/proxy/`
-export const BACKEND_TERMINAL_CHECK_ROUTE = `${BACKEND_API_PREFIX}/terminal/check`
-export const BACKEND_TERMINAL_INSTALL_ROUTE = `${BACKEND_API_PREFIX}/terminal/install`
-export const BACKEND_TERMINAL_START_ROUTE = `${BACKEND_API_PREFIX}/terminal/start`
-export const BACKEND_TERMINAL_ATTACH_ROUTE = `${BACKEND_API_PREFIX}/terminal/attach`
-export const BACKEND_TERMINAL_LIST_ROUTE = `${BACKEND_API_PREFIX}/terminal/list`
-export const BACKEND_TERMINAL_STOP_ROUTE = `${BACKEND_API_PREFIX}/terminal/stop`
-export const BACKEND_TERMINAL_HERDR_ROUTE = `${BACKEND_API_PREFIX}/terminal/herdr`
-export const BACKEND_TMUX_SESSIONS_ROUTE = `${BACKEND_API_PREFIX}/tmux-sessions`
-export const BACKEND_TMUX_SESSION_ROUTE = `${BACKEND_API_PREFIX}/tmux-sessions/[name]`
-export const BACKEND_TMUX_RENAME_ROUTE = `${BACKEND_API_PREFIX}/tmux-sessions/[name]/rename`
-const CENTRAL_TERMINAL_PROXY_PREFIX = '/api/terminal/proxy/'
 export const BACKEND_SHARE_VALIDATE_ROUTE = `${BACKEND_API_PREFIX}/projects/[project]/shares/validate`
 export const BACKEND_SHARES_ROUTE = `${BACKEND_API_PREFIX}/projects/[project]/shares`
 export const BACKEND_SHARE_ITEM_ROUTE = `${BACKEND_API_PREFIX}/projects/[project]/shares/[id]`
@@ -158,7 +127,10 @@ export const BACKEND_RUN_ROUTE = `${BACKEND_API_PREFIX}/runs/[id]`
 export const BACKEND_EXPERIMENTS_ROUTE = `${BACKEND_API_PREFIX}/experiments`
 export const BACKEND_EXPERIMENT_ROUTE = `${BACKEND_API_PREFIX}/experiments/[id]`
 export const BACKEND_HYPOTHESES_ROUTE = `${BACKEND_API_PREFIX}/hypotheses`
+/** Legacy `docs/journal.md` read; stays inside the existing viewer scope. */
 export const BACKEND_JOURNAL_ROUTE = `${BACKEND_API_PREFIX}/journal`
+/** Owner-only merged diagnostics: legacy history plus invocation receipts. */
+export const BACKEND_JOURNAL_HISTORY_ROUTE = `${BACKEND_API_PREFIX}/journal/history`
 export const BACKEND_ANOMALIES_ROUTE = `${BACKEND_API_PREFIX}/anomalies`
 export const BACKEND_REPORTS_ROUTE = `${BACKEND_API_PREFIX}/reports`
 export const BACKEND_REPORT_ROUTE = `${BACKEND_API_PREFIX}/reports/[id]`
@@ -187,7 +159,6 @@ export const BACKEND_RUN_STATUS_ROUTE = `${BACKEND_API_PREFIX}/runs/[id]/status`
 export const BACKEND_RUN_ARCHIVE_ROUTE = `${BACKEND_API_PREFIX}/runs/[id]/archive`
 export const BACKEND_EXPERIMENT_STATUS_ROUTE = `${BACKEND_API_PREFIX}/experiments/[id]/status`
 export const BACKEND_EXPERIMENT_ARCHIVE_ROUTE = `${BACKEND_API_PREFIX}/experiments/[id]/archive`
-export const BACKEND_JOURNAL_APPEND_ROUTE = `${BACKEND_API_PREFIX}/journal/append`
 export const BACKEND_RUN_WARNINGS_ROUTE = `${BACKEND_API_PREFIX}/runs/[id]/warnings`
 export const BACKEND_RUN_WARNING_ROUTE = `${BACKEND_API_PREFIX}/runs/[id]/warnings/[rowId]`
 export const BACKEND_EXPERIMENT_WARNINGS_ROUTE = `${BACKEND_API_PREFIX}/experiments/[id]/warnings`
@@ -208,16 +179,6 @@ export const BACKEND_ROUTE_ALLOW_LIST = Object.freeze({
   [BACKEND_META_PATH]: Object.freeze(['GET'] as const),
   [BACKEND_EVENTS_PATH]: Object.freeze(['GET'] as const),
   [BACKEND_PROJECTS_PATH]: Object.freeze(['GET'] as const),
-  [BACKEND_TERMINAL_CHECK_ROUTE]: Object.freeze(['GET'] as const),
-  [BACKEND_TERMINAL_INSTALL_ROUTE]: Object.freeze(['POST'] as const),
-  [BACKEND_TERMINAL_START_ROUTE]: Object.freeze(['POST'] as const),
-  [BACKEND_TERMINAL_ATTACH_ROUTE]: Object.freeze(['POST'] as const),
-  [BACKEND_TERMINAL_LIST_ROUTE]: Object.freeze(['GET'] as const),
-  [BACKEND_TERMINAL_STOP_ROUTE]: Object.freeze(['POST'] as const),
-  [BACKEND_TERMINAL_HERDR_ROUTE]: Object.freeze(['POST'] as const),
-  [BACKEND_TMUX_SESSIONS_ROUTE]: Object.freeze(['GET', 'POST'] as const),
-  [BACKEND_TMUX_SESSION_ROUTE]: Object.freeze(['GET', 'DELETE'] as const),
-  [BACKEND_TMUX_RENAME_ROUTE]: Object.freeze(['POST'] as const),
   [BACKEND_SHARE_VALIDATE_ROUTE]: Object.freeze(['POST'] as const),
   [BACKEND_SHARES_ROUTE]: Object.freeze(['GET', 'POST'] as const),
   [BACKEND_SHARE_ITEM_ROUTE]: Object.freeze(['DELETE'] as const),
@@ -227,11 +188,12 @@ export const BACKEND_ROUTE_ALLOW_LIST = Object.freeze({
   [BACKEND_EXPERIMENT_ROUTE]: Object.freeze(['GET', 'DELETE'] as const),
   [BACKEND_HYPOTHESES_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_JOURNAL_ROUTE]: Object.freeze(['GET'] as const),
+  [BACKEND_JOURNAL_HISTORY_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_ANOMALIES_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_REPORTS_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_REPORT_ROUTE]: Object.freeze(['GET', 'PUT'] as const),
   [BACKEND_DIGESTS_ROUTE]: Object.freeze(['GET'] as const),
-  [BACKEND_DIGEST_ROUTE]: Object.freeze(['GET', 'PUT'] as const),
+  [BACKEND_DIGEST_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_CODE_REVIEWS_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_CODE_REVIEW_ROUTE]: Object.freeze(['GET', 'PATCH'] as const),
   [BACKEND_README_ROUTE]: Object.freeze(['GET', 'PUT'] as const),
@@ -255,7 +217,6 @@ export const BACKEND_ROUTE_ALLOW_LIST = Object.freeze({
   [BACKEND_RUN_ARCHIVE_ROUTE]: Object.freeze(['PATCH'] as const),
   [BACKEND_EXPERIMENT_STATUS_ROUTE]: Object.freeze(['PATCH'] as const),
   [BACKEND_EXPERIMENT_ARCHIVE_ROUTE]: Object.freeze(['PATCH'] as const),
-  [BACKEND_JOURNAL_APPEND_ROUTE]: Object.freeze(['POST'] as const),
   [BACKEND_RUN_WARNINGS_ROUTE]: Object.freeze(['GET', 'POST'] as const),
   [BACKEND_RUN_WARNING_ROUTE]: Object.freeze(['PATCH', 'DELETE'] as const),
   [BACKEND_EXPERIMENT_WARNINGS_ROUTE]: Object.freeze(['GET', 'POST'] as const),
@@ -295,9 +256,6 @@ export type ProjectDiscoveryProvider = () =>
   | readonly ProjectDiscoveryItem[]
   | Promise<readonly ProjectDiscoveryItem[]>
 export type BackendShareValidator = (project: string, token: string) => boolean | Promise<boolean>
-export type BackendTerminalTargetResolver = (
-  opaqueRoute: string,
-) => string | null | Promise<string | null>
 export interface BackendShareProviders {
   list: (project: string, includeTokens: boolean) => unknown | Promise<unknown>
   add: (project: string, input: { label?: string; expires?: string }) => unknown | Promise<unknown>
@@ -317,9 +275,6 @@ export interface BackendServerOptions {
   projectDiscovery?: ProjectDiscoveryProvider
   shareValidator?: BackendShareValidator
   shareProviders?: Partial<BackendShareProviders>
-  terminalTargetResolver?: BackendTerminalTargetResolver
-  terminalService?: BackendTerminalService
-  onTerminalProxyError?: (error: Error) => void
   projectService?: BackendProjectReadService
   documentService?: BackendDocumentService
   gitService?: BackendGitService
@@ -345,9 +300,6 @@ interface ResolvedBackendOptions {
   projectDiscovery: ProjectDiscoveryProvider
   shareValidator: BackendShareValidator
   shareProviders: BackendShareProviders
-  terminalTargetResolver: BackendTerminalTargetResolver | null
-  terminalService?: BackendTerminalService
-  onTerminalProxyError: ((error: Error) => void) | undefined
   projectService?: BackendProjectReadService
   documentService?: BackendDocumentService
   gitService?: BackendGitService
@@ -400,10 +352,7 @@ function resolveOptions(options: BackendServerOptions): ResolvedBackendOptions {
         ? {
             ...options.capabilities,
             mutations: false,
-            tmux: false,
-            terminal: false,
             slurm: false,
-            herdr: false,
           }
         : options.capabilities,
     ),
@@ -428,11 +377,6 @@ function resolveOptions(options: BackendServerOptions): ResolvedBackendOptions {
           throw new Error('share revoke provider is unavailable')
         }),
     },
-    terminalTargetResolver:
-      options.terminalTargetResolver ??
-      (options.terminalService ? (route) => options.terminalService!.target(route) : null),
-    terminalService: options.terminalService,
-    onTerminalProxyError: options.onTerminalProxyError,
     projectService: options.projectService,
     documentService: options.documentService,
     gitService: options.gitService,
@@ -559,8 +503,9 @@ function writeCodeReviewResult(response: ServerResponse, result: unknown): boole
   return true
 }
 
+/** Diagnostic history changed: a mutation recorded an invocation receipt. */
 function publishJournalChange(eventStream: BackendEventStream, project: string): void {
-  eventStream.publish({ project, topic: 'journal-change', data: { type: 'append' } })
+  eventStream.publish({ project, topic: 'journal-change', data: { type: 'record' } })
 }
 
 function mutationErrorStatus(error: BackendMutationError): 400 | 403 | 404 | 409 | 500 {
@@ -574,6 +519,8 @@ function mutationErrorStatus(error: BackendMutationError): 400 | 403 | 404 | 409
     case 'PROJECT_NOT_FOUND':
     case 'RESOURCE_NOT_FOUND':
       return 404
+    // PARTIAL: the change landed but its receipt or rollback did not. It is a
+    // server-side incomplete operation, never a success and never a conflict.
     default:
       return 500
   }
@@ -601,7 +548,6 @@ interface AllowedBackendRoute {
   wikiId?: string
   wikiArtifact?: string
   wikiSha?: string
-  terminalSessionName?: string
 }
 
 function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | null {
@@ -610,23 +556,6 @@ function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | nul
     return { key, methods: BACKEND_ROUTE_ALLOW_LIST[key] }
   }
   const prefix = BACKEND_API_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const tmuxMatch = new RegExp(`^${prefix}/tmux-sessions/([^/]+)(?:/(rename))?$`).exec(pathname)
-  if (tmuxMatch) {
-    let sessionName: string
-    try {
-      sessionName = decodeURIComponent(tmuxMatch[1]!)
-    } catch {
-      return null
-    }
-    const parsed = TerminalSessionIdSchema.safeParse(sessionName)
-    if (!parsed.success || !parsed.data.startsWith('memon-')) return null
-    const key = tmuxMatch[2] ? BACKEND_TMUX_RENAME_ROUTE : BACKEND_TMUX_SESSION_ROUTE
-    return {
-      key,
-      methods: BACKEND_ROUTE_ALLOW_LIST[key],
-      terminalSessionName: parsed.data,
-    }
-  }
   const readmeMatch = new RegExp(`^${prefix}/(runs|experiments)/([^/]+)/readme$`).exec(pathname)
   if (readmeMatch) {
     let decodedId: string
@@ -1057,19 +986,6 @@ function isStreamDataRoute(key: string): boolean {
   return STREAM_DATA_ROUTE_KEYS.includes(key)
 }
 
-const TERMINAL_CONTROL_ROUTE_KEYS: readonly string[] = [
-  BACKEND_TERMINAL_CHECK_ROUTE,
-  BACKEND_TERMINAL_INSTALL_ROUTE,
-  BACKEND_TERMINAL_START_ROUTE,
-  BACKEND_TERMINAL_ATTACH_ROUTE,
-  BACKEND_TERMINAL_LIST_ROUTE,
-  BACKEND_TERMINAL_STOP_ROUTE,
-  BACKEND_TERMINAL_HERDR_ROUTE,
-]
-
-function isTerminalControlRoute(key: string): boolean {
-  return TERMINAL_CONTROL_ROUTE_KEYS.includes(key)
-}
 
 function hasSingleValue(search: URLSearchParams, key: string): boolean {
   return search.getAll(key).length === 1
@@ -1094,7 +1010,6 @@ function routeAllowsQuery(
       BACKEND_RUN_ARCHIVE_ROUTE,
       BACKEND_EXPERIMENT_STATUS_ROUTE,
       BACKEND_EXPERIMENT_ARCHIVE_ROUTE,
-      BACKEND_JOURNAL_APPEND_ROUTE,
       BACKEND_RUN_WARNINGS_ROUTE,
       BACKEND_RUN_WARNING_ROUTE,
       BACKEND_EXPERIMENT_WARNINGS_ROUTE,
@@ -1137,13 +1052,39 @@ function routeAllowsQuery(
         keys.every((key) => key === 'project' || key === 'force')
       )
     }
+    // `deprecated` is the explicit-inspection selector for the Run
+    // collection: absent means the research default (deprecated Runs
+    // excluded), `include` adds them, `only` returns just them. Explicit-id
+    // Run reads are never filtered, so no other route takes it.
+    const inventory = search.getAll('inventory')
+    const inventoryRoute =
+      route.key === BACKEND_RUNS_ROUTE || route.key === BACKEND_EXPERIMENTS_ROUTE
+    if (
+      inventory.length > 1 ||
+      (inventory.length === 1 && inventory[0] !== '1') ||
+      (inventory.length > 0 && !inventoryRoute)
+    ) {
+      return false
+    }
     const allowed =
       route.key === BACKEND_JOURNAL_ROUTE
         ? new Set(['project', 'limit', 'before', 'countOnly'])
         : route.key === BACKEND_RUN_FILES_ROUTE
           ? new Set(['project', 'depth'])
-          : new Set(['project'])
+          : route.key === BACKEND_RUNS_ROUTE
+            ? new Set(['project', 'deprecated', 'inventory'])
+            : route.key === BACKEND_EXPERIMENTS_ROUTE
+              ? new Set(['project', 'inventory'])
+              : new Set(['project'])
     if (keys.some((key) => !allowed.has(key))) return false
+    const deprecated = search.getAll('deprecated')
+    if (
+      deprecated.length > 1 ||
+      (deprecated[0] !== undefined && !['include', 'only'].includes(deprecated[0]))
+    ) {
+      return false
+    }
+    if (inventory.length > 0 && deprecated.length > 0) return false
     if (search.getAll('limit').length > 1 || search.getAll('before').length > 1) return false
     const limit = search.get('limit')
     const before = search.get('before')
@@ -1164,6 +1105,20 @@ function routeAllowsQuery(
   if (isDocumentDataRoute(route.key)) {
     const projects = search.getAll('project')
     if (projects.length !== 1 || !ProjectNameSchema.safeParse(projects[0]).success) return false
+    const inventoryRoutes: readonly string[] = [
+      BACKEND_REPORTS_ROUTE,
+      BACKEND_DIGESTS_ROUTE,
+      BACKEND_CODE_REVIEWS_ROUTE,
+      BACKEND_WIKI_ROUTE,
+    ]
+    if (inventoryRoutes.includes(route.key)) {
+      const inventory = search.getAll('inventory')
+      return (
+        inventory.length <= 1 &&
+        (inventory.length === 0 || inventory[0] === '1') &&
+        keys.every((key) => key === 'project' || key === 'inventory')
+      )
+    }
     if (route.key !== BACKEND_README_ROUTE) {
       return keys.length === 1 && keys[0] === 'project'
     }
@@ -1278,6 +1233,14 @@ function routeAllowsQuery(
       ProjectNameSchema.safeParse(projects[0]).success
     )
   }
+  if (route.key === BACKEND_JOURNAL_HISTORY_ROUTE) {
+    const projects = search.getAll('project')
+    if (projects.length !== 1 || !ProjectNameSchema.safeParse(projects[0]).success) return false
+    if (keys.some((key) => key !== 'project' && key !== 'limit')) return false
+    if (search.getAll('limit').length > 1) return false
+    const limit = search.get('limit')
+    return limit === null || /^\d{1,6}$/.test(limit)
+  }
   if (isStreamDataRoute(route.key)) {
     const projects = search.getAll('project')
     if (route.key === BACKEND_REPORT_ASSET_ROUTE || route.key === BACKEND_WIKI_ASSET_ROUTE) {
@@ -1307,19 +1270,6 @@ function routeAllowsQuery(
     return true
   }
   if (route.key === BACKEND_SLURM_STATUS_ROUTE) {
-    const projects = search.getAll('project')
-    return (
-      keys.length === 1 &&
-      keys[0] === 'project' &&
-      projects.length === 1 &&
-      ProjectNameSchema.safeParse(projects[0]).success
-    )
-  }
-  if (isTerminalControlRoute(route.key)) {
-    if (route.key !== BACKEND_TERMINAL_START_ROUTE && route.key !== BACKEND_TERMINAL_HERDR_ROUTE) {
-      return keys.length === 0
-    }
-    if (route.key === BACKEND_TERMINAL_HERDR_ROUTE && keys.length === 0) return true
     const projects = search.getAll('project')
     return (
       keys.length === 1 &&
@@ -1715,277 +1665,7 @@ export function createBackendHandler(options: BackendServerOptions): BackendHand
   return createResolvedBackendHandler(resolved)
 }
 
-async function handleTerminalControlRoute(
-  request: IncomingMessage,
-  response: ServerResponse,
-  route: AllowedBackendRoute,
-  parsedUrl: URL,
-  resolved: ResolvedBackendOptions,
-): Promise<void> {
-  let actor: ReturnType<typeof decodeBackendActorContext>
-  try {
-    actor = decodeBackendActorContext({
-      serviceAuthenticated: true,
-      headerValue: request.headers[BACKEND_ACTOR_CONTEXT_HEADER],
-    })
-  } catch (error) {
-    if (error instanceof BackendActorContextError) {
-      writeError(
-        response,
-        error.status,
-        error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST',
-        error.message,
-      )
-      return
-    }
-    throw error
-  }
-  if (actor.role !== 'owner') {
-    writeError(response, 403, 'FORBIDDEN', 'owner actor is required for terminal lifecycle')
-    return
-  }
-  if (!resolved.capabilities.terminal || !resolved.terminalService) {
-    writeError(response, 409, 'CONFLICT', 'Backend terminal capability is unavailable')
-    return
-  }
-  if (route.key === BACKEND_TERMINAL_HERDR_ROUTE && !resolved.capabilities.herdr) {
-    writeError(response, 409, 'CONFLICT', 'Backend Herdr capability is unavailable')
-    return
-  }
 
-  try {
-    switch (route.key) {
-      case BACKEND_TERMINAL_CHECK_ROUTE:
-        writeJson(
-          response,
-          200,
-          BackendTerminalCheckResponseSchema.parse(await resolved.terminalService.check()),
-        )
-        return
-      case BACKEND_TERMINAL_INSTALL_ROUTE:
-        writeJson(
-          response,
-          200,
-          BackendTerminalInstallResponseSchema.parse(await resolved.terminalService.install()),
-        )
-        return
-      case BACKEND_TERMINAL_LIST_ROUTE:
-        writeJson(
-          response,
-          200,
-          BackendTerminalListResponseSchema.parse(await resolved.terminalService.list()),
-        )
-        return
-      case BACKEND_TERMINAL_START_ROUTE: {
-        const input = BackendTerminalStartRequestSchema.safeParse(
-          await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-        )
-        if (!input.success || selectedProject(parsedUrl.searchParams) !== input.data.project) {
-          throw new BackendControlBodyError(400, 'BAD_REQUEST', 'Terminal start request is invalid')
-        }
-        writeJson(
-          response,
-          200,
-          BackendTerminalStartResponseSchema.parse(
-            await resolved.terminalService.start(input.data),
-          ),
-        )
-        return
-      }
-      case BACKEND_TERMINAL_ATTACH_ROUTE: {
-        const input = BackendTerminalAttachRequestSchema.safeParse(
-          await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-        )
-        if (!input.success) {
-          throw new BackendControlBodyError(
-            400,
-            'BAD_REQUEST',
-            'Terminal attach request is invalid',
-          )
-        }
-        writeJson(
-          response,
-          200,
-          BackendTerminalStartResponseSchema.parse(
-            await resolved.terminalService.attach(input.data),
-          ),
-        )
-        return
-      }
-      case BACKEND_TERMINAL_STOP_ROUTE: {
-        const input = BackendTerminalStopRequestSchema.safeParse(
-          await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-        )
-        if (!input.success) {
-          throw new BackendControlBodyError(400, 'BAD_REQUEST', 'Terminal stop request is invalid')
-        }
-        writeJson(
-          response,
-          200,
-          BackendTerminalStopResponseSchema.parse(await resolved.terminalService.stop(input.data)),
-        )
-        return
-      }
-      case BACKEND_TERMINAL_HERDR_ROUTE: {
-        const input = BackendHerdrStartRequestSchema.safeParse(
-          await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-        )
-        const queryProject = selectedProject(parsedUrl.searchParams)
-        if (
-          !input.success ||
-          (input.data.project !== undefined && queryProject !== input.data.project) ||
-          (input.data.project === undefined && queryProject !== null)
-        ) {
-          throw new BackendControlBodyError(400, 'BAD_REQUEST', 'Herdr start request is invalid')
-        }
-        writeJson(
-          response,
-          200,
-          BackendTerminalStartResponseSchema.parse(
-            await resolved.terminalService.startHerdr(input.data),
-          ),
-        )
-        return
-      }
-    }
-  } catch (error) {
-    if (error instanceof BackendControlBodyError) {
-      writeError(response, error.status, error.code, error.message)
-      return
-    }
-    if (error instanceof BackendTerminalServiceError) {
-      const status =
-        error.code === 'BAD_REQUEST' ? 400 : error.code === 'PROJECT_NOT_FOUND' ? 404 : 503
-      writeError(
-        response,
-        status,
-        status === 400 ? 'BAD_REQUEST' : status === 404 ? 'NOT_FOUND' : 'UNAVAILABLE',
-        status >= 500 ? 'Backend terminal operation failed' : error.message,
-        status >= 500,
-      )
-      return
-    }
-    writeError(response, 503, 'UNAVAILABLE', 'Backend terminal operation failed', true)
-  }
-}
-
-async function handleTmuxControlRoute(
-  request: IncomingMessage,
-  response: ServerResponse,
-  route: AllowedBackendRoute,
-  resolved: ResolvedBackendOptions,
-): Promise<void> {
-  let actor: ReturnType<typeof decodeBackendActorContext>
-  try {
-    actor = decodeBackendActorContext({
-      serviceAuthenticated: true,
-      headerValue: request.headers[BACKEND_ACTOR_CONTEXT_HEADER],
-    })
-  } catch (error) {
-    if (error instanceof BackendActorContextError) {
-      writeError(response, error.status, 'BAD_REQUEST', error.message)
-      return
-    }
-    throw error
-  }
-  if (actor.role !== 'owner') {
-    writeError(response, 403, 'FORBIDDEN', 'owner actor is required for tmux management')
-    return
-  }
-  if (!resolved.capabilities.tmux || !resolved.terminalService) {
-    writeError(response, 409, 'CONFLICT', 'Backend tmux capability is unavailable')
-    return
-  }
-
-  try {
-    const method = request.method ?? ''
-    if (route.key === BACKEND_TMUX_SESSIONS_ROUTE && method === 'GET') {
-      writeJson(
-        response,
-        200,
-        BackendTmuxSessionsResponseSchema.parse(await resolved.terminalService.listTmux()),
-      )
-      return
-    }
-    if (route.key === BACKEND_TMUX_SESSIONS_ROUTE && method === 'POST') {
-      const input = BackendTmuxCreateRequestSchema.parse(
-        await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-      )
-      writeJson(
-        response,
-        200,
-        BackendTmuxCreateResponseSchema.parse(await resolved.terminalService.createTmux(input)),
-      )
-      return
-    }
-    if (!route.terminalSessionName) {
-      throw new BackendTerminalServiceError('BAD_REQUEST', 'tmux session selector is invalid')
-    }
-    if (route.key === BACKEND_TMUX_SESSION_ROUTE && method === 'GET') {
-      writeJson(
-        response,
-        200,
-        BackendTmuxSessionResponseSchema.parse(
-          await resolved.terminalService.getTmux(route.terminalSessionName),
-        ),
-      )
-      return
-    }
-    if (route.key === BACKEND_TMUX_SESSION_ROUTE && method === 'DELETE') {
-      writeJson(
-        response,
-        200,
-        BackendTmuxKillResponseSchema.parse(
-          await resolved.terminalService.killTmux(route.terminalSessionName),
-        ),
-      )
-      return
-    }
-    if (route.key === BACKEND_TMUX_RENAME_ROUTE) {
-      const input = BackendTmuxRenameRequestSchema.parse(
-        await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
-      )
-      writeJson(
-        response,
-        200,
-        BackendTmuxRenameResponseSchema.parse(
-          await resolved.terminalService.renameTmux(route.terminalSessionName, input),
-        ),
-      )
-      return
-    }
-  } catch (error) {
-    if (error instanceof BackendControlBodyError) {
-      writeError(response, error.status, error.code, error.message)
-      return
-    }
-    if (error instanceof BackendTerminalServiceError) {
-      const status =
-        error.code === 'BAD_REQUEST'
-          ? 400
-          : error.code === 'CONFLICT'
-            ? 409
-            : error.code === 'PROJECT_NOT_FOUND'
-              ? 404
-              : 503
-      writeError(
-        response,
-        status,
-        status === 400
-          ? 'BAD_REQUEST'
-          : status === 409
-            ? 'CONFLICT'
-            : status === 404
-              ? 'NOT_FOUND'
-              : 'UNAVAILABLE',
-        status >= 500 ? 'Backend tmux operation failed' : error.message,
-        status >= 500,
-      )
-      return
-    }
-    writeError(response, 400, 'BAD_REQUEST', 'Backend tmux request is invalid')
-  }
-}
 
 function createResolvedBackendHandler(resolved: ResolvedBackendOptions): BackendHandler {
   return async (request, response) => {
@@ -2187,6 +1867,15 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
         publishJournalChange(resolved.eventStream, project)
         return
       } catch (error) {
+        if (error instanceof JournalRecordingError) {
+          writeError(
+            response,
+            500,
+            error.code,
+            'Journal recording failed; inspect current documents before retrying.',
+          )
+          return
+        }
         if (error instanceof BackendMutationError) {
           if (error.code === 'CONFLICT') {
             writeJson(
@@ -2212,8 +1901,14 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
                   ? 'FORBIDDEN'
                   : status === 404
                     ? 'NOT_FOUND'
-                    : 'INTERNAL',
-            status >= 500 ? 'Backend Experiment mutation failed' : error.message,
+                    : error.code === 'PARTIAL'
+                      ? 'PARTIAL'
+                      : 'INTERNAL',
+            error.code === 'PARTIAL'
+              ? 'Mutation partially applied; inspect current documents before retrying.'
+              : status >= 500
+                ? 'Backend Experiment mutation failed'
+                : error.message,
           )
           return
         }
@@ -2327,7 +2022,6 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
         BACKEND_RUN_ARCHIVE_ROUTE,
         BACKEND_EXPERIMENT_STATUS_ROUTE,
         BACKEND_EXPERIMENT_ARCHIVE_ROUTE,
-        BACKEND_JOURNAL_APPEND_ROUTE,
       ].includes(route.key)
     ) {
       if (!resolved.mutationService || !resolved.capabilities.mutations) {
@@ -2354,19 +2048,6 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
           return
         }
         const raw = await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES)
-        if (route.key === BACKEND_JOURNAL_APPEND_ROUTE) {
-          const input = BackendJournalAppendRequestSchema.parse(raw)
-          const result = BackendJournalAppendResponseSchema.parse(
-            await resolved.mutationService.appendJournal(project, input),
-          )
-          writeJson(response, 200, result)
-          resolved.eventStream.publish({
-            project,
-            topic: 'journal-change',
-            data: { type: 'append' },
-          })
-          return
-        }
         if (!route.resourceId) {
           writeError(response, 400, 'BAD_REQUEST', 'resource id is required')
           return
@@ -2607,19 +2288,6 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       return
     }
 
-    if (isTerminalControlRoute(route.key)) {
-      await handleTerminalControlRoute(request, response, route, parsedUrl, resolved)
-      return
-    }
-
-    if (
-      route.key === BACKEND_TMUX_SESSIONS_ROUTE ||
-      route.key === BACKEND_TMUX_SESSION_ROUTE ||
-      route.key === BACKEND_TMUX_RENAME_ROUTE
-    ) {
-      await handleTmuxControlRoute(request, response, route, resolved)
-      return
-    }
 
     if (pathname === BACKEND_PROJECTS_PATH) {
       let actor: ReturnType<typeof decodeBackendActorContext>
@@ -2668,6 +2336,60 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       return
     }
 
+    if (route.key === BACKEND_JOURNAL_HISTORY_ROUTE) {
+      const project = selectedProject(parsedUrl.searchParams)
+      if (!project || !resolved.projectService) {
+        writeError(response, 404, 'NOT_FOUND', 'Backend route not found')
+        return
+      }
+      try {
+        const actor = decodeBackendActorContext({
+          serviceAuthenticated: true,
+          headerValue: request.headers[BACKEND_ACTOR_CONTEXT_HEADER],
+        })
+        // Shell class: receipt paths and error codes are owner diagnostics.
+        // The legacy Journal read keeps its own viewer scope and is not
+        // widened by this route existing.
+        const authorization = authorizeBackendActor({
+          actor,
+          target: { host: resolved.host, project },
+          routeClass: 'shell',
+        })
+        if (!authorization.ok) {
+          writeError(response, 403, 'FORBIDDEN', authorization.message)
+          return
+        }
+        const limit = parsedUrl.searchParams.get('limit')
+        writeJson(
+          response,
+          200,
+          BackendJournalHistoryResponseSchema.parse(
+            await resolved.projectService.getJournalHistory(
+              project,
+              limit === null ? undefined : Number(limit),
+            ),
+          ),
+        )
+        return
+      } catch (error) {
+        if (error instanceof BackendActorContextError) {
+          writeError(
+            response,
+            error.status,
+            error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST',
+            error.message,
+          )
+          return
+        }
+        if (error instanceof BackendProjectServiceError) {
+          writeError(response, 404, 'NOT_FOUND', 'Backend Project resource not found')
+          return
+        }
+        writeError(response, 500, 'INTERNAL', 'Backend Journal history read failed')
+        return
+      }
+    }
+
     if (isProjectDataRoute(route.key)) {
       const project = selectedProject(parsedUrl.searchParams)
       if (!project || !resolved.projectService) {
@@ -2700,34 +2422,40 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       try {
         let payload: unknown
         switch (route.key) {
-          case BACKEND_RUNS_ROUTE:
-            payload = BackendRunsResponseSchema.parse(
-              await resolved.projectService.listRuns(project),
+          case BACKEND_RUNS_ROUTE: {
+            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
+            const result = await resolved.projectService.listRuns(
+              project,
+              {
+                includeDeprecated: parsedUrl.searchParams.get('deprecated') === 'include',
+                deprecatedOnly: parsedUrl.searchParams.get('deprecated') === 'only',
+              },
+              { inventoryOnly },
             )
+            payload = inventoryOnly
+              ? BackendResourceInventoryResponseSchema.parse(result)
+              : BackendRunsResponseSchema.parse(result)
             break
+          }
           case BACKEND_RUN_ROUTE:
             if (!route.resourceId) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', '')
             payload = BackendRunResponseSchema.parse(
               await resolved.projectService.getRun(project, route.resourceId),
             )
             break
-          case BACKEND_EXPERIMENTS_ROUTE:
-            payload = BackendExperimentsResponseSchema.parse(
-              await resolved.projectService.listExperiments(project),
-            )
+          case BACKEND_EXPERIMENTS_ROUTE: {
+            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
+            const result = await resolved.projectService.listExperiments(project, { inventoryOnly })
+            payload = inventoryOnly
+              ? BackendResourceInventoryResponseSchema.parse(result)
+              : BackendExperimentsResponseSchema.parse(result)
             break
+          }
           case BACKEND_EXPERIMENT_ROUTE: {
             if (!route.resourceId) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', '')
-            const detail = await resolved.projectService.getExperiment(project, route.resourceId)
-            // Wiki backlinks live with the wiki projection, not the Project
-            // snapshot; a Backend without a document service reports none.
-            const citedBy = resolved.documentService
-              ? await resolved.documentService.wikiBacklinks(project, route.resourceId)
-              : []
-            payload = BackendExperimentResponseSchema.parse({
-              ...(detail as Record<string, unknown>),
-              citedBy,
-            })
+            payload = BackendExperimentResponseSchema.parse(
+              await resolved.projectService.getExperiment(project, route.resourceId),
+            )
             break
           }
           case BACKEND_RUN_FILES_ROUTE:
@@ -2758,7 +2486,6 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
             if (parsedUrl.searchParams.get('countOnly') === '1') {
               payload = BackendJournalCountResponseSchema.parse({
                 totalEvents: journal.events.length,
-                lastDigestAt: journal.lastDigestAt,
               })
               break
             }
@@ -2934,15 +2661,18 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
 
       try {
         switch (route.key) {
-          case BACKEND_REPORTS_ROUTE:
+          case BACKEND_REPORTS_ROUTE: {
+            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
+            const result = await resolved.documentService.listReports(project, { inventoryOnly })
             writeJson(
               response,
               200,
-              BackendReportsResponseSchema.parse(
-                await resolved.documentService.listReports(project),
-              ),
+              inventoryOnly
+                ? BackendResourceInventoryResponseSchema.parse(result)
+                : BackendReportsResponseSchema.parse(result),
             )
             return
+          }
           case BACKEND_REPORT_ROUTE:
             if (!route.resourceId) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', '')
             if (method === 'GET') {
@@ -2972,53 +2702,44 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
               })
             }
             return
-          case BACKEND_DIGESTS_ROUTE:
+          case BACKEND_DIGESTS_ROUTE: {
+            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
+            const result = await resolved.documentService.listDigests(project, { inventoryOnly })
             writeJson(
               response,
               200,
-              BackendDigestsResponseSchema.parse(
-                await resolved.documentService.listDigests(project),
-              ),
+              inventoryOnly
+                ? BackendResourceInventoryResponseSchema.parse(result)
+                : BackendDigestsResponseSchema.parse(result),
             )
             return
+          }
           case BACKEND_DIGEST_ROUTE:
             if (!route.resourceId) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', '')
-            if (method === 'GET') {
-              writeJson(
-                response,
-                200,
-                BackendDigestResponseSchema.parse(
-                  await resolved.documentService.getDigest(project, route.resourceId),
-                ),
-              )
-              return
-            }
-            if (
-              writeDocumentResult(
-                response,
-                await resolved.documentService.putDigest(
-                  project,
-                  route.resourceId,
-                  await readDocumentWriteRequest(request),
-                ),
-              )
-            ) {
-              resolved.eventStream.publish({
-                project,
-                topic: 'digests-change',
-                data: { type: 'set', id: route.resourceId },
-              })
-            }
-            return
-          case BACKEND_CODE_REVIEWS_ROUTE:
+            // Historical digests stay readable; managed digest authoring is
+            // retired, so this route has no write half to dispatch to.
             writeJson(
               response,
               200,
-              BackendCodeReviewsResponseSchema.parse(
-                await resolved.documentService.listCodeReviews(project),
+              BackendDigestResponseSchema.parse(
+                await resolved.documentService.getDigest(project, route.resourceId),
               ),
             )
             return
+          case BACKEND_CODE_REVIEWS_ROUTE: {
+            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
+            const result = await resolved.documentService.listCodeReviews(project, {
+              inventoryOnly,
+            })
+            writeJson(
+              response,
+              200,
+              inventoryOnly
+                ? BackendResourceInventoryResponseSchema.parse(result)
+                : BackendCodeReviewsResponseSchema.parse(result),
+            )
+            return
+          }
           case BACKEND_CODE_REVIEW_ROUTE:
             if (!route.resourceId) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', '')
             if (method === 'GET') {
@@ -3123,7 +2844,7 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
                     route.resourceId,
                     input,
                   )
-            const { journalChanged, ...publicResult } = mutationResult
+            const { activityRecorded, ...publicResult } = mutationResult
             const result = BackendReadmeMutationResponseSchema.parse(publicResult)
             writeJson(response, 200, result)
             resolved.eventStream.publish({
@@ -3131,18 +2852,21 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
               topic: route.key === BACKEND_RUN_README_ROUTE ? 'run-change' : 'experiment-change',
               data: { type: 'set', id: route.resourceId },
             })
-            if (journalChanged) publishJournalChange(resolved.eventStream, project)
+            if (activityRecorded) publishJournalChange(resolved.eventStream, project)
             return
           }
-          case BACKEND_WIKI_ROUTE:
+          case BACKEND_WIKI_ROUTE: {
+            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
+            const result = await resolved.documentService.listWiki(project, { inventoryOnly })
             writeJson(
               response,
               200,
-              BackendWikiPagesResponseSchema.parse(
-                await resolved.documentService.listWiki(project),
-              ),
+              inventoryOnly
+                ? BackendWikiInventoryResponseSchema.parse(result)
+                : BackendWikiPagesResponseSchema.parse(result),
             )
             return
+          }
           case BACKEND_WIKI_BACKLINKS_ROUTE:
             if (!route.wikiArtifact) {
               throw new BackendDocumentServiceError('INVALID_RESOURCE', '')
@@ -3188,6 +2912,15 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
           }
         }
       } catch (error) {
+        if (error instanceof JournalRecordingError) {
+          writeError(
+            response,
+            500,
+            error.code,
+            'Journal recording failed; inspect current documents before retrying.',
+          )
+          return
+        }
         if (error instanceof BackendControlBodyError) {
           writeError(response, error.status, error.code, error.message)
           return
@@ -3225,8 +2958,14 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
                 ? 'FORBIDDEN'
                 : status === 404
                   ? 'NOT_FOUND'
-                  : 'INTERNAL',
-            status >= 500 ? 'Backend README mutation failed' : error.message,
+                  : error.code === 'PARTIAL'
+                    ? 'PARTIAL'
+                    : 'INTERNAL',
+            error.code === 'PARTIAL'
+              ? 'Mutation partially applied; inspect current documents before retrying.'
+              : status >= 500
+                ? 'Backend README mutation failed'
+                : error.message,
           )
           return
         }
@@ -3428,6 +3167,15 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
           return
         }
         if (error instanceof BackendGitServiceError) {
+          if (error.code === 'EXECUTION_UNAVAILABLE') {
+            writeError(
+              response,
+              501,
+              'EXECUTION_UNAVAILABLE',
+              'No execution provider is configured',
+            )
+            return
+          }
           if (error.code === 'INVALID_RESOURCE') {
             writeError(response, 400, 'BAD_REQUEST', 'Backend Git resource is invalid')
           } else {
@@ -3609,309 +3357,11 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
   }
 }
 
-interface BackendTerminalProxyRoute {
-  opaqueRoute: string
-}
-
-function resolveBackendTerminalProxyRoute(requestTarget: string): BackendTerminalProxyRoute | null {
-  let parsed: URL
-  try {
-    parsed = new URL(requestTarget, 'http://backend.invalid')
-  } catch {
-    return null
-  }
-  const rawPath = rawOriginFormPath(requestTarget)
-  if (
-    rawPath === null ||
-    rawPath !== parsed.pathname ||
-    !rawPath.startsWith(BACKEND_TERMINAL_PROXY_PREFIX)
-  ) {
-    return null
-  }
-  const routeSegment = rawPath.slice(BACKEND_TERMINAL_PROXY_PREFIX.length).split('/', 1)[0]
-  if (!routeSegment) return null
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(routeSegment)
-  } catch {
-    return null
-  }
-  if (decoded !== routeSegment) return null
-  const route = TerminalSessionIdSchema.safeParse(decoded)
-  return route.success ? { opaqueRoute: route.data } : null
-}
-
-function terminalRequestStatus(
-  request: IncomingMessage,
-  resolved: ResolvedBackendOptions,
-): { status: 400 | 401 | 403; code: BackendErrorCode; message: string } | null {
-  if (!authenticates(request, resolved.serviceTokens)) {
-    return {
-      status: 401,
-      code: 'UNAUTHORIZED',
-      message: 'Backend service authentication failed',
-    }
-  }
-  if (resolved.readOnly) {
-    return { status: 403, code: 'FORBIDDEN', message: 'Backend is configured read-only' }
-  }
-  let actor: ReturnType<typeof decodeBackendActorContext>
-  try {
-    actor = decodeBackendActorContext({
-      serviceAuthenticated: true,
-      headerValue: request.headers[BACKEND_ACTOR_CONTEXT_HEADER],
-    })
-  } catch (error) {
-    if (error instanceof BackendActorContextError) {
-      return {
-        status: error.status,
-        code: error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST',
-        message: error.message,
-      }
-    }
-    throw error
-  }
-  return actor.role === 'owner'
-    ? null
-    : {
-        status: 403,
-        code: 'FORBIDDEN',
-        message: 'owner actor is required for Backend terminal relay',
-      }
-}
-
-function normalizeTerminalTarget(input: string | null): string | null {
-  if (!input) return null
-  const exact = /^http:\/\/127\.0\.0\.1:(\d{1,5})$/.exec(input)
-  if (!exact) return null
-  const port = Number(exact[1])
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return null
-  let target: URL
-  try {
-    target = new URL(input)
-  } catch {
-    return null
-  }
-  if (
-    target.protocol !== 'http:' ||
-    target.hostname !== '127.0.0.1' ||
-    target.username ||
-    target.password ||
-    target.pathname !== '/' ||
-    target.search !== '' ||
-    target.hash !== ''
-  ) {
-    return null
-  }
-  return `http://127.0.0.1:${port}`
-}
-
-function safeTerminalTailSegment(segment: string, isFinal: boolean): boolean {
-  if (segment.length === 0) return isFinal
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(segment)
-  } catch {
-    return false
-  }
-  return (
-    decoded !== '.' &&
-    decoded !== '..' &&
-    !decoded.includes('/') &&
-    !decoded.includes('\\') &&
-    !decoded.includes('\0')
-  )
-}
-
-function terminalForwardTarget(
-  request: IncomingMessage,
-  route: BackendTerminalProxyRoute,
-  resolved: ResolvedBackendOptions,
-): string | null {
-  const forwarded = request.headers[BACKEND_TERMINAL_PUBLIC_PATH_HEADER]
-  if (forwarded === undefined) return request.url ?? null
-  if (
-    typeof forwarded !== 'string' ||
-    forwarded.length === 0 ||
-    Buffer.byteLength(forwarded, 'utf8') > 16 * 1024 ||
-    forwarded.includes('#')
-  ) {
-    return null
-  }
-  const rawPath = rawOriginFormPath(forwarded)
-  if (!rawPath?.startsWith(CENTRAL_TERMINAL_PROXY_PREFIX)) return null
-  let parsed: URL
-  try {
-    parsed = new URL(forwarded, 'http://central.invalid')
-  } catch {
-    return null
-  }
-  if (rawPath !== parsed.pathname) return null
-  const segments = rawPath.slice(CENTRAL_TERMINAL_PROXY_PREFIX.length).split('/')
-  const host = segments[0]
-  const session = segments[1]
-  let decodedHost: string
-  let decodedSession: string
-  try {
-    decodedHost = decodeURIComponent(host ?? '')
-    decodedSession = decodeURIComponent(session ?? '')
-  } catch {
-    return null
-  }
-  if (
-    !host ||
-    !session ||
-    decodedHost !== host ||
-    decodedSession !== session ||
-    host !== resolved.host ||
-    session !== route.opaqueRoute
-  ) {
-    return null
-  }
-  const tail = segments.slice(2)
-  return tail.every((segment, index) => safeTerminalTailSegment(segment, index === tail.length - 1))
-    ? forwarded
-    : null
-}
-
-function stripTerminalProxyCredentials(request: IncomingMessage): void {
-  for (const name of Object.keys(request.headers)) {
-    const lower = name.toLowerCase()
-    if (
-      lower === 'authorization' ||
-      lower === 'cookie' ||
-      lower === 'proxy-authorization' ||
-      lower === 'origin' ||
-      lower === 'forwarded' ||
-      lower.startsWith('x-forwarded-') ||
-      lower.startsWith('x-memon-')
-    ) {
-      delete request.headers[name]
-    }
-  }
-}
-
-function reportTerminalProxyError(resolved: ResolvedBackendOptions, error: unknown): void {
-  try {
-    resolved.onTerminalProxyError?.(error instanceof Error ? error : new Error(String(error)))
-  } catch {
-    // Diagnostics must never replace the bounded relay error returned to the caller.
-  }
-}
-
-async function terminalTarget(
-  route: BackendTerminalProxyRoute,
-  resolved: ResolvedBackendOptions,
-): Promise<string | null> {
-  if (!resolved.capabilities.terminal || !resolved.terminalTargetResolver) return null
-  try {
-    return normalizeTerminalTarget(await resolved.terminalTargetResolver(route.opaqueRoute))
-  } catch (error) {
-    reportTerminalProxyError(resolved, error)
-    return null
-  }
-}
-
-function rejectTerminalUpgrade(socket: Duplex, status: 400 | 401 | 403 | 404 | 405 | 502): void {
-  const reason =
-    status === 400
-      ? 'Bad Request'
-      : status === 401
-        ? 'Unauthorized'
-        : status === 403
-          ? 'Forbidden'
-          : status === 404
-            ? 'Not Found'
-            : status === 405
-              ? 'Method Not Allowed'
-              : 'Bad Gateway'
-  const body = JSON.stringify({ error: { code: status === 502 ? 'UNAVAILABLE' : 'FORBIDDEN' } })
-  socket.write(
-    `HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
-  )
-  socket.destroy()
-}
-
 /** Create the independently runnable Node HTTP server without Next/Web code. */
 export function createBackendServer(options: BackendServerOptions): Server {
   const resolved = resolveOptions(options)
   const handler = createResolvedBackendHandler(resolved)
-  const proxy = createProxyServer({ ws: true, changeOrigin: true })
-  proxy.on('proxyReqWs', (proxyRequest, _request, downstreamSocket) => {
-    let upstreamSocket: Duplex | null = null
-    const onDownstreamClose = () => upstreamSocket?.destroy()
-    downstreamSocket.once('close', onDownstreamClose)
-    downstreamSocket.once('end', onDownstreamClose)
-    downstreamSocket.once('error', onDownstreamClose)
-    proxyRequest.once('upgrade', (_response, socket) => {
-      upstreamSocket = socket
-      if (downstreamSocket.destroyed) {
-        socket.destroy()
-        return
-      }
-      const onUpstreamClose = () => {
-        downstreamSocket.off('close', onDownstreamClose)
-        downstreamSocket.off('end', onDownstreamClose)
-        downstreamSocket.off('error', onDownstreamClose)
-        if (!downstreamSocket.destroyed) downstreamSocket.destroy()
-      }
-      socket.once('close', onUpstreamClose)
-      socket.once('end', onUpstreamClose)
-      socket.once('error', onUpstreamClose)
-    })
-  })
-  proxy.on('error', (error, _request, responseOrSocket) => {
-    reportTerminalProxyError(resolved, error)
-    if (responseOrSocket && typeof (responseOrSocket as ServerResponse).writeHead === 'function') {
-      const response = responseOrSocket as ServerResponse
-      if (response.headersSent) response.destroy()
-      else writeError(response, 502, 'UNAVAILABLE', 'Backend terminal route is unavailable', true)
-      return
-    }
-    if (responseOrSocket) rejectTerminalUpgrade(responseOrSocket as Duplex, 502)
-  })
-
   const server = createServer((request, response) => {
-    if (
-      resolved.terminalTargetResolver &&
-      rawOriginFormPath(request.url ?? '')?.startsWith(BACKEND_TERMINAL_PROXY_PREFIX)
-    ) {
-      void (async () => {
-        const denied = terminalRequestStatus(request, resolved)
-        if (denied) {
-          writeError(response, denied.status, denied.code, denied.message)
-          return
-        }
-        if (request.method !== 'GET') {
-          response.setHeader('allow', 'GET')
-          writeError(response, 405, 'METHOD_NOT_ALLOWED', 'method not allowed')
-          return
-        }
-        const route = resolveBackendTerminalProxyRoute(request.url ?? '')
-        if (!route) {
-          writeError(response, 404, 'NOT_FOUND', 'Backend terminal route not found')
-          return
-        }
-        const forwardTarget = terminalForwardTarget(request, route, resolved)
-        if (!forwardTarget) {
-          writeError(response, 400, 'BAD_REQUEST', 'Backend terminal forward path is invalid')
-          return
-        }
-        const target = await terminalTarget(route, resolved)
-        if (!target) {
-          writeError(response, 502, 'UNAVAILABLE', 'Backend terminal route is unavailable', true)
-          return
-        }
-        resolved.terminalService?.noteHttpActivity?.(route.opaqueRoute)
-        stripTerminalProxyCredentials(request)
-        request.url = forwardTarget
-        proxy.web(request, response, { target })
-      })().catch(() => {
-        if (response.headersSent) response.destroy()
-        else writeError(response, 500, 'INTERNAL', 'Backend terminal relay failed')
-      })
-      return
-    }
     void handler(request, response).catch(() => {
       if (response.headersSent) {
         response.destroy()
@@ -3920,51 +3370,9 @@ export function createBackendServer(options: BackendServerOptions): Server {
       writeError(response, 500, 'INTERNAL', 'Backend request failed')
     })
   })
-  server.on('upgrade', (request, socket, head) => {
-    if (
-      !resolved.terminalTargetResolver ||
-      !rawOriginFormPath(request.url ?? '')?.startsWith(BACKEND_TERMINAL_PROXY_PREFIX)
-    ) {
-      socket.destroy()
-      return
-    }
-    void (async () => {
-      const denied = terminalRequestStatus(request, resolved)
-      if (denied) {
-        rejectTerminalUpgrade(socket, denied.status)
-        return
-      }
-      if (request.method !== 'GET') {
-        rejectTerminalUpgrade(socket, 405)
-        return
-      }
-      const route = resolveBackendTerminalProxyRoute(request.url ?? '')
-      if (!route) {
-        rejectTerminalUpgrade(socket, 404)
-        return
-      }
-      const forwardTarget = terminalForwardTarget(request, route, resolved)
-      if (!forwardTarget) {
-        rejectTerminalUpgrade(socket, 400)
-        return
-      }
-      const target = await terminalTarget(route, resolved)
-      if (!target) {
-        rejectTerminalUpgrade(socket, 502)
-        return
-      }
-      resolved.terminalService?.noteWsConnect?.(route.opaqueRoute)
-      socket.once('close', () => resolved.terminalService?.noteWsDisconnect?.(route.opaqueRoute))
-      stripTerminalProxyCredentials(request)
-      request.url = forwardTarget
-      proxy.ws(request, socket, head, { target })
-    })().catch(() => rejectTerminalUpgrade(socket, 502))
-  })
   server.once('close', () => {
-    proxy.close()
     resolved.filesystemMonitor?.stop()
     resolved.eventStream.close()
-    resolved.terminalService?.close?.()
   })
   return server
 }

@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from './project-file-store.js'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { type ResourceId, ResourceIdSchema } from './backend-protocol.js'
 

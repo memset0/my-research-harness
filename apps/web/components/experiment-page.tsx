@@ -1,33 +1,30 @@
 'use client'
 
 // v3 experiment-doc detail page (`/p/<project>/e/<E-id>`). Renders the
-// exp doc's body sections + a Runs section with one collapsible panel per
-// member run. The `?run=<dir>` query param auto-expands that panel.
+// exp doc's body sections plus a Runs section listing the roster declared by
+// the document's own `runs` frontmatter. Nothing about a Run is read until
+// its panel is opened; `?run=<dir>` opens that one panel on arrival.
 //
 // Page layout (top to bottom): header, Results, document sections,
 // supporting evidence, then Runs. Results is the decision surface; Runs is
 // deliberately last because it is the verbose execution detail.
 
-import type { ResultsDocument } from '@memon/core'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, File, Folder, FolderOpen, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   type ExperimentDisplaySection,
   type ExperimentManagedDocumentsPayload,
   type FullExperiment,
   fetchExperiment,
   fetchExperimentDoc,
-  fetchExperimentResults,
   fetchRunFiles,
-  type MemberRunSummary,
   type ProjectTarget,
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
 import { cn } from '../lib/utils'
-import { AddNoteButton } from './add-note-button'
 import { ArchiveToggle } from './archive-toggle'
 import { ClampedBlock } from './clamped-block'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
@@ -38,10 +35,10 @@ import { ExperimentResultsTable } from './experiment-results-table'
 import { ExperimentStatusEdit } from './experiment-status-edit'
 import { ExperimentWikiCitations } from './experiment-wiki-citations'
 import { LogViewer } from './log-viewer'
+import { ManualRefreshButton } from './manual-refresh-button'
 import { Markdown } from './markdown'
-import { OpenWithButton } from './open-with-button'
+import { useResourceHeartbeat } from './resource-heartbeat-provider'
 import { StatusEdit } from './status-edit'
-import { StatusPill } from './status-pill'
 import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -65,9 +62,14 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
   })
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-  if (error || !exp) {
+  // A failed refresh must not blank a page that already has content: the
+  // footer's status carries the error, the document stays readable.
+  if (!exp) {
     return (
-      <div className="p-6 text-sm text-destructive">Failed to load experiment {experimentId}</div>
+      <div className="p-6 text-sm text-destructive">
+        Failed to load experiment {experimentId}
+        {error ? `: ${(error as Error).message}` : ''}
+      </div>
     )
   }
   if (
@@ -85,9 +87,6 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
     )
   }
 
-  const aggregatedArtifacts = exp.memberRuns.flatMap((r) =>
-    r.artifacts.map((a) => ({ runId: r.id, path: a.path, description: a.description })),
-  )
   const documentSections: ExperimentDisplaySection[] =
     exp.documentSections ?? legacyDocumentSections(exp)
   const resultsSections = documentSections.filter((section) => section.heading === 'Results')
@@ -150,11 +149,14 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
                 compatibility view
               </Badge>
             )}
-            <OpenWithButton project={project} scope="exp" slug={exp.id} />
           </div>
         </header>
 
-        <ExperimentWikiCitations citedBy={exp.citedBy ?? []} />
+        <ExperimentWikiCitations
+          key={JSON.stringify([...projectQueryKey(project), exp.id])}
+          project={project}
+          experimentId={experimentId}
+        />
 
         {exp.documentReadOnly && (
           <div className="flex gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
@@ -175,12 +177,13 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             project={project}
             experimentId={exp.id}
             documents={exp.documents}
-            memberRuns={exp.memberRuns}
+            runIds={exp.frontMatter.runs}
+            deprecatedRuns={exp.deprecatedRuns}
             resultsUpdatedAt={exp.resultsUpdatedAt}
           />
         ))}
 
-        <RunParseWarningsBanner warnings={exp.parseWarnings ?? []} />
+        <ExperimentParseWarningsBanner warnings={exp.parseWarnings ?? []} />
         <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
         {nonResultsSections.map((section) => (
           <SectionCard
@@ -189,43 +192,18 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             project={project}
             experimentId={exp.id}
             documents={exp.documents}
-            memberRuns={exp.memberRuns}
+            runIds={exp.frontMatter.runs}
           />
         ))}
 
         <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Artifacts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {aggregatedArtifacts.length === 0 ? (
-              <div className="text-xs italic text-muted-foreground">
-                none described — runs may still produce files; check the run panel's file listing
-              </div>
-            ) : (
-              <ul className="flex flex-col gap-1 text-xs">
-                {aggregatedArtifacts.map((a) => (
-                  <li
-                    key={`${a.runId}:${a.path}:${a.description}`}
-                    className="flex flex-wrap items-baseline gap-1"
-                  >
-                    <span className="font-mono text-muted-foreground">{a.runId}</span>
-                    <code className="font-mono">{a.path}</code>
-                    <span className="text-muted-foreground">— {a.description}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
         <RunsCard
           project={project}
           experimentId={exp.id}
           initialOpenRun={initialOpenRun}
-          memberRuns={exp.memberRuns}
+          runIds={exp.frontMatter.runs}
+          deprecatedRuns={exp.deprecatedRuns}
         />
       </div>
     </DocumentArtifactLinkProvider>
@@ -245,14 +223,16 @@ function SectionCard({
   project,
   experimentId,
   documents,
-  memberRuns,
+  runIds,
+  deprecatedRuns,
   resultsUpdatedAt,
 }: {
   section: ExperimentDisplaySection
   project: ProjectTarget
   experimentId: string
   documents?: ExperimentManagedDocumentsPayload | null
-  memberRuns: MemberRunSummary[]
+  runIds: string[]
+  deprecatedRuns?: string[]
   resultsUpdatedAt?: string | null
 }) {
   const { heading, body } = section
@@ -265,40 +245,11 @@ function SectionCard({
         ? 'investigation'
         : null
   const managedDocument = managedKind ? documents?.[managedKind].data : null
-  const initialResultsDocument = heading === 'Results' ? documents?.results.data : null
-  const [resultsSnapshot, setResultsSnapshot] = useState<{
-    document: ResultsDocument
-    updatedAt: string | null
-  } | null>(() =>
-    initialResultsDocument
-      ? {
-          document: initialResultsDocument,
-          updatedAt: resultsUpdatedAt ?? null,
-        }
-      : null,
-  )
-  const [resultsRefreshing, setResultsRefreshing] = useState(false)
-  const [resultsRefreshError, setResultsRefreshError] = useState<string | null>(null)
-  const resultsRefreshInFlight = useRef(false)
-
-  const refreshResults = async () => {
-    if (!resultsSnapshot || resultsRefreshInFlight.current) return
-    resultsRefreshInFlight.current = true
-    setResultsRefreshing(true)
-    setResultsRefreshError(null)
-    try {
-      const next = await fetchExperimentResults(project, experimentId)
-      setResultsSnapshot({
-        document: next.document,
-        updatedAt: next.updatedAt,
-      })
-    } catch (error) {
-      setResultsRefreshError(error instanceof Error ? error.message : 'Results refresh failed')
-    } finally {
-      resultsRefreshInFlight.current = false
-      setResultsRefreshing(false)
-    }
-  }
+  const resultsDocument = heading === 'Results' ? (documents?.results.data ?? null) : null
+  // Results has no fetch, snapshot state or timer of its own: the
+  // experiment-doc query owns the payload and the shared foreground heartbeat
+  // keeps it current. The button below asks that coordinator to verify now.
+  const { refresh, refreshing } = useResourceHeartbeat()
   return (
     <Card
       className={cn(
@@ -324,35 +275,29 @@ function SectionCard({
           {section.occurrence > 1 && (
             <Badge variant="destructive">Duplicate #{section.occurrence}</Badge>
           )}
-          {resultsSnapshot && (
+          {resultsDocument && (
             <>
               <ResultsSnapshotStatus
-                key={resultsSnapshot.updatedAt ?? 'unknown'}
-                updatedAt={resultsSnapshot.updatedAt}
+                key={resultsUpdatedAt ?? 'unknown'}
+                updatedAt={resultsUpdatedAt ?? null}
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={resultsRefreshing}
-                onClick={refreshResults}
+                disabled={refreshing}
+                onClick={() => refresh('manual')}
                 aria-label="Refresh Results"
                 data-results-refresh
               >
-                <RefreshCw
-                  className={cn('size-3.5', resultsRefreshing && 'animate-spin')}
-                  aria-hidden
-                />
-                {resultsRefreshing ? 'Refreshing…' : 'Refresh'}
+                <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} aria-hidden />
+                {refreshing ? 'Refreshing…' : 'Refresh'}
               </Button>
             </>
           )}
         </div>
       </CardHeader>
       <CardContent>
-        {resultsRefreshError && (
-          <SectionNotice tone="error">Results refresh failed: {resultsRefreshError}</SectionNotice>
-        )}
         {!section.supported && (
           <SectionNotice tone="warning">
             This heading is not supported by the current Experiment schema. Its original content is
@@ -381,12 +326,14 @@ function SectionCard({
             ))}
           </ul>
         )}
-        {section.source === 'yaml' && resultsSnapshot ? (
+        {section.source === 'yaml' && resultsDocument ? (
           <ExperimentResultsTable
-            document={resultsSnapshot.document}
+            document={resultsDocument}
             project={project}
             experimentId={experimentId}
-            memberRuns={memberRuns}
+            runIds={runIds}
+            variantEligibility={documents?.results.variantEligibility}
+            deprecatedRuns={deprecatedRuns}
           />
         ) : section.source === 'yaml' && managedKind && managedDocument ? (
           <ClampedBlock lines={SECTION_MANAGED_CLAMP_LINES} label={heading}>
@@ -412,11 +359,11 @@ function SectionCard({
 }
 
 function ResultsSnapshotStatus({ updatedAt }: { updatedAt: string | null }) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1_000)
-    return () => window.clearInterval(interval)
-  }, [])
+  // Age advances with the shared foreground heartbeat rather than a per-card
+  // second timer; it stops moving when the tab is not in front, which is
+  // exactly when nothing is being checked either.
+  const { tick } = useResourceHeartbeat()
+  const now = useMemo(() => Date.now(), [tick])
 
   return (
     <div
@@ -451,34 +398,55 @@ function RunsCard({
   project,
   experimentId,
   initialOpenRun,
-  memberRuns,
+  runIds,
+  deprecatedRuns,
 }: {
   project: ProjectTarget
   experimentId: string
   initialOpenRun: string | null
-  memberRuns: MemberRunSummary[]
+  /** Roster exactly as declared by the Experiment's `runs` frontmatter. */
+  runIds: string[]
+  deprecatedRuns: string[]
 }) {
+  const [includeDeprecated, setIncludeDeprecated] = useState(false)
+  const excluded = useMemo(() => new Set(deprecatedRuns), [deprecatedRuns])
+  const visibleRunIds = includeDeprecated
+    ? runIds
+    : runIds.filter((id) => !excluded.has(id) || id === initialOpenRun)
   return (
     <Card data-section-heading="Runs">
-      <CardHeader>
+      <CardHeader className="flex-row items-center justify-between">
         <CardTitle>
           Runs{' '}
-          <span className="font-normal text-sm text-muted-foreground">({memberRuns.length})</span>
+          <span className="font-normal text-sm text-muted-foreground">
+            ({visibleRunIds.length})
+          </span>
         </CardTitle>
+        {excluded.size > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={includeDeprecated}
+            onClick={() => setIncludeDeprecated((value) => !value)}
+          >
+            {includeDeprecated ? 'Hide deprecated' : `Show deprecated (${excluded.size})`}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        {memberRuns.map((memberRun) => (
+        {visibleRunIds.map((runId) => (
           <RunPanel
-            key={memberRun.id}
+            key={runId}
             project={project}
             experimentId={experimentId}
-            runId={memberRun.id}
+            runId={runId}
             initialOpenRun={initialOpenRun}
-            summary={memberRun}
           />
         ))}
-        {memberRuns.length === 0 && (
-          <div className="text-xs text-muted-foreground">(no runs bound yet)</div>
+        {visibleRunIds.length === 0 && (
+          <div className="text-xs text-muted-foreground">
+            {runIds.length === 0 ? '(no runs bound yet)' : '(all bound runs are deprecated)'}
+          </div>
         )}
       </CardContent>
     </Card>
@@ -567,48 +535,38 @@ function RunPanel({
   experimentId,
   runId,
   initialOpenRun,
-  summary,
 }: {
   project: ProjectTarget
   experimentId: string
   runId: string
   initialOpenRun: string | null
-  summary: MemberRunSummary
 }) {
-  // Default folded; localStorage remembers per-(exp, run) toggle state.
-  // Exception: if URL ?run=<this-run> matches, force open on first paint.
-  const storageKey = `memon:exp-page:${projectQueryKey(project).join(':')}:${experimentId}:${runId}:open`
+  // Folded by default, and a folded panel reads nothing: the collapsed row
+  // shows only the declared Run id, and `RunBody` — which owns every Run
+  // fetch, the log reader and the file tree — is mounted solely while open.
+  // Only an explicit `?run=<this-run>` counts as a request to open it. The
+  // toggle is deliberately not persisted: remembering it would silently
+  // reintroduce eager Run reads on the next visit.
   const [open, setOpen] = useState<boolean>(initialOpenRun === runId)
 
   useEffect(() => {
-    if (initialOpenRun === runId) {
-      setOpen(true)
-      return
-    }
-    const stored = localStorage.getItem(storageKey)
-    if (stored === '1') setOpen(true)
-    if (stored === '0') setOpen(false)
-  }, [storageKey, initialOpenRun, runId])
-
-  function setOpenAndPersist(v: boolean) {
-    setOpen(v)
-    localStorage.setItem(storageKey, v ? '1' : '0')
-  }
+    // Same-page navigation to `?run=<this-run>` (e.g. a Results run link)
+    // is a fresh request to open; it never folds a panel the user opened.
+    if (initialOpenRun === runId) setOpen(true)
+  }, [initialOpenRun, runId])
 
   return (
-    <Collapsible open={open} onOpenChange={setOpenAndPersist} className="rounded-md border bg-card">
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-md border bg-card">
       <CollapsibleTrigger asChild>
         <button type="button" className="flex w-full cursor-pointer items-center gap-2 p-2">
-          <StatusPill status={summary.status as never} />
           <span className="font-mono text-sm">{runId}</span>
           <span className="ml-auto text-xs text-muted-foreground">
-            {summary.createdAt.slice(0, 16).replace('T', ' ')}
-            {summary.host ? ` • ${summary.host}` : ''}
+            {open ? 'hide details' : 'show details'}
           </span>
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
-        <RunBody project={project} experimentId={experimentId} runId={runId} />
+        {open && <RunBody project={project} experimentId={experimentId} runId={runId} />}
       </CollapsibleContent>
     </Collapsible>
   )
@@ -623,7 +581,11 @@ function RunBody({
   experimentId: string
   runId: string
 }) {
-  const { data: run, isLoading } = useQuery({
+  const {
+    data: run,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['run', ...projectQueryKey(project), runId],
     queryFn: () => fetchExperiment(project, runId),
   })
@@ -632,6 +594,20 @@ function RunBody({
     queryFn: () => fetchRunFiles(project, runId, 3),
   })
 
+  // A declared member id is not proof the Run exists: the roster comes from
+  // this Experiment's frontmatter alone. A missing or unreadable Run says so
+  // instead of spinning forever on "Loading run details…".
+  if (error || (!isLoading && !run)) {
+    return (
+      <div className="border-t p-3">
+        <SectionNotice tone="error">
+          Run <code className="font-mono">{runId}</code> is declared by this Experiment but could
+          not be read{error ? `: ${(error as Error).message}` : ''}. Fix the Run document or unlink
+          the id from this Experiment's <code>runs</code> list.
+        </SectionNotice>
+      </div>
+    )
+  }
   if (isLoading || !run) {
     return <div className="border-t p-3 text-xs text-muted-foreground">Loading run details…</div>
   }
@@ -648,11 +624,33 @@ function RunBody({
       sourceDocumentPath={runSourceDocumentPath}
       sourceSurface="left"
     >
+      {run.frontMatter.experiment !== experimentId && (
+        <div className="border-t p-3 pb-0">
+          <SectionNotice tone="warning">
+            This Run's <code>experiment</code> frontmatter says{' '}
+            {run.frontMatter.experiment ? (
+              <code className="font-mono">{run.frontMatter.experiment}</code>
+            ) : (
+              'nothing'
+            )}
+            , so membership in <code className="font-mono">{experimentId}</code> is declared on one
+            side only. Re-link the Run or drop the id from this Experiment's <code>runs</code> list.
+          </SectionNotice>
+        </div>
+      )}
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId, project }} />
-        <OpenWithButton project={project} scope="run" slug={runId} />
-        <AddNoteButton project={project} runId={runId} />
+        <ManualRefreshButton
+          label="Reload this run from disk"
+          queryKeys={[
+            ['run', ...projectQueryKey(project), runId],
+            ['run-files', ...projectQueryKey(project), runId],
+          ]}
+        />
+        {run.frontMatter.deprecated && (
+          <Badge variant="outline">deprecated — excluded from research</Badge>
+        )}
         {run.hasReadme ? (
           <>
             <StatusEdit
@@ -686,15 +684,9 @@ function RunBody({
       <div className="border-t p-3">
         <RunFrontmatterStripe run={run} project={project} />
       </div>
-      {/* Body stripe — v5 canonical 4 sections (Motivation optional). */}
+      {/* Render the actual optional body, including uncategorized legacy content. */}
       <div className="flex flex-col gap-3 border-t p-3">
-        <RunParseWarningsBanner warnings={run.parseWarnings} />
-        {run.sections.motivation && (
-          <RunSection heading="Motivation" body={run.sections.motivation} project={project} />
-        )}
-        <RunSection heading="Setup" body={run.sections.setup ?? null} project={project} />
-        <RunSection heading="Result" body={run.sections.result ?? null} project={project} />
-        <RunArtifactsBlock artifacts={run.sections.artifacts ?? []} />
+        {run.body.trim() && <Markdown project={project}>{run.body}</Markdown>}
         {run.hasReadme && (run.resource || run.path) && (
           <LogViewer project={project} runResource={run.resource} expPath={run.path} />
         )}
@@ -707,7 +699,6 @@ function RunBody({
             <FileTree node={files.tree} />
           </section>
         )}
-        <span className="hidden">{experimentId}</span>
       </div>
     </DocumentArtifactLinkProvider>
   )
@@ -799,65 +790,13 @@ function FmField({
   )
 }
 
-function RunArtifactsBlock({ artifacts }: { artifacts: { path: string; description: string }[] }) {
-  if (artifacts.length === 0) return null
-  return (
-    <section>
-      <h3 className="mb-1 text-xs font-semibold">Artifacts</h3>
-      <ul className="flex flex-col gap-0.5 text-xs">
-        {artifacts.map((a) => (
-          <li
-            key={`${a.path}:${a.description}`}
-            className="grid grid-cols-1 gap-x-3 md:grid-cols-2"
-          >
-            <code className="font-mono text-foreground/80">{a.path}</code>
-            <span className="text-muted-foreground">{a.description}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
-function RunSection({
-  heading,
-  body,
-  project,
-}: {
-  heading: string
-  body: string | null
-  project: ProjectTarget
-}) {
-  return (
-    <section>
-      <h3 className="mb-1 text-xs font-semibold">{heading}</h3>
-      {body ? (
-        <div className="prose prose-sm max-w-none text-xs/relaxed">
-          <Markdown project={project}>{body}</Markdown>
-        </div>
-      ) : (
-        <div className="text-xs italic text-muted-foreground">to fill</div>
-      )}
-    </section>
-  )
-}
-
-/**
- * v5: surface run-side parse warnings that flag forbidden sections (Method /
- * Conclusion / Caveats) and any unknown H2 in the README body. Severity-info
- * warnings (empty dangling headings) get a softer treatment; severity-warning
- * gets the destructive variant so they stand out.
- */
-function RunParseWarningsBanner({
+/** Experiment documents retain their schema-defined section diagnostics. */
+function ExperimentParseWarningsBanner({
   warnings,
 }: {
   warnings: Array<{ message: string; severity?: 'error' | 'warning' | 'info' }>
 }) {
-  const relevant = warnings.filter((w) =>
-    /^(RUN_HAS_METHOD|RUN_HAS_CONCLUSION|RUN_HAS_CAVEATS|UNKNOWN_H2_SECTION|LEGACY_SECTION_IN_RUN)/.test(
-      w.message,
-    ),
-  )
+  const relevant = warnings.filter((w) => w.message.startsWith('UNKNOWN_H2_SECTION'))
   if (relevant.length === 0) return null
   return (
     <section className="rounded border border-amber-300 bg-amber-50 p-2 text-xs">

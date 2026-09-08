@@ -8,7 +8,7 @@
 //   - exit 9 (`ORPHAN_RUN`) + stderr message when the run exists but is unbound
 //   - exit 4 (`NOT_FOUND`) + stderr message when the run dir is unknown
 
-import { scanProjectRoot } from '@memon/core'
+import { resolveRunTarget } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 
@@ -22,8 +22,9 @@ export async function runResolveExp(input: RunResolveExpInput): Promise<void> {
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
 
-  const snap = await scanProjectRoot(projectRoot, { includeArchived: true })
-  const target = snap.experiments.find((e) => e.id === input.runIdOrDir)
+  // Resolve the single named Run: bounded dir discovery, then one README
+  // read. Unrelated Runs and `docs/hypotheses.md` are never touched.
+  const target = await resolveRunTarget(projectRoot, input.runIdOrDir)
   if (!target) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found in ${projectRoot}`)
   }

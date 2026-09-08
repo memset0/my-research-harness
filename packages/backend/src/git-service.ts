@@ -1,4 +1,3 @@
-import { promises as fs } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 import {
   BackendCodePreviewResponseSchema,
@@ -15,9 +14,11 @@ import {
   BackendGitStatusResponseSchema,
   BackendGitSubmodulesResponseSchema,
   deleteCommitMark,
+  type GitCommandRunner,
   type GitFileStatus,
   type ProjectConfig,
   parseGithubPermalink,
+  projectFs as fs,
   ResourceIdSchema,
   readCommitMarks,
   readGitBranches,
@@ -31,10 +32,22 @@ import {
   setCommitMark,
   sliceContext,
 } from '@memon/core'
+import {
+  BackendExecutionError,
+  type BackendExecutionProvider,
+  type BackendExecutionResolver,
+  gitCommandRunnerFor,
+  resolveProjectExecution,
+} from './execution-service.js'
 
 export class BackendGitServiceError extends Error {
   constructor(
-    public readonly code: 'PROJECT_NOT_FOUND' | 'INVALID_RESOURCE' | 'RESOURCE_NOT_FOUND',
+    public readonly code:
+      | 'PROJECT_NOT_FOUND'
+      | 'INVALID_RESOURCE'
+      | 'RESOURCE_NOT_FOUND'
+      /** The Project has no execution target; routes answer 501. */
+      | 'EXECUTION_UNAVAILABLE',
     message: string,
   ) {
     super(message)
@@ -87,16 +100,29 @@ export interface BackendGitService {
 export interface FilesystemGitServiceOptions {
   /** Standalone-only compatibility for Config-owned paths already guarded by legacy adapters. */
   trustedConfiguredPaths?: boolean
+  /**
+   * Resolves where a Project's git commands run. Defaults to the Project's own
+   * `execution` configuration; a Project without one refuses rather than
+   * running git against a locally mounted working copy that belongs to another
+   * machine.
+   */
+  execution?: BackendExecutionResolver
 }
 
 interface ResolvedRepo {
   cwd: string
   submodule: string
+  /**
+   * Command runner for this repo, or `undefined` for local execution, which
+   * keeps core's own `execFile` path byte for byte.
+   */
+  exec: GitCommandRunner | undefined
 }
 
 export class FilesystemGitService implements BackendGitService {
   private readonly projects = new Map<string, ProjectConfig>()
   private readonly trustedConfiguredPaths: boolean
+  private readonly resolveExecution: BackendExecutionResolver
 
   constructor(projects: readonly ProjectConfig[], options: FilesystemGitServiceOptions = {}) {
     for (const project of projects) {
@@ -104,16 +130,19 @@ export class FilesystemGitService implements BackendGitService {
       this.projects.set(project.name, project)
     }
     this.trustedConfiguredPaths = options.trustedConfiguredPaths ?? false
+    this.resolveExecution = options.execution ?? resolveProjectExecution
   }
 
   async status(projectName: string) {
     const project = this.requireProject(projectName)
-    return BackendGitStatusResponseSchema.parse(redactFailure(await readGitStatus(project.root)))
+    return BackendGitStatusResponseSchema.parse(
+      redactFailure(await readGitStatus(project.root, { exec: this.runner(project) })),
+    )
   }
 
   async statusFiles(projectName: string, selector: GitRepoSelector) {
     const repo = await this.resolveRepo(this.requireProject(projectName), selector.submodule)
-    const result = redactFailure(await readGitStatusFiles(repo.cwd))
+    const result = redactFailure(await readGitStatusFiles(repo.cwd, { exec: repo.exec }))
     return BackendGitStatusFilesResponseSchema.parse(
       result.enabled
         ? {
@@ -128,7 +157,9 @@ export class FilesystemGitService implements BackendGitService {
 
   async branches(projectName: string, selector: GitRepoSelector) {
     const repo = await this.resolveRepo(this.requireProject(projectName), selector.submodule)
-    return BackendGitBranchesResponseSchema.parse(redactFailure(await readGitBranches(repo.cwd)))
+    return BackendGitBranchesResponseSchema.parse(
+      redactFailure(await readGitBranches(repo.cwd, { exec: repo.exec })),
+    )
   }
 
   async log(projectName: string, input: GitLogInput) {
@@ -136,21 +167,27 @@ export class FilesystemGitService implements BackendGitService {
     const ref = validateRef(input.ref)
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1000) invalid()
     return BackendGitLogResponseSchema.parse(
-      redactFailure(await readGitLog(repo.cwd, { ref, limit: input.limit })),
+      redactFailure(
+        await readGitLog(repo.cwd, { ref, limit: input.limit }, { exec: repo.exec }),
+      ),
     )
   }
 
   async commit(projectName: string, shaInput: string, selector: GitRepoSelector) {
     const repo = await this.resolveRepo(this.requireProject(projectName), selector.submodule)
     return BackendGitCommitResponseSchema.parse(
-      redactFailure(await readGitCommit(repo.cwd, validateRef(shaInput))),
+      redactFailure(await readGitCommit(repo.cwd, validateRef(shaInput), { exec: repo.exec })),
     )
   }
 
   async range(projectName: string, input: GitRangeInput) {
     const repo = await this.resolveRepo(this.requireProject(projectName), input.submodule)
     const result = redactFailure(
-      await readGitRange(repo.cwd, { from: validateRef(input.from), to: validateRef(input.to) }),
+      await readGitRange(
+        repo.cwd,
+        { from: validateRef(input.from), to: validateRef(input.to) },
+        { exec: repo.exec },
+      ),
     )
     return BackendGitRangeResponseSchema.parse(
       result.enabled ? { ...result, submodule: repo.submodule } : result,
@@ -199,8 +236,12 @@ export class FilesystemGitService implements BackendGitService {
     }
 
     const [oldResult, newResult] = await Promise.all([
-      oldRef ? readGitFileContents(repo.cwd, oldRef, path.data) : Promise.resolve(null),
-      newRef ? readGitFileContents(repo.cwd, newRef, path.data) : Promise.resolve(null),
+      oldRef
+        ? readGitFileContents(repo.cwd, oldRef, path.data, { exec: repo.exec })
+        : Promise.resolve(null),
+      newRef
+        ? readGitFileContents(repo.cwd, newRef, path.data, { exec: repo.exec })
+        : Promise.resolve(null),
     ])
     let oldContent: string | null = null
     let newContent: string | null = null
@@ -231,7 +272,7 @@ export class FilesystemGitService implements BackendGitService {
   async submodules(projectName: string) {
     const project = this.requireProject(projectName)
     return BackendGitSubmodulesResponseSchema.parse(
-      redactFailure(await readGitSubmodules(project.root)),
+      redactFailure(await readGitSubmodules(project.root, { exec: this.runner(project) })),
     )
   }
 
@@ -259,7 +300,9 @@ export class FilesystemGitService implements BackendGitService {
       startLine: link.startLine,
       endLine: link.endLine,
     }
-    const read = await readGitFileContents(repoRoot, base.sha, path.data)
+    const read = await readGitFileContents(repoRoot, base.sha, path.data, {
+      exec: this.runner(project),
+    })
     if (!read.ok) {
       if (read.reason === 'not-found') {
         throw new BackendGitServiceError('RESOURCE_NOT_FOUND', 'Code preview not found')
@@ -316,11 +359,35 @@ export class FilesystemGitService implements BackendGitService {
     return project
   }
 
+  /**
+   * The command runner for this Project, or `undefined` when the Project runs
+   * locally so core keeps its own `execFile` path.
+   *
+   * A Project with no execution configuration refuses: its root may be a mount
+   * of another machine's working copy, where a local `git` would report the
+   * wrong repository state (or none at all).
+   */
+  private runner(project: ProjectConfig): GitCommandRunner | undefined {
+    return gitCommandRunnerFor(this.execution(project))
+  }
+
+  private execution(project: ProjectConfig): BackendExecutionProvider {
+    try {
+      return this.resolveExecution(project)
+    } catch (error) {
+      if (error instanceof BackendExecutionError) {
+        throw new BackendGitServiceError('EXECUTION_UNAVAILABLE', error.message)
+      }
+      throw error
+    }
+  }
+
   private async resolveRepo(project: ProjectConfig, submodule?: string): Promise<ResolvedRepo> {
-    if (!submodule) return { cwd: project.root, submodule: '' }
+    const exec = this.runner(project)
+    if (!submodule) return { cwd: project.root, submodule: '', exec }
     if (submodule.length > 512 || submodule.includes('\0')) invalid()
     const parsed = BackendGitSubmodulesResponseSchema.parse(
-      redactFailure(await readGitSubmodules(project.root)),
+      redactFailure(await readGitSubmodules(project.root, { exec })),
     )
     if (!parsed.enabled) invalid()
     const matches = parsed.submodules.filter((entry) => entry.name === submodule)
@@ -330,6 +397,7 @@ export class FilesystemGitService implements BackendGitService {
         ? resolve(project.root, matches[0]!.path)
         : await containedRealpath(project.root, resolve(project.root, matches[0]!.path)),
       submodule: matches[0]!.name,
+      exec,
     }
   }
 }

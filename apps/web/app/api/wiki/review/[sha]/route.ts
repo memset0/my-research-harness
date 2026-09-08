@@ -17,7 +17,7 @@ import {
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime, type Runtime } from '../../../../../lib/runtime'
-import { wikiError, wikiProjectTarget } from '../../../../../lib/server/wiki-route'
+import { wikiError, wikiProjectTarget, withWikiInvocation } from '../../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +28,14 @@ type RouteContext = { params: Promise<{ sha: string }> }
 export async function POST(request: NextRequest, context: RouteContext) {
   const resolved = await resolve(request, context)
   if ('error' in resolved) return resolved.error
+  return withWikiInvocation(resolved.runtime, resolved.project, 'wiki review mark',
+    { sha: resolved.sha }, async () => {
+  if (!SHA_SELECTOR.test(resolved.sha)) {
+    return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
+  }
+  if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
+    return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
+  }
   let note: string | undefined
   try {
     const body = request.headers.get('content-length') === '0' ? null : await request.json()
@@ -42,17 +50,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return reviewFailure(caught)
   }
   return respondWithLog(resolved.runtime, resolved.project)
+  })
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   const resolved = await resolve(request, context)
   if ('error' in resolved) return resolved.error
+  return withWikiInvocation(resolved.runtime, resolved.project, 'wiki review unmark',
+    { sha: resolved.sha }, async () => {
+  if (!SHA_SELECTOR.test(resolved.sha)) {
+    return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
+  }
+  if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
+    return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
+  }
   try {
     await removeWikiReviewMark(resolved.root, resolved.sha)
   } catch (caught) {
     return reviewFailure(caught)
   }
   return respondWithLog(resolved.runtime, resolved.project)
+  })
 }
 
 interface ReviewTarget {
@@ -70,14 +88,6 @@ async function resolve(
   const target = wikiProjectTarget(runtime, new URL(request.url).searchParams)
   if ('error' in target) return { error: target.error }
   const sha = (await context.params).sha
-  if (!SHA_SELECTOR.test(sha)) {
-    return { error: wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`') }
-  }
-  if (!runtime.wikiCache.isGitProject(target.project)) {
-    return {
-      error: wikiError(404, 'NOT_FOUND', `project "${target.project}" is not a git worktree`),
-    }
-  }
   const root = runtime.config.projects.find((entry) => entry.name === target.project)?.root
   if (!root) return { error: wikiError(404, 'NOT_FOUND', 'project is not configured') }
   return { runtime, project: target.project, root, sha }

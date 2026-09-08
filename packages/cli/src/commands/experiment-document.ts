@@ -1,17 +1,16 @@
 import {
-  type ExperimentDocumentDiagnostic,
   lintExperimentDocument,
   MANAGED_EXPERIMENT_SECTIONS,
   type ManagedExperimentSection,
   readExperimentDoc,
   renderExperimentManagedSection,
   resolveExperimentId,
-  validateExperimentManagedDocuments,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
-import { emitJson, type OutputFormat } from '../lib/output.js'
+import { emitJson, emitLintDiagnostics, type OutputFormat } from '../lib/output.js'
+import { loadResultsEligibility, type ResultsEligibility } from '../lib/results-eligibility.js'
 
 interface ExperimentDocumentBaseInput {
   projectRoot?: string
@@ -27,9 +26,13 @@ export interface ExperimentDocumentSectionInput extends ExperimentDocumentBaseIn
 export async function runExperimentDocumentShow(
   input: ExperimentDocumentSectionInput,
 ): Promise<void> {
-  const { experiment, section } = await resolveInput(input)
+  const { experiment, section, projectRoot } = await resolveInput(input)
   const parsed = experiment.documents?.[section] ?? null
-  const rendered = renderExperimentManagedSection(experiment, section)
+  const eligibility =
+    section === 'results'
+      ? await loadResultsEligibility(projectRoot, experiment.documents?.results.data ?? null)
+      : null
+  const rendered = renderExperimentManagedSection(experiment, section, eligibility ?? undefined)
   if (input.format === 'human') {
     process.stdout.write(rendered.markdown)
     return
@@ -40,42 +43,59 @@ export async function runExperimentDocumentShow(
     document: parsed,
     renderedSource: rendered.source,
     diagnostics: rendered.diagnostics,
+    ...eligibilityFields(eligibility),
   })
 }
 
 export async function runExperimentDocumentRender(
   input: ExperimentDocumentSectionInput,
 ): Promise<void> {
-  const { experiment, section } = await resolveInput(input)
-  const rendered = renderExperimentManagedSection(experiment, section)
+  const { experiment, section, projectRoot } = await resolveInput(input)
+  const eligibility =
+    section === 'results'
+      ? await loadResultsEligibility(projectRoot, experiment.documents?.results.data ?? null)
+      : null
+  const rendered = renderExperimentManagedSection(experiment, section, eligibility ?? undefined)
+  const markdown = rendered.markdown
   if (input.format === 'human') {
-    process.stdout.write(rendered.markdown)
+    process.stdout.write(markdown)
     return
   }
   emitJson({
     experimentId: experiment.id,
     section,
-    markdown: rendered.markdown,
+    markdown,
     source: rendered.source,
     diagnostics: rendered.diagnostics,
+    ...eligibilityFields(eligibility),
   })
 }
 
-export async function runExperimentDocumentValidate(
-  input: ExperimentDocumentBaseInput,
-): Promise<void> {
+/**
+ * One lint workflow: README structure, managed pointers, YAML schemas and
+ * cross-references, including the schema validation the removed
+ * `experiment doc validate` used to perform on its own. Format and structure
+ * only — a well-formed document that cites a deprecated Run is valid, so
+ * research state never reaches lint output.
+ */
+export async function runExperimentDocumentLint(input: ExperimentDocumentBaseInput): Promise<void> {
   const { experiment } = await resolveInput(input)
-  emitDiagnostics(
+  emitLintDiagnostics(
     input.format,
-    experiment.id,
-    'validate',
-    validateExperimentManagedDocuments(experiment.documents ?? null),
+    { experimentId: experiment.id },
+    lintExperimentDocument(experiment),
   )
 }
 
-export async function runExperimentDocumentLint(input: ExperimentDocumentBaseInput): Promise<void> {
-  const { experiment } = await resolveInput(input)
-  emitDiagnostics(input.format, experiment.id, 'lint', lintExperimentDocument(experiment))
+function eligibilityFields(eligibility: ResultsEligibility | null): {
+  variantEligibility?: ResultsEligibility['variants']
+  deprecatedRuns?: string[]
+} {
+  if (eligibility === null) return {}
+  return {
+    variantEligibility: eligibility.variants,
+    deprecatedRuns: eligibility.deprecatedRuns,
+  }
 }
 
 async function resolveInput(input: ExperimentDocumentBaseInput & { section?: string }) {
@@ -97,32 +117,5 @@ async function resolveInput(input: ExperimentDocumentBaseInput & { section?: str
     }
     section = normalized as ManagedExperimentSection
   }
-  return { experiment, section }
-}
-
-function emitDiagnostics(
-  format: OutputFormat,
-  experimentId: string,
-  operation: 'validate' | 'lint',
-  diagnostics: ExperimentDocumentDiagnostic[],
-): void {
-  const summary = {
-    errors: diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length,
-    warnings: diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length,
-    info: diagnostics.filter((diagnostic) => diagnostic.severity === 'info').length,
-  }
-  if (format === 'human') {
-    if (diagnostics.length === 0) {
-      process.stdout.write(`${experimentId}: ${operation} passed\n`)
-    } else {
-      const lines = diagnostics.flatMap((diagnostic) => [
-        `[${diagnostic.severity.toUpperCase()}] ${diagnostic.code} (${diagnostic.file}${diagnostic.field ? `:${diagnostic.field}` : ''})`,
-        `  ${diagnostic.message}`,
-      ])
-      process.stdout.write(`${experimentId}: ${operation}\n${lines.join('\n')}\n`)
-    }
-  } else {
-    emitJson({ ok: summary.errors === 0, experimentId, operation, diagnostics, summary })
-  }
-  if (summary.errors > 0) process.exitCode = 1
+  return { experiment, section, projectRoot }
 }

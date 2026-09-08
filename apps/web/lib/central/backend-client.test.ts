@@ -20,10 +20,7 @@ const capabilities: BackendCapabilities = {
   wikiAssets: true,
   git: true,
   shares: true,
-  tmux: true,
-  terminal: true,
   slurm: false,
-  herdr: false,
 }
 const metadata = {
   host: 'host-a',

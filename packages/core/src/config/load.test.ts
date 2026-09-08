@@ -31,6 +31,53 @@ poll:
   backoff_factor: 3
 `
 
+describe('persistent file cache config', () => {
+  it('requires an explicit instance dump when any project opts in', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha, persistent_cache: true }]\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('resolves the dump beside the selected config rather than the caller cwd', async () => {
+    const configPath = join(dir, 'instance.yml')
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha, persistent_cache: true }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 12.5\n  wiki_ttl_seconds: 45\n  default_ttl_seconds: 2400\n')
+    const config = await loadConfig({ cwd: '/', explicitPath: configPath })
+    expect(config?.fileCache?.dumpPath).toBe(join(dir, '.memon-cache', 'files.dump'))
+    expect(config?.fileCache?.dumpIntervalMs).toBe(12_500)
+    expect(config?.fileCache?.wikiTtlMs).toBe(45_000)
+    expect(config?.fileCache?.defaultTtlMs).toBe(2_400_000)
+    expect(config?.projects[0]?.persistentCache).toBe(true)
+  })
+
+  it('defaults the periodic dump interval to 30 seconds', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n')
+    const config = await loadConfig({ cwd: dir })
+    expect(config?.fileCache?.dumpIntervalMs).toBe(30_000)
+  })
+
+  it('rejects the removed database key rather than treating it as a dump path', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  database: ./.memon-cache/files.sqlite\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects a blank dump path', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: "   "\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects a non-positive or non-finite dump interval', async () => {
+    const configPath = join(dir, 'config.yml')
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 0\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: .inf\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('rejects a Wiki period longer than the ordinary-document period', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  wiki_ttl_seconds: 1800\n  default_ttl_seconds: 30\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+})
+
 describe('loadConfig', () => {
   it('reads cwd/config.yml by default', async () => {
     await fs.writeFile(join(dir, 'config.yml'), VALID)
@@ -201,8 +248,6 @@ describe('implicitCwdProject', () => {
     expect(cfg.projects[0]!.root).toBe('/some/where')
     expect(cfg.projects[0]!.name).toBe('(cwd)')
     expect(cfg.poll.minIntervalMs).toBe(1000)
-    expect(cfg.terminal.ttydMaxConcurrent).toBe(16)
-    expect(cfg.terminal.ttydIdleTtlMinutes).toBe(30)
     expect(cfg.slurm.totalNodes).toBe(-1)
   })
 })
@@ -783,247 +828,39 @@ projects:
   })
 })
 
-describe('loadConfig terminal block', () => {
-  const DEFAULT_COMMANDS = {
-    none: [],
-    claude: ['claude'],
-    codex: ['codex'],
-    opencode: ['opencode'],
+describe('loadConfig retired interactive config compatibility', () => {
+  async function captureStderr<T>(run: () => Promise<T>): Promise<{ value: T; stderr: string }> {
+    const original = process.stderr.write
+    let stderr = ''
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderr += String(chunk)
+      return true
+    }) as typeof process.stderr.write
+    try {
+      return { value: await run(), stderr }
+    } finally {
+      process.stderr.write = original
+    }
   }
 
-  it('applies defaults when block is absent', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal).toEqual({
-      tmuxEnabled: true,
-      ttydMaxConcurrent: 16,
-      ttydIdleTtlMinutes: 30,
-      paneInfoActivePollMs: 5_000,
-      paneInfoIdlePollMs: 60_000,
-      commands: DEFAULT_COMMANDS,
-    })
-  })
-
-  it('partial config fills missing defaults', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  ttyd_max_concurrent: 8
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal).toEqual({
-      tmuxEnabled: true,
-      ttydMaxConcurrent: 8,
-      ttydIdleTtlMinutes: 30,
-      paneInfoActivePollMs: 5_000,
-      paneInfoIdlePollMs: 60_000,
-      commands: DEFAULT_COMMANDS,
-    })
-  })
-
-  it('idle_ttl_minutes 0 is allowed (disables killer)', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  ttyd_idle_ttl_minutes: 0
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal.ttydIdleTtlMinutes).toBe(0)
-  })
-
-  it('parses optional tmux enablement and Herdr CLI argv', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  tmux_enabled: false
-  herdr:
-    cli: ["/opt/herdr/bin/herdr", "--fixed-prefix"]
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal.tmuxEnabled).toBe(false)
-    expect(cfg!.terminal.herdr).toEqual({
-      cli: ['/opt/herdr/bin/herdr', '--fixed-prefix'],
-    })
-  })
-
-  it('rejects an empty Herdr CLI argv', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  herdr:
-    cli: []
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects negative ttyd_max_concurrent', async () => {
+  it('accepts invalid legacy values, ignores them all, and warns once', async () => {
     const yaml = `
 projects:
   - { name: a, root: ./a }
 terminal:
   ttyd_max_concurrent: -1
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects negative ttyd_idle_ttl_minutes', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  ttyd_idle_ttl_minutes: -5
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects ttyd_max_concurrent of 0', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  ttyd_max_concurrent: 0
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('honors custom pane_info polling intervals', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  pane_info_active_poll_ms: 3000
-  pane_info_idle_poll_ms: 120000
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal.paneInfoActivePollMs).toBe(3000)
-    expect(cfg!.terminal.paneInfoIdlePollMs).toBe(120000)
-  })
-
-  it('rejects zero pane_info_active_poll_ms', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  pane_info_active_poll_ms: 0
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects pane_info_idle_poll_ms below active', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  pane_info_active_poll_ms: 5000
-  pane_info_idle_poll_ms: 2000
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/must be >=/)
-  })
-
-  it('per-agent commands partial override fills the rest with defaults', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  commands:
-    claude: ["claude", "--model", "claude-sonnet-4-6"]
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal.commands).toEqual({
-      none: [],
-      claude: ['claude', '--model', 'claude-sonnet-4-6'],
-      codex: ['codex'],
-      opencode: ['opencode'],
-    })
-  })
-
-  it('per-agent commands full override uses caller values exactly', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  commands:
-    none: ["zsh", "-l"]
-    claude: ["bash", "-lc", "exec claude"]
-    codex: ["codex", "--profile", "local"]
-    opencode: ["opencode"]
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal.commands).toEqual({
-      none: ['zsh', '-l'],
-      claude: ['bash', '-lc', 'exec claude'],
-      codex: ['codex', '--profile', 'local'],
-      opencode: ['opencode'],
-    })
-  })
-
-  it('commands.none empty array is accepted (default behaviour)', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  commands:
-    none: []
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.terminal.commands.none).toEqual([])
-  })
-
-  it('rejects commands.claude empty array', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
   commands:
     claude: []
+tmux: definitely-not-valid
+herdr:
+  cli: []
 `
     await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects commands.claude with empty-string element', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  commands:
-    claude: ["", "--continue"]
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-  })
-
-  it('rejects commands with unknown agent key', async () => {
-    const yaml = `
-projects:
-  - { name: a, root: ./a }
-terminal:
-  commands:
-    aider: ["aider"]
-`
-    await fs.writeFile(join(dir, 'config.yml'), yaml)
-    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+    const { value: cfg, stderr } = await captureStderr(() => loadConfig({ cwd: dir }))
+    expect(cfg).not.toHaveProperty('terminal')
+    expect(cfg).not.toHaveProperty('tmux')
+    expect(cfg).not.toHaveProperty('herdr')
+    expect(stderr.match(/no longer supported/g)).toHaveLength(1)
   })
 })
 

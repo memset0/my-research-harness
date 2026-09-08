@@ -429,7 +429,9 @@ function WikiSelectedPane({
       </div>
     )
   }
-  if (error || !page) {
+  // A page already on screen survives a failed refresh; only an empty pane
+  // reports the failure.
+  if (!page) {
     return (
       <div className="flex h-full flex-col">
         {onShowRail && <ClosedRailToolbar onShowRail={onShowRail} />}
@@ -825,6 +827,9 @@ function WikiEditor({
       setKnownHash(result.page.hash)
       queryClient.setQueryData(detailKey, result.page)
       queryClient.invalidateQueries({ queryKey: ['wiki', ...projectQueryKey(project)] })
+      queryClient.invalidateQueries({
+        queryKey: ['wiki-inventory', ...projectQueryKey(project)],
+      })
       toast.success('saved')
       onClose()
     },

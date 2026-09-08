@@ -22,8 +22,8 @@
 //   - Share cookie is re-signed with pruned entries when any entry was
 //     stale; or cleared when all entries are now invalid.
 //
-// Bypass list (isAuthBypass): /api/auth/check, /api/terminal/proxy/*,
-// /_next/static/*, /_next/image, /favicon.ico — these never hit middleware.
+// Bypass list (isAuthBypass): /api/auth/check, /_next/static/*,
+// /_next/image, /favicon.ico — these never hit middleware.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { TOO_MANY_HEADERS, UNAUTHORIZED_HEADERS } from './lib/auth/basic-auth'

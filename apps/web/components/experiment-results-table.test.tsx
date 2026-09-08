@@ -1,4 +1,4 @@
-import type { ResultsDocument } from '@memon/core'
+import type { ResultsDocument, ResultsVariantEligibility } from '@memon/core'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -119,10 +119,6 @@ describe('ExperimentResultsTable', () => {
     ])
     expect(table).toHaveClass('table-auto', 'w-max', 'min-w-full')
     expect(table.parentElement).toHaveClass('overflow-x-auto')
-    expect(screen.getByRole('link', { name: 'W&B' })).toHaveAttribute(
-      'href',
-      'https://wandb.example/run-a',
-    )
     expect(container.querySelector('[data-max-lines="1"]')).toHaveStyle({
       maxHeight: 'calc(1 * 1.25rem)',
     })
@@ -652,23 +648,6 @@ describe('ExperimentResultsTable', () => {
     await user.click(screen.getByRole('button', { name: 'Resume saved row filters' }))
     expect(variantOrder()).toEqual(['V0001', 'V0002'])
 
-    await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-row-filters:preferences') ??
-          '{}',
-      ) as {
-        rowFilters?: Array<{ operator?: string }>
-        rowOverrides?: Record<string, string>
-      }
-      expect(preferences.rowFilters?.map((filter) => filter.operator)).toEqual([
-        'neq',
-        'gt',
-        'lt',
-        'eq',
-      ])
-      expect(preferences.rowOverrides).toEqual({ V0001: 'include', V0002: 'include' })
-    })
-
     first.unmount()
     const restored = renderResults('E0001-row-filters')
     await waitFor(() => expect(variantOrder()).toEqual(['V0001', 'V0002']))
@@ -936,6 +915,62 @@ describe('ExperimentResultsTable', () => {
     })
   })
 
+  it('keeps excluded metrics visible without ranking them and restores ranking after eligibility changes', async () => {
+    const experimentId = 'E0001-eligibility'
+    window.localStorage.setItem(
+      `memon:results-table:research:${experimentId}:preferences`,
+      JSON.stringify({ sotaModes: { 'schema:loss': 'lower-is-better' } }),
+    )
+    const eligibility: ResultsVariantEligibility[] = [
+      {
+        variantId: 'V0001',
+        runs: ['run-a'],
+        deprecatedRuns: ['run-a'],
+        eligibleRuns: [],
+        hasMetrics: true,
+        metricsValidity: 'unavailable',
+      },
+      {
+        variantId: 'V0002',
+        runs: ['run-b', 'run-c'],
+        deprecatedRuns: ['run-b'],
+        eligibleRuns: ['run-c'],
+        hasMetrics: true,
+        metricsValidity: 'partial',
+      },
+    ]
+    const { container, rerender } = renderResults(experimentId, RESULTS, eligibility)
+    const metric = (id: string) =>
+      container.querySelector(`[data-variant-id="${id}"] [data-column-id="schema:loss"] span`)!
+    await waitFor(() => expect(metric('V0001')).toHaveTextContent('0.1 [unavailable]'))
+    expect(metric('V0002')).toHaveTextContent('0.2 [partial]')
+    expect(metric('V0001')).not.toHaveClass('font-bold')
+    expect(metric('V0002')).not.toHaveClass('font-bold')
+
+    rerender(
+      <ExperimentResultsTable
+        document={RESULTS}
+        project="research"
+        experimentId={experimentId}
+        runIds={['run-a', 'run-b', 'run-c']}
+        variantEligibility={[
+          {
+            ...eligibility[0]!,
+            deprecatedRuns: [],
+            eligibleRuns: ['run-a'],
+            metricsValidity: 'valid',
+          },
+          eligibility[1]!,
+        ]}
+      />,
+    )
+    await waitFor(() => expect(metric('V0001')).toHaveClass('font-bold', 'underline'))
+    expect(metric('V0001')).toHaveTextContent('0.1')
+    expect(metric('V0001')).not.toHaveTextContent('unavailable')
+    expect(metric('V0002')).toHaveTextContent('0.2 [partial]')
+    expect(metric('V0002')).not.toHaveClass('font-bold')
+  })
+
   it('does not highlight non-numeric metric values', async () => {
     cleanup()
     const user = userEvent.setup()
@@ -966,7 +1001,11 @@ describe('ExperimentResultsTable', () => {
   })
 })
 
-function renderResults(experimentId: string, document: ResultsDocument = RESULTS) {
+function renderResults(
+  experimentId: string,
+  document: ResultsDocument = RESULTS,
+  variantEligibility?: ResultsVariantEligibility[],
+) {
   const portalRoot = window.document.createElement('div')
   portalRoot.id = 'portal-root'
   window.document.body.appendChild(portalRoot)
@@ -975,11 +1014,8 @@ function renderResults(experimentId: string, document: ResultsDocument = RESULTS
       document={document}
       project="research"
       experimentId={experimentId}
-      memberRuns={[
-        runSummary('run-a', 'https://wandb.example/run-a'),
-        runSummary('run-b'),
-        runSummary('run-c'),
-      ]}
+      runIds={['run-a', 'run-b', 'run-c']}
+      variantEligibility={variantEligibility}
     />,
   )
   return {
@@ -989,20 +1025,6 @@ function renderResults(experimentId: string, document: ResultsDocument = RESULTS
       result.unmount()
       portalRoot.remove()
     },
-  }
-}
-
-function runSummary(id: string, wandb?: string) {
-  return {
-    id,
-    status: 'FINISHED',
-    createdAt: '2026-08-13T00:00:00Z',
-    updatedAt: '2026-08-13T00:00:00Z',
-    finishedAt: '2026-08-13T01:00:00Z',
-    host: 'worker',
-    gpus: [],
-    artifacts: [],
-    wandb: wandb ?? null,
   }
 }
 

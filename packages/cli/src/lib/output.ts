@@ -14,6 +14,7 @@ import {
   type Run,
   STATUS_EMOJI,
 } from '@memon/core'
+import { recordCliInvocationFailureSync } from './invocation.js'
 
 export type OutputFormat = 'json' | 'human'
 
@@ -26,6 +27,15 @@ export interface TableRow {
   runs: string[]
   attempts: string[]
   values: Record<string, ResultScalar>
+  /**
+   * Read-time evidence state of this Variant's metrics, projected from Run
+   * deprecation. `partial` / `unavailable` numbers are shown exactly as
+   * recorded but are not current evidence, so every format carries the label:
+   * a consumer must not compare them, and no substitute is computed.
+   */
+  metricsValidity: 'valid' | 'partial' | 'unavailable'
+  /** Runs behind this Variant that are marked deprecated. */
+  deprecatedRuns: string[]
 }
 
 export interface TableOutput {
@@ -61,6 +71,8 @@ export function emitCsv(table: TableOutput): void {
     ...table.columns.map((c) => c.key),
     'runs_count',
     'attempts_count',
+    'metrics_validity',
+    'deprecated_runs',
   ]
   const lines = [header.map(escapeCsv).join(',')]
   for (const row of table.rows) {
@@ -71,6 +83,8 @@ export function emitCsv(table: TableOutput): void {
       ...table.columns.map((c) => String(row.values[c.key] ?? '')),
       String(row.runs.length),
       String(row.attempts.length),
+      row.metricsValidity,
+      row.deprecatedRuns.join(' '),
     ]
     lines.push(cells.map(escapeCsv).join(','))
   }
@@ -85,6 +99,7 @@ export function emitMarkdownTable(table: TableOutput): void {
     ...table.columns.map((c) => c.label),
     'Runs',
     'Attempts',
+    'Metrics',
   ]
   const rows = table.rows.map((row) => [
     `**${row.variantId}**`,
@@ -93,13 +108,14 @@ export function emitMarkdownTable(table: TableOutput): void {
     ...table.columns.map((c) => renderScalarMd(row.values[c.key])),
     String(row.runs.length),
     String(row.attempts.length),
+    row.metricsValidity,
   ])
   const allRows = [headers, ...rows]
   const widths = allRows[0]!.map((_, i) => Math.max(...allRows.map((r) => (r[i] ?? '').length)))
   const sep = widths.map((w) => '─'.repeat(w)).join('─┼─')
   const fmt = (row: string[]) => `│ ${row.map((cell, i) => cell.padEnd(widths[i]!)).join(' │ ')} │`
   process.stdout.write(
-    `${renderTableAnnotations(table)}${[
+    `${renderTableValidity(table)}${renderTableAnnotations(table)}${[
       fmt(headers),
       fmt(sep.split('─┼─').map((s) => s)),
       ...rows.map(fmt),
@@ -116,13 +132,21 @@ export function renderHumanTable(table: TableOutput): string {
   const annotations = renderTableAnnotations(table)
   if (table.rows.length === 0)
     return `experiment: ${table.experimentId}\n\n${annotations}(no matching variants)\n`
-  const headers = ['Variant', 'Status', ...table.columns.map((c) => c.label), 'Runs', 'Attempts']
+  const headers = [
+    'Variant',
+    'Status',
+    ...table.columns.map((c) => c.label),
+    'Runs',
+    'Attempts',
+    'Metrics',
+  ]
   const rows = table.rows.map((row) => [
     `**${row.variantId}** ${row.variantName}`,
     `\`${row.status}\``,
     ...table.columns.map((c) => renderScalarHuman(row.values[c.key])),
     String(row.runs.length),
     String(row.attempts.length),
+    row.metricsValidity,
   ])
   const allRows = [headers, ...rows]
   const widths = allRows[0]!.map((_, i) =>
@@ -133,7 +157,28 @@ export function renderHumanTable(table: TableOutput): string {
   const headerLine = fmt(headers)
   const sepLine = fmt(sep.split('─┼─').map((s) => s))
   const body = rows.map(fmt).join('\n')
-  return `experiment: ${table.experimentId}\n\n${annotations}${headerLine}\n${sepLine}\n${body}\n`
+  return `experiment: ${table.experimentId}\n\n${renderTableValidity(table)}${annotations}${headerLine}\n${sepLine}\n${body}\n`
+}
+
+/**
+ * Warn, in the formats a person reads, that some rows are not current
+ * evidence. Derived from the rows themselves, so it cannot drift from the
+ * `metrics_validity` cells.
+ */
+function renderTableValidity(table: TableOutput): string {
+  const invalidated = table.rows.filter((row) => row.metricsValidity !== 'valid')
+  if (invalidated.length === 0) return ''
+  const lines = [
+    'Metrics validity: these Variants rest on deprecated Runs. Their recorded',
+    'numbers are unchanged but are NOT current evidence — do not compare them.',
+    '',
+  ]
+  for (const row of invalidated) {
+    lines.push(
+      `- ${row.variantId}: ${row.metricsValidity} (deprecated runs: ${row.deprecatedRuns.join(', ') || 'none'})`,
+    )
+  }
+  return `${lines.join('\n')}\n\n`
 }
 
 function renderTableAnnotations(table: TableOutput): string {
@@ -184,6 +229,8 @@ export function emitYaml(table: TableOutput): void {
       runs: r.runs,
       attempts: r.attempts,
       values: r.values,
+      metricsValidity: r.metricsValidity,
+      deprecatedRuns: r.deprecatedRuns,
     })),
     meta: table.meta,
   }
@@ -200,9 +247,64 @@ export function emitHuman(text: string): void {
   process.stdout.write(`${text}\n`)
 }
 
+/**
+ * Legacy unstructured exit path. It still terminates the process, so it also
+ * flushes the invocation receipt: a mutating command that dies here has
+ * happened, and a missing receipt would understate the history.
+ */
 export function emitError(message: string, code = 1): never {
+  recordCliInvocationFailureSync('GENERIC')
   process.stderr.write(`memon: ${message}\n`)
   process.exit(code)
+}
+
+// ---------- lint diagnostics ----------
+
+/**
+ * Shape shared by every lint surface (`memon experiment doc lint`, `memon run
+ * lint`). Lint reports format, schema and structure only — research state
+ * (missing conclusions, stale runs, deprecated inputs) is never a lint
+ * finding, so this carries no severity ladder beyond the document's own.
+ */
+export interface LintDiagnostic {
+  code: string
+  severity: 'error' | 'warning' | 'info'
+  message: string
+  file: string
+  field?: string
+}
+
+/**
+ * Emit one lint report. `subject` carries the identifying fields for the
+ * linted object (`{ experimentId }`, `{ runId }`); its first value is the
+ * human-mode label. An `error` diagnostic sets exit code 1 without
+ * terminating, so a caller may keep emitting.
+ */
+export function emitLintDiagnostics(
+  format: OutputFormat,
+  subject: Record<string, string>,
+  diagnostics: readonly LintDiagnostic[],
+): void {
+  const summary = {
+    errors: diagnostics.filter((diagnostic) => diagnostic.severity === 'error').length,
+    warnings: diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length,
+    info: diagnostics.filter((diagnostic) => diagnostic.severity === 'info').length,
+  }
+  if (format === 'human') {
+    const label = Object.values(subject)[0] ?? ''
+    if (diagnostics.length === 0) {
+      process.stdout.write(`${label}: lint passed\n`)
+    } else {
+      const lines = diagnostics.flatMap((diagnostic) => [
+        `[${diagnostic.severity.toUpperCase()}] ${diagnostic.code} (${diagnostic.file}${diagnostic.field ? `:${diagnostic.field}` : ''})`,
+        `  ${diagnostic.message}`,
+      ])
+      process.stdout.write(`${label}: lint\n${lines.join('\n')}\n`)
+    }
+  } else {
+    emitJson({ ok: summary.errors === 0, ...subject, operation: 'lint', diagnostics, summary })
+  }
+  if (summary.errors > 0) process.exitCode = 1
 }
 
 // ---------- formatters for `human` mode ----------

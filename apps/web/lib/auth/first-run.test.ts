@@ -246,19 +246,6 @@ describe('ensureAuthInitialised', () => {
     const fakeCfg = {
       projects: [{ name: 'a', root: dir, include: [], exclude: [] }],
       poll: { minIntervalMs: 1000, maxIntervalMs: 60000, backoffFactor: 2 },
-      terminal: {
-        tmuxEnabled: true,
-        ttydMaxConcurrent: 16,
-        ttydIdleTtlMinutes: 30,
-        paneInfoActivePollMs: 5000,
-        paneInfoIdlePollMs: 60000,
-        commands: {
-          none: [],
-          claude: ['claude'],
-          codex: ['codex'],
-          opencode: ['opencode'],
-        },
-      },
       slurm: { totalNodes: -1 },
       gitStatus: { intervalMs: 10_000 },
     }
@@ -349,10 +336,10 @@ describe('appendSessionSecretToAuthBlock', () => {
 
   it('preserves trailing content after the auth block', () => {
     const before =
-      'auth:\n  username: alice\n  password: pw\n\nterminal:\n  ttyd_max_concurrent: 8\n'
+      'auth:\n  username: alice\n  password: pw\n\nlegacy_plugin:\n  retries: 8\n'
     const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
-    expect(after).toContain('  session_secret: "NEW-SECRET"\n\nterminal:')
-    expect(after).toContain('ttyd_max_concurrent: 8')
+    expect(after).toContain('  session_secret: "NEW-SECRET"\n\nlegacy_plugin:')
+    expect(after).toContain('retries: 8')
   })
 
   it('matches the existing auth-block indentation if non-default', () => {

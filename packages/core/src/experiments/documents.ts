@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { join } from 'node:path'
 
 import yaml from 'js-yaml'
@@ -20,6 +20,8 @@ import type {
   ResultsDocument,
   ResultVariant,
 } from '../types.js'
+import { projectResultsRunEligibility } from './results-eligibility.js'
+import type { ResultsVariantEligibility } from './results-eligibility.js'
 
 export const IMPLEMENTATION_SCHEMA_VERSION = 1
 export const INVESTIGATION_SCHEMA_VERSION = 1
@@ -94,6 +96,12 @@ export interface ResultsRunLink {
 /** Optional presentation links keyed by canonical Run ID. */
 export interface ResultsRenderContext {
   runs?: Readonly<Record<string, ResultsRunLink>>
+  /**
+   * Exclude these ids from displayed Run/Attempt collections. Preserve metric
+   * values with partial/unavailable qualification and evidence notes; never
+   * rewrite the source document or synthesize replacement measurements.
+   */
+  deprecatedRuns?: Iterable<string>
 }
 
 const StringList = z.array(z.string()).default([])
@@ -470,6 +478,14 @@ export function renderResultsMarkdown(
 ): string {
   const annotations = renderResultColumnAnnotationsMarkdown(document)
   if (document.variants.length === 0) return `${annotations}_No variants yet._\n`
+  const deprecatedRuns =
+    context?.deprecatedRuns === undefined ? null : new Set(context.deprecatedRuns)
+  const eligibility =
+    deprecatedRuns === null
+      ? null
+      : new Map(
+          projectResultsRunEligibility(document, deprecatedRuns).map((row) => [row.variantId, row]),
+        )
   const headers = [
     'Variant',
     'Status',
@@ -480,31 +496,55 @@ export function renderResultsMarkdown(
     'Runs',
     'Attempts',
   ]
-  const rows = document.variants.map((variant) => [
-    `**${escapeTable(variant.id)}** ${escapeTable(variant.name)}`,
-    `\`${variant.status}\``,
-    ...document.columns.map((column) =>
-      renderScalar(
-        column.group === 'parameter' ? variant.parameters[column.key] : variant.metrics[column.key],
-      ),
-    ),
-    renderProvenancePath(variant, 'entry'),
-    renderProvenancePath(variant, 'recipe'),
-    variant.provenance?.commit ? `\`${escapeCode(variant.provenance.commit)}\`` : '—',
-    variant.runs.length > 0
-      ? variant.runs.map((run) => renderRunReference(run, context)).join('<br>')
-      : '—',
-    variant.attempts.length > 0
-      ? variant.attempts.map((run) => renderRunReference(run, context)).join('<br>')
-      : '—',
-  ])
+  const rows = document.variants.map((variant) => {
+    const qualified = eligibility?.get(variant.id)
+    const validity = qualified?.metricsValidity ?? 'valid'
+    const runs = qualified?.eligibleRuns ?? variant.runs
+    const attempts = deprecatedRuns?.size
+      ? variant.attempts.filter((id) => !deprecatedRuns.has(id))
+      : variant.attempts
+    return [
+      `**${escapeTable(variant.id)}** ${escapeTable(variant.name)}`,
+      `\`${variant.status}\``,
+      ...document.columns.map((column) => {
+        if (column.group === 'parameter') return renderScalar(variant.parameters[column.key])
+        const cell = renderScalar(variant.metrics[column.key])
+        return validity !== 'valid' && cell !== '—' ? `${cell} (${validity})[^dep]` : cell
+      }),
+      renderProvenancePath(variant, 'entry'),
+      renderProvenancePath(variant, 'recipe'),
+      variant.provenance?.commit ? `\`${escapeCode(variant.provenance.commit)}\`` : '—',
+      runs.length > 0 ? runs.map((run) => renderRunReference(run, context)).join('<br>') : '—',
+      attempts.length > 0
+        ? attempts.map((run) => renderRunReference(run, context)).join('<br>')
+        : '—',
+    ]
+  })
   const table = [
     `| ${headers.map(escapeTable).join(' | ')} |`,
     `| ${headers.map(() => '---').join(' | ')} |`,
     ...rows.map((row) => `| ${row.join(' | ')} |`),
     '',
   ].join('\n')
-  return `${annotations}${table}`
+  const notes = eligibility === null ? '' : renderEligibilityNotes([...eligibility.values()])
+  return `${annotations}${table}${notes}`
+}
+
+/**
+ * Footnote block naming every Variant whose metrics lost evidence. Explicit
+ * by design: stored numbers stay in results.yaml, so the reader is told
+ * exactly which of them stopped being comparable and why.
+ */
+function renderEligibilityNotes(rows: readonly ResultsVariantEligibility[]): string {
+  const affected = rows.filter((row) => row.metricsValidity !== 'valid')
+  if (affected.length === 0) return ''
+  const lines = affected.map((row) => {
+    const runs = row.deprecatedRuns.map((run) => `\`${escapeCode(run)}\``).join(', ')
+    return row.metricsValidity === 'unavailable'
+      ? `- **${escapeTable(row.variantId)}**: metrics unavailable — every Run behind them is deprecated (${runs}). Retained values are not comparable; recover eligible evidence or state the gap.`
+      : `- **${escapeTable(row.variantId)}**: metrics partially invalidated — deprecated Runs ${runs} contributed to the stored values, which therefore do not describe the remaining eligible Runs (${row.eligibleRuns.map((run) => `\`${escapeCode(run)}\``).join(', ')}).`
+  })
+  return `\n[^dep]: Evidence withdrawn by Run deprecation.\n\n${lines.join('\n')}\n`
 }
 
 /** Render optional Markdown column/value explanations before the Results table. */

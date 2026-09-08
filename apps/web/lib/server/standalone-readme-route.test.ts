@@ -58,14 +58,14 @@ beforeEach(() => {
     mtime: 2,
     hash: 'b'.repeat(40),
     finalContent: '# Updated',
-    journalChanged: false,
+    activityRecorded: false,
   })
   writeExperimentReadme.mockResolvedValue({
     ok: true,
     mtime: 2,
     hash: 'b'.repeat(40),
     finalContent: '# Updated',
-    journalChanged: true,
+    activityRecorded: true,
   })
 })
 

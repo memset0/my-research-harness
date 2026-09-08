@@ -8,7 +8,7 @@
 //                  `projectFor` resolves into their scope set
 //   - `mutating` — anything that writes; OWNER-ONLY. Viewer cookies are NOT
 //                  decoded for these routes.
-//   - `shell`    — terminal proxy + tmux. OWNER-ONLY. Same short-circuit.
+//   - `shell`    — privileged process-control endpoints. OWNER-ONLY. Same short-circuit.
 //
 // Each rule also declares a `projectFor` function that returns the project
 // this route is scoped to (for in-scope checks on read routes):
@@ -203,7 +203,8 @@ const projectFromWikiId =
 /** project from /api/wiki-assets/<project>/... segment. */
 const projectFromWikiAssetsSegment =
   () =>
-  (_m: string, p: string): ResolvedProject => segmentAfter(p, '/api/wiki-assets/') ?? null
+  (_m: string, p: string): ResolvedProject =>
+    segmentAfter(p, '/api/wiki-assets/') ?? null
 
 const projectFromPathQuery =
   () =>
@@ -272,15 +273,16 @@ const RULES: Rule[] = [
     projectFor: projectFromHostProjectSegment(),
   },
 
-  // ===== shell =====
-  { match: startsWith('/api/terminal/'), class: 'shell', projectFor: projectGlobal() },
-  { match: startsWith('/api/tmux-sessions'), class: 'shell', projectFor: projectGlobal() },
-  // The /manage/tmux page and the /terminal-popup page spawn terminal
-  // sessions in the UI; classify them as shell so they're owner-only.
-  { match: methodIs(['GET'], exact('/manage/tmux')), class: 'shell', projectFor: projectGlobal() },
+  // File access settings: owner-only. The restart action invokes a configured
+  // supervisor argv, so it is shell class; read/save are ordinary management.
   {
-    match: methodIs(['GET'], startsWith('/terminal-popup')),
+    match: methodIs(['POST'], exact('/api/file-access/restart')),
     class: 'shell',
+    projectFor: projectGlobal(),
+  },
+  {
+    match: methodIs(['GET', 'PUT'], exact('/api/file-access')),
+    class: 'mutating',
     projectFor: projectGlobal(),
   },
 
@@ -323,6 +325,17 @@ const RULES: Rule[] = [
   // review marks because `.memon/` is control state, not project content.
   {
     match: methodIs(['POST', 'DELETE'], startsWith('/api/wiki/review/')),
+    class: 'shell',
+    projectFor: projectQueryOrMulti(),
+  },
+
+  // Merged diagnostic history (legacy Journal + invocation receipts) is an
+  // owner-only read: receipt paths and error codes can name project internals
+  // outside a viewer's share scope. It is deliberately NOT `read`, and it must
+  // stay ahead of any future `/api/journal/...` read rule. The legacy
+  // `/api/journal` read below keeps its existing viewer scope.
+  {
+    match: methodIs(['GET'], exact('/api/journal/history')),
     class: 'shell',
     projectFor: projectQueryOrMulti(),
   },
@@ -501,14 +514,13 @@ export function classifyAndExtract(
  * Paths that bypass Next middleware entirely. The list is intentionally narrow:
  *   - `/api/auth/check` does its own validation (it is the auth-validation
  *     ping endpoint), so middleware MUST NOT short-circuit it.
- *   - `/api/terminal/proxy/*` is auth-gated at the custom-server entry
- *     (`apps/web/lib/server-core.ts`) before the request ever reaches Next.
+ *   - The custom server delegates all application paths through Next or the
+ *     central gateway, so it needs no feature-specific auth bypass.
  *   - Next.js asset paths and the favicon are public by necessity (the
  *     login page itself can't load CSS without these).
  */
 export function isAuthBypass(pathname: string): boolean {
   if (pathname === '/api/auth/check') return true
-  if (pathname.startsWith('/api/terminal/proxy/')) return true
   if (pathname.startsWith('/_next/static/')) return true
   if (pathname === '/_next/image' || pathname.startsWith('/_next/image?')) return true
   if (pathname === '/favicon.ico') return true
