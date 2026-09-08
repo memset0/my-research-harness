@@ -1,7 +1,8 @@
 # fs-migration-guide-authoring Specification
 
 ## Purpose
-TBD - created by archiving change fs-convention-migration-system. Update Purpose after archive.
+Define the authoring contract for memon's filesystem-convention migration guides so agents can consistently interpret and execute migrations between consecutive versions. Standardize guide location, the seven-section structure, executable detection and verification commands, rollback guidance, commit messages, and edge-case handling while preserving user-owned content.
+
 ## Requirements
 ### Requirement: Migration guides live at a fixed path with a fixed naming pattern
 
@@ -147,4 +148,3 @@ Repo `CLAUDE.md` SHALL contain a section (under "OpenSpec workflow" or as a new 
 - **WHEN** a reader greps `CLAUDE.md` for `fs-migration-guide-authoring`
 - **THEN** the result contains a sentence directing future authors to consult that spec before writing a `v<N>-to-v<N+1>.md` guide
 - **AND** the sentence states the path is `openspec/specs/fs-migration-guide-authoring/spec.md`
-
