@@ -1,92 +1,80 @@
 # cluster-backend-api Specification
 
 ## Purpose
-Defines the authenticated, versioned, streaming service contract between one central gateway and one cluster-local Backend.
+Define safe central in-process project services and public document contracts; the legacy capability name does not require a remote Backend listener.
 
 ## Requirements
 
-### Requirement: Backend read-only policy is enforced locally
-A Backend instance MAY select a local `read_only` access mode for private bootstrap verification. In that mode metadata SHALL advertise mutation, terminal, tmux, Herdr, and other shell/write capabilities as unavailable, and the Backend itself SHALL reject mutations, share creation/revocation, terminal control, and terminal relay before invoking a provider. Project/data GETs and share-token validation MAY remain available. Changing to normal `read_write` mode SHALL require an explicit local configuration change and process restart; `read_write` SHALL remain the default.
+### Requirement: Central services preserve Wiki document contracts
 
-#### Scenario: Shadow candidate cannot become a second writer
-- **WHEN** a candidate Backend starts with `access_mode: read_only`
-- **THEN** central can verify metadata and Project reads, while direct authenticated write or shell requests are rejected by the Backend even if central misroutes them
+Wiki SHALL remain a document kind alongside Reports, using the public list/detail/write/review/asset contracts from wiki-store. Central SHALL resolve configured host-qualified projects directly to project services; no remote Backend listener, token or capability probe SHALL be necessary. List envelopes SHALL omit bodies and absolute paths; detail envelopes SHALL include content, hash and diagnostics. Runtime validation, read-only project-data policy and owner-only review marks SHALL remain enforced.
 
-### Requirement: Backend exposes one versioned static API
-Each Backend SHALL expose a static `/api/backend/v1` HTTP namespace containing authenticated metadata/readiness, capabilities, Project discovery, Project reads and mutations, events, supported cluster-local product operations, and terminal relay. The runtime API SHALL NOT expose installation, Git update, daemon control, or arbitrary shell execution.
+#### Scenario: List and detail preserve their envelopes
+- **WHEN** central lists a configured project's Wiki and reads a page
+- **THEN** the list contains summaries and the detail adds content/hash/diagnostics without absolute paths or a remote Backend request
 
-#### Scenario: Metadata identifies the expected instance
-- **WHEN** central calls authenticated Backend metadata
-- **THEN** the response includes Host ID, release version, Backend API major, running revision, instance epoch, readiness, and capabilities
+#### Scenario: Conflicting write is refused
+- **WHEN** expectedMtime or expectedHash no longer matches the Wiki file
+- **THEN** the write returns a conflict with current document state and does not alter the file
 
-#### Scenario: Operations control is absent
-- **WHEN** a caller requests an install, Git update, daemon restart, or arbitrary command through `/api/backend/v1`
-- **THEN** the Backend rejects the request because those actions exist only on the SSH-plus-local-CLI operations path
+#### Scenario: Review marks are owner-only
+- **WHEN** a viewer requests a Wiki review mark
+- **THEN** central denies it without modifying the mark file
 
-### Requirement: Backend uses independent service Bearer authentication
-A Backend SHALL accept only a valid high-entropy Bearer service token from its protected instance configuration. It SHALL NOT accept central human Basic credentials, browser session cookies, viewer cookies, or another Backend's token. Token comparison SHALL be constant-time, and a Backend MAY accept exactly two tokens during bounded rotation.
+#### Scenario: Read-only data rejects Wiki writes
+- **WHEN** a configured read-only project receives a Wiki document write
+- **THEN** central rejects it while preserving authorized list/detail reads; control-plane review permission is separately enforced
 
-#### Scenario: Browser credentials fail directly against Backend
-- **WHEN** a request presents a valid central browser cookie or owner Basic credential but no valid Backend Bearer token
-- **THEN** the Backend returns 401 and performs no operation
+#### Scenario: Report kind keeps serving
+- **WHEN** a project has Reports and Wiki pages
+- **THEN** both kinds retain their own routes and envelopes
 
-#### Scenario: Per-Host token cannot cross-authenticate
-- **WHEN** the token configured for Host A is presented to Host B
-- **THEN** Host B returns 401 and reveals no protected metadata
+### Requirement: Wiki assets preserve bounded streaming
 
-#### Scenario: Rotation overlap remains available
-- **WHEN** a Backend temporarily accepts old and next tokens and central switches to next
-- **THEN** authenticated readiness remains available before the old token is removed
+Central Wiki asset responses SHALL retain bounded streaming, range support, cancellation and path containment. Large assets SHALL not be expanded into JSON or eagerly loaded into the document-content cache. Ambiguous mutation failures SHALL not be automatically replayed.
 
-### Requirement: Backend validates central actor authorization
-Every proxied request SHALL carry a central-generated, service-authenticated actor context. The Backend SHALL reject viewer-context mutation and shell operations even when the service token is valid, and SHALL validate that the context scope contains the exact Host-qualified Project for viewer reads.
+#### Scenario: Large Wiki bundle asset remains streamed
+- **WHEN** a client reads a large binary Wiki asset
+- **THEN** bytes stream unchanged with bounded buffering
 
-#### Scenario: Service-authenticated viewer cannot mutate
-- **WHEN** central forwards a mutation with a viewer actor context
-- **THEN** the Backend returns 403 and leaves cluster state unchanged
+#### Scenario: Client disconnect cancels stream
+- **WHEN** a client disconnects during asset transport
+- **THEN** abandoned stream work is canceled without affecting other resources
 
-### Requirement: Backend DTOs and resource identifiers are safe and portable
-Requests and responses SHALL be runtime-validated. Cross-boundary resources SHALL use Host-qualified Project identity plus relative/opaque resource identifiers; cluster absolute Project roots SHALL NOT be returned to central/browser or accepted as arbitrary request paths. Filesystem resolution SHALL reject lexical traversal, encoded separators, absolute/device paths, symlink escape, and cross-Project access.
+### Requirement: Central service mutations record activity without peer negotiation
 
-#### Scenario: Symlink escape is rejected
-- **WHEN** a relative resource identifier resolves through a symlink outside its configured Project root
-- **THEN** the Backend rejects it without reading or writing the external target
+Supported non-readonly project-service invocations SHALL record automatic activity while enforcing owner authorization, read-only project policy and path safety. Direct document submissions SHALL remain CLI-owned. This surface SHALL NOT require a remote Backend or advertise unimplemented evidence-review endpoints.
 
-#### Scenario: Project discovery hides absolute roots
-- **WHEN** central lists Backend Projects
-- **THEN** the response contains Project names and safe metadata but no cluster absolute root path
+#### Scenario: Read-only project refuses a mutation
+- **WHEN** a request attempts to mutate a read-only configured project
+- **THEN** central rejects the research write without a remote capability probe
 
-### Requirement: Backend transport streams with cancellation and bounds
-The Backend API SHALL stream SSE, log data, report assets, and terminal traffic with backpressure rather than buffering or base64-wrapping complete responses. JSON/control bodies SHALL have explicit size limits. Downstream disconnect SHALL cancel upstream work, and a mutation SHALL NOT be automatically replayed after an ambiguous timeout.
+### Requirement: Journal authoring endpoints are removed
 
-#### Scenario: Large asset remains streamed
-- **WHEN** central reads a large binary Report asset
-- **THEN** bytes stream unchanged with bounded buffering and no base64 JSON expansion
+Central manual journal-append routes SHALL be removed along with their advertised schemas/capabilities and client helpers. Automatic native mutation receipts SHALL remain supported. New receipt diagnostic reads SHALL be owner-only; existing legacy Journal read scope SHALL not expand to include these receipts.
 
-#### Scenario: Client disconnect cancels Backend stream
-- **WHEN** the browser disconnects during a long log stream
-- **THEN** cancellation reaches the Backend and the abandoned stream stops consuming resources
+#### Scenario: Retired append endpoint
+- **WHEN** an old client POSTs manual Journal prose
+- **THEN** the request is rejected without creating legacy content or an activity receipt
 
-### Requirement: Backend event stream identifies continuity
-The Backend event endpoint SHALL provide heartbeats, an instance epoch, and a monotonic sequence within that epoch so central can detect reconnects and gaps. Events SHALL identify the local Project but SHALL NOT choose or assert the central Host routing authority.
+### Requirement: Retired service boundary does not remove safety
+Central SHALL enforce exact project authorization, read-only data mode, separately authorized share administration, path containment, runtime-validated public data and bounded streaming. Browser credentials SHALL never be forwarded to remote command targets. Ambiguous mutation failures SHALL not be automatically replayed.
 
-#### Scenario: Restart changes event epoch
-- **WHEN** the Backend process restarts
-- **THEN** its event stream reports a new instance epoch so central performs Host-wide resynchronization
+#### Scenario: Viewer mutation
+- **WHEN** a viewer requests a document write or shell operation
+- **THEN** central rejects it before file or command access
 
-### Requirement: Experiment detail preserves the safe v6 document contract
-The ID-addressed Backend Experiment detail response SHALL include ordered raw section descriptors, sanitized parsed Implementation/Investigation/Results documents, canonical display sections, document diagnostics, read-only state, and Results update metadata. It MUST omit absolute paths and raw filesystem authority. Experiment list responses SHALL NOT include the managed document payload.
+#### Scenario: Read only data
+- **WHEN** a read-only project receives a document write
+- **THEN** the write is rejected; share administration remains separately governed and physical write errors are surfaced
 
-Sanitized Results documents SHALL preserve optional `columnAnnotations`,
-including bounded Markdown column descriptions and sparse bounded value
-descriptions, so standalone and central-through-Backend views expose equivalent
-Results annotation behavior.
+### Requirement: Central detail preserves the safe v6 document contract
+Central Experiment detail SHALL preserve ordered raw sections, sanitized Implementation/Investigation/Results data, canonical projections, diagnostics, read-only state and Results update metadata including bounded column/value annotations. It SHALL omit absolute filesystem authority. Lists SHALL remain summary-only. This contract SHALL not require a Backend HTTP request.
 
-#### Scenario: Valid v6 detail crosses the Backend boundary
-- **WHEN** central requests an Experiment whose three managed YAML documents parse successfully
-- **THEN** the response runtime-validates and contains the structured data required to render all canonical managed sections and Results Variants
-- **AND** no cluster absolute path appears anywhere in the response
+#### Scenario: Valid detail
+- **WHEN** an experiment bundle parses successfully
+- **THEN** central returns the data needed for canonical sections and Results without absolute paths
 
-#### Scenario: List stays summary-only
-- **WHEN** central lists Experiments
-- **THEN** each summary omits raw sections, managed documents, display projections, and document bodies
+#### Scenario: Summary list
+- **WHEN** the user requests experiment summaries
+- **THEN** managed document bodies are omitted

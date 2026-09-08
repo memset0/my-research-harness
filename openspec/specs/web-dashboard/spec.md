@@ -1,8 +1,10 @@
 # web-dashboard Specification
 
 ## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+Present project research documents and navigation with exact identity, read-only authorization and recoverable editing behavior.
+
 ## Requirements
+
 ### Requirement: Project selector in top navigation
 
 The dashboard SHALL display a project selector in the top navigation showing the projects from the active session's accessible set:
@@ -81,7 +83,7 @@ is gone in v3).
 #### Scenario: Empty experiment renders an empty runs table
 - **GIVEN** an experiment with `runs: []` (zero member runs)
 - **WHEN** the card renders
-- **THEN** the runs table area shows an empty-state message ("No runs yet — open Claude Code to scaffold one")
+- **THEN** the runs table area shows an empty-state message stating there are no runs yet
 - **AND** the secondary line under the title reads `no runs yet`
 - **AND** the card pill renders the manual `status` (typically `OPEN`)
 - **AND** tag/time footers still render normally
@@ -189,9 +191,7 @@ The route `/p/<project>/e/<E-id-slug>` SHALL render an experiment detail
 page with this layout:
 - **Header bar**: title, aggregate status pill, effective times, tags,
   hypothesis-ref chips
-- **Action bar**: `Edit markdown` (opens the editor on the exp doc),
-  `Open Claude Code` (opens project root with exp-scoped preset prompt
-  per `experiment-edit`)
+- **Action bar**: `Edit markdown` opens the editor on the Experiment document.
 - **Body markdown**: rendered `Motivation` / `Method` / `Plan` /
   `Conclusion` / `Caveats` / `Warnings` (in this order; the warnings
   table renders inline with the Run column)
@@ -294,14 +294,12 @@ the lazy content. Multiple panels MAY fire requests concurrently.
 
 ### Requirement: Per-run-panel action bar
 
-Each expanded run panel SHALL render three action buttons inside the
-panel body (positioned at the top or bottom of the run-detail content,
-implementer's choice):
+Each expanded run panel SHALL render two action buttons inside the panel body
+(positioned at the top or bottom of the run-detail content, implementer's
+choice):
 - `Edit markdown (run)` — opens the editor on the run's README
-- `Open Claude Code (run)` — opens at the project root with a preset
-  prompt naming the run dir and parent exp doc
-- `Archive` — writes `<run-dir>/.archived` and removes the run from
-  the page's expanded set
+- `Archive` — writes `<run-dir>/.archived` and removes the run from the
+  page's expanded set
 
 #### Scenario: Edit markdown (run) targets the run README
 - **WHEN** the user clicks `Edit markdown (run)` inside the panel for
@@ -608,23 +606,20 @@ When the active session is `anon`, `ViewerGuard` SHALL render the child but forc
 - **AND** hovering produces a tooltip reading `Viewer mode — action disabled (Edit markdown)`
 - **AND** clicking does nothing (handler not invoked)
 
-### Requirement: All mutating / shell controls wrapped in `<ViewerGuard>`
+### Requirement: All mutating controls wrapped in `<ViewerGuard>`
 
-Every dashboard control whose action maps to a `mutating` or `shell` route SHALL be wrapped in `<ViewerGuard>` (or, equivalently, take a `disabled` prop driven by `useSession().role === 'viewer'`). The required wrap set is:
+Every dashboard control whose action maps to a `mutating` route SHALL be wrapped
+in `<ViewerGuard>` (or, equivalently, take a `disabled` prop driven by
+`useSession().role === 'viewer'`). The required wrap set is:
 
 - `EditMarkdownButton` (`apps/web/components/edit-markdown-button.tsx`)
 - `EditReadmeButton` (`apps/web/components/edit-readme-button.tsx`)
-- `OpenClaudeCodeButton` (`apps/web/components/open-claude-code-button.tsx`)
-- `AskClaudeCodeButton` (`apps/web/components/ask-claude-code-button.tsx`)
-- `TerminalButton` (`apps/web/components/terminal-button.tsx`)
 - `StatusEdit` (`apps/web/components/status-edit.tsx`)
 - `AddNoteButton` (`apps/web/components/add-note-button.tsx`)
 - `AddJournalEntryButton` (`apps/web/components/add-journal-entry-button.tsx`)
-- All buttons in `/manage/tmux/tmux-page.client.tsx` (start / stop / attach / kill rows).
 - All "Create experiment" / "Link" / "Unlink" / "Archive" affordances.
 - All Warnings-table CRUD buttons (add / edit / delete rows).
 - The "Manage share links" button itself (only owner can manage).
-- The `OpenWithButton` split-button: its `Open Claude Code` and `Open browser terminal` tab options SHALL be disabled in viewer mode; the `Open in editor` (file system path copy) tab option MAY remain enabled since it does not call any API.
 
 #### Scenario: Viewer page has every gated button disabled
 - **WHEN** a viewer GETs `/p/project-a` (exp page, run page, hypotheses page, etc.)
@@ -640,7 +635,7 @@ Every dashboard control whose action maps to a `mutating` or `shell` route SHALL
 The application sidebar (`apps/web/components/app-sidebar.tsx`) SHALL render different content for owner vs. viewer sessions:
 
 - **Owner**: full project list (unchanged from today).
-- **Viewer**: ONLY the projects listed in `useSession().scopeProjects`. The project switcher dropdown SHALL be replaced by a read-only label when `scopeProjects.length === 1`. Sidebar nav-items that are inherently project-scoped (Experiments, Hypotheses, Journal, Reports, Digests) SHALL link into the scope-set project; nav-items that aggregate across projects (e.g., a global "All anomalies" link) SHALL either be hidden OR filtered by scope.
+- **Viewer**: ONLY the projects listed in `useSession().scopeProjects`. The project switcher dropdown SHALL be replaced by a read-only label when `scopeProjects.length === 1`. Sidebar nav-items that are inherently project-scoped (Experiments, Hypotheses, Journal, Reports, Wiki, Digests) SHALL link into the scope-set project; nav-items that aggregate across projects (e.g., a global "All anomalies" link) SHALL either be hidden OR filtered by scope.
 - **Anon**: sidebar SHALL be hidden or replaced by the login-page chrome only.
 
 #### Scenario: Viewer with single-project scope
@@ -658,6 +653,11 @@ The application sidebar (`apps/web/components/app-sidebar.tsx`) SHALL render dif
 - **THEN** the sidebar does NOT show a "Manage tmux" link (the manage page is shell-classed)
 - **AND** it does NOT show a "Settings" link (settings is owner-only mutating)
 - **AND** it does NOT show the Slurm status widget (the `slurm-status` capability is owner-only; the widget is gated on `role !== 'viewer'` in the same conditional block that gates Manage tmux)
+
+#### Scenario: Viewer project nav lists both Reports and Wiki
+- **WHEN** a viewer with `scopeProjects = ["project-a"]` opens the dashboard
+- **THEN** the project-scoped nav items include both `Reports` and `Wiki`, each linking into `project-a`
+- **AND** the wiki entry is read-only: no review or edit action is offered
 
 ### Requirement: Viewer-mode banner with "Log in as owner" link
 
@@ -1172,7 +1172,7 @@ Below the `sm` breakpoint, an iframe toolbar SHALL show its truncated title and 
 
 ### Requirement: Lazy iframe timeout begins near the viewport
 
-A successfully probed Report iframe SHALL remain lazy-loaded. In browsers with IntersectionObserver, its bounded post-probe load timeout SHALL begin only when the wrapper enters a configured proximity margin around the viewport. A below-fold iframe SHALL remain mounted while deferred and SHALL not enter an error state merely because the timeout duration elapsed before it approached the viewport. Browsers without IntersectionObserver MAY start the timer immediately for compatibility.
+A successfully probed Report or wiki-page iframe SHALL remain lazy-loaded. In browsers with IntersectionObserver, its bounded post-probe load timeout SHALL begin only when the wrapper enters a configured proximity margin around the viewport. A below-fold iframe SHALL remain mounted while deferred and SHALL not enter an error state merely because the timeout duration elapsed before it approached the viewport. Browsers without IntersectionObserver MAY start the timer immediately for compatibility.
 
 #### Scenario: Later plots are not failed while below the fold
 - **GIVEN** one Report contains multiple lazy iframe plots and a later plot is outside the viewport proximity margin
@@ -1180,6 +1180,12 @@ A successfully probed Report iframe SHALL remain lazy-loaded. In browsers with I
 - **THEN** the later iframe remains mounted in its loading state
 - **WHEN** it approaches the viewport
 - **THEN** its bounded load timer begins and normal load/error handling resumes
+
+#### Scenario: Wiki bundle plots defer the same way
+- **GIVEN** a wiki bundle page contains multiple lazy iframe plots and a later plot is below the fold
+- **WHEN** more than the normal load-timeout duration elapses
+- **THEN** the deferred wiki iframe remains in its loading state instead of failing
+- **AND** its timer begins when it approaches the viewport
 
 ### Requirement: Central dashboard presents configured Hosts and live Projects
 In central mode, the dashboard SHALL show every configured Host with its explicit availability/compatibility state and SHALL show live Projects grouped or labelled by owning Host. Offline or unusable Hosts SHALL remain visible without stale Project payloads, and one Host failure SHALL not prevent other Host Projects from rendering.
@@ -1189,11 +1195,16 @@ In central mode, the dashboard SHALL show every configured Host with its explici
 - **THEN** the dashboard shows Host A as offline, omits stale Host A Project data, and renders Host B normally
 
 ### Requirement: Central navigation is Host-qualified
-Every central Project, run, Experiment, report, code-review, inbox, Git, terminal, and management link/action SHALL preserve the selected Host and Project. Equal names/IDs on two Hosts SHALL produce distinct links and state. Standalone routes SHALL remain project-only.
+Every central Project, run, Experiment, report, wiki, code-review, inbox, Git, terminal, and management link/action SHALL preserve the selected Host and Project. Equal names/IDs on two Hosts SHALL produce distinct links and state. Standalone routes SHALL remain project-only.
 
 #### Scenario: Equal Project names open distinct pages
 - **WHEN** two Hosts expose `project-x`
 - **THEN** selecting each entry navigates to a different `/h/<host>/p/project-x/...` route and loads only that Host
+
+#### Scenario: Host-qualified wiki links keep their Host
+- **WHEN** a central wiki page link is activated from a Host-qualified Project page
+- **THEN** the destination stays under `/h/<host>/p/<project>/wiki/...` and resolves against that configured Host-qualified project's central service
+- **AND** an equally-numbered page on another Host is not loaded
 
 ### Requirement: Central mode never guesses an omitted Host
 The UI SHALL NOT issue a Project/resource mutation without an exact Host selector. Legacy project-only navigation MAY redirect only for a unique live match; ambiguous navigation SHALL display a Host choice or error.
@@ -1337,3 +1348,29 @@ When the combined rendered width of visible pinned columns is less than the hori
 - **WHEN** the Results table loads
 - **THEN** the viewer sees and may select every centrally stored View for that Experiment
 - **AND** cannot change checkboxes, filters, formatting, names, or View lifecycle
+
+### Requirement: Wiki bundle pages reuse the Report HTML embed behavior
+
+A bundle-form wiki page SHALL reuse the Report HTML embed behavior already specified by this capability, with `/api/wiki-assets/<project>/<W-id>/<...path>` as the resolved same-origin asset route. Concretely, when the shared Markdown renderer encounters the local `.html`/`.htm` image syntax inside a wiki bundle page, the resulting embed SHALL behave exactly as the requirements "Embedded Report HTML uses a responsive, recoverable iframe wrapper", "Report HTML embeds share stepped zoom controls", "Report HTML embeds expose controlled reload and change awareness", "Report HTML expanded mode remains inside the page", and "Mobile Report iframe actions use a compact overflow menu" specify for Reports: the responsive wrapper with loading, error, Retry, Open in new tab and page-internal Expand states; the shared 10-point stepped zoom per rendered surface; the manual Reload with its low-frequency header-only revision check and update indicator; page-internal expanded mode covering the whole application viewport from a full-page route, right split, or drawer; and the sub-`sm` three-dot overflow menu with its in-menu zoom stepper.
+
+No separate wiki embed component, sizing model, or trust model SHALL be introduced: the same-origin unsandboxed iframe, the absence of a manifest, and server-side bundle path confinement carry over unchanged, now enforced by the wiki asset route. Single-file wiki pages have no resource base URL and SHALL render without an iframe.
+
+#### Scenario: Wiki bundle embed behaves like a Report embed
+- **GIVEN** a wiki bundle README containing `![Training curves](./views/loss-curves/index.html)`
+- **WHEN** the wiki page renders
+- **THEN** the embed uses the same wrapper with its loading, error, Retry, Open in new tab, Reload, zoom, and Expand behavior as an equivalent Report embed
+- **AND** its iframe and every action resolve `/api/wiki-assets/<project>/<W-id>/views/loss-curves/index.html` without a `sandbox` attribute
+
+#### Scenario: Wiki asset route is the only difference
+- **GIVEN** the same HTML view is embedded once from a Report bundle and once from a wiki bundle page
+- **WHEN** both surfaces render at a mobile width and at a desktop width
+- **THEN** their toolbars, overflow menus, zoom percentages, and expanded-mode coverage are identical
+- **AND** only the resolved asset URL differs, using `/api/report-assets/...` for the Report and `/api/wiki-assets/...` for the wiki page
+
+### Requirement: Research notes and diagnostics have separate controls
+
+The dashboard SHALL remove AddJournalEntryButton and Journal-targeting NOTE/REQUEST actions for every role, including owner. These retired controls are no longer part of the existing ViewerGuard required wrap set; supported mutation/shell controls SHALL retain the same protection. Existing AddNote actions that write canonical document content SHALL not be removed merely because they are named notes. Diagnostic history SHALL be explicitly read-only, and new receipt details SHALL be owner-only.
+
+#### Scenario: Owner cannot author Journal prose
+- **WHEN** the owner opens Journal or an Experiment detail
+- **THEN** no control writes a manual Journal note while supported document editing remains available

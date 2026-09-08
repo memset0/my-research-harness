@@ -1,7 +1,7 @@
 # web-layout Specification
 
 ## Purpose
-TBD - created by archiving change add-sidebar-and-log-tools. Update Purpose after archive.
+Define dashboard navigation, paired-document layout, resource counts and accessible responsive presentation.
 
 ## Requirements
 
@@ -140,7 +140,7 @@ The sidebar SHALL visually highlight:
 
 The dashboard SHALL render a sticky **AppBar** above the main content area containing:
 - The memon brand on the left
-- A `Tabs`-style switcher for `Experiments` / `Hypotheses` / `Journal` / `Reports` / `Digests`, scoped to the current project, in that left-to-right order
+- A `Tabs`-style switcher for `Experiments` / `Hypotheses` / `Journal` / `Reports` / `Digests` / `Code Review` / `Wiki`, scoped to the current project, in that left-to-right order
 - A `+ New experiment` action on the right
 
 #### Scenario: Tab navigation
@@ -159,12 +159,18 @@ The dashboard SHALL render a sticky **AppBar** above the main content area conta
 - **WHEN** the user clicks the `Digests` tab from any per-project view
 - **THEN** the URL updates to `/p/<project>/digests`; the AppBar's `Digests` tab is active and the inbox shell renders
 
+#### Scenario: Wiki tab navigates to the wiki surface
+- **WHEN** the user clicks the `Wiki` tab from any per-project view
+- **THEN** the URL updates to `/p/<project>/wiki`; the AppBar's `Wiki` tab is active and the wiki surface renders
+- **AND** the `Wiki` tab sits immediately to the right of the `Code Review` tab, last in the switcher
+
 ### Requirement: Existing routes continue working unchanged
 
 The pre-existing v2 URL routes SHALL be preserved or redirected. The URL
 structure `/p/[project]`, `/p/[project]/hypotheses`,
-`/p/[project]/journal`, `/p/[project]/reports[/<id>]`, and
-`/p/[project]/digests[/<id>]` SHALL be preserved.
+`/p/[project]/journal`, `/p/[project]/reports[/<id>]`,
+`/p/[project]/wiki[/<id>]`, and `/p/[project]/digests[/<id>]` SHALL be
+preserved.
 
 The new route `/p/[project]/e/[exp-id]` is added for experiment detail.
 
@@ -182,10 +188,11 @@ with a redirect to `/p/[project]/e/<E-id-of-parent>?run=<run-dir>` per
 - **THEN** the URL is rewritten to
   `/p/project-a/e/<exp-of-bar>?run=bar-260501-100000`
 
-<!-- The v2 requirements `Per-project collapsed-by-default with on-demand
-run list` and `"View more" temporary expansion past 5 runs` are NOT
-removed; they are MODIFIED in-place above to switch from "5 runs" to
-"5 experiments" navigation semantics. -->
+#### Scenario: Wiki detail URL is directly addressable
+- **WHEN** the user types `/p/project-a/wiki/W0007` directly into the
+  address bar
+- **THEN** the wiki surface renders with `W0007` selected
+- **AND** `/p/project-a/reports/R0007` continues to serve its Report
 
 ### Requirement: shadcn primitives replace hand-rolled UI components
 
@@ -410,42 +417,15 @@ The dashboard SHALL provide a reusable inbox-shell component used by Reports, Di
 
 ### Requirement: AppBar tab count badges reflect view-specific data
 
-Each tab in the AppBar SHALL render a small count badge next to the
-label whose value MUST match the data shown on that tab's view in the
-current project. Specifically:
+Tab badges SHALL count the identities of their own resource kind, not hydrated Run membership or another view's payload. They SHALL use the project-qualified inventory queries shared with navigation, show a loading placeholder rather than a false zero, and update through the resource heartbeat or mutation invalidation. Document/list SSE SHALL NOT be required.
 
-- The `Experiments` tab badge SHALL show the number of **experiment
-  docs** in the project (the data behind `GET /api/experiments`,
-  TanStack key `['experiments', project]`). It SHALL NOT show the
-  number of runs.
-- The `Hypotheses` tab badge SHALL show the number of hypothesis
-  entries.
-- The `Journal` tab badge SHALL show the project's total event count.
-- The `Reports` tab badge SHALL show the number of reports.
-- The `Digests` tab badge SHALL show the number of digests.
+#### Scenario: Experiment count is independent of Run bodies
+- **WHEN** a project has twelve Experiment identities and unreadable Run documents
+- **THEN** the Experiments badge can show twelve without reading those Run documents
 
-Each badge SHALL render a skeleton placeholder while its query is
-still loading (to avoid the flash of `0`), and SHALL re-render with
-the new value when its TanStack cache is invalidated by a relevant
-SSE topic (`experiment-change` for the Experiments tab,
-`run-change` for downstream effects on exp memberships, etc.).
-
-#### Scenario: Experiments badge counts exp docs, not runs
-- **GIVEN** a project with 12 exp docs and 47 runs
-- **WHEN** the AppBar renders
-- **THEN** the `Experiments` tab badge shows `12` (not `47`)
-
-#### Scenario: Badge updates when an exp doc is created
-- **GIVEN** the AppBar shows `Experiments 12`
-- **WHEN** a new exp doc is created (via CLI, web POST, or an external
-  edit) and the SSE `experiment-change` topic fires
-- **THEN** the badge re-renders to `13` without a full page reload
-
-#### Scenario: Loading state shows skeleton, not zero
-- **WHEN** the AppBar mounts and the `['experiments', project]` query
-  has not yet resolved
-- **THEN** the badge renders a skeleton placeholder span (not the
-  literal text `0`)
+#### Scenario: New Wiki identity
+- **WHEN** a due inventory observation discovers another Wiki page
+- **THEN** the next resource query updates the Wiki count without a full page reload
 
 ### Requirement: AppBar Experiments tab active-route coverage
 
@@ -462,6 +442,11 @@ under `/p/<project>/` SHALL include:
   permanent-redirects to the v3 `/e/<exp-id>` URL — during the
   redirect the matcher SHALL still treat the URL as active so the
   highlight does not flicker off).
+
+An `/p/<project>/e/<exp-id>` URL carrying side-workspace query
+parameters (`?report=<R-id>`, `?reportSurface=…`, `?wiki=<W-id>`,
+`?wikiSurface=…`) SHALL still match, because the left-side document
+remains the Experiment.
 
 The matcher SHALL NOT be naive prefix-matching that produces false
 positives on sibling segments (e.g. it must distinguish
@@ -499,6 +484,17 @@ positives on sibling segments (e.g. it must distinguish
 - **WHEN** the user navigates to `/p/project-a/reports`
 - **THEN** the AppBar's `Experiments` tab is NOT in the active state;
   the `Reports` tab is
+
+#### Scenario: Not active on wiki route
+- **WHEN** the user navigates to `/p/project-a/wiki`
+- **THEN** the AppBar's `Experiments` tab is NOT in the active state;
+  the `Wiki` tab is
+
+#### Scenario: Active with a side wiki page open
+- **WHEN** the user navigates to
+  `/p/project-a/e/E0001-foo?wiki=W0007&wikiSurface=split`
+- **THEN** the AppBar's `Experiments` tab is rendered in the active
+  state and the `Wiki` tab is not
 
 ### Requirement: AppBar tabs wrap on narrow viewports
 
@@ -541,77 +537,6 @@ the tab list overflowing. (The pre-existing avoidance of
 - **THEN** the `SidebarTrigger` button is vertically centered
   within the AppBar (its center aligns with the midpoint of the
   multi-row tab block, NOT with the top row's midpoint)
-
-### Requirement: Sidebar footer with link to tmux management page
-
-The `AppSidebar` component SHALL render a `<SidebarFooter>` containing a `<SidebarMenu>` with at least one item: a link to `/manage/tmux` (the new top-level cross-project tmux management page from the `tmux-session-management` capability).
-
-The link SHALL use a `<SidebarMenuButton size="sm" asChild>` wrapping a Next.js `<Link href="/manage/tmux">` whose children are a lucide `Terminal` icon (`size-4`) and the text label `Manage tmux`.
-
-The footer SHALL be visually distinct from the per-project Collapsible groups in `<SidebarContent>`, but follow shadcn's standard `SidebarFooter` styling (no custom backgrounds or borders). When the page route equals `/manage/tmux` the link SHALL render with `isActive` styling (per the existing active-highlight requirement).
-
-The footer area MAY contain additional siblings of the Manage tmux item that surface owner-only status / management affordances. v2 adds one such sibling: the **Slurm status widget** (capability `slurm-status`), mounted above the Manage tmux item, rendered only when `Config.slurm.totalNodes !== -1` AND `role !== 'viewer'`. When the Slurm feature is disabled by config (`total_nodes === -1`) the widget SHALL render nothing — the footer in that case is visually identical to v1.
-
-The footer area SHALL remain reserved for future `/manage/<other>` siblings and other host-level status indicators.
-
-#### Scenario: Sidebar shows the manage-tmux link in the footer
-- **WHEN** the dashboard is rendered on a project page
-- **THEN** the bottom of the sidebar shows a row with the `Terminal` icon and the label "Manage tmux"
-- **AND** clicking the row navigates to `/manage/tmux`
-
-#### Scenario: Active highlight on /manage/tmux
-- **GIVEN** the current route is `/manage/tmux`
-- **WHEN** the sidebar renders
-- **THEN** the "Manage tmux" footer link has `data-active="true"` (the shadcn isActive style)
-
-#### Scenario: Empty projects list still shows the footer
-- **GIVEN** `runtime.config.projects` is empty (so `<SidebarContent>` shows "No projects configured")
-- **THEN** the footer with the manage-tmux link is still visible
-
-#### Scenario: Slurm widget mounts above Manage tmux when enabled
-- **GIVEN** `Config.slurm.totalNodes === 8` and `role === 'owner'`
-- **WHEN** the sidebar renders
-- **THEN** the SidebarFooter contains two items: the Slurm status widget row (top), and the Manage tmux link (bottom)
-
-#### Scenario: Slurm widget absent when disabled
-- **GIVEN** `Config.slurm.totalNodes === -1`
-- **WHEN** the sidebar renders
-- **THEN** the SidebarFooter contains only the Manage tmux link; no Slurm row
-
-### Requirement: AppSidebar visible on /manage/* pages
-
-The dashboard SHALL render the `AppSidebar` (the same component that
-appears under `/p/<project>/*` routes) on every page under the
-`/manage/` prefix. This is achieved via a layout file at
-`apps/web/app/manage/layout.tsx` that wraps `children` with
-`<SidebarProvider>` + `<AppSidebar>` + `<SidebarInset>`.
-
-The `/manage/*` layout SHALL NOT mount `<AppBar>` — AppBar is
-project-scoped (its tabs target a single project) and does not apply
-to cross-project pages.
-
-The active-highlight on the sidebar's `Manage tmux` footer link
-(already wired in `app-sidebar.tsx` as
-`isActive={pathname === '/manage/tmux'}`) SHALL surface when the user
-is on `/manage/tmux`, because the sidebar is now rendered there.
-
-#### Scenario: Sidebar visible on /manage/tmux
-- **WHEN** the user navigates to `/manage/tmux`
-- **THEN** the left sidebar is visible (with the same project tree as
-  on `/p/<project>/*` routes)
-- **AND** the `Manage tmux` footer link in the sidebar has
-  `data-active="true"` (the shadcn isActive style)
-
-#### Scenario: AppBar absent on /manage/*
-- **WHEN** the user is on `/manage/tmux`
-- **THEN** no `<AppBar>` renders above the page content (no project
-  tabs)
-
-#### Scenario: Project list SSR-prefetched
-- **WHEN** the `/manage/tmux` page server-renders
-- **THEN** the response HTML contains the project names from
-  `runtime.config.projects` inside the sidebar markup (no
-  "No projects configured" flash on first paint)
 
 ### Requirement: Sidebar sections use a VSCode-Explorer-style banner header
 
@@ -956,99 +881,6 @@ below the banner-height floor.
   roughly half the content height (minus banner totals) over
   the same 200ms transition
 
-### Requirement: Sidebar experiment rows include a per-row "new terminal" launcher
-
-Each experiment row inside an expanded project section SHALL render
-a trailing icon-only "new terminal" launcher to the right of the
-exp-id span. The button SHALL be the last visual element in the row
-and SHALL behave as follows:
-
-- The icon SHALL be `lucide-react`'s **`Plus`** at `size-3.5`,
-  wrapped in a `<Button variant="ghost" size="icon" className="size-6 shrink-0">`
-  (or equivalent small ghost button). The Plus framing reads as
-  "create a new terminal" rather than "this row is itself a
-  terminal" — a `Terminal` icon was deliberately rejected.
-- The button's `aria-label` SHALL follow the pattern
-  `"New terminal for <exp-id>"` (or, in the disabled state,
-  `"New terminal for <exp-id> (ttyd unavailable)"`).
-- The button SHALL be **always visible** (NOT hover-revealed) so it
-  is discoverable and keyboard-reachable.
-- Clicking the button SHALL open a **right-side `<TerminalSheet>`
-  drawer** (the existing `<Sheet side="right">`-backed component)
-  scoped to that experiment, parameterized with
-  `{ project: <project>, scope: 'exp', slug: <exp-id>,
-  agent: 'none' }` — i.e. a **plain shell** session, not a
-  `claude code` session.
-- Clicking the button SHALL NOT navigate the surrounding link to
-  `/p/<project>/e/<exp-id>`. The button SHALL stop event
-  propagation OR sit outside the `<Link>` element so the link does
-  not also fire.
-
-Viewer-session gating:
-
-- When `useSession().role === 'viewer'`, the button SHALL render
-  nothing.
-
-ttyd-availability gating:
-
-- The component SHALL read the existing TanStack query
-  `['terminal','check']` (the same probe used by `TerminalButton`).
-- When the probe has not yet resolved, the button MAY render a
-  disabled placeholder OR render nothing (consistent with how
-  `TerminalButton` handles its first-paint phase).
-- When the probe reports ttyd is unavailable AND not
-  auto-downloadable, the button SHALL render disabled with a
-  tooltip surfacing the probe's `suggestion` field (or
-  `"ttyd unavailable"`).
-- When the probe reports ttyd is auto-downloadable, the button MAY
-  render disabled with a tooltip pointing the user to the existing
-  install affordance, OR render as enabled and trigger the install
-  flow inline. Either behavior is acceptable; the rendering MUST
-  NOT silently fail.
-
-#### Scenario: Owner sees the "+" button on every experiment row
-- **GIVEN** an owner session and a project with three experiments
-- **WHEN** the project section is expanded
-- **THEN** each of the three rows contains a Plus icon button
-  after the exp-id span with `aria-label="New terminal for
-  <exp-id>"`
-
-#### Scenario: Viewer does not see the "+" button
-- **GIVEN** a viewer session
-- **WHEN** the project section is expanded
-- **THEN** none of the experiment rows contain a Plus icon button;
-  the rest of the row (leading run-count badge, exp-id span)
-  renders unchanged
-
-#### Scenario: Click opens right-side TerminalSheet drawer with agent: 'none'
-- **GIVEN** an owner session and ttyd is available
-- **WHEN** the user clicks the Plus icon on the row for experiment
-  `E0007-foo` in project `project-a`
-- **THEN** a `<TerminalSheet>` opens as a right-side drawer (the
-  underlying `<Sheet side="right">` slides in from the right edge of
-  the viewport)
-- **AND** under the hood the sheet's call to `startTerminal` resolves
-  with the payload `{ project: 'project-a', scope: 'exp',
-  slug: 'E0007-foo', agent: 'none' }`
-- **AND** the page URL has NOT navigated to
-  `/p/project-a/e/E0007-foo`
-
-#### Scenario: ttyd missing renders disabled button
-- **GIVEN** an owner session and the `['terminal','check']` probe
-  reports `available: false, downloadable: false`
-- **WHEN** the project section is expanded
-- **THEN** each experiment row's Plus icon is rendered in a disabled
-  state with a tooltip surfacing the probe's `suggestion` (or the
-  fallback `"ttyd unavailable"`)
-
-#### Scenario: Click on button does not navigate the row link
-- **GIVEN** an owner session and ttyd is available
-- **WHEN** the user clicks the Plus icon on a row whose link target
-  is `/p/project-a/e/E0007-foo`
-- **THEN** the page URL after the click is unchanged (the click did
-  NOT navigate the surrounding `<Link>`); only the right-side
-  `<TerminalSheet>` drawer opened
-
 ### Requirement: Experiment row leading run-count badge replaces the indent gutter
 
 Each experiment row inside an expanded project section SHALL render
@@ -1113,11 +945,10 @@ experiments.
 ### Requirement: Sidebar footer has a visual divider above the footer widgets
 
 The `<SidebarFooter>` element SHALL render a 1px top border (via
-`border-t border-sidebar-border` or equivalent) so the
-`SlurmStatusWidget` + `Manage tmux` row block is visually separated
-from the project section list above. The token `--sidebar-border`
-MUST already be defined in `apps/web/app/globals.css`; the divider
-SHALL NOT introduce new CSS variables.
+`border-t border-sidebar-border` or equivalent) so its status rows are visually
+separated from the project section list above. The token `--sidebar-border`
+MUST already be defined in `apps/web/app/globals.css`; the divider SHALL NOT
+introduce new CSS variables.
 
 #### Scenario: Footer carries a top border
 - **WHEN** the sidebar renders on a project page (owner session)
@@ -1131,10 +962,9 @@ SHALL NOT introduce new CSS variables.
   for `--sidebar-border` (no new CSS variable is added by this
   change)
 
-#### Scenario: Footer divider visible on /manage/* routes too
-- **WHEN** the user navigates to `/manage/tmux`
-- **THEN** the footer block (which still contains `Manage tmux`)
-  carries the same top border above its content as on project pages
+#### Scenario: Footer divider visible on manage routes too
+- **WHEN** the user navigates to a manage page
+- **THEN** the footer carries the same top border as on project pages
 
 ### Requirement: Loading spinner shows when section first opens with no cached data
 
@@ -1199,59 +1029,22 @@ collapsed section's row stays at banner height.
   (the function returns `null`) — no spinner, no list, no
   empty-state placeholder
 
-### Requirement: Active experiment row highlight covers the wrapper from the leading badge to the trailing button
+### Requirement: Active experiment row highlight covers its complete link
 
-The sidebar SHALL highlight the row of the currently-open
-experiment (the row whose id matches the `:expDocId` URL segment
-under `/p/<project>/e/`) to confirm navigation context. The
-highlight SHALL satisfy a single coverage constraint: it covers
-the entire wrapper that contains the leading run-count badge, the
-exp-id span, and the trailing per-row "+" terminal button — i.e.
-all interactive content of the row sits on the highlighted
-background.
+The sidebar SHALL highlight the row of the currently-open experiment (the row
+whose id matches the `:expDocId` URL segment under `/p/<project>/e/`) to
+confirm navigation context. The highlight SHALL cover the complete native link,
+including the leading run-count badge and experiment-id span.
 
-Concretely:
+The inner `<SidebarMenuButton>` SHALL remain the single source of the active
+and hover background. There SHALL be no separate transparent indent gutter;
+the leading run-count badge inside the link is the row's first visual element.
 
-- The highlight background SHALL cover the wrapper `<div>` that
-  is the row's single source of background truth. The wrapper
-  contains, in order: the `<SidebarMenuButton asChild>`-rendered
-  `<Link>` (which itself contains the leading run-count badge and
-  the exp-id span), and the trailing `<ExpRowTerminalButton>`
-  (the Plus icon button). The Plus button SHALL appear inside
-  the highlighted region, not as a stray un-highlighted control
-  floating to the right.
-- The inner `<SidebarMenuButton>`'s default
-  `hover:bg-sidebar-accent` and `data-[active=true]:bg-sidebar-accent`
-  paints SHALL be suppressed (via `hover:bg-transparent` and
-  `data-[active=true]:bg-transparent` overrides) so the wrapper
-  remains the single source of background truth — no double-paint,
-  no edge mismatch between the link and the button.
-- An inactive row's wrapper SHALL apply
-  `hover:bg-sidebar-accent/40` (a lighter on-hover tint) so the
-  row still reads as clickable on hover; active and inactive
-  rows share the same wrapper layout and differ only by
-  background opacity.
-
-Implementation: the `<SidebarMenuItem>` wraps a single
-flex-row `<div className="flex min-w-0 flex-1 items-center
-rounded-md transition-colors ...">` that holds both the
-`<SidebarMenuButton>` and the `<ExpRowTerminalButton>`. The
-wrapper's class list reads
-`isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' :
-'hover:bg-sidebar-accent/40'`. There is NO separate transparent
-indent gutter spacer; the leading run-count badge (rendered
-inside the link) is the row's leading visual.
-
-#### Scenario: Active row's highlight covers badge + id + Plus button continuously
-- **GIVEN** a project section is expanded and the user is currently
-  viewing experiment `E0007-foo`
+#### Scenario: Active row highlight covers badge and id
+- **GIVEN** the user is viewing experiment `E0007-foo`
 - **WHEN** the sidebar renders
-- **THEN** the highlight background extends continuously from the
-  left edge of the leading run-count badge all the way to the
-  right edge of the trailing Plus button (no un-highlighted gap
-  appears anywhere along the row)
-- **AND** the Plus button itself sits visually inside the
-  highlighted region
+- **THEN** one continuous active background covers the badge and experiment ID
+- **AND** there is no detached trailing action outside that background
 
 #### Scenario: Inactive row reverts to a hover-only tint
 - **GIVEN** a project section is expanded with two experiments
@@ -1369,12 +1162,11 @@ drop it.)
   collapse)
 - **AND** the client hydrates against the same state
 
-#### Scenario: Cookie is shared across `/p/*` and `/manage/*`
+#### Scenario: Cookie is shared across project and manage routes
 
 - **GIVEN** the user collapses the sidebar while on `/p/project-a`
-- **WHEN** the user navigates to `/manage/tmux`
-- **THEN** the sidebar on `/manage/tmux` is also collapsed (the
-  cookie is read by the manage-layout's `SidebarProvider` too)
+- **WHEN** the user navigates to `/manage/settings`
+- **THEN** the sidebar remains collapsed
 
 ### Requirement: Sidebar drag-to-resize handle on desktop
 
@@ -1562,12 +1354,11 @@ persisted desktop width — mobile keeps its shadcn default.
   the wrapper is `320px`
 - **AND** the sidebar column renders at `320px`
 
-#### Scenario: Width persists across `/p/*` ↔ `/manage/*` navigation
+#### Scenario: Width persists across project and manage navigation
 
-- **GIVEN** the user resizes the sidebar to `300px` while on
-  `/p/project-a`
-- **WHEN** the user navigates to `/manage/tmux`
-- **THEN** the sidebar on `/manage/tmux` also renders at `300px`
+- **GIVEN** the user resizes the sidebar to `300px` while on `/p/project-a`
+- **WHEN** the user navigates to `/manage/settings`
+- **THEN** the sidebar still renders at `300px`
 
 #### Scenario: Absent localStorage falls back to default
 
@@ -1654,15 +1445,12 @@ children wrapper is the canonical fix.
 - **AND** the immediate `<div>` wrapper around `{children}`
   inside the inset also has `min-w-0` in its class list
 
-#### Scenario: Same constraint applies on the /manage/* layout
+#### Scenario: Same constraint applies on the manage layout
 
-- **WHEN** the `/manage/layout` renders (e.g. for `/manage/tmux`)
-- **THEN** its `<SidebarInset>` element also carries a class
-  list that constrains the inset's width to shrink below
-  intrinsic content min-width (e.g. `min-h-0 overflow-hidden`
-  combined with a flex-direction parent that already prevents
-  horizontal overflow), satisfying the same anti-overflow
-  contract as `/p/<project>/layout`
+- **WHEN** the `/manage/layout` renders
+- **THEN** its `<SidebarInset>` also constrains the inset width below intrinsic
+  content min-width, satisfying the same anti-overflow contract as the Project
+  layout
 
 ### Requirement: Manage pages render a visible SidebarTrigger for desktop drawer toggle
 
@@ -1678,19 +1466,16 @@ SHALL behave identically to the one in `<AppBar>`: it toggles the
 (`Cmd/Ctrl+B`), and uses the same shadcn primitive
 (`components/ui/sidebar` → `SidebarTrigger`).
 
-#### Scenario: Trigger renders on /manage/tmux
+#### Scenario: Trigger renders on manage pages
 
 - **GIVEN** an authenticated owner session
-- **WHEN** the owner requests `GET /manage/tmux`
-- **THEN** the response HTML contains at least one element with
-  `data-slot="sidebar-trigger"`
+- **WHEN** the owner requests a manage page
+- **THEN** the response HTML contains an element with `data-slot="sidebar-trigger"`
 
 #### Scenario: Click toggles the drawer
 
-- **GIVEN** the owner is on `/manage/tmux` with the sidebar
-  currently open (`sidebar_state=true`)
-- **WHEN** the owner clicks the `<SidebarTrigger />` rendered in
-  the manage layout chrome
+- **GIVEN** the owner is on a manage page with the sidebar open
+- **WHEN** the owner clicks the manage layout's `<SidebarTrigger />`
 - **THEN** the `sidebar_state` cookie value flips to `false`
 - **AND** clicking it again flips the cookie back to `true`
 
@@ -1771,41 +1556,16 @@ controls sit outside it.
 
 The AppBar's code-review view tab SHALL be labeled `Code Review` (both words
 title-cased), consistent with the other title-cased tab labels
-(`Experiments`, `Hypotheses`, `Journal`, `Reports`, `Digests`).
+(`Experiments`, `Hypotheses`, `Journal`, `Reports`, `Wiki`, `Digests`).
 
 #### Scenario: Tab renders title-cased label
 - **WHEN** the AppBar renders the code-review tab
 - **THEN** its visible label text is exactly `Code Review` (not `Code
   review`)
 
-### Requirement: Sidebar footer exposes enabled terminal integrations
-
-For owners, the sidebar footer SHALL show `Manage tmux` only while tmux is
-enabled and SHALL show `Open Herdr` plus a Herdr popup affordance only while
-Herdr is enabled. Viewers SHALL see neither shell-capable integration. Existing
-Slurm footer behavior SHALL remain unchanged.
-
-#### Scenario: Both footer integrations enabled
-
-- **GIVEN** the owner runtime config enables tmux and Herdr
-- **WHEN** a project page renders
-- **THEN** the footer contains the existing `Manage tmux` link and an `Open Herdr` launcher
-
-#### Scenario: Tmux footer is hidden when disabled
-
-- **GIVEN** tmux is disabled and Herdr is enabled
-- **WHEN** the sidebar renders
-- **THEN** `Manage tmux` is absent and `Open Herdr` remains available
-
-#### Scenario: Viewer has no shell launcher
-
-- **GIVEN** the session role is viewer
-- **WHEN** the sidebar renders
-- **THEN** neither the tmux management link nor Herdr drawer/popup actions are present
-
 ### Requirement: AppBar spans the paired-document workspace
 
-On project routes, the AppBar SHALL be laid out above the complete content workspace rather than inside the left split region. Opening, closing, or resizing a right-side terminal or Report SHALL affect only the content region below the AppBar; it SHALL NOT divide, duplicate, horizontally compress, or obscure the AppBar. The project sidebar SHALL also remain outside the paired content split.
+On project routes, the AppBar SHALL be laid out above the complete content workspace rather than inside the left split region. Opening, closing, or resizing a right-side terminal, Report, or wiki page SHALL affect only the content region below the AppBar; it SHALL NOT divide, duplicate, horizontally compress, or obscure the AppBar. The project sidebar SHALL also remain outside the paired content split.
 
 On manage routes, the manage header and SidebarTrigger SHALL follow the same rule when a terminal split is open.
 
@@ -1824,6 +1584,12 @@ On manage routes, the manage header and SidebarTrigger SHALL follow the same rul
 - **WHEN** a terminal opens in the right split on a manage route
 - **THEN** the manage header remains above the divided content workspace
 - **AND** its SidebarTrigger remains available
+
+#### Scenario: Project AppBar remains shared above wiki split
+- **GIVEN** a project page is open
+- **WHEN** a wiki page opens in the right split
+- **THEN** one AppBar spans above both the left document and the wiki pane
+- **AND** only the region below the AppBar is divided
 
 ### Requirement: Central navigation hierarchy is Host then Project
 In central mode, primary navigation SHALL expose configured Hosts and their live Projects with visible Host ownership and status. Project links SHALL include Host. Standalone layout SHALL preserve its current project-only navigation.
@@ -1845,3 +1611,14 @@ An unusable Host SHALL remain visible with status/help affordance even when its 
 #### Scenario: Host goes offline after page load
 - **WHEN** a Host transitions from online to offline
 - **THEN** its status remains visible, its stale Project navigation is removed/disabled, and other navigation remains stable
+
+### Requirement: Page freshness occupies the left footer
+The existing footer SHALL place page dependency freshness and queued/checking/error status at bottom-left and move existing Git/release information to bottom-right. It SHALL follow file-access-settings freshness semantics and remain readable at mobile widths without obscuring content or removing version access.
+
+#### Scenario: Desktop footer
+- **WHEN** a cached page is displayed during a queued refresh
+- **THEN** the left footer shows its age and queue status and Git/version remains on the right
+
+#### Scenario: Narrow viewport
+- **WHEN** the footer is rendered at phone width
+- **THEN** status and version remain accessible without overlapping page controls

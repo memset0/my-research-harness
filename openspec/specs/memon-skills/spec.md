@@ -1,111 +1,9 @@
 # memon-skills Specification
 
 ## Purpose
-TBD - created by archiving change add-skills-cli. Update Purpose after archive.
+Define bundled research-writing workflows, ownership, safety and skill installation boundaries for the accepted native CLI.
+
 ## Requirements
-### Requirement: Skill invocation policy split by risk tier
-
-The bundled skills under `packages/skills/memon-*/` SHALL declare invocation
-control via the `disable-model-invocation` frontmatter field according to their
-confirmation boundary. `memon-migrate-fs` SHALL set
-`disable-model-invocation: true` because it rewrites the full project convention
-and can create migration commits. Every other bundled skill MAY omit the field
-and be selected when its description matches, while still obeying the
-confirmation rules documented in its body.
-
-At archive time the model-invocable set is `memon-drive`,
-`memon-write-experiment-doc`, `memon-write-script`, `memon-run-experiment`,
-`memon-append-journal`, `memon-digest-journal`, `memon-write-report`,
-`memon-write-code-review`, and `memon-propose`.
-
-#### Scenario: Run-experiment allows model invocation
-
-- **WHEN** a reader inspects the frontmatter of
-  `packages/skills/memon-run-experiment/SKILL.md`
-- **THEN** no `disable-model-invocation` field is present (or the field is
-  `false`)
-
-#### Scenario: Migrate-fs is user-invoked
-
-- **WHEN** a reader inspects the frontmatter of
-  `packages/skills/memon-migrate-fs/SKILL.md`
-- **THEN** it contains the line `disable-model-invocation: true`
-
-#### Scenario: Append-journal allows model invocation
-
-- **WHEN** a reader inspects the frontmatter of
-  `packages/skills/memon-append-journal/SKILL.md`
-- **THEN** no `disable-model-invocation` field is present (or the field is
-  `false`)
-
-### Requirement: `--project-root` is always passed explicitly
-
-Every `memon ...` invocation issued from a skill body SHALL pass
-`--project-root <path>` (or `--project-root .`) explicitly. Skills SHALL NOT rely
-on the CLI's implicit-cwd fallback. This forces every skill to be portable
-across project cwd and configuration layouts and removes the
-silent-cwd-default class of bugs.
-
-#### Scenario: Append-journal example uses --project-root
-
-- **WHEN** reviewing the example invocation in
-  `packages/skills/memon-append-journal/SKILL.md`
-- **THEN** the command includes `--project-root .` (or
-  `--project-root <path>`) explicitly
-
-### Requirement: mtime optimistic locking discipline
-
-Any skill that writes `README.md` SHALL: (a) fetch the current mtime via `memon show <id> --format json` (or capture it from a prior write's response) immediately before writing; (b) pass it as `--expected-mtime`; (c) capture the returned mtime from the write response and use it as the input to the next write in the same logical operation; (d) on exit code 9 (CONFLICT), refresh the mtime and either retry once or surface to the user. Skills SHALL NOT use a `--force` style override to bypass mtime conflicts silently.
-
-#### Scenario: Conflict refresh path documented
-- **WHEN** reading the conflict-handling section of `packages/skills/memon-run-experiment/SKILL.md`
-- **THEN** the protocol explicitly: reads fresh mtime, attempts write, on exit 9 refreshes mtime + re-merges intent, retries once, surfaces to user on second conflict
-
-#### Scenario: Digest-journal helper enforces mtime discipline
-- **WHEN** reading `packages/skills/memon-digest-journal/SKILL.md`'s `fix_readme()` shell helper
-- **THEN** the helper fetches fresh mtime via `memon show` before calling `memon experiment readme write` and propagates the new mtime on success
-
-### Requirement: JOURNAL frontmatter is writable only via digest-mark
-
-Skills SHALL update `docs/journal.md` frontmatter (specifically `last_digest_at`) only via `memon journal digest-mark`. No other skill SHALL touch the frontmatter. Skills MAY only `memon journal append` event lines to the body.
-
-#### Scenario: append-journal does not touch frontmatter
-- **WHEN** reviewing `packages/skills/memon-append-journal/SKILL.md`
-- **THEN** the document states explicitly that the skill never modifies `docs/journal.md` frontmatter, only appends event lines
-
-#### Scenario: digest-journal is the only cursor-advancer
-- **WHEN** reviewing `packages/skills/memon-digest-journal/SKILL.md`
-- **THEN** the document is described as "the **only** skill that updates `last_digest_at`" and is the sole skill that calls `memon journal digest-mark`
-
-### Requirement: Doctor checks fold into memon-digest-journal; no standalone memon-doctor skill
-
-There SHALL NOT be a standalone `memon-doctor` skill. Doctor checks (running the
-`memon doctor` CLI and walking the user through fixes) SHALL be performed inside
-`memon-digest-journal`'s workflow before the cursor advance. The `memon doctor`
-CLI command itself is preserved for ad-hoc checks but no longer has a dedicated
-skill wrapper.
-
-The rationale is that integrity-sweep and cursor-advance share a natural commit
-point. Splitting them creates a "ran doctor, fixed things, forgot to digest"
-failure mode.
-
-#### Scenario: digest-journal includes the doctor sweep
-
-- **WHEN** reviewing `packages/skills/memon-digest-journal/SKILL.md` workflow
-- **THEN** it includes a step that runs
-  `memon doctor --project-root . --format json` and walks the user through each
-  issue with the documented doctor codes
-
-#### Scenario: Bundled skill inventory excludes removed wrappers
-
-- **WHEN** listing `packages/skills/memon-*` directories
-- **THEN** there is no `memon-doctor/`, `memon-append-warning/`, or
-  `memon-notify/` subdirectory
-- **AND** the only bundled directories are `memon-drive`,
-  `memon-write-experiment-doc`, `memon-write-script`,
-  `memon-run-experiment`, `memon-append-journal`, `memon-digest-journal`,
-  `memon-write-report`, `memon-write-code-review`, `memon-propose`, and
-  `memon-migrate-fs`
 
 ### Requirement: Skill body is English; user-facing dialogue is Chinese
 
@@ -120,25 +18,6 @@ This convention reflects the broader project rule (codified in repo `CLAUDE.md`)
 #### Scenario: Embedded Chinese for user dialogue is explicit
 - **WHEN** reviewing `memon-write-script/SKILL.md` "When you're done" section
 - **THEN** Chinese-language example prompts appear inside `>` block quotes, distinguishing them as user-dialogue templates from the English instructional surround
-
-### Requirement: Digests vs reports — date-keyed cursor-advancing vs theme-keyed cursor-independent
-
-Two persistent narrative artifacts SHALL coexist in `<projectRoot>/docs/`:
-
-- **Digests** at `docs/digests/D<NNNN>-<YYYY-MM-DD>.md`, written by `memon-digest-journal`. Date-keyed (one file per calendar date; same date appends, new date increments N). They SHALL advance the `last_digest_at` cursor exactly once per write. Coverage windows SHALL be strictly non-overlapping.
-- **Reports** at `docs/reports/R<NNNN>-<slug>.md`, written by `memon-write-report`. Theme-keyed (slug describes the theme). They SHALL NOT advance the cursor. Multiple reports MAY overlap in time. They SHALL carry a re-runnable `selector` shell snippet in frontmatter so future invocations can detect new matching events without rebuilding the filter.
-
-#### Scenario: Digest filename pattern
-- **WHEN** `memon-digest-journal` writes the first digest of a project on 2026-05-04
-- **THEN** the filename is `<projectRoot>/docs/digests/D0001-2026-05-04.md`
-
-#### Scenario: Same-day re-invocation appends
-- **WHEN** a digest has already been written today (`D0001-2026-05-04.md` exists) and `memon-digest-journal` runs again the same day
-- **THEN** it appends a `## Update <ISO>` section to `D0001-2026-05-04.md`, does NOT create a new digest file, and advances the cursor to the new `INVOCATION_TIME`
-
-#### Scenario: Report carries a selector
-- **WHEN** `memon-write-report` writes a report
-- **THEN** the frontmatter `selector:` block contains a multi-line bash snippet that re-runs to emit the matching JOURNAL events; the report does NOT call `memon journal digest-mark`
 
 ### Requirement: code.diff allowlist lives in project's CLAUDE.md
 
@@ -168,11 +47,7 @@ If the heading is absent on first run, the skill SHALL interactively seed it: in
 
 ### Requirement: Numeric IDs are 4-digit zero-padded across all skill outputs
 
-All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, digest `D<NNNN>`, report `R<NNNN>`) SHALL use the canonical 4-digit zero-padded form per the `hypotheses` capability. Skills that compute `next_n + 1` SHALL format the result with `printf '%04d'` (or equivalent) before constructing the filename or id string. Skills SHALL NOT emit unpadded ids (`H1`, `D7`, `R42`).
-
-#### Scenario: Digest filename uses %04d
-- **WHEN** `memon-digest-journal` computes the next N as 7 and writes a new digest on 2026-05-04
-- **THEN** the filename is `D0007-2026-05-04.md`, NOT `D7-2026-05-04.md`
+All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, digest `D<NNNN>`, report `R<NNNN>`, wiki page `W<NNNN>`, and the legacy `R<NNNN>` form preserved in a migrated page's `legacy_id`) SHALL use the canonical 4-digit zero-padded form per the `hypotheses` capability. Skills that compute `next_n + 1` SHALL format the result with `printf '%04d'` (or equivalent) before constructing the filename or id string. Skills SHALL NOT emit unpadded ids (`H1`, `D7`, `R42`, `W42`).
 
 #### Scenario: Report filename uses %04d
 - **WHEN** `memon-write-report` computes the next N as 42 with slug `bf16-investigation`
@@ -182,9 +57,13 @@ All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, digest `D<NNNN>
 - **WHEN** `memon-run-experiment` writes a new run README and the user mentioned "this run tests hypothesis 3"
 - **THEN** the frontmatter `hypotheses:` array contains `H0003`, NOT `H3`
 
+#### Scenario: Wiki page id is padded
+- **WHEN** `memon-wiki` refers to the page whose allocated number is 42
+- **THEN** it writes the id as `W0042`, NOT `W42`
+
 ### Requirement: Spec-mutating skills SHALL preflight-check the FS convention version
 
-Every memon skill that reads or writes spec files (the per-experiment `<runDir>/README.md`, the project's `<projectRoot>/docs/hypotheses.md`, `<projectRoot>/docs/journal.md`, or any file under `<projectRoot>/docs/digests/` or `<projectRoot>/docs/reports/`) SHALL invoke `memon fs-version check --project-root <p> --format json` as the first executable step in its workflow body, parse the result, and branch as follows:
+Every memon skill that reads or writes spec files (the per-experiment `<runDir>/README.md`, the project's `<projectRoot>/docs/hypotheses.md`, `<projectRoot>/docs/journal.md`, or any file under `<projectRoot>/docs/digests/`, `<projectRoot>/docs/reports/`, or `<projectRoot>/docs/wiki/`) SHALL invoke `memon fs-version check --project-root <p> --format json` as the first executable step in its workflow body, parse the result, and branch as follows:
 
 - `status === "match"`: proceed with the rest of the skill.
 - `status === "behind"`: surface the gap to the user (current version, expected version), recommend invoking `memon-migrate-fs`, and stop. The skill SHALL NOT proceed to read or write any spec file.
@@ -198,10 +77,13 @@ The following skills are subject to this requirement (matching the user-invoked 
 - `memon-run-experiment` — writes `<runDir>/README.md`.
 - `memon-digest-journal` — reads `docs/journal.md`, writes digests, advances cursor.
 - `memon-write-report` — writes report files under `docs/reports/`.
+- `memon-wiki` — writes wiki pages under `docs/wiki/`.
 - `memon-propose` — writes proposal artifacts.
 - `memon-append-journal` — appends event lines to `docs/journal.md`.
 - `memon-append-warning` — appends warning rows to `<runDir>/README.md`.
 - `memon-migrate-fs` itself is exempt from preflight (it IS the migration entry; it reads `.memon/version.json` directly as part of its own protocol).
+
+A skill that must first establish *how* it reaches the project (for example `memon-wiki`, which detects whether it operates in-project or through an sshfs mount and derives the `memon` invocation channel from that) MAY place that non-mutating detection step ahead of the preflight, provided the preflight call is still the first `memon` invocation and no spec file is read or written before it resolves.
 
 #### Scenario: Skill body contains the preflight preamble
 - **WHEN** a reader inspects the workflow body of any of the six listed skills
@@ -243,40 +125,6 @@ The skill SHALL NOT call `warning resolve`, `warning reopen`, or `warning delete
 #### Scenario: Skill text bounds what qualifies as a warning
 - **WHEN** a reader inspects the post-run review section
 - **THEN** the text includes both a "what qualifies" paragraph (reproducibility / methodology / anomalous metrics / hardware noise / baseline-drift) and an explicit Anti-patterns list naming low-signal items the agent must NOT flag
-
-### Requirement: `memon-digest-journal` doctor sweep walks per-experiment warning review
-
-`memon-digest-journal`'s doctor sweep step SHALL walk a defined per-experiment warning-review scope: the union of (a) experiments whose `README.md` mtime falls inside the digest window OR whose status changed in the journal events being digested, AND (b) experiments that currently have at least one warning with `Status=OPEN` (regardless of mtime).
-
-For each experiment in the scope, the agent SHALL review the run with full context (latest journal, baselines, comparison runs that landed during the window) and propose, to the user, EITHER (i) new warnings to append, OR (ii) existing OPEN warnings to flag for human attention. The agent SHALL NOT auto-append; it SHALL only append after explicit user confirmation per proposal.
-
-The agent SHALL NOT call `warning resolve`, `warning reopen`, or `warning delete` under any circumstance during the sweep.
-
-The sweep SHALL also surface `memon doctor`'s `WARN_UNRESOLVED` items as part of the same review pass (so the user sees both "new warnings I propose" and "still-open warnings from prior runs" in one walk).
-
-#### Scenario: Sweep walks the (a)+(b) scope
-- **WHEN** a reader inspects `packages/skills/memon-digest-journal/SKILL.md`'s doctor-sweep step
-- **THEN** the text explicitly defines the scope as "(a) experiments touched in the digest window OR with a STATUS event in the digested events ∪ (b) experiments with at least one OPEN warning currently"
-
-#### Scenario: Sweep proposes, never auto-applies
-- **WHEN** a reader inspects the doctor-sweep step
-- **THEN** the workflow surfaces proposed warnings to the user before any `memon experiment warning add` call, and the example dialogue shows the agent waiting for user confirmation per proposal
-
-#### Scenario: Digest-journal is forbidden from resolve/reopen/delete
-- **WHEN** a reader greps `packages/skills/memon-digest-journal/SKILL.md` for `warning resolve`, `warning reopen`, or `warning delete`
-- **THEN** any occurrence is inside an explicitly-marked Anti-pattern block
-
-### Requirement: AI authority on warnings is strictly append-only
-
-Skills SHALL NOT invoke `memon experiment warning resolve`, `memon experiment warning reopen`, or `memon experiment warning delete`. State transitions and deletion of warning rows are human-only acts; the CLI exposes them so the human can perform them via the terminal or the web UI, but skills' workflow bodies SHALL NOT contain those invocations outside an explicit Anti-pattern block.
-
-#### Scenario: Static check across all bundled skills
-- **WHEN** a reader greps every `packages/skills/memon-*/SKILL.md` file for `warning resolve|warning reopen|warning delete`
-- **THEN** every occurrence is inside an explicitly-marked Anti-pattern block; no occurrence appears in a workflow / example / instruction body
-
-#### Scenario: Anti-pattern block names the rule
-- **WHEN** a reader inspects the Anti-pattern section of `memon-run-experiment`, `memon-digest-journal`, or `memon-append-warning`
-- **THEN** at least one bullet explicitly states "do NOT call `warning resolve`/`reopen`/`delete` — those are human acts"
 
 ### Requirement: `memon-write-code-review` exists as a model-invocable code-review authoring skill
 
@@ -397,24 +245,6 @@ results but no code change. `memon-write-code-review` SHALL be listed among
 
 - **WHEN** a reader inspects the `memon-drive` skill body
 - **THEN** `memon-write-code-review` appears among its sub-tools
-
-### Requirement: Drive coordinates all Experiment work through a dedicated writer skill
-
-`memon-drive` SHALL read the v6 bundle, distinguish engineering work from empirical investigation, define Variants before launching Runs, and invoke `memon-write-experiment-doc` for every Experiment semantic write. The writer SHALL directly edit README/YAML and validate afterward; it SHALL NOT require item-level mutation CLI commands.
-
-Before a run, drive SHALL decide from the user's intent whether Variant-table approval is required. Explicit autonomous delegation permits immediate creation/execution; collaborative design prompts require a proposed Markdown table and confirmation. In all cases, the Variant exists before launch.
-
-Official Results-reading guidance SHALL use the structure-only Results summary
-when cell values are unnecessary and SHALL surface optional column/value
-annotations. The Experiment writer SHALL document that annotation get/set is
-an optional focused helper while direct `results.yaml` editing remains valid.
-No skill SHALL require complete annotation coverage or treat value descriptions
-as enum constraints.
-
-#### Scenario: Autonomous experiment still records Variant first
-- **GIVEN** the user explicitly delegates autonomous experimental choices
-- **WHEN** drive launches a run
-- **THEN** the corresponding Variant is already present in `results.yaml`
 
 ### Requirement: Warning skill is removed while CLI compatibility remains
 
@@ -543,3 +373,75 @@ Expected domain-state and validation failures SHALL NOT automatically be labeled
 - **WHEN** the skill reports its outcome
 - **THEN** it describes the document diagnostic as project state to fix
 - **AND** it does not claim the CLI itself is buggy without contradictory evidence
+
+### Requirement: Three narrative artifacts divide the project's prose surface
+
+Reports SHALL remain theme-keyed snapshots authored by their Report skill. Wiki pages SHALL remain living, source-linked knowledge maintained by the Wiki skill. Historical Digests SHALL remain readable, but no managed digest authoring skill or Journal cursor advancement SHALL be required. A writer SHALL stay within its owning artifact and preserve research history.
+
+#### Scenario: Maintaining current knowledge
+- **WHEN** accepted findings change
+- **THEN** the writer updates the relevant Wiki and Experiment sources without generating a mandatory digest or advancing a Journal cursor
+
+### Requirement: Supported skill invocation preserves risk boundaries without Journal authors
+
+The FS migration skill SHALL remain user-invoked. Other supported skills MAY be model-invocable subject to their documented authority boundaries. The inventory SHALL exclude memon-append-journal and memon-digest-journal; no replacement Journal prose or digest scheduler skill SHALL be added. Wiki/component skills from the completed wiki change SHALL remain supported.
+
+#### Scenario: Installed inventory matches the release
+- **WHEN** supported skills are synchronized into a project
+- **THEN** the two retired Journal skills are removed and unrelated custom skills remain unchanged
+
+### Requirement: All supported skill commands explicitly select the project
+
+Every skill-issued memon invocation SHALL explicitly select its project root. Mounted workflows SHALL execute commands through the selected remote channel rather than run normal memon/git scans over sshfs. New activity and evidence commands follow the same rule.
+
+#### Scenario: Mounted writer finalization
+- **WHEN** a writer finalizes edited files in a mounted project
+- **THEN** journal submit runs on the actual host with an explicit project root; the agent never operates on Journal files
+
+### Requirement: Document and review writers preserve optimistic concurrency
+
+README and managed-document writers SHALL snapshot the source hashes/mtimes, preserve existing optimistic locks, and reread/reapply once on conflict before reporting a repeated conflict. They SHALL NOT use force to overwrite concurrent work. Review-record writes also SHALL carry exact content and metadata preconditions.
+
+#### Scenario: Claim changes before confirmation
+- **WHEN** a confirmation fingerprint no longer matches the displayed claim
+- **THEN** the workflow reports a conflict and does not confirm the changed assertion
+
+### Requirement: Drive coordinates experiment writes and project knowledge writeback
+
+Drive SHALL retain the v6 separation of engineering work, investigations, Variants and Runs, and route Experiment semantic writes through the dedicated writer. It SHALL consult roadmap/findings and complete scoped related-Experiment writebacks without expanding lifecycle authority. Variant creation remains before launch. After direct Experiment/Wiki maintenance, writers SHALL invoke `memon journal submit --files <relative-paths...>` once for the completed batch, never directly manipulating Journal files. Native CLI operations SHALL not require a duplicate manual record. New questions, conclusions and decisions SHALL enter Wiki and cite Experiment/Run evidence, not Journal.
+
+#### Scenario: Approved successor decision
+- **WHEN** an approved decision changes which Experiment owns future work
+- **THEN** drive updates the roadmap and routes the affected old/new Experiment descriptions and scope through the writer before claiming the change complete
+
+### Requirement: Warning authority remains restricted after digest retirement
+
+Existing human-only warning resolution, reopening and deletion boundaries SHALL remain unchanged. Skills SHALL route supported warning content through the Experiment writer and SHALL NOT gain extra authority from the retirement of the digest skill.
+
+#### Scenario: Integrity check finds an old warning
+- **WHEN** a normal structural-lint-guided repair encounters an unresolved warning
+- **THEN** the coordinator does not resolve it merely to complete the repair
+
+### Requirement: Normal knowledge work does not consume or author Journal
+
+All supported skills SHALL remove normal Journal reads, manual append instructions, digest cursor updates and event-window research synthesis. Research requests/decisions/questions SHALL route to Wiki and factual changes to their Experiment/Run source. Explicit debugging MAY read bounded diagnostic history. Report selectors that historically read Journal SHALL be preserved as text, not automatically executed for routine knowledge refresh.
+
+#### Scenario: Resume a research task
+- **WHEN** drive or a report writer gathers normal research context
+- **THEN** it reads source artifacts and Wiki relationships rather than Journal history
+
+### Requirement: Knowledge maintenance does not fabricate human confirmation
+
+Agents SHALL preserve source provenance and existing human-only Wiki review permissions. Updating documents or recording an invocation SHALL NOT imply a scientific conclusion was independently checked or human-confirmed. Unimplemented per-claim evidence commands SHALL NOT be prescribed by installed skills.
+
+#### Scenario: User approves an implementation
+- **WHEN** the user approves code changes
+- **THEN** the agent does not convert that approval into scientific conclusion verification
+
+### Requirement: Structural lint replaces doctor without digest bookkeeping
+
+Supported skills SHALL use structural lint and current source inspection rather than a doctor command, standalone doctor skill or digest sweep. Repairs SHALL preserve existing writer authority and conflict handling.
+
+#### Scenario: Structural repair
+- **WHEN** lint identifies a document structure problem
+- **THEN** the source is repaired through its owning workflow without a Journal cursor or doctor invocation

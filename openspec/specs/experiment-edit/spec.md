@@ -236,19 +236,14 @@ white-canvas + line-numbers requirements continue to apply.
 
 ### Requirement: Run-panel actions inside the exp detail page
 
-Each expanded run panel inside the exp detail page SHALL provide three
-actions:
+Each expanded run panel inside the exp detail page SHALL provide two actions:
 - `Edit markdown (run)` — opens the markdown editor on the run's README
-  (uses `run-edit`'s save handshake)
-- `Open Claude Code (run)` — opens at the project root with a hardcoded
-  preset prompt naming the run dir and parent exp doc paths
+  using `run-edit`'s save handshake.
 - `Archive` — writes `<run-dir>/.archived` and removes the run from the
-  expanded panel set
+  expanded panel set.
 
-The exp-level action bar at the top of the page SHALL provide:
-- `Edit markdown` — opens the editor on the exp doc
-- `Open Claude Code` — opens at the project root with a preset prompt
-  naming the exp doc path and the list of member run dirs
+The exp-level action bar at the top of the page SHALL provide `Edit markdown`
+to open the editor on the Experiment document.
 
 The web load path for the run README inside `Edit markdown (run)`
 SHALL go through an id-addressed helper that derives the absolute
@@ -273,91 +268,6 @@ and returns `EISDIR` when handed a directory.
   file path — and the resulting `Could not load README` error path
   is NOT triggered (the legacy `EISDIR` regression must not return)
 
-#### Scenario: Open Claude Code preset prompts differ
-- **WHEN** the user clicks the run-panel `Open Claude Code` button
-- **THEN** the preset prompt names the run dir path and the exp doc
-  path, distinct from the exp-level button's prompt which names the exp
-  doc path and the run list
-
-### Requirement: `POST /api/open-claude-code` resolves a target's working directory
-
-The web layer SHALL expose `POST /api/open-claude-code` accepting a
-JSON body `{ kind: 'exp' | 'run', id: string, projectName: string }`.
-The endpoint resolves the working directory for a Claude Code launch
-on the given target and returns a copy-paste command. It does NOT
-spawn a process — `memon serve` is shared across users on a cluster,
-so server-side spawn would launch in the wrong session.
-
-The response shape SHALL be `{ command: string, cwd: string, hint:
-string }`:
-- `command` — a shell-quoted `cd <cwd> && claude` string. The user
-  pastes this into a local terminal.
-- `cwd` — the resolved absolute working directory. For `kind: 'exp'`,
-  this is the project root (so the agent can see both
-  `docs/experiments/` and `logs/`); for `kind: 'run'`, this is the
-  run dir.
-- `hint` — a one-sentence description naming the target (e.g.
-  `"Edit docs/experiments/E0001-foo.md (experiment E0001-foo)"`),
-  intended for a toast or console message.
-
-The endpoint SHALL return:
-- 400 BAD_REQUEST when the body fails the JSON schema
-- 404 NOT_FOUND when the project is not configured, or the named
-  experiment / run does not exist in the runtime index
-- 200 OK with the response shape on success
-
-The endpoint SHALL invoke `assertWithinProjectRoots()` on the
-resolved cwd before returning, so a tampered runtime index can't
-leak a path outside any configured project root.
-
-#### Scenario: Resolve cwd for an experiment doc
-- **WHEN** a client POSTs `{kind: 'exp', id: 'E0001-foo',
-  projectName: 'project-a'}`
-- **THEN** the response is 200 with `cwd` equal to the absolute
-  path of `project-a`'s root, `command` starting with `cd ` and
-  ending with `&& claude`, and `hint` mentioning the exp doc id
-
-#### Scenario: Resolve cwd for a run
-- **WHEN** a client POSTs `{kind: 'run', id: 'foo-260501-100000',
-  projectName: 'project-a'}`
-- **THEN** the response is 200 with `cwd` equal to the run dir's
-  absolute path
-
-#### Scenario: 404 on unknown id
-- **WHEN** a client POSTs `{kind: 'exp', id: 'E9999-nope',
-  projectName: 'project-a'}`
-- **THEN** the response is 404 with `error.code: NOT_FOUND`
-
-#### Scenario: 404 on unknown project
-- **WHEN** a client POSTs with `projectName: 'no-such-project'`
-- **THEN** the response is 404 with `error.code: NOT_FOUND`
-
-### Requirement: `Open Claude Code` button consumes the resolve endpoint
-
-Both the exp-level and run-panel `Open Claude Code` buttons SHALL
-call `POST /api/open-claude-code` with the appropriate `kind` / `id`
-/ `projectName` and copy `response.command` to the clipboard via
-`navigator.clipboard.writeText`. A toast SHALL confirm the copy with
-`response.hint` as its description.
-
-If the clipboard write fails (browser policy / no
-`navigator.clipboard`), the toast SHALL fall back to a `toast.message`
-that displays the command inline so the user can copy it manually.
-
-#### Scenario: Click copies the command
-- **WHEN** the user clicks the exp-level `Open Claude Code` button
-  on `/p/project-a/e/E0001-foo`
-- **THEN** the client POSTs `/api/open-claude-code` with
-  `{kind: 'exp', id: 'E0001-foo', projectName: 'project-a'}`,
-  receives a `command` string, writes it to the clipboard, and
-  shows a `toast.success` whose description is the response `hint`
-
-#### Scenario: Clipboard-blocked fallback
-- **GIVEN** `navigator.clipboard.writeText` rejects (e.g. sandbox
-  policy)
-- **WHEN** the user clicks `Open Claude Code`
-- **THEN** the UI surfaces a `toast.message` with the command in
-  its description so the user can copy it manually
 
 ### Requirement: Files-in-run-dir tree display
 
@@ -442,12 +352,9 @@ with the following display rules:
 
 The expanded run panel inside the v3 exp detail page SHALL render every piece of information from the legacy run-as-experiment page (`/p/<project>/experiments/<id>`) that's still relevant under the v3 model — so users don't need to follow a "(legacy)" link to see standard run metadata, edit run status, or browse logs. The panel content sits below the trigger row inside the `<CollapsibleContent>` and is laid out as **three flat divider-separated stripes** in this top-to-bottom order:
 
-1. **Action stripe** (`border-t p-3`) — three primary buttons in this order:
-   - `Edit markdown`
-   - `Open with [picker]` — a split-button whose main face launches the **default agent** (a localStorage-persisted choice; ships defaulting to `claude code`) and whose chevron opens a `DropdownMenu` with the four agent options (`Terminal`, `Claude Code`, `Codex`, `OpenCode`) plus an `Open in new window` action that opens the current default in a chrome-less popup.
-   - `+ Note`
-   Plus the `<StatusEdit>` control and the parse-errors `<Badge variant="destructive">` (when `run.parseErrors.length > 0`) at the right end of the stripe.
-   The previous separate `<TerminalButton>` and `<OpenClaudeCodeButton>` are NOT used in this stripe; both are subsumed by the `Open with` combo.
+1. **Action stripe** (`border-t p-3`) — primary actions for `Edit markdown`
+   and `+ Note`; followed by `<StatusEdit>` and the parse-errors
+   `<Badge variant="destructive">` when `run.parseErrors.length > 0`.
 2. **Frontmatter stripe** (`border-t p-3`) — a 2-column-on-mobile
    / 4-column-on-desktop dl grid of frontmatter fields:
    name, project (only when it differs from the URL's project),
@@ -490,18 +397,9 @@ appear in the panel.
 
 #### Scenario: Action stripe order
 - **WHEN** the action stripe renders
-- **THEN** its primary buttons appear in this order: `Edit markdown`, `Open with [picker]`, `+ Note` — followed by `StatusEdit` and (if applicable) the parse-errors Badge
+- **THEN** its primary actions appear in this order: `Edit markdown`, `+ Note`
+- **AND** `StatusEdit` and any parse-errors Badge follow those actions
 
-#### Scenario: Open with picker has four agent options + popup option
-- **WHEN** the user clicks the chevron on the `Open with` split-button
-- **THEN** a `DropdownMenu` appears containing exactly these items in this order: `Terminal`, `Claude Code`, `Codex`, `OpenCode`, then a separator, then `Open in new window`
-- **AND** clicking any of the four agent items launches the side drawer for that agent
-- **AND** clicking `Open in new window` opens the default agent in a chrome-less popup window
-
-#### Scenario: Action stripe no longer carries TerminalButton or OpenClaudeCodeButton directly
-- **WHEN** the action stripe renders
-- **THEN** there is exactly ONE button whose visible label starts with the text `Open with`
-- **AND** there are NO buttons whose visible label is exactly `Open in browser` (the previous TerminalButton label) or `Open Claude Code` (the previous OpenClaudeCodeButton label)
 
 #### Scenario: Action bar is above the frontmatter
 - **WHEN** the panel renders
@@ -882,42 +780,3 @@ The command SHALL NOT roll back on partial failure. The validate-first posture c
 - **THEN** the rename succeeds
 - **AND** `docs/hypotheses.md`'s mtime is unchanged (no write
   performed because content is unchanged)
-
-### Requirement: Run Open-with picker includes enabled peer backends
-
-The expanded run action stripe SHALL continue to use the unified Open-with
-component. Its four existing tmux agent items SHALL remain unchanged when tmux
-is enabled, and an enabled Herdr integration SHALL add a `Herdr` item whose
-drawer and popup actions create-or-focus a run-labelled Herdr workspace.
-
-#### Scenario: Run picker includes Herdr without replacing tmux
-
-- **GIVEN** tmux and Herdr are enabled
-- **WHEN** the owner opens a run panel's Open-with picker
-- **THEN** all four existing tmux agent items remain in their existing order
-- **AND** `Herdr` appears after them and opens a workspace labelled with the run ID
-
-### Requirement: Experiment and run Open-with actions can launch the right split
-
-The unified Open-with component used by experiment and run action stripes SHALL provide `Open in split view` after the enabled integration choices and before `Open in new window`. The action SHALL open the current default integration against the same experiment or run target that the drawer and popup actions use.
-
-#### Scenario: Run picker includes the split action
-
-- **GIVEN** an owner opens the Open-with picker for a run
-- **WHEN** the picker renders
-- **THEN** it includes `Open in split view` before `Open in new window`
-- **AND** selecting it opens the current default integration against that run in the right split
-
-#### Scenario: Experiment picker uses experiment identity
-
-- **GIVEN** an owner opens the Open-with picker at experiment scope
-- **WHEN** the owner selects `Open in split view`
-- **THEN** the right terminal region opens using the experiment target identity
-
-#### Scenario: Herdr uses the common Open-with presentation
-
-- **GIVEN** Herdr is enabled alongside the tmux-backed choices
-- **WHEN** the Open-with picker renders
-- **THEN** the Herdr menu item uses the same text-only presentation as the peer agent items
-- **AND** the main `Open with Herdr` action uses the common agent icon rather than a Herdr-specific extra icon
-

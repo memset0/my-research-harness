@@ -1,47 +1,9 @@
 # live-updates Specification
 
 ## Purpose
-TBD - created by archiving change add-write-flow. Update Purpose after archive.
+Define foreground resource heartbeat refresh and retained byte/log streaming without document/list event fan-in.
 
 ## Requirements
-
-### Requirement: Single SSE connection from the root layout
-
-The dashboard SHALL open exactly one `EventSource` connection to `/api/events` from the root layout (mounted via `Providers`). All components subscribing to live updates SHALL go through a shared `useMemonEvents()` hook backed by an in-memory event emitter that fans out to React subscribers.
-
-#### Scenario: One connection per tab
-- **WHEN** the user opens the dashboard and navigates between list, detail, hypothesis, and journal pages
-- **THEN** the browser DevTools network panel shows exactly one open `text/event-stream` request to `/api/events` (no duplicates, no leaked connections after navigation)
-
-#### Scenario: Reconnect on disconnect
-- **WHEN** the SSE connection drops (network blip, dev server HMR, server restart)
-- **THEN** the browser's native `EventSource` reconnect kicks in within ~3 seconds and the page resumes receiving events without user action
-
-### Requirement: Cache invalidation on experiment-change
-
-The `useMemonEvents()` hook SHALL invalidate TanStack Query caches when
-events arrive on the three v3 topics. The mapping is described in the
-"Experiment-doc and anomaly SSE topics" requirement; the v2 single-topic
-mapping is replaced by the multi-topic mapping.
-
-The v3 wiring drops the legacy `experiment-change` deprecated alias for
-run edits — `experiment-change` events on the SSE wire mean
-exp-doc events ONLY. Frontend code that previously listened to
-`experiment-change` for run edits SHALL migrate to `run-change`. There
-is no transition window beyond the v3 cutover.
-
-#### Scenario: Run edit propagates to relevant queries
-- **WHEN** an underlying run README is edited (locally or remotely)
-- **THEN** within ~1 second, the run's parent experiment detail page
-  (if open) and any list view refresh; the `['run', id]` query is
-  invalidated AND, when the run carries an `experiment` parent id, the
-  `['experiment', parentId]` query is also invalidated
-
-#### Scenario: Toast on remote experiment-doc create
-- **WHEN** an `experiment-change` event with `op: 'set'` is received
-  for an experiment doc id NOT previously in the local cache
-- **THEN** a `toast.info('New experiment: <id>')` appears for ~3
-  seconds with a `View` action that navigates to the exp detail page
 
 ### Requirement: SSE-driven log streaming
 
@@ -129,26 +91,6 @@ Rendered markdown bodies (experiment sections, hypothesis statements, journal re
 - **WHEN** an experiment's `## Method` section contains markdown with code blocks, lists, and inline links
 - **THEN** the rendered output has visible heading sizes, code blocks with `bg-slate-100` shading, list bullets with proper indentation, and links underlined in blue (no plain unstyled `<h2>` / `<pre>` etc.)
 
-### Requirement: SSR-prefetched queries do not refetch on hydration
-
-The web app SHALL prefetch React Query data on the server (via `getQueryClient()` + `prefetchQuery()`) and hydrate that data on the client (via `<HydrationBoundary>`) WITHOUT triggering an immediate refetch of every prefetched key on mount. The client-side default `staleTime` SHALL be greater than or equal to the server-side prefetch `staleTime` (today: 60 seconds), so server-fresh data remains fresh on the client until either an SSE invalidation event arrives or the per-query background `refetchInterval` (default 60 s) fires.
-
-Per-query overrides SHALL be allowed: a `useQuery({ staleTime: <smaller> })` call may opt into shorter freshness if the data semantics demand it.
-
-#### Scenario: Page open does not double-fetch prefetched queries
-- **GIVEN** a project page whose server component prefetches `['experiments', project]`, `['hypotheses', project]`, `['journal', project, …countOnly]`, `['reports', project]`, `['digests', project]`
-- **WHEN** the user opens that page (cold or warm) and the client mounts the `<HydrationBoundary>`
-- **THEN** none of the prefetched query keys SHALL fire a network request on mount (the dev server log SHALL NOT show a duplicate GET for any of them within 1 second of the page-level GET)
-
-#### Scenario: Per-query opt-in to shorter freshness still works
-- **GIVEN** a `useQuery({ queryKey: [...], staleTime: 5_000 })` call in a component
-- **WHEN** the query has been in cache for 6 s
-- **THEN** the next render of that component refetches that specific query (the per-query override beats the default)
-
-#### Scenario: SSE invalidation still drives updates
-- **WHEN** an SSE `experiment-change` event arrives for a query already in cache
-- **THEN** the affected `queryKey` is invalidated and refetched as before — the alignment of `staleTime` does NOT delay live updates
-
 ### Requirement: Server-side prefetch is a no-op in dev
 
 In dev (`process.env.NODE_ENV !== 'production'`), the server-side `QueryClient` returned by `getQueryClient()` SHALL have its `prefetchQuery` method replaced with a resolved no-op. Page modules SHALL continue to call `await queryClient.prefetchQuery(...)` and `<HydrationBoundary state={dehydrate(queryClient)}>` exactly as in production — no per-page conditionals, no helper at the call site. The dehydrated state in dev SHALL therefore be empty, and the client React Query SHALL fetch each query on mount.
@@ -173,84 +115,52 @@ This relaxation only applies to the server branch of `getQueryClient()`. The bro
 - **THEN** `queryFn` runs on the server and the dehydrated state contains the prefetched key
 - **AND** the client does NOT refetch that key on mount (per the existing "SSR-prefetched queries do not refetch on hydration" requirement)
 
-### Requirement: Experiment-doc and anomaly SSE topics
+### Requirement: Foreground polling serves stale content before verification
+Document/list resources SHALL return available cached content immediately and schedule appropriate file checks independently. Foreground heartbeats SHALL return semantic changed/unchanged plus freshness and queue/error status. No proactive document/list push SHALL be required or opened. Hidden or unfocused pages SHALL stop periodic resource requests; opening or reactivating SHALL trigger human attention for documents, never collections.
 
-The system SHALL extend the live-updates SSE channel with three v3
-event topics. The `useMemonEvents()` hook (and the underlying
-`/api/events` SSE stream) SHALL fan out exactly three topics:
+#### Scenario: Warm open then edit
+- **WHEN** a cached Report is opened after an external edit
+- **THEN** cached content renders first; after file checking a later heartbeat returns changed content
 
-- `run-change` (NEW name; replaces v2's `experiment-change` for run-doc
-  edits — no alias retained)
-- `experiment-change` (NEW semantics: experiment-doc edits, creates,
-  deletes, binds — repurposed from the v2 run-edit topic)
-- `anomaly` (NEW: per `experiment-membership-anomalies`)
+#### Scenario: No semantic change
+- **WHEN** a file check changes only metadata or equivalent source formatting
+- **THEN** the frontend does not replace content or display an update toast
 
-The `experiment-change` event payload SHALL include `{ id, op,
-projectName }` where `op` is one of `set` (create or edit), `delete`,
-or `bind` (link/unlink).
+#### Scenario: Background activation
+- **WHEN** a hidden Wiki page becomes visible and focused
+- **THEN** it immediately sends human attention and resumes the shared heartbeat
 
-The `anomaly` event payload SHALL include `{ project: string, count:
-number }` where `count` is the anomaly count for the project AFTER
-the recompute that triggered the event. Per-anomaly granularity
-(`{ op, record }`) is explicitly NOT supported — clients receive the
-coarse signal and refetch `/api/anomalies?project=…` for the diff.
-Rationale: implementation simplicity (no need to diff anomaly sets
-across recomputes); the anomaly list is small enough that a refetch
-is cheap (<50ms locally).
+### Requirement: Refresh coverage is unified with manual Run bodies
+Experiment documents and all three managed YAML tables, Wiki lists/details and current component dependencies, Reports, Run lists and other metadata resources SHALL use one resource polling lifecycle. Results-specific refresh timers SHALL be removed. Run README bodies SHALL load initially and through manual refresh only, not on heartbeat, focus or parent-list invalidation.
 
-The `useMemonEvents()` hook SHALL invalidate the matching TanStack
-Query caches on each topic:
-- `run-change` → `['runs']`, `['run', evt.id]`,
-  `['experiment', evt.parentExperimentId]` (when known)
-- `experiment-change` → `['experiments']`, `['experiment', evt.id]`
-- `anomaly` → `['anomalies', evt.project]`
+All collection GET/HEAD requests SHALL be classified as automatic on both client and server, including navigation, tab counts, main-content lists, and link-resolution inventories. Manual/focus resource pulses SHALL exclude collection queries; automatic heartbeats MAY continue refreshing them. An existing in-flight batch remains shared rather than being duplicated or having its collection requests promoted. Mutations SHALL retain write priority. This policy SHALL NOT introduce a second result cache or change primitive-cache TTLs or independent Git-status polling.
 
-#### Scenario: Experiment-doc edit propagates within ~1s
-- **GIVEN** the user has an exp detail page open in tab A
-- **WHEN** the same exp doc is saved from tab B (or a CLI command)
-- **THEN** within ~1 second, tab A's exp page re-renders with the new
-  body content, no manual refresh required
+#### Scenario: Results changes
+- **WHEN** results.yaml changes while the experiment page is active
+- **THEN** the common resource refresh updates the table without an independent table timer
 
-#### Scenario: Anomaly recompute pushes a banner refetch
-- **GIVEN** the user is on a project list page with the anomaly banner
-  showing N records
-- **WHEN** the indexer's `recomputeAnomalies(project)` runs (e.g.
-  triggered by a poll-detected exp-doc edit)
-- **THEN** an `anomaly` event with `{ project, count }` is pushed; the
-  banner invalidates `['anomalies', project]` and refetches the list;
-  the banner re-renders with the updated record set within ~1 second
+#### Scenario: Run list changes
+- **WHEN** a Run status changes while its body is open
+- **THEN** the list may update but the displayed Run body remains unchanged until manual refresh
 
-#### Scenario: Run edit carries parent experiment id when bound
-- **GIVEN** a run with `frontMatter.experiment = "E0001-foo"`
-- **WHEN** the run README is edited
-- **THEN** the SSE `run-change` event payload SHALL include
-  `parentExperimentId: "E0001-foo"`; the hook invalidates BOTH
-  `['run', id]` AND `['experiment', "E0001-foo"]`
+### Requirement: Resource updates preserve user state
+The client SHALL apply only current-page, non-obsolete responses, preserve scroll/expansion/table interaction state, and never overwrite unsaved editor text. A changed rendered content batch SHALL show one small update notification; first load and status-only changes SHALL not.
 
-### Requirement: Central fans Backend events into one browser SSE stream
-Central SHALL maintain one authenticated Backend event stream per usable Host and merge them into the existing single browser SSE connection. Every relayed event SHALL carry the configured Host ID plus Project identity, and viewer filtering SHALL use the Host-qualified scope.
+#### Scenario: Old response arrives
+- **WHEN** a response from a previous page or older resource generation arrives
+- **THEN** it is ignored rather than replacing newer content
 
-#### Scenario: Two Hosts emit equal Project events
-- **WHEN** Host A and Host B both emit a run change for `project-x`
-- **THEN** the browser receives two Host-qualified events and invalidates each Host's cache independently
+#### Scenario: Unsaved editor
+- **WHEN** new filesystem content is observed while an editor has local changes
+- **THEN** the editor buffer is preserved and conflict/update state is shown
 
-### Requirement: One Backend stream failure does not close aggregate SSE
-Loss, authentication failure, or incompatibility of one Backend event stream SHALL update only that Host and SHALL NOT close the browser SSE connection or stop updates from other Hosts.
+### Requirement: Hydrated resources register attention without duplicate content fetches
+Production SSR and browser hydration SHALL share resource versions and avoid duplicate initial content fetches. Page-open attention SHALL be registered once without requiring a duplicate payload request. Subsequent visible-and-focused heartbeats SHALL query semantic versions through the common resource protocol, replacing independent per-query document timers.
 
-#### Scenario: Other Host continues updating
-- **WHEN** Host A's Backend SSE disconnects while Host B emits events
-- **THEN** Host B events continue reaching the same browser connection
+#### Scenario: Hydrated page
+- **WHEN** a page hydrates a prefetched resource
+- **THEN** content renders without duplicate initial payload fetch and a single attention lifecycle starts
 
-### Requirement: Event gaps cause Host-wide resynchronization
-Central SHALL detect Backend reconnect, instance-epoch change, and sequence gaps. Before resuming incremental delivery for that Host, it SHALL emit a Host-resync signal that invalidates all live queries for that Host without invalidating another Host.
-
-#### Scenario: Missed events cannot leave stale cache indefinitely
-- **WHEN** a Backend reconnects after events may have been lost
-- **THEN** all browser data for that Host is refetched before incremental assumptions resume
-
-### Requirement: Event streams are bounded and live
-Backend and browser SSE connections SHALL provide heartbeats, bounded event/frame parsing, cancellation on disconnect, and reverse-proxy-compatible flush behavior.
-
-#### Scenario: Idle stream remains observable
-- **WHEN** no Project events occur during the heartbeat interval
-- **THEN** heartbeat traffic keeps the authenticated Backend and browser streams detectably live
+#### Scenario: Version changed
+- **WHEN** a later heartbeat reports a different semantic version
+- **THEN** the client obtains or applies the returned new resource data

@@ -1,8 +1,10 @@
 # inbox-viewer Specification
 
 ## Purpose
-TBD - created by archiving change inbox-reports-and-digests. Update Purpose after archive.
+Display report and historical digest documents with appropriate navigation and supported editing boundaries.
+
 ## Requirements
+
 ### Requirement: Desktop inbox layout (≥ md breakpoint)
 
 The dashboard SHALL provide an inbox-shaped layout for browsing per-project
@@ -130,20 +132,15 @@ The inbox SHALL react to file additions, deletions, and content edits performed 
 
 ### Requirement: Empty state copy is kind-specific
 
-When the watched directory is empty (no matching files yet), the inbox SHALL render an empty-state message tailored to the kind:
-- For Reports: "No reports yet. Reports are written by `memon-write-report`; pick a hypothesis or set of experiments and ask the skill to summarize."
-- For Digests: "No digests yet. Digests are written by `memon-digest-journal` and snapshot a date range from JOURNAL.md."
-
-The kind-specific copy SHALL come from a prop on the shared layout component, not hardcoded inside it.
+The inbox SHALL render kind-specific empty states. Reports SHALL identify memon-write-report as the authoring workflow. Digests SHALL describe the surface as historical documents and direct new research synthesis to Wiki, without advertising the removed digest skill or Journal cursor. Copy SHALL remain a property of the shared layout rather than hardcoded behavior.
 
 #### Scenario: Empty reports directory
-- **WHEN** a project has no files matching `R<NNNN>-<slug>.md`
-- **THEN** the right pane shows the Reports empty-state copy referencing `memon-write-report`
-- **AND** the rail shows a small "no reports" placeholder
+- **WHEN** a project has no matching Report files
+- **THEN** the pane points to memon-write-report and the rail shows an empty placeholder
 
 #### Scenario: Empty digests directory
-- **WHEN** a project has no files matching `D<NNNN>-<YYYY-MM-DD>.md`
-- **THEN** the right pane shows the Digests empty-state copy referencing `memon-digest-journal`
+- **WHEN** a project has no matching Digest files
+- **THEN** the pane identifies a historical digest collection and does not offer the retired digest skill
 
 ### Requirement: Frontmatter property panel above rendered body
 
@@ -284,9 +281,8 @@ SHALL expose the Report ID, title, and slug with a clear information hierarchy.
 The entire card SHALL be a native link to the Report detail route. Hover SHALL
 provide a subtle accent treatment, keyboard focus SHALL have a visible focus
 ring, and the selected Report SHALL have a primary-border (or equivalently
-prominent semantic) active treatment. These states SHALL follow the compact
-card rhythm used by the tmux management session list without copying tmux-only
-actions or metadata.
+prominent semantic) active treatment. These states SHALL use the existing
+compact selectable-card rhythm without copying unrelated actions or metadata.
 
 Digest picker entries SHALL keep their existing row presentation.
 
@@ -529,3 +525,10 @@ Digest bodies and Markdown surfaces outside Report rendering SHALL retain their 
 - **WHEN** a Report contains only its H1 title, or a Digest contains section headings
 - **THEN** no generated Report table of contents is rendered for that body
 
+### Requirement: Managed inbox editing excludes historical digests
+
+Desktop/mobile edit and optimistic-save behavior SHALL continue to apply to supported editable artifacts such as Reports. Digest routes SHALL remain read-only with no Edit action, Monaco mutation mode or PUT call. Existing read layout, selection, mobile navigation, frontmatter display and external-file refresh SHALL remain available.
+
+#### Scenario: Digest route on mobile
+- **WHEN** an owner opens a historical Digest on a narrow viewport
+- **THEN** reading and file selection work but no edit Sheet can be opened

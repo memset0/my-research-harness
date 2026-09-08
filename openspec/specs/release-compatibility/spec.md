@@ -1,48 +1,21 @@
 # release-compatibility Specification
 
 ## Purpose
-Defines memon's filesystem-aligned Major, Backend/CLI-changing Minor, central-only Patch, and exact adjacent-Minor compatibility policy.
+Define filesystem-aligned Major, distributed CLI/skills Minor, central-only Patch and independent native installation.
 
 ## Requirements
 
 ### Requirement: Release axes have fixed meanings
-The memon release SHALL be `MAJOR.MINOR.PATCH`. `MAJOR` SHALL equal `FS_CONVENTION_VERSION`; `MINOR` SHALL change for every Backend or CLI artifact change; and `PATCH` SHALL change only central Web/gateway artifacts. A Patch release MUST NOT change Backend or CLI bytes.
 
-#### Scenario: First release is derived from current filesystem convention
-- **WHEN** this split architecture is first released while `FS_CONVENTION_VERSION` is 6
-- **THEN** its release is `6.0.0`
+MAJOR SHALL equal FS_CONVENTION_VERSION. Distributed CLI or bundled-skill artifact changes SHALL increment MINOR and reset PATCH. Central-only Web or in-process service changes SHALL increment PATCH when distributed CLI/skill artifacts are unchanged. There is no separately versioned remote Backend fleet.
 
-#### Scenario: Backend code change increments Minor
-- **WHEN** a later release changes Backend or CLI source/artifacts
-- **THEN** its Minor increases and affected cluster distributions require update
+#### Scenario: Distributed artifact change
+- **WHEN** a release changes CLI or bundled skills
+- **THEN** MINOR increases and nodes update independently
 
-#### Scenario: Frontend-only fix increments Patch
-- **WHEN** a release changes only central Web/gateway code
-- **THEN** only Patch increases and no Backend/CLI reinstall is required
-
-### Requirement: One change may span multiple pinned releases
-OpenSpec change lifecycle SHALL be independent from release lifecycle. An active change MAY produce multiple sequential release boundaries before it is complete. Every boundary SHALL apply the Major/Minor/Patch surface rules, update the canonical version, commit and push the reviewed source before deployment, and pin central plus affected nodes to the same exact revision. Shipping one boundary SHALL NOT by itself archive the change.
-
-#### Scenario: Refinement after the first deployment
-- **WHEN** `6.0.0` is deployed while this change still has implementation or rollout work and a later Backend refinement is required
-- **THEN** the change remains active, the refinement advances to `6.1.0`, and nodes install the exact pushed `6.1.0` revision
-
-#### Scenario: Central-only refinement inside the same change
-- **WHEN** the latest boundary is `6.1.0` and the next refinement changes only central Web/gateway bytes
-- **THEN** the next boundary is `6.1.1` and Backends are not reinstalled
-
-### Requirement: Verified work advances through release automatically
-After a user-requested implementation is complete and its applicable release gates pass, the Agent SHALL by default finish the release without requesting a second confirmation. It SHALL commit only reviewed in-scope implementation files, advance the canonical version according to the release-axis rules, create a separate `release: vMAJOR.MINOR.PATCH` commit, push the exact revision, update the configured central service and every affected Backend to that revision, and verify readiness plus the changed behavior. Automatic release SHALL NOT archive the active OpenSpec change.
-
-The Agent SHALL stop before release only when a breaking migration or unresolved product decision requires user choice, required credentials or authority are unavailable, unrelated dirty-worktree changes cannot be safely isolated, or a validation, deployment, or rollback-safety check fails.
-
-#### Scenario: Completed Backend change ships without another prompt
-- **WHEN** an authorized user asks for a Backend-affecting change and its implementation, focused tests, typechecks, and release validation pass
-- **THEN** the Agent commits the implementation, advances the Minor release in a separate release commit, pushes it, updates affected Backends and central to the exact revision, and verifies the rollout without asking “should I release?”
-
-#### Scenario: Unsafe automatic release pauses
-- **WHEN** release preparation detects an unresolved filesystem migration, missing deployment authority, an inseparable unrelated worktree edit, or a failed release gate
-- **THEN** the Agent leaves the last known-good deployment intact and requests only the decision or authority needed to continue
+#### Scenario: Central-only change
+- **WHEN** a release changes only central artifacts
+- **THEN** PATCH increases without a remote CLI installation gate
 
 ### Requirement: Major release requires matching filesystem migration
 A release Major change SHALL include and require the matching reviewed filesystem-convention migration. Cross-Major runtime compatibility SHALL NOT be assumed; a mismatch SHALL be reported as `filesystem_migration_required` rather than network failure.
@@ -51,34 +24,46 @@ A release Major change SHALL include and require the matching reviewed filesyste
 - **WHEN** a release proposes Major 7 from the current v6 line
 - **THEN** release validation fails unless the v6-to-v7 migration contract and implementation are present
 
-### Requirement: Central supports current and immediately prior Backend Minor
-Central `M.N.P` SHALL accept Backend `M.N.*` as `online` and `M.(N-1).*` as usable `update_available`. An older Minor SHALL be `upgrade_required`, a newer Minor SHALL be `central_update_required`, a different Major SHALL be `filesystem_migration_required`, and malformed/unsupported API metadata SHALL be incompatible/misconfigured. Patch SHALL not affect Backend compatibility.
+### Requirement: Version axes remain unchanged after centralization
+MAJOR SHALL continue to equal FS_CONVENTION_VERSION and require its reviewed migration. Changes to distributed CLI artifacts (including bundled skills) SHALL increment MINOR and reset PATCH. Central Web-only changes SHALL increment PATCH without forcing remote reinstall. Retiring Backend artifacts in this migration SHALL be a Minor surface change, not a Major filesystem change.
 
-#### Scenario: Previous Minor stays usable during rollout
-- **WHEN** central is `6.2.4` and a Backend is `6.1.0`
-- **THEN** the Backend remains usable and is labelled `update_available`
+#### Scenario: Web only fix
+- **WHEN** only central Web artifacts change
+- **THEN** PATCH increments and remote CLI updates are not required
 
-#### Scenario: Backend ahead blocks routing
-- **WHEN** central is `6.1.3` and Backend is `6.2.0`
-- **THEN** the Host is `central_update_required` and receives no data requests
+#### Scenario: CLI or bundled skill change
+- **WHEN** distributed CLI or bundled skills change
+- **THEN** MINOR increments and PATCH resets
 
-### Requirement: Compatibility includes capability negotiation
-Central SHALL maintain explicit adapters/capability gates for exactly its current and previous Backend Minor. It SHALL NOT invoke an endpoint or capability absent from the negotiated Backend contract.
+#### Scenario: Filesystem convention change
+- **WHEN** the on-disk convention changes
+- **THEN** MAJOR changes only with the matching migration
 
-#### Scenario: New capability is hidden for previous Minor
-- **WHEN** a Backend at `M.(N-1)` lacks a capability added in `M.N`
-- **THEN** central keeps the Host usable but does not offer or call that capability
+### Requirement: Remote updates are independent and do not run suites
+Each remote node MAY invoke memon update to pull the latest configured trusted published CLI/skills source and install it independently. The updater SHALL NOT require central revision discovery or equality, build the Web frontend, run unit tests or project-wide lint/typecheck suites, or execute a per-peer deployment gate. Filesystem convention safety checks SHALL remain.
 
-### Requirement: Normal Minor rollout is central-first and pinned
-A normal Minor rollout SHALL update central first, then update Backends individually to the exact central target revision through authorized Agent-driven SSH/local CLI operations. It SHALL NOT resolve a moving latest per Host. After the user has authorized the implementation/release workflow, the Agent MAY execute the configured rollout automatically under the verified-release requirement; the central product itself SHALL NOT initiate fleet updates. The initial standalone bootstrap SHALL use its separate side-by-side migration gate.
+#### Scenario: Different latest revision
+- **WHEN** a node updates after a newer CLI publication than central deployment
+- **THEN** it can install that latest source without a central SHA match
 
-#### Scenario: Rollout uses one revision
-- **WHEN** an Agent updates multiple Backends for a Minor release
-- **THEN** every invocation is pinned to the same reviewed target revision and reports per-Host outcome
+#### Scenario: Remote update work
+- **WHEN** memon update executes on a CLI node
+- **THEN** only update/build/install work needed for CLI/skills occurs, without remote tests or Backend startup
 
-### Requirement: Rollback respects the compatibility window
-Before rolling central back, operations SHALL verify compatibility with every already-upgraded Backend. If the rollback central would reject a newer Backend, those Backends SHALL be rolled back and verified before central is rolled back.
+### Requirement: Active changes span independently deployed central releases
+OpenSpec change and release lifecycles SHALL remain independent. Central releases SHALL record their exact source revision, and a release SHALL NOT archive an active change. Remote CLI/skills installations SHALL not be pinned to the central revision or block central release completion.
 
-#### Scenario: Partial rollout cannot strand central rollback
-- **WHEN** some Backends have advanced beyond the prior central's supported window
-- **THEN** operations roll those Backends back first or abort central rollback without changing it
+#### Scenario: Remote revision differs
+- **WHEN** central is released while a remote CLI remains at an older compatible filesystem version
+- **THEN** central release does not require updating or testing that node
+
+### Requirement: Verified releases complete without remote fleet gates
+After an authorized implementation satisfies development/release-side gates, release SHALL retain separate implementation and semantic release commits, push the release, deploy and verify central when affected. Required product choices, credentials, unsafe worktree isolation, failed gates or rollback checks SHALL still block deployment. This workflow SHALL NOT require deploying a Backend, matching remote SHAs, or running tests on remote CLI nodes.
+
+#### Scenario: Central release completes
+- **WHEN** central post-deployment checks pass while remote nodes have not updated
+- **THEN** the release is complete without a fleet rollout
+
+#### Scenario: Development tests fail
+- **WHEN** an applicable release-side test fails
+- **THEN** deployment stops rather than replacing the gate with remote testing

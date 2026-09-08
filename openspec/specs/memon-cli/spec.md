@@ -1,7 +1,7 @@
 # memon-cli Specification
 
 ## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+Define the native memon command surface, structured output, project-root selection and safe file mutations independently of central availability.
 
 ## Requirements
 
@@ -9,8 +9,8 @@ TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
 
 The package SHALL expose a single CLI binary `memon` (registered via
 `package.json` `bin`) with subcommands: `serve`, `list`, `show`,
-`search`, `new`, `hypo`, `mock`, `experiment`, `run`, `doctor`,
-`scan`, `journal`, `hypotheses`, `install-skills`, `fs-version`.
+`search`, `hypo`, `mock`, `experiment`, `run`, `update`, `share`,
+`scan`, `journal`, `hypotheses`, `wiki`, `install-skills`, `fs-version`.
 Running `memon` with no arguments SHALL print top-level help.
 
 The `experiment` and `run` subcommand families are described in the
@@ -34,7 +34,7 @@ command still dispatches as normal.
 #### Scenario: Help on no args
 - **WHEN** the user runs `memon` with no arguments
 - **THEN** stdout shows the usage block listing all subcommands
-  including `experiment` and `run`, exit code 0
+  including `experiment`, `run`, and `wiki`, exit code 0
 
 #### Scenario: Legacy `experiment status set` redirects to `run status set`
 - **WHEN** the user runs `memon experiment status set foo-260501-100000
@@ -160,7 +160,7 @@ valid only on `serve`.
 
 All read subcommands (`list`, `show`, `search`, `hypo list`, `hypo show`, **`scan`**, **`hypotheses read`**, **`journal read`**) SHALL default to machine-readable JSON output on stdout to support agent consumption. A `--format human` flag SHALL switch to a tabular/colored human-readable rendering.
 
-Write subcommands (`experiment status set`, `experiment readme write`, `journal append`, `journal digest-mark`) SHALL emit JSON status objects on stdout (`{"ok":true,...}` on success, structured error JSON on failure). They SHALL NOT have a `--format human` mode in v1; their output is intended for skill consumption.
+Write subcommands (`experiment status set`, `experiment readme write`, `run record`, `journal submit`) SHALL emit JSON status objects on stdout (`{"ok":true,...}` on success, structured error JSON on failure). They SHALL NOT have a `--format human` mode in v1; their output is intended for skill consumption.
 
 #### Scenario: JSON list output
 - **WHEN** the user runs `memon list`
@@ -214,30 +214,6 @@ For listing experiments, users SHALL use `memon experiment ls`.
 - **WHEN** the user runs `memon search "loss diverged" --in body`
 - **THEN** stdout lists only experiments whose body text (excluding front matter) contains "loss diverged", each with a snippet of context
 
-### Requirement: `memon new <name>` creates an experiment scaffold
-
-`memon new <name>` SHALL create a new **run** directory at
-`<projectRoot>/logs/<name>-<yymmdd>-<hhmmss>/` (using current local time)
-with:
-- a `README.md` populated by the v3 run template (frontmatter
-  prefilled, `Setup` / `Result` / `Artifacts` sections empty). The
-  template's frontmatter SHALL include `created_at` (now), `updated_at`
-  (= `created_at`), and SHALL leave `experiment:` empty for the agent
-  / user to fill in.
-- an executable `run.sh` template (referenced as `entry`)
-- an entry appended to JOURNAL.md with tag `[CREATE]`
-
-The template SHALL NOT include `project:` (sub-project) or run-level
-`hypotheses:` / `tags:` (those moved to the experiment layer).
-
-#### Scenario: Successful creation
-- **WHEN** the user runs `memon new attn-overlap` in a project with
-  root `/mnt/p` (config project name `p`)
-- **THEN** the directory `/mnt/p/logs/attn-overlap-260503-100000/` is
-  created, `README.md` has v3 frontmatter (no `project:`, no
-  `hypotheses:`, no `tags:`), `run.sh` is written, and a `[CREATE]`
-  event is appended to JOURNAL.md
-
 ### Requirement: `memon hypo` subcommands
 
 `memon hypo` SHALL be a parent command with at least:
@@ -284,77 +260,6 @@ All read subcommands (`list` / `show` / `search` / `hypo list` / `hypo show` / `
 - **WHEN** the user runs `memon list --project-root /does/not/exist`
 - **THEN** the command exits 4 with stderr `{"error":{"code":"NOT_FOUND","message":"project root does not exist: ..."}}`
 
-### Requirement: `memon scan <project-root>` returns the full project snapshot
-
-`memon scan <project-root>` SHALL output a single JSON document containing every structured piece of state under that project root: experiments (with full parsed sections), hypotheses, journal events. The output shape SHALL match this contract exactly so callers can parse it without conditionals:
-
-```jsonc
-{
-  "projectRoot": "<abs path>",
-  "scannedAt":   "<ISO8601 with offset>",
-  "experiments": [
-    { "id", "path", "mtime", "hasReadme", "frontMatter", "sections", "parseErrors": [], "parseWarnings": [], "stale" }
-  ],
-  "hypotheses": { "legendBlock", "summaryTableBlock", "entries": [...], "parseErrors": [], "parseWarnings": [] },
-  "journal":    { "lastDigestAt", "events": [...] }
-}
-```
-
-Default JSON; `--format human` SHALL emit a tabular human summary.
-
-#### Scenario: Scan a populated project
-- **WHEN** the user runs `memon scan ./mock/project-a`
-- **THEN** stdout is JSON with `experiments.length === 5` (matching the fixture), `hypotheses.entries.length === 6`, `journal.events.length > 0`; exit 0
-
-#### Scenario: Scan an empty project root
-- **WHEN** the user runs `memon scan /tmp/empty-dir` where the dir exists but has no experiment subdirs and no HYPOTHESES/JOURNAL
-- **THEN** stdout is JSON with `experiments: []`, `hypotheses: { entries: [], summaryTableBlock: null, ... }`, `journal: { lastDigestAt: null, events: [] }`; exit 0
-
-#### Scenario: Scan output JSON shape matches the web `/api/scan` if implemented
-- **WHEN** any consumer parses the output of `memon scan`
-- **THEN** field names and types are identical to what the web backend returns at `/api/scan` (or would return if the web `scan` route were implemented identically — same Zod schema)
-
-### Requirement: `memon journal append` is the only path for non-STATUS events
-
-`memon journal append --project-root <path> --tag <TAG> --body <BODY> [--experiment-id <id>] [--at <ISO>]` SHALL append a single event line to `<projectRoot>/JOURNAL.md`. The command SHALL NOT touch the file's frontmatter, including `last_digest_at`. Allowed tags: `NOTE` / `REQUEST` / `ERROR` / `ARCHIVE` / `CREATE`. The tag `STATUS` SHALL be rejected with `BAD_REQUEST` — STATUS events are emitted automatically by `memon experiment status set`.
-
-#### Scenario: Append a NOTE
-- **WHEN** the user runs `memon journal append --project-root ./mock/project-a --tag NOTE --body "agent observation" --experiment-id foo-260501-100000`
-- **THEN** the JOURNAL gains exactly one new line `- <ISO> [NOTE] \`foo-260501-100000\` agent observation`
-- **AND** the file's frontmatter `last_digest_at` is unchanged
-- **AND** stdout is `{"ok":true,"appended":1,"timestamp":"<ISO>"}`; exit 0
-
-#### Scenario: Reject STATUS tag
-- **WHEN** the user runs `memon journal append ... --tag STATUS --body "..."`
-- **THEN** the command exits 2 with stderr `{"error":{"code":"BAD_REQUEST","message":"STATUS events must be emitted via 'memon experiment status set'"}}`
-- **AND** the JOURNAL is untouched
-
-#### Scenario: Project root has no JOURNAL.md yet
-- **WHEN** the user runs `journal append` on a fresh project root with no JOURNAL.md
-- **THEN** the command creates JOURNAL.md with a frontmatter `last_digest_at: null` block and appends the event line; exit 0
-
-### Requirement: `memon journal digest-mark` is the only path that updates `last_digest_at`
-
-`memon journal digest-mark --project-root <path> --at <ISO>` SHALL atomically update the `last_digest_at` field in `<projectRoot>/JOURNAL.md` frontmatter to the given timestamp. The command SHALL NOT modify any event lines. The command SHALL be the only CLI entrypoint that mutates frontmatter (concretely: only path that calls `updateLastDigestAt` from `@memon/core`).
-
-#### Scenario: Update last_digest_at
-- **WHEN** the user runs `memon journal digest-mark --project-root ./mock/project-a --at 2026-05-04T10:00:00+08:00`
-- **THEN** JOURNAL.md frontmatter shows `last_digest_at: 2026-05-04T10:00:00+08:00`
-- **AND** all event lines below the frontmatter are byte-identical to before
-- **AND** stdout is `{"ok":true,"lastDigestAt":"2026-05-04T10:00:00+08:00"}`; exit 0
-
-#### Scenario: Invalid ISO timestamp
-- **WHEN** `--at` is not a valid ISO8601 string with offset
-- **THEN** exit 2 with `BAD_REQUEST`
-
-### Requirement: `memon journal read` exposes paged query
-
-`memon journal read --project-root <path> [--since <ISO>] [--tag <TAG>] [--experiment-id <id>] [--limit <N>]` SHALL parse the project's JOURNAL.md and emit `{"events":[...],"lastDigestAt":"..."}`. Filters compose AND-style. Default `--limit` is 200, max 1000.
-
-#### Scenario: Filter by tag and experiment
-- **WHEN** the user runs `memon journal read --project-root ./mock/project-a --tag NOTE --experiment-id foo-260501-100000`
-- **THEN** only events whose tag is `NOTE` and whose experimentId matches are returned
-
 ### Requirement: `memon experiment status set` writes README + appends [STATUS] atomically
 
 `memon experiment status set <id> --project-root <path> --to <STATUS> --expected-mtime <ms>` SHALL operate in two modes depending on the form of `<id>`:
@@ -373,7 +278,7 @@ In both modes, the command SHALL apply the soft warning per `archive-frontmatter
 #### Scenario: Exp-id form sets ExperimentStatus
 - **WHEN** the user runs `memon experiment status set E0001-foo --project-root <p> --to RESOLVED --expected-mtime <m>`
 - **THEN** the doc's frontmatter has `status: RESOLVED`
-- **AND** JOURNAL has a `[EXP_STATUS] OPEN → RESOLVED` line
+- **AND** the automatic invocation includes a `[EXP_STATUS] OPEN → RESOLVED` line
 - **AND** stdout `{"ok":true,"mtime":<n>,"prevStatus":"OPEN","nextStatus":"RESOLVED"}`
 
 #### Scenario: Exp-id form rejects run-side enum value
@@ -413,7 +318,7 @@ and `Note=<--note>`. `--note` SHALL be required for `resolve`.
 `reopen` SHALL set `Status=OPEN`, clear `Resolved` and `Note`, and
 preserve `Created` and `Run`.
 
-`delete` SHALL remove the row; the JOURNAL event SHALL include the
+`delete` SHALL remove the row; the invocation detail SHALL include the
 deleted row's complete content for reversibility.
 
 #### Scenario: add with run attribution
@@ -421,38 +326,17 @@ deleted row's complete content for reversibility.
   bar-260501-100000 --category result --message "..."`
 - **THEN** stdout is `{"ok":true,"rowId":"...","mtime":...}`, the `##
   Warnings` table on the exp doc has the new row with Run cell
-  `bar-260501-100000`, and JOURNAL has a `[WARNING]` event with
+  `bar-260501-100000`, and the automatic invocation includes a `[WARNING]` event with
   `run: "bar-260501-100000"`
 
 #### Scenario: add without --run is exp-scoped
 - **WHEN** the same command runs without `--run`
-- **THEN** the new row's Run cell is `—`, the JOURNAL event has
+- **THEN** the new row's Run cell is `—`, the invocation detail has
   `run: null`
-
-### Requirement: `WARN_UNRESOLVED` doctor code
-
-`memon doctor`'s rule set SHALL include a code `WARN_UNRESOLVED` (severity `info`) that triggers when an experiment has at least one warning row with `Status=OPEN`. The issue payload SHALL include a `count` field with the number of open warnings on that experiment so the consumer can order or filter by noise.
-
-The code SHALL NOT cause exit code 1 (`info` severity does not bump the exit code per the existing severity rules). The `--severity warn` filter SHALL exclude `WARN_UNRESOLVED` from output but it SHALL still appear in `summary.byCode`.
-
-#### Scenario: Open warning surfaces WARN_UNRESOLVED
-- **GIVEN** an experiment whose `## Warnings` table contains at least one row with `Status=OPEN`
-- **WHEN** the user runs `memon doctor --project-root .`
-- **THEN** the issues array contains a `WARN_UNRESOLVED` entry for that experiment with `severity: "info"` and a `count` reflecting the number of open warnings
-
-#### Scenario: All RESOLVED suppresses WARN_UNRESOLVED
-- **GIVEN** an experiment whose `## Warnings` table contains only RESOLVED rows
-- **WHEN** `memon doctor` runs
-- **THEN** no `WARN_UNRESOLVED` issue is emitted for that experiment
-
-#### Scenario: WARN_UNRESOLVED does not bump exit code
-- **GIVEN** a project where every doctor finding is `WARN_UNRESOLVED`
-- **WHEN** `memon doctor` runs
-- **THEN** the command exits 0 (info-only severities do not bump exit code per existing rules)
 
 ### Requirement: `memon experiment archive` toggles the `archived` frontmatter field
 
-`memon experiment archive <id> --project-root <p>` SHALL set `archived: true` on the target's frontmatter (an exp doc when `<id>` matches `EXPERIMENT_FILENAME_REGEX`, a run README when `<id>` matches `RUN_DIR_REGEX` — the run-id form is a deprecation alias for `memon run archive`). `memon experiment unarchive <id> --project-root <p>` SHALL set `archived: false`. Both commands SHALL append a single `[ARCHIVE]` event to JOURNAL.md per `archive-frontmatter`'s "Archive subcommands write frontmatter atomically with mtime-lock + JOURNAL [ARCHIVE] event." Both SHALL bump the README / doc `updated_at` (the v3 wording "Neither command SHALL modify README.md or its mtime" no longer applies — the archive write IS a frontmatter mutation in v4).
+`memon experiment archive <id> --project-root <p>` SHALL set `archived: true` on the target's frontmatter (an exp doc when `<id>` matches `EXPERIMENT_FILENAME_REGEX`, a run README when `<id>` matches `RUN_DIR_REGEX` — the run-id form is a deprecation alias for `memon run archive`). `memon experiment unarchive <id> --project-root <p>` SHALL set `archived: false`. Both commands SHALL record a single `[ARCHIVE]` detail in the automatic invocation per `archive-frontmatter`'s "Archive subcommands write frontmatter atomically with mtime-lock + JOURNAL [ARCHIVE] event." Both SHALL bump the README / doc `updated_at` (the v3 wording "Neither command SHALL modify README.md or its mtime" no longer applies — the archive write IS a frontmatter mutation in v4).
 
 The hard `archive-on-RUNNING` rule applies to the run-id form (or to a run-targeting `archive` command). The soft warning applies when archiving an already-archived target (no-op success with the warning suppressed per `archive-frontmatter`'s unarchive-doesn't-warn rule on the unarchive side).
 
@@ -460,14 +344,14 @@ The hard `archive-on-RUNNING` rule applies to the run-id form (or to a run-targe
 - **WHEN** the user runs `memon experiment archive foo-260513-100000 --project-root <p>` (run-id form)
 - **THEN** stderr contains `[deprecation]` banner pointing to `memon run archive`
 - **AND** the run's README has `archived: true` in frontmatter
-- **AND** JOURNAL has a new `[ARCHIVE] \`foo-260513-100000\` op=archive` line
+- **AND** the automatic invocation includes a new `[ARCHIVE] \`foo-260513-100000\` op=archive` line
 - **AND** README `updated_at` is bumped
 - **AND** there is NO `<runDir>/.archived` sidecar created (the legacy mechanism is gone)
 
 #### Scenario: Archive an exp doc writes frontmatter
 - **WHEN** the user runs `memon experiment archive E0001-zero-snr-fix --project-root <p>` (exp-id form)
 - **THEN** the doc's frontmatter has `archived: true`
-- **AND** JOURNAL has a new `[ARCHIVE] \`E0001-zero-snr-fix\` op=archive` line
+- **AND** the automatic invocation includes a new `[ARCHIVE] \`E0001-zero-snr-fix\` op=archive` line
 
 #### Scenario: Archive a RUNNING run is refused
 - **GIVEN** a run with `status: RUNNING`
@@ -476,7 +360,7 @@ The hard `archive-on-RUNNING` rule applies to the run-id form (or to a run-targe
 
 ### Requirement: Read commands honor archive filter via `--include-archived`
 
-`list` / `scan` / `show` / `search` / `journal read` / `hypo list` / `hypotheses read` / `doctor` SHALL skip experiments AND runs whose `archived: true` (per the frontmatter field, NOT the legacy sidecar) by default. A `--include-archived` flag SHALL include them. An `--archived-only` flag SHALL include only items with `archived: true`.
+`list` / `scan` / `show` / `search` / `journal read` / `hypo list` / `hypotheses read` SHALL skip experiments AND runs whose `archived: true` (per the frontmatter field, NOT the legacy sidecar) by default. A `--include-archived` flag SHALL include them. An `--archived-only` flag SHALL include only items with `archived: true`.
 
 When the legacy `<runDir>/.archived` sidecar fallback path applies (per `archive-frontmatter`'s "Sidecar fallback during the migration window"), the read commands SHALL honor the fallback — i.e., a run whose README lacks the field but has the sidecar IS treated as archived for filter purposes.
 
@@ -494,40 +378,6 @@ When the legacy `<runDir>/.archived` sidecar fallback path applies (per `archive
 #### Scenario: --archived-only filters to archived items
 - **WHEN** the user runs `memon list --project-root <p> --archived-only`
 - **THEN** only items with `archived: true` (per frontmatter or legacy sidecar) are returned
-
-### Requirement: `memon doctor` reports incomplete-state issues without writing
-
-`memon doctor --project-root <p> [--include-archived] [--severity <min>]` SHALL scan the project root, run a fixed set of consistency rules, and emit an issue list. The command SHALL NOT modify any file on disk. Exit code SHALL reflect the highest severity present: `0` when no issues or only `info`/`warn`; `1` when at least one `error` issue is reported. The `--severity` flag (default `info`) filters issues at or above that level.
-
-The rule set v4 (additions to v3 marked):
-
-| `code` | `severity` | trigger |
-|---|---|---|
-| `MISSING_RESULT` | `warn` | `status === 'FINISHED'` and `sections.result` is missing or only whitespace |
-| `MISSING_CONCLUSION` | `warn` | `status === 'FINISHED'` and `sections.conclusion` missing |
-| `FAILED_NO_NOTE` | `info` | `status === 'FAILED'` and `sections.result` is empty |
-| `INTERRUPTED_NO_NOTE` | `info` | (v4-added) `status === 'INTERRUPTED'` and `sections.result` is empty (whitespace-only counts as empty) |
-| `RESOLVED_NO_CONCLUSION` | `info` | (v4-added) exp doc with `status === 'RESOLVED'` and `sections.conclusion` is empty |
-| `STALE_RUNNING` | `info` | `status === 'RUNNING'` and `isStaleRunning` returns true |
-| `PARSE_ERROR` | `error` | `parseErrors.length > 0` |
-| `PARSE_WARNING` | `warn` | `parseWarnings.length > 0` |
-| `ORPHAN_HYPOTHESIS_REF` | `warn` | front matter `hypotheses[]` contains an id NOT present in HYPOTHESES.md `entries[].id` |
-| `LEGACY_ARCHIVE_SIDECAR` | `info` | (v4-added; emitted via parse-warning bubbling) run README lacks `archived` frontmatter and a `<runDir>/.archived` sidecar exists; instructs the user to re-run migration or set the field manually |
-
-The doctor SHALL NOT add lints that depend on the soft warning emitted at write time by `archive-frontmatter` — the soft warning is a write-time signal, not a static lint.
-
-The doctor SHALL NOT add a lint for `ABANDONED` exp without `## Caveats` in v4; tentatively unnecessary, can be added later if user feedback supports it.
-
-#### Scenario: INTERRUPTED with empty Result triggers info lint
-- **GIVEN** a run with `status: INTERRUPTED` and `## Result` section is missing or only whitespace
-- **WHEN** the user runs `memon doctor --project-root .`
-- **THEN** the issues array contains a `INTERRUPTED_NO_NOTE` entry with `severity: 'info'`
-- **AND** the exit code is 0 (info severity does not bump exit code per existing rules)
-
-#### Scenario: RESOLVED exp without Conclusion triggers info lint
-- **GIVEN** an exp doc with `status: RESOLVED` and `## Conclusion` is empty
-- **WHEN** the user runs `memon doctor --project-root .`
-- **THEN** the issues array contains a `RESOLVED_NO_CONCLUSION` entry with `severity: 'info'`
 
 ### Requirement: `memon install-skills` synchronises bundled skills into a project
 
@@ -685,40 +535,6 @@ The CLI SHALL use this exit code table for all subcommands. Skills depend on the
 - **AND** the stderr JSON has `error.code === "MEMON_TOO_OLD"`
 - **AND** the message names both the project's version and the tool's version
 
-### Requirement: Optional cross-process scan cache (deferred — contract only)
-
-The CLI and web backend SHALL respect the env var `MEMON_SCAN_CACHE`: when **unset or `0`** the system SHALL behave as if no on-disk scan cache exists (this is the v1 default — no cache implementation lives in this change). When set to `1`, both surfaces SHALL read and write a snapshot file at `~/.cache/memon/scan/<sha1(absoluteProjectRoot)>/snapshot.json` according to the contract below. **v1 of `add-skills-cli` does not implement the `=1` branch** — this Requirement freezes the format so a future change can flip the switch without renegotiating the spec.
-
-- **Location**: cache files SHALL live at `~/.cache/memon/scan/<sha1(absoluteProjectRoot)>/snapshot.json`
-- **Snapshot shape** (writers MUST emit, readers MUST tolerate exactly this shape):
-  ```jsonc
-  {
-    "schemaVersion": 1,
-    "projectRoot": "<abs>",
-    "writtenAt": "<ISO with offset>",
-    "experiments": [{ "id", "path", "mtimeMs", "size" }, ...],
-    "hypothesesMtimeMs": <n|null>,
-    "journalMtimeMs":    <n|null>,
-    "snapshot": { /* full `memon scan` output */ }
-  }
-  ```
-- **Validation**: on a cache hit, consumers SHALL re-`fs.stat` every entry in `experiments[].path`, `HYPOTHESES.md`, `JOURNAL.md`. Any mtime mismatch SHALL invalidate the entire snapshot; the consumer MUST then fall back to a full rescan and overwrite the snapshot.
-- **Atomic write**: writers MUST use `snapshot.json.tmp.<rand>` followed by `rename`; partial writes are forbidden.
-- **Cross-process safety**: concurrent writers may race the rename — the loser SHALL accept the winner's snapshot without retrying (the next consumer re-validates freshness regardless).
-- **Disposability**: deleting `~/.cache/memon/scan/` MUST never cause data loss; it only forces a rescan.
-
-#### Scenario: Cache off (v1 default)
-- **WHEN** `MEMON_SCAN_CACHE` is unset or `=0`
-- **THEN** every `memon scan` invocation walks the project root from scratch; no file in `~/.cache/memon/scan/` is created or read
-
-#### Scenario: Cache hit (future)
-- **WHEN** `MEMON_SCAN_CACHE=1` AND a snapshot exists for this root AND every recorded mtime still matches the on-disk file
-- **THEN** the command returns the cached `snapshot` field directly without walking the tree (target latency < 50ms for a 200-experiment project)
-
-#### Scenario: Cache miss due to mtime drift (future)
-- **WHEN** `MEMON_SCAN_CACHE=1` AND a snapshot exists but at least one tracked path's mtime has changed
-- **THEN** the cache is treated as missing; a full rescan runs and overwrites the snapshot atomically
-
 ### Requirement: `memon install-skills` writes and reports `.memon/version.json`
 
 After completing the skill-directory synchronisation (and before the AGENTS.md-symlink step), `memon install-skills` SHALL inspect `<projectRoot>/.memon/version.json`:
@@ -863,7 +679,7 @@ The `experiment create` and `experiment rename` commands' behaviors are detailed
 
 The `experiment warning *` write commands SHALL:
 - Use the section-bound writer for `## Warnings` defined in `experiment-readme`.
-- Append a `[WARNING]` event to JOURNAL.md per write, including the `run` attribution.
+- Record a `[WARNING]` detail in the automatic invocation per write, including the `run` attribution.
 
 #### Scenario: `experiment ls` returns JSON list
 - **WHEN** the user runs `memon experiment ls --project-root <p>`
@@ -998,7 +814,7 @@ The CLI's `memon experiment warning {add, list, resolve, reopen, delete}` subcom
 - **GIVEN** a project root with `docs/experiments/E0001-foo/README.md` containing the canonical `## Warnings` table header
 - **WHEN** the user runs `memon experiment warning add E0001-foo --run bar-260501-100000 --category result --message "loss diverges" --project-root <root>`
 - **THEN** the CLI writes the new row to `docs/experiments/E0001-foo/README.md` (the v5 location)
-- **AND** the JOURNAL `[WARNING]` event carries `` `E0001-foo` op=add ... run=bar-260501-100000 ... ``
+- **AND** the invocation `[WARNING]` detail carries `` `E0001-foo` op=add ... run=bar-260501-100000 ... ``
 - **AND** the response is `{"ok":true,"rowId":"w_...","mtime":...}`
 
 #### Scenario: warning add resolves exp-id to legacy v4 file during migration
@@ -1012,7 +828,7 @@ The CLI's `memon experiment warning {add, list, resolve, reopen, delete}` subcom
 - **WHEN** the user runs `memon experiment warning add E0099-missing --category result --message "..."`
 - **THEN** the CLI exits with `NOT_FOUND` and stderr names the missing id
 - **AND** no file is written
-- **AND** no JOURNAL event is appended
+- **AND** no legacy Journal file is modified
 
 #### Scenario: warning list reads via v5-aware discovery
 - **GIVEN** a project root with `docs/experiments/E0001-foo/README.md` containing one warning row
@@ -1230,29 +1046,129 @@ serve contract.
   the `auth-system` contract
 
 ### Requirement: CLI serves explicit central and Backend roles
-The CLI SHALL provide canonical entry paths that execute the actual custom central server and actual Backend server, including HTTP and WebSocket handling. It SHALL NOT implement a role by invoking a framework server that bypasses required gateway/proxy logic. Existing `memon serve` SHALL continue to serve standalone instances.
 
-#### Scenario: Central serve activates gateway upgrades
-- **WHEN** the CLI starts a central instance
-- **THEN** its configured bind address/port, Backend routing, SSE, and terminal WebSocket upgrade handlers are active
+The legacy role split is retired. Memon serve SHALL start the actual custom unified Web/API server with the selected instance configuration, not a framework-only server that bypasses authentication and project services. It SHALL NOT offer a remote Backend service role.
 
-### Requirement: CLI exposes the complete Backend lifecycle family
-The CLI SHALL expose `memon backend serve`, `daemon start|stop|restart|status`, `install --revision`, `update --revision`, `rollback`, and explicit token generation with selected-config support and stable structured output/exit codes. Status and errors SHALL redact all tokens and private-key material.
-
-#### Scenario: Update result is Agent-readable
-- **WHEN** a pinned Backend update succeeds or rolls back
-- **THEN** JSON output identifies requested/installed/running revision, readiness, daemon outcome, and rollback outcome without secrets
+#### Scenario: Configured central serve
+- **WHEN** memon serve starts with a valid instance configuration
+- **THEN** its configured listener serves both Web and public API with project authorization
 
 ### Requirement: Ordinary cluster-local CLI commands remain local
-Existing Project scan/read/write/doctor/skill commands invoked on a cluster SHALL continue to operate against that local Project configuration without requiring central availability or Backend service credentials.
 
-#### Scenario: Central outage does not block local CLI read
-- **WHEN** central is unavailable and a user runs an ordinary local read command on a cluster Host
-- **THEN** the command reads local Project state according to its existing contract
+Native project read/write/lint/skill commands SHALL operate on their selected project roots without central availability, service tokens, Backend listeners or central observation caches.
+
+#### Scenario: Central unavailable
+- **WHEN** an ordinary native CLI read is requested
+- **THEN** it reads the selected project directly without probing a service
 
 ### Requirement: Legacy Hub/Node config is rejected
 The CLI/config loader SHALL reject abandoned `hub:` or `node:` blocks with a clear migration message and SHALL NOT start the node-initiated WebSocket implementation.
 
 #### Scenario: Old node config cannot silently start
 - **WHEN** an instance config contains the abandoned `node:` block
-- **THEN** startup fails with guidance to use central/Backend configuration
+- **THEN** startup fails with guidance to use central project-root configuration
+
+### Requirement: `memon wiki` command group is registered on the binary
+
+The `memon` binary SHALL expose a `wiki` parent command, implemented in `packages/cli/src/commands/wiki.ts` and registered through the standard subcommand dispatch in `packages/cli/src/index.ts`, with the child subcommands `ls`, `show`, `create`, `move`, `set`, `review`, `lint`, `backlinks`, `migrate-report`, `commit`, `components`, `deprecate`, `undeprecate`, and `delete`. Like every other non-`serve` family it SHALL resolve its project context from `--project-root <path>` (falling back to `cwd`) with no `config.yml` lookup and no `--config` flag, SHALL default to machine-readable JSON on stdout with `--format human` available, and SHALL use the CLI-wide exit-code table. The per-subcommand flags, output projections, validation rules, and error semantics are defined by the `wiki-cli` capability and SHALL NOT be restated here.
+
+#### Scenario: `wiki` is dispatchable from the binary
+- **WHEN** the user runs `memon wiki --help`
+- **THEN** stdout lists `ls`, `show`, `create`, `move`, `set`, `review`, `lint`, `backlinks`, `migrate-report`, `commit`, `components`, `deprecate`, `undeprecate`, and `delete`, exit code 0
+
+#### Scenario: Wiki commands take `--project-root`, not `--config`
+- **WHEN** the user runs `memon wiki ls --config /tmp/config.yml`
+- **THEN** the command parser rejects the unknown option with a non-zero exit and no configuration file is read
+
+### Requirement: Project scan excludes diagnostic history
+
+The CLI SHALL return the existing project, scan-time, run/experiment and hypothesis snapshot fields without a journal field. Default scan SHALL NOT read legacy Journal files or activity receipts. Human output SHALL not report a digest cursor. Diagnostic history SHALL be queried explicitly through journal read, not embedded into normal scans.
+
+#### Scenario: Scan without Journal permissions
+- **GIVEN** research documents are readable but diagnostic history is unavailable
+- **WHEN** the user runs a normal scan
+- **THEN** the research snapshot succeeds without reading diagnostic history or inserting a fake empty journal object
+
+### Requirement: Journal diagnostic query uses typed filters and stable paging
+
+`memon journal read` SHALL provide explicit diagnostic history with AND-composed `--since`, `--tag`, `--experiment-id`, `--run-id`, `--limit` and opaque `--cursor` filters. Default limit SHALL be 200 and maximum 1000. Timestamps SHALL compare as instants across timezone offsets. Output SHALL include events, nextCursor and origin/typed association information, not an active lastDigestAt. Experiment IDs and Run IDs SHALL be validated separately; a run-shaped experiment-id SHALL fail with an actionable run-id hint. Stable pagination SHALL not skip tied timestamps.
+
+#### Scenario: Entity filtering is real
+- **GIVEN** history contains operations for E0001 and E0002
+- **WHEN** journal read filters E0001
+- **THEN** no E0002-only operation is returned
+
+#### Scenario: Separate Run filter
+- **WHEN** the user supplies `--run-id alpha-260901-100000`
+- **THEN** only events explicitly associated with that Run are returned
+
+#### Scenario: Legacy misnamed filter rejected
+- **WHEN** the user supplies `--experiment-id alpha-260901-100000`
+- **THEN** the command fails with BAD_REQUEST and points to --run-id rather than silently ignoring the filter
+
+### Requirement: Automatic capture submission computes bounded fingerprints
+
+The CLI SHALL expose journal submit --files as defined by activity-capture. It SHALL compute bounded document fingerprints and SHALL NOT accept Journal prose or expose unimplemented evidence show/check/confirm/revoke commands.
+
+#### Scenario: Lint is a pure read
+- **WHEN** document lint runs
+- **THEN** it creates neither an activity receipt nor evidence-confirmation metadata
+
+### Requirement: Removed authoring commands fail without side effects
+
+The CLI SHALL remove Journal append/digest-mark registrations and their authoring helpers. Invocations SHALL fail clearly rather than run a compatibility writer. Doctor and separate document validate commands SHALL remain retired; structural lint is the supported check workflow.
+
+#### Scenario: Old append invocation
+- **WHEN** an old skill invokes journal append
+- **THEN** the command fails without changing legacy history or creating a narrative receipt
+
+### Requirement: CLI remains direct and independent of central cache
+Remote CLI commands SHALL read/write project files directly and retain existing filesystem formats, status permissions and optimistic-lock behavior. They SHALL not require a central connection, a persistent cache daemon, or cache notification integration. Backend serving/lifecycle commands SHALL be removed while central memon serve remains available in the central installation.
+
+#### Scenario: Offline CLI
+- **WHEN** central is unavailable
+- **THEN** local experiment and Wiki CLI operations continue without cache synchronization
+
+### Requirement: CLI target operations avoid unrelated Run reads
+CLI commands that operate on identified Runs SHALL locate directory paths without reading all Run documents or hypotheses. Batch member mutations SHALL reuse one discovery within the command rather than rediscover for each member. Discovery SHALL start only at project-root logs/, outputs/, and experiments/. Independent Run operations MAY use bounded concurrency; no Web queue, TTL cache or artificial rate delay SHALL mediate CLI filesystem access.
+
+#### Scenario: Single Run mutation
+- **WHEN** a command changes one identified Run and an unrelated Run README is unreadable
+- **THEN** unrelated content is not read merely to locate the target
+
+#### Scenario: Cascade unlink
+- **WHEN** an Experiment with multiple member Runs is deleted with explicit cascade authorization
+- **THEN** member paths are located once and only the relevant member documents are read or changed
+
+### Requirement: Markdown source target resolution belongs only to Web
+CLI Markdown operations SHALL preserve source-reference values and validate their syntax without resolving target existence, metadata or staleness. This SHALL apply to Wiki and other Markdown source references. Web SHALL retain target resolution using the shared file Store. CLI source filters and backlinks MAY compare reference tokens without opening targets. Explicit migration or mutation of a target object SHALL still read the object it acts upon.
+
+#### Scenario: Wiki source references a Run
+- **WHEN** a CLI Wiki read, creation, edit or lint encounters a Run source reference
+- **THEN** it does not discover Runs or read Run content to resolve that reference
+
+### Requirement: Independent Wiki file operations are fully concurrent
+Independent CLI Wiki file operations SHALL have no application-level concurrency throttle. Same-file locking, read-before-write dependencies, and mutation ordering required for correctness SHALL remain sequential.
+
+#### Scenario: Multiple Wiki documents
+- **WHEN** independent Wiki documents must be read
+- **THEN** the CLI submits their reads concurrently without joining the Web scheduler or enforcing a Wiki operation semaphore
+
+### Requirement: Memon update pulls and installs latest CLI and skills
+memon update SHALL fetch/pull the latest source from the configured trusted publication upstream with fast-forward-only semantics and install the CLI and bundled managed skills. It SHALL report selected revision and action results, preserve user-authored files, and refuse dirty/divergent source rather than reset or stash it. It SHALL avoid Web builds, Backend startup, remote test suites and central SHA equality. Installation failure SHALL retain a usable prior installation.
+
+#### Scenario: Normal update
+- **WHEN** a clean CLI installation invokes memon update with reachable upstream
+- **THEN** latest source is pulled and CLI/managed skills are updated without remote unit tests
+
+#### Scenario: Dirty checkout
+- **WHEN** local source modifications or divergence prevent a safe update
+- **THEN** the command reports the problem and preserves local work and the usable installation
+
+#### Scenario: Install failure
+- **WHEN** new CLI installation fails
+- **THEN** the previous usable CLI remains available and the command reports failure
+
+#### Scenario: Custom skills
+- **WHEN** a user has skills outside the managed bundle boundary
+- **THEN** updating bundled skills does not overwrite those files

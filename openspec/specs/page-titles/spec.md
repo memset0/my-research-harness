@@ -1,7 +1,7 @@
 # page-titles Specification
 
 ## Purpose
-TBD - created by archiving change dynamic-page-titles. Update Purpose after archive.
+Present consistent project and artifact identity in browser titles without coupling titles to service transport.
 
 ## Requirements
 
@@ -110,46 +110,6 @@ same shape.
   `generateMetadata` does NOT throw (the page body still handles the
   404)
 
-### Requirement: Tmux manage page title
-
-The route `/manage/tmux` SHALL emit the static title `Tmux`. The
-combined title SHALL be `Tmux · memon`.
-
-#### Scenario: Manage tmux page
-- **WHEN** the user navigates to `/manage/tmux`
-- **THEN** the rendered `<title>` is `Tmux · memon`
-
-### Requirement: Terminal popup title
-
-The route `/terminal-popup` SHALL emit a title that identifies the
-attached tmux session, in one of two shapes depending on which query-
-param form was used:
-
-- If `sessionName` is present and matches the
-  `^memon-[A-Za-z0-9._-]+$` shape, the title SHALL be the bare
-  `sessionName` string (e.g. `memon-run-my-slug-260513-091200`).
-- Otherwise, if `project`, `scope`, and `slug` are all present with
-  `scope` in `{exp, run, project}`, the title SHALL be
-  `<scope>:<slug>` (e.g. `run:my-slug-260513-091200`).
-- If neither shape is recognizable, the title SHALL be the static
-  `Terminal`.
-
-#### Scenario: Raw sessionName form
-- **WHEN** the popup is opened with
-  `?sessionName=memon-run-my-slug-260513-091200`
-- **THEN** the rendered `<title>` is
-  `memon-run-my-slug-260513-091200 · memon`
-
-#### Scenario: Structured form
-- **WHEN** the popup is opened with
-  `?project=p&scope=run&slug=my-slug-260513-091200`
-- **THEN** the rendered `<title>` is
-  `run:my-slug-260513-091200 · memon`
-
-#### Scenario: Unrecognizable params
-- **WHEN** the popup is opened with no recognizable session params
-- **THEN** the rendered `<title>` is `Terminal · memon`
-
 ### Requirement: Home / redirect fallback title
 
 The route `/` SHALL NOT set its own metadata. When the route renders
@@ -177,11 +137,15 @@ the 404/error response.
   section name), and the page body continues to render normally
 
 ### Requirement: Central data page titles identify Host and Project
-In central mode, page titles for Project-scoped runs, Experiments, reports, reviews, inbox entries, Git views, tmux, and terminals SHALL include enough Host and Project identity to distinguish equal names across Hosts. Standalone titles SHALL preserve their existing form.
+In central mode, page titles for Project-scoped runs, Experiments, reports, wiki pages, reviews, inbox entries, Git views, tmux, and terminals SHALL include enough Host and Project identity to distinguish equal names across Hosts. Standalone titles SHALL preserve their existing form.
 
 #### Scenario: Equal Project names produce distinct titles
 - **WHEN** two tabs show `project-x` on Host A and Host B
 - **THEN** their document titles visibly distinguish Host A from Host B
+
+#### Scenario: Host-qualified wiki detail identifies its Host
+- **WHEN** the user opens `/h/<host>/p/project-x/wiki/W0007`
+- **THEN** the document title identifies the Host alongside `W0007` and `project-x`
 
 ### Requirement: Host failure title remains contextual
 When direct navigation targets an unusable Host, the error page title SHALL retain the requested Host/Project context rather than falling back to a generic or another Host's title.
@@ -189,3 +153,27 @@ When direct navigation targets an unusable Host, the error page title SHALL reta
 #### Scenario: Offline direct link keeps identity
 - **WHEN** a bookmarked Host-qualified Project URL is opened while that Host is offline
 - **THEN** the title identifies the requested Host/Project and the page shows its availability state
+
+### Requirement: Wiki page titles
+
+The wiki list route `/p/<project>/wiki` SHALL emit a title of the form `Wiki · <project>`, and the wiki detail route `/p/<project>/wiki/<id>` SHALL emit a title of the form `<W-id> · Wiki · <project>`, where `<id>` is the raw decoded id (e.g. `W0123`) and `<project>` is the decoded project name from the URL. As with every other route under `/p/[project]/**`, the page SHALL emit only the segment-specific prefix and let the project layout's template append `· <project> · memon`.
+
+If the id does not match the expected `W\d{4}` shape, the page already returns a Next.js 404 and the title is irrelevant — but `generateMetadata` SHALL still return without throwing.
+
+Report titles are unaffected: `/p/<project>/reports` and `/p/<project>/reports/<id>` keep the titles specified by the requirements "Project sub-page titles" and "Digest and Report detail titles".
+
+#### Scenario: Wiki list
+- **WHEN** the user navigates to `/p/my-project/wiki`
+- **THEN** the rendered `<title>` is `Wiki · my-project · memon`
+
+#### Scenario: Wiki page detail
+- **WHEN** the user navigates to `/p/my-project/wiki/W0123`
+- **THEN** the rendered `<title>` is `W0123 · Wiki · my-project · memon`
+
+#### Scenario: Report titles are unchanged
+- **WHEN** the user navigates to `/p/my-project/reports/R0123`
+- **THEN** the rendered `<title>` is still `R0123 · Reports · my-project · memon`
+
+#### Scenario: Malformed wiki id does not throw
+- **WHEN** the user navigates to `/p/my-project/wiki/nope`
+- **THEN** `generateMetadata` returns a fallback title without throwing and the page body owns the 404 response

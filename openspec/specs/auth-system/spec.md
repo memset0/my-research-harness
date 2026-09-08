@@ -1,8 +1,10 @@
 # auth-system Specification
 
 ## Purpose
-TBD - created by archiving change add-system-auth. Update Purpose after archive.
+Protect central owner and project-scoped viewer access with persistent local authentication, safe cookies and non-challenging browser login flows.
+
 ## Requirements
+
 ### Requirement: Single-user credentials live in `config.yml` under top-level `auth` block (PLAINTEXT)
 
 The config schema SHALL accept an optional top-level `auth` mapping with keys `username` (string, default `"admin"`) and `password` (string, **plaintext**). When `auth` is missing or `password` is missing/empty, the server SHALL treat the configuration as "uninitialised" and trigger first-run password generation (see "First-run password generation"). CLI commands that do NOT start the HTTP server (e.g. `memon list`, `memon serve --help`) SHALL NOT require `auth` to be present.
@@ -58,7 +60,12 @@ Next.js `middleware.ts` SHALL inspect every incoming request and require a valid
 
 1. **Owner session cookie** — `memon-session` cookie present, signature verifies against `cfg.auth.session_secret`, payload `exp` is in the future, payload `role === "owner"`.
 2. **Owner HTTP Basic** — `Authorization: Basic <b64(username:password)>` header where `username` and `password` match `cfg.auth.username` and `cfg.auth.password` after `crypto.timingSafeEqual` on equal-length UTF-8 byte buffers (with dummy compare on length mismatch to avoid leaking length via timing).
-3. **Viewer share cookie** — `memon-shares` cookie present, signature verifies, AND at least one entry in the cookie validates against the corresponding project's `.memon/shares.json` (with `expires_at` either null or future). **Mode 3 is evaluated ONLY for `read`-classed routes.** For `shell` and `mutating` routes, the share cookie SHALL NOT be decoded — it is categorically irrelevant on those routes and the middleware short-circuits to "no owner identity → anon" if modes 1+2 both fail. This optimization spares the per-request signature verify and `shares.json` lookup on routes where the answer is "deny" regardless of share-cookie state, and gives the user a useful 401/login redirect rather than a dead-end 403.
+3. **Viewer share cookie** — `memon-shares` cookie present, signature verifies,
+   AND at least one entry in the cookie validates against the corresponding
+   project's `.memon/shares.json` (with `expires_at` either null or future).
+   **Mode 3 is evaluated ONLY for `read`-classed routes.** For `mutating`
+   routes, the share cookie SHALL NOT be decoded; without owner identity the
+   request follows anonymous handling.
 
 The middleware SHALL evaluate modes in the order listed; the FIRST passing mode wins. The acceptance criterion is "at least one applicable mode passes"; mode 3 is "applicable" only for `read` routes.
 
@@ -91,11 +98,11 @@ The check SHALL apply to all routes EXCEPT those in the `anon` class (see "anon 
 - **THEN** middleware computes `scopeProjects` from the validating entries
 - **AND** the request is passed through IF the requested project resolves in-scope per the route-class policy (see "Project-scope enforcement"); otherwise 403
 
-#### Scenario: Viewer share cookie on a shell/mutating route — ignored
-- **WHEN** the request is `shell`- or `mutating`-class AND no owner identity is present, even when a `memon-shares` cookie IS present (with a valid signature)
-- **THEN** the middleware DOES NOT decode the share cookie at all; mode 3 is not evaluated
-- **AND** the response is anonymous-handling: HTML → 302 `/login?next=...`, API → 401 `WWW-Authenticate: Basic realm="memon"`
-- **AND** the rate-limit token consumed for this request is NOT refunded (failed owner-auth pays the bucket cost)
+#### Scenario: Viewer share cookie on a mutating route is ignored
+- **WHEN** the request is `mutating`-class and no owner identity is present, even with a valid `memon-shares` cookie
+- **THEN** middleware does not decode the share cookie; mode 3 is not evaluated
+- **AND** the response follows anonymous handling
+- **AND** the failed owner-auth attempt is not refunded from the rate-limit bucket
 
 #### Scenario: Owner cookie present but expired
 - **WHEN** `memon-session` exists but `exp` is past, and no Basic header, on a `read` route with no valid share cookie
@@ -194,7 +201,7 @@ Client IP SHALL be derived from the last entry of the `X-Forwarded-For` request 
 
 ### Requirement: Endpoint classification for future read-only public-share
 
-Every HTTP route SHALL be classified in `apps/web/lib/auth/route-classes.ts` as one of `anon | read | mutating | shell`. Each rule SHALL also declare a `projectFor(method, pathname, searchParams)` function that returns:
+Every HTTP route SHALL be classified in `apps/web/lib/auth/route-classes.ts` as one of `anon | read | mutating`. Each rule SHALL also declare a `projectFor(method, pathname, searchParams)` function that returns:
 
 - a project name (string),
 - `'multi'` (the route legitimately aggregates across projects; handler must filter via `req.scopeProjects`),
@@ -210,7 +217,6 @@ The middleware enforces the policy table from "Project-scope enforcement for rea
 The current classifications are:
 
 - **anon** — `GET /login`, `POST /api/auth/login`, `GET /api/auth/check`, `GET /share/<project>/<token>`, all static asset paths.
-- **shell** — `* /api/terminal/*` (any method).
 - **read** — every GET listed in the existing classification PLUS `GET /api/projects/<project>/shares` is owner-only (treated as `mutating` for viewer purposes).
 - **mutating** — every other non-GET under `/api/`. Catch-all default.
 
@@ -237,9 +243,6 @@ The current classifications are:
 - **WHEN** an anonymous `PUT /api/experiments/foo/readme` is received
 - **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"` (for API) or 302 to /login (for HTML)
 
-#### Scenario: Shell route rejects anonymous regardless of method
-- **WHEN** an anonymous `GET /api/terminal/list` is received
-- **THEN** the response is 401 (it's classified `shell`, not `anon`)
 
 #### Scenario: Mutating route rejects viewer
 - **WHEN** a viewer (valid `memon-shares`) does `PUT /api/experiments/X/readme`
@@ -272,54 +275,10 @@ There is no in-app password reset. To change the password, the operator SHALL st
 - **THEN** subsequent requests with `Authorization: Basic <b64(admin:new)>` get 200
 - **AND** subsequent requests with `Authorization: Basic <b64(admin:old)>` get 401
 
-### Requirement: ttyd binding remains loopback-only as last-line defense
-
-The ttyd subprocess SHALL continue to bind to `127.0.0.1:7682` (existing behavior). The spec and `apps/web/lib/terminal/manager.ts` header SHALL document that this loopback bind is one of three independent gates protecting the writable terminal: **(1) loopback bind on ttyd; (2) the custom server's HTTP-Basic check on every `/api/terminal/proxy/*` HTTP request and WebSocket upgrade; (3) Next.js middleware's HTTP-Basic check on every other dashboard route.** ttyd's own `-c user:pass` flag SHALL NOT be used (operational reason: tying ttyd's basic-auth to memon's would couple ttyd argv to `config.yml`'s plaintext, and rotating the password would require an additional ttyd restart on top of the memon restart that already covers the rotation; the three gates above already protect the terminal without that coupling).
-
-#### Scenario: Loopback bind verified at runtime
-- **WHEN** `apps/web/lib/terminal/manager.ts` spawns ttyd
-- **THEN** the argv contains `-i 127.0.0.1` (no `0.0.0.0` or external interface)
-- **AND** the spawn does NOT include `-c`
-
-#### Scenario: Documentation mentions the three gates
-- **WHEN** a developer reads the design doc or the manager.ts file header comment
-- **THEN** the three gates are explicitly named: loopback bind on ttyd, custom-server HTTP-Basic on `/api/terminal/proxy/*` (HTTP + WS), Next.js middleware HTTP-Basic on the rest of the site
-
-### Requirement: Custom server enforces HTTP Basic on WebSocket upgrade for `/api/terminal/proxy/*`
-
-The Node `http.Server` underlying memon's process SHALL gate every WebSocket upgrade whose path begins with `/api/terminal/proxy/` behind owner-only auth modes — specifically modes 1 (owner session cookie) and 2 (owner HTTP Basic). The `memon-shares` cookie SHALL NOT be decoded or validated on the upgrade path: the terminal proxy is `shell`-classed, and the share cookie is categorically irrelevant on shell routes (mirroring the middleware's mode-3 short-circuit). The upgrade gate SHARES the same rate-limit bucket as middleware so brute-force attempts are counted in one bucket per IP.
-
-If neither mode 1 nor mode 2 passes, the server SHALL write a raw `HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="memon"\r\n\r\n` to the socket and destroy it; ttyd SHALL receive no upgrade. The presence or absence of a `memon-shares` cookie SHALL NOT affect this outcome — viewers and anonymous are indistinguishable from the upgrade gate's perspective. If owner verification succeeds, the upgrade SHALL be forwarded to `127.0.0.1:7682` and the WebSocket SHALL be piped end-to-end.
-
-#### Scenario: Anonymous WebSocket upgrade is rejected at the server entry
-- **WHEN** an anonymous client opens `ws://<host>/api/terminal/proxy/<sess>/ws` with no cookie and no Authorization header
-- **THEN** the custom server writes `HTTP/1.1 401 Unauthorized` with `WWW-Authenticate: Basic realm="memon"` and destroys the socket
-- **AND** the ttyd subprocess receives no upgrade
-
-#### Scenario: Owner cookie WebSocket upgrade reaches ttyd
-- **WHEN** the client opens the upgrade with a valid `memon-session` cookie
-- **THEN** the upgrade is forwarded to `127.0.0.1:7682`
-- **AND** the response is `HTTP/1.1 101 Switching Protocols`
-- **AND** the rate-limit token consumed for the attempt is refunded
-
-#### Scenario: Owner Basic WebSocket upgrade reaches ttyd
-- **WHEN** the client opens the upgrade with valid `Authorization: Basic` matching `cfg.auth` (and no cookie)
-- **THEN** the upgrade is forwarded; 101 Switching Protocols
-
-#### Scenario: Viewer-with-share-cookie WebSocket upgrade is rejected with 401, cookie not decoded
-- **WHEN** a client opens the upgrade with a valid `memon-shares` cookie present (with a valid signature) and no owner identity
-- **THEN** the server does NOT decode `memon-shares` (no signature verify, no `shares.json` lookup)
-- **AND** the server writes `HTTP/1.1 401 Unauthorized` with `WWW-Authenticate: Basic realm="memon"` and destroys the socket
-- **AND** the rate-limit token consumed for this attempt is NOT refunded (the upgrade was a failed owner-auth attempt)
-
-#### Scenario: Brute-force on the upgrade endpoint is rate-limited
-- **WHEN** a client sends ≥61 upgrade attempts with bad credentials in under 60s from the same IP
-- **THEN** the first 60 are rejected at the auth check (no refund on bad attempts) and the 61st receives `HTTP/1.1 429 Too Many Requests`
-- **AND** the bucket is consumed exactly once per upgrade attempt
-
 ### Requirement: Caddy single-port reverse-proxy snippet documented in README
 
-The repo SHALL document — in `README.md` under "Production deployment" AND in `config.example.yml` comments — that the Caddy site block requires only:
+The repo SHALL document in `README.md` under "Production deployment" that the
+Caddy site block requires only:
 
 ```caddyfile
 <host> {
@@ -329,20 +288,15 @@ The repo SHALL document — in `README.md` under "Production deployment" AND in 
 }
 ```
 
-The `flush_interval -1` is the only `reverse_proxy` option needed: it disables Caddy's response-body buffering so SSE (`/api/events`, `/api/log/stream*`) streams in real time. It is harmless for ordinary HTTP and irrelevant for the WebSocket upgrade (raw socket).
+The `flush_interval -1` option disables response-body buffering so SSE streams
+in real time. Authentication remains inside memon. The README SHALL document
+password rotation as editing `config.yml`'s plaintext `auth.password` and
+restarting memon; Caddy reload is not part of password rotation.
 
-The README SHALL state that no `basic_auth`, no `@terminal` path matcher, no separate ttyd upstream, and no `forward_auth` are required — auth and ttyd proxying both live in the memon process. The README SHALL document the password-rotation flow as: edit `config.yml`'s `auth.password` (plaintext) → restart memon. Caddy reload is no longer part of the rotation flow.
-
-#### Scenario: README Production section reflects the new model
-- **WHEN** a new operator reads the README's "Production deployment" section
-- **THEN** they find a single-`reverse_proxy` Caddy snippet (with `flush_interval -1`) and an explicit note that auth + terminal proxy are handled by memon, not Caddy
-- **AND** the rotation flow listed is "edit config.yml.auth.password → restart memon" — Caddy is not mentioned
-
-#### Scenario: Single-directive Caddyfile is sufficient for terminal use
-- **WHEN** an operator pastes the new snippet, runs `caddy reload`, and opens the in-browser terminal
-- **THEN** anonymous requests to the host receive `401` from memon
-- **AND** authenticated requests receive the dashboard, the terminal iframe loads, AND the WebSocket upgrade completes with `HTTP/1.1 101 Switching Protocols`
-- **AND** no `@terminal` matcher, `basic_auth`, or `forward_auth` was needed in the Caddyfile
+#### Scenario: README Production section reflects the model
+- **WHEN** a new operator reads the README's Production deployment section
+- **THEN** they find the single-reverse-proxy Caddy snippet
+- **AND** they find the memon-owned auth and password-rotation flow
 
 ### Requirement: HMAC signing key `cfg.auth.session_secret` auto-generated on first run
 
@@ -437,16 +391,17 @@ Every route classified `read` in `route-classes.ts` SHALL declare a `projectFor(
 - `'global'` if the route is project-independent (owner-only),
 - `null` if extraction is not possible for that URL shape (fail-closed: treated as `'global'`).
 
-Middleware SHALL apply the following policy. Note that mode 3 (viewer share cookie) is NOT evaluated on `shell` and `mutating` routes — viewers on those routes are indistinguishable from anon from the middleware's perspective:
+Middleware SHALL apply the following policy. Mode 3 (viewer share cookie) is
+not evaluated on mutating routes.
 
-| Class      | Owner | Viewer + projectFor in scope | Viewer + 'multi' | Viewer + out-of-scope | Viewer + 'global' | Viewer + null | Anon (or viewer-cookie ignored on shell/mutating) |
-| ---------- | ----- | --------------------------- | ---------------- | --------------------- | ----------------- | ------------- | -------------------------------------------------- |
-| `anon`     | pass  | pass                        | pass             | pass                  | pass              | pass          | pass                                               |
-| `read`     | pass  | pass                        | pass (handler must filter) | 403          | 403               | 403           | 401/302                                            |
-| `mutating` | pass  | N/A (mode 3 not evaluated)  | N/A              | N/A                   | N/A               | N/A           | 401/302                                            |
-| `shell`    | pass  | N/A (mode 3 not evaluated)  | N/A              | N/A                   | N/A               | N/A           | 401/302                                            |
+| Class      | Owner | Viewer + projectFor in scope | Viewer + 'multi' | Viewer + out-of-scope | Viewer + 'global' | Viewer + null | Anon |
+| ---------- | ----- | --------------------------- | ---------------- | --------------------- | ----------------- | ------------- | ---- |
+| `anon`     | pass  | pass                        | pass             | pass                  | pass              | pass          | pass |
+| `read`     | pass  | pass                        | pass (handler must filter) | 403          | 403               | 403           | 401/302 |
+| `mutating` | pass  | N/A (mode 3 not evaluated)  | N/A              | N/A                   | N/A               | N/A           | 401/302 |
 
-For `shell` and `mutating` routes, "viewer" cells are N/A — the share cookie is not decoded. A request that would have been viewer-on-mutating ends up in the rightmost column (Anon) and gets 401/302. This is a deliberate simplification: the only sources of "403" in the system are now viewer + out-of-scope `read` AND viewer + `'global'` `read`. Everything else is 401 (or, for HTML, the 302 → /login rewrite).
+For mutating routes, the share cookie is not decoded. Without owner identity,
+the request gets 401/302.
 
 `/p/<project>` and `/api/projects/<project>` paths SHALL extract the project from the first path segment. `?project=<P>` query params SHALL extract from the query. `/api/runs/<id>`, `/api/experiments/<id>`, `/api/digests/<id>`, `/api/reports/<id>` SHALL extract via in-memory index lookup using the request's runtime cache; if the id is unknown to the cache, `projectFor` returns `null` (the handler will likely 404 anyway).
 
@@ -473,10 +428,6 @@ For `shell` and `mutating` routes, "viewer" cells are N/A — the share cookie i
 - **AND** the response is 401 with `WWW-Authenticate: Basic realm="memon"` (API path)
 - **AND** the rate-limit token consumed for this request is NOT refunded
 
-#### Scenario: Viewer attempting shell — share cookie ignored
-- **WHEN** a request carrying a valid `memon-shares` cookie (no owner identity) POSTs `/api/terminal/start`
-- **THEN** middleware does NOT decode the share cookie
-- **AND** the response is 401 (or for HTML page navigation 302 to /login)
 
 #### Scenario: Viewer attempting id-resolved cross-project read
 - **WHEN** a viewer with scope `{"project-a"}` GETs `/api/runs/<id-belonging-to-project-b>`
@@ -493,8 +444,8 @@ For `shell` and `mutating` routes, "viewer" cells are N/A — the share cookie i
 Middleware SHALL distinguish between "no usable identity for this route" (`401 Unauthorized`) and "viewer identity present but project out of scope" (`403 Forbidden`):
 
 - `401 Unauthorized` — no owner identity (mode 1+2 both failed) AND either:
-  - the request is to a `shell`/`mutating` route (where mode 3 is not evaluated), OR
-  - the request is to a `read` route and mode 3 also failed (no valid share cookie, or no entries validate).
+  - the request is to a `mutating` route (where mode 3 is not evaluated), OR
+  - the request is to a `read` route and mode 3 also failed.
   
   Carries `WWW-Authenticate: Basic realm="memon"`. HTML page requests that would result in 401 SHALL instead be served as `302 Found` with `Location: /login?next=<path>` so browsers land on the login form rather than triggering the native Basic-auth dialog. API requests (path starts with `/api/` OR `Accept: application/json`) get the raw 401.
 
@@ -677,3 +628,28 @@ The central authorization layer SHALL classify Experiment View collection reads 
 - **WHEN** the viewer directly submits a create, update, rename, or delete request
 - **THEN** the request is rejected as forbidden
 - **AND** SQLite remains unchanged
+
+### Requirement: Browser-facing authentication failures do not advertise Basic challenges
+The Web/central server SHALL continue to accept an explicitly supplied owner
+`Authorization: Basic` header using the existing constant-time comparison and
+rate limit. A failed HTTP API or auth-check request SHALL return 401 without
+`WWW-Authenticate`, so a browser never replaces the memon login/share
+experience with a native HTTP Basic dialog. HTML navigations without a usable
+identity SHALL continue to redirect to `/login?next=...`.
+
+#### Scenario: Anonymous browser background API request
+- **WHEN** the login page or another anonymous browser surface causes a same-origin API request without credentials
+- **THEN** the response is 401 with `Cache-Control: no-store`
+- **AND** `WWW-Authenticate` is absent
+
+#### Scenario: Preemptive CLI Basic remains supported
+- **WHEN** curl or CLI sends a valid `Authorization: Basic ...` header on its first request
+- **THEN** it authenticates as owner without requiring a preceding challenge response
+
+### Requirement: Anonymous pages do not open authenticated live-update streams
+The root client provider SHALL subscribe to `/api/events` only for an injected `owner` or `viewer` session. An anonymous `/login` render SHALL not open or retry EventSource until a later authenticated navigation remounts the provider.
+
+#### Scenario: Login page remains quiet
+- **WHEN** an anonymous browser renders `/login`
+- **THEN** no `/api/events` EventSource is created
+- **AND** the login form remains the only authentication prompt

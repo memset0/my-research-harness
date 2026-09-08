@@ -171,11 +171,9 @@ width" failure mode that plain comma-listed fields suffer from.
 
 ### Requirement: Sidebar widget mounted in `<SidebarFooter>`
 
-`apps/web/components/slurm-status-widget.tsx` SHALL be a client
-component mounted inside the existing `<SidebarFooter>` in
-`apps/web/components/app-sidebar.tsx`, above the `Manage tmux`
-item, inside the same `role !== 'viewer'` conditional that gates
-Manage tmux.
+`apps/web/components/slurm-status-widget.tsx` SHALL be a client component
+mounted inside the existing `<SidebarFooter>` in
+`apps/web/components/app-sidebar.tsx` for owner sessions.
 
 The widget SHALL fetch `/api/slurm/status` via TanStack `useQuery`
 with `queryKey: ['slurm-status']` and `refetchInterval: 30000`.
@@ -206,7 +204,7 @@ Rendering branches:
 #### Scenario: Disabled feature renders nothing
 - **GIVEN** the API returns `{ enabled: false }`
 - **WHEN** the widget renders
-- **THEN** the DOM contains no widget row above the Manage tmux item
+- **THEN** the DOM contains no Slurm widget row
 
 #### Scenario: Enabled feature renders X/N
 - **GIVEN** the API returns `{ enabled: true, totalNodes: 8, usedNodes: 3, jobs: [...3 entries...] }`

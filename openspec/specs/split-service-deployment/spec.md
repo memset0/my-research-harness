@@ -1,38 +1,9 @@
 # split-service-deployment Specification
 
 ## Purpose
-Defines independently deployable central, cluster-backend, and compatible standalone roles without committing environment-specific deployment state.
+Define one central Web/API service and independent native CLI installations, with explicit execution providers and safe operator-controlled deployment.
 
 ## Requirements
-
-### Requirement: Central, Backend, and standalone roles have explicit boundaries
-The system SHALL provide a central role that owns the Web UI, human authentication, authorization, aggregation, and gateway; a Backend role that owns cluster-local Projects, filesystem access, events, and cluster tools; and a standalone role that preserves the co-located single-process product by composing the same service layer. A process SHALL NOT run central and Backend role blocks from one instance configuration.
-
-#### Scenario: Central starts without Project roots
-- **WHEN** an instance configuration selects the central role and contains no local Project roots
-- **THEN** the central Web/gateway starts and obtains Project data only from configured Backends
-
-#### Scenario: Backend starts without human auth
-- **WHEN** an instance configuration selects the Backend role with Projects and service authentication
-- **THEN** the Backend starts without serving the Web UI or initializing browser-facing credentials
-
-#### Scenario: Existing standalone configuration remains usable
-- **WHEN** an instance configuration contains neither a central nor Backend block
-- **THEN** memon preserves the existing standalone Web-plus-Backend behavior and project-only routes
-
-### Requirement: Central and Backend are independently buildable and installable
-The central and Backend roles SHALL have separate build outputs and runtime dependency sets. A central-only Patch release SHALL be installable without building or reinstalling a Backend, and a Backend distribution SHALL NOT require the Web frontend build.
-
-#### Scenario: Central Patch deployment leaves Backend artifact unchanged
-- **WHEN** a Patch release is deployed to central
-- **THEN** every installed Backend artifact remains byte-unchanged and compatible
-
-### Requirement: Production local Backend is explicit
-A central Host MAY run a separately configured local Backend, but production central startup SHALL NOT implicitly register repository mock Projects. Development/test mock Projects SHALL use an explicitly started Backend and the same authenticated API and Host-qualified routing as remote Projects.
-
-#### Scenario: Production central has no implicit mocks
-- **WHEN** central starts without an explicitly configured local Backend Host entry
-- **THEN** no repository mock Project appears in its Project list
 
 ### Requirement: Concrete deployment state remains local
 Tracked examples and OpenSpec artifacts SHALL contain only generic schema and synthetic values. Real Host identities, domains, addresses, ports, SSH details, paths, tokens, and runbook notes SHALL remain in selected Git-ignored instance configurations or machine-local service/proxy configuration.
@@ -41,13 +12,43 @@ Tracked examples and OpenSpec artifacts SHALL contain only generic schema and sy
 - **WHEN** tracked change artifacts, examples, tests, and deployment templates are inspected
 - **THEN** they contain no real fleet credential or environment-specific connection value introduced by this change
 
-### Requirement: Bootstrap prevents two public writable control planes
-The first standalone-to-split migration SHALL support a private candidate Backend and candidate central service alongside the live standalone service. Candidate mutation and terminal capabilities SHALL remain disabled until a quiesced cutover, and at most one public writable control plane SHALL be active for a Project at any time.
+### Requirement: Central serves configured roots without remote application services
+Central SHALL own Web, public API, authentication, document transformations and file scheduling for explicitly configured project roots. Roots MAY be local or externally mounted at arbitrary paths and SHALL not require a directory named mounted. Remote devices SHALL need only CLI/skills for memon data workflows, not a Backend daemon, service token or central proxy tunnel. Mock projects SHALL be explicitly configured.
 
-#### Scenario: Candidate read verification does not create a second writer
-- **WHEN** the candidate Backend is being shadow-verified while legacy standalone remains public
-- **THEN** candidate metadata and reads work but its mutation and terminal-creation operations are rejected
+#### Scenario: Arbitrary mount root
+- **WHEN** a valid local config points a project to a mount outside mounted
+- **THEN** central reads it through the same file Store as an ordinary directory
 
-#### Scenario: Failed cutover restores the legacy path
+#### Scenario: No peer daemon
+- **WHEN** no memon Backend runs on a remote device whose project is mounted
+- **THEN** central can serve the project without Backend discovery or negotiation
+
+### Requirement: Execution context is explicit and separate from file access
+Remote command capabilities SHALL use locally configured SSH execution target and remote working root, not the central mount path or a remote memon Backend. Local projects SHALL retain local execution. Existing owner/read-only restrictions and command-specific behavior SHALL remain in force; no target may be inferred from browser path input.
+
+#### Scenario: Remote process operation
+- **WHEN** an authorized user invokes a configured remote Slurm or Git operation
+- **THEN** it executes on the exact remote target rather than the central machine or mounted cwd
+
+#### Scenario: Missing execution target
+- **WHEN** a mounted project has no configured command provider
+- **THEN** file reads remain usable and command capability reports unavailable rather than executing locally
+
+### Requirement: Centralization cutover preserves one writer
+Migration SHALL support a private read-only candidate, retain previous deployment/configuration rollback material, quiesce old public writes before switching, verify the central path, and only then retire old Backend services. No filesystem convention migration SHALL be required by transport changes alone.
+
+#### Scenario: Candidate verification
+- **WHEN** the prior service is live during candidate read checks
+- **THEN** the candidate cannot become a second public writer
+
+#### Scenario: Failed cutover
 - **WHEN** post-switch verification fails
-- **THEN** new writes are quiesced, the prior ingress and legacy process are restored and verified, and only then are candidate processes stopped
+- **THEN** the previous service/configuration can be restored before writes resume
+
+### Requirement: Deployment changes are explicit and preserve rollback
+
+Code archival SHALL NOT itself change production hosts, copy research data or import cache snapshots. An operator-authorized deployment SHALL use the selected central host, preserve a rollback source and avoid two writable authorities. A previously delivered private candidate is historical evidence, not a requirement to create another candidate for every archive.
+
+#### Scenario: Archive without deployment
+- **WHEN** accepted code and specifications are archived
+- **THEN** existing service processes and project data remain unchanged unless deployment is separately requested

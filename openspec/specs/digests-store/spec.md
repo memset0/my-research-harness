@@ -1,8 +1,10 @@
 # digests-store Specification
 
 ## Purpose
-TBD - created by archiving change inbox-reports-and-digests. Update Purpose after archive.
+Keep historical digest discovery and reading available while retiring managed authoring and Journal cursor advancement.
+
 ## Requirements
+
 ### Requirement: Digests live at `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`
 
 The dashboard SHALL discover, parse, and serve markdown files from `<projectRoot>/docs/digests/` whose base name matches the strict regex `^D\d{4}-\d{4}-\d{2}-\d{2}\.md$` (i.e. `D` + 4 digits + `-` + ISO date). Files that do not match SHALL be ignored. Discovery SHALL be one level deep within the directory.
@@ -38,29 +40,18 @@ The dashboard SHALL discover, parse, and serve markdown files from `<projectRoot
 - **WHEN** the user requests `/api/digests/D0001?project=p` and a digest with that id exists
 - **THEN** the response includes mtime, hash, content, and the parsed `date` field
 
-### Requirement: PUT /api/digests/[id]?project=NAME writes with mtime+hash optimistic lock
+### Requirement: Historical digest reads refresh through shared file observations
 
-Identical contract to `PUT /api/reports/<id>` (body `{ content, expectedMtime, expectedHash }`; sha1 hash; 409 CONFLICT on stale mtime or hash; 403 FORBIDDEN on path-traversal). The server SHALL NOT modify the digest's filename or directory in any way — only the content bytes change.
+Existing digest discovery and read surfaces SHALL remain backed by central primitive file observations and foreground heartbeat queries. Externally added, edited or removed canonical digest files SHALL remain visible after the applicable observation becomes due and a subsequent query retrieves it. No managed digest authoring skill or cursor advance SHALL be required for discovery.
 
-#### Scenario: Successful write
-- **WHEN** PUT arrives with matching expected mtime+hash
-- **THEN** the file is rewritten and response carries new mtime+hash
+#### Scenario: Existing digest edited outside memon
+- **WHEN** a user edits a historical digest with their own editor
+- **THEN** the read-only dashboard reflects that file change without any Journal cursor mutation
 
-#### Scenario: Stale write → 409 CONFLICT
-- **GIVEN** the digest was edited externally since the client opened it
-- **WHEN** PUT arrives with stale expectedMtime
-- **THEN** 409 with current mtime, hash, content
+### Requirement: Historical digests remain readable without managed authoring
 
-#### Scenario: Editing does NOT advance the JOURNAL `last_digest_at` cursor
-- **WHEN** the user edits a digest's content via PUT
-- **THEN** `<projectRoot>/JOURNAL.md` frontmatter `last_digest_at` is unchanged
-- **AND** no JOURNAL events are appended (digest content edits are not journal events)
+Digest list/detail GET contracts and canonical file discovery SHALL remain available. The managed digest editor, PUT route and cursor-driven generation workflow SHALL be removed. Existing files SHALL NOT be deleted, relabelled as wiki evidence, or rewritten during rollout.
 
-### Requirement: Live cache backed by Poller
-
-Same shape as the reports cache. The runtime SHALL warm at boot, watch the digests directory and every matching file via the shared Poller, and emit SSE invalidations with kind `digests` on additions / deletions / content changes.
-
-#### Scenario: New digest appears live
-- **WHEN** `memon-digest-journal` writes a new digest
-- **THEN** the dashboard sees it within the polling window with an SSE event of kind `digests`
-
+#### Scenario: Historical digest after cutover
+- **WHEN** a user opens an existing D0001 document
+- **THEN** its content is readable and no Edit or digest-generation action is offered

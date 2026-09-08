@@ -1,26 +1,9 @@
 # run-discovery Specification
 
 ## Purpose
-TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+Discover supported Run identities within sanctioned project roots while preserving exclusions, archive/deprecation policy and path safety.
+
 ## Requirements
-### Requirement: Recursive scan from configured project roots
-
-The system SHALL recursively scan every configured project's `root`
-directory to discover **run directories**, applying both default and
-user-configured exclude patterns at every level of recursion.
-
-#### Scenario: Single project root with runs at variable depth
-- **WHEN** `config.yml` declares a project with `root: /mnt/p` and the file
-  system contains `/mnt/p/logs/foo-260501-100000/`,
-  `/mnt/p/sub/logs/bar-260502-150000/`, and `/mnt/p/runs/baz-260503-080000/`
-- **THEN** all three directories are discovered and registered as runs
-  under that project
-
-#### Scenario: Default excludes applied
-- **WHEN** scanning a project root that contains `.git/`, `node_modules/`,
-  `__pycache__/`, `.venv/`, `venv/`, and `.cache/` subdirectories
-- **THEN** none of those directories are descended into, regardless of
-  their contents
 
 ### Requirement: Run directory identification by name regex
 
@@ -37,96 +20,6 @@ ancestor directory.
 - **WHEN** a directory is named `foo-260501` (only one date segment) or
   `foo-2026-05-01-100000` (4-digit year)
 - **THEN** that directory is not identified as a run
-
-### Requirement: Polling with exponential backoff
-
-The system SHALL detect file changes within run directories by per-directory
-polling, never by `inotify`/fs watcher. Each tracked directory has its own
-poll interval that doubles after each unchanged check, bounded between
-`poll.min_interval_ms` (default 1000ms) and `poll.max_interval_ms` (default
-300000ms), with `poll.backoff_factor` (default 2).
-
-#### Scenario: Cold directory backs off to max
-- **WHEN** a run directory has not changed for 30 minutes
-- **THEN** its poll interval has reached `poll.max_interval_ms` and stays
-  there until a change is observed
-
-#### Scenario: Change resets backoff
-- **WHEN** the poller observes that the directory's `mtime` (or any tracked
-  file's `mtime`) has advanced since the last poll
-- **THEN** the next interval for that directory is reset to
-  `poll.min_interval_ms`
-
-### Requirement: Active-attention reset
-
-The system SHALL reset a directory's poll interval to
-`poll.min_interval_ms` whenever the user actively engages with the run in
-the web UI (opens the parent experiment page with this run expanded, edits
-the run README, opens log tail).
-
-#### Scenario: Opening parent experiment page with run expanded
-- **WHEN** the web frontend loads `/p/<project>/e/<E-id>?run=<run-dir>`
-- **THEN** the backend's poller for the named run dir has its interval
-  reset to `poll.min_interval_ms` for at least one cycle
-
-### Requirement: In-memory run index
-
-The system SHALL maintain an in-memory index of all discovered runs. Each
-indexed entry SHALL carry:
-- a top-level `project` string field set from the `config.yml` project's
-  `name` whose `discoverRuns` call surfaced the directory (membership is
-  structural, never derived from frontmatter — `project:` field on the run
-  side is gone in v3)
-- a projection of frontmatter fields per `run-readme` capability
-  (`id`, `name`, `status`, `created_at`, `updated_at`, `finished_at`,
-  `experiment`, `host`, `pid`, `gpus`, `wandb`, `entry`, `command`)
-- derived metadata (`mtime`, `readmeMtime`, `path`, `hasReadme`, `archived`)
-
-`mtime` SHALL be the **effective** mtime: `max(dirStat.mtimeMs,
-readmeStat.mtimeMs)` when the README exists, else `dirStat.mtimeMs`. This
-value drives live-update invalidation (SSE), staleness banners, and the
-runtime index's change-detection. It MUST NOT be used as the optimistic
-locking key for mutating routes.
-
-`readmeMtime` SHALL be the README.md file's own mtime, in isolation:
-`readmeStat.mtimeMs` when the README exists; `0` when `hasReadme === false`.
-This value is the canonical optimistic-locking key for `expectedMtime`
-on every run-side mutating route (`PATCH /api/runs/:id/archive`,
-`PATCH /api/runs/:id/status`, `PUT /api/runs/:id/readme`, the
-`/api/runs/:id/warnings` family).
-
-Membership filters (`memon list --project <name>`,
-`/api/runs?project=<name>`) SHALL filter on the top-level `project` field.
-
-#### Scenario: Top-level project equals config project name
-- **WHEN** a run at `/mnt/p/logs/foo-260501-100000` is discovered via the
-  project entry `{ name: "p", root: "/mnt/p" }`
-- **THEN** the indexed entry's top-level `project` field equals `"p"`
-
-#### Scenario: Missing README still indexed
-- **WHEN** a discovered run directory has no `README.md`
-- **THEN** the index entry has top-level `project` from config, `id` and
-  `path` populated, `status: UNKNOWN`, `hasReadme: false`,
-  `created_at` derived from the dir-name timestamp,
-  `updated_at` equal to `created_at`
-- **AND** `readmeMtime` equals `0` (no README file to stat)
-- **AND** `mtime` equals `dirStat.mtimeMs`
-
-#### Scenario: Index update on poll change
-- **WHEN** a poll cycle observes that a `README.md` `mtime` has advanced
-- **THEN** the index entry is re-parsed within that cycle; the top-level
-  `project` field is preserved (it cannot drift on edit since the
-  frontmatter `project:` field is gone in v3)
-- **AND** the entry's `readmeMtime` reflects the new README stat
-- **AND** the entry's `mtime` is the new `max(dir, README)`
-
-#### Scenario: README mtime and dir mtime diverge
-- **GIVEN** a run dir where the README was last written at `M_r` and a
-  non-README file was last modified at `M_d` with `M_d > M_r`
-- **WHEN** discovery indexes this run
-- **THEN** `readmeMtime === M_r`
-- **AND** `mtime === M_d`
-- **AND** the two are distinct fields on the run record
 
 ### Requirement: Archived runs are skipped by default
 
@@ -172,3 +65,61 @@ legacy front-matter sub-project search match is removed in v3.
 - **WHEN** the user searches for `sparse-fsdp`
 - **THEN** every such run is returned
 
+### Requirement: Run walk composes cached listings from project roots
+Run discovery SHALL be the sole recursive project discovery exception, implemented as a composite walk through shared cached listDir operations rooted exclusively at logs/, outputs/, and experiments/ directly beneath each configured project root. Missing entry directories SHALL be skipped; the project root and unrelated subtrees SHALL NOT be enumerated. Default and configured excludes SHALL apply to entry directories and descendants. A recognized Run directory SHALL be recorded and never descended into, even without a README. Depth beneath these three entries SHALL remain unrestricted. Directory symlinks, including entry-directory symlinks, SHALL NOT be followed.
+
+#### Scenario: Variable depth
+- **WHEN** Runs exist at different depths under the project's logs/, outputs/, or experiments/
+- **THEN** the walk discovers them through listDir and stops at each recognized Run
+
+#### Scenario: Unrelated project directories
+- **WHEN** other directories under the project root contain matching Run names
+- **THEN** they are not visited or discovered, and absent permitted entry directories are skipped
+
+#### Scenario: Run contains outputs
+- **WHEN** a Run directory contains many output directories
+- **THEN** discovery does not enumerate those descendants
+
+#### Scenario: Warm walk
+- **WHEN** a walk repeats while its directory observations are reusable
+- **THEN** it composes cached listings rather than unconditionally repeating filesystem enumeration
+
+### Requirement: Run dependencies use shared operation backoff
+Run directory-list and README observations SHALL use the shared per-operation automatic backoff and configured active/inactive intervals, not an independent Run scan timer or watcher. Directory listings detect topology; README dependencies detect list-field changes.
+
+#### Scenario: Quiet run discovery
+- **WHEN** directory listings remain unchanged during automatic checking
+- **THEN** their intervals double to the configured cap
+
+#### Scenario: Changed status
+- **WHEN** an existing Run README status changes without directory-entry changes
+- **THEN** the Run list updates after the file check and frontend heartbeat
+
+### Requirement: Human Run attention resets shared dependency schedules
+Human detail operations SHALL reset the selected document's relevant schedules according to the file Store policy. Identity lists and discovery preparation SHALL remain automatic, including when needed by an opened document. This SHALL NOT opt an expanded Run README body into automatic refresh.
+
+#### Scenario: Open experiment
+- **WHEN** the user opens an experiment with associated Runs
+- **THEN** explicitly requested detail dependencies receive attention, identity discovery remains automatic, and Run body refresh remains manual
+
+### Requirement: Run identity bookkeeping derives records from file observations
+The runtime SHALL retain lightweight Run identity/path and dependency bookkeeping, deriving Run records from cached file/list observations without a second long-lived domain-payload cache. Records SHALL preserve configured project membership, canonical Run metadata, missing README behavior, archived handling, distinct effective mtime and README locking mtime. Effective mtime SHALL NOT replace expectedMtime for writes.
+
+#### Scenario: Missing README
+- **WHEN** a recognized Run has no README
+- **THEN** its derived record remains discoverable with UNKNOWN status, hasReadme false and readmeMtime zero
+
+#### Scenario: Metadata changes
+- **WHEN** a Run README observation changes
+- **THEN** the next projection updates list metadata while preserving project identity and separate locking time
+
+### Requirement: Identity inventories do not load content or membership
+Navigation, discovered-identity counts and reference entry points SHALL use name/path inventories rather than rich Run or Experiment projections. Run inventory SHALL use the bounded directory walk without per-Run stat, README reads, archive/deprecation parsing or membership joins. Experiment inventory SHALL obtain canonical or legacy Markdown paths from one directory listing, preferring canonical folders on collisions. Explicit rich lists and details MAY read the metadata they actually display. No membership/result cache or filesystem-layout migration SHALL be introduced by this separation.
+
+#### Scenario: Unreadable content still has an identity
+- **WHEN** a canonically named Run or Experiment has a missing or unreadable README
+- **THEN** its identity and path remain enumerable without reading that README, while an explicit detail request retains normal missing/error behavior
+
+#### Scenario: Counting Runs
+- **WHEN** the caller only needs the number of discovered Runs or their reference targets
+- **THEN** the caller counts or resolves the identity inventory without computing Experiment membership or reading Run content

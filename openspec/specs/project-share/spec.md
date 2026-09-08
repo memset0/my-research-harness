@@ -1,7 +1,7 @@
 # project-share Specification
 
 ## Purpose
-TBD - created by archiving change share-project-via-login. Update Purpose after archive.
+Manage project-scoped viewer credentials under owner authority without broadening read-only research-data permissions.
 
 ## Requirements
 
@@ -273,18 +273,16 @@ All three endpoints SHALL be classified `mutating` (or `read` for the GET; both 
 - **THEN** the response is 403 Forbidden (NOT 401 — the viewer is authenticated, just under-privileged)
 
 ### Requirement: Central share identity is Host-qualified
-New central share URLs SHALL use `/share/<host>/<project>/<token>`, and viewer cookie entries SHALL store `{host, project, token}`. A share for one Host SHALL not authorize an equal-name Project on another Host.
+New central share URLs SHALL use `/share/<host>/<project>/<token>`, and viewer cookie entries SHALL store `{host, project, token}`. Central SHALL construct this public URL from its configured public origin after validating the exact owning Backend's create response; it SHALL NOT return a Backend-internal URL or a Backend DTO that omits `share_url`. A share for one Host SHALL not authorize an equal-name Project on another Host.
+
+#### Scenario: Central creates a canonical share URL
+- **WHEN** an owner creates a share for `{host-a, project-x}` through central
+- **THEN** the response contains `https://<public-origin>/share/host-a/project-x/<token>`
+- **AND** opening that link redeems only the `{host-a, project-x}` viewer scope
 
 #### Scenario: Same Project name has independent shares
 - **WHEN** Host A and Host B both expose `project-x` and only Host A token is redeemed
 - **THEN** the viewer can read Host A's Project but receives 403 for Host B's
-
-### Requirement: Owning Backend validates and stores share state
-Share creation, listing, revocation, expiry, and landing validation SHALL route to the exact owning Backend Project. Central SHALL mint/refresh the viewer cookie only after that Backend validates the token. An offline/unusable Backend SHALL not mint or revalidate access.
-
-#### Scenario: Revocation takes effect through central
-- **WHEN** a share is revoked on its owning Backend
-- **THEN** later central requests prune or reject that Host-qualified viewer scope
 
 ### Requirement: Legacy share landing is migration-only and fail-safe
 A legacy project-only share URL MAY be supported during bootstrap only through an explicitly configured migration Host or a unique unambiguous validation result. It SHALL never select the first Host by name. Newly created central shares SHALL always use the Host-qualified form.
@@ -292,3 +290,21 @@ A legacy project-only share URL MAY be supported during bootstrap only through a
 #### Scenario: Ambiguous legacy share does not grant access
 - **WHEN** a legacy share cannot be bound to exactly one Host
 - **THEN** central rejects it without adding any viewer scope
+
+### Requirement: Share migration does not transfer authority
+Centralization SHALL preserve existing share records, namespace identity and owner-first authentication, including preemptive Basic support without browser Basic challenges. Removing Backend transport SHALL not silently reassign a share to another project.
+
+#### Scenario: Existing share link
+- **WHEN** a valid existing host-qualified link is opened after centralization
+- **THEN** it resolves to the same project scope using its mounted share state
+
+### Requirement: Central validates authoritative project share state
+Central SHALL read and manage share records at the exact configured project root, retaining existing record format and host-qualified viewer scope. Token validation and revocation SHALL not be authorized from stale display-cache results. Unavailable authoritative storage SHALL fail closed for new/revalidated access. Share administration remains a separate permission from document mutation and actual filesystem write errors SHALL be surfaced.
+
+#### Scenario: Revoke centrally
+- **WHEN** an owner revokes a share
+- **THEN** subsequent token validation rejects it without any Backend request
+
+#### Scenario: Storage unavailable
+- **WHEN** authoritative share state cannot be validated
+- **THEN** central does not grant new or revalidated access using a stale positive observation
