@@ -286,6 +286,13 @@ Other references (read on demand):
 
 ## Dev: prefer prod build for the dashboard
 
+Local deployment and unit-test scheduling follow `AGENTS.md`: direct
+production build + hosting, no local systemd service, no remote-cluster unit
+tests. During development run an agent-selected, change-relevant testlist;
+reserve the full local suite for user-confirmed archive, aborting archive
+on failure. An explicit request to archive directly may skip that full suite.
+Reuse an exact-release build already completed instead of rebuilding it.
+
 For everyday use of the dashboard (looking at runs/experiments, hitting the
 API), **prefer the production build over `pnpm dev`**. Reason: Next.js dev
 mode lazy-compiles each route on first request — every route the user
