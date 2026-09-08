@@ -416,6 +416,7 @@ function WikiSelectedPane({
 }) {
   const [editing, setEditing] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [widthLimited, setWidthLimited] = useState(true)
   const isOwner = useIsOwner()
   const notFound = (error as (Error & { status?: number }) | null)?.status === 404
 
@@ -453,7 +454,7 @@ function WikiSelectedPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex min-w-0 items-center gap-2">
           {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
           <div className="flex min-w-0 items-baseline gap-2 text-xs">
@@ -470,6 +471,16 @@ function WikiSelectedPane({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="Limit reading width to 800px"
+            aria-pressed={widthLimited}
+            title={widthLimited ? 'Use full width' : 'Limit reading width to 800px'}
+            onClick={() => setWidthLimited((value) => !value)}
+          >
+            {widthLimited ? '800px' : 'Full width'}
+          </Button>
           {showHistory && (
             <Button size="sm" variant="outline" onClick={() => setHistoryOpen(true)}>
               <History className="size-3.5" />
@@ -489,12 +500,20 @@ function WikiSelectedPane({
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
-          className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-card"
+          className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden"
           data-wiki-reading-surface=""
         >
           <div className="flex justify-center gap-6 p-4 md:p-6" data-wiki-reading-layout="">
-            <div className="min-w-0 max-w-[720px] flex-1" data-wiki-document-column="">
-              <WikiDocumentView project={project} page={page} sourceSurface="full-wiki" />
+            <div
+              className={cn('min-w-0 flex-1 bg-card p-4 md:p-6', widthLimited && 'max-w-[800px]')}
+              data-wiki-document-column=""
+            >
+              <WikiDocumentView
+                project={project}
+                page={page}
+                sourceSurface="full-wiki"
+                widthLimited={widthLimited}
+              />
             </div>
             {!editing && outline.length > 0 && (
               <nav
@@ -625,10 +644,12 @@ export function WikiDocumentView({
   project,
   page,
   sourceSurface,
+  widthLimited = true,
 }: {
   project: ProjectTarget
   page: WikiPageDetail
   sourceSurface: 'full-wiki' | 'side-wiki'
+  widthLimited?: boolean
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(page.content), [page.content])
   const unverified = useMemo(() => {
@@ -686,7 +707,8 @@ export function WikiDocumentView({
       <WikiDiagnosticsBlock diagnostics={page.diagnostics} />
 
       <div
-        className="mx-auto w-full max-w-[720px]"
+        className={cn('mx-auto w-full', widthLimited && 'max-w-[800px]')}
+        data-wiki-document-body=""
         title={wholeBodyUnverified ? 'no line of this page is verified' : undefined}
         data-wiki-unverified-body={wholeBodyUnverified ? '' : undefined}
       >

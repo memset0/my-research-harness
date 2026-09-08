@@ -96,7 +96,7 @@ describe('WikiShell', () => {
       <WikiDocumentView project="project-a" page={page} sourceSurface="side-wiki" />,
     )
     const body = container.querySelector('[data-wiki-unverified-body]')
-    expect(body).toHaveClass('mx-auto', 'w-full', 'max-w-[720px]')
+    expect(body).toHaveClass('mx-auto', 'w-full', 'max-w-[800px]')
     expect(body).not.toHaveClass('rounded-md', 'border-l-4', 'bg-muted/50', 'py-2', 'pl-3')
     expect(body).toHaveAttribute('title', 'no line of this page is verified')
     expect(container.querySelector('[data-wiki-review-summary]')).toHaveAttribute(
@@ -148,7 +148,7 @@ describe('WikiShell', () => {
     expect(layout).toHaveClass('justify-center', 'gap-6')
     expect(outline?.parentElement).toBe(layout)
     expect(container.querySelector('[data-wiki-document-column]')).toHaveClass(
-      'max-w-[720px]',
+      'max-w-[800px]',
       'min-w-0',
     )
     expect(container.querySelector('[data-wiki-inline-toc]')).toBeNull()
@@ -156,6 +156,24 @@ describe('WikiShell', () => {
     expect(outline).toHaveTextContent('Limits')
     expect(outline?.querySelector('a')).toHaveAttribute('href', '#wiki-w0002-evidence')
     expect(screen.getByTestId('wiki-markdown')).not.toHaveTextContent('---')
+
+    const column = container.querySelector('[data-wiki-document-column]')
+    const body = container.querySelector('[data-wiki-document-body]')
+    expect(column).toHaveClass('bg-card')
+    expect(container.querySelector('[data-wiki-reading-surface]')).not.toHaveClass('bg-card')
+    expect(outline).not.toHaveClass('bg-card')
+    const widthToggle = screen.getByRole('button', { name: 'Limit reading width to 800px' })
+    expect(widthToggle).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(widthToggle)
+    expect(widthToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(widthToggle).toHaveTextContent('Full width')
+    expect(column).not.toHaveClass('max-w-[800px]')
+    expect(body).not.toHaveClass('max-w-[800px]')
+    expect(outline).toBeVisible()
+    await userEvent.click(widthToggle)
+    expect(widthToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(column).toHaveClass('max-w-[800px]')
+    expect(body).toHaveClass('max-w-[800px]')
 
     await userEvent.type(screen.getByLabelText('Filter'), 'weekly')
     await waitFor(() => {
