@@ -12,7 +12,7 @@ import type { BackendFetch } from './backend-url'
 import type { CentralHostRegistry, HostFailureState } from './host-registry'
 
 export const MAX_CENTRAL_PROJECTS_JSON_BYTES = 1024 * 1024
-export const DEFAULT_CENTRAL_PROJECTS_TIMEOUT_MS = 5_000
+export const DEFAULT_CENTRAL_PROJECTS_TIMEOUT_MS = 50_000
 
 export interface AggregateCentralProjectsOptions {
   registry: CentralHostRegistry
@@ -104,6 +104,7 @@ async function fetchHostProjects(
     const response = await proxyCentralApiRequest(request, {
       registry: options.registry,
       actor: options.actor ?? { role: 'owner' },
+      headerTimeoutMs: timeoutMs,
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     })
     if (!response.ok) {

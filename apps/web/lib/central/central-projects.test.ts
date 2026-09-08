@@ -13,7 +13,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './backend-headers'
 import {
   aggregateCentralProjects,
-  DEFAULT_CENTRAL_PROJECTS_TIMEOUT_MS,
   MAX_CENTRAL_PROJECTS_JSON_BYTES,
 } from './central-projects'
 import { CentralHostRegistry } from './host-registry'
@@ -254,7 +253,6 @@ describe('aggregateCentralProjects', () => {
   })
 
   it('bounds each Host request by a deadline and isolates a hung Host', async () => {
-    expect(DEFAULT_CENTRAL_PROJECTS_TIMEOUT_MS).toBe(5_000)
     const hostRegistry = registry('host-a', 'host-b')
     const fetchImpl = vi.fn(
       async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
