@@ -41,6 +41,12 @@ If a screenshot/preview tool is available, prefer that over curl. Otherwise the 
 
 **Hard rule:** When introducing or changing a `bg-*-foreground` / `text-*-foreground` / `border-*` semantic class, grep `apps/web/app/globals.css` for the matching `--<token>` variable. If it isn't there, **stop and fix the install (F2)** before touching more components.
 
+### F5. Overwriting the live Next.js build during development
+
+**What went wrong:** A development/validation process reused production's `.next` directory. The running server's HTML referenced assets that had been replaced, leaving pages unstyled or broken.
+
+**Hard rule:** Never run dev, build, or cleanup against a live server's build output. Verify the actual output directory used by custom server entrypoints; do not assume a `distDir` override took effect. Build separately from the live output, or stop the host before rebuilding in place. Coordinate cutovers across tasks, and verify the public page's referenced CSS/JS plus actual browser rendering after restart—not just an HTTP 200.
+
 ## Repo-specific conventions
 
 ### Local deployment info lives in LOCAL.md (gitignored)
