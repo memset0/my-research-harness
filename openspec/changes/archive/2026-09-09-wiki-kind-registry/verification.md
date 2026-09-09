@@ -70,3 +70,28 @@ release phase only. Registry route ownership is explicitly registered in the
 central API manifest. Figure and body-translation work remain excluded. Data
 migration completion is coordinated with its owning task; the FS v6 marker and
 the migration change's deferred final-release tasks remain unchanged.
+
+## Authorized rollout verification
+
+The registry release was committed and pushed, with the already committed
+FS v6 migration adapters included. The data migration owner confirmed readiness
+before the production host was switched. The production build completed in an
+isolated release checkout; unfinished figure and translation work was excluded.
+The previous working host remains available as a rollback target.
+
+- The additional route-manifest, registry API and Help checks passed: 11 tests.
+- Core, Backend, Skills, CLI and Web production builds passed.
+- An authenticated Chromium session against the public production endpoint
+  checked all 11 kinds, desktop/mobile layout, keyboard opening, dismissal,
+  focus restoration, generated CSS rules and theme tokens. No page errors occurred.
+- Desktop dialog measured 672 × 850; mobile measured 358 × 717.4 with 16px
+  margins and no horizontal overflow. Both screenshots were visually inspected.
+- Production HTML contained application assets; the hydrated page contained
+  the Help trigger. The host-qualified shell fetches page content client-side.
+- Registry authentication and Experiment list/detail structured-document reads
+  passed. No automatic review marks or FS version changes were made.
+- The local CLI launcher now selects the same isolated release. Existing
+  project-installed skill copies are not overwritten by this rollout; refresh
+  them explicitly using the documented dry-run/install workflow.
+
+No full test suite was run for this explicitly requested rollout/archive.

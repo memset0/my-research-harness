@@ -71,7 +71,8 @@ memon --project-root <project-root> install-skills --agent codex
 Use the installed command's `--target` option for an explicitly selected custom
 skill directory. Installation replaces managed skill copies; review dry-run
 output first. A separately authorized Web rollout builds Core/Backend and Web
-and restarts the chosen host using the new build. This task performs no rollout.
+and restarts the chosen host using the new build. Deployment is an explicit
+operation, not an effect of editing the registry.
 
 ## Read the installed definitions
 
