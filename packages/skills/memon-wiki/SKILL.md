@@ -1,6 +1,6 @@
 ---
 name: memon-wiki
-description: "Maintain a project's memon wiki under docs/wiki/: meetings, roadmaps, findings, bottlenecks, showcases, questions, decisions, notes, and harness feedback. Use when the user wants durable project knowledge recorded, corrected, promoted from Experiment Results, or migrated out of a Report — whether the project root is the current directory or an sshfs-mounted remote project."
+description: "Maintain durable project knowledge under docs/wiki/ using the installed kind registry. Use when the user wants knowledge recorded, corrected, promoted from Experiment Results, or explicitly migrated out of a Report — in the current directory or an sshfs-mounted project."
 ---
 
 # memon-wiki
@@ -38,24 +38,10 @@ evidence instead of duplicating raw results, run logs, machine-oriented schemas,
 or exhaustive status tables in the wiki. A small cited result may be included
 when it is necessary to explain a conclusion.
 
-A roadmap is a content-first research tree: every node is a goal, research
-question, or direction, and the nesting expresses how those refine one another.
-Nodes are not experiment slots — never impose one experiment per node, and never
-let the tree degrade into an inventory of Experiments. A node that is an
-explicitly proposed goal or open question needs no evidence at all.
-The roadmap page and its nodes carry no status vocabulary. Express whether a
-direction is proposed, active, blocked, or complete in the prose when that
-distinction helps the reader; do not turn it into page-level bookkeeping.
-
-Cite experiments inline as supporting evidence wherever they bear on a node, and
-state the evidentiary role at that citation instead of duplicating the
-experiment's content. The relationship is many-to-many: one Experiment or
-Variant may support several nodes and several roadmaps, and one node may cite
-several experiments. Distinguish proposed work from established evidence; do not
-invent Experiment ids for uncreated work. Do not make the roadmap a second
-experiment task tracker. If discussion exposes an outdated Experiment document,
-route the correction through its authoring workflow rather than keeping the
-corrected truth only in the wiki.
+Use the generated kind reference for kind-specific narrative and evidence
+relationships. Never invent Experiment IDs for uncreated work. If discussion
+exposes an outdated Experiment document, route its correction through the
+Experiment authoring workflow instead of keeping corrected truth only here.
 
 Represent user feedback faithfully. Preserve the user's priorities, corrections,
 constraints, and unresolved disagreements in the relevant narrative, not merely
@@ -165,12 +151,14 @@ exactly two levels deep — never place a page directly under `docs/wiki/`.
 
 ## Choose the kind
 
-Read [references/page-kinds.md](references/page-kinds.md) for every kind's
+Read [references/page-rules.md](references/page-rules.md) for shared safety and
+frontmatter rules, and the generated [references/page-kinds.md](references/page-kinds.md) for every kind's
 purpose, status vocabulary, required frontmatter, recommended H2 sections, and
-authoring guidance. Pick the kind with the user, or infer it when the request
-is unambiguous (a research tree is a `roadmap`; a pasted meeting transcript is
-a `meeting`; "record that X is now our approach" is a `decision`). When two
-kinds both fit, ask:
+authoring guidance. Inspect the installed definitions with `memon wiki kinds ls`
+and `memon wiki kinds show <kind> --format human` (or `--format json`). Generated
+guidance is refreshed when the updated skills package is installed, not when
+someone edits the source registry. Pick the kind with the user, or infer it
+when the request is unambiguous. When two kinds both fit, ask:
 
 > 这条内容我打算记成 `finding`(有 Results 支撑的结论),也可以记成 `note`(暂时的观察)。
 > 你倾向哪一个?
@@ -269,9 +257,7 @@ When the user asserts something no Experiment supports:
 7. When updating an existing page, preserve prior claims or mark the
    correction explicitly. Never quietly rewrite history.
 
-Kind-specific requirements: a `meeting` records decisions and action items as
-two separate lists and cites the Experiments discussed in `sources`; a
-`showcase` states how to reproduce every artifact it shows.
+Follow the generated kind-specific writing guidance in `references/page-kinds.md`.
 
 ## Links and callouts
 

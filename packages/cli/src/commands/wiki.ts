@@ -43,6 +43,9 @@ import {
   WIKI_DIR_RELPATH,
   WIKI_ID_REGEX,
   WIKI_KINDS,
+  WIKI_KIND_DEFINITIONS,
+  WIKI_KIND_REGISTRY,
+  getWikiKind,
   WIKI_RECOMMENDED_SECTIONS,
   WIKI_RESERVED_KINDS,
   WIKI_SLUG_REGEX,
@@ -103,6 +106,33 @@ function readFormat(input: WikiCommonInput, allowMarkdown = false): WikiFormat {
 }
 
 // ---------- project load ----------
+
+export async function runWikiKinds(input: WikiCommonInput & { kind?: string }): Promise<void> {
+  const format = readFormat(input)
+  const selected = input.kind === undefined ? undefined : getWikiKind(assertKind(input.kind))
+  if (format === 'json') {
+    emitJson(selected ?? WIKI_KIND_REGISTRY)
+    return
+  }
+  const kinds = selected ? [selected] : WIKI_KIND_DEFINITIONS
+  for (const kind of kinds) {
+    process.stdout.write(`${kind.id} — ${kind.label}\n${kind.zh.purpose}\n`)
+    if (!selected) continue
+    process.stdout.write([
+      `适用：${kind.zh.uses.join('；')}`,
+      `示例：${kind.zh.examples.join('；')}`,
+      `区别：${kind.zh.distinctions}`,
+      `Status: ${kind.policy.statuses.join(' | ') || 'none'}`,
+      `Date required: ${kind.policy.dateRequired}; sources required: ${kind.policy.sourcesRequired}`,
+      `Recommended H2 (advisory): ${kind.policy.recommendedHeadings.join(', ') || 'none'}`,
+      `Required H2: none`,
+      `Authoring: ${kind.en.purpose} ${kind.en.authoring}`,
+      `Examples: ${kind.en.examples.join('; ')}`,
+      `Distinctions: ${kind.en.distinctions}`,
+      '',
+    ].join('\n'))
+  }
+}
 
 interface WikiContext {
   projectRoot: string
@@ -233,7 +263,7 @@ function assertKind(kind: string): WikiKind {
 
 /** Validate `status` against a kind's vocabulary; default to its first value. */
 function resolveStatus(kind: WikiKind, status: string | undefined): string | undefined {
-  const vocabulary = WIKI_STATUS_BY_KIND[kind]
+  const vocabulary = WIKI_STATUS_BY_KIND[kind] ?? []
   if (vocabulary.length === 0) {
     if (status !== undefined) {
       emitErrorAndExit('BAD_REQUEST', `\`${kind}\` pages carry no status; drop --status`)
@@ -489,8 +519,8 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     emitErrorAndExit('BAD_REQUEST', '--title is required and must be a non-empty string')
   }
   const status = resolveStatus(kind, input.status)
-  if (kind === 'meeting' && (input.date === undefined || input.date.trim() === '')) {
-    emitErrorAndExit('BAD_REQUEST', '`meeting` pages require --date <YYYY-MM-DD>')
+  if (getWikiKind(kind)?.policy.dateRequired && (input.date === undefined || input.date.trim() === '')) {
+    emitErrorAndExit('BAD_REQUEST', `\`${kind}\` pages require --date <YYYY-MM-DD>`)
   }
   if (input.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
     emitErrorAndExit('BAD_REQUEST', `--date must be YYYY-MM-DD; got "${input.date}"`)
@@ -514,7 +544,7 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     updated_at: now,
   }
 
-  const sections = WIKI_RECOMMENDED_SECTIONS[kind]
+  const sections = WIKI_RECOMMENDED_SECTIONS[kind] ?? []
   const body = [
     '',
     `# ${frontmatter.title}`,
@@ -645,7 +675,7 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
   const slug = rawSlug === undefined ? summary.slug : assertSlug(rawSlug)
   assertSlugFree(ctx, slug, summary.id)
 
-  const vocabulary = WIKI_STATUS_BY_KIND[kind]
+  const vocabulary = WIKI_STATUS_BY_KIND[kind] ?? []
   let status: string | undefined
   if (input.status !== undefined) {
     status = resolveStatus(kind, input.status)
@@ -1118,11 +1148,11 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
     ) {
       patch.created_at = formatIsoLocal(new Date(mtime))
     }
-    if (kind === 'meeting' && typeof existing.date !== 'string') {
+    if (getWikiKind(kind)?.policy.dateRequired && typeof existing.date !== 'string') {
       const created = typeof patch.created_at === 'string' ? patch.created_at : existing.created_at
       if (typeof created === 'string') patch.date = created.slice(0, 10)
     }
-    if (kind === 'finding' && wikiStringList(existing.sources).length === 0) {
+    if (getWikiKind(kind)?.policy.sourcesRequired && wikiStringList(existing.sources).length === 0) {
       const derived = deriveSources(body)
       if (derived.length > 0) patch.sources = derived
     }

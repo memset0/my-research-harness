@@ -6,57 +6,10 @@
 // components, summary, review) builds on these declarations only, so client
 // bundles can `import type` from here without pulling any node code.
 
-export const WIKI_KINDS = [
-  'meeting',
-  'roadmap',
-  'finding',
-  'bottleneck',
-  'showcase',
-  'question',
-  'decision',
-  'note',
-  'harness-feedback',
-] as const
-
-export type WikiKind = (typeof WIKI_KINDS)[number]
-
-/** True for a directory name the canonical kind list covers. */
-export function isWikiKind(value: unknown): value is WikiKind {
-  return typeof value === 'string' && (WIKI_KINDS as readonly string[]).includes(value)
-}
-
-/**
- * Allowed `status` values per kind. An empty list means the kind carries no
- * status at all (`meeting`, `roadmap`, `note`) — a `status` key there is
- * ignored, and a missing one is not a diagnostic.
- */
-export const WIKI_STATUS_BY_KIND: Record<WikiKind, readonly string[]> = {
-  meeting: [],
-  roadmap: [],
-  finding: ['TENTATIVE', 'VERIFIED', 'RETRACTED'],
-  bottleneck: ['OPEN', 'MITIGATED', 'RESOLVED'],
-  showcase: ['DRAFT', 'READY', 'OUTDATED'],
-  question: ['OPEN', 'ANSWERED', 'DROPPED'],
-  decision: ['PROPOSED', 'ACCEPTED', 'SUPERSEDED'],
-  note: [],
-  'harness-feedback': ['PROPOSED', 'ACCEPTED', 'SHIPPED', 'REJECTED'],
-}
-
-/** Advisory H2 sections per kind; a missing one is a `warn`, never an error. */
-export const WIKI_RECOMMENDED_SECTIONS: Record<WikiKind, readonly string[]> = {
-  meeting: ['Attendees', 'Notes', 'Decisions', 'Action items'],
-  roadmap: [],
-  finding: ['Claim', 'Evidence', 'Limits'],
-  bottleneck: ['Problem', 'Impact', 'Status', 'Candidates'],
-  showcase: ['What to show', 'How to reproduce', 'Assets'],
-  question: ['Question', 'Context', 'Answer'],
-  decision: ['Decision', 'Rationale', 'Consequences'],
-  note: [],
-  'harness-feedback': ['Motivation', 'Proposal', 'Status'],
-}
-
-/** Reserved for the FS v7 consolidation of `docs/code-review/` into the wiki. */
-export const WIKI_RESERVED_KINDS = ['code-review'] as const
+export {
+  WIKI_KINDS, WIKI_STATUS_BY_KIND, WIKI_RECOMMENDED_SECTIONS,
+  WIKI_RESERVED_KINDS, isWikiKind, type WikiKind,
+} from './kind-registry.js'
 
 /** `W<NNNN>` — the canonical page id. */
 export const WIKI_ID_REGEX = /^W\d{4}$/

@@ -71,3 +71,5 @@ export {
   type WikiSummaryLocation,
 } from './summary.js'
 export * from './types.js'
+export * from './kind-registry.js'
+export * from './kind-guidance.js'

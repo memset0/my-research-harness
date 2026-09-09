@@ -9,6 +9,8 @@
   },
   "packageManager": "pnpm@10.33.2",
   "scripts": {
+    "wiki:kinds:generate": "pnpm --filter @memon/core build && node scripts/wiki-kinds.mjs --write",
+    "wiki:kinds:check": "pnpm --filter @memon/core build && node scripts/wiki-kinds.mjs --check",
     "dev": "pnpm --filter @memon/web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",

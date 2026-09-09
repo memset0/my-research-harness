@@ -25,6 +25,7 @@ import {
   runWikiDelete,
   runWikiDeprecate,
   runWikiLint,
+  runWikiKinds,
   runWikiLs,
   runWikiMigrateReport,
   runWikiMove,
@@ -38,6 +39,67 @@ import {
 } from './wiki.js'
 
 const execFileAsync = promisify(execFile)
+
+describe('wiki kinds', () => {
+  it('accepts a config-only kind through create, move and lint', async () => {
+    const configurationPath = new URL('../../../core/dist/wiki/kinds.json', import.meta.url)
+    const configuration = JSON.parse(await fs.readFile(configurationPath, 'utf8'))
+    const ordinary = structuredClone(configuration.kinds.find((kind: { id: string }) => kind.id === 'note'))
+    Object.assign(ordinary, { id: 'test-guide', order: 120, relatedKinds: [] })
+    ordinary.en.purpose = 'Fixture purpose.'
+    ordinary.en.examples = ['Fixture example.']
+    configuration.kinds.push(ordinary)
+    vi.resetModules()
+    vi.doMock('../../../core/dist/wiki/kinds.json', () => ({ default: configuration }))
+    try {
+      const commands = await import('./wiki.js')
+      const created = await runCapturing(() => commands.runWikiCreate({ cwd: root, kind: 'test-guide', slug: 'fixture', title: 'Fixture' }))
+      expect(created.exitCode).toBeNull()
+      const original = JSON.parse(created.stdout)
+      const moved = await runCapturing(() => commands.runWikiMove({ cwd: root, page: original.id, target: 'note' }))
+      expect(moved.exitCode).toBeNull()
+      const restored = await runCapturing(() => commands.runWikiMove({ cwd: root, page: original.id, target: 'test-guide' }))
+      expect(restored.exitCode).toBeNull()
+      expect(JSON.parse(restored.stdout).id).toBe(original.id)
+      const checked = await runCapturing(() => commands.runWikiLint({ cwd: root, strict: true }))
+      expect(checked.exitCode).toBeNull()
+      const explanation = await runCapturing(() => commands.runWikiKinds({ cwd: root, kind: 'test-guide', format: 'human' }))
+      expect(explanation.stdout).toContain('Fixture purpose.')
+      expect(explanation.stdout).toContain('Fixture example.')
+    } finally {
+      vi.doUnmock('../../../core/dist/wiki/kinds.json')
+      vi.resetModules()
+    }
+  })
+
+  it('lists and explains kinds without resolving a project', async () => {
+    const listed = await runCapturing(() => runWikiKinds({ cwd: '/missing-project', format: 'json' }))
+    const payload = JSON.parse(listed.stdout)
+    expect(payload.kinds.map((kind: { id: string }) => kind.id)).toEqual(expect.arrayContaining(['initiative', 'catalog', 'note', 'roadmap']))
+    const shown = await runCapturing(() => runWikiKinds({ cwd: '/missing-project', format: 'human', kind: 'initiative' }))
+    expect(shown.stdout).toContain('推进计划')
+    expect(shown.stdout).toContain('Status: none')
+    expect(shown.stdout).toContain('May predate any Experiment')
+    const unknown = await runCapturing(() => runWikiKinds({ cwd: '.', kind: 'workspace' }))
+    expect(unknown.exitCode).toBe(2)
+  })
+
+  it.each(['initiative', 'catalog'])('creates and moves %s with stable identity and no scaffold', async (kind) => {
+    const created = await runCapturing(() => runWikiCreate({ cwd: root, kind: 'note', slug: 'working-page', title: 'Working page', format: 'json' }))
+    expect(created.exitCode).toBeNull()
+    const original = JSON.parse(created.stdout)
+    const moved = await runCapturing(() => runWikiMove({ cwd: root, page: original.id, target: kind, format: 'json' }))
+    expect(moved.exitCode).toBeNull()
+    const page = JSON.parse(moved.stdout)
+    expect(page.id).toBe(original.id)
+    expect(page.slug).toBe(original.slug)
+    expect(page.status).toBeNull()
+    const read = await fs.readFile(join(root, `docs/wiki/${kind}/${original.id}-working-page.md`), 'utf8')
+    expect(read).not.toContain('\n## ')
+    const checked = await runCapturing(() => runWikiLint({ cwd: root, strict: true, format: 'json' }))
+    expect(checked.exitCode).toBeNull()
+  })
+})
 
 let root: string
 

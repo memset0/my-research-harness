@@ -113,6 +113,8 @@ describe('command classification', () => {
     ['experiment link', 'project'],
     ['experiment ls', 'readonly'],
     ['journal read', 'readonly'],
+    ['wiki kinds ls', 'readonly'],
+    ['wiki kinds show', 'readonly'],
     ['journal submit', 'project'],
     ['serve', 'host'],
     ['update', 'host'],

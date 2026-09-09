@@ -8,6 +8,7 @@
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation, validateWikiEntry } from './deprecation.js'
 import { wikiStringList } from './frontmatter.js'
+import { getWikiKind } from './kind-registry.js'
 import { wikiSourceKind } from './staleness.js'
 import {
   isWikiKind,
@@ -306,7 +307,7 @@ function lintStatusAndDates(
   const kind = page.kind
   const status = typeof frontmatter?.status === 'string' ? frontmatter.status : null
   if (isWikiKind(kind)) {
-    const vocabulary = WIKI_STATUS_BY_KIND[kind]
+    const vocabulary = WIKI_STATUS_BY_KIND[kind] ?? []
     if (vocabulary.length > 0) {
       if (!status) {
         diagnostics.push({
@@ -322,21 +323,21 @@ function lintStatusAndDates(
         })
       }
     }
-    if (kind === 'meeting') {
+    if (getWikiKind(kind)?.policy.dateRequired) {
       const date = typeof frontmatter?.date === 'string' ? frontmatter.date : ''
       if (!WIKI_DATE_REGEX.test(date)) {
         diagnostics.push({
           code: 'WIKI_DATE_MISSING',
           severity: 'error',
-          message: '`meeting` pages require `date` in YYYY-MM-DD form',
+          message: `\`${kind}\` pages require \`date\` in YYYY-MM-DD form`,
         })
       }
     }
-    if (kind === 'finding' && wikiStringList(frontmatter?.sources).length === 0) {
+    if (getWikiKind(kind)?.policy.sourcesRequired && wikiStringList(frontmatter?.sources).length === 0) {
       diagnostics.push({
         code: 'WIKI_SOURCES_REQUIRED',
         severity: 'error',
-        message: '`finding` pages require a non-empty `sources` list',
+        message: `\`${kind}\` pages require a non-empty \`sources\` list`,
       })
     }
   }
@@ -388,7 +389,7 @@ function lintSections(
   offset: number,
 ): void {
   if (!isWikiKind(page.kind)) return
-  const recommended = WIKI_RECOMMENDED_SECTIONS[page.kind]
+  const recommended = WIKI_RECOMMENDED_SECTIONS[page.kind] ?? []
   if (recommended.length === 0) return
   const present = new Set<string>()
   for (const line of masked.split('\n')) {
@@ -414,22 +415,23 @@ function lintEvidence(
   diagnostics: WikiDiagnostic[],
   offset: number,
 ): void {
-  if (page.kind !== 'finding') return
-  if (!EVIDENCE_TOKEN_REGEX.test(masked)) {
+  const policy = getWikiKind(page.kind)?.policy
+  if (!policy) return
+  if (policy.bodyEvidenceWarning && !EVIDENCE_TOKEN_REGEX.test(masked)) {
     diagnostics.push({
       code: 'WIKI_CLAIM_WITHOUT_EVIDENCE',
       severity: 'warn',
       message:
-        'finding body cites no Experiment, Variant, or run identifier; point the prose at the evidence, not only `sources`',
+        `${page.kind} body cites no Experiment, Variant, or run identifier; point the prose at the evidence, not only \`sources\``,
       line: offset + 1,
     })
   }
   const review = ctx.review
-  if (review && frontmatter?.status === 'VERIFIED' && review.state !== 'VERIFIED') {
+  if (review && policy.reviewWarningStatus && frontmatter?.status === policy.reviewWarningStatus && review.state !== 'VERIFIED') {
     diagnostics.push({
       code: 'WIKI_UNREVIEWED_VERIFIED',
       severity: 'warn',
-      message: `finding is \`status: VERIFIED\` but its review state is ${review.state}`,
+      message: `${page.kind} is \`status: ${policy.reviewWarningStatus}\` but its review state is ${review.state}`,
     })
   }
 }

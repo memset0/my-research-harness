@@ -296,6 +296,8 @@ memon wiki review log|diff|verify <sha|next>|unverify <sha>   # diff: whole docs
 memon wiki commit [-m SUMMARY]                  # stages only docs/wiki/
 memon wiki migrate-report <R-id> <kind> [<slug>]
 memon wiki components ls|show|migrate --central URL
+memon wiki kinds ls --format human
+memon wiki kinds show initiative --format json
 ```
 
 The CLI validates source syntax and filters declared source tokens; only Web
@@ -305,6 +307,13 @@ references scanned from Markdown bodies.
 
 Migration is editorial and one Report at a time (`migrate-report`); a
 migrated page keeps `legacy_id: R<NNNN>` so old `R` links keep resolving.
+
+Wiki kinds, policies and bilingual guidance are configured in
+`packages/core/src/wiki/kinds.json`. The Wiki help button displays “Wiki 类型指南”.
+See [Wiki kind registry](docs/wiki-kind-registry.md) for schema fields,
+deterministic skill generation, drift checks, explicit package/skill refresh,
+and safe migration boundaries. Editing the registry does not update deployed
+instances or move existing pages automatically.
 
 ## CLI
 

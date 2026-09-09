@@ -1113,6 +1113,16 @@ const wiki = program
   .command('wiki')
   .description('wiki commands (docs/wiki/<kind>/W<NNNN>-<slug>{.md,/README.md})')
 
+const wikiKinds = wiki.command('kinds').description('list or explain shipped Wiki kinds')
+wikiCommand(wikiKinds, 'ls', 'list all supported Wiki kinds').action(async (opts) => {
+  const { runWikiKinds } = await import('./commands/wiki.js')
+  await runWikiKinds(wikiGlobals(opts))
+})
+wikiCommand(wikiKinds, 'show <kind>', 'explain a Wiki kind and its authoring rules').action(async (kind, opts) => {
+  const { runWikiKinds } = await import('./commands/wiki.js')
+  await runWikiKinds({ ...wikiGlobals(opts), kind })
+})
+
 interface WikiLocalOptions {
   projectRoot?: string
   format?: string

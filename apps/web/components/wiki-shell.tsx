@@ -61,6 +61,8 @@ import {
   WikiStatusBadge,
 } from './wiki-page-card'
 import { WikiChangesDialog, WikiReviewPanel } from './wiki-review-panel'
+import { WikiKindHelp } from './wiki-kind-help'
+import { wikiKinds } from '../lib/wiki-kinds'
 
 const WIKI_RAIL_PREFERENCE_KEY = 'memon:wiki:rail-open'
 const WIKI_TIMESTAMP_KEYS = ['created_at', 'updated_at', 'date'] as const
@@ -236,7 +238,7 @@ function WikiRailFilters({
   const present = new Set(kinds.map((page) => page.kind))
   const options = [
     ...WIKI_KIND_ORDER.filter((known) => present.has(known)),
-    ...[...present].filter((k) => !WIKI_KIND_ORDER.includes(k as never)).sort(),
+    ...[...present].filter((value) => !WIKI_KIND_ORDER.includes(value)).sort(),
   ]
   return (
     <div className="flex flex-col gap-2">
@@ -252,7 +254,7 @@ function WikiRailFilters({
             <SelectItem value="all">all kinds</SelectItem>
             {options.map((option) => (
               <SelectItem key={option} value={option}>
-                {option}
+                {wikiKinds.find((entry) => entry.id === option)?.label ?? option} ({option})
               </SelectItem>
             ))}
           </SelectContent>
@@ -373,7 +375,10 @@ function WikiLandingState({
 }) {
   return (
     <div className="flex h-full flex-col">
-      {onShowRail && <ClosedRailToolbar onShowRail={onShowRail} />}
+      <div className="flex items-center justify-end gap-2 border-b px-4 py-2">
+        {onShowRail && <WikiRailToggleButton action="show" onClick={onShowRail} />}
+        <WikiKindHelp />
+      </div>
       <div className="flex flex-1 items-center justify-center p-8">
         {isLoading ? (
           <div className="w-full max-w-md">
@@ -471,6 +476,7 @@ function WikiSelectedPane({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <WikiKindHelp />
           <Button
             size="sm"
             variant="outline"

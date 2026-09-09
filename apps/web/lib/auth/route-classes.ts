@@ -315,7 +315,7 @@ const RULES: Rule[] = [
   // class despite being POSTs, which the generic non-GET fallthrough would
   // otherwise make owner-only.
   {
-    match: startsWith('/api/wiki/components'),
+    match: (method, path) => startsWith('/api/wiki/components')(method, path) || exact('/api/wiki/kinds')(method, path),
     class: 'read',
     projectFor: projectGlobal(),
   },

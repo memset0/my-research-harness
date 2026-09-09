@@ -178,6 +178,7 @@ export const API_ROUTE_MANIFEST = {
   'wiki/components/lint/route.ts': central(['POST'], 'read'),
   'wiki/components/migrate/route.ts': central(['POST'], 'read'),
   'wiki/components/route.ts': central(['GET'], 'read'),
+  'wiki/kinds/route.ts': central(['GET'], 'read'),
   'wiki/review/[sha]/route.ts': backend(['DELETE', 'POST'], 'project-query', 'shell'),
   'wiki/review/route.ts': backend(['GET'], 'project-query', 'read'),
   'wiki/route.ts': backend(['GET'], 'project-query', 'read'),

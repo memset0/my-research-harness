@@ -141,6 +141,8 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'wiki review verify': 'project',
   'wiki review unverify': 'project',
   'wiki components ls': 'readonly',
+  'wiki kinds ls': 'readonly',
+  'wiki kinds show': 'readonly',
   'wiki components show': 'readonly',
   'wiki components migrate': 'project',
 }

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "next build",
+    "build": "node ../../scripts/wiki-kinds.mjs --check && next build",
     "start": "NODE_ENV=production tsx server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

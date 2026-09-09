@@ -11,21 +11,9 @@ import type { WikiListItem } from '../lib/api'
 import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
+import { wikiKinds } from '../lib/wiki-kinds'
 
-// Canonical kind order, inlined rather than imported from @memon/core:
-// client bundles must not pull the core runtime (it transitively imports
-// fast-glob → fs). Mirrors WIKI_KINDS.
-export const WIKI_KIND_ORDER = [
-  'meeting',
-  'roadmap',
-  'finding',
-  'bottleneck',
-  'showcase',
-  'question',
-  'decision',
-  'note',
-  'harness-feedback',
-] as const
+export { wikiKindOrder as WIKI_KIND_ORDER } from '../lib/wiki-kinds'
 
 const REVIEW_LABEL: Record<ReviewState, string> = {
   VERIFIED: 'VERIFIED',
@@ -54,6 +42,7 @@ export function WikiKindBadge({ kind, className }: { kind: string; className?: s
       className={cn('shrink-0 font-mono text-[10px] lowercase', className)}
       data-slot="wiki-kind-badge"
       data-kind={kind}
+      title={wikiKinds.find((entry) => entry.id === kind)?.label ?? kind}
     >
       {kind}
     </Badge>

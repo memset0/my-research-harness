@@ -70,6 +70,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/wiki/review')).toBe('read')
     expect(classify('GET', '/api/wiki/backlinks/E0001-fused')).toBe('read')
     expect(classify('GET', '/api/wiki/components')).toBe('read')
+    expect(classify('GET', '/api/wiki/kinds')).toBe('read')
     expect(classify('POST', '/api/wiki/components/lint')).toBe('read')
     expect(classify('GET', '/api/wiki-assets/project-a/W0006/views/map/index.html')).toBe('read')
     expect(classify('HEAD', '/api/wiki-assets/project-a/W0006/views/map/index.html')).toBe('read')

@@ -11,13 +11,14 @@
       "import": "./dist/index.js"
     },
     "./project-io-child": "./dist/project-io-child.js",
+    "./wiki-kinds.json": "./dist/wiki/kinds.json",
     "./package.json": "./package.json"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json && node dist/wiki/kind-registry.js",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

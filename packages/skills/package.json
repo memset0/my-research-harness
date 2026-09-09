@@ -18,11 +18,15 @@
     "retired-skills.json"
   ],
   "scripts": {
-    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/wiki-kinds.mjs --check && node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
+    "prepack": "node ../../scripts/wiki-kinds.mjs --check",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@memon/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
