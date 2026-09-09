@@ -19,13 +19,11 @@ import {
   emptyInvestigationDocument,
   emptyResultsDocument,
   nextExperimentId,
-  parseReadme,
   type Run,
   readExperimentDoc,
-  reserializeReadme,
   resolveExperimentId,
   resolveRunTarget,
-  RunTargetIndex,
+  projectRunPath,
   serializeExperimentReadme,
   serializeImplementationYaml,
   serializeInvestigationYaml,
@@ -193,7 +191,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
           `run "${input.fromRun}" already claims experiment ${importedRun.frontMatter.experiment}; unlink first`,
         )
       }
-      initialRuns.push(importedRun.id)
+      initialRuns.push(projectRunPath(projectRoot, importedRun.path))
     }
     const content = serializeExperimentReadme({
       frontMatter: {
@@ -249,8 +247,8 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
           'Imported from an existing Run by `memon experiment create --from-run`; refine the Variant definition before launching another comparison.',
         parameters: {},
         metrics: {},
-        runs: unsuccessful ? [] : [importedRun.id],
-        attempts: unsuccessful ? [importedRun.id] : [],
+        runs: unsuccessful ? [] : [projectRunPath(projectRoot, importedRun.path)],
+        attempts: unsuccessful ? [projectRunPath(projectRoot, importedRun.path)] : [],
         ...(importedRun.frontMatter.entry
           ? { provenance: { entry: importedRun.frontMatter.entry } }
           : {}),
@@ -280,10 +278,6 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
       throw err
     }
     id = fullId
-    // If --from-run, also write the run's `experiment:` back-reference.
-    if (importedRun) {
-      await setRunExperiment(importedRun, fullId)
-    }
     // [EXPERIMENT] op=create journal event
     await appendJournalEvent({
       path: join(projectRoot, 'docs', 'journal.md'),
@@ -369,9 +363,9 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
     )
   }
 
-  // Update both sides atomically (best-effort: write run first, then exp).
-  if (!exp.frontMatter.runs.includes(run.id)) {
-    exp.frontMatter.runs.push(run.id)
+  exp.frontMatter.runs = exp.frontMatter.runs.filter((reference) => reference !== run.id)
+  if (!exp.frontMatter.runs.includes(projectRunPath(projectRoot, run.path))) {
+    exp.frontMatter.runs.push(projectRunPath(projectRoot, run.path))
   }
   exp.frontMatter.updatedAt = nowIso()
   await atomicWrite(
@@ -384,9 +378,6 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
       rawBody: exp.body,
     }),
   )
-  if (run.frontMatter.experiment !== expId) {
-    await setRunExperiment(run, expId)
-  }
 
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
@@ -396,7 +387,7 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
       body: `\`${expId}\` op=link run=${run.id}`,
     },
   })
-  emitJson({ ok: true, experimentId: expId, runId: run.id })
+  emitJson({ ok: true, experimentId: expId, runId: projectRunPath(projectRoot, run.path) })
 }
 
 export interface ExperimentUnlinkInput {
@@ -417,7 +408,7 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
   const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
   if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
 
-  exp.frontMatter.runs = exp.frontMatter.runs.filter((r) => r !== run.id)
+  exp.frontMatter.runs = exp.frontMatter.runs.filter((reference) => reference !== projectRunPath(projectRoot, run.path) && reference !== run.id)
   exp.frontMatter.updatedAt = nowIso()
   await atomicWrite(
     exp.path,
@@ -429,9 +420,6 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
       rawBody: exp.body,
     }),
   )
-  if (run.frontMatter.experiment === expId) {
-    await setRunExperiment(run, null)
-  }
 
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
@@ -441,7 +429,7 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
       body: `\`${expId}\` op=unlink run=${run.id}`,
     },
   })
-  emitJson({ ok: true, experimentId: expId, runId: run.id })
+  emitJson({ ok: true, experimentId: expId, runId: projectRunPath(projectRoot, run.path) })
 }
 
 // ---------- experiment status set (v4) ----------
@@ -616,20 +604,6 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
     )
   }
 
-  // Cascade-unlink each member run. One bounded discovery pass, then reads of
-  // the named members only — the old code re-scanned the whole project twice
-  // per member (once to find it, once inside the write helper).
-  if (memberRuns.length > 0) {
-    const index = await RunTargetIndex.open(projectRoot, { projectName })
-    const members = await index.runs(memberRuns)
-    for (const runId of new Set(memberRuns)) {
-      const run = members.get(runId)
-      if (run && run.frontMatter.experiment === expId) {
-        await setRunExperiment(run, null)
-      }
-    }
-  }
-
   // v5: Delete the exp folder (and everything inside — README.md plus any
   // user-owned scratch files). For legacy v4 records still on disk (the
   // mid-migration window), `exp.path` is a file path; just unlink it.
@@ -689,22 +663,6 @@ async function resolveOrFail(projectRoot: string, idOrSlug: string): Promise<str
     emitErrorAndExit('NOT_FOUND', `no experiment matches "${idOrSlug}" in ${projectRoot}`)
   }
   return resolved
-}
-
-async function setRunExperiment(run: Run, experiment: string | null): Promise<void> {
-  // If the run has no README, the membership join will surface this as a
-  // parse-issue rather than fail silently. We don't synthesize a README here.
-  if (!run.hasReadme) return
-  // Re-read immediately before the write: the resolution read is a snapshot,
-  // and the atomic rewrite must be based on the current bytes (the parsed
-  // record carries backfilled `id` / `created_at` that must never be
-  // persisted).
-  const readmePath = join(run.path, 'README.md')
-  const content = await fs.readFile(readmePath, 'utf8')
-  const parsed = parseReadme(content)
-  parsed.frontMatter.experiment = experiment
-  parsed.frontMatter.updatedAt = nowIso()
-  await atomicWrite(readmePath, reserializeReadme(parsed))
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {

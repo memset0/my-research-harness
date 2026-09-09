@@ -28,3 +28,12 @@ The migration SHALL ship `v6-to-v7.md` using the seven-section guide contract, a
 #### Scenario: Old project opened by new tooling
 - **WHEN** v7 tooling is asked to mutate a v6 project
 - **THEN** it requests explicit migration and leaves all project files unchanged
+
+### Staged rollout decision
+
+An explicitly approved data-only migration MAY use `--keep-version` to apply
+the membership conversion while preserving the v6 marker byte-for-byte.
+Readers and writers SHALL support this state. Verification SHALL check the
+actual data format separately from the release marker. Final v7 release and
+marker advancement wait until all planned migrations are ready; this step
+SHALL NOT trigger an automatic release or claim unrelated migrations passed.

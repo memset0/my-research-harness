@@ -1,22 +1,9 @@
-// renameExperiment — change an experiment's `<slug>` part (preserving
-// `E<NNNN>`) and cascade the rewrite through bound runs, the
-// hypotheses index, and the JOURNAL.
-//
-// Mirrors the shape of `packages/cli/src/commands/run-rename.ts` for
-// the run side: validate → fast-fail-on-collision → folder rename →
-// exp README rewrite → bound-run rewrites → hypotheses substitution →
-// JOURNAL append. No automatic rollback; the user resolves partial
-// failures via git.
-
 import { projectFs as fs } from '../project-file-store.js'
 import { dirname, join } from 'node:path'
 
 import { padId, parseId } from '../ids.js'
 import { appendJournalEvent } from '../journal/append.js'
-import { parseReadme } from '../readme/parse.js'
-import { reserializeReadme } from '../readme/serialize.js'
 import { parseSlugFromRunDir } from '../time.js'
-import { RunTargetIndex } from '../cli/resolve-run.js'
 import { discoverExperiments, readExperimentDoc } from './discover.js'
 import { resolveExperimentId } from './id.js'
 import { serializeExperimentReadme } from './serialize.js'
@@ -170,20 +157,12 @@ export async function renameExperiment(
     await atomicWrite(newReadmePath, serialized)
   }
 
-  // ── Step 3: bound-run rewrites ───────────────────────────────────
   const warnings: RenameExperimentWarning[] = []
   if (exp.frontMatter.runs.length > 0) {
-    // Bounded discovery once, then reads of the bound members only — an
-    // unrelated Run's README is never opened, and `docs/hypotheses.md` is
-    // read once below rather than as scan collateral.
-    const index = await RunTargetIndex.open(projectRoot, { projectName })
-    const members = await index.runs(exp.frontMatter.runs)
     for (const runId of new Set(exp.frontMatter.runs)) {
-      const run = members.get(runId)
-      if (!run) continue
       // Soft prefix-violation: warn when the run slug no longer starts
       // with the new exp slug.
-      const runSlug = parseSlugFromRunDir(run.id)
+      const runSlug = parseSlugFromRunDir(runId.split('/').at(-1)!)
       if (runSlug && !runSlug.startsWith(newSlug)) {
         warnings.push({
           code: 'RUN_SLUG_PREFIX_VIOLATION',
@@ -191,14 +170,6 @@ export async function renameExperiment(
           message: `run slug "${runSlug}" does not start with experiment slug "${newSlug}"`,
         })
       }
-      if (!run.hasReadme) continue
-      const runReadmePath = join(run.path, 'README.md')
-      const runContent = await fs.readFile(runReadmePath, 'utf8')
-      const runParsed = parseReadme(runContent)
-      if (runParsed.frontMatter.experiment !== oldId) continue
-      runParsed.frontMatter.experiment = newId
-      runParsed.frontMatter.updatedAt = now()
-      await atomicWrite(runReadmePath, reserializeReadme(runParsed))
     }
   }
 

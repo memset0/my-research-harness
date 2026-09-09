@@ -94,6 +94,9 @@ beforeEach(async () => {
   await fs.mkdir(orphanDir, { recursive: true })
   await fs.writeFile(join(orphanDir, 'README.md'), RUN_README_ORPHAN)
 
+  const expDir = join(root, 'docs/experiments/E0001-foo')
+  await fs.mkdir(expDir, { recursive: true })
+  await fs.writeFile(join(expDir, 'README.md'), '---\nid: E0001-foo\nslug: foo\nruns: [logs/foo-260501-100000]\n---\n')
   exitSpy = spyExit()
   stdoutChunks = []
   stderrChunks = []
@@ -129,7 +132,7 @@ describe('runResolveExp', () => {
     expect(stderrChunks.join('')).toBe('')
   })
 
-  it('preserves newest-created-at selection for duplicate Run directory ids', async () => {
+  it('rejects ambiguous bare IDs and accepts a declared explicit path', async () => {
     const duplicate = join(root, 'outputs', 'foo-260501-100000')
     await fs.mkdir(duplicate, { recursive: true })
     await fs.writeFile(
@@ -142,13 +145,9 @@ describe('runResolveExp', () => {
         ),
     )
 
-    await runResolveExp({
-      projectRoot: root,
-      cwd: root,
-      runIdOrDir: 'foo-260501-100000',
-    })
-
-    expect(stdoutChunks.join('')).toBe('E0002-newer\n')
+    await expect(runResolveExp({ projectRoot: root, cwd: root, runIdOrDir: 'foo-260501-100000' })).rejects.toThrow('Ambiguous Run ID')
+    await runResolveExp({ projectRoot: root, cwd: root, runIdOrDir: 'logs/foo-260501-100000' })
+    expect(stdoutChunks.join('')).toBe('E0001-foo\n')
   })
 
   it('does not read unrelated Run READMEs or hypotheses while resolving one target', async () => {

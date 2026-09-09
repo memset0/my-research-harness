@@ -34,3 +34,12 @@ Non-goals: moving Run outputs, changing result semantics, adding a persistent me
 3. Run an explicitly authorized read-only plan on the operator project and store it privately. Present all conflicts and the exact proposed write set for approval. Planning is not authorization to migrate.
 4. Stop incompatible writers and take a recoverable snapshot; apply the approved plan, verify all declared paths and removal of Run ownership fields, then advance the FS marker through the migration runtime. Use commit message `chore(memon): migrate FS convention v6 -> v7` in Git mode; support the existing tarball fallback otherwise.
 5. Deploy matching v7 central/CLI artifacts, verify membership/navigation and measure representative I/O/latency. Roll back project data and tooling together if verification fails. Preserve the explicit read-only central policy; migration writes require separate operator authorization.
+
+### Staged rollout decision
+
+An explicitly approved data-only migration MAY use `--keep-version` to apply
+the membership conversion while preserving the v6 marker byte-for-byte.
+Readers and writers SHALL support this state. Verification SHALL check the
+actual data format separately from the release marker. Final v7 release and
+marker advancement wait until all planned migrations are ready; this step
+SHALL NOT trigger an automatic release or claim unrelated migrations passed.

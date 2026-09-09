@@ -624,20 +624,6 @@ function RunBody({
       sourceDocumentPath={runSourceDocumentPath}
       sourceSurface="left"
     >
-      {run.frontMatter.experiment !== experimentId && (
-        <div className="border-t p-3 pb-0">
-          <SectionNotice tone="warning">
-            This Run's <code>experiment</code> frontmatter says{' '}
-            {run.frontMatter.experiment ? (
-              <code className="font-mono">{run.frontMatter.experiment}</code>
-            ) : (
-              'nothing'
-            )}
-            , so membership in <code className="font-mono">{experimentId}</code> is declared on one
-            side only. Re-link the Run or drop the id from this Experiment's <code>runs</code> list.
-          </SectionNotice>
-        </div>
-      )}
       {/* Action stripe */}
       <div className="flex flex-wrap items-center gap-2 border-t p-3">
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId, project }} />

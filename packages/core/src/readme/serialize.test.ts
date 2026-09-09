@@ -116,7 +116,7 @@ describe('serializeReadme', () => {
   it('drops legacy v2 fields (project / hypotheses / tags) when building a document', () => {
     const parsed = parseReadme(V2_SAMPLE)
     const out = serializeReadme({ frontMatter: parsed.frontMatter, sections: parsed.sections })
-    expect(out).toContain('experiment:')
+    expect(out).not.toContain('experiment:')
     expect(out).toContain('updated_at:')
     expect(out).not.toContain('project:')
     expect(out).not.toContain('hypotheses:')

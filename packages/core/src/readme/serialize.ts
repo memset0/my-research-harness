@@ -178,8 +178,6 @@ function renderFrontMatter(fm: RunFrontMatter): string {
   lines.push(`id: ${quoteIfNeeded(fm.id)}`)
   lines.push(`name: ${quoteIfNeeded(fm.name)}`)
   lines.push(`status: ${fm.status}`)
-  // v3 task 4.2: parent experiment doc id (null when unbound). Always emit.
-  lines.push(`experiment: ${fm.experiment === null ? 'null' : quoteIfNeeded(fm.experiment)}`)
   lines.push(`created_at: ${quoteIfNeeded(fm.createdAt)}`)
   // v3 task 4.2: updated_at is bumped by writers; always emit (defaults to
   // createdAt when never edited). Old readers tolerate the new field.
@@ -234,9 +232,6 @@ function renderDeclaredFrontMatter(fm: RunFrontMatter, declared: readonly string
   if (fm.name !== '' || has('name')) lines.push(`name: ${quoteIfNeeded(fm.name)}`)
   if (has('project')) lines.push(`project: ${quoteIfNeeded(fm.project)}`)
   lines.push(`status: ${fm.status}`)
-  if (fm.experiment !== null || has('experiment')) {
-    lines.push(`experiment: ${fm.experiment === null ? 'null' : quoteIfNeeded(fm.experiment)}`)
-  }
   lines.push(`created_at: ${quoteIfNeeded(fm.createdAt)}`)
   if ((fm.updatedAt !== '' && fm.updatedAt !== fm.createdAt) || has('updated_at')) {
     lines.push(`updated_at: ${quoteIfNeeded(fm.updatedAt)}`)
@@ -273,7 +268,6 @@ function renderMinimalFrontMatter(fm: RunFrontMatter): string {
   lines.push(`id: ${quoteIfNeeded(fm.id)}`)
   if (fm.name !== '') lines.push(`name: ${quoteIfNeeded(fm.name)}`)
   lines.push(`status: ${fm.status}`)
-  if (fm.experiment !== null) lines.push(`experiment: ${quoteIfNeeded(fm.experiment)}`)
   lines.push(`created_at: ${quoteIfNeeded(fm.createdAt)}`)
   if (fm.updatedAt !== '' && fm.updatedAt !== fm.createdAt) {
     lines.push(`updated_at: ${quoteIfNeeded(fm.updatedAt)}`)

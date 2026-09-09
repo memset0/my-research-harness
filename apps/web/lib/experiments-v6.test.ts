@@ -168,15 +168,19 @@ finished
     const fresh = await readExperimentDoc(root, 'research', created.id)
     rt.experiments.set(created.id, fresh!)
 
-    await linkRun(rt, created.id, { run: runId })
+    const runBefore = await fs.readFile(join(runDir, 'README.md'), 'utf8')
+    const runMtime = (await fs.stat(join(runDir, 'README.md'))).mtimeMs
+    await linkRun(rt, created.id, { run: `logs/${runId}` })
     let after = await fs.readFile(created.path, 'utf8')
     expect(after.match(/^## Legacy Notes$/gm)).toHaveLength(2)
-    expect(after).toContain(`runs: [${runId}]`)
+    expect(after).toContain(`runs: [logs/${runId}]`)
 
     await unlinkRun(rt, created.id, { run: runId })
     after = await fs.readFile(created.path, 'utf8')
     expect(after.match(/^## Legacy Notes$/gm)).toHaveLength(2)
     expect(after).toContain('runs: []')
+    expect(await fs.readFile(join(runDir, 'README.md'), 'utf8')).toBe(runBefore)
+    expect((await fs.stat(join(runDir, 'README.md'))).mtimeMs).toBe(runMtime)
   })
 
   it('deletes a run-free canonical bundle without treating managed YAML as scratch', async () => {

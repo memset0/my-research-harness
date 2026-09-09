@@ -15,6 +15,18 @@ copying this contract into their own skill.
 - [Routing reference](#routing-reference)
 - [Versioning and rendering](#versioning-and-rendering)
 
+## Run reference authority
+
+Store each member in README frontmatter `runs` as a POSIX directory path
+relative to the project root, for example `logs/trial-260908-120000`.
+Use exactly the same paths in `results.yaml` Variant `runs` and `attempts`.
+Do not use bare IDs, absolute paths, traversal, or paths escaping through
+symlinks. An existing path may belong to at most one Experiment. An unassigned
+Run is valid. Resolve members directly; do not scan unrelated Run directories
+or output trees. Never write or infer ownership from a Run README's retired
+`experiment` field. Rename an Experiment without rewriting member Run READMEs;
+rename a Run by updating its declared path and dependent result references.
+
 ## Layout and README order
 
 ```text

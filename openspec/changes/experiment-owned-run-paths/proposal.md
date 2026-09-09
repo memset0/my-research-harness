@@ -26,6 +26,18 @@ Membership currently intersects Experiment `runs` basename IDs with the Run READ
 
 ## Impact
 
+### Staged rollout decision
+
+Ship compatible CLI, Backend, Web and skill readers/writers now. An explicitly
+approved data-only migration converts the real Experiment and Run documents
+while retaining the FS v6 marker byte-for-byte (`--keep-version`). The marker
+does not claim that this optional preparation has or has not run; verify actual
+documents. Legacy unique basename declarations remain readable during this
+transition, but new membership writes use canonical project-relative paths.
+The final v7 guide, version gates and release remain deferred until the other
+planned migrations and projects are ready. Do not migrate other projects or
+release v7 as part of this preparation.
+
 Core types/parsers/serializers, membership/discovery helpers, rename and reference resolution; Backend project/document/mutation services; CLI create/link/unlink/delete/doctor/migrate-fs; Web member lists, Run navigation and resource query keys; result provenance, eligibility/deprecation checks and Wiki citations; bundled skills, version metadata, migration guides and regression fixtures.
 
 Existing v6 projects require explicit migration before v7 mutation. Ordinary list/read requests do not migrate data. Deployment must coordinate central and CLI compatibility; a read-only central project does not authorize a migration write. Operator-specific audits, project paths and migration reports remain outside tracked artifacts.

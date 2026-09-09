@@ -1,3 +1,5 @@
+import { basename } from 'node:path'
+import { isRunPath } from '../experiments/run-path.js'
 // Evidence resolution: `sources` -> project artifacts -> staleness + backlinks.
 //
 // A source is one of `E<NNNN>[-<slug>]`, `E<NNNN>[-<slug>]/V<NNNN>` (a Variant
@@ -26,7 +28,7 @@ export function wikiSourceKind(source: string): WikiSourceKind | null {
   if (experiment) return experiment[3] === undefined ? 'experiment' : 'variant'
   if (HYPOTHESIS_SOURCE_REGEX.test(source)) return 'hypothesis'
   if (WIKI_ID_REGEX.test(source)) return 'wiki'
-  if (RUN_SOURCE_REGEX.test(source)) return 'run'
+  if (RUN_SOURCE_REGEX.test(source) || isRunPath(source)) return 'run'
   return null
 }
 
@@ -54,7 +56,7 @@ export function collectWikiSourceReferences(sources: Iterable<string>): WikiSour
       experiments.add(experiment[1]!)
       continue
     }
-    if (RUN_SOURCE_REGEX.test(source)) runs.add(source)
+    if (RUN_SOURCE_REGEX.test(source) || isRunPath(source)) runs.add(source)
   }
   return { experiments: [...experiments], runs: [...runs] }
 }
@@ -132,6 +134,9 @@ export function resolveWikiSources(
   ctx: WikiSourceContext,
 ): WikiSourceIndex {
   const runsById = new Map(ctx.runs.map((run) => [run.id, run]))
+  const byBasename = new Map<string, Run[]>()
+  for (const run of ctx.runs) byBasename.set(basename(run.id), [...(byBasename.get(basename(run.id)) ?? []), run])
+  for (const [id, matches] of byBasename) if (matches.length === 1) runsById.set(id, matches[0]!)
   const experimentsByNumericId = new Map<string, Experiment>()
   for (const experiment of ctx.experiments) {
     const numeric = experiment.id.slice(0, 5)
@@ -273,7 +278,7 @@ function resolveSource(
     }
   }
 
-  if (RUN_SOURCE_REGEX.test(source)) {
+  if (RUN_SOURCE_REGEX.test(source) || isRunPath(source)) {
     const run = deps.runsById.get(source)
     if (!run) return unresolved
     return {

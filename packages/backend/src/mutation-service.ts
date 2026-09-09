@@ -3,7 +3,9 @@ import { basename, dirname, join, relative, sep } from 'node:path'
 import {
   applyWarningOp,
   discoverExperiments,
-  discoverRuns,
+  resolveRunReference,
+  projectRunPath,
+  declaredRunOwner,
   EXPERIMENT_DIR_REGEX,
   emptyImplementationDocument,
   emptyInvestigationDocument,
@@ -210,21 +212,11 @@ export class FilesystemMutationService implements BackendMutationService {
    * the newest `created_at` wins, as the scan-ordered lookup did.
    */
   private async run(project: ProjectConfig, projectName: string, id: string): Promise<Run> {
-    const paths = (await discoverRuns(project, { includeArchived: true })).filter(
-      (path) => basename(path) === id,
-    )
-    if (paths.length === 0) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Run not found')
-    let best = await readRunDir(paths[0]!, projectName)
-    for (const path of paths.slice(1)) {
-      const candidate = await readRunDir(path, projectName)
-      if (
-        String(candidate.frontMatter.createdAt).localeCompare(String(best.frontMatter.createdAt)) >
-        0
-      ) {
-        best = candidate
-      }
-    }
-    return best
+    const path = await resolveRunReference(project, id)
+    if (!path) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Run not found')
+    const run = await readRunDir(path, projectName)
+    run.frontMatter.experiment = await declaredRunOwner(project.root, path, projectName)
+    return run
   }
   /**
    * One Experiment document, read by id. Resolving a mutation target must not
@@ -620,8 +612,8 @@ export class FilesystemMutationService implements BackendMutationService {
           description: 'Imported from an existing Run; refine this Variant before reuse.',
           parameters: {},
           metrics: {},
-          runs: unsuccessful ? [] : [importedRun.id],
-          attempts: unsuccessful ? [importedRun.id] : [],
+          runs: unsuccessful ? [] : [projectRunPath(project.root, importedRun.path)],
+          attempts: unsuccessful ? [projectRunPath(project.root, importedRun.path)] : [],
           ...(importedRun.frontMatter.entry
             ? { provenance: { entry: importedRun.frontMatter.entry } }
             : {}),
@@ -634,7 +626,7 @@ export class FilesystemMutationService implements BackendMutationService {
           title: input.title ?? input.slug,
           status: 'OPEN',
           archived: false,
-          runs: importedRun ? [importedRun.id] : [],
+          runs: importedRun ? [projectRunPath(project.root, importedRun.path)] : [],
           hypotheses: input.hypotheses ?? [],
           tags: input.tags ?? [],
           createdAt: timestamp,
@@ -667,13 +659,7 @@ export class FilesystemMutationService implements BackendMutationService {
         await Promise.all(
           managed.map(([file, body]) => fs.writeFile(file, body, { encoding: 'utf8', flag: 'wx' })),
         )
-        if (importedLock && importedReadmePath) {
-          const parsedRun = parseReadme(importedLock.content)
-          parsedRun.frontMatter.experiment = id
-          parsedRun.frontMatter.updatedAt = timestamp
-          importedPostimage = reserializeReadme(parsedRun)
-          await atomicReplace(importedReadmePath, importedPostimage)
-        }
+
       } catch (error) {
         // Restore the imported Run only while it still holds exactly the
         // postimage this operation wrote. Another writer's content is never
@@ -747,25 +733,20 @@ export class FilesystemMutationService implements BackendMutationService {
     const runPath = join(run.path, 'README.md')
     const runLock = await readLockedDocument(runPath, input.expectedRunMtime, input.expectedRunHash)
     const parsedExperiment = parseExperimentReadme(experimentLock.content, id)
-    const parsedRun = parseReadme(runLock.content)
     if (
       operation === 'link' &&
-      parsedRun.frontMatter.experiment &&
-      parsedRun.frontMatter.experiment !== id
+      run.frontMatter.experiment &&
+      run.frontMatter.experiment !== id
     ) {
       throw new BackendMutationError('BAD_STATE', 'Run already belongs to another Experiment')
     }
     const timestamp = formatIsoLocal(this.now())
     parsedExperiment.frontMatter.runs =
       operation === 'link'
-        ? [...new Set([...parsedExperiment.frontMatter.runs, run.id])]
-        : parsedExperiment.frontMatter.runs.filter((runId) => runId !== run.id)
-    if (operation === 'link' || parsedRun.frontMatter.experiment === id) {
-      parsedRun.frontMatter.experiment = operation === 'link' ? id : null
-      parsedRun.frontMatter.updatedAt = timestamp
-    }
+        ? [...new Set([...parsedExperiment.frontMatter.runs.filter((reference) => reference !== run.id), projectRunPath(project.root, run.path)])]
+        : parsedExperiment.frontMatter.runs.filter((runId) => runId !== projectRunPath(project.root, run.path) && runId !== run.id)
     parsedExperiment.frontMatter.updatedAt = timestamp
-    const nextRun = reserializeReadme(parsedRun)
+    const nextRun = runLock.content
     const nextExperiment = serializeExperimentReadme({
       frontMatter: parsedExperiment.frontMatter,
       sections: parsedExperiment.sections,
@@ -773,14 +754,12 @@ export class FilesystemMutationService implements BackendMutationService {
       rawBody: parsedExperiment.body,
     })
     try {
-      await atomicReplace(runPath, nextRun)
       await atomicReplace(experiment.path, nextExperiment)
     } catch (error) {
       // Each file is restored only while it still holds this operation's
       // postimage. A file that moved on underneath us is left alone and the
       // caller is told the bind is partial instead of all-or-nothing.
       const restored = await Promise.all([
-        restorePostimage(runPath, nextRun, runLock.content),
         restorePostimage(experiment.path, nextExperiment, experimentLock.content),
       ])
       if (restored.includes(false)) {
@@ -792,10 +771,8 @@ export class FilesystemMutationService implements BackendMutationService {
       }
       throw error
     }
-    // One logical bind, one receipt: both targets and both file changes.
     ctx.addDetail({ kind: 'target', type: 'experiment', id })
     ctx.addDetail({ kind: 'target', type: 'run', id: run.id })
-    ctx.addDetail(fileChange(project.root, runPath, runLock.content, nextRun))
     ctx.addDetail(fileChange(project.root, experiment.path, experimentLock.content, nextExperiment))
     const [runStat, experimentStat] = await Promise.all([
       fs.stat(runPath),
@@ -804,7 +781,7 @@ export class FilesystemMutationService implements BackendMutationService {
     return {
       ok: true as const,
       experimentId: id,
-      runId: run.id,
+      runId: projectRunPath(project.root, run.path),
       experimentMtime: experimentStat.mtimeMs,
       experimentHash: sha1(nextExperiment),
       runMtime: runStat.mtimeMs,
@@ -844,28 +821,6 @@ export class FilesystemMutationService implements BackendMutationService {
     if (lockMap.size !== input.runLocks.length) {
       throw new BackendMutationError('BAD_REQUEST', 'Run locks contain duplicate ids')
     }
-    const affected: Array<{
-      path: string
-      lock: LockedDocument
-      next: string
-      id: string
-    }> = []
-    for (const memberId of memberIds) {
-      const run = await this.run(project, projectName, memberId)
-      const lockInput = lockMap.get(memberId)
-      if (!lockInput) throw new BackendMutationError('BAD_REQUEST', 'Exact Run locks are required')
-      const path = join(run.path, 'README.md')
-      const lock = await readLockedDocument(path, lockInput.expectedMtime, lockInput.expectedHash)
-      const parsed = parseReadme(lock.content)
-      if (parsed.frontMatter.experiment === id) {
-        parsed.frontMatter.experiment = null
-        parsed.frontMatter.updatedAt = formatIsoLocal(this.now())
-      }
-      affected.push({ path, lock, next: reserializeReadme(parsed), id: memberId })
-    }
-    if (lockMap.size !== memberIds.length) {
-      throw new BackendMutationError('BAD_REQUEST', 'Run locks must match member Runs exactly')
-    }
 
     const target = experiment.path.endsWith(`${id}.md`) ? experiment.path : dirname(experiment.path)
     if (!input.force && target !== experiment.path) {
@@ -877,42 +832,10 @@ export class FilesystemMutationService implements BackendMutationService {
       }
     }
     const quarantine = join(dirname(target), `.memon-delete-${id}-${randomUUID()}`)
-    let quarantined = false
-    try {
-      for (const run of affected) await atomicReplace(run.path, run.next)
-      await fs.rename(target, quarantine)
-      quarantined = true
-    } catch (error) {
-      const restored: boolean[] = []
-      if (quarantined) {
-        restored.push(
-          await fs
-            .rename(quarantine, target)
-            .then(() => true)
-            .catch(() => false),
-        )
-      }
-      for (const run of affected) {
-        restored.push(await restorePostimage(run.path, run.next, run.lock.content))
-      }
-      if (restored.includes(false)) {
-        ctx.markOutcome('partial', 'ROLLBACK_BLOCKED')
-        throw new BackendMutationError(
-          'PARTIAL',
-          'Experiment delete failed and its documents could not be safely restored',
-        )
-      }
-      throw error
-    }
+    await fs.rename(target, quarantine)
     await fs.rm(quarantine, { recursive: true, force: true }).catch(() => undefined)
-    // One receipt for the whole cascade: the deleted bundle plus every Run
-    // whose membership reference this operation released.
     ctx.addDetail({ kind: 'target', type: 'experiment', id })
     ctx.addDetail(fileChange(project.root, experiment.path, experimentLock.content, null))
-    for (const run of affected) {
-      ctx.addDetail({ kind: 'target', type: 'run', id: run.id })
-      ctx.addDetail(fileChange(project.root, run.path, run.lock.content, run.next))
-    }
     return { ok: true as const, deletedId: id, cascadedRuns: memberIds }
   }
   async mutateWarning(

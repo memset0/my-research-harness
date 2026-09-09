@@ -12,6 +12,18 @@ autonomously. The CLI issue handoff in `../PREFLIGHT.md` still applies.
 
 ## Determine the migration chain
 
+### Explicit data-only preparation
+
+When the user explicitly requests the Run-path data conversion before the next
+FS release, use `scripts/migrate-v6-to-v7.mjs` with `--keep-version` for both
+planning and verification, following its operator guide. This is an exception
+to the `match` early exit below: matching v6 markers do not prove this optional
+data step has run. Apply the reviewed plan with external backups and report
+actual changed files and remaining blockers. Preserve `.memon/version.json`
+byte-for-byte, including its timestamps; do not release v7, mark the full
+version chain complete, or migrate other projects without a separate request.
+All dirty-tree and dropped-claim approvals below still apply.
+
 ```sh
 memon --project-root . --format json fs-version check
 ```
@@ -31,7 +43,12 @@ triggered some other skill is not migration consent.
 ## Git and local staging preflight
 
 For Git projects, require a clean tracked and untracked working tree. Never
-auto-stash or discard work: show dirty paths and stop.
+auto-stash or discard work: show dirty paths and stop. For FS v6→v7 only,
+an operator may explicitly authorize scoped dirty-tree migration. Record that
+approval, use the fingerprinted plan and external preimage backup, and preserve
+all unrelated edits. Never infer this authorization from a generic migration
+request. Explicitly obtain approval before dropping Run-only ownership claims;
+never backfill those claims into Experiment membership.
 
 Keep review candidates local:
 

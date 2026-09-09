@@ -1,7 +1,8 @@
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { projectFs as fs } from '../project-file-store.js'
 import { discoverRuns } from '../discovery/discover.js'
-import { discoverExperiments } from './discover.js'
+import { listExperimentPaths } from './discover.js'
+import { parseExperimentReadme } from './parse.js'
 import type { ProjectConfig } from '../types.js'
 
 export function isRunPath(value: string): boolean {
@@ -46,15 +47,27 @@ export async function resolveRunReference(project: ProjectConfig, reference: str
       throw error
     }
   }
-  const matches = (await discoverRuns(project)).filter((path) => basename(path) === reference)
+  const matches = (await discoverRuns(project, { includeArchived: true })).filter((path) => basename(path) === reference)
   if (matches.length > 1) throw new Error(`Ambiguous Run ID; use a project-relative path: ${matches.map((path) => projectRunPath(project.root, path)).join(', ')}`)
   return matches[0] ?? null
 }
 
 export async function declaredRunOwner(root: string, directory: string, projectName = '(project-root)'): Promise<string | null> {
   const path = projectRunPath(root, directory)
-  const { experiments } = await discoverExperiments(root, projectName)
-  const owners = experiments.filter((experiment) => experiment.frontMatter.runs.includes(path))
+  const owners: string[] = []
+  let legacyTarget: string | null | undefined
+  for (const [id, document] of await listExperimentPaths(root)) {
+    let content: string
+    try { content = await fs.readFile(join(root, document), 'utf8') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error }
+    const experiment = parseExperimentReadme(content, id)
+    let declared = experiment.frontMatter.runs.includes(path)
+    if (!declared && experiment.frontMatter.runs.includes(basename(directory))) {
+      legacyTarget ??= await resolveRunReference({ root, name: projectName, include: [], exclude: [] }, basename(directory))
+      declared = legacyTarget === directory
+    }
+    if (declared) owners.push(id)
+  }
   if (owners.length > 1) throw new Error(`Run path has multiple Experiment owners: ${path}`)
-  return owners[0]?.id ?? null
+  return owners[0] ?? null
 }

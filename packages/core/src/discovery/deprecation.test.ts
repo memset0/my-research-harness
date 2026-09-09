@@ -153,7 +153,7 @@ describe('research collections exclude deprecated runs by default', () => {
     await writeRun('here-260901-100800', 'FINISHED')
     await deprecateRun(dir, { now: NOW })
 
-    expect(await listDeprecatedRunIds(root)).toEqual(['gone-260901-100700'])
+    expect(await listDeprecatedRunIds(root)).toEqual(['logs/gone-260901-100700'])
   })
 
   it('restricts eligibility reads and propagates selected metadata I/O failures', async () => {

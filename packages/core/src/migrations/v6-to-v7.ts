@@ -14,6 +14,7 @@ export interface MembershipMigrationPlan {
   warnings: string[]
   droppedClaims: string[]
   allowDirty: boolean
+  keepVersion?: boolean
 }
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -37,10 +38,10 @@ async function safeFile(root: string, path: string): Promise<string> {
 
 export async function planMembershipMigration(
   projectRoot: string,
-  options: { allowDirty?: boolean; dropRunOnlyClaims?: boolean } = {},
+  options: { allowDirty?: boolean; dropRunOnlyClaims?: boolean; keepVersion?: boolean } = {},
 ): Promise<MembershipMigrationPlan> {
   const root = await fs.realpath(projectRoot)
-  const plan: MembershipMigrationPlan = { version: 1, root, files: [], blockers: [], warnings: [], droppedClaims: [], allowDirty: options.allowDirty ?? false }
+  const plan: MembershipMigrationPlan = { version: 1, root, files: [], blockers: [], warnings: [], droppedClaims: [], allowDirty: options.allowDirty ?? false, keepVersion: options.keepVersion ?? false }
   const add = (path: string, before: string, after: string) => {
     plan.files.push({ path, before, after, hash: hash(before) })
   }
@@ -135,7 +136,7 @@ export async function planMembershipMigration(
   const before = await fs.readFile(await safeFile(root, markerPath), 'utf8')
   const marker = JSON.parse(before)
   if (![6, 7].includes(marker.fs_convention_version)) plan.blockers.push('Migration requires FS v6 or already migrated v7')
-  if (marker.fs_convention_version === 6) {
+  if (marker.fs_convention_version === 6 && !options.keepVersion) {
     marker.fs_convention_version = 7
     marker.last_migrated_at = new Date().toISOString()
     add(markerPath, before, `${JSON.stringify(marker, null, 2)}\n`)
@@ -171,7 +172,7 @@ export async function applyMembershipMigration(plan: MembershipMigrationPlan, ba
   try {
     for (const file of plan.files) {
       if (file.path === '.memon/version.json') {
-        const check = await planMembershipMigration(root, { allowDirty: true })
+        const check = await planMembershipMigration(root, { allowDirty: true, keepVersion: plan.keepVersion })
         const changed = check.files.filter((entry) => entry.path !== '.memon/version.json' && entry.before !== entry.after)
         if (check.blockers.length || changed.length) throw new Error(`Membership verification failed: ${check.blockers.join('; ')}`)
         for (const entry of check.files) {

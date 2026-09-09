@@ -13,12 +13,10 @@
 // lifetime of the index instance; every command still sees a fresh
 // filesystem.
 //
-// Lookup keys are Run directory base names (`Run.id`), exactly like the
-// `snap.experiments.find(e => e.id === needle)` calls this replaces. Path
-// inputs are deliberately NOT accepted: no CLI surface ever matched them.
 
 import { existsSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
+import { resolveRunReference, declaredRunOwner, projectRunPath } from '../experiments/run-path.js'
 import { discoverRuns } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
 import type { Run } from '../types.js'
@@ -89,6 +87,7 @@ export class RunTargetIndex {
     const dirsById = new Map<string, string[]>()
     for (const path of paths) {
       const id = basename(path)
+      dirsById.set(projectRunPath(abs, path), [path])
       const existing = dirsById.get(id)
       if (existing) existing.push(path)
       else dirsById.set(id, [path])
@@ -162,21 +161,7 @@ export class RunTargetIndex {
     const candidates = this.dirsById.get(id)
     if (!candidates) return null
     if (candidates.length === 1) return readRunDir(candidates[0]!, this.projectName)
-    let best = await readRunDir(candidates[0]!, this.projectName)
-    // Keep duplicate reads sequential so even a pathological tree with many
-    // same-basename directories cannot punch through the batch concurrency
-    // ceiling. Different requested ids still run concurrently in `runs()`.
-    for (const path of candidates.slice(1)) {
-      const run = await readRunDir(path, this.projectName)
-      // Ambiguous base name: same winner the scan-ordered lookup picked —
-      // newest `created_at`, ties broken by the sorted discovery order.
-      if (
-        String(run.frontMatter.createdAt).localeCompare(String(best.frontMatter.createdAt)) > 0
-      ) {
-        best = run
-      }
-    }
-    return best
+    throw new Error(`Ambiguous Run ID; use a project-relative path: ${id}`)
   }
 }
 
@@ -190,6 +175,9 @@ export async function resolveRunTarget(
   id: string,
   options: RunTargetOptions = {},
 ): Promise<Run | null> {
-  const index = await RunTargetIndex.open(projectRoot, options)
-  return index.read(id)
+  const path = await resolveRunReference({ root: projectRoot, name: options.projectName ?? '(project-root)', include: options.include ?? [], exclude: options.exclude ?? [] }, id)
+  if (!path) return null
+  const run = await readRunDir(path, options.projectName ?? '(project-root)')
+  run.frontMatter.experiment = await declaredRunOwner(projectRoot, path, options.projectName)
+  return run
 }

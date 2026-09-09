@@ -20,6 +20,8 @@ import {
   readExperimentDoc,
   reserializeReadme,
   RunTargetIndex,
+  declaredRunOwner,
+  projectRunPath,
   serializeExperimentReadme,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -86,7 +88,9 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
 
   // If the run claims an experiment, ensure the binding is consistent before
   // touching disk; otherwise refuse with BAD_STATE.
-  const claimedExpId = target.frontMatter.experiment
+  const claimedExpId = await declaredRunOwner(projectRoot, target.path, projectName)
+  const oldPath = projectRunPath(projectRoot, target.path)
+  const newReference = projectRunPath(projectRoot, join(dirname(target.path), newId))
   if (claimedExpId) {
     const exp = await readExperimentDoc(projectRoot, projectName, claimedExpId)
     if (!exp) {
@@ -95,7 +99,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
         `run claims experiment ${claimedExpId} but no such exp doc found; reconcile first via 'memon experiment unlink'`,
       )
     }
-    if (!exp.frontMatter.runs.includes(oldId)) {
+    if (!exp.frontMatter.runs.includes(oldPath)) {
       emitErrorAndExit(
         'BAD_STATE',
         `MISMATCH_EXPERIMENT_REF: run "${oldId}" claims ${claimedExpId} but ${claimedExpId}.runs[] does not list it; reconcile first`,
@@ -142,7 +146,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   if (claimedExpId) {
     const exp = await readExperimentDoc(projectRoot, projectName, claimedExpId)
     if (exp) {
-      exp.frontMatter.runs = exp.frontMatter.runs.map((r) => (r === oldId ? newId : r))
+      exp.frontMatter.runs = exp.frontMatter.runs.map((r) => (r === oldPath ? newReference : r))
       exp.frontMatter.updatedAt = nowIso()
       await atomicWrite(
         exp.path,
@@ -158,12 +162,12 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
       if (
         results?.raw &&
         results.data?.variants.some(
-          (variant) => variant.runs.includes(oldId) || variant.attempts.includes(oldId),
+          (variant) => variant.runs.includes(oldPath) || variant.attempts.includes(oldPath),
         )
       ) {
-        const escaped = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const escaped = oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         const token = new RegExp(`(?<![A-Za-z0-9._-])${escaped}(?![A-Za-z0-9._-])`, 'g')
-        const rewritten = results.raw.replace(token, newId)
+        const rewritten = results.raw.replace(token, newReference)
         if (rewritten !== results.raw) await atomicWrite(results.path, rewritten)
       }
     }

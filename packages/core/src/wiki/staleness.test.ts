@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Experiment, ResultVariant, Run } from '../types.js'
-import { resolveWikiSources, type WikiSourcePage } from './staleness.js'
+import { collectWikiSourceReferences, resolveWikiSources, type WikiSourcePage } from './staleness.js'
 
 function makeRun(id: string, updatedAt: string, readmeMtime = 0): Run {
   return {
@@ -49,6 +49,16 @@ function makeRun(id: string, updatedAt: string, readmeMtime = 0): Run {
     frontMatterKeys: [],
   }
 }
+
+it('resolves canonical citations while rejecting ambiguous basename aliases', () => {
+  const name = 'trial-260909-010000'
+  const sources = [`logs/${name}`, `outputs/${name}`, name]
+  const runs = sources.slice(0, 2).map((reference) => makeRun(reference, '2026-09-09T01:00:00Z'))
+  expect(collectWikiSourceReferences(sources).runs).toEqual(sources)
+  const result = resolveWikiSources([page('W0001', sources, '2026-09-08T00:00:00Z')], { ...CTX, runs })
+  expect(result.pages.get('W0001')?.unresolvedSources).toEqual([name])
+  expect(result.pages.get('W0001')?.staleSources).toEqual(sources.slice(0, 2))
+})
 
 function makeExperiment(
   id: string,

@@ -100,26 +100,25 @@ describe('computeMembership — single-sided anomalies', () => {
     expect(phantom?.experimentId).toBe('E0001-fsdp')
   })
 
-  it('reports MISMATCH_EXPERIMENT_REF when exp lists a run whose own field disagrees', () => {
+  it('ignores the retired Run parent field when an Experiment declares the Run', () => {
     const e = exp('E0001-fsdp', 'fsdp', ['fsdp-260501-100000'])
     const r = run('fsdp-260501-100000', 'E0099-other')
     const { anomalies } = computeMembership({ experiments: [e], runs: [r], project: 'p' })
     const mismatch = anomalies.find((a) => a.code === 'MISMATCH_EXPERIMENT_REF')
-    expect(mismatch).toBeDefined()
-    expect(mismatch?.message).toContain('E0099-other')
+    expect(mismatch).toBeUndefined()
   })
 
-  it('reports ORPHAN_RUN when run.experiment is null and no exp claims it', () => {
+  it('allows unassigned Runs', () => {
     const r = run('orphan-260501-100000', null)
     const { anomalies } = computeMembership({ experiments: [], runs: [r], project: 'p' })
-    expect(anomalies.find((a) => a.code === 'ORPHAN_RUN')?.runId).toBe('orphan-260501-100000')
+    expect(anomalies).toEqual([])
   })
 
-  it('reports ORPHAN_RUN when run claims a non-existent experiment', () => {
+  it('ignores retired Run-only claims', () => {
     const r = run('orphan-260501-100000', 'E0099-ghost')
     const { anomalies } = computeMembership({ experiments: [], runs: [r], project: 'p' })
     const orphan = anomalies.find((a) => a.code === 'ORPHAN_RUN')
-    expect(orphan?.experimentId).toBe('E0099-ghost')
+    expect(orphan).toBeUndefined()
   })
 })
 
@@ -153,7 +152,7 @@ describe('computeMembership — v3 task 5.5 slug-uniqueness anomalies', () => {
     // assert the surrogate property — the only anomalies emitted are
     // ORPHAN_RUN (both runs have no experiment binding).
     expect(anomalies.every((x) => x.code === 'ORPHAN_RUN')).toBe(true)
-    expect(anomalies.length).toBe(2)
+    expect(anomalies.length).toBe(0)
   })
 
   it('reports RUN_SLUG_PREFIX_VIOLATION when a member run does not start with the exp slug', () => {

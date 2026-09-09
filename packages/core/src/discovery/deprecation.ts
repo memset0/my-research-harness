@@ -20,6 +20,7 @@ import { projectFs as fs } from '../project-file-store.js'
 import { basename, dirname, join, resolve } from 'node:path'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { parseReadme } from '../readme/parse.js'
+import { resolveRunReference, projectRunPath } from '../experiments/run-path.js'
 import { discoverRuns } from './discover.js'
 import type { ParsedReadme, Run } from '../types.js'
 import { yamlEngine } from '../yaml-engine.js'
@@ -135,13 +136,15 @@ export async function listDeprecatedRunIds(
 ): Promise<string[]> {
   if (options.ids?.length === 0) return []
   const wanted = options.ids === undefined ? null : new Set(options.ids)
-  const discovered = await discoverRuns({
+  const project = {
     name: options.projectName ?? '(project-root)',
     root: resolve(projectRoot),
     include: options.include ?? [],
     exclude: options.exclude ?? [],
-  })
-  const dirs = wanted ? discovered.filter((dir) => wanted.has(basename(dir))) : discovered
+  }
+  const dirs = wanted
+    ? (await Promise.all([...wanted].map((reference) => resolveRunReference(project, reference)))).filter((path): path is string => path !== null)
+    : await discoverRuns(project)
   const concurrency = options.readConcurrency ?? 16
   if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {
     throw new Error('readConcurrency must be a positive safe integer')
@@ -162,11 +165,15 @@ export async function listDeprecatedRunIds(
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
           throw error
         }
-        if (readDeprecatedFlag(content)) deprecated.push(basename(dir))
+        if (readDeprecatedFlag(content)) {
+          const path = projectRunPath(projectRoot, dir)
+          if (!wanted || wanted.has(path)) deprecated.push(path)
+          if (wanted?.has(basename(dir))) deprecated.push(basename(dir))
+        }
       }
     }),
   )
-  return deprecated.sort()
+  return [...new Set(deprecated)].sort()
 }
 
 export interface ListDeprecatedRunIdsOptions {

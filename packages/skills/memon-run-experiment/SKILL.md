@@ -29,7 +29,10 @@ creates a fresh Run, not a resurrection of the deprecated record.
 - Use a project-approved durable session/scheduler for long jobs. Capture the
   launcher's `[memon] PROJECT_ROOT=`, `RUN_NAME=` and `RUN_DIR=` output. The Run
   id is that directory's basename, matching `^.+-[0-9]{6}-[0-9]{6}$` inside the
-  configured logs area. Confirm actual execution/log activity. Never guess the
+  configured logs area. Set `$RUN_PATH` to the observed directory relative to
+  the project root (POSIX form, for example `logs/trial-260908-120000`).
+  Use that path for commands, membership and result references; retain the
+  basename only as a display ID. Confirm actual execution/log activity. Never guess the
   newest directory or fabricate a Run after a pre-launch failure.
 - A new execution needs a fresh directory. Resume only when explicitly requested
   and supported; append to `run.log`, retain checkpoints and prior snapshots,
@@ -40,14 +43,17 @@ creates a fresh Run, not a resurrection of the deprecated record.
 Once the actual directory exists, choose the observed `$STATUS` and record it:
 
 ```sh
-memon --project-root . --format json run record "$RUN_ID" --status "$STATUS"
-memon --project-root . --format json experiment link "$EXP_ID" "$RUN_ID"
+memon --project-root . --format json run record "$RUN_PATH" --status "$STATUS"
+memon --project-root . --format json experiment link "$EXP_ID" "$RUN_PATH"
 ```
 
 `record` never launches or overwrites. Add known execution-specific options
 (`--pid`, `--host`, `--gpus`, timestamps, entry/command or tracking URL) only when
 useful; use `run record --help` for exact flags. `--body` reads optional notes
-from stdin. Binding uses `experiment link`, not a one-sided `--experiment` flag.
+from stdin. Binding uses `experiment link`, which edits only the Experiment
+README `runs` list. Never write an `experiment` field into a Run README.
+Experiment declarations are the sole membership authority; an unassigned Run
+is valid. Bare IDs are compatibility selectors only when globally unique.
 
 The record needs identity/state/time, not Motivation/Setup/Result/Artifacts.
 Do not duplicate Variant parameters, provenance or Experiment interpretation.

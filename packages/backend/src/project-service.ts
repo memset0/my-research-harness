@@ -17,6 +17,9 @@ import {
   BackendRunsResponseSchema,
   buildExperimentDocumentView,
   computeMembership,
+  resolveRunReference,
+  projectRunPath,
+  declaredRunOwner,
   discoverExperiments,
   discoverRuns,
   type Experiment,
@@ -219,9 +222,8 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const project = this.requireProject(projectName)
     return withAutomaticProjectFileContext(async () => {
       const hypothesesPath = join(project.root, 'docs', 'hypotheses.md')
-      const [experimentIds, runPaths, content, hypothesesStat] = await Promise.all([
+      const [experimentIds, content, hypothesesStat] = await Promise.all([
         listExperimentIds(project.root),
-        discoverRuns(project, { includeArchived: true }),
         missingOrThrow(fs.readFile(hypothesesPath, 'utf8')),
         missingOrThrow(fs.stat(hypothesesPath)),
       ])
@@ -243,19 +245,17 @@ export class FilesystemProjectService implements BackendProjectReadService {
       for (const experiment of experiments) {
         for (const runId of experiment.frontMatter.runs) wantedRuns.add(runId)
       }
-      const pathsById = new Map(runPaths.map((path) => [basename(path), path]))
-      const wantedPaths: string[] = []
-      for (const runId of wantedRuns) {
-        const path = pathsById.get(runId)
-        if (path !== undefined) wantedPaths.push(path)
-      }
-      const runs = await Promise.all(wantedPaths.map((path) => readRunDir(path, project.name)))
+      const wantedPaths = (await Promise.all([...wantedRuns].map((reference) => resolveRunReference(project, reference)))).filter((path): path is string => path !== null)
+      const runs = await Promise.all(wantedPaths.map(async (path) => {
+        const run = await readRunDir(path, project.name)
+        return { ...run, id: projectRunPath(project.root, path) }
+      }))
 
       return {
         experiments,
         runs,
         experimentIds,
-        runIds: [...pathsById.keys()],
+        runIds: runs.map((run) => run.id),
         hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
         hypothesisIds:
           content === null ? [] : parseHypotheses(content).entries.map((entry) => entry.id),
@@ -283,7 +283,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
         items: paths.map((path): BackendResourceInventoryItem => {
           const id = basename(path)
           return {
-            id,
+            id: projectRunPath(project.root, path),
             slug: id.replace(/-\d{6}-\d{6}$/, ''),
             resource: portableProjectResource(project, join(path, 'README.md')),
           }
@@ -308,6 +308,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const run = await this.readRun(project, id)
     return BackendRunResponseSchema.parse({
       ...safeRunSummary(run, project),
+      id: id.includes('/') ? projectRunPath(project.root, run.path) : run.id,
       sections: {
         motivation: run.sections.motivation,
         setup: run.sections.setup,
@@ -410,7 +411,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   async getRunFiles(projectName: string, id: string, depth: number) {
     const project = this.requireProject(projectName)
-    const runPath = (await this.runPaths(project)).get(id)
+    const runPath = await resolveRunReference(project, id)
     if (!runPath) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const runRoot = await fs.realpath(runPath)
     let truncated = false
@@ -578,9 +579,10 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   /** One Run's own README, located through the walk and parsed for this request. */
   private async readRun(project: ProjectConfig, id: string): Promise<IndexedRun> {
-    const path = (await this.runPaths(project)).get(id)
+    const path = await resolveRunReference(project, id)
     if (!path) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const run = await readRunDir(path, project.name)
+    run.frontMatter.experiment = await declaredRunOwner(project.root, path, project.name)
     return {
       ...run,
       archived: await runArchivedFromRun(run),
@@ -647,15 +649,23 @@ export class FilesystemProjectService implements BackendProjectReadService {
       }),
       discoverExperiments(project.root, project.name),
     ])
+    const legacyCounts = new Map<string, number>()
+    for (const run of snapshot.experiments) legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
+    for (const run of snapshot.experiments) {
+      const path = projectRunPath(project.root, run.path)
+      const owners = experimentResult.experiments.filter((experiment) => experiment.frontMatter.runs.includes(path) || (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)))
+      run.frontMatter.experiment = owners.length === 1 ? owners[0]!.id : null
+    }
     return {
       project,
       runs: snapshot.experiments,
-      runsById: new Map(snapshot.experiments.map((run) => [run.id, run])),
+      runsById: new Map(snapshot.experiments.map((run) => [projectRunPath(project.root, run.path), run])),
       experiments: experimentResult.experiments,
       membership: computeMembership({
         experiments: experimentResult.experiments,
         runs: snapshot.experiments,
         project: project.name,
+        projectRoot: project.root,
       }),
     }
   }
@@ -664,7 +674,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
 function safeRunSummary(run: IndexedRun, project: ProjectConfig): BackendRunSummary {
   const frontMatter = run.frontMatter
   return BackendRunsResponseSchema.shape.runs.element.parse({
-    id: run.id,
+    id: projectRunPath(project.root, run.path),
     project: run.project,
     resource: runReadmeResource(project, run),
     mtime: run.mtime,

@@ -28,6 +28,24 @@ afterEach(async () => {
 })
 
 describe('FS v6 to v7 membership migration', () => {
+  it('performs the data upgrade without changing any version-marker bytes when requested', async () => {
+    const { root, base, experiment, readme } = await fixture()
+    const markerPath = join(root, '.memon/version.json')
+    const markerBefore = await fs.readFile(markerPath, 'utf8')
+    const markerStat = await fs.stat(markerPath)
+    const plan = await planMembershipMigration(root, { allowDirty: true, keepVersion: true })
+    await applyMembershipMigration(plan, join(base, 'backup'))
+    expect(await fs.readFile(experiment, 'utf8')).toContain(`logs/${run}`)
+    expect(await fs.readFile(readme, 'utf8')).not.toContain('experiment:')
+    expect(await fs.readFile(markerPath, 'utf8')).toBe(markerBefore)
+    expect((await fs.stat(markerPath)).mtimeMs).toBe(markerStat.mtimeMs)
+    const second = await planMembershipMigration(root, { keepVersion: true })
+    expect(second.blockers).toEqual([])
+    expect(second.files.filter((file) => file.before !== file.after)).toEqual([])
+    const finalUpgrade = await planMembershipMigration(root)
+    expect(finalUpgrade.files.filter((file) => file.before !== file.after).map((file) => file.path)).toEqual(['.memon/version.json'])
+  })
+
   it('refuses dirty Git worktrees without the explicit scoped override', async () => {
     const { root, base } = await fixture()
     execFileSync('git', ['init', '-q'], { cwd: root })

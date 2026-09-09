@@ -145,7 +145,7 @@ describe('FilesystemMutationService', () => {
     ).rejects.toMatchObject({ code: 'CONFLICT' })
   })
 
-  it('creates and cascade-deletes a path-free Experiment bundle with exact Run locks', async () => {
+  it('creates and deletes an Experiment without changing its Run', async () => {
     const service = new FilesystemMutationService(
       [{ name: 'project-a', root: projectRoot, include: [], exclude: [] }],
       () => new Date('2026-08-26T19:00:00Z'),
@@ -162,7 +162,7 @@ describe('FilesystemMutationService', () => {
     expect(created.resource).toMatch(/^docs\/experiments\/E\d{4}-backend-created\/README\.md$/)
     expect(JSON.stringify(created)).not.toContain(projectRoot)
     const experimentPath = join(projectRoot, created.resource)
-    expect(await fs.readFile(runPath, 'utf8')).toContain(`experiment: ${created.id}`)
+    expect(await documentLock(runPath)).toEqual(runBefore)
     await expect(
       service.deleteExperiment('project-a', created.id, {
         force: true,
@@ -192,13 +192,13 @@ describe('FilesystemMutationService', () => {
     expect(deleted).toEqual({
       ok: true,
       deletedId: created.id,
-      cascadedRuns: ['sub-recipe-260504-110000'],
+      cascadedRuns: ['logs/sub-recipe-260504-110000'],
     })
     await expect(fs.stat(experimentPath)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect(await fs.readFile(runPath, 'utf8')).toContain('experiment: null')
+    expect(await documentLock(runPath)).toEqual(runBefore)
   })
 
-  it('links and unlinks both documents under mtime+hash conflicts', async () => {
+  it('links and unlinks the Experiment under mtime+hash conflicts without Run writes', async () => {
     const service = new FilesystemMutationService(
       [{ name: 'project-a', root: projectRoot, include: [], exclude: [] }],
       () => new Date('2026-08-26T19:00:00Z'),
@@ -218,9 +218,9 @@ describe('FilesystemMutationService', () => {
       expectedRunMtime: runBefore.mtime,
       expectedRunHash: runBefore.hash,
     })
-    expect(linked).toMatchObject({ ok: true, experimentId, runId })
+    expect(linked).toMatchObject({ ok: true, experimentId, runId: `logs/${runId}` })
     expect(JSON.stringify(linked)).not.toContain(projectRoot)
-    expect(await fs.readFile(runPath, 'utf8')).toContain(`experiment: ${experimentId}`)
+    expect(await documentLock(runPath)).toEqual(runBefore)
     expect(await fs.readFile(experimentPath, 'utf8')).toContain(runId)
     await expect(
       service.bindExperiment('unlink', 'project-a', experimentId, {
@@ -243,7 +243,7 @@ describe('FilesystemMutationService', () => {
       expectedRunMtime: runLinked.mtime,
       expectedRunHash: runLinked.hash,
     })
-    expect(await fs.readFile(runPath, 'utf8')).toContain('experiment: null')
+    expect(await documentLock(runPath)).toEqual(runBefore)
   })
 
   it('writes a canonical Experiment README and rejects stale content locks', async () => {

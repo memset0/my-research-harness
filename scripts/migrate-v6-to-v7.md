@@ -1,8 +1,9 @@
 # Experiment membership migration tooling
 
-This is the operator entry point for the pending FS v7 rollout. Do not apply a
-plan while v6 readers or writers are serving the project. Complete the matching
-CLI/Web rollout checks and stop incompatible clients before changing live data.
+This is the operator entry point for the pending FS v7 rollout. Membership
+format and release version can advance separately with explicit operator
+approval. Use compatible readers/writers for path declarations; the unchanged
+v6 marker alone does not establish an older client's compatibility.
 This script does not install, stop, restart or publish services.
 
 Build `@memon/core` from the reviewed revision before running the script. Stop a
@@ -28,6 +29,21 @@ Contradictory Experiment declarations still block application.
 The plan contains complete preimages, including potentially private document
 content. Keep it outside the project in a private directory. Do not commit or
 print its contents. Inspect the reported counts and blockers before proceeding.
+
+## Data-only upgrade before the v7 release
+
+With explicit operator approval, pass `--keep-version` during planning:
+
+```sh
+node scripts/migrate-v6-to-v7.mjs plan "$PROJECT_ROOT" "$PLAN_FILE" --keep-version
+```
+
+This upgrades actual Experiment membership, result references and Run headers,
+while preserving every byte and the mtime of `.memon/version.json`. The saved
+plan binds this choice; apply never silently promotes a data-only plan to v7.
+Verify such projects with `verify "$PROJECT_ROOT" --keep-version`. A later
+normal plan can advance the version after all other v7 migrations are ready.
+This operation neither releases v7 nor claims other migrations are complete.
 
 ## Apply and verify
 
@@ -63,3 +79,8 @@ the staged diff before using the migration commit message:
 ```text
 chore(memon): migrate FS convention v6 -> v7
 ```
+
+That subject is reserved for the completed FS version step. For an explicitly
+approved `--keep-version` data-only application, use
+`chore(memon): migrate experiment run references` instead. Keep the v6 marker
+unchanged and do not create a v7 release or claim the remaining upgrades ran.
