@@ -7,7 +7,6 @@ import {
   createExperimentDoc,
   deleteExperimentDoc,
   fetchCodeReviewsInventory,
-  fetchDigestsInventory,
   fetchExperimentsInventory,
   fetchCodePreview,
   fetchExpDocReadme,
@@ -132,8 +131,6 @@ describe('central ProjectTarget URL qualification', () => {
     await fetchReportsInventory(target)
     expect(String(lastCall()[0])).toBe('/api/reports?host=host-a&project=project-x&inventory=1')
 
-    await fetchDigestsInventory(target)
-    expect(String(lastCall()[0])).toBe('/api/digests?host=host-a&project=project-x&inventory=1')
 
     await fetchCodeReviewsInventory(target)
     expect(String(lastCall()[0])).toBe(

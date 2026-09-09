@@ -71,6 +71,11 @@ faithfully into English without adding goals or commitments the user did not mak
   work any skill does; see `../PREFLIGHT.md`.
 - Verifying a page. Verification is the human's job (see below).
 
+Use the ordinary `digest` Wiki kind for a user-requested retrospective over a
+time window. Link research evidence directly; do not synthesize the diagnostic
+Journal. Legacy `docs/digests/` files belong to the reviewed v7 migration, not
+ad-hoc move/relabel operations. Never create new standalone D documents.
+
 ## Step 1 — Detect the operating mode
 
 Do this before anything else. The project may be local, or it may be an

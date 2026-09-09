@@ -1,10 +1,26 @@
-# Experiment membership migration tooling
+# Experiment membership and Digest migration tooling
 
 This is the operator entry point for the pending FS v7 rollout. Membership
 format and release version can advance separately with explicit operator
 approval. Use compatible readers/writers for path declarations; the unchanged
 v6 marker alone does not establish an older client's compatibility.
 This script does not install, stop, restart or publish services.
+
+Final v7 plans also convert canonical legacy `docs/digests/D<NNNN>-<date>.md`
+documents into `docs/wiki/digest/W<NNNN>-digest-d<NNNN>-<date>.md`. The receipt
+maps source paths to destinations, preserves D identity in `legacy_id`, retains
+metadata and body text, and rebases ordinary relative Markdown links. Wiki ID
+allocation checks all kind directories. Existing destinations, duplicate legacy
+IDs, unsafe symlinks, malformed frontmatter and unsupported legacy entries are
+blockers, not silently omitted documents. Relative images and embedded HTML
+assets require an explicit Wiki asset conversion before final apply.
+
+`--keep-version` remains membership-only preparation: it deliberately does not
+remove Digests while an older reader may still be active. Regenerate older final
+v7 plans; apply rejects plans lacking the Digest inventory. Preview and resolve
+blockers, then run final apply/verify before switching to a reader without legacy
+Digest support. No review marks or Journal cursors are written. Rollback validates
+both source and converted bytes before restoring migration-owned documents.
 
 Build `@memon/core` from the reviewed revision before running the script. Stop a
 production host that shares its build output before rebuilding that output.

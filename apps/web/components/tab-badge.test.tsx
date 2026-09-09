@@ -13,12 +13,10 @@ vi.mock('../lib/api', async (importOriginal) => {
   return {
     ...actual,
     fetchCodeReviewsInventory: vi.fn(),
-    fetchDigestsInventory: vi.fn(),
     fetchExperimentsInventory: vi.fn(),
     fetchReportsInventory: vi.fn(),
     fetchWikiInventory: vi.fn(),
     fetchCodeReviews: vi.fn(),
-    fetchDigests: vi.fn(),
     fetchExperimentDocs: vi.fn(),
     fetchReports: vi.fn(),
     fetchWiki: vi.fn(),
@@ -28,8 +26,6 @@ vi.mock('../lib/api', async (importOriginal) => {
 import {
   fetchCodeReviews,
   fetchCodeReviewsInventory,
-  fetchDigests,
-  fetchDigestsInventory,
   fetchExperimentDocs,
   fetchExperimentsInventory,
   fetchReports,
@@ -51,7 +47,6 @@ describe('TabBadge identity counts', () => {
   it.each([
     ['experiments', fetchExperimentsInventory],
     ['reports', fetchReportsInventory],
-    ['digests', fetchDigestsInventory],
     ['code-review', fetchCodeReviewsInventory],
   ] as const)('counts the %s inventory', async (kind, fetchInventory) => {
     vi.mocked(fetchInventory).mockResolvedValue(INVENTORY)
@@ -68,7 +63,6 @@ describe('TabBadge identity counts', () => {
     expect(fetchInventory).toHaveBeenCalledWith('project-a')
     expect(fetchExperimentDocs).not.toHaveBeenCalled()
     expect(fetchReports).not.toHaveBeenCalled()
-    expect(fetchDigests).not.toHaveBeenCalled()
     expect(fetchCodeReviews).not.toHaveBeenCalled()
   })
 

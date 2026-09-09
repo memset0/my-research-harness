@@ -7,7 +7,6 @@ import type {
 } from '@memon/core'
 import {
   fetchCodeReviewsInventory,
-  fetchDigestsInventory,
   fetchExperimentsInventory,
   fetchHypotheses,
   fetchJournalCount,
@@ -25,7 +24,6 @@ export type TabKind =
   | 'hypotheses'
   | 'journal'
   | 'reports'
-  | 'digests'
   | 'code-review'
   | 'wiki'
 
@@ -106,8 +104,6 @@ function tabQueryRoot(kind: TabKind): string {
       return 'journal-count'
     case 'reports':
       return 'reports-inventory'
-    case 'digests':
-      return 'digests-inventory'
     case 'code-review':
       return 'code-reviews-inventory'
     case 'wiki':
@@ -131,8 +127,6 @@ function fetchTabCollection(kind: TabKind, project: ProjectTarget): Promise<TabC
       return fetchJournalCount(project)
     case 'reports':
       return fetchReportsInventory(project)
-    case 'digests':
-      return fetchDigestsInventory(project)
     case 'code-review':
       return fetchCodeReviewsInventory(project)
     case 'wiki':

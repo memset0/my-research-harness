@@ -109,12 +109,6 @@ export const RUN_DIR_REGEX = /^.+-\d{6}-\d{6}$/
 export const REPORT_FILENAME_REGEX = /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
 
 /**
- * Regex matching digest file basenames under `<projectRoot>/docs/digests/`:
- * `D<NNNN>-<YYYY-MM-DD>.md`.
- */
-export const DIGEST_FILENAME_REGEX = /^D(\d{4})-(\d{4}-\d{2}-\d{2})\.md$/
-
-/**
  * Regex matching code-review doc basenames under
  * `<projectRoot>/docs/code-review/` and
  * `<projectRoot>/docs/experiments/E<NNNN>-<slug>/code-review/`:
@@ -591,7 +585,7 @@ export interface ExperimentMembershipAnomaly {
   detectedAt: string
 }
 
-// ---------- Reports + Digests ----------
+// ---------- Reports ----------
 
 /**
  * List-view metadata for a single report at
@@ -607,23 +601,6 @@ export interface ReportSummary {
   /** mtime in epoch ms. */
   mtime: number
   /** First H1 heading of the body (`# Title`), or null when absent. */
-  title: string | null
-}
-
-/**
- * List-view metadata for a single digest at
- * `<projectRoot>/docs/digests/D<NNNN>-<YYYY-MM-DD>.md`.
- */
-export interface DigestSummary {
-  /** Canonical 4-digit padded id, e.g. `'D0001'`. */
-  id: string
-  /** ISO date from the filename (`YYYY-MM-DD`). */
-  date: string
-  /** Absolute filesystem path. */
-  path: string
-  /** mtime in epoch ms. */
-  mtime: number
-  /** First H1 heading of the body, or null when absent. */
   title: string | null
 }
 

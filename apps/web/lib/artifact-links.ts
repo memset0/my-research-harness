@@ -70,6 +70,13 @@ export function resolveBareArtifactReference(
   reference: string,
   inventory: ArtifactInventory,
 ): ArtifactTarget | null {
+  if (/^D\d{4}$/.test(reference)) {
+    return uniqueIdentity(
+      (inventory.wiki ?? [])
+        .filter((item) => item.legacyId === reference)
+        .map((item) => ({ kind: 'wiki' as const, id: item.id })),
+    )
+  }
   if (REPORT_ID_RE.test(reference)) {
     const report = uniqueIdentity(
       inventory.reports
@@ -280,6 +287,8 @@ function reportIdFromProjectPath(candidate: string, sourcePath: string): string 
   const sourceDocs = projectDocsRoot(sourcePath)
   const candidateDocs = projectDocsRoot(candidate)
   if (sourceDocs === null || candidateDocs !== sourceDocs) return null
+  const digestPrefix = `${sourceDocs}/digests/`
+  if (candidate.startsWith(digestPrefix)) return /^(D\d{4})-\d{4}-\d{2}-\d{2}\.md$/.exec(candidate.slice(digestPrefix.length))?.[1] ?? null
   const prefix = `${sourceDocs}/reports/`
   if (!candidate.startsWith(prefix)) return null
   const tail = candidate.slice(prefix.length)

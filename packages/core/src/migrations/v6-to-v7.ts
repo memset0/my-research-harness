@@ -5,6 +5,8 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { isRunPath } from '../experiments/run-path.js'
+import { planDigestWikiMigration, validateDigestWikiMigration, applyDigestWikiMigration, verifyDigestWikiMigration, rollbackDigestWikiMigration, type DigestWikiMigrationPlan } from './digests-to-wiki.js'
+import { formatIsoLocal } from '../time.js'
 
 export interface MembershipMigrationPlan {
   version: 1
@@ -15,6 +17,7 @@ export interface MembershipMigrationPlan {
   droppedClaims: string[]
   allowDirty: boolean
   keepVersion?: boolean
+  digests?: DigestWikiMigrationPlan
 }
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -133,12 +136,16 @@ export async function planMembershipMigration(
     }
   }
   const markerPath = '.memon/version.json'
+  if (!options.keepVersion) {
+    plan.digests = await planDigestWikiMigration(root)
+    plan.blockers.push(...plan.digests.blockers)
+  }
   const before = await fs.readFile(await safeFile(root, markerPath), 'utf8')
   const marker = JSON.parse(before)
   if (![6, 7].includes(marker.fs_convention_version)) plan.blockers.push('Migration requires FS v6 or already migrated v7')
   if (marker.fs_convention_version === 6 && !options.keepVersion) {
     marker.fs_convention_version = 7
-    marker.last_migrated_at = new Date().toISOString()
+    marker.last_migrated_at = formatIsoLocal(new Date())
     add(markerPath, before, `${JSON.stringify(marker, null, 2)}\n`)
   } else add(markerPath, before, before)
   return plan
@@ -147,6 +154,11 @@ export async function planMembershipMigration(
 export async function applyMembershipMigration(plan: MembershipMigrationPlan, backupDirectory: string): Promise<void> {
   if (plan.version !== 1 || plan.blockers.length) throw new Error('Migration plan has blockers')
   const root = await fs.realpath(plan.root)
+  if (!plan.keepVersion && !plan.digests) throw new Error('Regenerate the v7 plan to include Digest migration')
+  if (plan.digests) {
+    if (plan.digests.root !== root) throw new Error('Digest migration root mismatch')
+    await validateDigestWikiMigration(plan.digests)
+  }
   const backup = resolve(backupDirectory)
   if (backup === root || backup.startsWith(root + sep)) throw new Error('Backup must be outside the project')
   const inGit = (() => {
@@ -170,11 +182,16 @@ export async function applyMembershipMigration(plan: MembershipMigrationPlan, ba
   await fs.writeFile(join(backup, 'plan.json'), JSON.stringify(plan, null, 2), { mode: 0o600, flag: 'wx' })
   const written: typeof plan.files = []
   try {
+    if (plan.digests) await applyDigestWikiMigration(plan.digests)
     for (const file of plan.files) {
       if (file.path === '.memon/version.json') {
+        if (plan.digests) await verifyDigestWikiMigration(plan.digests)
         const check = await planMembershipMigration(root, { allowDirty: true, keepVersion: plan.keepVersion })
         const changed = check.files.filter((entry) => entry.path !== '.memon/version.json' && entry.before !== entry.after)
-        if (check.blockers.length || changed.length) throw new Error(`Membership verification failed: ${check.blockers.join('; ')}`)
+        if (check.blockers.length || changed.length || check.digests?.documents.length) throw new Error(`Migration verification failed: ${check.blockers.join('; ')}`)
+        for (const document of plan.digests?.documents ?? []) {
+          if (await fs.readFile(await safeFile(root, document.target), 'utf8') !== document.after) throw new Error('Digest postimage changed')
+        }
         for (const entry of check.files) {
           const original = plan.files.find((candidate) => candidate.path === entry.path)
           if (!original || (entry.path !== '.memon/version.json' && entry.before !== original.after)) throw new Error(`Concurrent edit: ${entry.path}`)
@@ -198,6 +215,7 @@ export async function applyMembershipMigration(plan: MembershipMigrationPlan, ba
       const path = paths.get(file.path)!
       if (await fs.readFile(path, 'utf8') === file.after) await fs.writeFile(path, file.before)
     }
+    if (plan.digests) await rollbackDigestWikiMigration(plan.digests)
     throw error
   }
 }
@@ -206,6 +224,10 @@ export async function rollbackMembershipMigration(backupDirectory: string): Prom
   const plan: MembershipMigrationPlan = JSON.parse(await fs.readFile(join(backupDirectory, 'plan.json'), 'utf8'))
   if (plan.version !== 1) throw new Error('Unsupported recovery manifest')
   const root = await fs.realpath(plan.root)
+  if (plan.digests) {
+    if (plan.digests.root !== root) throw new Error('Digest migration root mismatch')
+    await rollbackDigestWikiMigration(plan.digests, true)
+  }
   for (const file of plan.files) {
     if (hash(file.before) !== file.hash) throw new Error('Corrupt preimage')
     const current = await fs.readFile(await safeFile(root, file.path), 'utf8')
@@ -224,4 +246,5 @@ export async function rollbackMembershipMigration(backupDirectory: string): Prom
       await fs.rename(temp, path)
     } finally { await fs.rm(temp, { force: true }) }
   }
+  if (plan.digests) await rollbackDigestWikiMigration(plan.digests)
 }

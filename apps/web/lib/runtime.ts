@@ -21,7 +21,6 @@ import {
   configureProjectFileStore,
   configureProjectFileCache,
   deriveCompletion,
-  DIGEST_FILENAME_REGEX,
   discoverExperiments,
   parseCodeReview,
   discoverRuns,
@@ -40,7 +39,6 @@ import {
   type AuthConfig,
   type CodeReviewSummary,
   type Config,
-  type DigestSummary,
   type Experiment,
   type ExperimentMembershipAnomaly,
   type ParsedHypotheses,
@@ -87,7 +85,6 @@ export class Runtime {
     public readonly hypothesesCache: FileCache<ParsedHypotheses>,
     public readonly journalCache: FileCache<ParsedJournal>,
     public readonly reportsCache: DirCache<ReportSummary>,
-    public readonly digestsCache: DirCache<DigestSummary>,
     public readonly codeReviewsCache: DirCache<CodeReviewSummary>,
     public readonly wikiCache: WikiCache,
     public readonly auth: AuthConfig,
@@ -152,12 +149,6 @@ export class Runtime {
   reportsDir(project: string): string | null {
     const p = this.config.projects.find((x) => x.name === project)
     return p ? join(p.root, 'docs', 'reports') : null
-  }
-
-  /** Path to <project>/docs/digests/ for the given project (or null). */
-  digestsDir(project: string): string | null {
-    const p = this.config.projects.find((x) => x.name === project)
-    return p ? join(p.root, 'docs', 'digests') : null
   }
 
   /**
@@ -274,9 +265,8 @@ async function init(): Promise<Runtime> {
     parse: parseJournal,
   })
 
-  // Per-project directory caches for docs/reports/ and docs/digests/.
+  // Per-project directory cache for docs/reports/.
   const reportsDirs = legacyProjects.map((p) => join(p.root, 'docs', 'reports'))
-  const digestsDirs = legacyProjects.map((p) => join(p.root, 'docs', 'digests'))
 
   const reportsCache = new DirCache<ReportSummary>({
     name: 'reports',
@@ -299,26 +289,6 @@ async function init(): Promise<Runtime> {
       events.emit('reports-change', { project })
       // Legacy `R<NNNN>` resolution depends on which reports still exist.
       wikiCache.invalidate(project)
-    },
-  })
-  const digestsCache = new DirCache<DigestSummary>({
-    name: 'digests',
-    dirs: digestsDirs,
-    fileNameRegex: DIGEST_FILENAME_REGEX,
-    parseFile: (absPath, content, mtime) => {
-      const name = basename(absPath)
-      const m = DIGEST_FILENAME_REGEX.exec(name)!
-      return {
-        id: `D${m[1]}`,
-        date: m[2]!,
-        path: absPath,
-        mtime,
-        title: extractTitle(content),
-      }
-    },
-    onUpdate: (dir) => {
-      const project = projectForDir(config, dir)
-      if (project) events.emit('digests-change', { project })
     },
   })
 
@@ -426,7 +396,6 @@ async function init(): Promise<Runtime> {
       if (journalCache.handlePollChange(path)) return
       // Try directory caches (handles both dir-mtime and per-file changes).
       if (reportsCache.handlePollChange(path, poller)) return
-      if (digestsCache.handlePollChange(path, poller)) return
       if (codeReviewsCache.handlePollChange(path, poller)) return
       // Wiki tree, `.memon/wiki-review.csv`, and the git HEAD/ref pair.
       if (wikiCache.handlePollChange(path, poller)) return
@@ -547,7 +516,6 @@ async function init(): Promise<Runtime> {
     hypothesesCache.warmup(),
     journalCache.warmup(),
     reportsCache.warmup(),
-    digestsCache.warmup(),
     codeReviewsCache.warmup(),
     wikiCache.warmup(),
     (async () => {
@@ -601,19 +569,13 @@ async function init(): Promise<Runtime> {
     poller.watch(p, entry?.mtime ?? 0)
   }
 
-  // Register dir-level + per-file watch for reports/digests. Both the
+  // Register dir-level + per-file observations for reports. Both the
   // directory mtime (advances on add/remove) and each individual file
   // (advances on edit) are watched.
   for (const dir of reportsCache.dirs()) {
     poller.watch(dir, await dirMtimeOrZero(dir))
   }
   for (const filePath of reportsCache.paths()) {
-    poller.watch(filePath, await fileMtimeOrZero(filePath))
-  }
-  for (const dir of digestsCache.dirs()) {
-    poller.watch(dir, await dirMtimeOrZero(dir))
-  }
-  for (const filePath of digestsCache.paths()) {
     poller.watch(filePath, await fileMtimeOrZero(filePath))
   }
   for (const dir of codeReviewsCache.dirs()) {
@@ -642,7 +604,7 @@ async function init(): Promise<Runtime> {
       `${expDocCount} experiments, ` +
       `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
       `${journalCache.populated()}/${journalPaths.length} journal files, ` +
-      `${reportsCache.paths().length} reports, ${digestsCache.paths().length} digests, ` +
+      `${reportsCache.paths().length} reports, ` +
       `${codeReviewsCache.paths().length} code-reviews, ` +
       `${wikiCache.paths().length} wiki pages`,
   )
@@ -666,7 +628,6 @@ async function init(): Promise<Runtime> {
     hypothesesCache,
     journalCache,
     reportsCache,
-    digestsCache,
     codeReviewsCache,
     wikiCache,
     auth,
@@ -685,7 +646,6 @@ async function init(): Promise<Runtime> {
 function projectForDir(config: Config, dir: string): string | null {
   for (const p of config.projects) {
     if (dir === join(p.root, 'docs', 'reports')) return p.name
-    if (dir === join(p.root, 'docs', 'digests')) return p.name
   }
   // Code-review dirs: the flat docs/code-review/ or any nested
   // docs/experiments/E*/code-review/.

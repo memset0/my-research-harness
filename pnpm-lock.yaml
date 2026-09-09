@@ -254,6 +254,12 @@ importers:
       pino:
         specifier: ^9.5.0
         version: 9.14.0
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
       yaml:
         specifier: ^2.9.0
         version: 2.9.0

@@ -10,7 +10,6 @@ const stubCtx = (overrides: Partial<ProjectResolverContext> = {}): ProjectResolv
   isKnownProject: (name: string) => ['project-a', 'project-b'].includes(name),
   resolveByRunId: () => null,
   resolveByExperimentId: () => null,
-  resolveByDigestId: () => null,
   resolveByReportId: () => null,
   resolveByWikiId: () => null,
   resolveByPath: () => null,
@@ -193,15 +192,6 @@ describe('classifyAndExtract — project extraction', () => {
     expect(r).toEqual({ class: 'read', project: 'project-a' })
   })
 
-  it('resolves /api/digests/<id>', () => {
-    const r = classifyAndExtract(
-      'GET',
-      '/api/digests/D0042',
-      emptySearch(),
-      stubCtx({ resolveByDigestId: () => 'project-a' }),
-    )
-    expect(r).toEqual({ class: 'read', project: 'project-a' })
-  })
 
   it('resolves /api/reports/<id>', () => {
     const r = classifyAndExtract(

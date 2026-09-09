@@ -2,7 +2,6 @@ import { promises as fs } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
   BackendCodeReviewsResponseSchema,
-  BackendDigestsResponseSchema,
   BackendReportsResponseSchema,
   discoverExperiments,
   discoverRuns,
@@ -22,7 +21,6 @@ export type BackendMonitoredResourceKind =
   | 'run'
   | 'experiment'
   | 'report'
-  | 'digest'
   | 'code-review'
   | 'wiki'
 
@@ -211,11 +209,10 @@ export class BackendFilesystemMonitor implements BackendFilesystemMonitorControl
 export async function scanBackendProject(project: ProjectConfig): Promise<BackendMonitorSnapshot> {
   ProjectNameSchema.parse(project.name)
   const documents = new FilesystemDocumentService([project])
-  const [runPaths, experimentResult, reports, digests, codeReviews, wikiPages] = await Promise.all([
+  const [runPaths, experimentResult, reports, codeReviews, wikiPages] = await Promise.all([
     discoverRuns(project, { includeArchived: true }),
     discoverExperiments(project.root, project.name),
     documents.listReports(project.name),
-    documents.listDigests(project.name),
     documents.listCodeReviews(project.name),
     // Discovery only: the derived wiki projection (git review, source
     // resolution) is far too expensive for the poll loop.
@@ -251,9 +248,6 @@ export async function scanBackendProject(project: ProjectConfig): Promise<Backen
   }
   for (const report of BackendReportsResponseSchema.parse(reports).reports) {
     add('report', report.id, `${report.resource}:${report.mtime}`)
-  }
-  for (const digest of BackendDigestsResponseSchema.parse(digests).digests) {
-    add('digest', digest.id, `${digest.resource}:${digest.mtime}`)
   }
   for (const review of BackendCodeReviewsResponseSchema.parse(codeReviews).codeReviews) {
     add('code-review', review.id, `${review.resource}:${review.mtime}`)
@@ -307,8 +301,6 @@ function topicFor(kind: BackendMonitoredResourceKind) {
       return 'experiment-change' as const
     case 'report':
       return 'reports-change' as const
-    case 'digest':
-      return 'digests-change' as const
     case 'code-review':
       return 'code-reviews-change' as const
     case 'wiki':

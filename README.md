@@ -181,8 +181,8 @@ dry runs do not record. Machine-level hosting/update commands have no project
 Journal. Rejected CLI syntax records the identified mutating command without
 unparsed arguments when its project can be resolved.
 
-Existing `docs/journal.md` bytes and historical digest documents remain
-untouched. A legacy file can still look like this:
+Existing `docs/journal.md` bytes remain untouched. Historical digest documents
+are converted only by the reviewed v7 migration. A legacy Journal can still look like this:
 
 ```markdown
 ---
@@ -529,9 +529,9 @@ hypothesis-binding lives in the exp doc. Two layers, no duplication.
   experiment cross-links.
 - **/p/[project]/journal** — reverse-chronological timeline, filter by
   tag and experiment id, browser-tz timestamps.
-- **/p/[project]/reports** + **/digests** — index pages for the
-  single-file or directory-bundle Reports and
-  `docs/digests/D<N>-<date>.md` files. Local `.html` image references render
+- **/p/[project]/reports** — index pages for single-file or directory-bundle
+  Reports. Historical Digests move to Wiki's `digest` kind through the reviewed
+  v7 migration; standalone Digest routes are retired. Local `.html` image references render
   as unsandboxed iframes; normal links remain links.
 
 The exp detail page's action bar exposes:

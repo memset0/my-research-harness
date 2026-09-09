@@ -31,8 +31,6 @@ export interface ProjectResolverContext {
   resolveByRunId: (id: string) => string | null
   /** Look up an experiment doc by id `E<NNNN>-<slug>`; returns project. */
   resolveByExperimentId: (id: string) => string | null
-  /** Look up a digest by id `D<NNNN>`; returns project. */
-  resolveByDigestId: (id: string) => string | null
   /** Look up a report by id `R<NNNN>`; returns project. */
   resolveByReportId: (id: string) => string | null
   /** Look up a wiki page by id `W<NNNN>`; returns project. */
@@ -153,21 +151,6 @@ const projectFromExperimentId =
     const id = idAfter(p, '/api/experiments/')
     if (!id) return PROJECT_MULTI
     return ctx.resolveByExperimentId(id)
-  }
-
-const projectFromDigestId =
-  () =>
-  (
-    _m: string,
-    p: string,
-    search: URLSearchParams,
-    ctx: ProjectResolverContext,
-  ): ResolvedProject => {
-    const queryProject = projectFromQuery(search)
-    if (queryProject) return queryProject
-    const id = idAfter(p, '/api/digests/')
-    if (!id) return PROJECT_MULTI
-    return ctx.resolveByDigestId(id)
   }
 
 const projectFromReportId =
@@ -370,16 +353,6 @@ const RULES: Rule[] = [
     match: methodIs(['GET'], startsWith('/api/experiments/')),
     class: 'read',
     projectFor: projectFromExperimentId(),
-  },
-  {
-    match: methodIs(['GET'], exact('/api/digests')),
-    class: 'read',
-    projectFor: projectQueryOrMulti(),
-  },
-  {
-    match: methodIs(['GET'], startsWith('/api/digests/')),
-    class: 'read',
-    projectFor: projectFromDigestId(),
   },
   {
     match: methodIs(['GET'], exact('/api/reports')),

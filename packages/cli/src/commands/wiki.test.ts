@@ -45,7 +45,7 @@ describe('wiki kinds', () => {
     const configurationPath = new URL('../../../core/dist/wiki/kinds.json', import.meta.url)
     const configuration = JSON.parse(await fs.readFile(configurationPath, 'utf8'))
     const ordinary = structuredClone(configuration.kinds.find((kind: { id: string }) => kind.id === 'note'))
-    Object.assign(ordinary, { id: 'test-guide', order: 120, relatedKinds: [] })
+    Object.assign(ordinary, { id: 'test-guide', order: 1000, relatedKinds: [] })
     ordinary.en.purpose = 'Fixture purpose.'
     ordinary.en.examples = ['Fixture example.']
     configuration.kinds.push(ordinary)
@@ -75,7 +75,7 @@ describe('wiki kinds', () => {
   it('lists and explains kinds without resolving a project', async () => {
     const listed = await runCapturing(() => runWikiKinds({ cwd: '/missing-project', format: 'json' }))
     const payload = JSON.parse(listed.stdout)
-    expect(payload.kinds.map((kind: { id: string }) => kind.id)).toEqual(expect.arrayContaining(['initiative', 'catalog', 'note', 'roadmap']))
+    expect(payload.kinds.map((kind: { id: string }) => kind.id)).toEqual(expect.arrayContaining(['initiative', 'catalog', 'note', 'roadmap', 'digest']))
     const shown = await runCapturing(() => runWikiKinds({ cwd: '/missing-project', format: 'human', kind: 'initiative' }))
     expect(shown.stdout).toContain('推进计划')
     expect(shown.stdout).toContain('Status: none')
@@ -84,7 +84,7 @@ describe('wiki kinds', () => {
     expect(unknown.exitCode).toBe(2)
   })
 
-  it.each(['initiative', 'catalog'])('creates and moves %s with stable identity and no scaffold', async (kind) => {
+  it.each(['initiative', 'catalog', 'digest'])('creates and moves %s with stable identity and no scaffold', async (kind) => {
     const created = await runCapturing(() => runWikiCreate({ cwd: root, kind: 'note', slug: 'working-page', title: 'Working page', format: 'json' }))
     expect(created.exitCode).toBeNull()
     const original = JSON.parse(created.stdout)

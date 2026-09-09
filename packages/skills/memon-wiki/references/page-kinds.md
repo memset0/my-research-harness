@@ -247,6 +247,28 @@ Explain meaningful families, differences, suitability, maturity and evidence lim
 - Human-review warning at status: none.
 - Related kinds: showcase, note, finding.
 
+## digest
+
+Summarize progress, evidence and unresolved questions over a time window.
+
+Suitable uses: Periodic retrospectives; Preserving historical research summaries
+
+Examples (advisory): A weekly summary of experiment progress and open questions
+
+Distinctions: Unlike a single meeting record or a durable finding, a digest summarizes a period and links to original evidence.
+
+Describe the covered period, meaningful progress, evidence limits and unresolved questions. Cite original Wiki pages or Experiments rather than copying them. Preserve historical context and provenance; do not revive automatic journal cursors, generation schedules or review claims. Structure is advisory; no status or mandatory headings.
+
+- Status vocabulary: none.
+- Creation default: no status.
+- Date required: no.
+- Non-empty sources required: no.
+- Recommended H2s (warning only; also used by create): none; free-form.
+- Required H2s: none.
+- Body evidence warning: no.
+- Human-review warning at status: none.
+- Related kinds: meeting, finding, note.
+
 ## Reserved directories
 
 `code-review`, `assets`

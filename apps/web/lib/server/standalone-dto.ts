@@ -32,10 +32,6 @@ export function standaloneReport<T extends ResourceDto>(config: Config, report: 
   return { ...report, path: absolute(config, report.project, report.resource) }
 }
 
-export function standaloneDigest<T extends ResourceDto>(config: Config, digest: T) {
-  return { ...digest, path: absolute(config, digest.project, digest.resource) }
-}
-
 export function standaloneCodeReview<T extends ResourceDto>(config: Config, review: T) {
   return { ...review, path: absolute(config, review.project, review.resource) }
 }

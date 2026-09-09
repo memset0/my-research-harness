@@ -5,8 +5,6 @@ import {
   BackendCodeReviewPatchResponseSchema,
   BackendCodeReviewResponseSchema,
   BackendCodeReviewsResponseSchema,
-  BackendDigestResponseSchema,
-  BackendDigestsResponseSchema,
   BackendDocumentConflictResponseSchema,
   BackendDocumentWriteResponseSchema,
   BackendReadmeResponseSchema,
@@ -86,17 +84,21 @@ function expectPathFree(value: unknown): void {
 }
 
 describe('FilesystemDocumentService', () => {
-  it('discovers strict, path-free report, digest, code-review, and README DTOs', async () => {
+  it('serves migrated Digest content through ordinary Wiki inventory and detail', async () => {
+    await fs.mkdir(join(root, 'docs/wiki/digest'), { recursive: true })
+    const content = '---\nid: W0001\nkind: digest\nlegacy_id: D0001\ntitle: Period summary\n---\n# Preserved summary\n'
+    await fs.writeFile(join(root, 'docs/wiki/digest/W0001-period.md'), content)
+    const inventory = await service.listWiki('research', { inventoryOnly: true })
+    expect(inventory).toEqual({ pages: [{ id: 'W0001', resource: 'docs/wiki/digest/W0001-period.md', legacyId: 'D0001' }] })
+    expect(await service.getWiki('research', 'W0001')).toMatchObject({ content, kind: 'digest', legacyId: 'D0001' })
+  })
+
+  it('discovers strict, path-free report, code-review, and README DTOs', async () => {
     const reports = BackendReportsResponseSchema.parse(await service.listReports('research'))
     expect(reports.reports.map((report) => report.id)).toEqual(['R0002', 'R0001'])
     expect(reports.reports[0]?.format).toBe('bundle')
     expect(reports.reports[0]?.resource).toBe('docs/reports/R0002-bundle/README.md')
     const report = BackendReportResponseSchema.parse(await service.getReport('research', 'R0001'))
-
-    const digests = BackendDigestsResponseSchema.parse(await service.listDigests('research'))
-    expect(digests.digests.map((digest) => digest.id)).toEqual(['D0001'])
-    expect(digests.digests[0]?.resource).toBe('docs/digests/D0001-2026-08-26.md')
-    const digest = BackendDigestResponseSchema.parse(await service.getDigest('research', 'D0001'))
 
     const reviews = BackendCodeReviewsResponseSchema.parse(
       await service.listCodeReviews('research'),
@@ -109,7 +111,7 @@ describe('FilesystemDocumentService', () => {
       await service.getReadme('research', 'logs/run-one/README.md'),
     )
 
-    for (const payload of [reports, report, digests, digest, reviews, review, readme]) {
+    for (const payload of [reports, report, reviews, review, readme]) {
       expectPathFree(payload)
     }
   })
@@ -122,9 +124,6 @@ describe('FilesystemDocumentService', () => {
 
     const reports = BackendResourceInventoryResponseSchema.parse(
       await service.listReports('research', { inventoryOnly: true }),
-    )
-    const digests = BackendResourceInventoryResponseSchema.parse(
-      await service.listDigests('research', { inventoryOnly: true }),
     )
     const reviews = BackendResourceInventoryResponseSchema.parse(
       await service.listCodeReviews('research', { inventoryOnly: true }),
@@ -140,13 +139,6 @@ describe('FilesystemDocumentService', () => {
         id: 'R0001',
         slug: 'report',
         resource: 'docs/reports/R0001-report.md',
-      },
-    ])
-    expect(digests.items).toEqual([
-      {
-        id: 'D0001',
-        slug: '2026-08-26',
-        resource: 'docs/digests/D0001-2026-08-26.md',
       },
     ])
     expect(reviews.items).toEqual([
@@ -184,8 +176,7 @@ describe('FilesystemDocumentService', () => {
       BackendReportResponseSchema.parse(await service.getReport('research', 'R0001')).content,
     ).toBe('# Updated report\n')
 
-    // Historical digests stay readable; the managed digest writer is retired.
-    BackendDigestResponseSchema.parse(await service.getDigest('research', 'D0001'))
+    // Standalone Digest methods are retired.
     expect('putDigest' in service).toBe(false)
 
     const readme = BackendReadmeResponseSchema.parse(
@@ -230,8 +221,6 @@ describe('FilesystemDocumentService', () => {
 
   it('rejects non-README resources and traversal, and omits an escaping symlink', async () => {
     await fs.symlink('/etc/hostname', join(root, 'docs', 'digests', 'D0002-2026-08-27.md'))
-    const digests = BackendDigestsResponseSchema.parse(await service.listDigests('research'))
-    expect(digests.digests.map((digest) => digest.id)).toEqual(['D0001'])
     await expect(service.getReadme('research', '../outside/README.md')).rejects.toMatchObject({
       code: 'INVALID_RESOURCE',
     } satisfies Partial<BackendDocumentServiceError>)

@@ -17,8 +17,8 @@ export const WIKI_ID_REGEX = /^W\d{4}$/
 export const WIKI_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*$/
 /** `W<NNNN>-<slug>` — page file basename (without `.md`) or bundle directory. */
 export const WIKI_PAGE_NAME_REGEX = /^(W\d{4})-([a-z0-9][a-z0-9-]*)$/
-/** `R<NNNN>` — legacy Report id a migrated page may carry. */
-export const WIKI_LEGACY_ID_REGEX = /^R\d{4}$/
+/** `R<NNNN>` or `D<NNNN>` — legacy identity a migrated page may carry. */
+export const WIKI_LEGACY_ID_REGEX = /^[RD]\d{4}$/
 /** `docs/wiki`, relative to the project root, POSIX separators. */
 export const WIKI_DIR_RELPATH = 'docs/wiki'
 

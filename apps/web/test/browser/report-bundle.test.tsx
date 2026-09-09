@@ -14,12 +14,10 @@ vi.mock('../../lib/api', async (importOriginal) => {
     ...actual,
     fetchReports: vi.fn(),
     fetchReport: vi.fn(),
-    fetchDigests: vi.fn(),
-    fetchDigest: vi.fn(),
   }
 })
 
-import { fetchDigest, fetchDigests, fetchReport, fetchReports } from '../../lib/api'
+import { fetchReport, fetchReports } from '../../lib/api'
 
 const REPORT_PICKER_PREFERENCE_KEY = 'memon:reports:picker-open'
 
@@ -64,33 +62,14 @@ describe('directory Report inbox rendering', () => {
       content: '# Rich report\n\n![Interactive chart](./chart.html)\n',
       format: 'bundle',
     })
-    vi.mocked(fetchDigests).mockResolvedValue({
-      digests: [
-        {
-          id: 'D0001',
-          date: '2026-08-15',
-          path: '/project/docs/digests/D0001-2026-08-15.md',
-          mtime: 1,
-          title: 'Daily digest',
-        },
-      ],
-    })
-    vi.mocked(fetchDigest).mockResolvedValue({
-      id: 'D0001',
-      date: '2026-08-15',
-      path: '/project/docs/digests/D0001-2026-08-15.md',
-      mtime: 1,
-      hash: 'digest-hash',
-      content: '# Daily digest\n',
-    })
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('enables the TOC for Reports but leaves Digest markdown unchanged', () => {
-    const view = render(
+  it('enables the TOC for Reports', () => {
+    render(
       <RenderedItem
         kind="reports"
         content={'# Report title\n\n## Summary\n\n### Metrics'}
@@ -110,10 +89,6 @@ describe('directory Report inbox rendering', () => {
       'report-r0002-summary',
     )
 
-    view.rerender(
-      <RenderedItem kind="digests" content={'# Digest title\n\n## Summary'} project="research" />,
-    )
-    expect(screen.queryByRole('navigation', { name: 'Table of contents' })).toBeNull()
   })
 
   it('threads FullReport.format into the Markdown resource base', async () => {
@@ -329,20 +304,4 @@ describe('directory Report inbox rendering', () => {
     expect(cards[0]).toHaveClass('rounded-md', 'border', 'bg-card')
   })
 
-  it('keeps Digest rows and reading background unchanged', async () => {
-    const { container } = renderWithQuery(
-      <InboxShell kind="digests" project="research" selectedId="D0001" />,
-    )
-    await screen.findByRole('heading', { name: 'Daily digest' })
-
-    expect(screen.getByRole('complementary', { name: 'Digest picker' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /reports/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Switch report/i })).not.toBeInTheDocument()
-
-    const surface = container.querySelector('[data-inbox-reading-surface="digests"]')
-    expect(surface).not.toHaveClass('bg-card')
-    const digestLink = screen.getByRole('link', { name: /D0001.*Daily digest/s })
-    expect(digestLink).toHaveClass('border-b')
-    expect(digestLink).not.toHaveAttribute('data-report-card')
-  })
 })

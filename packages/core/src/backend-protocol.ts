@@ -871,7 +871,7 @@ export const BackendAnomaliesResponseSchema = z
   .object({ anomalies: z.array(BackendAnomalySchema).max(100_000) })
   .strict()
 
-export const BACKEND_DOCUMENT_KINDS = ['report', 'digest', 'code-review', 'readme', 'wiki'] as const
+export const BACKEND_DOCUMENT_KINDS = ['report', 'code-review', 'readme', 'wiki'] as const
 const BackendSha1Schema = z.string().regex(/^[a-f0-9]{40}$/)
 export const BackendDocumentSummarySchema = z
   .object({
@@ -1047,25 +1047,6 @@ export const BackendWikiReviewOrderResponseSchema = z
 export const BackendWikiReviewMarkRequestSchema = z
   .object({ note: z.string().max(4096).optional() })
   .strict()
-
-export const BackendDigestSummarySchema = z
-  .object({
-    id: z.string().regex(/^D\d{4}$/),
-    project: ProjectNameSchema,
-    resource: BackendOpaqueResourceIdSchema,
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    title: z.string().max(512).nullable(),
-    mtime: z.number().finite().nonnegative(),
-  })
-  .strict()
-export const BackendDigestDocumentSchema = BackendDigestSummarySchema.extend({
-  hash: BackendSha1Schema,
-  content: z.string().max(4 * 1024 * 1024),
-}).strict()
-export const BackendDigestsResponseSchema = z
-  .object({ digests: z.array(BackendDigestSummarySchema).max(10_000) })
-  .strict()
-export const BackendDigestResponseSchema = BackendDigestDocumentSchema
 
 export const BackendCodeReviewCompletionSchema = z
   .object({
@@ -1526,7 +1507,6 @@ export const RESOURCE_KINDS = [
   'journal',
   'report',
   'report-asset',
-  'digest',
   'code-review',
   'log',
   'git',
@@ -1982,7 +1962,6 @@ export const BACKEND_EVENT_TOPICS = [
   'anomaly',
   'code-reviews-change',
   'reports-change',
-  'digests-change',
   'wiki-change',
   'wiki-review-change',
 ] as const

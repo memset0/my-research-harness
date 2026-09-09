@@ -17,20 +17,6 @@ export function makeProjectResolver(runtime: Runtime): ProjectResolverContext {
     return exp ? exp.project : null
   }
 
-  const resolveByDigestId = (id: string): string | null => {
-    // Digests are stored by project; iterate cached entries to find the id.
-    // O(N) across cached digests is fine — digest counts are small.
-    for (const project of runtime.config.projects) {
-      const dir = runtime.digestsDir(project.name)
-      if (!dir) continue
-      const entries = runtime.digestsCache.getList(dir)
-      for (const entry of entries) {
-        if (entry.id === id) return project.name
-      }
-    }
-    return null
-  }
-
   const resolveByReportId = (id: string): string | null => {
     for (const project of runtime.config.projects) {
       const dir = runtime.reportsDir(project.name)
@@ -62,7 +48,6 @@ export function makeProjectResolver(runtime: Runtime): ProjectResolverContext {
     isKnownProject: (name) => projectNames.has(name),
     resolveByRunId,
     resolveByExperimentId,
-    resolveByDigestId,
     resolveByReportId,
     resolveByWikiId,
     resolveByPath,

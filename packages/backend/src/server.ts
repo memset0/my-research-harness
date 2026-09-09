@@ -19,8 +19,6 @@ import {
   BackendCommitMarksResponseSchema,
   BackendCommitMarkWriteRequestSchema,
   BackendCommitMarkWriteResponseSchema,
-  BackendDigestResponseSchema,
-  BackendDigestsResponseSchema,
   BackendDocumentConflictResponseSchema,
   BackendDocumentWriteRequestSchema,
   BackendDocumentWriteResponseSchema,
@@ -134,8 +132,6 @@ export const BACKEND_JOURNAL_HISTORY_ROUTE = `${BACKEND_API_PREFIX}/journal/hist
 export const BACKEND_ANOMALIES_ROUTE = `${BACKEND_API_PREFIX}/anomalies`
 export const BACKEND_REPORTS_ROUTE = `${BACKEND_API_PREFIX}/reports`
 export const BACKEND_REPORT_ROUTE = `${BACKEND_API_PREFIX}/reports/[id]`
-export const BACKEND_DIGESTS_ROUTE = `${BACKEND_API_PREFIX}/digests`
-export const BACKEND_DIGEST_ROUTE = `${BACKEND_API_PREFIX}/digests/[id]`
 export const BACKEND_CODE_REVIEWS_ROUTE = `${BACKEND_API_PREFIX}/code-reviews`
 export const BACKEND_CODE_REVIEW_ROUTE = `${BACKEND_API_PREFIX}/code-reviews/[...id]`
 export const BACKEND_README_ROUTE = `${BACKEND_API_PREFIX}/readme`
@@ -192,8 +188,6 @@ export const BACKEND_ROUTE_ALLOW_LIST = Object.freeze({
   [BACKEND_ANOMALIES_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_REPORTS_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_REPORT_ROUTE]: Object.freeze(['GET', 'PUT'] as const),
-  [BACKEND_DIGESTS_ROUTE]: Object.freeze(['GET'] as const),
-  [BACKEND_DIGEST_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_CODE_REVIEWS_ROUTE]: Object.freeze(['GET'] as const),
   [BACKEND_CODE_REVIEW_ROUTE]: Object.freeze(['GET', 'PATCH'] as const),
   [BACKEND_README_ROUTE]: Object.freeze(['GET', 'PUT'] as const),
@@ -678,9 +672,8 @@ function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | nul
     return { key, methods: BACKEND_ROUTE_ALLOW_LIST[key], resourceId: resourceId.data }
   }
   const reportMatch = new RegExp(`^${prefix}/reports/([^/]+)$`).exec(pathname)
-  const digestMatch = new RegExp(`^${prefix}/digests/([^/]+)$`).exec(pathname)
   const codeReviewMatch = new RegExp(`^${prefix}/code-reviews/(.+)$`).exec(pathname)
-  const documentMatch = reportMatch ?? digestMatch ?? codeReviewMatch
+  const documentMatch = reportMatch ?? codeReviewMatch
   if (documentMatch?.[1]) {
     let decodedId: string
     try {
@@ -692,11 +685,8 @@ function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | nul
     if (!resourceId.success) return null
     const key = reportMatch
       ? BACKEND_REPORT_ROUTE
-      : digestMatch
-        ? BACKEND_DIGEST_ROUTE
-        : BACKEND_CODE_REVIEW_ROUTE
+      : BACKEND_CODE_REVIEW_ROUTE
     if (key === BACKEND_REPORT_ROUTE && !/^R\d{4}$/.test(resourceId.data)) return null
-    if (key === BACKEND_DIGEST_ROUTE && !/^D\d{4}$/.test(resourceId.data)) return null
     if (
       key === BACKEND_CODE_REVIEW_ROUTE &&
       !/^(?:code-review|experiments\/E\d{4}-[a-z0-9-]+\/code-review)\/\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*$/.test(
@@ -926,8 +916,6 @@ function isProjectDataRoute(key: string): boolean {
 const DOCUMENT_DATA_ROUTE_KEYS: readonly string[] = [
   BACKEND_REPORTS_ROUTE,
   BACKEND_REPORT_ROUTE,
-  BACKEND_DIGESTS_ROUTE,
-  BACKEND_DIGEST_ROUTE,
   BACKEND_CODE_REVIEWS_ROUTE,
   BACKEND_CODE_REVIEW_ROUTE,
   BACKEND_README_ROUTE,
@@ -1107,7 +1095,6 @@ function routeAllowsQuery(
     if (projects.length !== 1 || !ProjectNameSchema.safeParse(projects[0]).success) return false
     const inventoryRoutes: readonly string[] = [
       BACKEND_REPORTS_ROUTE,
-      BACKEND_DIGESTS_ROUTE,
       BACKEND_CODE_REVIEWS_ROUTE,
       BACKEND_WIKI_ROUTE,
     ]
@@ -2701,30 +2688,6 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
                 data: { type: 'set', id: route.resourceId },
               })
             }
-            return
-          case BACKEND_DIGESTS_ROUTE: {
-            const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'
-            const result = await resolved.documentService.listDigests(project, { inventoryOnly })
-            writeJson(
-              response,
-              200,
-              inventoryOnly
-                ? BackendResourceInventoryResponseSchema.parse(result)
-                : BackendDigestsResponseSchema.parse(result),
-            )
-            return
-          }
-          case BACKEND_DIGEST_ROUTE:
-            if (!route.resourceId) throw new BackendDocumentServiceError('RESOURCE_NOT_FOUND', '')
-            // Historical digests stay readable; managed digest authoring is
-            // retired, so this route has no write half to dispatch to.
-            writeJson(
-              response,
-              200,
-              BackendDigestResponseSchema.parse(
-                await resolved.documentService.getDigest(project, route.resourceId),
-              ),
-            )
             return
           case BACKEND_CODE_REVIEWS_ROUTE: {
             const inventoryOnly = parsedUrl.searchParams.get('inventory') === '1'

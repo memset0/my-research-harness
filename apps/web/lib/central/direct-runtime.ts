@@ -281,8 +281,6 @@ const RESOURCE_ENVELOPES: Record<string, true> = {
   pages: true,
   report: true,
   reports: true,
-  digest: true,
-  digests: true,
   document: true,
   documents: true,
   files: true,

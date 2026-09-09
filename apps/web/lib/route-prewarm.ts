@@ -15,7 +15,7 @@ interface PrewarmOpts {
   auth: { username: string; password: string }
 }
 
-const SUB_PAGES = ['', '/hypotheses', '/journal', '/reports', '/digests'] as const
+const SUB_PAGES = ['', '/hypotheses', '/journal', '/reports'] as const
 
 function buildPaths(projects: ReadonlyArray<{ name: string }>): string[] {
   const paths: string[] = ['/api/projects']

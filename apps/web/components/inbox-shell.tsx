@@ -1,6 +1,6 @@
 'use client'
 
-// Shared inbox shell for the per-project Reports and Digests views.
+// Inbox shell for the per-project Reports view.
 // Desktop: 2-column read mode (rail + rendered) → 3-column when editing
 // (rail + rendered + Monaco). Mobile: rendered only with a FAB that opens
 // a right-side Sheet showing the rail; tapping Edit opens a full-viewport
@@ -12,11 +12,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  type DigestListItem,
-  type FullDigest,
   type FullReport,
-  fetchDigest,
-  fetchDigests,
   fetchReport,
   fetchReports,
   type ProjectTarget,
@@ -41,7 +37,7 @@ import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
 
-export type InboxKind = 'reports' | 'digests'
+export type InboxKind = 'reports'
 
 interface CommonItem {
   id: string
@@ -49,7 +45,7 @@ interface CommonItem {
   resource?: string
   mtime: number
   title: string | null
-  /** For reports it's the slug; for digests it's the ISO date. Sub-label. */
+  /** Report slug sub-label. */
   subLabel: string
 }
 
@@ -69,15 +65,10 @@ const EMPTY_COPY = {
     rail: 'no reports yet',
     body: 'No reports yet. Reports are written by `memon-write-report`; pick a hypothesis or set of experiments and ask the skill to summarize.',
   },
-  digests: {
-    rail: 'no digests yet',
-    body: 'No digests. Digests are historical documents under docs/digests/; memon no longer generates or edits them, and existing files stay readable here.',
-  },
 } as const
 
 const ERROR_COPY = {
   reports: { rail: 'failed to load reports' },
-  digests: { rail: 'failed to load digests' },
 } as const
 
 const REPORT_TIMESTAMP_KEYS = ['created_at', 'updated_at'] as const
@@ -106,7 +97,7 @@ export function InboxShell({
   const reportRailOpen = typeof storedReportRailOpen === 'boolean' ? storedReportRailOpen : true
 
   const empty = EMPTY_COPY[kind]
-  const showDesktopRail = kind === 'digests' || reportRailOpen
+  const showDesktopRail = reportRailOpen
   const showReportRail = kind === 'reports' && !reportRailOpen
 
   return (
@@ -114,7 +105,7 @@ export function InboxShell({
       {/* Left rail — desktop only */}
       {showDesktopRail && (
         <aside
-          aria-label={kind === 'reports' ? 'Report picker' : 'Digest picker'}
+          aria-label={'Report picker'}
           className="hidden w-72 shrink-0 border-r md:flex md:flex-col"
           data-inbox-rail={kind}
         >
@@ -188,12 +179,6 @@ function useItemsList(
     enabled: kind === 'reports',
     staleTime: 5_000,
   })
-  const digestsQ = useQuery({
-    queryKey: ['digests', ...projectQueryKey(project)],
-    queryFn: () => fetchDigests(project),
-    enabled: kind === 'digests',
-    staleTime: 5_000,
-  })
   const items = useMemo(() => {
     if (kind === 'reports') {
       const reports: ReportListItem[] = reportsQ.data?.reports ?? []
@@ -206,17 +191,9 @@ function useItemsList(
         subLabel: r.slug,
       }))
     }
-    const digests: DigestListItem[] = digestsQ.data?.digests ?? []
-    return digests.map((d) => ({
-      id: d.id,
-      path: d.path,
-      resource: d.resource,
-      mtime: d.mtime,
-      title: d.title,
-      subLabel: d.date,
-    }))
-  }, [kind, reportsQ.data, digestsQ.data])
-  const active = kind === 'reports' ? reportsQ : digestsQ
+    return []
+  }, [kind, reportsQ.data])
+  const active = reportsQ
   return {
     items,
     isLoading: active.isLoading,
@@ -235,11 +212,6 @@ function useSelectedItem(
     queryFn: () => fetchReport(project, selectedId!),
     enabled: kind === 'reports' && !!selectedId,
   })
-  const digestQ = useQuery({
-    queryKey: ['digest', ...projectQueryKey(project), selectedId],
-    queryFn: () => fetchDigest(project, selectedId!),
-    enabled: kind === 'digests' && !!selectedId,
-  })
   if (kind === 'reports') {
     const r = reportQ.data as FullReport | undefined
     return {
@@ -248,12 +220,7 @@ function useSelectedItem(
       error: (reportQ.error as Error | null) ?? null,
     }
   }
-  const d = digestQ.data as FullDigest | undefined
-  return {
-    data: d ? { ...d, subLabel: d.date } : undefined,
-    isLoading: digestQ.isLoading,
-    error: (digestQ.error as Error | null) ?? null,
-  }
+  return { data: undefined, isLoading: false, error: null }
 }
 
 function RailHeader({
@@ -267,7 +234,7 @@ function RailHeader({
 }) {
   return (
     <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
-      <span>{kind === 'reports' ? 'Reports' : 'Digests'}</span>
+      <span>{'Reports'}</span>
       <div className="flex items-center gap-1.5">
         <span className="tabular-nums">{count}</span>
         {onHideReports && <ReportRailToggleButton action="hide" onClick={onHideReports} />}
@@ -435,8 +402,6 @@ function SelectedItemPane({
   items: CommonItem[]
   itemsLoading: boolean
 }) {
-  // Reports remain editable; historical digests are read-only after the
-  // managed digest-authoring retirement, so no Edit control is offered.
   const editable = kind === 'reports'
   const [editing, setEditing] = useState(false)
 
@@ -677,7 +642,7 @@ export function reportResourceBaseUrl(project: ProjectTarget, reportId: string):
     : base
 }
 
-/** Report editor. Digests have no managed writer, so this is reports-only. */
+/** Report editor. */
 function InboxEditor({
   project,
   data,
@@ -790,7 +755,7 @@ function MobileRailDrawer({
       <SheetContent side="right" className="w-80 p-0">
         <SheetHeader className="border-b px-3 py-3">
           <SheetTitle className="text-sm">
-            {kind === 'reports' ? 'Reports' : 'Digests'} ·{' '}
+            {'Reports'} ·{' '}
             {projectHost(project) ? `${projectHost(project)}/` : ''}
             {projectName(project)}
           </SheetTitle>

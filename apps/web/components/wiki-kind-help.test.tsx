@@ -31,7 +31,7 @@ describe('Wiki type guide', () => {
 
   it('renders an ordinary config entry and edited help without a second list', () => {
     const fixture = structuredClone(wikiKinds.find((kind) => kind.id === 'note')!)
-    Object.assign(fixture, { id: 'test-guide', label: '临时指南', order: 120 })
+    Object.assign(fixture, { id: 'test-guide', label: '临时指南', order: 1000 })
     fixture.zh.purpose = '测试用途更新'
     fixture.zh.examples = ['测试示例更新']
     render(<WikiKindGuide kinds={[fixture]} />)

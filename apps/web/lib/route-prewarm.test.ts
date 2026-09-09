@@ -22,7 +22,7 @@ afterEach(() => {
 })
 
 describe('prewarmRoutes', () => {
-  it('GETs /api/projects + 5 sub-paths per project, with Basic auth', async () => {
+  it('GETs /api/projects + 4 sub-paths per project, with Basic auth', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => fakeResponse(200))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
@@ -36,12 +36,11 @@ describe('prewarmRoutes', () => {
     const calls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(calls).toContain('http://localhost:3737/api/projects')
     for (const project of ['project-a', 'project-b']) {
-      for (const sub of ['', '/hypotheses', '/journal', '/reports', '/digests']) {
+      for (const sub of ['', '/hypotheses', '/journal', '/reports']) {
         expect(calls).toContain(`http://localhost:3737/p/${project}${sub}`)
       }
     }
-    // 1 + (2 projects × 5 sub-paths) = 11 total
-    expect(fetchMock).toHaveBeenCalledTimes(11)
+    expect(fetchMock).toHaveBeenCalledTimes(9)
 
     const expectedHeader = `Basic ${Buffer.from('admin:pw', 'utf8').toString('base64')}`
     for (const [, init] of fetchMock.mock.calls) {

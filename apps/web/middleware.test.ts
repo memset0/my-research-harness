@@ -41,7 +41,6 @@ beforeEach(() => {
     index: { get: () => undefined },
     experiments: new Map(),
     reportsCache: { getList: () => [] },
-    digestsCache: { getList: () => [] },
     projectFor: () => null,
     reportsDir: () => null,
     digestsDir: () => null,

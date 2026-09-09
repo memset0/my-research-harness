@@ -17,6 +17,7 @@ describe('Wiki kind registry', () => {
       'harness-feedback',
       'initiative',
       'catalog',
+      'digest',
     ])
     expect(
       Object.fromEntries(
@@ -34,6 +35,7 @@ describe('Wiki kind registry', () => {
       'harness-feedback': ['PROPOSED', 'ACCEPTED', 'SHIPPED', 'REJECTED'],
       initiative: [],
       catalog: [],
+      digest: [],
     })
   })
 
@@ -41,6 +43,7 @@ describe('Wiki kind registry', () => {
     'roadmap',
     'initiative',
     'catalog',
+    'digest',
     'note',
   ])('%s stays free-form and status-free', (id) => {
     expect(getWikiKind(id)?.policy).toMatchObject({
@@ -176,7 +179,7 @@ describe('Wiki kind registry', () => {
     value.kinds.push({
       ...structuredClone(value.kinds.find((kind) => kind.id === 'note')!),
       id: 'test-guide',
-      order: 120,
+      order: 1000,
       relatedKinds: [],
     })
     vi.resetModules()

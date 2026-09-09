@@ -9,8 +9,6 @@ import {
   BackendCodeReviewPatchResponseSchema,
   BackendCodeReviewResponseSchema,
   BackendCodeReviewsResponseSchema,
-  BackendDigestResponseSchema,
-  BackendDigestsResponseSchema,
   BackendDocumentConflictResponseSchema,
   BackendDocumentWriteResponseSchema,
   BackendReadmeResponseSchema,
@@ -150,14 +148,6 @@ describe('Backend document routes', () => {
         await request('/api/backend/v1/reports/R0001?project=research', { actor: owner })
       ).json(),
     )
-    const digests = BackendDigestsResponseSchema.parse(
-      await (await request('/api/backend/v1/digests?project=research', { actor: owner })).json(),
-    )
-    const digest = BackendDigestResponseSchema.parse(
-      await (
-        await request('/api/backend/v1/digests/D0001?project=research', { actor: owner })
-      ).json(),
-    )
     const reviews = BackendCodeReviewsResponseSchema.parse(
       await (
         await request('/api/backend/v1/code-reviews?project=research', { actor: owner })
@@ -188,10 +178,9 @@ describe('Backend document routes', () => {
     expect(duplicate.id).toBe(report.id)
     expect(duplicate.project).toBe('research-copy')
     expect(report).not.toHaveProperty('report')
-    expect(digest).not.toHaveProperty('digest')
     expect(review).not.toHaveProperty('codeReview')
     expect(readme).not.toHaveProperty('readme')
-    for (const payload of [reports, report, digests, digest, reviews, review, readme, duplicate]) {
+    for (const payload of [reports, report, reviews, review, readme, duplicate]) {
       expectPathFree(payload)
     }
   })
@@ -199,11 +188,10 @@ describe('Backend document routes', () => {
   it('dispatches document inventories without changing rich collection routes', async () => {
     const paths = [
       '/api/backend/v1/reports?project=research&inventory=1',
-      '/api/backend/v1/digests?project=research&inventory=1',
       '/api/backend/v1/code-reviews?project=research&inventory=1',
     ]
     const responses = await Promise.all(paths.map((path) => request(path, { actor: owner })))
-    expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
+    expect(responses.map((response) => response.status)).toEqual([200, 200])
     const inventories = await Promise.all(
       responses.map(async (response) =>
         BackendResourceInventoryResponseSchema.parse(await response.json()),
@@ -211,9 +199,15 @@ describe('Backend document routes', () => {
     )
     expect(inventories.map(({ items }) => items.map(({ id }) => id))).toEqual([
       ['R0001'],
-      ['D0001'],
       ['code-review/2026-08-26-route'],
     ])
+  })
+
+  it('retires legacy Digest read and write routes even when old files exist', async () => {
+    for (const path of ['/api/backend/v1/digests?project=research', '/api/backend/v1/digests/D0001?project=research']) {
+      expect((await request(path, { actor: owner })).status).toBe(404)
+    }
+    expect(await fs.readFile(join(root, 'docs/digests/D0001-2026-08-26.md'), 'utf8')).toBe('# Digest\n')
   })
 
   it('applies strict optimistic writes and does not return current content on conflict', async () => {
@@ -263,7 +257,7 @@ describe('Backend document routes', () => {
         expectedHash: 'a'.repeat(40),
       },
     })
-    expect(digestWrite.status).toBe(405)
+    expect(digestWrite.status).toBe(404)
     expect(eventStream.currentSequence).toBe(1)
 
     const review = BackendCodeReviewResponseSchema.parse(

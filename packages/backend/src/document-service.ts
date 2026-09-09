@@ -7,8 +7,6 @@ import {
   BackendResourceInventoryResponseSchema,
   BackendCodeReviewResponseSchema,
   BackendCodeReviewsResponseSchema,
-  BackendDigestResponseSchema,
-  BackendDigestsResponseSchema,
   BackendDocumentConflictResponseSchema,
   BackendDocumentWriteResponseSchema,
   BackendReadmeResponseSchema,
@@ -104,9 +102,6 @@ export interface BackendDocumentService {
     id: string,
     input: DocumentWriteInput,
   ): Promise<BackendDocumentWriteResult>
-  /** Historical digests are read-only after the managed-authoring retirement. */
-  listDigests(project: string, options?: InventoryListOptions): Promise<unknown>
-  getDigest(project: string, id: string): Promise<unknown>
   listCodeReviews(project: string, options?: InventoryListOptions): Promise<unknown>
   getCodeReview(project: string, id: string): Promise<unknown>
   patchCodeReview(project: string, id: string, input: CodeReviewPatchInput): Promise<unknown>
@@ -141,7 +136,7 @@ interface DocumentEntry {
   resource: string
   title: string | null
   mtime: number
-  kind: 'report' | 'digest' | 'code-review' | 'readme'
+  kind: 'report' | 'code-review' | 'readme'
   format?: 'markdown' | 'bundle'
   slug?: string
   date?: string
@@ -250,29 +245,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
       const entry = exactEntry(await this.discoverReports(project), id)
       addJournalInvocationDetail({ kind: 'target', type: 'project', id: project.name })
       return this.write(project, entry, input)
-    })
-  }
-
-  async listDigests(projectName: string, options: InventoryListOptions = {}) {
-    const project = this.requireProject(projectName)
-    if (options.inventoryOnly) {
-      return BackendResourceInventoryResponseSchema.parse({
-        items: await withAutomaticProjectFileContext(() => this.discoverDigestInventory(project)),
-      })
-    }
-    const digests = await this.discoverDigests(project)
-    return BackendDigestsResponseSchema.parse({
-      digests: digests.map((entry) => digestSummary(project, entry)),
-    })
-  }
-
-  async getDigest(projectName: string, id: string) {
-    const project = this.requireProject(projectName)
-    const digests = await withAutomaticProjectFileContext(() => this.discoverDigests(project))
-    const entry = exactEntry(digests, id)
-    return BackendDigestResponseSchema.parse({
-      ...digestSummary(project, entry),
-      ...(await this.read(project, entry)),
     })
   }
 
@@ -747,27 +719,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
     )
   }
 
-  private async discoverDigestInventory(
-    project: ProjectConfig,
-  ): Promise<BackendResourceInventoryItem[]> {
-    const directory = join(project.root, 'docs', 'digests')
-    if (!(await isWithin(project.root, directory))) return []
-    const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
-    const items: BackendResourceInventoryItem[] = []
-    for (const entry of entries) {
-      const match = entry.isFile()
-        ? /^D(\d{4})-(\d{4}-\d{2}-\d{2})\.md$/.exec(entry.name)
-        : null
-      if (!match) continue
-      items.push({
-        id: `D${match[1]}`,
-        slug: match[2]!,
-        resource: ResourceIdSchema.parse(`docs/digests/${entry.name}`),
-      })
-    }
-    return items.sort((left, right) => right.id.localeCompare(left.id))
-  }
-
   private async discoverCodeReviewInventory(
     project: ProjectConfig,
   ): Promise<BackendResourceInventoryItem[]> {
@@ -851,39 +802,6 @@ export class FilesystemDocumentService implements BackendDocumentService {
       })
     }
     return out.sort((a, b) => b.id.localeCompare(a.id))
-  }
-
-  private async discoverDigests(project: ProjectConfig): Promise<DocumentEntry[]> {
-    const directory = join(project.root, 'docs', 'digests')
-    const names = (await missingOrThrow(fs.readdir(directory))) ?? []
-    return (
-      await Promise.all(
-        names.flatMap(async (name) => {
-          const match = /^D(\d{4})-(\d{4}-\d{2}-\d{2})\.md$/.exec(name)
-          if (!match) return []
-          const absolutePath = join(directory, name)
-          if (!(await isWithin(project.root, absolutePath))) return []
-          const [content, stat] = await Promise.all([
-            missingOrThrow(fs.readFile(absolutePath, 'utf8')),
-            missingOrThrow(fs.stat(absolutePath)),
-          ])
-          if (content === null || !stat?.isFile()) return []
-          return [
-            {
-              id: `D${match[1]}`,
-              absolutePath,
-              resource: relative(project.root, absolutePath).split(sep).join('/'),
-              title: extractTitle(content),
-              mtime: stat.mtimeMs,
-              kind: 'digest' as const,
-              date: match[2],
-            },
-          ]
-        }),
-      )
-    )
-      .flat()
-      .sort((a, b) => b.id.localeCompare(a.id))
   }
 
   private async discoverCodeReviews(project: ProjectConfig): Promise<DocumentEntry[]> {
@@ -1046,20 +964,6 @@ function reportSummary(project: ProjectConfig, entry: DocumentEntry) {
     title: entry.title,
     mtime: entry.mtime,
     format: entry.format,
-  }
-}
-
-function digestSummary(project: ProjectConfig, entry: DocumentEntry) {
-  if (entry.kind !== 'digest' || !entry.date) {
-    throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Invalid digest metadata')
-  }
-  return {
-    id: entry.id,
-    project: project.name,
-    resource: entry.resource,
-    date: entry.date,
-    title: entry.title,
-    mtime: entry.mtime,
   }
 }
 

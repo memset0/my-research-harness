@@ -78,6 +78,13 @@
       "en": {"purpose": "A human-readable classification guide to related assets or methods.", "uses": ["Understanding differences, suitability, maturity and evidence limits"], "examples": ["Kernel-family classification", "Training-dataset suitability guide"], "distinctions": "Not a raw inventory or duplicate Results table; use showcase for visual demonstrations.", "authoring": "Explain meaningful families, differences, suitability, maturity and evidence limits. Link authoritative assets and evidence without copying results. Structure follows the material; suggestions are advisory and there is no page status or fixed heading scaffold."},
       "relatedKinds": ["showcase", "note", "finding"],
       "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+    },
+    {
+      "id": "digest", "order": 120, "label": "阶段摘要",
+      "zh": {"purpose": "按一个时间窗口汇总进展、证据与尚未解决的问题。", "uses": ["阶段回顾", "保留历史研究摘要"], "examples": ["一周实验进展与待解决问题摘要"], "distinctions": "不同于单次会议记录 meeting，也不把阶段概述当作经过论证的持久结论 finding；引用原始证据而不复制它。"},
+      "en": {"purpose": "Summarize progress, evidence and unresolved questions over a time window.", "uses": ["Periodic retrospectives", "Preserving historical research summaries"], "examples": ["A weekly summary of experiment progress and open questions"], "distinctions": "Unlike a single meeting record or a durable finding, a digest summarizes a period and links to original evidence.", "authoring": "Describe the covered period, meaningful progress, evidence limits and unresolved questions. Cite original Wiki pages or Experiments rather than copying them. Preserve historical context and provenance; do not revive automatic journal cursors, generation schedules or review claims. Structure is advisory; no status or mandatory headings."},
+      "relatedKinds": ["meeting", "finding", "note"],
+      "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
     }
   ]
 }

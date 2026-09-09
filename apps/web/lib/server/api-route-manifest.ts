@@ -62,8 +62,6 @@ export const API_ROUTE_MANIFEST = {
   'code-preview/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'git'),
   'code-reviews/[...id]/route.ts': backend(['GET', 'PATCH'], 'resource', 'mixed'),
   'code-reviews/route.ts': backend(['GET'], 'project-query', 'read'),
-  'digests/[id]/route.ts': backend(['GET'], 'resource', 'read'),
-  'digests/route.ts': backend(['GET'], 'project-query', 'read'),
   'events/route.ts': composed(['GET'], 'global', 'read', 'sse'),
   'experiment-results-views/[id]/route.ts': central(
     ['PATCH', 'DELETE'],

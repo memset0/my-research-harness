@@ -10,7 +10,6 @@
 //
 // Used for:
 //   - <projectRoot>/docs/reports/  (filenames R<NNNN>-<slug>.md)
-//   - <projectRoot>/docs/digests/  (filenames D<NNNN>-<YYYY-MM-DD>.md)
 //   - <projectRoot>/docs/wiki/     (depth 2: <kind>/<slug>.md and
 //     <kind>/<slug>/README.md; opt in with `depth: 2`)
 // Lifecycle (per instance):

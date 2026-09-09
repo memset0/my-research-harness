@@ -66,7 +66,7 @@ afterEach(async () => {
 
 function snapshot(
   entries: Array<{
-    kind: 'run' | 'experiment' | 'report' | 'digest' | 'code-review'
+    kind: 'run' | 'experiment' | 'report' | 'code-review'
     id: string
     signature: string
   }>,
@@ -166,12 +166,12 @@ describe('BackendFilesystemMonitor', () => {
         'run-change',
         'experiment-change',
         'reports-change',
-        'digests-change',
         'code-reviews-change',
         'wiki-change',
         'anomaly',
       ]),
     )
+    expect(topics).not.toContain('digests-change')
 
     await fs.unlink(report)
     await monitor.pollNow('project-a')

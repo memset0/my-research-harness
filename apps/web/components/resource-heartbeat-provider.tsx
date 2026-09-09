@@ -63,7 +63,6 @@ const RESOURCE_QUERY_ROOTS: Record<string, true> = {
   'code-reviews-inventory': true,
   digest: true,
   digests: true,
-  'digests-inventory': true,
   experiment: true,
   experiments: true,
   'experiments-inventory': true,

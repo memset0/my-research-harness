@@ -8,7 +8,7 @@ describe('Wiki kind API', () => {
   it('projects a config-only extension and edited text into API and Web', async () => {
     const fixture = structuredClone(configuration)
     const entry = structuredClone(fixture.kinds.find((kind) => kind.id === 'note')!)
-    Object.assign(entry, { id: 'test-guide', order: 120, relatedKinds: [] })
+    Object.assign(entry, { id: 'test-guide', order: 1000, relatedKinds: [] })
     entry.zh.purpose = '新的用途'
     entry.zh.examples = ['新的示例']
     fixture.kinds.push(entry)

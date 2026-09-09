@@ -8,7 +8,6 @@ import type {
   CodeReviewCompletion,
   CodeReviewFrontMatter,
   CodeReviewSummary,
-  DigestSummary,
   ExperimentDocumentDiagnostic,
   ExperimentRawSection,
   HostAvailability,
@@ -541,41 +540,6 @@ export async function fetchCodePreview(project: ProjectTarget, url: string): Pro
   return jsonFetch(
     `${projectQueryUrl('/api/code-preview', project)}&url=${encodeURIComponent(url)}`,
   )
-}
-
-// ---------- Digests ----------
-
-export interface FullDigest {
-  id: string
-  date: string
-  /** Standalone-only absolute path; central Backend responses deliberately omit it. */
-  path?: string
-  resource?: string
-  mtime: number
-  hash: string
-  content: string
-}
-
-export type DigestListItem = Omit<DigestSummary, 'path'> & { path?: string; resource?: string }
-
-export interface DigestsResponse {
-  digests: DigestListItem[]
-}
-
-export async function fetchDigestsInventory(
-  project: ProjectTarget,
-): Promise<BackendResourceInventoryResponse> {
-  return jsonFetch(
-    projectQueryUrl('/api/digests', project, new URLSearchParams({ inventory: '1' })),
-  )
-}
-
-export async function fetchDigests(project: ProjectTarget): Promise<DigestsResponse> {
-  return jsonFetch(projectQueryUrl('/api/digests', project))
-}
-
-export async function fetchDigest(project: ProjectTarget, id: string): Promise<FullDigest> {
-  return jsonFetch(projectQueryUrl(`/api/digests/${encodeURIComponent(id)}`, project))
 }
 
 export async function fetchLog(
