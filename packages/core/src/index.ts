@@ -136,6 +136,19 @@ export {
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
 export type { MembershipInput, MembershipResult } from './experiments/membership.js'
 export { computeMembership } from './experiments/membership.js'
+export {
+  planMembershipMigration,
+  applyMembershipMigration,
+  rollbackMembershipMigration,
+  type MembershipMigrationPlan,
+} from './migrations/v6-to-v7.js'
+export {
+  isRunPath,
+  projectRunPath,
+  resolveDeclaredRunPath,
+  resolveRunReference,
+  declaredRunOwner,
+} from './experiments/run-path.js'
 export type { ParsedExperiment } from './experiments/parse.js'
 // v3 experiment-doc parser / serializer / discovery / membership
 export { buildExperimentRecord, parseExperimentReadme } from './experiments/parse.js'

@@ -17,6 +17,7 @@ export type PatchableRunFrontMatterKey =
   | 'name'
   | 'project'
   | 'experiment'
+  | 'runs'
   | 'created_at'
   | 'host'
   | 'pid'
