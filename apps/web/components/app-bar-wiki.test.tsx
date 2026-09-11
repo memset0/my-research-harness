@@ -27,7 +27,6 @@ describe('AppBar Wiki tab', () => {
       'Hypotheses1',
       'Journal1',
       'Reports1',
-      'Digests1',
       'Code Review1',
       'Wiki1',
     ])

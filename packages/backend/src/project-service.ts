@@ -245,17 +245,30 @@ export class FilesystemProjectService implements BackendProjectReadService {
       for (const experiment of experiments) {
         for (const runId of experiment.frontMatter.runs) wantedRuns.add(runId)
       }
-      const wantedPaths = (await Promise.all([...wantedRuns].map((reference) => resolveRunReference(project, reference)))).filter((path): path is string => path !== null)
-      const runs = await Promise.all(wantedPaths.map(async (path) => {
-        const run = await readRunDir(path, project.name)
-        return { ...run, id: projectRunPath(project.root, path) }
-      }))
+      const [wantedPaths, walkedPaths] = await Promise.all([
+        Promise.all([...wantedRuns].map((reference) => resolveRunReference(project, reference))),
+        discoverRuns(project, { includeArchived: true }),
+      ])
+      const runs = await Promise.all(
+        wantedPaths
+          .filter((path): path is string => path !== null)
+          .map(async (path) => {
+            const run = await readRunDir(path, project.name)
+            return { ...run, id: projectRunPath(project.root, path) }
+          }),
+      )
+      // `@` mentions resolve against every walked directory — by canonical
+      // project path and by base name — without opening a single README.
+      const runIds: string[] = []
+      for (const path of walkedPaths) {
+        runIds.push(projectRunPath(project.root, path), basename(path))
+      }
 
       return {
         experiments,
         runs,
         experimentIds,
-        runIds: runs.map((run) => run.id),
+        runIds,
         hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
         hypothesisIds:
           content === null ? [] : parseHypotheses(content).entries.map((entry) => entry.id),
@@ -566,23 +579,18 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   /**
-   * Run id -> directory, from the composite Run walk. The walk consults
-   * directory listings only: no Run README is read to answer "where is this
-   * Run", and a warm listing cache makes the mapping free.
+   * One Run's own README, parsed for this request. Locating it (a Run-root
+   * walk for a bare id) and finding its declared owner (an Experiment
+   * inventory) are automatic-priority work; only the README itself is read at
+   * the caller's priority.
    */
-  private async runPaths(project: ProjectConfig): Promise<ReadonlyMap<string, string>> {
-    return withAutomaticProjectFileContext(async () => {
-      const paths = await discoverRuns(project, { includeArchived: true })
-      return new Map(paths.map((path) => [basename(path), path]))
-    })
-  }
-
-  /** One Run's own README, located through the walk and parsed for this request. */
   private async readRun(project: ProjectConfig, id: string): Promise<IndexedRun> {
-    const path = await resolveRunReference(project, id)
+    const path = await withAutomaticProjectFileContext(() => resolveRunReference(project, id))
     if (!path) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const run = await readRunDir(path, project.name)
-    run.frontMatter.experiment = await declaredRunOwner(project.root, path, project.name)
+    run.frontMatter.experiment = await withAutomaticProjectFileContext(() =>
+      declaredRunOwner(project.root, path, project.name),
+    )
     return {
       ...run,
       archived: await runArchivedFromRun(run),

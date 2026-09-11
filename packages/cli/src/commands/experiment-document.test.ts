@@ -187,7 +187,7 @@ variants:
     const id = JSON.parse(stdout).id as string
     const results = await fs.readFile(join(root, 'docs', 'experiments', id, 'results.yaml'), 'utf8')
     expect(results).toContain('id: V0001')
-    expect(results).toContain(`- ${IMPORTED_RUN_ID}`)
+    expect(results).toContain(`- logs/${IMPORTED_RUN_ID}`)
 
     stdout = ''
     await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
@@ -226,7 +226,7 @@ variants:
     expect(JSON.parse(stdout)).toMatchObject({
       ok: true,
       deletedId: id,
-      cascadedRuns: [IMPORTED_RUN_ID],
+      cascadedRuns: [`logs/${IMPORTED_RUN_ID}`],
     })
     const runReadme = await fs.readFile(join(runDirectory, 'README.md'), 'utf8')
     expect(runReadme).toContain('experiment: null')

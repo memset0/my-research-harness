@@ -182,12 +182,15 @@ describe('renameExperiment', () => {
     expect(newReadme).toContain('slug: zero-snr')
     expect(newReadme).toContain(`updated_at: "${FIXED_NOW}"`)
 
-    // Bound runs rewritten.
+    // Membership is Experiment-owned: the renamed README still carries both
+    // member declarations exactly as seeded (legacy bare ids stay readable),
+    // and the Run READMEs are not rewritten.
+    expect(newReadme).toContain('foo-260501-100000')
+    expect(newReadme).toContain('foo-260502-110000')
     const run1 = await fs.readFile(join(root, 'logs', 'foo-260501-100000', 'README.md'), 'utf8')
     const run2 = await fs.readFile(join(root, 'logs', 'foo-260502-110000', 'README.md'), 'utf8')
-    expect(run1).toContain('experiment: E0001-zero-snr')
-    expect(run2).toContain('experiment: E0001-zero-snr')
-    expect(run1).not.toContain('experiment: E0001-foo')
+    expect(run1).not.toContain('experiment: E0001-zero-snr')
+    expect(run2).not.toContain('experiment: E0001-zero-snr')
 
     // Hypotheses substituted.
     const hyps = await fs.readFile(join(root, 'docs', 'hypotheses.md'), 'utf8')

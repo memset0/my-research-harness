@@ -19,6 +19,7 @@
 ## 4. Integration
 
 - [ ] 4.1 Run selected cross-surface regression tests and compare cold/warm membership I/O against unrelated Run counts; record actual results and limitations.
+- [x] 4.2 Reconcile the residual v6-model tests with the path model (backend Run inventory ids, CLI member paths, rename without Run rewrites, retired one-side-only panel notice), restore walk-derived `@` Run reference identities in the wiki artifact inventory (base name and path), keep bare-id Run lookup behind automatic priority, and add the `wiki-store` delta; verify with the affected core/backend/cli/web test files and the full local suite.
 
 ## Current preparation checkpoint
 

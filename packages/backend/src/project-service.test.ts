@@ -108,7 +108,7 @@ describe('FilesystemProjectService safe reads', () => {
       ])
 
       const runs = BackendRunsResponseSchema.parse(await service.listRuns('scoped')).runs
-      expect(runs.map((run) => run.id)).toEqual(['included-260826-010203'])
+      expect(runs.map((run) => run.id)).toEqual(['logs/included-260826-010203'])
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
@@ -154,9 +154,11 @@ describe('FilesystemProjectService safe reads', () => {
       const experiments = BackendResourceInventoryResponseSchema.parse(
         await service.listExperiments('inventory', { inventoryOnly: true }),
       )
+      // Run identity is the canonical project-relative path; the base name
+      // survives only as the slug source.
       expect(runs.items).toEqual([
         {
-          id: runId,
+          id: `logs/${runId}`,
           slug: 'poisoned-run',
           resource: `logs/${runId}/README.md`,
         },

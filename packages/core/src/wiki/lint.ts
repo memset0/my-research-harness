@@ -33,6 +33,8 @@ const BARE_REFERENCE_REGEX = /(^|[^\w`/@.])@([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Z
 const EXPERIMENT_REF_REGEX = /^(E\d{4})(?:-([a-z0-9][a-z0-9-]*))?$/
 const HYPOTHESIS_REF_REGEX = /^H\d{4}$/
 const RUN_REF_REGEX = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
+/** Canonical project-relative Run path, the unambiguous form of a Run reference. */
+const RUN_PATH_REF_REGEX = /^(?:logs|outputs|experiments)\/(?:[^/]+\/)*[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
 /** Any evidence token a `finding` body must carry. */
 const EVIDENCE_TOKEN_REGEX = /\bE\d{4}\b|\bV\d{4}\b|\b[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}\b/
 
@@ -230,6 +232,7 @@ export function extractWikiReferences(body: string, maskedBody?: string): WikiRe
 export function resolvesWikiReference(ref: string, inventory: WikiArtifactInventory): boolean {
   if (WIKI_ID_REGEX.test(ref)) return inventory.wikiIds.includes(ref)
   if (inventory.wikiSlugs.includes(ref)) return true
+  if (RUN_PATH_REF_REGEX.test(ref)) return inventory.runIds.includes(ref)
   const [head = '', variant] = ref.split('/')
   const experiment = EXPERIMENT_REF_REGEX.exec(head)
   if (experiment) {

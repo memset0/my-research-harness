@@ -178,20 +178,4 @@ describe('ExperimentPage — Run panels read only while open', () => {
     await waitFor(() => expect(screen.getByText(/could not be read/)).toBeInTheDocument())
     expect(screen.getByText(/run README missing/)).toBeInTheDocument()
   })
-
-  it('flags a Run that does not point back at this Experiment', async () => {
-    vi.mocked(fetchExperiment).mockImplementation(async (_project, id) => {
-      const run = sampleRun(id, COMMAND_A)
-      return { ...run, frontMatter: { ...run.frontMatter, experiment: 'E0002-other' } }
-    })
-
-    renderWithQuery(
-      <ExperimentPage project="project-a" experimentId={EXP_ID} initialOpenRun={RUN_A} />,
-    )
-
-    await waitFor(() =>
-      expect(screen.getByText(/declared on one\s+side only/)).toBeInTheDocument(),
-    )
-    expect(screen.getByText('E0002-other')).toBeInTheDocument()
-  })
 })
