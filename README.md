@@ -551,6 +551,10 @@ The frontend invalidates only the matching TanStack Query keys
 without blanket refetching.
 
 
+Owner-only, opt-in Chinese body translation for Experiments, Wiki pages, and reports
+is documented in [Body translation](docs/body-translation.md). It uses the serving
+instance's local Codex Spark login and never modifies English source documents.
+
 ## Production deployment
 
 memon's HTTP server is single-user. Browsers authenticate through the

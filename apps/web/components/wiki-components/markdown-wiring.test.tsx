@@ -1,8 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { ProjectRefSchema } from '@memon/core'
 import { describe, expect, it, vi } from 'vitest'
 import { listComponents } from '../../lib/wiki-components/registry'
 import { Markdown } from '../markdown'
 import { hasWikiComponentRenderer } from './index'
+import { figureV1 } from '../../lib/wiki-components/figure@1'
+import { checklistV1 } from '../../lib/wiki-components/checklist@1'
 
 const INLINE_DATA_BLOCK = [
   '## Evidence',
@@ -19,6 +22,34 @@ const INLINE_DATA_BLOCK = [
 ].join('\n')
 
 describe('Markdown component wiring', () => {
+  it('renders a project-scoped figure with caption and agent description, not inline SVG', () => {
+    const { container } = render(<Markdown project="project-a">{figureV1.example}</Markdown>)
+    const image = screen.getByRole('img')
+    expect(image).toHaveAttribute('src', '/api/wiki-assets/project-a/shared/pipeline-overview.svg')
+    expect(image).toHaveAttribute('alt', expect.stringContaining('Input, Process, and Output'))
+    expect(container.querySelector('figcaption')).toHaveTextContent('Figure 1.')
+    expect(container.querySelector('svg, iframe')).toBeNull()
+    fireEvent.error(image)
+    expect(screen.getByRole('status')).toHaveTextContent('Image unavailable')
+    expect(screen.getByRole('status')).toHaveTextContent('Input, Process, and Output')
+    expect(container.querySelector('figcaption')).toHaveTextContent('Figure 1.')
+  })
+
+  it('keeps Host identity for shared raster assets even with a bundle asset base', () => {
+    render(<Markdown
+      project={ProjectRefSchema.parse({ host: 'host-a', project: 'project-a' })}
+      resourceBaseUrl="/api/wiki-assets/project-a/W0001"
+    >{figureV1.example.replace('pipeline-overview.svg', 'pipeline-overview.png')}</Markdown>)
+    expect(screen.getByRole('img')).toHaveAttribute('src',
+      '/api/wiki-assets/project-a/shared/pipeline-overview.png?host=host-a&project=project-a')
+  })
+
+  it('retains figure description when no project context is available', () => {
+    render(<Markdown>{figureV1.example}</Markdown>)
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('requires a project context')
+    expect(screen.getByText('Figure 1. A three-stage processing pipeline.')).toBeInTheDocument()
+  })
   it('renders a memon-data block as a table with its provenance caption', () => {
     render(<Markdown>{INLINE_DATA_BLOCK}</Markdown>)
 
@@ -166,6 +197,35 @@ describe('Markdown component wiring', () => {
     expect(screen.getByRole('columnheader', { name: 'fid' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '41.2' })).toBeInTheDocument()
     vi.unstubAllGlobals()
+  })
+
+  it('renders a checklist with bold numbering, collapsed content, and read-only controls outside the wiki', async () => {
+    const { container } = render(<Markdown>{checklistV1.example}</Markdown>)
+    const numbers = Array.from(container.querySelectorAll('[data-wiki-checklist-number]')).map(
+      (el) => el.textContent,
+    )
+    expect(numbers).toEqual(['1', '1.1', '1.2', '2'])
+    expect(container.querySelector('[data-wiki-checklist-number]')?.tagName).toBe('STRONG')
+    expect(container.querySelector('[data-wiki-checklist-content]')).toBeNull()
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(12)
+    expect(boxes.every((box) => box.hasAttribute('disabled'))).toBe(true)
+    expect(container.querySelector('[data-wiki-checklist]')).toHaveAttribute(
+      'data-wiki-checklist-readonly',
+      expect.stringContaining('read-only'),
+    )
+    // Independent flags: item 1.1 has agent + acknowledged, not reviewed.
+    const child = container.querySelector('[data-wiki-checklist-item="1.1"]')!
+    expect(child.querySelector('[data-wiki-checklist-field="agent_completed"]')).toHaveAttribute('data-state', 'checked')
+    expect(child.querySelector('[data-wiki-checklist-field="human_acknowledged"]')).toHaveAttribute('data-state', 'checked')
+    expect(child.querySelector('[data-wiki-checklist-field="human_reviewed"]')).toHaveAttribute('data-state', 'unchecked')
+    // Only item 1 has content, so only it gets an expander.
+    expect(screen.getAllByRole('button', { name: /Expand item/ })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Expand item 1' }))
+    await waitFor(() =>
+      expect(container.querySelector('[data-wiki-checklist-content]')).toHaveTextContent('Run the baseline'),
+    )
+    expect(container.querySelector('[data-wiki-checklist-item="1.1"]')).toBeInTheDocument()
   })
 
   it('has a renderer for every registered component version', () => {

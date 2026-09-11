@@ -25,7 +25,7 @@ delegation: following another skill's rules inline is always allowed.
 | Launch, resume, or inspect one execution | `memon-run-experiment` | Minimal Run record/artifacts; Results updates through the bundle writer |
 | Record durable project knowledge, roadmap, or a cross-project note | `memon-wiki` | Wiki pages under `docs/wiki/` via `memon wiki` plus direct Markdown edits |
 | Write a theme Report | `memon-write-report` | Markdown by default; explicit HTML/interactive/dashboard requests use a static bundle, optionally with a delegated visualization/frontend skill |
-| Author a registered fenced-block component | `memon-author-components` | Nothing of its own; it shapes blocks inside the calling skill's document |
+| Author a registered fenced-block component | `memon-author-components` | Blocks inside the calling skill's document; authorized figure images under `docs/wiki/assets/` |
 | Write a human code-review guide | `memon-write-code-review` | Project/Experiment code-review doc; optional Implementation link through writer |
 | Brainstorm next research work | `memon-propose` | Read-only, Experiment/Variant layer only |
 | Upgrade the FS convention | `memon-migrate-fs` | Staged migration + final FS marker; explicit user invocation only |

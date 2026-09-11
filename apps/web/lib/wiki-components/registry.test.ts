@@ -85,8 +85,10 @@ describe('fenced block scanning', () => {
 })
 
 describe('registry resolution', () => {
-  it('ships exactly memon-data@1 and html-embed@1', () => {
+  it('ships the registered data, HTML, figure, and checklist components', () => {
     expect(listComponents().map((entry) => `${entry.name}@${entry.version}`).sort()).toEqual([
+      'checklist@1',
+      'figure@1',
       'html-embed@1',
       'memon-data@1',
     ])

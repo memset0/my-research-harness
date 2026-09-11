@@ -21,10 +21,14 @@ import {
   fetchExperimentDoc,
   fetchRunFiles,
   type ProjectTarget,
+  projectHost,
+  projectName,
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
 import { cn } from '../lib/utils'
+import { translationSources } from '../lib/translation/sources'
+import { BodyTranslation, TranslatedLiteral } from './body-translation'
 import { ArchiveToggle } from './archive-toggle'
 import { ClampedBlock } from './clamped-block'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
@@ -170,6 +174,10 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           </div>
         )}
 
+        <BodyTranslation
+          document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'experiment', id: exp.id }}
+          sources={translationSources('experiment', exp)}
+        >
         {resultsSections.map((section) => (
           <SectionCard
             key={`${section.index}:${section.heading}:${section.occurrence}`}
@@ -196,6 +204,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           />
         ))}
 
+        </BodyTranslation>
         <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
         <RunsCard
@@ -261,7 +270,7 @@ function SectionCard({
       data-section-heading={heading}
     >
       <CardHeader className="flex-row items-center justify-between gap-2">
-        <CardTitle>{heading}</CardTitle>
+        <CardTitle><TranslatedLiteral>{heading}</TranslatedLiteral></CardTitle>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {!section.supported && (
             <Badge variant="outline" className="border-amber-500/60">

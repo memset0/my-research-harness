@@ -238,6 +238,15 @@ describe('actor-context encoding', () => {
 })
 
 describe('buildBrowserResponseHeaders', () => {
+  it('preserves only the fixed shared-image CSP, never arbitrary Backend policies', () => {
+    const policy = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+    expect(buildBrowserResponseHeaders(new Headers({ 'content-security-policy': policy }))
+      .get('content-security-policy')).toBe(policy)
+    expect(buildBrowserResponseHeaders(new Headers({ 'content-security-policy': "report-uri https://example.com" }))
+      .get('content-security-policy')).toBeNull()
+    expect(buildBrowserResponseHeaders(new Headers({ 'content-security-policy': policy, connection: 'content-security-policy' }))
+      .get('content-security-policy')).toBeNull()
+  })
   it('retains only safe content, cache, range, and resource-version metadata', () => {
     const input = new Headers({
       'accept-ranges': 'bytes',

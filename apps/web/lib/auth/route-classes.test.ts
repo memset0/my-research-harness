@@ -20,6 +20,9 @@ const emptySearch = () => new URLSearchParams('')
 const search = (raw: string) => new URLSearchParams(raw)
 
 describe('classify (pure class only)', () => {
+  it('keeps every translation route owner-only, including manifest and status reads', () => {
+    for (const method of ['GET', 'POST']) for (const path of ['/api/translations/body', '/api/translations/status']) expect(classify(method, path)).toBe('shell')
+  })
   it('classifies anon routes', () => {
     expect(classify('GET', '/login')).toBe('anon')
     expect(classify('POST', '/api/auth/login')).toBe('anon')

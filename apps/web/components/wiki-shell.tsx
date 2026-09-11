@@ -1,4 +1,6 @@
 'use client'
+import { BodyTranslation } from './body-translation'
+import { translationSources } from '../lib/translation/sources'
 
 // Per-project wiki surface.
 //
@@ -10,10 +12,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, History, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { WikiDiagnostic } from '@memon/core'
 import {
+  ApiError,
   fetchWiki,
   fetchWikiPage,
   type ProjectTarget,
@@ -26,14 +29,25 @@ import {
   type WikiPageDetail,
 } from '../lib/api'
 import { splitFrontmatter } from '../lib/frontmatter'
-import { extractMarkdownOutline, type MarkdownOutlineEntry } from '../lib/markdown-outline'
+import {
+  extractMarkdownOutline,
+  type MarkdownOutlineEntry,
+  normalizeHeadingIdPrefix,
+} from '../lib/markdown-outline'
+import { handleFragmentClick, resetDriftedAncestors, scrollFragmentIntoSurface } from '../lib/scroll-to-fragment'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
+import { setChecklistStatus } from '../lib/wiki-components/checklist@1/update'
 import { cn } from '../lib/utils'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
 import { ReportHtmlZoomProvider } from './report-html-embed'
+import {
+  ChecklistWriteProvider,
+  type ChecklistToggle,
+  type ChecklistWriteContextValue,
+} from './wiki-components/checklist-write-context'
 import { useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
@@ -520,6 +534,7 @@ function WikiSelectedPane({
                 sourceSurface="full-wiki"
                 widthLimited={widthLimited}
               />
+              <WikiFragmentDeepLink pageId={page.id} />
             </div>
             {!editing && outline.length > 0 && (
               <nav
@@ -569,6 +584,7 @@ function WikiOutlineList({ entries }: { entries: readonly MarkdownOutlineEntry[]
         <li key={entry.id} style={{ paddingLeft: `${(entry.depth - minDepth) * 0.75}rem` }}>
           <a
             href={`#${entry.id}`}
+            onClick={(event) => handleFragmentClick(event, `#${entry.id}`)}
             className="block truncate text-muted-foreground transition-colors hover:text-foreground"
           >
             {entry.label}
@@ -577,6 +593,22 @@ function WikiOutlineList({ entries }: { entries: readonly MarkdownOutlineEntry[]
       ))}
     </ul>
   )
+}
+
+/**
+ * Positions the heading named by the URL fragment inside the reading surface
+ * once the page body is mounted. The browser's own load-time hash scroll has
+ * already dragged the non-scrollable ancestors, so those are reset too.
+ */
+function WikiFragmentDeepLink({ pageId }: { pageId: string }) {
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1))
+    if (!id.startsWith(normalizeHeadingIdPrefix(`wiki-${pageId}`))) return
+    const surface = document.querySelector('[data-wiki-reading-surface]')
+    if (surface) resetDriftedAncestors(surface)
+    scrollFragmentIntoSurface(id)
+  }, [pageId])
+  return null
 }
 
 function WikiIdentity({
@@ -658,13 +690,14 @@ export function WikiDocumentView({
   widthLimited?: boolean
 }) {
   const { frontmatter, body } = useMemo(() => splitFrontmatter(page.content), [page.content])
+  // `unverifiedRanges` and checklist edits are file lines; the body starts
+  // after the frontmatter block, so tell both where its line 1 lands.
+  const bodyStartLine = useMemo(
+    () => page.content.slice(0, page.content.length - body.length).split('\n').length,
+    [body, page.content],
+  )
   const unverified = useMemo(() => {
     if (!page.review || page.review.state !== 'CHANGED_SINCE_VERIFY') return undefined
-    // `unverifiedRanges` are file lines; the body starts after the
-    // frontmatter block, so tell the renderer where its line 1 lands.
-    const bodyStartLine = page.content
-      .slice(0, page.content.length - body.length)
-      .split('\n').length
     return {
       ranges: page.review.unverifiedRanges,
       lineOffset: bodyStartLine,
@@ -672,8 +705,9 @@ export function WikiDocumentView({
         ? 'changed since verification (uncommitted)'
         : `changed since verification (${page.review.unverifiedCommits.map((sha) => sha.slice(0, 8)).join(', ') || 'later commits'})`,
     }
-  }, [body, page.content, page.review])
+  }, [bodyStartLine, page.review])
   const wholeBodyUnverified = page.review?.state === 'UNVERIFIED'
+  const checklistWrite = useWikiChecklistWrite(project, page, bodyStartLine)
 
   return (
     <DocumentArtifactLinkProvider
@@ -718,20 +752,87 @@ export function WikiDocumentView({
         title={wholeBodyUnverified ? 'no line of this page is verified' : undefined}
         data-wiki-unverified-body={wholeBodyUnverified ? '' : undefined}
       >
+        <BodyTranslation
+          document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'wiki', id: page.id }}
+          sources={translationSources('wiki', page)}
+        >
         <ReportHtmlZoomProvider>
-          <Markdown
-            project={project}
-            resourceBaseUrl={
-              page.format === 'bundle' ? wikiResourceBaseUrl(project, page.id) : undefined
-            }
-            unverified={unverified}
-            headingIdPrefix={`wiki-${page.id}`}
-          >
-            {body}
-          </Markdown>
+          <ChecklistWriteProvider value={checklistWrite}>
+            <Markdown
+              project={project}
+              resourceBaseUrl={
+                page.format === 'bundle' ? wikiResourceBaseUrl(project, page.id) : undefined
+              }
+              unverified={unverified}
+              headingIdPrefix={`wiki-${page.id}`}
+            >
+              {body}
+            </Markdown>
+          </ChecklistWriteProvider>
         </ReportHtmlZoomProvider>
+        </BodyTranslation>
       </div>
     </DocumentArtifactLinkProvider>
+  )
+}
+
+/**
+ * Persists one checklist flag by rewriting the page through the ordinary
+ * page write (mtime/hash lock). Nothing is shown as checked until the server
+ * has accepted the new file; a conflict offers reload instead of retrying.
+ */
+function useWikiChecklistWrite(
+  project: ProjectTarget,
+  page: WikiPageDetail,
+  bodyStartLine: number,
+): ChecklistWriteContextValue {
+  const queryClient = useQueryClient()
+  const isOwner = useIsOwner()
+  const detailKey = useMemo(
+    () => ['wiki-page', ...projectQueryKey(project), page.id],
+    [project, page.id],
+  )
+  const mutation = useMutation({
+    mutationFn: (edit: ChecklistToggle) =>
+      putWikiPage(project, page.id, {
+        content: setChecklistStatus(page.content, {
+          line: edit.bodyLine + bodyStartLine - 1,
+          payload: edit.payload,
+          path: edit.path,
+          field: edit.field,
+          value: edit.value,
+        }),
+        expectedMtime: page.mtime,
+        expectedHash: page.hash,
+      }),
+    onSuccess: (result) => {
+      queryClient.setQueryData(detailKey, result.page)
+      queryClient.invalidateQueries({ queryKey: ['wiki', ...projectQueryKey(project)] })
+    },
+    onError: (error: Error) => {
+      if (error instanceof ApiError && error.status === 409 && error.code === 'CONFLICT') {
+        toast.error('The page changed on disk since it was loaded; the checkbox was not saved.', {
+          duration: 15_000,
+          action: {
+            label: 'Reload',
+            onClick: () => queryClient.invalidateQueries({ queryKey: detailKey }),
+          },
+        })
+        return
+      }
+      toast.error(`checklist update failed: ${error.message}`)
+    },
+  })
+  return useMemo(
+    () => ({
+      pending: mutation.isPending,
+      readOnlyReason: isOwner ? null : 'read-only: sign in as the owner to change checklist state',
+      toggle: (edit: ChecklistToggle) => {
+        if (!isOwner || mutation.isPending) return
+        mutation.mutate(edit)
+      },
+    }),
+    [isOwner, mutation],
   )
 }
 

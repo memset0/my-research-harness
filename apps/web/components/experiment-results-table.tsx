@@ -1,4 +1,5 @@
 'use client'
+import { TranslatedLiteral } from './body-translation'
 
 import type {
   ResultColumnAnnotation,
@@ -2050,7 +2051,7 @@ function ResultCell({
         <span className="font-mono text-[10px] font-medium text-muted-foreground">
           {variant.id}
         </span>
-        <span className="font-medium text-foreground">{renderTextWithBreaks(variant.name)}</span>
+        <span className="font-medium text-foreground"><TranslatedLiteral original={renderTextWithBreaks(variant.name)}>{variant.name}</TranslatedLiteral></span>
         {invalidMetrics && <Badge variant="outline">metrics {eligibility.metricsValidity}</Badge>}
       </span>
     )

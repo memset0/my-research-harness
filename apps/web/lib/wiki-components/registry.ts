@@ -13,7 +13,9 @@
  * diagnostics on the request path.
  */
 
+import { checklistV1 } from './checklist@1'
 import { scanFencedBlocks } from './fence'
+import { figureV1 } from './figure@1'
 import { htmlEmbedV1 } from './html-embed@1'
 import type { MemonDataV1 } from './memon-data@1'
 import { memonDataV1 } from './memon-data@1'
@@ -393,8 +395,13 @@ export function createWikiComponentRegistry(
   }
 }
 
-/** The shipped registry: exactly `memon-data@1` and `html-embed@1`. */
-export const WIKI_COMPONENT_REGISTRY = createWikiComponentRegistry([memonDataV1, htmlEmbedV1])
+/** The shipped registry. */
+export const WIKI_COMPONENT_REGISTRY = createWikiComponentRegistry([
+  memonDataV1,
+  htmlEmbedV1,
+  figureV1,
+  checklistV1,
+])
 
 export const listComponents = WIKI_COMPONENT_REGISTRY.listComponents
 export const listLatestComponents = WIKI_COMPONENT_REGISTRY.listLatestComponents

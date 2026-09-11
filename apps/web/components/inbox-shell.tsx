@@ -1,4 +1,6 @@
 'use client'
+import { BodyTranslation } from './body-translation'
+import { translationSources } from '../lib/translation/sources'
 
 // Inbox shell for the per-project Reports view.
 // Desktop: 2-column read mode (rail + rendered) → 3-column when editing
@@ -604,6 +606,10 @@ export function RenderedItem({
         />
       )}
       {kind === 'reports' ? (
+        <BodyTranslation
+          document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'report', id: sourceReportId ?? '' }}
+          sources={translationSources('report', { content })}
+        >
         <ReportHtmlZoomProvider>
           <Markdown
             project={project}
@@ -613,6 +619,7 @@ export function RenderedItem({
             {body}
           </Markdown>
         </ReportHtmlZoomProvider>
+        </BodyTranslation>
       ) : (
         <Markdown project={project} resourceBaseUrl={resourceBaseUrl}>
           {body}

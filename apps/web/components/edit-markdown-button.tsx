@@ -38,7 +38,7 @@ export function EditMarkdownButton({
   return (
     <>
       <ViewerGuard reason="Edit markdown">
-        <Button variant={variant} size={size} onClick={() => setOpen(true)}>
+        <Button variant={variant} size={size} onClick={() => { window.dispatchEvent(new Event('memon-translation-stop')); setOpen(true) }}>
           <Pencil className="size-3.5" />
           {text}
         </Button>

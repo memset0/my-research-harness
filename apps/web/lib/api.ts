@@ -174,10 +174,8 @@ async function jsonFetch<T>(url: string, init?: RequestInit, conditional = true)
     body = text
   }
   if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      (body as { error?: { message?: string } })?.error?.message ?? text,
-    )
+    const error = (body as { error?: { message?: string; code?: string } } | null)?.error
+    throw new ApiError(res.status, error?.message ?? text, error?.code ?? null)
   }
   recordResourceResponse(resource, res, body)
   return body as T
@@ -187,6 +185,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Server-side `error.code` when the body carried one (e.g. `CONFLICT`). */
+    public code: string | null = null,
   ) {
     super(message)
     this.name = 'ApiError'

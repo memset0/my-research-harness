@@ -186,5 +186,12 @@ export function buildBackendRequestHeaders(
 export function buildBrowserResponseHeaders(backendHeaders: Headers): Headers {
   const result = new Headers()
   copyAllowedHeaders(backendHeaders, BROWSER_RESPONSE_PASSTHROUGH_HEADERS, result)
+  const imagePolicy = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+  if (
+    backendHeaders.get('content-security-policy') === imagePolicy &&
+    !connectionNamedHeaders(backendHeaders).has('content-security-policy')
+  ) {
+    result.set('content-security-policy', imagePolicy)
+  }
   return result
 }

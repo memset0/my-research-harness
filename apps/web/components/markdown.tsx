@@ -11,11 +11,18 @@ import {
   useContext,
   useMemo,
 } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import { TranslationText, useBodyTranslation } from './body-translation'
+import {
+  removeGeneratedAutolinks,
+  segmentMarkdownTree,
+  type ProseNode,
+  type TranslationSegment,
+} from '../lib/translation/segments'
 import 'katex/dist/katex.min.css'
 import type { ProjectTarget } from '../lib/api'
 import {
@@ -30,6 +37,7 @@ import {
   normalizeHeadingIdPrefix,
 } from '../lib/markdown-outline'
 import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
+import { handleFragmentClick } from '../lib/scroll-to-fragment'
 import { cn } from '../lib/utils'
 import { resolveComponentBlock } from '../lib/wiki-components/registry'
 import { replaceWorkspaceHistory } from '../lib/workspace-history'
@@ -159,10 +167,41 @@ export function Markdown({
   unverified?: MarkdownUnverifiedOptions
 }) {
   const inheritedArtifactLinks = useContext(ArtifactLinkContext)
+  const translation = useBodyTranslation()
+  const translationSegments = useMemo(() => new Map<string, TranslationSegment>(), [children])
+  const translationEnabled = translation !== null
+  const translationPlugin = useMemo(
+    () => translationEnabled ? () => (tree: ProseNode) => {
+      for (const segment of segmentMarkdownTree(tree, children, true)) {
+        translationSegments.set(segment.id, segment)
+      }
+    } : null,
+    [children, translationEnabled, translationSegments],
+  )
   const activeArtifactLinks = artifactLinks === undefined ? inheritedArtifactLinks : artifactLinks
   const components = useMemo<Components>(
     () => ({
       ...BASE_COMPONENTS,
+      span: ({ node, children: spanChildren, ...rest }) => {
+        const segment = translationSegments.get(String(node?.properties?.dataMemonTranslation ?? ''))
+        if (segment) return (
+          <TranslationText segment={segment} render={(text) => (
+            <ReactMarkdown
+              skipHtml
+              remarkPlugins={[
+                remarkGfm,
+                remarkMath,
+                () => (tree: ProseNode) => removeGeneratedAutolinks(tree, text),
+              ]}
+              rehypePlugins={[rehypeKatex]}
+              components={{ ...components, p: 'span' }}
+            >
+              {text}
+            </ReactMarkdown>
+          )} />
+        )
+        return <span {...rest}>{spanChildren}</span>
+      },
       p: ({ node, children: paragraphChildren, ...rest }) => {
         // CommonMark represents an image-only line as an image inside a
         // paragraph. An HTML-report image becomes a block-level <figure>,
@@ -222,10 +261,14 @@ export function Markdown({
         const resolvedHref =
           href && resourceBaseUrl ? (resolveDocumentResourceUrl(resourceBaseUrl, href) ?? href) : href
         const external = !!resolvedHref && /^https?:\/\//i.test(resolvedHref)
+        const fragment = !!resolvedHref && resolvedHref.startsWith('#')
         return (
           <a
             href={resolvedHref}
             {...(external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+            {...(fragment
+              ? { onClick: (event: React.MouseEvent<HTMLAnchorElement>) => handleFragmentClick(event, resolvedHref) }
+              : {})}
             {...rest}
           >
             {linkChildren}
@@ -258,13 +301,16 @@ export function Markdown({
               version={block.version}
               data={block.data}
               assetBase={resourceBaseUrl ?? null}
+              project={project}
+              sourceLine={node?.position?.start.line ?? null}
+              payload={block.payload}
             />
           )
         }
         return <pre {...rest}>{preChildren}</pre>
       },
     }),
-    [activeArtifactLinks, project, resourceBaseUrl],
+    [activeArtifactLinks, project, resourceBaseUrl, translationSegments],
   )
 
   const artifactRemarkPlugin = useMemo(
@@ -303,6 +349,7 @@ export function Markdown({
       remarkGfm,
       remarkMath,
       remarkFenceMeta,
+      ...(translationPlugin ? [translationPlugin] : []),
       ...(artifactRemarkPlugin ? [artifactRemarkPlugin] : []),
       ...(tableOfContentsRemarkPlugin ? [tableOfContentsRemarkPlugin] : []),
       ...(headingIdRemarkPlugin ? [headingIdRemarkPlugin] : []),
@@ -313,6 +360,7 @@ export function Markdown({
       headingIdRemarkPlugin,
       tableOfContentsRemarkPlugin,
       unverifiedRemarkPlugin,
+      translationPlugin,
     ],
   )
 
@@ -421,6 +469,9 @@ interface HastCodeElement {
   children?: { value?: unknown }[]
 }
 
+/** The `node` react-markdown hands to the `pre` renderer. */
+type HastPreElement = NonNullable<ExtraProps['node']>
+
 /**
  * Copy each fenced block's info-string remainder onto the emitted `<code>`
  * element as `data-fence-meta`. `mdast-util-to-hast` parks it in `data.meta`,
@@ -450,11 +501,11 @@ function remarkFenceMeta() {
  * ordinary code block.
  */
 function wikiComponentBlockFromPre(
-  node: unknown,
-): { name: string; version: number; data: unknown } | null {
-  const children = (node as { children?: unknown[] } | undefined)?.children
+  node: HastPreElement | undefined,
+): { name: string; version: number; data: unknown; payload: string } | null {
+  const children = node?.children
   if (!children || children.length !== 1) return null
-  const code = children[0] as HastCodeElement
+  const code = children[0] as HastCodeElement // hast Element narrowed structurally below
   if (code.type !== 'element' || code.tagName !== 'code') return null
 
   const classNames = code.properties?.className
@@ -476,7 +527,7 @@ function wikiComponentBlockFromPre(
   })
   if (!block || block.version === null || block.data === null) return null
   if (!hasWikiComponentRenderer(block.name, block.version)) return null
-  return { name: block.name, version: block.version, data: block.data }
+  return { name: block.name, version: block.version, data: block.data, payload }
 }
 
 interface MarkdownAstNode {

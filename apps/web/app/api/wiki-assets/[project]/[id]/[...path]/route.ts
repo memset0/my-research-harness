@@ -7,9 +7,11 @@
 // service independently enforces containment inside the bundle directory.
 
 import { Readable } from 'node:stream'
+import { resolve } from 'node:path'
 import { BackendStreamServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../../../lib/runtime'
+import { assertWithinProjectRoots } from '../../../../../../lib/path-safety'
 import { standaloneServices } from '../../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +57,11 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   }
   try {
     const runtime = await getRuntime()
+    if (id === 'shared') {
+      const configuredProject = runtime.config.projects.find((entry) => entry.name === project)
+      if (!configuredProject) return error(404, 'NOT_FOUND', 'Project not found')
+      assertWithinProjectRoots(resolve(configuredProject.root, 'docs/wiki/assets', resource), runtime.config)
+    }
     const service = standaloneServices(runtime.config).streaming
     const asset = await service.resolveWikiAsset(project, id, resource)
     const headers = new Headers({
@@ -66,6 +73,7 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
       'x-content-type-options': 'nosniff',
       'x-memon-resource-version': asset.version,
     })
+    if (asset.contentSecurityPolicy) headers.set('content-security-policy', asset.contentSecurityPolicy)
     if (notModified(request, asset.etag, asset.mtimeMs)) {
       return new NextResponse(null, { status: 304, headers })
     }

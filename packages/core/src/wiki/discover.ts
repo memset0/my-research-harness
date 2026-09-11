@@ -73,7 +73,7 @@ export async function discoverWikiPages(
 
   const discovered = await Promise.all(
     [...kindEntries]
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && entry.name !== 'assets')
       .sort((a, b) => (a.name < b.name ? -1 : 1))
       .map(async (kindEntry) => {
         const kind = kindEntry.name

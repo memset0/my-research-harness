@@ -55,6 +55,8 @@ const backend = (
 ): ApiRouteOwnership => ({ methods, owner: 'backend', scope, auth, streaming, capability })
 
 export const API_ROUTE_MANIFEST = {
+  'translations/status/route.ts': central(['GET'], 'shell'),
+  'translations/body/route.ts': central(['GET', 'POST'], 'shell'),
   'anomalies/route.ts': backend(['GET'], 'project-query', 'read'),
   'auth/check/route.ts': central(['GET'], 'anon'),
   'auth/login/route.ts': central(['POST'], 'anon'),
@@ -254,6 +256,11 @@ export const DIRECT_RUNTIME_SURFACES = {
     purpose: 'project-data',
   },
   'lib/server/standalone-readme-route.ts': {
+    owner: 'composed',
+    scope: 'resource',
+    purpose: 'project-data',
+  },
+  'lib/translation/http.ts': {
     owner: 'composed',
     scope: 'resource',
     purpose: 'project-data',

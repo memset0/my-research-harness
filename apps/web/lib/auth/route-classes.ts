@@ -218,6 +218,12 @@ const projectFromShareLanding =
 // before the catch-all `mutating`-on-non-GET fallthrough.
 
 const RULES: Rule[] = [
+  {
+    match: (_method, pathname) =>
+      pathname === '/api/translations/status' || pathname === '/api/translations/body',
+    class: 'shell',
+    projectFor: projectGlobal(),
+  },
   // ===== anon =====
   // The login form, login API, logout-prep, auth check, share-landing — no
   // identity required to reach these. Mutation occurs server-side after

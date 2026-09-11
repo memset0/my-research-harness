@@ -29,6 +29,7 @@ diagnostic, no rendering, no harm.
 
 - A table whose numbers must stay traceable to a collector.
 - An embedded HTML view inside otherwise ordinary Markdown.
+- An illustration with a visible caption and an agent-readable description.
 - You are about to hand-roll a `<div>` soup and want to know whether a component
   already covers it.
 - A block you wrote lints `WIKI_COMPONENT_UNPINNED`, `WIKI_COMPONENT_INVALID`,
@@ -51,9 +52,9 @@ script", "a diagram of the training pipeline", "an interactive scatter plot the
 reader can filter", "three sentences and a link".
 
 **Plain Markdown is the default and right answer for most sections.** A static
-table nobody will regenerate is a Markdown table; a one-off image is an image.
-Reach for a component only when the shape needs reproducibility metadata or an
-HTML runtime.
+table nobody will regenerate is a Markdown table. Use the figure component for
+illustrations that need a caption and a description agents can read without
+opening the image. Other components cover reproducibility metadata or an HTML runtime.
 
 Do not ask the user which component to use and do not show a draft block for
 approval: pick the one matching the shape, write it, and let lint and the
@@ -91,12 +92,14 @@ contract.
   documents. An invented attribute lints `WIKI_COMPONENT_INVALID`.
 - **Relative payload paths resolve against the containing document's asset
   route.** Inside a wiki bundle `./data/metrics.csv` works; a single-file page
-  has no asset route, so use the inline form.
+  has no bundle asset route, so use the inline form. Figures instead reference
+  the project's shared wiki assets, as documented by their registry entry.
 - **Keep the block diffable.** Inline rows for tables a human should see change
   in a commit; a file under the bundle's `data/` for anything large or shared.
 
-Currently registered: `memon-data@1` (tabular data with provenance) and
-`html-embed@1` (an embedded HTML document) — confirm against `components ls`
+Currently registered: `memon-data@1` (tabular data with provenance),
+`html-embed@1` (an embedded HTML document), and `figure@1` (a captioned local image
+with an agent-readable description) — confirm against `components ls`
 rather than trusting this sentence.
 
 Data blocks are captured by hand: run the collector yourself, read its output,
@@ -104,6 +107,29 @@ and paste the rows with the provenance fields `show` documents. A data block
 whose rows were never produced by running its own collector is a fabricated
 table. Collector scripts live in the project's `scripts/`, not inside
 `docs/wiki/`, and are committed separately from the page.
+
+## Authoring figures
+
+Read `memon wiki components show figure@1 --central <url>` before writing the
+block; that output, not this skill, owns the field reference.
+
+- Save images under `docs/wiki/assets/` using descriptive lowercase kebab-case
+  slugs and the original supported extension. This is shared wiki storage, not
+  a page-kind directory. Reuse an identical existing asset; choose a new slug
+  rather than overwriting unrelated content.
+- You may draw a self-contained SVG for a page. Do not include scripts, event
+  handlers, `foreignObject`, external fonts, or external image/resource links.
+- User-provided images requested for insertion are authorized. Preserve their
+  bytes unless the user requests a transformation. Ask before downloading or
+  inserting images the user has not supplied or explicitly authorized; never
+  hotlink them or assume finding an image authorizes its use.
+- Write a useful visible caption and an accurate description based on your
+  drawing, an inspected image, or the user's supplied description. Include
+  important labels, relationships, axes, and visual encodings where relevant.
+  If you cannot establish what an image contains, ask instead of inventing it.
+- Confirm the local file exists, lint the component, and inspect the rendered
+  image and caption when a dashboard is available. Do not claim a missing or
+  unread image has been verified.
 
 ## Step 4 — Verify
 

@@ -192,6 +192,8 @@ The full-page and side-pane wiki reading surfaces SHALL generate an accessible t
 
 Each directory entry SHALL link to the matching rendered heading. Heading IDs SHALL be stable for the same content, scoped with a wiki-specific prefix so they do not collide with the left document, preserve readable Unicode heading text, and disambiguate repeated heading labels deterministically. Visual indentation SHALL reflect the source heading depth.
 
+Activating a directory entry, an in-body fragment link, or opening a page URL whose fragment names a heading SHALL scroll only the reading surface that owns that heading so the heading lands below the surface's sticky toolbar. Ancestor containers (the application content scroller, the sidebar inset, the document body) SHALL keep their scroll position, and the reading surface SHALL remain wheel-scrollable afterwards. The URL fragment SHALL reflect the activated heading without causing a second native scroll.
+
 #### Scenario: Full page exposes linked sections
 - **GIVEN** a full-page wiki body contains an H1 title, two H2 sections, and an H3 subsection
 - **WHEN** the page is rendered
@@ -214,6 +216,17 @@ Each directory entry SHALL link to the matching rendered heading. Heading IDs SH
 #### Scenario: Empty outline renders nothing
 - **WHEN** a page contains only its H1 title
 - **THEN** no generated table of contents is rendered for that body
+
+#### Scenario: Outline activation keeps the layout anchored
+- **GIVEN** a desktop wiki page whose last heading is below the fold
+- **WHEN** the user activates that heading's outline entry
+- **THEN** the reading surface scrolls so the heading is visible below the toolbar
+- **AND** the sidebar inset and application content scroller report a scroll offset of zero
+- **AND** scrolling the reading surface back to its top restores the original layout without a reload
+
+#### Scenario: Fragment deep link positions inside the surface
+- **WHEN** the user opens a page URL ending in a heading fragment
+- **THEN** the reading surface positions that heading below the toolbar and no ancestor container is scrolled
 
 ### Requirement: Rendered wiki body uses a distinct document surface
 

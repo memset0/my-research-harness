@@ -42,6 +42,7 @@ export interface BackendByteResource {
   mtimeMs: number
   etag: string
   version: string
+  contentSecurityPolicy?: string
 }
 
 export interface LogLinesInput {
@@ -213,8 +214,16 @@ export class FilesystemStreamService implements BackendStreamService {
    */
   async resolveWikiAsset(projectName: string, wikiId: string, resourceInput: string) {
     const project = this.requireProject(projectName)
-    if (!/^W\d{4}$/.test(wikiId)) invalid()
+    if (wikiId !== 'shared' && !/^W\d{4}$/.test(wikiId)) invalid()
     const resource = parseResource(resourceInput)
+    if (wikiId === 'shared') {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*\.(?:svg|png|jpe?g|webp|gif|avif)$/.test(resource)) invalid()
+      const asset = await this.resolveBundleAsset(project, 'docs/wiki/assets', resource)
+      return {
+        ...asset,
+        contentSecurityPolicy: "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      }
+    }
     if (resource.toLowerCase() === 'readme.md') {
       throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Wiki README is not an asset')
     }

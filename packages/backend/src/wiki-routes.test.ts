@@ -443,6 +443,22 @@ describe('Backend wiki routes', () => {
     ).toBe(400)
   })
 
+  it('serves shared figure images through the existing authenticated transport', async () => {
+    await fs.mkdir(join(root, 'docs/wiki/assets'), { recursive: true })
+    await fs.writeFile(join(root, 'docs/wiki/assets/pipeline-overview.svg'), '<svg/>')
+    const url = '/api/backend/v1/wiki-assets/research/shared/pipeline-overview.svg'
+    const response = await request(url, { actor: owner })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('image/svg+xml')
+    expect(response.headers.get('content-security-policy')).toContain("sandbox; default-src 'none'")
+    expect(await response.text()).toBe('<svg/>')
+    expect((await request(url, { actor: viewer })).status).toBe(200)
+    const otherViewer = ActorContextSchema.parse({ role: 'viewer', scopes: [{ host: 'host-a', project: 'project-b' }] })
+    expect((await request(url, { actor: otherViewer })).status).toBe(403)
+    expect((await request(url, { actor: owner, method: 'HEAD' })).status).toBe(200)
+    expect((await fetch(`${origin}${url}`)).status).toBe(401)
+  })
+
   it('gates review marks on an owner actor and enforces commit order', async () => {
     const log = BackendWikiReviewResponseSchema.parse(
       await (

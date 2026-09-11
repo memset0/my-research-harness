@@ -29,6 +29,8 @@ describe('GET /api/wiki/components', () => {
   it('serves a JSON-safe descriptor for every registered version', async () => {
     const payload = await (await listRoute()).json()
     expect(payload.components.map((entry: { pinned: string }) => entry.pinned).sort()).toEqual([
+      'checklist@1',
+      'figure@1',
       'html-embed@1',
       'memon-data@1',
     ])

@@ -1,4 +1,5 @@
 'use client'
+import { TranslatedLiteral } from './body-translation'
 
 import type {
   ImplementationDocument,
@@ -211,7 +212,7 @@ function ManagedItemNode({
                   </span>
                 )}
               </div>
-              <h3 className="text-sm font-medium leading-snug text-foreground">{item.title}</h3>
+              <h3 className="text-sm font-medium leading-snug text-foreground"><TranslatedLiteral>{item.title}</TranslatedLiteral></h3>
             </div>
             <StatusBadge status={item.status} />
           </header>

@@ -23,6 +23,11 @@ afterEach(async () => {
 })
 
 describe('discoverWikiPages', () => {
+  it('reserves shared assets instead of discovering them as an unknown page kind', async () => {
+    await write('docs/wiki/assets/pipeline-overview.svg', '<svg/>')
+    await write('docs/wiki/assets/W0001-not-a-page.md', '---\nid: W0001\n---\nasset\n')
+    expect(await discoverWikiPages(root)).toEqual([])
+  })
   it('returns an empty list when docs/wiki is missing', async () => {
     expect(await discoverWikiPages(root)).toEqual([])
   })

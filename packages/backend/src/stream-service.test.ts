@@ -54,6 +54,23 @@ afterEach(async () => {
 })
 
 describe('FilesystemStreamService', () => {
+  it('serves only contained slug-named shared images with an active-content restriction', async () => {
+    const assets = join(rootA, 'docs/wiki/assets')
+    await fs.mkdir(assets, { recursive: true })
+    await fs.writeFile(join(assets, 'pipeline-overview.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    await fs.writeFile(join(assets, 'reference-diagram.png'), Buffer.from('89504e470d0a1a0a', 'hex'))
+    await fs.symlink(join(workspace, 'outside.log'), join(assets, 'leak.svg'))
+    await fs.symlink(join(rootA, 'logs/run-one/README.md'), join(assets, 'within-project.svg'))
+    const asset = await service.resolveWikiAsset('project-a', 'shared', 'pipeline-overview.svg')
+    expect(asset.contentType).toBe('image/svg+xml')
+    expect(asset.contentSecurityPolicy).toContain("sandbox; default-src 'none'")
+    expect(asset.resource).toBe('docs/wiki/assets/pipeline-overview.svg')
+    expect((await service.resolveWikiAsset('project-a', 'shared', 'reference-diagram.png')).contentType).toBe('image/png')
+    for (const source of ['../outside.svg', '%2e%2e/outside.svg', 'nested/diagram.svg', 'diagram.html', 'leak.svg', 'within-project.svg']) {
+      await expect(service.resolveWikiAsset('project-a', 'shared', source)).rejects.toMatchObject({ code: 'INVALID_RESOURCE' })
+    }
+    await expect(service.resolveWikiAsset('project-b', 'shared', 'pipeline-overview.svg')).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' })
+  })
   it('lists only contained log files as portable resources', async () => {
     const files = BackendLogFilesResponseSchema.parse(
       await service.listLogFiles('project-a', 'logs/run-one/README.md'),

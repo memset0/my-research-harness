@@ -1,12 +1,22 @@
 'use client'
 
+import type { ProjectTarget } from '../../lib/api'
+import type { ChecklistV1 } from '../../lib/wiki-components/checklist@1'
+import type { FigureV1 } from '../../lib/wiki-components/figure@1'
 import type { HtmlEmbedV1 } from '../../lib/wiki-components/html-embed@1'
 import type { MemonDataV1 } from '../../lib/wiki-components/memon-data@1'
+import { ChecklistBlock } from './checklist@1'
 import { HtmlEmbedBlock } from './html-embed@1'
 import { MemonDataBlock } from './memon-data@1'
+import { FigureBlock } from './figure@1'
 
 /** Every `name@version` with a renderer in this module. */
-const RENDERABLE: Record<string, true> = { 'memon-data@1': true, 'html-embed@1': true }
+const RENDERABLE: Record<string, true> = {
+  'memon-data@1': true,
+  'html-embed@1': true,
+  'figure@1': true,
+  'checklist@1': true,
+}
 
 export const WIKI_COMPONENT_RENDERER_KEYS = Object.keys(RENDERABLE)
 
@@ -31,13 +41,25 @@ export function WikiComponentBlockView({
   version,
   data,
   assetBase,
+  project,
+  sourceLine = null,
+  payload = '',
 }: {
   name: string
   version: number
   data: unknown
   assetBase: string | null
+  project?: ProjectTarget
+  /** 1-based opening-fence line in the rendered Markdown body, when known. */
+  sourceLine?: number | null
+  /** Fenced payload as rendered; identity guard for in-place writes. */
+  payload?: string
 }) {
   switch (`${name}@${version}`) {
+    case 'checklist@1':
+      return <ChecklistBlock data={data as ChecklistV1} sourceLine={sourceLine} payload={payload} />
+    case 'figure@1':
+      return <FigureBlock data={data as FigureV1} project={project} />
     case 'memon-data@1':
       return <MemonDataBlock data={data as MemonDataV1} assetBase={assetBase} />
     case 'html-embed@1':

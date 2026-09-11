@@ -18,7 +18,7 @@ vi.mock('../lib/api', async (importOriginal) => {
 vi.mock('../lib/use-user-preference-state', () => ({
   useUserPreferenceState: () => [true, vi.fn()],
 }))
-vi.mock('./session-provider', () => ({ useIsOwner: () => false }))
+vi.mock('./session-provider', () => ({ useIsOwner: () => false, useSession: () => ({ role: 'viewer', scopeProjects: [] }) }))
 vi.mock('./document-artifact-link-provider', () => ({
   DocumentArtifactLinkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
@@ -183,6 +183,38 @@ describe('WikiShell', () => {
     expect(screen.getByTestId('wiki-markdown')).toHaveTextContent('Measured result.')
     await userEvent.click(screen.getByRole('button', { name: 'Clear wiki page filter' }))
     expect(container.querySelectorAll('[data-wiki-card]')).toHaveLength(2)
+  })
+
+  it('scrolls only the reading surface when an outline entry is activated', async () => {
+    const page = summary('W0002', '2026-05-04T08:00:00+00:00')
+    vi.mocked(fetchWiki).mockResolvedValue({ pages: [page] })
+    vi.mocked(fetchWikiPage).mockResolvedValue(
+      detail(page, ['# Title', '## Evidence', 'Measured result.'].join('\n')),
+    )
+    const { container } = renderWithQuery(
+      <div id="inset" style={{ overflow: 'hidden' }}>
+        <WikiShell project="project-a" selectedId="W0002" />
+      </div>,
+    )
+    const markdown = await screen.findByTestId('wiki-markdown')
+    const heading = document.createElement('h2')
+    heading.id = 'wiki-w0002-evidence'
+    markdown.append(heading)
+
+    const surface = container.querySelector('[data-wiki-reading-surface]') as HTMLElement
+    const inset = container.querySelector('#inset') as HTMLElement
+    surface.style.overflowY = 'auto'
+    Object.defineProperty(surface, 'scrollHeight', { value: 3000 })
+    Object.defineProperty(surface, 'clientHeight', { value: 600 })
+    surface.getBoundingClientRect = () => ({ top: 100 }) as DOMRect
+    heading.getBoundingClientRect = () => ({ top: 900 }) as DOMRect
+    inset.scrollTop = 0
+
+    const link = container.querySelector('[data-wiki-outline] a') as HTMLAnchorElement
+    await userEvent.click(link)
+    expect(surface.scrollTop).toBe(800)
+    expect(inset.scrollTop).toBe(0)
+    expect(window.location.hash).toBe('#wiki-w0002-evidence')
   })
 
   it('distinguishes an unselected populated wiki from a genuinely empty wiki', async () => {

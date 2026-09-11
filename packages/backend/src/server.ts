@@ -797,7 +797,7 @@ function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | nul
     }
     const project = ProjectNameSchema.safeParse(projectInput)
     const resourceId = ResourceIdSchema.safeParse(resourceInput)
-    if (!project.success || !/^W\d{4}$/.test(wikiId) || !resourceId.success) return null
+    if (!project.success || (wikiId !== 'shared' && !/^W\d{4}$/.test(wikiId)) || !resourceId.success) return null
     return {
       key: BACKEND_WIKI_ASSET_ROUTE,
       methods: BACKEND_ROUTE_ALLOW_LIST[BACKEND_WIKI_ASSET_ROUTE],
@@ -1478,6 +1478,7 @@ function ifRangeAllows(request: IncomingMessage, resource: BackendByteResource):
 
 function byteResourceHeaders(resource: BackendByteResource): Record<string, string> {
   return {
+    ...(resource.contentSecurityPolicy ? { 'content-security-policy': resource.contentSecurityPolicy } : {}),
     'accept-ranges': 'bytes',
     'cache-control': 'private, no-cache',
     'content-type': resource.contentType,
