@@ -193,6 +193,25 @@ describe('FilesystemDocumentService wiki reads', () => {
     expect(page.id).toBe('W0002')
   })
 
+  it('lists pages whose sources cite an ambiguous Run base name instead of failing', async () => {
+    // Two Run directories share one base name; a citation by that name is
+    // simply unresolved (the Web reports it), never an exception that turns
+    // the whole listing into a 500.
+    const shared = 'dup-260901-010203'
+    for (const root_ of ['logs', 'outputs']) {
+      await fs.mkdir(join(root, root_, shared), { recursive: true })
+      await fs.writeFile(join(root, root_, shared, 'README.md'), '---\nid: dup-260901-010203\n---\n\n## Setup\n\ns\n\n## Result\n\nr\n\n## Artifacts\n\n- a\n')
+    }
+    await fs.writeFile(
+      join(root, 'docs', 'wiki', 'note', 'W0002-beta.md'),
+      NOTE.replace('updated_at: 2026-09-04T10:00:00+08:00', `updated_at: 2026-09-04T10:00:00+08:00\nsources: [${shared}]`),
+    )
+    const listed = BackendWikiPagesResponseSchema.parse(await service.listWiki('research'))
+    const note = listed.pages.find((page) => page.id === 'W0002')!
+    expect(note.stale).toBe(false)
+    expect(note.diagnostics.map((entry) => entry.code)).toContain('WIKI_SOURCE_UNRESOLVED')
+  })
+
   it('keeps W0002 composition automatic while refreshing its selected body manually', async () => {
     const storageGroup = `wiki-detail-${root}`
     const context = { root, storageGroup, persistentCache: true, attentionId: 'wiki-tab' }

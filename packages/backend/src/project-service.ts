@@ -18,6 +18,7 @@ import {
   buildExperimentDocumentView,
   computeMembership,
   resolveRunReference,
+  resolveDeclaredRunPath,
   projectRunPath,
   declaredRunOwner,
   discoverExperiments,
@@ -245,10 +246,31 @@ export class FilesystemProjectService implements BackendProjectReadService {
       for (const experiment of experiments) {
         for (const runId of experiment.frontMatter.runs) wantedRuns.add(runId)
       }
-      const [wantedPaths, walkedPaths] = await Promise.all([
-        Promise.all([...wantedRuns].map((reference) => resolveRunReference(project, reference))),
-        discoverRuns(project, { includeArchived: true }),
-      ])
+      // One directory walk serves everything below. Resolving each bare
+      // reference through `resolveRunReference` would walk the Run roots once
+      // per citation in parallel, which overflowed the project I/O channel on
+      // a project with a thousand Runs.
+      const walkedPaths = await discoverRuns(project, { includeArchived: true })
+      const byBasename = new Map<string, string[]>()
+      for (const path of walkedPaths) {
+        const name = basename(path)
+        byBasename.set(name, [...(byBasename.get(name) ?? []), path])
+      }
+      const wantedPaths = await Promise.all(
+        [...wantedRuns].map(async (reference) => {
+          if (reference.includes('/')) {
+            try {
+              return await resolveDeclaredRunPath(project.root, reference)
+            } catch {
+              return null
+            }
+          }
+          // An ambiguous or unknown base name is an unresolved citation, not a
+          // failed listing.
+          const candidates = byBasename.get(reference) ?? []
+          return candidates.length === 1 ? candidates[0]! : null
+        }),
+      )
       const runs = await Promise.all(
         wantedPaths
           .filter((path): path is string => path !== null)
