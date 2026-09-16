@@ -190,6 +190,26 @@ claiming its numbers are current, read the output, and say so plainly when a run
 failed or when you are looking at a cached result from an earlier run. A table
 whose numbers were never produced by its own function is a fabricated table.
 
+## Images for figures
+
+`figure@1` shows one local image. Where the image comes from is a boundary,
+not a detail:
+
+- Keep the file beside the document — normally in its `<stem>__assets/`
+  directory — with a descriptive kebab-case name, and reference it with a
+  document-relative `image` path. Never hotlink a URL.
+- A user-provided image is authorized as given: save its original bytes and do
+  not transform them unless asked.
+- Ask before downloading or inserting any image the user did not supply or
+  explicitly authorize. Finding an image is not permission to use it.
+- You may draw an SVG yourself. Keep it self-contained: no `<script>`, event
+  handlers, `foreignObject`, external fonts, or external image/resource
+  references. The dashboard renders it as an image, so none of that would run
+  anyway — but it would still be shipped.
+- Write `description` from what the image actually shows (labels, axes,
+  relationships, encodings) or from the user's own description. If you cannot
+  establish what an image contains, ask; do not invent a description.
+
 ## Checklist flags are a human boundary
 
 `checklist@1` carries three independent flags per item: `agent_completed`,

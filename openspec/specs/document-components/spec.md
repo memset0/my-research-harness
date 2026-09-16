@@ -83,6 +83,10 @@ The shared Markdown renderer SHALL resolve component blocks wherever it renders 
 - **WHEN** `image: ../../../../etc/hostname` or an absolute path outside every project root is declared
 - **THEN** no file is read and the block shows the notice with the caption
 
+#### Scenario: SVG is drawn as an image, never inlined
+- **WHEN** `image` names an SVG that contains a `<script>` element
+- **THEN** it is displayed through an image element served with a restrictive CSP and the script never executes in the page
+
 ### Requirement: `embed@1` renders trusted HTML in an iframe
 
 `embed@1` SHALL accept `data` (HTML string), optional `height` (positive integer pixels or `"auto"`, default `"auto"`), and optional `title`. It SHALL render the HTML in a same-origin `srcdoc` iframe with a `<base href>` pointing at the document's asset route so relative resources resolve, using the existing embed toolbar.
