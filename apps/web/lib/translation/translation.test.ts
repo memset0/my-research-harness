@@ -5,7 +5,6 @@ import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { createTranslationManifest } from './manifest'
-import * as componentRegistry from '../wiki-components/registry'
 import {
   literalSegment,
   packSegments,
@@ -148,21 +147,15 @@ describe('body manifest', () => {
   })
 
   it('includes only a valid component caption, not its description or raw payload', () => {
-    const block = componentRegistry.resolveComponentBlock({ info: 'figure@1', payload: '' })!
-    vi.spyOn(componentRegistry, 'resolveComponentBlock').mockReturnValue({
-      ...block,
-      data: { caption: 'Visible figure caption', description: 'Agent-only visual description' },
-    })
     const manifest = createTranslationManifest([
       {
         format: 'markdown',
-        text: '```figure@1\nslug: example\nsrc: assets/example.svg\ncaption: Visible figure caption\ndescription: Agent-only visual description\n```',
+        text: '```yaml figure@1 #example\nimage: assets/example.svg\ncaption: Visible figure caption\ndescription: Agent-only visual description\n```',
       },
     ])
     expect(manifest.segments.map((item) => item.text)).toEqual(['Visible figure caption'])
-    vi.mocked(componentRegistry.resolveComponentBlock).mockReturnValue({ ...block, data: null })
     expect(
-      createTranslationManifest([{ format: 'markdown', text: '```figure@1\ninvalid\n```' }])
+      createTranslationManifest([{ format: 'markdown', text: '```yaml figure@1 #bad\nimage: x.svg\n```' }])
         .segments,
     ).toEqual([])
   })

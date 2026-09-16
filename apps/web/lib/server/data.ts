@@ -153,10 +153,7 @@ export async function getWikiPage(project: string, id: string): Promise<WikiPage
   const rt = await getRuntime()
   const page = await rt.wikiCache.getWikiPage(project, id)
   if (!page) return null
-  const assets = new Set(rt.wikiCache.getPageRecord(project, id)?.assets ?? [])
-  return wikiPageDto(project, page.summary, page.content, page.hash, {
-    fileExists: (relativePath) => assets.has(relativePath.replace(/^\.\//, '')),
-  })
+  return wikiPageDto(project, page.summary, page.content, page.hash)
 }
 
 export async function getCodeReviewsList(

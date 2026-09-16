@@ -64,6 +64,13 @@ export const API_ROUTE_MANIFEST = {
   'code-preview/route.ts': backend(['GET'], 'project-query', 'read', 'none', 'git'),
   'code-reviews/[...id]/route.ts': backend(['GET', 'PATCH'], 'resource', 'mixed'),
   'code-reviews/route.ts': backend(['GET'], 'project-query', 'read'),
+  'components/run/route.ts': central(['POST'], 'mutating'),
+  'doc-assets/[project]/[...path]/route.ts': central(
+    ['GET', 'HEAD'],
+    'read',
+    'bytes',
+    'project-path',
+  ),
   'events/route.ts': composed(['GET'], 'global', 'read', 'sse'),
   'experiment-results-views/[id]/route.ts': central(
     ['PATCH', 'DELETE'],
@@ -174,10 +181,6 @@ export const API_ROUTE_MANIFEST = {
   // Backlinks have their own resource lifecycle so Wiki source resolution
   // never delays the Experiment detail response.
   'wiki/backlinks/[artifact]/route.ts': central(['GET'], 'read', 'none', 'project-query'),
-  'wiki/components/[name]/route.ts': central(['GET'], 'read'),
-  'wiki/components/lint/route.ts': central(['POST'], 'read'),
-  'wiki/components/migrate/route.ts': central(['POST'], 'read'),
-  'wiki/components/route.ts': central(['GET'], 'read'),
   'wiki/kinds/route.ts': central(['GET'], 'read'),
   'wiki/review/[sha]/route.ts': backend(['DELETE', 'POST'], 'project-query', 'shell'),
   'wiki/review/route.ts': backend(['GET'], 'project-query', 'read'),

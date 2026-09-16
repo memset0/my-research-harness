@@ -6,9 +6,9 @@
 // preserves and validates source syntax without walking unrelated artifacts.
 //
 // Two deliberate boundaries:
-//   - Component descriptors live ONLY in the central dashboard. `components`
-//     and `lint --central` reach them over HTTP; nothing about a component is
-//     compiled into the CLI artifact.
+//   - Component descriptors live ONLY in the central dashboard; nothing about
+//     a component is compiled into the CLI artifact. `memon components run`
+//     executes blocks locally through `@memon/core` without any descriptor.
 //   - git is invoked only through the shared core command seam with an argv
 //     array (never a shell string), and only by `commit` and the `review`
 //     subcommands. Every other command is a pure Wiki-file read — no worktree
@@ -951,7 +951,6 @@ export async function runWikiDelete(input: WikiDeleteInput): Promise<void> {
 export interface WikiLintInput extends WikiCommonInput {
   page?: string
   strict?: boolean
-  central?: string
 }
 
 export async function runWikiLint(input: WikiLintInput): Promise<void> {
@@ -969,22 +968,6 @@ export async function runWikiLint(input: WikiLintInput): Promise<void> {
     path: summary.path,
     diagnostics: [...summary.diagnostics],
   }))
-
-  if (input.central !== undefined) {
-    const central = resolveCentral(input.central)
-    await Promise.all(
-      rows.map(async (row) => {
-        const page = ctx.byPath.get(row.path)
-        if (!page) return
-        const result = await centralRequest<{ diagnostics?: WikiDiagnostic[] }>(central, {
-          path: '/api/wiki/components/lint',
-          method: 'POST',
-          body: { content: page.content },
-        })
-        row.diagnostics.push(...(result.diagnostics ?? []))
-      }),
-    )
-  }
 
   const errors = rows.reduce(
     (total, row) => total + row.diagnostics.filter((d) => d.severity === 'error').length,
@@ -1701,234 +1684,4 @@ function verbFor(status: string): string {
   if (status === 'A') return 'create'
   if (status === 'D') return 'delete'
   return 'update'
-}
-
-// ---------- memon wiki components (central registry over HTTP) ----------
-
-interface CentralTarget {
-  baseUrl: string
-  headers: Record<string, string>
-}
-
-function resolveCentral(
-  explicit: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): CentralTarget {
-  const raw = explicit ?? env.MEMON_CENTRAL_URL
-  if (!raw || raw.trim() === '') {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      'no central dashboard configured: pass --central <url> or set MEMON_CENTRAL_URL',
-    )
-  }
-  const headers: Record<string, string> = { accept: 'application/json' }
-  const token = env.MEMON_CENTRAL_TOKEN
-  const user = env.MEMON_CENTRAL_USER
-  const password = env.MEMON_CENTRAL_PASS
-  if (token && token.trim() !== '') {
-    headers.authorization = `Bearer ${token.trim()}`
-  } else if (user && password) {
-    headers.authorization = `Basic ${Buffer.from(`${user}:${password}`, 'utf8').toString('base64')}`
-  }
-  return { baseUrl: raw.trim().replace(/\/+$/, ''), headers }
-}
-
-interface CentralRequest {
-  path: string
-  method?: 'GET' | 'POST'
-  body?: unknown
-}
-
-async function centralRequest<T>(target: CentralTarget, request: CentralRequest): Promise<T> {
-  const url = `${target.baseUrl}${request.path}`
-  const headers = { ...target.headers }
-  if (request.body !== undefined) headers['content-type'] = 'application/json'
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: request.method ?? 'GET',
-      headers,
-      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
-    })
-  } catch (err) {
-    emitErrorAndExit(
-      'CENTRAL_UNREACHABLE',
-      `cannot reach central at ${url}: ${(err as Error).message}`,
-      undefined,
-      EXIT.GENERIC,
-    )
-  }
-  const text = await response.text()
-  if (!response.ok) {
-    let code = response.status === 404 ? 'NOT_FOUND' : 'CENTRAL_ERROR'
-    let message = `central returned ${response.status} for ${url}`
-    try {
-      const parsed = JSON.parse(text) as { error?: { code?: string; message?: string } }
-      if (parsed.error?.code) code = parsed.error.code
-      if (parsed.error?.message) message = parsed.error.message
-    } catch {
-      if (text.trim() !== '') message = `${message}: ${text.trim().slice(0, 200)}`
-    }
-    emitErrorAndExit(
-      code,
-      message,
-      undefined,
-      response.status === 404
-        ? EXIT.NOT_FOUND
-        : response.status === 400
-          ? EXIT.USAGE
-          : EXIT.GENERIC,
-    )
-  }
-  if (text.trim() === '') return {} as T
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    emitErrorAndExit(
-      'CENTRAL_ERROR',
-      `central returned non-JSON for ${url}`,
-      undefined,
-      EXIT.GENERIC,
-    )
-  }
-}
-
-interface CentralComponent {
-  name: string
-  version: number
-  description?: string
-  outdated?: boolean
-  [key: string]: unknown
-}
-
-export interface WikiComponentsLsInput extends WikiCommonInput {
-  central?: string
-}
-
-export async function runWikiComponentsLs(input: WikiComponentsLsInput): Promise<void> {
-  const format = readFormat(input)
-  const target = resolveCentral(input.central)
-  const result = await centralRequest<{ components?: CentralComponent[] }>(target, {
-    path: '/api/wiki/components',
-  })
-  const components = result.components ?? []
-  if (format === 'json') {
-    emitJson({ components })
-    return
-  }
-  if (components.length === 0) {
-    process.stdout.write('(no registered components)\n')
-    return
-  }
-  process.stdout.write(
-    `${components
-      .map((component) =>
-        `${`${component.name}@${component.version}`.padEnd(24)} ${
-          component.outdated === true ? '[outdated]' : '          '
-        } ${component.description ?? ''}`.trimEnd(),
-      )
-      .join('\n')}\n`,
-  )
-}
-
-export interface WikiComponentsShowInput extends WikiCommonInput {
-  name: string
-  central?: string
-}
-
-export async function runWikiComponentsShow(input: WikiComponentsShowInput): Promise<void> {
-  const format = readFormat(input)
-  const target = resolveCentral(input.central)
-  const descriptor = await centralRequest<Record<string, unknown>>(target, {
-    path: `/api/wiki/components/${encodeURIComponent(input.name)}`,
-  })
-  if (format === 'json') {
-    emitJson(descriptor)
-    return
-  }
-  const lines: string[] = []
-  for (const [key, value] of Object.entries(descriptor)) {
-    lines.push(
-      typeof value === 'string'
-        ? `${key}: ${value}`
-        : `${key}: ${JSON.stringify(value, null, 2).split('\n').join('\n  ')}`,
-    )
-  }
-  process.stdout.write(`${lines.join('\n')}\n`)
-}
-
-export interface WikiComponentsMigrateInput extends WikiCommonInput {
-  page?: string
-  central?: string
-  dryRun?: boolean
-}
-
-export async function runWikiComponentsMigrate(input: WikiComponentsMigrateInput): Promise<void> {
-  const format = readFormat(input)
-  const target = resolveCentral(input.central)
-  const ctx = await loadWiki(input)
-  const summaries =
-    input.page === undefined ? ctx.projection.summaries : [resolvePage(ctx, input.page)]
-
-  const migrationResults = await Promise.all(
-    summaries.map(async (summary) => {
-      const page = ctx.byPath.get(summary.path)
-      if (!page) return null
-      const parsed = parseWikiFrontmatter(page.content)
-      const response = await centralRequest<{ content?: string }>(target, {
-        path: '/api/wiki/components/migrate',
-        method: 'POST',
-        body: { content: parsed.body },
-      })
-      if (typeof response.content !== 'string') {
-        emitErrorAndExit(
-          'CENTRAL_ERROR',
-          'central component migration response did not contain a Markdown body',
-          undefined,
-          EXIT.GENERIC,
-        )
-      }
-      const changed = response.content !== parsed.body
-      const bodyOffset = page.content.length - parsed.body.length
-      return {
-        summary,
-        page,
-        changed,
-        content: `${page.content.slice(0, bodyOffset)}${response.content}`,
-      }
-    }),
-  )
-  const migrations = migrationResults.flatMap((migration) =>
-    migration === null ? [] : [migration],
-  )
-
-  if (input.dryRun !== true) {
-    await Promise.all(
-      migrations
-        .filter((migration) => migration.changed)
-        .map((migration) => atomicWrite(migration.page.absolutePath, migration.content)),
-    )
-  }
-
-  const results = migrations.map(({ summary, changed }) => ({
-    id: summary.id,
-    path: summary.path,
-    changed,
-    written: changed && input.dryRun !== true,
-  }))
-
-  if (format === 'json') {
-    emitJson({ dryRun: input.dryRun === true, pages: results })
-    return
-  }
-  const touched = results.filter((row) => row.changed)
-  if (touched.length === 0) {
-    process.stdout.write('(no component blocks needed migration)\n')
-    return
-  }
-  process.stdout.write(
-    `${touched
-      .map((row) => `${row.written ? 'migrated' : 'would migrate'}  ${row.id}  ${row.path}`)
-      .join('\n')}\n`,
-  )
 }

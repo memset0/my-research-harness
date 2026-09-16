@@ -99,7 +99,7 @@ The review CLI SHALL expose log, diff, verify and unverify over Git-backed whole
 
 ### Requirement: `memon wiki commit` isolates wiki changes in their own commit
 
-`memon wiki commit [-m <summary>] [--allow-empty-message]` SHALL stage every change under `docs/wiki/` (and nothing else), refuse with exit 2 when there is nothing to stage, refuse with exit 9 `MIXED_INDEX` when the index already contains non-wiki paths, and create a commit whose subject is `wiki: <summary>`; when `-m` is omitted the summary SHALL be generated from the touched pages (`update W0004, create W0009`). Collector scripts referenced by `memon-data` blocks live outside `docs/wiki/` and SHALL be committed separately. The command SHALL print the new SHA and the pages it touched.
+`memon wiki commit [-m <summary>] [--allow-empty-message]` SHALL stage every change under `docs/wiki/` (and nothing else), refuse with exit 2 when there is nothing to stage, refuse with exit 9 `MIXED_INDEX` when the index already contains non-wiki paths, and create a commit whose subject is `wiki: <summary>`; when `-m` is omitted the summary SHALL be generated from the touched pages (`update W0004, create W0009`). A page's `<stem>__assets/` directory is staged with it; Python files referenced by `script:` payloads that live outside `docs/wiki/` SHALL be committed separately. The command SHALL print the new SHA and the pages it touched.
 
 #### Scenario: Only wiki paths are committed
 - **GIVEN** modified `docs/wiki/finding/W0001-x.md` and modified `src/train.py`
@@ -167,21 +167,6 @@ The review CLI SHALL expose log, diff, verify and unverify over Git-backed whole
 - **WHEN** the user runs `memon wiki create code-review x --title t`
 - **THEN** the command exits 2 and writes nothing
 
-### Requirement: `memon wiki components` reads the central registry
-
-`memon wiki components ls|show <name>[@N]|migrate [page] [--dry-run]` SHALL obtain the registry from a central dashboard (`GET /api/wiki/components`, `GET /api/wiki/components/<name>[@N]`, `POST /api/wiki/components/migrate`) addressed by `--central <url>` or `MEMON_CENTRAL_URL`, authenticating with `MEMON_CENTRAL_TOKEN` or `-u`-style Basic credentials from the environment; the CLI artifact SHALL contain no component descriptors. Without a central address the commands SHALL exit 2 with a message naming the option. `ls` prints name, version, one-line description, and `outdated`; `show` prints the full descriptor (args, effect, useWhen, example, invalidExamples, fixtures); `migrate` sends each page body to central and writes back the returned body only when it differs. `memon wiki lint` SHALL run without central and SHALL then only report `WIKI_COMPONENT_UNPINNED` for component blocks; with `--central <url>` it SHALL additionally include central's component diagnostics.
-
-#### Scenario: No central configured
-- **WHEN** the user runs `memon wiki components ls` with no `--central` and no `MEMON_CENTRAL_URL`
-- **THEN** the command exits 2 and names both ways to configure it
-
-#### Scenario: Lint without central is structural only
-- **GIVEN** a page with a `memon-data@1` block whose rows are ragged
-- **WHEN** the user runs `memon wiki lint`
-- **THEN** no `WIKI_DATA_BLOCK_INVALID` is reported
-- **WHEN** the user runs `memon wiki lint --central http://localhost:3737`
-- **THEN** `WIKI_DATA_BLOCK_INVALID` is reported
-
 ### Requirement: `memon wiki ls` lists declared page metadata
 
 Wiki ls SHALL enumerate supported Wiki files and bundles, expose their declared metadata and relative paths, and support the registered kind, status, source and description filters/formats. It SHALL NOT resolve linked Run/Experiment/Hypothesis bodies or derive source-staleness or per-page human-review state. CLI --stale and --review filters SHALL remain unavailable; source resolution and viewer review projection belong to Web.
@@ -197,3 +182,15 @@ Wiki backlinks SHALL select Wiki pages by their declared sources without resolvi
 #### Scenario: Declared source backlink
 - **WHEN** a page declares an Experiment source whose body is unavailable
 - **THEN** backlinks can return the declaring page without reading that Experiment or its Runs
+
+### Requirement: `memon components run` executes a document's component blocks locally
+
+`memon components run <document> [--id <id>]…` SHALL run inside the project (no central address), locate the executable component blocks of the given Markdown document (project-relative or absolute path inside the project), run every one or only the named ids, write each result to `<stem>__assets/<id>.json` per `component-execution`, print one JSON line per block (`{ id, status: "updated"|"unchanged"|"failed", path, durationMs, error? }`), and exit 0 only when every requested block succeeded (1 otherwise, 2 for a bad request such as an unknown id or a document without executable blocks when ids were named, 4 when the document does not exist). The CLI SHALL validate only that the function returned a JSON object; schema validation stays central. `memon wiki lint` SHALL keep structural-only component checks (`WIKI_COMPONENT_UNPINNED`, `COMPONENT_ID_DUPLICATE`) and the `--central` merge SHALL be removed with the API.
+
+#### Scenario: Run one block
+- **WHEN** `memon components run docs/wiki/note/W0004-x.md --id fid`
+- **THEN** only `fid` executes and `docs/wiki/note/W0004-x__assets/fid.json` is written
+
+#### Scenario: Unknown id
+- **WHEN** `--id nope` names no executable block of the document
+- **THEN** the command exits 2 and lists the executable ids

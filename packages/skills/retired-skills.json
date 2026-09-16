@@ -60,6 +60,12 @@
       ]
     },
     {
+      "name": "memon-author-components",
+      "deposit_digests": [
+        "36dc5110206e1280bd6a7790a717240419a1776234e35c9dccf4092cf35f31b2"
+      ]
+    },
+    {
       "name": "memon-update-journal",
       "deposit_digests": [
         "d0c2eeeba19d26c6db972e5f8adc7df0692b14558c6901a609288c3137de2029"

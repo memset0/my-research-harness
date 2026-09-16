@@ -42,7 +42,7 @@ content. Migration alone relocates unsupported material under user approval.
 Recheck hashes before writing. On conflict, reread/reapply once, then surface an
 unresolved conflict; never force over another writer. Direct YAML editing is
 normal. Use the optional annotation helper only when useful and
-`memon-author-components` only for a registered fenced block.
+`memon-components` only for a component block.
 
 Keep original measurements, Run identities and provenance. Deprecation produces
 read-time validity, not a document mirror or an automatic metric rewrite.

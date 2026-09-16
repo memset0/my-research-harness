@@ -3,7 +3,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
-import { resolveComponentBlock } from '../wiki-components/registry'
+import { resolveComponentBlock } from '../components/registry'
 import {
   literalSegment,
   segmentMarkdownTree,
@@ -29,15 +29,11 @@ export function createTranslationManifest(sources: TranslationSource[]) {
     }
     const tree = processor.runSync(processor.parse(source.text)) as ProseNode
     segmentMarkdownTree(tree, source.text).forEach(add)
-    const captions = (node: ProseNode & { lang?: string }) => {
-      if (node.type === 'code' && node.lang === 'figure@1' && node.value) {
-        const block = resolveComponentBlock({ info: node.lang, payload: node.value })
-        if (
-          block &&
-          'data' in block &&
-          typeof (block.data as { caption?: unknown })?.caption === 'string'
-        )
-          add(literalSegment((block.data as { caption: string }).caption))
+    const captions = (node: ProseNode & { lang?: string; meta?: string }) => {
+      if (node.type === 'code' && node.lang && node.meta && node.value) {
+        const block = resolveComponentBlock({ info: `${node.lang} ${node.meta}`, payload: node.value })
+        const data = block?.type === 'figure' ? block.data : null
+        if (data && typeof data.caption === 'string') add(literalSegment(data.caption))
       }
       node.children?.forEach(captions)
     }

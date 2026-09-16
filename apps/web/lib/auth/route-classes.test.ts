@@ -71,9 +71,7 @@ describe('classify (pure class only)', () => {
     expect(classify('GET', '/api/wiki/W0001')).toBe('read')
     expect(classify('GET', '/api/wiki/review')).toBe('read')
     expect(classify('GET', '/api/wiki/backlinks/E0001-fused')).toBe('read')
-    expect(classify('GET', '/api/wiki/components')).toBe('read')
     expect(classify('GET', '/api/wiki/kinds')).toBe('read')
-    expect(classify('POST', '/api/wiki/components/lint')).toBe('read')
     expect(classify('GET', '/api/wiki-assets/project-a/W0006/views/map/index.html')).toBe('read')
     expect(classify('HEAD', '/api/wiki-assets/project-a/W0006/views/map/index.html')).toBe('read')
     expect(classify('PUT', '/api/wiki/W0001')).toBe('mutating')
@@ -214,6 +212,24 @@ describe('classifyAndExtract — project extraction', () => {
       stubCtx(),
     )
     expect(r).toEqual({ class: 'read', project: 'project-a' })
+  })
+
+  it('scopes document assets to the addressed project and keeps recompute owner-only', () => {
+    for (const method of ['GET', 'HEAD']) {
+      expect(
+        classifyAndExtract(
+          method,
+          '/api/doc-assets/project-a/docs/wiki/note/W0004-x__assets/fid.json',
+          emptySearch(),
+          stubCtx(),
+        ),
+      ).toEqual({ class: 'read', project: 'project-a' })
+    }
+    expect(classifyAndExtract('POST', '/api/components/run', emptySearch(), stubCtx())).toEqual({
+      class: 'mutating',
+      project: 'global',
+    })
+    expect(classify('GET', '/api/components/run')).toBe('mutating')
   })
 
   it('extracts project from /api/log?path= via path resolver', () => {

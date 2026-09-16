@@ -750,7 +750,13 @@ export interface GithubRepoMapping {
  * mounted remote Project would run on the wrong machine.
  */
 export type ProjectExecutionConfig =
-  | { kind: 'local' }
+  | {
+      kind: 'local'
+      /** Interpreter for executable component payloads; default `python3`. */
+      python?: string
+      /** Per-block timeout for component execution; default 120000. */
+      component_timeout_ms?: number
+    }
   | {
       kind: 'ssh'
       /** `user@host` or a `~/.ssh/config` alias; never a shell string. */

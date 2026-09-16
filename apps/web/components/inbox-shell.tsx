@@ -615,13 +615,18 @@ export function RenderedItem({
             project={project}
             resourceBaseUrl={resourceBaseUrl}
             tableOfContents={{ headingIdPrefix: `report-${sourceReportId ?? 'document'}` }}
+            document={sourceDocumentPath ? { project: projectName(project), host: projectHost(project) ?? undefined, path: sourceDocumentPath } : undefined}
           >
             {body}
           </Markdown>
         </ReportHtmlZoomProvider>
         </BodyTranslation>
       ) : (
-        <Markdown project={project} resourceBaseUrl={resourceBaseUrl}>
+        <Markdown
+          project={project}
+          resourceBaseUrl={resourceBaseUrl}
+          document={sourceDocumentPath ? { project: projectName(project), host: projectHost(project) ?? undefined, path: sourceDocumentPath } : undefined}
+        >
           {body}
         </Markdown>
       )}

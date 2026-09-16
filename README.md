@@ -282,22 +282,29 @@ independent trust axes:
   separately with `memon wiki commit`.
 
 Inside a body, `@W0001`, `@E0017`, `@E0017/V0068`, `@H0003` and
-`@<run-dir>` are links. Two fenced components render on every dashboard
-Markdown surface: ```` ```memon-data@1 ```` (a table with the command,
-commit and time that produced it) and ```` ```html-embed@1 ```` (an HTML
-block in an iframe). Unknown fences degrade to plain code blocks.
+`@<run-dir>` are links. A fenced block declared `` ```<lang> <type>@<N> #<id> ``
+renders as a component on every dashboard Markdown surface: `datatable@1`
+(a table plus line/bar views), `figure@1` (a captioned image beside the
+document), `embed@1` (HTML in an iframe) and `checklist@1` (a recursive list
+with independent Agent and human flags). The payload language parses the body
+into the one object the component receives — `yaml`/`json` to a mapping, any
+other language to `{ data: "<body>" }`. A `yaml` payload carrying `script:` or
+`code:` is executed on request by `memon components run` and its result is
+cached in `<stem>__assets/<id>.json` beside the document. Unknown fences
+degrade to plain code blocks.
 
 ```
 memon wiki ls [--kind K] [--status S] [--source ARTIFACT]
 memon wiki show|create|move|set|delete <page>
-memon wiki lint [--strict] [--central URL]      # component diagnostics need a central dashboard
+memon wiki lint [--strict]
 memon wiki backlinks <artifact>
 memon wiki review log|diff|verify <sha|next>|unverify <sha>   # diff: whole docs/wiki/ since last verified commit
 memon wiki commit [-m SUMMARY]                  # stages only docs/wiki/
 memon wiki migrate-report <R-id> <kind> [<slug>]
-memon wiki components ls|show|migrate --central URL
 memon wiki kinds ls --format human
 memon wiki kinds show initiative --format json
+
+memon components run <document> [--id ID]...    # recompute executable component blocks
 ```
 
 The CLI validates source syntax and filters declared source tokens; only Web

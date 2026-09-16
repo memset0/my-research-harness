@@ -17,8 +17,8 @@ import {
   type WikiResolvedComponent,
   type WikiSummary,
 } from '@memon/core'
+import { lintComponents, listComponentBlocks } from '../components/registry'
 import type { Runtime } from '../runtime'
-import { lintComponents, listComponentBlocks } from '../wiki-components/registry'
 
 /** Summary as the HTTP layer serves it. */
 export type WikiSummaryDto = WikiSummary & { project: string; resource: string }
@@ -87,9 +87,9 @@ export function wikiSummaryDto(project: string, summary: WikiSummary): WikiSumma
 }
 
 /**
- * Detail projection. `components[]` and the central-only component
- * diagnostics (`WIKI_COMPONENT_INVALID`, `WIKI_DATA_BLOCK_INVALID`,
- * `WIKI_DATA_PROVENANCE_MISSING`) exist only here: Backends and the CLI treat
+ * Detail projection. `components[]` and the component diagnostics
+ * (`WIKI_COMPONENT_UNPINNED`, `WIKI_COMPONENT_INVALID`,
+ * `COMPONENT_ID_DUPLICATE`) exist only here: Backends and the CLI treat
  * component blocks as opaque fenced code, so central resolves them against
  * the shipped registry when it serves the page.
  */
@@ -98,9 +98,8 @@ export function wikiPageDto(
   summary: WikiSummary,
   content: string,
   hash: string,
-  options: { fileExists?: (relativePath: string) => boolean } = {},
 ): WikiPageDto {
-  const componentProjection = wikiComponentProjection(content, options)
+  const componentProjection = wikiComponentProjection(content)
   return {
     ...summary,
     project,
@@ -119,27 +118,31 @@ export function wikiPageDto(
  */
 export function wikiComponentProjection(
   content: string,
-  options: { fileExists?: (relativePath: string) => boolean } = {},
 ): Pick<WikiPage, 'components'> & { diagnostics: WikiDiagnostic[] } {
   const parsed = parseWikiFrontmatter(content)
   const lineOffset = (
     content.slice(0, Math.max(0, content.length - parsed.body.length)).match(/\n/g) ?? []
   ).length
-  const blockOptions = options.fileExists ? { fileExists: options.fileExists } : {}
   const components: WikiResolvedComponent[] = []
-  for (const block of listComponentBlocks(parsed.body, blockOptions)) {
+  for (const block of listComponentBlocks(parsed.body)) {
     if (block.version === null) continue
     components.push({
       index: block.index,
-      name: block.name,
+      type: block.type,
       version: block.version,
-      line: block.line + lineOffset,
+      pinnedVersion: block.pinnedVersion,
+      latestVersion: block.latestVersion,
       outdated: block.outdated,
+      id: block.id,
+      executable: block.executable,
+      line: block.line + lineOffset,
     })
   }
-  const diagnostics = lintComponents(parsed.body, blockOptions).map((diagnostic) => ({
-    ...diagnostic,
-    ...(diagnostic.line === undefined ? {} : { line: diagnostic.line + lineOffset }),
+  const diagnostics = lintComponents(parsed.body).map((diagnostic) => ({
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    line: diagnostic.line + lineOffset,
   }))
   return { components, diagnostics }
 }

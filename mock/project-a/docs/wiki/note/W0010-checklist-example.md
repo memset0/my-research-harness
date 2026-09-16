@@ -15,7 +15,7 @@ updated_at: 2026-09-11T09:00:00+00:00
 Every flag below is independent: the Agent marks its own completion, the
 human marks what they have seen and what they have reviewed.
 
-```checklist@1
+```yaml checklist@1 #release_gate
 items:
   - title: Collect baseline measurements
     content: |

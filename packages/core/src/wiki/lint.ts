@@ -5,6 +5,7 @@
 // dashboard, and the Backend surface verbatim. `lintWikiPage` covers one page;
 // `lintWikiProject` covers the cross-page uniqueness rules.
 
+import { COMPONENT_TYPES } from './component-names.generated.js'
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation, validateWikiEntry } from './deprecation.js'
 import { wikiStringList } from './frontmatter.js'
@@ -75,8 +76,8 @@ export interface WikiLintContext {
   /** Derived review; `undefined`/`null` skips `WIKI_UNREVIEWED_VERIFIED`. */
   review?: WikiReview | null
   /**
-   * Component names to check for an unpinned info string. Central passes its
-   * live registry; everyone else gets `WIKI_STRUCTURAL_COMPONENT_NAMES`.
+   * Component type names to check for an unpinned declaration. Central passes
+   * its live registry; everyone else gets the generated `COMPONENT_TYPES`.
    */
   componentNames?: readonly string[]
 }
@@ -445,14 +446,27 @@ function lintComponents(
   diagnostics: WikiDiagnostic[],
   offset: number,
 ): void {
-  const names = ctx.componentNames
-  if (!names || names.length === 0) return
+  const types = ctx.componentNames ?? COMPONENT_TYPES
+  const idLines = new Map<string, number>()
   for (const block of parseWikiComponentBlocks(page.body)) {
-    if (block.version !== null || !names.includes(block.name)) continue
+    if (block.version === null && types.includes(block.type)) {
+      diagnostics.push({
+        code: 'WIKI_COMPONENT_UNPINNED',
+        severity: 'warn',
+        message: `component block \`${block.type}\` does not pin a major version; write \`${block.type}@<N>\``,
+        line: offset + block.line,
+      })
+    }
+    if (block.id === null) continue
+    const first = idLines.get(block.id)
+    if (first === undefined) {
+      idLines.set(block.id, block.line)
+      continue
+    }
     diagnostics.push({
-      code: 'WIKI_COMPONENT_UNPINNED',
-      severity: 'warn',
-      message: `component block \`${block.name}\` does not pin a major version; write \`${block.name}@<N>\``,
+      code: 'COMPONENT_ID_DUPLICATE',
+      severity: 'error',
+      message: `block id \`#${block.id}\` is already used on line ${offset + first}`,
       line: offset + block.line,
     })
   }

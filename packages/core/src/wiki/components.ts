@@ -1,26 +1,16 @@
-// Structural body scanning: fenced blocks, component info strings, and the
+// Structural body scanning: fenced blocks, component declarations, and the
 // code mask every other lint pass reads.
 //
 // Core stays opaque to component semantics — payload schemas, renderers, and
-// `WIKI_COMPONENT_INVALID` / `WIKI_DATA_*` diagnostics live in the central
-// dashboard registry (`apps/web/lib/wiki-components/`). What lives here is
-// only what a Backend or the CLI can decide without the registry: where the
-// blocks are, which component each one names, and whether the info string
-// pins a major version.
+// `WIKI_COMPONENT_INVALID` live in the central dashboard registry
+// (`apps/web/lib/components/`). What lives here is only what a Backend or the
+// CLI can decide without the registry: where the blocks are, which type and
+// version each one declares, whether it pins a major version, its block id,
+// and whether its payload is executable.
 
+import { parseComponentDeclaration } from '../components/declaration.js'
+import { derivePayload } from '../components/payload.js'
 import type { WikiComponentBlock } from './types.js'
-
-/**
- * Component names known well enough offline to warn about an unpinned info
- * string. This is a *name* mirror of the central registry, never a descriptor:
- * a component added centrally simply misses the offline WIKI_COMPONENT_UNPINNED
- * warning until the next core release, and central always passes its live name
- * list to `lintWikiPage`.
- */
-export const WIKI_STRUCTURAL_COMPONENT_NAMES: readonly string[] = ['memon-data', 'html-embed']
-
-/** `<name>` or `<name>@<major>` — the first token of a component info string. */
-const COMPONENT_TOKEN_REGEX = /^([a-z][a-z0-9-]*)(?:@(\d+))?$/
 
 export interface WikiFencedBlock {
   /** 1-based line of the opening fence. */
@@ -77,25 +67,28 @@ export function parseWikiFencedBlocks(body: string): WikiFencedBlock[] {
 }
 
 /**
- * Every fenced block whose info string opens with a component-shaped token,
- * in body order. Unregistered languages (`python`, `mermaid`, `foo-chart`)
- * come back too — resolving names against a registry is the caller's job, and
- * `index` is the position in this list.
+ * Every fenced block whose info string parses as a component declaration
+ * (`<lang> <type>[@<N>] [#<id>]`), in body order. Unregistered types come
+ * back too — resolving them against a registry is the caller's job — and
+ * `index` is the position in this list. Info strings that look like a
+ * component but break the grammar are left out: naming them is the central
+ * registry's `WIKI_COMPONENT_INVALID`.
  */
 export function parseWikiComponentBlocks(body: string): WikiComponentBlock[] {
   const blocks: WikiComponentBlock[] = []
   for (const fenced of parseWikiFencedBlocks(body)) {
-    const [token = '', ...rest] = fenced.info.split(/\s+/)
-    const match = COMPONENT_TOKEN_REGEX.exec(token)
-    if (!match) continue
-    const version = match[2] === undefined ? null : Number.parseInt(match[2], 10)
+    const parsed = parseComponentDeclaration(fenced.info)
+    if (parsed.kind !== 'component') continue
+    const { lang, type, version, id } = parsed.declaration
     blocks.push({
       index: blocks.length,
-      name: match[1]!,
+      lang,
+      type,
       version,
+      id,
       line: fenced.line,
-      info: rest.join(' '),
       payload: fenced.payload,
+      executable: derivePayload(lang, fenced.payload).kind === 'executable',
     })
   }
   return blocks

@@ -86,10 +86,9 @@ export interface WikiFrontmatter {
 // ---------- diagnostics ----------
 
 /**
- * Every diagnostic code the wiki can emit. The `WIKI_COMPONENT_INVALID`,
- * `WIKI_DATA_BLOCK_INVALID`, and `WIKI_DATA_PROVENANCE_MISSING` codes are
+ * Every diagnostic code the wiki can emit. `WIKI_COMPONENT_INVALID` is
  * produced centrally (the component registry lives in the dashboard); core
- * emits the structural `WIKI_COMPONENT_UNPINNED` only.
+ * emits the structural `WIKI_COMPONENT_UNPINNED` and `COMPONENT_ID_DUPLICATE`.
  */
 export const WIKI_DIAGNOSTIC_CODES = [
   'WIKI_ID_INVALID',
@@ -114,8 +113,7 @@ export const WIKI_DIAGNOSTIC_CODES = [
   'WIKI_ENTRY_MISSING',
   'WIKI_COMPONENT_UNPINNED',
   'WIKI_COMPONENT_INVALID',
-  'WIKI_DATA_BLOCK_INVALID',
-  'WIKI_DATA_PROVENANCE_MISSING',
+  'COMPONENT_ID_DUPLICATE',
 ] as const
 
 export type WikiDiagnosticCode = (typeof WIKI_DIAGNOSTIC_CODES)[number]
@@ -140,30 +138,40 @@ export interface WikiProjectDiagnostic extends WikiDiagnostic {
 
 export type WikiPageFormat = 'markdown' | 'bundle'
 
-/** One `<component>[@<version>] [attrs]` fenced block found in a page body. */
+/** One `<lang> <type>[@<N>] [#<id>]` fenced block found in a page body. */
 export interface WikiComponentBlock {
-  /** 0-based index in body order; the address used by `data` commands. */
+  /** 0-based index among the component blocks, in body order. */
   index: number
-  name: string
-  /** Pinned major version, or null when the info string omits `@N`. */
+  /** First declaration token: the payload language (`yaml`, `html`, …). */
+  lang: string
+  type: string
+  /** Pinned major version, or null when the declaration omits `@N`. */
   version: number | null
+  /** Block id (`#<id>`), or null when the declaration omits it. */
+  id: string | null
   /** 1-based line of the opening fence. */
   line: number
-  /** Info string with the leading `<component>[@<version>]` token removed. */
-  info: string
   /** Raw block body, verbatim, without the fences. */
   payload: string
+  /** The payload carries a reserved `script`/`code` key. */
+  executable: boolean
 }
 
 /** `components[]` as the dashboard resolves it against the live registry. */
 export interface WikiResolvedComponent {
   index: number
-  name: string
-  /** Resolved major version (the pinned one, or the registry's latest). */
+  type: string
+  /** Resolved major version: the pinned one, or the registry's latest. */
   version: number
-  line: number
-  /** A newer major version of the same component is registered. */
+  /** Version the declaration pinned, or null when it omitted `@N`. */
+  pinnedVersion: number | null
+  /** Highest registered version of the type, or null when unregistered. */
+  latestVersion: number | null
+  /** A newer major version of the same type is registered. */
   outdated: boolean
+  id: string | null
+  executable: boolean
+  line: number
 }
 
 export interface WikiSummary {

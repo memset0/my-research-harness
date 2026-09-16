@@ -22,7 +22,7 @@ export const SKILL_NAMES = [
   'memon-write-report',
   'memon-wiki',
   'memon-write-code-review',
-  'memon-author-components',
+  'memon-components',
   'memon-propose',
   'memon-migrate-fs',
 ] as const

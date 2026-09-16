@@ -4,6 +4,7 @@
 
 import { ConfigError, EXPERIMENT_DIR_REGEX, MEMON_RELEASE, RUN_DIR_REGEX } from '@memon/core'
 import { Command, CommanderError } from 'commander'
+import { runComponentsRun } from './commands/components.js'
 import {
   readStdin,
   runArchive,
@@ -64,9 +65,6 @@ import {
 import {
   runWikiBacklinks,
   runWikiCommit,
-  runWikiComponentsLs,
-  runWikiComponentsMigrate,
-  runWikiComponentsShow,
   runWikiCreate,
   runWikiDelete,
   runWikiDeprecate,
@@ -1107,6 +1105,31 @@ fsVersion
     await runFsVersionCheck({ projectRoot: g.projectRoot, cwd: g.cwd, format: g.format })
   })
 
+// ---------- memon components ----------
+
+const components = program
+  .command('components')
+  .description('document component blocks (docs under the project root)')
+
+components
+  .command('run <document>')
+  .description('execute a document\'s executable component blocks and cache the results')
+  .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
+  .option('--format <fmt>', 'output format: json | human')
+  .option('--id <id>', 'only run this block id (repeatable)', collectOption, [])
+  .action(
+    async (document: string, opts: { projectRoot?: string; format?: string; id?: string[] }) => {
+      const global = program.opts<{ projectRoot?: string; format?: string }>()
+      await runComponentsRun({
+        document,
+        ids: opts.id,
+        projectRoot: opts.projectRoot ?? global.projectRoot,
+        cwd: process.cwd(),
+        format: opts.format ?? global.format,
+      })
+    },
+  )
+
 // ---------- memon wiki ----------
 
 const wiki = program
@@ -1268,15 +1291,9 @@ wikiCommand(wiki, 'set <page>', 'edit frontmatter only, with an optional mtime l
 
 wikiCommand(wiki, 'lint [page]', 'report diagnostics for one page or the whole wiki')
   .option('--strict', 'exit 1 when any `error` severity diagnostic exists', false)
-  .option('--central <url>', 'also apply the central component registry lint')
-  .action(
-    async (
-      page: string | undefined,
-      opts: WikiLocalOptions & { strict?: boolean; central?: string },
-    ) => {
-      await runWikiLint({ ...wikiGlobals(opts), page, strict: opts.strict, central: opts.central })
-    },
-  )
+  .action(async (page: string | undefined, opts: WikiLocalOptions & { strict?: boolean }) => {
+    await runWikiLint({ ...wikiGlobals(opts), page, strict: opts.strict })
+  })
 
 
 wikiCommand(wiki, 'backlinks <artifact>', 'list pages declaring an artifact source').action(
@@ -1371,47 +1388,6 @@ wikiCommand(wikiReview, 'unverify <sha>', 'remove a mark and every newer one (hu
     await runWikiReviewUnverify({ ...wikiGlobals(opts), sha })
   },
 )
-
-const wikiComponents = wiki
-  .command('components')
-  .description('body component registry, read from a central dashboard over HTTP')
-
-wikiCommand(
-  wikiComponents,
-  'ls',
-  'list registered components (name, version, description, outdated)',
-)
-  .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
-  .action(async (opts: WikiLocalOptions & { central?: string }) => {
-    await runWikiComponentsLs({ ...wikiGlobals(opts), central: opts.central })
-  })
-
-wikiCommand(wikiComponents, 'show <name>', 'print one descriptor (`<name>` or `<name>@<N>`)')
-  .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
-  .action(async (name: string, opts: WikiLocalOptions & { central?: string }) => {
-    await runWikiComponentsShow({ ...wikiGlobals(opts), name, central: opts.central })
-  })
-
-wikiCommand(
-  wikiComponents,
-  'migrate [page]',
-  'rewrite component blocks to their latest version via central',
-)
-  .option('--central <url>', 'central dashboard base URL (default: $MEMON_CENTRAL_URL)')
-  .option('--dry-run', 'report what would change without writing', false)
-  .action(
-    async (
-      page: string | undefined,
-      opts: WikiLocalOptions & { central?: string; dryRun?: boolean },
-    ) => {
-      await runWikiComponentsMigrate({
-        ...wikiGlobals(opts),
-        page,
-        central: opts.central,
-        dryRun: opts.dryRun,
-      })
-    },
-  )
 
 function interceptParserExits(command: Command): void {
   command.exitOverride()

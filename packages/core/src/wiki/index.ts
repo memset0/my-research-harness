@@ -2,11 +2,11 @@
 // deprecation, structural component scanning, review, and the projections the
 // CLI / Backend / dashboard all serve.
 
+export { COMPONENT_LATEST_VERSION, COMPONENT_TYPES } from './component-names.generated.js'
 export {
   maskWikiCode,
   parseWikiComponentBlocks,
   parseWikiFencedBlocks,
-  WIKI_STRUCTURAL_COMPONENT_NAMES,
   type WikiFencedBlock,
 } from './components.js'
 export {
@@ -46,7 +46,6 @@ export {
   experimentEffectiveUpdatedAtMs,
   resolveWikiSources,
   runLastChangedAtMs,
-  type WikiDataBlockSources,
   type WikiPageStaleness,
   type WikiSourceContext,
   type WikiSourceIndex,

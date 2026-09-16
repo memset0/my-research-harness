@@ -60,8 +60,8 @@ export interface ReportHtmlEmbedProps {
   /** Same-origin document URL. Mutually exclusive with `srcDoc`. */
   src?: string
   /**
-   * Inline document rendered through `srcdoc`. Used by the `html-embed`
-   * wiki component, whose payload IS the document, so there is nothing to
+   * Inline document rendered through `srcdoc`. Used by the `embed@1`
+   * component, whose payload IS the document, so there is nothing to
    * probe over HTTP. Mutually exclusive with `src`.
    */
   srcDoc?: string

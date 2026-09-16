@@ -57,7 +57,8 @@ is valid. Bare IDs are compatibility selectors only when globally unique.
 
 The record needs identity/state/time, not Motivation/Setup/Result/Artifacts.
 Do not duplicate Variant parameters, provenance or Experiment interpretation.
-Optional notes explain actual deviations or non-obvious artifact locations.
+Optional notes explain actual deviations or non-obvious artifact locations; when
+one needs a component block, follow `memon-components`.
 Existing rich records remain intact. Later metadata edits use mtime/hash locks;
 use `run lint` after direct edits or for a structural concern, not every poll.
 

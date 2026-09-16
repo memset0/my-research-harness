@@ -28,21 +28,23 @@ All composition numbers come from a single CFG scale of 7.5 over only 500 prompt
 
 ## Evidence
 
-```memon-data@1 title="Brightness bias |Δ| by CFG scale (E0002)"
-runner: python3 -
-code: |
-  import json, re
-  txt = open("docs/experiments/E0002-zero-snr-eval/README.md").read()
-  rows = [[f"CFG={c}", float(a), float(b)] for c, a, b in re.findall(r"CFG=(\d+(?:\.\d+)?): (\d+\.\d+) → (\d+\.\d+)", txt)]
-  print(json.dumps({"columns": ["cfg", "baseline_abs_delta", "zero_snr_abs_delta"], "rows": rows}))
-captured_at: 2026-05-06T14:20:00+08:00
-captured_commit: 9f2c4e1a7b3d5f6081a2c3d4e5f60718293a4b5c
-sources: [E0002]
-columns: [cfg, baseline_abs_delta, zero_snr_abs_delta]
-rows:
-  - [CFG=4.5, 0.061, 0.009]
-  - [CFG=7.5, 0.087, 0.011]
-  - [CFG=10, 0.114, 0.018]
+```yaml datatable@1 #brightness_bias
+title: Brightness bias |Δ| by CFG scale (E0002)
+note: Absolute mean-brightness delta on the 500-prompt subset; lower is better.
+columns: [cfg, schedule, abs_delta]
+data:
+  - [4.5, baseline, 0.061]
+  - [4.5, zero_snr, 0.009]
+  - [7.5, baseline, 0.087]
+  - [7.5, zero_snr, 0.011]
+  - [10, baseline, 0.114]
+  - [10, zero_snr, 0.018]
+views:
+  - type: table
+  - type: bar
+    x: cfg
+    y: abs_delta
+    series: schedule
 ```
 
 ```mermaid

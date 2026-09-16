@@ -20,15 +20,17 @@ Does SNR-weighted loss reduce high-frequency artifacts beyond 128²?
 
 Hypothesis @H0002 claims that min-SNR-γ weighting reduces high-frequency artifacts, and it is marked ✅ CONFIRMED on the basis of @E0003-snr-sweep and @E0001-vpred-convergence. However, the evidence cited under @H0002 — HF-band energy ratio dropping from 0.184 to 0.139 (-24%) and FID@256 going from 8.92 to 8.87 — is reported at 256² resolution. The hypothesis page itself flags a caveat: 'small-batch runs (bs=32) show much weaker effect,' and the resolution caveat for the parent v-pred experiment (@H0001) limits transferability. No run in the supplied context measures the SNR-weighted loss below 128², so the sub-128² behavior of the artifact-reduction effect is not empirically established by @E0003 or @E0001.
 
-```memon-data@1 title="HF artifact score by resolution (E0003)"
-script: python3 scripts/collect_hf_artifacts.py
-captured_at: 2026-05-05T09:40:00+08:00
-captured_commit: 9f2c4e1a7b3d5f6081a2c3d4e5f60718293a4b5c
-sources: [E0003]
+```yaml datatable@1 #hf_artifacts
+title: HF artifact score by resolution (E0003)
 columns: [resolution, uniform_loss, snr_weighted_loss]
-rows:
+data:
   - [64, 0.41, 0.29]
   - [128, 0.38, 0.27]
+views:
+  - type: table
+  - type: line
+    x: resolution
+    y: snr_weighted_loss
 ```
 
 ```foo-chart

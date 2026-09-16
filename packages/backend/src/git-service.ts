@@ -425,11 +425,17 @@ async function containedRealpath(projectRoot: string, target: string): Promise<s
   return realTarget
 }
 
+/**
+ * Containment check for a path that may not exist: a missing file has nothing
+ * to contain. `ENOTDIR` counts as missing too — a component of the path is a
+ * file, so the target cannot exist either.
+ */
 async function assertExistingTargetWithin(root: string, target: string): Promise<void> {
   try {
     await containedRealpath(root, target)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return
     throw error
   }
 }

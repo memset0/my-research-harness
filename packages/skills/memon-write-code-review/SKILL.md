@@ -146,8 +146,7 @@ Keep raw code minimal — excerpt plus permalink, never whole files — while th
 explanation stays thorough. These sections are angles, not fields: omit what
 does not apply, add what is missing, and never pad.
 
-When a section needs a registered fenced-block component, follow
-`memon-author-components`.
+When a section needs a component block, follow `memon-components`.
 
 ## Workflow
 

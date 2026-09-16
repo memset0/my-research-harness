@@ -24,22 +24,10 @@ The crash leaves @E0004 with a single confirmed FID number for the EDM2 thread i
 
 ## Status
 
-```memon-data@1 title="EDM2 run status"
-runner: bash -s
-code: |
-  printf '{"columns":["run","status"],"rows":['
-  first=1
-  for d in logs/edm2-precond-*/; do
-    s=$(grep -m1 '^status:' "$d/README.md" | cut -d' ' -f2)
-    [ $first = 1 ] || printf ','
-    printf '["%s","%s"]' "$(basename "$d")" "$s"; first=0
-  done
-  printf ']}\n'
-captured_at: 2026-05-04T10:30:00+08:00
-captured_commit: 9f2c4e1a7b3d5f6081a2c3d4e5f60718293a4b5c
-sources: [edm2-precond-260503-080000, edm2-precond-rerun-260503-100000]
+```yaml datatable@1 #run_status
+title: EDM2 run status
 columns: [run, status]
-rows:
+data:
   - [edm2-precond-260503-080000, FAILED]
   - [edm2-precond-rerun-260503-100000, PENDING]
 ```

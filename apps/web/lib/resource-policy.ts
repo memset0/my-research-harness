@@ -9,7 +9,6 @@ const COLLECTION_PATHS = new Set([
   '/api/runs',
   '/api/wiki',
   '/api/wiki/review',
-  '/api/wiki/components',
   '/api/reports',
   '/api/code-reviews',
   '/api/hypotheses',

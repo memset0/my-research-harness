@@ -239,24 +239,6 @@ describe('resolveWikiSources', () => {
     expect(result.pages.get('W0011')?.staleSources).toEqual(['bar-260902-150000'])
   })
 
-  it('compares a data block against its capture time and addresses it as data[n]', () => {
-    const result = resolveWikiSources(
-      [
-        {
-          ...page('W0012', [], '2026-09-10T10:00:00+08:00'),
-          dataBlocks: [
-            { index: 0, sources: ['E0017/V0068'], capturedAt: '2026-09-01T10:00:00+08:00' },
-          ],
-        },
-      ],
-      CTX,
-    )
-    expect(result.pages.get('W0012')).toMatchObject({
-      stale: true,
-      staleSources: ['data[0]:E0017/V0068'],
-    })
-  })
-
   it('indexes backlinks under every experiment form, newest page first', () => {
     const result = resolveWikiSources(
       [

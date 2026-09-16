@@ -2,7 +2,7 @@
 id: W0008
 kind: harness-feedback
 title: Data blocks should show live vs saved capture
-description: Proposal to let the dashboard re-run a memon-data collector and compare it against the saved rows.
+description: Proposal to let the dashboard re-run a data block's collector instead of comparing it against hand-pasted rows.
 status: ACCEPTED
 sources: [W0001, W0002]
 tags: [components]
@@ -18,8 +18,12 @@ While writing @W0001 and @W0002 the saved tables went out of date twice within a
 
 ## Proposal
 
-Add a Saved / Live toggle to the `memon-data` component. Live re-runs the block's collector without writing; a difference marks the saved view `stale`, a failing collector shows `collector broken` with stderr. Tracked as an OpenSpec change in the harness repo.
+Let a data block carry its own collector and recompute on request instead of
+holding hand-pasted rows. Recompute reports `updated`, `unchanged`, or `failed`;
+a failing collector keeps the last good data and shows its error. Tracked as an
+OpenSpec change in the harness repo.
 
 ## Status
 
-Accepted; shipped with the `wiki-system` change.
+Accepted; shipped as the executable payload of `datatable@1` — see the
+`#fid_by_precond` block on @W0006 and `memon components run`.

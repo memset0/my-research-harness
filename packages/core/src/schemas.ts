@@ -146,7 +146,14 @@ const SafeSshTargetRawSchema = z
   })
 
 export const ProjectExecutionRawSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('local') }).strict(),
+  z
+    .object({
+      kind: z.literal('local'),
+      /** Interpreter used for executable component payloads. */
+      python: z.string().min(1).optional(),
+      component_timeout_ms: z.number().int().min(1_000).max(3_600_000).optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('ssh'),

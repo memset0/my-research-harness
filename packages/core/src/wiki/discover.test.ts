@@ -66,4 +66,13 @@ describe('discoverWikiPages', () => {
     await write('docs/wiki/note/W0007-empty/data/x.json', '{}')
     expect(await discoverWikiPages(root)).toEqual([])
   })
+
+  it('never discovers a `<page>__assets` directory as a page', async () => {
+    await write('docs/wiki/note/W0008-fid.md', '---\nid: W0008\n---\nbody\n')
+    await write('docs/wiki/note/W0008-fid__assets/fid.json', '{"__component_id":"fid"}')
+    await write('docs/wiki/note/W0008-fid__assets/README.md', '---\nid: W0008\n---\nnot a page\n')
+
+    const pages = await discoverWikiPages(root)
+    expect(pages.map((page) => page.path)).toEqual(['docs/wiki/note/W0008-fid.md'])
+  })
 })

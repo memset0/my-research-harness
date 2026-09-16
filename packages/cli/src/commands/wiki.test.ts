@@ -1,13 +1,10 @@
 // `memon wiki` CLI behaviour, scenario-for-scenario against the wiki-cli spec.
 //
 // Every case runs against a throwaway project root; the review / commit cases
-// build a throwaway git repo, and the component cases talk to a stub central
-// dashboard on 127.0.0.1 so no descriptor knowledge leaks into the CLI.
+// build a throwaway git repo.
 
 import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,9 +15,6 @@ import { parseWikiFrontmatter } from '@memon/core'
 import {
   runWikiBacklinks,
   runWikiCommit,
-  runWikiComponentsLs,
-  runWikiComponentsMigrate,
-  runWikiComponentsShow,
   runWikiCreate,
   runWikiDelete,
   runWikiDeprecate,
@@ -1040,6 +1034,39 @@ describe('memon wiki lint', () => {
     const run = await runCapturing(() => runWikiLint({ ...globals(), page: 'demo' }))
     expect(lintRows(run)[0]!.codes).toContain('WIKI_ENTRY_MISSING')
   })
+
+  it('reports the structural component diagnostics without any registry', async () => {
+    await write(
+      'docs/wiki/note/W0008-blocks.md',
+      page(
+        [
+          'id: W0008',
+          'kind: note',
+          'title: Blocks',
+          'created_at: "2026-09-01T09:00:00+08:00"',
+          'updated_at: "2026-09-01T09:00:00+08:00"',
+        ].join('\n'),
+        [
+          '',
+          '```yaml datatable #fid',
+          'columns: [a]',
+          'data: [[1, 2]]',
+          '```',
+          '',
+          '```yaml checklist@1 #fid',
+          'items: []',
+          '```',
+          '',
+        ].join('\n'),
+      ),
+    )
+    const run = await runCapturing(() => runWikiLint({ ...globals(), page: 'blocks' }))
+    const codes = lintRows(run)[0]!.codes
+    expect(codes).toContain('WIKI_COMPONENT_UNPINNED')
+    expect(codes).toContain('COMPONENT_ID_DUPLICATE')
+    // Payload judgements stay with the dashboard registry.
+    expect(codes).not.toContain('WIKI_COMPONENT_INVALID')
+  })
 })
 
 // ---------- deprecate / delete ----------
@@ -1670,6 +1697,31 @@ describe('memon wiki commit', () => {
     expect(await git('status', '--porcelain', '--', 'src/train.py')).toContain(' M src/train.py')
   })
 
+  it('stages a page`s component cache directory alongside the page', async () => {
+    await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
+    )
+    await write(
+      'docs/wiki/note/W0001-alpha__assets/fid.json',
+      '{\n  "value": 1,\n  "__component_id": "fid"\n}\n',
+    )
+
+    const run = await runCapturing(() => runWikiCommit({ ...globals(), message: 'add fid' }))
+    expect(run.exitCode).toBeNull()
+    const result = jsonAs<{
+      pages: { id: string; paths: string[] }[]
+      files: string[]
+    }>(run.stdout)
+    expect(result.files).toEqual([
+      'docs/wiki/note/W0001-alpha.md',
+      'docs/wiki/note/W0001-alpha__assets/fid.json',
+    ])
+    expect(result.pages[0]!.paths).toEqual([
+      'docs/wiki/note/W0001-alpha.md',
+      'docs/wiki/note/W0001-alpha__assets/fid.json',
+    ])
+  })
+
   it('generates the summary from the touched pages when -m is omitted', async () => {
     await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
@@ -1703,229 +1755,5 @@ describe('memon wiki commit', () => {
     const run = await runCapturing(() => runWikiCommit(globals()))
     expect(run.exitCode).toBe(2)
     expect((await git('log', '-1', '--format=%s')).trim()).toBe('init')
-  })
-})
-
-// ---------- components / lint --central (stub central dashboard) ----------
-
-interface StubRequest {
-  method: string
-  url: string
-  authorization?: string
-  body: string
-}
-
-describe('memon wiki components', () => {
-  let server: Server
-  let central: string
-  let requests: StubRequest[]
-  let savedEnv: Record<string, string | undefined>
-
-  beforeEach(async () => {
-    requests = []
-    server = createServer((req, res) => {
-      const chunks: Buffer[] = []
-      req.on('data', (chunk: Buffer) => chunks.push(chunk))
-      req.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8')
-        requests.push({
-          method: req.method ?? '',
-          url: req.url ?? '',
-          ...(req.headers.authorization === undefined
-            ? {}
-            : { authorization: req.headers.authorization }),
-          body,
-        })
-        const url = req.url ?? ''
-        res.setHeader('content-type', 'application/json')
-        if (url === '/api/wiki/components') {
-          res.end(
-            JSON.stringify({
-              components: [
-                { name: 'memon-data', version: 1, description: 'Tabular data', outdated: false },
-                { name: 'html-embed', version: 1, description: 'Embedded HTML', outdated: false },
-              ],
-            }),
-          )
-          return
-        }
-        if (url === '/api/wiki/components/memon-data%401') {
-          res.end(
-            JSON.stringify({
-              name: 'memon-data',
-              version: 1,
-              effect: 'Renders a table',
-              useWhen: 'small tables',
-              args: { title: 'string' },
-              example: '```memon-data@1\n```',
-              invalidExamples: [],
-              fixtures: [],
-            }),
-          )
-          return
-        }
-        if (url === '/api/wiki/components/nope') {
-          res.statusCode = 404
-          res.end(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'no such component' } }))
-          return
-        }
-        if (url === '/api/wiki/components/lint') {
-          res.end(
-            JSON.stringify({
-              diagnostics: [
-                {
-                  code: 'WIKI_DATA_BLOCK_INVALID',
-                  severity: 'error',
-                  message: 'ragged rows',
-                  line: 12,
-                },
-              ],
-              components: [],
-            }),
-          )
-          return
-        }
-        if (url === '/api/wiki/components/migrate') {
-          const parsed = jsonAs<{ content: string }>(body)
-          res.end(
-            JSON.stringify({ content: parsed.content.replace('```memon-data\n', '```memon-data@1\n') }),
-          )
-          return
-        }
-        res.statusCode = 404
-        res.end(JSON.stringify({ error: { code: 'NOT_FOUND', message: url } }))
-      })
-    })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-    central = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-    savedEnv = {
-      MEMON_CENTRAL_URL: process.env.MEMON_CENTRAL_URL,
-      MEMON_CENTRAL_TOKEN: process.env.MEMON_CENTRAL_TOKEN,
-      MEMON_CENTRAL_USER: process.env.MEMON_CENTRAL_USER,
-      MEMON_CENTRAL_PASS: process.env.MEMON_CENTRAL_PASS,
-    }
-    for (const key of Object.keys(savedEnv)) delete process.env[key]
-  })
-
-  afterEach(async () => {
-    for (const [key, value] of Object.entries(savedEnv)) {
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
-    await new Promise<void>((resolve, reject) =>
-      server.close((err) => (err ? reject(err) : resolve())),
-    )
-  })
-
-  it('exits 2 and names both ways to configure central when none is set', async () => {
-    const run = await runCapturing(() => runWikiComponentsLs(globals()))
-    expect(run.exitCode).toBe(2)
-    const message = errorOf(run).message
-    expect(message).toContain('--central')
-    expect(message).toContain('MEMON_CENTRAL_URL')
-    expect(requests).toHaveLength(0)
-  })
-
-  it('reads the registry from MEMON_CENTRAL_URL and prints name, version, description', async () => {
-    process.env.MEMON_CENTRAL_URL = central
-    const run = await runCapturing(() => runWikiComponentsLs({ ...globals(), format: 'human' }))
-    expect(run.stdout).toContain('memon-data@1')
-    expect(run.stdout).toContain('Tabular data')
-    expect(requests[0]).toMatchObject({ method: 'GET', url: '/api/wiki/components' })
-  })
-
-  it('sends a bearer token, or Basic credentials, from the environment', async () => {
-    process.env.MEMON_CENTRAL_TOKEN = 't0k'
-    await runCapturing(() => runWikiComponentsLs({ ...globals(), central }))
-    expect(requests[0]!.authorization).toBe('Bearer t0k')
-
-    delete process.env.MEMON_CENTRAL_TOKEN
-    process.env.MEMON_CENTRAL_USER = 'owner'
-    process.env.MEMON_CENTRAL_PASS = 'secret'
-    await runCapturing(() => runWikiComponentsLs({ ...globals(), central }))
-    expect(requests[1]!.authorization).toBe(`Basic ${Buffer.from('owner:secret').toString('base64')}`)
-  })
-
-  it('shows one pinned descriptor and maps a central 404 to exit 4', async () => {
-    const shown = await runCapturing(() =>
-      runWikiComponentsShow({ ...globals(), name: 'memon-data@1', central }),
-    )
-    expect(JSON.parse(shown.stdout)).toMatchObject({
-      name: 'memon-data',
-      version: 1,
-      effect: 'Renders a table',
-      useWhen: 'small tables',
-    })
-    expect(requests[0]!.url).toBe('/api/wiki/components/memon-data%401')
-
-    const missing = await runCapturing(() =>
-      runWikiComponentsShow({ ...globals(), name: 'nope', central }),
-    )
-    expect(missing.exitCode).toBe(4)
-    expect(errorOf(missing).code).toBe('NOT_FOUND')
-  })
-
-  it('migrates a page body through central, honouring --dry-run', async () => {
-    const relative = 'docs/wiki/note/W0001-data.md'
-    await write(
-      relative,
-      page(
-        [
-          'id: W0001',
-          'kind: note',
-          'title: Data',
-          'created_at: "2026-09-01T09:00:00+08:00"',
-          'updated_at: "2026-09-01T09:00:00+08:00"',
-        ].join('\n'),
-        '\n# Data\n\n```memon-data\ncolumns: [a]\nrows: [[1]]\n```\n',
-      ),
-    )
-    const before = await readFile(relative)
-
-    const dry = await runCapturing(() =>
-      runWikiComponentsMigrate({ ...globals(), central, dryRun: true }),
-    )
-    expect((jsonAs<{ pages: { changed: boolean; written: boolean }[] }>(dry.stdout)).pages).toEqual([
-      { id: 'W0001', path: relative, changed: true, written: false },
-    ])
-    expect(await readFile(relative)).toBe(before)
-    const requested = jsonAs<{ content: string }>(requests[0]!.body).content
-    expect(requested).toBe(parseWikiFrontmatter(before).body)
-    expect(requested).not.toContain('id: W0001')
-
-
-    const applied = await runCapturing(() => runWikiComponentsMigrate({ ...globals(), central }))
-    expect((jsonAs<{ pages: { written: boolean }[] }>(applied.stdout)).pages[0]!.written).toBe(
-      true,
-    )
-    expect(await readFile(relative)).toContain('```memon-data@1')
-    expect(await readFile(relative)).toBe(before.replace('```memon-data\n', '```memon-data@1\n'))
-  })
-
-  it('lint --central merges central component diagnostics', async () => {
-    await write(
-      'docs/wiki/note/W0001-data.md',
-      page(
-        [
-          'id: W0001',
-          'kind: note',
-          'title: Data',
-          'created_at: "2026-09-01T09:00:00+08:00"',
-          'updated_at: "2026-09-01T09:00:00+08:00"',
-        ].join('\n'),
-        '\n# Data\n\n```memon-data@1\ncolumns: [a]\nrows: [[1, 2]]\n```\n',
-      ),
-    )
-    const local = await runCapturing(() => runWikiLint({ ...globals(), strict: true }))
-    expect(local.exitCode).toBeNull()
-    expect(local.stdout).not.toContain('WIKI_DATA_BLOCK_INVALID')
-
-    const withCentral = await runCapturing(() =>
-      runWikiLint({ ...globals(), strict: true, central }),
-    )
-    expect(withCentral.exitCode).toBe(1)
-    expect(withCentral.stdout).toContain('WIKI_DATA_BLOCK_INVALID')
-    expect(requests[0]).toMatchObject({ method: 'POST', url: '/api/wiki/components/lint' })
-    expect(JSON.parse(requests[0]!.body)).toMatchObject({ content: expect.any(String) })
   })
 })

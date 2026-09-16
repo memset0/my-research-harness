@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 
 import { formatIsoLocal } from '../time.js'
 import type { Experiment, Run } from '../types.js'
-import { WIKI_STRUCTURAL_COMPONENT_NAMES } from './components.js'
+import { COMPONENT_TYPES } from './component-names.generated.js'
 import type { DiscoveredWikiPage } from './discover.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation } from './deprecation.js'
 import { parseWikiFrontmatter, wikiStringList } from './frontmatter.js'
@@ -127,7 +127,7 @@ export function sortWikiSummaries<T extends WikiSummary>(summaries: readonly T[]
 interface WikiProjectionContext {
   /** Page path -> derived review, as produced by `deriveWikiReview`. */
   reviews?: ReadonlyMap<string, WikiReview> | null
-  /** Component names for the unpinned check; defaults to the structural set. */
+  /** Component type names for the unpinned check; defaults to the generated set. */
   componentNames?: readonly string[]
 }
 
@@ -257,7 +257,7 @@ export function buildWikiProject(
     else projectDiagnostics.set(path, [rest])
   }
 
-  const componentNames = ctx.componentNames ?? WIKI_STRUCTURAL_COMPONENT_NAMES
+  const componentNames = ctx.componentNames ?? COMPONENT_TYPES
   const summaries = parsed.map((entry, index) => {
     const staleness = resolved?.pages.get(entry.id) ?? null
     const review = ctx.reviews?.get(entry.page.path) ?? null

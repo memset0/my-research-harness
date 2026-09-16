@@ -8,7 +8,7 @@
 
 import { markJournalInvocationOutcome, WIKI_ID_REGEX } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime, type Runtime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/runtime'
 import {
   parseWikiWriteBody,
   wikiError,
@@ -32,11 +32,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
   const page = await runtime.wikiCache.getWikiPage(target.project, id)
   if (!page) return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
-  return NextResponse.json(
-    wikiPageDto(target.project, page.summary, page.content, page.hash, {
-      fileExists: bundleProbe(runtime, target.project, id),
-    }),
-  )
+  return NextResponse.json(wikiPageDto(target.project, page.summary, page.content, page.hash))
 }
 
 export async function PUT(request: NextRequest, context: RouteContext) {
@@ -95,24 +91,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     ok: true,
     mtime: result.mtime,
     hash: result.hash,
-    page: wikiPageDto(target.project, written, write.content, result.hash, {
-      fileExists: bundleProbe(runtime, target.project, id),
-    }),
+    page: wikiPageDto(target.project, written, write.content, result.hash),
     finalContent: write.content,
   })
   })
-}
-
-/**
- * Bundle-relative existence probe for `memon-data` file payloads, backed by
- * the cache's asset listing. A single-file page has no bundle, so every
- * relative payload path is unresolvable by construction.
- */
-function bundleProbe(
-  runtime: Runtime,
-  project: string,
-  id: string,
-): (relativePath: string) => boolean {
-  const assets = new Set(runtime.wikiCache.getPageRecord(project, id)?.assets ?? [])
-  return (relativePath) => assets.has(relativePath.replace(/^\.\//, ''))
 }

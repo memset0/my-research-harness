@@ -139,9 +139,15 @@ the project root**, which is listed in `.gitignore`. Rules:
     marks in `.memon/wiki-review.csv`, commit-ordered; `VERIFIED` /
     `CHANGED_SINCE_VERIFY` / `UNVERIFIED` with `unverifiedRanges`). The CLI
     derives neither — page commands run no git at all.
-    Body components are fenced blocks `memon-data@1` / `html-embed@1`;
-    the registry lives ONLY in `apps/web/lib/wiki-components/` (central),
-    the CLI treats them as opaque code. Reports remain; the old
+    Body components are fenced blocks declared `<lang> <type>@<N> #<id>`
+    (`yaml datatable@1 #fid`, `html embed@1 #chart`, `yaml figure@1`,
+    `yaml checklist@1`); a `yaml` payload with `script:`/`code:` is
+    executed on request and cached at `<stem>__assets/<id>.json`. The
+    descriptor directories `apps/web/lib/components/<type>/v<N>/` are the
+    only source of truth; `node scripts/component-docs.mjs --write`
+    regenerates the registry barrels, core's name list and the
+    `memon-components` skill table (`--check` runs in the skills build).
+    The CLI treats blocks as opaque code. Reports remain; the old
     commit-marks system is deprecated in favour of wiki review.
   - TS internal naming: `Run` = run dir record; `Experiment` = exp
     doc record. `discoverRuns` / `RunIndex` / `archiveRun` are
@@ -203,8 +209,9 @@ plus inline at the top of each expanded run panel):
 - `memon wiki commit [-m S]` — stages only `docs/wiki/`, subject `wiki: S`;
   it uses git for staging/commit safety but derives no review state and marks
   nothing verified
-- `memon wiki components ls|show|migrate --central <url>` — registry lives
-  on central; `MEMON_CENTRAL_URL` / `MEMON_CENTRAL_TOKEN` also accepted
+- `memon components run <document> [--id <id>…]` — execute a document's
+  executable component blocks locally and write `<stem>__assets/<id>.json`
+  (exit 1 when any block failed, 2 bad request, 4 missing document)
 - `memon update [--source <checkout>] [--remote <name>] [--branch <name>]
   [--skills-root <p>]… [--no-skills] [--dry-run]` — maintain this
   installation: fast-forward-only pull from the checkout's configured trusted

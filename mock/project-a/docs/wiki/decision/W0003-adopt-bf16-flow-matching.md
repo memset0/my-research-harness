@@ -20,26 +20,29 @@ We will adopt bf16 flow matching for the low-sigma regime in our project-a train
 
 The decisive factors are throughput and time-to-result rather than absolute endpoint quality at this stage of project-a. @E0005-bf16-flow-matching is on the critical path because @H0006 is deferred until bf16 stability settles, and waiting for a definitive answer would block downstream work. The @H0005 evidence is only preliminary (oscillating val_loss after 6k steps, no σ binning yet, no fp32 control), so adopting bf16 is a conditional commitment: we retain the option to switch the relevant low-sigma loss terms to fp32 if the fp32 control run shows a >2% val_loss gap at σ < 0.02. We are not relying on any of the refuted EDM2 preconditioning gains (@H0004, @E0004-edm2-precond) or the partially-supported zero-SNR tradeoff (@H0003) for this decision. Concretely, we will run bf16 globally but cast the final loss reduction and gradient scaling for the σ < 0.02 bin to fp32, matching the resolution used in our best ε-pred baselines from @E0001.
 
-```html-embed@1 height=240 title="chart"
-<!doctype html><meta charset="utf-8">
-<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-<div id="chart"></div>
-<script>vegaEmbed('#chart', {
-  "data": {"values": [
-    {"sigma": 0.001, "fp32_loss": 0.182, "bf16_loss": 0.184},
-    {"sigma": 0.01, "fp32_loss": 0.171, "bf16_loss": 0.172},
-    {"sigma": 0.1, "fp32_loss": 0.158, "bf16_loss": 0.158}
-  ]},
-  "transform": [{"fold": ["fp32_loss", "bf16_loss"], "as": ["precision", "loss"]}],
-  "mark": "line",
-  "encoding": {
-    "x": {"field": "sigma", "type": "quantitative", "scale": {"type": "log"}},
-    "y": {"field": "loss", "type": "quantitative"},
-    "color": {"field": "precision", "type": "nominal"}
-  }
-}, {actions: false});</script>
+```yaml embed@1 #sigma_loss_chart
+title: Per-sigma val_loss, fp32 vs bf16
+height: 240
+data: |
+  <!doctype html><meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+  <div id="chart"></div>
+  <script>vegaEmbed('#chart', {
+    "data": {"values": [
+      {"sigma": 0.001, "fp32_loss": 0.182, "bf16_loss": 0.184},
+      {"sigma": 0.01, "fp32_loss": 0.171, "bf16_loss": 0.172},
+      {"sigma": 0.1, "fp32_loss": 0.158, "bf16_loss": 0.158}
+    ]},
+    "transform": [{"fold": ["fp32_loss", "bf16_loss"], "as": ["precision", "loss"]}],
+    "mark": "line",
+    "encoding": {
+      "x": {"field": "sigma", "type": "quantitative", "scale": {"type": "log"}},
+      "y": {"field": "loss", "type": "quantitative"},
+      "color": {"field": "precision", "type": "nominal"}
+    }
+  }, {actions: false});</script>
 ```
 
 ## Consequences

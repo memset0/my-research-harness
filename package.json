@@ -11,6 +11,8 @@
   "scripts": {
     "wiki:kinds:generate": "pnpm --filter @memon/core build && node scripts/wiki-kinds.mjs --write",
     "wiki:kinds:check": "pnpm --filter @memon/core build && node scripts/wiki-kinds.mjs --check",
+    "components:docs:generate": "node scripts/component-docs.mjs --write",
+    "components:docs:check": "node scripts/component-docs.mjs --check",
     "dev": "pnpm --filter @memon/web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",

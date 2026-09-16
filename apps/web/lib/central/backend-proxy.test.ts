@@ -88,12 +88,9 @@ function backendWikiDocument() {
     'created_at: 2026-05-01T10:00:00+08:00',
     'updated_at: 2026-05-01T10:00:00+08:00',
     '---',
-    '```memon-data@1',
-    'script: x',
-    'captured_at: 2026-05-04T13:00:00+08:00',
-    'captured_commit: null',
+    '```yaml datatable@1 #metrics',
     'columns: [a, b]',
-    'rows: [[1]]',
+    'data: [[1]]',
     '```',
   ].join('\n')
   return {
@@ -268,10 +265,20 @@ describe('central Wiki proxy projection', () => {
     expect(response.status).toBe(200)
     const payload = await response.json()
     expect(payload.components).toEqual([
-      { index: 0, name: 'memon-data', version: 1, line: 8, outdated: false },
+      {
+        index: 0,
+        type: 'datatable',
+        version: 1,
+        pinnedVersion: 1,
+        latestVersion: 1,
+        outdated: false,
+        id: 'metrics',
+        executable: false,
+        line: 8,
+      },
     ])
     expect(payload.diagnostics).toEqual([
-      expect.objectContaining({ code: 'WIKI_DATA_BLOCK_INVALID', line: 8 }),
+      expect.objectContaining({ code: 'WIKI_COMPONENT_INVALID', line: 8 }),
     ])
     expect(response.headers.get('content-encoding')).toBeNull()
     expect(response.headers.get('content-length')).toBeNull()

@@ -118,13 +118,13 @@ describe('command classification', () => {
     ['journal submit', 'project'],
     ['serve', 'host'],
     ['update', 'host'],
-    ['wiki components migrate', 'project'],
+    ['components run', 'project'],
   ])('classifies %s as %s', (path, expected) => {
     expect(classifyCliCommand(path, {})).toBe(expected)
   })
 
   it('treats a --dry-run mutation as a read', () => {
-    expect(classifyCliCommand('wiki components migrate', { dryRun: true })).toBe('readonly')
+    expect(classifyCliCommand('wiki move', { dryRun: true })).toBe('readonly')
   })
 
   it('treats install-skills with an explicit --target as host-scoped', () => {

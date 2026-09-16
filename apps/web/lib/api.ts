@@ -1610,3 +1610,30 @@ export async function deleteCommitMark(
 
 // Re-exports for convenience
 export type { Hypothesis, JournalEvent, Run, WarningRecord }
+
+export interface ComponentRunResult {
+  id: string
+  status: 'updated' | 'unchanged' | 'failed'
+  path: string
+  durationMs: number
+  error?: string
+}
+
+/** Explicitly recompute one or more executable component blocks. */
+export async function runComponents(
+  project: ProjectTarget | { project: string; host?: string },
+  input: { document: string; ids?: readonly string[] },
+): Promise<{ results: ComponentRunResult[] }> {
+  const name = typeof project === 'string' ? project : project.project
+  const host = typeof project === 'string' ? undefined : project.host
+  return jsonFetch('/api/components/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      project: name,
+      ...(host ? { host } : {}),
+      document: input.document,
+      ...(input.ids ? { ids: input.ids } : {}),
+    }),
+  })
+}

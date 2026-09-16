@@ -246,22 +246,49 @@ updated_at: "2026-09-01T09:00:00+08:00"
     expect(body.split('\n')[diagnostics[0]!.line! - 1]).toContain('@H0007')
   })
 
-  it('warns only for a known component whose info string omits @version', () => {
+  it('warns only for a known component type whose declaration omits @version', () => {
     const body = VALID_FINDING.replace(
       'Single CFG scale.',
-      ['```memon-data', 'rows: []', '```', '', '```mermaid', 'flowchart LR', '```'].join('\n'),
+      [
+        '```yaml datatable #fid',
+        'data: []',
+        '```',
+        '',
+        '```mermaid',
+        'flowchart LR',
+        '```',
+      ].join('\n'),
     )
-    const diagnostics = lintWikiPage(makePage(body), {
-      componentNames: ['memon-data', 'html-embed'],
-    })
+    const diagnostics = lintWikiPage(makePage(body))
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.code).toBe('WIKI_COMPONENT_UNPINNED')
-    expect(body.split('\n')[diagnostics[0]!.line! - 1]).toBe('```memon-data')
-    expect(
-      lintWikiPage(makePage(body.replace('```memon-data', '```memon-data@1')), {
-        componentNames: ['memon-data'],
-      }),
-    ).toEqual([])
+    expect(body.split('\n')[diagnostics[0]!.line! - 1]).toBe('```yaml datatable #fid')
+    expect(lintWikiPage(makePage(body.replace('datatable #fid', 'datatable@1 #fid')))).toEqual([])
+    // An unregistered type is nobody's business offline.
+    expect(lintWikiPage(makePage(body.replace('datatable #fid', 'gantt #fid')))).toEqual([])
+  })
+
+  it('reports a repeated block id as COMPONENT_ID_DUPLICATE with both lines', () => {
+    const body = VALID_FINDING.replace(
+      'Single CFG scale.',
+      [
+        '```yaml datatable@1 #fid',
+        'data: []',
+        '```',
+        '',
+        '```yaml checklist@1 #fid',
+        'items: []',
+        '```',
+      ].join('\n'),
+    )
+    const diagnostics = lintWikiPage(makePage(body))
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.code).toBe('COMPONENT_ID_DUPLICATE')
+    expect(diagnostics[0]?.severity).toBe('error')
+    expect(body.split('\n')[diagnostics[0]!.line! - 1]).toBe('```yaml checklist@1 #fid')
+    expect(diagnostics[0]?.message).toContain(
+      `line ${body.split('\n').indexOf('```yaml datatable@1 #fid') + 1}`,
+    )
   })
 
   it('warns when `superseded_by` names a page that does not exist', () => {

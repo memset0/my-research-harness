@@ -39,11 +39,12 @@ import {
 import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
 import { handleFragmentClick } from '../lib/scroll-to-fragment'
 import { cn } from '../lib/utils'
-import { resolveComponentBlock } from '../lib/wiki-components/registry'
+import { resolveComponentBlock, type ResolvedBlock } from '../lib/components/registry'
+import type { ComponentDocumentRef } from '../lib/components/types'
 import { replaceWorkspaceHistory } from '../lib/workspace-history'
 import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
 import { ReportHtmlEmbed } from './report-html-embed'
-import { hasWikiComponentRenderer, WikiComponentBlockView } from './wiki-components'
+import { ComponentBlockView } from './components'
 
 export type MarkdownArtifactSourceSurface = ArtifactSourceSurface
 
@@ -138,6 +139,7 @@ export function Markdown({
   tableOfContents,
   headingIdPrefix,
   unverified,
+  document,
 }: {
   children: string
   className?: string
@@ -165,6 +167,7 @@ export function Markdown({
   headingIdPrefix?: string
   /** Tints the top-level blocks whose source lines are not yet verified. */
   unverified?: MarkdownUnverifiedOptions
+  document?: ComponentDocumentRef
 }) {
   const inheritedArtifactLinks = useContext(ArtifactLinkContext)
   const translation = useBodyTranslation()
@@ -293,24 +296,12 @@ export function Markdown({
       // validation — keeps the ordinary code block, so unknown components
       // degrade instead of breaking the page.
       pre: ({ node, children: preChildren, ...rest }) => {
-        const block = wikiComponentBlockFromPre(node)
-        if (block) {
-          return (
-            <WikiComponentBlockView
-              name={block.name}
-              version={block.version}
-              data={block.data}
-              assetBase={resourceBaseUrl ?? null}
-              project={project}
-              sourceLine={node?.position?.start.line ?? null}
-              payload={block.payload}
-            />
-          )
-        }
+        const block = componentBlockFromPre(node)
+        if (block) return <ComponentBlockView block={block} document={document} />
         return <pre {...rest}>{preChildren}</pre>
       },
     }),
-    [activeArtifactLinks, project, resourceBaseUrl, translationSegments],
+    [activeArtifactLinks, document, project, resourceBaseUrl, translationSegments],
   )
 
   const artifactRemarkPlugin = useMemo(
@@ -491,43 +482,34 @@ function remarkFenceMeta() {
 }
 
 /**
- * Resolve the `<pre>` produced for a fenced block against the component
- * registry. The info string is reassembled from the language class and the
- * preserved fence meta, so `html-embed@1 height=280 title="chart"` keeps its
- * attributes.
- *
- * Returns `null` for a plain code block, an unregistered language, and a
- * registered block whose payload failed validation — all three render as an
- * ordinary code block.
+ * Reassemble the complete info string from react-markdown's `language-*`
+ * class and our preserved `data-fence-meta`, then resolve it once through the
+ * registry. Ordinary code blocks return null; invalid component declarations
+ * remain resolvable so `ComponentBlockView` can show their diagnostic beside
+ * the verbatim payload.
  */
-function wikiComponentBlockFromPre(
-  node: HastPreElement | undefined,
-): { name: string; version: number; data: unknown; payload: string } | null {
+function componentBlockFromPre(node: HastPreElement | undefined): ResolvedBlock | null {
   const children = node?.children
   if (!children || children.length !== 1) return null
-  const code = children[0] as HastCodeElement // hast Element narrowed structurally below
+  const code = children[0] as HastCodeElement
   if (code.type !== 'element' || code.tagName !== 'code') return null
-
   const classNames = code.properties?.className
   const language = (Array.isArray(classNames) ? classNames : [])
     .map(String)
     .find((entry) => entry.startsWith('language-'))
     ?.slice('language-'.length)
   if (!language) return null
-
   const rawMeta = code.properties?.dataFenceMeta ?? code.data?.meta
   const meta = typeof rawMeta === 'string' ? rawMeta : ''
   const payload = (code.children ?? [])
     .map((child) => (typeof child.value === 'string' ? child.value : ''))
     .join('')
     .replace(/\n$/, '')
-  const block = resolveComponentBlock({
-    info: meta ? `${language} ${meta}` : language,
-    payload,
-  })
-  if (!block || block.version === null || block.data === null) return null
-  if (!hasWikiComponentRenderer(block.name, block.version)) return null
-  return { name: block.name, version: block.version, data: block.data, payload }
+  return resolveComponentBlock(
+    { info: meta ? `${language} ${meta}` : language, payload },
+    0,
+    node.position?.start.line ?? 1,
+  )
 }
 
 interface MarkdownAstNode {

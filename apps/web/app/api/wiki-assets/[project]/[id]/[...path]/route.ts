@@ -7,11 +7,10 @@
 // service independently enforces containment inside the bundle directory.
 
 import { Readable } from 'node:stream'
-import { resolve } from 'node:path'
 import { BackendStreamServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../../../../lib/runtime'
-import { assertWithinProjectRoots } from '../../../../../../lib/path-safety'
+import { isNotModified, parseByteRange } from '../../../../../../lib/server/asset-validators'
 import { standaloneServices } from '../../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -57,11 +56,6 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   }
   try {
     const runtime = await getRuntime()
-    if (id === 'shared') {
-      const configuredProject = runtime.config.projects.find((entry) => entry.name === project)
-      if (!configuredProject) return error(404, 'NOT_FOUND', 'Project not found')
-      assertWithinProjectRoots(resolve(configuredProject.root, 'docs/wiki/assets', resource), runtime.config)
-    }
     const service = standaloneServices(runtime.config).streaming
     const asset = await service.resolveWikiAsset(project, id, resource)
     const headers = new Headers({
@@ -74,11 +68,11 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
       'x-memon-resource-version': asset.version,
     })
     if (asset.contentSecurityPolicy) headers.set('content-security-policy', asset.contentSecurityPolicy)
-    if (notModified(request, asset.etag, asset.mtimeMs)) {
+    if (isNotModified(request, asset.etag, asset.mtimeMs)) {
       return new NextResponse(null, { status: 304, headers })
     }
     const range = request.headers.get('range')
-    const selected = range ? parseRange(range, asset.size) : null
+    const selected = range ? parseByteRange(range, asset.size) : null
     if (range && !selected) {
       headers.set('content-range', `bytes */${asset.size}`)
       headers.set('content-length', '0')
@@ -102,35 +96,6 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
     }
     return error(500, 'INTERNAL', 'wiki resource failed')
   }
-}
-
-function parseRange(value: string, size: number): { start: number; end: number } | null {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(value)
-  if (!match || size <= 0) return null
-  if (!match[1]) {
-    const suffix = Number(match[2])
-    if (!Number.isSafeInteger(suffix) || suffix <= 0) return null
-    const start = Math.max(0, size - suffix)
-    return { start, end: size - 1 }
-  }
-  const start = Number(match[1])
-  const end = match[2] ? Number(match[2]) : size - 1
-  return Number.isSafeInteger(start) &&
-    Number.isSafeInteger(end) &&
-    start >= 0 &&
-    start < size &&
-    end >= start
-    ? { start, end: Math.min(end, size - 1) }
-    : null
-}
-
-function notModified(request: NextRequest, etag: string, mtimeMs: number): boolean {
-  const ifNoneMatch = request.headers.get('if-none-match')
-  if (ifNoneMatch && ifNoneMatch.split(',').some((value) => value.trim() === etag)) return true
-  const ifModifiedSince = request.headers.get('if-modified-since')
-  if (!ifModifiedSince) return false
-  const since = Date.parse(ifModifiedSince)
-  return Number.isFinite(since) && Math.floor(mtimeMs / 1000) * 1000 <= since
 }
 
 function error(status: number, code: string, message: string) {

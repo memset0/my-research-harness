@@ -19,8 +19,9 @@ const content = [
   'created_at: 2026-05-01T10:00:00+08:00',
   'updated_at: 2026-05-01T10:00:00+08:00',
   '---',
-  '```html-embed@1 height=bad',
-  '<div>chart</div>',
+  '```yaml datatable@1 #metrics',
+  'columns: [step, loss]',
+  'data: [[1]]',
   '```',
 ].join('\n')
 
@@ -53,7 +54,6 @@ const wikiCache = {
   getWikiPage: vi.fn(),
   getWikiSummary: vi.fn(),
   putWikiPage: vi.fn(),
-  getPageRecord: vi.fn(() => null),
 }
 
 let root: string
@@ -94,7 +94,17 @@ describe('GET /api/wiki/[id]', () => {
     expect(response.status).toBe(200)
     const payload = await response.json()
     expect(payload.components).toEqual([
-      { index: 0, name: 'html-embed', version: 1, line: 8, outdated: false },
+      {
+        index: 0,
+        type: 'datatable',
+        version: 1,
+        pinnedVersion: 1,
+        latestVersion: 1,
+        outdated: false,
+        id: 'metrics',
+        executable: false,
+        line: 8,
+      },
     ])
     expect(payload.diagnostics).toEqual([
       expect.objectContaining({ code: 'WIKI_COMPONENT_INVALID', line: 8 }),
@@ -104,7 +114,7 @@ describe('GET /api/wiki/[id]', () => {
   it('omits unresolved component versions but preserves their diagnostics', async () => {
     wikiCache.getWikiPage.mockResolvedValueOnce({
       summary,
-      content: content.replace('html-embed@1', 'html-embed@999'),
+      content: content.replace('datatable@1', 'datatable@999'),
       mtime: 1,
       hash: 'a'.repeat(40),
     })

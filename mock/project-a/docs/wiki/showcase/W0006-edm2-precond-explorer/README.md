@@ -16,15 +16,27 @@ updated_at: "2026-05-04T13:00:00+08:00"
 
 This page showcases the @E0004-edm2-precond head-to-head, where EDM2-style preconditioning (Karras et al. 2024) was grafted onto the project-a DiT-B/2 stack at 256² ImageNet to test @H0004's prediction of a ≥5% FID gain over the original Karras-EDM preconditioner. The bundle bundles a paired run dir @edm2-precond-260503-080000 and its clean rerun @edm2-precond-rerun-260503-100000, each carrying two threads that share a seed so the only difference is the preconditioning/target scaling (bs=128, lr=2e-4, EMA 0.9999, 120k steps, FID@256 every 20k on 10k samples). Headline numbers to surface: EDM FID@256 = 8.91 vs EDM2 FID@256 = 8.74, a measured 1.9% gain that refutes @H0004 ❌, while EDM2 reached best FID at step 80k versus 100k for the EDM baseline (~20% fewer steps). The view layer should also flag the open NaN-crash warning (step 84k of the EDM2 thread, `logs/stderr.log`) so readers know the EDM2 endpoint is extrapolated from the last good checkpoint until @edm2-precond-rerun-260503-100000 reports in.
 
-```memon-data@1 title="FID by preconditioning"
-script: python3 scripts/collect_fid.py --exp E0004
-captured_at: 2026-05-04T13:00:00+08:00
-captured_commit: 9f2c4e1a7b3d5f6081a2c3d4e5f60718293a4b5c
-sources: [E0004]
-data: ./data/fid.csv
+```yaml datatable@1 #fid_by_precond
+code: |
+  import csv, os
+
+  def collect(source, **kw):
+      path = os.path.join(os.path.dirname(kw["__md_file_path"]), source)
+      with open(path, newline="") as handle:
+          rows = list(csv.DictReader(handle))
+      return {
+          "title": "FID by preconditioning (E0004)",
+          "columns": ["step", "precond", "fid"],
+          "data": [[int(r["step"]), r["precond"], float(r["fid"])] for r in rows],
+          "views": [
+              {"type": "table"},
+              {"type": "line", "x": "step", "y": "fid", "series": "precond"},
+          ],
+      }
+source: data/fid.csv
 ```
 
-```html-embed@1 height=280 title="chart"
+```html embed@1 #fid_bar_chart
 <!doctype html><meta charset="utf-8">
 <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
@@ -42,7 +54,7 @@ data: ./data/fid.csv
 }, {actions: false});</script>
 ```
 
-```html-embed@1 height=360 title="Interactive FID curve (D3)"
+```html embed@1 #fid_curve
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <div id="chart"></div>
 <script>

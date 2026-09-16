@@ -22,6 +22,7 @@ export {
   toggleCommitReviewed,
   toggleTodoDone,
 } from './code-review/parse.js'
+export * from './components/index.js'
 export type {
   BackendUrlPolicyErrorCode,
   BackendUrlPolicyOptions,

@@ -184,6 +184,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             section={section}
             project={project}
             experimentId={exp.id}
+            documentPath={exp.path ?? exp.resource}
             documents={exp.documents}
             runIds={exp.frontMatter.runs}
             deprecatedRuns={exp.deprecatedRuns}
@@ -199,6 +200,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
             section={section}
             project={project}
             experimentId={exp.id}
+            documentPath={exp.path ?? exp.resource}
             documents={exp.documents}
             runIds={exp.frontMatter.runs}
           />
@@ -231,6 +233,7 @@ function SectionCard({
   section,
   project,
   experimentId,
+  documentPath,
   documents,
   runIds,
   deprecatedRuns,
@@ -239,6 +242,7 @@ function SectionCard({
   section: ExperimentDisplaySection
   project: ProjectTarget
   experimentId: string
+  documentPath?: string
   documents?: ExperimentManagedDocumentsPayload | null
   runIds: string[]
   deprecatedRuns?: string[]
@@ -254,6 +258,9 @@ function SectionCard({
         ? 'investigation'
         : null
   const managedDocument = managedKind ? documents?.[managedKind].data : null
+  const componentDocument = documentPath
+    ? { project: projectName(project), host: projectHost(project) ?? undefined, path: documentPath }
+    : undefined
   const resultsDocument = heading === 'Results' ? (documents?.results.data ?? null) : null
   // Results has no fetch, snapshot state or timer of its own: the
   // experiment-doc query owns the payload and the shared foreground heartbeat
@@ -351,12 +358,13 @@ function SectionCard({
               document={managedDocument}
               project={project}
               experimentId={experimentId}
+              sourceDocument={componentDocument}
             />
           </ClampedBlock>
         ) : body ? (
           <ClampedBlock lines={SECTION_PROSE_CLAMP_LINES} label={heading}>
             <div className="prose prose-sm max-w-none text-xs/relaxed">
-              <Markdown project={project}>{body}</Markdown>
+              <Markdown project={project} document={componentDocument}>{body}</Markdown>
             </div>
           </ClampedBlock>
         ) : (
@@ -681,7 +689,9 @@ function RunBody({
       </div>
       {/* Render the actual optional body, including uncategorized legacy content. */}
       <div className="flex flex-col gap-3 border-t p-3">
-        {run.body.trim() && <Markdown project={project}>{run.body}</Markdown>}
+        {run.body.trim() && runSourceDocumentPath && (
+          <Markdown project={project} document={{ project: projectName(project), host: projectHost(project) ?? undefined, path: runSourceDocumentPath }}>{run.body}</Markdown>
+        )}
         {run.hasReadme && (run.resource || run.path) && (
           <LogViewer project={project} runResource={run.resource} expPath={run.path} />
         )}

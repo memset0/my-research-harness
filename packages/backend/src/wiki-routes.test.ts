@@ -98,8 +98,8 @@ updated_at: 2026-09-01T10:00:00+08:00
 
 An unpinned block plus a payload only the central registry can judge:
 
-\`\`\`memon-data
-{ "rows": [[1, 2], [3]] }
+\`\`\`json datatable #ragged
+{ "columns": ["a", "b"], "data": [[1, 2], [3]] }
 \`\`\`
 
 ## How to reproduce
@@ -341,13 +341,12 @@ describe('Backend wiki routes', () => {
       await (await request('/api/backend/v1/wiki/W0002?project=research', { actor: owner })).json(),
     )
     // The block crosses the boundary verbatim; central resolves `components`.
-    expect(page.content).toContain('{ "rows": [[1, 2], [3]] }')
+    expect(page.content).toContain('{ "columns": ["a", "b"], "data": [[1, 2], [3]] }')
     expect('components' in page).toBe(false)
     const codes = page.diagnostics.map((diagnostic) => diagnostic.code)
-    // Structural info-string check happens here...
+    // Structural declaration checks happen here...
     expect(codes).toContain('WIKI_COMPONENT_UNPINNED')
-    // ...but every payload/attribute judgement belongs to the registry.
-    expect(codes).not.toContain('WIKI_DATA_BLOCK_INVALID')
+    // ...but every payload judgement belongs to the registry.
     expect(codes).not.toContain('WIKI_COMPONENT_INVALID')
   })
 
@@ -441,22 +440,6 @@ describe('Backend wiki routes', () => {
       (await request('/api/backend/v1/wiki-assets/research/W0002/leak.txt', { actor: owner }))
         .status,
     ).toBe(400)
-  })
-
-  it('serves shared figure images through the existing authenticated transport', async () => {
-    await fs.mkdir(join(root, 'docs/wiki/assets'), { recursive: true })
-    await fs.writeFile(join(root, 'docs/wiki/assets/pipeline-overview.svg'), '<svg/>')
-    const url = '/api/backend/v1/wiki-assets/research/shared/pipeline-overview.svg'
-    const response = await request(url, { actor: owner })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toContain('image/svg+xml')
-    expect(response.headers.get('content-security-policy')).toContain("sandbox; default-src 'none'")
-    expect(await response.text()).toBe('<svg/>')
-    expect((await request(url, { actor: viewer })).status).toBe(200)
-    const otherViewer = ActorContextSchema.parse({ role: 'viewer', scopes: [{ host: 'host-a', project: 'project-b' }] })
-    expect((await request(url, { actor: otherViewer })).status).toBe(403)
-    expect((await request(url, { actor: owner, method: 'HEAD' })).status).toBe(200)
-    expect((await fetch(`${origin}${url}`)).status).toBe(401)
   })
 
   it('gates review marks on an owner actor and enforces commit order', async () => {

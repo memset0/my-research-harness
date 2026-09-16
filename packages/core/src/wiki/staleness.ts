@@ -74,14 +74,6 @@ export interface WikiSourceContext {
   hypothesisIds?: readonly string[]
 }
 
-/** A `memon-data` block's declared provenance, addressed as `data[<index>]`. */
-export interface WikiDataBlockSources {
-  index: number
-  sources: readonly string[]
-  /** ISO8601 capture time the block's rows were collected at. */
-  capturedAt: string | null
-}
-
 export interface WikiSourcePage {
   id: string
   slug: string
@@ -89,7 +81,6 @@ export interface WikiSourcePage {
   sources: readonly string[]
   updatedAt: string
   deprecated?: boolean
-  dataBlocks?: readonly WikiDataBlockSources[]
 }
 
 export interface WikiSourceResolution {
@@ -126,8 +117,8 @@ export interface WikiSourceIndex {
 }
 
 /**
- * Resolve every page's `sources` (and `memon-data` block sources) against the
- * project's Experiments, Runs, Hypotheses, and wiki pages.
+ * Resolve every page's declared `sources` against the project's Experiments,
+ * Runs, Hypotheses, and wiki pages.
  */
 export function resolveWikiSources(
   pages: readonly WikiSourcePage[],
@@ -188,12 +179,6 @@ export function resolveWikiSources(
     }
 
     for (const source of page.sources) consider(source, source, pageUpdatedAt)
-    for (const block of page.dataBlocks ?? []) {
-      const capturedAt = block.capturedAt === null ? pageUpdatedAt : toEpochMs(block.capturedAt)
-      for (const source of block.sources) {
-        consider(source, `data[${block.index}]:${source}`, capturedAt)
-      }
-    }
 
     // A deprecated page is not expected to track its evidence any more.
     const deprecated = page.deprecated === true

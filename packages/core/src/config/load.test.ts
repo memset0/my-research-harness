@@ -252,6 +252,44 @@ describe('implicitCwdProject', () => {
   })
 })
 
+describe('loadConfig local execution block', () => {
+  it('carries the component interpreter and timeout onto the project', async () => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects:\n  - name: alpha\n    root: ./alpha\n    execution:\n      kind: local\n      python: /opt/venv/bin/python\n      component_timeout_ms: 30000\n',
+    )
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects[0]!.execution).toEqual({
+      kind: 'local',
+      python: '/opt/venv/bin/python',
+      component_timeout_ms: 30_000,
+    })
+  })
+
+  it('leaves both keys absent when the block only names the kind', async () => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha, execution: { kind: local } }]\n',
+    )
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects[0]!.execution).toEqual({ kind: 'local' })
+  })
+
+  it('rejects an unusable interpreter or timeout', async () => {
+    const configPath = join(dir, 'config.yml')
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha, execution: { kind: local, python: "" } }]\n',
+    )
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha, execution: { kind: local, component_timeout_ms: 5 } }]\n',
+    )
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+})
+
 describe('loadConfig slurm block', () => {
   it('defaults to totalNodes: -1 when block is absent', async () => {
     await fs.writeFile(join(dir, 'config.yml'), VALID)

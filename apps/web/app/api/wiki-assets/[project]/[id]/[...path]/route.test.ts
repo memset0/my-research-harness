@@ -51,29 +51,16 @@ function headRequest(path: string[]) {
 }
 
 describe('GET|HEAD wiki bundle assets', () => {
-  it('serves a shared SVG with CSP, validators, HEAD and range support', async () => {
-    await fs.mkdir(join(root, 'docs/wiki/assets'), { recursive: true })
-    await fs.writeFile(join(root, 'docs/wiki/assets/pipeline-overview.svg'), '<svg/>')
-    const url = 'http://localhost/api/wiki-assets/project-a/shared/pipeline-overview.svg'
-    const context = { params: Promise.resolve({ project: 'project-a', id: 'shared', path: ['pipeline-overview.svg'] }) }
-    const response = await GET(new NextRequest(url), context)
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toBe('image/svg+xml')
-    expect(response.headers.get('content-security-policy')).toContain("sandbox; default-src 'none'")
-    expect(await response.text()).toBe('<svg/>')
-    expect((await HEAD(new NextRequest(url, { method: 'HEAD' }), context)).status).toBe(200)
-    const partial = await GET(new NextRequest(url, { headers: { range: 'bytes=0-3' } }), context)
-    expect(partial.status).toBe(206)
-    expect(await partial.text()).toBe('<svg')
-    const cached = await GET(new NextRequest(url, { headers: { 'if-none-match': response.headers.get('etag')! } }), context)
-    expect(cached.status).toBe(304)
-  })
   it('serves nested assets with validators and byte ranges', async () => {
     const html = await request(['views', 'index.html'])
     expect(html.status).toBe(200)
     expect(html.headers.get('content-type')).toBe('text/html; charset=utf-8')
     expect(html.headers.get('etag')).toMatch(/^W\/"[a-f0-9]{40}"$/)
     expect(await html.text()).toBe('<h1>Explorer</h1>')
+    const cached = await request(['views', 'index.html'], {
+      'if-none-match': html.headers.get('etag')!,
+    })
+    expect(cached.status).toBe(304)
 
     const partial = await request(['data', 'metrics.json'], { range: 'bytes=0-4' })
     expect(partial.status).toBe(206)

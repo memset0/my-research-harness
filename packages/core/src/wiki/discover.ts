@@ -19,6 +19,8 @@ import { WIKI_DIR_RELPATH, WIKI_PAGE_NAME_REGEX, type WikiPageFormat } from './t
 const BUNDLE_ASSET_MAX_DEPTH = 8
 /** Safety cap so a stray data directory cannot stall discovery. */
 const BUNDLE_ASSET_MAX_FILES = 5000
+/** Component execution caches live beside a page in `<stem>__assets/`. */
+const COMPONENT_ASSETS_SUFFIX = '__assets'
 
 export interface DiscoveredWikiPage {
   /** Page id taken from the file / directory name (`W<NNNN>`). */
@@ -86,6 +88,8 @@ export async function discoverWikiPages(
         }
         return Promise.all(
           [...pageEntries]
+            // `<page>__assets/` holds component execution caches, not a page.
+            .filter((entry) => !entry.name.endsWith(COMPONENT_ASSETS_SUFFIX))
             .sort((a, b) => (a.name < b.name ? -1 : 1))
             .map((pageEntry) =>
               pageEntry.isDirectory()

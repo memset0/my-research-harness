@@ -58,9 +58,10 @@ describe('retired-skills.json', () => {
     }
   })
 
-  it('covers the two skills this release retired', () => {
+  it('covers the skills this harness retired', () => {
     const names = entries.map((e) => e.name)
     expect(names).toContain('memon-append-journal')
     expect(names).toContain('memon-digest-journal')
+    expect(names).toContain('memon-author-components')
   })
 })

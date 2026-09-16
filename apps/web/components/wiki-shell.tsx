@@ -36,7 +36,7 @@ import {
 } from '../lib/markdown-outline'
 import { handleFragmentClick, resetDriftedAncestors, scrollFragmentIntoSurface } from '../lib/scroll-to-fragment'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
-import { setChecklistStatus } from '../lib/wiki-components/checklist@1/update'
+import { setChecklistStatus } from '../lib/components/checklist/v1/update'
 import { cn } from '../lib/utils'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { FrontmatterPanel } from './frontmatter-panel'
@@ -47,7 +47,7 @@ import {
   ChecklistWriteProvider,
   type ChecklistToggle,
   type ChecklistWriteContextValue,
-} from './wiki-components/checklist-write-context'
+} from '../lib/components/checklist/v1/write-context'
 import { useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
@@ -708,6 +708,10 @@ export function WikiDocumentView({
   }, [bodyStartLine, page.review])
   const wholeBodyUnverified = page.review?.state === 'UNVERIFIED'
   const checklistWrite = useWikiChecklistWrite(project, page, bodyStartLine)
+  const componentDocumentPath = page.resource ?? page.path
+  const componentDocument = componentDocumentPath
+    ? { project: projectName(project), host: projectHost(project) ?? undefined, path: componentDocumentPath }
+    : undefined
 
   return (
     <DocumentArtifactLinkProvider
@@ -765,6 +769,7 @@ export function WikiDocumentView({
               }
               unverified={unverified}
               headingIdPrefix={`wiki-${page.id}`}
+              document={componentDocument}
             >
               {body}
             </Markdown>
@@ -796,7 +801,7 @@ function useWikiChecklistWrite(
     mutationFn: (edit: ChecklistToggle) =>
       putWikiPage(project, page.id, {
         content: setChecklistStatus(page.content, {
-          line: edit.bodyLine + bodyStartLine - 1,
+          target: edit.id ? { id: edit.id } : { line: edit.bodyLine + bodyStartLine - 1 },
           payload: edit.payload,
           path: edit.path,
           field: edit.field,

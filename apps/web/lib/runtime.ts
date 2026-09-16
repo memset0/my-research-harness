@@ -52,7 +52,7 @@ import { FileCache } from './runtime/file-cache'
 import { WikiCache } from './runtime/wiki-cache'
 import { ensureAuthInitialised } from './auth/first-run'
 import { resolveRuntimeConfigPath } from './runtime-config-path'
-import { listComponents } from './wiki-components/registry'
+import { listComponents } from './components/registry'
 import { probeSqueue } from './slurm/probe'
 
 export interface ExperimentChangeEvent {
@@ -360,7 +360,7 @@ async function init(): Promise<Runtime> {
   // index, the run index, the hypotheses file, and the report id set, so the
   // cache pulls them through this closure on every rebuild — never from disk.
   const wikiComponentNames = Array.from(
-    new Set(listComponents().map((descriptor) => descriptor.name)),
+    new Set(listComponents().map((descriptor) => descriptor.type)),
   )
   const wikiCache = new WikiCache({
     projects: legacyProjects.map((p) => ({ name: p.name, root: p.root })),

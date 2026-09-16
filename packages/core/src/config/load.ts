@@ -184,7 +184,13 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
         ? {
             execution:
               p.execution.kind === 'local'
-                ? { kind: 'local' as const }
+                ? {
+                    kind: 'local' as const,
+                    ...(p.execution.python === undefined ? {} : { python: p.execution.python }),
+                    ...(p.execution.component_timeout_ms === undefined
+                      ? {}
+                      : { component_timeout_ms: p.execution.component_timeout_ms }),
+                  }
                 : {
                     kind: 'ssh' as const,
                     target: p.execution.target,

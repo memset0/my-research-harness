@@ -253,69 +253,6 @@ The runtime SHALL derive Wiki resources from the shared file Store, listing `doc
 - **WHEN** `docs/wiki/decision/` is created with a first page
 - **THEN** the directory is watched from then on and the page is listed
 
-### Requirement: Fenced blocks are the single component container
-
-A body component SHALL be expressed as a fenced code block whose info string is `<component>[@<version>] [key=value …]`: the first token selects a registered component (optionally pinning a major version), the remaining `key=value` / `key="quoted value"` tokens are its attributes, and the block body is its payload. The central dashboard SHALL ship the component registry that maps each component version to a payload schema, a React renderer, a Markdown projection, and lint rules; Backends and the CLI SHALL treat component blocks as opaque fenced code (they parse only the info string for `WIKI_COMPONENT_UNPINNED` and pass the body through), and central SHALL compute `components[]` and every `WIKI_COMPONENT_*` / `WIKI_DATA_BLOCK_*` diagnostic when it serves a page. The initial registry SHALL contain exactly `memon-data@1` and `html-embed@1`; further components are added by later central releases. A fenced block whose language is not a registered component SHALL render as an ordinary code block everywhere (dashboard, CLI, GitHub) and SHALL NOT produce a diagnostic — unknown components degrade, never break. Attribute values SHALL be validated per component; an invalid attribute or payload SHALL produce `WIKI_COMPONENT_INVALID` (`error`, message naming the component, version, and the field) and the block SHALL render verbatim as a code block. The page projection SHALL list `components: [{ index, name, version, line }]` so tooling can address blocks by index.
-
-#### Scenario: Unregistered language degrades
-- **GIVEN** a page body containing a fenced block with language `foo-chart`
-- **WHEN** the page renders and is linted
-- **THEN** the block is shown as a plain code block and no diagnostic is produced
-
-#### Scenario: Invalid attribute is reported
-- **GIVEN** a fenced `html-embed height=tall` block
-- **WHEN** the page is linted
-- **THEN** `WIKI_COMPONENT_INVALID` names `html-embed`, its version, and `height`, and the block renders verbatim
-
-#### Scenario: Core parser stays opaque
-- **GIVEN** a page with a `memon-data@1` block whose payload is invalid
-- **WHEN** the framework-neutral page parser or CLI reads it
-- **THEN** it preserves the raw fenced content without registry-specific payload diagnostics
-- **AND** central's page projection reports the registry diagnostic and `components[]`
-
-#### Scenario: Components are listed
-- **GIVEN** a page with one `memon-data@1` and one `html-embed@1` block
-- **WHEN** `GET /api/wiki/<id>` is requested
-- **THEN** `components` contains both entries with their resolved versions and line numbers
-
-### Requirement: Components are versioned by major version and every version keeps rendering
-
-Each component SHALL live in the central web application at `apps/web/lib/wiki-components/<slug>@<N>/` (never in `@memon/core`, `@memon/backend`, or the CLI artifact, so that adding or changing a component is a central-only PATCH release and no Backend or CLI is reinstalled) where `<N>` is a positive integer major version, and SHALL export a descriptor with `name`, `version`, `description` (what it shows), `args` (every attribute and payload field with type, default, and meaning), `effect` (how the dashboard and Markdown projections render it), `useWhen` (scenarios where it is the right choice, and when it is not), at least one complete `example` block, `invalidExamples` (a list of `{ block, code }` pairs: a wrong block and the diagnostic code it produces), and `fixtures` (project-relative paths of fixture pages in `mock/project-a/docs/wiki/` that render this version). The canonical authored form SHALL be pinned (`memon-data@1`): every template, `refresh`, `create`, and skill output SHALL write the pinned form. An unpinned info string (`memon-data`) SHALL still resolve to the highest registered version at read time but SHALL produce `WIKI_COMPONENT_UNPINNED` (`warn`); `memon wiki components migrate` SHALL rewrite unpinned blocks to the pinned latest version. A pinned info string SHALL resolve to exactly that version. A new major version SHALL be created only when the attribute or payload contract of the previous version cannot accept old blocks unchanged; compatible additions SHALL extend the current version. Every registered version SHALL remain readable, lintable, and renderable forever. A version directory MAY export `migrate(block) -> block | null` that mechanically rewrites a block of the previous version into the new contract; `memon wiki components migrate` SHALL apply such migrations across the wiki and SHALL rewrite the info string to the new pinned version. A version without an automatic migration SHALL NOT offer partial or interactive migration — old blocks simply keep rendering under their pinned version, and the page projection SHALL flag `components[].outdated: true` for any block resolved to a version below the latest. Pinning a version that is not registered SHALL produce `WIKI_COMPONENT_INVALID`.
-
-#### Scenario: Unpinned resolves to latest but warns
-- **GIVEN** registered `memon-data@1` and `memon-data@2` and a block whose info string is `memon-data`
-- **WHEN** the page renders and is linted
-- **THEN** version 2 renders it, `components[0].version` is 2, and `WIKI_COMPONENT_UNPINNED` is reported; `memon wiki components migrate` rewrites the info string to `memon-data@2`
-
-#### Scenario: Old pinned block keeps rendering
-- **GIVEN** a block whose info string is `memon-data@1` after `memon-data@2` is registered
-- **WHEN** the page renders and is linted
-- **THEN** version 1 renders it without diagnostics and `components[0].outdated` is `true`
-
-#### Scenario: Automatic migration rewrites the block
-- **GIVEN** `memon-data@2` exports `migrate` and a page with a `memon-data@1` block
-- **WHEN** the user runs `memon wiki components migrate`
-- **THEN** the block is rewritten to the version 2 contract with info string `memon-data@2` and every other byte of the page is unchanged
-
-#### Scenario: Unknown pinned version
-- **GIVEN** a block with info string `memon-data@9`
-- **WHEN** the page is linted
-- **THEN** `WIKI_COMPONENT_INVALID` is reported and the block renders verbatim
-
-### Requirement: Components render on every Markdown surface of the dashboard
-
-The dashboard's shared Markdown renderer SHALL apply the component registry wherever it renders project Markdown — wiki pages, Experiment README sections, Run READMEs, digests, code reviews, and legacy Reports — so a registered fenced block renders identically regardless of the document that contains it. Relative payload paths (`data:`, `data.url`, iframe `<base>`) SHALL resolve against the asset route of the containing document when it has one (wiki bundles, Report bundles) and SHALL otherwise be reported as unresolvable in the rendered block without failing the page. Only the wiki surfaces SHALL expose component lint diagnostics and `components[]` projections; other document parsers remain unchanged.
-
-#### Scenario: Data block inside an Experiment README
-- **GIVEN** an Experiment README whose Findings section contains a `memon-data` block with inline `rows`
-- **WHEN** the Experiment page renders
-- **THEN** the block renders as the same table component used on wiki pages
-
-#### Scenario: Relative data path outside a bundle
-- **GIVEN** a Run README containing a `memon-data@1` block whose `data:` is `./data/x.csv`
-- **WHEN** the Run page renders
-- **THEN** the block shows an unresolvable-path notice in place of the table and the rest of the README renders
-
 ### Requirement: Callouts use GitHub alert syntax
 
 A blockquote whose first line is `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`, or `> [!DEPRECATED] …` SHALL render as a styled callout of that type; any other blockquote renders as an ordinary quotation. `[!DEPRECATED]` additionally carries the section-deprecation semantics defined below.
@@ -327,7 +264,7 @@ A blockquote whose first line is `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [
 
 ### Requirement: Agent-authored HTML is a first-class body form
 
-Free-form HTML SHALL be supported at three scopes. **Inline**: raw HTML (`<div>`, `<svg>`, inline styles, `<table>`) in the body renders in place; `<script>` inside raw HTML SHALL NOT execute. **Block**: the `html-embed` component (attributes `height=<px|auto>`, `title="…"`) SHALL render its payload as an unsandboxed same-origin iframe built from the block content (`srcdoc`) inside the shared embed toolbar (zoom, reload, expand, mobile menu); for a bundle page the iframe document SHALL resolve relative URLs against `/api/wiki-assets/<project>/<W-id>/` so `./data/*` and `./views/*` are reachable; for a single-file page only inline and CDN resources are available. **Page**: a bundle page MAY declare frontmatter `entry: ./views/<slug>/index.html`; the dashboard SHALL then render that document as the primary body (full-height iframe through the same toolbar) with the Markdown body shown as notes beneath, and `memon wiki show` SHALL print the entry path. An `entry` that does not exist inside the bundle SHALL produce `WIKI_ENTRY_MISSING` (`error`). Multiple views remain embeddable individually via `![label](./views/<slug>/index.html)`. All HTML forms share the existing v1 trust model (trusted agent-authored, same-origin, not sandboxed, no dev server at read time). Outside the dashboard (`show`, `--format markdown`) `html-embed` remains a plain fenced block.
+Free-form HTML SHALL be supported at three scopes. **Inline**: raw HTML (`<div>`, `<svg>`, inline styles, `<table>`) in the body renders in place; `<script>` inside raw HTML SHALL NOT execute. **Block**: the `embed@1` component (payload `data`, optional `height: <px|"auto">`, `title`; declared as `` ```html embed@1 `` or produced by an executable payload) SHALL render its HTML as an unsandboxed same-origin iframe built from the block content (`srcdoc`) inside the shared embed toolbar (zoom, reload, expand, mobile menu); for a bundle page the iframe document SHALL resolve relative URLs against `/api/wiki-assets/<project>/<W-id>/` so `./data/*` and `./views/*` are reachable; for a single-file page only inline and CDN resources are available. **Page**: a bundle page MAY declare frontmatter `entry: ./views/<slug>/index.html`; the dashboard SHALL then render that document as the primary body (full-height iframe through the same toolbar) with the Markdown body shown as notes beneath, and `memon wiki show` SHALL print the entry path. An `entry` that does not exist inside the bundle SHALL produce `WIKI_ENTRY_MISSING` (`error`). Multiple views remain embeddable individually via `![label](./views/<slug>/index.html)`. All HTML forms share the existing v1 trust model (trusted agent-authored, same-origin, not sandboxed, no dev server at read time). Outside the dashboard (`show`, `--format markdown`) `embed` remains a plain fenced block.
 
 #### Scenario: Static SVG renders inline
 - **GIVEN** a page body containing a hand-authored `<svg>` bar chart
@@ -335,7 +272,7 @@ Free-form HTML SHALL be supported at three scopes. **Inline**: raw HTML (`<div>`
 - **THEN** the SVG is displayed in place without an iframe
 
 #### Scenario: Scripted chart in an html-embed block
-- **GIVEN** a bundle page containing a fenced `html-embed height=420` block that loads `./data/latency.json` and draws with a CDN library
+- **GIVEN** a bundle page containing a `` ```yaml embed@1 `` block whose function returns `{ data, height: 420 }` and has been run that loads `./data/latency.json` and draws with a CDN library
 - **WHEN** the page renders
 - **THEN** the block appears as a 420 px iframe with the embed toolbar and the JSON request resolves through the page's asset route
 
@@ -348,40 +285,6 @@ Free-form HTML SHALL be supported at three scopes. **Inline**: raw HTML (`<div>`
 - **GIVEN** `<div><script>alert(1)</script></div>` in the body
 - **WHEN** the page renders
 - **THEN** the div renders and the script does not execute
-
-### Requirement: Data blocks record table data together with the script and commit that produced it
-
-The `memon-data` component's payload SHALL be YAML with: exactly one of `script` (a command line executed from the project root) or `code` (an inline script body, normally a YAML block scalar) with optional `runner` (interpreter command that reads the script from stdin; default `python3 -`; `bash -s` for shell); `captured_at` (required; ISO8601 with offset); `captured_commit` (required; the 40-character git HEAD of the project root at capture time, or `null` when the project is not a git worktree) and optional `captured_dirty: true` when the worktree had uncommitted changes; exactly one of `rows` (inline form: `columns` string list + `rows` list of lists aligned to it) or `data` (file form: a relative path to a CSV or JSON file inside the page bundle whose header/keys are the columns); and optional `title`, `sources` (same forms as page `sources`), `note`. The script contract for both `script` and `code`: run from the project root, exit 0, print to stdout a JSON object `{ "columns": [...], "rows": [[...], ...] }`. The renderer SHALL present the block as a table with a caption showing `title`, `captured_at`, `captured_commit` (abbreviated, marked dirty when applicable), and either the `script` line in code style or a collapsible "Collection script" panel showing `code`; CLI `show --format markdown` SHALL render the inline form as a GFM table followed by the caption and the file form as the caption plus the file path, in both cases followed by `code` in a fenced block when present. A block whose YAML is invalid, whose row widths disagree with `columns`, whose `data` file is missing, or which has both `rows` and `data` or both `script` and `code` SHALL produce `WIKI_DATA_BLOCK_INVALID` (`error`) and render verbatim. A block missing `captured_commit` SHALL produce `WIKI_DATA_PROVENANCE_MISSING` (`warn`). A block whose `sources` resolve to artifacts changed after `captured_at` SHALL mark the page stale with `data[<n>]:<source>` in `staleSources`. A `data` file MAY be shared with `vega-lite` blocks on the same page.
-
-#### Scenario: Inline collection script
-- **GIVEN** a `memon-data` block with `code: |` containing a Python script and no `script`
-- **WHEN** the page renders
-- **THEN** the table shows with a collapsible "Collection script" panel containing the code, and the caption shows the abbreviated `captured_commit`
-
-#### Scenario: Missing commit is a warning
-- **GIVEN** a `memon-data` block without `captured_commit`
-- **WHEN** the page is linted
-- **THEN** `WIKI_DATA_PROVENANCE_MISSING` is reported and the block still renders as a table
-
-#### Scenario: Inline data block renders as a table
-- **GIVEN** a `memon-data` block with two columns and three rows and a `script`
-- **WHEN** the page renders
-- **THEN** a three-row table appears with a caption containing the script command and `captured_at`
-
-#### Scenario: File-form data block
-- **GIVEN** a bundle page with `./data/p50.csv` and a `memon-data` block with `data: ./data/p50.csv`
-- **WHEN** the page renders
-- **THEN** the CSV is shown as a table with the caption, and an `html-embed@1` block on the same page may fetch the same file through the asset route
-
-#### Scenario: Ragged rows are an error
-- **GIVEN** a `memon-data` block whose second row has one cell fewer than `columns`
-- **WHEN** the page is linted
-- **THEN** `WIKI_DATA_BLOCK_INVALID` is reported and the block renders verbatim
-
-#### Scenario: Data captured before its source moved
-- **GIVEN** a block with `sources: [E0017/V0068]` and `captured_at` earlier than `E0017`'s effective updated time
-- **WHEN** the wiki is listed
-- **THEN** the page is `stale` and `staleSources` contains `data[0]:E0017/V0068`
 
 ### Requirement: Outdated content is marked deprecated, never silently kept
 

@@ -40,7 +40,7 @@ const content = [
   '---',
   '# Plan',
   '',
-  '```checklist@1',
+  '```yaml checklist@1 #plan',
   'items:',
   '  - title: Parent',
   '    children:',

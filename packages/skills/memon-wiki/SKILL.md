@@ -275,8 +275,8 @@ unresolvable reference renders as plain text and lints
 GitHub alert blockquotes render as callouts: `> [!NOTE]`, `> [!TIP]`,
 `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`, `> [!DEPRECATED]`.
 
-For registered fenced-block components (data tables, embedded HTML), follow
-`memon-author-components`; do not restate or invent component rules here.
+For component blocks (`` ```<lang> <type>@<N> #<id> ``), follow
+`memon-components`; do not restate or invent component rules here.
 
 For bundle pages with HTML views or a frontmatter `entry`, read
 [references/html-bundle.md](references/html-bundle.md) in full first.
@@ -317,7 +317,7 @@ call `POST` or `DELETE` on `/api/wiki/review/*` — not even when the user says
 "it's fine, mark it". Ask them to do it in the dashboard or the CLI.
 
 Ordinary wiki commands — `ls`, `show`, `create`, `set`, `move`, `deprecate`,
-`undeprecate`, `delete`, `lint`, `backlinks`, `migrate-report`, `components` —
+`undeprecate`, `delete`, `lint`, `backlinks`, `migrate-report` —
 carry no review information at all and never inspect git. Do not expect a
 `review` field in their output, and do not read the review trail "just to be
 safe" after ordinary wiki work. Only `wiki commit` and the `review`

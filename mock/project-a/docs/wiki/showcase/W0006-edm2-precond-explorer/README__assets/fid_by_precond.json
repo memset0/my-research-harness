@@ -1,0 +1,67 @@
+{
+  "title": "FID by preconditioning (E0004)",
+  "columns": [
+    "step",
+    "precond",
+    "fid"
+  ],
+  "data": [
+    [
+      20000,
+      "karras",
+      41.2
+    ],
+    [
+      20000,
+      "edm2",
+      39.8
+    ],
+    [
+      40000,
+      "karras",
+      28.6
+    ],
+    [
+      40000,
+      "edm2",
+      26.9
+    ],
+    [
+      60000,
+      "karras",
+      22.1
+    ],
+    [
+      60000,
+      "edm2",
+      20.4
+    ],
+    [
+      80000,
+      "karras",
+      19.7
+    ],
+    [
+      80000,
+      "edm2",
+      18.3
+    ]
+  ],
+  "views": [
+    {
+      "type": "table"
+    },
+    {
+      "type": "line",
+      "x": "step",
+      "y": "fid",
+      "series": "precond"
+    }
+  ],
+  "__md_file_path": "docs/wiki/showcase/W0006-edm2-precond-explorer/README.md",
+  "__component_type": "datatable@1",
+  "__component_id": "fid_by_precond",
+  "__updated_at": "2026-09-16T07:34:16+00:00",
+  "__source_hash": "ef525648477284926669437f3e03ebb279f07817595954832ed8ca7f26a08262",
+  "__duration_ms": 30
+}

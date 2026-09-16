@@ -31,8 +31,9 @@ import {
   Target,
 } from 'lucide-react'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { createContext, type ReactNode, useContext } from 'react'
 import { type ProjectTarget, projectWebPath } from '../lib/api'
+import type { ComponentDocumentRef } from '../lib/components/types'
 import { cn } from '../lib/utils'
 import { ClampedBlock } from './clamped-block'
 import { Markdown } from './markdown'
@@ -42,6 +43,7 @@ type ManagedDocumentKind = 'implementation' | 'investigation'
 type ManagedDocument = ImplementationDocument | InvestigationDocument
 type ManagedItem = ImplementationItem | InvestigationItem
 type ManagedStatus = ImplementationStatus | InvestigationStatus
+const ManagedDocumentContext = createContext<ComponentDocumentRef | undefined>(undefined)
 
 const STATUS_STYLE: Record<
   ManagedStatus,
@@ -107,11 +109,13 @@ export function ExperimentManagedSection({
   document,
   project,
   experimentId,
+  sourceDocument,
 }: {
   kind: ManagedDocumentKind
   document: ManagedDocument
   project: ProjectTarget
   experimentId: string
+  sourceDocument?: ComponentDocumentRef
 }) {
   const items = document.items as ManagedItem[]
   const flatItems = flattenItems(items)
@@ -121,6 +125,7 @@ export function ExperimentManagedSection({
   }
 
   return (
+    <ManagedDocumentContext.Provider value={sourceDocument}>
     <div className="space-y-3" data-slot={`${kind}-document`}>
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/35 px-3 py-2">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -165,6 +170,7 @@ export function ExperimentManagedSection({
         </ul>
       )}
     </div>
+    </ManagedDocumentContext.Provider>
   )
 }
 
@@ -572,6 +578,7 @@ function CodeChip({ children, title }: { children: ReactNode; title?: string }) 
 }
 
 function RichText({ children, className }: { children: string; className?: string }) {
+  const document = useContext(ManagedDocumentContext)
   return (
     <Markdown
       className={cn(
@@ -580,6 +587,7 @@ function RichText({ children, className }: { children: string; className?: strin
         '[&_ul]:my-1 [&_ol]:my-1',
         className,
       )}
+      document={document}
     >
       {children}
     </Markdown>

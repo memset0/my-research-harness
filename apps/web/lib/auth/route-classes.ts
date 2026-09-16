@@ -115,6 +115,12 @@ const projectFromReportAssetsSegment =
     return seg ?? null
   }
 
+/** project from /api/doc-assets/<project>/<project-relative path> segment. */
+const projectFromDocAssetsSegment =
+  () =>
+  (_m: string, p: string): ResolvedProject =>
+    segmentAfter(p, '/api/doc-assets/') ?? null
+
 // ----- ID-resolved extractors -----
 
 function idAfter(pathname: string, prefix: string): string | null {
@@ -298,14 +304,20 @@ const RULES: Rule[] = [
     projectFor: projectQueryOrMulti(),
   },
 
-  // The wiki component registry is a static, project-independent description
-  // of the shipped components. `lint` and `migrate` are pure functions of the
-  // posted body — they read no project and write nothing — so they are read
-  // class despite being POSTs, which the generic non-GET fallthrough would
-  // otherwise make owner-only.
+  // The wiki kind registry is a static, project-independent description of
+  // the shipped page kinds.
   {
-    match: (method, path) => startsWith('/api/wiki/components')(method, path) || exact('/api/wiki/kinds')(method, path),
+    match: methodIs(['GET'], exact('/api/wiki/kinds')),
     class: 'read',
+    projectFor: projectGlobal(),
+  },
+
+  // Component execution runs the Project's own Python from the dashboard:
+  // owner-only, listed explicitly so no future read rule can widen it. The
+  // Project comes from the request body, so there is nothing to scope.
+  {
+    match: methodIs(['POST'], exact('/api/components/run')),
+    class: 'mutating',
     projectFor: projectGlobal(),
   },
 
@@ -374,6 +386,11 @@ const RULES: Rule[] = [
     match: methodIs(['GET', 'HEAD'], startsWith('/api/report-assets/')),
     class: 'read',
     projectFor: projectFromReportAssetsSegment(),
+  },
+  {
+    match: methodIs(['GET', 'HEAD'], startsWith('/api/doc-assets/')),
+    class: 'read',
+    projectFor: projectFromDocAssetsSegment(),
   },
   {
     match: methodIs(['GET'], exact('/api/wiki')),

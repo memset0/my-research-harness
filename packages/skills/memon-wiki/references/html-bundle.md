@@ -81,9 +81,9 @@ a side effect.
 - **Inline** — raw HTML in the body (`<div>`, `<svg>`, a styled `<table>`)
   renders in place. `<script>` inside inline HTML does **not** execute; use it
   for static structure only.
-- **Block** — a fenced `html-embed` block renders its payload as an iframe.
+- **Block** — a fenced `html embed@1` block renders its payload as an iframe.
   Block authoring is out of scope here; `SKILL.md` routes you to the skill
-  that owns registered components.
+  that owns component blocks.
 - **Page** — a bundle page may declare frontmatter
   `entry: ./views/<slug>/index.html`. That document becomes the page's primary
   body, rendered full-height, with the Markdown beneath it. An `entry` that
