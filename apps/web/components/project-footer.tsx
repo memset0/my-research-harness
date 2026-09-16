@@ -71,7 +71,7 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
           'md:left-[var(--sidebar-width)]',
         )}
       >
-        <PageFreshness />
+        <PageFreshness project={projectName(project)} />
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <Link
             href={projectWebPath(project)}

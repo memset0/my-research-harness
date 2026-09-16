@@ -11,7 +11,9 @@
 //
 // Neither method touches project storage: `effective` comes from the config the
 // process loaded at startup, `pending` from the local instance config file, and
-// metrics from the Store's in-memory aggregates.
+// metrics from the Store's in-memory aggregates. A `storage: local` project is
+// read directly inside the request and never reaches the Store, so it
+// contributes no storage group and no samples to that snapshot.
 
 import { getFileOperationMetrics } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'

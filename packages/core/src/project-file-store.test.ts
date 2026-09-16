@@ -365,6 +365,132 @@ describe('projectFs inside a project file context', () => {
   })
 })
 
+describe('projectFs inside a direct (storage: local) context', () => {
+  it('reads through the filesystem without scheduling, caching or metering', async () => {
+    const file = join(root, 'README.md')
+    await nodeFs.writeFile(file, 'first\n')
+    const before = getFileOperationMetrics()
+
+    const read = await withProjectFileContext(
+      // A named group proves nothing is scheduled even when one is supplied.
+      { root, storage: 'local', storageGroup: 'never-scheduled', reason: 'open' },
+      async () => {
+        const initial = await projectFs.readFile(file, 'utf8')
+        await nodeFs.writeFile(file, 'second\n')
+        const again = await projectFs.readFile(file, 'utf8')
+        const listing = await projectFs.readdir(root)
+        const size = (await projectFs.stat(file)).size
+        return { initial, again, listing, size }
+      },
+    )
+
+    expect(read.initial).toBe('first\n')
+    // No observation period elapsed and no cache was consulted: the external
+    // rewrite is visible immediately.
+    expect(read.again).toBe('second\n')
+    expect(read.listing).toEqual(['README.md'])
+    expect(read.size).toBe('second\n'.length)
+
+    const after = getFileOperationMetrics()
+    expect(after.byOperation.readFile.samples).toBe(before.byOperation.readFile.samples)
+    expect(after.byOperation.readdir.samples).toBe(before.byOperation.readdir.samples)
+    expect(after.byOperation.stat.samples).toBe(before.byOperation.stat.samples)
+    expect(after.cacheEntries).toBe(before.cacheEntries)
+    expect(after.groups.some((group) => group.storageGroup === 'never-scheduled')).toBe(false)
+  })
+
+  it('still fails closed for a path outside the context root', async () => {
+    const outside = await nodeFs.mkdtemp(join(tmpdir(), 'memon-direct-outside-'))
+    try {
+      await nodeFs.writeFile(join(outside, 'secret.md'), 'secret\n')
+      await withProjectFileContext({ root, storage: 'local', reason: 'open' }, async () => {
+        await expect(projectFs.readFile(join(outside, 'secret.md'), 'utf8')).rejects.toMatchObject({
+          code: 'EACCES',
+        })
+        await expect(projectFs.readdir(outside)).rejects.toMatchObject({ code: 'EACCES' })
+        await expect(projectFs.stat(join(outside, 'secret.md'))).rejects.toMatchObject({
+          code: 'EACCES',
+        })
+        await expect(projectFs.writeFile(join(outside, 'x.md'), 'nope')).rejects.toMatchObject({
+          code: 'EACCES',
+        })
+        await expect(projectFs.mkdir(join(outside, 'planted'))).rejects.toMatchObject({
+          code: 'EACCES',
+        })
+      })
+      expect(await nodeFs.readdir(outside)).toEqual(['secret.md'])
+    } finally {
+      await nodeFs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses every mutation under a read-only policy while reads keep working', async () => {
+    const file = join(root, 'page.md')
+    await nodeFs.writeFile(file, 'body\n')
+
+    await withProjectFileContext(
+      { root, storage: 'local', reason: 'open', readOnly: true },
+      async () => {
+        expect(await projectFs.readFile(file, 'utf8')).toBe('body\n')
+        await expect(projectFs.writeFile(file, 'nope')).rejects.toMatchObject({ code: 'EROFS' })
+        await expect(projectFs.mkdir(join(root, 'nested'))).rejects.toMatchObject({
+          code: 'EROFS',
+        })
+        await expect(projectFs.unlink(file)).rejects.toMatchObject({ code: 'EROFS' })
+        await expect(projectFs.rename(file, join(root, 'moved.md'))).rejects.toMatchObject({
+          code: 'EROFS',
+        })
+        await expect(projectFs.open(file, 'w')).rejects.toMatchObject({ code: 'EROFS' })
+      },
+    )
+
+    expect(await nodeFs.readFile(file, 'utf8')).toBe('body\n')
+    expect(await nodeFs.readdir(root)).toEqual(['page.md'])
+  })
+
+  it('performs contained mutations natively and reports the root as direct', async () => {
+    const before = getFileOperationMetrics().byOperation.write.samples
+
+    await withProjectFileContext({ root, storage: 'local', reason: 'write' }, async () => {
+      await projectFs.mkdir(join(root, 'notes'))
+      await projectFs.writeFile(join(root, 'notes', 'a.md'), 'written\n')
+      expect(await projectFs.readFile(join(root, 'notes', 'a.md'), 'utf8')).toBe('written\n')
+    })
+
+    expect(await nodeFs.readFile(join(root, 'notes', 'a.md'), 'utf8')).toBe('written\n')
+    expect(getFileOperationMetrics().byOperation.write.samples).toBe(before)
+
+    const status = getProjectFileStatus(root)
+    expect(status).toMatchObject({
+      direct: true,
+      version: 'direct',
+      incomplete: false,
+      queued: 0,
+      checking: 0,
+      error: null,
+      oldestVerifiedAt: null,
+    })
+  })
+
+  it('schedules and caches an explicit sshfs context in the same process', async () => {
+    const file = join(root, 'mounted.md')
+    await nodeFs.writeFile(file, 'first\n')
+
+    const warm = await withProjectFileContext(
+      { root, storage: 'sshfs', reason: 'open' },
+      async () => {
+        const initial = await projectFs.readFile(file, 'utf8')
+        await nodeFs.writeFile(file, 'second\n')
+        return { initial, repeat: await projectFs.readFile(file, 'utf8') }
+      },
+    )
+
+    expect(warm.initial).toBe('first\n')
+    expect(warm.repeat).toBe('first\n')
+    expect(getProjectFileStatus(root).direct).toBeUndefined()
+  })
+})
+
 describe('Run walk over cached listings', () => {
   it('reuses cached listings for a warm walk and re-reads after invalidation', async () => {
     await nodeFs.mkdir(join(root, 'logs', 'alpha-260501-100000'), { recursive: true })

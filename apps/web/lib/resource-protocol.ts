@@ -32,6 +32,11 @@ export interface ProjectFileStatus {
   queued: number
   checking: number
   error: string | null
+  /**
+   * The project is read directly (`storage: local`): nothing is queued, cached
+   * or leased, so the queue/check/age fields carry no information.
+   */
+  direct?: boolean
   /** Dependency observation vector, not a semantic body hash. */
   version: string
 }
@@ -47,6 +52,8 @@ export interface PageResourceStatus {
   epoch: string | null
   /** How many distinct resources contributed to this aggregate. */
   resources: number
+  /** Every contributing dependency was read directly from local disk. */
+  direct: boolean
 }
 
 export const ATTENTION_HEADER = 'X-Memon-Attention'
@@ -139,6 +146,7 @@ const EMPTY_STATUS: PageResourceStatus = {
   error: null,
   epoch: null,
   resources: 0,
+  direct: false,
 }
 
 let scope = 'initial'
@@ -154,7 +162,17 @@ function recompute(): void {
   let checking = 0
   let error: string | null = null
   let epoch: string | null = null
+  // Vacuously true for an empty page, narrowed by the first scheduled status.
+  let direct = true
   for (const status of statuses.values()) {
+    if (status.direct === true) {
+      // A direct read has no observation vector, no queue and no lease: it
+      // carries no age to age out and must not make the page look partial.
+      if (!error && status.error) error = status.error
+      epoch = status.epoch
+      continue
+    }
+    direct = false
     if (status.oldestVerifiedAt === null) incomplete = true
     else if (oldestVerifiedAt === null || status.oldestVerifiedAt < oldestVerifiedAt) {
       oldestVerifiedAt = status.oldestVerifiedAt
@@ -176,6 +194,7 @@ function recompute(): void {
     error,
     epoch,
     resources: statuses.size,
+    direct: statuses.size > 0 && direct,
   }
   for (const listener of statusListeners) listener()
 }
@@ -283,6 +302,7 @@ function readStatusHeader(response: Response): ProjectFileStatus | null {
       queued: typeof parsed.queued === 'number' ? parsed.queued : 0,
       checking: typeof parsed.checking === 'number' ? parsed.checking : 0,
       error: typeof parsed.error === 'string' && parsed.error ? parsed.error : null,
+      direct: parsed.direct === true,
       version: typeof parsed.version === 'string' ? parsed.version : '',
     }
   } catch {

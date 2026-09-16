@@ -399,6 +399,7 @@ function createRuntime(config: Config): DirectCentralRuntime {
         {
           root: project.root,
           storageGroup: project.storageGroup ?? project.name,
+          storage: project.storage,
           reason: requestReason(selector.request, new URL(selector.request.url).pathname),
           readOnly: project.readOnly === true,
           persistentCache: project.persistentCache === true,
@@ -474,6 +475,7 @@ function createRuntime(config: Config): DirectCentralRuntime {
         {
           root: project.root,
           storageGroup: project.storageGroup ?? project.name,
+          storage: project.storage,
           reason: requestReason(request, url.pathname),
           readOnly: project.readOnly === true,
           persistentCache: project.persistentCache === true,

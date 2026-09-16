@@ -781,9 +781,16 @@ export interface ProjectConfig {
    */
   host?: string
   /**
-   * Shared-storage bucket used for I/O scheduling. Projects on one mount name
-   * the same group so an unavailable mount cannot starve unrelated roots.
-   * Defaults to the Project name when absent.
+   * Physical storage class of `root`. `sshfs` opts the Project into the file
+   * operation scheduler, observation cache and isolated I/O worker; `local`
+   * (the default when the key is absent) reads and writes the Project's files
+   * directly. `storageGroup` and `persistentCache` are SSHFS-only.
+   */
+  storage?: 'local' | 'sshfs'
+  /**
+   * Shared-storage bucket used for I/O scheduling, `storage: sshfs` only.
+   * Projects on one mount name the same group so an unavailable mount cannot
+   * starve unrelated roots. Defaults to the Project name when absent.
    */
   storageGroup?: string
   /** Application-level write refusal for this Project's data. */

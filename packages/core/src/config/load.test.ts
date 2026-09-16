@@ -31,15 +31,70 @@ poll:
   backoff_factor: 3
 `
 
+describe('project storage mode', () => {
+  it('defaults an undeclared project to direct local storage', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects.map((project) => project.storage)).toEqual(['local', 'local'])
+  })
+
+  it('keeps the sshfs group defaulting to the project name at the consumer', async () => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects:\n  - { name: alpha, root: ./alpha, storage: sshfs }\n  - { name: beta, root: ./beta, storage: sshfs, storage_group: mount-a }\n',
+    )
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects[0]).toMatchObject({ storage: 'sshfs' })
+    expect(cfg!.projects[0]!.storageGroup).toBeUndefined()
+    expect(cfg!.projects[1]).toMatchObject({ storage: 'sshfs', storageGroup: 'mount-a' })
+  })
+
+  it('rejects a storage group on a local project in either spelling', async () => {
+    const configPath = join(dir, 'config.yml')
+    for (const project of [
+      '{ name: alpha, root: ./alpha, storage_group: mount-a }',
+      '{ name: alpha, root: ./alpha, storageGroup: mount-a }',
+      '{ name: alpha, root: ./alpha, storage: local, storage_group: mount-a }',
+    ]) {
+      await fs.writeFile(configPath, `projects: [${project}]\n`)
+      const error = await loadConfig({ cwd: dir }).catch((err: unknown) => err)
+      expect(error).toBeInstanceOf(ConfigError)
+      expect(String(error)).toContain('alpha')
+      expect(String(error)).toMatch(/storage_?[Gg]roup/)
+    }
+  })
+
+  it('rejects the persistent cache on a local project but allows opting out explicitly', async () => {
+    const configPath = join(dir, 'config.yml')
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha, persistent_cache: true }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n',
+    )
+    const error = await loadConfig({ cwd: dir }).catch((err: unknown) => err)
+    expect(error).toBeInstanceOf(ConfigError)
+    expect(String(error)).toContain('persistent_cache')
+    expect(String(error)).toContain('alpha')
+
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha, persistent_cache: false }]\n')
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects[0]).toMatchObject({ storage: 'local', persistentCache: false })
+  })
+
+  it('rejects an unknown storage mode', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha, storage: nfs }]\n')
+    await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
+  })
+})
+
 describe('persistent file cache config', () => {
   it('requires an explicit instance dump when any project opts in', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha, persistent_cache: true }]\n')
+    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\n')
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 
   it('resolves the dump beside the selected config rather than the caller cwd', async () => {
     const configPath = join(dir, 'instance.yml')
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha, persistent_cache: true }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 12.5\n  wiki_ttl_seconds: 45\n  default_ttl_seconds: 2400\n')
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 12.5\n  wiki_ttl_seconds: 45\n  default_ttl_seconds: 2400\n')
     const config = await loadConfig({ cwd: '/', explicitPath: configPath })
     expect(config?.fileCache?.dumpPath).toBe(join(dir, '.memon-cache', 'files.dump'))
     expect(config?.fileCache?.dumpIntervalMs).toBe(12_500)

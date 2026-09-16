@@ -374,6 +374,11 @@ export function FileAccessSettingsPanel() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
+          <p className="text-[11px] text-muted-foreground">
+            These settings and the metrics below cover <code>storage: sshfs</code> projects only; a{' '}
+            <code>storage: local</code> project is read directly through the filesystem, so it is
+            never queued, cached or listed as a storage group here.
+          </p>
           {issues.length > 0 && (
             <ul
               className="list-disc space-y-1 rounded-md border border-destructive/50 bg-destructive/5 p-3 pl-7 text-xs text-destructive"

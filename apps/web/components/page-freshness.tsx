@@ -9,6 +9,11 @@
 // not a guaranteed maximum age of the remote disk. When a dependency has
 // never been observed the readout says so instead of quoting an optimistic
 // age, and a failed refresh keeps the last successful age with an error mark.
+//
+// A `storage: local` project has none of that machinery: the request reads the
+// filesystem itself, so there is no queue, no observation age and nothing to
+// age out. For those pages the readout says the project is read directly and
+// quotes no numbers — only a real error still shows.
 
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
@@ -24,7 +29,12 @@ function formatAge(ms: number): string {
   return `${hours}h ${minutes % 60}m`
 }
 
-export function PageFreshness() {
+export interface PageFreshnessProps {
+  /** Project this page belongs to; named in the direct-read wording. */
+  project: string
+}
+
+export function PageFreshness({ project }: PageFreshnessProps) {
   const status = usePageResourceStatus()
   const { refresh, refreshing, foreground, heartbeatMs, tick } = useResourceHeartbeat()
   // The shared heartbeat is also this label's clock: `tick` advances once per
@@ -32,23 +42,30 @@ export function PageFreshness() {
   const now = useMemo(() => Date.now(), [tick])
 
   const age = status.oldestVerifiedAt === null ? null : formatAge(now - status.oldestVerifiedAt)
-  const label =
-    status.resources === 0
+  const label = status.direct
+    ? `reads ${project} directly`
+    : status.resources === 0
       ? 'nothing read yet'
       : age === null
         ? 'checking dependencies'
         : `oldest check ${age} ago`
 
   const detail: string[] = []
-  if (status.incomplete && status.resources > 0) detail.push('partial')
-  if (status.checking > 0) detail.push(`checking ${status.checking}`)
-  if (status.queued > 0) detail.push(`${status.queued} queued`)
+  if (!status.direct) {
+    if (status.incomplete && status.resources > 0) detail.push('partial')
+    if (status.checking > 0) detail.push(`checking ${status.checking}`)
+    if (status.queued > 0) detail.push(`${status.queued} queued`)
+  }
 
   const title = [
-    status.resources === 0
-      ? 'No file dependencies observed for this page yet.'
-      : `Oldest successful observation across ${status.resources} resource${status.resources === 1 ? '' : 's'} on this page.`,
-    status.incomplete ? 'Some dependencies have no successful observation yet.' : null,
+    status.direct
+      ? `${project} is configured storage: local — every dependency of this page was read from the filesystem inside the request, so there is no queue, cache or observation age.`
+      : status.resources === 0
+        ? 'No file dependencies observed for this page yet.'
+        : `Oldest successful observation across ${status.resources} resource${status.resources === 1 ? '' : 's'} on this page.`,
+    !status.direct && status.incomplete
+      ? 'Some dependencies have no successful observation yet.'
+      : null,
     status.error ? `Last error: ${status.error}` : null,
     foreground
       ? `Foreground heartbeat every ${Math.round(heartbeatMs / 100) / 10}s.`

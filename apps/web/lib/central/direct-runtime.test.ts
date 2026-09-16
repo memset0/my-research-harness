@@ -10,6 +10,8 @@ import {
   type FileOperationMetrics,
   getFileOperationMetrics,
   getProjectFileContext,
+  loadConfig,
+  type ProjectConfig,
 } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -127,5 +129,72 @@ describe('direct central resource priority', () => {
     expect(detail.status).toBe(200)
     const afterDetail = getFileOperationMetrics()
     expect(activity(afterDetail, 'human')).toBeGreaterThan(activity(afterCollection, 'human'))
+  })
+})
+
+describe('direct central storage mode', () => {
+  /** The storage mode the request context carried, or `'no-context'`. */
+  async function contextStorage(projects: readonly ProjectConfig[]): Promise<unknown> {
+    // The runtime is process-global and memoised, so a second config needs a
+    // reset to be seen at all.
+    __resetDirectCentralRuntimeForTests()
+    const runtime = directCentralRuntime({ ...config, projects: [...projects] })
+    let observed: unknown = 'no-context'
+    const response = await runtime.readJsonResource(
+      {
+        host: 'local',
+        project: 'research',
+        request: new Request('http://central.test/api/wiki/W0002', {
+          headers: { [REASON_HEADER]: 'manual' },
+        }),
+      },
+      async () => {
+        observed = getProjectFileContext()?.storage
+        return { ok: true }
+      },
+    )
+    expect(response).not.toBeNull()
+    return observed
+  }
+
+  const base = { name: 'research', root: '', host: 'local', include: ['logs/*'], exclude: [] }
+
+  it('declares a local project so the store reads it directly', async () => {
+    await expect(contextStorage([{ ...base, root, storage: 'local' }])).resolves.toBe('local')
+  })
+
+  it('keeps an sshfs project on the scheduler', async () => {
+    await expect(
+      contextStorage([{ ...base, root, storageGroup, storage: 'sshfs' }]),
+    ).resolves.toBe('sshfs')
+  })
+
+  it('leaves the mode unset when a config was assembled without one', async () => {
+    // Only the loader defaults the mode; a hand-built ProjectConfig leaves it
+    // undefined, which the store reads as sshfs — existing callers keep the
+    // scheduler they had before this key existed.
+    await expect(contextStorage([{ ...base, root, storageGroup }])).resolves.toBeUndefined()
+  })
+
+  it('serves a configured project as local when the config file omits `storage:`', async () => {
+    const dir = await fs.mkdtemp(join(tmpdir(), 'memon-direct-storage-'))
+    const configPath = join(dir, 'config.yml')
+    await fs.writeFile(
+      configPath,
+      `projects:
+  - name: research
+    root: ${root}
+    host: local
+    include: ['logs/*']
+`,
+    )
+    await fs.chmod(configPath, 0o600)
+    try {
+      const loaded = await loadConfig({ explicitPath: configPath, cwd: dir })
+      expect(loaded).not.toBeNull()
+      await expect(contextStorage(loaded!.projects)).resolves.toBe('local')
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 })

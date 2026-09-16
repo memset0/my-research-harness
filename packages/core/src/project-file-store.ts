@@ -11,14 +11,20 @@
 // Shape of the module:
 //
 //   * `withProjectFileContext()` installs a per-request context (project root,
-//     storage group, human/automatic reason, attention id, read-only policy,
-//     persistent-cache opt-in).
+//     storage mode, storage group, human/automatic reason, attention id,
+//     read-only policy, persistent-cache opt-in).
 //   * `projectFs` is an `fs/promises`-compatible facade. Outside a context it
 //     delegates straight to the native filesystem (the CLI always reads fresh,
 //     with no cache, no scheduler and no worker); inside a context `readFile` /
 //     `readdir` / `stat` / `lstat` / `realpath` route through the cache + I/O
 //     scheduler, and mutations enforce the read-only policy and invalidate the
 //     exact affected entries.
+//   * A `storage: 'local'` context is direct: containment and the read-only
+//     policy still apply, but the facade performs the native call itself —
+//     nothing is queued, coalesced, cached, leased, backed off, counted, or
+//     sent to a worker. Only `storage: 'sshfs'` projects use the machinery
+//     below. (An unconfigured *project* is local; a context that omits the
+//     field is sshfs, so callers predating the switch are unchanged.)
 //   * The scheduler keeps at most one queued-or-running task per
 //     project/path/operation key, promotes automatic work when a human joins,
 //     limits physical operations per storage group (default 10), and records
@@ -135,6 +141,16 @@ export function isHumanFileOperationReason(reason: FileOperationReason | undefin
 export interface ProjectFileContext {
   /** Absolute project root. Identity of every cache key created in the context. */
   root: string
+  /**
+   * Physical storage class of the Project. `'local'` performs every operation
+   * directly on the native filesystem inside this context: contained and
+   * read-only-enforced, but never queued, coalesced, cached, leased, backed
+   * off, counted or run in an I/O worker. `undefined` means `'sshfs'` — the
+   * scheduled path — so a caller that predates the switch keeps its
+   * behaviour. (The *config* default is the opposite: an unconfigured
+   * Project is local.)
+   */
+  storage?: 'local' | 'sshfs'
   /** Physical storage bucket sharing one concurrency limit. Defaults to `'default'`. */
   storageGroup?: string
   /** Why the read happens; human reasons reset backoff and take priority. */
@@ -204,6 +220,12 @@ export interface ProjectFileStatus {
   error: string | null
   /** Dependency observation vector token — NOT a semantic body hash. */
   version: string
+  /**
+   * True when this root is read directly (`storage: local`): nothing is
+   * scheduled or cached, so there is no freshness to report and `version`
+   * is the constant `'direct'`.
+   */
+  direct?: boolean
 }
 
 export interface FileOperationLatency {
@@ -958,6 +980,12 @@ class ProjectFileStore {
   private readonly realRoots = new Map<string, string>()
   /** Mount identity observed for each real root, used as an availability guard. */
   private readonly rootMounts = new Map<string, MountIdentity>()
+  /**
+   * Roots whose most recent context declared `storage: 'local'`. Direct
+   * operations create no entries, tasks or metrics, so this is the only
+   * record freshness reporting can answer from.
+   */
+  private readonly directRoots = new Set<string>()
   private mountTableEntries: MountIdentity[] | null = null
   private mountTableAtMono: number | null = null
   private mountTableRead: Promise<MountIdentity[] | null> | null = null
@@ -1668,12 +1696,35 @@ class ProjectFileStore {
     this.persistObservation(entry, observation)
   }
 
+  /**
+   * Record how a root's files are reached, so freshness reporting can
+   * describe a direct root that owns no scheduler state at all.
+   */
+  noteStorage(root: string, storage: ProjectFileContext['storage']): void {
+    if (storage === 'local') this.directRoots.add(root)
+    else this.directRoots.delete(root)
+  }
+
   // -- status / metrics ----------------------------------------------------
 
   status(root: string, attentionId?: string): ProjectFileStatus {
     const normalizedRoot = resolve(root)
     const now = Date.now()
     this.sweepAttentions(now)
+    // A direct root has no queue, no lease and no observation vector: every
+    // read already came from the filesystem at request time.
+    if (this.directRoots.has(normalizedRoot)) {
+      return {
+        epoch: this.epoch,
+        oldestVerifiedAt: null,
+        incomplete: false,
+        queued: 0,
+        checking: 0,
+        error: null,
+        version: 'direct',
+        direct: true,
+      }
+    }
 
     let scoped: StoreEntry[] | null = null
     if (attentionId !== undefined) {
@@ -2150,6 +2201,7 @@ export function withProjectFileContext<T>(
 ): Promise<T> {
   const store = getStore()
   const normalized: ProjectFileContext = { ...context, root: resolve(context.root) }
+  store.noteStorage(normalized.root, normalized.storage)
   return store.contextStorage.run(normalized, callback)
 }
 
@@ -2234,11 +2286,13 @@ function decodeFile(value: FileValue, encoding: EncodingSelector): string | Buff
  * Inside a context the decision fails closed: a path that is not lexically
  * inside the project root — or a target whose path cannot be determined —
  * is refused instead of silently reaching the filesystem unmediated.
+ * `direct` marks a `storage: 'local'` context: contained and policed, but
+ * performed on the native filesystem instead of the scheduler.
  */
 function routable(
   target: PathLike,
   syscall: string,
-): { context: ProjectFileContext; path: string } | null {
+): { context: ProjectFileContext; path: string; direct: boolean } | null {
   const context = getStore().contextStorage.getStore()
   if (context === undefined) return null
   const absolutePath = resolveTargetPath(target)
@@ -2246,7 +2300,7 @@ function routable(
   if (!isWithinPath(context.root, absolutePath)) {
     throw containmentError(syscall, absolutePath, context.root)
   }
-  return { context, path: absolutePath }
+  return { context, path: absolutePath, direct: context.storage === 'local' }
 }
 
 /**
@@ -2279,7 +2333,10 @@ async function facadeReadFile(
   options?: ReadFileOptions,
 ): Promise<string | Buffer> {
   const routed = routable(target, 'readFile')
-  if (routed === null) {
+  if (routed === null || routed.direct) {
+    // Direct root: the native call is the whole operation — the caller's own
+    // options (abort signal, flag, encoding) apply unchanged and nothing is
+    // cached, so a following read always sees the current bytes.
     return (await nodeFs.readFile(target as never, options as never)) as string | Buffer
   }
   const encoding = encodingOf(options)
@@ -2308,7 +2365,9 @@ async function facadeReaddir(
   options?: ReaddirOptions,
 ): Promise<string[] | Buffer[] | Dirent[]> {
   const routed = routable(target, 'readdir')
-  if (routed === null) {
+  if (routed === null || routed.direct) {
+    // A direct root has no cache entries to keep consistent, so even a
+    // recursive listing is just the native walk the caller asked for.
     return (await nodeFs.readdir(target as never, options as never)) as
       | string[]
       | Buffer[]
@@ -2335,7 +2394,7 @@ async function facadeReaddir(
 
 async function facadeStat(target: PathLike, options?: unknown): Promise<Stats> {
   const routed = routable(target, 'stat')
-  if (routed === null) {
+  if (routed === null || routed.direct) {
     return (await nodeFs.stat(target as never, options as never)) as Stats
   }
   if (optionValue(options, 'bigint') === true) {
@@ -2348,7 +2407,7 @@ async function facadeStat(target: PathLike, options?: unknown): Promise<Stats> {
 
 async function facadeLstat(target: PathLike, options?: unknown): Promise<Stats> {
   const routed = routable(target, 'lstat')
-  if (routed === null) {
+  if (routed === null || routed.direct) {
     return (await nodeFs.lstat(target as never, options as never)) as Stats
   }
   if (optionValue(options, 'bigint') === true) {
@@ -2359,7 +2418,7 @@ async function facadeLstat(target: PathLike, options?: unknown): Promise<Stats> 
 
 async function facadeRealpath(target: PathLike, options?: unknown): Promise<string> {
   const routed = routable(target, 'realpath')
-  if (routed === null) {
+  if (routed === null || routed.direct) {
     return (await nodeFs.realpath(target as never, options as never)) as string
   }
   return await getStore().realpathValue(routed.context, routed.path)
@@ -2372,8 +2431,12 @@ async function facadeAccess(target: PathLike, mode?: number): Promise<void> {
     return
   }
   const writeCheck = mode !== undefined && (mode & 2) !== 0
+  if (writeCheck && routed.context.readOnly === true) throw readOnlyError('access', routed.path)
+  if (routed.direct) {
+    await nodeFs.access(target as never, mode)
+    return
+  }
   if (writeCheck) {
-    if (routed.context.readOnly === true) throw readOnlyError('access', routed.path)
     await getStore().rawAccess(routed.context, routed.path, mode)
     return
   }
@@ -2393,6 +2456,9 @@ async function facadeOpen(target: PathLike, flags?: unknown, mode?: unknown): Pr
   }
   if (routed.context.readOnly === true && isWriteFlag(flags)) {
     throw readOnlyError('open', routed.path)
+  }
+  if (routed.direct) {
+    return await nodeFs.open(target as never, flags as never, mode as never)
   }
   // File handles are byte-range transports (log tails, line indexes, binary
   // downloads): deliberately not whole-file cache entries, and deliberately
@@ -2416,6 +2482,11 @@ async function facadeWriteFile(target: PathLike, data: unknown, options?: unknow
     await nodeFs.writeFile(target as never, data as never, options as never)
     return
   }
+  if (routed.direct) {
+    if (routed.context.readOnly === true) throw readOnlyError('writeFile', routed.path)
+    await nodeFs.writeFile(target as never, data as never, options as never)
+    return
+  }
   const store = getStore()
   const bytes = writtenBytes(data)
   await store.mutate(routed.context, 'writeFile', [routed.path], 'writeFile', [
@@ -2430,9 +2501,20 @@ async function facadeWriteFile(target: PathLike, data: unknown, options?: unknow
 }
 
 /**
- * A mutation on one path. Outside a context it is the plain native call; in a
- * context the store enforces policy, containment and slot accounting, and the
- * isolated worker performs it.
+ * The native implementations behind the mutating facade methods. Keyed by the
+ * same allowlist the isolated worker uses, so a direct root performs exactly
+ * the mutation the scheduled path would have delegated.
+ */
+const nativeMutations = nodeFs as unknown as Record<
+  MutationMethod,
+  (...args: unknown[]) => Promise<unknown>
+>
+
+/**
+ * A mutation on one path. Outside a context, and on a direct root, it is the
+ * native call (a direct root still refuses writes under the read-only
+ * policy); in a scheduled context the store enforces policy, containment and
+ * slot accounting, and the isolated worker performs it.
  */
 function mutatingUnary(
   method: MutationMethod,
@@ -2443,6 +2525,10 @@ function mutatingUnary(
     const routed = routable(target, method)
     if (routed === null) {
       return await executeProjectIo({ id: 0, op: 'mutate', method, args: [target, ...forwarded] })
+    }
+    if (routed.direct) {
+      if (routed.context.readOnly === true) throw readOnlyError(method, routed.path)
+      return await nativeMutations[method](target, ...forwarded)
     }
     return await getStore().mutate(routed.context, method, [routed.path], method, [
       routed.path,
@@ -2466,6 +2552,12 @@ function mutatingBinary(
         method,
         args: [source, destination, ...forwarded],
       })
+    }
+    if (routed.direct) {
+      if (routed.context.readOnly === true) throw readOnlyError(method, routed.path)
+      // The destination is contained by the same rule as the source.
+      routable(destination, method)
+      return await nativeMutations[method](source, destination, ...forwarded)
     }
     // The destination is validated by the same containment rules as the
     // source, so a linked or out-of-root target cannot receive the write.

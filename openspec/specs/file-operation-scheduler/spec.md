@@ -21,7 +21,7 @@ The scheduler SHALL keep at most one queued or executing task for an equivalent 
 - **THEN** the queued callers reuse the completed observation
 
 ### Requirement: Actual concurrency is configurable and defaults to ten
-Actual filesystem operations SHALL share a configurable storage-group concurrency limit defaulting to 10 across projects in that group. The isolated worker thread pool SHALL retain its implementation cap of 128; a scheduler setting is not a promise of more worker threads. Cache hits and composite Run walks SHALL NOT hold slots. Automatic tasks SHALL not starve indefinitely behind human work. Timeouts SHALL NOT falsely release capacity while uncanceled physical operations still execute.
+Actual filesystem operations SHALL share a configurable storage-group concurrency limit defaulting to 10 across projects in that group. The isolated worker thread pool SHALL retain its implementation cap of 128; a scheduler setting is not a promise of more worker threads. Cache hits and composite Run walks SHALL NOT hold slots. Automatic tasks SHALL not starve indefinitely behind human work. Timeouts SHALL NOT falsely release capacity while uncanceled physical operations still execute. The scheduler SHALL apply only to projects declared `storage: sshfs`; a local project performs its operations directly and never occupies a slot.
 
 #### Scenario: Composite walk at capacity
 - **WHEN** a Run walk awaits child listings
@@ -34,6 +34,10 @@ Actual filesystem operations SHALL share a configurable storage-group concurrenc
 #### Scenario: Unavailable storage
 - **WHEN** one group has blocked I/O
 - **THEN** cached HTTP responses and healthy groups remain serviceable without replacement-operation storms
+
+#### Scenario: Local project never queues
+- **WHEN** a local project performs a thousand directory listings while an sshfs project's group is saturated
+- **THEN** the listings complete without waiting for a slot and the sshfs queue depth is unaffected
 
 ### Requirement: Human attention resets automatic backoff
 For memory-only projects, unchanged automatic observations SHALL multiply their interval by two to the configured cap, and human attention SHALL reset relevant backoffs. For persistent SSHFS observations, the configured Wiki/default TTL SHALL determine due checks; ordinary open/focus/expand SHALL NOT bypass a valid TTL. Manual refresh and known writes SHALL reset relevant operation schedules without postponing an existing due check. Heartbeats SHALL NOT reset backoff. A completion from an older attention generation SHALL NOT undo a newer explicit reset.

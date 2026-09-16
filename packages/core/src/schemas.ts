@@ -202,6 +202,13 @@ export const ProjectConfigRawSchema = z.object({
    */
   host: HostIdRawSchema.optional(),
   /**
+   * Physical storage class. Absent means `local`: the Project's files are
+   * read directly. `sshfs` opts into the scheduler, observation cache and
+   * isolated worker, and is the only mode where `storage_group` and
+   * `persistent_cache` are meaningful.
+   */
+  storage: z.enum(['local', 'sshfs']).optional(),
+  /**
    * `storage_group` / `read_only` are the canonical snake_case spellings used
    * by every other Project key. The camelCase aliases are accepted because
    * these two fields also appear camelCased in the settings/API payloads, and

@@ -168,14 +168,37 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   // Execution defaults are role-dependent and resolved after role selection.
   const projects: ProjectConfig[] = cfg.projects.map((p) => {
     const root = isAbsolute(p.root) ? p.root : resolve(baseDir, p.root)
+    const storage = p.storage ?? 'local'
     const storageGroup = p.storage_group ?? p.storageGroup
     const readOnly = p.read_only ?? p.readOnly
+    if (storage === 'local') {
+      // Both keys only describe SSHFS mechanics. Accepting them silently on a
+      // direct Project would promise scheduling and persistence that mode
+      // deliberately does not perform.
+      const sshfsOnly =
+        p.storage_group !== undefined
+          ? 'storage_group'
+          : p.storageGroup !== undefined
+            ? 'storageGroup'
+            : p.persistent_cache === true
+              ? 'persistent_cache'
+              : undefined
+      if (sshfsOnly !== undefined) {
+        throw new ConfigError(
+          `projects.${p.name}: \`${sshfsOnly}\` applies to \`storage: sshfs\` Projects only; project ${JSON.stringify(p.name)} reads its files directly`,
+          candidate,
+        )
+      }
+    }
     return {
       name: p.name,
       root,
       include: p.include ?? [],
       exclude: p.exclude ?? [],
       ...(p.host ? { host: p.host } : {}),
+      // Always explicit on a resolved Project: the default is a policy, and
+      // every consumer routes file access on it.
+      storage,
       // Either spelling is accepted; the schema rejects supplying both.
       ...(storageGroup === undefined ? {} : { storageGroup }),
       ...(readOnly === undefined ? {} : { readOnly }),
@@ -666,6 +689,7 @@ export function implicitCwdProject(cwd: string, name = '(cwd)'): Config {
         root: resolve(cwd),
         include: [],
         exclude: [],
+        storage: 'local',
         execution: { kind: 'local' },
       },
     ],

@@ -25,6 +25,7 @@ interface StatusHeader {
   queued: number
   checking: number
   error: string | null
+  direct: boolean
   version: string
 }
 
@@ -208,6 +209,75 @@ describe('page freshness aggregate', () => {
     expect(snapshot.checking).toBe(2)
     expect(snapshot.incomplete).toBe(false)
     expect(snapshot.resources).toBe(2)
+    expect(snapshot.direct).toBe(false)
+  })
+
+  it('reports a direct page and keeps its scheduler fields inert', () => {
+    recordResourceResponse(
+      beginResourceRequest('/api/wiki'),
+      jsonResponse({
+        [RESOURCE_VERSION_HEADER]: 'v1',
+        [FILE_STATUS_HEADER]: statusHeader({
+          oldestVerifiedAt: null,
+          direct: true,
+          version: 'direct',
+        }),
+      }),
+      { pages: [] },
+    )
+    recordResourceResponse(
+      beginResourceRequest('/api/reports'),
+      jsonResponse({
+        [RESOURCE_VERSION_HEADER]: 'r1',
+        [FILE_STATUS_HEADER]: statusHeader({
+          oldestVerifiedAt: null,
+          direct: true,
+          version: 'direct',
+        }),
+      }),
+      { reports: [] },
+    )
+
+    const snapshot = getResourceStatusSnapshot()
+    expect(snapshot.direct).toBe(true)
+    // A direct read has no observation vector, so it must not look partial.
+    expect(snapshot.incomplete).toBe(false)
+    expect(snapshot.oldestVerifiedAt).toBeNull()
+    expect(snapshot.queued).toBe(0)
+    expect(snapshot.resources).toBe(2)
+  })
+
+  it('stops claiming a direct page as soon as one dependency is scheduled', () => {
+    recordResourceResponse(
+      beginResourceRequest('/api/wiki'),
+      jsonResponse({
+        [RESOURCE_VERSION_HEADER]: 'v1',
+        [FILE_STATUS_HEADER]: statusHeader({
+          oldestVerifiedAt: null,
+          direct: true,
+          version: 'direct',
+        }),
+      }),
+      { pages: [] },
+    )
+    recordResourceResponse(
+      beginResourceRequest('/api/reports'),
+      jsonResponse({
+        [RESOURCE_VERSION_HEADER]: 'r1',
+        [FILE_STATUS_HEADER]: statusHeader({ oldestVerifiedAt: 8_000, queued: 2 }),
+      }),
+      { reports: [] },
+    )
+
+    const snapshot = getResourceStatusSnapshot()
+    expect(snapshot.direct).toBe(false)
+    expect(snapshot.oldestVerifiedAt).toBe(8_000)
+    expect(snapshot.queued).toBe(2)
+  })
+
+  it('never calls an empty page direct', () => {
+    expect(getResourceStatusSnapshot().direct).toBe(false)
+    expect(getResourceStatusSnapshot().resources).toBe(0)
   })
 
   it('marks freshness incomplete while a dependency has never been observed', () => {

@@ -51,9 +51,10 @@ projects:
 #     - name: project-a
 #       root: /example/mounts/project-a
 #       host: host-a           # same id rule as central.hosts[].id
-#       storage_group: mount-a # shared I/O budget for one mount
+#       storage: sshfs   # opt-in: only SSHFS roots use the scheduler/cache; default local = direct reads
+#       storage_group: mount-a # sshfs only: shared I/O budget for one mount
 #       read_only: true        # refuse every write to this Project's data
-#       persistent_cache: true # opt-in dumped LRU; actual SSHFS roots only
+#       persistent_cache: true # sshfs only: opt-in dumped LRU for this mount
 #       # Command capabilities (Git and Slurm) require an explicit execution
 #       # context. Absent means "no execution provider": those routes answer
 #       # 501 instead of running against the mounted root.
@@ -141,8 +142,10 @@ poll:
 # ── project file access (scheduled filesystem I/O) ───────────────────
 # Bounded, shared I/O for Project files: one logical task per operation, human
 # requests ahead of background checks, exponential backoff per path, and a
-# concurrency budget per `storage_group`. Every key is optional and applies at
-# startup only; the owner-only File access settings page writes this block.
+# concurrency budget per `storage_group`. It applies to `storage: sshfs`
+# Projects only — a local Project reads its files directly. Every key is
+# optional and applies at startup only; the owner-only File access settings
+# page writes this block.
 # camelCase here is deliberate — the keys mirror the API payload exactly.
 #
 # Relationships validated at load time: `leaseMs` >= 3 x `heartbeatMs`,
