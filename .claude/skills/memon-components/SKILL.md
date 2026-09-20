@@ -321,7 +321,7 @@ items:
 | `data` | array of array of unknown | yes | Rows in display order; every row has exactly one cell per column. Cells may be strings, numbers, booleans, or null. |
 | `title` | string | no | Short caption shown above the data. |
 | `note` | string | no | One or two sentences of context shown under the title, e.g. how the numbers were produced. |
-| `views` | array of object | no | How to show the data, in switcher order. `table` needs nothing else; `line` and `bar` need `x` and `y` column names and accept `series` (one line/bar group per distinct value), `tabs` (outer tab strip), and `select` (inner dropdown). The four roles must name four different existing columns. |
+| `views` | array of object | no | How to show the data, in switcher order. `table` needs nothing else; `line` and `bar` need `x` and `y` column names and accept `series` (one line/bar group per distinct value), `tabs` (outer tab strip), and `select` (inner dropdown). The four roles must name four different existing columns. Axes fit the plotted values by default (a `line` view with numeric `x` cells uses a to-scale numeric x axis); set `y_from_zero: true` / `x_from_zero: true` to anchor an axis at zero. |
 
 ````markdown
 ```yaml datatable@1 #fid_by_step

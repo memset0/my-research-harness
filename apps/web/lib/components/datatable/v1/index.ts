@@ -25,6 +25,8 @@ const plotView = z
     series: z.string().min(1).optional(),
     tabs: z.string().min(1).optional(),
     select: z.string().min(1).optional(),
+    x_from_zero: z.boolean().optional(),
+    y_from_zero: z.boolean().optional(),
   })
   .strict()
 
@@ -55,7 +57,7 @@ const schema = z.object({
     .min(1)
     .default([{ type: 'table' }])
     .describe(
-      'How to show the data, in switcher order. `table` needs nothing else; `line` and `bar` need `x` and `y` column names and accept `series` (one line/bar group per distinct value), `tabs` (outer tab strip), and `select` (inner dropdown). The four roles must name four different existing columns.',
+      'How to show the data, in switcher order. `table` needs nothing else; `line` and `bar` need `x` and `y` column names and accept `series` (one line/bar group per distinct value), `tabs` (outer tab strip), and `select` (inner dropdown). The four roles must name four different existing columns. Axes fit the plotted values by default (a `line` view with numeric `x` cells uses a to-scale numeric x axis); set `y_from_zero: true` / `x_from_zero: true` to anchor an axis at zero.',
     ),
 })
 

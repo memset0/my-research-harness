@@ -18,8 +18,12 @@ export interface PlotFilter {
 export interface PlotPoint {
   /** X axis label, i.e. the `x` cell rendered as text. */
   x: string
+  /** The `x` cell as a number, null when it is not one. */
+  xNumber: number | null
   /** One numeric entry per series name present at this x. */
   values: Record<string, number>
+  /** The `y` cell text per series name, exactly as declared — what a tooltip shows. */
+  labels: Record<string, string>
 }
 
 export interface PlotModel {
@@ -81,7 +85,6 @@ export function buildPlotModel(
   const series: string[] = []
   const points: PlotPoint[] = []
   const pointAt = new Map<string, PlotPoint>()
-  const xNumber = new Map<string, number>()
   let skipped = 0
   let numericX = true
 
@@ -98,18 +101,18 @@ export function buildPlotModel(
     const label = cellLabel(row[xAt])
     const asNumber = cellNumber(row[xAt])
     if (asNumber === null) numericX = false
-    else if (!xNumber.has(label)) xNumber.set(label, asNumber)
     let point = pointAt.get(label)
     if (!point) {
-      point = { x: label, values: {} }
+      point = { x: label, xNumber: asNumber, values: {}, labels: {} }
       pointAt.set(label, point)
       points.push(point)
     }
     point.values[name] = y
+    point.labels[name] = cellLabel(row[yAt])
   }
 
   if (numericX && points.length > 1) {
-    points.sort((left, right) => (xNumber.get(left.x) ?? 0) - (xNumber.get(right.x) ?? 0))
+    points.sort((left, right) => (left.xNumber ?? 0) - (right.xNumber ?? 0))
   }
   return { series, points, skipped, numericX: numericX && points.length > 0 }
 }
