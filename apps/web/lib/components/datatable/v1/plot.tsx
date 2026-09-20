@@ -113,7 +113,8 @@ export function DatatablePlot({ view, model }: { view: DatatablePlotView; model:
               dataKey={name}
               stroke={colors[index]}
               strokeWidth={2}
-              dot={false}
+              dot={{ r: 3, strokeWidth: 0, fill: colors[index] }}
+              activeDot={{ r: 5, strokeWidth: 0, fill: colors[index] }}
               connectNulls
             />
           ))}
