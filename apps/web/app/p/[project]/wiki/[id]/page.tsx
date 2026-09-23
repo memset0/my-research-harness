@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { WikiShell } from '../../../../../components/wiki-shell'
 import { getQueryClient } from '../../../../../lib/get-query-client'
-import { getWikiList, getWikiPage } from '../../../../../lib/server/data'
+import { getWikiPage } from '../../../../../lib/server/data'
 
 const ID_REGEX = /^W\d{4}$/
 
@@ -30,17 +30,13 @@ export default async function WikiDetailPage({
   const decodedId = decodeURIComponent(id)
   if (!ID_REGEX.test(decodedId)) notFound()
 
+  // Only the selected page is server-rendered: the rail's list loads on the
+  // client, so the reading surface never waits for it.
   const queryClient = getQueryClient()
-  await Promise.all([
-    queryClient.prefetchQuery({
-      queryKey: ['wiki', decodedProject],
-      queryFn: () => getWikiList(decodedProject),
-    }),
-    queryClient.prefetchQuery({
-      queryKey: ['wiki-page', decodedProject, decodedId],
-      queryFn: () => getWikiPage(decodedProject, decodedId),
-    }),
-  ])
+  await queryClient.prefetchQuery({
+    queryKey: ['wiki-page', decodedProject, decodedId],
+    queryFn: () => getWikiPage(decodedProject, decodedId),
+  })
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>

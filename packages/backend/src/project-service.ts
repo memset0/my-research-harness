@@ -52,7 +52,11 @@ import {
   listDeprecatedRunIds,
   scanProjectRoot,
 } from '@memon/core'
-import type { BackendWikiArtifactReferences, BackendWikiArtifacts } from './document-service.js'
+import type {
+  BackendWikiArtifactOptions,
+  BackendWikiArtifactReferences,
+  BackendWikiArtifacts,
+} from './document-service.js'
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 
@@ -219,6 +223,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
   async readWikiArtifacts(
     projectName: string,
     references: BackendWikiArtifactReferences,
+    options: BackendWikiArtifactOptions = {},
   ): Promise<BackendWikiArtifacts> {
     const project = this.requireProject(projectName)
     return withAutomaticProjectFileContext(async () => {
@@ -249,15 +254,23 @@ export class FilesystemProjectService implements BackendProjectReadService {
       // One directory walk serves everything below. Resolving each bare
       // reference through `resolveRunReference` would walk the Run roots once
       // per citation in parallel, which overflowed the project I/O channel on
-      // a project with a thousand Runs.
-      const walkedPaths = await discoverRuns(project, { includeArchived: true })
+      // a project with a thousand Runs. A caller may supply a shared inventory
+      // of that walk instead of paying for a fresh one.
+      const walkedPaths = options.runPaths
+        ? await options.runPaths()
+        : await discoverRuns(project, { includeArchived: true })
       const byBasename = new Map<string, string[]>()
       for (const path of walkedPaths) {
         const name = basename(path)
         byBasename.set(name, [...(byBasename.get(name) ?? []), path])
       }
-      const wantedPaths = await Promise.all(
-        [...wantedRuns].map(async (reference) => {
+      // Cited Runs are resolved and read a few at a time: a list citing busy
+      // Experiments reads a thousand READMEs, and launching them all at once
+      // queues every other request's file operations behind them.
+      const wantedPaths = await mapWithConcurrency(
+        [...wantedRuns],
+        WIKI_RUN_READ_CONCURRENCY,
+        async (reference) => {
           if (reference.includes('/')) {
             try {
               return await resolveDeclaredRunPath(project.root, reference)
@@ -269,15 +282,15 @@ export class FilesystemProjectService implements BackendProjectReadService {
           // failed listing.
           const candidates = byBasename.get(reference) ?? []
           return candidates.length === 1 ? candidates[0]! : null
-        }),
+        },
       )
-      const runs = await Promise.all(
-        wantedPaths
-          .filter((path): path is string => path !== null)
-          .map(async (path) => {
-            const run = await readRunDir(path, project.name)
-            return { ...run, id: projectRunPath(project.root, path) }
-          }),
+      const runs = await mapWithConcurrency(
+        wantedPaths.filter((path): path is string => path !== null),
+        WIKI_RUN_READ_CONCURRENCY,
+        async (path) => {
+          const run = await readRunDir(path, project.name)
+          return { ...run, id: projectRunPath(project.root, path) }
+        },
       )
       // `@` mentions resolve against every walked directory — by canonical
       // project path and by base name — without opening a single README.
@@ -948,4 +961,25 @@ async function managedResultsUpdatedAt(
   if (!results?.exists) return null
   const stat = await missingOrThrow(fs.stat(results.path))
   return stat?.mtime.toISOString() ?? null
+}
+
+/** In-flight bound for the wiki projection's cited-Run resolution and reads. */
+const WIKI_RUN_READ_CONCURRENCY = 8
+
+/** `Promise.all(items.map(fn))` with at most `limit` calls in flight; order kept. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await fn(items[index]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
 }

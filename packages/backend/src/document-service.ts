@@ -28,6 +28,7 @@ import {
   deriveCompletion,
   deriveWikiReview,
   type DiscoveredWikiPage,
+  discoverRuns,
   discoverWikiPages,
   effectiveWikiId,
   type Experiment,
@@ -71,6 +72,7 @@ import {
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
+import { RunInventory, type RunInventoryWalk } from './run-inventory.js'
 
 export class BackendDocumentServiceError extends Error {
   constructor(
@@ -174,9 +176,18 @@ export interface BackendWikiArtifacts {
 /** What the wiki's declared sources ask the artifact provider to load. */
 export type BackendWikiArtifactReferences = WikiSourceReferences
 
+export interface BackendWikiArtifactOptions {
+  /**
+   * Every Run directory of the Project, as `discoverRuns` with archived Runs
+   * would return it. Omitted, the provider walks the Run roots itself.
+   */
+  runPaths?: () => Promise<readonly string[]>
+}
+
 export type BackendWikiArtifactProvider = (
   project: ProjectConfig,
   references: BackendWikiArtifactReferences,
+  options?: BackendWikiArtifactOptions,
 ) => Promise<BackendWikiArtifacts>
 
 export interface FilesystemDocumentServiceOptions {
@@ -190,14 +201,21 @@ export interface FilesystemDocumentServiceOptions {
    * `git` run against a mounted copy that belongs to another machine.
    */
   execution?: BackendExecutionResolver
+  /** Override for the Run-directory walk behind the shared wiki Run inventory. */
+  runWalk?: RunInventoryWalk
 }
 
 /** Read the cited artifacts' metadata without unrelated archive-policy reads. */
 export async function scanBackendWikiArtifacts(
   project: ProjectConfig,
   references: BackendWikiArtifactReferences,
+  options: BackendWikiArtifactOptions = {},
 ): Promise<BackendWikiArtifacts> {
-  return new FilesystemProjectService([project]).readWikiArtifacts(project.name, references)
+  return new FilesystemProjectService([project]).readWikiArtifacts(
+    project.name,
+    references,
+    options,
+  )
 }
 
 export class FilesystemDocumentService implements BackendDocumentService {
@@ -207,6 +225,9 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   private readonly resolveExecution: BackendExecutionResolver
 
+  /** One Run-directory walk shared by every wiki projection of a Project. */
+  private readonly runInventory: RunInventory
+
   constructor(projects: readonly ProjectConfig[], options: FilesystemDocumentServiceOptions = {}) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
@@ -214,6 +235,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
     this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
     this.resolveExecution = options.execution ?? resolveProjectExecution
+    this.runInventory = new RunInventory(
+      options.runWalk ??
+        ((name) =>
+          withAutomaticProjectFileContext(() =>
+            discoverRuns(this.requireProject(name), { includeArchived: true }),
+          )),
+    )
   }
 
   async listReports(projectName: string, options: InventoryListOptions = {}) {
@@ -564,13 +592,17 @@ export class FilesystemDocumentService implements BackendDocumentService {
       ),
     )
     const [artifacts, reportIds, marks] = await Promise.all([
-      this.wikiArtifacts(project, references),
+      this.wikiArtifacts(project, references, {
+        runPaths: () => this.runInventory.get(project.name),
+      }),
       this.listReportIds(project),
       readWikiReviewMarks(project.root),
     ])
+    // A single-page projection keeps only the cited summary, so only its
+    // review is derived: git blame per page is the other per-page cost.
     const reviews = await this.wikiReviews(
       project,
-      pages.map((page) => page.path),
+      (cited === pages ? pages : cited).map((page) => page.path),
       marks,
     )
     return buildWikiProject(pages, {

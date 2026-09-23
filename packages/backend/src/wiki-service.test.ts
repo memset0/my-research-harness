@@ -193,6 +193,27 @@ describe('FilesystemDocumentService wiki reads', () => {
     expect(page.id).toBe('W0002')
   })
 
+  it('shares one Run walk between a page and the list requested together, then reuses it', async () => {
+    let walks = 0
+    const counted = new FilesystemDocumentService([project()], {
+      runWalk: async () => {
+        walks += 1
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        return []
+      },
+    })
+    const [page, listed] = await Promise.all([
+      counted.getWiki('research', 'W0001'),
+      counted.listWiki('research'),
+    ])
+    expect(BackendWikiDocumentSchema.parse(page).id).toBe('W0001')
+    expect(BackendWikiPagesResponseSchema.parse(listed).pages).toHaveLength(3)
+    expect(walks).toBe(1)
+
+    await counted.getWiki('research', 'W0002')
+    expect(walks).toBe(1)
+  })
+
   it('lists pages whose sources cite an ambiguous Run base name instead of failing', async () => {
     // Two Run directories share one base name; a citation by that name is
     // simply unresolved (the Web reports it), never an exception that turns
@@ -487,6 +508,17 @@ describe('FilesystemDocumentService wiki review', () => {
     )
     expect(cascaded.verifiedThrough).toBeNull()
     expect(cascaded.commits.every((commit) => !commit.verified)).toBe(true)
+  })
+
+  it('serves one page with the same review the list reports for it', async () => {
+    await repoService.markWikiReview('research', commits[0]!)
+    await repoService.markWikiReview('research', commits[1]!)
+    const listed = BackendWikiPagesResponseSchema.parse(await repoService.listWiki('research'))
+    for (const id of ['W0001', 'W0002']) {
+      const page = BackendWikiDocumentSchema.parse(await repoService.getWiki('research', id))
+      expect(page.review).not.toBeNull()
+      expect(page.review).toEqual(listed.pages.find((entry) => entry.id === id)?.review)
+    }
   })
 
   it('reports an uncommitted edit as dirty', async () => {
