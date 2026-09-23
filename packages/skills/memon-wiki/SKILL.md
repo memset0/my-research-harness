@@ -90,13 +90,16 @@ Format (`wiki lint` warns `WIKI_MAINTENANCE_RULES_INVALID` otherwise):
 - The section contains list items only: no paragraphs, sub-headings, tables,
   callouts, or code blocks.
 - One requirement per item, stated as an instruction, ending with the date the
-  user stated it: `(2026-09-23)`.
+  user stated or authorized it: `(2026-09-23)`.
 - Top-level items bind every agent. Requirements for one agent sit indented
   under a scope item worded exactly `- Only for <agent>:`. Related rules may be
   grouped under a topic item that ends with a colon (`- Launch safety:`), at
   any depth. Scope and topic items state no requirement themselves.
 - The section holds current rules only. A replaced rule is edited, a withdrawn
   rule is removed; git keeps the history, so no `[!DEPRECATED]` markers here.
+- Keep it compact. Every agent reads the whole section before every edit, so a
+  long list of overlapping rules gets skimmed and broken. See "Keep the rules
+  compact" below.
 
 ```markdown
 ## Maintenance rules for agents
@@ -128,21 +131,79 @@ The user can put you into maintenance mode for one page ("进入 W0012 的维护
 3. A requirement that replaces or contradicts a rule edits that rule; a
    withdrawn requirement removes it. Never keep two conflicting items. Scope a
    requirement to one agent only when the user says it applies to that agent.
-4. Create the section when the first rule is recorded.
-5. After every change to the section, tell the user exactly what changed,
+4. Before adding a rule, apply "Keep the rules compact": fold it into the rule
+   it refines rather than appending a near-duplicate.
+5. Create the section when the first rule is recorded.
+6. After every change to the section, tell the user exactly what changed,
    quoting the items:
 
    > 已更新 W0012「Maintenance rules for agents」：
    > - 新增：「Only for Oh My Pi: Never cancel or modify a Slurm allocation; … (2026-09-23)」
    > - 删除：「Use one small-model owner per assigned node. (2026-09-13)」
    > - 修改：「Validate every 100 steps.」→「Validate every 50 steps. (2026-09-23)」
+   > - 合并：「Validate every 50 steps.」+「Also validate at step 0.」→「Validate at step 0 and every 50 steps. (2026-09-23)」
 
-6. Rule edits are ordinary page edits: lint, `journal submit`, and a commit at
+7. Rule edits are ordinary page edits: lint, `journal submit`, and a commit at
    the next stopping point (see "Commit and push at stopping points") whose
    summary names the rule change.
 
 Outside maintenance mode, a standing requirement the user states explicitly
 about how a page is maintained is recorded and reported the same way.
+
+### Keep the rules compact
+
+Adding is the last resort. Every rule you add is one more thing every agent
+must read and obey, so the section should hold the fewest rules that still say
+everything the user requires.
+
+- Before adding, look for the rule the new requirement refines, narrows, or
+  repeats, and edit that rule instead.
+- Merge duplicate or overlapping rules into one. Replace several specific rules
+  with one general rule when the general rule requires everything they did
+  ("Never edit `run.sh` in flight" + "Never edit `prepare.sh` in flight" →
+  "Never edit a launcher while a run executes it").
+- Drop the words that carry no requirement: history, examples, and reasons the
+  instruction does not need.
+- Compression never drops or weakens a requirement. Removing one, or making a
+  rule less strict, needs the user's word like any withdrawal.
+- A merged rule carries the latest date of the rules it replaces.
+- Report every merge with the replaced items quoted (`合并：`), so the user can
+  undo it.
+- When a section has grown past what fits on a screen or holds visible
+  overlap, propose a compressed version as a quoted before → after list and
+  apply it once the user agrees.
+
+### Error patterns need authorization
+
+A mistake that happened and can happen again — an incident, a wrong
+assumption that cost a run, a tooling trap — belongs in the rules as a
+preventive instruction. Unlike a requirement the user states, the lesson is
+your own conclusion, so it enters the section only after the user authorizes
+it:
+
+1. Propose it: quote the exact item, its scope (every agent or
+   `Only for <agent>:`) and topic, and the evidence — the date, what went
+   wrong, and where it is recorded. First check whether an existing rule
+   already covers it; if so, propose editing that rule instead.
+
+   > 发现一个可能反复出现的错误模式，建议写入 W0012「Maintenance rules for agents」：
+   > - 拟新增（Only for Oh My Pi → Launch safety）：「Never give concurrent jobs a fixed rendezvous port; let each pick a free one. (2026-09-23)」
+   > - 依据：2026-09-10 八次预处理启动因端口占用失败（E0021 Findings）。
+   > 要加进去吗？
+
+2. Add it only after the user agrees, dated with the day of the
+   authorization, and report it like any other rule change.
+3. A declined proposal leaves nothing behind. Do not propose the same lesson
+   again unless new evidence appears.
+4. Word it as an instruction that prevents the error ("Never X; do Y
+   instead"). Add the cause in a short clause only when the instruction alone
+   would look arbitrary. The incident narrative stays in the Experiment or the
+   page body.
+5. When the user asks you to review a page's history for error patterns, list
+   every candidate the same way and add only those the user approves.
+
+An error pattern the user states as a rule ("以后不要再……") is a requirement:
+record it directly.
 
 ## When to use
 
@@ -572,8 +633,9 @@ Report:
 
 - the detected mode (and remote root when mounted);
 - pages created/updated with ids, slugs, kinds, and language;
-- maintenance rules added, removed, or changed (already reported when they
-  happened; repeat them here);
+- maintenance rules added, removed, changed, or merged (already reported when
+  they happened; repeat them here), and error-pattern proposals still awaiting
+  the user's answer;
 - the wiki commit SHA(s) with their push result, or which pages stay
   uncommitted and what they wait for; and the `journal submit` `invocationId`
   for the direct page edits (or the reason the maintenance is unrecorded);
@@ -597,7 +659,10 @@ Report:
 - Never mix wiki and non-wiki paths in one commit.
 - Never delete or silently rewrite a historical claim; deprecate it.
 - Never edit a page without first reading its maintenance rules, and never
-  record or drop a rule without telling the user the exact item.
+  record, merge, or drop a rule without telling the user the exact items.
+- Never add an error pattern you identified to the maintenance rules without
+  the user's authorization, and never append a rule an existing rule already
+  covers.
 - Never invent an id, path, or slug — `memon wiki create` and
   `memon wiki move` own them.
 - Never migrate a Report the user did not name.
