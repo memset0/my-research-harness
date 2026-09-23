@@ -13,4 +13,4 @@
 
 - [x] 3.1 Add backend tests: concurrent page+list share one walk; warm read serves cached inventory and refreshes in background after the refresh age; failed refresh keeps the last inventory; single-page review matches the list's review
 - [x] 3.2 Run the selected backend wiki/document tests and web typecheck
-- [ ] 3.3 Measure page and concurrent page+list latency against the real Project on a separate port with the new build, and confirm rendered wiki HTML/CSS per the UI verification protocol
+- [x] 3.3 Measure page and concurrent page+list latency against the real Project on a separate port with the new build, and confirm rendered wiki HTML/CSS per the UI verification protocol
