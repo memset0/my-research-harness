@@ -31,11 +31,7 @@ it('reuses SQLite translations after reopen without a provider invocation', asyn
   const invoke = vi.fn(async () => output)
   const first = store()
   expect(
-    await new BodyTranslationService(invoke, Date.now, first).translate(
-      'document-revision-a',
-      [segment],
-      signal(),
-    ),
+    await new BodyTranslationService(invoke, Date.now, first).translate('document-revision-a', 'zh-CN', [segment], signal()),
   ).toEqual([result])
   await first.close()
   const reopened = store()
@@ -43,19 +39,11 @@ it('reuses SQLite translations after reopen without a provider invocation', asyn
     throw new Error('cache must avoid paid call')
   })
   expect(
-    await new BodyTranslationService(forbidden, Date.now, reopened).translate(
-      'document-revision-a',
-      [segment],
-      signal(),
-    ),
+    await new BodyTranslationService(forbidden, Date.now, reopened).translate('document-revision-a', 'zh-CN', [segment], signal()),
   ).toEqual([result])
   expect(forbidden).not.toHaveBeenCalled()
   const other = vi.fn(async () => output)
-  await new BodyTranslationService(other, Date.now, reopened).translate(
-    'document-revision-b',
-    [segment],
-    signal(),
-  )
+  await new BodyTranslationService(other, Date.now, reopened).translate('document-revision-b', 'zh-CN', [segment], signal())
   expect(other).toHaveBeenCalledTimes(1)
   expect((await stat(reopened.path)).mode & 0o777).toBe(0o600)
   expect((await readFile(reopened.path)).includes(Buffer.from('document-revision-a'))).toBe(false)
@@ -144,11 +132,7 @@ it('rejects malformed persisted JSON and revalidates protected output', async ()
     set: vi.fn(async () => undefined),
   }
   expect(
-    await new BodyTranslationService(invoke, Date.now, invalid).translate(
-      'key',
-      [segment],
-      signal(),
-    ),
+    await new BodyTranslationService(invoke, Date.now, invalid).translate('key', 'zh-CN', [segment], signal()),
   ).toEqual([result])
   expect(invoke).toHaveBeenCalledTimes(1)
 })
@@ -169,9 +153,9 @@ it('does not let memory bypass expired or removed persistent entries', async () 
   const get = vi.fn().mockResolvedValueOnce(result).mockResolvedValueOnce(null)
   const invoke = vi.fn(async () => output)
   const service = new BodyTranslationService(invoke, Date.now, { get, set: async () => undefined })
-  await service.translate('key', [segment], signal())
+  await service.translate('key', 'zh-CN', [segment], signal())
   expect(invoke).not.toHaveBeenCalled()
-  await service.translate('key', [segment], signal())
+  await service.translate('key', 'zh-CN', [segment], signal())
   expect(invoke).toHaveBeenCalledTimes(1)
 })
 
@@ -184,7 +168,7 @@ it('fails closed on unavailable storage before spending quota or acknowledging a
     set: vi.fn(async () => undefined),
   }
   await expect(
-    new BodyTranslationService(invoke, Date.now, unavailable).translate('key', [segment], signal()),
+    new BodyTranslationService(invoke, Date.now, unavailable).translate('key', 'zh-CN', [segment], signal()),
   ).rejects.toMatchObject({ code: 'CACHE_UNAVAILABLE' })
   expect(invoke).not.toHaveBeenCalled()
   const unwritable = {
@@ -194,11 +178,7 @@ it('fails closed on unavailable storage before spending quota or acknowledging a
     },
   }
   expect(
-    await new BodyTranslationService(invoke, Date.now, unwritable).translate(
-      'key',
-      [segment],
-      signal(),
-    ),
+    await new BodyTranslationService(invoke, Date.now, unwritable).translate('key', 'zh-CN', [segment], signal()),
   ).toEqual([{ id: segment.id, sourceHash: segment.sourceHash, code: 'CACHE_UNAVAILABLE' }])
   expect(invoke).toHaveBeenCalledTimes(1)
   const cache = new SqliteTranslationCache(join(directory, 'missing', 'translations.sqlite3'))

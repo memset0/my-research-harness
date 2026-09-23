@@ -5,15 +5,6 @@ Defines the bundled `memon-wiki` skill: how an agent maintains a project's wiki 
 
 ## Requirements
 
-### Requirement: `memon-wiki` is bundled and installed in the harness repo
-
-A skill SHALL exist at `packages/skills/memon-wiki/SKILL.md` with `name: memon-wiki`, no `disable-model-invocation: true`, a `references/page-kinds.md` describing every canonical kind's purpose, status vocabulary, required frontmatter, recommended sections, and authoring guidance, and a `references/html-bundle.md` carrying the static bundle contract adapted to the wiki asset route. An identical copy SHALL exist at `<harness repo>/.claude/skills/memon-wiki/`. `memon-write-report` SHALL remain bundled and unchanged. The skill body SHALL be English; user-facing dialogue examples SHALL be Chinese inside block quotes.
-
-#### Scenario: Skill present in both locations
-- **WHEN** a reader compares `packages/skills/memon-wiki/` with `.claude/skills/memon-wiki/`
-- **THEN** the trees are byte-identical
-- **AND** `packages/skills/memon-write-report/` still exists
-
 ### Requirement: The skill detects in-project versus mounted operation
 
 Before any other step the skill SHALL resolve the project path `P` (an explicit user-given path, else `cwd`) and run `findmnt -T "$P" -o FSTYPE -n`. When the result is `fuse.sshfs` the skill SHALL derive `user@host` and the remote project root from `findmnt -T "$P" -o SOURCE,TARGET -n` plus the path of `P` relative to the mount target, and SHALL run every `memon` command as `ssh <user@host> 'cd <remote root> && memon --project-root . …'` while reading and writing page files through the local mount path. Otherwise the skill SHALL run `memon --project-root "$P" …` locally. The skill SHALL state the detected mode and, in mounted mode, the remote root to the user before continuing. The skill SHALL NOT parse `LOCAL.md` or any other prose file to find hosts.
@@ -125,7 +116,7 @@ When updating a page whose earlier claims no longer hold, the skill SHALL keep t
 
 ### Requirement: Component authoring lives in `memon-components`, not in other skills
 
-The harness SHALL bundle a skill `packages/skills/memon-components/SKILL.md` (copied to `.claude/skills/` in the harness repo and shipped by `install-skills`) that is the only skill describing how to write component blocks. It SHALL contain a generated section, delimited by markers, holding one table row per registered component type at its latest version (type, version, one-line description, when to use, payload fields with type/required/meaning, a copyable example) produced by `scripts/component-docs.mjs` from the descriptor directories; the skills build SHALL fail when that section is stale. The skill SHALL teach the declaration syntax, static versus executable payloads, the `script`/`code` reuse rule (inline by default; extract a `.py` only when reused elsewhere or unusually long), the `__assets` cache and `memon components run`, and SHALL NOT tell the agent to query a CLI or HTTP API for field lists. `memon-author-components` SHALL be retired through `retired-skills.json`. `memon-wiki`, `memon-write-experiment-doc`, `memon-run-experiment`, and `memon-write-code-review` SHALL each contain exactly one routing sentence naming `memon-components` and SHALL NOT restate component rules.
+The harness SHALL bundle a skill `packages/skills/memon-components/SKILL.md` (shipped to projects by `install-skills`; no harness-repo copy) that is the only skill describing how to write component blocks. It SHALL contain a generated section, delimited by markers, holding one table row per registered component type at its latest version (type, version, one-line description, when to use, payload fields with type/required/meaning, a copyable example) produced by `scripts/component-docs.mjs` from the descriptor directories; the skills build SHALL fail when that section is stale. The skill SHALL teach the declaration syntax, static versus executable payloads, the `script`/`code` reuse rule (inline by default; extract a `.py` only when reused elsewhere or unusually long), the `__assets` cache and `memon components run`, and SHALL NOT tell the agent to query a CLI or HTTP API for field lists. `memon-author-components` SHALL be retired through `retired-skills.json`. `memon-wiki`, `memon-write-experiment-doc`, `memon-run-experiment`, and `memon-write-code-review` SHALL each contain exactly one routing sentence naming `memon-components` and SHALL NOT restate component rules.
 
 #### Scenario: Other skills only route
 - **WHEN** a reader greps `packages/skills/memon-wiki/SKILL.md` for `memon-components` and for `views:`
@@ -159,3 +150,60 @@ The `memon-components` skill SHALL tell the agent to keep a figure's image besid
 #### Scenario: Skill states the rule
 - **WHEN** a reader greps `packages/skills/memon-components/SKILL.md` for `hotlink` and for `foreignObject`
 - **THEN** each matches at least once
+
+### Requirement: Pages are written in their declared language
+
+The skill SHALL write new pages in English unless the user asks for Chinese for that page or states it as a preference for the task, in which case the page SHALL be created with `language: zh` and written in Chinese (title, description, headings, prose, table text). Updates SHALL keep an existing page's declared language; a conversation held in Chinese SHALL NOT by itself switch a page's language. A language switch SHALL happen only on request, as a faithful whole-page rewrite that changes no claims or sources, together with the `language` field, in one wiki commit. In Chinese prose the skill SHALL keep in English: artifact identifiers, paths, code, column, Variant, metric and config names, method, model and library names, acronyms, and technical terms with no standard unambiguous Chinese rendering; frontmatter enums and slugs SHALL stay unchanged.
+
+#### Scenario: User asks for a Chinese page
+- **WHEN** the user asks for a finding about KV-cache memory "用中文写"
+- **THEN** the page is created with `--language zh`, uses the Chinese headings, and keeps terms such as `KV cache`, `FP8`, and `E0017` in English
+
+#### Scenario: Updating an English page from a Chinese conversation
+- **GIVEN** an English page and a user who discusses it in Chinese without asking for a language change
+- **WHEN** the skill records the agreed update
+- **THEN** the update is written in English and `language` is unchanged
+
+### Requirement: Agents follow and maintain a page's maintenance rules
+
+The skill SHALL document the maintenance rules section: fixed name (`Maintenance rules`, or `维护规则` on Chinese pages), last H2 of the page, list items only, one dated requirement per item, agent-specific requirements nested under a scope item worded `- Only for <agent>:`, and related rules optionally grouped under topic items ending with a colon at any depth. Every agent SHALL read a page's rules before editing it and follow those that apply to it, preserving rules scoped to other agents. When the owner puts the agent into maintenance mode for a page, the agent SHALL record every long-term requirement the owner states in that section without asking, SHALL edit or remove a rule the owner replaces or withdraws instead of adding a conflicting item, SHALL NOT record one-off instructions, and after each change SHALL tell the owner exactly which items were added, removed, or changed, quoting them. Outside maintenance mode a standing requirement the owner states explicitly about how a page is maintained SHALL be recorded and reported the same way.
+
+#### Scenario: Owner states a standing requirement in maintenance mode
+- **GIVEN** the agent is in maintenance mode for `W0012`
+- **WHEN** the owner says that from now on Oh My Pi must never cancel an allocation
+- **THEN** a dated item is added under `- Only for Oh My Pi:` in W0012's `## Maintenance rules` and the agent reports the added item verbatim
+
+#### Scenario: Owner withdraws a rule
+- **WHEN** the owner says an existing rule no longer applies
+- **THEN** the item is removed, no deprecated marker is left in the section, and the agent reports the removed item verbatim
+
+### Requirement: Wiki changes are committed per batch of the agent's own pages and pushed
+
+The skill SHALL commit only when a batch of page changes reaches a stopping point: while an experiment the pages depend on is still running or pending, or a question to the user is awaiting an answer that would change the pages, it SHALL leave the edits uncommitted unless the user asks for a version to be committed now. At a stopping point it SHALL commit that batch of related page changes as one `memon wiki commit <page>...` naming exactly the pages the agent changed in that batch, SHALL commit unrelated batches separately, SHALL never include pages or files changed by others, and SHALL rely on the command's automatic push. The handoff SHALL report each commit's SHA and push result; on `PUSH_FAILED` the skill SHALL report the SHA and reason and SHALL NOT fetch, rebase, merge, or force on its own.
+
+#### Scenario: Finding plus roadmap
+- **WHEN** the agent records a finding W0024 and links it from roadmap W0012 in one task
+- **THEN** it runs one `memon wiki commit W0024 W0012 -m ...` and reports the pushed SHA
+
+#### Scenario: Another agent's edit in the tree
+- **GIVEN** W0013 was modified by another agent in the same working tree
+- **WHEN** this agent commits its W0012 change
+- **THEN** W0013 is not part of the commit
+
+#### Scenario: Work waits on an experiment
+- **GIVEN** the agent updated W0012 and the result it will cite is still being produced
+- **WHEN** it hands off to wait for the experiment
+- **THEN** the edit stays uncommitted and the handoff says so and why
+
+#### Scenario: User asks for a snapshot
+- **WHEN** the user asks to commit the current version while questions remain open
+- **THEN** the agent commits and pushes the pages it changed
+
+### Requirement: `memon-wiki` is bundled in `packages/skills`
+
+A skill SHALL exist at `packages/skills/memon-wiki/SKILL.md` with `name: memon-wiki`, no `disable-model-invocation: true`, a `references/page-kinds.md` describing every canonical kind's purpose, status vocabulary, required frontmatter, recommended sections, and authoring guidance, and a `references/html-bundle.md` carrying the static bundle contract adapted to the wiki asset route. The skill SHALL exist only under `packages/skills/` and reach projects through `memon install-skills`; the harness repository SHALL NOT carry a copy. `memon-write-report` SHALL remain bundled and unchanged. The skill body SHALL be English; user-facing dialogue examples SHALL be Chinese inside block quotes.
+
+#### Scenario: Skill present only in the package
+- **WHEN** a reader lists the harness repository
+- **THEN** `packages/skills/memon-wiki/SKILL.md` exists and `.claude/skills/memon-wiki/` does not
+- **AND** `packages/skills/memon-write-report/` still exists

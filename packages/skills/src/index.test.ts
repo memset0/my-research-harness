@@ -65,3 +65,26 @@ describe('retired-skills.json', () => {
     expect(names).toContain('memon-author-components')
   })
 })
+
+describe('harness repository', () => {
+  // Bundled skills have one source, this package, and reach research projects
+  // through `memon install-skills`. A copy in the harness's own agent skill
+  // directories goes stale and shadows the package for harness developers.
+  const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
+
+  it('carries no memon skill copies in its agent skill directories', () => {
+    const strays: string[] = []
+    for (const dir of ['.claude/skills', '.codex/skills', '.opencode/skills']) {
+      let entries: string[]
+      try {
+        entries = readdirSync(join(repoRoot, dir))
+      } catch {
+        continue
+      }
+      for (const name of entries) {
+        if (name.startsWith('memon-') || name === 'PREFLIGHT.md') strays.push(`${dir}/${name}`)
+      }
+    }
+    expect(strays).toEqual([])
+  })
+})

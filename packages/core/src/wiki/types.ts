@@ -7,7 +7,7 @@
 // bundles can `import type` from here without pulling any node code.
 
 export {
-  WIKI_KINDS, WIKI_STATUS_BY_KIND, WIKI_RECOMMENDED_SECTIONS,
+  WIKI_KINDS, WIKI_STATUS_BY_KIND, WIKI_RECOMMENDED_SECTION_FORMS,
   WIKI_RESERVED_KINDS, isWikiKind, type WikiKind,
 } from './kind-registry.js'
 
@@ -27,6 +27,23 @@ export const WIKI_TIMESTAMP_REGEX =
   /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
 /** `YYYY-MM-DD`, the `meeting` kind's `date`. */
 export const WIKI_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
+/** Content languages a page may declare; an absent `language` means `en`. */
+export const WIKI_LANGUAGES = ['en', 'zh'] as const
+
+export type WikiLanguage = (typeof WIKI_LANGUAGES)[number]
+
+/** True for a raw frontmatter value that names a supported page language. */
+export function isWikiLanguage(value: unknown): value is WikiLanguage {
+  return typeof value === 'string' && (WIKI_LANGUAGES as readonly string[]).includes(value)
+}
+
+/**
+ * The H2 a page uses for the owner's standing requirements, in both written
+ * forms. Either form is recognized on any page; the section holds list items
+ * only (`WIKI_MAINTENANCE_RULES_INVALID`).
+ */
+export const WIKI_MAINTENANCE_RULES_HEADINGS = { en: 'Maintenance rules', zh: '维护规则' } as const
 
 // ---------- review ----------
 
@@ -71,6 +88,8 @@ export interface WikiFrontmatter {
   status?: string
   /** `YYYY-MM-DD`; required for `meeting`. */
   date?: string
+  /** Declared content language; absent or unknown reads as `en`. */
+  language?: string
   created_at: string
   updated_at: string
   sources?: string[]
@@ -103,7 +122,9 @@ export const WIKI_DIAGNOSTIC_CODES = [
   'WIKI_DATE_MISSING',
   'WIKI_SOURCES_REQUIRED',
   'WIKI_TIMESTAMP_INVALID',
+  'WIKI_LANGUAGE_INVALID',
   'WIKI_MISSING_SECTION',
+  'WIKI_MAINTENANCE_RULES_INVALID',
   'WIKI_SOURCE_UNRESOLVED',
   'WIKI_CLAIM_WITHOUT_EVIDENCE',
   'WIKI_UNREVIEWED_VERIFIED',
@@ -182,6 +203,8 @@ export interface WikiSummary {
   description: string | null
   status: string | null
   date: string | null
+  /** Effective content language: the declared one, else `en`. */
+  language: WikiLanguage
   tags: string[]
   sources: string[]
   legacyId: string | null

@@ -56,7 +56,7 @@ In every Markdown surface the dashboard renders, a link whose destination is `@<
 
 Every page SHALL start with YAML frontmatter. `id` SHALL match `^W\d{4}$` and be unique in the project; `kind` SHALL equal the enclosing directory name; `title` SHALL be a non-empty string; `created_at` and `updated_at` SHALL be ISO8601 timestamps with an explicit offset. Status/date/source policies SHALL derive from the validated shipped Wiki kind registry. The existing defaults SHALL remain: `status` required and restricted per kind: `finding` `TENTATIVE|VERIFIED|RETRACTED`; `bottleneck` `OPEN|MITIGATED|RESOLVED`; `question` `OPEN|ANSWERED|DROPPED`; `decision` `PROPOSED|ACCEPTED|SUPERSEDED`; `showcase` `DRAFT|READY|OUTDATED`; `harness-feedback` `PROPOSED|ACCEPTED|SHIPPED|REJECTED`; `meeting`, `roadmap`, `note`, `initiative`, and `catalog` SHALL NOT require `status`. `meeting` SHALL require `date` in `YYYY-MM-DD` form. `finding` SHALL require a non-empty `sources` list. `description` (a one-to-three-sentence plain-text summary of the page, no Markdown), `tags` (string list), `sources` (string list), `legacy_id` (`^R\d{4}$`), `entry` (bundle pages only; relative path to an HTML document inside the bundle),  Keys outside this schema SHALL be preserved verbatim by every write path.
 
-Violations SHALL be reported as diagnostics (`WIKI_ID_INVALID`, `WIKI_ID_DUPLICATE`, `WIKI_KIND_MISMATCH`, `WIKI_TITLE_MISSING`, `WIKI_STATUS_MISSING`, `WIKI_STATUS_INVALID`, `WIKI_DATE_MISSING`, `WIKI_SOURCES_REQUIRED`, `WIKI_TIMESTAMP_INVALID`) with severity `error`; the page SHALL remain readable and listed.
+Violations SHALL be reported as diagnostics (`WIKI_ID_INVALID`, `WIKI_ID_DUPLICATE`, `WIKI_KIND_MISMATCH`, `WIKI_TITLE_MISSING`, `WIKI_STATUS_MISSING`, `WIKI_STATUS_INVALID`, `WIKI_DATE_MISSING`, `WIKI_SOURCES_REQUIRED`, `WIKI_TIMESTAMP_INVALID`, `WIKI_LANGUAGE_INVALID`) with severity `error`; the page SHALL remain readable and listed. A page MAY declare `language: en` or `language: zh`, the language its content is written in; an absent field SHALL mean `en`, and page summaries and details SHALL expose the effective `language`.
 
 #### Scenario: Valid finding
 - **GIVEN** a `finding` page with `status: VERIFIED` and `sources: [E0017-fused-attention]`
@@ -73,14 +73,29 @@ Violations SHALL be reported as diagnostics (`WIKI_ID_INVALID`, `WIKI_ID_DUPLICA
 - **WHEN** the page is rewritten through the API or CLI
 - **THEN** `owner: alice` is still present unchanged
 
+#### Scenario: Chinese page
+- **GIVEN** a page with `language: zh`
+- **WHEN** the wiki is listed
+- **THEN** its summary carries `language: zh` and no diagnostic is produced
+
+#### Scenario: Unknown language
+- **GIVEN** a page with `language: fr`
+- **WHEN** the page is validated
+- **THEN** a `WIKI_LANGUAGE_INVALID` error diagnostic is produced and the page is listed with `language: en`
+
 ### Requirement: Recommended sections are advisory
 
-For each canonical kind the system SHALL derive recommended H2 sections from the shipped registry, initially: `meeting` Attendees, Notes, Decisions, Action items; `finding` Claim, Evidence, Limits; `bottleneck` Problem, Impact, Status, Candidates; `question` Question, Context, Answer; `decision` Decision, Rationale, Consequences; `showcase` What to show, How to reproduce, Assets; `harness-feedback` Motivation, Proposal, Status; `note`, `roadmap`, `initiative`, and `catalog` none. Required H2 structure SHALL NOT be inferred from suggestions. A missing recommended section SHALL produce a `WIKI_MISSING_SECTION` diagnostic with severity `warn`. Additional or reordered sections SHALL NOT produce diagnostics.
+For each canonical kind the system SHALL derive recommended H2 sections from the shipped registry, initially: `meeting` Attendees, Notes, Decisions, Action items; `finding` Claim, Evidence, Limits; `bottleneck` Problem, Impact, Status, Candidates; `question` Question, Context, Answer; `decision` Decision, Rationale, Consequences; `showcase` What to show, How to reproduce, Assets; `harness-feedback` Motivation, Proposal, Status; `note`, `roadmap`, `initiative`, and `catalog` none. Required H2 structure SHALL NOT be inferred from suggestions. A missing recommended section SHALL produce a `WIKI_MISSING_SECTION` diagnostic with severity `warn`. Additional or reordered sections SHALL NOT produce diagnostics. Every recommended section SHALL also have a Chinese form from the registry (`finding` 结论, 证据, 局限, and so on); either form SHALL satisfy the recommendation on any page, and the warning SHALL name the form of the page's declared language.
 
 #### Scenario: Finding without Limits
 - **GIVEN** a `finding` page whose body has `## Claim` and `## Evidence` only
 - **WHEN** the page is linted
 - **THEN** exactly one `WIKI_MISSING_SECTION` warning naming `Limits` is produced
+
+#### Scenario: Chinese finding headings
+- **GIVEN** a `language: zh` `finding` page whose body has `## 结论`, `## 证据` and `## 局限`
+- **WHEN** the page is linted
+- **THEN** no `WIKI_MISSING_SECTION` diagnostic is produced
 
 ### Requirement: Sources resolve to project artifacts and drive staleness
 
@@ -304,3 +319,22 @@ Deprecation exists at two levels. **Page level**: frontmatter `deprecated` is an
 - **GIVEN** a blockquote `> [!DEPRECATED]` with nothing after it
 - **WHEN** the page is linted
 - **THEN** `WIKI_DEPRECATION_INVALID` is reported
+
+### Requirement: Maintenance rules section holds only list items
+
+A page MAY carry one section named `Maintenance rules` or `维护规则` recording the owner's standing requirements for agents working on that page. Inside that section every non-blank line SHALL be a list item or an indented line belonging to a list item. Any other content, or a second section with either name, SHALL produce a `WIKI_MAINTENANCE_RULES_INVALID` diagnostic with severity `warn` on the offending line; the page SHALL remain valid and listed. A page without the section SHALL produce no diagnostic.
+
+#### Scenario: Valid rules with an agent-scoped group
+- **GIVEN** a page ending with `## Maintenance rules` whose lines are `- Keep the top callout current. (2026-09-23)`, `- Only for Oh My Pi:` and an indented `  - Never cancel a Slurm allocation. (2026-09-18)`
+- **WHEN** the page is linted
+- **THEN** no `WIKI_MAINTENANCE_RULES_INVALID` diagnostic is produced
+
+#### Scenario: Prose inside the rules
+- **GIVEN** the same section followed by a plain paragraph line
+- **WHEN** the page is linted
+- **THEN** one `WIKI_MAINTENANCE_RULES_INVALID` warning names that line
+
+#### Scenario: Two rules sections
+- **GIVEN** a page with both `## Maintenance rules` and `## 维护规则`
+- **WHEN** the page is linted
+- **THEN** a `WIKI_MAINTENANCE_RULES_INVALID` warning names the second heading

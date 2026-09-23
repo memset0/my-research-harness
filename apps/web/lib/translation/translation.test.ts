@@ -175,7 +175,7 @@ describe('queue and cache', () => {
     )
     const service = new BodyTranslationService(invoke)
     const requests = ['first', 'second', 'third'].map((identity) =>
-      service.translate(identity, [segment()], new AbortController().signal),
+      service.translate(identity, 'zh-CN', [segment()], new AbortController().signal),
     )
     await vi.advanceTimersByTimeAsync(1000)
     expect(invoke).toHaveBeenCalledTimes(2)
@@ -194,6 +194,7 @@ describe('queue and cache', () => {
     for (let offset = 0; offset < 2016; offset += 24) {
       const request = service.translate(
         'same',
+        'zh-CN',
         Array.from({ length: 24 }, (_, index) => segment(`Prose ${offset + index}`)),
         new AbortController().signal,
       )
@@ -201,7 +202,7 @@ describe('queue and cache', () => {
       await request
     }
     const before = invoke.mock.calls.length
-    const evicted = service.translate('same', [segment('Prose 0')], new AbortController().signal)
+    const evicted = service.translate('same', 'zh-CN', [segment('Prose 0')], new AbortController().signal)
     await vi.advanceTimersByTimeAsync(150)
     await evicted
     expect(invoke.mock.calls.length).toBe(before + 1)
@@ -219,20 +220,17 @@ describe('queue and cache', () => {
     for (let offset = 0; offset < 600; offset += 6) {
       const request = bytes.translate(
         'same',
+        'zh-CN',
         Array.from({ length: 6 }, (_, index) => segment(`Prose ${offset + index}`)),
         new AbortController().signal,
       )
       await vi.advanceTimersByTimeAsync(150)
       await request
     }
-    const cached = await bytes.translate(
-      'same',
-      [segment('Prose 599')],
-      new AbortController().signal,
-    )
+    const cached = await bytes.translate('same', 'zh-CN', [segment('Prose 599')], new AbortController().signal)
     expect(cached[0]?.text).toContain('中')
     expect(large).toHaveBeenCalledTimes(100)
-    const byteEvicted = bytes.translate('same', [segment('Prose 0')], new AbortController().signal)
+    const byteEvicted = bytes.translate('same', 'zh-CN', [segment('Prose 0')], new AbortController().signal)
     await vi.advanceTimersByTimeAsync(150)
     await byteEvicted
     expect(large).toHaveBeenCalledTimes(101)
@@ -261,13 +259,12 @@ describe('queue and cache', () => {
     vi.useFakeTimers()
     const invoke = vi.fn(echo).mockRejectedValueOnce(new TranslationError('PROVIDER_EXIT'))
     const service = new BodyTranslationService(invoke)
-    const request = service.translate('same', [segment()], new AbortController().signal)
+    const request = service.translate('same', 'zh-CN', [segment()], new AbortController().signal)
     await vi.runAllTimersAsync()
     expect((await request)[0]?.text).toBe('Hello world')
     expect(invoke).toHaveBeenCalledTimes(2)
     const controller = new AbortController()
-    const abandoned = service
-      .translate('other', [segment()], controller.signal)
+    const abandoned = service.translate('other', 'zh-CN', [segment()], controller.signal)
       .catch((error) => error.code)
     controller.abort()
     expect(await abandoned).toBe('CANCELLED')
@@ -278,25 +275,13 @@ describe('queue and cache', () => {
     vi.useFakeTimers()
     const invoke = vi.fn(echo)
     const service = new BodyTranslationService(invoke)
-    const first = service.translate(
-      'project-a/revision-a',
-      [segment()],
-      new AbortController().signal,
-    )
-    const second = service.translate(
-      'project-a/revision-a',
-      [segment()],
-      new AbortController().signal,
-    )
+    const first = service.translate('project-a/revision-a', 'zh-CN', [segment()], new AbortController().signal)
+    const second = service.translate('project-a/revision-a', 'zh-CN', [segment()], new AbortController().signal)
     await vi.advanceTimersByTimeAsync(150)
     expect(await first).toEqual(await second)
-    await service.translate('project-a/revision-a', [segment()], new AbortController().signal)
+    await service.translate('project-a/revision-a', 'zh-CN', [segment()], new AbortController().signal)
     expect(invoke).toHaveBeenCalledTimes(1)
-    const changed = service.translate(
-      'project-a/revision-b',
-      [segment()],
-      new AbortController().signal,
-    )
+    const changed = service.translate('project-a/revision-b', 'zh-CN', [segment()], new AbortController().signal)
     await vi.advanceTimersByTimeAsync(150)
     await changed
     expect(invoke).toHaveBeenCalledTimes(2)
@@ -313,8 +298,8 @@ describe('queue and cache', () => {
     })
     const first = new AbortController()
     const second = new AbortController()
-    const one = service.translate('same', [segment()], first.signal).catch((error) => error.code)
-    const two = service.translate('same', [segment()], second.signal).catch((error) => error.code)
+    const one = service.translate('same', 'zh-CN', [segment()], first.signal).catch((error) => error.code)
+    const two = service.translate('same', 'zh-CN', [segment()], second.signal).catch((error) => error.code)
     await vi.advanceTimersByTimeAsync(150)
     first.abort()
     expect(await one).toBe('CANCELLED')
@@ -330,16 +315,16 @@ describe('queue and cache', () => {
     let now = 0
     const invoke = vi.fn(echo)
     const service = new BodyTranslationService(invoke, () => now)
-    const pending = service.translate('same', [segment()], new AbortController().signal)
+    const pending = service.translate('same', 'zh-CN', [segment()], new AbortController().signal)
     await vi.advanceTimersByTimeAsync(150)
     await pending
     now = 1_800_001
     invoke.mockRejectedValueOnce(new TranslationError('QUOTA_EXHAUSTED'))
-    const expired = service.translate('same', [segment()], new AbortController().signal)
+    const expired = service.translate('same', 'zh-CN', [segment()], new AbortController().signal)
     await vi.advanceTimersByTimeAsync(150)
     expect((await expired)[0]?.code).toBe('QUOTA_EXHAUSTED')
     await expect(
-      service.translate('other', [segment()], new AbortController().signal),
+      service.translate('other', 'zh-CN', [segment()], new AbortController().signal),
     ).rejects.toMatchObject({ code: 'QUOTA_EXHAUSTED' })
     expect(invoke).toHaveBeenCalledTimes(2)
   })
@@ -348,10 +333,10 @@ describe('queue and cache', () => {
     vi.useFakeTimers()
     const service = new BodyTranslationService(echo)
     const requests = Array.from({ length: 32 }, (_, index) =>
-      service.translate(`doc-${index}`, [segment()], new AbortController().signal),
+      service.translate(`doc-${index}`, 'zh-CN', [segment()], new AbortController().signal),
     )
     await expect(
-      service.translate('overflow', [segment()], new AbortController().signal),
+      service.translate('overflow', 'zh-CN', [segment()], new AbortController().signal),
     ).rejects.toMatchObject({ code: 'QUEUE_FULL' })
     await vi.runAllTimersAsync()
     await Promise.all(requests)

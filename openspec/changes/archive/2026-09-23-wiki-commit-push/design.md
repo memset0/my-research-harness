@@ -1,0 +1,10 @@
+## Context
+
+`runWikiCommit` checks the index for non-wiki paths (`MIXED_INDEX`), runs `git add -A -- docs/wiki`, derives the summary from staged wiki paths, commits, and prints the SHA and pages. It never pushes.
+
+## Decisions
+
+1. **Page scope**: each `<page>` argument is a `W<NNNN>` id or a slug resolved to an id through discovery (an id need not exist on disk, so a deleted page can be committed). The pathspec is `docs/wiki/*/W<NNNN>-*` in default magic (`*` spans `/`; a glob pair aborts `git add` when one half matches nothing), which covers the single file, the bundle directory, `__assets/`, a slug rename, and a kind move. The command runs `git add -A -- <pathspec>` per page (tolerating an unmatched pathspec) and then `git commit --only -m <subject> -- <staged page files>`, so other staged entries are neither committed nor unstaged, and `MIXED_INDEX` does not apply. Nothing to commit for the named pages exits 2 as today.
+2. **No pages**: unchanged behavior.
+3. **Push**: after a successful commit, unless `--no-push`: resolve the upstream with `git rev-parse --abbrev-ref --symbolic-full-name @{u}`; none -> `PUSH_FAILED` (`no upstream`). Otherwise `git push <remote> HEAD:<upstream branch>` (no `--force`). Success adds `push: { status: "pushed", remote, branch }` to the output; `--no-push` adds `status: "skipped"`. Failure exits 1 with error code `PUSH_FAILED`, message containing the new SHA, the remote/branch, and git's trimmed stderr; the commit is kept. No automatic fetch/pull/rebase/merge/force.
+4. **Skill**: commit only at a stopping point — not while an experiment the pages depend on is running or pending, or while a question to the owner that would change the pages is open, unless the owner asks for a version now. Then one commit per coherent batch (for example a finding plus the roadmap that links it, or one page's cleanup), naming exactly the pages this agent changed; unrelated batches get separate commits; non-wiki files are never included. On `PUSH_FAILED`, report the SHA and reason and leave integration (fetch/rebase) to the user.

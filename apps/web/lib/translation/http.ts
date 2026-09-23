@@ -14,6 +14,7 @@ import { createTranslationManifest } from './manifest'
 import { getTranslationCache } from './cache'
 import { BodyTranslationService } from './service'
 import { translationSources, type TranslationDocument } from './sources'
+import { TRANSLATION_TARGETS, type TranslationTarget } from './target'
 
 const selector = z
   .string()
@@ -33,11 +34,12 @@ export const TranslationDocumentSchema = z
       value.id,
     ),
   )
+export const TranslationTargetSchema = z.enum(TRANSLATION_TARGETS)
 export const TranslationRequestSchema = z
   .object({
     document: TranslationDocumentSchema,
     revision: z.string().regex(/^[a-f0-9]{64}$/),
-    targetLanguage: z.literal('zh-CN'),
+    targetLanguage: TranslationTargetSchema,
     segments: z
       .array(z.object({ id: z.string().max(128), sourceHash: z.string().max(32) }).strict())
       .min(1)
@@ -182,7 +184,7 @@ export async function translationService() {
     state.__memonBodyTranslation = {
       key,
       service: new BodyTranslationService(
-        (prompt, signal) => runCodexTranslation(options, prompt, signal),
+        (prompt, signal, target) => runCodexTranslation(options, { prompt, target }, signal),
         Date.now,
         getTranslationCache(configPath),
       ),
@@ -191,14 +193,18 @@ export async function translationService() {
   return state.__memonBodyTranslation.service
 }
 
-export function translationCacheKey(document: TranslationDocument, revision: string) {
+export function translationCacheKey(
+  document: TranslationDocument,
+  revision: string,
+  target: TranslationTarget,
+) {
   return JSON.stringify([
     document.host ?? null,
     document.project,
     document.kind,
     document.id,
     revision,
-    'zh-CN',
+    target,
     TRANSLATION_MODEL,
     'body-v1',
   ])

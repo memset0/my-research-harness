@@ -30,6 +30,7 @@ import {
   gitCommandStdoutText,
   isGitCommandFailure,
   isGitWorktree,
+  isWikiLanguage,
   listWikiCommits,
   padId,
   parseId,
@@ -46,7 +47,8 @@ import {
   WIKI_KIND_DEFINITIONS,
   WIKI_KIND_REGISTRY,
   getWikiKind,
-  WIKI_RECOMMENDED_SECTIONS,
+  WIKI_LANGUAGES,
+  WIKI_RECOMMENDED_SECTION_FORMS,
   WIKI_RESERVED_KINDS,
   WIKI_SLUG_REGEX,
   WIKI_STATUS_BY_KIND,
@@ -62,6 +64,7 @@ import {
   type WikiDiagnostic,
   type WikiFrontmatter,
   type WikiKind,
+  type WikiLanguage,
   type WikiProjectProjection,
   type WikiReviewMark,
   type WikiSummary,
@@ -124,7 +127,11 @@ export async function runWikiKinds(input: WikiCommonInput & { kind?: string }): 
       `区别：${kind.zh.distinctions}`,
       `Status: ${kind.policy.statuses.join(' | ') || 'none'}`,
       `Date required: ${kind.policy.dateRequired}; sources required: ${kind.policy.sourcesRequired}`,
-      `Recommended H2 (advisory): ${kind.policy.recommendedHeadings.join(', ') || 'none'}`,
+      `Recommended H2 (advisory): ${
+        kind.policy.recommendedHeadings.length === 0
+          ? 'none'
+          : `${kind.policy.recommendedHeadings.join(', ')}; on \`language: zh\` pages: ${kind.zh.headings.join(', ')}`
+      }`,
       `Required H2: none`,
       `Authoring: ${kind.en.purpose} ${kind.en.authoring}`,
       `Examples: ${kind.en.examples.join('; ')}`,
@@ -285,6 +292,18 @@ function assertSlug(slug: string): string {
     emitErrorAndExit('BAD_REQUEST', `slug "${slug}" must match ${WIKI_SLUG_REGEX.source}`)
   }
   return slug
+}
+
+/** `--language` on `create` / `set`: the declared content language, if any. */
+function assertLanguage(value: string | undefined): WikiLanguage | undefined {
+  if (value === undefined) return undefined
+  if (!isWikiLanguage(value)) {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `--language must be one of ${WIKI_LANGUAGES.join('|')}; got "${value}"`,
+    )
+  }
+  return value
 }
 
 function assertSlugFree(ctx: WikiContext, slug: string, allowId?: string): void {
@@ -508,6 +527,7 @@ export interface WikiCreateInput extends WikiCommonInput {
   date?: string
   source?: string[]
   tag?: string[]
+  language?: string
   bundle?: boolean
 }
 
@@ -525,6 +545,7 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
   if (input.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
     emitErrorAndExit('BAD_REQUEST', `--date must be YYYY-MM-DD; got "${input.date}"`)
   }
+  const language = assertLanguage(input.language)
 
   const ctx = await loadWiki(input)
   assertSlugFree(ctx, slug)
@@ -538,13 +559,16 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     ...(input.description === undefined ? {} : { description: input.description }),
     ...(status === undefined ? {} : { status }),
     ...(input.date === undefined ? {} : { date: input.date }),
+    ...(language === undefined ? {} : { language }),
     ...(input.source && input.source.length > 0 ? { sources: input.source } : {}),
     ...(input.tag && input.tag.length > 0 ? { tags: input.tag } : {}),
     created_at: now,
     updated_at: now,
   }
 
-  const sections = WIKI_RECOMMENDED_SECTIONS[kind] ?? []
+  const sections = (WIKI_RECOMMENDED_SECTION_FORMS[kind] ?? []).map((form) =>
+    language === 'zh' ? form.zh : form.en,
+  )
   const body = [
     '',
     `# ${frontmatter.title}`,
@@ -736,6 +760,7 @@ export interface WikiSetInput extends WikiCommonInput {
   title?: string
   description?: string
   date?: string
+  language?: string
   addSource?: string[]
   rmSource?: string[]
   addTag?: string[]
@@ -750,6 +775,7 @@ export async function runWikiSet(input: WikiSetInput): Promise<void> {
     input.title,
     input.description,
     input.date,
+    input.language,
     input.addSource?.length ? 'x' : undefined,
     input.rmSource?.length ? 'x' : undefined,
     input.addTag?.length ? 'x' : undefined,
@@ -758,12 +784,13 @@ export async function runWikiSet(input: WikiSetInput): Promise<void> {
   if (changes.length === 0) {
     emitErrorAndExit(
       'BAD_REQUEST',
-      'at least one change flag is required: --status --title --description --date --add-source --rm-source --add-tag --rm-tag',
+      'at least one change flag is required: --status --title --description --date --language --add-source --rm-source --add-tag --rm-tag',
     )
   }
   if (input.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
     emitErrorAndExit('BAD_REQUEST', `--date must be YYYY-MM-DD; got "${input.date}"`)
   }
+  const language = assertLanguage(input.language)
 
   const ctx = await loadWiki(input)
   const summary = resolvePage(ctx, input.page)
@@ -789,6 +816,7 @@ export async function runWikiSet(input: WikiSetInput): Promise<void> {
   if (input.title !== undefined) patch.title = input.title
   if (input.description !== undefined) patch.description = input.description
   if (input.date !== undefined) patch.date = input.date
+  if (language !== undefined) patch.language = language
   const sources = applyListEdit(summary.sources, input.addSource, input.rmSource)
   if (sources) patch.sources = sources
   const tags = applyListEdit(summary.tags, input.addTag, input.rmTag)
@@ -1554,6 +1582,16 @@ export async function runWikiReviewUnverify(input: WikiReviewUnverifyInput): Pro
 export interface WikiCommitInput extends WikiCommonInput {
   message?: string
   allowEmptyMessage?: boolean
+  /** Pages (id or slug) to commit; empty commits every wiki change. */
+  pages?: string[]
+  noPush?: boolean
+}
+
+/** Where a successful commit landed, or why it was not pushed. */
+interface WikiPushResult {
+  status: 'pushed' | 'skipped'
+  remote?: string
+  branch?: string
 }
 
 export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
@@ -1564,25 +1602,35 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   const prefix = (await git(projectRoot, ['rev-parse', '--show-prefix'])).stdout.trim()
   const wikiPrefix = `${prefix}${WIKI_DIR_RELPATH}/`
 
-  // Refusing a mixed index is a safety decision about the index as it is now.
-  const alreadyStaged = (
-    await git(projectRoot, ['diff', '--cached', '--name-only', '-z'], 'bypass')
-  ).stdout
-    .split('\0')
-    .filter((entry) => entry !== '')
-  const foreign = alreadyStaged.filter((path) => !path.startsWith(wikiPrefix))
-  if (foreign.length > 0) {
-    emitErrorAndExit(
-      'MIXED_INDEX',
-      `the index already holds ${foreign.length} non-wiki path(s); commit or reset them first`,
-      { staged: foreign },
-      EXIT.CONFLICT,
-    )
+  // Named pages commit only their own paths, so the index belongs to whoever
+  // staged it: no mixed-index refusal, no `docs/wiki`-wide staging.
+  const scope = await commitScope(input)
+
+  if (scope === null) {
+    // Refusing a mixed index is a safety decision about the index as it is now.
+    const alreadyStaged = (
+      await git(projectRoot, ['diff', '--cached', '--name-only', '-z'], 'bypass')
+    ).stdout
+      .split('\0')
+      .filter((entry) => entry !== '')
+    const foreign = alreadyStaged.filter((path) => !path.startsWith(wikiPrefix))
+    if (foreign.length > 0) {
+      emitErrorAndExit(
+        'MIXED_INDEX',
+        `the index already holds ${foreign.length} non-wiki path(s); commit or reset them first`,
+        { staged: foreign },
+        EXIT.CONFLICT,
+      )
+    }
   }
 
-  if (await exists(join(projectRoot, WIKI_DIR_RELPATH))) {
-    const staged = await git(projectRoot, ['add', '-A', '--', WIKI_DIR_RELPATH])
-    if (!staged.ok) {
+  const pathspecs = scope?.pathspecs ?? [WIKI_DIR_RELPATH]
+  if (scope !== null || (await exists(join(projectRoot, WIKI_DIR_RELPATH)))) {
+    for (const pathspec of pathspecs) {
+      const staged = await git(projectRoot, ['add', '-A', '--', pathspec])
+      // A page with no file of its own left (already deleted and committed)
+      // is not an error here; the "nothing to commit" check below decides.
+      if (staged.ok || staged.stderr.includes('did not match any files')) continue
       emitErrorAndExit(
         'GIT_FAILED',
         `git add failed: ${staged.stderr.trim()}`,
@@ -1593,10 +1641,24 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   }
 
   const statusRows = parseNameStatus(
-    (await git(projectRoot, ['diff', '--cached', '--name-status', '-z'])).stdout,
+    (
+      await git(projectRoot, [
+        'diff',
+        '--cached',
+        '--name-status',
+        '-z',
+        '--',
+        ...pathspecs,
+      ])
+    ).stdout,
   )
   if (statusRows.length === 0) {
-    emitErrorAndExit('BAD_REQUEST', `nothing to commit under ${WIKI_DIR_RELPATH}/`)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      scope === null
+        ? `nothing to commit under ${WIKI_DIR_RELPATH}/`
+        : `nothing to commit for ${scope.ids.join(', ')}`,
+    )
   }
 
   const changes = new Map<string, { change: string; paths: string[] }>()
@@ -1623,7 +1685,14 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   }
   const subject = `wiki: ${summary === '' ? generated : summary}`
 
-  const committed = await git(projectRoot, ['commit', '-m', subject])
+  const committed = await git(
+    projectRoot,
+    scope === null
+      ? ['commit', '-m', subject]
+      : // `--only` commits exactly these files, so whatever another writer
+        // staged stays staged and uncommitted.
+        ['commit', '--only', '-m', subject, '--', ...files],
+  )
   if (!committed.ok) {
     emitErrorAndExit(
       'GIT_FAILED',
@@ -1642,15 +1711,86 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
     paths: changes.get(id)!.paths,
   }))
 
+  const push = await pushCommit(projectRoot, sha, input.noPush === true)
+
   if (format === 'json') {
-    emitJson({ sha, shortSha: sha.slice(0, 10), subject, pages, files })
+    emitJson({ sha, shortSha: sha.slice(0, 10), subject, pages, files, push })
     return
   }
+  const destination =
+    push.status === 'pushed' ? `pushed to ${push.remote}/${push.branch}` : 'not pushed (--no-push)'
   process.stdout.write(
     `${sha.slice(0, 10)}  ${subject}\n${pages
       .map((page) => `  ${page.change} ${page.id}`)
-      .join('\n')}\n`,
+      .join('\n')}\n${destination}\n`,
   )
+}
+
+/**
+ * Page arguments resolved to the pathspecs that cover every file a page can
+ * own: the Markdown file, the bundle directory, `<stem>__assets/`, and the
+ * same id under another kind or slug (a move or rename). A `W<NNNN>` id is
+ * taken as written so a deleted page can still be committed; anything else is
+ * resolved as a slug. `null` means "every wiki change", the default scope.
+ */
+async function commitScope(
+  input: WikiCommitInput,
+): Promise<{ ids: string[]; pathspecs: string[] } | null> {
+  const refs = (input.pages ?? []).map((ref) => ref.trim()).filter((ref) => ref !== '')
+  if (refs.length === 0) return null
+  const ids: string[] = []
+  let ctx: WikiContext | null = null
+  for (const ref of refs) {
+    const id = WIKI_ID_REGEX.test(ref) ? ref : resolvePage((ctx ??= await loadWiki(input)), ref).id
+    if (!ids.includes(id)) ids.push(id)
+  }
+  // Default pathspec magic: `*` spans `/`, so one pattern per id covers the
+  // Markdown file, the bundle directory, `<stem>__assets/`, and the same id
+  // under another kind or slug.
+  return { ids, pathspecs: ids.map((id) => `${WIKI_DIR_RELPATH}/*/${id}-*`) }
+}
+
+/**
+ * Publish the branch as it now stands — the new commit and any earlier local
+ * one — with a plain non-force push. A push that cannot happen leaves the
+ * commit in place and fails loudly: integrating diverged history (fetch,
+ * rebase, merge, force) is the owner's call, never this command's.
+ */
+async function pushCommit(
+  projectRoot: string,
+  sha: string,
+  skip: boolean,
+): Promise<WikiPushResult> {
+  if (skip) return { status: 'skipped' }
+  const upstream = await git(
+    projectRoot,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+    'bypass',
+  )
+  const tracked = upstream.stdout.trim()
+  const separator = tracked.indexOf('/')
+  if (!upstream.ok || separator <= 0) {
+    emitErrorAndExit(
+      'PUSH_FAILED',
+      `commit ${sha} was created but not pushed: the current branch has no upstream branch; set one with \`git push -u <remote> <branch>\``,
+      { sha },
+      EXIT.GENERIC,
+    )
+  }
+  const remote = tracked.slice(0, separator)
+  const branch = tracked.slice(separator + 1)
+  const pushed = await git(projectRoot, ['push', remote, `HEAD:${branch}`], 'bypass')
+  if (!pushed.ok) {
+    emitErrorAndExit(
+      'PUSH_FAILED',
+      `commit ${sha} was created but the push to ${remote}/${branch} failed: ${(
+        pushed.stderr || pushed.stdout
+      ).trim()}`,
+      { sha, remote, branch },
+      EXIT.GENERIC,
+    )
+  }
+  return { status: 'pushed', remote, branch }
 }
 
 function parseNameStatus(stdout: string): { status: string; path: string }[] {

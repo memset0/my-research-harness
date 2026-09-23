@@ -16,20 +16,45 @@ lands in its own commit so a human can verify it line by line.
 
 ## Authoring language
 
-Maintain wiki content in English: titles, descriptions, headings, body prose,
-tables, and newly authored annotations. This applies to every page kind,
-including roadmaps.
+Pages are written in English unless the user chooses otherwise. The language
+belongs to the page: frontmatter `language: zh` marks a Chinese page, and no
+field means English.
 
-User-facing discussion and handoffs may remain in the user's language. Translate
-agreed content into English when recording it; preserve artifact identifiers,
-code, paths, and verbatim source quotations. Do not translate or rewrite
-unrelated historical pages as part of a routine update.
+- Write a new page in Chinese only when the user asks for Chinese for that
+  page, states it as their preference for the pages of this task, or the
+  page's maintenance rules require it. Create it with `--language zh`;
+  otherwise create it in English.
+- Update an existing page in its declared language. The conversation language
+  does not change it: a Chinese discussion of an English page is recorded in
+  English, and the reverse.
+- Switch a page's language only when the user asks: rewrite the whole page
+  faithfully (same claims, numbers, sources, links, and structure), run
+  `memon wiki set <page> --language <en|zh>`, and land both in one wiki
+  commit. Never leave a page half in one language.
+- On a Chinese page, write the title, description, headings, prose, and table
+  text in Chinese, and use the kind's Chinese heading forms listed in
+  `references/page-kinds.md`. Ids, slugs, frontmatter keys, and `status`
+  values never change.
+- On every page, keep technical terms in English wherever a translation could
+  blur them: artifact ids and `@` references, paths, commands, code, config
+  keys, column, Variant, and metric names, method, model, library, and kernel
+  names (DMD, FastVideo, VSA), acronyms (FID, CFG, SNR, QAT, NVFP4), and domain
+  terms without a standard, unambiguous Chinese rendering (checkpoint,
+  rollout, critic, cube). Use Chinese for ordinary words and for terms whose
+  Chinese rendering is standard (训练, 学习率, 显存). For example:
+  "V0341 在 K3 shifted schedule 下使用 C128 cube；checkpoint 500 的 DMD loss 仍在下降。"
+- Keep verbatim source quotations in their original language. Do not translate
+  or rewrite unrelated pages as part of a routine update.
+
+Discussion and handoffs stay in the user's language whatever the page
+language is. Readers who want the other language use the dashboard's
+translation action; do not add a second-language copy to the page.
 
 ## Human-readable knowledge
 
 Optimize wiki pages for human readers, not machine bookkeeping. Explain the
 research goal, reasoning, relationships between experiments, what is known,
-what remains uncertain, and the next decisions in concise English prose.
+what remains uncertain, and the next decisions in concise prose.
 Use headings, nested lists, and small tables only when they improve readability.
 
 Experiment documents remain the maintained source of detailed designs, Results,
@@ -49,7 +74,75 @@ in a generic acknowledgement. Distinguish agreed decisions from suggestions and
 open questions; never turn feedback into an unsupported experimental finding.
 When feedback changes direction, explain the change and retain the historical
 context rather than silently rewriting earlier conclusions. Translate meaning
-faithfully into English without adding goals or commitments the user did not make.
+faithfully into the page language without adding goals or commitments the user
+did not make.
+
+## Maintenance rules
+
+A page can carry the owner's standing requirements for the agents that work on
+it, in one section with a fixed name: `## Maintenance rules` on English pages,
+`## 维护规则` on Chinese pages, placed as the page's last H2. It records how
+agents maintain the page and what they must or must not do when acting on its
+subject. Research facts, evidence, and decisions stay in the body.
+
+Format (`wiki lint` warns `WIKI_MAINTENANCE_RULES_INVALID` otherwise):
+
+- The section contains list items only: no paragraphs, sub-headings, tables,
+  callouts, or code blocks.
+- One requirement per item, stated as an instruction, ending with the date the
+  user stated it: `(2026-09-23)`.
+- Top-level items bind every agent. Requirements for one agent sit indented
+  under a scope item worded exactly `- Only for <agent>:`. Related rules may be
+  grouped under a topic item that ends with a colon (`- Launch safety:`), at
+  any depth. Scope and topic items state no requirement themselves.
+- The section holds current rules only. A replaced rule is edited, a withdrawn
+  rule is removed; git keeps the history, so no `[!DEPRECATED]` markers here.
+
+```markdown
+## Maintenance rules
+
+- Keep the top callout limited to the owner's current decision. (2026-09-22)
+- Discuss in Chinese; write this page in English. (2026-09-13)
+- Only for Oh My Pi:
+  - Delegation:
+    - Main owns research design, interpretation, and dispatch; delegated agents only execute. (2026-09-18)
+  - Allocations:
+    - Never cancel or modify a Slurm allocation; stop the launcher and hold the node in the queue CLI. (2026-09-18)
+```
+
+Before editing any page, read its rules and follow every top-level rule and
+every rule scoped to you. Preserve rules scoped to other agents unchanged.
+
+### Maintenance mode
+
+The user can put you into maintenance mode for one page ("进入 W0012 的维护模式",
+"maintain W0012"). Then:
+
+1. Read the whole page, including its rules, and tell the user in a short list
+   which rules bind you.
+2. For the rest of the session, record every long-term requirement the user
+   states — anything meant to hold beyond the current request ("以后", "每次",
+   "默认", "never", "always", a standing preference about content, structure,
+   language, process, or execution). Do not ask whether to record it. One-off
+   instructions for the current request are not rules.
+3. A requirement that replaces or contradicts a rule edits that rule; a
+   withdrawn requirement removes it. Never keep two conflicting items. Scope a
+   requirement to one agent only when the user says it applies to that agent.
+4. Create the section when the first rule is recorded.
+5. After every change to the section, tell the user exactly what changed,
+   quoting the items:
+
+   > 已更新 W0012「Maintenance rules」：
+   > - 新增：「Only for Oh My Pi: Never cancel or modify a Slurm allocation; … (2026-09-23)」
+   > - 删除：「Use one small-model owner per assigned node. (2026-09-13)」
+   > - 修改：「Validate every 100 steps.」→「Validate every 50 steps. (2026-09-23)」
+
+6. Rule edits are ordinary page edits: lint, `journal submit`, and a commit at
+   the next stopping point (see "Commit and push at stopping points") whose
+   summary names the rule change.
+
+Outside maintenance mode, a standing requirement the user states explicitly
+about how a page is maintained is recorded and reported the same way.
 
 ## When to use
 
@@ -204,7 +297,8 @@ When the user asserts something no Experiment supports:
 
 1. Read the current state: `memon wiki ls --kind <k>` and
    `memon wiki show <page>` for anything related, so a new page does not
-   duplicate or silently contradict an existing one.
+   duplicate or silently contradict an existing one. Before editing an
+   existing page, read its maintenance rules.
 2. Create through the CLI — never hand-write the file path or allocate an id
    yourself:
 
@@ -217,12 +311,14 @@ When the user asserts something no Experiment supports:
 
    `--description` is mandatory in practice: one to three plain-text sentences
    that stand alone in a listing. `meeting` additionally requires `--date`.
-   Add `--bundle` only when the page will carry assets.
+   Add `--language zh` for a Chinese page (see Authoring language); it also
+   scaffolds the Chinese heading forms. Add `--bundle` only when the page will
+   carry assets.
 3. Write the body by editing the Markdown file directly (through the local
    mount path in mounted mode). Fill the kind's recommended H2 sections when it
    has any; shape a roadmap around the research tree rather than fixed headings.
 4. Frontmatter-only changes go through `memon wiki set` — status, title,
-   description, tags, sources — never by hand-editing YAML:
+   description, tags, sources, language — never by hand-editing YAML:
 
    ```sh
    memon --project-root . wiki set zero-snr-brightness --status VERIFIED --add-source E0003
@@ -348,26 +444,43 @@ exact unverified line ranges, `verifiedThrough`) is a **Web-only** surface, as
 are resolved sources and staleness. Point the user at the dashboard for it;
 the CLI does not derive it.
 
-## Commit every wiki change separately
+## Commit and push at stopping points
 
-After each batch of wiki edits, and before the handoff:
+Do not commit after every edit. Commit when the batch of page changes has
+reached a stopping point — the pages say what this task set out to record.
+While an experiment the pages depend on is still running or pending, or a
+question to the user is open whose answer would change the pages, leave the
+edits uncommitted and say so in the handoff, unless the user asks you to commit
+the current version now.
+
+At a stopping point, commit the batch as one commit that names exactly the
+pages you changed — related pages changed together (a finding and the roadmap
+that links it) share one commit; unrelated batches get separate commits:
 
 ```sh
-memon --project-root . wiki commit -m "record zero-SNR brightness finding"
+memon --project-root . wiki commit W0001 W0012 -m "record zero-SNR brightness finding"
 ```
 
-In mounted mode this runs through `ssh` like every other `memon` command. The
-command stages only `docs/wiki/`; it refuses with `MIXED_INDEX` if the index
-already holds non-wiki paths. Collector scripts and any other non-wiki file go
-in their own separate commit — one wiki commit per change is what makes the
-change individually verifiable.
+With page arguments the command stages and commits only those pages' files
+(including renames, deletions, and `__assets/`), so pages and files other
+agents changed in the same working tree stay out of your commit. Never omit
+the page list; never pass a page you did not change. Collector scripts and any
+other non-wiki file go in their own separate commit.
 
-The closing message names the new wiki commit SHA(s) and asks the user to
-review them. Committing never marks anything verified, and a change that is
-not committed cannot appear in `memon wiki review diff`:
+The command then pushes the branch to its upstream automatically; earlier
+unpushed local commits go with it, which is expected. It exits 1 with
+`PUSH_FAILED` when the push cannot happen (no upstream, remote advanced,
+network or credentials): the commit stays local. Report the SHA and git's
+reason; do not fetch, rebase, merge, or force on your own. `--no-push` exists
+for the rare case where the user asks to commit without pushing. In mounted
+mode the command runs through `ssh` like every other `memon` command.
 
-> 已提交 `wiki: record zero-SNR brightness finding`(`a1b2c3d`)。
-> 本次改动涉及 @W0001、@W0009,尚未有人 review。
+The closing message names the new wiki commit SHA(s) with their push result
+and asks the user to review them. Committing never marks anything verified,
+and a change that is not committed cannot appear in `memon wiki review diff`:
+
+> 已提交并推送 `wiki: record zero-SNR brightness finding`(`a1b2c3d`)。
+> 本次改动涉及 @W0001、@W0012,尚未有人 review。
 > 需要的话可以用 `memon wiki review diff` 看自上次人工校验以来 docs/wiki 的整体改动,
 > 或在 dashboard 上逐条 review 后标记;单页的 review 状态只在 Web 上显示。
 
@@ -458,9 +571,12 @@ and never set a `harness-feedback` status other than `PROPOSED`.
 Report:
 
 - the detected mode (and remote root when mounted);
-- pages created/updated with ids, slugs, and kinds;
-- the wiki commit SHA(s), and the `journal submit` `invocationId` for the
-  direct page edits (or the reason the maintenance is unrecorded);
+- pages created/updated with ids, slugs, kinds, and language;
+- maintenance rules added, removed, or changed (already reported when they
+  happened; repeat them here);
+- the wiki commit SHA(s) with their push result, or which pages stay
+  uncommitted and what they wait for; and the `journal submit` `invocationId`
+  for the direct page edits (or the reason the maintenance is unrecorded);
 - an explicit ask for human review of those commits; do not report a per-page
   review state — the CLI derives none, and Web is where the user reads it;
 - remaining lint diagnostics and why they are acceptable;
@@ -480,6 +596,8 @@ Report:
   trail; ordinary wiki work ends at `memon wiki commit`.
 - Never mix wiki and non-wiki paths in one commit.
 - Never delete or silently rewrite a historical claim; deprecate it.
+- Never edit a page without first reading its maintenance rules, and never
+  record or drop a rule without telling the user the exact item.
 - Never invent an id, path, or slug — `memon wiki create` and
   `memon wiki move` own them.
 - Never migrate a Report the user did not name.

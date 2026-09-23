@@ -16,6 +16,7 @@ function page(
     description: null,
     status: 'TENTATIVE',
     date: null,
+    language: 'en',
     tags: [],
     sources: [],
     legacyId: null,

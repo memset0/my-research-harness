@@ -1233,6 +1233,7 @@ wikiCommand(wiki, 'create <kind> <slug>', 'allocate the next W<NNNN> and write a
     [],
   )
   .option('--tag <tag>', 'add a tag (repeatable)', collectOption, [])
+  .option('--language <en|zh>', 'content language of the page (default: en)')
   .option('--bundle', 'create the bundle form (<slug>/README.md + assets)', false)
   .action(
     async (
@@ -1245,6 +1246,7 @@ wikiCommand(wiki, 'create <kind> <slug>', 'allocate the next W<NNNN> and write a
         date?: string
         source?: string[]
         tag?: string[]
+        language?: string
         bundle?: boolean
       },
     ) => {
@@ -1263,6 +1265,7 @@ wikiCommand(wiki, 'set <page>', 'edit frontmatter only, with an optional mtime l
   .option('--title <text>', 'new title')
   .option('--description <text>', 'new description')
   .option('--date <YYYY-MM-DD>', 'new meeting date')
+  .option('--language <en|zh>', 'content language of the page')
   .option('--add-source <artifact>', 'append to `sources` (repeatable)', collectOption, [])
   .option('--rm-source <artifact>', 'remove from `sources` (repeatable)', collectOption, [])
   .option('--add-tag <tag>', 'append to `tags` (repeatable)', collectOption, [])
@@ -1278,6 +1281,7 @@ wikiCommand(wiki, 'set <page>', 'edit frontmatter only, with an optional mtime l
         title?: string
         description?: string
         date?: string
+        language?: string
         addSource?: string[]
         rmSource?: string[]
         addTag?: string[]
@@ -1344,16 +1348,30 @@ wikiCommand(wiki, 'delete <page>', 'delete a page (bundles with assets require -
     await runWikiDelete({ ...wikiGlobals(opts), page, force: opts.force })
   })
 
-wikiCommand(wiki, 'commit', 'stage docs/wiki/ only and commit it as `wiki: <summary>`')
+wikiCommand(
+  wiki,
+  'commit [pages...]',
+  'commit wiki changes (all, or only the named pages) as `wiki: <summary>` and push',
+)
   .option('-m, --message <summary>', 'commit summary (default: generated from the touched pages)')
   .option(
     '--allow-empty-message',
     'accept an empty -m and fall back to the generated summary',
     false,
   )
-  .action(async (opts: WikiLocalOptions & { message?: string; allowEmptyMessage?: boolean }) => {
-    await runWikiCommit({ ...wikiGlobals(opts), ...opts })
-  })
+  .option('--no-push', 'keep the commit local instead of pushing it to the upstream branch')
+  .action(
+    async (
+      pages: string[],
+      opts: WikiLocalOptions & {
+        message?: string
+        allowEmptyMessage?: boolean
+        push?: boolean
+      },
+    ) => {
+      await runWikiCommit({ ...wikiGlobals(opts), ...opts, pages, noPush: opts.push === false })
+    },
+  )
 
 const wikiReview = wiki
   .command('review')

@@ -185,14 +185,48 @@ updated_at: "2026-09-01T09:00:00+08:00"
     expect(codes(diagnostics)).toEqual(['WIKI_TIMESTAMP_INVALID'])
   })
 
-  it('warns once per missing recommended section', () => {
+  it('warns once per missing recommended section, naming both written forms', () => {
     const diagnostics = lintWikiPage(
       makePage(VALID_FINDING.replace('## Limits\n\nSingle CFG scale.\n', '')),
     )
     const missing = diagnostics.filter((entry) => entry.code === 'WIKI_MISSING_SECTION')
     expect(missing).toHaveLength(1)
-    expect(missing[0]?.message).toContain('Limits')
+    expect(missing[0]?.message).toBe('recommended `finding` section "Limits" (局限) is missing')
     expect(missing[0]?.severity).toBe('warn')
+  })
+
+  it('accepts the Chinese heading forms and names them on a `language: zh` page', () => {
+    const chinese = VALID_FINDING.replace('status: VERIFIED', 'status: VERIFIED\nlanguage: zh')
+      .replace('## Claim', '## 结论')
+      .replace('## Evidence', '## 证据')
+      .replace('## Limits', '## 局限')
+    expect(lintWikiPage(makePage(chinese), { inventory: INVENTORY })).toEqual([])
+
+    const withoutLimits = lintWikiPage(
+      makePage(chinese.replace('## 局限\n\nSingle CFG scale.\n', '')),
+      { inventory: INVENTORY },
+    )
+    expect(withoutLimits).toEqual([
+      expect.objectContaining({
+        code: 'WIKI_MISSING_SECTION',
+        severity: 'warn',
+        message: 'recommended `finding` section "局限" (Limits) is missing',
+      }),
+    ])
+  })
+
+  it('rejects an unknown `language` and keeps reading the page as English', () => {
+    const diagnostics = lintWikiPage(
+      makePage(VALID_FINDING.replace('status: VERIFIED', 'status: VERIFIED\nlanguage: fr')),
+      { inventory: INVENTORY },
+    )
+    expect(diagnostics).toEqual([
+      {
+        code: 'WIKI_LANGUAGE_INVALID',
+        severity: 'error',
+        message: 'language "fr" is not a supported page language; expected one of en|zh',
+      },
+    ])
   })
 
   it('passes unresolved sources through as warnings', () => {
@@ -206,6 +240,85 @@ updated_at: "2026-09-01T09:00:00+08:00"
         message:
           'source "E9999" does not resolve to an Experiment, Variant, Hypothesis, wiki page, or run directory',
       },
+    ])
+  })
+
+  it('accepts a list-only `Maintenance rules` section, including scope groups', () => {
+    const rules = `${VALID_FINDING}
+## Maintenance rules
+
+- Keep the top callout current. (2026-09-23)
+- Only for Oh My Pi:
+  - Never cancel a Slurm allocation. (2026-09-18)
+    Ask the owner first.
+1. Re-check the numbers after every rerun. (2026-09-20)
+`
+    expect(lintWikiPage(makePage(rules), { inventory: INVENTORY })).toEqual([])
+  })
+
+  it('warns once, on its line, about non-list content in the rules section', () => {
+    const rules = `${VALID_FINDING}
+## Maintenance rules
+
+- Keep the top callout current. (2026-09-23)
+
+This paragraph does not belong here.
+
+Neither does this one.
+`
+    const diagnostics = lintWikiPage(makePage(rules), { inventory: INVENTORY })
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'WIKI_MAINTENANCE_RULES_INVALID',
+        severity: 'warn',
+        message:
+          '`Maintenance rules` holds list items only; "This paragraph does not belong here." is neither a list item nor part of one',
+      }),
+    ])
+    expect(diagnostics[0]?.line).toBe(
+      rules.split('\n').indexOf('This paragraph does not belong here.') + 1,
+    )
+  })
+
+  it('warns about a second rules section in either written form', () => {
+    const rules = `${VALID_FINDING}
+## Maintenance rules
+
+- Keep the top callout current. (2026-09-23)
+
+## 维护规则
+
+- 复核完成后更新状态。(2026-09-21)
+`
+    expect(lintWikiPage(makePage(rules), { inventory: INVENTORY })).toEqual([
+      expect.objectContaining({
+        code: 'WIKI_MAINTENANCE_RULES_INVALID',
+        severity: 'warn',
+        message:
+          'a page carries at most one `Maintenance rules` (维护规则) section; "维护规则" is a second one',
+        line: rules.split('\n').indexOf('## 维护规则') + 1,
+      }),
+    ])
+  })
+
+  it('accepts a Chinese rules section and reports a fenced block inside it', () => {
+    const chinese = `${VALID_FINDING}
+## 维护规则
+
+- 每次改动后复核结论。(2026-09-22)
+`
+    expect(lintWikiPage(makePage(chinese), { inventory: INVENTORY })).toEqual([])
+
+    const fenced = `${chinese}
+\`\`\`sh
+memon wiki lint
+\`\`\`
+`
+    expect(lintWikiPage(makePage(fenced), { inventory: INVENTORY })).toEqual([
+      expect.objectContaining({
+        code: 'WIKI_MAINTENANCE_RULES_INVALID',
+        message: expect.stringContaining('```sh'),
+      }),
     ])
   })
 

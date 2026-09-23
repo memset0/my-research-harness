@@ -971,6 +971,8 @@ export const BackendWikiSummarySchema = z
     description: z.string().max(4096).nullable(),
     status: z.string().max(64).nullable(),
     date: z.string().max(64).nullable(),
+    // Older Backends omit the field; an absent language reads as English.
+    language: z.enum(['en', 'zh']).default('en'),
     tags: z.array(z.string().min(1).max(128)).max(1024),
     sources: z.array(z.string().min(1).max(512)).max(1024),
     legacyId: z.string().max(128).nullable(),

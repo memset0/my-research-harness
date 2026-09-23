@@ -753,12 +753,14 @@ export function WikiDocumentView({
       <div
         className={cn('mx-auto w-full', widthLimited && 'max-w-[800px]')}
         data-wiki-document-body=""
+        lang={page.language === 'zh' ? 'zh-CN' : 'en'}
         title={wholeBodyUnverified ? 'no line of this page is verified' : undefined}
         data-wiki-unverified-body={wholeBodyUnverified ? '' : undefined}
       >
         <BodyTranslation
           document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'wiki', id: page.id }}
           sources={translationSources('wiki', page)}
+          sourceLanguage={page.language === 'zh' ? 'zh' : 'en'}
         >
         <ReportHtmlZoomProvider>
           <ChecklistWriteProvider value={checklistWrite}>

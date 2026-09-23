@@ -48,6 +48,7 @@ function summary(
     description: null,
     status: 'TENTATIVE',
     date: null,
+    language: 'en',
     tags: [],
     sources: [],
     legacyId: null,
@@ -104,6 +105,34 @@ describe('WikiShell', () => {
       'UNVERIFIED',
     )
     expect(container.querySelector('[data-wiki-inline-toc]')).toBeNull()
+  })
+
+  it('declares the page language on the reading body', () => {
+    const english = renderWithQuery(
+      <WikiDocumentView
+        project="project-a"
+        page={detail(summary('W0006', '2026-05-04T08:00:00+00:00'), '## Evidence\nProse.')}
+        sourceSurface="full-wiki"
+      />,
+    )
+    expect(english.container.querySelector('[data-wiki-document-body]')).toHaveAttribute(
+      'lang',
+      'en',
+    )
+    const chinese = renderWithQuery(
+      <WikiDocumentView
+        project="project-a"
+        page={detail(
+          summary('W0007', '2026-05-04T08:00:00+00:00', { language: 'zh' }),
+          '## 证据\n实测结果。',
+        )}
+        sourceSurface="side-wiki"
+      />,
+    )
+    expect(chinese.container.querySelector('[data-wiki-document-body]')).toHaveAttribute(
+      'lang',
+      'zh-CN',
+    )
   })
 
   it('renders the flat newest-first card rail, selected document, and sticky outline', async () => {

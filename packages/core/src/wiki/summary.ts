@@ -21,6 +21,7 @@ import {
 } from './lint.js'
 import { resolveWikiSources, wikiSourceKind, type WikiPageStaleness } from './staleness.js'
 import {
+  isWikiLanguage,
   WIKI_ID_REGEX,
   WIKI_KINDS,
   WIKI_LEGACY_ID_REGEX,
@@ -67,6 +68,7 @@ export function buildWikiSummary(input: BuildWikiSummaryInput): WikiSummary {
     description: typeof frontmatter?.description === 'string' ? frontmatter.description : null,
     status,
     date: typeof frontmatter?.date === 'string' ? frontmatter.date : null,
+    language: isWikiLanguage(frontmatter?.language) ? frontmatter.language : 'en',
     tags: wikiStringList(frontmatter?.tags),
     sources: wikiStringList(frontmatter?.sources),
     legacyId: legacyId && WIKI_LEGACY_ID_REGEX.test(legacyId) ? legacyId : null,

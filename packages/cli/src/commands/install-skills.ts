@@ -20,7 +20,7 @@
 // every other path reports a `skipped-*` action without blocking.
 
 import { createHash } from 'node:crypto'
-import { existsSync as fsExistsSync, promises as fs } from 'node:fs'
+import { existsSync as fsExistsSync, promises as fs, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -214,10 +214,26 @@ function resolveTargets(input: InstallSkillsInput): ResolvedTargets {
     }
   }
   const root = resolve(input.projectRoot ?? input.cwd)
+  if (isHarnessCheckout(root)) {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `${root} is the memon harness checkout: bundled skills live in packages/skills/ and are installed into research projects, never into the harness itself`,
+    )
+  }
   const agents = input.agents && input.agents.length > 0 ? input.agents : [...ALL_AGENTS]
   return {
     projectRootForLink: root,
     targets: agents.map((agent) => ({ agent, path: join(root, AGENT_TARGETS[agent]) })),
+  }
+}
+
+/** A memon checkout carries the skill package sources; installing into it would mirror them. */
+function isHarnessCheckout(root: string): boolean {
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, 'packages', 'skills', 'package.json'), 'utf8'))
+    return manifest?.name === '@memon/skills'
+  } catch {
+    return false
   }
 }
 

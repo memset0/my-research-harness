@@ -206,8 +206,10 @@ plus inline at the top of each expanded run panel):
   `git diff <last verified commit | empty tree> HEAD -- docs/wiki` for the
   whole wiki, uncommitted work excluded; `verify`/`unverify` are human-only.
   Page-lifecycle subcommands run no git and report no review state
-- `memon wiki commit [-m S]` — stages only `docs/wiki/`, subject `wiki: S`;
-  it uses git for staging/commit safety but derives no review state and marks
+- `memon wiki commit [<page>...] [-m S] [--no-push]` — stages only `docs/wiki/`
+  (or only the named pages, leaving every other change alone), subject
+  `wiki: S`, then pushes the branch to its upstream unless `--no-push`; it uses
+  git for staging/commit/push safety but derives no review state and marks
   nothing verified
 - `memon components run <document> [--id <id>…]` — execute a document's
   executable component blocks locally and write `<stem>__assets/<id>.json`
@@ -278,7 +280,7 @@ plus inline at the top of each expanded run panel):
 - **No `fs.watch` / `chokidar` / inotify-based watchers** anywhere. Polling with exponential backoff (default 1s → 5min, factor 2). The user runs on shared clusters with hard inotify limits.
 - **All timestamps ISO8601 with timezone offset** (`2026-05-03T08:28:00+08:00`). Never write UTC-converted timestamps to disk.
 - **Status enum is uppercase** (`PENDING`/`RUNNING`/`FINISHED`/`FAILED`/`UNKNOWN`). Hypothesis status enum is `CONFIRMED`/`REFUTED`/`PARTIAL`/`OPEN`/`DEFERRED`.
-- **Skills (`.claude/skills/*.md`)**: write in **English**. Conversational dialogue with the user is in **Chinese**.
+- **Skills (`packages/skills/memon-*/SKILL.md`)**: write in **English**. Conversational dialogue with the user is in **Chinese**. Bundled skills live only in `packages/skills/` and reach research projects through `memon install-skills`; never copy them into this repository's `.claude/`, `.codex/` or `.opencode/` skill directories.
 - **Path safety:** any backend route accepting a path parameter MUST go through `assertWithinProjectRoots()` before touching the filesystem.
 - **mtime optimistic locking** for README writes; client carries `expectedMtime` (and optional `expectedHash` for low-resolution-mtime safety on NFS).
 

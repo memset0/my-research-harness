@@ -58,6 +58,7 @@ function page(): WikiPageDetail {
     description: null,
     status: null,
     date: null,
+    language: 'en',
     tags: [],
     sources: [],
     legacyId: null,

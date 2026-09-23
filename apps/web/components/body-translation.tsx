@@ -13,6 +13,7 @@ import {
   type TranslationDocument,
   type TranslationSource,
 } from '../lib/translation/sources'
+import type { TranslationSourceLanguage, TranslationTarget } from '../lib/translation/target'
 import { useSession } from './session-provider'
 import { Button } from './ui/button'
 
@@ -29,6 +30,7 @@ type State = {
 }
 const Context = createContext<{
   active: boolean
+  target: TranslationTarget
   results: Record<string, string>
   errors: Record<string, string>
 } | null>(null)
@@ -88,14 +90,18 @@ async function jsonRequest(url: string, options: RequestInit = {}) {
 export function BodyTranslation({
   document: target,
   sources,
+  sourceLanguage = 'en',
   children,
 }: {
   document: TranslationDocument
   sources: TranslationSource[]
+  /** Language the body is written in; a `zh` body is translated into English. */
+  sourceLanguage?: TranslationSourceLanguage
   children: ReactNode
 }) {
   const { role } = useSession()
-  const identity = JSON.stringify([target, sources])
+  const targetLanguage: TranslationTarget = sourceLanguage === 'zh' ? 'en' : 'zh-CN'
+  const identity = JSON.stringify([target, sources, targetLanguage])
   const currentIdentity = useRef(identity)
   currentIdentity.current = identity
   const abort = useRef<AbortController | null>(null)
@@ -199,7 +205,7 @@ export function BodyTranslation({
     }
     try {
       const revision = await sourceRevision(sources)
-      const params = new URLSearchParams({ ...target, revision })
+      const params = new URLSearchParams({ ...target, revision, targetLanguage })
       if (!target.host) params.delete('host')
       const manifest = await jsonRequest(`/api/translations/body?${params}`, {
         signal: controller.signal,
@@ -246,7 +252,7 @@ export function BodyTranslation({
               body: JSON.stringify({
                 document: target,
                 revision,
-                targetLanguage: 'zh-CN',
+                targetLanguage,
                 retry: index === 0,
                 segments: batch.map(({ id, sourceHash }) => ({ id, sourceHash })),
               }),
@@ -290,6 +296,7 @@ export function BodyTranslation({
     <Context.Provider
       value={{
         active: !!active,
+        target: targetLanguage,
         results: active ? state!.results : {},
         errors: active ? state!.errors : {},
       }}
@@ -320,7 +327,11 @@ export function BodyTranslation({
               }
               onClick={() => toggleCurrent.current()}
             >
-              {active ? 'Show original' : 'Translate to Chinese'}
+              {active
+                ? 'Show original'
+                : targetLanguage === 'en'
+                  ? 'Translate to English'
+                  : 'Translate to Chinese'}
             </Button>
             {active &&
               !state!.running &&
@@ -381,13 +392,19 @@ export function TranslationText({
     ) : null
   }
   const markdown = reconstructTranslation(segment, text)
-  if (markdown === null) return <span role="status">译文格式校验失败</span>
+  const chinese = context.target === 'zh-CN'
+  if (markdown === null)
+    return (
+      <span role="status">
+        {chinese ? '译文格式校验失败' : 'Translation format validation failed'}
+      </span>
+    )
   return (
     <span
-      lang="zh-CN"
+      lang={context.target}
       className="mt-1 block border-l-2 border-primary/30 pl-3 text-foreground"
       data-slot="body-translation"
-      aria-label="机器译文"
+      aria-label={chinese ? '机器译文' : 'Machine translation'}
     >
       {render(markdown)}
     </span>

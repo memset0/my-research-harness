@@ -34,7 +34,7 @@ Defines the `memon wiki` command group through which agents and humans create, r
 
 ### Requirement: `memon wiki create` allocates an id and writes a template
 
-`memon wiki create <kind> <slug> --title <T> [--description <D>] [--status S] [--date D] [--source A]... [--tag T]... [--bundle]` SHALL: validate `kind` against the canonical list (exit 2 on an unknown kind), validate the slug regex and project-wide uniqueness (exit 9 `CONFLICT` when taken), validate `status` against the kind's vocabulary (exit 2 when invalid; default to the vocabulary's first value when omitted for a kind that requires one), require `--date` when the registry date policy requires it (including `meeting`; exit 2 when absent), allocate the next free `W<NNNN>` across all pages, and write `docs/wiki/<kind>/<slug>.md` (or `<slug>/README.md` with `--bundle`) containing the full frontmatter (including `description` when given), an H1 equal to the title, and an empty H2 for every recommended section of the kind. `created_at` and `updated_at` SHALL be the current time with offset. Output SHALL be the new page's summary including its absolute `path`.
+`memon wiki create <kind> <slug> --title <T> [--description <D>] [--status S] [--date D] [--source A]... [--tag T]... [--language L] [--bundle]` SHALL: validate `kind` against the canonical list (exit 2 on an unknown kind), validate the slug regex and project-wide uniqueness (exit 9 `CONFLICT` when taken), validate `status` against the kind's vocabulary (exit 2 when invalid; default to the vocabulary's first value when omitted for a kind that requires one), require `--date` when the registry date policy requires it (including `meeting`; exit 2 when absent), allocate the next free `W<NNNN>` across all pages, and write `docs/wiki/<kind>/<slug>.md` (or `<slug>/README.md` with `--bundle`) containing the full frontmatter (including `description` when given), an H1 equal to the title, and an empty H2 for every recommended section of the kind. `created_at` and `updated_at` SHALL be the current time with offset. Output SHALL be the new page's summary including its absolute `path`. `--language <en|zh>` SHALL write the `language` field and, for `zh`, scaffold the Chinese forms of the recommended H2s; any other value SHALL exit 2.
 
 #### Scenario: Create a finding
 - **WHEN** the user runs `memon wiki create finding vsa-debt --title "VSA common-path debt" --status VERIFIED --source E0017`
@@ -49,6 +49,10 @@ Defines the `memon wiki` command group through which agents and humans create, r
 #### Scenario: Meeting without date
 - **WHEN** the user runs `memon wiki create meeting weekly --title "Weekly"`
 - **THEN** the command exits 2 with `BAD_REQUEST` mentioning `--date`
+
+#### Scenario: Create a Chinese finding
+- **WHEN** the user runs `memon wiki create finding kv-cache --title "KV cache 显存占用" --language zh --source E0017`
+- **THEN** the page has `language: zh` and H2s `结论`, `证据`, `局限`
 
 ### Requirement: `memon wiki move` relocates a page
 
@@ -66,7 +70,7 @@ Defines the `memon wiki` command group through which agents and humans create, r
 
 ### Requirement: `memon wiki set` edits frontmatter with an optimistic lock
 
-`memon wiki set <page> [--status S] [--title T] [--description D] [--date D] [--add-source A]... [--rm-source A]... [--add-tag T]... [--rm-tag T]... [--expected-mtime <ms>]` SHALL apply only the requested frontmatter changes, preserve the body byte-for-byte, preserve unknown keys, bump `updated_at`, and write atomically. When `--expected-mtime` is given and differs from the on-disk mtime the command SHALL exit 9 `CONFLICT` with the current mtime in the error. At least one change flag SHALL be required (exit 2 otherwise). Invalid `status` for the page's kind SHALL exit 2.
+`memon wiki set <page> [--status S] [--title T] [--description D] [--date D] [--add-source A]... [--rm-source A]... [--add-tag T]... [--rm-tag T]... [--language L] [--expected-mtime <ms>]` SHALL apply only the requested frontmatter changes, preserve the body byte-for-byte, preserve unknown keys, bump `updated_at`, and write atomically. When `--expected-mtime` is given and differs from the on-disk mtime the command SHALL exit 9 `CONFLICT` with the current mtime in the error. At least one change flag SHALL be required (exit 2 otherwise). Invalid `status` for the page's kind SHALL exit 2. `--language <en|zh>` SHALL set the `language` field and counts as a change flag; any other value SHALL exit 2.
 
 #### Scenario: Mark a finding retracted
 - **WHEN** the user runs `memon wiki set vsa-debt --status RETRACTED`
@@ -75,6 +79,10 @@ Defines the `memon wiki` command group through which agents and humans create, r
 #### Scenario: Stale expected mtime
 - **WHEN** the user runs `memon wiki set vsa-debt --add-tag x --expected-mtime 1`
 - **THEN** the command exits 9 with `CONFLICT` and the file is unchanged
+
+#### Scenario: Switch a page to Chinese
+- **WHEN** the user runs `memon wiki set vsa-debt --language zh`
+- **THEN** the frontmatter has `language: zh`, a newer `updated_at`, and the body is unchanged
 
 ### Requirement: `memon wiki lint` reports diagnostics
 
@@ -99,7 +107,7 @@ The review CLI SHALL expose log, diff, verify and unverify over Git-backed whole
 
 ### Requirement: `memon wiki commit` isolates wiki changes in their own commit
 
-`memon wiki commit [-m <summary>] [--allow-empty-message]` SHALL stage every change under `docs/wiki/` (and nothing else), refuse with exit 2 when there is nothing to stage, refuse with exit 9 `MIXED_INDEX` when the index already contains non-wiki paths, and create a commit whose subject is `wiki: <summary>`; when `-m` is omitted the summary SHALL be generated from the touched pages (`update W0004, create W0009`). A page's `<stem>__assets/` directory is staged with it; Python files referenced by `script:` payloads that live outside `docs/wiki/` SHALL be committed separately. The command SHALL print the new SHA and the pages it touched.
+`memon wiki commit [<page>...] [-m <summary>] [--allow-empty-message] [--no-push]` SHALL stage every change under `docs/wiki/` (and nothing else), refuse with exit 2 when there is nothing to stage, refuse with exit 9 `MIXED_INDEX` when the index already contains non-wiki paths, and create a commit whose subject is `wiki: <summary>`; when `-m` is omitted the summary SHALL be generated from the touched pages (`update W0004, create W0009`). A page's `<stem>__assets/` directory is staged with it; Python files referenced by `script:` payloads that live outside `docs/wiki/` SHALL be committed separately. The command SHALL print the new SHA and the pages it touched. Given one or more `<page>` arguments (id or slug; an id need not exist on disk), the command SHALL instead stage and commit only the paths of those pages — single file or bundle directory, `<stem>__assets/`, and renames or deletions of the same id — leaving every other staged or unstaged change uncommitted and unmodified, without the `MIXED_INDEX` refusal. After a successful commit the command SHALL push the current branch to its configured upstream with a normal non-force push, including earlier unpushed local commits, unless `--no-push` is given; the output SHALL report the push result. When the push cannot complete (no upstream, rejected, or failed) the commit SHALL remain and the command SHALL exit 1 with `PUSH_FAILED` naming the new SHA and the reason, without pulling, rebasing, merging, or forcing.
 
 #### Scenario: Only wiki paths are committed
 - **GIVEN** modified `docs/wiki/finding/W0001-x.md` and modified `src/train.py`
@@ -110,6 +118,21 @@ The review CLI SHALL expose log, diff, verify and unverify over Git-backed whole
 - **GIVEN** `src/train.py` is already staged
 - **WHEN** the user runs `memon wiki commit`
 - **THEN** the command exits 9 with `MIXED_INDEX` and creates no commit
+
+#### Scenario: Commit only the agent's pages
+- **GIVEN** modified `docs/wiki/roadmap/W0012-x.md`, modified `docs/wiki/note/W0013-y.md`, and staged `src/train.py`
+- **WHEN** the agent runs `memon wiki commit W0012 -m "prune W0012 history"`
+- **THEN** the new commit contains only the W0012 file, W0013 stays modified and unstaged, and `src/train.py` stays staged
+
+#### Scenario: Commit is pushed
+- **GIVEN** the branch tracks `origin/main` and holds one earlier unpushed commit
+- **WHEN** the agent runs `memon wiki commit W0012`
+- **THEN** both commits reach `origin/main` and the output reports `push.status: pushed`
+
+#### Scenario: Rejected push keeps the commit
+- **GIVEN** `origin/main` advanced since the last fetch
+- **WHEN** the agent runs `memon wiki commit W0012`
+- **THEN** the commit exists locally, the command exits 1 with `PUSH_FAILED` naming its SHA, and no pull, rebase, or force push happens
 
 ### Requirement: `memon wiki migrate-report` moves one Report into the wiki
 

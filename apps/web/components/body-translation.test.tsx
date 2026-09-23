@@ -14,7 +14,7 @@ const text =
   '# Body heading\n\nHello **world** with `code`.\n\n- List prose\n\n| Label |\n|---|\n| Table prose |\n\n## Findings\n\nMore evidence.'
 const sources = [{ format: 'markdown' as const, text }]
 const manifest = createTranslationManifest(sources)
-function setup(role: 'owner' | 'viewer' = 'owner') {
+function setup(role: 'owner' | 'viewer' = 'owner', sourceLanguage: 'en' | 'zh' = 'en') {
   vi.stubGlobal('crypto', webcrypto)
   const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
     if (url.includes('/status')) return Response.json({ ready: true })
@@ -34,6 +34,7 @@ function setup(role: 'owner' | 'viewer' = 'owner') {
       <BodyTranslation
         document={{ project: 'project-a', kind: 'wiki', id: 'W0001' }}
         sources={[{ format: 'markdown', text: body }]}
+        sourceLanguage={sourceLanguage}
       >
         <Markdown tableOfContents={{ headingIdPrefix: 'fixture' }}>{body}</Markdown>
       </BodyTranslation>
@@ -70,6 +71,30 @@ it('translates React-owned headings, paragraphs, lists and tables; restores orig
   expect(fetcher).toHaveBeenCalledTimes(requests)
   expect(button).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByText('Alt+T toggles translation / original')).toBeInTheDocument()
+})
+
+it('offers English for a Chinese page and asks the server for that direction', async () => {
+  const { container, fetcher } = setup('owner', 'zh')
+  const button = screen.getByRole('button', { name: 'Translate to English' })
+  await waitFor(() => expect(button).not.toBeDisabled())
+  fireEvent.click(button)
+  await waitFor(() =>
+    expect(container.querySelectorAll('[data-slot="body-translation"]')).toHaveLength(
+      manifest.segments.length,
+    ),
+  )
+  expect(container.querySelector('h1 [lang="en"][data-slot="body-translation"]')).toBeTruthy()
+  expect(container.querySelector('[lang="zh-CN"]')).toBeNull()
+  expect(
+    container.querySelector('[data-slot="body-translation"]')?.getAttribute('aria-label'),
+  ).toBe('Machine translation')
+  const [manifestUrl] = fetcher.mock.calls.find(
+    ([url, options]) => !options?.method && !url.includes('/status'),
+  )!
+  expect(String(manifestUrl)).toContain('targetLanguage=en')
+  const posted = fetcher.mock.calls.filter(([, options]) => options?.method === 'POST')
+  expect(posted).toHaveLength(1)
+  expect(JSON.parse(String(posted[0]![1]!.body)).targetLanguage).toBe('en')
 })
 
 it('toggles with Alt+T and ignores editors, dialogs and repeated keys', async () => {

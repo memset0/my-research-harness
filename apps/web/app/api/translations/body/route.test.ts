@@ -98,12 +98,37 @@ it('bounds HTTP input, rejects disabled use and keeps exact cache namespaces', a
   expect(mocks.invoke).not.toHaveBeenCalled()
   const document = { project: 'project-a', kind: 'wiki' as const, id: 'W0001' }
   const keys = [
-    translationCacheKey(document, 'one'),
-    translationCacheKey({ ...document, host: 'host-a' }, 'one'),
-    translationCacheKey({ ...document, project: 'project-b' }, 'one'),
-    translationCacheKey(document, 'two'),
+    translationCacheKey(document, 'one', 'zh-CN'),
+    translationCacheKey({ ...document, host: 'host-a' }, 'one', 'zh-CN'),
+    translationCacheKey({ ...document, project: 'project-b' }, 'one', 'zh-CN'),
+    translationCacheKey(document, 'two', 'zh-CN'),
+    translationCacheKey(document, 'one', 'en'),
   ]
-  expect(new Set(keys).size).toBe(4)
+  expect(new Set(keys).size).toBe(5)
+})
+
+it('keeps each translation direction on its own cache namespace and rejects unknown ones', async () => {
+  expect((await POST(request('owner'))).status).toBe(200)
+  const english = await POST(request('owner', { ...body, targetLanguage: 'en' }))
+  expect(english.status).toBe(200)
+  expect(mocks.invoke).toHaveBeenCalledTimes(2)
+  expect(mocks.invoke.mock.calls.map((call) => call[1].target)).toEqual(['zh-CN', 'en'])
+  expect(mocks.invoke.mock.calls[1]![1].prompt).toContain('into English.')
+  expect((await POST(request('owner'))).status).toBe(200)
+  expect((await POST(request('owner', { ...body, targetLanguage: 'en' }))).status).toBe(200)
+  expect(mocks.invoke).toHaveBeenCalledTimes(2)
+  expect((await POST(request('owner', { ...body, targetLanguage: 'fr' }))).status).toBe(400)
+  expect(
+    (
+      await GET(
+        new NextRequest(
+          `http://localhost/api/translations/body?project=project-a&kind=wiki&id=W0001&targetLanguage=fr&revision=${manifest.revision}`,
+          { headers: { 'x-memon-role': 'owner' } },
+        ),
+      )
+    ).status,
+  ).toBe(400)
+  expect(mocks.invoke).toHaveBeenCalledTimes(2)
 })
 
 it('serves matching manifests and rechecks revision before returning paid results', async () => {
@@ -132,7 +157,7 @@ it('returns exact cached results with the manifest without calling Codex', async
   const cached = { id: segment.id, sourceHash: segment.sourceHash, text: '你好世界' }
   mocks.cache.set(
     JSON.stringify([
-      translationCacheKey(document, manifest.revision),
+      translationCacheKey(document, manifest.revision, 'zh-CN'),
       segment.id,
       segment.sourceHash,
     ]),

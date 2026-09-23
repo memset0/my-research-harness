@@ -208,6 +208,21 @@ describe('runInstallSkills — multi-target install', () => {
     ])
   })
 
+  it('refuses the memon harness checkout and writes nothing', async () => {
+    await fs.mkdir(join(projectRoot, 'packages', 'skills'), { recursive: true })
+    await fs.writeFile(
+      join(projectRoot, 'packages', 'skills', 'package.json'),
+      JSON.stringify({ name: '@memon/skills' }),
+    )
+    const r = await runDefault()
+    expect(r.exitCode).toBe(2)
+    expect(r.stderr).toContain('BAD_REQUEST')
+    expect(r.stderr).toContain('harness checkout')
+    for (const sub of Object.values(AGENT_TARGETS)) {
+      expect(await dirExists(join(projectRoot, sub))).toBe(false)
+    }
+  })
+
   it('--agent claude only writes .claude/skills', async () => {
     await runDefault({ agents: ['claude'] })
     expect(await dirExists(join(projectRoot, AGENT_TARGETS.claude))).toBe(true)

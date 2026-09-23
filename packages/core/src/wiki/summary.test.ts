@@ -61,6 +61,7 @@ function summary(overrides: Partial<WikiSummary>): WikiSummary {
     description: null,
     status: null,
     date: null,
+    language: 'en',
     tags: [],
     sources: [],
     legacyId: null,
@@ -149,6 +150,30 @@ deprecated:
     expect(result.title).toBe('Recovered title')
     expect(result.createdAt).toBe(result.updatedAt)
     expect(Date.parse(result.updatedAt)).toBe(Date.parse('2026-09-04T12:00:00Z'))
+  })
+
+  it('reads the declared language and falls back to English', () => {
+    const location = {
+      id: 'W0011',
+      slug: 'kv-cache',
+      kind: 'note' as const,
+      format: 'markdown' as const,
+      path: 'docs/wiki/note/W0011-kv-cache.md',
+      mtime: 0,
+    }
+    const base = {
+      id: 'W0011',
+      kind: 'note',
+      title: 'KV cache',
+      created_at: '2026-09-01T09:00:00+08:00',
+      updated_at: '2026-09-01T09:00:00+08:00',
+    }
+    const language = (frontmatter: Record<string, unknown> | null) =>
+      buildWikiSummary({ location, frontmatter: frontmatter as never, body: '' }).language
+    expect(language({ ...base, language: 'zh' })).toBe('zh')
+    expect(language(base)).toBe('en')
+    expect(language({ ...base, language: 'fr' })).toBe('en')
+    expect(language(null)).toBe('en')
   })
 })
 

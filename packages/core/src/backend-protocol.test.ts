@@ -547,6 +547,7 @@ describe('shared Backend actor, event, and error schemas', () => {
       description: 'Where the tail comes from',
       status: 'VERIFIED',
       date: null,
+      language: 'zh',
       tags: ['attention'],
       sources: ['E0017', 'E0017/V3'],
       legacyId: 'R0004',
@@ -575,6 +576,15 @@ describe('shared Backend actor, event, and error schemas', () => {
     // A list entry never carries the body; only the single-page envelope does.
     expect(
       BackendWikiPagesResponseSchema.safeParse({ pages: [{ ...summary, content: '# x' }] }).success,
+    ).toBe(false)
+    // An older Backend omits the field; the page then reads as English.
+    const { language: _language, ...withoutLanguage } = summary
+    expect(BackendWikiPagesResponseSchema.parse({ pages: [withoutLanguage] }).pages[0]).toEqual({
+      ...withoutLanguage,
+      language: 'en',
+    })
+    expect(
+      BackendWikiPagesResponseSchema.safeParse({ pages: [{ ...summary, language: 'fr' }] }).success,
     ).toBe(false)
     const page = { ...summary, hash: 'c'.repeat(40), content: '---\nid: W0004\n---\n' }
     expect(BackendWikiDocumentSchema.parse(page)).toEqual(page)

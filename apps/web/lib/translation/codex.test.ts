@@ -75,7 +75,9 @@ readline.createInterface({input: process.stdin}).on('line', line => {
 
 it('handles split UTF-8, correlated final output, isolated ephemeral config and cleanup', async () => {
   await fixture()
-  expect(await runCodexTranslation({ executable }, 'Neutral fixture')).toBe('你好，世界。')
+  expect(
+    await runCodexTranslation({ executable }, { prompt: 'Neutral fixture', target: 'zh-CN' }),
+  ).toBe('你好，世界。')
   const requests = (await readFile(join(directory, 'requests'), 'utf8'))
     .trim()
     .split('\n')
@@ -93,6 +95,15 @@ it('handles split UTF-8, correlated final output, isolated ephemeral config and 
     features: { shell_tool: false },
     orchestrator: { skills: { enabled: false }, mcp: { enabled: false } },
   })
+  expect(thread.baseInstructions).toContain('Translate the supplied prose into Simplified Chinese.')
+  await runCodexTranslation({ executable }, { prompt: 'Neutral fixture', target: 'en' })
+  const english = (await readFile(join(directory, 'requests'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((request) => request.method === 'thread/start')
+    .at(-1).params
+  expect(english.baseInstructions).toContain('Translate the supplied prose into English.')
   const cwd = await readFile(join(directory, 'cwd'), 'utf8')
   await expect(stat(cwd)).rejects.toMatchObject({ code: 'ENOENT' })
 })
@@ -111,7 +122,7 @@ it.each([
   await expect(
     runCodexTranslation(
       { executable, timeoutMs: mode === 'timeout' ? 150 : 3000 },
-      'Neutral fixture',
+      { prompt: 'Neutral fixture', target: 'zh-CN' },
     ),
   ).rejects.toMatchObject({ code, message: code })
 })
@@ -121,7 +132,11 @@ it('does not infer during readiness and cancels active turns', async () => {
   expect(await runCodexTranslation({ executable }, null)).toBe('ready')
   expect(await readFile(join(directory, 'requests'), 'utf8')).not.toContain('turn/start')
   const controller = new AbortController()
-  const result = runCodexTranslation({ executable }, 'Neutral fixture', controller.signal)
+  const result = runCodexTranslation(
+    { executable },
+    { prompt: 'Neutral fixture', target: 'zh-CN' },
+    controller.signal,
+  )
   setTimeout(() => controller.abort(), 150)
   await expect(result).rejects.toMatchObject({ code: 'CANCELLED' })
 })
@@ -130,9 +145,11 @@ it('shares two Codex slots with readiness and removes cancelled waiters', async 
   await fixture('timeout')
   const controllers = Array.from({ length: 4 }, () => new AbortController())
   const invoke = (index: number, prompt: string | null) =>
-    runCodexTranslation({ executable }, prompt, controllers[index]!.signal).catch(
-      (error) => error.code,
-    )
+    runCodexTranslation(
+      { executable },
+      prompt === null ? null : { prompt, target: 'zh-CN' },
+      controllers[index]!.signal,
+    ).catch((error) => error.code)
   const first = invoke(0, 'First neutral fixture')
   const second = invoke(1, 'Second neutral fixture')
   let third: Promise<string> | undefined

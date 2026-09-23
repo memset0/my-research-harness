@@ -507,6 +507,42 @@ describe('memon wiki create', () => {
     expect((jsonAs<{ id: string }>(run.stdout)).id).toBe('W0008')
   })
 
+  it('scaffolds the Chinese headings for --language zh and rejects an unknown language', async () => {
+    const run = await runCapturing(() =>
+      runWikiCreate({
+        ...globals(),
+        kind: 'finding',
+        slug: 'kv-cache',
+        title: 'KV cache 显存占用',
+        language: 'zh',
+        source: ['E0017'],
+      }),
+    )
+    expect(run.exitCode).toBeNull()
+    const summary = jsonAs<{ path: string; language: string }>(run.stdout)
+    expect(summary.language).toBe('zh')
+    const content = await readFile(summary.path)
+    expect(content).toContain('language: zh')
+    for (const section of ['## 结论', '## 证据', '## 局限']) {
+      expect(content).toContain(section)
+    }
+    expect(content).not.toContain('## Claim')
+
+    const english = await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'plain', title: 'Plain' }),
+    )
+    expect(jsonAs<{ language: string; path: string }>(english.stdout).language).toBe('en')
+    expect(await readFile('docs/wiki/note/W0002-plain.md')).not.toContain('language:')
+
+    const invalid = await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'bad', title: 'Bad', language: 'fr' }),
+    )
+    expect(invalid.exitCode).toBe(2)
+    expect(errorOf(invalid).code).toBe('BAD_REQUEST')
+    expect(errorOf(invalid).message).toContain('--language')
+    expect(await pathExists('docs/wiki/note/W0003-bad.md')).toBe(false)
+  })
+
   it('defaults status to the kind vocabulary and requires --date for meeting', async () => {
     const created = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'question', slug: 'why', title: 'Why?' }),
@@ -790,6 +826,26 @@ describe('memon wiki set', () => {
     expect(await readFile(relative)).toContain('- E9999-never-loaded/V0042')
   })
 
+  it('switches the page language and rejects an unknown one', async () => {
+    const before = await readFile(relative)
+    const run = await runCapturing(() =>
+      runWikiSet({ ...globals(), page: 'vsa-debt', language: 'zh' }),
+    )
+    expect(run.exitCode).toBeNull()
+    expect(jsonAs<{ language: string }>(run.stdout).language).toBe('zh')
+    const content = await readFile(relative)
+    expect(content).toContain('language: zh')
+    expect(content.endsWith(body)).toBe(true)
+
+    const invalid = await runCapturing(() =>
+      runWikiSet({ ...globals(), page: 'vsa-debt', language: 'fr' }),
+    )
+    expect(invalid.exitCode).toBe(2)
+    expect(errorOf(invalid).message).toContain('--language')
+    expect(await readFile(relative)).toContain('language: zh')
+    expect(before).not.toContain('language:')
+  })
+
   it('refuses a stale --expected-mtime and leaves the file alone', async () => {
     const before = await readFile(relative)
     const run = await runCapturing(() =>
@@ -803,6 +859,7 @@ describe('memon wiki set', () => {
   it('requires at least one change flag and a valid status', async () => {
     const empty = await runCapturing(() => runWikiSet({ ...globals(), page: 'vsa-debt' }))
     expect(empty.exitCode).toBe(2)
+    expect(errorOf(empty).message).toContain('--language')
 
     const badStatus = await runCapturing(() =>
       runWikiSet({ ...globals(), page: 'vsa-debt', status: 'OPEN' }),
@@ -1660,12 +1717,35 @@ describe('memon wiki review diff without usable history', () => {
 })
 
 describe('memon wiki commit', () => {
+  let remote: string | null = null
+
   beforeEach(async () => {
     await initGit()
     await write('src/train.py', 'print(1)\n')
     await git('add', '-A')
     await git('commit', '-m', 'init')
   })
+
+  afterEach(async () => {
+    if (remote !== null) await fs.rm(remote, { recursive: true, force: true })
+    remote = null
+  })
+
+  /** A bare repository tracked as `origin/main`, the push destination. */
+  async function trackRemote(): Promise<string> {
+    remote = await fs.mkdtemp(join(tmpdir(), 'memon-wiki-remote-'))
+    await execFileAsync('git', ['init', '--bare', '-b', 'main', remote], { encoding: 'utf8' })
+    await git('remote', 'add', 'origin', remote)
+    await git('push', '-u', 'origin', 'main')
+    return remote
+  }
+
+  async function remoteLog(at: string): Promise<string> {
+    const { stdout } = await execFileAsync('git', ['-C', at, 'log', '--format=%s', 'main'], {
+      encoding: 'utf8',
+    })
+    return stdout
+  }
 
   it('stages only docs/wiki and leaves other changes alone', async () => {
     await runCapturing(() =>
@@ -1674,7 +1754,7 @@ describe('memon wiki commit', () => {
     await fs.appendFile(join(root, 'src/train.py'), 'print(2)\n', 'utf8')
 
     const run = await runCapturing(() =>
-      runWikiCommit({ ...globals(), message: 'tighten W0001 limits' }),
+      runWikiCommit({ ...globals(), message: 'tighten W0001 limits', noPush: true }),
     )
     expect(run.exitCode).toBeNull()
     const result = jsonAs<{
@@ -1682,9 +1762,11 @@ describe('memon wiki commit', () => {
       subject: string
       pages: { id: string; change: string; paths: string[] }[]
       files: string[]
+      push: { status: string }
     }>(run.stdout)
     expect(result.subject).toBe('wiki: tighten W0001 limits')
     expect(result.files).toEqual(['docs/wiki/note/W0001-alpha.md'])
+    expect(result.push).toEqual({ status: 'skipped' })
     // No review claim survives a commit: verification is whole-wiki.
     expect(result.pages).toEqual([
       { id: 'W0001', change: 'create', paths: ['docs/wiki/note/W0001-alpha.md'] },
@@ -1706,7 +1788,9 @@ describe('memon wiki commit', () => {
       '{\n  "value": 1,\n  "__component_id": "fid"\n}\n',
     )
 
-    const run = await runCapturing(() => runWikiCommit({ ...globals(), message: 'add fid' }))
+    const run = await runCapturing(() =>
+      runWikiCommit({ ...globals(), message: 'add fid', noPush: true }),
+    )
     expect(run.exitCode).toBeNull()
     const result = jsonAs<{
       pages: { id: string; paths: string[] }[]
@@ -1726,13 +1810,13 @@ describe('memon wiki commit', () => {
     await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
     )
-    await runCapturing(() => runWikiCommit({ ...globals(), message: 'first' }))
+    await runCapturing(() => runWikiCommit({ ...globals(), message: 'first', noPush: true }))
 
     await runCapturing(() => runWikiSet({ ...globals(), page: 'W0001', title: 'Alpha prime' }))
     await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'beta', title: 'Beta' }),
     )
-    const run = await runCapturing(() => runWikiCommit(globals()))
+    const run = await runCapturing(() => runWikiCommit({ ...globals(), noPush: true }))
     expect((jsonAs<{ subject: string }>(run.stdout)).subject).toBe(
       'wiki: update W0001, create W0002',
     )
@@ -1755,5 +1839,131 @@ describe('memon wiki commit', () => {
     const run = await runCapturing(() => runWikiCommit(globals()))
     expect(run.exitCode).toBe(2)
     expect((await git('log', '-1', '--format=%s')).trim()).toBe('init')
+  })
+
+  it('pushes the new commit and any earlier unpushed one to the upstream branch', async () => {
+    const at = await trackRemote()
+    await fs.appendFile(join(root, 'src/train.py'), 'print(2)\n', 'utf8')
+    await git('commit', '-am', 'earlier local work')
+    await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
+    )
+
+    const run = await runCapturing(() => runWikiCommit({ ...globals(), message: 'add alpha' }))
+    expect(run.exitCode).toBeNull()
+    expect(jsonAs<{ push: unknown }>(run.stdout).push).toEqual({
+      status: 'pushed',
+      remote: 'origin',
+      branch: 'main',
+    })
+    const log = await remoteLog(at)
+    expect(log).toContain('wiki: add alpha')
+    expect(log).toContain('earlier local work')
+  })
+
+  it('exits 1 PUSH_FAILED naming the commit when the branch has no upstream', async () => {
+    await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
+    )
+    const run = await runCapturing(() => runWikiCommit({ ...globals(), message: 'add alpha' }))
+    expect(run.exitCode).toBe(1)
+    const error = errorOf(run)
+    expect(error.code).toBe('PUSH_FAILED')
+    const sha = (await git('rev-parse', 'HEAD')).trim()
+    expect(error.message).toContain(sha)
+    expect(error.message).toContain('no upstream')
+    // The commit is kept; only publishing failed.
+    expect((await git('log', '-1', '--format=%s')).trim()).toBe('wiki: add alpha')
+  })
+
+  it('keeps the commit and refuses to force when the remote has advanced', async () => {
+    const at = await trackRemote()
+    const clone = await fs.mkdtemp(join(tmpdir(), 'memon-wiki-clone-'))
+    await execFileAsync('git', ['clone', at, clone], { encoding: 'utf8' })
+    for (const [key, value] of [
+      ['user.email', 'other@example.invalid'],
+      ['user.name', 'other'],
+      ['commit.gpgsign', 'false'],
+    ]) {
+      await execFileAsync('git', ['-C', clone, 'config', key!, value!], { encoding: 'utf8' })
+    }
+    await fs.writeFile(join(clone, 'other.txt'), 'x\n', 'utf8')
+    await execFileAsync('git', ['-C', clone, 'add', '-A'], { encoding: 'utf8' })
+    await execFileAsync('git', ['-C', clone, 'commit', '-m', 'remote moved on'], {
+      encoding: 'utf8',
+    })
+    await execFileAsync('git', ['-C', clone, 'push', 'origin', 'main'], { encoding: 'utf8' })
+    await fs.rm(clone, { recursive: true, force: true })
+
+    await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
+    )
+    const run = await runCapturing(() => runWikiCommit({ ...globals(), message: 'add alpha' }))
+    expect(run.exitCode).toBe(1)
+    const error = errorOf(run)
+    expect(error.code).toBe('PUSH_FAILED')
+    expect(error.message).toContain('origin/main')
+    expect(error.message).toContain((await git('rev-parse', 'HEAD')).trim())
+    expect((await git('log', '-1', '--format=%s')).trim()).toBe('wiki: add alpha')
+    // No force push, no rewrite: the remote still holds only its own commit.
+    expect(await remoteLog(at)).not.toContain('wiki: add alpha')
+  })
+
+  it('commits only the named page, leaving other wiki and staged changes alone', async () => {
+    for (const [slug, title] of [
+      ['alpha', 'Alpha'],
+      ['beta', 'Beta'],
+    ]) {
+      await runCapturing(() =>
+        runWikiCreate({ ...globals(), kind: 'note', slug: slug!, title: title! }),
+      )
+    }
+    await runCapturing(() => runWikiCommit({ ...globals(), message: 'both', noPush: true }))
+
+    await runCapturing(() => runWikiSet({ ...globals(), page: 'W0001', title: 'Alpha prime' }))
+    await runCapturing(() => runWikiSet({ ...globals(), page: 'W0002', title: 'Beta prime' }))
+    await fs.appendFile(join(root, 'src/train.py'), 'print(2)\n', 'utf8')
+    await git('add', 'src/train.py')
+
+    const run = await runCapturing(() =>
+      runWikiCommit({ ...globals(), pages: ['alpha'], message: 'prune W0001', noPush: true }),
+    )
+    expect(run.exitCode).toBeNull()
+    const result = jsonAs<{ files: string[]; pages: { id: string }[] }>(run.stdout)
+    expect(result.files).toEqual(['docs/wiki/note/W0001-alpha.md'])
+    expect(result.pages.map((entry) => entry.id)).toEqual(['W0001'])
+    expect((await git('show', '--name-only', '--format=', 'HEAD')).trim()).toBe(
+      'docs/wiki/note/W0001-alpha.md',
+    )
+    const status = await git('status', '--porcelain')
+    expect(status).toContain(' M docs/wiki/note/W0002-beta.md')
+    expect(status).toContain('M  src/train.py')
+  })
+
+  it('commits a deleted page by id and rejects an unknown page', async () => {
+    await runCapturing(() =>
+      runWikiCreate({ ...globals(), kind: 'note', slug: 'alpha', title: 'Alpha' }),
+    )
+    await runCapturing(() => runWikiCommit({ ...globals(), message: 'add alpha', noPush: true }))
+    await fs.rm(join(root, 'docs/wiki/note/W0001-alpha.md'))
+
+    const run = await runCapturing(() =>
+      runWikiCommit({ ...globals(), pages: ['W0001'], message: 'drop alpha', noPush: true }),
+    )
+    expect(run.exitCode).toBeNull()
+    expect(jsonAs<{ pages: { change: string }[] }>(run.stdout).pages[0]!.change).toBe('delete')
+    expect(await pathExists('docs/wiki/note/W0001-alpha.md')).toBe(false)
+
+    const nothing = await runCapturing(() =>
+      runWikiCommit({ ...globals(), pages: ['W0001'], noPush: true }),
+    )
+    expect(nothing.exitCode).toBe(2)
+    expect(errorOf(nothing).message).toContain('W0001')
+
+    const unknown = await runCapturing(() =>
+      runWikiCommit({ ...globals(), pages: ['never-written'], noPush: true }),
+    )
+    expect(unknown.exitCode).toBe(4)
+    expect(errorOf(unknown).code).toBe('NOT_FOUND')
   })
 })

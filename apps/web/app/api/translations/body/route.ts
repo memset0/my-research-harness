@@ -7,6 +7,7 @@ import {
   TranslationDocumentSchema,
   TranslationRequestSchema,
   translationCacheKey,
+  TranslationTargetSchema,
   translationFailure,
   translationOptions,
   translationResponse,
@@ -26,11 +27,12 @@ export async function GET(request: NextRequest) {
       kind: params.get('kind'),
       id: params.get('id'),
     })
+    const target = TranslationTargetSchema.parse(params.get('targetLanguage') ?? 'zh-CN')
     const manifest = await loadTranslationManifest(document, request.signal)
     if (params.get('revision') !== manifest.revision)
       throw new TranslationError('SOURCE_CHANGED', 409)
     const cachedResults = await (await translationService()).cached(
-      translationCacheKey(document, manifest.revision),
+      translationCacheKey(document, manifest.revision, target),
       manifest.segments,
       request.signal,
     )
@@ -61,7 +63,8 @@ export async function POST(request: NextRequest) {
       return segment
     })
     const results = await (await translationService()).translate(
-      translationCacheKey(body.document, body.revision),
+      translationCacheKey(body.document, body.revision, body.targetLanguage),
+      body.targetLanguage,
       segments,
       request.signal,
       body.retry,

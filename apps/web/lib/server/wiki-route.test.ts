@@ -32,6 +32,7 @@ function summary(diagnostics: WikiSummary['diagnostics'] = []): WikiSummary {
     description: null,
     status: null,
     date: null,
+    language: 'en',
     tags: [],
     sources: [],
     legacyId: null,

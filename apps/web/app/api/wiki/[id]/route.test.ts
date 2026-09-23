@@ -33,6 +33,7 @@ const summary = {
   description: null,
   status: 'TENTATIVE',
   date: null,
+  language: 'en',
   tags: [],
   sources: ['E0001'],
   legacyId: null,
