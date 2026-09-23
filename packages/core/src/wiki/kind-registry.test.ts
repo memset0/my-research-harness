@@ -4,7 +4,7 @@ import {
   getWikiKind,
   parseWikiKindRegistry,
   WIKI_KINDS,
-  WIKI_RECOMMENDED_SECTION_FORMS,
+  WIKI_RECOMMENDED_SECTIONS,
 } from './kind-registry.js'
 import { renderWikiKindGuidance } from './kind-guidance.js'
 
@@ -81,12 +81,8 @@ describe('Wiki kind registry', () => {
       decision: ['Decision', 'Rationale', 'Consequences'],
       'harness-feedback': ['Motivation', 'Proposal', 'Status'],
     })
-    expect(WIKI_RECOMMENDED_SECTION_FORMS.finding).toEqual([
-      { en: 'Claim', zh: '结论' },
-      { en: 'Evidence', zh: '证据' },
-      { en: 'Limits', zh: '局限' },
-    ])
-    expect(WIKI_RECOMMENDED_SECTION_FORMS.note).toEqual([])
+    expect(WIKI_RECOMMENDED_SECTIONS.finding).toEqual(['Claim', 'Evidence', 'Limits'])
+    expect(WIKI_RECOMMENDED_SECTIONS.note).toEqual([])
   })
 
   it.each([
@@ -154,18 +150,10 @@ describe('Wiki kind registry', () => {
       'statuses',
     ],
     [
-      'missing Chinese heading',
+      'a Chinese headings list',
       (value: typeof configuration) => {
         const finding = value.kinds.find((kind) => kind.id === 'finding')!
-        finding.zh.headings = ['结论', '证据']
-      },
-      'zh.headings',
-    ],
-    [
-      'duplicate Chinese heading',
-      (value: typeof configuration) => {
-        const finding = value.kinds.find((kind) => kind.id === 'finding')!
-        finding.zh.headings = ['结论', '结论', '局限']
+        ;(finding.zh as Record<string, unknown>).headings = ['结论', '证据', '局限']
       },
       'zh.headings',
     ],

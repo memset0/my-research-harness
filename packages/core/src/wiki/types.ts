@@ -7,7 +7,7 @@
 // bundles can `import type` from here without pulling any node code.
 
 export {
-  WIKI_KINDS, WIKI_STATUS_BY_KIND, WIKI_RECOMMENDED_SECTION_FORMS,
+  WIKI_KINDS, WIKI_STATUS_BY_KIND, WIKI_RECOMMENDED_SECTIONS,
   WIKI_RESERVED_KINDS, isWikiKind, type WikiKind,
 } from './kind-registry.js'
 
@@ -39,11 +39,10 @@ export function isWikiLanguage(value: unknown): value is WikiLanguage {
 }
 
 /**
- * The H2 a page uses for the owner's standing requirements, in both written
- * forms. Either form is recognized on any page; the section holds list items
- * only (`WIKI_MAINTENANCE_RULES_INVALID`).
+ * The H2 a page uses for the owner's standing requirements. English on every
+ * page; the section holds list items only (`WIKI_MAINTENANCE_RULES_INVALID`).
  */
-export const WIKI_MAINTENANCE_RULES_HEADINGS = { en: 'Maintenance rules', zh: '维护规则' } as const
+export const WIKI_MAINTENANCE_RULES_HEADING = 'Maintenance rules for agents'
 
 // ---------- review ----------
 

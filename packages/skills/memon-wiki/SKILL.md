@@ -31,10 +31,10 @@ field means English.
   faithfully (same claims, numbers, sources, links, and structure), run
   `memon wiki set <page> --language <en|zh>`, and land both in one wiki
   commit. Never leave a page half in one language.
-- On a Chinese page, write the title, description, headings, prose, and table
-  text in Chinese, and use the kind's Chinese heading forms listed in
-  `references/page-kinds.md`. Ids, slugs, frontmatter keys, and `status`
-  values never change.
+- On a Chinese page, write the title, description, prose, and table text in
+  Chinese. Every section heading stays in English on every page — the kind's
+  recommended H2s, `## Maintenance rules for agents`, and any heading you add.
+  Ids, slugs, frontmatter keys, and `status` values never change.
 - On every page, keep technical terms in English wherever a translation could
   blur them: artifact ids and `@` references, paths, commands, code, config
   keys, column, Variant, and metric names, method, model, library, and kernel
@@ -77,11 +77,11 @@ context rather than silently rewriting earlier conclusions. Translate meaning
 faithfully into the page language without adding goals or commitments the user
 did not make.
 
-## Maintenance rules
+## Maintenance rules for agents
 
 A page can carry the owner's standing requirements for the agents that work on
-it, in one section with a fixed name: `## Maintenance rules` on English pages,
-`## 维护规则` on Chinese pages, placed as the page's last H2. It records how
+it, in one section with a fixed English name on every page,
+`## Maintenance rules for agents`, placed as the page's last H2. It records how
 agents maintain the page and what they must or must not do when acting on its
 subject. Research facts, evidence, and decisions stay in the body.
 
@@ -99,7 +99,7 @@ Format (`wiki lint` warns `WIKI_MAINTENANCE_RULES_INVALID` otherwise):
   rule is removed; git keeps the history, so no `[!DEPRECATED]` markers here.
 
 ```markdown
-## Maintenance rules
+## Maintenance rules for agents
 
 - Keep the top callout limited to the owner's current decision. (2026-09-22)
 - Discuss in Chinese; write this page in English. (2026-09-13)
@@ -132,7 +132,7 @@ The user can put you into maintenance mode for one page ("进入 W0012 的维护
 5. After every change to the section, tell the user exactly what changed,
    quoting the items:
 
-   > 已更新 W0012「Maintenance rules」：
+   > 已更新 W0012「Maintenance rules for agents」：
    > - 新增：「Only for Oh My Pi: Never cancel or modify a Slurm allocation; … (2026-09-23)」
    > - 删除：「Use one small-model owner per assigned node. (2026-09-13)」
    > - 修改：「Validate every 100 steps.」→「Validate every 50 steps. (2026-09-23)」
@@ -311,8 +311,8 @@ When the user asserts something no Experiment supports:
 
    `--description` is mandatory in practice: one to three plain-text sentences
    that stand alone in a listing. `meeting` additionally requires `--date`.
-   Add `--language zh` for a Chinese page (see Authoring language); it also
-   scaffolds the Chinese heading forms. Add `--bundle` only when the page will
+   Add `--language zh` for a Chinese page (see Authoring language); the
+   scaffolded headings stay English. Add `--bundle` only when the page will
    carry assets.
 3. Write the body by editing the Markdown file directly (through the local
    mount path in mounted mode). Fill the kind's recommended H2 sections when it

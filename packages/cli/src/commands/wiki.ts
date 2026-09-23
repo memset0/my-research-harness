@@ -48,7 +48,7 @@ import {
   WIKI_KIND_REGISTRY,
   getWikiKind,
   WIKI_LANGUAGES,
-  WIKI_RECOMMENDED_SECTION_FORMS,
+  WIKI_RECOMMENDED_SECTIONS,
   WIKI_RESERVED_KINDS,
   WIKI_SLUG_REGEX,
   WIKI_STATUS_BY_KIND,
@@ -127,11 +127,7 @@ export async function runWikiKinds(input: WikiCommonInput & { kind?: string }): 
       `区别：${kind.zh.distinctions}`,
       `Status: ${kind.policy.statuses.join(' | ') || 'none'}`,
       `Date required: ${kind.policy.dateRequired}; sources required: ${kind.policy.sourcesRequired}`,
-      `Recommended H2 (advisory): ${
-        kind.policy.recommendedHeadings.length === 0
-          ? 'none'
-          : `${kind.policy.recommendedHeadings.join(', ')}; on \`language: zh\` pages: ${kind.zh.headings.join(', ')}`
-      }`,
+      `Recommended H2 (advisory): ${kind.policy.recommendedHeadings.join(', ') || 'none'}`,
       `Required H2: none`,
       `Authoring: ${kind.en.purpose} ${kind.en.authoring}`,
       `Examples: ${kind.en.examples.join('; ')}`,
@@ -566,9 +562,7 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     updated_at: now,
   }
 
-  const sections = (WIKI_RECOMMENDED_SECTION_FORMS[kind] ?? []).map((form) =>
-    language === 'zh' ? form.zh : form.en,
-  )
+  const sections = WIKI_RECOMMENDED_SECTIONS[kind] ?? []
   const body = [
     '',
     `# ${frontmatter.title}`,

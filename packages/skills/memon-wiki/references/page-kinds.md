@@ -21,7 +21,7 @@ Use date-prefixed slugs where useful. Cite discussed Experiments in sources. Ext
 - Creation default: no status.
 - Date required: yes (YYYY-MM-DD).
 - Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Attendees, Notes, Decisions, Action items; on `language: zh` pages: 参会人, 记录, 决定, 行动项.
+- Recommended H2s (warning only; also used by create): Attendees, Notes, Decisions, Action items.
 - Required H2s: none.
 - Body evidence warning: no.
 - Human-review warning at status: none.
@@ -65,7 +65,7 @@ Make Claim quotable. Attribute every number to an Experiment, Variant or run in 
 - Creation default: TENTATIVE.
 - Date required: no.
 - Non-empty sources required: yes.
-- Recommended H2s (warning only; also used by create): Claim, Evidence, Limits; on `language: zh` pages: 结论, 证据, 局限.
+- Recommended H2s (warning only; also used by create): Claim, Evidence, Limits.
 - Required H2s: none.
 - Body evidence warning: yes.
 - Human-review warning at status: VERIFIED.
@@ -87,7 +87,7 @@ Quantify impact where possible and cite numbers. Compare candidate options with 
 - Creation default: OPEN.
 - Date required: no.
 - Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Problem, Impact, Status, Candidates; on `language: zh` pages: 问题, 影响, 状态, 候选方案.
+- Recommended H2s (warning only; also used by create): Problem, Impact, Status, Candidates.
 - Required H2s: none.
 - Body evidence warning: no.
 - Human-review warning at status: none.
@@ -109,7 +109,7 @@ Usually use a bundle with data/ and views/<slug>/index.html. Explain exact repro
 - Creation default: DRAFT.
 - Date required: no.
 - Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): What to show, How to reproduce, Assets; on `language: zh` pages: 展示内容, 复现方法, 素材.
+- Recommended H2s (warning only; also used by create): What to show, How to reproduce, Assets.
 - Required H2s: none.
 - Body evidence warning: no.
 - Human-review warning at status: none.
@@ -131,7 +131,7 @@ State a falsifiable question, why it matters now and what was ruled out. Leave A
 - Creation default: OPEN.
 - Date required: no.
 - Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Question, Context, Answer; on `language: zh` pages: 问题, 背景, 答案.
+- Recommended H2s (warning only; also used by create): Question, Context, Answer.
 - Required H2s: none.
 - Body evidence warning: no.
 - Human-review warning at status: none.
@@ -153,7 +153,7 @@ State the decision in one imperative sentence. Name alternatives and discriminat
 - Creation default: PROPOSED.
 - Date required: no.
 - Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Decision, Rationale, Consequences; on `language: zh` pages: 决定, 理由, 影响.
+- Recommended H2s (warning only; also used by create): Decision, Rationale, Consequences.
 - Required H2s: none.
 - Body evidence warning: no.
 - Human-review warning at status: none.
@@ -197,7 +197,7 @@ Describe the concrete moment the gap hurt and cite the affected page or task. Pr
 - Creation default: PROPOSED.
 - Date required: no.
 - Non-empty sources required: no.
-- Recommended H2s (warning only; also used by create): Motivation, Proposal, Status; on `language: zh` pages: 动机, 提议, 状态.
+- Recommended H2s (warning only; also used by create): Motivation, Proposal, Status.
 - Required H2s: none.
 - Body evidence warning: no.
 - Human-review warning at status: none.

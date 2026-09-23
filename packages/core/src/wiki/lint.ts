@@ -9,7 +9,7 @@ import { COMPONENT_TYPES } from './component-names.generated.js'
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation, validateWikiEntry } from './deprecation.js'
 import { wikiStringList } from './frontmatter.js'
-import { getWikiKind, WIKI_RECOMMENDED_SECTION_FORMS } from './kind-registry.js'
+import { getWikiKind, WIKI_RECOMMENDED_SECTIONS } from './kind-registry.js'
 import { wikiSourceKind } from './staleness.js'
 import {
   isWikiKind,
@@ -18,7 +18,7 @@ import {
   WIKI_ID_REGEX,
   WIKI_LANGUAGES,
   WIKI_LEGACY_ID_REGEX,
-  WIKI_MAINTENANCE_RULES_HEADINGS,
+  WIKI_MAINTENANCE_RULES_HEADING,
   WIKI_STATUS_BY_KIND,
   WIKI_TIMESTAMP_REGEX,
   type WikiDiagnostic,
@@ -29,7 +29,7 @@ import {
 } from './types.js'
 
 const H2_REGEX = /^ {0,3}##\s+(.+?)\s*#*\s*$/
-/** An H1 closes a `Maintenance rules` section just as the next H2 does. */
+/** An H1 closes a `Maintenance rules for agents` section as the next H2 does. */
 const H1_REGEX = /^ {0,3}#\s+\S/
 /** `-`, `*`, `+`, `1.` or `1)` opening a list item. */
 const LIST_ITEM_REGEX = /^ {0,3}(?:[-*+]|\d{1,9}[.)])\s+\S/
@@ -411,33 +411,30 @@ function lintSections(
   offset: number,
 ): void {
   if (!isWikiKind(page.kind)) return
-  const recommended = WIKI_RECOMMENDED_SECTION_FORMS[page.kind] ?? []
+  const recommended = WIKI_RECOMMENDED_SECTIONS[page.kind] ?? []
   if (recommended.length === 0) return
   const present = new Set<string>()
   for (const line of masked.split('\n')) {
     const heading = H2_REGEX.exec(line)
     if (heading) present.add(heading[1]!.trim().toLowerCase())
   }
-  // Either written form satisfies the recommendation; the warning names the
-  // form of the page's declared language and shows the other in parentheses.
-  const zh = page.frontmatter?.language === 'zh'
+  // Section headings are English on every page, whatever the page's language.
   for (const section of recommended) {
-    if (present.has(section.en.toLowerCase()) || present.has(section.zh.toLowerCase())) continue
-    const [named, alternate] = zh ? [section.zh, section.en] : [section.en, section.zh]
+    if (present.has(section.toLowerCase())) continue
     diagnostics.push({
       code: 'WIKI_MISSING_SECTION',
       severity: 'warn',
-      message: `recommended \`${page.kind}\` section "${named}" (${alternate}) is missing`,
+      message: `recommended \`${page.kind}\` section "${section}" is missing`,
       line: offset + 1,
     })
   }
 }
 
 /**
- * The `Maintenance rules` / `维护规则` section records the owner's standing
+ * The `Maintenance rules for agents` section records the owner's standing
  * requirements as a list, so anything else inside it — prose, a table, a
  * fenced block, a nested heading — is reported once, on its first line. A
- * second section with either name is reported on its heading. Headings are
+ * second section with that name is reported on its heading. Headings are
  * read from the code mask (a heading inside a fence is not one); the content
  * rule reads the raw body, so a fence is offending text rather than a hole.
  */
@@ -447,9 +444,7 @@ function lintMaintenanceRules(
   diagnostics: WikiDiagnostic[],
   offset: number,
 ): void {
-  const names = [WIKI_MAINTENANCE_RULES_HEADINGS.en, WIKI_MAINTENANCE_RULES_HEADINGS.zh].map(
-    (name) => name.toLowerCase(),
-  )
+  const name = WIKI_MAINTENANCE_RULES_HEADING.toLowerCase()
   const maskedLines = masked.split('\n')
   const rawLines = page.body.split('\n')
   let heading: string | null = null
@@ -460,7 +455,7 @@ function lintMaintenanceRules(
     const h2 = H2_REGEX.exec(line)
     if (h2 || H1_REGEX.test(line)) {
       const text = h2?.[1]?.trim() ?? ''
-      if (!names.includes(text.toLowerCase())) {
+      if (text.toLowerCase() !== name) {
         heading = null
         continue
       }
@@ -469,7 +464,7 @@ function lintMaintenanceRules(
         diagnostics.push({
           code: 'WIKI_MAINTENANCE_RULES_INVALID',
           severity: 'warn',
-          message: `a page carries at most one \`${WIKI_MAINTENANCE_RULES_HEADINGS.en}\` (${WIKI_MAINTENANCE_RULES_HEADINGS.zh}) section; "${text}" is a second one`,
+          message: `a page carries at most one \`${WIKI_MAINTENANCE_RULES_HEADING}\` section; "${text}" is a second one`,
           line: offset + index + 1,
         })
         return

@@ -22,7 +22,14 @@ export const WikiKindDefinitionSchema = z
     id: z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
     order: z.number().int().nonnegative(),
     label: text,
-    zh: helpSchema.extend({ headings: uniqueTexts }),
+    // Advisory headings are English-only. A translated list is rejected by its
+    // own path instead of a bare unrecognized-key complaint about `zh`.
+    zh: helpSchema.extend({
+      headings: z.undefined({
+        invalid_type_error:
+          'Advisory headings exist only in English; remove the Chinese `headings` list',
+      }),
+    }),
     en: helpSchema.extend({ authoring: text }),
     relatedKinds: uniqueTexts,
     policy: z
@@ -72,12 +79,6 @@ export const WikiKindRegistrySchema = z
           issue(['relatedKinds'], `Invalid related kind: ${related}`)
         }
       }
-      if (kind.zh.headings.length !== kind.policy.recommendedHeadings.length) {
-        issue(
-          ['zh', 'headings'],
-          `Chinese headings must mirror the ${kind.policy.recommendedHeadings.length} advisory heading(s) of \`${kind.id}\`, in the same order; got ${kind.zh.headings.length}`,
-        )
-      }
       if (
         kind.policy.reviewWarningStatus !== null &&
         !kind.policy.statuses.includes(kind.policy.reviewWarningStatus)
@@ -114,17 +115,10 @@ export const WIKI_STATUS_BY_KIND = Object.fromEntries(
   WIKI_KIND_DEFINITIONS.map((kind) => [kind.id, kind.policy.statuses]),
 ) as Record<WikiKind, readonly string[]>
 
-/**
- * Per kind, the advisory H2s in both written forms, in registry order. Lint
- * accepts either form; `memon wiki create --language zh` scaffolds the Chinese
- * one; the generated kind reference lists both.
- */
-export const WIKI_RECOMMENDED_SECTION_FORMS = Object.fromEntries(
-  WIKI_KIND_DEFINITIONS.map((kind) => [
-    kind.id,
-    kind.policy.recommendedHeadings.map((en, index) => ({ en, zh: kind.zh.headings[index] ?? en })),
-  ]),
-) as Record<WikiKind, readonly { en: string; zh: string }[]>
+/** Per kind, the advisory H2s in registry order; English on every page. */
+export const WIKI_RECOMMENDED_SECTIONS = Object.fromEntries(
+  WIKI_KIND_DEFINITIONS.map((kind) => [kind.id, kind.policy.recommendedHeadings]),
+) as Record<WikiKind, readonly string[]>
 
 export function getWikiKind(value: string): WikiKindDefinition | undefined {
   return WIKI_KIND_DEFINITIONS.find((kind) => kind.id === value)

@@ -185,33 +185,33 @@ updated_at: "2026-09-01T09:00:00+08:00"
     expect(codes(diagnostics)).toEqual(['WIKI_TIMESTAMP_INVALID'])
   })
 
-  it('warns once per missing recommended section, naming both written forms', () => {
+  it('warns once per missing recommended section', () => {
     const diagnostics = lintWikiPage(
       makePage(VALID_FINDING.replace('## Limits\n\nSingle CFG scale.\n', '')),
     )
     const missing = diagnostics.filter((entry) => entry.code === 'WIKI_MISSING_SECTION')
     expect(missing).toHaveLength(1)
-    expect(missing[0]?.message).toBe('recommended `finding` section "Limits" (局限) is missing')
+    expect(missing[0]?.message).toBe('recommended `finding` section "Limits" is missing')
     expect(missing[0]?.severity).toBe('warn')
   })
 
-  it('accepts the Chinese heading forms and names them on a `language: zh` page', () => {
+  it('expects English headings on a `language: zh` page', () => {
     const chinese = VALID_FINDING.replace('status: VERIFIED', 'status: VERIFIED\nlanguage: zh')
-      .replace('## Claim', '## 结论')
-      .replace('## Evidence', '## 证据')
-      .replace('## Limits', '## 局限')
     expect(lintWikiPage(makePage(chinese), { inventory: INVENTORY })).toEqual([])
 
-    const withoutLimits = lintWikiPage(
-      makePage(chinese.replace('## 局限\n\nSingle CFG scale.\n', '')),
+    const translated = lintWikiPage(
+      makePage(
+        chinese
+          .replace('## Claim', '## 结论')
+          .replace('## Evidence', '## 证据')
+          .replace('## Limits', '## 局限'),
+      ),
       { inventory: INVENTORY },
     )
-    expect(withoutLimits).toEqual([
-      expect.objectContaining({
-        code: 'WIKI_MISSING_SECTION',
-        severity: 'warn',
-        message: 'recommended `finding` section "局限" (Limits) is missing',
-      }),
+    expect(translated.map((entry) => entry.message)).toEqual([
+      'recommended `finding` section "Claim" is missing',
+      'recommended `finding` section "Evidence" is missing',
+      'recommended `finding` section "Limits" is missing',
     ])
   })
 
@@ -243,9 +243,9 @@ updated_at: "2026-09-01T09:00:00+08:00"
     ])
   })
 
-  it('accepts a list-only `Maintenance rules` section, including scope groups', () => {
+  it('accepts a list-only `Maintenance rules for agents` section, including scope groups', () => {
     const rules = `${VALID_FINDING}
-## Maintenance rules
+## Maintenance rules for agents
 
 - Keep the top callout current. (2026-09-23)
 - Only for Oh My Pi:
@@ -258,7 +258,7 @@ updated_at: "2026-09-01T09:00:00+08:00"
 
   it('warns once, on its line, about non-list content in the rules section', () => {
     const rules = `${VALID_FINDING}
-## Maintenance rules
+## Maintenance rules for agents
 
 - Keep the top callout current. (2026-09-23)
 
@@ -272,7 +272,7 @@ Neither does this one.
         code: 'WIKI_MAINTENANCE_RULES_INVALID',
         severity: 'warn',
         message:
-          '`Maintenance rules` holds list items only; "This paragraph does not belong here." is neither a list item nor part of one',
+          '`Maintenance rules for agents` holds list items only; "This paragraph does not belong here." is neither a list item nor part of one',
       }),
     ])
     expect(diagnostics[0]?.line).toBe(
@@ -280,36 +280,44 @@ Neither does this one.
     )
   })
 
-  it('warns about a second rules section in either written form', () => {
+  it('warns about a second rules section', () => {
     const rules = `${VALID_FINDING}
-## Maintenance rules
+## Maintenance rules for agents
 
 - Keep the top callout current. (2026-09-23)
 
-## 维护规则
+## Maintenance rules for agents
 
-- 复核完成后更新状态。(2026-09-21)
+- Re-check the numbers after every rerun. (2026-09-21)
 `
     expect(lintWikiPage(makePage(rules), { inventory: INVENTORY })).toEqual([
       expect.objectContaining({
         code: 'WIKI_MAINTENANCE_RULES_INVALID',
         severity: 'warn',
         message:
-          'a page carries at most one `Maintenance rules` (维护规则) section; "维护规则" is a second one',
-        line: rules.split('\n').indexOf('## 维护规则') + 1,
+          'a page carries at most one `Maintenance rules for agents` section; "Maintenance rules for agents" is a second one',
+        line: rules.split('\n').lastIndexOf('## Maintenance rules for agents') + 1,
       }),
     ])
   })
 
-  it('accepts a Chinese rules section and reports a fenced block inside it', () => {
-    const chinese = `${VALID_FINDING}
+  it('leaves the old section names as ordinary content and reports a fence in the rules', () => {
+    const renamed = `${VALID_FINDING}
+## Maintenance rules
+
+Prose under an ordinary section is fine.
+
 ## 维护规则
 
-- 每次改动后复核结论。(2026-09-22)
+也是普通小节。
 `
-    expect(lintWikiPage(makePage(chinese), { inventory: INVENTORY })).toEqual([])
+    expect(lintWikiPage(makePage(renamed), { inventory: INVENTORY })).toEqual([])
 
-    const fenced = `${chinese}
+    const fenced = `${VALID_FINDING}
+## Maintenance rules for agents
+
+- 每次改动后复核结论。(2026-09-22)
+
 \`\`\`sh
 memon wiki lint
 \`\`\`

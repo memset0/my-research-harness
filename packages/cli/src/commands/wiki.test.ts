@@ -507,7 +507,7 @@ describe('memon wiki create', () => {
     expect((jsonAs<{ id: string }>(run.stdout)).id).toBe('W0008')
   })
 
-  it('scaffolds the Chinese headings for --language zh and rejects an unknown language', async () => {
+  it('writes `language: zh` with the English scaffold and rejects an unknown language', async () => {
     const run = await runCapturing(() =>
       runWikiCreate({
         ...globals(),
@@ -523,10 +523,11 @@ describe('memon wiki create', () => {
     expect(summary.language).toBe('zh')
     const content = await readFile(summary.path)
     expect(content).toContain('language: zh')
-    for (const section of ['## 结论', '## 证据', '## 局限']) {
+    // Section headings stay English whatever the page language is.
+    for (const section of ['## Claim', '## Evidence', '## Limits']) {
       expect(content).toContain(section)
     }
-    expect(content).not.toContain('## Claim')
+    expect(content).not.toContain('## 结论')
 
     const english = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'plain', title: 'Plain' }),

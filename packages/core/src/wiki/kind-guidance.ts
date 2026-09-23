@@ -28,11 +28,7 @@ export function renderWikiKindGuidance(registry: WikiKindRegistry): string {
       `- Creation default: ${kind.policy.statuses[0] ?? 'no status'}.`,
       `- Date required: ${kind.policy.dateRequired ? 'yes (YYYY-MM-DD)' : 'no'}.`,
       `- Non-empty sources required: ${kind.policy.sourcesRequired ? 'yes' : 'no'}.`,
-      `- Recommended H2s (warning only; also used by create): ${
-        kind.policy.recommendedHeadings.length === 0
-          ? 'none; free-form'
-          : `${kind.policy.recommendedHeadings.join(', ')}; on \`language: zh\` pages: ${kind.zh.headings.join(', ')}`
-      }.`,
+      `- Recommended H2s (warning only; also used by create): ${kind.policy.recommendedHeadings.join(', ') || 'none; free-form'}.`,
       '- Required H2s: none.',
       `- Body evidence warning: ${kind.policy.bodyEvidenceWarning ? 'yes' : 'no'}.`,
       `- Human-review warning at status: ${kind.policy.reviewWarningStatus ?? 'none'}.`,
