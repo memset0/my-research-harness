@@ -6,7 +6,7 @@
  * bundle.
  */
 
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Line, LineChart, Scatter, ScatterChart, XAxis, YAxis } from 'recharts'
 import {
   ChartContainer,
   ChartLegend,
@@ -16,7 +16,7 @@ import {
   type ChartConfig,
 } from '../../../../components/ui/chart'
 import type { DatatablePlotView } from './index'
-import type { PlotModel, PlotPoint } from './series'
+import type { PlotModel, PlotPoint, ScatterModel, ScatterPoint } from './series'
 
 /**
  * Series palette: the theme's `--chart-1` is a near-background grey in this
@@ -131,6 +131,91 @@ export function DatatablePlot({ view, model }: { view: DatatablePlotView; model:
           ))}
         </BarChart>
       )}
+    </ChartContainer>
+  )
+}
+
+function seriesConfig(series: readonly string[]) {
+  const colors = series.map((_name, index) => SERIES_COLORS[index % SERIES_COLORS.length]!)
+  const config: ChartConfig = {}
+  series.forEach((name, index) => {
+    config[name] = { label: name, color: colors[index] }
+  })
+  return { colors, config }
+}
+
+/**
+ * One dot per row on two numeric axes. The tooltip prints the hovered row's
+ * declared `x` and `y` cells, not recharts' formatted numbers.
+ */
+export function DatatableScatter({ view, model }: { view: DatatablePlotView; model: ScatterModel }) {
+  const { colors, config } = seriesConfig(model.series)
+  const bySeries = model.series.map((name) => model.points.filter((point) => point.series === name))
+  const tooltip = (
+    <ChartTooltip
+      cursor={{ strokeDasharray: '3 3' }}
+      content={({ active, payload }) => {
+        const point = payload?.[0]?.payload as ScatterPoint | undefined
+        if (!active || !point) return null
+        const color = colors[model.series.indexOf(point.series)]
+        return (
+          <div className="grid min-w-32 gap-1 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+            {model.series.length > 1 && (
+              <div className="flex items-center gap-2 font-medium">
+                <span className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: color }} aria-hidden />
+                {point.series}
+              </div>
+            )}
+            {[
+              [view.x, point.xLabel],
+              [view.y, point.yLabel],
+            ].map(([name, raw]) => (
+              <div key={name} className="flex w-full items-center gap-2">
+                <span className="text-muted-foreground">{name}</span>
+                <span className="ml-auto font-mono font-medium tabular-nums text-foreground" data-datatable-raw="">
+                  {raw}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      }}
+    />
+  )
+
+  return (
+    <ChartContainer config={config} className="min-h-[220px] w-full">
+      <ScatterChart margin={{ top: 8, right: 16, bottom: 4, left: 4 }}>
+        <CartesianGrid />
+        <XAxis
+          dataKey="x"
+          type="number"
+          name={view.x}
+          domain={[view.x_from_zero ? 0 : 'auto', 'auto']}
+          // Keeps dots on the extreme values whole instead of cut by the plot edge.
+          padding={{ left: 12, right: 12 }}
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+        />
+        <YAxis
+          dataKey="y"
+          type="number"
+          name={view.y}
+          domain={[view.y_from_zero ? 0 : 'auto', 'auto']}
+          padding={{ top: 12, bottom: 12 }}
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          width={60}
+        />
+        {tooltip}
+        {/* Legend in series first-appearance order, not recharts' default name sort. */}
+        {model.series.length > 1 && <ChartLegend itemSorter={null} content={<ChartLegendContent />} />}
+        {model.series.map((name, index) => (
+          <Scatter key={name} name={name} data={bySeries[index]} fill={colors[index]} isAnimationActive={false} />
+        ))}
+      </ScatterChart>
     </ChartContainer>
   )
 }

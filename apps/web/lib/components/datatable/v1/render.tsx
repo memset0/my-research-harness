@@ -21,14 +21,20 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../../../../components/ui/tabs'
 import type { ComponentData, ComponentRenderer } from '../../types'
 import type { descriptor } from './index'
-import { buildPlotModel, cellLabel, distinctValues } from './series'
+import { buildPlotModel, buildScatterModel, cellLabel, distinctValues, filterRows } from './series'
 
 type Datatable = ComponentData<typeof descriptor>
 type View = Datatable['views'][number]
+type TableView = Extract<View, { type: 'table' }>
 
+const plotLoading = () => <div className="h-[220px]" aria-busy="true" />
 const DatatablePlot = dynamic(() => import('./plot').then((module) => module.DatatablePlot), {
   ssr: false,
-  loading: () => <div className="h-[220px]" aria-busy="true" />,
+  loading: plotLoading,
+})
+const DatatableScatter = dynamic(() => import('./plot').then((module) => module.DatatableScatter), {
+  ssr: false,
+  loading: plotLoading,
 })
 
 export const Render: ComponentRenderer<Datatable> = ({ data, block }) => {
@@ -64,10 +70,11 @@ export const Render: ComponentRenderer<Datatable> = ({ data, block }) => {
         </div>
       )}
 
+      {/* Keyed by position so each view starts from its own defaults. */}
       {view.type === 'table' ? (
-        <DatatableTable data={data} />
+        <DatatableTable key={active} data={data} view={view} />
       ) : (
-        <DatatablePlotView data={data} view={view} />
+        <DatatablePlotView key={active} data={data} view={view} />
       )}
 
       {(data.title || data.note) && (
@@ -84,13 +91,96 @@ export const Render: ComponentRenderer<Datatable> = ({ data, block }) => {
   )
 }
 
-function DatatableTable({ data }: { data: Datatable }) {
+function chipClass(on: boolean) {
+  return cn(
+    'rounded-full border px-2.5 py-0.5 text-xs',
+    on
+      ? 'border-primary bg-primary text-primary-foreground'
+      : 'bg-background text-muted-foreground hover:text-foreground',
+  )
+}
+
+/**
+ * Named filters are toggle chips: in `any` mode each chip toggles and the
+ * active ones combine with AND; in `one` mode choosing a chip replaces the
+ * active one and `All` clears it.
+ */
+function DatatableTable({ data, view }: { data: Datatable; view: TableView }) {
+  const filters = view.filters ?? []
+  const single = view.filter_mode === 'one'
+  const [activeLabels, setActiveLabels] = useState<string[]>(() =>
+    filters.filter((filter) => filter.default).map((filter) => filter.label),
+  )
+  const rows = useMemo(
+    () => filterRows(data.columns, data.data, filters.filter((filter) => activeLabels.includes(filter.label))),
+    [data.columns, data.data, filters, activeLabels],
+  )
+  const toggle = (label: string) =>
+    setActiveLabels((current) =>
+      single
+        ? [label]
+        : current.includes(label)
+          ? current.filter((candidate) => candidate !== label)
+          : [...current, label],
+    )
+
+  return (
+    <div className="min-w-0">
+      {filters.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2"
+          data-datatable-filters={single ? 'one' : 'any'}
+        >
+          {single && (
+            <button
+              type="button"
+              aria-pressed={activeLabels.length === 0}
+              onClick={() => setActiveLabels([])}
+              data-datatable-filter-all=""
+              className={chipClass(activeLabels.length === 0)}
+            >
+              All
+            </button>
+          )}
+          {filters.map((filter) => {
+            const on = activeLabels.includes(filter.label)
+            return (
+              <button
+                key={filter.label}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggle(filter.label)}
+                data-datatable-filter={filter.label}
+                data-active={on ? '' : undefined}
+                className={chipClass(on)}
+              >
+                {filter.label}
+              </button>
+            )
+          })}
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums" data-datatable-rowcount={rows.length}>
+            {rows.length} of {data.data.length} rows
+          </span>
+        </div>
+      )}
+      {rows.length === 0 && filters.length > 0 ? (
+        <p className="px-3 py-6 text-center text-xs text-muted-foreground" role="status">
+          No rows match the active filters.
+        </p>
+      ) : (
+        <DatatableRows columns={data.columns} rows={rows} />
+      )}
+    </div>
+  )
+}
+
+function DatatableRows({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   return (
     <div className="min-w-0 overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            {data.columns.map((column) => (
+            {columns.map((column) => (
               <TableHead key={column} className="font-mono">
                 {column}
               </TableHead>
@@ -98,7 +188,7 @@ function DatatableTable({ data }: { data: Datatable }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.data.map((row, rowIndex) => (
+          {rows.map((row, rowIndex) => (
             // Rows have no identity beyond their position in the payload.
             // biome-ignore lint/suspicious/noArrayIndexKey: display-only ordered list
             <TableRow key={`row-${rowIndex}`}>
@@ -125,7 +215,7 @@ function DatatableTable({ data }: { data: Datatable }) {
  * the dropdown to the first value that tab actually has, because the two
  * columns are orthogonal only in the payload, not in the data.
  */
-function DatatablePlotView({ data, view }: { data: Datatable; view: Exclude<View, { type: 'table' }> }) {
+function DatatablePlotView({ data, view }: { data: Datatable; view: Exclude<View, TableView> }) {
   const tabs = useMemo(
     () => distinctValues(data.columns, data.data, view.tabs),
     [data.columns, data.data, view.tabs],
@@ -158,10 +248,12 @@ function DatatablePlotView({ data, view }: { data: Datatable; view: Exclude<View
     )
   }
 
-  const model = useMemo(
-    () => buildPlotModel(data.columns, data.data, view, { tab: activeTab, select: activeOption }),
-    [data.columns, data.data, view, activeTab, activeOption],
-  )
+  const model = useMemo(() => {
+    const filter = { tab: activeTab, select: activeOption }
+    return view.type === 'scatter'
+      ? { kind: 'scatter' as const, ...buildScatterModel(data.columns, data.data, view, filter) }
+      : { kind: 'plot' as const, ...buildPlotModel(data.columns, data.data, view, filter) }
+  }, [data.columns, data.data, view, activeTab, activeOption])
 
   return (
     <div className="min-w-0 px-3 py-3" data-datatable-plot={view.type}>
@@ -194,17 +286,19 @@ function DatatablePlotView({ data, view }: { data: Datatable; view: Exclude<View
         </div>
       )}
       <div data-datatable-series={model.series.join(',')}>
-        {model.points.length > 0 ? (
-          <DatatablePlot view={view} model={model} />
-        ) : (
+        {model.points.length === 0 ? (
           <p className="py-8 text-center text-xs text-muted-foreground" role="status">
             No numeric rows to plot.
           </p>
+        ) : model.kind === 'scatter' ? (
+          <DatatableScatter view={view} model={model} />
+        ) : (
+          <DatatablePlot view={view} model={model} />
         )}
       </div>
       {model.skipped > 0 && (
         <p className="mt-1 text-xs text-muted-foreground" data-datatable-skipped={model.skipped}>
-          {model.skipped} {model.skipped === 1 ? 'row' : 'rows'} skipped (non-numeric y)
+          {`${model.skipped} ${model.skipped === 1 ? 'row' : 'rows'} skipped (non-numeric ${model.kind === 'scatter' ? 'x or y' : 'y'})`}
         </p>
       )}
     </div>
