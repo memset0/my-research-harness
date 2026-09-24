@@ -190,10 +190,10 @@ claiming its numbers are current, read the output, and say so plainly when a run
 failed or when you are looking at a cached result from an earlier run. A table
 whose numbers were never produced by its own function is a fabricated table.
 
-## Images for figures
+## Images and videos for figures
 
-`figure@1` shows one local image. Where the image comes from is a boundary,
-not a detail:
+`figure@1` shows one local image or one video. Where the file comes from is a
+boundary, not a detail:
 
 - Keep the file beside the document — normally in its `<stem>__assets/`
   directory — with a descriptive kebab-case name, and reference it with a
@@ -209,6 +209,22 @@ not a detail:
 - Write `description` from what the image actually shows (labels, axes,
   relationships, encodings) or from the user's own description. If you cannot
   establish what an image contains, ask; do not invent a description.
+
+For a video, give `video` instead of `image`, with the same path rules:
+
+- Use MP4 (H.264) or WebM. Keep an MP4's metadata at the front
+  (`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`) so the thumbnail
+  loads from a few small requests; do not re-encode a user's video otherwise.
+- The page shows a thumbnail with a play button; the video downloads and plays
+  only when the reader clicks. Without `poster` the thumbnail is the video's
+  first frame; add `poster` (an image beside the video, e.g. its first frame
+  as JPEG) for large videos and for readers on iOS Safari, which shows no
+  frame before playback.
+- Point at the Run's own video when it already lives inside the project root
+  (an absolute path or a document-relative one); copy it into `<stem>__assets/`
+  only when the page must keep it after the Run directory changes.
+- Write `description` from what the video shows (subject, motion, visible
+  artifacts), not from the file name.
 
 ## Checklist flags are a human boundary
 
@@ -284,7 +300,7 @@ contract. Copy an example and edit it rather than inventing fields.
 | `checklist` | 1 | A recursive task list with independent Agent-completed, human-acknowledged, and human-reviewed flags. | Use for work plans, review gates, and hand-offs where the human must distinguish Agent completion from their own acknowledgement and review. Agents set `agent_completed` only after doing the work and never set either human-owned flag without an explicit request. Do not infer a parent state from its children. |
 | `datatable` | 1 | A table of measured values with optional named row filters, optionally plotted as line, bar, or scatter views of the same rows. | Use it whenever a document states more than two or three numbers: metrics per step, per configuration, or per host. Write the numbers you actually measured — one row per observation, long format (`run, step, metric, value`) rather than one column per run — and add a `line`/`bar` view when the shape of the numbers is the point, a `scatter` view when the relation between two measured columns is, and table `filters` when readers need to narrow a long table to named subsets. Use an executable payload (`script:`/`code:`) when the numbers come from logs that change; keep the block static when they are final. Do not use it for prose comparisons (plain Markdown), for an interactive plot (`embed@1`), or for a picture of a plot (`figure@1`). |
 | `embed` | 1 | Trusted HTML rendered in a same-origin iframe with the shared report toolbar. | Use for an interactive chart or self-contained HTML view. Put `title`/`height` in a YAML payload when they matter, or use an `html embed@1` fence for the simplest `{data}` form. Use `figure@1` for a static image and `datatable@1` when the source numbers should remain directly readable. |
-| `figure` | 1 | A document-relative image with a visible caption and agent-readable description. | Use for a local image or plot snapshot that needs a durable visible caption. Keep the image beside the document (usually in its `<stem>__assets` directory), describe what the pixels show, and use `embed@1` instead when interaction matters. |
+| `figure` | 1 | A document-relative image, or a click-to-play video, with a visible caption and agent-readable description. | Use for a local image, plot snapshot, or video (validation samples, rollouts) that needs a durable visible caption. Keep the file beside the document (usually in its `<stem>__assets` directory) and describe what it shows. A video shows only a thumbnail until the reader clicks it, so a page may carry several. Use `embed@1` instead when interaction beyond playback matters. |
 
 ### checklist@1
 
@@ -367,9 +383,11 @@ views:
 
 | field | type | required | meaning |
 | --- | --- | --- | --- |
-| `image` | string | yes | Image path relative to the containing Markdown document, or an absolute path inside the project root. |
-| `caption` | string | yes | Visible caption displayed below the image. |
-| `description` | string | no | Image alternative text and readable fallback detail; defaults to the caption. |
+| `image` | string | no | Image path relative to the containing Markdown document, or an absolute path inside the project root. Give exactly one of `image` or `video`. |
+| `video` | string | no | Video path (MP4 or WebM) relative to the containing Markdown document, or an absolute path inside the project root. Shown as a thumbnail; the video downloads and plays only when the reader clicks it. |
+| `poster` | string | no | Thumbnail image path for `video`, relative to the containing Markdown document, or an absolute path inside the project root. Without it the thumbnail is the video's first frame, read through small ranged requests. |
+| `caption` | string | yes | Visible caption displayed below the image or video. |
+| `description` | string | no | Alternative text and readable fallback detail for the image or video; defaults to the caption. |
 
 ````markdown
 ```yaml figure@1 #pipeline

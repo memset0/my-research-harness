@@ -1,7 +1,9 @@
 // GET|HEAD /api/doc-assets/[project]/[...projectRelativePath][?host=NAME]
 //
 // One file belonging to a document: a component execution cache
-// (`<dir>/<stem>__assets/<id>.json`) or an image a `figure` block points at.
+// (`<dir>/<stem>__assets/<id>.json`), or an image or video a `figure` block
+// points at. Videos rely on the byte-range support below for metadata reads
+// and seeking.
 // The address is the project-relative path of the file itself, so every
 // Markdown surface can serve its own neighbouring assets without a
 // per-document id space.
@@ -39,6 +41,8 @@ const CONTENT_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.gif': 'image/gif',
   '.avif': 'image/avif',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 }
 
 /** An SVG is a document: deny every fetch and inline script, allow styling. */
