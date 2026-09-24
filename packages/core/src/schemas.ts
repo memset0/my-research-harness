@@ -435,6 +435,12 @@ const FileCacheRawSchema = z.object({
   'Wiki cache period must not exceed the default cache period',
 )
 
+const MediaRawSchema = z
+  .object({
+    ffmpeg: z.string().trim().min(1).refine((value) => !value.includes('\0'), 'Invalid ffmpeg path'),
+  })
+  .strict()
+
 export const ConfigRawSchema = z.object({
   // Project count is role-dependent and enforced by config/load.ts.
   projects: z.array(ProjectConfigRawSchema).default([]),
@@ -450,6 +456,7 @@ export const ConfigRawSchema = z.object({
   backend: BackendConfigRawSchema,
   fileAccess: FileAccessRawSchema,
   file_cache: FileCacheRawSchema.optional(),
+  media: MediaRawSchema.optional(),
   fileAccessRestart: RoleArgvRawSchema.optional(),
 })
 

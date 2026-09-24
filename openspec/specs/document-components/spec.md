@@ -143,7 +143,7 @@ A `table` view SHALL accept optional `filters: { label: string, where: Where, de
 
 ### Requirement: `figure@1` shows a document-relative or absolute image or video
 
-`figure@1` SHALL accept exactly one of `image` or `video` (each a path relative to the containing document, or an absolute path), `caption` (non-empty), optional `description` (used as alt text or the video's accessible description), and, with `video` only, optional `poster` (an image path in the same form). A video SHALL render as a thumbnail with a play control and SHALL NOT download or play the video until the reader activates it: the thumbnail is the `poster` image when given, otherwise a frame the browser reads through ranged metadata requests without fetching the whole file. Activating it SHALL load the video with native controls and start playback. Every referenced file SHALL be served only when its real path is inside a configured project root (`assertWithinProjectRoots`); otherwise, or on load failure, the block SHALL render the caption and description with a readable notice instead of the media.
+`figure@1` SHALL accept exactly one of `image` or `video` (each a path relative to the containing document, or an absolute path), `caption` (non-empty), optional `description` (used as alt text or the video's accessible description), and, with `video` only, optional `poster` (an image path in the same form). A video SHALL render as a thumbnail with a play control and SHALL NOT download or play the video until the reader activates it: the thumbnail is the `poster` image when given, otherwise a JPEG of the video's first frame that the dashboard server extracts, and a neutral placeholder tile when no frame can be extracted. No byte of the video SHALL reach the browser before activation. Activating it SHALL load the video with native controls and start playback. Every referenced file SHALL be served only when its real path is inside a configured project root (`assertWithinProjectRoots`); otherwise, or on load failure, the block SHALL render the caption and description with a readable notice instead of the media.
 
 #### Scenario: Image beside the page
 - **WHEN** `docs/wiki/note/W0009-gallery.md` declares `image: W0009-gallery__assets/pipeline.svg`
@@ -166,6 +166,11 @@ A `table` view SHALL accept optional `filters: { label: string, where: Where, de
 #### Scenario: Image and video together are invalid
 - **WHEN** a block declares both `image` and `video`, or `poster` without `video`
 - **THEN** the block is invalid with `WIKI_COMPONENT_INVALID` naming the field
+
+#### Scenario: Posterless video gets a server-extracted thumbnail
+- **GIVEN** `video: W0009-gallery__assets/rollout.mp4` without `poster`
+- **WHEN** the page renders
+- **THEN** the thumbnail image is requested from the document asset route with `thumbnail=1` and the video file itself is not requested until the reader activates the play control
 
 ### Requirement: `embed@1` renders trusted HTML in an iframe
 

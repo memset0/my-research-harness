@@ -1,4 +1,4 @@
-// GET|HEAD /api/doc-assets/[project]/[...projectRelativePath][?host=NAME]
+// GET|HEAD /api/doc-assets/[project]/[...projectRelativePath][?host=NAME][&thumbnail=1]
 //
 // One file belonging to a document: a component execution cache
 // (`<dir>/<stem>__assets/<id>.json`), or an image or video a `figure` block
@@ -24,6 +24,7 @@ import { assertWithinProjectRoots } from '../../../../../lib/path-safety'
 import { getRuntime } from '../../../../../lib/runtime'
 import { isNotModified, parseByteRange } from '../../../../../lib/server/asset-validators'
 import { findConfiguredProject } from '../../../../../lib/server/project-lookup'
+import { extractVideoThumbnail } from '../../../../../lib/server/video-thumbnail'
 
 export const dynamic = 'force-dynamic'
 
@@ -89,6 +90,10 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   const extension = extname(relative).toLowerCase()
   const contentType = CONTENT_TYPES[extension]
   if (!contentType) return error(404, 'NOT_FOUND', 'not a document asset type')
+  const thumbnail = new URL(request.url).searchParams.get('thumbnail') === '1'
+  if (thumbnail && !contentType.startsWith('video/')) {
+    return error(404, 'NOT_FOUND', 'thumbnails exist only for videos')
+  }
 
   const runtime = await getRuntime()
   const project = findConfiguredProject(
@@ -123,6 +128,8 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   }
   const stats = await stat(absolutePath).catch(() => null)
   if (!stats?.isFile()) return error(404, 'NOT_FOUND', 'document asset not found')
+
+  if (thumbnail) return serveThumbnail(request, runtime.config.media?.ffmpeg ?? 'ffmpeg', absolutePath, stats, includeBody)
 
   const etag = `W/"${createHash('sha1').update(`${absolutePath}:${stats.size}:${stats.mtimeMs}`).digest('hex')}"`
   const headers = new Headers({
@@ -165,4 +172,32 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
 
 function error(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status })
+}
+
+/**
+ * First-frame JPEG of a figure video. Validators come from the video's stat,
+ * so a revalidation answers 304 before any ffmpeg process starts.
+ */
+async function serveThumbnail(
+  request: NextRequest,
+  ffmpeg: string,
+  absolutePath: string,
+  stats: { size: number; mtimeMs: number },
+  includeBody: boolean,
+) {
+  const etag = `W/"${createHash('sha1').update(`${absolutePath}:${stats.size}:${stats.mtimeMs}:thumb-v1`).digest('hex')}"`
+  const headers = new Headers({
+    'cache-control': 'private, no-cache',
+    'content-type': 'image/jpeg',
+    etag,
+    'last-modified': new Date(stats.mtimeMs).toUTCString(),
+    'x-content-type-options': 'nosniff',
+  })
+  if (isNotModified(request, etag, stats.mtimeMs)) {
+    return new NextResponse(null, { status: 304, headers })
+  }
+  const jpeg = await extractVideoThumbnail(ffmpeg, absolutePath)
+  if (!jpeg) return error(404, 'THUMBNAIL_UNAVAILABLE', 'no thumbnail could be extracted from this video')
+  headers.set('content-length', String(jpeg.length))
+  return new NextResponse(includeBody && request.method !== 'HEAD' ? new Uint8Array(jpeg) : null, { status: 200, headers })
 }

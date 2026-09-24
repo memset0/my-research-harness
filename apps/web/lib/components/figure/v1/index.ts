@@ -17,7 +17,7 @@ const schema = z.object({
     .min(1)
     .optional()
     .describe(
-      `Thumbnail image path for \`video\`, ${path}. Without it the thumbnail is the video's first frame, read through small ranged requests.`,
+      `Thumbnail image path for \`video\`, ${path}. Without it the dashboard server extracts the first frame as the thumbnail (placeholder tile when it cannot).`,
     ),
   caption: z.string().trim().min(1).describe('Visible caption displayed below the image or video.'),
   description: z

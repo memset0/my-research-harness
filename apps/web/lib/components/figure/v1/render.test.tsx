@@ -34,17 +34,26 @@ describe('figure@1 video', () => {
     expect(player).toHaveAttribute('autoplay')
   })
 
-  it('reads only metadata for a posterless thumbnail', () => {
+  it('shows a server-extracted thumbnail and no video element before the click', () => {
     render(<Render block={block} data={{ video: 'W0009-x__assets/rollout.mp4', caption: 'Video 1.' }} />)
-    const thumbnail = document.querySelector('video')
-    expect(thumbnail).toHaveAttribute('src', video)
-    expect(thumbnail).toHaveAttribute('preload', 'metadata')
-    expect(thumbnail).not.toHaveAttribute('controls')
-    expect(thumbnail).not.toHaveAttribute('autoplay')
+    expect(document.querySelector('video')).toBeNull()
+    expect(document.querySelector('img')).toHaveAttribute('src', `${video}?thumbnail=1`)
+    fireEvent.click(screen.getByRole('button', { name: 'Play video: Video 1.' }))
+    expect(document.querySelector('video')).toHaveAttribute('src', video)
   })
 
-  it('falls back to the caption notice when the video fails to load', () => {
+  it('keeps a clickable placeholder when no thumbnail loads', () => {
     render(<Render block={block} data={{ video: 'W0009-x__assets/rollout.mp4', caption: 'Video 1.' }} />)
+    fireEvent.error(document.querySelector('img') as HTMLImageElement)
+    expect(document.querySelector('img')).toBeNull()
+    expect(document.querySelector('video')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Play video: Video 1.' }))
+    expect(document.querySelector('video')).toHaveAttribute('src', video)
+  })
+
+  it('falls back to the caption notice when the video fails to play', () => {
+    render(<Render block={block} data={{ video: 'W0009-x__assets/rollout.mp4', caption: 'Video 1.' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Play video: Video 1.' }))
     fireEvent.error(document.querySelector('video') as HTMLVideoElement)
     expect(screen.getByRole('status')).toHaveTextContent('Video unavailable: W0009-x__assets/rollout.mp4')
   })

@@ -958,6 +958,16 @@ export interface Config {
    * browser-supplied arguments.
    */
   fileAccessRestart?: readonly string[]
+  /**
+   * External media tools the dashboard server runs. Absent means defaults:
+   * `ffmpeg` looked up on `PATH` for video-figure thumbnails.
+   */
+  media?: MediaOptions
+}
+
+export interface MediaOptions {
+  /** Absolute path (resolved beside the config file) or a command name looked up on `PATH`. */
+  ffmpeg: string
 }
 
 export const DEFAULT_EXCLUDES: readonly string[] = [

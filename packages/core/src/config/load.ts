@@ -605,6 +605,9 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
         defaultTtlMs: cfg.file_cache.default_ttl_seconds * 1000,
       }
     : undefined
+  const media = cfg.media
+    ? { ffmpeg: cfg.media.ffmpeg.includes('/') ? resolve(baseDir, cfg.media.ffmpeg) : cfg.media.ffmpeg }
+    : undefined
   if (!fileCache && resolvedProjects.some((project) => project.persistentCache)) {
     throw new ConfigError('persistent_cache requires file_cache.dump_path in the instance config', candidate)
   }
@@ -619,6 +622,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     backend,
     ...(fileAccess ? { fileAccess } : {}),
     ...(fileCache ? { fileCache } : {}),
+    ...(media ? { media } : {}),
     ...(cfg.fileAccessRestart ? { fileAccessRestart: cfg.fileAccessRestart } : {}),
   }
 }

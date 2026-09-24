@@ -83,6 +83,14 @@ projects:
 # Queues, in-flight work, Promises, waiters, leases, failures/retry scheduling
 # and metrics are NEVER stored in the LRU values or dump.
 
+# Optional media tools run by the dashboard server. `ffmpeg` extracts the
+# first-frame thumbnail of a `figure@1` video that declares no `poster`; a
+# value containing `/` resolves beside this config, anything else is looked up
+# on PATH (default `ffmpeg`). Without a working ffmpeg such videos show a
+# placeholder tile; no video bytes are sent before the reader clicks play.
+# media:
+#   ffmpeg: /usr/bin/ffmpeg
+
 # Polling policy. Each watched directory has its own per-path interval that
 # doubles after each unchanged check, capped between min and max. Defaults
 # below match the spec.

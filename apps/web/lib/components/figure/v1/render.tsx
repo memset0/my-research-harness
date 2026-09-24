@@ -1,7 +1,8 @@
 'use client'
 
 import { Play } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { cn } from '../../../utils'
 import type { ComponentData, ComponentRenderer } from '../../types'
 import type { descriptor } from './index'
 
@@ -47,10 +48,10 @@ export const Render: ComponentRenderer<FigureData> = ({ data, block }) => {
 }
 
 /**
- * A video costs nothing until the reader asks for it: the thumbnail is the
- * poster image, or — without one — the first frame the browser reads through
- * small ranged metadata requests, and only once the thumbnail nears the
- * viewport. Clicking swaps in the real player, which is when the file loads.
+ * No byte of the video reaches the browser until the reader presses play.
+ * The thumbnail is the poster, or the first frame the server extracts
+ * (`?thumbnail=1`); if neither loads, a neutral tile with the play button
+ * stands in. Clicking swaps in the real player, which is when the file loads.
  */
 function FigureVideo({
   source,
@@ -64,9 +65,8 @@ function FigureVideo({
   onError: () => void
 }) {
   const [playing, setPlaying] = useState(false)
-  const [frameFailed, setFrameFailed] = useState(false)
-  const thumbnail = useRef<HTMLButtonElement | null>(null)
-  const near = useNearViewport(thumbnail, poster === null && !playing)
+  const [thumbnailFailed, setThumbnailFailed] = useState(false)
+  const thumbnail = poster ?? `${source}${source.includes('?') ? '&' : '?'}thumbnail=1`
 
   if (playing) {
     return (
@@ -87,34 +87,25 @@ function FigureVideo({
   }
   return (
     <button
-      ref={thumbnail}
       type="button"
       aria-label={`Play video: ${label}`}
-      className="group relative mx-auto flex min-h-32 w-full max-w-full items-center justify-center overflow-hidden rounded-sm bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        'group relative mx-auto flex max-w-full items-center justify-center overflow-hidden rounded-sm bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        thumbnailFailed ? 'aspect-video w-full max-w-xl' : 'min-h-24',
+      )}
       data-figure-video="thumbnail"
       onClick={() => setPlaying(true)}
     >
-      {poster ? (
+      {!thumbnailFailed && (
         <img
-          src={poster}
+          src={thumbnail}
           alt=""
           loading="lazy"
           decoding="async"
           className="block h-auto max-w-full"
-          onError={() => setFrameFailed(true)}
+          onError={() => setThumbnailFailed(true)}
         />
-      ) : near && !frameFailed ? (
-        <video
-          src={source}
-          preload="metadata"
-          muted
-          playsInline
-          tabIndex={-1}
-          aria-hidden
-          className="pointer-events-none block h-auto max-w-full"
-          onError={onError}
-        />
-      ) : null}
+      )}
       <span className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/25">
         <span className="flex size-14 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md">
           <Play className="ml-0.5 size-6 fill-current" aria-hidden />
@@ -122,26 +113,4 @@ function FigureVideo({
       </span>
     </button>
   )
-}
-
-/** True once `element` comes within 200px of the viewport (immediately without IntersectionObserver). */
-function useNearViewport(element: React.RefObject<HTMLElement | null>, enabled: boolean): boolean {
-  const [near, setNear] = useState(false)
-  useEffect(() => {
-    if (!enabled || near) return
-    const target = element.current
-    if (!target || typeof IntersectionObserver === 'undefined') {
-      setNear(true)
-      return
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) setNear(true)
-      },
-      { rootMargin: '200px' },
-    )
-    observer.observe(target)
-    return () => observer.disconnect()
-  }, [element, enabled, near])
-  return near
 }

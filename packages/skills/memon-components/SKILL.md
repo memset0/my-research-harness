@@ -212,14 +212,14 @@ boundary, not a detail:
 
 For a video, give `video` instead of `image`, with the same path rules:
 
-- Use MP4 (H.264) or WebM. Keep an MP4's metadata at the front
-  (`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`) so the thumbnail
-  loads from a few small requests; do not re-encode a user's video otherwise.
+- Use MP4 (H.264) or WebM. Prefer an MP4 with its metadata at the front
+  (`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`) so playback starts
+  before the whole file arrives; do not re-encode a user's video otherwise.
 - The page shows a thumbnail with a play button; the video downloads and plays
-  only when the reader clicks. Without `poster` the thumbnail is the video's
-  first frame; add `poster` (an image beside the video, e.g. its first frame
-  as JPEG) for large videos and for readers on iOS Safari, which shows no
-  frame before playback.
+  only when the reader clicks. Without `poster` the dashboard server extracts
+  the first frame as the thumbnail (a neutral tile when it cannot); add
+  `poster` (an image beside the video) when a different frame represents the
+  clip better.
 - Point at the Run's own video when it already lives inside the project root
   (an absolute path or a document-relative one); copy it into `<stem>__assets/`
   only when the page must keep it after the Run directory changes.
@@ -385,7 +385,7 @@ views:
 | --- | --- | --- | --- |
 | `image` | string | no | Image path relative to the containing Markdown document, or an absolute path inside the project root. Give exactly one of `image` or `video`. |
 | `video` | string | no | Video path (MP4 or WebM) relative to the containing Markdown document, or an absolute path inside the project root. Shown as a thumbnail; the video downloads and plays only when the reader clicks it. |
-| `poster` | string | no | Thumbnail image path for `video`, relative to the containing Markdown document, or an absolute path inside the project root. Without it the thumbnail is the video's first frame, read through small ranged requests. |
+| `poster` | string | no | Thumbnail image path for `video`, relative to the containing Markdown document, or an absolute path inside the project root. Without it the dashboard server extracts the first frame as the thumbnail (placeholder tile when it cannot). |
 | `caption` | string | yes | Visible caption displayed below the image or video. |
 | `description` | string | no | Alternative text and readable fallback detail for the image or video; defaults to the caption. |
 

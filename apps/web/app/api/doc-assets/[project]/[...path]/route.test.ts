@@ -25,24 +25,40 @@ beforeAll(async () => {
   await fs.writeFile(join(root, 'config.yml'), 'secret: true\n', 'utf8')
   await fs.writeFile(join(other, 'elsewhere.json'), '{"secret": true}', 'utf8')
   await fs.symlink(join(other, 'elsewhere.json'), join(root, 'docs/wiki/note/leak.json'))
+  // Stub ffmpeg: records each invocation, then writes fake JPEG bytes to stdout.
+  await fs.writeFile(
+    join(other, 'ffmpeg'),
+    `#!/bin/sh\necho "$@" >> "${join(other, 'ffmpeg.calls')}"\nprintf 'JPEGDATA'\n`,
+    { mode: 0o755 },
+  )
+  setFfmpeg(join(other, 'ffmpeg'))
+})
+
+function setFfmpeg(ffmpeg: string) {
   vi.mocked(getRuntime).mockResolvedValue({
     config: {
       projects: [
         { name: 'project-a', root, include: [], exclude: [] },
         { name: 'project-b', root: other, include: [], exclude: [] },
       ],
+      media: { ffmpeg },
     },
   } as never)
-})
+}
+
+async function ffmpegCalls(): Promise<number> {
+  const log = await fs.readFile(join(other, 'ffmpeg.calls'), 'utf8').catch(() => '')
+  return log.split('\n').filter(Boolean).length
+}
 
 afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
   await fs.rm(other, { recursive: true, force: true })
 })
 
-function get(path: string, project = 'project-a', headers?: HeadersInit) {
+function get(path: string, project = 'project-a', headers?: HeadersInit, query = '') {
   const segments = path.split('/')
-  const url = `http://localhost/api/doc-assets/${project}/${path}`
+  const url = `http://localhost/api/doc-assets/${project}/${path}${query}`
   return GET(new NextRequest(url, { ...(headers ? { headers } : {}) }), {
     params: Promise.resolve({ project, path: segments }),
   })
@@ -116,11 +132,37 @@ describe('GET|HEAD document assets', () => {
     expect(await partial.text()).toBe('{"__')
   })
 
-  it('serves a figure video as video/mp4 with byte ranges for metadata reads', async () => {
+  it('serves a figure video as video/mp4 with byte ranges for seeking', async () => {
     const partial = await get('docs/wiki/note/W0004-x__assets/rollout.mp4', 'project-a', { range: 'bytes=0-1023' })
     expect(partial.status).toBe(206)
     expect(partial.headers.get('content-type')).toBe('video/mp4')
     expect(partial.headers.get('content-range')).toBe('bytes 0-1023/4096')
     expect((await partial.arrayBuffer()).byteLength).toBe(1024)
+  })
+
+  it('extracts a video thumbnail with the configured ffmpeg and revalidates without it', async () => {
+    const video = 'docs/wiki/note/W0004-x__assets/rollout.mp4'
+    const before = await ffmpegCalls()
+    const first = await get(video, 'project-a', undefined, '?thumbnail=1')
+    expect(first.status).toBe(200)
+    expect(first.headers.get('content-type')).toBe('image/jpeg')
+    expect(await first.text()).toBe('JPEGDATA')
+    expect(await ffmpegCalls()).toBe(before + 1)
+    const again = await get(video, 'project-a', { 'if-none-match': first.headers.get('etag') as string }, '?thumbnail=1')
+    expect(again.status).toBe(304)
+    expect(await ffmpegCalls()).toBe(before + 1)
+    expect(first.headers.get('etag')).not.toBe((await get(video)).headers.get('etag'))
+  })
+
+  it('answers 404 without video bytes when no thumbnail can be extracted', async () => {
+    setFfmpeg(join(other, 'missing-ffmpeg'))
+    try {
+      const missing = await get('docs/wiki/note/W0004-x__assets/rollout.mp4', 'project-a', undefined, '?thumbnail=1')
+      expect(missing.status).toBe(404)
+      expect(await missing.json()).toMatchObject({ error: { code: 'THUMBNAIL_UNAVAILABLE' } })
+      expect((await get('docs/wiki/note/diagram.svg', 'project-a', undefined, '?thumbnail=1')).status).toBe(404)
+    } finally {
+      setFfmpeg(join(other, 'ffmpeg'))
+    }
   })
 })

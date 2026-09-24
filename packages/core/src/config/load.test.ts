@@ -103,6 +103,16 @@ describe('persistent file cache config', () => {
     expect(config?.projects[0]?.persistentCache).toBe(true)
   })
 
+  it('resolves a relative ffmpeg path beside the config and keeps a bare command name', async () => {
+    const configPath = join(dir, 'instance.yml')
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffmpeg: ./bin/ffmpeg\n')
+    expect((await loadConfig({ cwd: '/', explicitPath: configPath }))?.media).toEqual({ ffmpeg: join(dir, 'bin', 'ffmpeg') })
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffmpeg: ffmpeg\n')
+    expect((await loadConfig({ cwd: '/', explicitPath: configPath }))?.media).toEqual({ ffmpeg: 'ffmpeg' })
+    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffprobe: x\n')
+    await expect(loadConfig({ cwd: '/', explicitPath: configPath })).rejects.toBeInstanceOf(ConfigError)
+  })
+
   it('defaults the periodic dump interval to 30 seconds', async () => {
     await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n')
     const config = await loadConfig({ cwd: dir })
