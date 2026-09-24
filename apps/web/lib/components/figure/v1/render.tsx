@@ -105,7 +105,7 @@ function FigureVideo({
         />
       ) : near && !frameFailed ? (
         <video
-          src={`${source}#t=0.1`}
+          src={source}
           preload="metadata"
           muted
           playsInline

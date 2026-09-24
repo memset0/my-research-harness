@@ -37,7 +37,7 @@ describe('figure@1 video', () => {
   it('reads only metadata for a posterless thumbnail', () => {
     render(<Render block={block} data={{ video: 'W0009-x__assets/rollout.mp4', caption: 'Video 1.' }} />)
     const thumbnail = document.querySelector('video')
-    expect(thumbnail).toHaveAttribute('src', `${video}#t=0.1`)
+    expect(thumbnail).toHaveAttribute('src', video)
     expect(thumbnail).toHaveAttribute('preload', 'metadata')
     expect(thumbnail).not.toHaveAttribute('controls')
     expect(thumbnail).not.toHaveAttribute('autoplay')
