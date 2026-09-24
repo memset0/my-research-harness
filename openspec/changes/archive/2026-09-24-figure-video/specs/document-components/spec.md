@@ -1,7 +1,7 @@
 ## RENAMED Requirements
 
-- FROM: `### Requirement: \`figure@1\` shows a document-relative or absolute image`
-- TO: `### Requirement: \`figure@1\` shows a document-relative or absolute image or video`
+- FROM: `### Requirement: `figure@1` shows a document-relative or absolute image`
+- TO: `### Requirement: `figure@1` shows a document-relative or absolute image or video`
 
 ## MODIFIED Requirements
 
