@@ -55,7 +55,7 @@ canonical edge cases every guide must address.
 
 ## Status
 
-Current: `FS_CONVENTION_VERSION = 6`. Guides present:
+The current value lives in `packages/core/src/version.ts`. Guides present:
 
 - `v1-to-v2.md`
 - `v2-to-v3.md`
@@ -63,3 +63,6 @@ Current: `FS_CONVENTION_VERSION = 6`. Guides present:
 - `v4-to-v5.md`
 - `v5-to-v6.md` — staged, per-Experiment semantic migration to structured
   Implementation, Investigation, and Results sidecars.
+- `v6-to-v7.md` — mechanical, plan-reviewed migration to Experiment-owned
+  project-relative Run paths and Digest-to-Wiki conversion, executed by
+  `scripts/migrate-v6-to-v7.mjs` (`plan` / `apply` / `verify` / `rollback`).

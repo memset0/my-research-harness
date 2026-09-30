@@ -104,6 +104,15 @@ For a guide explicitly marked mechanical:
 
 Never improvise a semantic rewrite under this shorter path.
 
+FS v6→v7 (`packages/core/migrations/v6-to-v7.md`) is mechanical. Its executor is
+`scripts/migrate-v6-to-v7.mjs` from the reviewed memon checkout: `plan` is the
+read-only dry run (plan file outside the project), `apply` takes the reviewed
+plan plus a new external backup directory and writes the marker last, and the
+guide's `bash` Verification block is the check. Blockers stop the step until the
+user resolves them and a fresh plan is made; warnings such as
+`MEMBER_README_MISSING` are reported but do not block. Commit with exactly
+`chore(memon): migrate FS convention v6 -> v7`.
+
 ## Review-required semantic step
 
 v5→v6 uses this workflow; any future guide may opt in.

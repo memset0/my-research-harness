@@ -1,8 +1,12 @@
 # Experiment membership and Digest migration tooling
 
-This is the operator entry point for the pending FS v7 rollout. Membership
-format and release version can advance separately with explicit operator
-approval. Use compatible readers/writers for path declarations; the unchanged
+This is the operator entry point for the executor script, and in particular
+for the keep-version, data-only preparation (`--keep-version`). The
+authoritative FS v6 → v7 migration procedure, including detection, the
+fail-closed verification block, rollback and the fixed commit message, is the
+guide at `packages/core/migrations/v6-to-v7.md`; follow it for the final
+migration. Membership format and release version can advance separately with
+explicit operator approval. Use compatible readers/writers for path declarations; the unchanged
 v6 marker alone does not establish an older client's compatibility.
 This script does not install, stop, restart or publish services.
 

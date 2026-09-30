@@ -731,7 +731,7 @@ previous build (`backup`) so the installation can be repaired by hand.
 
 ```json
 {
-  "fs_convention_version": 6,
+  "fs_convention_version": 7,
   "installed_at": "2026-05-04T10:00:00+08:00",
   "last_migrated_at": null
 }
