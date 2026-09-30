@@ -18,7 +18,7 @@
 ## 3. Migration
 
 - [x] 3.1 Implement a reusable read-only batch planner and fingerprinted apply/verifier with backups and recovery; test ambiguity, missing targets, conflicts, interruption and idempotence.
-- [ ] 3.2 Add the seven-section v6-to-v7 guide and FS/version gates; verify migration guide and release-policy tests.
+- [x] 3.2 Add the seven-section v6-to-v7 guide and FS/version gates; verify migration guide and release-policy tests.
   - [x] 3.2.1 Relax the planner for README-less declared members and in-project symlinks (design D4), with fixtures for both plus an escaping symlink.
   - [x] 3.2.2 Align `packages/core/migrations/v6-to-v7.md` with `fs-migration-guide-authoring` and sync the migrations README, the operator script note, the migrate-fs skill and the README marker example (design D6).
   - [x] 3.2.3 Convert `mock/project-a` and `mock/project-b` to v7 declarations with the keep-version script and update affected tests (design D3).
@@ -27,7 +27,7 @@
 
 ## 4. Integration
 
-- [ ] 4.1 Run selected cross-surface regression tests and compare cold/warm membership I/O against unrelated Run counts; record actual results and limitations.
+- [x] 4.1 Run selected cross-surface regression tests and compare cold/warm membership I/O against unrelated Run counts; record actual results and limitations.
   - [x] 4.1.1 Add a spy-based I/O test (3 members, N = 3 and N = 50 unrelated Runs, cold and warm caches) asserting member reads do not scale with N (design D5), and record the measured counts below.
 - [x] 4.2 Reconcile the residual v6-model tests with the path model (backend Run inventory ids, CLI member paths, rename without Run rewrites, retired one-side-only panel notice), restore walk-derived `@` Run reference identities in the wiki artifact inventory (base name and path), keep bare-id Run lookup behind automatic priority, and add the `wiki-store` delta; verify with the affected core/backend/cli/web test files and the full local suite.
 
@@ -54,6 +54,14 @@ reference in eligibility) and 12 Run-root listings, which is why writers emit
 paths and lint flags `LEGACY_RUN_ID_REF`. Limitations: test-level counts on a
 local temporary directory, no SSHFS latency and no operator-project benchmark
 (design D5).
+
+Selected regression run for this pass (2026-09-30): `@memon/core` full package
+873/873; Backend path-membership, wiki-service, project-service,
+mutation-service, run-inventory and document-service 62/62; CLI
+experiment-document, run-resolve-exp and scan 13/13; Web run-redirect,
+standalone-readme-route, runtime-experiment-watch, read-flow integration and
+digest-retirement 20/20; skills 8/8. No full monorepo suite and no remote tests
+ran.
 
 ## Current preparation checkpoint
 
