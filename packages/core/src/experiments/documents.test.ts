@@ -447,6 +447,34 @@ variants:
     expect(codes).toContain('UNASSIGNED_EXPERIMENT_RUN')
   })
 
+  it('keeps same-basename Runs under different paths distinct in results', () => {
+    const readme = canonicalReadme().replace('runs: []', 'runs: [logs/a/dup-260810-010000]')
+    const results = parseResultsYaml(`
+schema_version: 1
+columns: []
+variants:
+  - id: V0001
+    name: declared
+    status: COMPLETED
+    runs: [logs/a/dup-260810-010000]
+    attempts: [outputs/b/dup-260810-010000, dup-260810-010000]
+`)
+    const exp = experiment(readme)
+    exp.documents = { implementation, investigation, results }
+    const members = lintExperimentDocument(exp).filter(
+      (diagnostic) => diagnostic.code === 'VARIANT_RUN_NOT_EXPERIMENT_MEMBER',
+    )
+    // The sibling path and the bare base name are not the declared member,
+    // even though both share its base name; neither is silently matched.
+    expect(members.map((diagnostic) => diagnostic.message)).toEqual([
+      expect.stringContaining('outputs/b/dup-260810-010000'),
+      expect.stringContaining('references dup-260810-010000,'),
+    ])
+    expect(lintExperimentDocument(exp).map((diagnostic) => diagnostic.code)).not.toContain(
+      'UNASSIGNED_EXPERIMENT_RUN',
+    )
+  })
+
   it('allows a planned Variant with zero Runs', () => {
     const planned = parseResultsYaml(`
 schema_version: 1

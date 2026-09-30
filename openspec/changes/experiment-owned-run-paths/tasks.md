@@ -11,7 +11,7 @@
   - [x] 2.1.2 Add a Web route/component test for two Runs with the same base name under different paths.
   - [x] 2.1.3 Add a Backend test proving `getExperiment` resolves members without global Run discovery.
 - [ ] 2.2 Update results, citations, eligibility and doctor consumers for unambiguous references; verify reference-resolution and diagnostic tests.
-  - [ ] 2.2.1 Add ambiguous-basename tests for results `runs`/`attempts`, Wiki citations and deprecation eligibility.
+  - [x] 2.2.1 Add ambiguous-basename tests for results `runs`/`attempts`, Wiki citations and deprecation eligibility.
   - [ ] 2.2.2 Add the `LEGACY_RUN_ID_REF` Experiment lint warning and the `RUN_LEGACY_EXPERIMENT_FIELD` Run lint warning (design D2), with tests.
 - [x] 2.3 Update managed skills and neutral fixtures to teach single-sided path ownership; verify bundled-skill checks.
 

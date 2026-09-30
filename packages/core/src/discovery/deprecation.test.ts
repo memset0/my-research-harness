@@ -157,6 +157,25 @@ describe('research collections exclude deprecated runs by default', () => {
     expect(await listDeprecatedRunIds(root)).toEqual(['logs/gone-260901-100700'])
   })
 
+  it('treats same-basename Runs under different paths as distinct eligibility subjects', async () => {
+    const id = 'dup-260901-100900'
+    for (const path of [`logs/a/${id}`, `outputs/b/${id}`]) {
+      await mkdir(join(root, path), { recursive: true })
+      await writeFile(join(root, path, 'README.md'), runDoc(id, 'FINISHED'))
+    }
+    await deprecateRun(join(root, `outputs/b/${id}`), { now: NOW })
+
+    expect(await listDeprecatedRunIds(root, { ids: [`outputs/b/${id}`] })).toEqual([
+      `outputs/b/${id}`,
+    ])
+    expect(await listDeprecatedRunIds(root, { ids: [`logs/a/${id}`] })).toEqual([])
+    // An ambiguous bare id is rejected with its candidate paths, never
+    // resolved to whichever directory happens to be walked first.
+    await expect(listDeprecatedRunIds(root, { ids: [id] })).rejects.toThrow(
+      /Ambiguous Run ID.*logs\/a\/dup-260901-100900.*outputs\/b\/dup-260901-100900|Ambiguous Run ID.*outputs\/b\/dup-260901-100900.*logs\/a\/dup-260901-100900/,
+    )
+  })
+
   it('restricts eligibility reads and propagates selected metadata I/O failures', async () => {
     const selected = 'selected-260901-101100'
     const unreadable = 'unreadable-260901-101200'
