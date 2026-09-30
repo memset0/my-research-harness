@@ -29,3 +29,13 @@ export function exitCodeForErrorCode(
       return EXIT.GENERIC
   }
 }
+
+/**
+ * Exit code for a Commander parse failure. Help and version output exit 0;
+ * every other rejection (unknown option, missing argument, invalid choice,
+ * missing subcommand) is a usage error, matching the BAD_REQUEST that the
+ * invocation receipt records for it.
+ */
+export function commanderExitCode(commanderExit: number): ExitCode {
+  return commanderExit === 0 ? EXIT.SUCCESS : EXIT.USAGE
+}

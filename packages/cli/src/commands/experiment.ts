@@ -102,14 +102,10 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
   // Strict lock when actually flipping the value.
   if (stat.mtimeMs !== input.expectedMtime) {
     process.stdout.write(content)
-    process.stderr.write(
-      `${JSON.stringify({
-        error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
-        currentMtime: stat.mtimeMs,
-        expectedMtime: input.expectedMtime,
-      })}\n`,
-    )
-    process.exit(9)
+    emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
+      currentMtime: stat.mtimeMs,
+      expectedMtime: input.expectedMtime,
+    })
   }
 
   parsed.frontMatter.status = nextStatus
@@ -201,21 +197,18 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
     }
 
     process.stdout.write(currentContent)
-    process.stderr.write(
-      `${JSON.stringify({
-        error: {
-          code: 'CONFLICT',
-          message: mtimeStale
-            ? 'on-disk mtime differs from expectedMtime'
-            : 'on-disk content hash differs from expectedHash',
-        },
+    emitErrorAndExit(
+      'CONFLICT',
+      mtimeStale
+        ? 'on-disk mtime differs from expectedMtime'
+        : 'on-disk content hash differs from expectedHash',
+      {
         currentMtime: stat.mtimeMs,
         ...(hashStale && {
           actualHash: createHash('sha1').update(currentContent).digest('hex'),
         }),
-      })}\n`,
+      },
     )
-    process.exit(9)
   }
 
   // Detect status transition for JOURNAL [STATUS] event

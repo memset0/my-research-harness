@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { runArchive, runStatusSet } from './experiment.js'
+import { runArchive, runReadmeWrite, runStatusSet } from './experiment.js'
 import {
   runExperimentArchiveDoc,
   runExperimentStatusSet,
@@ -386,5 +386,71 @@ describe('memon experiment archive (exp-doc form)', () => {
 
     const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
     expect(journal).toContain('`E0002-bar` op=unarchive')
+  })
+})
+
+// ---------- lock conflicts use the structured error envelope ----------
+
+describe('mtime/hash lock conflicts', () => {
+  async function conflictOf(run: () => Promise<void>) {
+    let caught: ExitCalled | null = null
+    try {
+      await run()
+    } catch (err) {
+      if (!(err instanceof ExitCalled)) throw err
+      caught = err
+    }
+    expect(caught?.exitCode).toBe(9)
+    const lines = stderrChunks.join('').trim().split('\n')
+    const envelope = JSON.parse(lines[lines.length - 1]!)
+    expect(envelope.error.code).toBe('CONFLICT')
+    return envelope.error as { message: string; details: Record<string, unknown> }
+  }
+
+  it('run status set', async () => {
+    const error = await conflictOf(() =>
+      runStatusSet({
+        cwd: root,
+        projectRoot: root,
+        runId: 'foo-260513-100000',
+        to: 'FINISHED',
+        expectedMtime: 1,
+      }),
+    )
+    expect(error.details).toEqual({
+      currentMtime: await runReadmeMtime('foo-260513-100000'),
+      expectedMtime: 1,
+    })
+    expect(stdoutChunks.join('')).toContain('status: RUNNING')
+  })
+
+  it('run readme write reports the actual hash when only the hash is stale', async () => {
+    const error = await conflictOf(async () =>
+      runReadmeWrite({
+        cwd: root,
+        projectRoot: root,
+        runId: 'foo-260513-100000',
+        expectedMtime: await runReadmeMtime('foo-260513-100000'),
+        expectedHash: '0'.repeat(40),
+        stdinContent: RUN_RUNNING.replace('## Setup', '## Setup\n\nchanged'),
+      }),
+    )
+    expect(error.message).toContain('hash')
+    expect(error.details.actualHash).toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  it('experiment status set', async () => {
+    const error = await conflictOf(() =>
+      runExperimentStatusSet({
+        cwd: root,
+        projectRoot: root,
+        experimentId: 'E0001-foo',
+        to: 'RESOLVED',
+        expectedMtime: 1,
+      }),
+    )
+    expect(error.details).toMatchObject({ expectedMtime: 1 })
+    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0001-foo.md'), 'utf8')
+    expect(expContent).toContain('status: OPEN')
   })
 })

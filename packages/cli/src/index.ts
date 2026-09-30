@@ -82,7 +82,7 @@ import {
 } from './commands/wiki.js'
 import { emitWarningDeprecationBanner } from './lib/deprecations.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
-import { EXIT } from './lib/exit-codes.js'
+import { commanderExitCode, EXIT } from './lib/exit-codes.js'
 import {
   beginCliInvocation,
   finishCliInvocation,
@@ -1433,7 +1433,7 @@ async function main() {
         }
         recordCliInvocationFailureSync('BAD_REQUEST')
       }
-      process.exit(err.exitCode)
+      process.exit(commanderExitCode(err.exitCode))
     }
     if (err instanceof ConfigError) {
       process.stderr.write(`${JSON.stringify({ error: { message: err.message } })}\n`)

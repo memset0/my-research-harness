@@ -4,13 +4,8 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { type Hypothesis, isId, parseHypotheses } from '@memon/core'
-import {
-  emitError,
-  emitHuman,
-  emitJson,
-  formatHypothesisTable,
-  type OutputFormat,
-} from '../lib/output.js'
+import { emitErrorAndExit } from '../lib/emit-error.js'
+import { emitHuman, emitJson, formatHypothesisTable, type OutputFormat } from '../lib/output.js'
 import { resolveConfig } from '../lib/resolver.js'
 
 export interface HypoListOptions {
@@ -37,22 +32,14 @@ export async function runHypoList(opts: HypoListOptions): Promise<void> {
 
 export async function runHypoShow(opts: HypoShowOptions): Promise<void> {
   if (!isId(opts.id, 'H')) {
-    const message = `hypothesis id must be canonical 4-digit form (e.g. H0003); got "${opts.id}"`
-    if (opts.format === 'json') {
-      emitJson({ error: { code: 'BAD_REQUEST', message } })
-      process.exit(2)
-    }
-    emitError(message, 2)
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `hypothesis id must be canonical 4-digit form (e.g. H0003); got "${opts.id}"`,
+    )
   }
   const all = await collectHypotheses(opts)
   const match = all.find((e) => e.hypothesis.id === opts.id)
-  if (!match) {
-    if (opts.format === 'json') {
-      emitJson({ error: { code: 'NOT_FOUND', message: `hypothesis "${opts.id}" not found` } })
-      process.exit(1)
-    }
-    emitError(`hypothesis "${opts.id}" not found`, 1)
-  }
+  if (!match) emitErrorAndExit('NOT_FOUND', `hypothesis "${opts.id}" not found`)
   if (opts.format === 'human') {
     emitHuman(JSON.stringify(match.hypothesis, null, 2))
     return

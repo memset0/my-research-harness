@@ -466,14 +466,10 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
   if (stat.mtimeMs !== input.expectedMtime) {
     const current = await fs.readFile(exp.path, 'utf8')
     process.stdout.write(current)
-    process.stderr.write(
-      `${JSON.stringify({
-        error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
-        currentMtime: stat.mtimeMs,
-        expectedMtime: input.expectedMtime,
-      })}\n`,
-    )
-    process.exit(9)
+    emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
+      currentMtime: stat.mtimeMs,
+      expectedMtime: input.expectedMtime,
+    })
   }
 
   const prevStatus = exp.frontMatter.status

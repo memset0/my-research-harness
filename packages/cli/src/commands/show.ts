@@ -4,8 +4,9 @@
 // — that's the most useful thing for a person reading on the command line.
 // In `json` mode we emit a structured `{ frontMatter, body, sections }`.
 
+import { emitErrorAndExit } from '../lib/emit-error.js'
 import { buildIndex } from '../lib/index-builder.js'
-import { emitError, emitHuman, emitJson, type OutputFormat } from '../lib/output.js'
+import { emitHuman, emitJson, type OutputFormat } from '../lib/output.js'
 import { resolveConfig } from '../lib/resolver.js'
 
 export interface ShowOptions {
@@ -22,13 +23,7 @@ export async function runShow(opts: ShowOptions): Promise<void> {
   })
   const idx = await buildIndex(config)
   const exp = idx.get(opts.id)
-  if (!exp) {
-    if (opts.format === 'json') {
-      emitJson({ error: { code: 'NOT_FOUND', message: `experiment "${opts.id}" not found` } })
-      process.exit(1)
-    }
-    emitError(`experiment "${opts.id}" not found`, 1)
-  }
+  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${opts.id}" not found`)
 
   if (opts.format === 'human') {
     if (!exp.hasReadme) {

@@ -224,6 +224,8 @@ describe('memon experiment warning add', () => {
     expect(exit!.exitCode).toBe(9)
     const err = JSON.parse(stderrChunks.join(''))
     expect(err.error.code).toBe('CONFLICT')
+    expect(err.error.details.currentMtime).toEqual(expect.any(Number))
+    expect(err.error.details.currentHash).toMatch(/^[0-9a-f]{40}$/)
   })
 })
 

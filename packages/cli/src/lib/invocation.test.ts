@@ -175,6 +175,23 @@ describe('automatic interception', () => {
     expect(records[0]!.finishedAt).not.toBeNull()
   })
 
+  it('records a lock conflict as a conflict receipt, not a failure', async () => {
+    const program = buildProgram(async () => {
+      emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
+        currentMtime: 2,
+      })
+    })
+
+    await expect(
+      program.parseAsync(['node', 'memon', '--project-root', root, 'experiment', 'link', 'a', 'b']),
+    ).rejects.toMatchObject({ exitCode: 9 })
+
+    const records = await readJournalInvocations(root)
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ outcome: 'conflict', errorCode: 'CONFLICT' })
+    expect(JSON.parse(stderrChunks.join('')).error.details).toEqual({ currentMtime: 2 })
+  })
+
   it.each([
     ['read command', ['experiment', 'ls']],
     ['host command', ['serve']],

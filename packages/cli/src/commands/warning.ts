@@ -103,25 +103,17 @@ async function readWithLock(
   const mtime = stat.mtimeMs
   if (expectedMtime !== undefined && mtime !== expectedMtime) {
     process.stdout.write(content)
-    process.stderr.write(
-      `${JSON.stringify({
-        error: { code: 'CONFLICT', message: 'on-disk mtime differs from expectedMtime' },
-        currentMtime: mtime,
-        currentHash: hash,
-      })}\n`,
-    )
-    process.exit(9)
+    emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
+      currentMtime: mtime,
+      currentHash: hash,
+    })
   }
   if (expectedHash !== undefined && hash !== expectedHash) {
     process.stdout.write(content)
-    process.stderr.write(
-      `${JSON.stringify({
-        error: { code: 'CONFLICT', message: 'on-disk content hash differs from expectedHash' },
-        currentMtime: mtime,
-        currentHash: hash,
-      })}\n`,
-    )
-    process.exit(9)
+    emitErrorAndExit('CONFLICT', 'on-disk content hash differs from expectedHash', {
+      currentMtime: mtime,
+      currentHash: hash,
+    })
   }
   return { content, mtime, hash }
 }

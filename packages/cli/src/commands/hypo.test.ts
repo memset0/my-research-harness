@@ -7,6 +7,8 @@ import { runHypoShow } from './hypo.js'
 let root: string
 let exitSpy: ReturnType<typeof spyExit>
 let stdoutLines: string[]
+let stderrLines: string[]
+let realStderrWrite: typeof process.stderr.write
 
 function spyExit() {
   const real = process.exit
@@ -50,6 +52,12 @@ beforeEach(async () => {
   await fs.writeFile(join(root, 'docs', 'hypotheses.md'), HYPOTHESES_MD)
   exitSpy = spyExit()
   stdoutLines = []
+  stderrLines = []
+  realStderrWrite = process.stderr.write.bind(process.stderr)
+  process.stderr.write = ((chunk: unknown) => {
+    stderrLines.push(String(chunk))
+    return true
+  }) as typeof process.stderr.write
   const realWrite = process.stdout.write.bind(process.stdout)
   process.stdout.write = ((chunk: unknown) => {
     stdoutLines.push(String(chunk))
@@ -60,6 +68,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   exitSpy.restore()
+  process.stderr.write = realStderrWrite
   const realWrite = (globalThis as { __realStdoutWrite?: typeof process.stdout.write })
     .__realStdoutWrite
   if (realWrite) process.stdout.write = realWrite
@@ -81,9 +90,10 @@ describe('memon hypo show — strict id validation', () => {
       else throw err
     }
     expect(thrown?.exitCode).toBe(2)
-    const out = stdoutLines.join('')
-    expect(out).toContain('BAD_REQUEST')
-    expect(out).toContain('H0003')
+    expect(stdoutLines.join('')).toBe('')
+    const err = JSON.parse(stderrLines.join(''))
+    expect(err.error.code).toBe('BAD_REQUEST')
+    expect(err.error.message).toContain('H0003')
   })
 
   it('accepts canonical 4-digit id and returns the record', async () => {
@@ -113,6 +123,21 @@ describe('memon hypo show — strict id validation', () => {
       else throw err
     }
     expect(thrown?.exitCode).toBe(2)
-    expect(stdoutLines.join('')).toContain('BAD_REQUEST')
+    expect(stderrLines.join('')).toContain('BAD_REQUEST')
+  })
+})
+
+describe('memon hypo show — missing hypothesis', () => {
+  it.each(['json', 'human'] as const)('exits 4 NOT_FOUND on stderr (%s)', async (format) => {
+    let thrown: ExitCalled | undefined
+    try {
+      await runHypoShow({ id: 'H0999', format, cwd: root, projectRoot: undefined })
+    } catch (err) {
+      if (err instanceof ExitCalled) thrown = err
+      else throw err
+    }
+    expect(thrown?.exitCode).toBe(4)
+    expect(stdoutLines.join('')).toBe('')
+    expect(JSON.parse(stderrLines.join('')).error.code).toBe('NOT_FOUND')
   })
 })

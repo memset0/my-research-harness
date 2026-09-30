@@ -19,8 +19,8 @@
 
 ## 5. CLI structured exits
 
-- [ ] 5.1 Route the lock conflicts in `commands/experiment.ts`, `experiment-doc.ts` and `warning.ts` through `emitErrorAndExit('CONFLICT', …, details)`; verify with tests that exit is 9, stderr carries `error.details`, and the receipt records a conflict
-- [ ] 5.2 Make `hypo show` and `show` NOT_FOUND exit 4 with stderr-only output and make Commander parse failures exit 2; verify with hypo/show/parser tests
+- [x] 5.1 Route the lock conflicts in `commands/experiment.ts`, `experiment-doc.ts` and `warning.ts` through `emitErrorAndExit('CONFLICT', …, details)`; verify with tests that exit is 9, stderr carries `error.details`, and the receipt records a conflict
+- [x] 5.2 Make `hypo show` and `show` NOT_FOUND exit 4 with stderr-only output and make Commander parse failures exit 2; verify with hypo/show/parser tests
 
 ## 6. Backend lifecycle removal
 
