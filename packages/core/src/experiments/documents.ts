@@ -809,6 +809,20 @@ export function lintExperimentDocument(experiment: Experiment): ExperimentDocume
     if (!readmeWarningsCoveredByStrictLint.has(diagnostic.code)) diagnostics.push(diagnostic)
   }
   diagnostics.push(...validateExperimentManagedDocuments(experiment.documents ?? null))
+  // FS v7 reads a legacy bare Run ID (resolved only when unique) but writes
+  // project-relative paths; ask for the path so reads stay walk-free.
+  for (const run of experiment.frontMatter.runs) {
+    if (!run.includes('/'))
+      diagnostics.push(
+        diag(
+          'LEGACY_RUN_ID_REF',
+          'warning',
+          'README.md',
+          `runs entry "${run}" is a bare Run ID; declare the project-relative Run directory path instead`,
+          'runs',
+        ),
+      )
+  }
   const results = experiment.documents?.results.data
   if (results) {
     const experimentRuns = new Set(experiment.frontMatter.runs)

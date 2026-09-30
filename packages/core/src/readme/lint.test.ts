@@ -70,6 +70,19 @@ describe('lintRun', () => {
     expect(codes).toContain('RUN_TIMESTAMP_MALFORMED')
   })
 
+  it('warns about a leftover legacy experiment field without treating it as ownership', () => {
+    const legacy = lintRun(run(MINIMAL.replace('status:', 'experiment: E0001-foo\nstatus:')))
+    expect(legacy).toContainEqual(
+      expect.objectContaining({
+        code: 'RUN_LEGACY_EXPERIMENT_FIELD',
+        severity: 'warning',
+        field: 'experiment',
+      }),
+    )
+    expect(legacy.some((d) => d.severity === 'error')).toBe(false)
+    expect(lintRun(run(MINIMAL)).map((d) => d.code)).not.toContain('RUN_LEGACY_EXPERIMENT_FIELD')
+  })
+
   it('reports a wrong-typed flag as schema breakage', () => {
     const diagnostics = lintRun(run(MINIMAL.replace('status:', 'deprecated: yesterday\nstatus:')))
     expect(diagnostics.some((d) => d.field === 'deprecated' && d.severity === 'error')).toBe(true)

@@ -475,6 +475,19 @@ variants:
     )
   })
 
+  it('warns about legacy bare Run IDs but not project-relative paths', () => {
+    const exp = experiment(
+      canonicalReadme().replace('runs: []', 'runs: [logs/a/foo-260810-010000, bar-260810-020000]'),
+    )
+    const legacy = lintExperimentDocument(exp).filter(
+      (diagnostic) => diagnostic.code === 'LEGACY_RUN_ID_REF',
+    )
+    expect(legacy).toEqual([
+      expect.objectContaining({ severity: 'warning', field: 'runs', file: 'README.md' }),
+    ])
+    expect(legacy[0]!.message).toContain('"bar-260810-020000"')
+  })
+
   it('allows a planned Variant with zero Runs', () => {
     const planned = parseResultsYaml(`
 schema_version: 1

@@ -82,6 +82,17 @@ export function lintRun(run: Run): RunLintDiagnostic[] {
       message: `experiment reference "${fm.experiment}" is not E<NNNN>-<slug>`,
     })
   }
+  if (fm.experiment !== null) {
+    // FS v7: membership is declared only by the Experiment's `runs`; a Run
+    // README parent field is obsolete and never decides ownership.
+    diagnostics.push({
+      code: 'RUN_LEGACY_EXPERIMENT_FIELD',
+      severity: 'warning',
+      file: 'README.md',
+      field: 'experiment',
+      message: `obsolete "experiment: ${fm.experiment}" field; membership is declared by the Experiment's runs list (remove this field)`,
+    })
+  }
 
   for (const [field, value] of [
     ['created_at', fm.createdAt],
