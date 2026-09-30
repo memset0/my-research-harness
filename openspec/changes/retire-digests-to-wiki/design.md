@@ -27,6 +27,12 @@ marking content verified, merging digest prose, or independently releasing FS7.
   Apply validates all sources/destinations before writes, verifies resulting Wiki
   documents before deleting originals, and updates the FS marker last. Rollback
   restores sources and removes only unchanged generated destinations.
+- Canonical clauses that still describe the standalone Digest surface receive
+  explicit deltas so sync leaves no contradictory v6 text. A requirement whose
+  Digest scenarios must disappear is REMOVED and re-ADDED under a Report-specific
+  name, because a MODIFIED block cannot drop scenarios; Report behavior is
+  unchanged. `journal`, `reports-store` and `memon-cli` use "digest" only for the
+  retired Journal cursor/skill and are left alone.
 - The membership-only `keepVersion` preparation path must not implicitly delete
   legacy digests while an older reader is deployed. Final v7 planning includes
   digest conversion by default; explicit digest-inclusive preparation, if offered,

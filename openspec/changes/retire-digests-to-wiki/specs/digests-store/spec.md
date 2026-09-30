@@ -28,9 +28,10 @@ The application SHALL NOT expose dedicated Digest list/detail pages, API routes,
 backend capabilities, navigation entries or observation topics. Historical parsing
 needed exclusively for explicit migration SHALL NOT re-enable live Digest support.
 
-For the coordinated v7 reader, this retirement SHALL supersede historical
+For the coordinated v7 reader, this retirement supersedes the historical
 standalone Digest clauses in inbox-viewer, web-layout, web-dashboard, page-titles,
-dev-route-prewarm, runtime-cache, auth-system and markdown-link-preview. Their
+dev-route-prewarm, runtime-cache, auth-system and markdown-link-preview, which
+this change's delta specs for those capabilities remove or modify. Their
 Report and other non-Digest behavior SHALL remain unchanged. Migrated Digest
 pages SHALL use Wiki navigation, titles, authentication, observation and editing.
 Legacy D tokens and canonical Digest Markdown paths SHALL resolve through a
