@@ -41,10 +41,18 @@ export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }>
   }
 }
 
-export async function getExperimentData(id: string): Promise<FullExperiment | null> {
+/**
+ * Load a Run detail for SSR hydration. Returns null when the Run does not
+ * exist *or* belongs to a different project than the one in the URL, so a
+ * viewer scoped to one project can never hydrate another project's README.
+ */
+export async function getExperimentData(
+  project: string,
+  id: string,
+): Promise<FullExperiment | null> {
   const rt = await getRuntime()
   const exp = rt.index.get(id)
-  if (!exp) return null
+  if (!exp || exp.project !== project) return null
   // Touch the poller so the next backend GET refreshes promptly
   rt.pokeById(id)
   return {

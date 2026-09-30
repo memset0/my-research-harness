@@ -1,11 +1,11 @@
 ## 1. Formatting baseline
 
-- [ ] 1.1 Exclude `apps/web/components/ui/` from Biome lint and format in `biome.json` and verify `pnpm exec biome format apps/web/components/ui` reports no processed files
-- [ ] 1.2 Run `pnpm exec biome format --write .`, confirm the diff is whitespace/quote/comma/wrapping only, and verify `pnpm -r typecheck` shows no errors beyond the known core TS6059 failure
+- [x] 1.1 Exclude `apps/web/components/ui/` from Biome lint and format in `biome.json` and verify `pnpm exec biome format apps/web/components/ui` reports no processed files
+- [x] 1.2 Run `pnpm exec biome format --write .`, confirm the diff is whitespace/quote/comma/wrapping only, and verify `pnpm -r typecheck` shows no errors beyond the known core TS6059 failure
 
 ## 2. Project-scoped Run detail hydration
 
-- [ ] 2.1 Make `getExperimentData(project, id)` return `null` for a Run outside `project`; scope the page and `generateMetadata` through it and prefetch under `['run', ...projectQueryKey(project), id]`; verify with a page test that a cross-project id yields `notFound()` and the matching id dehydrates under the client key
+- [x] 2.1 Make `getExperimentData(project, id)` return `null` for a Run outside `project`; scope the page and `generateMetadata` through it and prefetch under `['run', ...projectQueryKey(project), id]`; verify with a page test that a cross-project id yields `notFound()` and the matching id dehydrates under the client key
 
 ## 3. Standalone core typecheck and lint errors
 
