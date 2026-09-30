@@ -23,6 +23,11 @@ Membership currently intersects Experiment `runs` basename IDs with the Run READ
 - `experiment-edit`: membership mutations affect Experiment declarations only.
 - `fs-migration-runtime`: deterministic, reviewed v6-to-v7 batch conversion and recovery.
 - `memon-skills`: teach the new authority, paths, validation and migration procedure.
+- `experiment-discovery`: membership derives from declarations only.
+- `run-edit`, `memon-cli`: run rename and the run/experiment command families rewrite declarations, not Run fields.
+- `web-dashboard`: legacy run redirects derive the parent from declarations; orphan cards are retired.
+- `fs-version-tracking`: the constant becomes 7 at the 7.0.0 release.
+- `wiki-store`: `@` Run references accept project-relative paths.
 
 ## Impact
 
@@ -34,10 +39,11 @@ while retaining the FS v6 marker byte-for-byte (`--keep-version`). The marker
 does not claim that this optional preparation has or has not run; verify actual
 documents. Legacy unique basename declarations remain readable during this
 transition, but new membership writes use canonical project-relative paths.
-The final v7 guide, version gates and release remain deferred until the other
-planned migrations and projects are ready. Do not migrate other projects or
-release v7 as part of this preparation.
+The final v7 guide and release readiness are now completed in this change; the
+version constants move to 7 / 7.0.0 only in the separate release commit.
+Legacy bare IDs stay readable after v7 (design D2). Do not migrate other
+projects as part of this change.
 
 Core types/parsers/serializers, membership/discovery helpers, rename and reference resolution; Backend project/document/mutation services; CLI create/link/unlink/delete/doctor/migrate-fs; Web member lists, Run navigation and resource query keys; result provenance, eligibility/deprecation checks and Wiki citations; bundled skills, version metadata, migration guides and regression fixtures.
 
-Existing v6 projects require explicit migration before v7 mutation. Ordinary list/read requests do not migrate data. Deployment must coordinate central and CLI compatibility; a read-only central project does not authorize a migration write. Operator-specific audits, project paths and migration reports remain outside tracked artifacts.
+Existing v6 projects require the reviewed migration before v7 skills proceed (skill preflight and `memon fs-version check` report `behind`); ordinary write paths do not read the marker (design D1). Ordinary list/read requests do not migrate data. Deployment must coordinate central and CLI compatibility; a read-only central project does not authorize a migration write. Operator-specific audits, project paths and migration reports remain outside tracked artifacts.
