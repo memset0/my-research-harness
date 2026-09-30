@@ -28,6 +28,6 @@
 
 ## 7. Local gates
 
-- [ ] 7.1 Add `scripts/install-git-hooks.mjs` (skip without `.git` or without lefthook, else `pnpm exec lefthook install`) and point root `prepare` at it; verify `pnpm install` creates `.git/hooks/pre-commit` and the script exits 0 without side effects in a `git archive` export
-- [ ] 7.2 Ignore root `/.memon/` and `.claude/worktrees/` in `.gitignore`; verify `git status` no longer lists `.memon/`
-- [ ] 7.3 Verify `pnpm -r typecheck` and `pnpm exec biome check .` report zero errors and that the pre-commit hook runs green on a real commit
+- [x] 7.1 Add `scripts/install-git-hooks.mjs` (skip without `.git` or without lefthook, else `pnpm exec lefthook install`) and point root `prepare` at it; verify `pnpm install` creates `.git/hooks/pre-commit` and the script exits 0 without side effects in a `git archive` export
+- [x] 7.2 Ignore root `/.memon/` and `.claude/worktrees/` in `.gitignore`; verify `git status` no longer lists `.memon/`
+- [x] 7.3 Verify `pnpm -r typecheck` and `pnpm exec biome check .` report zero errors and that the pre-commit hook runs green on a real commit

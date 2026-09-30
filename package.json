@@ -21,7 +21,8 @@
     "format": "biome format --write .",
     "validate:release": "pnpm --filter @memon/core build && node scripts/validate-release.mjs",
     "typecheck": "pnpm -r typecheck",
-    "memon": "pnpm --filter @memon/cli memon"
+    "memon": "pnpm --filter @memon/cli memon",
+    "prepare": "node scripts/install-git-hooks.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

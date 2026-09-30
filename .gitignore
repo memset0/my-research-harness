@@ -52,3 +52,7 @@ next-env.d.ts
 
 # Coverage
 coverage/
+
+# Root-level memon runtime side-files and agent worktrees (local only).
+/.memon/
+.claude/worktrees/
