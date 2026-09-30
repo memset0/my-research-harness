@@ -4,8 +4,8 @@
 // badge.tsx — keeping the shadcn component pristine and CLI-overwrite-safe.
 
 import * as React from 'react'
-import { Badge } from './ui/badge'
 import { cn } from '../lib/utils'
+import { Badge } from './ui/badge'
 
 export const WarningBadge = React.forwardRef<HTMLSpanElement, React.ComponentProps<typeof Badge>>(
   function WarningBadge({ className, variant: _variant, ...props }, _ref) {

@@ -3,15 +3,15 @@
 
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { isId, parseHypotheses, type Hypothesis } from '@memon/core'
-import { resolveConfig } from '../lib/resolver.js'
+import { type Hypothesis, isId, parseHypotheses } from '@memon/core'
 import {
   emitError,
-  emitJson,
   emitHuman,
+  emitJson,
   formatHypothesisTable,
   type OutputFormat,
 } from '../lib/output.js'
+import { resolveConfig } from '../lib/resolver.js'
 
 export interface HypoListOptions {
   project?: string

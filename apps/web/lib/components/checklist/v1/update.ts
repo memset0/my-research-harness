@@ -1,12 +1,12 @@
 import { isMap, isSeq, parseDocument } from 'yaml'
 import { derivePayload } from '../../payload'
+import { validatePayload } from '../../registry'
 import {
   BlockRewriteError,
+  type BlockTarget,
   locateComponentBlock,
   replaceBlockPayload,
-  type BlockTarget,
 } from '../../rewrite'
-import { validatePayload } from '../../registry'
 import { CHECKLIST_STATUS_FIELDS, type ChecklistStatusField } from './index'
 
 export interface ChecklistStatusEdit {

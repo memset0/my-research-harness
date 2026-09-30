@@ -28,10 +28,10 @@ import {
   formatIsoLocal,
   parseTimestampFromRunDir,
   RUN_DIR_REGEX,
-  RunTargetIndex,
-  serializeMinimalRun,
   type RunFrontMatter,
+  RunTargetIndex,
   type Status,
+  serializeMinimalRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'

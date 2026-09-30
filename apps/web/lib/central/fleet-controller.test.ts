@@ -2,10 +2,10 @@
 
 import {
   BACKEND_API_MAJOR,
-  MEMON_RELEASE,
   type BackendCapabilities,
   type BackendMetadata,
   type CentralConfig,
+  MEMON_RELEASE,
 } from '@memon/core'
 import { describe, expect, it, vi } from 'vitest'
 import { BackendProbeError } from './backend-client'

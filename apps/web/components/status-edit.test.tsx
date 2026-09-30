@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('sonner', () => ({
@@ -12,9 +12,9 @@ vi.mock('../lib/api', () => ({
   patchExperimentStatus: vi.fn(),
 }))
 
+import { toast } from 'sonner'
 import { patchExperimentStatus } from '../lib/api'
 import { StatusEdit } from './status-edit'
-import { toast } from 'sonner'
 
 describe('StatusEdit', () => {
   beforeEach(() => {

@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NextRequest } from 'next/server'
+
 import type { AuthConfig } from '@memon/core'
+import { NextRequest } from 'next/server'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { __limits, __resetForTests } from '../../../../lib/auth/rate-limit'
 
 // Mock the runtime singleton — the real one walks the filesystem.
@@ -11,8 +12,8 @@ vi.mock('../../../../lib/runtime', () => {
   }
 })
 
-import { GET } from './route'
 import { getRuntime } from '../../../../lib/runtime'
+import { GET } from './route'
 
 function basic(user: string, pass: string): string {
   return `Basic ${Buffer.from(`${user}:${pass}`, 'utf8').toString('base64')}`

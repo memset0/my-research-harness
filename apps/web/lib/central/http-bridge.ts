@@ -3,8 +3,8 @@ import { CentralBackendProxyError, proxyCentralApiRequest } from './backend-prox
 import {
   BackendRouteError,
   mapCentralApiToBackend,
-  resolveCentralApiRoute,
   type ResolvedCentralApiRoute,
+  resolveCentralApiRoute,
 } from './backend-route'
 import type { BackendFetch } from './backend-url'
 import { validateCentralShare } from './central-shares'

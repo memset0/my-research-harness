@@ -1,7 +1,7 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
 import type { BackendResourceInventoryResponse, BackendWikiInventoryResponse } from '@memon/core'
+import { useQuery } from '@tanstack/react-query'
 import {
   fetchCodeReviewsInventory,
   fetchExperimentsInventory,

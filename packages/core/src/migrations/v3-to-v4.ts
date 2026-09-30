@@ -12,15 +12,13 @@
 // recipe (with Verification + Edge Cases sections per
 // fs-migration-guide-authoring/spec.md).
 
-import { promises as fs } from 'node:fs'
-import { existsSync } from 'node:fs'
+import { existsSync, promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
-
+import { ARCHIVED_SIDECAR } from './../discovery/archive.js'
+import { type ParsedExperiment, parseExperimentReadme } from '../experiments/parse.js'
+import { serializeExperimentReadme } from '../experiments/serialize.js'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme, serializeReadme } from '../readme/serialize.js'
-import { parseExperimentReadme, type ParsedExperiment } from '../experiments/parse.js'
-import { serializeExperimentReadme } from '../experiments/serialize.js'
-import { ARCHIVED_SIDECAR } from './../discovery/archive.js'
 
 export interface RewriteV3RunInput {
   /** Raw v3 README content (entire file, frontmatter + body). */

@@ -7,11 +7,11 @@
 // bundles can `import type` from here without pulling any node code.
 
 export {
+  isWikiKind,
   WIKI_KINDS,
-  WIKI_STATUS_BY_KIND,
   WIKI_RECOMMENDED_SECTIONS,
   WIKI_RESERVED_KINDS,
-  isWikiKind,
+  WIKI_STATUS_BY_KIND,
   type WikiKind,
 } from './kind-registry.js'
 

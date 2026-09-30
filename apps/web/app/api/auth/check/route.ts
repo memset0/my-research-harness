@@ -5,15 +5,15 @@
 // be reached by Caddy's probe even from anonymous clients), so the rate
 // limiter and scrypt verification both happen here directly.
 
-import { NextResponse, type NextRequest } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { type NextRequest, NextResponse } from 'next/server'
 import {
   parseBasicAuth,
-  verifyBasic,
-  UNAUTHORIZED_HEADERS,
   TOO_MANY_HEADERS,
+  UNAUTHORIZED_HEADERS,
+  verifyBasic,
 } from '../../../../lib/auth/basic-auth'
 import { clientIpFromHeaders, consume, refund } from '../../../../lib/auth/rate-limit'
+import { getRuntime } from '../../../../lib/runtime'
 
 export const dynamic = 'force-dynamic'
 

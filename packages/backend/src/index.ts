@@ -37,11 +37,11 @@ export {
   type BackendExecutionErrorCode,
   type BackendExecutionProvider,
   type BackendExecutionResolver,
+  createLocalExecutionProvider,
+  createSshExecutionProvider,
   type ExecutionBytesResult,
   type ExecutionCommandOptions,
   type ExecutionCommandResult,
-  createLocalExecutionProvider,
-  createSshExecutionProvider,
   projectExecutionConfig,
   resolveProjectExecution,
 } from './execution-service.js'

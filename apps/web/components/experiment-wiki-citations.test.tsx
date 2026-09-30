@@ -3,9 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { ExperimentWikiCitations } from './experiment-wiki-citations'
-import { projectQueryKey } from '../lib/api'
 import type * as Api from '../lib/api'
+import { projectQueryKey } from '../lib/api'
+import { ExperimentWikiCitations } from './experiment-wiki-citations'
 
 const { openWiki, fetchWikiBacklinks } = vi.hoisted(() => ({
   openWiki: vi.fn(),

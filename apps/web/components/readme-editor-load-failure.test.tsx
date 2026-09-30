@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import type { ComponentType } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 // Force the dynamic import of @monaco-editor/react to reject — this exercises
@@ -26,8 +26,8 @@ vi.mock('../lib/api', () => ({
   putReadme: vi.fn(),
 }))
 
-import { ReadmeEditor } from './readme-editor'
 import { toast } from 'sonner'
+import { ReadmeEditor } from './readme-editor'
 
 beforeEach(() => {
   vi.clearAllMocks()

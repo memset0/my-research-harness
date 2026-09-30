@@ -27,10 +27,10 @@
 //   * Unknown labeled bullets are kept in `extraFields` for debugging /
 //     forward-compat (not surfaced via the typed Hypothesis, but warned about).
 
-import type { Hypothesis, HypothesisStatus, ParseIssue, ParsedHypotheses } from '../types.js'
-import { HYPOTHESIS_STATUS_EMOJI, HYPOTHESIS_STATUS_VALUES } from '../types.js'
 import { parseId } from '../ids.js'
 import { splitH2Sections } from '../readme/sections.js'
+import type { Hypothesis, HypothesisStatus, ParsedHypotheses, ParseIssue } from '../types.js'
+import { HYPOTHESIS_STATUS_EMOJI, HYPOTHESIS_STATUS_VALUES } from '../types.js'
 
 // Canonical hypothesis heading: `H<NNNN>. <slug>` where NNNN is exactly
 // 4 digits. Any other H-prefixed heading is treated as malformed.

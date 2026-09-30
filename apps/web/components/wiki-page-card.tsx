@@ -4,14 +4,14 @@
 // independent signal badges (status, staleness, review) the wiki surface
 // shows everywhere a page is listed.
 
+import type { ReviewState } from '@memon/core'
 import { AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
-import type { ReviewState } from '@memon/core'
 import type { WikiListItem } from '../lib/api'
 import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
-import { Badge } from './ui/badge'
 import { wikiKinds } from '../lib/wiki-kinds'
+import { Badge } from './ui/badge'
 
 export { wikiKindOrder as WIKI_KIND_ORDER } from '../lib/wiki-kinds'
 

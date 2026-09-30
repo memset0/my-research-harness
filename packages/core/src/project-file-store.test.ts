@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isArchivedSidecar } from './discovery/archive.js'
 import { discoverRuns } from './discovery/discover.js'
-import { getProjectIo } from './project-io.js'
 import {
   configureProjectFileStore,
   getFileOperationMetrics,
@@ -13,6 +12,7 @@ import {
   projectFs,
   withProjectFileContext,
 } from './project-file-store.js'
+import { getProjectIo } from './project-io.js'
 
 let root: string
 

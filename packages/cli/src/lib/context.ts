@@ -5,9 +5,9 @@
 
 import {
   CliContextError,
-  loadCliContext,
   type Config,
   type LoadCliContextResult,
+  loadCliContext,
 } from '@memon/core'
 import { emitErrorAndExit } from './emit-error.js'
 

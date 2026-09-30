@@ -10,8 +10,8 @@ import { createHash } from 'node:crypto'
 import { formatIsoLocal } from '../time.js'
 import type { Experiment, Run } from '../types.js'
 import { COMPONENT_TYPES } from './component-names.generated.js'
-import type { DiscoveredWikiPage } from './discover.js'
 import { findWikiDeprecatedSections, validateWikiDeprecation } from './deprecation.js'
+import type { DiscoveredWikiPage } from './discover.js'
 import { parseWikiFrontmatter, wikiStringList } from './frontmatter.js'
 import {
   lintWikiPage,
@@ -19,7 +19,7 @@ import {
   type WikiArtifactInventory,
   type WikiLintPage,
 } from './lint.js'
-import { resolveWikiSources, wikiSourceKind, type WikiPageStaleness } from './staleness.js'
+import { resolveWikiSources, type WikiPageStaleness, wikiSourceKind } from './staleness.js'
 import {
   isWikiLanguage,
   WIKI_ID_REGEX,

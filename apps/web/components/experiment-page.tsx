@@ -26,10 +26,10 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
-import { cn } from '../lib/utils'
 import { translationSources } from '../lib/translation/sources'
-import { BodyTranslation, TranslatedLiteral } from './body-translation'
+import { cn } from '../lib/utils'
 import { ArchiveToggle } from './archive-toggle'
+import { BodyTranslation, TranslatedLiteral } from './body-translation'
 import { ClampedBlock } from './clamped-block'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { EditMarkdownButton } from './edit-markdown-button'

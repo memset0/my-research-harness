@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_PX,
   MAX_PX,
   MIN_PX,
-  STORAGE_KEY,
   parseStoredWidth,
+  STORAGE_KEY,
   useSidebarWidth,
 } from './use-sidebar-width'
 

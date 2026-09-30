@@ -18,8 +18,8 @@
 // user can see and resolve.
 
 import type { Dirent } from 'node:fs'
-import { projectFs as fs } from '../project-file-store.js'
 import * as path from 'node:path'
+import { projectFs as fs } from '../project-file-store.js'
 
 import type { Experiment } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'

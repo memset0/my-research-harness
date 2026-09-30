@@ -18,8 +18,8 @@
 // should read the cookie and pass `defaultOpen` through.
 
 import * as React from 'react'
-import { SidebarProvider } from './ui/sidebar'
 import { useSidebarWidth } from '../hooks/use-sidebar-width'
+import { SidebarProvider } from './ui/sidebar'
 
 type ResizableSidebarProviderProps = Omit<React.ComponentProps<typeof SidebarProvider>, 'style'> & {
   style?: React.CSSProperties

@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('../lib/api', () => ({
@@ -8,7 +8,7 @@ vi.mock('../lib/api', () => ({
   deleteCommitMark: vi.fn(),
 }))
 
-import { deleteCommitMark, setCommitMark, type CommitMark } from '../lib/api'
+import { type CommitMark, deleteCommitMark, setCommitMark } from '../lib/api'
 import { CommitMarkEditor } from './commit-mark-editor'
 
 const EXISTING: CommitMark = {

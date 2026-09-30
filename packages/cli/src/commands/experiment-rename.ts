@@ -5,7 +5,7 @@
 // surfaces soft warnings as one-line stderr JSON events, and emits
 // JSON success on stdout.
 
-import { renameExperiment, RenameExperimentError, type RenameExperimentWarning } from '@memon/core'
+import { RenameExperimentError, type RenameExperimentWarning, renameExperiment } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'

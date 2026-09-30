@@ -9,32 +9,32 @@
 // `<GitDiffDialog />`. The parent (project-footer) keeps the two dialogs
 // mutually exclusive — only one open at a time.
 
-import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { History, RefreshCw } from 'lucide-react'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Skeleton } from './ui/skeleton'
-import { Button } from './ui/button'
+import { useMemo, useState } from 'react'
 import {
+  type CommitMark,
   fetchCommitMarks,
   fetchGitBranches,
   fetchGitCommit,
   fetchGitLog,
   fetchSubmodules,
-  type CommitMark,
   type GitBranches,
   type GitCommitDetail,
   type GitCommitSummary,
   type GitSubmoduleEntry,
 } from '../lib/api'
+import { formatRelativeTime } from '../lib/format-relative-time'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
+import { cn } from '../lib/utils'
 import { CommitMarkBadge } from './commit-mark-badge'
 import { CommitMarkEditor } from './commit-mark-editor'
 import { FileRow } from './file-row'
 import { SubmoduleBumpRow } from './submodule-bump-row'
-import { formatRelativeTime } from '../lib/format-relative-time'
-import { cn } from '../lib/utils'
+import { Button } from './ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { Skeleton } from './ui/skeleton'
 
 export interface GitHistoryDialogProps {
   project: string

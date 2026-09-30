@@ -1,5 +1,5 @@
+import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
-import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 import { CodeReviewList } from '../../../../components/code-review-list'
 import { getQueryClient } from '../../../../lib/get-query-client'
 import { getCodeReviewsList } from '../../../../lib/server/data'

@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('../../../lib/path-safety', () => ({
@@ -13,10 +14,10 @@ vi.mock('@memon/core', async (importOriginal) => {
   return { ...actual, readGitFileContents: vi.fn() }
 })
 
-import { GET } from './route'
-import { getRuntime } from '../../../lib/runtime'
 import { readGitFileContents } from '@memon/core'
 import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/path-safety'
+import { getRuntime } from '../../../lib/runtime'
+import { GET } from './route'
 
 const FILE = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n')
 

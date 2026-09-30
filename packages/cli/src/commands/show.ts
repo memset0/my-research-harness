@@ -4,9 +4,9 @@
 // — that's the most useful thing for a person reading on the command line.
 // In `json` mode we emit a structured `{ frontMatter, body, sections }`.
 
-import { resolveConfig } from '../lib/resolver.js'
 import { buildIndex } from '../lib/index-builder.js'
-import { emitError, emitJson, emitHuman, type OutputFormat } from '../lib/output.js'
+import { emitError, emitHuman, emitJson, type OutputFormat } from '../lib/output.js'
+import { resolveConfig } from '../lib/resolver.js'
 
 export interface ShowOptions {
   id: string

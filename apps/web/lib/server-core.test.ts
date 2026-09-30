@@ -1,11 +1,11 @@
 // @vitest-environment node
 
 import { once } from 'node:events'
-import { promisify } from 'node:util'
-import { request as httpRequest } from 'node:http'
-import { connect } from 'node:net'
-import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
+import { request as httpRequest } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { connect } from 'node:net'
+import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemonServer } from './server-core'
 

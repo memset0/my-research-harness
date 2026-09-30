@@ -2,7 +2,6 @@
 
 import { ChevronRight } from 'lucide-react'
 import { useId, useState } from 'react'
-import { cn } from '../../../utils'
 import { Checkbox } from '../../../../components/ui/checkbox'
 import {
   Collapsible,
@@ -10,6 +9,7 @@ import {
   CollapsibleTrigger,
 } from '../../../../components/ui/collapsible'
 import { Label } from '../../../../components/ui/label'
+import { cn } from '../../../utils'
 import type { ComponentData, ComponentRenderer } from '../../types'
 import {
   CHECKLIST_STATUS_FIELDS,

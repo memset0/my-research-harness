@@ -1,10 +1,10 @@
 import { webcrypto } from 'node:crypto'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { createTranslationManifest } from '../lib/translation/manifest'
 import { BodyTranslation } from './body-translation'
 import { Markdown } from './markdown'
 import { SessionProvider } from './session-provider'
-import { createTranslationManifest } from '../lib/translation/manifest'
 
 afterEach(() => {
   cleanup()

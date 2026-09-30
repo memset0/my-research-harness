@@ -1,15 +1,15 @@
 'use client'
 
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Server } from 'lucide-react'
-import { fetchSlurmStatus, type SlurmStatus, type SlurmJobJson } from '../lib/api'
+import { useState } from 'react'
 import { useIsMobile } from '../hooks/use-mobile'
+import { fetchSlurmStatus, type SlurmJobJson, type SlurmStatus } from '../lib/api'
+import { cn } from '../lib/utils'
+import { Badge } from './ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 import { SidebarMenuButton, SidebarMenuItem } from './ui/sidebar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
-import { Badge } from './ui/badge'
-import { cn } from '../lib/utils'
 
 export function SlurmStatusWidget() {
   const isMobile = useIsMobile()

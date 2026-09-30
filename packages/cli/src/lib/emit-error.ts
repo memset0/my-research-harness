@@ -7,7 +7,7 @@
 // recognized mutating command that was rejected still happened, and the
 // ledger records invocations, not just successful writes.
 
-import { EXIT, exitCodeForErrorCode, type ExitCode } from './exit-codes.js'
+import { EXIT, type ExitCode, exitCodeForErrorCode } from './exit-codes.js'
 import { recordCliInvocationFailureSync } from './invocation.js'
 
 export interface ErrorEnvelope {

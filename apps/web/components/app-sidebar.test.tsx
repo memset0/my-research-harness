@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import type * as ApiModule from '../lib/api'
 import { ProjectRefSchema } from '@memon/core'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as ApiModule from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 
 let currentPathname = '/p/project-a'

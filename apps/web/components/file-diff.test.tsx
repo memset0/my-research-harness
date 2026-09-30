@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-
-import { FileDiff } from './file-diff'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DIFF_VIEW_STORAGE_KEY } from '../lib/use-diff-view-mode'
+import { FileDiff } from './file-diff'
 
 beforeEach(() => {
   window.localStorage.clear()

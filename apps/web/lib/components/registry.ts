@@ -8,9 +8,9 @@
  */
 
 import type { RefinementCtx, ZodIssue, ZodObject, ZodType, ZodTypeDef } from 'zod'
-import { parseComponentDeclaration, type ComponentDiagnosticCode } from './declaration'
+import { type ComponentDiagnosticCode, parseComponentDeclaration } from './declaration'
 import { scanFencedBlocks } from './fence'
-import { derivePayload, stripHiddenKeys, type ExecutableSpec } from './payload'
+import { derivePayload, type ExecutableSpec, stripHiddenKeys } from './payload'
 import { GENERATED_DESCRIPTORS } from './registry.generated'
 import type { ComponentDescriptor } from './types'
 

@@ -14,7 +14,9 @@
       "!**/dist",
       "!**/build",
       "!**/coverage",
-      "!apps/web/components/ui"
+      "!apps/web/components/ui",
+      "!**/*.generated.ts",
+      "!**/*.generated.tsx"
     ]
   },
   "formatter": {

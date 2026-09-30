@@ -20,16 +20,16 @@
 // every other path reports a `skipped-*` action without blocking.
 
 import { createHash } from 'node:crypto'
-import { existsSync as fsExistsSync, promises as fs, readFileSync } from 'node:fs'
+import { promises as fs, existsSync as fsExistsSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  FS_CONVENTION_VERSION,
   computeFsVersionStatus,
+  FS_CONVENTION_VERSION,
+  type FsVersionStatus,
   formatIsoLocal,
   readFsVersion,
   writeFsVersion,
-  type FsVersionStatus,
 } from '@memon/core'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'

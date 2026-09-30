@@ -3,8 +3,8 @@
 import { ChevronLeft, ChevronRight, X as XIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
-import { useReadmeEditor } from './readme-editor-context'
 import { ReadmeEditorBody } from './readme-editor'
+import { useReadmeEditor } from './readme-editor-context'
 import { Button } from './ui/button'
 
 const COLLAPSED_WIDTH = 32

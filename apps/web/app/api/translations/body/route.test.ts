@@ -1,7 +1,9 @@
 // @vitest-environment node
-import { beforeEach, expect, it, vi } from 'vitest'
+
 import { NextRequest } from 'next/server'
+import { beforeEach, expect, it, vi } from 'vitest'
 import { createTranslationManifest } from '../../../../lib/translation/manifest'
+
 const mocks = vi.hoisted(() => ({
   document: vi.fn(),
   invoke: vi.fn(),
@@ -31,9 +33,10 @@ vi.mock('../../../../lib/translation/codex', async (original) => ({
   ...(await original<object>()),
   runCodexTranslation: mocks.invoke,
 }))
-import { GET, POST } from './route'
-import { GET as status } from '../status/route'
+
 import { translationCacheKey } from '../../../../lib/translation/http'
+import { GET as status } from '../status/route'
+import { GET, POST } from './route'
 
 const manifest = createTranslationManifest([{ format: 'markdown', text: 'Hello world' }])
 const body = {

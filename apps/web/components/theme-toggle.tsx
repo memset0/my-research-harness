@@ -1,11 +1,10 @@
 'use client'
 
-import * as React from 'react'
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
-
-import { cn } from '@/lib/utils'
+import * as React from 'react'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { cn } from '@/lib/utils'
 
 const OPTIONS = [
   { value: 'light', label: 'Light', Icon: Sun },

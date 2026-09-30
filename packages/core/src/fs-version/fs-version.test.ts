@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readFsVersion } from './read.js'
-import { writeFsVersion } from './write.js'
 import { FsVersionSchemaError, validateFsVersionRecord } from './schema.js'
+import { writeFsVersion } from './write.js'
 
 let dir: string
 

@@ -4,11 +4,11 @@ import { withProjectFileContext } from '../project-file-store.js'
 import {
   cachedGitCommand,
   execFileGitCommand,
-  invalidateGitOperations,
-  isGitCommandFailure,
   type GitCommandOptions,
   type GitCommandResult,
   type GitCommandRunner,
+  invalidateGitOperations,
+  isGitCommandFailure,
 } from './command.js'
 
 // The cache is process-wide (one state on `globalThis`), so every case starts

@@ -1,8 +1,7 @@
-import { projectFs as fs } from '../project-file-store.js'
 import { join } from 'node:path'
-
 import yaml from 'js-yaml'
 import { type ZodError, z } from 'zod'
+import { projectFs as fs } from '../project-file-store.js'
 
 import type {
   Experiment,
@@ -20,8 +19,8 @@ import type {
   ResultsDocument,
   ResultVariant,
 } from '../types.js'
-import { projectResultsRunEligibility } from './results-eligibility.js'
 import type { ResultsVariantEligibility } from './results-eligibility.js'
+import { projectResultsRunEligibility } from './results-eligibility.js'
 
 export const IMPLEMENTATION_SCHEMA_VERSION = 1
 export const INVESTIGATION_SCHEMA_VERSION = 1

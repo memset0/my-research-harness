@@ -11,48 +11,48 @@
 // instance config.yml. The committed config.example.yml is never a runtime
 // configuration source.
 
+import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
-import { EventEmitter } from 'node:events'
 import {
+  type AuthConfig,
   CODE_REVIEW_FILENAME_REGEX,
+  type CodeReviewSummary,
+  type Config,
   computeMembership,
-  projectRunPath,
-  configureProjectFileStore,
   configureProjectFileCache,
+  configureProjectFileStore,
   deriveCompletion,
   discoverExperiments,
-  parseCodeReview,
   discoverRuns,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
+  type Experiment,
+  type ExperimentMembershipAnomaly,
   extractTitle,
   loadConfig,
   MANAGED_DOCUMENT_FILE_NAMES,
-  parseHypotheses,
-  parseJournal,
-  Poller,
-  readExperimentDoc,
-  readRunDir,
-  REPORT_FILENAME_REGEX,
-  RunIndex,
-  type AuthConfig,
-  type CodeReviewSummary,
-  type Config,
-  type Experiment,
-  type ExperimentMembershipAnomaly,
   type ParsedHypotheses,
   type ParsedJournal,
+  Poller,
+  parseCodeReview,
+  parseHypotheses,
+  parseJournal,
+  projectRunPath,
+  REPORT_FILENAME_REGEX,
   type ReportSummary,
   type Run,
+  RunIndex,
+  readExperimentDoc,
+  readRunDir,
 } from '@memon/core'
+import { ensureAuthInitialised } from './auth/first-run'
 import { servesProjectsDirectly } from './central/direct-projects'
+import { listComponents } from './components/registry'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { WikiCache } from './runtime/wiki-cache'
-import { ensureAuthInitialised } from './auth/first-run'
 import { resolveRuntimeConfigPath } from './runtime-config-path'
-import { listComponents } from './components/registry'
 import { probeSqueue } from './slurm/probe'
 
 export interface ExperimentChangeEvent {

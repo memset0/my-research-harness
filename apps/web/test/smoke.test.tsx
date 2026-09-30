@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
 describe('test rig smoke', () => {
   it('jsdom + RTL + jest-dom matchers work end-to-end', () => {

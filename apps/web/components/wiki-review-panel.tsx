@@ -11,12 +11,12 @@
 // Marks are strictly sequential, so no per-row verify action is offered: the
 // only forward move is the oldest unverified commit.
 
+import type { WikiReview } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, GitCommitVertical, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import type { WikiReview } from '@memon/core'
 import {
   fetchGitCommit,
   fetchWikiReview,

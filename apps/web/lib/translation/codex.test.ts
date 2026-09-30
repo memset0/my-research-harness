@@ -1,8 +1,9 @@
 // @vitest-environment node
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { runCodexTranslation, translationAuthHome, translationEnvironment } from './codex'
 
 it('uses the selected native auth file without reading or copying its contents', async () => {

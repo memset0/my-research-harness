@@ -4,9 +4,9 @@
 // useQuery; we mock the fetcher and assert the rendered DOM contains
 // one Card per exp doc.
 
+import { ProjectRefSchema } from '@memon/core'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ProjectRefSchema } from '@memon/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExperimentCardGrid } from '../../components/experiment-card-grid'
 import { renderWithQuery } from '../utils'

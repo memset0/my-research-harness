@@ -9,7 +9,7 @@
 // Next.js redirect error in real life) and the runtime, and assert
 // the redirect target string.
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/navigation', () => ({
   permanentRedirect: vi.fn((url: string) => {

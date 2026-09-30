@@ -1,5 +1,4 @@
 'use client'
-import { TranslatedLiteral } from './body-translation'
 
 import type {
   ImplementationDocument,
@@ -35,6 +34,7 @@ import { createContext, type ReactNode, useContext } from 'react'
 import { type ProjectTarget, projectWebPath } from '../lib/api'
 import type { ComponentDocumentRef } from '../lib/components/types'
 import { cn } from '../lib/utils'
+import { TranslatedLiteral } from './body-translation'
 import { ClampedBlock } from './clamped-block'
 import { Markdown } from './markdown'
 import { Badge } from './ui/badge'

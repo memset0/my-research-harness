@@ -1,8 +1,8 @@
 // @vitest-environment node
 
+import type * as MemonCore from '@memon/core'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type * as MemonCore from '@memon/core'
 
 vi.mock('../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
 // Real ComponentRunError so the handler's `instanceof` mapping is exercised.

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
 import { parseWikiKindRegistry, renderWikiKindGuidance } from '@memon/core'
+import { describe, expect, it } from 'vitest'
 
 describe('generated Wiki kind guidance', () => {
   it('matches the source registry byte-for-byte', () => {

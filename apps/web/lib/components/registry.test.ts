@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { listComponentBlocks, lintComponents, validatePayload } from './registry'
+import { lintComponents, listComponentBlocks, validatePayload } from './registry'
 
 describe('component registry', () => {
   it('resolves unpinned blocks to latest and warns', () => {

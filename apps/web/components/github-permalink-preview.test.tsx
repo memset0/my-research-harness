@@ -1,9 +1,8 @@
-import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-
-import { Markdown } from './markdown'
-import { isGithubBlobPermalink } from './github-permalink-preview'
+import { describe, expect, it } from 'vitest'
 import { renderWithQuery } from '../test/utils'
+import { isGithubBlobPermalink } from './github-permalink-preview'
+import { Markdown } from './markdown'
 
 describe('isGithubBlobPermalink', () => {
   it('accepts single-line and range blob permalinks', () => {

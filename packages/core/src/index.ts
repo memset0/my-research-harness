@@ -3,7 +3,6 @@
 // Re-exports types, parsers, serializers. Discovery, polling, log tail, and
 // config loaders are added by phases 3-5.
 
-export * from './project-file-store.js'
 export * from './backend-negotiation.js'
 export * from './backend-protocol.js'
 export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'
@@ -51,14 +50,6 @@ export {
   setRunArchived,
   unarchiveRun,
 } from './discovery/archive.js'
-export {
-  ARCHIVED_SIDECAR,
-  discoverRuns,
-  isArchived,
-  isArchivedSidecar,
-  mergeExcludes,
-  runArchivedFromRun,
-} from './discovery/discover.js'
 export type {
   DeprecationResult,
   ListDeprecatedRunIdsOptions,
@@ -72,6 +63,14 @@ export {
   setRunDeprecated,
   undeprecateRun,
 } from './discovery/deprecation.js'
+export {
+  ARCHIVED_SIDECAR,
+  discoverRuns,
+  isArchived,
+  isArchivedSidecar,
+  mergeExcludes,
+  runArchivedFromRun,
+} from './discovery/discover.js'
 export type { ListFilter, SearchScope } from './discovery/index.js'
 export { matchesRunDeprecationFilter, RunIndex } from './discovery/index.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
@@ -126,30 +125,9 @@ export {
   upsertResultColumnAnnotationYaml,
   validateExperimentManagedDocuments,
 } from './experiments/documents.js'
-export type {
-  ResultsMetricsValidity,
-  ResultsVariantEligibility,
-} from './experiments/results-eligibility.js'
-export {
-  projectResultsRunEligibility,
-  variantHasMetrics,
-} from './experiments/results-eligibility.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
 export type { MembershipInput, MembershipResult } from './experiments/membership.js'
 export { computeMembership } from './experiments/membership.js'
-export {
-  planMembershipMigration,
-  applyMembershipMigration,
-  rollbackMembershipMigration,
-  type MembershipMigrationPlan,
-} from './migrations/v6-to-v7.js'
-export {
-  isRunPath,
-  projectRunPath,
-  resolveDeclaredRunPath,
-  resolveRunReference,
-  declaredRunOwner,
-} from './experiments/run-path.js'
 export type { ParsedExperiment } from './experiments/parse.js'
 // v3 experiment-doc parser / serializer / discovery / membership
 export { buildExperimentRecord, parseExperimentReadme } from './experiments/parse.js'
@@ -159,6 +137,21 @@ export type {
   RenameExperimentWarning,
 } from './experiments/rename.js'
 export { RenameExperimentError, renameExperiment } from './experiments/rename.js'
+export type {
+  ResultsMetricsValidity,
+  ResultsVariantEligibility,
+} from './experiments/results-eligibility.js'
+export {
+  projectResultsRunEligibility,
+  variantHasMetrics,
+} from './experiments/results-eligibility.js'
+export {
+  declaredRunOwner,
+  isRunPath,
+  projectRunPath,
+  resolveDeclaredRunPath,
+  resolveRunReference,
+} from './experiments/run-path.js'
 export type { SerializeExperimentInput } from './experiments/serialize.js'
 export { serializeExperimentReadme } from './experiments/serialize.js'
 export {
@@ -175,6 +168,13 @@ export {
   validateFsVersionRecord,
   writeFsVersion,
 } from './fs-version/index.js'
+export type { GitCommandOptions, GitCommandResult, GitCommandRunner } from './git/command.js'
+export {
+  cachedGitCommand,
+  gitCommandStdoutText,
+  invalidateGitOperations,
+  isGitCommandFailure,
+} from './git/command.js'
 export type {
   CommitMark,
   CommitMarkStatus,
@@ -224,13 +224,6 @@ export {
   readGitLog,
   readGitRange,
 } from './git/history.js'
-export type { GitCommandRunner, GitCommandOptions, GitCommandResult } from './git/command.js'
-export {
-  cachedGitCommand,
-  gitCommandStdoutText,
-  invalidateGitOperations,
-  isGitCommandFailure,
-} from './git/command.js'
 export type { GitStatus, ReadGitStatusOptions } from './git/status.js'
 export { parsePorcelainV2, readGitStatus } from './git/status.js'
 export type {
@@ -272,14 +265,14 @@ export {
   classifyError as classifyJournalInvocationError,
   currentJournalInvocation,
   JOURNAL_ACTIVITY_RELDIR,
-  JOURNAL_INVOCATION_OUTCOMES,
   JOURNAL_INVOCATION_MAX_DETAILS,
+  JOURNAL_INVOCATION_OUTCOMES,
   JOURNAL_INVOCATION_RECORD_VERSION,
-  JournalRecordingError,
   JournalInvocationDetailSchema,
   JournalInvocationOriginSchema,
   JournalInvocationOutcomeSchema,
   JournalInvocationRecordSchema,
+  JournalRecordingError,
   markJournalInvocationOutcome,
   readJournalActivity,
   readJournalInvocations,
@@ -322,11 +315,15 @@ export {
   rewriteV3ExpDoc,
   rewriteV3RunReadme,
 } from './migrations/v3-to-v4.js'
+export {
+  applyMembershipMigration,
+  type MembershipMigrationPlan,
+  planMembershipMigration,
+  rollbackMembershipMigration,
+} from './migrations/v6-to-v7.js'
+export * from './project-file-store.js'
 export * from './project-resource.js'
 export { parseArtifacts } from './readme/artifacts.js'
-export { parseReadme } from './readme/parse.js'
-export type { H2SectionEntry, SectionSplit } from './readme/sections.js'
-export { splitH2Sections } from './readme/sections.js'
 export type {
   PatchableRunFrontMatterKey,
   RunFrontMatterPatch,
@@ -337,6 +334,9 @@ export {
 } from './readme/frontmatter-patch.js'
 export type { RunLintDiagnostic } from './readme/lint.js'
 export { lintRun } from './readme/lint.js'
+export { parseReadme } from './readme/parse.js'
+export type { H2SectionEntry, SectionSplit } from './readme/sections.js'
+export { splitH2Sections } from './readme/sections.js'
 export type { SerializeMinimalRunInput, SerializeReadmeInput } from './readme/serialize.js'
 export {
   MINIMAL_RUN_FRONT_MATTER_KEYS,

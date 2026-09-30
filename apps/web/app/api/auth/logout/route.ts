@@ -5,7 +5,7 @@
 // viewer→owner via login reverts to viewer mode (with their original share
 // scopes) after logout.
 
-import { NextResponse, type NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { buildClearCookieHeader, SESSION_COOKIE_NAME } from '@/lib/auth/cookies'
 import { isHttps, publicOrigin } from '@/lib/auth/public-url'
 

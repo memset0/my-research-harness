@@ -5,8 +5,8 @@
 // honor the sidecar only as a narrow fallback when the README lacks the
 // canonical `archived` field entirely.
 
-import { projectFs as fs } from '../project-file-store.js'
 import { dirname, join } from 'node:path'
+import { projectFs as fs } from '../project-file-store.js'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme } from '../readme/serialize.js'
 

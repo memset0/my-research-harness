@@ -1,6 +1,6 @@
-import { projectFs as fs } from './project-file-store.js'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { type ResourceId, ResourceIdSchema } from './backend-protocol.js'
+import { projectFs as fs } from './project-file-store.js'
 
 export type ProjectResourceErrorCode =
   | 'INVALID_RESOURCE'

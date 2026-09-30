@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
-import type { WikiListItem } from '../lib/api'
 import { describe, expect, it } from 'vitest'
+import type { WikiListItem } from '../lib/api'
 import { filterWikiPages, sortWikiPages, WikiPageCard } from './wiki-page-card'
 
 function page(id: string, updatedAt: string, overrides: Partial<WikiListItem> = {}): WikiListItem {

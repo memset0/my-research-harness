@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   type Config,
-  DEFAULT_SLURM,
   DEFAULT_GIT_STATUS,
+  DEFAULT_SLURM,
   type FileOperationMetrics,
   getFileOperationMetrics,
   getProjectFileContext,

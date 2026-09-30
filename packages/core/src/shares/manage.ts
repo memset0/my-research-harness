@@ -1,13 +1,13 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { formatIsoLocal } from '../time.js'
 import { readShares } from './read.js'
-import { writeShares } from './write.js'
 import {
   AmbiguousShareError,
   ShareNotFoundError,
-  ShareStoreError,
   type ShareRecord,
+  ShareStoreError,
 } from './types.js'
+import { writeShares } from './write.js'
 
 const TOKEN_BYTES = 18 // 24 base64url chars, 144 bits
 const ID_BYTES = 6 // 8 base64url chars

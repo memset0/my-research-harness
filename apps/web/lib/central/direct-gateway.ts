@@ -11,8 +11,8 @@ import type { RuntimeAuth } from '../auth/identity'
 import { CentralBackendProxyError } from './backend-proxy'
 import {
   BackendRouteError,
-  resolveCentralApiRoute,
   type ResolvedCentralApiRoute,
+  resolveCentralApiRoute,
 } from './backend-route'
 import { type DirectCentralRuntime, DirectDispatchError } from './direct-runtime'
 import {

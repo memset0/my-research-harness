@@ -13,7 +13,7 @@
 import { promises as fs } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 
-import { ComponentRunError, runDocumentComponents, type ComponentRunResult } from '@memon/core'
+import { ComponentRunError, type ComponentRunResult, runDocumentComponents } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'

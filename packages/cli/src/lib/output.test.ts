@@ -1,5 +1,5 @@
+import type { Hypothesis, Run } from '@memon/core'
 import { describe, expect, it } from 'vitest'
-import type { Run, Hypothesis } from '@memon/core'
 import { formatExperimentTable, formatHypothesisTable } from './output.js'
 
 function makeExp(overrides: Partial<Run['frontMatter']> = {}): Run {

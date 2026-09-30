@@ -1,5 +1,5 @@
-import { TRANSLATION_CONCURRENCY, TranslationError } from './codex'
 import type { TranslationCache } from './cache'
+import { TRANSLATION_CONCURRENCY, TranslationError } from './codex'
 import { packSegments, reconstructTranslation, type TranslationSegment } from './segments'
 import { TRANSLATION_TARGET_NAMES, type TranslationTarget } from './target'
 

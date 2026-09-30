@@ -2,6 +2,7 @@
 
 - [x] 1.1 Exclude `apps/web/components/ui/` from Biome lint and format in `biome.json` and verify `pnpm exec biome format apps/web/components/ui` reports no processed files
 - [x] 1.2 Run `pnpm exec biome format --write .`, confirm the diff is whitespace/quote/comma/wrapping only, and verify `pnpm -r typecheck` shows no errors beyond the known core TS6059 failure
+- [x] 1.3 Apply Biome's import organization once (excluding `*.generated.ts[x]`, which the generator checks byte-for-byte) and verify `biome check .` reports no assist errors, typecheck stays clean, `component-docs --check` passes, and the tests beside every reordered file pass
 
 ## 2. Project-scoped Run detail hydration
 

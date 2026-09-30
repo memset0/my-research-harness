@@ -20,7 +20,7 @@
  * `node scripts/component-docs.mjs --check` works from the repository root.
  */
 
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { ComponentDescriptor } from '../apps/web/lib/components/types'
 

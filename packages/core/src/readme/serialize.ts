@@ -5,14 +5,14 @@
 // Metadata-only reserialization patches the source YAML and preserves the
 // complete body, comments, unknown fields and unmodified legacy values.
 
-import type { ArtifactEntry, RunFrontMatter, RunSections, ParsedReadme } from '../types.js'
 import { isId } from '../ids.js'
-import { parseReadme } from './parse.js'
+import type { ArtifactEntry, ParsedReadme, RunFrontMatter, RunSections } from '../types.js'
 import {
-  patchRunFrontMatter,
   type PatchableRunFrontMatterKey,
+  patchRunFrontMatter,
   type RunFrontMatterPatch,
 } from './frontmatter-patch.js'
+import { parseReadme } from './parse.js'
 
 // Legacy run-side section order. `Motivation` / `Setup` / `Result` /
 // `Artifacts` are always emitted (empty heading + empty body round-trips

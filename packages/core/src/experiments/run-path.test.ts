@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isRunPath, resolveDeclaredRunPath, resolveRunReference } from './run-path.js'
 import { projectFs } from '../project-file-store.js'
+import { isRunPath, resolveDeclaredRunPath, resolveRunReference } from './run-path.js'
 
 const roots: string[] = []
 const name = 'trial-260908-120000'

@@ -1,17 +1,16 @@
-import { readFile } from 'node:fs/promises'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   COMMIT_MARKS_RELPATH,
+  type CommitMark,
   deleteCommitMark,
   parseCsv as parseCommitMarksCsv,
   readCommitMarks,
   serializeCsv as serializeCommitMarksCsv,
   setCommitMark,
-  type CommitMark,
 } from './commit-marks.js'
 
 const SHA_A = 'a'.repeat(40)

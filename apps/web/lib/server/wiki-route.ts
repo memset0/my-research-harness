@@ -6,17 +6,17 @@
 // `project` / `resource` pair every other document DTO carries, so a client
 // reads a standalone and a Backend-proxied page the same way.
 
-import { NextResponse } from 'next/server'
 import {
-  parseWikiFrontmatter,
   JournalRecordingError,
-  withJournalInvocation,
+  parseWikiFrontmatter,
   WIKI_ID_REGEX,
   type WikiDiagnostic,
   type WikiPage,
   type WikiResolvedComponent,
   type WikiSummary,
+  withJournalInvocation,
 } from '@memon/core'
+import { NextResponse } from 'next/server'
 import { lintComponents, listComponentBlocks } from '../components/registry'
 import type { Runtime } from '../runtime'
 

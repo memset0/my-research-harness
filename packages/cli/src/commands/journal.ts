@@ -21,9 +21,9 @@ import {
   type JournalEvent,
   type JournalInvocationRecord,
   type JournalSnapshot,
+  RUN_DIR_REGEX,
   readJournalActivity,
   readProjectJournal,
-  RUN_DIR_REGEX,
   type UnreadableJournalReceipt,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'

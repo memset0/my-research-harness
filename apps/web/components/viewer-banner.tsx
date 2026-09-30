@@ -4,10 +4,10 @@
 // viewer. Identifies the scope set and offers a "Log in as owner" link.
 // Dismissible per browser tab via sessionStorage; reappears on tab reload.
 
-import { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
-import Link from 'next/link'
 import { Eye, X } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { useSession } from './session-provider'
 
 const DISMISS_KEY = 'memon:viewer-banner:dismissed'

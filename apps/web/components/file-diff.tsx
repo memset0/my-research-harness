@@ -7,8 +7,8 @@
 import ReactDiffViewer from 'react-diff-viewer-continued'
 import type { GitFileStatus } from '../lib/api'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
-import { Skeleton } from './ui/skeleton'
 import { cn } from '../lib/utils'
+import { Skeleton } from './ui/skeleton'
 
 export type FileDiffSkipReason = 'too-large' | 'binary' | 'conflict'
 

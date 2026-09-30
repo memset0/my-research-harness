@@ -1,12 +1,13 @@
 // @vitest-environment node
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sqlite3 from 'sqlite3'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SqliteTranslationCache } from './cache'
-import { BodyTranslationService } from './service'
 import { literalSegment } from './segments'
+import { BodyTranslationService } from './service'
 
 let directory: string
 const stores: SqliteTranslationCache[] = []

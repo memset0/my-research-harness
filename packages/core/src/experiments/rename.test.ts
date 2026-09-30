@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { renameExperiment, RenameExperimentError } from './rename.js'
+import { RenameExperimentError, renameExperiment } from './rename.js'
 
 const PROJECT_NAME = '(project-root)'
 

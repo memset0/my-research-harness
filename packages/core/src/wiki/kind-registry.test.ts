@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import configuration from './kinds.json'
+import { renderWikiKindGuidance } from './kind-guidance.js'
 import {
   getWikiKind,
   parseWikiKindRegistry,
   WIKI_KINDS,
   WIKI_RECOMMENDED_SECTIONS,
 } from './kind-registry.js'
-import { renderWikiKindGuidance } from './kind-guidance.js'
+import configuration from './kinds.json'
 
 describe('Wiki kind registry', () => {
   it('preserves existing order and status vocabularies', () => {

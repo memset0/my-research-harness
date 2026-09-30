@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { parseCodeReview, deriveCompletion, toggleCommitReviewed, toggleTodoDone } from './parse.js'
+import { describe, expect, it } from 'vitest'
 import { CODE_REVIEW_FILENAME_REGEX } from '../types.js'
+import { deriveCompletion, parseCodeReview, toggleCommitReviewed, toggleTodoDone } from './parse.js'
 
 const DOC = `---
 title: bf16 fix

@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest'
+
 import type { Config } from '@memon/core'
-import { PathSafetyError, assertWithinProjectRoots } from './path-safety'
+import { describe, expect, it } from 'vitest'
+import { assertWithinProjectRoots, PathSafetyError } from './path-safety'
 
 const config: Config = {
   projects: [

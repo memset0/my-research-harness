@@ -6,7 +6,7 @@
 //
 // `memon serve` resolves config independently — see commands/serve.ts.
 
-import { CliContextError, loadCliContext, type Config } from '@memon/core'
+import { CliContextError, type Config, loadCliContext } from '@memon/core'
 import { emitErrorAndExit } from './emit-error.js'
 
 export interface ResolveOptions {

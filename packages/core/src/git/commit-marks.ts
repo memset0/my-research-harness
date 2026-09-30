@@ -17,8 +17,8 @@
 // `submodule = ''`. The writer always emits the 5-column form, so the
 // first write after deployment upgrades the file in place.
 
-import { projectFs } from '../project-file-store.js'
 import { dirname, join } from 'node:path'
+import { projectFs } from '../project-file-store.js'
 
 const { mkdir, readFile, rename, rm, writeFile } = projectFs
 

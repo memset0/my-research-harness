@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('sonner', () => ({
@@ -17,9 +17,9 @@ vi.mock('../lib/api', () => ({
   patchExperimentArchived: vi.fn(),
 }))
 
+import { toast } from 'sonner'
 import { patchExperimentArchived, patchRunArchived } from '../lib/api'
 import { ArchiveToggle } from './archive-toggle'
-import { toast } from 'sonner'
 
 describe('ArchiveToggle — disabled state (run hard rule)', () => {
   beforeEach(() => {

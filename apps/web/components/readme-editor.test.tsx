@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor, render } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentType } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 // Stub @monaco-editor/react with a synchronous textarea so the editor surface
@@ -41,9 +41,9 @@ vi.mock('../lib/api', () => ({
   putReadme: vi.fn(),
 }))
 
+import { toast } from 'sonner'
 import { fetchReadme, putReadme } from '../lib/api'
 import { ReadmeEditor, ReadmeEditorBody } from './readme-editor'
-import { toast } from 'sonner'
 
 const PATH = '/p/a/logs/exp/README.md'
 
@@ -212,6 +212,7 @@ describe('ReadmeEditorBody — panel containerKind does not auto-close on save',
 })
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
 function BodyHarness({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },

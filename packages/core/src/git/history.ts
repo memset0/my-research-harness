@@ -15,10 +15,10 @@
 
 import {
   cachedGitCommand,
+  type GitCommandRunner,
   gitCommandStdoutText,
   isGitCommandFailure,
   toGitExecFailure,
-  type GitCommandRunner,
 } from './command.js'
 
 import type { GitFileEntry, GitFileStatus } from './files.js'

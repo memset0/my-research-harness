@@ -20,8 +20,8 @@
 
 import { execFile } from 'node:child_process'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { cachedGitCommand } from '@memon/core'
 import type { GitCommandRunner, ProjectConfig, ProjectExecutionConfig } from '@memon/core'
+import { cachedGitCommand } from '@memon/core'
 
 export type BackendExecutionErrorCode =
   | 'EXECUTION_UNAVAILABLE'

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import type { AuthConfig } from '@memon/core'
+import { describe, expect, it } from 'vitest'
 import { parseBasicAuth, verifyBasic } from './basic-auth'
 
 function basic(user: string, pass: string): string {

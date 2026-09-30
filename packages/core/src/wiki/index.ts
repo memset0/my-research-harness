@@ -18,18 +18,20 @@ export {
   type WikiSectionDeprecationResult,
 } from './deprecation.js'
 export {
-  discoverWikiPages,
   type DiscoveredWikiPage,
   type DiscoverWikiPagesOptions,
+  discoverWikiPages,
 } from './discover.js'
 export {
+  type ParsedWikiFrontmatter,
   parseWikiFrontmatter,
   serializeWikiPage,
   updateWikiFrontmatter,
   wikiDeprecationValue,
   wikiStringList,
-  type ParsedWikiFrontmatter,
 } from './frontmatter.js'
+export * from './kind-guidance.js'
+export * from './kind-registry.js'
 export {
   extractWikiReferences,
   lintWikiPage,
@@ -50,25 +52,23 @@ export {
   type WikiSourceContext,
   type WikiSourceIndex,
   type WikiSourceKind,
-  wikiSourceKind,
   type WikiSourcePage,
   type WikiSourceReferences,
   type WikiSourceResolution,
+  wikiSourceKind,
 } from './staleness.js'
 export {
+  type BuildWikiSummaryInput,
   buildWikiPage,
   buildWikiProject,
   buildWikiSummary,
   effectiveWikiId,
   sortWikiSummaries,
-  wikiContentHash,
-  wikiDisplayTitle,
-  type BuildWikiSummaryInput,
   type WikiLocalProjectContext,
   type WikiProjectContext,
   type WikiProjectProjection,
   type WikiSummaryLocation,
+  wikiContentHash,
+  wikiDisplayTitle,
 } from './summary.js'
 export * from './types.js'
-export * from './kind-registry.js'
-export * from './kind-guidance.js'

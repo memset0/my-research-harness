@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MAX_PX, STORAGE_KEY } from '../hooks/use-sidebar-width'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SidebarProvider } from './ui/sidebar'
-import { MAX_PX, STORAGE_KEY } from '../hooks/use-sidebar-width'
 
 // Helper: set viewport size and stub matchMedia to track it. The shadcn
 // primitive's `useIsMobile()` reads `window.innerWidth` + listens on

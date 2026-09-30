@@ -13,12 +13,12 @@ import {
   Clock,
   HelpCircle,
   Loader2,
+  type LucideIcon,
   PauseCircle,
   XCircle,
-  type LucideIcon,
 } from 'lucide-react'
-import { Badge } from './ui/badge'
 import { cn } from '../lib/utils'
+import { Badge } from './ui/badge'
 
 const STATUS_ICON: Readonly<Record<Status, LucideIcon>> = {
   PENDING: Clock,

@@ -1,5 +1,4 @@
 'use client'
-import { TranslatedLiteral } from './body-translation'
 
 import type {
   ResultColumnAnnotation,
@@ -61,6 +60,7 @@ import type {
 import { useExperimentResultsViews } from '../lib/use-experiment-results-views'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
+import { TranslatedLiteral } from './body-translation'
 import { Markdown } from './markdown'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'

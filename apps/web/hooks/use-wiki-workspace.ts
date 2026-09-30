@@ -1,8 +1,8 @@
 'use client'
 
 import { usePathname, useSearchParams } from 'next/navigation'
-import type { ProjectTarget } from '../lib/api'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ProjectTarget } from '../lib/api'
 import {
   moveWikiWorkspaceUrl,
   parseWikiWorkspaceUrl,
@@ -17,8 +17,8 @@ import {
   replaceWorkspaceHistory,
   WORKSPACE_HISTORY_EVENT,
 } from '../lib/workspace-history'
-import { projectFromWorkspacePathname } from './use-report-workspace'
 import { useIsMobile } from './use-mobile'
+import { projectFromWorkspacePathname } from './use-report-workspace'
 
 export interface WikiWorkspaceController {
   project: ProjectTarget | null

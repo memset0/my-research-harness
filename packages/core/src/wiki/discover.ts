@@ -10,8 +10,8 @@
 // WIKI_UNKNOWN_KIND.
 
 import type { Dirent } from 'node:fs'
-import { projectFs as fs } from '../project-file-store.js'
 import * as path from 'node:path'
+import { projectFs as fs } from '../project-file-store.js'
 
 import { WIKI_DIR_RELPATH, WIKI_PAGE_NAME_REGEX, type WikiPageFormat } from './types.js'
 

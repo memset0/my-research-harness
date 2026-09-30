@@ -1,6 +1,6 @@
 'use client'
-import { BodyTranslation } from './body-translation'
 import { translationSources } from '../lib/translation/sources'
+import { BodyTranslation } from './body-translation'
 
 // Inbox shell for the per-project Reports view.
 // Desktop: 2-column read mode (rail + rendered) → 3-column when editing

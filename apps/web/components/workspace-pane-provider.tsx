@@ -13,12 +13,12 @@ import {
   useState,
 } from 'react'
 import { type ReportWorkspaceController, useReportWorkspace } from '../hooks/use-report-workspace'
+import { useWikiWorkspace, type WikiWorkspaceController } from '../hooks/use-wiki-workspace'
 import { useWorkspacePanelWidth } from '../hooks/use-workspace-panel-width'
-import { type WikiWorkspaceController, useWikiWorkspace } from '../hooks/use-wiki-workspace'
 import { ReportPane, type ReportPaneSurface } from './report-pane'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from './ui/sheet'
 import { WikiPane, type WikiPaneSurface } from './wiki-pane'
 import { WorkspaceResizeHandle } from './workspace-resize-handle'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from './ui/sheet'
 
 interface ReportPaneApi {
   openReport: (reportId: string, surface?: ReportPaneSurface) => void

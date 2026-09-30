@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
-import configuration from '@memon/core/wiki-kinds.json'
 import { WIKI_KIND_REGISTRY } from '@memon/core'
+import configuration from '@memon/core/wiki-kinds.json'
+import { describe, expect, it, vi } from 'vitest'
 import { wikiKinds } from '../../../../lib/wiki-kinds'
 import { GET } from './route'
 

@@ -7,8 +7,8 @@ import {
   __resetResourceProtocolForTests,
   beginResourceRequest,
   FILE_STATUS_HEADER,
-  recordResourceResponse,
   RESOURCE_VERSION_HEADER,
+  recordResourceResponse,
 } from '../../lib/resource-protocol'
 import { renderWithHeartbeat } from '../utils'
 

@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { resolveSharesFilePath } from './paths.js'
-import { emptySharesFile, ShareStoreError, type SharesFile, type ShareRecord } from './types.js'
+import { emptySharesFile, type ShareRecord, ShareStoreError, type SharesFile } from './types.js'
 
 /**
  * Read `<projectRoot>/.memon/shares.json`. If the file does not exist,

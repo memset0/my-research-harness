@@ -36,8 +36,8 @@ import {
   type Config,
   type FileOperationReason,
   getProjectFileStatus,
-  parseFileOperationReason,
   type ProjectConfig,
+  parseFileOperationReason,
   validateShare,
   withProjectFileContext,
 } from '@memon/core'
@@ -48,7 +48,7 @@ import {
   resolveBackendSelectors,
   selectedBackendProject,
 } from './backend-proxy'
-import { mapCentralApiToBackend, type MappedBackendRoute } from './backend-route'
+import { type MappedBackendRoute, mapCentralApiToBackend } from './backend-route'
 import { DirectProjectRegistry } from './direct-projects'
 import { createInProcessBackendDispatch, type InProcessBackendDispatch } from './in-process-backend'
 

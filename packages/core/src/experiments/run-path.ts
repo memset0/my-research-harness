@@ -1,9 +1,9 @@
 import { basename, join, relative, resolve, sep } from 'node:path'
-import { projectFs as fs } from '../project-file-store.js'
 import { discoverRuns } from '../discovery/discover.js'
+import { projectFs as fs } from '../project-file-store.js'
+import type { ProjectConfig } from '../types.js'
 import { listExperimentPaths } from './discover.js'
 import { parseExperimentReadme } from './parse.js'
-import type { ProjectConfig } from '../types.js'
 
 export function isRunPath(value: string): boolean {
   const parts = value.split('/')

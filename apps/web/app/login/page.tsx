@@ -5,15 +5,15 @@
 // the server 302s to `?next` (or `/`). On failure the user lands back here
 // with `?error=1` and the page re-renders with an inline error banner.
 
-import { redirect } from 'next/navigation'
+import { AlertCircle } from 'lucide-react'
 import { cookies } from 'next/headers'
-import { getRuntime } from '@/lib/runtime'
-import { SESSION_COOKIE_NAME, verifySessionCookie } from '@/lib/auth/cookies'
+import { redirect } from 'next/navigation'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { AlertCircle } from 'lucide-react'
+import { SESSION_COOKIE_NAME, verifySessionCookie } from '@/lib/auth/cookies'
+import { getRuntime } from '@/lib/runtime'
 
 interface PageProps {
   searchParams: Promise<{ next?: string; error?: string }>

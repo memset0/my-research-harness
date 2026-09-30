@@ -1,14 +1,14 @@
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { applyDigestWikiMigration, verifyDigestWikiMigration } from './digests-to-wiki.js'
 import {
   applyMembershipMigration,
   planMembershipMigration,
   rollbackMembershipMigration,
 } from './v6-to-v7.js'
-import { applyDigestWikiMigration, verifyDigestWikiMigration } from './digests-to-wiki.js'
 
 const roots: string[] = []
 const run = 'trial-260908-120000'

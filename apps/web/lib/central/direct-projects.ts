@@ -16,8 +16,8 @@ import {
   HostIdSchema,
   MEMON_RELEASE,
   MEMON_REVISION,
-  ProjectNameSchema,
   type ProjectConfig,
+  ProjectNameSchema,
 } from '@memon/core'
 import type { DisplayHostAvailability } from './fleet-controller'
 

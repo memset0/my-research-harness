@@ -7,9 +7,9 @@ import {
   ProjectNameSchema,
 } from '@memon/core'
 import type { ApiMethod } from '../server/api-route-manifest'
+import { wikiComponentProjection } from '../server/wiki-route'
 import { normalizeBackendUpstream } from './backend-client'
 import { buildBackendRequestHeaders, buildBrowserResponseHeaders } from './backend-headers'
-import { wikiComponentProjection } from '../server/wiki-route'
 import { type MappedBackendRoute, mapCentralApiToBackend } from './backend-route'
 import {
   type BackendFetch,

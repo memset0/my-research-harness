@@ -2,9 +2,9 @@ import {
   BackendResourceInventoryResponseSchema,
   BackendWikiInventoryResponseSchema,
 } from '@memon/core'
-import type * as ApiModule from '../lib/api'
 import { screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as ApiModule from '../lib/api'
 import { renderWithQuery } from '../test/utils'
 import { TabBadge } from './tab-badge'
 

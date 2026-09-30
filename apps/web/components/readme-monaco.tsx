@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
+import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react'
 
 interface MonacoEditorProps {
   value?: string

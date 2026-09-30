@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { parseGithubPermalink, sliceContext } from './github-permalink.js'
 
 describe('parseGithubPermalink', () => {

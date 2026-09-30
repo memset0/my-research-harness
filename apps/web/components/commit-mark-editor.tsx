@@ -12,12 +12,12 @@
 //     converges back to the persisted note. The parent uses this to
 //     gate commit-switch navigation behind a confirm dialog.
 
-import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { deleteCommitMark, setCommitMark, type CommitMark, type CommitMarkStatus } from '../lib/api'
+import { useEffect, useState } from 'react'
+import { type CommitMark, type CommitMarkStatus, deleteCommitMark, setCommitMark } from '../lib/api'
+import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
-import { cn } from '../lib/utils'
 
 export interface CommitMarkEditorProps {
   project: string

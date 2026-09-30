@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FS_CONVENTION_VERSION, writeFsVersion } from '@memon/core'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { inspectFsVersion, runFsVersionCheck } from './fs-version-check.js'
 
 let projectRoot: string

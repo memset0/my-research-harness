@@ -45,10 +45,10 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomBytes } from 'node:crypto'
-import { type Dirent, type PathLike, promises as nodeFs, type Stats } from 'node:fs'
+import { type Dirent, promises as nodeFs, type PathLike, type Stats } from 'node:fs'
+import type * as FsPromisesModule from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type * as FsPromisesModule from 'node:fs/promises'
 import { LRUCache } from 'lru-cache'
 import { invalidateGitOperations } from './git/command.js'
 import {
@@ -56,8 +56,8 @@ import {
   isWithinPath,
   type MountIdentity,
   readMountTable,
-  sameMountIdentity,
   SSHFS_FS_TYPE,
+  sameMountIdentity,
 } from './mount-table.js'
 import {
   getProjectFileCache,

@@ -10,7 +10,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { implicitCwdProject } from '../config/load.js'
-import { DEFAULT_GIT_STATUS, DEFAULT_POLL, DEFAULT_SLURM, type Config } from '../types.js'
+import { type Config, DEFAULT_GIT_STATUS, DEFAULT_POLL, DEFAULT_SLURM } from '../types.js'
 
 export class CliContextError extends Error {
   constructor(

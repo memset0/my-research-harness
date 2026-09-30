@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect, type ComponentType, type ReactNode } from 'react'
+import { type ComponentType, type ReactNode, useEffect } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('@monaco-editor/react', () => ({

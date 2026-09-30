@@ -3,10 +3,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
-import { runComponents, type ComponentRunResult } from '../../lib/api'
+import { type ComponentRunResult, runComponents } from '../../lib/api'
 import type { ComponentBlockContext } from '../../lib/components/types'
-import { Button } from '../ui/button'
 import { useIsOwner } from '../session-provider'
+import { Button } from '../ui/button'
 import { componentCacheQueryKey } from './cache'
 
 type RecomputeState =

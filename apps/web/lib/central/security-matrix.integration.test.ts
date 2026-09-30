@@ -9,8 +9,8 @@ import {
   BACKEND_API_MAJOR,
   type BackendCapabilities,
   type BackendMetadata,
-  MEMON_RELEASE,
   type CentralConfig,
+  MEMON_RELEASE,
   resolveProjectResource,
 } from '@memon/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'

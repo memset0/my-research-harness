@@ -34,13 +34,13 @@ import {
 } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
+import { formatIsoLocal } from '../time.js'
 import {
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_STATUS_VALUES,
   RUN_DIR_REGEX,
   STATUS_VALUES,
 } from '../types.js'
-import { formatIsoLocal } from '../time.js'
 
 /** Bumped when the on-disk receipt shape changes incompatibly. */
 export const JOURNAL_INVOCATION_RECORD_VERSION = 1

@@ -6,8 +6,8 @@ import { unified } from 'unified'
 import { resolveComponentBlock } from '../components/registry'
 import {
   literalSegment,
-  segmentMarkdownTree,
   type ProseNode,
+  segmentMarkdownTree,
   type TranslationSegment,
 } from './segments'
 import type { TranslationSource } from './sources'

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resolveBareArtifactReference, resolveArtifactMarkdownHref } from './artifact-links'
+import { describe, expect, it } from 'vitest'
+import { resolveArtifactMarkdownHref, resolveBareArtifactReference } from './artifact-links'
 import { API_ROUTE_MANIFEST } from './server/api-route-manifest'
 import { wikiKinds } from './wiki-kinds'
 

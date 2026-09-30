@@ -16,13 +16,13 @@ import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { TranslationText, useBodyTranslation } from './body-translation'
 import {
+  type ProseNode,
   removeGeneratedAutolinks,
   segmentMarkdownTree,
-  type ProseNode,
   type TranslationSegment,
 } from '../lib/translation/segments'
+import { TranslationText, useBodyTranslation } from './body-translation'
 import 'katex/dist/katex.min.css'
 import type { ProjectTarget } from '../lib/api'
 import {
@@ -31,17 +31,17 @@ import {
   resolveArtifactMarkdownHref,
   resolveBareArtifactReference,
 } from '../lib/artifact-links'
+import { type ResolvedBlock, resolveComponentBlock } from '../lib/components/registry'
+import type { ComponentDocumentRef } from '../lib/components/types'
 import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
 import { markdownHeadingSlug, normalizeHeadingIdPrefix } from '../lib/markdown-outline'
 import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
 import { handleFragmentClick } from '../lib/scroll-to-fragment'
 import { cn } from '../lib/utils'
-import { resolveComponentBlock, type ResolvedBlock } from '../lib/components/registry'
-import type { ComponentDocumentRef } from '../lib/components/types'
 import { replaceWorkspaceHistory } from '../lib/workspace-history'
+import { ComponentBlockView } from './components'
 import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
 import { ReportHtmlEmbed } from './report-html-embed'
-import { ComponentBlockView } from './components'
 
 export type MarkdownArtifactSourceSurface = ArtifactSourceSurface
 

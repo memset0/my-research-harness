@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { containingMount, NETWORK_FS_TYPES, readMountTable } from './mount-table.js'
 import {
   configureProjectFileCache,
-  getProjectFileCache,
   DEFAULT_DOCUMENT_TTL_MS,
   DEFAULT_DUMP_INTERVAL_MS,
   DEFAULT_WIKI_TTL_MS,
+  getProjectFileCache,
   type PersistedObservation,
   ProjectFileCache,
   projectFileTtlMs,

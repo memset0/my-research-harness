@@ -10,7 +10,7 @@
  */
 
 import { parseComponentDeclaration } from './declaration'
-import { scanFencedBlocks, type FencedBlock } from './fence'
+import { type FencedBlock, scanFencedBlocks } from './fence'
 
 export class BlockRewriteError extends Error {
   constructor(message: string) {

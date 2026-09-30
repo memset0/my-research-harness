@@ -1,20 +1,20 @@
-export { readShares } from './read.js'
-export { writeShares } from './write.js'
 export {
+  type AddShareOptions,
   addShare,
-  revokeShare,
-  validateShare,
   listShares,
   parseDuration,
-  type AddShareOptions,
   type RevokeShareOptions,
+  revokeShare,
+  validateShare,
 } from './manage.js'
 export { resolveSharesFilePath } from './paths.js'
+export { readShares } from './read.js'
 export {
   AmbiguousShareError,
   emptySharesFile,
   ShareNotFoundError,
-  ShareStoreError,
   type ShareRecord,
+  ShareStoreError,
   type SharesFile,
 } from './types.js'
+export { writeShares } from './write.js'

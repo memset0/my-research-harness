@@ -1,8 +1,8 @@
 'use client'
 
 import { usePathname, useSearchParams } from 'next/navigation'
-import type { ProjectTarget } from '../lib/api'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ProjectTarget } from '../lib/api'
 import {
   moveReportWorkspaceUrl,
   parseReportWorkspaceUrl,

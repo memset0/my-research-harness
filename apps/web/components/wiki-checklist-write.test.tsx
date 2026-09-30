@@ -29,8 +29,8 @@ vi.mock('./body-translation', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-import { ApiError, putWikiPage } from '../lib/api'
 import { toast } from 'sonner'
+import { ApiError, putWikiPage } from '../lib/api'
 
 const content = [
   '---',

@@ -19,22 +19,22 @@
 //         affordance for an isolated archived bucket.
 //       * checked → archived + active interleaved in a single sort.
 
-import Link from 'next/link'
-import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, Pencil } from 'lucide-react'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import {
-  fetchExperimentDocs,
   type ExperimentDocSummary,
+  fetchExperimentDocs,
+  type ProjectTarget,
   projectHost,
   projectName,
   projectQueryKey,
-  type ProjectTarget,
 } from '../lib/api'
+import { cn } from '../lib/utils'
+import { ExperimentStatusPill } from './status-pill'
 import { Badge } from './ui/badge'
 import { Checkbox } from './ui/checkbox'
-import { ExperimentStatusPill } from './status-pill'
-import { cn } from '../lib/utils'
 
 const STORAGE_KEY_SHOW_ARCHIVED = (project: ProjectTarget) =>
   `memon:list:${projectQueryKey(project).join(':')}:show-archived`

@@ -5,7 +5,7 @@
 // Poller on top to keep the index fresh in long-running mode. CLI commands
 // are short-lived and just snapshot the filesystem.
 
-import { RunIndex, discoverRuns, readRunDir, type Config } from '@memon/core'
+import { type Config, discoverRuns, RunIndex, readRunDir } from '@memon/core'
 
 export interface BuildIndexOptions {
   /** Restrict to a single project by name. */

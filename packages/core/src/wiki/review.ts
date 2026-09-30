@@ -38,20 +38,20 @@
 // mistaken for a clean, fully verified wiki.
 
 import { execFile } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { dirname as posixDirname, join as posixJoin } from 'node:path/posix'
 import {
   cachedGitCommand,
-  gitCommandStdoutText,
-  isGitCommandFailure,
-  toGitExecFailure,
   type GitCommandResult,
   type GitCommandRunner,
   type GitExecFailure,
+  gitCommandStdoutText,
+  isGitCommandFailure,
+  toGitExecFailure,
 } from '../git/command.js'
 import { projectFs } from '../project-file-store.js'
-import { dirname as posixDirname, join as posixJoin } from 'node:path/posix'
-import { dirname, join } from 'node:path'
 import { formatIsoLocal } from '../time.js'
-import { WIKI_DIR_RELPATH, type ReviewState, type WikiReview } from './types.js'
+import { type ReviewState, WIKI_DIR_RELPATH, type WikiReview } from './types.js'
 
 // The review store is project content: reads and writes go through the shared
 // project file facade so they are cached, scheduled and read-only aware.

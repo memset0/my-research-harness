@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { parseWikiKindRegistry } from '../packages/core/dist/wiki/kind-registry.js'
 import { renderWikiKindGuidance } from '../packages/core/dist/wiki/kind-guidance.js'
+import { parseWikiKindRegistry } from '../packages/core/dist/wiki/kind-registry.js'
 
 const source = new URL('../packages/core/src/wiki/kinds.json', import.meta.url)
 const target = new URL('../packages/skills/memon-wiki/references/page-kinds.md', import.meta.url)

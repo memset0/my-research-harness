@@ -8,9 +8,8 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
 import { parseWikiFrontmatter } from '@memon/core'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   runWikiBacklinks,
@@ -18,8 +17,8 @@ import {
   runWikiCreate,
   runWikiDelete,
   runWikiDeprecate,
-  runWikiLint,
   runWikiKinds,
+  runWikiLint,
   runWikiLs,
   runWikiMigrateReport,
   runWikiMove,

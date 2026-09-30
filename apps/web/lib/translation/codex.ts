@@ -1,6 +1,6 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { access, mkdtemp, rm, stat } from 'node:fs/promises'
+import { type ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process'
 import { constants } from 'node:fs'
+import { access, mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'

@@ -8,10 +8,10 @@
 
 import {
   cachedGitCommand,
+  type GitCommandRunner,
   gitCommandStdoutText,
   isGitCommandFailure,
   toGitExecFailure,
-  type GitCommandRunner,
 } from './command.js'
 
 const DEFAULT_TIMEOUT_MS = 5000

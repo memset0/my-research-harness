@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { type Config, DEFAULT_GIT_STATUS } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_GIT_STATUS, type Config } from '@memon/core'
 import { buildIndex } from './index-builder.js'
 
 let root: string

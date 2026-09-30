@@ -18,12 +18,12 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  type ChartConfig,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from '../../../../components/ui/chart'
 import type { DatatablePlotView } from './index'
 import type { PlotModel, PlotPoint, ScatterModel, ScatterPoint } from './series'

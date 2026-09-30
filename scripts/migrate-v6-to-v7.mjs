@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
-  planMembershipMigration,
   applyMembershipMigration,
+  planMembershipMigration,
   rollbackMembershipMigration,
 } from '../packages/core/dist/index.js'
 

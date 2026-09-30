@@ -20,7 +20,7 @@ import { isArchivedSidecar } from './archive.js'
 
 // Re-export for back-compat with code that imported the constant from
 // discover.ts (the canonical home is now archive.ts).
-export { ARCHIVED_SIDECAR, isArchivedSidecar, isArchived } from './archive.js'
+export { ARCHIVED_SIDECAR, isArchived, isArchivedSidecar } from './archive.js'
 
 /**
  * Ceiling on concurrent directory listings during the Run walk. Matches

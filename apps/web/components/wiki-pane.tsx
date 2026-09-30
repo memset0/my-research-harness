@@ -15,8 +15,8 @@ import {
   projectWebPath,
   type WikiListItem,
 } from '../lib/api'
-import { switchWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { cn } from '../lib/utils'
+import { switchWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { ListSkeleton } from './skeletons'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'

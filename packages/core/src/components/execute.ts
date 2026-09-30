@@ -20,7 +20,7 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { COMPONENT_LATEST_VERSION } from '../wiki/component-names.generated.js'
 import { parseWikiComponentBlocks } from '../wiki/components.js'
 import { canonicalJson, componentAssetsDir, writeComponentCache } from './cache.js'
-import { derivePayload, executableFunctionName, type ExecutableSpec } from './payload.js'
+import { derivePayload, type ExecutableSpec, executableFunctionName } from './payload.js'
 
 export const COMPONENT_RUN_DEFAULT_PYTHON = 'python3'
 export const COMPONENT_RUN_DEFAULT_TIMEOUT_MS = 120_000

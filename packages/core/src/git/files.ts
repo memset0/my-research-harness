@@ -5,17 +5,17 @@
 // `readGitFileContents` reads the bytes at a specific side of a diff (HEAD,
 // index, or working tree) with a 1024 KB cap and binary detection.
 
+import { resolve, sep } from 'node:path'
+import { projectFs as fs } from '../project-file-store.js'
 import {
   cachedGitCommand,
+  type GitCommandRunner,
+  type GitExecFailure,
   gitCommandStdoutBytes,
   gitCommandStdoutText,
   isGitCommandFailure,
   toGitExecFailure,
-  type GitCommandRunner,
-  type GitExecFailure,
 } from './command.js'
-import { projectFs as fs } from '../project-file-store.js'
-import { resolve, sep } from 'node:path'
 
 export const MAX_DIFF_BYTES = 1024 * 1024
 

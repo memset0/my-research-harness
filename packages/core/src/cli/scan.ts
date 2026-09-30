@@ -7,13 +7,13 @@
 // neither read nor returned here. Callers that want legacy history call
 // `readProjectJournal` explicitly.
 
-import { projectFs as fs } from '../project-file-store.js'
 import { join, resolve } from 'node:path'
 import { discoverRuns, runArchivedFromRun } from '../discovery/discover.js'
-import { readRunDir } from '../discovery/read.js'
 import { matchesRunDeprecationFilter } from '../discovery/index.js'
+import { readRunDir } from '../discovery/read.js'
 import { isStaleRunning } from '../discovery/stale.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
+import { projectFs as fs } from '../project-file-store.js'
 import type { ParsedHypotheses, Run } from '../types.js'
 
 export interface IndexedRun extends Run {

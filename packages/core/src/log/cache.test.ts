@@ -2,8 +2,8 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LineIndex } from './line-index.js'
 import { loadCache, saveCache } from './cache.js'
+import { LineIndex } from './line-index.js'
 
 let workDir: string
 let cacheDir: string

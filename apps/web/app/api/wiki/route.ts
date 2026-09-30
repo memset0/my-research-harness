@@ -7,8 +7,8 @@
 import { BackendWikiInventoryResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '../../../lib/runtime'
-import { wikiProjectTarget, wikiSummaryDto } from '../../../lib/server/wiki-route'
 import { standaloneServices } from '../../../lib/server/standalone-services'
+import { wikiProjectTarget, wikiSummaryDto } from '../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'
 

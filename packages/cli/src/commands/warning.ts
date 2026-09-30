@@ -12,10 +12,11 @@
 // All paths use optimistic mtime+hash locking and append a single [WARNING]
 // JOURNAL event per write whose body always includes a `run=<…|null>` token.
 
-import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  type ApplyWarningOpResult,
   appendJournalEvent,
   applyWarningOp,
   discoverExperiments,
@@ -23,10 +24,9 @@ import {
   parseReadme,
   RunTargetIndex,
   WARNING_CATEGORIES,
-  WarningOpError,
-  type ApplyWarningOpResult,
   type Warning,
   type WarningCategory,
+  WarningOpError,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'

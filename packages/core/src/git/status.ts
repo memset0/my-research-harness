@@ -12,11 +12,11 @@
 
 import {
   cachedGitCommand,
+  type GitCommandRunner,
+  type GitExecFailure,
   gitCommandStdoutText,
   isGitCommandFailure,
   toGitExecFailure,
-  type GitCommandRunner,
-  type GitExecFailure,
 } from './command.js'
 
 const DEFAULT_TIMEOUT_MS = 3000

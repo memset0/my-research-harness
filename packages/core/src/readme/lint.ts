@@ -12,8 +12,8 @@
 // Diagnostics use the same shape as `ExperimentDocumentDiagnostic` so one
 // emitter can render both.
 
-import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '../types.js'
 import type { ParseIssue, Run } from '../types.js'
+import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '../types.js'
 
 export interface RunLintDiagnostic {
   code: string

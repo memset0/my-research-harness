@@ -10,7 +10,6 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { fetchWikiBacklinks, type ProjectTarget, projectQueryKey } from '../lib/api'
-import { useWikiPane } from './workspace-pane-provider'
 import { setWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
@@ -21,6 +20,7 @@ import {
   WikiStaleIndicator,
   WikiStatusBadge,
 } from './wiki-page-card'
+import { useWikiPane } from './workspace-pane-provider'
 
 export function ExperimentWikiCitations({
   project,

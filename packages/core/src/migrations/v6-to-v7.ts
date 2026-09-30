@@ -1,19 +1,19 @@
-import { type Dirent, promises as fs } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
+import { type Dirent, promises as fs } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
-import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { isRunPath } from '../experiments/run-path.js'
-import {
-  planDigestWikiMigration,
-  validateDigestWikiMigration,
-  applyDigestWikiMigration,
-  verifyDigestWikiMigration,
-  rollbackDigestWikiMigration,
-  type DigestWikiMigrationPlan,
-} from './digests-to-wiki.js'
+import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { formatIsoLocal } from '../time.js'
+import {
+  applyDigestWikiMigration,
+  type DigestWikiMigrationPlan,
+  planDigestWikiMigration,
+  rollbackDigestWikiMigration,
+  validateDigestWikiMigration,
+  verifyDigestWikiMigration,
+} from './digests-to-wiki.js'
 
 export interface MembershipMigrationPlan {
   version: 1

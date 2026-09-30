@@ -1,5 +1,5 @@
-import { projectFs as fs } from '../project-file-store.js'
 import { dirname } from 'node:path'
+import { projectFs as fs } from '../project-file-store.js'
 import { resolveVersionFilePath } from './paths.js'
 import { validateFsVersionRecord } from './schema.js'
 import type { FsVersionRecord } from './types.js'

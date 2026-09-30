@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { execFileGitCommand, type GitCommandRunner } from '../git/command.js'
 import {
-  WIKI_REVIEW_RELPATH,
   deriveWikiReview,
   isGitWorktree,
   listWikiCommits,
@@ -16,10 +15,11 @@ import {
   removeWikiReviewMark,
   serializeWikiReviewCsv,
   verifiedThroughMark,
+  WIKI_REVIEW_RELPATH,
+  type WikiCommit,
   WikiReviewError,
   WikiReviewOrderError,
   writeWikiReviewMark,
-  type WikiCommit,
 } from './review.js'
 
 const execFileAsync = promisify(execFile)

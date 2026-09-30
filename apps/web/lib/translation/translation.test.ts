@@ -1,9 +1,11 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
+
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import remarkParse from 'remark-parse'
+import { unified } from 'unified'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { isolatedTranslationConfig, TranslationError, translationEnvironment } from './codex'
 import { createTranslationManifest } from './manifest'
 import {
   literalSegment,
@@ -11,9 +13,8 @@ import {
   reconstructTranslation,
   segmentMarkdownTree,
 } from './segments'
-import { sourceRevision, translationSources } from './sources'
 import { BodyTranslationService, validateTranslations } from './service'
-import { TranslationError, isolatedTranslationConfig, translationEnvironment } from './codex'
+import { sourceRevision, translationSources } from './sources'
 
 afterEach(() => {
   vi.useRealTimers()

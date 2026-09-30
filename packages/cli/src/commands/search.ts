@@ -3,9 +3,9 @@
 // JSON output includes per-match snippet excerpts (~120 chars around the
 // first hit per haystack); human output renders a compact table.
 
-import { resolveConfig } from '../lib/resolver.js'
 import { buildIndex } from '../lib/index-builder.js'
-import { emitJson, emitHuman, formatExperimentTable, type OutputFormat } from '../lib/output.js'
+import { emitHuman, emitJson, formatExperimentTable, type OutputFormat } from '../lib/output.js'
+import { resolveConfig } from '../lib/resolver.js'
 
 export interface SearchOptions {
   query: string

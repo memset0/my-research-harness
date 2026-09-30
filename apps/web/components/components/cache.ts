@@ -1,8 +1,8 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { cacheFileUrl, componentAssetsDir } from '../../lib/components/urls'
 import type { ComponentDocumentRef } from '../../lib/components/types'
+import { cacheFileUrl, componentAssetsDir } from '../../lib/components/urls'
 
 export type ComponentCacheState =
   | { phase: 'loading' }

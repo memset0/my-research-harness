@@ -4,7 +4,6 @@ import { pipeline } from 'node:stream/promises'
 import { TextDecoder } from 'node:util'
 import {
   AmbiguousShareError,
-  JournalRecordingError,
   BACKEND_API_MAJOR,
   BackendAnomaliesResponseSchema,
   BackendArchiveMutationRequestSchema,
@@ -56,8 +55,8 @@ import {
   BackendReadmeMutationResponseSchema,
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
-  BackendResourceInventoryResponseSchema,
   BackendReportsResponseSchema,
+  BackendResourceInventoryResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
   BackendRunsResponseSchema,
@@ -84,6 +83,7 @@ import {
   BackendWikiWriteResponseSchema,
   HostIdSchema,
   InstanceEpochSchema,
+  JournalRecordingError,
   MEMON_RELEASE,
   MEMON_REVISION,
   ProjectNameSchema,

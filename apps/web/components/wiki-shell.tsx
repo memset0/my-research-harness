@@ -1,6 +1,6 @@
 'use client'
-import { BodyTranslation } from './body-translation'
 import { translationSources } from '../lib/translation/sources'
+import { BodyTranslation } from './body-translation'
 
 // Per-project wiki surface.
 //
@@ -9,12 +9,12 @@ import { translationSources } from '../lib/translation/sources'
 // Mobile: reading surface only, with a FAB that opens the same card list in a
 // right-side Sheet and a full-viewport bottom Sheet for editing.
 
+import type { WikiDiagnostic } from '@memon/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, History, List, PanelLeftClose, PanelLeftOpen, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import type { WikiDiagnostic } from '@memon/core'
 import {
   ApiError,
   fetchWiki,
@@ -28,6 +28,12 @@ import {
   type WikiListItem,
   type WikiPageDetail,
 } from '../lib/api'
+import { setChecklistStatus } from '../lib/components/checklist/v1/update'
+import {
+  type ChecklistToggle,
+  type ChecklistWriteContextValue,
+  ChecklistWriteProvider,
+} from '../lib/components/checklist/v1/write-context'
 import { splitFrontmatter } from '../lib/frontmatter'
 import {
   extractMarkdownOutline,
@@ -40,18 +46,13 @@ import {
   scrollFragmentIntoSurface,
 } from '../lib/scroll-to-fragment'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
-import { setChecklistStatus } from '../lib/components/checklist/v1/update'
 import { cn } from '../lib/utils'
+import { wikiKinds } from '../lib/wiki-kinds'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { FrontmatterPanel } from './frontmatter-panel'
 import { Markdown } from './markdown'
 import { ReadmeMonaco } from './readme-monaco'
 import { ReportHtmlZoomProvider } from './report-html-embed'
-import {
-  ChecklistWriteProvider,
-  type ChecklistToggle,
-  type ChecklistWriteContextValue,
-} from '../lib/components/checklist/v1/write-context'
 import { useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
 import { TimestampLocal } from './timestamp'
@@ -61,6 +62,7 @@ import { Label } from './ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
+import { WikiKindHelp } from './wiki-kind-help'
 import {
   filterWikiPages,
   sortWikiPages,
@@ -73,8 +75,6 @@ import {
   WikiStatusBadge,
 } from './wiki-page-card'
 import { WikiChangesDialog, WikiReviewPanel } from './wiki-review-panel'
-import { WikiKindHelp } from './wiki-kind-help'
-import { wikiKinds } from '../lib/wiki-kinds'
 
 const WIKI_RAIL_PREFERENCE_KEY = 'memon:wiki:rail-open'
 const WIKI_TIMESTAMP_KEYS = ['created_at', 'updated_at', 'date'] as const

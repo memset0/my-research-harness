@@ -1,11 +1,11 @@
-import { promises as fs } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
-import { unified } from 'unified'
 import remarkParse from 'remark-parse'
+import { unified } from 'unified'
+import { formatIsoLocal } from '../time.js'
 import { parseWikiFrontmatter, serializeWikiPage } from '../wiki/frontmatter.js'
 import type { WikiFrontmatter } from '../wiki/types.js'
-import { formatIsoLocal } from '../time.js'
 
 export interface DigestWikiMigrationPlan {
   version: 1

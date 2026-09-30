@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
 
 import { migrateV3ToV4, rewriteV3ExpDoc, rewriteV3RunReadme } from './v3-to-v4.js'
 

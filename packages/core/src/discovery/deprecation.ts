@@ -16,14 +16,14 @@
 // legacy rich README keeps its body verbatim and a minimal record is not
 // promoted into the old narrative layout.
 
-import { projectFs as fs } from '../project-file-store.js'
 import { basename, dirname, join, resolve } from 'node:path'
+import { projectRunPath, resolveRunReference } from '../experiments/run-path.js'
+import { projectFs as fs } from '../project-file-store.js'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { parseReadme } from '../readme/parse.js'
-import { resolveRunReference, projectRunPath } from '../experiments/run-path.js'
-import { discoverRuns } from './discover.js'
 import type { ParsedReadme, Run } from '../types.js'
 import { yamlEngine } from '../yaml-engine.js'
+import { discoverRuns } from './discover.js'
 
 export interface DeprecationResult {
   runDir: string

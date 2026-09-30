@@ -2,9 +2,8 @@
 // keep parsing, and the orthogonal `deprecated` flag survives a round-trip.
 
 import { describe, expect, it } from 'vitest'
-
-import { parseReadme } from './parse.js'
 import { patchRunFrontMatter } from './frontmatter-patch.js'
+import { parseReadme } from './parse.js'
 import { reserializeReadme, serializeMinimalRun } from './serialize.js'
 
 const MINIMAL = `---

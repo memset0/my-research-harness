@@ -2,9 +2,9 @@
 
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { GENERATED_RENDERERS } from '../../lib/components/renderers.generated'
 import { stripHiddenKeys } from '../../lib/components/payload'
-import { validatePayload, type ResolvedBlock } from '../../lib/components/registry'
+import { type ResolvedBlock, validatePayload } from '../../lib/components/registry'
+import { GENERATED_RENDERERS } from '../../lib/components/renderers.generated'
 import type { ComponentBlockContext, ComponentDocumentRef } from '../../lib/components/types'
 import { docAssetUrl } from '../../lib/components/urls'
 import { useComponentCache } from './cache'

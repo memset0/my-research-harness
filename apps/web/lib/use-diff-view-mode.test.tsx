@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
 import { act, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   DIFF_VIEW_EVENT,
   DIFF_VIEW_STORAGE_KEY,
-  useDiffViewMode,
   type DiffViewMode,
+  useDiffViewMode,
 } from './use-diff-view-mode'
 
 function Probe({

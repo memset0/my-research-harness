@@ -10,14 +10,14 @@
 
 import { resolve } from 'node:path'
 import {
-  FS_CONVENTION_VERSION,
   computeFsVersionStatus,
-  readFsVersion,
+  FS_CONVENTION_VERSION,
   type FsVersionStatus,
+  readFsVersion,
 } from '@memon/core'
-import { emitJson, emitHuman, type OutputFormat } from '../lib/output.js'
-import { EXIT } from '../lib/exit-codes.js'
 import { emitGenericAndExit } from '../lib/emit-error.js'
+import { EXIT } from '../lib/exit-codes.js'
+import { emitHuman, emitJson, type OutputFormat } from '../lib/output.js'
 
 export interface FsVersionCheckInput {
   projectRoot?: string

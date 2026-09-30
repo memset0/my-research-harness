@@ -5,8 +5,8 @@
 // unmarked commits (the dot is invisible in that case).
 
 import type { CommitMark, CommitMarkStatus } from '../lib/api'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 import { cn } from '../lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 export interface CommitMarkBadgeProps {
   mark?: CommitMark | null

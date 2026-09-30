@@ -7,8 +7,8 @@
 //   - nested task lists (2-space indent under a parent) render as
 //     additional checkbox inputs at deeper DOM depth
 
-import { describe, expect, it } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 import { Markdown } from '../../components/markdown'
 
 describe('Markdown — GFM task list rendering', () => {

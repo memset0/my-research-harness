@@ -6,8 +6,8 @@ import {
   parseWarningsBody,
   serializeWarningRow,
   WARNING_CATEGORIES,
-  WarningOpError,
   type Warning,
+  WarningOpError,
 } from './warnings.js'
 
 const SAMPLE_README = `---

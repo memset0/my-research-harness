@@ -1,7 +1,7 @@
 'use client'
 
-import { CircleHelp } from 'lucide-react'
 import type { WikiKindDefinition } from '@memon/core'
+import { CircleHelp } from 'lucide-react'
 import { wikiKinds } from '../lib/wiki-kinds'
 import { Button } from './ui/button'
 import {

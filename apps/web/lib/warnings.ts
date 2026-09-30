@@ -4,24 +4,24 @@
 // optimistic-locking + JOURNAL-event + path-safety conventions, so the
 // route handlers stay thin.
 
-import { promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  type ApplyWarningOpResult,
   appendJournalEvent,
   applyWarningOp,
   generateRowId,
   parseReadme,
   readRunDir,
   WARNING_CATEGORIES,
-  WarningOpError,
-  type ApplyWarningOpResult,
   type Warning,
   type WarningCategory,
   type WarningOp,
+  WarningOpError,
 } from '@memon/core'
+import { assertWithinProjectRoots, PathSafetyError } from './path-safety'
 import type { Runtime } from './runtime'
-import { PathSafetyError, assertWithinProjectRoots } from './path-safety'
 
 export class WarningHttpError extends Error {
   constructor(

@@ -25,10 +25,10 @@
 //     and call `setWidthPx` directly since they're discrete commits.
 
 import * as React from 'react'
-import { useSidebar } from './ui/sidebar'
 import { useIsMobile } from '../hooks/use-mobile'
 import { DEFAULT_PX, MAX_PX, MIN_PX, useSidebarWidth } from '../hooks/use-sidebar-width'
 import { cn } from '../lib/utils'
+import { useSidebar } from './ui/sidebar'
 
 const KB_STEP = 16
 const KB_STEP_LARGE = 64

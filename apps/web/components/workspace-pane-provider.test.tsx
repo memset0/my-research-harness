@@ -63,7 +63,7 @@ vi.mock('./wiki-pane', () => ({
   ),
 }))
 
-import { WorkspacePaneProvider, useWikiPane, WorkspaceSplitOutlet } from './workspace-pane-provider'
+import { useWikiPane, WorkspacePaneProvider, WorkspaceSplitOutlet } from './workspace-pane-provider'
 
 function setViewport(width: number) {
   Object.defineProperty(window, 'innerWidth', {

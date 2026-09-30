@@ -1,8 +1,8 @@
 // `memon list [--project NAME] [--format json|human]`
 
-import { resolveConfig } from '../lib/resolver.js'
 import { buildIndex } from '../lib/index-builder.js'
-import { emitJson, emitHuman, formatExperimentTable, type OutputFormat } from '../lib/output.js'
+import { emitHuman, emitJson, formatExperimentTable, type OutputFormat } from '../lib/output.js'
+import { resolveConfig } from '../lib/resolver.js'
 
 export interface ListOptions {
   project?: string

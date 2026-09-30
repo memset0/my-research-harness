@@ -9,11 +9,11 @@
 //
 // hasReadme=false is the signal for "no README" — frontend renders a grayed-out card.
 
-import { projectFs as fs } from '../project-file-store.js'
 import { basename, join } from 'node:path'
+import { projectFs as fs } from '../project-file-store.js'
 import { parseReadme } from '../readme/parse.js'
 import { parseTimestampFromRunDir } from '../time.js'
-import type { Run, ParsedReadme } from '../types.js'
+import type { ParsedReadme, Run } from '../types.js'
 
 export async function readRunDir(dirPath: string, projectName: string): Promise<Run> {
   const id = basename(dirPath)

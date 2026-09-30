@@ -2,7 +2,6 @@
 
 import dynamic from 'next/dynamic'
 import { useMemo, useState } from 'react'
-import { cn } from '../../../utils'
 import {
   Select,
   SelectContent,
@@ -19,6 +18,7 @@ import {
   TableRow,
 } from '../../../../components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '../../../../components/ui/tabs'
+import { cn } from '../../../utils'
 import type { ComponentData, ComponentRenderer } from '../../types'
 import type { descriptor } from './index'
 import { buildPlotModel, buildScatterModel, cellLabel, distinctValues, filterRows } from './series'

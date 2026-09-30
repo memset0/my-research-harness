@@ -10,7 +10,7 @@
 
 import yaml from 'js-yaml'
 import { CodeReviewFrontMatterRawSchema } from '../schemas.js'
-import type { CodeReviewFrontMatter, CodeReviewCompletion } from '../types.js'
+import type { CodeReviewCompletion, CodeReviewFrontMatter } from '../types.js'
 
 // Opening `---`, lazy frontmatter capture, closing `---` at line start, then
 // the verbatim body. Tolerates CRLF and a missing trailing newline.

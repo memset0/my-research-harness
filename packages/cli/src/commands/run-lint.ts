@@ -6,7 +6,7 @@
 // like a live one. A minimal v6 Run record (id + status + created_at with a
 // free-form body) is clean input, not a finding.
 
-import { lintRun, readRunDir, RunTargetIndex } from '@memon/core'
+import { lintRun, RunTargetIndex, readRunDir } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitLintDiagnostics, type OutputFormat } from '../lib/output.js'

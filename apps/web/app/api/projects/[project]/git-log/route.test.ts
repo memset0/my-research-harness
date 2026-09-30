@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../../lib/runtime', () => ({
   getRuntime: vi.fn(),
@@ -15,8 +16,8 @@ vi.mock('@memon/core', async (importOriginal) => {
 })
 
 import { readGitLog } from '@memon/core'
-import { GET } from './route'
 import { getRuntime } from '../../../../../lib/runtime'
+import { GET } from './route'
 
 const PAYLOAD = {
   enabled: true as const,
