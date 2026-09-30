@@ -131,9 +131,13 @@ describe('PATCH /api/runs/:id/archive', () => {
 
     const onDisk = await fs.readFile(readmePath, 'utf8')
     expect(onDisk).toMatch(/^archived:\s+true$/m)
-    expect(await readJournalInvocations(root)).toContainEqual(expect.objectContaining({
-      command: 'run archive set', outcome: 'success', parameters: { run: ID, archived: true },
-    }))
+    expect(await readJournalInvocations(root)).toContainEqual(
+      expect.objectContaining({
+        command: 'run archive set',
+        outcome: 'success',
+        parameters: { run: ID, archived: true },
+      }),
+    )
   })
 
   it('returns noop 200 when on-disk archived already matches the target, even on stale expectedMtime', async () => {
@@ -154,9 +158,13 @@ describe('PATCH /api/runs/:id/archive', () => {
     expect(body.archived).toBe(true)
     expect(body.noop).toBe(true)
 
-    expect(await readJournalInvocations(root)).toEqual([expect.objectContaining({
-      command: 'run archive set', outcome: 'noop', parameters: { run: ID, archived: true },
-    })])
+    expect(await readJournalInvocations(root)).toEqual([
+      expect.objectContaining({
+        command: 'run archive set',
+        outcome: 'noop',
+        parameters: { run: ID, archived: true },
+      }),
+    ])
     await expect(fs.readFile(journalPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 

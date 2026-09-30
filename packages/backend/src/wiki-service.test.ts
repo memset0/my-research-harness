@@ -221,11 +221,17 @@ describe('FilesystemDocumentService wiki reads', () => {
     const shared = 'dup-260901-010203'
     for (const root_ of ['logs', 'outputs']) {
       await fs.mkdir(join(root, root_, shared), { recursive: true })
-      await fs.writeFile(join(root, root_, shared, 'README.md'), '---\nid: dup-260901-010203\n---\n\n## Setup\n\ns\n\n## Result\n\nr\n\n## Artifacts\n\n- a\n')
+      await fs.writeFile(
+        join(root, root_, shared, 'README.md'),
+        '---\nid: dup-260901-010203\n---\n\n## Setup\n\ns\n\n## Result\n\nr\n\n## Artifacts\n\n- a\n',
+      )
     }
     await fs.writeFile(
       join(root, 'docs', 'wiki', 'note', 'W0002-beta.md'),
-      NOTE.replace('updated_at: 2026-09-04T10:00:00+08:00', `updated_at: 2026-09-04T10:00:00+08:00\nsources: [${shared}]`),
+      NOTE.replace(
+        'updated_at: 2026-09-04T10:00:00+08:00',
+        `updated_at: 2026-09-04T10:00:00+08:00\nsources: [${shared}]`,
+      ),
     )
     const listed = BackendWikiPagesResponseSchema.parse(await service.listWiki('research'))
     const note = listed.pages.find((page) => page.id === 'W0002')!
@@ -252,14 +258,16 @@ describe('FilesystemDocumentService wiki reads', () => {
         service.getWiki('research', 'W0002'),
       ),
     )
-    await expect.poll(async () => {
-      const refreshed = BackendWikiDocumentSchema.parse(
-        await withProjectFileContext({ ...context, reason: 'automatic' }, () =>
-          service.getWiki('research', 'W0002'),
-        ),
-      )
-      return refreshed.content
-    }).toContain('Changed selected body.')
+    await expect
+      .poll(async () => {
+        const refreshed = BackendWikiDocumentSchema.parse(
+          await withProjectFileContext({ ...context, reason: 'automatic' }, () =>
+            service.getWiki('research', 'W0002'),
+          ),
+        )
+        return refreshed.content
+      })
+      .toContain('Changed selected body.')
     const after = getFileOperationMetrics()
     const counters = (origin: 'human' | 'automatic', metrics = after) =>
       metrics.series

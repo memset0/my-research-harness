@@ -116,7 +116,13 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-function lastJsonStdout(): { ok: boolean; rowId?: string; mtime?: number; hash?: string; warnings?: unknown[] } {
+function lastJsonStdout(): {
+  ok: boolean
+  rowId?: string
+  mtime?: number
+  hash?: string
+  warnings?: unknown[]
+} {
   // emitJson writes one JSON object followed by a single newline; multiple
   // calls separate by newlines. Find the last newline-delimited JSON blob.
   const blob = stdoutChunks.join('')

@@ -36,11 +36,9 @@ export async function GET(request: NextRequest) {
     const inventoryOnly = search.get('inventory') === '1'
     const responses = await Promise.all(
       projects.map((project) =>
-        standaloneServices(runtime.config).projects.listRuns(
-          project.name,
-          deprecationFilter,
-          { inventoryOnly },
-        ),
+        standaloneServices(runtime.config).projects.listRuns(project.name, deprecationFilter, {
+          inventoryOnly,
+        }),
       ),
     )
     if (inventoryOnly) {

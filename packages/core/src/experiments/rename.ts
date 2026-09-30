@@ -27,11 +27,7 @@ export interface RenameExperimentResult {
 
 export class RenameExperimentError extends Error {
   constructor(
-    public code:
-      | 'BAD_REQUEST'
-      | 'NOT_FOUND'
-      | 'EXPERIMENT_SLUG_PREFIX_COLLISION'
-      | 'BAD_STATE',
+    public code: 'BAD_REQUEST' | 'NOT_FOUND' | 'EXPERIMENT_SLUG_PREFIX_COLLISION' | 'BAD_STATE',
     message: string,
     public extra?: Record<string, unknown>,
   ) {
@@ -55,10 +51,7 @@ export async function renameExperiment(
   const now = options.now ?? defaultNowIso
 
   if (!SLUG_RE.test(newSlug)) {
-    throw new RenameExperimentError(
-      'BAD_REQUEST',
-      `new slug "${newSlug}" must match ${SLUG_RE}`,
-    )
+    throw new RenameExperimentError('BAD_REQUEST', `new slug "${newSlug}" must match ${SLUG_RE}`)
   }
   if (TIMESTAMP_TAIL_RE.test(newSlug)) {
     throw new RenameExperimentError(
@@ -111,10 +104,7 @@ export async function renameExperiment(
         { conflictingId: other.id },
       )
     }
-    if (
-      newSlug.startsWith(`${otherSlug}-`) ||
-      otherSlug.startsWith(`${newSlug}-`)
-    ) {
+    if (newSlug.startsWith(`${otherSlug}-`) || otherSlug.startsWith(`${newSlug}-`)) {
       throw new RenameExperimentError(
         'EXPERIMENT_SLUG_PREFIX_COLLISION',
         `slug "${newSlug}" prefix-collides with experiment ${other.id} (slug "${otherSlug}")`,

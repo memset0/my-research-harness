@@ -56,11 +56,9 @@ function buildProgram(action: () => Promise<void>): Command {
   })
 
   const experiment = program.command('experiment')
-  experiment
-    .command('link <exp> <run>')
-    .action(async () => {
-      await action()
-    })
+  experiment.command('link <exp> <run>').action(async () => {
+    await action()
+  })
   experiment.command('ls').action(async () => {
     await action()
   })
@@ -141,9 +139,16 @@ describe('automatic interception', () => {
   it('records one receipt for a mutating command with no per-command code', async () => {
     const program = buildProgram(async () => {})
 
-    await program.parseAsync(
-      ['node', 'memon', '--project-root', root, 'experiment', 'link', 'E0001-foo', 'foo-260901-090000'],
-    )
+    await program.parseAsync([
+      'node',
+      'memon',
+      '--project-root',
+      root,
+      'experiment',
+      'link',
+      'E0001-foo',
+      'foo-260901-090000',
+    ])
 
     const records = await readJournalInvocations(root)
     expect(records).toHaveLength(1)
@@ -207,7 +212,16 @@ describe('automatic interception', () => {
     const program = buildProgram(async () => {})
     const missing = join(root, 'does-not-exist')
 
-    await program.parseAsync(['node', 'memon', '--project-root', missing, 'experiment', 'link', 'a', 'b'])
+    await program.parseAsync([
+      'node',
+      'memon',
+      '--project-root',
+      missing,
+      'experiment',
+      'link',
+      'a',
+      'b',
+    ])
 
     expect(await readJournalInvocations(root)).toEqual([])
     expect(await readJournalInvocations(missing)).toEqual([])

@@ -178,10 +178,12 @@ function payloadMatchesOperation(
   operation: PersistedOperation,
   kind: PersistedPayload['kind'],
 ): boolean {
-  return kind === 'missing' ||
+  return (
+    kind === 'missing' ||
     (kind === 'file' && operation === 'readFile') ||
     (kind === 'dir' && operation === 'readdir') ||
     (kind === 'stat' && (operation === 'stat' || operation === 'lstat'))
+  )
 }
 
 function cacheKey(namespaceId: string, operation: PersistedOperation, path: string): string {
@@ -250,7 +252,8 @@ function normalizedDump(candidate: unknown): CacheDump | null {
 async function prepareLocalDumpPath(path: string): Promise<void> {
   const directory = dirname(path)
   const table = await readMountTable()
-  if (table === null) throw new Error('memon: cannot verify local storage for the project file cache')
+  if (table === null)
+    throw new Error('memon: cannot verify local storage for the project file cache')
   const dumpMount = containingMount(path, table)
   if (dumpMount !== undefined && NETWORK_FS_TYPES[dumpMount.fsType] === true) {
     throw new Error('memon: the project file cache dump must live on local disk')
@@ -461,7 +464,9 @@ export class ProjectFileCache {
       await handle.close()
       handle = null
       await nodeFs.rename(temporary, this.options.dumpPath)
-      const directoryHandle = await nodeFs.open(dirname(this.options.dumpPath), 'r').catch(() => null)
+      const directoryHandle = await nodeFs
+        .open(dirname(this.options.dumpPath), 'r')
+        .catch(() => null)
       if (directoryHandle !== null) {
         await directoryHandle.sync().catch(() => undefined)
         await directoryHandle.close().catch(() => undefined)
@@ -546,8 +551,7 @@ export function configureProjectFileCache(options?: FileCacheOptions): Promise<v
       return
     }
     current.wikiTtlMs = options.wikiTtlMs > 0 ? options.wikiTtlMs : DEFAULT_WIKI_TTL_MS
-    current.defaultTtlMs =
-      options.defaultTtlMs > 0 ? options.defaultTtlMs : DEFAULT_DOCUMENT_TTL_MS
+    current.defaultTtlMs = options.defaultTtlMs > 0 ? options.defaultTtlMs : DEFAULT_DOCUMENT_TTL_MS
     current.cache = await ProjectFileCache.open({
       dumpPath: options.dumpPath,
       dumpIntervalMs: options.dumpIntervalMs,

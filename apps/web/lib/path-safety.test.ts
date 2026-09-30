@@ -22,20 +22,18 @@ describe('assertWithinProjectRoots', () => {
   })
 
   it('throws PathSafetyError for /etc/passwd', () => {
-    expect(() => assertWithinProjectRoots('/etc/passwd', config)).toThrowError(
+    expect(() => assertWithinProjectRoots('/etc/passwd', config)).toThrowError(PathSafetyError)
+  })
+
+  it('throws for sibling directories that share a prefix but not the root', () => {
+    expect(() => assertWithinProjectRoots('/repos/project-a-evil/secret', config)).toThrowError(
       PathSafetyError,
     )
   })
 
-  it('throws for sibling directories that share a prefix but not the root', () => {
-    expect(() =>
-      assertWithinProjectRoots('/repos/project-a-evil/secret', config),
-    ).toThrowError(PathSafetyError)
-  })
-
   it('normalizes ../ traversal attempts', () => {
-    expect(() =>
-      assertWithinProjectRoots('/repos/project-a/../etc/passwd', config),
-    ).toThrowError(PathSafetyError)
+    expect(() => assertWithinProjectRoots('/repos/project-a/../etc/passwd', config)).toThrowError(
+      PathSafetyError,
+    )
   })
 })

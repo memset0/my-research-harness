@@ -314,7 +314,8 @@ function parseWarningRow(
     rowId = synthesiseRowIdForLegacy(created)
     issues.push({
       field: 'warnings.rowId',
-      message: 'WARNINGS_SECTION_NOT_TABLE: row missing trailing <!-- id:w_... --> comment; synthesised',
+      message:
+        'WARNINGS_SECTION_NOT_TABLE: row missing trailing <!-- id:w_... --> comment; synthesised',
       severity: 'warning',
     })
   }
@@ -579,7 +580,8 @@ function insertWarningsSectionLines(lines: string[]): { lines: string[]; range: 
   if (insertAt > 0 && lines[insertAt - 1]!.trim() !== '') prefix.push('')
   const out = [...lines.slice(0, insertAt), ...prefix, ...newSection, ...lines.slice(insertAt)]
   const range = findWarningsSectionRange(out)
-  if (!range) throw new WarningOpError('INTERNAL', 'inserted Warnings section but cannot relocate it')
+  if (!range)
+    throw new WarningOpError('INTERNAL', 'inserted Warnings section but cannot relocate it')
   return { lines: out, range }
 }
 

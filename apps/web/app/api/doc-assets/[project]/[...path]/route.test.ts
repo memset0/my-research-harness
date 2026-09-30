@@ -21,7 +21,10 @@ beforeAll(async () => {
   await fs.mkdir(join(root, 'docs/wiki/note/W0004-x__assets'), { recursive: true })
   await fs.writeFile(join(root, CACHE), '{"__component_id": "fid"}\n', 'utf8')
   await fs.writeFile(join(root, 'docs/wiki/note/diagram.svg'), '<svg/>', 'utf8')
-  await fs.writeFile(join(root, 'docs/wiki/note/W0004-x__assets/rollout.mp4'), Buffer.alloc(4096, 7))
+  await fs.writeFile(
+    join(root, 'docs/wiki/note/W0004-x__assets/rollout.mp4'),
+    Buffer.alloc(4096, 7),
+  )
   await fs.writeFile(join(root, 'config.yml'), 'secret: true\n', 'utf8')
   await fs.writeFile(join(other, 'elsewhere.json'), '{"secret": true}', 'utf8')
   await fs.symlink(join(other, 'elsewhere.json'), join(root, 'docs/wiki/note/leak.json'))
@@ -133,7 +136,9 @@ describe('GET|HEAD document assets', () => {
   })
 
   it('serves a figure video as video/mp4 with byte ranges for seeking', async () => {
-    const partial = await get('docs/wiki/note/W0004-x__assets/rollout.mp4', 'project-a', { range: 'bytes=0-1023' })
+    const partial = await get('docs/wiki/note/W0004-x__assets/rollout.mp4', 'project-a', {
+      range: 'bytes=0-1023',
+    })
     expect(partial.status).toBe(206)
     expect(partial.headers.get('content-type')).toBe('video/mp4')
     expect(partial.headers.get('content-range')).toBe('bytes 0-1023/4096')
@@ -148,7 +153,12 @@ describe('GET|HEAD document assets', () => {
     expect(first.headers.get('content-type')).toBe('image/jpeg')
     expect(await first.text()).toBe('JPEGDATA')
     expect(await ffmpegCalls()).toBe(before + 1)
-    const again = await get(video, 'project-a', { 'if-none-match': first.headers.get('etag') as string }, '?thumbnail=1')
+    const again = await get(
+      video,
+      'project-a',
+      { 'if-none-match': first.headers.get('etag') as string },
+      '?thumbnail=1',
+    )
     expect(again.status).toBe(304)
     expect(await ffmpegCalls()).toBe(before + 1)
     expect(first.headers.get('etag')).not.toBe((await get(video)).headers.get('etag'))
@@ -157,10 +167,17 @@ describe('GET|HEAD document assets', () => {
   it('answers 404 without video bytes when no thumbnail can be extracted', async () => {
     setFfmpeg(join(other, 'missing-ffmpeg'))
     try {
-      const missing = await get('docs/wiki/note/W0004-x__assets/rollout.mp4', 'project-a', undefined, '?thumbnail=1')
+      const missing = await get(
+        'docs/wiki/note/W0004-x__assets/rollout.mp4',
+        'project-a',
+        undefined,
+        '?thumbnail=1',
+      )
       expect(missing.status).toBe(404)
       expect(await missing.json()).toMatchObject({ error: { code: 'THUMBNAIL_UNAVAILABLE' } })
-      expect((await get('docs/wiki/note/diagram.svg', 'project-a', undefined, '?thumbnail=1')).status).toBe(404)
+      expect(
+        (await get('docs/wiki/note/diagram.svg', 'project-a', undefined, '?thumbnail=1')).status,
+      ).toBe(404)
     } finally {
       setFfmpeg(join(other, 'ffmpeg'))
     }

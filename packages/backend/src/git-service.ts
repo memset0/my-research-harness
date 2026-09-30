@@ -167,9 +167,7 @@ export class FilesystemGitService implements BackendGitService {
     const ref = validateRef(input.ref)
     if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1000) invalid()
     return BackendGitLogResponseSchema.parse(
-      redactFailure(
-        await readGitLog(repo.cwd, { ref, limit: input.limit }, { exec: repo.exec }),
-      ),
+      redactFailure(await readGitLog(repo.cwd, { ref, limit: input.limit }, { exec: repo.exec })),
     )
   }
 

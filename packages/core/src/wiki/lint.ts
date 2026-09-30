@@ -7,7 +7,11 @@
 
 import { COMPONENT_TYPES } from './component-names.generated.js'
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
-import { findWikiDeprecatedSections, validateWikiDeprecation, validateWikiEntry } from './deprecation.js'
+import {
+  findWikiDeprecatedSections,
+  validateWikiDeprecation,
+  validateWikiEntry,
+} from './deprecation.js'
 import { wikiStringList } from './frontmatter.js'
 import { getWikiKind, WIKI_RECOMMENDED_SECTIONS } from './kind-registry.js'
 import { wikiSourceKind } from './staleness.js'
@@ -36,14 +40,17 @@ const LIST_ITEM_REGEX = /^ {0,3}(?:[-*+]|\d{1,9}[.)])\s+\S/
 /** `[text](@ref)` link destinations. */
 const LINK_REFERENCE_REGEX = /\]\(\s*@([^)\s]+?)\s*\)/g
 /** Bare `@ref` mentions; the leading guard keeps `mail@example.com` out. */
-const BARE_REFERENCE_REGEX = /(^|[^\w`/@.])@([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?)/g
+const BARE_REFERENCE_REGEX =
+  /(^|[^\w`/@.])@([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?)/g
 const EXPERIMENT_REF_REGEX = /^(E\d{4})(?:-([a-z0-9][a-z0-9-]*))?$/
 const HYPOTHESIS_REF_REGEX = /^H\d{4}$/
 const RUN_REF_REGEX = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
 /** Canonical project-relative Run path, the unambiguous form of a Run reference. */
-const RUN_PATH_REF_REGEX = /^(?:logs|outputs|experiments)\/(?:[^/]+\/)*[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
+const RUN_PATH_REF_REGEX =
+  /^(?:logs|outputs|experiments)\/(?:[^/]+\/)*[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
 /** Any evidence token a `finding` body must carry. */
-const EVIDENCE_TOKEN_REGEX = /\bE\d{4}\b|\bV\d{4}\b|\b[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}\b/
+const EVIDENCE_TOKEN_REGEX =
+  /\bE\d{4}\b|\bV\d{4}\b|\b[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}\b/
 
 /** Artifact ids the `@` reference resolver checks against. */
 export interface WikiArtifactInventory {
@@ -113,7 +120,6 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
   lintMaintenanceRules(page, masked, diagnostics, offset)
   lintSourceSyntax(frontmatter, diagnostics)
 
-
   const deprecation = validateWikiDeprecation(frontmatter?.deprecated)
   diagnostics.push(...deprecation.diagnostics)
   const sections = findWikiDeprecatedSections(page.body, masked)
@@ -129,9 +135,7 @@ export function lintWikiPage(page: WikiLintPage, ctx: WikiLintContext = {}): Wik
   }
 
   const entry = typeof frontmatter?.entry === 'string' ? frontmatter.entry : undefined
-  diagnostics.push(
-    ...validateWikiEntry(entry, { format: page.format, assets: page.assets ?? [] }),
-  )
+  diagnostics.push(...validateWikiEntry(entry, { format: page.format, assets: page.assets ?? [] }))
 
   for (const source of ctx.unresolvedSources ?? []) {
     diagnostics.push({
@@ -345,7 +349,10 @@ function lintStatusAndDates(
         })
       }
     }
-    if (getWikiKind(kind)?.policy.sourcesRequired && wikiStringList(frontmatter?.sources).length === 0) {
+    if (
+      getWikiKind(kind)?.policy.sourcesRequired &&
+      wikiStringList(frontmatter?.sources).length === 0
+    ) {
       diagnostics.push({
         code: 'WIKI_SOURCES_REQUIRED',
         severity: 'error',
@@ -392,7 +399,6 @@ function lintSourceSyntax(
     })
   }
 }
-
 
 function lintLanguage(frontmatter: WikiFrontmatter | null, diagnostics: WikiDiagnostic[]): void {
   const language = frontmatter?.language
@@ -506,13 +512,17 @@ function lintEvidence(
     diagnostics.push({
       code: 'WIKI_CLAIM_WITHOUT_EVIDENCE',
       severity: 'warn',
-      message:
-        `${page.kind} body cites no Experiment, Variant, or run identifier; point the prose at the evidence, not only \`sources\``,
+      message: `${page.kind} body cites no Experiment, Variant, or run identifier; point the prose at the evidence, not only \`sources\``,
       line: offset + 1,
     })
   }
   const review = ctx.review
-  if (review && policy.reviewWarningStatus && frontmatter?.status === policy.reviewWarningStatus && review.state !== 'VERIFIED') {
+  if (
+    review &&
+    policy.reviewWarningStatus &&
+    frontmatter?.status === policy.reviewWarningStatus &&
+    review.state !== 'VERIFIED'
+  ) {
     diagnostics.push({
       code: 'WIKI_UNREVIEWED_VERIFIED',
       severity: 'warn',

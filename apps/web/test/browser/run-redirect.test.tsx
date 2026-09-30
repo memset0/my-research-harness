@@ -69,9 +69,7 @@ describe('LegacyRunRedirect — /r/<run> → /e/<exp>?run=<run>', () => {
     }
 
     expect(caught?.message).toContain('NEXT_REDIRECT')
-    expect(permanentRedirect).toHaveBeenCalledWith(
-      `/p/project-a/e/${EXP_ID}?run=${RUN_ID}`,
-    )
+    expect(permanentRedirect).toHaveBeenCalledWith(`/p/project-a/e/${EXP_ID}?run=${RUN_ID}`)
   })
 
   it('redirects to project list when the run is orphan (experiment=null)', async () => {
@@ -88,9 +86,7 @@ describe('LegacyRunRedirect — /r/<run> → /e/<exp>?run=<run>', () => {
 
     expect(caught?.message).toContain('NEXT_REDIRECT')
     expect(permanentRedirect).toHaveBeenCalledWith('/p/project-a')
-    expect(permanentRedirect).not.toHaveBeenCalledWith(
-      expect.stringContaining(`?run=${RUN_ID}`),
-    )
+    expect(permanentRedirect).not.toHaveBeenCalledWith(expect.stringContaining(`?run=${RUN_ID}`))
   })
 
   it('redirects to project list when the run is unknown', async () => {

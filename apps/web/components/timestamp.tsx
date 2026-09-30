@@ -21,11 +21,12 @@ export function TimestampLocal({
   if (Number.isNaN(d.getTime())) {
     return <span className="font-mono text-xs text-muted-foreground">{value}</span>
   }
-  const formatted = variant === 'long'
-    ? d.toLocaleString()
-    : d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }) +
-      ' ' +
-      d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+  const formatted =
+    variant === 'long'
+      ? d.toLocaleString()
+      : d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }) +
+        ' ' +
+        d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
   return (
     <span className="font-mono text-xs text-foreground/80" title={value}>
       {formatted}

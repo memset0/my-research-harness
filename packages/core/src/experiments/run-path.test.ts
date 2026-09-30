@@ -22,7 +22,14 @@ async function fixture() {
 }
 
 describe('project-relative Run references', () => {
-  it.each(['../logs/x-260908-120000', '/logs/x-260908-120000', 'logs/../x-260908-120000', 'logs//x-260908-120000', 'logs\\x-260908-120000', 'logs/%2f-260908-120000'])('rejects unsafe %s', (path) => {
+  it.each([
+    '../logs/x-260908-120000',
+    '/logs/x-260908-120000',
+    'logs/../x-260908-120000',
+    'logs//x-260908-120000',
+    'logs\\x-260908-120000',
+    'logs/%2f-260908-120000',
+  ])('rejects unsafe %s', (path) => {
     expect(isRunPath(path)).toBe(false)
   })
 

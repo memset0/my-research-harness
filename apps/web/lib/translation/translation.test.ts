@@ -155,8 +155,9 @@ describe('body manifest', () => {
     ])
     expect(manifest.segments.map((item) => item.text)).toEqual(['Visible figure caption'])
     expect(
-      createTranslationManifest([{ format: 'markdown', text: '```yaml figure@1 #bad\nimage: x.svg\n```' }])
-        .segments,
+      createTranslationManifest([
+        { format: 'markdown', text: '```yaml figure@1 #bad\nimage: x.svg\n```' },
+      ]).segments,
     ).toEqual([])
   })
 })
@@ -202,7 +203,12 @@ describe('queue and cache', () => {
       await request
     }
     const before = invoke.mock.calls.length
-    const evicted = service.translate('same', 'zh-CN', [segment('Prose 0')], new AbortController().signal)
+    const evicted = service.translate(
+      'same',
+      'zh-CN',
+      [segment('Prose 0')],
+      new AbortController().signal,
+    )
     await vi.advanceTimersByTimeAsync(150)
     await evicted
     expect(invoke.mock.calls.length).toBe(before + 1)
@@ -227,10 +233,20 @@ describe('queue and cache', () => {
       await vi.advanceTimersByTimeAsync(150)
       await request
     }
-    const cached = await bytes.translate('same', 'zh-CN', [segment('Prose 599')], new AbortController().signal)
+    const cached = await bytes.translate(
+      'same',
+      'zh-CN',
+      [segment('Prose 599')],
+      new AbortController().signal,
+    )
     expect(cached[0]?.text).toContain('中')
     expect(large).toHaveBeenCalledTimes(100)
-    const byteEvicted = bytes.translate('same', 'zh-CN', [segment('Prose 0')], new AbortController().signal)
+    const byteEvicted = bytes.translate(
+      'same',
+      'zh-CN',
+      [segment('Prose 0')],
+      new AbortController().signal,
+    )
     await vi.advanceTimersByTimeAsync(150)
     await byteEvicted
     expect(large).toHaveBeenCalledTimes(101)
@@ -264,7 +280,8 @@ describe('queue and cache', () => {
     expect((await request)[0]?.text).toBe('Hello world')
     expect(invoke).toHaveBeenCalledTimes(2)
     const controller = new AbortController()
-    const abandoned = service.translate('other', 'zh-CN', [segment()], controller.signal)
+    const abandoned = service
+      .translate('other', 'zh-CN', [segment()], controller.signal)
       .catch((error) => error.code)
     controller.abort()
     expect(await abandoned).toBe('CANCELLED')
@@ -275,13 +292,33 @@ describe('queue and cache', () => {
     vi.useFakeTimers()
     const invoke = vi.fn(echo)
     const service = new BodyTranslationService(invoke)
-    const first = service.translate('project-a/revision-a', 'zh-CN', [segment()], new AbortController().signal)
-    const second = service.translate('project-a/revision-a', 'zh-CN', [segment()], new AbortController().signal)
+    const first = service.translate(
+      'project-a/revision-a',
+      'zh-CN',
+      [segment()],
+      new AbortController().signal,
+    )
+    const second = service.translate(
+      'project-a/revision-a',
+      'zh-CN',
+      [segment()],
+      new AbortController().signal,
+    )
     await vi.advanceTimersByTimeAsync(150)
     expect(await first).toEqual(await second)
-    await service.translate('project-a/revision-a', 'zh-CN', [segment()], new AbortController().signal)
+    await service.translate(
+      'project-a/revision-a',
+      'zh-CN',
+      [segment()],
+      new AbortController().signal,
+    )
     expect(invoke).toHaveBeenCalledTimes(1)
-    const changed = service.translate('project-a/revision-b', 'zh-CN', [segment()], new AbortController().signal)
+    const changed = service.translate(
+      'project-a/revision-b',
+      'zh-CN',
+      [segment()],
+      new AbortController().signal,
+    )
     await vi.advanceTimersByTimeAsync(150)
     await changed
     expect(invoke).toHaveBeenCalledTimes(2)
@@ -298,8 +335,12 @@ describe('queue and cache', () => {
     })
     const first = new AbortController()
     const second = new AbortController()
-    const one = service.translate('same', 'zh-CN', [segment()], first.signal).catch((error) => error.code)
-    const two = service.translate('same', 'zh-CN', [segment()], second.signal).catch((error) => error.code)
+    const one = service
+      .translate('same', 'zh-CN', [segment()], first.signal)
+      .catch((error) => error.code)
+    const two = service
+      .translate('same', 'zh-CN', [segment()], second.signal)
+      .catch((error) => error.code)
     await vi.advanceTimersByTimeAsync(150)
     first.abort()
     expect(await one).toBe('CANCELLED')

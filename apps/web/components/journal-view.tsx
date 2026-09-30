@@ -19,14 +19,7 @@ import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 
 function TagBadge({ tag }: { tag: string }) {
   switch (tag) {
@@ -136,8 +129,8 @@ function InvocationLedger({ project }: { project: ProjectTarget }) {
       </Table>
       {data && data.unreadableReceipts.length > 0 ? (
         <p className="pt-3 text-xs text-destructive">
-          {data.unreadableReceipts.length} receipt file(s) could not be decoded and are omitted
-          from this list.
+          {data.unreadableReceipts.length} receipt file(s) could not be decoded and are omitted from
+          this list.
         </p>
       ) : null}
     </>
@@ -183,8 +176,8 @@ export function JournalView({ project }: { project: ProjectTarget }) {
             <CardTitle>Journal</CardTitle>
             <Badge variant="outline">read-only diagnostics</Badge>
             <span className="text-xs text-muted-foreground">
-              Operation history, not research knowledge. Questions, decisions and findings belong
-              in Wiki and Experiment documents.
+              Operation history, not research knowledge. Questions, decisions and findings belong in
+              Wiki and Experiment documents.
             </span>
           </div>
         </CardHeader>

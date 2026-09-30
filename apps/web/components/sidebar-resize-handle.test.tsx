@@ -59,23 +59,17 @@ describe('SidebarResizeHandle', () => {
   it('returns null on mobile viewports (< 768px)', () => {
     setViewport(500)
     const { container } = renderInProvider(true)
-    expect(
-      container.querySelector('[data-slot="sidebar-resize-handle"]'),
-    ).toBeNull()
+    expect(container.querySelector('[data-slot="sidebar-resize-handle"]')).toBeNull()
   })
 
   it('returns null when sidebar is collapsed', () => {
     const { container } = renderInProvider(false)
-    expect(
-      container.querySelector('[data-slot="sidebar-resize-handle"]'),
-    ).toBeNull()
+    expect(container.querySelector('[data-slot="sidebar-resize-handle"]')).toBeNull()
   })
 
   it('ArrowRight increments width by 16 and persists', () => {
     const { container } = renderInProvider(true)
-    const handle = container.querySelector(
-      '[data-slot="sidebar-resize-handle"]',
-    ) as HTMLElement
+    const handle = container.querySelector('[data-slot="sidebar-resize-handle"]') as HTMLElement
     expect(handle).not.toBeNull()
     // Starts at DEFAULT_PX = 256
     fireEvent.keyDown(handle, { key: 'ArrowRight' })
@@ -86,18 +80,14 @@ describe('SidebarResizeHandle', () => {
 
   it('ArrowLeft decrements width by 16 and persists', () => {
     const { container } = renderInProvider(true)
-    const handle = container.querySelector(
-      '[data-slot="sidebar-resize-handle"]',
-    ) as HTMLElement
+    const handle = container.querySelector('[data-slot="sidebar-resize-handle"]') as HTMLElement
     fireEvent.keyDown(handle, { key: 'ArrowLeft' })
     expect(localStorage.getItem(STORAGE_KEY)).toBe('240')
   })
 
   it('Shift+ArrowRight takes a 64px step', () => {
     const { container } = renderInProvider(true)
-    const handle = container.querySelector(
-      '[data-slot="sidebar-resize-handle"]',
-    ) as HTMLElement
+    const handle = container.querySelector('[data-slot="sidebar-resize-handle"]') as HTMLElement
     fireEvent.keyDown(handle, { key: 'ArrowRight', shiftKey: true })
     expect(localStorage.getItem(STORAGE_KEY)).toBe('320')
   })
@@ -106,9 +96,7 @@ describe('SidebarResizeHandle', () => {
     // Pre-seed near the max so a single shift+arrow blows past it.
     localStorage.setItem(STORAGE_KEY, '370')
     const { container } = renderInProvider(true)
-    const handle = container.querySelector(
-      '[data-slot="sidebar-resize-handle"]',
-    ) as HTMLElement
+    const handle = container.querySelector('[data-slot="sidebar-resize-handle"]') as HTMLElement
     // After mount + hydration the handle's hook reads 370. Shift+arrow
     // would otherwise yield 434; expect clamp to 384.
     fireEvent.keyDown(handle, { key: 'ArrowRight', shiftKey: true })
@@ -118,9 +106,7 @@ describe('SidebarResizeHandle', () => {
   it('clamps at MIN_PX when arrowing past the lower bound', () => {
     localStorage.setItem(STORAGE_KEY, '200')
     const { container } = renderInProvider(true)
-    const handle = container.querySelector(
-      '[data-slot="sidebar-resize-handle"]',
-    ) as HTMLElement
+    const handle = container.querySelector('[data-slot="sidebar-resize-handle"]') as HTMLElement
     fireEvent.keyDown(handle, { key: 'ArrowLeft', shiftKey: true })
     expect(localStorage.getItem(STORAGE_KEY)).toBe('192')
   })

@@ -139,10 +139,7 @@ describe('FilesystemProjectService safe reads', () => {
       ])
       await Promise.all([
         fs.symlink('README.md', join(root, 'logs', runId, 'README.md')),
-        fs.symlink(
-          'README.md',
-          join(root, 'docs', 'experiments', experimentId, 'README.md'),
-        ),
+        fs.symlink('README.md', join(root, 'docs', 'experiments', experimentId, 'README.md')),
       ])
       const service = new FilesystemProjectService([
         { name: 'inventory', root, include: [], exclude: [] },
@@ -205,10 +202,7 @@ describe('FilesystemProjectService safe reads', () => {
   it('keeps Run lookup and Experiment eligibility inventories behind automatic priority', async () => {
     const storageGroup = `detail-inventories-${process.pid}`
     const service = new FilesystemProjectService([project('project-a')])
-    const activity = (
-      metrics: FileOperationMetrics,
-      origin: 'human' | 'automatic',
-    ) =>
+    const activity = (metrics: FileOperationMetrics, origin: 'human' | 'automatic') =>
       metrics.series
         .filter((series) => series.storageGroup === storageGroup && series.origin === origin)
         .reduce((total, series) => total + series.samples + series.cacheHits, 0)

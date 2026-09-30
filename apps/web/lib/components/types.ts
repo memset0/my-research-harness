@@ -42,7 +42,8 @@ export interface ComponentDescriptor<Shape extends ZodRawShape = ZodRawShape> {
   fixtures: readonly string[]
 }
 
-export type ComponentData<D> = D extends ComponentDescriptor<infer S> ? z.infer<ZodObject<S>> : never
+export type ComponentData<D> =
+  D extends ComponentDescriptor<infer S> ? z.infer<ZodObject<S>> : never
 
 /** Identity of the containing document, when the surface knows it. */
 export interface ComponentDocumentRef {

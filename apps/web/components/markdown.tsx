@@ -32,10 +32,7 @@ import {
   resolveBareArtifactReference,
 } from '../lib/artifact-links'
 import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
-import {
-  markdownHeadingSlug,
-  normalizeHeadingIdPrefix,
-} from '../lib/markdown-outline'
+import { markdownHeadingSlug, normalizeHeadingIdPrefix } from '../lib/markdown-outline'
 import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
 import { handleFragmentClick } from '../lib/scroll-to-fragment'
 import { cn } from '../lib/utils'
@@ -174,11 +171,14 @@ export function Markdown({
   const translationSegments = useMemo(() => new Map<string, TranslationSegment>(), [children])
   const translationEnabled = translation !== null
   const translationPlugin = useMemo(
-    () => translationEnabled ? () => (tree: ProseNode) => {
-      for (const segment of segmentMarkdownTree(tree, children, true)) {
-        translationSegments.set(segment.id, segment)
-      }
-    } : null,
+    () =>
+      translationEnabled
+        ? () => (tree: ProseNode) => {
+            for (const segment of segmentMarkdownTree(tree, children, true)) {
+              translationSegments.set(segment.id, segment)
+            }
+          }
+        : null,
     [children, translationEnabled, translationSegments],
   )
   const activeArtifactLinks = artifactLinks === undefined ? inheritedArtifactLinks : artifactLinks
@@ -186,23 +186,29 @@ export function Markdown({
     () => ({
       ...BASE_COMPONENTS,
       span: ({ node, children: spanChildren, ...rest }) => {
-        const segment = translationSegments.get(String(node?.properties?.dataMemonTranslation ?? ''))
-        if (segment) return (
-          <TranslationText segment={segment} render={(text) => (
-            <ReactMarkdown
-              skipHtml
-              remarkPlugins={[
-                remarkGfm,
-                remarkMath,
-                () => (tree: ProseNode) => removeGeneratedAutolinks(tree, text),
-              ]}
-              rehypePlugins={[rehypeKatex]}
-              components={{ ...components, p: 'span' }}
-            >
-              {text}
-            </ReactMarkdown>
-          )} />
+        const segment = translationSegments.get(
+          String(node?.properties?.dataMemonTranslation ?? ''),
         )
+        if (segment)
+          return (
+            <TranslationText
+              segment={segment}
+              render={(text) => (
+                <ReactMarkdown
+                  skipHtml
+                  remarkPlugins={[
+                    remarkGfm,
+                    remarkMath,
+                    () => (tree: ProseNode) => removeGeneratedAutolinks(tree, text),
+                  ]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={{ ...components, p: 'span' }}
+                >
+                  {text}
+                </ReactMarkdown>
+              )}
+            />
+          )
         return <span {...rest}>{spanChildren}</span>
       },
       p: ({ node, children: paragraphChildren, ...rest }) => {
@@ -262,7 +268,9 @@ export function Markdown({
         }
 
         const resolvedHref =
-          href && resourceBaseUrl ? (resolveDocumentResourceUrl(resourceBaseUrl, href) ?? href) : href
+          href && resourceBaseUrl
+            ? (resolveDocumentResourceUrl(resourceBaseUrl, href) ?? href)
+            : href
         const external = !!resolvedHref && /^https?:\/\//i.test(resolvedHref)
         const fragment = !!resolvedHref && resolvedHref.startsWith('#')
         return (
@@ -270,7 +278,10 @@ export function Markdown({
             href={resolvedHref}
             {...(external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
             {...(fragment
-              ? { onClick: (event: React.MouseEvent<HTMLAnchorElement>) => handleFragmentClick(event, resolvedHref) }
+              ? {
+                  onClick: (event: React.MouseEvent<HTMLAnchorElement>) =>
+                    handleFragmentClick(event, resolvedHref),
+                }
               : {})}
             {...rest}
           >
@@ -855,10 +866,7 @@ function generatedArtifactTarget(
   const properties = (node as { properties?: Record<string, unknown> } | undefined)?.properties
   const kind = properties?.dataMemonArtifactKind ?? properties?.['data-memon-artifact-kind']
   const id = properties?.dataMemonArtifactId ?? properties?.['data-memon-artifact-id']
-  if (
-    (kind !== 'experiment' && kind !== 'report' && kind !== 'wiki') ||
-    typeof id !== 'string'
-  ) {
+  if ((kind !== 'experiment' && kind !== 'report' && kind !== 'wiki') || typeof id !== 'string') {
     return null
   }
   const resolved = resolveBareArtifactReference(id, inventory)

@@ -86,7 +86,10 @@ export function parseExperimentRefList(text: string): {
   return { experiments, runs }
 }
 const EMOJI_TO_STATUS: Record<string, HypothesisStatus> = Object.fromEntries(
-  Object.entries(HYPOTHESIS_STATUS_EMOJI).map(([status, emoji]) => [emoji, status as HypothesisStatus]),
+  Object.entries(HYPOTHESIS_STATUS_EMOJI).map(([status, emoji]) => [
+    emoji,
+    status as HypothesisStatus,
+  ]),
 )
 const VALID_STATUS_TEXT = new Set<string>(HYPOTHESIS_STATUS_VALUES)
 

@@ -45,9 +45,9 @@ describe('loadCliContext', () => {
     const filePath = join(root, 'imafile.txt')
     writeFileSync(filePath, 'hello')
     try {
-      await expect(
-        loadCliContext({ projectRoot: filePath, cwd: '/' }),
-      ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+      await expect(loadCliContext({ projectRoot: filePath, cwd: '/' })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

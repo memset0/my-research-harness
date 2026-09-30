@@ -108,9 +108,9 @@ describe('validateWikiEntry', () => {
   const assets = ['README.md', 'views/dashboard/index.html']
 
   it('accepts a relative entry that exists in the bundle', () => {
-    expect(
-      validateWikiEntry('./views/dashboard/index.html', { format: 'bundle', assets }),
-    ).toEqual([])
+    expect(validateWikiEntry('./views/dashboard/index.html', { format: 'bundle', assets })).toEqual(
+      [],
+    )
   })
 
   it('reports a missing target', () => {

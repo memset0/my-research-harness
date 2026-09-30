@@ -31,7 +31,10 @@ export function createTranslationManifest(sources: TranslationSource[]) {
     segmentMarkdownTree(tree, source.text).forEach(add)
     const captions = (node: ProseNode & { lang?: string; meta?: string }) => {
       if (node.type === 'code' && node.lang && node.meta && node.value) {
-        const block = resolveComponentBlock({ info: `${node.lang} ${node.meta}`, payload: node.value })
+        const block = resolveComponentBlock({
+          info: `${node.lang} ${node.meta}`,
+          payload: node.value,
+        })
         const data = block?.type === 'figure' ? block.data : null
         if (data && typeof data.caption === 'string') add(literalSegment(data.caption))
       }

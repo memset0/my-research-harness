@@ -143,9 +143,7 @@ export async function getReport(project: string, id: string): Promise<FullReport
 
 export async function getWikiList(project: string): Promise<{ pages: WikiListItem[] }> {
   const rt = await getRuntime()
-  const pages = rt.wikiCache
-    .getWikiList(project)
-    .map((summary) => wikiSummaryDto(project, summary))
+  const pages = rt.wikiCache.getWikiList(project).map((summary) => wikiSummaryDto(project, summary))
   return { pages }
 }
 

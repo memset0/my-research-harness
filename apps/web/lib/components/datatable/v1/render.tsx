@@ -47,7 +47,10 @@ export const Render: ComponentRenderer<Datatable> = ({ data, block }) => {
       data-component={`datatable@${block.version}`}
     >
       {data.views.length > 1 && (
-        <div className="flex flex-wrap gap-1 border-b bg-muted/30 px-3 py-2" data-datatable-views="">
+        <div
+          className="flex flex-wrap gap-1 border-b bg-muted/30 px-3 py-2"
+          data-datatable-views=""
+        >
           {data.views.map((candidate, index) => (
             <button
               // Views have no identity beyond their position in the payload.
@@ -112,7 +115,12 @@ function DatatableTable({ data, view }: { data: Datatable; view: TableView }) {
     filters.filter((filter) => filter.default).map((filter) => filter.label),
   )
   const rows = useMemo(
-    () => filterRows(data.columns, data.data, filters.filter((filter) => activeLabels.includes(filter.label))),
+    () =>
+      filterRows(
+        data.columns,
+        data.data,
+        filters.filter((filter) => activeLabels.includes(filter.label)),
+      ),
     [data.columns, data.data, filters, activeLabels],
   )
   const toggle = (label: string) =>
@@ -158,7 +166,10 @@ function DatatableTable({ data, view }: { data: Datatable; view: TableView }) {
               </button>
             )
           })}
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums" data-datatable-rowcount={rows.length}>
+          <span
+            className="ml-auto text-xs text-muted-foreground tabular-nums"
+            data-datatable-rowcount={rows.length}
+          >
             {rows.length} of {data.data.length} rows
           </span>
         </div>
@@ -272,7 +283,10 @@ function DatatablePlotView({ data, view }: { data: Datatable; view: Exclude<View
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="font-mono">{view.select}</span>
           <Select value={activeOption} onValueChange={setSelected}>
-            <SelectTrigger className="h-7 w-auto min-w-[8rem] text-xs" data-datatable-select={view.select}>
+            <SelectTrigger
+              className="h-7 w-auto min-w-[8rem] text-xs"
+              data-datatable-select={view.select}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -175,37 +175,41 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
         )}
 
         <BodyTranslation
-          document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'experiment', id: exp.id }}
+          document={{
+            host: projectHost(project) ?? undefined,
+            project: projectName(project),
+            kind: 'experiment',
+            id: exp.id,
+          }}
           sources={translationSources('experiment', exp)}
         >
-        {resultsSections.map((section) => (
-          <SectionCard
-            key={`${section.index}:${section.heading}:${section.occurrence}`}
-            section={section}
-            project={project}
-            experimentId={exp.id}
-            documentPath={exp.path ?? exp.resource}
-            documents={exp.documents}
-            runIds={exp.frontMatter.runs}
-            deprecatedRuns={exp.deprecatedRuns}
-            resultsUpdatedAt={exp.resultsUpdatedAt}
-          />
-        ))}
+          {resultsSections.map((section) => (
+            <SectionCard
+              key={`${section.index}:${section.heading}:${section.occurrence}`}
+              section={section}
+              project={project}
+              experimentId={exp.id}
+              documentPath={exp.path ?? exp.resource}
+              documents={exp.documents}
+              runIds={exp.frontMatter.runs}
+              deprecatedRuns={exp.deprecatedRuns}
+              resultsUpdatedAt={exp.resultsUpdatedAt}
+            />
+          ))}
 
-        <ExperimentParseWarningsBanner warnings={exp.parseWarnings ?? []} />
-        <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
-        {nonResultsSections.map((section) => (
-          <SectionCard
-            key={`${section.index}:${section.heading}:${section.occurrence}`}
-            section={section}
-            project={project}
-            experimentId={exp.id}
-            documentPath={exp.path ?? exp.resource}
-            documents={exp.documents}
-            runIds={exp.frontMatter.runs}
-          />
-        ))}
-
+          <ExperimentParseWarningsBanner warnings={exp.parseWarnings ?? []} />
+          <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
+          {nonResultsSections.map((section) => (
+            <SectionCard
+              key={`${section.index}:${section.heading}:${section.occurrence}`}
+              section={section}
+              project={project}
+              experimentId={exp.id}
+              documentPath={exp.path ?? exp.resource}
+              documents={exp.documents}
+              runIds={exp.frontMatter.runs}
+            />
+          ))}
         </BodyTranslation>
         <ExperimentCodeReviews project={project} experimentId={exp.id} />
 
@@ -277,7 +281,9 @@ function SectionCard({
       data-section-heading={heading}
     >
       <CardHeader className="flex-row items-center justify-between gap-2">
-        <CardTitle><TranslatedLiteral>{heading}</TranslatedLiteral></CardTitle>
+        <CardTitle>
+          <TranslatedLiteral>{heading}</TranslatedLiteral>
+        </CardTitle>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {!section.supported && (
             <Badge variant="outline" className="border-amber-500/60">
@@ -364,7 +370,9 @@ function SectionCard({
         ) : body ? (
           <ClampedBlock lines={SECTION_PROSE_CLAMP_LINES} label={heading}>
             <div className="prose prose-sm max-w-none text-xs/relaxed">
-              <Markdown project={project} document={componentDocument}>{body}</Markdown>
+              <Markdown project={project} document={componentDocument}>
+                {body}
+              </Markdown>
             </div>
           </ClampedBlock>
         ) : (
@@ -690,7 +698,16 @@ function RunBody({
       {/* Render the actual optional body, including uncategorized legacy content. */}
       <div className="flex flex-col gap-3 border-t p-3">
         {run.body.trim() && runSourceDocumentPath && (
-          <Markdown project={project} document={{ project: projectName(project), host: projectHost(project) ?? undefined, path: runSourceDocumentPath }}>{run.body}</Markdown>
+          <Markdown
+            project={project}
+            document={{
+              project: projectName(project),
+              host: projectHost(project) ?? undefined,
+              path: runSourceDocumentPath,
+            }}
+          >
+            {run.body}
+          </Markdown>
         )}
         {run.hasReadme && (run.resource || run.path) && (
           <LogViewer project={project} runResource={run.resource} expPath={run.path} />

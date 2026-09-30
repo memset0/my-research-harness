@@ -31,7 +31,10 @@ function release(): void {
 }
 
 /** JPEG bytes, or null when ffmpeg is missing, fails, times out, or produces nothing usable. */
-export async function extractVideoThumbnail(ffmpeg: string, videoPath: string): Promise<Buffer | null> {
+export async function extractVideoThumbnail(
+  ffmpeg: string,
+  videoPath: string,
+): Promise<Buffer | null> {
   await acquire()
   try {
     return await new Promise<Buffer | null>((resolve) => {

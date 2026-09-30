@@ -17,9 +17,9 @@ import {
 
 describe('wiki workspace URL state', () => {
   it('parses valid split and drawer deep links', () => {
-    expect(parseWikiWorkspaceUrl('/p/project-a/e/E0017-kernels?wiki=W0007&wikiSurface=split')).toEqual(
-      { wikiId: 'W0007', surface: 'split' },
-    )
+    expect(
+      parseWikiWorkspaceUrl('/p/project-a/e/E0017-kernels?wiki=W0007&wikiSurface=split'),
+    ).toEqual({ wikiId: 'W0007', surface: 'split' })
     expect(
       parseWikiWorkspaceUrl('https://memon.test/p/project-a/journal?wiki=W0003&wikiSurface=drawer'),
     ).toEqual({ wikiId: 'W0003', surface: 'drawer' })
@@ -94,7 +94,8 @@ describe('report= and wiki= are mutually exclusive', () => {
   it('never yields a URL carrying both identities', () => {
     let href = '/p/project-a/e/E0017'
     for (const step of ['wiki', 'report', 'wiki'] as const) {
-      href = step === 'wiki' ? setWikiWorkspaceUrl(href, 'W0004') : setReportWorkspaceUrl(href, 'R0007')
+      href =
+        step === 'wiki' ? setWikiWorkspaceUrl(href, 'W0004') : setReportWorkspaceUrl(href, 'R0007')
       const search = new URL(href, 'http://memon.invalid').searchParams
       expect([search.has('wiki'), search.has('report')].filter(Boolean)).toHaveLength(1)
     }

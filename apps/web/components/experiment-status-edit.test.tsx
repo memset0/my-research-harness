@@ -27,9 +27,7 @@ describe('ExperimentStatusEdit', () => {
 
   it('PATCH success → success toast + invalidate', async () => {
     vi.mocked(patchExperimentStatusV4).mockResolvedValue({ mtime: 2000 } as never)
-    renderWithQuery(
-      <ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />,
-    )
+    renderWithQuery(<ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />)
     await userEvent.click(screen.getByRole('combobox'))
     const opt = await screen.findByRole('option', { name: 'RESOLVED' })
     await userEvent.click(opt)
@@ -66,9 +64,7 @@ describe('ExperimentStatusEdit', () => {
     vi.mocked(patchExperimentStatusV4).mockResolvedValue({
       error: { code: 'CONFLICT', message: 'mtime mismatch' },
     } as never)
-    renderWithQuery(
-      <ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />,
-    )
+    renderWithQuery(<ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />)
     await userEvent.click(screen.getByRole('combobox'))
     const opt = await screen.findByRole('option', { name: 'RESOLVED' })
     await userEvent.click(opt)
@@ -81,9 +77,7 @@ describe('ExperimentStatusEdit', () => {
   })
 
   it('selecting same status is a noop (no API call)', async () => {
-    renderWithQuery(
-      <ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />,
-    )
+    renderWithQuery(<ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />)
     await userEvent.click(screen.getByRole('combobox'))
     const opt = await screen.findByRole('option', { name: 'OPEN' })
     await userEvent.click(opt)

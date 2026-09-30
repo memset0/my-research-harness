@@ -37,7 +37,9 @@ export async function GET(req: NextRequest) {
               await aggregateCentralProjects({
                 registry: (await getCentralFleet()).registry,
                 actor:
-                  role === 'viewer' ? { role: 'viewer', scopes: scopeProjectRefs } : { role: 'owner' },
+                  role === 'viewer'
+                    ? { role: 'viewer', scopes: scopeProjectRefs }
+                    : { role: 'owner' },
               })
             ).projects
           : []

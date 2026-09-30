@@ -6,7 +6,7 @@
   "rows": [
     { "cfg": 4.5, "zero_snr_bias": 0.009, "baseline_bias": 0.061, "improvement": 0.052 },
     { "cfg": 7.5, "zero_snr_bias": 0.011, "baseline_bias": 0.087, "improvement": 0.076 },
-    { "cfg": 10,  "zero_snr_bias": 0.018, "baseline_bias": 0.114, "improvement": 0.096 }
+    { "cfg": 10, "zero_snr_bias": 0.018, "baseline_bias": 0.114, "improvement": 0.096 }
   ],
   "verdict": "brightness fix is large (7-9x reduction across all CFG scales)"
 }

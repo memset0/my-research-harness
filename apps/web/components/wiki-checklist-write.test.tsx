@@ -85,15 +85,25 @@ describe('wiki checklist writes', () => {
   it('rewrites only the toggled flag through the page write lock and adopts the saved page', async () => {
     session.owner = true
     const saved = { ...page(), mtime: 2000, hash: 'b'.repeat(40) }
-    vi.mocked(putWikiPage).mockImplementation(async (_project, _id, input): Promise<WikiPutResponse> => {
-      saved.content = input.content
-      return { ok: true, mtime: saved.mtime, hash: saved.hash, page: saved, finalContent: input.content }
-    })
+    vi.mocked(putWikiPage).mockImplementation(
+      async (_project, _id, input): Promise<WikiPutResponse> => {
+        saved.content = input.content
+        return {
+          ok: true,
+          mtime: saved.mtime,
+          hash: saved.hash,
+          page: saved,
+          finalContent: input.content,
+        }
+      },
+    )
     const { container } = renderWithQuery(
       <WikiDocumentView project="project-a" page={page()} sourceSurface="full-wiki" />,
     )
     const child = container.querySelector('[data-wiki-checklist-item="1.1"]')!
-    const box = child.querySelector('[data-wiki-checklist-field="human_acknowledged"]') as HTMLElement
+    const box = child.querySelector(
+      '[data-wiki-checklist-field="human_acknowledged"]',
+    ) as HTMLElement
     expect(box).not.toHaveAttribute('disabled')
     await userEvent.click(box)
     await waitFor(() => expect(putWikiPage).toHaveBeenCalledTimes(1))
@@ -101,7 +111,10 @@ describe('wiki checklist writes', () => {
     expect(call[2].expectedMtime).toBe(1000)
     expect(call[2].expectedHash).toBe('a'.repeat(40))
     expect(call[2].content).toBe(
-      content.replace('      - title: Child', '      - title: Child\n        status:\n          human_acknowledged: true'),
+      content.replace(
+        '      - title: Child',
+        '      - title: Child\n        status:\n          human_acknowledged: true',
+      ),
     )
   })
 
@@ -124,7 +137,11 @@ describe('wiki checklist writes', () => {
   it('reports a read-only backend rejection as a failure, not a conflict', async () => {
     session.owner = true
     vi.mocked(putWikiPage).mockRejectedValue(
-      new ApiError(409, 'Backend does not support required capability mutations', 'UNSUPPORTED_CAPABILITY'),
+      new ApiError(
+        409,
+        'Backend does not support required capability mutations',
+        'UNSUPPORTED_CAPABILITY',
+      ),
     )
     const { container } = renderWithQuery(
       <WikiDocumentView project="project-a" page={page()} sourceSurface="full-wiki" />,

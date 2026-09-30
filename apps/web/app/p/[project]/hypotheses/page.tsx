@@ -6,11 +6,7 @@ import { getHypothesesData } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Hypotheses' }
 
-export default async function HypothesesPage({
-  params,
-}: {
-  params: Promise<{ project: string }>
-}) {
+export default async function HypothesesPage({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params
   const decoded = decodeURIComponent(project)
 

@@ -9,7 +9,10 @@ import {
   type DiffViewMode,
 } from './use-diff-view-mode'
 
-function Probe({ onMode, onSet }: {
+function Probe({
+  onMode,
+  onSet,
+}: {
   onMode: (m: DiffViewMode) => void
   onSet?: (set: (next: DiffViewMode) => void) => void
 }) {

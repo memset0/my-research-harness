@@ -63,10 +63,7 @@ export function FileDiff(props: FileDiffProps) {
 
   if (loading) {
     return (
-      <div
-        data-slot="file-diff-loading"
-        className={cn('px-3 py-2', className)}
-      >
+      <div data-slot="file-diff-loading" className={cn('px-3 py-2', className)}>
         <Skeleton className="h-4 w-3/4" />
         <Skeleton className="mt-2 h-4 w-2/3" />
         <Skeleton className="mt-2 h-4 w-4/5" />
@@ -88,7 +85,9 @@ export function FileDiff(props: FileDiffProps) {
   if (skipReason) {
     const label = SKIP_REASON_LABEL[skipReason]
     const sizeNote =
-      skipReason === 'too-large' && typeof skipSizeBytes === 'number' && typeof skipMaxBytes === 'number'
+      skipReason === 'too-large' &&
+      typeof skipSizeBytes === 'number' &&
+      typeof skipMaxBytes === 'number'
         ? ` — ${formatBytes(skipSizeBytes)} / ${formatBytes(skipMaxBytes)} cap`
         : ''
     return (

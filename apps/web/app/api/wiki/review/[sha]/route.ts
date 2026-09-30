@@ -17,7 +17,11 @@ import {
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime, type Runtime } from '../../../../../lib/runtime'
-import { wikiError, wikiProjectTarget, withWikiInvocation } from '../../../../../lib/server/wiki-route'
+import {
+  wikiError,
+  wikiProjectTarget,
+  withWikiInvocation,
+} from '../../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,49 +32,59 @@ type RouteContext = { params: Promise<{ sha: string }> }
 export async function POST(request: NextRequest, context: RouteContext) {
   const resolved = await resolve(request, context)
   if ('error' in resolved) return resolved.error
-  return withWikiInvocation(resolved.runtime, resolved.project, 'wiki review mark',
-    { sha: resolved.sha }, async () => {
-  if (!SHA_SELECTOR.test(resolved.sha)) {
-    return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
-  }
-  if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
-    return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
-  }
-  let note: string | undefined
-  try {
-    const body = request.headers.get('content-length') === '0' ? null : await request.json()
-    const value = (body as { note?: unknown } | null)?.note
-    if (typeof value === 'string' && value.trim() !== '') note = value
-  } catch {
-    // An empty or non-JSON body just means "no note".
-  }
-  try {
-    await writeWikiReviewMark(resolved.root, resolved.sha, note)
-  } catch (caught) {
-    return reviewFailure(caught)
-  }
-  return respondWithLog(resolved.runtime, resolved.project)
-  })
+  return withWikiInvocation(
+    resolved.runtime,
+    resolved.project,
+    'wiki review mark',
+    { sha: resolved.sha },
+    async () => {
+      if (!SHA_SELECTOR.test(resolved.sha)) {
+        return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
+      }
+      if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
+        return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
+      }
+      let note: string | undefined
+      try {
+        const body = request.headers.get('content-length') === '0' ? null : await request.json()
+        const value = (body as { note?: unknown } | null)?.note
+        if (typeof value === 'string' && value.trim() !== '') note = value
+      } catch {
+        // An empty or non-JSON body just means "no note".
+      }
+      try {
+        await writeWikiReviewMark(resolved.root, resolved.sha, note)
+      } catch (caught) {
+        return reviewFailure(caught)
+      }
+      return respondWithLog(resolved.runtime, resolved.project)
+    },
+  )
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   const resolved = await resolve(request, context)
   if ('error' in resolved) return resolved.error
-  return withWikiInvocation(resolved.runtime, resolved.project, 'wiki review unmark',
-    { sha: resolved.sha }, async () => {
-  if (!SHA_SELECTOR.test(resolved.sha)) {
-    return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
-  }
-  if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
-    return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
-  }
-  try {
-    await removeWikiReviewMark(resolved.root, resolved.sha)
-  } catch (caught) {
-    return reviewFailure(caught)
-  }
-  return respondWithLog(resolved.runtime, resolved.project)
-  })
+  return withWikiInvocation(
+    resolved.runtime,
+    resolved.project,
+    'wiki review unmark',
+    { sha: resolved.sha },
+    async () => {
+      if (!SHA_SELECTOR.test(resolved.sha)) {
+        return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
+      }
+      if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
+        return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
+      }
+      try {
+        await removeWikiReviewMark(resolved.root, resolved.sha)
+      } catch (caught) {
+        return reviewFailure(caught)
+      }
+      return respondWithLog(resolved.runtime, resolved.project)
+    },
+  )
 }
 
 interface ReviewTarget {

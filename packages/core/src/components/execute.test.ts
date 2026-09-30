@@ -5,7 +5,11 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { componentAssetsDir, readComponentCache } from './cache.js'
-import { ComponentRunError, listExecutableComponentBlocks, runDocumentComponents } from './execute.js'
+import {
+  ComponentRunError,
+  listExecutableComponentBlocks,
+  runDocumentComponents,
+} from './execute.js'
 
 let root = ''
 const DOCUMENT = 'docs/wiki/note/W0004-fid.md'
@@ -21,9 +25,13 @@ function page(...blocks: string[]): string {
 }
 
 function codeBlock(id: string, body: string[], extra: string[] = []): string {
-  return ['```yaml datatable@1 #' + id, 'code: |', ...body.map((line) => `  ${line}`), ...extra, '```'].join(
-    '\n',
-  )
+  return [
+    '```yaml datatable@1 #' + id,
+    'code: |',
+    ...body.map((line) => `  ${line}`),
+    ...extra,
+    '```',
+  ].join('\n')
 }
 
 beforeEach(async () => {
@@ -101,9 +109,14 @@ describe('runDocumentComponents', () => {
 
   it('keeps the previous data and records __last_error when the function raises', async () => {
     await write(DOCUMENT, page(codeBlock('fid', ['def collect(**kw):', '    return {"value": 1}'])))
-    expect((await runDocumentComponents({ root, documentPath: DOCUMENT }))[0]?.status).toBe('updated')
+    expect((await runDocumentComponents({ root, documentPath: DOCUMENT }))[0]?.status).toBe(
+      'updated',
+    )
 
-    await write(DOCUMENT, page(codeBlock('fid', ['def collect(**kw):', '    raise RuntimeError("no runs yet")'])))
+    await write(
+      DOCUMENT,
+      page(codeBlock('fid', ['def collect(**kw):', '    raise RuntimeError("no runs yet")'])),
+    )
     const failed = await runDocumentComponents({ root, documentPath: DOCUMENT })
     expect(failed[0]?.status).toBe('failed')
     expect(failed[0]?.error).toContain('no runs yet')
@@ -124,13 +137,25 @@ describe('runDocumentComponents', () => {
   it('runs a script relative to the document and injects the project root', async () => {
     await write(
       'scripts/collect.py',
-      ['import os', '', '', 'def collect(scale, **kw):', '    return {"scale": scale, "cwd": os.getcwd(), "root": kw["__project_root"]}', ''].join(
-        '\n',
-      ),
+      [
+        'import os',
+        '',
+        '',
+        'def collect(scale, **kw):',
+        '    return {"scale": scale, "cwd": os.getcwd(), "root": kw["__project_root"]}',
+        '',
+      ].join('\n'),
     )
     await write(
       DOCUMENT,
-      page(['```yaml datatable@1 #fid', 'script: ../../../scripts/collect.py::collect', 'scale: 4', '```'].join('\n')),
+      page(
+        [
+          '```yaml datatable@1 #fid',
+          'script: ../../../scripts/collect.py::collect',
+          'scale: 4',
+          '```',
+        ].join('\n'),
+      ),
     )
     const results = await runDocumentComponents({ root, documentPath: DOCUMENT })
     expect(results[0]?.status).toBe('updated')
@@ -142,10 +167,18 @@ describe('runDocumentComponents', () => {
 
   it('refuses a script path that resolves outside the project root', async () => {
     const outside = await fs.mkdtemp(join(tmpdir(), 'memon-outside-'))
-    await fs.writeFile(join(outside, 'evil.py'), 'def collect():\n    return {"ok": True}\n', 'utf8')
+    await fs.writeFile(
+      join(outside, 'evil.py'),
+      'def collect():\n    return {"ok": True}\n',
+      'utf8',
+    )
     await write(
       DOCUMENT,
-      page(['```yaml datatable@1 #fid', `script: ${join(outside, 'evil.py')}::collect`, '```'].join('\n')),
+      page(
+        ['```yaml datatable@1 #fid', `script: ${join(outside, 'evil.py')}::collect`, '```'].join(
+          '\n',
+        ),
+      ),
     )
     const results = await runDocumentComponents({ root, documentPath: DOCUMENT })
     expect(results[0]?.status).toBe('failed')
@@ -164,7 +197,10 @@ describe('runDocumentComponents', () => {
   })
 
   it('kills a run that exceeds the timeout', async () => {
-    await write(DOCUMENT, page(codeBlock('fid', ['def collect(**kw):', '    import time', '    time.sleep(30)'])))
+    await write(
+      DOCUMENT,
+      page(codeBlock('fid', ['def collect(**kw):', '    import time', '    time.sleep(30)'])),
+    )
     const results = await runDocumentComponents({ root, documentPath: DOCUMENT, timeoutMs: 500 })
     expect(results[0]?.status).toBe('failed')
     expect(results[0]?.error).toBe('timed out after 500 ms')
@@ -183,9 +219,11 @@ describe('runDocumentComponents', () => {
     expect(results.map((result) => result.id)).toEqual(['two'])
     expect(await readComponentCache(root, DOCUMENT, 'one')).toBeNull()
 
-    const error = await runDocumentComponents({ root, documentPath: DOCUMENT, ids: ['nope'] }).catch(
-      (err: unknown) => err,
-    )
+    const error = await runDocumentComponents({
+      root,
+      documentPath: DOCUMENT,
+      ids: ['nope'],
+    }).catch((err: unknown) => err)
     expect(error).toBeInstanceOf(ComponentRunError)
     expect((error as ComponentRunError).code).toBe('UNKNOWN_ID')
     expect((error as ComponentRunError).ids).toEqual(['one', 'two'])
@@ -199,14 +237,18 @@ describe('runDocumentComponents', () => {
 
     await write(DOCUMENT, page('```yaml datatable@1 #static', 'columns: [a]', 'data: [[1]]', '```'))
     expect(await runDocumentComponents({ root, documentPath: DOCUMENT })).toEqual([])
-    const named = await runDocumentComponents({ root, documentPath: DOCUMENT, ids: ['static'] }).catch(
-      (err: unknown) => err as ComponentRunError,
-    )
+    const named = await runDocumentComponents({
+      root,
+      documentPath: DOCUMENT,
+      ids: ['static'],
+    }).catch((err: unknown) => err as ComponentRunError)
     expect((named as ComponentRunError).code).toBe('NO_EXECUTABLE_BLOCKS')
 
     await write(
       DOCUMENT,
-      page(['```yaml datatable@1', 'code: |', '  def collect():', '      return {}', '```'].join('\n')),
+      page(
+        ['```yaml datatable@1', 'code: |', '  def collect():', '      return {}', '```'].join('\n'),
+      ),
     )
     const anonymous = await runDocumentComponents({ root, documentPath: DOCUMENT }).catch(
       (err: unknown) => err as ComponentRunError,

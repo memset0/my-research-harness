@@ -38,10 +38,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, query: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/git-log?${query}`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/git-log?${query}`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -64,7 +64,11 @@ describe('GET /api/projects/[project]/git-log', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitLog).toHaveBeenCalledWith('/tmp/a', { ref: 'main', limit: 100 }, { exec: undefined })
+    expect(readGitLog).toHaveBeenCalledWith(
+      '/tmp/a',
+      { ref: 'main', limit: 100 },
+      { exec: undefined },
+    )
   })
 
   it('200 with custom limit', async () => {
@@ -73,7 +77,11 @@ describe('GET /api/projects/[project]/git-log', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitLog).toHaveBeenCalledWith('/tmp/a', { ref: 'main', limit: 25 }, { exec: undefined })
+    expect(readGitLog).toHaveBeenCalledWith(
+      '/tmp/a',
+      { ref: 'main', limit: 25 },
+      { exec: undefined },
+    )
   })
 
   it('400 missing ref', async () => {
@@ -111,10 +119,7 @@ describe('GET /api/projects/[project]/git-log', () => {
   })
 
   it('404 unknown project', async () => {
-    const res = await GET(
-      req('nope', 'ref=main', { 'x-memon-role': 'owner' }),
-      paramsFor('nope'),
-    )
+    const res = await GET(req('nope', 'ref=main', { 'x-memon-role': 'owner' }), paramsFor('nope'))
     expect(res.status).toBe(404)
   })
 

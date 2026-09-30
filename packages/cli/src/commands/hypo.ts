@@ -5,7 +5,13 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { isId, parseHypotheses, type Hypothesis } from '@memon/core'
 import { resolveConfig } from '../lib/resolver.js'
-import { emitError, emitJson, emitHuman, formatHypothesisTable, type OutputFormat } from '../lib/output.js'
+import {
+  emitError,
+  emitJson,
+  emitHuman,
+  formatHypothesisTable,
+  type OutputFormat,
+} from '../lib/output.js'
 
 export interface HypoListOptions {
   project?: string

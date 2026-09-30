@@ -126,7 +126,8 @@ export function resolveWikiSources(
 ): WikiSourceIndex {
   const runsById = new Map(ctx.runs.map((run) => [run.id, run]))
   const byBasename = new Map<string, Run[]>()
-  for (const run of ctx.runs) byBasename.set(basename(run.id), [...(byBasename.get(basename(run.id)) ?? []), run])
+  for (const run of ctx.runs)
+    byBasename.set(basename(run.id), [...(byBasename.get(basename(run.id)) ?? []), run])
   for (const [id, matches] of byBasename) if (matches.length === 1) runsById.set(id, matches[0]!)
   const experimentsByNumericId = new Map<string, Experiment>()
   for (const experiment of ctx.experiments) {

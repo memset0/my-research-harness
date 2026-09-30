@@ -11,13 +11,7 @@ import { TimestampLocal } from './timestamp'
 import { ListSkeleton } from './skeletons'
 import { Input } from './ui/input'
 import { cn } from '../lib/utils'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as const
 
@@ -75,9 +69,7 @@ export function ExperimentList({ project }: { project: string }) {
       </div>
 
       {isLoading && experiments.length === 0 && <ListSkeleton count={6} />}
-      {error && (
-        <div className="text-sm text-destructive">error: {(error as Error).message}</div>
-      )}
+      {error && <div className="text-sm text-destructive">error: {(error as Error).message}</div>}
 
       <div className="hidden grid-cols-12 items-center gap-3 border-b pb-2 text-[10px] uppercase tracking-wide text-muted-foreground md:grid">
         <div className="col-span-5">id</div>

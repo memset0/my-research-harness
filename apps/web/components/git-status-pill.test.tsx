@@ -150,18 +150,14 @@ describe('GitStatusPill — disabled / loading paths', () => {
       enabled: false,
       reason: 'not-a-repo',
     })
-    const { container } = renderWithQuery(
-      <GitStatusPill project="p" variant="compact" />,
-    )
+    const { container } = renderWithQuery(<GitStatusPill project="p" variant="compact" />)
     await waitFor(() => expect(fetchGitStatus).toHaveBeenCalled())
     expect(container.querySelector('[data-slot="git-status-pill-compact"]')).toBeNull()
   })
 
   it('renders null when query rejects', async () => {
     vi.mocked(fetchGitStatus).mockRejectedValueOnce(new Error('boom'))
-    const { container } = renderWithQuery(
-      <GitStatusPill project="p" variant="footer" />,
-    )
+    const { container } = renderWithQuery(<GitStatusPill project="p" variant="footer" />)
     await waitFor(() => expect(fetchGitStatus).toHaveBeenCalled())
     expect(container.querySelector('[data-slot="git-status-pill-footer"]')).toBeNull()
   })

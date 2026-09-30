@@ -12,20 +12,8 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { History, RefreshCw } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Skeleton } from './ui/skeleton'
 import { Button } from './ui/button'
 import {
@@ -58,11 +46,7 @@ const DETACHED_REF_PREFIX = '__detached__:'
 /** Radix Select rejects an empty string value; use this sentinel for "main repo". */
 const MAIN_REPO_SENTINEL = '__main__'
 
-export function GitHistoryDialog({
-  project,
-  open,
-  onOpenChange,
-}: GitHistoryDialogProps) {
+export function GitHistoryDialog({ project, open, onOpenChange }: GitHistoryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -99,8 +83,7 @@ function HistoryBody({ project }: { project: string }) {
 
   const branchesQuery = useQuery({
     queryKey: ['git-branches', project, selectedSubmodule],
-    queryFn: () =>
-      fetchGitBranches(project, selectedSubmodule || undefined),
+    queryFn: () => fetchGitBranches(project, selectedSubmodule || undefined),
     staleTime: Infinity,
     retry: false,
   })
@@ -128,8 +111,7 @@ function HistoryBody({ project }: { project: string }) {
 
   const logQuery = useQuery({
     queryKey: ['git-log', project, selectedSubmodule, gitRev],
-    queryFn: () =>
-      fetchGitLog(project, gitRev!, 100, selectedSubmodule || undefined),
+    queryFn: () => fetchGitLog(project, gitRev!, 100, selectedSubmodule || undefined),
     enabled: Boolean(gitRev),
     staleTime: Infinity,
     retry: false,
@@ -163,15 +145,8 @@ function HistoryBody({ project }: { project: string }) {
   const [editorDirty, setEditorDirty] = useState(false)
 
   function trySelect(nextSha: string) {
-    if (
-      editorDirty &&
-      selectedSha &&
-      selectedSha !== nextSha &&
-      typeof window !== 'undefined'
-    ) {
-      const ok = window.confirm(
-        'You have unsaved note changes. Discard them and switch commits?',
-      )
+    if (editorDirty && selectedSha && selectedSha !== nextSha && typeof window !== 'undefined') {
+      const ok = window.confirm('You have unsaved note changes. Discard them and switch commits?')
       if (!ok) return
     }
     setSelectedSha(nextSha)
@@ -267,14 +242,9 @@ function Toolbar({
     <div className="flex items-center gap-2 border-b pb-2">
       <Select
         value={selectedSubmodule || MAIN_REPO_SENTINEL}
-        onValueChange={(next) =>
-          onSelectedSubmoduleChange(next === MAIN_REPO_SENTINEL ? '' : next)
-        }
+        onValueChange={(next) => onSelectedSubmoduleChange(next === MAIN_REPO_SENTINEL ? '' : next)}
       >
-        <SelectTrigger
-          data-slot="git-history-submodule-select"
-          className="h-7 w-[12rem] text-xs"
-        >
+        <SelectTrigger data-slot="git-history-submodule-select" className="h-7 w-[12rem] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -285,14 +255,8 @@ function Toolbar({
           ))}
         </SelectContent>
       </Select>
-      <Select
-        value={selectedRef ?? undefined}
-        onValueChange={onSelectedRefChange}
-      >
-        <SelectTrigger
-          data-slot="git-history-branch-select"
-          className="h-7 w-[14rem] text-xs"
-        >
+      <Select value={selectedRef ?? undefined} onValueChange={onSelectedRefChange}>
+        <SelectTrigger data-slot="git-history-branch-select" className="h-7 w-[14rem] text-xs">
           <SelectValue placeholder="Loading branches…" />
         </SelectTrigger>
         <SelectContent>
@@ -352,8 +316,9 @@ function CommitList({
   submodule,
 }: {
   project: string
-  query: ReturnType<typeof useQuery<unknown, Error>> &
-    { data?: import('../lib/api').GitLog | undefined }
+  query: ReturnType<typeof useQuery<unknown, Error>> & {
+    data?: import('../lib/api').GitLog | undefined
+  }
   selectedSha: string | null
   onSelect: (sha: string) => void
   marks: CommitMark[]
@@ -393,9 +358,7 @@ function CommitList({
                 commit={c}
                 selected={c.sha === selectedSha}
                 onSelect={() => onSelect(c.sha)}
-                mark={marks.find(
-                  (m) => m.sha === c.sha && m.submodule === submodule,
-                )}
+                mark={marks.find((m) => m.sha === c.sha && m.submodule === submodule)}
               />
             </li>
           ))}
@@ -430,9 +393,7 @@ function CommitRow({
     >
       <span className="flex w-full items-center gap-2">
         <CommitMarkBadge mark={mark} />
-        <span className="font-mono text-muted-foreground">
-          {commit.shortSha}
-        </span>
+        <span className="font-mono text-muted-foreground">{commit.shortSha}</span>
         <span className="truncate font-medium">{commit.subject}</span>
       </span>
       <span className="flex w-full items-center gap-2 text-[10px] text-muted-foreground">
@@ -512,9 +473,7 @@ function CommitDetail({
           sha={data.sha}
           submodule={submodule}
           submodules={submodules}
-          mark={marks.find(
-            (m) => m.sha === data.sha && m.submodule === submodule,
-          )}
+          mark={marks.find((m) => m.sha === data.sha && m.submodule === submodule)}
           onDirtyChange={onDirtyChange}
         />
       )}
@@ -554,9 +513,7 @@ function CommitDetailBody({
         <div className="font-mono text-muted-foreground">{detail.sha}</div>
         <div>
           <span className="font-medium">{detail.authorName}</span>{' '}
-          <span className="text-muted-foreground">
-            &lt;{detail.authorEmail}&gt;
-          </span>{' '}
+          <span className="text-muted-foreground">&lt;{detail.authorEmail}&gt;</span>{' '}
           <span className="text-muted-foreground">· {detail.authorDate}</span>
         </div>
         <CommitMarkEditor
@@ -568,9 +525,7 @@ function CommitDetailBody({
         />
         <div className="font-medium">{detail.subject}</div>
         {detail.body && (
-          <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {detail.body}
-          </pre>
+          <pre className="whitespace-pre-wrap text-xs text-muted-foreground">{detail.body}</pre>
         )}
       </header>
       <h4 className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -581,9 +536,7 @@ function CommitDetailBody({
       ) : (
         <ul className="space-y-0.5">
           {detail.files.map((f) => {
-            const bumpName = f.submoduleBump
-              ? submodulePathToName.get(f.path)
-              : undefined
+            const bumpName = f.submoduleBump ? submodulePathToName.get(f.path) : undefined
             if (f.submoduleBump && bumpName) {
               return (
                 <li key={`${f.path}:bump`}>

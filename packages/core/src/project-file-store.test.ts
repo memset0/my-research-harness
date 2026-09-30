@@ -71,15 +71,14 @@ describe('projectFs inside a project file context', () => {
   it('keeps queued and running requests outside the completed-value cache', async () => {
     const first = join(root, 'first.txt')
     const second = join(root, 'second.txt')
-    await Promise.all([
-      nodeFs.writeFile(first, 'first'),
-      nodeFs.writeFile(second, 'second'),
-    ])
+    await Promise.all([nodeFs.writeFile(first, 'first'), nodeFs.writeFile(second, 'second')])
     const before = getFileOperationMetrics()
     const io = getProjectIo()
     const readFile = io.readFile.bind(io)
     let release!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
     const blocked = vi.spyOn(io, 'readFile').mockImplementation(async (group, path) => {
       if (path === first) await gate
       return await readFile(group, path)

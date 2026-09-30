@@ -5,7 +5,11 @@ import type { ComponentData, ComponentRenderer } from '../../types'
 import type { descriptor } from './index'
 
 function escapeHtmlAttribute(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
 }
 
 function withAssetBase(html: string, resource: string | null): string {

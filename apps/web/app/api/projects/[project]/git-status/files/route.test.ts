@@ -37,10 +37,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/git-status/files`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/git-status/files`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -58,10 +58,7 @@ beforeEach(() => {
 
 describe('GET /api/projects/[project]/git-status/files', () => {
   it('200 with bucketed payload for owner request', async () => {
-    const res = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
     expect(readGitStatusFiles).toHaveBeenCalledWith('/tmp/a', { exec: undefined })

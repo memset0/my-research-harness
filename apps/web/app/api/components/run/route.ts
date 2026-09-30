@@ -46,7 +46,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!parsed.success) {
     const issue = parsed.error.issues[0]
     const field = issue?.path.join('.')
-    return error(400, 'BAD_REQUEST', issue ? `${field || 'body'}: ${issue.message}` : 'invalid body')
+    return error(
+      400,
+      'BAD_REQUEST',
+      issue ? `${field || 'body'}: ${issue.message}` : 'invalid body',
+    )
   }
   const body = parsed.data
   // The runtime resolves the document against the Project root, but a path

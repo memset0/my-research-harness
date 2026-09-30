@@ -57,9 +57,7 @@ export function useDiffViewMode(): [DiffViewMode, (next: DiffViewMode) => void] 
     } catch {
       /* localStorage unavailable — still emit the event so this tab updates */
     }
-    window.dispatchEvent(
-      new CustomEvent<DiffViewMode>(DIFF_VIEW_EVENT, { detail: next }),
-    )
+    window.dispatchEvent(new CustomEvent<DiffViewMode>(DIFF_VIEW_EVENT, { detail: next }))
   }, [])
 
   return [mode, setMode]

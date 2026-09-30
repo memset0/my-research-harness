@@ -222,9 +222,14 @@ describe('PATCH/DELETE /api/runs/:id/warnings/:rowId', () => {
     expect(res.status).toBe(200)
     const md = await fs.readFile(readmePath, 'utf8')
     expect(md).not.toContain(rowId)
-    expect(await readJournalInvocations(root)).toContainEqual(expect.objectContaining({
-      command: 'run warning delete', outcome: 'success',
-    }))
-    await expect(fs.readFile(join(root, 'docs', 'journal.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readJournalInvocations(root)).toContainEqual(
+      expect.objectContaining({
+        command: 'run warning delete',
+        outcome: 'success',
+      }),
+    )
+    await expect(fs.readFile(join(root, 'docs', 'journal.md'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 })

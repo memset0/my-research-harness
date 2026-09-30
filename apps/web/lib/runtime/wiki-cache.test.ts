@@ -271,7 +271,13 @@ describe('WikiCache', () => {
     const current = await cache.getWikiPage('project-a', 'W0001')
     const next = `${current!.content}\nMore.\n`
 
-    const stale = await cache.putWikiPage('project-a', 'W0001', next, current!.mtime - 1000, current!.hash)
+    const stale = await cache.putWikiPage(
+      'project-a',
+      'W0001',
+      next,
+      current!.mtime - 1000,
+      current!.hash,
+    )
     expect(stale).toMatchObject({ ok: false, code: 'CONFLICT' })
 
     const ok = await cache.putWikiPage('project-a', 'W0001', next, current!.mtime, current!.hash)

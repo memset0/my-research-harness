@@ -406,7 +406,9 @@ r
     // Both rows now have 7 cells. The pre-existing row's Run column
     // back-fills as `—` (em dash) since v2 carried no per-row run
     // attribution.
-    const lines = result.content.split('\n').filter((l) => l.startsWith('| OPEN ') || l.startsWith('| RESOLVED '))
+    const lines = result.content
+      .split('\n')
+      .filter((l) => l.startsWith('| OPEN ') || l.startsWith('| RESOLVED '))
     expect(lines.length).toBe(2)
     for (const l of lines) {
       // Count pipe separators — 7 cells means 8 pipes.

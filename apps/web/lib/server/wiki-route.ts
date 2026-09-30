@@ -64,19 +64,34 @@ export async function withWikiInvocation(
   const root = runtime.config.projects.find((entry) => entry.name === project)?.root
   if (!root) return wikiError(404, 'NOT_FOUND', 'project is not configured')
   try {
-    return await withJournalInvocation(root, { command, origin: 'web', parameters }, async (ctx) => {
-      const response = await action()
-      if (response.status >= 400) {
-        ctx.markOutcome(response.status === 409 ? 'conflict' : 'failure',
-          response.status === 409 ? 'CONFLICT' : response.status === 404 ? 'NOT_FOUND' :
-            response.status === 400 ? 'BAD_REQUEST' : 'INTERNAL')
-      }
-      return response
-    }, { standalone: true })
+    return await withJournalInvocation(
+      root,
+      { command, origin: 'web', parameters },
+      async (ctx) => {
+        const response = await action()
+        if (response.status >= 400) {
+          ctx.markOutcome(
+            response.status === 409 ? 'conflict' : 'failure',
+            response.status === 409
+              ? 'CONFLICT'
+              : response.status === 404
+                ? 'NOT_FOUND'
+                : response.status === 400
+                  ? 'BAD_REQUEST'
+                  : 'INTERNAL',
+          )
+        }
+        return response
+      },
+      { standalone: true },
+    )
   } catch (error) {
     if (error instanceof JournalRecordingError) {
-      return wikiError(500, error.code,
-        'Journal recording failed; inspect the current document state before retrying.')
+      return wikiError(
+        500,
+        error.code,
+        'Journal recording failed; inspect the current document state before retrying.',
+      )
     }
     return wikiError(500, 'INTERNAL', 'Wiki operation failed')
   }

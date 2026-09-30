@@ -58,7 +58,10 @@ describe('buildIndex', () => {
 
     const idx = await buildIndex(config)
     expect(idx.size()).toBe(2)
-    const ids = idx.list().map((e) => e.id).sort()
+    const ids = idx
+      .list()
+      .map((e) => e.id)
+      .sort()
     expect(ids).toEqual(['bar-260502-100000', 'foo-260501-100000'])
   })
 

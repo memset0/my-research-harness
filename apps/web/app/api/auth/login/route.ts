@@ -17,11 +17,7 @@ import {
   signSessionCookie,
 } from '@/lib/auth/cookies'
 import { verifyBasic } from '@/lib/auth/basic-auth'
-import {
-  clientIpFromHeaders,
-  consume,
-  refund,
-} from '@/lib/auth/rate-limit'
+import { clientIpFromHeaders, consume, refund } from '@/lib/auth/rate-limit'
 import { isHttps, publicOrigin } from '@/lib/auth/public-url'
 
 function wantsJson(req: NextRequest): boolean {
@@ -37,7 +33,11 @@ function validateNext(raw: string | null): string {
   return raw
 }
 
-function publicRedirect(req: NextRequest, path: string, extraHeaders: Record<string, string> = {}): NextResponse {
+function publicRedirect(
+  req: NextRequest,
+  path: string,
+  extraHeaders: Record<string, string> = {},
+): NextResponse {
   const target = new URL(path, publicOrigin(req))
   return new NextResponse(null, {
     status: 302,
@@ -96,10 +96,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  const ok = await verifyBasic({ username, password }, {
-    username: runtime.auth.username,
-    password: runtime.auth.password,
-  })
+  const ok = await verifyBasic(
+    { username, password },
+    {
+      username: runtime.auth.username,
+      password: runtime.auth.password,
+    },
+  )
   if (!ok) {
     if (wantsJson(req)) {
       return new NextResponse(JSON.stringify({ ok: false }), {

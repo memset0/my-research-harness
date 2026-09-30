@@ -83,9 +83,7 @@ describe('GitDiffDialog', () => {
   })
 
   it('renders sections + counts when open=true', async () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
     await waitFor(() => {
       expect(screen.getByText(/Staged \(1\)/)).toBeInTheDocument()
       expect(screen.getByText(/Unstaged \(2\)/)).toBeInTheDocument()
@@ -96,53 +94,37 @@ describe('GitDiffDialog', () => {
   })
 
   it('does not fetch the file list while open=false', () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open={false} onOpenChange={() => {}} />,
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open={false} onOpenChange={() => {}} />)
     expect(fetchGitStatusFiles).not.toHaveBeenCalled()
     expect(fetchGitDiff).not.toHaveBeenCalled()
   })
 
   it('file rows are collapsed by default (no diff request fired)', async () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText(/Staged \(1\)/)).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText(/Staged \(1\)/)).toBeInTheDocument())
     // Dialog renders via Radix Portal — query `document.body`, not container.
     expect(document.body.querySelectorAll('[data-slot="file-diff"]').length).toBe(0)
-    expect(
-      document.body.querySelectorAll('[data-slot="file-diff-loading"]').length,
-    ).toBe(0)
+    expect(document.body.querySelectorAll('[data-slot="file-diff-loading"]').length).toBe(0)
     expect(fetchGitDiff).not.toHaveBeenCalled()
   })
 
   it('expanding a row fires fetchGitDiff exactly once', async () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('unstaged-a.txt')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('unstaged-a.txt')).toBeInTheDocument())
     await userEvent.click(screen.getByText('unstaged-a.txt'))
     await waitFor(() => {
-      expect(fetchGitDiff).toHaveBeenCalledWith(
-        'project-a',
-        'unstaged-a.txt',
-        'unstaged',
-        { sha: undefined, submodule: undefined, from: undefined, to: undefined },
-      )
+      expect(fetchGitDiff).toHaveBeenCalledWith('project-a', 'unstaged-a.txt', 'unstaged', {
+        sha: undefined,
+        submodule: undefined,
+        from: undefined,
+        to: undefined,
+      })
     })
   })
 
   it('collapsing and re-expanding does NOT re-fetch within a single session', async () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('unstaged-a.txt')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('unstaged-a.txt')).toBeInTheDocument())
     const row = screen.getByText('unstaged-a.txt')
     await userEvent.click(row) // expand
     await waitFor(() => expect(fetchGitDiff).toHaveBeenCalledTimes(1))
@@ -157,22 +139,14 @@ describe('GitDiffDialog', () => {
       ...FILES,
       untracked: [],
     })
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText(/Untracked \(0\)/)).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText(/Untracked \(0\)/)).toBeInTheDocument())
     expect(screen.getByText('(none)')).toBeInTheDocument()
   })
 
   it('view-mode toggle persists across instances via the shared hook', async () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('unstaged-a.txt')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('unstaged-a.txt')).toBeInTheDocument())
     await userEvent.click(screen.getByText('unstaged-a.txt'))
     await waitFor(() =>
       expect(document.body.querySelector('[data-slot="file-diff"]')).not.toBeNull(),
@@ -204,23 +178,15 @@ describe('GitDiffDialog', () => {
       ).not.toBeNull(),
     )
     await userEvent.click(
-      document.body.querySelector(
-        '[data-slot="git-diff-dialog-history-link"]',
-      ) as HTMLElement,
+      document.body.querySelector('[data-slot="git-diff-dialog-history-link"]') as HTMLElement,
     )
     expect(onOpenHistory).toHaveBeenCalledTimes(1)
   })
 
   it('omits the "View history" link when no onOpenHistory prop given', async () => {
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText(/Staged \(1\)/)).toBeInTheDocument(),
-    )
-    expect(
-      document.body.querySelector('[data-slot="git-diff-dialog-history-link"]'),
-    ).toBeNull()
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText(/Staged \(1\)/)).toBeInTheDocument())
+    expect(document.body.querySelector('[data-slot="git-diff-dialog-history-link"]')).toBeNull()
   })
 
   it('renders a per-submodule repo block when submodules are present', async () => {
@@ -248,9 +214,7 @@ describe('GitDiffDialog', () => {
       }
       return FILES
     })
-    renderWithQuery(
-      <GitDiffDialog project="project-a" open onOpenChange={() => {}} />,
-    )
+    renderWithQuery(<GitDiffDialog project="project-a" open onOpenChange={() => {}} />)
     await waitFor(() => {
       const main = document.body.querySelector('[data-slot="repo-block-main"]')
       const subs = document.body.querySelectorAll('[data-slot="repo-block-submodule"]')

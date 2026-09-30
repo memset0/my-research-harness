@@ -63,10 +63,7 @@ afterEach(() => {
 
 describe('GET /api/projects/[project]/git-status', () => {
   it('200 with body for an owner request to a known project', async () => {
-    const res = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(CLEAN_STATUS)
     expect(readGitStatus).toHaveBeenCalledTimes(1)
@@ -103,15 +100,9 @@ describe('GET /api/projects/[project]/git-status', () => {
   })
 
   it('two requests within intervalMs use the throttle cache (single reader call)', async () => {
-    const r1 = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const r1 = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(r1.status).toBe(200)
-    const r2 = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const r2 = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(r2.status).toBe(200)
     expect(await r2.json()).toEqual(CLEAN_STATUS)
     // Critical: the reader is invoked exactly once across both requests.
@@ -125,15 +116,9 @@ describe('GET /api/projects/[project]/git-status', () => {
     const dateNowSpy = vi.spyOn(Date, 'now')
     try {
       dateNowSpy.mockReturnValue(0)
-      await GET(
-        req('project-a', { 'x-memon-role': 'owner' }),
-        paramsFor('project-a'),
-      )
+      await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
       dateNowSpy.mockReturnValue(12_000)
-      await GET(
-        req('project-a', { 'x-memon-role': 'owner' }),
-        paramsFor('project-a'),
-      )
+      await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
       expect(readGitStatus).toHaveBeenCalledTimes(2)
     } finally {
       dateNowSpy.mockRestore()
@@ -145,28 +130,26 @@ describe('GET /api/projects/[project]/git-status', () => {
     // a 2s gap is enough to bust the cache.
     vi.mocked(getRuntime).mockResolvedValueOnce({
       config: {
-        projects: [{ name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } }],
+        projects: [
+          { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        ],
         gitStatus: { intervalMs: 1_000 },
       },
     } as unknown as Awaited<ReturnType<typeof getRuntime>>)
     vi.mocked(getRuntime).mockResolvedValueOnce({
       config: {
-        projects: [{ name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } }],
+        projects: [
+          { name: 'project-a', root: '/tmp/a', exclude: [], execution: { kind: 'local' } },
+        ],
         gitStatus: { intervalMs: 1_000 },
       },
     } as unknown as Awaited<ReturnType<typeof getRuntime>>)
     const dateNowSpy = vi.spyOn(Date, 'now')
     try {
       dateNowSpy.mockReturnValue(0)
-      await GET(
-        req('project-a', { 'x-memon-role': 'owner' }),
-        paramsFor('project-a'),
-      )
+      await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
       dateNowSpy.mockReturnValue(2_000)
-      await GET(
-        req('project-a', { 'x-memon-role': 'owner' }),
-        paramsFor('project-a'),
-      )
+      await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
       expect(readGitStatus).toHaveBeenCalledTimes(2)
     } finally {
       dateNowSpy.mockRestore()
@@ -178,10 +161,7 @@ describe('GET /api/projects/[project]/git-status', () => {
       enabled: false,
       reason: 'not-a-repo',
     })
-    const res = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ enabled: false, reason: 'not-a-repo' })
   })

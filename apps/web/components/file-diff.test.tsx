@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 import { FileDiff } from './file-diff'
-import {
-  DIFF_VIEW_STORAGE_KEY,
-} from '../lib/use-diff-view-mode'
+import { DIFF_VIEW_STORAGE_KEY } from '../lib/use-diff-view-mode'
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -16,13 +14,7 @@ afterEach(() => {
 describe('FileDiff', () => {
   it('renders a skeleton when loading=true and does not mount RDV', () => {
     const { container } = render(
-      <FileDiff
-        filename="a.ts"
-        status="modified"
-        oldContent={null}
-        newContent={null}
-        loading
-      />,
+      <FileDiff filename="a.ts" status="modified" oldContent={null} newContent={null} loading />,
     )
     expect(container.querySelector('[data-slot="file-diff-loading"]')).not.toBeNull()
     expect(container.querySelector('[data-slot="file-diff"]')).toBeNull()
@@ -79,12 +71,7 @@ describe('FileDiff', () => {
 
   it('mounts RDV with splitView=true when mode is split (default)', () => {
     const { container } = render(
-      <FileDiff
-        filename="a.ts"
-        status="modified"
-        oldContent="hello\n"
-        newContent="world\n"
-      />,
+      <FileDiff filename="a.ts" status="modified" oldContent="hello\n" newContent="world\n" />,
     )
     const root = container.querySelector('[data-slot="file-diff"]')
     expect(root).not.toBeNull()
@@ -94,12 +81,7 @@ describe('FileDiff', () => {
   it('mounts RDV with splitView=false when mode is inline', () => {
     window.localStorage.setItem(DIFF_VIEW_STORAGE_KEY, 'inline')
     const { container } = render(
-      <FileDiff
-        filename="a.ts"
-        status="modified"
-        oldContent="hello\n"
-        newContent="world\n"
-      />,
+      <FileDiff filename="a.ts" status="modified" oldContent="hello\n" newContent="world\n" />,
     )
     const root = container.querySelector('[data-slot="file-diff"]')
     expect(root?.getAttribute('data-view-mode')).toBe('inline')

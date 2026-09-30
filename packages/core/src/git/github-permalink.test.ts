@@ -3,22 +3,29 @@ import { parseGithubPermalink, sliceContext } from './github-permalink.js'
 
 describe('parseGithubPermalink', () => {
   it('parses a single-line permalink', () => {
-    expect(
-      parseGithubPermalink('https://github.com/acme/proj/blob/abc123/src/foo.ts#L42'),
-    ).toEqual({
-      owner: 'acme',
-      repo: 'proj',
-      sha: 'abc123',
-      path: 'src/foo.ts',
-      startLine: 42,
-      endLine: 42,
-    })
+    expect(parseGithubPermalink('https://github.com/acme/proj/blob/abc123/src/foo.ts#L42')).toEqual(
+      {
+        owner: 'acme',
+        repo: 'proj',
+        sha: 'abc123',
+        path: 'src/foo.ts',
+        startLine: 42,
+        endLine: 42,
+      },
+    )
   })
 
   it('parses a range permalink with a nested path', () => {
     expect(
       parseGithubPermalink('https://github.com/o/r/blob/deadbeef/a/b/c.cc#L10-L20'),
-    ).toMatchObject({ owner: 'o', repo: 'r', sha: 'deadbeef', path: 'a/b/c.cc', startLine: 10, endLine: 20 })
+    ).toMatchObject({
+      owner: 'o',
+      repo: 'r',
+      sha: 'deadbeef',
+      path: 'a/b/c.cc',
+      startLine: 10,
+      endLine: 20,
+    })
   })
 
   it('strips a trailing ?plain=1 query', () => {

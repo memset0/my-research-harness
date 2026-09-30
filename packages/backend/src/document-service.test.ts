@@ -86,11 +86,18 @@ function expectPathFree(value: unknown): void {
 describe('FilesystemDocumentService', () => {
   it('serves migrated Digest content through ordinary Wiki inventory and detail', async () => {
     await fs.mkdir(join(root, 'docs/wiki/digest'), { recursive: true })
-    const content = '---\nid: W0001\nkind: digest\nlegacy_id: D0001\ntitle: Period summary\n---\n# Preserved summary\n'
+    const content =
+      '---\nid: W0001\nkind: digest\nlegacy_id: D0001\ntitle: Period summary\n---\n# Preserved summary\n'
     await fs.writeFile(join(root, 'docs/wiki/digest/W0001-period.md'), content)
     const inventory = await service.listWiki('research', { inventoryOnly: true })
-    expect(inventory).toEqual({ pages: [{ id: 'W0001', resource: 'docs/wiki/digest/W0001-period.md', legacyId: 'D0001' }] })
-    expect(await service.getWiki('research', 'W0001')).toMatchObject({ content, kind: 'digest', legacyId: 'D0001' })
+    expect(inventory).toEqual({
+      pages: [{ id: 'W0001', resource: 'docs/wiki/digest/W0001-period.md', legacyId: 'D0001' }],
+    })
+    expect(await service.getWiki('research', 'W0001')).toMatchObject({
+      content,
+      kind: 'digest',
+      legacyId: 'D0001',
+    })
   })
 
   it('discovers strict, path-free report, code-review, and README DTOs', async () => {

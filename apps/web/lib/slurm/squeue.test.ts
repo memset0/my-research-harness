@@ -35,18 +35,14 @@ describe('parseSqueueOutput', () => {
   })
 
   it('handles multi-node NodeList compact form', () => {
-    const jobs = parseSqueueOutput(
-      '2000001|main|multinode|R|0:30|2|fs-mbz-gpu-[111,469]|\n',
-    )
+    const jobs = parseSqueueOutput('2000001|main|multinode|R|0:30|2|fs-mbz-gpu-[111,469]|\n')
     expect(jobs).toHaveLength(1)
     expect(jobs[0]!.numNodes).toBe(2)
     expect(jobs[0]!.nodeList).toBe('fs-mbz-gpu-[111,469]')
   })
 
   it('preserves pending (PD) rows', () => {
-    const jobs = parseSqueueOutput(
-      '2000002|main|waiting|PD|0:00|4|(Resources)|\n',
-    )
+    const jobs = parseSqueueOutput('2000002|main|waiting|PD|0:00|4|(Resources)|\n')
     expect(jobs).toHaveLength(1)
     expect(jobs[0]!.state).toBe('PD')
     expect(jobs[0]!.nodeList).toBe('(Resources)')
@@ -58,23 +54,19 @@ describe('parseSqueueOutput', () => {
   // saw 6 fields instead of 7. Pipe-delimited output preserves the
   // boundary even with no whitespace between fields.
   it('handles names that would overflow the default 20-char Name column', () => {
-    const jobs = parseSqueueOutput(
-      '1618473|main|lk-lambda-eta10-cold|R|6:44|1|fs-mbz-gpu-185|\n',
-    )
+    const jobs = parseSqueueOutput('1618473|main|lk-lambda-eta10-cold|R|6:44|1|fs-mbz-gpu-185|\n')
     expect(jobs).toHaveLength(1)
     expect(jobs[0]!.name).toBe('lk-lambda-eta10-cold')
     expect(jobs[0]!.state).toBe('R')
   })
 
   it('throws on a line with the wrong column count', () => {
-    expect(() => parseSqueueOutput('1|2|3|\n')).toThrow(
-      /expected 7 pipe-delimited columns/,
-    )
+    expect(() => parseSqueueOutput('1|2|3|\n')).toThrow(/expected 7 pipe-delimited columns/)
   })
 
   it('throws when NumNodes is not an integer', () => {
-    expect(() =>
-      parseSqueueOutput('1|main|n|R|0:00|oops|fs-mbz-gpu-111|\n'),
-    ).toThrow(/NumNodes is not an integer/)
+    expect(() => parseSqueueOutput('1|main|n|R|0:00|oops|fs-mbz-gpu-111|\n')).toThrow(
+      /NumNodes is not an integer/,
+    )
   })
 })

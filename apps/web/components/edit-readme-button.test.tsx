@@ -5,8 +5,17 @@ import type { ComponentType } from 'react'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('@monaco-editor/react', () => ({
-  default: function MonacoStub(props: { value?: string; onChange?: (v: string | undefined) => void }) {
-    return <textarea data-testid="monaco-editor" value={props.value ?? ''} onChange={(e) => props.onChange?.(e.target.value)} />
+  default: function MonacoStub(props: {
+    value?: string
+    onChange?: (v: string | undefined) => void
+  }) {
+    return (
+      <textarea
+        data-testid="monaco-editor"
+        value={props.value ?? ''}
+        onChange={(e) => props.onChange?.(e.target.value)}
+      />
+    )
   },
 }))
 
@@ -47,9 +56,7 @@ function ContextSnoop({ onCtx }: { onCtx: (v: ReturnType<typeof useReadmeEditor>
 
 describe('EditReadmeButton', () => {
   it('mobile/tablet: clicking opens a Dialog (no context required)', async () => {
-    renderWithQuery(
-      <EditReadmeButton path="/x" runId="e" />,
-    )
+    renderWithQuery(<EditReadmeButton path="/x" runId="e" />)
     await userEvent.click(screen.getByRole('button', { name: /edit readme/i }))
     // Dialog renders the Monaco editor inside.
     expect(await screen.findByTestId('monaco-editor')).toBeInTheDocument()
@@ -60,7 +67,11 @@ describe('EditReadmeButton', () => {
     const snooped: { current: ReturnType<typeof useReadmeEditor> | null } = { current: null }
     renderWithQuery(
       <ReadmeEditorProvider>
-        <ContextSnoop onCtx={(v) => { snooped.current = v }} />
+        <ContextSnoop
+          onCtx={(v) => {
+            snooped.current = v
+          }}
+        />
         <EditReadmeButton path="/x" runId="e" />
       </ReadmeEditorProvider>,
     )

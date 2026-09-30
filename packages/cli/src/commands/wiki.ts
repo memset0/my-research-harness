@@ -121,19 +121,21 @@ export async function runWikiKinds(input: WikiCommonInput & { kind?: string }): 
   for (const kind of kinds) {
     process.stdout.write(`${kind.id} — ${kind.label}\n${kind.zh.purpose}\n`)
     if (!selected) continue
-    process.stdout.write([
-      `适用：${kind.zh.uses.join('；')}`,
-      `示例：${kind.zh.examples.join('；')}`,
-      `区别：${kind.zh.distinctions}`,
-      `Status: ${kind.policy.statuses.join(' | ') || 'none'}`,
-      `Date required: ${kind.policy.dateRequired}; sources required: ${kind.policy.sourcesRequired}`,
-      `Recommended H2 (advisory): ${kind.policy.recommendedHeadings.join(', ') || 'none'}`,
-      `Required H2: none`,
-      `Authoring: ${kind.en.purpose} ${kind.en.authoring}`,
-      `Examples: ${kind.en.examples.join('; ')}`,
-      `Distinctions: ${kind.en.distinctions}`,
-      '',
-    ].join('\n'))
+    process.stdout.write(
+      [
+        `适用：${kind.zh.uses.join('；')}`,
+        `示例：${kind.zh.examples.join('；')}`,
+        `区别：${kind.zh.distinctions}`,
+        `Status: ${kind.policy.statuses.join(' | ') || 'none'}`,
+        `Date required: ${kind.policy.dateRequired}; sources required: ${kind.policy.sourcesRequired}`,
+        `Recommended H2 (advisory): ${kind.policy.recommendedHeadings.join(', ') || 'none'}`,
+        `Required H2: none`,
+        `Authoring: ${kind.en.purpose} ${kind.en.authoring}`,
+        `Examples: ${kind.en.examples.join('; ')}`,
+        `Distinctions: ${kind.en.distinctions}`,
+        '',
+      ].join('\n'),
+    )
   }
 }
 
@@ -535,7 +537,10 @@ export async function runWikiCreate(input: WikiCreateInput): Promise<void> {
     emitErrorAndExit('BAD_REQUEST', '--title is required and must be a non-empty string')
   }
   const status = resolveStatus(kind, input.status)
-  if (getWikiKind(kind)?.policy.dateRequired && (input.date === undefined || input.date.trim() === '')) {
+  if (
+    getWikiKind(kind)?.policy.dateRequired &&
+    (input.date === undefined || input.date.trim() === '')
+  ) {
     emitErrorAndExit('BAD_REQUEST', `\`${kind}\` pages require --date <YYYY-MM-DD>`)
   }
   if (input.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
@@ -1157,7 +1162,10 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
       const created = typeof patch.created_at === 'string' ? patch.created_at : existing.created_at
       if (typeof created === 'string') patch.date = created.slice(0, 10)
     }
-    if (getWikiKind(kind)?.policy.sourcesRequired && wikiStringList(existing.sources).length === 0) {
+    if (
+      getWikiKind(kind)?.policy.sourcesRequired &&
+      wikiStringList(existing.sources).length === 0
+    ) {
       const derived = deriveSources(body)
       if (derived.length > 0) patch.sources = derived
     }
@@ -1635,16 +1643,8 @@ export async function runWikiCommit(input: WikiCommitInput): Promise<void> {
   }
 
   const statusRows = parseNameStatus(
-    (
-      await git(projectRoot, [
-        'diff',
-        '--cached',
-        '--name-status',
-        '-z',
-        '--',
-        ...pathspecs,
-      ])
-    ).stdout,
+    (await git(projectRoot, ['diff', '--cached', '--name-status', '-z', '--', ...pathspecs]))
+      .stdout,
   )
   if (statusRows.length === 0) {
     emitErrorAndExit(

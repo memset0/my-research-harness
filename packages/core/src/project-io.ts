@@ -508,7 +508,6 @@ class ProjectIoWorker {
 // Pool
 // ---------------------------------------------------------------------------
 
-
 const MIN_WORKER_THREADS = 8
 const MAX_WORKER_THREADS = 128
 
@@ -542,7 +541,10 @@ class ProjectIoPool {
   }
 
   async readFile(group: string, path: string, flag?: string): Promise<Buffer> {
-    const value = await this.run(group, flag === undefined ? { op: 'readFile', path } : { op: 'readFile', path, flag })
+    const value = await this.run(
+      group,
+      flag === undefined ? { op: 'readFile', path } : { op: 'readFile', path, flag },
+    )
     return Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array)
   }
 

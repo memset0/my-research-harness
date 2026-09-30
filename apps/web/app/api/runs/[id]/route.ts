@@ -23,7 +23,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       runtime.pokeById(id)
       return NextResponse.json(standaloneRun(runtime.config, run))
     } catch (error) {
-      if (error instanceof BackendProjectServiceError && error.code === 'RESOURCE_NOT_FOUND') continue
+      if (error instanceof BackendProjectServiceError && error.code === 'RESOURCE_NOT_FOUND')
+        continue
       throw error
     }
   }

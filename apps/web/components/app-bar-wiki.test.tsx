@@ -22,14 +22,11 @@ describe('AppBar Wiki tab', () => {
   it('renders Wiki immediately after Code Review as the final project tab', () => {
     render(<AppBar project="project-a" />)
     const tablist = screen.getByRole('tablist')
-    expect(within(tablist).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Experiments1',
-      'Hypotheses1',
-      'Journal1',
-      'Reports1',
-      'Code Review1',
-      'Wiki1',
-    ])
+    expect(
+      within(tablist)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Experiments1', 'Hypotheses1', 'Journal1', 'Reports1', 'Code Review1', 'Wiki1'])
     const wiki = within(tablist).getByRole('tab', { name: /^Wiki 1$/ })
     expect(wiki).toHaveAttribute('href', '/p/project-a/wiki')
     expect(wiki).toHaveAttribute('aria-selected', 'true')

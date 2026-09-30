@@ -21,7 +21,13 @@ export interface ChecklistWriteContextValue {
 
 const ChecklistWriteContext = createContext<ChecklistWriteContextValue | null>(null)
 
-export function ChecklistWriteProvider({ value, children }: { value: ChecklistWriteContextValue; children: ReactNode }) {
+export function ChecklistWriteProvider({
+  value,
+  children,
+}: {
+  value: ChecklistWriteContextValue
+  children: ReactNode
+}) {
   return <ChecklistWriteContext.Provider value={value}>{children}</ChecklistWriteContext.Provider>
 }
 

@@ -49,10 +49,7 @@ beforeEach(() => {
 
 describe('GET /api/projects/[project]/submodules', () => {
   it('200 for owner with payload', async () => {
-    const res = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
     expect(readGitSubmodules).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
@@ -76,10 +73,7 @@ describe('GET /api/projects/[project]/submodules', () => {
   })
 
   it('404 unknown project', async () => {
-    const res = await GET(
-      req('nope', { 'x-memon-role': 'owner' }),
-      paramsFor('nope'),
-    )
+    const res = await GET(req('nope', { 'x-memon-role': 'owner' }), paramsFor('nope'))
     expect(res.status).toBe(404)
   })
 })

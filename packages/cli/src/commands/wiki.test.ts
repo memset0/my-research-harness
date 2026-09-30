@@ -38,7 +38,9 @@ describe('wiki kinds', () => {
   it('accepts a config-only kind through create, move and lint', async () => {
     const configurationPath = new URL('../../../core/dist/wiki/kinds.json', import.meta.url)
     const configuration = JSON.parse(await fs.readFile(configurationPath, 'utf8'))
-    const ordinary = structuredClone(configuration.kinds.find((kind: { id: string }) => kind.id === 'note'))
+    const ordinary = structuredClone(
+      configuration.kinds.find((kind: { id: string }) => kind.id === 'note'),
+    )
     Object.assign(ordinary, { id: 'test-guide', order: 1000, relatedKinds: [] })
     ordinary.en.purpose = 'Fixture purpose.'
     ordinary.en.examples = ['Fixture example.']
@@ -47,17 +49,30 @@ describe('wiki kinds', () => {
     vi.doMock('../../../core/dist/wiki/kinds.json', () => ({ default: configuration }))
     try {
       const commands = await import('./wiki.js')
-      const created = await runCapturing(() => commands.runWikiCreate({ cwd: root, kind: 'test-guide', slug: 'fixture', title: 'Fixture' }))
+      const created = await runCapturing(() =>
+        commands.runWikiCreate({
+          cwd: root,
+          kind: 'test-guide',
+          slug: 'fixture',
+          title: 'Fixture',
+        }),
+      )
       expect(created.exitCode).toBeNull()
       const original = JSON.parse(created.stdout)
-      const moved = await runCapturing(() => commands.runWikiMove({ cwd: root, page: original.id, target: 'note' }))
+      const moved = await runCapturing(() =>
+        commands.runWikiMove({ cwd: root, page: original.id, target: 'note' }),
+      )
       expect(moved.exitCode).toBeNull()
-      const restored = await runCapturing(() => commands.runWikiMove({ cwd: root, page: original.id, target: 'test-guide' }))
+      const restored = await runCapturing(() =>
+        commands.runWikiMove({ cwd: root, page: original.id, target: 'test-guide' }),
+      )
       expect(restored.exitCode).toBeNull()
       expect(JSON.parse(restored.stdout).id).toBe(original.id)
       const checked = await runCapturing(() => commands.runWikiLint({ cwd: root, strict: true }))
       expect(checked.exitCode).toBeNull()
-      const explanation = await runCapturing(() => commands.runWikiKinds({ cwd: root, kind: 'test-guide', format: 'human' }))
+      const explanation = await runCapturing(() =>
+        commands.runWikiKinds({ cwd: root, kind: 'test-guide', format: 'human' }),
+      )
       expect(explanation.stdout).toContain('Fixture purpose.')
       expect(explanation.stdout).toContain('Fixture example.')
     } finally {
@@ -67,10 +82,16 @@ describe('wiki kinds', () => {
   })
 
   it('lists and explains kinds without resolving a project', async () => {
-    const listed = await runCapturing(() => runWikiKinds({ cwd: '/missing-project', format: 'json' }))
+    const listed = await runCapturing(() =>
+      runWikiKinds({ cwd: '/missing-project', format: 'json' }),
+    )
     const payload = JSON.parse(listed.stdout)
-    expect(payload.kinds.map((kind: { id: string }) => kind.id)).toEqual(expect.arrayContaining(['initiative', 'catalog', 'note', 'roadmap', 'digest']))
-    const shown = await runCapturing(() => runWikiKinds({ cwd: '/missing-project', format: 'human', kind: 'initiative' }))
+    expect(payload.kinds.map((kind: { id: string }) => kind.id)).toEqual(
+      expect.arrayContaining(['initiative', 'catalog', 'note', 'roadmap', 'digest']),
+    )
+    const shown = await runCapturing(() =>
+      runWikiKinds({ cwd: '/missing-project', format: 'human', kind: 'initiative' }),
+    )
     expect(shown.stdout).toContain('推进计划')
     expect(shown.stdout).toContain('Status: none')
     expect(shown.stdout).toContain('May predate any Experiment')
@@ -78,19 +99,38 @@ describe('wiki kinds', () => {
     expect(unknown.exitCode).toBe(2)
   })
 
-  it.each(['initiative', 'catalog', 'digest'])('creates and moves %s with stable identity and no scaffold', async (kind) => {
-    const created = await runCapturing(() => runWikiCreate({ cwd: root, kind: 'note', slug: 'working-page', title: 'Working page', format: 'json' }))
+  it.each([
+    'initiative',
+    'catalog',
+    'digest',
+  ])('creates and moves %s with stable identity and no scaffold', async (kind) => {
+    const created = await runCapturing(() =>
+      runWikiCreate({
+        cwd: root,
+        kind: 'note',
+        slug: 'working-page',
+        title: 'Working page',
+        format: 'json',
+      }),
+    )
     expect(created.exitCode).toBeNull()
     const original = JSON.parse(created.stdout)
-    const moved = await runCapturing(() => runWikiMove({ cwd: root, page: original.id, target: kind, format: 'json' }))
+    const moved = await runCapturing(() =>
+      runWikiMove({ cwd: root, page: original.id, target: kind, format: 'json' }),
+    )
     expect(moved.exitCode).toBeNull()
     const page = JSON.parse(moved.stdout)
     expect(page.id).toBe(original.id)
     expect(page.slug).toBe(original.slug)
     expect(page.status).toBeNull()
-    const read = await fs.readFile(join(root, `docs/wiki/${kind}/${original.id}-working-page.md`), 'utf8')
+    const read = await fs.readFile(
+      join(root, `docs/wiki/${kind}/${original.id}-working-page.md`),
+      'utf8',
+    )
     expect(read).not.toContain('\n## ')
-    const checked = await runCapturing(() => runWikiLint({ cwd: root, strict: true, format: 'json' }))
+    const checked = await runCapturing(() =>
+      runWikiLint({ cwd: root, strict: true, format: 'json' }),
+    )
     expect(checked.exitCode).toBeNull()
   })
 })
@@ -370,7 +410,6 @@ describe('memon wiki ls', () => {
     expect(format.exitCode).toBe(2)
     expect(errorOf(format).code).toBe('BAD_REQUEST')
   })
-
 })
 
 describe('memon wiki show and addressing', () => {
@@ -414,7 +453,7 @@ describe('memon wiki show and addressing', () => {
     const json = await runCapturing(() =>
       runWikiShow({ ...globals(), page: 'W0004', bodyOnly: true }),
     )
-    expect((jsonAs<{ content: string }>(json.stdout)).content).not.toContain('id: W0004')
+    expect(jsonAs<{ content: string }>(json.stdout).content).not.toContain('id: W0004')
 
     const human = await runCapturing(() =>
       runWikiShow({ ...globals(), page: 'W0004', bodyOnly: true, format: 'human' }),
@@ -504,7 +543,7 @@ describe('memon wiki create', () => {
     const run = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'note', slug: 'fresh', title: 'Fresh' }),
     )
-    expect((jsonAs<{ id: string }>(run.stdout)).id).toBe('W0008')
+    expect(jsonAs<{ id: string }>(run.stdout).id).toBe('W0008')
   })
 
   it('writes `language: zh` with the English scaffold and rejects an unknown language', async () => {
@@ -548,7 +587,7 @@ describe('memon wiki create', () => {
     const created = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'question', slug: 'why', title: 'Why?' }),
     )
-    expect((jsonAs<{ status: string }>(created.stdout)).status).toBe('OPEN')
+    expect(jsonAs<{ status: string }>(created.stdout).status).toBe('OPEN')
 
     const missingDate = await runCapturing(() =>
       runWikiCreate({ ...globals(), kind: 'meeting', slug: 'weekly', title: 'Weekly' }),
@@ -717,7 +756,7 @@ describe('memon wiki move', () => {
     const run = await runCapturing(() =>
       runWikiMove({ ...globals(), page: 'W0012', target: 'question/kernel-abi', status: 'OPEN' }),
     )
-    expect((jsonAs<{ newPath: string }>(run.stdout)).newPath).toBe(
+    expect(jsonAs<{ newPath: string }>(run.stdout).newPath).toBe(
       'docs/wiki/question/W0012-kernel-abi.md',
     )
   })
@@ -807,7 +846,7 @@ describe('memon wiki set', () => {
     expect(content).toContain('owner: nobody')
     expect(content.endsWith(body)).toBe(true)
     expect(content).not.toContain('updated_at: "2026-09-01T09:00:00+08:00"')
-    expect((jsonAs<{ status: string }>(run.stdout)).status).toBe('RETRACTED')
+    expect(jsonAs<{ status: string }>(run.stdout).status).toBe('RETRACTED')
   })
 
   it('adds and removes sources and tags', async () => {
@@ -886,9 +925,7 @@ describe('memon wiki local file scope', () => {
         source: ['E9999-does-not-exist'],
       }),
     )
-    await runCapturing(() =>
-      runWikiSet({ ...globals(), page: 'local-only', addSource: ['H9999'] }),
-    )
+    await runCapturing(() => runWikiSet({ ...globals(), page: 'local-only', addSource: ['H9999'] }))
     await runCapturing(() => runWikiLs(globals()))
 
     const visited = readdir.mock.calls.map(([path]) => String(path))
@@ -1048,7 +1085,11 @@ describe('memon wiki lint', () => {
 
     const linted = await withStubbedGit(() => runCapturing(() => runWikiLint(globals())))
     expect(linted.calls).toEqual([])
-    expect(lintRows(linted.result).map((row) => row.id).sort()).toEqual(['W0001', 'W0002'])
+    expect(
+      lintRows(linted.result)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(['W0001', 'W0002'])
     expect(lintRows(linted.result).flatMap((row) => row.codes)).not.toContain(
       'WIKI_UNREVIEWED_VERIFIED',
     )
@@ -1171,9 +1212,7 @@ describe('memon wiki deprecate and delete', () => {
     // Deprecated pages sort last within their kind.
     expect(listed.stdout.trimEnd().split('\n').at(-1)).toContain('W0004')
 
-    const restored = await runCapturing(() =>
-      runWikiUndeprecate({ ...globals(), page: 'W0004' }),
-    )
+    const restored = await runCapturing(() => runWikiUndeprecate({ ...globals(), page: 'W0004' }))
     expect(jsonAs<{ deprecated: unknown }>(restored.stdout).deprecated).toBeNull()
     expect(await readFile('docs/wiki/note/W0004-old-claim.md')).not.toContain('deprecated:')
   })
@@ -1183,9 +1222,7 @@ describe('memon wiki deprecate and delete', () => {
       runWikiDeprecate({ ...globals(), page: 'W0004', reason: 'x', supersededBy: 'W9999' }),
     )
     expect(accepted.exitCode).toBeNull()
-    expect(await readFile('docs/wiki/note/W0004-old-claim.md')).toContain(
-      'superseded_by: W9999',
-    )
+    expect(await readFile('docs/wiki/note/W0004-old-claim.md')).toContain('superseded_by: W9999')
   })
 
   it('refuses a bundle holding more than README.md without --force', async () => {
@@ -1212,7 +1249,7 @@ describe('memon wiki deprecate and delete', () => {
       runWikiDelete({ ...globals(), page: 'kernel-map', force: true }),
     )
     expect(forced.exitCode).toBeNull()
-    expect((jsonAs<{ removed: string[] }>(forced.stdout)).removed).toEqual([
+    expect(jsonAs<{ removed: string[] }>(forced.stdout).removed).toEqual([
       'docs/wiki/showcase/W0020-kernel-map',
     ])
     expect(await pathExists('docs/wiki/showcase/W0020-kernel-map')).toBe(false)
@@ -1220,7 +1257,7 @@ describe('memon wiki deprecate and delete', () => {
 
   it('deletes a single-file page outright', async () => {
     const run = await runCapturing(() => runWikiDelete({ ...globals(), page: 'W0004' }))
-    expect((jsonAs<{ removed: string[] }>(run.stdout)).removed).toEqual([
+    expect(jsonAs<{ removed: string[] }>(run.stdout).removed).toEqual([
       'docs/wiki/note/W0004-old-claim.md',
     ])
     expect(await pathExists('docs/wiki/note/W0004-old-claim.md')).toBe(false)
@@ -1283,9 +1320,7 @@ describe('memon wiki backlinks', () => {
       '# digest\n\n[report](../reports/R0007-bf16-drift.md)\n',
     )
 
-    const run = await runCapturing(() =>
-      runWikiBacklinks({ ...globals(), artifact: 'R0007' }),
-    )
+    const run = await runCapturing(() => runWikiBacklinks({ ...globals(), artifact: 'R0007' }))
     expect(jsonAs<{ pages: unknown[] }>(run.stdout)).toEqual({
       artifact: 'R0007',
       pages: [],
@@ -1348,7 +1383,7 @@ describe('memon wiki migrate-report', () => {
       runWikiMigrateReport({ ...globals(), report: 'R0011', kind: 'showcase' }),
     )
     expect(run.exitCode).toBeNull()
-    expect((jsonAs<{ newPath: string }>(run.stdout)).newPath).toBe(
+    expect(jsonAs<{ newPath: string }>(run.stdout).newPath).toBe(
       'docs/wiki/showcase/W0001-kernel-map/README.md',
     )
     expect(await readFile('docs/wiki/showcase/W0001-kernel-map/data/fid.csv')).toBe('a,b\n1,2\n')
@@ -1378,10 +1413,7 @@ describe('memon wiki migrate-report', () => {
   })
 
   it('exits 4 for an unknown Report and 9 for a taken slug', async () => {
-    await write(
-      'docs/reports/R0007-bf16-drift.md',
-      '# bf16 drift\n\nMeasured in E0002.\n',
-    )
+    await write('docs/reports/R0007-bf16-drift.md', '# bf16 drift\n\nMeasured in E0002.\n')
     await write(
       'docs/wiki/note/W0001-bf16-drift.md',
       page(
@@ -1511,9 +1543,7 @@ describe('memon wiki review', () => {
     expect(parsed.removed).toEqual([shas[0], shas[1]])
     expect(parsed.verifiedThrough).toBeNull()
 
-    const missing = await runCapturing(() =>
-      runWikiReviewUnverify({ ...globals(), sha: shas[0]! }),
-    )
+    const missing = await runCapturing(() => runWikiReviewUnverify({ ...globals(), sha: shas[0]! }))
     expect(missing.exitCode).toBe(4)
   })
 })
@@ -1818,9 +1848,7 @@ describe('memon wiki commit', () => {
       runWikiCreate({ ...globals(), kind: 'note', slug: 'beta', title: 'Beta' }),
     )
     const run = await runCapturing(() => runWikiCommit({ ...globals(), noPush: true }))
-    expect((jsonAs<{ subject: string }>(run.stdout)).subject).toBe(
-      'wiki: update W0001, create W0002',
-    )
+    expect(jsonAs<{ subject: string }>(run.stdout).subject).toBe('wiki: update W0001, create W0002')
   })
 
   it('refuses a mixed index with exit 9 MIXED_INDEX and creates no commit', async () => {

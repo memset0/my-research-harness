@@ -92,11 +92,7 @@ export class RunTargetIndex {
       if (existing) existing.push(path)
       else dirsById.set(id, [path])
     }
-    return new RunTargetIndex(
-      dirsById,
-      options.projectName ?? '(project-root)',
-      readConcurrency,
-    )
+    return new RunTargetIndex(dirsById, options.projectName ?? '(project-root)', readConcurrency)
   }
 
   /** True when the project has a Run directory with this base name. */
@@ -175,7 +171,15 @@ export async function resolveRunTarget(
   id: string,
   options: RunTargetOptions = {},
 ): Promise<Run | null> {
-  const path = await resolveRunReference({ root: projectRoot, name: options.projectName ?? '(project-root)', include: options.include ?? [], exclude: options.exclude ?? [] }, id)
+  const path = await resolveRunReference(
+    {
+      root: projectRoot,
+      name: options.projectName ?? '(project-root)',
+      include: options.include ?? [],
+      exclude: options.exclude ?? [],
+    },
+    id,
+  )
   if (!path) return null
   const run = await readRunDir(path, options.projectName ?? '(project-root)')
   run.frontMatter.experiment = await declaredRunOwner(projectRoot, path, options.projectName)

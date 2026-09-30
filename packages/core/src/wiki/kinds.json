@@ -3,88 +3,340 @@
   "reservedIds": ["code-review", "assets"],
   "kinds": [
     {
-      "id": "meeting", "order": 10, "label": "会议",
-      "zh": {"purpose": "记录某一天的讨论、分歧与共识。", "uses": ["周会、评审和临时讨论"], "examples": ["一次实验评审的决定与行动项"], "distinctions": "决定与待办分开记录；值得独立引用的结论另写 finding 或 decision。"},
-      "en": {"purpose": "Record what was discussed and agreed on a given day.", "uses": ["Meetings and reviews"], "examples": ["An experiment review with decisions and action items"], "distinctions": "Separate settled decisions from owned action items; preserve disagreement.", "authoring": "Use date-prefixed slugs where useful. Cite discussed Experiments in sources. Extract independently citable decisions or findings into linked pages."},
+      "id": "meeting",
+      "order": 10,
+      "label": "会议",
+      "zh": {
+        "purpose": "记录某一天的讨论、分歧与共识。",
+        "uses": ["周会、评审和临时讨论"],
+        "examples": ["一次实验评审的决定与行动项"],
+        "distinctions": "决定与待办分开记录；值得独立引用的结论另写 finding 或 decision。"
+      },
+      "en": {
+        "purpose": "Record what was discussed and agreed on a given day.",
+        "uses": ["Meetings and reviews"],
+        "examples": ["An experiment review with decisions and action items"],
+        "distinctions": "Separate settled decisions from owned action items; preserve disagreement.",
+        "authoring": "Use date-prefixed slugs where useful. Cite discussed Experiments in sources. Extract independently citable decisions or findings into linked pages."
+      },
       "relatedKinds": ["decision", "finding"],
-      "policy": {"statuses": [], "dateRequired": true, "sourcesRequired": false, "recommendedHeadings": ["Attendees", "Notes", "Decisions", "Action items"], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": [],
+        "dateRequired": true,
+        "sourcesRequired": false,
+        "recommendedHeadings": ["Attendees", "Notes", "Decisions", "Action items"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "roadmap", "order": 20, "label": "研究路线图",
-      "zh": {"purpose": "组织研究目标、问题与方向的树状关系。", "uses": ["梳理长期目标及其子问题"], "examples": ["从总体目标展开多个待验证的研究方向"], "distinctions": "不是实验清单或预留实验槽位；Experiment 与节点之间是多对多证据关系。"},
-      "en": {"purpose": "A content-first research tree of goals, questions and directions.", "uses": ["Organizing research direction"], "examples": ["A goal refined into open questions and candidate directions"], "distinctions": "Not an Experiment inventory or one-Experiment-per-node slot system.", "authoring": "Use headings and nested lists as the content demands; no page status or recommended scaffold. Proposed goals need no evidence. Cite Experiments or Variants inline and explain their evidence role. Evidence is many-to-many across nodes and roadmaps. Keep detailed designs, metrics, execution state and experiment-local tasks in Experiments."},
+      "id": "roadmap",
+      "order": 20,
+      "label": "研究路线图",
+      "zh": {
+        "purpose": "组织研究目标、问题与方向的树状关系。",
+        "uses": ["梳理长期目标及其子问题"],
+        "examples": ["从总体目标展开多个待验证的研究方向"],
+        "distinctions": "不是实验清单或预留实验槽位；Experiment 与节点之间是多对多证据关系。"
+      },
+      "en": {
+        "purpose": "A content-first research tree of goals, questions and directions.",
+        "uses": ["Organizing research direction"],
+        "examples": ["A goal refined into open questions and candidate directions"],
+        "distinctions": "Not an Experiment inventory or one-Experiment-per-node slot system.",
+        "authoring": "Use headings and nested lists as the content demands; no page status or recommended scaffold. Proposed goals need no evidence. Cite Experiments or Variants inline and explain their evidence role. Evidence is many-to-many across nodes and roadmaps. Keep detailed designs, metrics, execution state and experiment-local tasks in Experiments."
+      },
       "relatedKinds": ["initiative", "question"],
-      "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": [],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": [],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "finding", "order": 30, "label": "研究发现",
-      "zh": {"purpose": "记录有证据支持、可独立引用的发现。", "uses": ["总结实验支持的结论及适用边界"], "examples": ["某方法在指定条件下优于基线"], "distinctions": "尚未回答的问题用 question；没有证据的猜测不能写成已验证发现。"},
-      "en": {"purpose": "An independently citable claim supported by evidence.", "uses": ["Evidence-backed research conclusions"], "examples": ["A method outperforms a baseline under stated conditions"], "distinctions": "Not an unanswered question or an unsupported claim disguised as a note.", "authoring": "Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them. Page status is independent of human git review."},
+      "id": "finding",
+      "order": 30,
+      "label": "研究发现",
+      "zh": {
+        "purpose": "记录有证据支持、可独立引用的发现。",
+        "uses": ["总结实验支持的结论及适用边界"],
+        "examples": ["某方法在指定条件下优于基线"],
+        "distinctions": "尚未回答的问题用 question；没有证据的猜测不能写成已验证发现。"
+      },
+      "en": {
+        "purpose": "An independently citable claim supported by evidence.",
+        "uses": ["Evidence-backed research conclusions"],
+        "examples": ["A method outperforms a baseline under stated conditions"],
+        "distinctions": "Not an unanswered question or an unsupported claim disguised as a note.",
+        "authoring": "Make Claim quotable. Attribute every number to an Experiment, Variant or run in Evidence and state coverage limits. Cite evidence in prose as well as sources. VERIFIED means claims reproduce from cited Results, otherwise retain TENTATIVE. Retract disproven claims with an explanation rather than deleting them. Page status is independent of human git review."
+      },
       "relatedKinds": ["question", "note"],
-      "policy": {"statuses": ["TENTATIVE", "VERIFIED", "RETRACTED"], "dateRequired": false, "sourcesRequired": true, "recommendedHeadings": ["Claim", "Evidence", "Limits"], "requiredHeadings": [], "bodyEvidenceWarning": true, "reviewWarningStatus": "VERIFIED"}
+      "policy": {
+        "statuses": ["TENTATIVE", "VERIFIED", "RETRACTED"],
+        "dateRequired": false,
+        "sourcesRequired": true,
+        "recommendedHeadings": ["Claim", "Evidence", "Limits"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": true,
+        "reviewWarningStatus": "VERIFIED"
+      }
     },
     {
-      "id": "bottleneck", "order": 40, "label": "瓶颈",
-      "zh": {"purpose": "解释阻碍项目推进的问题、影响与候选解法。", "uses": ["定位性能或工作流程阻碍"], "examples": ["数据准备耗时成为迭代瓶颈"], "distinctions": "已有绕行方案不等于根因解决；普通待研究问题用 question。"},
-      "en": {"purpose": "Explain what is holding the project back.", "uses": ["Performance and workflow obstacles"], "examples": ["Data preparation dominates iteration time"], "distinctions": "MITIGATED means a workaround exists, not that the underlying problem is resolved.", "authoring": "Quantify impact where possible and cite numbers. Compare candidate options with costs, including rejected alternatives and reasons."},
+      "id": "bottleneck",
+      "order": 40,
+      "label": "瓶颈",
+      "zh": {
+        "purpose": "解释阻碍项目推进的问题、影响与候选解法。",
+        "uses": ["定位性能或工作流程阻碍"],
+        "examples": ["数据准备耗时成为迭代瓶颈"],
+        "distinctions": "已有绕行方案不等于根因解决；普通待研究问题用 question。"
+      },
+      "en": {
+        "purpose": "Explain what is holding the project back.",
+        "uses": ["Performance and workflow obstacles"],
+        "examples": ["Data preparation dominates iteration time"],
+        "distinctions": "MITIGATED means a workaround exists, not that the underlying problem is resolved.",
+        "authoring": "Quantify impact where possible and cite numbers. Compare candidate options with costs, including rejected alternatives and reasons."
+      },
       "relatedKinds": ["question", "initiative"],
-      "policy": {"statuses": ["OPEN", "MITIGATED", "RESOLVED"], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": ["Problem", "Impact", "Status", "Candidates"], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": ["OPEN", "MITIGATED", "RESOLVED"],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": ["Problem", "Impact", "Status", "Candidates"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "showcase", "order": 50, "label": "展示",
-      "zh": {"purpose": "展示可查看、可复现的图表或交互成果。", "uses": ["图集、演示和交互浏览器"], "examples": ["带复现步骤的结果可视化"], "distinctions": "展示是主角；分类选型说明用 catalog，证据结论用 finding。"},
-      "en": {"purpose": "Show a rendered artifact, plot set or interactive explorer.", "uses": ["Visual demonstrations and reproducible explorers"], "examples": ["Result visualizations with reproduction instructions"], "distinctions": "Not a classification guide or a replacement for evidence-backed findings.", "authoring": "Usually use a bundle with data/ and views/<slug>/index.html. Explain exact reproduction commands, inputs and producing Experiments in substance. Read html-bundle.md before writing HTML. Mark stale, non-regenerable displays OUTDATED."},
+      "id": "showcase",
+      "order": 50,
+      "label": "展示",
+      "zh": {
+        "purpose": "展示可查看、可复现的图表或交互成果。",
+        "uses": ["图集、演示和交互浏览器"],
+        "examples": ["带复现步骤的结果可视化"],
+        "distinctions": "展示是主角；分类选型说明用 catalog，证据结论用 finding。"
+      },
+      "en": {
+        "purpose": "Show a rendered artifact, plot set or interactive explorer.",
+        "uses": ["Visual demonstrations and reproducible explorers"],
+        "examples": ["Result visualizations with reproduction instructions"],
+        "distinctions": "Not a classification guide or a replacement for evidence-backed findings.",
+        "authoring": "Usually use a bundle with data/ and views/<slug>/index.html. Explain exact reproduction commands, inputs and producing Experiments in substance. Read html-bundle.md before writing HTML. Mark stale, non-regenerable displays OUTDATED."
+      },
       "relatedKinds": ["catalog", "finding"],
-      "policy": {"statuses": ["DRAFT", "READY", "OUTDATED"], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": ["What to show", "How to reproduce", "Assets"], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": ["DRAFT", "READY", "OUTDATED"],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": ["What to show", "How to reproduce", "Assets"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "question", "order": 60, "label": "问题",
-      "zh": {"purpose": "明确尚待回答、值得研究的问题。", "uses": ["提出可检验的问题并记录已有排除项"], "examples": ["某项改动能否改善指定指标"], "distinctions": "已有证据结论用 finding；正在阻塞推进的问题可用 bottleneck。"},
-      "en": {"purpose": "A not-yet-known answer that someone should investigate.", "uses": ["Falsifiable research questions"], "examples": ["Does a change improve a specified metric?"], "distinctions": "Not an already established finding or necessarily a blocking problem.", "authoring": "State a falsifiable question, why it matters now and what was ruled out. Leave Answer empty until evidence exists, then cite it and set ANSWERED. Consider a separate finding. DROPPED records why the question stopped mattering."},
+      "id": "question",
+      "order": 60,
+      "label": "问题",
+      "zh": {
+        "purpose": "明确尚待回答、值得研究的问题。",
+        "uses": ["提出可检验的问题并记录已有排除项"],
+        "examples": ["某项改动能否改善指定指标"],
+        "distinctions": "已有证据结论用 finding；正在阻塞推进的问题可用 bottleneck。"
+      },
+      "en": {
+        "purpose": "A not-yet-known answer that someone should investigate.",
+        "uses": ["Falsifiable research questions"],
+        "examples": ["Does a change improve a specified metric?"],
+        "distinctions": "Not an already established finding or necessarily a blocking problem.",
+        "authoring": "State a falsifiable question, why it matters now and what was ruled out. Leave Answer empty until evidence exists, then cite it and set ANSWERED. Consider a separate finding. DROPPED records why the question stopped mattering."
+      },
       "relatedKinds": ["finding", "bottleneck"],
-      "policy": {"statuses": ["OPEN", "ANSWERED", "DROPPED"], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": ["Question", "Context", "Answer"], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": ["OPEN", "ANSWERED", "DROPPED"],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": ["Question", "Context", "Answer"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "decision", "order": 70, "label": "决策",
-      "zh": {"purpose": "记录已提出或作出的选择、依据与代价。", "uses": ["保存方案取舍，避免反复讨论"], "examples": ["选择一种数据格式并解释被放弃的方案"], "distinctions": "不是会议逐字记录；决策需要明确替代选项与后果。"},
-      "en": {"purpose": "A choice the project should not repeatedly re-litigate.", "uses": ["Recording trade-offs and consequences"], "examples": ["Choosing a data format over alternatives"], "distinctions": "Not a meeting transcript; alternatives and consequences matter.", "authoring": "State the decision in one imperative sentence. Name alternatives and discriminating evidence in Rationale; record costs in Consequences. When replaced, set SUPERSEDED and explicitly deprecate with a successor reference."},
+      "id": "decision",
+      "order": 70,
+      "label": "决策",
+      "zh": {
+        "purpose": "记录已提出或作出的选择、依据与代价。",
+        "uses": ["保存方案取舍，避免反复讨论"],
+        "examples": ["选择一种数据格式并解释被放弃的方案"],
+        "distinctions": "不是会议逐字记录；决策需要明确替代选项与后果。"
+      },
+      "en": {
+        "purpose": "A choice the project should not repeatedly re-litigate.",
+        "uses": ["Recording trade-offs and consequences"],
+        "examples": ["Choosing a data format over alternatives"],
+        "distinctions": "Not a meeting transcript; alternatives and consequences matter.",
+        "authoring": "State the decision in one imperative sentence. Name alternatives and discriminating evidence in Rationale; record costs in Consequences. When replaced, set SUPERSEDED and explicitly deprecate with a successor reference."
+      },
       "relatedKinds": ["meeting"],
-      "policy": {"statuses": ["PROPOSED", "ACCEPTED", "SUPERSEDED"], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": ["Decision", "Rationale", "Consequences"], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": ["PROPOSED", "ACCEPTED", "SUPERSEDED"],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": ["Decision", "Rationale", "Consequences"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "note", "order": 80, "label": "笔记",
-      "zh": {"purpose": "保存不属于其他类型的持久上下文。", "uses": ["术语、阅读摘要和入门说明"], "examples": ["项目常用术语解释"], "distinctions": "不是杂物箱，也不能用来绕过 finding 的证据要求。"},
-      "en": {"purpose": "Durable context that fits no other kind.", "uses": ["Glossaries, reading summaries and onboarding"], "examples": ["A glossary of project terminology"], "distinctions": "Not a dumping ground or a way to evade finding evidence requirements.", "authoring": "Write free-form, useful context without a status or prescribed scaffold. If the content is a tentative claim, use a TENTATIVE finding instead."},
+      "id": "note",
+      "order": 80,
+      "label": "笔记",
+      "zh": {
+        "purpose": "保存不属于其他类型的持久上下文。",
+        "uses": ["术语、阅读摘要和入门说明"],
+        "examples": ["项目常用术语解释"],
+        "distinctions": "不是杂物箱，也不能用来绕过 finding 的证据要求。"
+      },
+      "en": {
+        "purpose": "Durable context that fits no other kind.",
+        "uses": ["Glossaries, reading summaries and onboarding"],
+        "examples": ["A glossary of project terminology"],
+        "distinctions": "Not a dumping ground or a way to evade finding evidence requirements.",
+        "authoring": "Write free-form, useful context without a status or prescribed scaffold. If the content is a tentative claim, use a TENTATIVE finding instead."
+      },
       "relatedKinds": ["finding", "catalog"],
-      "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": [],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": [],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "harness-feedback", "order": 90, "label": "工具反馈",
-      "zh": {"purpose": "记录实际使用中发现的 memon 能力缺口。", "uses": ["提交具体问题与最小改进建议"], "examples": ["某个 CLI 选项缺失导致重复手工操作"], "distinctions": "这是工具开发输入，不是研究结论；agent 只能写 PROPOSED。"},
-      "en": {"purpose": "A gap in memon itself surfaced by real work.", "uses": ["Concrete tool improvement proposals"], "examples": ["A missing CLI option causes repeated manual steps"], "distinctions": "Not a research finding. Agents may write only PROPOSED; other lifecycle values are human-owned.", "authoring": "Describe the concrete moment the gap hurt and cite the affected page or task. Propose the smallest useful fix, not a redesign. Hand off to an OpenSpec change in the harness repository and stop; do not certify implementation or human review."},
+      "id": "harness-feedback",
+      "order": 90,
+      "label": "工具反馈",
+      "zh": {
+        "purpose": "记录实际使用中发现的 memon 能力缺口。",
+        "uses": ["提交具体问题与最小改进建议"],
+        "examples": ["某个 CLI 选项缺失导致重复手工操作"],
+        "distinctions": "这是工具开发输入，不是研究结论；agent 只能写 PROPOSED。"
+      },
+      "en": {
+        "purpose": "A gap in memon itself surfaced by real work.",
+        "uses": ["Concrete tool improvement proposals"],
+        "examples": ["A missing CLI option causes repeated manual steps"],
+        "distinctions": "Not a research finding. Agents may write only PROPOSED; other lifecycle values are human-owned.",
+        "authoring": "Describe the concrete moment the gap hurt and cite the affected page or task. Propose the smallest useful fix, not a redesign. Hand off to an OpenSpec change in the harness repository and stop; do not certify implementation or human review."
+      },
       "relatedKinds": ["bottleneck"],
-      "policy": {"statuses": ["PROPOSED", "ACCEPTED", "SHIPPED", "REJECTED"], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": ["Motivation", "Proposal", "Status"], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": ["PROPOSED", "ACCEPTED", "SHIPPED", "REJECTED"],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": ["Motivation", "Proposal", "Status"],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "initiative", "order": 100, "label": "推进计划",
-      "zh": {"purpose": "围绕一个目标持续组织准备、实现与可能的多个实验。", "uses": ["记录演进阶段、证据支持的进展、阻碍和下一轮讨论"], "examples": ["一项训练改进从准备到多轮实验的工作页"], "distinctions": "可先于 Experiment 存在；不是第二份详细任务账本或对话转录，研究方向树用 roadmap。"},
-      "en": {"purpose": "A human-readable working page advancing one goal through preparation, implementation and potentially several Experiments.", "uses": ["Evolving goal-oriented work"], "examples": ["A training improvement from preparation through multiple experiments"], "distinctions": "May predate any Experiment; not a second detailed task ledger or transcript dump. Use roadmap for a research direction tree.", "authoring": "Explain intent, evolving phases, evidence-backed progress, blockers, decisions and the next discussion. Cite Experiments for evidence rather than duplicating their details. Let the content choose its structure; examples are advisory, with no status or fixed headings."},
+      "id": "initiative",
+      "order": 100,
+      "label": "推进计划",
+      "zh": {
+        "purpose": "围绕一个目标持续组织准备、实现与可能的多个实验。",
+        "uses": ["记录演进阶段、证据支持的进展、阻碍和下一轮讨论"],
+        "examples": ["一项训练改进从准备到多轮实验的工作页"],
+        "distinctions": "可先于 Experiment 存在；不是第二份详细任务账本或对话转录，研究方向树用 roadmap。"
+      },
+      "en": {
+        "purpose": "A human-readable working page advancing one goal through preparation, implementation and potentially several Experiments.",
+        "uses": ["Evolving goal-oriented work"],
+        "examples": ["A training improvement from preparation through multiple experiments"],
+        "distinctions": "May predate any Experiment; not a second detailed task ledger or transcript dump. Use roadmap for a research direction tree.",
+        "authoring": "Explain intent, evolving phases, evidence-backed progress, blockers, decisions and the next discussion. Cite Experiments for evidence rather than duplicating their details. Let the content choose its structure; examples are advisory, with no status or fixed headings."
+      },
       "relatedKinds": ["roadmap", "bottleneck", "decision"],
-      "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": [],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": [],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "catalog", "order": 110, "label": "分类指南",
-      "zh": {"purpose": "解释相关资产或方法的分类、差异与适用条件。", "uses": ["帮助读者理解成熟度、选型依据和证据边界"], "examples": ["内核家族分类指南", "训练数据集差异与适用性说明"], "distinctions": "不是原始库存清单，也不复制 Results 表；视觉成果展示用 showcase。"},
-      "en": {"purpose": "A human-readable classification guide to related assets or methods.", "uses": ["Understanding differences, suitability, maturity and evidence limits"], "examples": ["Kernel-family classification", "Training-dataset suitability guide"], "distinctions": "Not a raw inventory or duplicate Results table; use showcase for visual demonstrations.", "authoring": "Explain meaningful families, differences, suitability, maturity and evidence limits. Link authoritative assets and evidence without copying results. Structure follows the material; suggestions are advisory and there is no page status or fixed heading scaffold."},
+      "id": "catalog",
+      "order": 110,
+      "label": "分类指南",
+      "zh": {
+        "purpose": "解释相关资产或方法的分类、差异与适用条件。",
+        "uses": ["帮助读者理解成熟度、选型依据和证据边界"],
+        "examples": ["内核家族分类指南", "训练数据集差异与适用性说明"],
+        "distinctions": "不是原始库存清单，也不复制 Results 表；视觉成果展示用 showcase。"
+      },
+      "en": {
+        "purpose": "A human-readable classification guide to related assets or methods.",
+        "uses": ["Understanding differences, suitability, maturity and evidence limits"],
+        "examples": ["Kernel-family classification", "Training-dataset suitability guide"],
+        "distinctions": "Not a raw inventory or duplicate Results table; use showcase for visual demonstrations.",
+        "authoring": "Explain meaningful families, differences, suitability, maturity and evidence limits. Link authoritative assets and evidence without copying results. Structure follows the material; suggestions are advisory and there is no page status or fixed heading scaffold."
+      },
       "relatedKinds": ["showcase", "note", "finding"],
-      "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": [],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": [],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     },
     {
-      "id": "digest", "order": 120, "label": "阶段摘要",
-      "zh": {"purpose": "按一个时间窗口汇总进展、证据与尚未解决的问题。", "uses": ["阶段回顾", "保留历史研究摘要"], "examples": ["一周实验进展与待解决问题摘要"], "distinctions": "不同于单次会议记录 meeting，也不把阶段概述当作经过论证的持久结论 finding；引用原始证据而不复制它。"},
-      "en": {"purpose": "Summarize progress, evidence and unresolved questions over a time window.", "uses": ["Periodic retrospectives", "Preserving historical research summaries"], "examples": ["A weekly summary of experiment progress and open questions"], "distinctions": "Unlike a single meeting record or a durable finding, a digest summarizes a period and links to original evidence.", "authoring": "Describe the covered period, meaningful progress, evidence limits and unresolved questions. Cite original Wiki pages or Experiments rather than copying them. Preserve historical context and provenance; do not revive automatic journal cursors, generation schedules or review claims. Structure is advisory; no status or mandatory headings."},
+      "id": "digest",
+      "order": 120,
+      "label": "阶段摘要",
+      "zh": {
+        "purpose": "按一个时间窗口汇总进展、证据与尚未解决的问题。",
+        "uses": ["阶段回顾", "保留历史研究摘要"],
+        "examples": ["一周实验进展与待解决问题摘要"],
+        "distinctions": "不同于单次会议记录 meeting，也不把阶段概述当作经过论证的持久结论 finding；引用原始证据而不复制它。"
+      },
+      "en": {
+        "purpose": "Summarize progress, evidence and unresolved questions over a time window.",
+        "uses": ["Periodic retrospectives", "Preserving historical research summaries"],
+        "examples": ["A weekly summary of experiment progress and open questions"],
+        "distinctions": "Unlike a single meeting record or a durable finding, a digest summarizes a period and links to original evidence.",
+        "authoring": "Describe the covered period, meaningful progress, evidence limits and unresolved questions. Cite original Wiki pages or Experiments rather than copying them. Preserve historical context and provenance; do not revive automatic journal cursors, generation schedules or review claims. Structure is advisory; no status or mandatory headings."
+      },
       "relatedKinds": ["meeting", "finding", "note"],
-      "policy": {"statuses": [], "dateRequired": false, "sourcesRequired": false, "recommendedHeadings": [], "requiredHeadings": [], "bodyEvidenceWarning": false, "reviewWarningStatus": null}
+      "policy": {
+        "statuses": [],
+        "dateRequired": false,
+        "sourcesRequired": false,
+        "recommendedHeadings": [],
+        "requiredHeadings": [],
+        "bodyEvidenceWarning": false,
+        "reviewWarningStatus": null
+      }
     }
   ]
 }

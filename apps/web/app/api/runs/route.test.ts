@@ -38,7 +38,12 @@ beforeEach(() => {
           }
         : {
             runs: [
-              { id: `${project}-run`, project, resource: `logs/${project}-run/README.md`, stale: false },
+              {
+                id: `${project}-run`,
+                project,
+                resource: `logs/${project}-run/README.md`,
+                stale: false,
+              },
             ],
           },
   )

@@ -14,12 +14,7 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  deleteCommitMark,
-  setCommitMark,
-  type CommitMark,
-  type CommitMarkStatus,
-} from '../lib/api'
+import { deleteCommitMark, setCommitMark, type CommitMark, type CommitMarkStatus } from '../lib/api'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
 import { cn } from '../lib/utils'
@@ -141,7 +136,10 @@ export function CommitMarkEditor({
       className="space-y-2 rounded border border-border bg-muted/30 p-2 text-xs"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground" title="Superseded by wiki review; kept for compatibility.">
+        <span
+          className="text-muted-foreground"
+          title="Superseded by wiki review; kept for compatibility."
+        >
           mark (deprecated):
         </span>
         <div className="inline-flex overflow-hidden rounded-md border">
@@ -160,10 +158,7 @@ export function CommitMarkEditor({
                 onClick={() => onStatusToggle(opt.value)}
                 disabled={inFlight}
               >
-                <span
-                  className={cn('inline-block size-2 rounded-full', opt.dot)}
-                  aria-hidden
-                />
+                <span className={cn('inline-block size-2 rounded-full', opt.dot)} aria-hidden />
                 {opt.label}
               </Button>
             )

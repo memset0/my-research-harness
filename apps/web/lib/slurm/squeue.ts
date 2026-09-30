@@ -33,15 +33,13 @@ export interface SlurmJob {
 // `StateCompact` returns the short code (R, PD, CG, …); `State` would
 // return the long word (RUNNING) and breaks the `state === 'R'` filter
 // the API handler uses to compute `usedNodes`.
-const SQUEUE_FORMAT =
-  'JobID:|,Partition:|,Name:|,StateCompact:|,TimeUsed:|,NumNodes:|,NodeList:|'
+const SQUEUE_FORMAT = 'JobID:|,Partition:|,Name:|,StateCompact:|,TimeUsed:|,NumNodes:|,NodeList:|'
 
 export async function runSqueueMe(): Promise<SlurmJob[]> {
-  const { stdout } = await execFileP(
-    'squeue',
-    ['--me', '--noheader', '-O', SQUEUE_FORMAT],
-    { timeout: 10_000, maxBuffer: 262_144 },
-  )
+  const { stdout } = await execFileP('squeue', ['--me', '--noheader', '-O', SQUEUE_FORMAT], {
+    timeout: 10_000,
+    maxBuffer: 262_144,
+  })
   return parseSqueueOutput(stdout)
 }
 

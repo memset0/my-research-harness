@@ -249,11 +249,7 @@ export function createSshExecutionProvider(
     return `${remoteRoot}/${rel.split(sep).join('/')}`
   }
 
-  const sshArgv = (
-    bin: string,
-    args: readonly string[],
-    cwd?: string,
-  ): string[] => {
+  const sshArgv = (bin: string, args: readonly string[], cwd?: string): string[] => {
     const remoteCwd = cwd ? resolvePath(cwd) : null
     const remoteCommand = [
       ...(remoteCwd ? ['cd', shellQuote(remoteCwd), '&&'] : []),

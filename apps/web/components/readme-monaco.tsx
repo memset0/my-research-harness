@@ -90,40 +90,37 @@ export function ReadmeMonaco({ value, onChange, onLoadError }: ReadmeMonacoProps
     }
   }, [onLoadError])
 
-  const handleMount = useCallback(
-    (_editor: unknown, monaco: unknown) => {
-      try {
-        // Pin the editor canvas to white so it reads as a clean writing
-        // surface against the panel's bg-card grey, regardless of the rest of
-        // the app's theme tokens.
-        const bg = '#ffffff'
-        const fg = cssVarAsHex('--foreground', '#0a0a0a')
-        const muted = cssVarAsHex('--muted', '#f4f4f5')
-        const gutterFg = cssVarAsHex('--muted-foreground', '#71717a')
-        // biome-ignore lint/suspicious/noExplicitAny: Monaco's exported types are heavyweight.
-        const m = monaco as any
-        m.editor.defineTheme('memon-light', {
-          base: 'vs',
-          inherit: true,
-          rules: [],
-          colors: {
-            'editor.background': bg,
-            'editor.foreground': fg,
-            'editorGutter.background': bg,
-            'editorLineNumber.foreground': gutterFg,
-            'editor.lineHighlightBackground': muted,
-            'editor.lineHighlightBorder': muted,
-            'editorIndentGuide.background1': muted,
-          },
-        })
-        m.editor.setTheme('memon-light')
-      } catch {
-        // Theme registration is best-effort; fall back to vs default. Don't
-        // promote this to a load failure.
-      }
-    },
-    [],
-  )
+  const handleMount = useCallback((_editor: unknown, monaco: unknown) => {
+    try {
+      // Pin the editor canvas to white so it reads as a clean writing
+      // surface against the panel's bg-card grey, regardless of the rest of
+      // the app's theme tokens.
+      const bg = '#ffffff'
+      const fg = cssVarAsHex('--foreground', '#0a0a0a')
+      const muted = cssVarAsHex('--muted', '#f4f4f5')
+      const gutterFg = cssVarAsHex('--muted-foreground', '#71717a')
+      // biome-ignore lint/suspicious/noExplicitAny: Monaco's exported types are heavyweight.
+      const m = monaco as any
+      m.editor.defineTheme('memon-light', {
+        base: 'vs',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': bg,
+          'editor.foreground': fg,
+          'editorGutter.background': bg,
+          'editorLineNumber.foreground': gutterFg,
+          'editor.lineHighlightBackground': muted,
+          'editor.lineHighlightBorder': muted,
+          'editorIndentGuide.background1': muted,
+        },
+      })
+      m.editor.setTheme('memon-light')
+    } catch {
+      // Theme registration is best-effort; fall back to vs default. Don't
+      // promote this to a load failure.
+    }
+  }, [])
 
   if (loadError) {
     // Parent should have already swapped us out via onLoadError; render nothing.

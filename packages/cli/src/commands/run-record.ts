@@ -100,7 +100,10 @@ export async function runRunRecord(input: RunRecordInput): Promise<void> {
     if (trimmed === '') continue
     const index = Number(trimmed)
     if (!Number.isSafeInteger(index) || index < 0) {
-      emitErrorAndExit('BAD_REQUEST', `--gpus must be a comma-separated list of indices; got "${raw}"`)
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        `--gpus must be a comma-separated list of indices; got "${raw}"`,
+      )
     }
     gpus.push(index)
   }

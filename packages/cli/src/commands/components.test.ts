@@ -118,16 +118,26 @@ function page(...blocks: string[]): string {
 }
 
 function inline(id: string, body: string[], extra: string[] = []): string {
-  return [`\`\`\`yaml datatable@1 #${id}`, 'code: |', ...body.map((line) => `  ${line}`), ...extra, '```'].join(
-    '\n',
-  )
+  return [
+    `\`\`\`yaml datatable@1 #${id}`,
+    'code: |',
+    ...body.map((line) => `  ${line}`),
+    ...extra,
+    '```',
+  ].join('\n')
 }
 
 describe('memon components run', () => {
   it('writes the cache on the first run and reports unchanged on the second', async () => {
     await write(
       DOCUMENT,
-      page(inline('fid', ['def collect(limit, **kw):', '    return {"columns": ["step"], "data": [[limit]]}'], ['limit: 7'])),
+      page(
+        inline(
+          'fid',
+          ['def collect(limit, **kw):', '    return {"columns": ["step"], "data": [[limit]]}'],
+          ['limit: 7'],
+        ),
+      ),
     )
 
     const first = await runCapturing(() => runComponentsRun({ ...globals(), document: DOCUMENT }))
@@ -171,7 +181,10 @@ describe('memon components run', () => {
     await write(DOCUMENT, page(inline('fid', ['def collect(**kw):', '    return {"n": 1}'])))
     await runCapturing(() => runComponentsRun({ ...globals(), document: DOCUMENT }))
 
-    await write(DOCUMENT, page(inline('fid', ['def collect(**kw):', '    raise RuntimeError("no runs yet")'])))
+    await write(
+      DOCUMENT,
+      page(inline('fid', ['def collect(**kw):', '    raise RuntimeError("no runs yet")'])),
+    )
     const failed = await runCapturing(() => runComponentsRun({ ...globals(), document: DOCUMENT }))
     expect(failed.exitCode).toBe(1)
     const [row] = lines(failed)
@@ -241,7 +254,11 @@ describe('memon components run', () => {
       await fs.writeFile(join(outside, 'evil.py'), 'def collect(**kw):\n    return {"ok": 1}\n')
       await write(
         DOCUMENT,
-        page(['```yaml datatable@1 #fid', `script: ${join(outside, 'evil.py')}::collect`, '```'].join('\n')),
+        page(
+          ['```yaml datatable@1 #fid', `script: ${join(outside, 'evil.py')}::collect`, '```'].join(
+            '\n',
+          ),
+        ),
       )
       const run = await runCapturing(() => runComponentsRun({ ...globals(), document: DOCUMENT }))
       expect(run.exitCode).toBe(1)
@@ -254,11 +271,19 @@ describe('memon components run', () => {
   it('runs a `script` relative to the document in human format', async () => {
     await write(
       'scripts/collect.py',
-      ['def collect(**kw):', '    return {"id": kw["__id"], "assets": kw["__assets_dir"]}', ''].join('\n'),
+      [
+        'def collect(**kw):',
+        '    return {"id": kw["__id"], "assets": kw["__assets_dir"]}',
+        '',
+      ].join('\n'),
     )
     await write(
       DOCUMENT,
-      page(['```yaml datatable@1 #fid', 'script: ../../../scripts/collect.py::collect', '```'].join('\n')),
+      page(
+        ['```yaml datatable@1 #fid', 'script: ../../../scripts/collect.py::collect', '```'].join(
+          '\n',
+        ),
+      ),
     )
     const run = await runCapturing(() =>
       runComponentsRun({ ...globals(), document: DOCUMENT, format: 'human' }),

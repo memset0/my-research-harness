@@ -6,9 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  parseComponentDeclaration as webParseDeclaration,
-} from '../../../../apps/web/lib/components/declaration.js'
+import { parseComponentDeclaration as webParseDeclaration } from '../../../../apps/web/lib/components/declaration.js'
 import {
   derivePayload as webDerivePayload,
   executableFunctionName as webExecutableFunctionName,
@@ -73,16 +71,15 @@ describe('declaration grammar parity', () => {
 })
 
 describe('payload derivation parity', () => {
-  it.each(PAYLOADS.map((entry) => [`${entry.lang}: ${JSON.stringify(entry.body)}`, entry] as const))(
-    'agrees on %s',
-    (_label, entry) => {
-      const mine = derivePayload(entry.lang, entry.body)
-      expect(mine).toEqual(webDerivePayload(entry.lang, entry.body))
-      if (mine.kind === 'executable') {
-        expect(executableFunctionName(mine.spec)).toBe(webExecutableFunctionName(mine.spec))
-      }
-    },
-  )
+  it.each(
+    PAYLOADS.map((entry) => [`${entry.lang}: ${JSON.stringify(entry.body)}`, entry] as const),
+  )('agrees on %s', (_label, entry) => {
+    const mine = derivePayload(entry.lang, entry.body)
+    expect(mine).toEqual(webDerivePayload(entry.lang, entry.body))
+    if (mine.kind === 'executable') {
+      expect(executableFunctionName(mine.spec)).toBe(webExecutableFunctionName(mine.spec))
+    }
+  })
 
   it('agrees on stripping reserved keys', () => {
     const value = { a: 1, __md_file_path: 'x.md', __last_error: { message: 'boom' }, b: 2 }

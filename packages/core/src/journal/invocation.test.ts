@@ -85,17 +85,19 @@ describe('withJournalInvocation', () => {
 
   it('joins a nested invocation into one receipt instead of duplicating it', async () => {
     await withJournalInvocation(root, { command: 'experiment delete', origin: 'cli' }, async () => {
-      await withJournalInvocation(root, { command: 'experiment unlink', origin: 'cli' }, async (ctx) => {
-        ctx.addDetail({ kind: 'target', type: 'run', id: 'foo-260901-090000' })
-      })
+      await withJournalInvocation(
+        root,
+        { command: 'experiment unlink', origin: 'cli' },
+        async (ctx) => {
+          ctx.addDetail({ kind: 'target', type: 'run', id: 'foo-260901-090000' })
+        },
+      )
     })
 
     const records = await readJournalInvocations(root)
     expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({ command: 'experiment delete', outcome: 'success' })
-    expect(records[0]!.details).toEqual([
-      { kind: 'target', type: 'run', id: 'foo-260901-090000' },
-    ])
+    expect(records[0]!.details).toEqual([{ kind: 'target', type: 'run', id: 'foo-260901-090000' }])
   })
 })
 

@@ -67,7 +67,8 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
       'x-content-type-options': 'nosniff',
       'x-memon-resource-version': asset.version,
     })
-    if (asset.contentSecurityPolicy) headers.set('content-security-policy', asset.contentSecurityPolicy)
+    if (asset.contentSecurityPolicy)
+      headers.set('content-security-policy', asset.contentSecurityPolicy)
     if (isNotModified(request, asset.etag, asset.mtimeMs)) {
       return new NextResponse(null, { status: 304, headers })
     }

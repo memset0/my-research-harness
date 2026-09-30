@@ -105,10 +105,7 @@ export async function readMountTable(): Promise<MountIdentity[] | null> {
 }
 
 /** The most specific mount containing `path`. */
-export function containingMount(
-  path: string,
-  entries: MountIdentity[],
-): MountIdentity | undefined {
+export function containingMount(path: string, entries: MountIdentity[]): MountIdentity | undefined {
   let best: MountIdentity | undefined
   for (const entry of entries) {
     if (!isWithinPath(entry.mountPoint, path)) continue

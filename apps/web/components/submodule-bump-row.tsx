@@ -60,10 +60,7 @@ export function SubmoduleBumpRow({
         className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent hover:text-accent-foreground"
       >
         <ChevronRight
-          className={cn(
-            'size-3.5 shrink-0 transition-transform',
-            expanded && 'rotate-90',
-          )}
+          className={cn('size-3.5 shrink-0 transition-transform', expanded && 'rotate-90')}
           aria-hidden
         />
         <span className="w-3 shrink-0 text-center font-mono font-semibold text-blue-600 dark:text-blue-400">
@@ -128,9 +125,7 @@ function SubmoduleBumpBody({
   if (data.enabled === false) {
     return (
       <p className="px-2 py-1 text-xs text-muted-foreground italic">
-        {data.reason === 'not-a-repo'
-          ? 'submodule is not a git repo'
-          : `git: ${data.reason}`}
+        {data.reason === 'not-a-repo' ? 'submodule is not a git repo' : `git: ${data.reason}`}
       </p>
     )
   }
@@ -171,13 +166,9 @@ function CommitsSummary({
         <ul className="space-y-0.5 pl-2">
           {commits.map((c) => (
             <li key={c.sha} className="flex gap-2 text-xs">
-              <span className="shrink-0 font-mono text-muted-foreground">
-                {c.shortSha}
-              </span>
+              <span className="shrink-0 font-mono text-muted-foreground">{c.shortSha}</span>
               <span className="truncate">{c.subject}</span>
-              <span className="shrink-0 text-muted-foreground">
-                {c.authorName}
-              </span>
+              <span className="shrink-0 text-muted-foreground">{c.authorName}</span>
             </li>
           ))}
         </ul>

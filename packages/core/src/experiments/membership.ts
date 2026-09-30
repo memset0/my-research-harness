@@ -1,9 +1,5 @@
 import { relative } from 'node:path'
-import type {
-  Experiment,
-  ExperimentMembershipAnomaly,
-  Run,
-} from '../types.js'
+import type { Experiment, ExperimentMembershipAnomaly, Run } from '../types.js'
 
 export interface MembershipResult {
   /** Map from experiment id to confirmed member run dir base names. */
@@ -30,11 +26,17 @@ export function computeMembership(input: MembershipInput): MembershipResult {
   const project = input.project
 
   const runByDir = new Map<string, Run>()
-  for (const run of input.runs) runByDir.set(input.projectRoot ? relative(input.projectRoot, run.path).split('\\').join('/') : run.id, run)
+  for (const run of input.runs)
+    runByDir.set(
+      input.projectRoot ? relative(input.projectRoot, run.path).split('\\').join('/') : run.id,
+      run,
+    )
 
   const legacyBuckets = new Map<string, Run[]>()
-  for (const run of input.runs) legacyBuckets.set(run.id, [...(legacyBuckets.get(run.id) ?? []), run])
-  for (const [id, candidates] of legacyBuckets) if (candidates.length === 1) runByDir.set(id, candidates[0]!)
+  for (const run of input.runs)
+    legacyBuckets.set(run.id, [...(legacyBuckets.get(run.id) ?? []), run])
+  for (const [id, candidates] of legacyBuckets)
+    if (candidates.length === 1) runByDir.set(id, candidates[0]!)
   const ownersByPath = new Map<string, Set<string>>()
   for (const experiment of input.experiments) {
     for (const reference of experiment.frontMatter.runs) {
@@ -66,7 +68,14 @@ export function computeMembership(input: MembershipInput): MembershipResult {
       }
       const owners = ownersByPath.get(run.path)!
       if (owners.size > 1) {
-        anomalies.push({ code: 'MISMATCH_EXPERIMENT_REF', project, experimentId: exp.id, runId: runDirName, message: `Run path has multiple Experiment owners: ${runDirName}`, detectedAt })
+        anomalies.push({
+          code: 'MISMATCH_EXPERIMENT_REF',
+          project,
+          experimentId: exp.id,
+          runId: runDirName,
+          message: `Run path has multiple Experiment owners: ${runDirName}`,
+          detectedAt,
+        })
         continue
       }
       confirmed.push(runDirName)

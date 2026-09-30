@@ -15,10 +15,7 @@ import { parseReadme } from '../readme/parse.js'
 import { parseTimestampFromRunDir } from '../time.js'
 import type { Run, ParsedReadme } from '../types.js'
 
-export async function readRunDir(
-  dirPath: string,
-  projectName: string,
-): Promise<Run> {
+export async function readRunDir(dirPath: string, projectName: string): Promise<Run> {
   const id = basename(dirPath)
   const readmePath = join(dirPath, 'README.md')
 
@@ -89,9 +86,10 @@ export async function readRunDir(
  * absent. Caller still treats the resulting Run as `hasReadme: false`.
  */
 function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
-  const tail = /^(?<name>.+)-(?<yy>\d{2})(?<mm>\d{2})(?<dd>\d{2})-(?<hh>\d{2})(?<mi>\d{2})(?<ss>\d{2})$/.exec(
-    id,
-  )
+  const tail =
+    /^(?<name>.+)-(?<yy>\d{2})(?<mm>\d{2})(?<dd>\d{2})-(?<hh>\d{2})(?<mi>\d{2})(?<ss>\d{2})$/.exec(
+      id,
+    )
   let name = id
   let createdAt = ''
   if (tail?.groups) {
@@ -147,7 +145,10 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
     body: '',
     parseErrors: [],
     parseWarnings: [
-      { message: 'no README.md (synthesized id/name/created_at from directory name)', severity: 'warning' },
+      {
+        message: 'no README.md (synthesized id/name/created_at from directory name)',
+        severity: 'warning',
+      },
     ],
     // No frontmatter block at all, so no declared keys.
     frontMatterKeys: [],

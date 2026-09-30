@@ -81,7 +81,11 @@ export function derivePayload(lang: string, body: string): DerivedPayload {
   const hasCode = 'code' in value
   if (!hasScript && !hasCode) return { kind: 'static', value }
   if (lang === 'json') {
-    return { kind: 'error', field: hasScript ? 'script' : 'code', message: 'executable payloads must be YAML' }
+    return {
+      kind: 'error',
+      field: hasScript ? 'script' : 'code',
+      message: 'executable payloads must be YAML',
+    }
   }
   if (hasScript && hasCode) {
     return { kind: 'error', field: 'script', message: '`script` and `code` are mutually exclusive' }
@@ -91,7 +95,11 @@ export function derivePayload(lang: string, body: string): DerivedPayload {
   for (const [key, entry] of Object.entries(value)) {
     if (key === 'script' || key === 'code') continue
     if (key.startsWith(RESERVED_PREFIX)) {
-      return { kind: 'error', field: key, message: `keys starting with \`${RESERVED_PREFIX}\` are reserved` }
+      return {
+        kind: 'error',
+        field: key,
+        message: `keys starting with \`${RESERVED_PREFIX}\` are reserved`,
+      }
     }
     kwargs[key] = entry
   }
@@ -104,7 +112,8 @@ export function derivePayload(lang: string, body: string): DerivedPayload {
     return { kind: 'executable', spec: { script: script.trim(), kwargs } }
   }
   const code = value.code
-  if (typeof code !== 'string') return { kind: 'error', field: 'code', message: '`code` must be a string' }
+  if (typeof code !== 'string')
+    return { kind: 'error', field: 'code', message: '`code` must be a string' }
   const defs = [...code.matchAll(TOP_LEVEL_DEF)]
   if (defs.length !== 1) {
     return {

@@ -390,9 +390,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
             id: effectiveWikiId(page.id, frontmatter),
             resource: ResourceIdSchema.parse(page.path),
             legacyId:
-              typeof legacyId === 'string' && WIKI_LEGACY_ID_REGEX.test(legacyId)
-                ? legacyId
-                : null,
+              typeof legacyId === 'string' && WIKI_LEGACY_ID_REGEX.test(legacyId) ? legacyId : null,
           }
         }),
       })
@@ -405,9 +403,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   async getWiki(projectName: string, id: string) {
     const project = this.requireProject(projectName)
-    const summary = await withAutomaticProjectFileContext(() =>
-      this.wikiPageSummary(project, id),
-    )
+    const summary = await withAutomaticProjectFileContext(() => this.wikiPageSummary(project, id))
     return BackendWikiDocumentSchema.parse(await this.readWikiPage(project, summary))
   }
 
@@ -729,20 +725,14 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
     const items: BackendResourceInventoryItem[] = []
     for (const entry of entries) {
-      const file = entry.isFile()
-        ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
-        : null
-      const bundle = entry.isDirectory()
-        ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/.exec(entry.name)
-        : null
+      const file = entry.isFile() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name) : null
+      const bundle = entry.isDirectory() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/.exec(entry.name) : null
       const match = file ?? bundle
       if (!match) continue
       items.push({
         id: `R${match[1]}`,
         slug: match[2]!,
-        resource: ResourceIdSchema.parse(
-          `docs/reports/${entry.name}${bundle ? '/README.md' : ''}`,
-        ),
+        resource: ResourceIdSchema.parse(`docs/reports/${entry.name}${bundle ? '/README.md' : ''}`),
       })
     }
     return items.sort(
@@ -759,8 +749,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const candidates: Array<{ relativePath: string; slug: string }> = []
     const flatDirectory = join(docs, 'code-review')
     if (await isWithin(project.root, flatDirectory)) {
-      const flat =
-        (await missingOrThrow(fs.readdir(flatDirectory, { withFileTypes: true }))) ?? []
+      const flat = (await missingOrThrow(fs.readdir(flatDirectory, { withFileTypes: true }))) ?? []
       for (const entry of flat) {
         const match = entry.isFile()
           ? /^\d{4}-\d{2}-\d{2}-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
@@ -791,11 +780,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
         }
       }
     }
-    return candidates.map(({ relativePath, slug }) => ({
-      id: relativePath.replace(/\.md$/, ''),
-      slug,
-      resource: ResourceIdSchema.parse(`docs/${relativePath}`),
-    })).sort((left, right) => right.id.localeCompare(left.id))
+    return candidates
+      .map(({ relativePath, slug }) => ({
+        id: relativePath.replace(/\.md$/, ''),
+        slug,
+        resource: ResourceIdSchema.parse(`docs/${relativePath}`),
+      }))
+      .sort((left, right) => right.id.localeCompare(left.id))
   }
 
   /**

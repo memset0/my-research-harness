@@ -204,10 +204,15 @@ describe('Backend document routes', () => {
   })
 
   it('retires legacy Digest read and write routes even when old files exist', async () => {
-    for (const path of ['/api/backend/v1/digests?project=research', '/api/backend/v1/digests/D0001?project=research']) {
+    for (const path of [
+      '/api/backend/v1/digests?project=research',
+      '/api/backend/v1/digests/D0001?project=research',
+    ]) {
       expect((await request(path, { actor: owner })).status).toBe(404)
     }
-    expect(await fs.readFile(join(root, 'docs/digests/D0001-2026-08-26.md'), 'utf8')).toBe('# Digest\n')
+    expect(await fs.readFile(join(root, 'docs/digests/D0001-2026-08-26.md'), 'utf8')).toBe(
+      '# Digest\n',
+    )
   })
 
   it('applies strict optimistic writes and does not return current content on conflict', async () => {

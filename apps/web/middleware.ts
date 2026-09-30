@@ -95,10 +95,7 @@ function appendSetCookie(headers: Headers, value: string): void {
  */
 function isViewerVisibleMutation(method: string, pathname: string): boolean {
   if (method === 'POST' && pathname === '/api/experiment-results-views') return true
-  if (
-    (method === 'POST' || method === 'DELETE') &&
-    /^\/api\/wiki\/review\/[^/]+$/.test(pathname)
-  ) {
+  if ((method === 'POST' || method === 'DELETE') && /^\/api\/wiki\/review\/[^/]+$/.test(pathname)) {
     return true
   }
   if (method !== 'PATCH' && method !== 'DELETE') return false

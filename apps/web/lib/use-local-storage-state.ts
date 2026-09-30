@@ -15,10 +15,7 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
-export function useLocalStorageState<T>(
-  key: string,
-  initial: T,
-): [T, (next: T) => void] {
+export function useLocalStorageState<T>(key: string, initial: T): [T, (next: T) => void] {
   const [value, setValue] = useState<T>(initial)
   const hydratedRef = useRef(false)
 

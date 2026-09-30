@@ -23,9 +23,7 @@ describe('StatusEdit', () => {
 
   it('PATCH success → success toast + invalidate', async () => {
     vi.mocked(patchExperimentStatus).mockResolvedValue({ mtime: 2000 } as never)
-    renderWithQuery(
-      <StatusEdit id="exp-1" status="RUNNING" expectedMtime={1000} />,
-    )
+    renderWithQuery(<StatusEdit id="exp-1" status="RUNNING" expectedMtime={1000} />)
     await userEvent.click(screen.getByRole('combobox'))
     const opt = await screen.findByRole('option', { name: 'FINISHED' })
     await userEvent.click(opt)
@@ -43,9 +41,7 @@ describe('StatusEdit', () => {
     vi.mocked(patchExperimentStatus).mockResolvedValue({
       error: { code: 'CONFLICT', message: 'mtime mismatch' },
     } as never)
-    renderWithQuery(
-      <StatusEdit id="exp-1" status="RUNNING" expectedMtime={1000} />,
-    )
+    renderWithQuery(<StatusEdit id="exp-1" status="RUNNING" expectedMtime={1000} />)
     await userEvent.click(screen.getByRole('combobox'))
     const opt = await screen.findByRole('option', { name: 'FINISHED' })
     await userEvent.click(opt)

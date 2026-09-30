@@ -75,26 +75,38 @@ describe('project storage mode', () => {
     expect(String(error)).toContain('persistent_cache')
     expect(String(error)).toContain('alpha')
 
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha, persistent_cache: false }]\n')
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha, persistent_cache: false }]\n',
+    )
     const cfg = await loadConfig({ cwd: dir })
     expect(cfg!.projects[0]).toMatchObject({ storage: 'local', persistentCache: false })
   })
 
   it('rejects an unknown storage mode', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha, storage: nfs }]\n')
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha, storage: nfs }]\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 })
 
 describe('persistent file cache config', () => {
   it('requires an explicit instance dump when any project opts in', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\n')
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 
   it('resolves the dump beside the selected config rather than the caller cwd', async () => {
     const configPath = join(dir, 'instance.yml')
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 12.5\n  wiki_ttl_seconds: 45\n  default_ttl_seconds: 2400\n')
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha, storage: sshfs, persistent_cache: true }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 12.5\n  wiki_ttl_seconds: 45\n  default_ttl_seconds: 2400\n',
+    )
     const config = await loadConfig({ cwd: '/', explicitPath: configPath })
     expect(config?.fileCache?.dumpPath).toBe(join(dir, '.memon-cache', 'files.dump'))
     expect(config?.fileCache?.dumpIntervalMs).toBe(12_500)
@@ -105,40 +117,73 @@ describe('persistent file cache config', () => {
 
   it('resolves a relative ffmpeg path beside the config and keeps a bare command name', async () => {
     const configPath = join(dir, 'instance.yml')
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffmpeg: ./bin/ffmpeg\n')
-    expect((await loadConfig({ cwd: '/', explicitPath: configPath }))?.media).toEqual({ ffmpeg: join(dir, 'bin', 'ffmpeg') })
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffmpeg: ffmpeg\n')
-    expect((await loadConfig({ cwd: '/', explicitPath: configPath }))?.media).toEqual({ ffmpeg: 'ffmpeg' })
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffprobe: x\n')
-    await expect(loadConfig({ cwd: '/', explicitPath: configPath })).rejects.toBeInstanceOf(ConfigError)
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffmpeg: ./bin/ffmpeg\n',
+    )
+    expect((await loadConfig({ cwd: '/', explicitPath: configPath }))?.media).toEqual({
+      ffmpeg: join(dir, 'bin', 'ffmpeg'),
+    })
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffmpeg: ffmpeg\n',
+    )
+    expect((await loadConfig({ cwd: '/', explicitPath: configPath }))?.media).toEqual({
+      ffmpeg: 'ffmpeg',
+    })
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha }]\nmedia:\n  ffprobe: x\n',
+    )
+    await expect(loadConfig({ cwd: '/', explicitPath: configPath })).rejects.toBeInstanceOf(
+      ConfigError,
+    )
   })
 
   it('defaults the periodic dump interval to 30 seconds', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n')
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n',
+    )
     const config = await loadConfig({ cwd: dir })
     expect(config?.fileCache?.dumpIntervalMs).toBe(30_000)
   })
 
   it('rejects the removed database key rather than treating it as a dump path', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  database: ./.memon-cache/files.sqlite\n')
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  database: ./.memon-cache/files.sqlite\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 
   it('rejects a blank dump path', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: "   "\n')
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: "   "\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 
   it('rejects a non-positive or non-finite dump interval', async () => {
     const configPath = join(dir, 'config.yml')
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 0\n')
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 0\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
-    await fs.writeFile(configPath, 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: .inf\n')
+    await fs.writeFile(
+      configPath,
+      'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: .inf\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 
   it('rejects a Wiki period longer than the ordinary-document period', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), 'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  wiki_ttl_seconds: 1800\n  default_ttl_seconds: 30\n')
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha }]\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  wiki_ttl_seconds: 1800\n  default_ttl_seconds: 30\n',
+    )
     await expect(loadConfig({ cwd: dir })).rejects.toBeInstanceOf(ConfigError)
   })
 })

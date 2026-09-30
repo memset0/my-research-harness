@@ -62,9 +62,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
     vi.mocked(putReadme).mockResolvedValue({ mtime: 2000 } as never)
     const onClose = vi.fn()
 
-    renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={onClose} />,
-    )
+    renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={onClose} />)
 
     const editor = await screen.findByTestId('monaco-editor')
     expect(editor).toHaveValue('original')
@@ -95,9 +93,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
       mtime: 5000,
     } as never)
 
-    renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
-    )
+    renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />)
 
     const editor = await screen.findByTestId('monaco-editor')
     await userEvent.clear(editor)
@@ -105,9 +101,7 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(
-      await screen.findByText(/disk changed since you opened/i),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/disk changed since you opened/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /keep mine/i })).toBeInTheDocument()
   })
 
@@ -121,24 +115,16 @@ describe('ReadmeEditor (Dialog) — save and conflict paths', () => {
       }),
     )
 
-    renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
-    )
+    renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />)
 
-    expect(
-      await screen.findByText(/unsaved draft found/i),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: /restore my draft/i }),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/unsaved draft found/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /restore my draft/i })).toBeInTheDocument()
   })
 })
 
 describe('ReadmeEditor toolbar — plain toggle', () => {
   it('toggles to plain mode and persists preference', async () => {
-    const { unmount } = renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
-    )
+    const { unmount } = renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />)
     await screen.findByTestId('monaco-editor')
 
     const toggle = screen.getByRole('button', { name: /switch to plain editor/i })
@@ -150,9 +136,7 @@ describe('ReadmeEditor toolbar — plain toggle', () => {
 
     // Re-render: should default to plain now
     unmount()
-    renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
-    )
+    renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />)
     expect(await screen.findByTestId('readme-plain-textarea')).toBeInTheDocument()
     expect(screen.queryByTestId('monaco-editor')).not.toBeInTheDocument()
   })
@@ -166,9 +150,7 @@ describe('ReadmeEditor toolbar — copy markdown', () => {
       value: { writeText },
     })
 
-    renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
-    )
+    renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />)
 
     const editor = await screen.findByTestId('monaco-editor')
     await userEvent.clear(editor)
@@ -187,23 +169,16 @@ describe('ReadmeEditor toolbar — copy markdown', () => {
       value: { writeText },
     })
 
-    renderWithQuery(
-      <ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />,
-    )
+    renderWithQuery(<ReadmeEditor path={PATH} runId="exp" onClose={vi.fn()} />)
 
     await screen.findByTestId('monaco-editor')
     // Switch to plain so the .select() fallback hits a real textarea.
-    await userEvent.click(
-      screen.getByRole('button', { name: /switch to plain editor/i }),
-    )
+    await userEvent.click(screen.getByRole('button', { name: /switch to plain editor/i }))
     const textarea = await screen.findByTestId('readme-plain-textarea')
     await userEvent.clear(textarea)
     await userEvent.type(textarea, 'fallback content')
 
-    const selectSpy = vi.spyOn(
-      textarea as HTMLTextAreaElement,
-      'select',
-    )
+    const selectSpy = vi.spyOn(textarea as HTMLTextAreaElement, 'select')
     await userEvent.click(screen.getByRole('button', { name: /copy markdown/i }))
 
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -219,12 +194,7 @@ describe('ReadmeEditorBody — panel containerKind does not auto-close on save',
 
     render(
       <BodyHarness>
-        <ReadmeEditorBody
-          path={PATH}
-          runId="exp"
-          onClose={onClose}
-          containerKind="panel"
-        />
+        <ReadmeEditorBody path={PATH} runId="exp" onClose={onClose} containerKind="panel" />
       </BodyHarness>,
     )
 

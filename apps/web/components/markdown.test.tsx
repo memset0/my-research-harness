@@ -268,7 +268,9 @@ describe('<Markdown> directory Report resources', () => {
   it('refuses relative paths with traversal segments', () => {
     expect(resolveDocumentResourceUrl(base, '../secret.json')).toBeNull()
     expect(resolveDocumentResourceUrl(base, '%2e%2e/secret.json')).toBeNull()
-    expect(resolveDocumentResourceUrl(base, './data/metrics.json')).toBe(`${base}/data/metrics.json`)
+    expect(resolveDocumentResourceUrl(base, './data/metrics.json')).toBe(
+      `${base}/data/metrics.json`,
+    )
   })
 
   it('keeps central Host selectors after the appended asset path', () => {

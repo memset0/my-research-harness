@@ -205,9 +205,7 @@ describe('Backend initial Project data routes', () => {
     expect(history.invocations).toEqual([])
     // Receipt diagnostics never travel on the legacy read.
     const legacy = BackendJournalResponseSchema.parse(
-      await (
-        await request('/api/backend/v1/journal?project=project-a', { actor: owner })
-      ).json(),
+      await (await request('/api/backend/v1/journal?project=project-a', { actor: owner })).json(),
     )
     expect(legacy).not.toHaveProperty('invocations')
     expect(legacy).not.toHaveProperty('lastDigestAt')

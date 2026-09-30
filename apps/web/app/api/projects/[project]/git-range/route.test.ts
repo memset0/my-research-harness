@@ -32,10 +32,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, query: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/git-range?${query}`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/git-range?${query}`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -59,7 +59,11 @@ describe('GET /api/projects/[project]/git-range', () => {
       paramsFor('project-a'),
     )
     expect(res.status).toBe(200)
-    expect(readGitRange).toHaveBeenCalledWith('/tmp/a', { from: 'aaa', to: 'bbb' }, { exec: undefined })
+    expect(readGitRange).toHaveBeenCalledWith(
+      '/tmp/a',
+      { from: 'aaa', to: 'bbb' },
+      { exec: undefined },
+    )
     const body = await res.json()
     expect(body).toMatchObject({ enabled: true, submodule: '' })
   })

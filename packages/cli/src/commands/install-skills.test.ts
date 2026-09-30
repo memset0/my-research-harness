@@ -24,15 +24,13 @@ const FAKE_PREFLIGHT = '# fake preflight\nbody\n'
 // provenance contract, not the implementation's own arithmetic.
 const RETIRED_SKILL = 'memon-legacy'
 const RETIRED_SHIPPED_BODY = '# retired legacy skill\n'
-const RETIRED_SHIPPED_DEPOSIT =
-  '6a27e74d68d2ecb7026cbdf60e40e03dae0771a280121bb193d0e56307b87502'
+const RETIRED_SHIPPED_DEPOSIT = '6a27e74d68d2ecb7026cbdf60e40e03dae0771a280121bb193d0e56307b87502'
 // A second released shape for the same name: `SKILL.md` plus a nested
 // `references/legacy.md`, the layout real skill deposits use. Digest literal is
 // `sha256` over the two sorted `<rel path>\0<sha256 of bytes>\n` lines,
 // computed independently of the installer.
 const RETIRED_NESTED_BODY = '# legacy reference\n'
-const RETIRED_NESTED_DEPOSIT =
-  'b196b8cc9ce1cc1e77e4efc2fe2bb057668e865693814da68c425f520eb6181b'
+const RETIRED_NESTED_DEPOSIT = 'b196b8cc9ce1cc1e77e4efc2fe2bb057668e865693814da68c425f520eb6181b'
 
 beforeEach(async () => {
   // Build a fake @memon/skills source directory so tests don't depend on the

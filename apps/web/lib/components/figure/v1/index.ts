@@ -1,10 +1,15 @@
 import { z } from 'zod'
 import { defineComponent } from '../../types'
 
-const path = 'relative to the containing Markdown document, or an absolute path inside the project root'
+const path =
+  'relative to the containing Markdown document, or an absolute path inside the project root'
 
 const schema = z.object({
-  image: z.string().min(1).optional().describe(`Image path ${path}. Give exactly one of \`image\` or \`video\`.`),
+  image: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(`Image path ${path}. Give exactly one of \`image\` or \`video\`.`),
   video: z
     .string()
     .min(1)
@@ -25,7 +30,9 @@ const schema = z.object({
     .trim()
     .min(1)
     .optional()
-    .describe('Alternative text and readable fallback detail for the image or video; defaults to the caption.'),
+    .describe(
+      'Alternative text and readable fallback detail for the image or video; defaults to the caption.',
+    ),
 })
 
 const example = [
@@ -61,18 +68,34 @@ export const descriptor = defineComponent({
       })
     }
     if (data.poster !== undefined && data.video === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['poster'], message: '`poster` requires `video`' })
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['poster'],
+        message: '`poster` requires `video`',
+      })
     }
   },
   example,
   invalidExamples: [
     { block: example.replace(/^caption:.*\n/m, ''), code: 'WIKI_COMPONENT_INVALID' },
-    { block: example.replace('image: W0009-figure-gallery__assets/pipeline.svg', 'image: ""'), code: 'WIKI_COMPONENT_INVALID' },
     {
-      block: videoExample.replace('poster:', 'image: W0009-figure-gallery__assets/pipeline.svg\nposter:'),
+      block: example.replace('image: W0009-figure-gallery__assets/pipeline.svg', 'image: ""'),
       code: 'WIKI_COMPONENT_INVALID',
     },
-    { block: example.replace('caption:', 'poster: W0009-figure-gallery__assets/rollout.jpg\ncaption:'), code: 'WIKI_COMPONENT_INVALID' },
+    {
+      block: videoExample.replace(
+        'poster:',
+        'image: W0009-figure-gallery__assets/pipeline.svg\nposter:',
+      ),
+      code: 'WIKI_COMPONENT_INVALID',
+    },
+    {
+      block: example.replace(
+        'caption:',
+        'poster: W0009-figure-gallery__assets/rollout.jpg\ncaption:',
+      ),
+      code: 'WIKI_COMPONENT_INVALID',
+    },
   ],
   fixtures: ['docs/wiki/showcase/W0009-figure-gallery.md'],
 })

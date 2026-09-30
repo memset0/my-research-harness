@@ -128,10 +128,7 @@ export class Poller {
           // Swallow callback errors — poller must keep going
         }
       } else {
-        state.interval = Math.min(
-          state.interval * this.opts.backoffFactor,
-          this.opts.maxIntervalMs,
-        )
+        state.interval = Math.min(state.interval * this.opts.backoffFactor, this.opts.maxIntervalMs)
       }
     } finally {
       state.inFlight = false

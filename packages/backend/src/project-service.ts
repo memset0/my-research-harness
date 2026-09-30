@@ -386,10 +386,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
    * its own document's; the member roster and the window widened over it are
    * the detail projection's job.
    */
-  async listExperiments(
-    projectName: string,
-    options: InventoryListOptions = {},
-  ) {
+  async listExperiments(projectName: string, options: InventoryListOptions = {}) {
     const project = this.requireProject(projectName)
     if (options.inventoryOnly) {
       const paths = await withAutomaticProjectFileContext(() => listExperimentPaths(project.root))
@@ -693,16 +690,23 @@ export class FilesystemProjectService implements BackendProjectReadService {
       discoverExperiments(project.root, project.name),
     ])
     const legacyCounts = new Map<string, number>()
-    for (const run of snapshot.experiments) legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
+    for (const run of snapshot.experiments)
+      legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
     for (const run of snapshot.experiments) {
       const path = projectRunPath(project.root, run.path)
-      const owners = experimentResult.experiments.filter((experiment) => experiment.frontMatter.runs.includes(path) || (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)))
+      const owners = experimentResult.experiments.filter(
+        (experiment) =>
+          experiment.frontMatter.runs.includes(path) ||
+          (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)),
+      )
       run.frontMatter.experiment = owners.length === 1 ? owners[0]!.id : null
     }
     return {
       project,
       runs: snapshot.experiments,
-      runsById: new Map(snapshot.experiments.map((run) => [projectRunPath(project.root, run.path), run])),
+      runsById: new Map(
+        snapshot.experiments.map((run) => [projectRunPath(project.root, run.path), run]),
+      ),
       experiments: experimentResult.experiments,
       membership: computeMembership({
         experiments: experimentResult.experiments,

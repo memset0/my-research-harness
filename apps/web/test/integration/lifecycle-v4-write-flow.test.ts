@@ -281,10 +281,13 @@ describe('PATCH /api/experiments/:id/status', () => {
     expect(exp).toContain('first unsupported occurrence')
     expect(exp).toContain('second unsupported occurrence')
 
-    expect(await readJournalInvocations(projectRoot)).toContainEqual(expect.objectContaining({
-      command: 'experiment status set', outcome: 'success',
-      parameters: { experiment: id, status: 'RESOLVED' },
-    }))
+    expect(await readJournalInvocations(projectRoot)).toContainEqual(
+      expect.objectContaining({
+        command: 'experiment status set',
+        outcome: 'success',
+        parameters: { experiment: id, status: 'RESOLVED' },
+      }),
+    )
   })
 
   it('noop when status unchanged', async () => {
@@ -326,10 +329,13 @@ describe('PATCH /api/experiments/:id/archive', () => {
     expect(exp).toContain('first unsupported occurrence')
     expect(exp).toContain('second unsupported occurrence')
 
-    expect(await readJournalInvocations(projectRoot)).toContainEqual(expect.objectContaining({
-      command: 'experiment archive set', outcome: 'success',
-      parameters: { experiment: id, archived: true },
-    }))
+    expect(await readJournalInvocations(projectRoot)).toContainEqual(
+      expect.objectContaining({
+        command: 'experiment archive set',
+        outcome: 'success',
+        parameters: { experiment: id, archived: true },
+      }),
+    )
   })
 })
 
@@ -398,9 +404,13 @@ describe('PUT /api/runs/:id/readme', () => {
     expect(after).toContain('status: INTERRUPTED')
     expect(after).toContain('archived: true')
 
-    expect(await readJournalInvocations(projectRoot)).toContainEqual(expect.objectContaining({
-      command: 'run readme write', outcome: 'success', parameters: { run: id },
-    }))
+    expect(await readJournalInvocations(projectRoot)).toContainEqual(
+      expect.objectContaining({
+        command: 'run readme write',
+        outcome: 'success',
+        parameters: { run: id },
+      }),
+    )
   })
 
   // fix-run-readme-mtime-lock-vs-dir-mtime D3: stale expectedMtime + content
@@ -434,11 +444,19 @@ describe('PUT /api/runs/:id/readme', () => {
     expect(body.finalContent).toBe(before)
 
     const receiptsAfter = await readJournalInvocations(projectRoot)
-    const added = receiptsAfter.filter((record) => !receiptsBefore.some((before) => before.id === record.id))
-    expect(added).toEqual([expect.objectContaining({
-      command: 'run readme write', outcome: 'noop', parameters: { run: id },
-    })])
-    await expect(fs.readFile(join(projectRoot, 'docs', 'journal.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+    const added = receiptsAfter.filter(
+      (record) => !receiptsBefore.some((before) => before.id === record.id),
+    )
+    expect(added).toEqual([
+      expect.objectContaining({
+        command: 'run readme write',
+        outcome: 'noop',
+        parameters: { run: id },
+      }),
+    ])
+    await expect(fs.readFile(join(projectRoot, 'docs', 'journal.md'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
   })
 
   // Negative: stale expectedMtime + DIFFERENT canonical content → 409.

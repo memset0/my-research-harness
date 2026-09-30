@@ -6,18 +6,8 @@ import { AlertTriangle, Server } from 'lucide-react'
 import { fetchSlurmStatus, type SlurmStatus, type SlurmJobJson } from '../lib/api'
 import { useIsMobile } from '../hooks/use-mobile'
 import { SidebarMenuButton, SidebarMenuItem } from './ui/sidebar'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 import { Badge } from './ui/badge'
 import { cn } from '../lib/utils'
 
@@ -54,16 +44,9 @@ export function SlurmStatusWidget() {
       onClick={isMobile ? () => setDialogOpen(true) : undefined}
       className={cn(isError && 'text-destructive')}
     >
-      {isError ? (
-        <AlertTriangle className="size-4" />
-      ) : (
-        <Server className="size-4" />
-      )}
+      {isError ? <AlertTriangle className="size-4" /> : <Server className="size-4" />}
       <span>Slurm Usage</span>
-      <Badge
-        variant={isError ? 'destructive' : 'secondary'}
-        className="ml-auto font-mono"
-      >
+      <Badge variant={isError ? 'destructive' : 'secondary'} className="ml-auto font-mono">
         {isError ? 'error' : `${data.usedNodes} / ${data.totalNodes}`}
       </Badge>
     </SidebarMenuButton>

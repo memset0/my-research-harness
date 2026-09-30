@@ -457,9 +457,7 @@ export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedP
                 'md:h-[70vh] md:max-h-[52rem]',
               ],
         )}
-        style={
-          !isExpanded && fixedHeightPx !== null ? { height: `${fixedHeightPx}px` } : undefined
-        }
+        style={!isExpanded && fixedHeightPx !== null ? { height: `${fixedHeightPx}px` } : undefined}
         aria-busy={phase === 'checking' || phase === 'loading'}
       >
         {(phase === 'checking' || phase === 'loading') && (

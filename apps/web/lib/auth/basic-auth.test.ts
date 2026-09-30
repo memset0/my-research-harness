@@ -8,7 +8,10 @@ function basic(user: string, pass: string): string {
 
 describe('parseBasicAuth', () => {
   it('parses well-formed header', () => {
-    expect(parseBasicAuth(basic('admin', 'sekret'))).toEqual({ username: 'admin', password: 'sekret' })
+    expect(parseBasicAuth(basic('admin', 'sekret'))).toEqual({
+      username: 'admin',
+      password: 'sekret',
+    })
   })
 
   it('handles empty password', () => {
@@ -16,7 +19,10 @@ describe('parseBasicAuth', () => {
   })
 
   it('handles password containing colons', () => {
-    expect(parseBasicAuth(basic('admin', 'a:b:c'))).toEqual({ username: 'admin', password: 'a:b:c' })
+    expect(parseBasicAuth(basic('admin', 'a:b:c'))).toEqual({
+      username: 'admin',
+      password: 'a:b:c',
+    })
   })
 
   it('returns null for missing/blank/non-Basic', () => {

@@ -26,9 +26,6 @@ export async function GET() {
       lastError: rt.lastError,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: { message: (err as Error).message } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }

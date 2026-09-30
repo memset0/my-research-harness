@@ -23,10 +23,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, query: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/git-diff?${query}`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/git-diff?${query}`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -58,8 +58,12 @@ describe('GET /api/projects/[project]/git-diff', () => {
       oldContent: 'old\n',
       newContent: 'new\n',
     })
-    expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'index', 'app.ts', { exec: undefined })
-    expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'working', 'app.ts', { exec: undefined })
+    expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'index', 'app.ts', {
+      exec: undefined,
+    })
+    expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'working', 'app.ts', {
+      exec: undefined,
+    })
   })
 
   it('untracked: oldContent=null, newContent from working', async () => {
@@ -215,8 +219,12 @@ describe('GET /api/projects/[project]/git-diff', () => {
         oldContent: 'parent\n',
         newContent: 'commit\n',
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'abc1234^', 'app.ts', { exec: undefined })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'abc1234', 'app.ts', { exec: undefined })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'abc1234^', 'app.ts', {
+        exec: undefined,
+      })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'abc1234', 'app.ts', {
+        exec: undefined,
+      })
     })
 
     it('root commit: parent not-found → oldContent="" status=added', async () => {
@@ -303,8 +311,12 @@ describe('GET /api/projects/[project]/git-diff', () => {
         oldContent: 'old\n',
         newContent: 'new\n',
       })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'aaa', 'app.ts', { exec: undefined })
-      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'bbb', 'app.ts', { exec: undefined })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(1, '/tmp/a', 'aaa', 'app.ts', {
+        exec: undefined,
+      })
+      expect(readGitFileContents).toHaveBeenNthCalledWith(2, '/tmp/a', 'bbb', 'app.ts', {
+        exec: undefined,
+      })
     })
 
     it('400 missing from', async () => {

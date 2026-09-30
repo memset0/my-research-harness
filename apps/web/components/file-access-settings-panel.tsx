@@ -630,9 +630,9 @@ function MetricsView({ metrics }: { metrics: FileOperationMetrics }) {
         rows; these are alternative breakdowns, not additional totals. Runtime entries count
         project/path/operation keys in scheduler memory, including keys with pending work; they are
         not unique paths, observation-LRU values, or dump records. Read volume counts application
-        bytes from physical reads; cache hits read nothing.
-        Joined counts each extra caller once when it joins an existing task. Window{' '}
-        {Math.round(metrics.windowMs / 60_000)} min, generated {metrics.generatedAt}.
+        bytes from physical reads; cache hits read nothing. Joined counts each extra caller once
+        when it joins an existing task. Window {Math.round(metrics.windowMs / 60_000)} min,
+        generated {metrics.generatedAt}.
       </p>
     </div>
   )

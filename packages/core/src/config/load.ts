@@ -300,7 +300,6 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     if (cfg.auth.session_secret !== undefined) auth.sessionSecret = cfg.auth.session_secret
   }
 
-
   const slurm: SlurmConfig = {
     totalNodes: cfg.slurm?.total_nodes ?? DEFAULT_SLURM.totalNodes,
   }
@@ -357,9 +356,9 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
         candidate,
       )
     }
-    const incompatibleKey = (
-      directProjects ? (['poll'] as const) : clusterOnlyKeys
-    ).find((key) => Object.hasOwn(rawRecord, key))
+    const incompatibleKey = (directProjects ? (['poll'] as const) : clusterOnlyKeys).find((key) =>
+      Object.hasOwn(rawRecord, key),
+    )
     if (incompatibleKey) {
       throw new ConfigError(
         directProjects
@@ -606,10 +605,17 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       }
     : undefined
   const media = cfg.media
-    ? { ffmpeg: cfg.media.ffmpeg.includes('/') ? resolve(baseDir, cfg.media.ffmpeg) : cfg.media.ffmpeg }
+    ? {
+        ffmpeg: cfg.media.ffmpeg.includes('/')
+          ? resolve(baseDir, cfg.media.ffmpeg)
+          : cfg.media.ffmpeg,
+      }
     : undefined
   if (!fileCache && resolvedProjects.some((project) => project.persistentCache)) {
-    throw new ConfigError('persistent_cache requires file_cache.dump_path in the instance config', candidate)
+    throw new ConfigError(
+      'persistent_cache requires file_cache.dump_path in the instance config',
+      candidate,
+    )
   }
 
   return {

@@ -98,7 +98,10 @@ export function PageFreshness({ project }: PageFreshnessProps) {
         {label}
       </span>
       {detail.length > 0 && (
-        <span className="hidden truncate text-muted-foreground/70 sm:inline" data-page-freshness-detail>
+        <span
+          className="hidden truncate text-muted-foreground/70 sm:inline"
+          data-page-freshness-detail
+        >
           {detail.join(' · ')}
         </span>
       )}

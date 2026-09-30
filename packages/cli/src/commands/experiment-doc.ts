@@ -408,7 +408,9 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
   const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
   if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
 
-  exp.frontMatter.runs = exp.frontMatter.runs.filter((reference) => reference !== projectRunPath(projectRoot, run.path) && reference !== run.id)
+  exp.frontMatter.runs = exp.frontMatter.runs.filter(
+    (reference) => reference !== projectRunPath(projectRoot, run.path) && reference !== run.id,
+  )
   exp.frontMatter.updatedAt = nowIso()
   await atomicWrite(
     exp.path,

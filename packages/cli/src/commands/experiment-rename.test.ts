@@ -88,7 +88,11 @@ function spyExit() {
   process.exit = ((code?: number) => {
     throw new ExitCalled(code ?? 0)
   }) as typeof process.exit
-  return { restore: () => { process.exit = real } }
+  return {
+    restore: () => {
+      process.exit = real
+    },
+  }
 }
 
 describe('runExperimentRename', () => {
@@ -123,7 +127,13 @@ describe('runExperimentRename', () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  function lastJsonStdout(): { ok: boolean; oldId: string; newId: string; noop?: true; warnings?: unknown[] } {
+  function lastJsonStdout(): {
+    ok: boolean
+    oldId: string
+    newId: string
+    noop?: true
+    warnings?: unknown[]
+  } {
     // emitJson uses JSON.stringify(value, null, 2), so the payload spans
     // multiple newlines. Walk backwards counting brace depth to extract
     // the last top-level JSON object (mirrors warning.test.ts).

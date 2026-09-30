@@ -43,22 +43,14 @@ export interface LoadCliContextResult {
  *
  * No `config.yml` file is read; that's a `memon serve` (web) concern.
  */
-export async function loadCliContext(
-  input: LoadCliContextInput,
-): Promise<LoadCliContextResult> {
+export async function loadCliContext(input: LoadCliContextInput): Promise<LoadCliContextResult> {
   if (input.projectRoot) {
     const abs = resolve(input.projectRoot)
     if (!existsSync(abs)) {
-      throw new CliContextError(
-        'NOT_FOUND',
-        `project root does not exist: ${abs}`,
-      )
+      throw new CliContextError('NOT_FOUND', `project root does not exist: ${abs}`)
     }
     if (!statSync(abs).isDirectory()) {
-      throw new CliContextError(
-        'NOT_FOUND',
-        `project root is not a directory: ${abs}`,
-      )
+      throw new CliContextError('NOT_FOUND', `project root is not a directory: ${abs}`)
     }
     return {
       config: {

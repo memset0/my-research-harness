@@ -180,7 +180,8 @@ export function matchesCell(cell: unknown, matcher: FilterMatcher): boolean {
   if (matcher === null || typeof matcher !== 'object') return cellLabel(matcher) === text
   if (matcher.eq !== undefined && cellLabel(matcher.eq) !== text) return false
   if (matcher.ne !== undefined && cellLabel(matcher.ne) === text) return false
-  if (matcher.in !== undefined && !matcher.in.some((value) => cellLabel(value) === text)) return false
+  if (matcher.in !== undefined && !matcher.in.some((value) => cellLabel(value) === text))
+    return false
   if (matcher.not_in?.some((value) => cellLabel(value) === text)) return false
   const bounds = [matcher.lt, matcher.lte, matcher.gt, matcher.gte]
   if (bounds.every((bound) => bound === undefined)) return true
@@ -194,7 +195,11 @@ export function matchesCell(cell: unknown, matcher: FilterMatcher): boolean {
 }
 
 /** A row matches a filter when every `where` entry holds. */
-export function matchesFilter(columns: readonly string[], row: readonly unknown[], filter: DatatableFilter): boolean {
+export function matchesFilter(
+  columns: readonly string[],
+  row: readonly unknown[],
+  filter: DatatableFilter,
+): boolean {
   return Object.entries(filter.where).every(([column, matcher]) => {
     const at = columns.indexOf(column)
     return at !== -1 && matchesCell(row[at], matcher)

@@ -107,10 +107,9 @@ describe('direct central resource priority', () => {
     const runtime = directCentralRuntime(config)
     const beforeCollection = getFileOperationMetrics()
     const collection = await runtime.dispatch({
-      request: new Request(
-        'http://central.test/api/hypotheses?host=local&project=research',
-        { headers: { [REASON_HEADER]: 'manual' } },
-      ),
+      request: new Request('http://central.test/api/hypotheses?host=local&project=research', {
+        headers: { [REASON_HEADER]: 'manual' },
+      }),
       actor: { role: 'owner' },
     })
     expect(collection.status).toBe(200)
@@ -164,9 +163,9 @@ describe('direct central storage mode', () => {
   })
 
   it('keeps an sshfs project on the scheduler', async () => {
-    await expect(
-      contextStorage([{ ...base, root, storageGroup, storage: 'sshfs' }]),
-    ).resolves.toBe('sshfs')
+    await expect(contextStorage([{ ...base, root, storageGroup, storage: 'sshfs' }])).resolves.toBe(
+      'sshfs',
+    )
   })
 
   it('leaves the mode unset when a config was assembled without one', async () => {

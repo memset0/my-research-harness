@@ -101,15 +101,8 @@ describe('SubmoduleBumpRow', () => {
       />,
     )
     await userEvent.click(screen.getByRole('button'))
-    await waitFor(() =>
-      expect(fetchGitRange).toHaveBeenCalledTimes(1),
-    )
-    expect(fetchGitRange).toHaveBeenCalledWith(
-      'project-a',
-      FROM,
-      TO,
-      'vendor/foo',
-    )
+    await waitFor(() => expect(fetchGitRange).toHaveBeenCalledTimes(1))
+    expect(fetchGitRange).toHaveBeenCalledWith('project-a', FROM, TO, 'vendor/foo')
   })
 
   it('expanded body renders commit summaries + files', async () => {
@@ -141,22 +134,15 @@ describe('SubmoduleBumpRow', () => {
       />,
     )
     await userEvent.click(screen.getByRole('button'))
-    await waitFor(() =>
-      expect(screen.getByText('src/lib.ts')).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText('src/lib.ts')).toBeInTheDocument())
     await userEvent.click(screen.getByText('src/lib.ts'))
     await waitFor(() => expect(fetchGitDiff).toHaveBeenCalledTimes(1))
-    expect(fetchGitDiff).toHaveBeenCalledWith(
-      'project-a',
-      'src/lib.ts',
-      'range',
-      {
-        sha: undefined,
-        submodule: 'vendor/foo',
-        from: FROM,
-        to: TO,
-      },
-    )
+    expect(fetchGitDiff).toHaveBeenCalledWith('project-a', 'src/lib.ts', 'range', {
+      sha: undefined,
+      submodule: 'vendor/foo',
+      from: FROM,
+      to: TO,
+    })
   })
 
   it('renders the disabled state when the range query reports enabled=false', async () => {
@@ -175,8 +161,6 @@ describe('SubmoduleBumpRow', () => {
       />,
     )
     await userEvent.click(screen.getByRole('button'))
-    await waitFor(() =>
-      expect(screen.getByText(/git: error/)).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText(/git: error/)).toBeInTheDocument())
   })
 })

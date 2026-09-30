@@ -6,10 +6,7 @@
 // scopes) after logout.
 
 import { NextResponse, type NextRequest } from 'next/server'
-import {
-  buildClearCookieHeader,
-  SESSION_COOKIE_NAME,
-} from '@/lib/auth/cookies'
+import { buildClearCookieHeader, SESSION_COOKIE_NAME } from '@/lib/auth/cookies'
 import { isHttps, publicOrigin } from '@/lib/auth/public-url'
 
 function wantsJson(req: NextRequest): boolean {
@@ -33,9 +30,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       headers: { Location: target.toString(), 'Cache-Control': 'no-store' },
     })
   }
-  res.headers.append(
-    'Set-Cookie',
-    buildClearCookieHeader(SESSION_COOKIE_NAME, isHttps(req)),
-  )
+  res.headers.append('Set-Cookie', buildClearCookieHeader(SESSION_COOKIE_NAME, isHttps(req)))
   return res
 }

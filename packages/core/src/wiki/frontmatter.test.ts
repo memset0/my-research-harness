@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  parseWikiFrontmatter,
-  serializeWikiPage,
-  updateWikiFrontmatter,
-} from './frontmatter.js'
+import { parseWikiFrontmatter, serializeWikiPage, updateWikiFrontmatter } from './frontmatter.js'
 
 const PAGE = `---
 id: W0004

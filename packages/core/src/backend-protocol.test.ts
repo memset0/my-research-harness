@@ -154,7 +154,6 @@ describe('shared Backend protocol identity schemas', () => {
       }).success,
     ).toBe(false)
   })
-
 })
 
 describe('Backend Results annotations', () => {

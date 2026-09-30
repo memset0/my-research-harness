@@ -335,8 +335,7 @@ describe('appendSessionSecretToAuthBlock', () => {
   })
 
   it('preserves trailing content after the auth block', () => {
-    const before =
-      'auth:\n  username: alice\n  password: pw\n\nlegacy_plugin:\n  retries: 8\n'
+    const before = 'auth:\n  username: alice\n  password: pw\n\nlegacy_plugin:\n  retries: 8\n'
     const after = __testAppendSessionSecretToAuthBlock(before, 'NEW-SECRET')
     expect(after).toContain('  session_secret: "NEW-SECRET"\n\nlegacy_plugin:')
     expect(after).toContain('retries: 8')

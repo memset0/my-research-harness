@@ -20,10 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import {
-  runArchive,
-  runStatusSet,
-} from './experiment.js'
+import { runArchive, runStatusSet } from './experiment.js'
 import {
   runExperimentArchiveDoc,
   runExperimentStatusSet,
@@ -222,10 +219,7 @@ describe('memon experiment status set (exp-doc form)', () => {
       journalAppended: true,
     })
 
-    const expContent = await fs.readFile(
-      join(root, 'docs', 'experiments', 'E0001-foo.md'),
-      'utf8',
-    )
+    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0001-foo.md'), 'utf8')
     expect(expContent).toContain('status: RESOLVED')
 
     const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
@@ -248,7 +242,10 @@ describe('memon experiment status set (exp-doc form)', () => {
 
     // No journal file (or no [EXP_STATUS] line)
     const journalPath = join(root, 'docs', 'journal.md')
-    const exists = await fs.stat(journalPath).then(() => true).catch(() => false)
+    const exists = await fs
+      .stat(journalPath)
+      .then(() => true)
+      .catch(() => false)
     if (exists) {
       const journal = await fs.readFile(journalPath, 'utf8')
       expect(journal).not.toContain('[EXP_STATUS]')
@@ -312,10 +309,7 @@ describe('memon run archive — hard rule on RUNNING', () => {
     expect(errBlob).toContain('cannot archive a RUNNING run')
 
     // README untouched
-    const readme = await fs.readFile(
-      join(root, 'logs', 'foo-260513-100000', 'README.md'),
-      'utf8',
-    )
+    const readme = await fs.readFile(join(root, 'logs', 'foo-260513-100000', 'README.md'), 'utf8')
     expect(readme).toContain('archived: false')
   })
 })
@@ -348,10 +342,7 @@ describe('memon experiment archive (exp-doc form)', () => {
     const out = lastJsonOnStdout()
     expect(out).toMatchObject({ ok: true, archived: true, noop: false })
 
-    const expContent = await fs.readFile(
-      join(root, 'docs', 'experiments', 'E0001-foo.md'),
-      'utf8',
-    )
+    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0001-foo.md'), 'utf8')
     expect(expContent).toContain('archived: true')
 
     const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')
@@ -371,7 +362,10 @@ describe('memon experiment archive (exp-doc form)', () => {
 
     // No [ARCHIVE] event for E0002-bar should appear
     const journalPath = join(root, 'docs', 'journal.md')
-    const exists = await fs.stat(journalPath).then(() => true).catch(() => false)
+    const exists = await fs
+      .stat(journalPath)
+      .then(() => true)
+      .catch(() => false)
     if (exists) {
       const journal = await fs.readFile(journalPath, 'utf8')
       expect(journal).not.toContain('`E0002-bar`')
@@ -387,10 +381,7 @@ describe('memon experiment archive (exp-doc form)', () => {
     const out = lastJsonOnStdout()
     expect(out).toMatchObject({ ok: true, archived: false, noop: false })
 
-    const expContent = await fs.readFile(
-      join(root, 'docs', 'experiments', 'E0002-bar.md'),
-      'utf8',
-    )
+    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0002-bar.md'), 'utf8')
     expect(expContent).toContain('archived: false')
 
     const journal = await fs.readFile(join(root, 'docs', 'journal.md'), 'utf8')

@@ -83,9 +83,7 @@ export function validateReleaseTransition(transition: ReleasePolicyTransition): 
 
   if (distributedChanged) {
     if (next.minor !== previous.minor + 1 || next.patch !== 0) {
-      throw new Error(
-        'CLI/skills release must increment Minor by exactly one and reset Patch',
-      )
+      throw new Error('CLI/skills release must increment Minor by exactly one and reset Patch')
     }
     return 'cli-minor'
   }

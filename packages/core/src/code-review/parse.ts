@@ -83,9 +83,7 @@ export function deriveCompletion(fm: CodeReviewFrontMatter): CodeReviewCompletio
   const totalTodos = fm.reviewTodolist.length
   const doneTodos = fm.reviewTodolist.filter((t) => t.done).length
   const isComplete =
-    totalCommits + totalTodos > 0 &&
-    reviewedCommits === totalCommits &&
-    doneTodos === totalTodos
+    totalCommits + totalTodos > 0 && reviewedCommits === totalCommits && doneTodos === totalTodos
   return { totalCommits, reviewedCommits, totalTodos, doneTodos, isComplete }
 }
 

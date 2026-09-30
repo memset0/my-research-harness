@@ -8,11 +8,7 @@ vi.mock('../lib/api', () => ({
   deleteCommitMark: vi.fn(),
 }))
 
-import {
-  deleteCommitMark,
-  setCommitMark,
-  type CommitMark,
-} from '../lib/api'
+import { deleteCommitMark, setCommitMark, type CommitMark } from '../lib/api'
 import { CommitMarkEditor } from './commit-mark-editor'
 
 const EXISTING: CommitMark = {
@@ -35,9 +31,7 @@ afterEach(() => {
 describe('CommitMarkEditor', () => {
   // ---- Status toggle auto-save ----
   it('clicking a status toggle auto-fires setCommitMark with the current note', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
     const suspiciousBtn = document.body.querySelector(
       '[data-slot="commit-mark-option-suspicious"]',
     ) as HTMLButtonElement
@@ -53,9 +47,7 @@ describe('CommitMarkEditor', () => {
   })
 
   it('status toggle also persists the current note draft', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={null} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={null} />)
     const note = document.body.querySelector(
       '[data-slot="commit-mark-note"]',
     ) as HTMLTextAreaElement
@@ -76,42 +68,30 @@ describe('CommitMarkEditor', () => {
 
   // ---- Save button (manual save for note-only edits) ----
   it('Save is disabled while form is pristine (existing mark, no edits)', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
-    const save = document.body.querySelector(
-      '[data-slot="commit-mark-save"]',
-    ) as HTMLButtonElement
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
+    const save = document.body.querySelector('[data-slot="commit-mark-save"]') as HTMLButtonElement
     expect(save.disabled).toBe(true)
   })
 
   it('typing in the note alone does NOT fire setCommitMark but enables Save', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
     const note = document.body.querySelector(
       '[data-slot="commit-mark-note"]',
     ) as HTMLTextAreaElement
     await userEvent.type(note, ' more')
     expect(setCommitMark).not.toHaveBeenCalled()
-    const save = document.body.querySelector(
-      '[data-slot="commit-mark-save"]',
-    ) as HTMLButtonElement
+    const save = document.body.querySelector('[data-slot="commit-mark-save"]') as HTMLButtonElement
     expect(save.disabled).toBe(false)
   })
 
   it('Save fires setCommitMark with the current status + note', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
     const note = document.body.querySelector(
       '[data-slot="commit-mark-note"]',
     ) as HTMLTextAreaElement
     await userEvent.clear(note)
     await userEvent.type(note, 'still good')
-    const save = document.body.querySelector(
-      '[data-slot="commit-mark-save"]',
-    ) as HTMLButtonElement
+    const save = document.body.querySelector('[data-slot="commit-mark-save"]') as HTMLButtonElement
     await userEvent.click(save)
     await waitFor(() => {
       expect(setCommitMark).toHaveBeenCalledWith(
@@ -125,9 +105,7 @@ describe('CommitMarkEditor', () => {
 
   // ---- Ctrl+S in textarea ----
   it('Ctrl+S in the textarea fires save when the form is dirty', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
     const note = document.body.querySelector(
       '[data-slot="commit-mark-note"]',
     ) as HTMLTextAreaElement
@@ -146,9 +124,7 @@ describe('CommitMarkEditor', () => {
   })
 
   it('Ctrl+S is a no-op when the form is clean', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
     const note = document.body.querySelector(
       '[data-slot="commit-mark-note"]',
     ) as HTMLTextAreaElement
@@ -159,28 +135,18 @@ describe('CommitMarkEditor', () => {
 
   // ---- Clear ----
   it('Clear button only renders when a mark exists', () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={null} />,
-    )
-    expect(
-      document.body.querySelector('[data-slot="commit-mark-clear"]'),
-    ).toBeNull()
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={null} />)
+    expect(document.body.querySelector('[data-slot="commit-mark-clear"]')).toBeNull()
   })
 
   it('Clear fires deleteCommitMark', async () => {
-    renderWithQuery(
-      <CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />,
-    )
+    renderWithQuery(<CommitMarkEditor project="project-a" sha="abc1234" mark={EXISTING} />)
     const clearBtn = document.body.querySelector(
       '[data-slot="commit-mark-clear"]',
     ) as HTMLButtonElement
     await userEvent.click(clearBtn)
     await waitFor(() => {
-      expect(deleteCommitMark).toHaveBeenCalledWith(
-        'project-a',
-        'abc1234',
-        undefined,
-      )
+      expect(deleteCommitMark).toHaveBeenCalledWith('project-a', 'abc1234', undefined)
     })
   })
 
@@ -203,27 +169,18 @@ describe('CommitMarkEditor', () => {
       '[data-slot="commit-mark-note"]',
     ) as HTMLTextAreaElement
     await userEvent.type(note, '!')
-    await waitFor(() =>
-      expect(onDirtyChange).toHaveBeenLastCalledWith(true),
-    )
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
 
     // Backspace back to original
     await userEvent.type(note, '{Backspace}')
-    await waitFor(() =>
-      expect(onDirtyChange).toHaveBeenLastCalledWith(false),
-    )
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false))
   })
 
   // ---- Optional onMutated callback ----
   it('invokes onMutated after a successful save', async () => {
     const onMutated = vi.fn()
     renderWithQuery(
-      <CommitMarkEditor
-        project="project-a"
-        sha="abc1234"
-        mark={null}
-        onMutated={onMutated}
-      />,
+      <CommitMarkEditor project="project-a" sha="abc1234" mark={null} onMutated={onMutated} />,
     )
     const verifiedBtn = document.body.querySelector(
       '[data-slot="commit-mark-option-verified"]',

@@ -41,7 +41,11 @@ function resolveSegments(base: readonly string[], target: string): string[] {
   return out
 }
 
-function assetRouteUrl(doc: ComponentDocumentRef, segments: readonly string[], absolute: boolean): string {
+function assetRouteUrl(
+  doc: ComponentDocumentRef,
+  segments: readonly string[],
+  absolute: boolean,
+): string {
   const encoded = segments.map((segment) => encodeURIComponent(segment))
   if (absolute) encoded[0] = encodeURIComponent(`/${segments[0] ?? ''}`)
   const path = `/api/doc-assets/${encodeURIComponent(doc.project)}/${encoded.join('/')}`
@@ -64,5 +68,9 @@ export function docAssetUrl(doc: ComponentDocumentRef, target: string): string {
 
 /** URL of one executable block's cache file beside its document. */
 export function cacheFileUrl(doc: ComponentDocumentRef, id: string): string {
-  return assetRouteUrl(doc, resolveSegments([], `${componentAssetsDir(doc.path)}/${id}.json`), false)
+  return assetRouteUrl(
+    doc,
+    resolveSegments([], `${componentAssetsDir(doc.path)}/${id}.json`),
+    false,
+  )
 }

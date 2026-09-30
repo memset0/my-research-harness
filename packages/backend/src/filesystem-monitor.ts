@@ -17,12 +17,7 @@ export const DEFAULT_BACKEND_MONITOR_MIN_INTERVAL_MS = 1_000
 export const DEFAULT_BACKEND_MONITOR_MAX_INTERVAL_MS = 30_000
 export const DEFAULT_BACKEND_MONITOR_BACKOFF_FACTOR = 2
 
-export type BackendMonitoredResourceKind =
-  | 'run'
-  | 'experiment'
-  | 'report'
-  | 'code-review'
-  | 'wiki'
+export type BackendMonitoredResourceKind = 'run' | 'experiment' | 'report' | 'code-review' | 'wiki'
 
 export interface BackendMonitorSnapshotEntry {
   kind: BackendMonitoredResourceKind

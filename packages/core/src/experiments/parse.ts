@@ -378,7 +378,11 @@ function validatedRunRefs(v: unknown, warnings: ParseIssue[]): string[] {
   const out: string[] = []
   for (const elem of v) {
     if (typeof elem !== 'string') continue
-    if (RUN_DIR_RE.test(elem) && !/[\\\0]/.test(elem) && elem.split('/').every((part) => part !== '.' && part !== '..' && part !== '')) {
+    if (
+      RUN_DIR_RE.test(elem) &&
+      !/[\\\0]/.test(elem) &&
+      elem.split('/').every((part) => part !== '.' && part !== '..' && part !== '')
+    ) {
       out.push(elem)
     } else {
       warnings.push({

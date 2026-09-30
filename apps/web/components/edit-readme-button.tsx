@@ -7,13 +7,7 @@ import { ReadmeEditor } from './readme-editor'
 import { useReadmeEditorOptional } from './readme-editor-context'
 import { ViewerGuard } from './viewer-guard'
 
-export function EditReadmeButton({
-  path,
-  runId,
-}: {
-  path: string
-  runId: string
-}) {
+export function EditReadmeButton({ path, runId }: { path: string; runId: string }) {
   const isDesktop = useIsDesktop()
   const ctx = useReadmeEditorOptional()
   const [openDialog, setOpenDialog] = useState(false)

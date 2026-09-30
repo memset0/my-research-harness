@@ -20,10 +20,7 @@ const INVENTORY: WikiArtifactInventory = {
   reportIds: ['R0007'],
 }
 
-function makePage(
-  content: string,
-  overrides: Partial<WikiLintPage> = {},
-): WikiLintPage {
+function makePage(content: string, overrides: Partial<WikiLintPage> = {}): WikiLintPage {
   const parsed = parseWikiFrontmatter(content)
   return {
     id: 'W0001',
@@ -95,9 +92,7 @@ describe('lintWikiPage', () => {
   })
 
   it('reports a missing title', () => {
-    const diagnostics = lintWikiPage(
-      makePage(VALID_FINDING.replace(/^title: .*$/m, 'title: "  "')),
-    )
+    const diagnostics = lintWikiPage(makePage(VALID_FINDING.replace(/^title: .*$/m, 'title: "  "')))
     expect(codes(diagnostics)).toContain('WIKI_TITLE_MISSING')
   })
 
@@ -331,12 +326,17 @@ memon wiki lint
   })
 
   it('warns when a finding body carries no evidence token', () => {
-    const withoutEvidence = VALID_FINDING.replace('Measured in @E0017-fused-attention.', 'Trust me.')
+    const withoutEvidence = VALID_FINDING.replace(
+      'Measured in @E0017-fused-attention.',
+      'Trust me.',
+    )
     const diagnostics = lintWikiPage(makePage(withoutEvidence))
     expect(codes(diagnostics)).toEqual(['WIKI_CLAIM_WITHOUT_EVIDENCE'])
     // The same body with a run identifier is fine.
     expect(
-      lintWikiPage(makePage(withoutEvidence.replace('Trust me.', 'See zero-snr-eval-260902-110000.'))),
+      lintWikiPage(
+        makePage(withoutEvidence.replace('Trust me.', 'See zero-snr-eval-260902-110000.')),
+      ),
     ).toEqual([])
   })
 
@@ -352,13 +352,16 @@ memon wiki lint
     expect(codes(lintWikiPage(makePage(VALID_FINDING), { review }))).toEqual([
       'WIKI_UNREVIEWED_VERIFIED',
     ])
-    expect(lintWikiPage(makePage(VALID_FINDING), { review: { ...review, state: 'VERIFIED' } })).toEqual(
-      [],
-    )
+    expect(
+      lintWikiPage(makePage(VALID_FINDING), { review: { ...review, state: 'VERIFIED' } }),
+    ).toEqual([])
   })
 
   it('warns on an unresolved `@` reference and points at its line', () => {
-    const body = VALID_FINDING.replace('Measured in @E0017-fused-attention.', 'Measured in @E0017-fused-attention and @H0007.')
+    const body = VALID_FINDING.replace(
+      'Measured in @E0017-fused-attention.',
+      'Measured in @E0017-fused-attention and @H0007.',
+    )
     const diagnostics = lintWikiPage(makePage(body), { inventory: INVENTORY })
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.code).toBe('WIKI_LINK_UNRESOLVED')
@@ -370,15 +373,9 @@ memon wiki lint
   it('warns only for a known component type whose declaration omits @version', () => {
     const body = VALID_FINDING.replace(
       'Single CFG scale.',
-      [
-        '```yaml datatable #fid',
-        'data: []',
-        '```',
-        '',
-        '```mermaid',
-        'flowchart LR',
-        '```',
-      ].join('\n'),
+      ['```yaml datatable #fid', 'data: []', '```', '', '```mermaid', 'flowchart LR', '```'].join(
+        '\n',
+      ),
     )
     const diagnostics = lintWikiPage(makePage(body))
     expect(diagnostics).toHaveLength(1)
@@ -432,7 +429,10 @@ memon wiki lint
 
 describe('lintWikiProject', () => {
   it('reports duplicate ids, slugs, and legacy ids on every offending page', () => {
-    const first = makePage(VALID_FINDING, { path: 'docs/wiki/finding/W0001-alpha.md', slug: 'alpha' })
+    const first = makePage(VALID_FINDING, {
+      path: 'docs/wiki/finding/W0001-alpha.md',
+      slug: 'alpha',
+    })
     const second = makePage(VALID_FINDING, {
       path: 'docs/wiki/note/W0001-alpha.md',
       kind: 'note',

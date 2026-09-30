@@ -572,7 +572,9 @@ export interface LinkResult {
 export async function linkRun(rt: Runtime, expId: string, input: LinkInput): Promise<LinkResult> {
   const exp = rt.experiments.get(expId)
   if (!exp) throw new ExperimentHttpError(404, 'NOT_FOUND', `experiment doc "${expId}" not found`)
-  const run = await resolveRunTarget(projectFromExp(rt, exp).root, input.run, { projectName: exp.project })
+  const run = await resolveRunTarget(projectFromExp(rt, exp).root, input.run, {
+    projectName: exp.project,
+  })
   if (!run) throw new ExperimentHttpError(404, 'NOT_FOUND', `run "${input.run}" not found`)
   if (run.frontMatter.experiment && run.frontMatter.experiment !== expId) {
     throw new ExperimentHttpError(
@@ -586,7 +588,8 @@ export async function linkRun(rt: Runtime, expId: string, input: LinkInput): Pro
   const current = await fs.readFile(expPath, 'utf8')
   const parsed = parseExperimentReadme(current, expId)
   parsed.frontMatter.runs = parsed.frontMatter.runs.filter((reference) => reference !== run.id)
-  if (!parsed.frontMatter.runs.includes(projectRunPath(owning.root, run.path))) parsed.frontMatter.runs.push(projectRunPath(owning.root, run.path))
+  if (!parsed.frontMatter.runs.includes(projectRunPath(owning.root, run.path)))
+    parsed.frontMatter.runs.push(projectRunPath(owning.root, run.path))
   parsed.frontMatter.updatedAt = nowIso()
   await atomicWrite(
     expPath,
@@ -613,13 +616,17 @@ export async function linkRun(rt: Runtime, expId: string, input: LinkInput): Pro
 export async function unlinkRun(rt: Runtime, expId: string, input: LinkInput): Promise<LinkResult> {
   const exp = rt.experiments.get(expId)
   if (!exp) throw new ExperimentHttpError(404, 'NOT_FOUND', `experiment doc "${expId}" not found`)
-  const run = await resolveRunTarget(projectFromExp(rt, exp).root, input.run, { projectName: exp.project })
+  const run = await resolveRunTarget(projectFromExp(rt, exp).root, input.run, {
+    projectName: exp.project,
+  })
   if (!run) throw new ExperimentHttpError(404, 'NOT_FOUND', `run "${input.run}" not found`)
   const owning = projectFromExp(rt, exp)
   const expPath = safe(exp.path, rt)
   const current = await fs.readFile(expPath, 'utf8')
   const parsed = parseExperimentReadme(current, expId)
-  parsed.frontMatter.runs = parsed.frontMatter.runs.filter((reference) => reference !== projectRunPath(owning.root, run.path) && reference !== run.id)
+  parsed.frontMatter.runs = parsed.frontMatter.runs.filter(
+    (reference) => reference !== projectRunPath(owning.root, run.path) && reference !== run.id,
+  )
   parsed.frontMatter.updatedAt = nowIso()
   await atomicWrite(
     expPath,

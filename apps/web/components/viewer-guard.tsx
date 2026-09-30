@@ -46,22 +46,24 @@ export function ViewerGuard({ reason, className, children }: ViewerGuardProps) {
   }
 
   const child = isValidElement(children) ? (children as ReactElement<CloneableProps>) : null
-  const tooltipText = reason ? `Viewer mode — action disabled (${reason})` : 'Viewer mode — action disabled'
+  const tooltipText = reason
+    ? `Viewer mode — action disabled (${reason})`
+    : 'Viewer mode — action disabled'
 
-  const disabledChild = child
-    ? cloneElement<CloneableProps>(child, {
-        disabled: true,
-        'aria-disabled': true,
-        onClick: disableHandler,
-        onPointerDown: disableHandler,
-        tabIndex: -1,
-        className: [child.props.className, className].filter(Boolean).join(' ') || undefined,
-      })
-    : (
-        <span aria-disabled className={className} style={{ opacity: 0.5, pointerEvents: 'none' }}>
-          {children}
-        </span>
-      )
+  const disabledChild = child ? (
+    cloneElement<CloneableProps>(child, {
+      disabled: true,
+      'aria-disabled': true,
+      onClick: disableHandler,
+      onPointerDown: disableHandler,
+      tabIndex: -1,
+      className: [child.props.className, className].filter(Boolean).join(' ') || undefined,
+    })
+  ) : (
+    <span aria-disabled className={className} style={{ opacity: 0.5, pointerEvents: 'none' }}>
+      {children}
+    </span>
+  )
 
   return (
     <TooltipProvider delayDuration={150}>

@@ -21,7 +21,9 @@ const search = (raw: string) => new URLSearchParams(raw)
 
 describe('classify (pure class only)', () => {
   it('keeps every translation route owner-only, including manifest and status reads', () => {
-    for (const method of ['GET', 'POST']) for (const path of ['/api/translations/body', '/api/translations/status']) expect(classify(method, path)).toBe('shell')
+    for (const method of ['GET', 'POST'])
+      for (const path of ['/api/translations/body', '/api/translations/status'])
+        expect(classify(method, path)).toBe('shell')
   })
   it('classifies anon routes', () => {
     expect(classify('GET', '/login')).toBe('anon')
@@ -192,7 +194,6 @@ describe('classifyAndExtract — project extraction', () => {
     )
     expect(r).toEqual({ class: 'read', project: 'project-a' })
   })
-
 
   it('resolves /api/reports/<id>', () => {
     const r = classifyAndExtract(

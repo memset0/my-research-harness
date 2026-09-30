@@ -8,7 +8,9 @@
 
 import type { JournalEvent, ParsedJournal } from '../types.js'
 
-export function formatJournalEvent(event: Pick<JournalEvent, 'timestamp' | 'tag' | 'body'>): string {
+export function formatJournalEvent(
+  event: Pick<JournalEvent, 'timestamp' | 'tag' | 'body'>,
+): string {
   return `- ${event.timestamp} [${event.tag}] ${event.body}`
 }
 

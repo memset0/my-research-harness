@@ -38,7 +38,8 @@ export function locateComponentBlock(document: string, target: BlockTarget): Fen
     const parsed = parseComponentDeclaration(candidate.info)
     return parsed.kind === 'component' && parsed.declaration.id === target.id
   })
-  if (matches.length === 0) throw new BlockRewriteError(`no component block has id \`${target.id}\``)
+  if (matches.length === 0)
+    throw new BlockRewriteError(`no component block has id \`${target.id}\``)
   if (matches.length > 1) {
     throw new BlockRewriteError(
       `block id \`${target.id}\` is used by ${matches.length} blocks (lines ${matches
@@ -67,12 +68,14 @@ export function replaceBlockPayload(
   if (block.closeIndex >= lines.length) throw new BlockRewriteError('component block is not closed')
   const newline = document.includes('\r\n') ? '\r\n' : '\n'
   const payload = withoutCarriageReturns(nextPayload)
-  const body = payload.length === 0
-    ? []
-    : payload
-        .split('\n')
-        .map((content) => (content.length > 0 ? block.indent + content : content))
-        .map((content) => (newline === '\r\n' ? `${content}\r` : content))
-  return [...lines.slice(0, block.openIndex + 1), ...body, ...lines.slice(block.closeIndex)].join('\n')
+  const body =
+    payload.length === 0
+      ? []
+      : payload
+          .split('\n')
+          .map((content) => (content.length > 0 ? block.indent + content : content))
+          .map((content) => (newline === '\r\n' ? `${content}\r` : content))
+  return [...lines.slice(0, block.openIndex + 1), ...body, ...lines.slice(block.closeIndex)].join(
+    '\n',
+  )
 }
-

@@ -3,7 +3,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyMembershipMigration, planMembershipMigration, rollbackMembershipMigration } from './v6-to-v7.js'
+import {
+  applyMembershipMigration,
+  planMembershipMigration,
+  rollbackMembershipMigration,
+} from './v6-to-v7.js'
 import { applyDigestWikiMigration, verifyDigestWikiMigration } from './digests-to-wiki.js'
 
 const roots: string[] = []
@@ -17,8 +21,12 @@ it('detects new Wiki identities after Digest conversion before finalization', as
   await applyDigestWikiMigration(plan.digests!)
   await expect(verifyDigestWikiMigration(plan.digests!)).resolves.toBeUndefined()
   await fs.writeFile(join(root, 'docs/wiki/digest/W0001-concurrent.md'), '# Another page\n')
-  await expect(verifyDigestWikiMigration(plan.digests!)).rejects.toThrow('Concurrent Wiki inventory')
-  expect(JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8')).fs_convention_version).toBe(6)
+  await expect(verifyDigestWikiMigration(plan.digests!)).rejects.toThrow(
+    'Concurrent Wiki inventory',
+  )
+  expect(
+    JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8')).fs_convention_version,
+  ).toBe(6)
 })
 
 async function fixture() {
@@ -31,8 +39,14 @@ async function fixture() {
   await fs.writeFile(join(root, '.memon/version.json'), '{"fs_convention_version":6}\n')
   const experiment = join(root, 'docs/experiments/E0001-trial/README.md')
   const readme = join(root, 'logs', run, 'README.md')
-  await fs.writeFile(experiment, `---\nid: E0001-trial\nruns: [${run}] # members\ncustom: 'keep me'\n---\nUnchanged body\n`)
-  await fs.writeFile(readme, `---\nexperiment: E0001-trial\ncustom: 'keep me'\n---\nUnchanged run body\n`)
+  await fs.writeFile(
+    experiment,
+    `---\nid: E0001-trial\nruns: [${run}] # members\ncustom: 'keep me'\n---\nUnchanged body\n`,
+  )
+  await fs.writeFile(
+    readme,
+    `---\nexperiment: E0001-trial\ncustom: 'keep me'\n---\nUnchanged run body\n`,
+  )
   return { root, base, experiment, readme }
 }
 
@@ -49,11 +63,18 @@ describe('FS v6 to v7 membership migration', () => {
     await fs.writeFile(join(root, 'docs/journal.md'), journal)
     await fs.mkdir(join(root, 'docs/digests'), { recursive: true })
     await fs.mkdir(join(root, 'docs/wiki/note'), { recursive: true })
-    await fs.writeFile(join(root, 'docs/wiki/note/W0007-existing.md'), '---\nid: W0007\nkind: note\ntitle: Existing\n---\nKeep\n')
+    await fs.writeFile(
+      join(root, 'docs/wiki/note/W0007-existing.md'),
+      '---\nid: W0007\nkind: note\ntitle: Existing\n---\nKeep\n',
+    )
     const firstPath = join(root, 'docs/digests/D0001-2026-05-04.md')
-    const first = '---\nid: D0001\nowner: human\n---\n# Progress\n\n[Next](D0002-2026-05-05.md#section)\n[Evidence](../experiments/E0001-trial/README.md)\n`[literal](../unchanged)`\n'
+    const first =
+      '---\nid: D0001\nowner: human\n---\n# Progress\n\n[Next](D0002-2026-05-05.md#section)\n[Evidence](../experiments/E0001-trial/README.md)\n`[literal](../unchanged)`\n'
     await fs.writeFile(firstPath, first)
-    await fs.writeFile(join(root, 'docs/digests/D0002-2026-05-05.md'), '# Next\n\nUnchanged narrative.\n')
+    await fs.writeFile(
+      join(root, 'docs/digests/D0002-2026-05-05.md'),
+      '# Next\n\nUnchanged narrative.\n',
+    )
     const plan = await planMembershipMigration(root, { allowDirty: true })
     expect(plan.blockers).toEqual([])
     expect(plan.digests?.documents).toHaveLength(2)
@@ -85,13 +106,22 @@ describe('FS v6 to v7 membership migration', () => {
     const source = join(root, 'docs/digests/D0001-2026-05-04.md')
     await fs.writeFile(source, '# Original summary\n')
     const plan = await planMembershipMigration(root, { allowDirty: true })
-    const rename = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('simulated write failure'))
+    const rename = vi
+      .spyOn(fs, 'rename')
+      .mockRejectedValueOnce(new Error('simulated write failure'))
     try {
-      await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow('simulated write failure')
-    } finally { rename.mockRestore() }
+      await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow(
+        'simulated write failure',
+      )
+    } finally {
+      rename.mockRestore()
+    }
     expect(await fs.readFile(source, 'utf8')).toBe('# Original summary\n')
-    await expect(fs.stat(join(root, plan.digests!.documents[0]!.target))).rejects.toMatchObject({ code: 'ENOENT' })
-    for (const file of plan.files) expect(await fs.readFile(join(root, file.path), 'utf8')).toBe(file.before)
+    await expect(fs.stat(join(root, plan.digests!.documents[0]!.target))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    for (const file of plan.files)
+      expect(await fs.readFile(join(root, file.path), 'utf8')).toBe(file.before)
   })
 
   it('leaves legacy digests untouched during explicit FS6 membership preparation', async () => {
@@ -106,7 +136,11 @@ describe('FS v6 to v7 membership migration', () => {
     expect((await planMembershipMigration(root)).digests?.documents).toHaveLength(1)
   })
 
-  it.each(['source', 'destination', 'wiki-inventory'])('rejects stale Digest %s before membership writes', async (change) => {
+  it.each([
+    'source',
+    'destination',
+    'wiki-inventory',
+  ])('rejects stale Digest %s before membership writes', async (change) => {
     const { root, base, experiment } = await fixture()
     await fs.mkdir(join(root, 'docs/digests'), { recursive: true })
     const source = join(root, 'docs/digests/D0001-2026-05-04.md')
@@ -115,12 +149,26 @@ describe('FS v6 to v7 membership migration', () => {
     const plan = await planMembershipMigration(root, { allowDirty: true })
     await fs.mkdir(join(root, 'docs/wiki/digest'), { recursive: true })
     if (change === 'source') await fs.appendFile(source, 'Concurrent edit')
-    else await fs.writeFile(join(root, change === 'destination' ? plan.digests!.documents[0]!.target : 'docs/wiki/digest/W0001-other.md'), 'occupied')
-    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow('Stale Digest')
+    else
+      await fs.writeFile(
+        join(
+          root,
+          change === 'destination'
+            ? plan.digests!.documents[0]!.target
+            : 'docs/wiki/digest/W0001-other.md',
+        ),
+        'occupied',
+      )
+    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow(
+      'Stale Digest',
+    )
     expect(await fs.readFile(experiment, 'utf8')).toBe(before)
   })
 
-  it.each(['notes.md', 'D0001-2026-05-04.md'])('blocks unsupported legacy content rather than omitting %s', async (name) => {
+  it.each([
+    'notes.md',
+    'D0001-2026-05-04.md',
+  ])('blocks unsupported legacy content rather than omitting %s', async (name) => {
     const { root } = await fixture()
     await fs.mkdir(join(root, 'docs/digests'), { recursive: true })
     await fs.writeFile(join(root, 'docs/digests', name), '![plot](plot.png)\n')
@@ -130,8 +178,13 @@ describe('FS v6 to v7 membership migration', () => {
   it('blocks reference-style image assets rather than rebasing them as document links', async () => {
     const { root } = await fixture()
     await fs.mkdir(join(root, 'docs/digests'), { recursive: true })
-    await fs.writeFile(join(root, 'docs/digests/D0001-2026-05-04.md'), '![plot][chart]\n\n[chart]: plot.png\n')
-    expect((await planMembershipMigration(root)).blockers.join('\n')).toContain('Relative image assets')
+    await fs.writeFile(
+      join(root, 'docs/digests/D0001-2026-05-04.md'),
+      '![plot][chart]\n\n[chart]: plot.png\n',
+    )
+    expect((await planMembershipMigration(root)).blockers.join('\n')).toContain(
+      'Relative image assets',
+    )
   })
 
   it('rejects duplicate legacy identities and escaping symlink directories', async () => {
@@ -139,7 +192,9 @@ describe('FS v6 to v7 membership migration', () => {
     await fs.mkdir(join(root, 'docs/digests'), { recursive: true })
     await fs.writeFile(join(root, 'docs/digests/D0001-2026-05-04.md'), '# One\n')
     await fs.writeFile(join(root, 'docs/digests/D0001-2026-05-05.md'), '# Two\n')
-    expect((await planMembershipMigration(root)).blockers.join('\n')).toContain('Duplicate legacy identity')
+    expect((await planMembershipMigration(root)).blockers.join('\n')).toContain(
+      'Duplicate legacy identity',
+    )
     await fs.rm(join(root, 'docs/digests'), { recursive: true })
     await fs.symlink(base, join(root, 'docs/digests'))
     expect((await planMembershipMigration(root)).blockers.join('\n')).toContain('Unsafe symlink')
@@ -175,15 +230,22 @@ describe('FS v6 to v7 membership migration', () => {
     expect(second.blockers).toEqual([])
     expect(second.files.filter((file) => file.before !== file.after)).toEqual([])
     const finalUpgrade = await planMembershipMigration(root)
-    expect(finalUpgrade.files.filter((file) => file.before !== file.after).map((file) => file.path)).toEqual(['.memon/version.json'])
+    expect(
+      finalUpgrade.files.filter((file) => file.before !== file.after).map((file) => file.path),
+    ).toEqual(['.memon/version.json'])
   })
 
   it('refuses dirty Git worktrees without the explicit scoped override', async () => {
     const { root, base } = await fixture()
     execFileSync('git', ['init', '-q'], { cwd: root })
     const plan = await planMembershipMigration(root)
-    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow('Dirty worktree')
-    expect(JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8')).fs_convention_version).toBe(6)
+    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow(
+      'Dirty worktree',
+    )
+    expect(
+      JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8'))
+        .fs_convention_version,
+    ).toBe(6)
   })
 
   it('resumes an interrupted plan and rolls back only its own postimages', async () => {
@@ -195,7 +257,8 @@ describe('FS v6 to v7 membership migration', () => {
     await applyMembershipMigration(plan, backup)
     await fs.writeFile(join(root, 'unrelated.txt'), 'keep this')
     await rollbackMembershipMigration(backup)
-    for (const file of plan.files) expect(await fs.readFile(join(root, file.path), 'utf8')).toBe(file.before)
+    for (const file of plan.files)
+      expect(await fs.readFile(join(root, file.path), 'utf8')).toBe(file.before)
     expect(await fs.readFile(join(root, 'unrelated.txt'), 'utf8')).toBe('keep this')
   })
 
@@ -207,23 +270,33 @@ describe('FS v6 to v7 membership migration', () => {
     await fs.appendFile(readme, 'new note\n')
     await expect(rollbackMembershipMigration(backup)).rejects.toThrow('Concurrent edit')
     expect(await fs.readFile(readme, 'utf8')).toContain('new note')
-    expect(JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8')).fs_convention_version).toBe(7)
+    expect(
+      JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8'))
+        .fs_convention_version,
+    ).toBe(7)
   })
 
   it('migrates declarations and results, preserving unrelated bytes, and is idempotent', async () => {
     const { root, base, experiment, readme } = await fixture()
     const results = join(root, 'docs/experiments/E0001-trial/results.yaml')
-    await fs.writeFile(results, `variants:\n  - id: V0001\n    runs: [${run}] # evidence\n    attempts: []\ncustom: 'keep me'\n`)
+    await fs.writeFile(
+      results,
+      `variants:\n  - id: V0001\n    runs: [${run}] # evidence\n    attempts: []\ncustom: 'keep me'\n`,
+    )
     const plan = await planMembershipMigration(root, { allowDirty: true })
     expect(plan.blockers).toEqual([])
     await applyMembershipMigration(plan, join(base, 'backup'))
     expect(await fs.readFile(experiment, 'utf8')).toContain(`runs: ["logs/${run}"] # members`)
-    expect(await fs.readFile(readme, 'utf8')).toBe("---\ncustom: 'keep me'\n---\nUnchanged run body\n")
+    expect(await fs.readFile(readme, 'utf8')).toBe(
+      "---\ncustom: 'keep me'\n---\nUnchanged run body\n",
+    )
     expect(await fs.readFile(results, 'utf8')).toContain(`runs: ["logs/${run}"] # evidence`)
     const second = await planMembershipMigration(root, { allowDirty: true })
     expect(second.blockers).toEqual([])
     expect(second.files.filter((file) => file.before !== file.after)).toEqual([])
-    expect(JSON.parse(await fs.readFile(join(base, 'backup/plan.json'), 'utf8')).files).toEqual(plan.files)
+    expect(JSON.parse(await fs.readFile(join(base, 'backup/plan.json'), 'utf8')).files).toEqual(
+      plan.files,
+    )
   })
 
   it('requires explicit permission to discard Run-only ownership', async () => {
@@ -241,8 +314,13 @@ describe('FS v6 to v7 membership migration', () => {
     const { root, base, readme } = await fixture()
     const plan = await planMembershipMigration(root, { allowDirty: true })
     await fs.appendFile(readme, 'Concurrent research note\n')
-    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow('Stale migration plan')
-    expect(JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8')).fs_convention_version).toBe(6)
+    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow(
+      'Stale migration plan',
+    )
+    expect(
+      JSON.parse(await fs.readFile(join(root, '.memon/version.json'), 'utf8'))
+        .fs_convention_version,
+    ).toBe(6)
     expect(await fs.readFile(readme, 'utf8')).toContain('Concurrent research note')
   })
 
@@ -250,7 +328,9 @@ describe('FS v6 to v7 membership migration', () => {
     const { root } = await fixture()
     await fs.mkdir(join(root, 'outputs', run), { recursive: true })
     await fs.writeFile(join(root, 'outputs', run, 'README.md'), '---\n---\n')
-    expect((await planMembershipMigration(root)).blockers.join('\n')).toContain('ambiguous Run reference')
+    expect((await planMembershipMigration(root)).blockers.join('\n')).toContain(
+      'ambiguous Run reference',
+    )
   })
 
   it('rejects traversal and leaves an unreferenced missing README alone', async () => {

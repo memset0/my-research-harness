@@ -1,10 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type {
-  BackendResourceInventoryResponse,
-  BackendWikiInventoryResponse,
-} from '@memon/core'
+import type { BackendResourceInventoryResponse, BackendWikiInventoryResponse } from '@memon/core'
 import {
   fetchCodeReviewsInventory,
   fetchExperimentsInventory,
@@ -19,13 +16,7 @@ import {
 } from '../lib/api'
 import { cn } from '../lib/utils'
 
-export type TabKind =
-  | 'experiments'
-  | 'hypotheses'
-  | 'journal'
-  | 'reports'
-  | 'code-review'
-  | 'wiki'
+export type TabKind = 'experiments' | 'hypotheses' | 'journal' | 'reports' | 'code-review' | 'wiki'
 
 /**
  * Small count badge rendered next to AppBar tab labels. File-backed

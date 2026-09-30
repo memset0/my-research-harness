@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { discoverExperiments, listExperimentIds, listExperimentPaths, readExperimentDoc } from './discover.js'
+import {
+  discoverExperiments,
+  listExperimentIds,
+  listExperimentPaths,
+  readExperimentDoc,
+} from './discover.js'
 
 const EXPERIMENT_ID = 'E0001-foo'
 const README = `---
@@ -118,7 +123,10 @@ describe('v6 Experiment bundle mtimes', () => {
       README.replaceAll(EXPERIMENT_ID, 'E0003-legacy'),
     )
     await fs.writeFile(join(root, 'docs', 'experiments', 'notes.md'), '# not an experiment\n')
-    await fs.writeFile(join(root, 'docs', 'experiments', `${EXPERIMENT_ID}.md`), '# leftover legacy')
+    await fs.writeFile(
+      join(root, 'docs', 'experiments', `${EXPERIMENT_ID}.md`),
+      '# leftover legacy',
+    )
     // A document that cannot be read at all still has an identity on disk.
     await fs.rm(join(directory, 'README.md'))
     await fs.symlink('README.md', join(directory, 'README.md'))

@@ -60,12 +60,10 @@ export function rewriteV2RunReadme(input: RewriteV2RunInput): string {
   // The serializer emits placeholder `## Heading\n\n` blocks for the
   // four cleared sections. Strip them so the v3 run README contains
   // only Setup / Result / Artifacts.
-  return stripEmptyHeadings(patchRunFrontMatter(intermediate, { experiment: JSON.stringify(input.experiment) }), [
-    'Motivation',
-    'Method',
-    'Conclusion',
-    'Caveats',
-  ])
+  return stripEmptyHeadings(
+    patchRunFrontMatter(intermediate, { experiment: JSON.stringify(input.experiment) }),
+    ['Motivation', 'Method', 'Conclusion', 'Caveats'],
+  )
 }
 
 function stripEmptyHeadings(content: string, headings: readonly string[]): string {

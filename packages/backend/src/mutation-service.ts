@@ -659,7 +659,6 @@ export class FilesystemMutationService implements BackendMutationService {
         await Promise.all(
           managed.map(([file, body]) => fs.writeFile(file, body, { encoding: 'utf8', flag: 'wx' })),
         )
-
       } catch (error) {
         // Restore the imported Run only while it still holds exactly the
         // postimage this operation wrote. Another writer's content is never
@@ -733,18 +732,21 @@ export class FilesystemMutationService implements BackendMutationService {
     const runPath = join(run.path, 'README.md')
     const runLock = await readLockedDocument(runPath, input.expectedRunMtime, input.expectedRunHash)
     const parsedExperiment = parseExperimentReadme(experimentLock.content, id)
-    if (
-      operation === 'link' &&
-      run.frontMatter.experiment &&
-      run.frontMatter.experiment !== id
-    ) {
+    if (operation === 'link' && run.frontMatter.experiment && run.frontMatter.experiment !== id) {
       throw new BackendMutationError('BAD_STATE', 'Run already belongs to another Experiment')
     }
     const timestamp = formatIsoLocal(this.now())
     parsedExperiment.frontMatter.runs =
       operation === 'link'
-        ? [...new Set([...parsedExperiment.frontMatter.runs.filter((reference) => reference !== run.id), projectRunPath(project.root, run.path)])]
-        : parsedExperiment.frontMatter.runs.filter((runId) => runId !== projectRunPath(project.root, run.path) && runId !== run.id)
+        ? [
+            ...new Set([
+              ...parsedExperiment.frontMatter.runs.filter((reference) => reference !== run.id),
+              projectRunPath(project.root, run.path),
+            ]),
+          ]
+        : parsedExperiment.frontMatter.runs.filter(
+            (runId) => runId !== projectRunPath(project.root, run.path) && runId !== run.id,
+          )
     parsedExperiment.frontMatter.updatedAt = timestamp
     const nextRun = runLock.content
     const nextExperiment = serializeExperimentReadme({

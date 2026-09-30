@@ -196,7 +196,12 @@ async function settingsRequest(url: string, init?: RequestInit): Promise<FileAcc
   const body = await parseBody(response)
   if (!response.ok) return failure(response.status, body)
   if (!body || typeof body !== 'object') {
-    return { ok: false, status: response.status, code: 'BAD_RESPONSE', message: 'Malformed response' }
+    return {
+      ok: false,
+      status: response.status,
+      code: 'BAD_RESPONSE',
+      message: 'Malformed response',
+    }
   }
   return { ok: true, data: body as FileAccessSettings }
 }

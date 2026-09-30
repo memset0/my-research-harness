@@ -42,7 +42,9 @@ export const Render: ComponentRenderer<FigureData> = ({ data, block }) => {
           onError={() => setFailed(source)}
         />
       )}
-      <figcaption className="mt-2 text-center text-sm text-muted-foreground">{data.caption}</figcaption>
+      <figcaption className="mt-2 text-center text-sm text-muted-foreground">
+        {data.caption}
+      </figcaption>
     </figure>
   )
 }

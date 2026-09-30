@@ -1615,7 +1615,6 @@ export type HostQualifiedResourceRef = z.infer<typeof HostQualifiedResourceRefSc
 export const ResourceRefSchema = HostQualifiedResourceRefSchema
 export type ResourceRef = HostQualifiedResourceRef
 
-
 /**
  * Capabilities are explicit booleans rather than an open string array. This
  * makes absent features and malformed metadata distinguishable and gives the

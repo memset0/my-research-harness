@@ -172,56 +172,56 @@ const StorageGroupRawSchema = z
   .max(63)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'must be a safe storage-group name')
 
-
-export const ProjectConfigRawSchema = z.object({
-  // Project names appear in URL paths and Host-qualified identifiers.
-  // Restrict to letters, digits, and hyphens.
-  name: z
-    .string()
-    .min(1)
-    .regex(/^[A-Za-z0-9-]+$/, 'must match [A-Za-z0-9-]+'),
-  root: z.string().min(1),
-  include: z.array(z.string()).optional(),
-  exclude: z.array(z.string()).optional(),
-  // Per-project GitHub owner/repo -> local path mappings, for code-preview.
-  // `path` is relative to the project root ('.' = main repo, else a submodule).
-  github: z
-    .array(
-      z.object({
-        owner: z.string().min(1),
-        repo: z.string().min(1),
-        path: z.string().min(1),
-      }),
-    )
-    .optional(),
-  /**
-   * Host namespace for host-qualified `{host, project}` identity. Validated
-   * with the same rule as `central.hosts[].id` so one instance can serve a
-   * namespace directly and another can register it as a peer without any
-   * identity migration.
-   */
-  host: HostIdRawSchema.optional(),
-  /**
-   * Physical storage class. Absent means `local`: the Project's files are
-   * read directly. `sshfs` opts into the scheduler, observation cache and
-   * isolated worker, and is the only mode where `storage_group` and
-   * `persistent_cache` are meaningful.
-   */
-  storage: z.enum(['local', 'sshfs']).optional(),
-  /**
-   * `storage_group` / `read_only` are the canonical snake_case spellings used
-   * by every other Project key. The camelCase aliases are accepted because
-   * these two fields also appear camelCased in the settings/API payloads, and
-   * silently ignoring a misspelled `readOnly` would turn a read-only mount
-   * into a writable one. Supplying both spellings is an error.
-   */
-  storage_group: StorageGroupRawSchema.optional(),
-  storageGroup: StorageGroupRawSchema.optional(),
-  read_only: z.boolean().optional(),
-  readOnly: z.boolean().optional(),
-  persistent_cache: z.boolean().optional(),
-  execution: ProjectExecutionRawSchema.optional(),
-})
+export const ProjectConfigRawSchema = z
+  .object({
+    // Project names appear in URL paths and Host-qualified identifiers.
+    // Restrict to letters, digits, and hyphens.
+    name: z
+      .string()
+      .min(1)
+      .regex(/^[A-Za-z0-9-]+$/, 'must match [A-Za-z0-9-]+'),
+    root: z.string().min(1),
+    include: z.array(z.string()).optional(),
+    exclude: z.array(z.string()).optional(),
+    // Per-project GitHub owner/repo -> local path mappings, for code-preview.
+    // `path` is relative to the project root ('.' = main repo, else a submodule).
+    github: z
+      .array(
+        z.object({
+          owner: z.string().min(1),
+          repo: z.string().min(1),
+          path: z.string().min(1),
+        }),
+      )
+      .optional(),
+    /**
+     * Host namespace for host-qualified `{host, project}` identity. Validated
+     * with the same rule as `central.hosts[].id` so one instance can serve a
+     * namespace directly and another can register it as a peer without any
+     * identity migration.
+     */
+    host: HostIdRawSchema.optional(),
+    /**
+     * Physical storage class. Absent means `local`: the Project's files are
+     * read directly. `sshfs` opts into the scheduler, observation cache and
+     * isolated worker, and is the only mode where `storage_group` and
+     * `persistent_cache` are meaningful.
+     */
+    storage: z.enum(['local', 'sshfs']).optional(),
+    /**
+     * `storage_group` / `read_only` are the canonical snake_case spellings used
+     * by every other Project key. The camelCase aliases are accepted because
+     * these two fields also appear camelCased in the settings/API payloads, and
+     * silently ignoring a misspelled `readOnly` would turn a read-only mount
+     * into a writable one. Supplying both spellings is an error.
+     */
+    storage_group: StorageGroupRawSchema.optional(),
+    storageGroup: StorageGroupRawSchema.optional(),
+    read_only: z.boolean().optional(),
+    readOnly: z.boolean().optional(),
+    persistent_cache: z.boolean().optional(),
+    execution: ProjectExecutionRawSchema.optional(),
+  })
   .superRefine((project, ctx) => {
     for (const [snake, camel] of [
       ['storage_group', 'storageGroup'],
@@ -425,19 +425,30 @@ export const FileAccessRawSchema = z
 
 const MAX_NODE_TIMER_SECONDS = 2_147_483.647
 
-const FileCacheRawSchema = z.object({
-  dump_path: z.string().trim().min(1).refine((path) => !path.includes('\0'), 'Invalid dump path'),
-  dump_interval_seconds: z.number().finite().positive().max(MAX_NODE_TIMER_SECONDS).default(30),
-  wiki_ttl_seconds: z.number().int().positive().max(2_592_000).default(30),
-  default_ttl_seconds: z.number().int().positive().max(2_592_000).default(1800),
-}).strict().refine(
-  (cache) => cache.wiki_ttl_seconds <= cache.default_ttl_seconds,
-  'Wiki cache period must not exceed the default cache period',
-)
+const FileCacheRawSchema = z
+  .object({
+    dump_path: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((path) => !path.includes('\0'), 'Invalid dump path'),
+    dump_interval_seconds: z.number().finite().positive().max(MAX_NODE_TIMER_SECONDS).default(30),
+    wiki_ttl_seconds: z.number().int().positive().max(2_592_000).default(30),
+    default_ttl_seconds: z.number().int().positive().max(2_592_000).default(1800),
+  })
+  .strict()
+  .refine(
+    (cache) => cache.wiki_ttl_seconds <= cache.default_ttl_seconds,
+    'Wiki cache period must not exceed the default cache period',
+  )
 
 const MediaRawSchema = z
   .object({
-    ffmpeg: z.string().trim().min(1).refine((value) => !value.includes('\0'), 'Invalid ffmpeg path'),
+    ffmpeg: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => !value.includes('\0'), 'Invalid ffmpeg path'),
   })
   .strict()
 

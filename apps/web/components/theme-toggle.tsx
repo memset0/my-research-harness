@@ -43,10 +43,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     <div
       data-theme-toggle
       data-mounted="true"
-      className={cn(
-        'relative inline-flex h-8 items-center rounded-md bg-muted p-0.5',
-        className,
-      )}
+      className={cn('relative inline-flex h-8 items-center rounded-md bg-muted p-0.5', className)}
     >
       {/* Sliding indicator: a sibling that translates between slot positions.
           Keeping it outside ToggleGroup means the animation does not depend

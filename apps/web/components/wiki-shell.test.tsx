@@ -18,7 +18,10 @@ vi.mock('../lib/api', async (importOriginal) => {
 vi.mock('../lib/use-user-preference-state', () => ({
   useUserPreferenceState: () => [true, vi.fn()],
 }))
-vi.mock('./session-provider', () => ({ useIsOwner: () => false, useSession: () => ({ role: 'viewer', scopeProjects: [] }) }))
+vi.mock('./session-provider', () => ({
+  useIsOwner: () => false,
+  useSession: () => ({ role: 'viewer', scopeProjects: [] }),
+}))
 vi.mock('./document-artifact-link-provider', () => ({
   DocumentArtifactLinkProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
@@ -250,7 +253,9 @@ describe('WikiShell', () => {
     const page = summary('W0001', '2026-05-04T08:00:00+00:00')
     vi.mocked(fetchWiki).mockResolvedValueOnce({ pages: [page] })
     const populated = renderWithQuery(<WikiShell project="project-a" selectedId={null} />)
-    expect(await screen.findByText('Select a wiki page from the page list to begin reading.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Select a wiki page from the page list to begin reading.'),
+    ).toBeInTheDocument()
     expect(screen.queryByText(/memon wiki create/)).not.toBeInTheDocument()
     populated.unmount()
 

@@ -96,7 +96,10 @@ beforeEach(async () => {
 
   const expDir = join(root, 'docs/experiments/E0001-foo')
   await fs.mkdir(expDir, { recursive: true })
-  await fs.writeFile(join(expDir, 'README.md'), '---\nid: E0001-foo\nslug: foo\nruns: [logs/foo-260501-100000]\n---\n')
+  await fs.writeFile(
+    join(expDir, 'README.md'),
+    '---\nid: E0001-foo\nslug: foo\nruns: [logs/foo-260501-100000]\n---\n',
+  )
   exitSpy = spyExit()
   stdoutChunks = []
   stderrChunks = []
@@ -137,15 +140,15 @@ describe('runResolveExp', () => {
     await fs.mkdir(duplicate, { recursive: true })
     await fs.writeFile(
       join(duplicate, 'README.md'),
-      RUN_README_BOUND
-        .replace('experiment: E0001-foo', 'experiment: E0002-newer')
-        .replace(
-          "created_at: '2026-05-01T10:00:00+08:00'",
-          "created_at: '2026-05-01T12:00:00+08:00'",
-        ),
+      RUN_README_BOUND.replace('experiment: E0001-foo', 'experiment: E0002-newer').replace(
+        "created_at: '2026-05-01T10:00:00+08:00'",
+        "created_at: '2026-05-01T12:00:00+08:00'",
+      ),
     )
 
-    await expect(runResolveExp({ projectRoot: root, cwd: root, runIdOrDir: 'foo-260501-100000' })).rejects.toThrow('Ambiguous Run ID')
+    await expect(
+      runResolveExp({ projectRoot: root, cwd: root, runIdOrDir: 'foo-260501-100000' }),
+    ).rejects.toThrow('Ambiguous Run ID')
     await runResolveExp({ projectRoot: root, cwd: root, runIdOrDir: 'logs/foo-260501-100000' })
     expect(stdoutChunks.join('')).toBe('E0001-foo\n')
   })

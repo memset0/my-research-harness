@@ -330,15 +330,11 @@ describe('readGitCommit with submodule bump (real git)', () => {
       await writeFile(join(libDir, 'a.txt'), 'v1\n', 'utf8')
       await git(libDir, ['add', 'a.txt'])
       await git(libDir, ['commit', '-m', 'v1'])
-      const libV1 = (
-        await execFileP('git', ['rev-parse', 'HEAD'], { cwd: libDir })
-      ).stdout.trim()
+      const libV1 = (await execFileP('git', ['rev-parse', 'HEAD'], { cwd: libDir })).stdout.trim()
       await writeFile(join(libDir, 'a.txt'), 'v2\n', 'utf8')
       await git(libDir, ['add', 'a.txt'])
       await git(libDir, ['commit', '-m', 'v2'])
-      const libV2 = (
-        await execFileP('git', ['rev-parse', 'HEAD'], { cwd: libDir })
-      ).stdout.trim()
+      const libV2 = (await execFileP('git', ['rev-parse', 'HEAD'], { cwd: libDir })).stdout.trim()
 
       // Main repo
       await initRepoWithCommit(root)
@@ -365,9 +361,7 @@ describe('readGitCommit with submodule bump (real git)', () => {
       })
       await git(root, ['add', 'vendor/foo'])
       await git(root, ['commit', '-m', 'bump submodule to v2'])
-      const bumpSha = (
-        await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })
-      ).stdout.trim()
+      const bumpSha = (await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim()
 
       const r = await readGitCommit(root, bumpSha)
       if (!r.enabled) throw new Error(`expected enabled; got ${JSON.stringify(r)}`)

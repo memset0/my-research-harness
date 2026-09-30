@@ -27,31 +27,23 @@ describe('ArchiveToggle — disabled state (run hard rule)', () => {
   })
 
   it('button is disabled when kind=run + archived=false + runStatus=RUNNING', () => {
-    renderWithQuery(
-      <ArchiveToggle kind="run" id="foo-1" archived={false} runStatus="RUNNING" />,
-    )
+    renderWithQuery(<ArchiveToggle kind="run" id="foo-1" archived={false} runStatus="RUNNING" />)
     const btn = screen.getByRole('button', { name: 'Archive' })
     expect(btn).toBeDisabled()
   })
 
   it('button is enabled when kind=run + archived=false + runStatus=FINISHED', () => {
-    renderWithQuery(
-      <ArchiveToggle kind="run" id="foo-1" archived={false} runStatus="FINISHED" />,
-    )
+    renderWithQuery(<ArchiveToggle kind="run" id="foo-1" archived={false} runStatus="FINISHED" />)
     expect(screen.getByRole('button', { name: 'Archive' })).not.toBeDisabled()
   })
 
   it('Unarchive is always enabled (even when status is RUNNING)', () => {
-    renderWithQuery(
-      <ArchiveToggle kind="run" id="foo-1" archived={true} runStatus="RUNNING" />,
-    )
+    renderWithQuery(<ArchiveToggle kind="run" id="foo-1" archived={true} runStatus="RUNNING" />)
     expect(screen.getByRole('button', { name: 'Unarchive' })).not.toBeDisabled()
   })
 
   it('exp-side has no hard rule (button always enabled regardless of runStatus)', () => {
-    renderWithQuery(
-      <ArchiveToggle kind="exp" id="E0001-foo" archived={false} />,
-    )
+    renderWithQuery(<ArchiveToggle kind="exp" id="E0001-foo" archived={false} />)
     expect(screen.getByRole('button', { name: 'Archive' })).not.toBeDisabled()
   })
 })
@@ -68,7 +60,13 @@ describe('ArchiveToggle — success / error toasts', () => {
       mtime: 2000,
     } as never)
     renderWithQuery(
-      <ArchiveToggle kind="run" id="foo-1" archived={false} runStatus="FINISHED" expectedMtime={1000} />,
+      <ArchiveToggle
+        kind="run"
+        id="foo-1"
+        archived={false}
+        runStatus="FINISHED"
+        expectedMtime={1000}
+      />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
     await waitFor(() => {
@@ -110,7 +108,13 @@ describe('ArchiveToggle — success / error toasts', () => {
     // server now says no. Easier: render a non-RUNNING run (button enabled)
     // and have the server return the 422 error anyway.
     renderWithQuery(
-      <ArchiveToggle kind="run" id="foo-1" archived={false} runStatus="FINISHED" expectedMtime={1000} />,
+      <ArchiveToggle
+        kind="run"
+        id="foo-1"
+        archived={false}
+        runStatus="FINISHED"
+        expectedMtime={1000}
+      />,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
     await waitFor(() => {

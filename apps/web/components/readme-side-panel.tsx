@@ -24,22 +24,19 @@ export function ReadmeSidePanel({ path, runId }: ReadmeSidePanelProps) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const asideRef = useRef<HTMLDivElement | null>(null)
 
-  const onMouseMove = useCallback(
-    (e: MouseEvent) => {
-      const drag = dragRef.current
-      if (!drag) return
-      const delta = drag.startX - e.clientX
-      const next = drag.startWidth + delta
-      // Update DOM directly during drag for smoothness.
-      if (asideRef.current) {
-        const min = 320
-        const max = Math.max(min, Math.floor(window.innerWidth * 0.5))
-        const clamped = Math.min(max, Math.max(min, next))
-        asideRef.current.style.width = `${clamped}px`
-      }
-    },
-    [],
-  )
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const delta = drag.startX - e.clientX
+    const next = drag.startWidth + delta
+    // Update DOM directly during drag for smoothness.
+    if (asideRef.current) {
+      const min = 320
+      const max = Math.max(min, Math.floor(window.innerWidth * 0.5))
+      const clamped = Math.min(max, Math.max(min, next))
+      asideRef.current.style.width = `${clamped}px`
+    }
+  }, [])
 
   const onMouseUp = useCallback(() => {
     const drag = dragRef.current

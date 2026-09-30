@@ -20,7 +20,8 @@ const COLLECTION_PATHS = new Set([
   '/api/experiment-results-views',
 ])
 
-const COLLECTION_SUBRESOURCE = /^(?:\/api\/wiki\/backlinks\/[^/]+|\/api\/runs\/[^/]+\/(?:files|warnings)|\/api\/experiments\/[^/]+\/warnings|\/api\/projects\/[^/]+\/(?:git-status(?:\/files)?|git-branches|git-log|submodules|shares|commit-marks))\/?$/
+const COLLECTION_SUBRESOURCE =
+  /^(?:\/api\/wiki\/backlinks\/[^/]+|\/api\/runs\/[^/]+\/(?:files|warnings)|\/api\/experiments\/[^/]+\/warnings|\/api\/projects\/[^/]+\/(?:git-status(?:\/files)?|git-branches|git-log|submodules|shares|commit-marks))\/?$/
 
 export function isCollectionResourcePath(pathname: string): boolean {
   const path = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname

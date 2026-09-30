@@ -126,50 +126,52 @@ export function ExperimentManagedSection({
 
   return (
     <ManagedDocumentContext.Provider value={sourceDocument}>
-    <div className="space-y-3" data-slot={`${kind}-document`}>
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/35 px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {kind === 'implementation' ? (
-            <Code2 className="size-3.5" aria-hidden />
-          ) : (
-            <FlaskConical className="size-3.5" aria-hidden />
-          )}
-          <span data-slot="document-summary">
-            <strong className="font-medium tabular-nums text-foreground">{flatItems.length}</strong>{' '}
-            {flatItems.length === 1 ? 'item' : 'items'} across {items.length}{' '}
-            {items.length === 1 ? 'workstream' : 'workstreams'}
-          </span>
+      <div className="space-y-3" data-slot={`${kind}-document`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/35 px-3 py-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {kind === 'implementation' ? (
+              <Code2 className="size-3.5" aria-hidden />
+            ) : (
+              <FlaskConical className="size-3.5" aria-hidden />
+            )}
+            <span data-slot="document-summary">
+              <strong className="font-medium tabular-nums text-foreground">
+                {flatItems.length}
+              </strong>{' '}
+              {flatItems.length === 1 ? 'item' : 'items'} across {items.length}{' '}
+              {items.length === 1 ? 'workstream' : 'workstreams'}
+            </span>
+          </div>
+          <fieldset className="flex flex-wrap items-center gap-1">
+            <legend className="sr-only">Status summary</legend>
+            {STATUS_ORDER[kind].map((status) => {
+              const count = statusCounts.get(status) ?? 0
+              return count > 0 ? (
+                <StatusBadge key={status} status={status} count={count} compact />
+              ) : null
+            })}
+          </fieldset>
         </div>
-        <fieldset className="flex flex-wrap items-center gap-1">
-          <legend className="sr-only">Status summary</legend>
-          {STATUS_ORDER[kind].map((status) => {
-            const count = statusCounts.get(status) ?? 0
-            return count > 0 ? (
-              <StatusBadge key={status} status={status} count={count} compact />
-            ) : null
-          })}
-        </fieldset>
-      </div>
 
-      {items.length === 0 ? (
-        <div className="rounded-md border border-dashed px-3 py-8 text-center text-xs italic text-muted-foreground">
-          No {kind} items yet.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {items.map((item) => (
-            <ManagedItemNode
-              key={item.id}
-              item={item}
-              kind={kind}
-              project={project}
-              experimentId={experimentId}
-              depth={0}
-            />
-          ))}
-        </ul>
-      )}
-    </div>
+        {items.length === 0 ? (
+          <div className="rounded-md border border-dashed px-3 py-8 text-center text-xs italic text-muted-foreground">
+            No {kind} items yet.
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {items.map((item) => (
+              <ManagedItemNode
+                key={item.id}
+                item={item}
+                kind={kind}
+                project={project}
+                experimentId={experimentId}
+                depth={0}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </ManagedDocumentContext.Provider>
   )
 }
@@ -218,7 +220,9 @@ function ManagedItemNode({
                   </span>
                 )}
               </div>
-              <h3 className="text-sm font-medium leading-snug text-foreground"><TranslatedLiteral>{item.title}</TranslatedLiteral></h3>
+              <h3 className="text-sm font-medium leading-snug text-foreground">
+                <TranslatedLiteral>{item.title}</TranslatedLiteral>
+              </h3>
             </div>
             <StatusBadge status={item.status} />
           </header>

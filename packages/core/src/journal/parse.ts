@@ -91,7 +91,9 @@ export function parseJournal(content: string): ParsedJournal {
     let statusTo: Status | null = null
     if (tag === 'STATUS') {
       // body looks like "`<id>` <FROM> → <TO>"
-      const afterBackticks = expMatch ? body.slice(expMatch.index + expMatch[0].length).trim() : body
+      const afterBackticks = expMatch
+        ? body.slice(expMatch.index + expMatch[0].length).trim()
+        : body
       const tm = STATUS_TRANSITION_REGEX.exec(afterBackticks)
       if (tm) {
         const [, from, to] = tm as unknown as [string, string, string]

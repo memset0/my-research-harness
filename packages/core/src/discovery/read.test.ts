@@ -116,11 +116,7 @@ describe('readRunDir', () => {
     // low-resolution filesystems.
     const siblingFuture = readmeStat.mtimeMs + 5000
     await fs.writeFile(join(dir, 'output.log'), 'hello')
-    await fs.utimes(
-      join(dir, 'output.log'),
-      siblingFuture / 1000,
-      siblingFuture / 1000,
-    )
+    await fs.utimes(join(dir, 'output.log'), siblingFuture / 1000, siblingFuture / 1000)
     await fs.utimes(dir, siblingFuture / 1000, siblingFuture / 1000)
 
     const exp = await readRunDir(dir, 'fsdp-comm')

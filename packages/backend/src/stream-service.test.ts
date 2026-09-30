@@ -57,7 +57,10 @@ describe('FilesystemStreamService', () => {
   it('refuses a wiki asset request that does not name a W-id bundle', async () => {
     const assets = join(rootA, 'docs/wiki/assets')
     await fs.mkdir(assets, { recursive: true })
-    await fs.writeFile(join(assets, 'pipeline-overview.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    await fs.writeFile(
+      join(assets, 'pipeline-overview.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    )
     // The shared `docs/wiki/assets` figure convention is gone: figure images
     // live beside their document and are served by the document asset route.
     await expect(

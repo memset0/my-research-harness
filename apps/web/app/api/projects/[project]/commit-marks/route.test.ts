@@ -36,10 +36,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/commit-marks`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/commit-marks`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -57,10 +57,7 @@ beforeEach(() => {
 
 describe('GET /api/projects/[project]/commit-marks', () => {
   it('200 for owner', async () => {
-    const res = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
     expect(readCommitMarks).toHaveBeenCalledWith('/tmp/a')
@@ -84,10 +81,7 @@ describe('GET /api/projects/[project]/commit-marks', () => {
   })
 
   it('404 for unknown project', async () => {
-    const res = await GET(
-      req('nope', { 'x-memon-role': 'owner' }),
-      paramsFor('nope'),
-    )
+    const res = await GET(req('nope', { 'x-memon-role': 'owner' }), paramsFor('nope'))
     expect(res.status).toBe(404)
   })
 })

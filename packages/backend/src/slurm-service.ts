@@ -4,10 +4,7 @@ import {
   type BackendSlurmStatus,
   BackendSlurmStatusSchema,
 } from '@memon/core'
-import {
-  type BackendExecutionProvider,
-  createLocalExecutionProvider,
-} from './execution-service.js'
+import { type BackendExecutionProvider, createLocalExecutionProvider } from './execution-service.js'
 
 const SQUEUE_FORMAT = 'JobID:|,Partition:|,Name:|,StateCompact:|,TimeUsed:|,NumNodes:|,NodeList:|'
 export type SlurmJobsProvider = () => Promise<readonly BackendSlurmJob[]>

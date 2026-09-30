@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { renderWithQuery } from '../test/utils'
 
 vi.mock('../lib/api', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../lib/api')>(),
+  ...(await importOriginal<typeof import('../lib/api')>()),
   fetchGitBranches: vi.fn(),
   fetchGitLog: vi.fn(),
   fetchGitCommit: vi.fn(),
@@ -104,17 +104,13 @@ afterEach(() => {
 
 describe('GitHistoryDialog', () => {
   it('does not fetch anything while open=false', () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open={false} onOpenChange={() => {}} />,
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open={false} onOpenChange={() => {}} />)
     expect(fetchGitBranches).not.toHaveBeenCalled()
     expect(fetchGitLog).not.toHaveBeenCalled()
   })
 
   it('opens with the shell classes spec demands', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
     await waitFor(() => {
       const content = document.body.querySelector('[data-slot="git-history-dialog"]')
       expect(content).not.toBeNull()
@@ -127,81 +123,50 @@ describe('GitHistoryDialog', () => {
   })
 
   it('renders commit list after branches + log resolve', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     expect(screen.getByText('add feature')).toBeInTheDocument()
     expect(fetchGitBranches).toHaveBeenCalledWith('project-a', undefined)
     expect(fetchGitLog).toHaveBeenCalledWith('project-a', 'main', 100, undefined)
   })
 
   it('right pane shows placeholder until a commit is clicked', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     expect(screen.getByText(/Select a commit/i)).toBeInTheDocument()
     expect(fetchGitCommit).not.toHaveBeenCalled()
   })
 
   it('clicking a commit fetches its detail and renders file rows', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     await userEvent.click(screen.getByText('fix the bug'))
     await waitFor(() => {
-      expect(fetchGitCommit).toHaveBeenCalledWith(
-        'project-a',
-        'a'.repeat(40),
-        undefined,
-      )
+      expect(fetchGitCommit).toHaveBeenCalledWith('project-a', 'a'.repeat(40), undefined)
     })
     expect(screen.getByText('app/page.tsx')).toBeInTheDocument()
     expect(screen.getByText('lib/util.ts')).toBeInTheDocument()
   })
 
   it('expanding a file row fetches the commit-side diff', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     await userEvent.click(screen.getByText('fix the bug'))
-    await waitFor(() =>
-      expect(screen.getByText('app/page.tsx')).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText('app/page.tsx')).toBeInTheDocument())
     await userEvent.click(screen.getByText('app/page.tsx'))
     await waitFor(() => {
-      expect(fetchGitDiff).toHaveBeenCalledWith(
-        'project-a',
-        'app/page.tsx',
-        'commit',
-        {
-          sha: 'a'.repeat(40),
-          submodule: undefined,
-          from: undefined,
-          to: undefined,
-        },
-      )
+      expect(fetchGitDiff).toHaveBeenCalledWith('project-a', 'app/page.tsx', 'commit', {
+        sha: 'a'.repeat(40),
+        submodule: undefined,
+        from: undefined,
+        to: undefined,
+      })
     })
   })
 
   it('refresh invalidates branches + log but not the cached commit', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     await userEvent.click(screen.getByText('fix the bug'))
     await waitFor(() => expect(fetchGitCommit).toHaveBeenCalledTimes(1))
     // Baselines after the initial open + commit click:
@@ -232,15 +197,9 @@ describe('GitHistoryDialog', () => {
       ],
       parseWarnings: [],
     })
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
-    const badges = document.body.querySelectorAll(
-      '[data-slot="commit-mark-badge"]',
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
+    const badges = document.body.querySelectorAll('[data-slot="commit-mark-badge"]')
     expect(badges.length).toBe(2)
     const statuses = Array.from(badges).map((b) => b.getAttribute('data-status'))
     expect(statuses).toContain('verified')
@@ -248,17 +207,11 @@ describe('GitHistoryDialog', () => {
   })
 
   it('selecting a commit renders a commit-mark-editor in the detail pane', async () => {
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     await userEvent.click(screen.getByText('fix the bug'))
     await waitFor(() => {
-      const editor = document.body.querySelector(
-        '[data-slot="commit-mark-editor"]',
-      )
+      const editor = document.body.querySelector('[data-slot="commit-mark-editor"]')
       expect(editor).not.toBeNull()
       expect(editor!.getAttribute('data-sha')).toBe('a'.repeat(40))
     })
@@ -267,12 +220,8 @@ describe('GitHistoryDialog', () => {
   it('switching to a different commit with a dirty note prompts confirm', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     try {
-      renderWithQuery(
-        <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-      )
-      await waitFor(() =>
-        expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-      )
+      renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+      await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
       // Select the first commit so an editor is mounted.
       await userEvent.click(screen.getByText('fix the bug'))
       const note = await waitFor(() => {
@@ -296,12 +245,8 @@ describe('GitHistoryDialog', () => {
   it('cancelling the confirm keeps the current selection', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     try {
-      renderWithQuery(
-        <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-      )
-      await waitFor(() =>
-        expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-      )
+      renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+      await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
       await userEvent.click(screen.getByText('fix the bug'))
       const note = await waitFor(() => {
         const el = document.body.querySelector(
@@ -336,22 +281,14 @@ describe('GitHistoryDialog', () => {
         },
       ],
     })
-    renderWithQuery(
-      <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-    )
-    await waitFor(() =>
-      expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-    )
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
     await userEvent.click(screen.getByText('fix the bug'))
     await waitFor(() =>
-      expect(
-        document.body.querySelector('[data-slot="submodule-bump-row"]'),
-      ).not.toBeNull(),
+      expect(document.body.querySelector('[data-slot="submodule-bump-row"]')).not.toBeNull(),
     )
     // The submodule-bump row replaces the FileRow for that entry.
-    const fileRowTriggers = document.body.querySelectorAll(
-      '[data-slot="file-row-trigger"]',
-    )
+    const fileRowTriggers = document.body.querySelectorAll('[data-slot="file-row-trigger"]')
     // The non-submodule file STILL renders as a FileRow.
     expect(fileRowTriggers.length).toBe(1)
     // The header carries both short SHAs.
@@ -362,18 +299,12 @@ describe('GitHistoryDialog', () => {
   it('switching without a dirty note does NOT prompt', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm')
     try {
-      renderWithQuery(
-        <GitHistoryDialog project="project-a" open onOpenChange={() => {}} />,
-      )
-      await waitFor(() =>
-        expect(screen.getByText('fix the bug')).toBeInTheDocument(),
-      )
+      renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+      await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
       await userEvent.click(screen.getByText('fix the bug'))
       // Wait for editor to mount but DO NOT type into the note.
       await waitFor(() =>
-        expect(
-          document.body.querySelector('[data-slot="commit-mark-editor"]'),
-        ).not.toBeNull(),
+        expect(document.body.querySelector('[data-slot="commit-mark-editor"]')).not.toBeNull(),
       )
       await userEvent.click(screen.getByText('add feature'))
       expect(confirmSpy).not.toHaveBeenCalled()

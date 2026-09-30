@@ -6,11 +6,7 @@ import { getCodeReviewsList } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Code review' }
 
-export default async function CodeReviewPage({
-  params,
-}: {
-  params: Promise<{ project: string }>
-}) {
+export default async function CodeReviewPage({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params
   const decoded = decodeURIComponent(project)
 

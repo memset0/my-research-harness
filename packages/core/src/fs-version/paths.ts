@@ -5,7 +5,10 @@ import { resolve } from 'node:path'
  * within `projectRoot` after path normalisation. Defends against malformed
  * `projectRoot` inputs that contain `..` segments.
  */
-export function resolveVersionFilePath(projectRoot: string): { rootAbs: string; markerAbs: string } {
+export function resolveVersionFilePath(projectRoot: string): {
+  rootAbs: string
+  markerAbs: string
+} {
   const rootAbs = resolve(projectRoot)
   const markerAbs = resolve(rootAbs, '.memon', 'version.json')
   if (markerAbs !== `${rootAbs}/.memon/version.json`) {

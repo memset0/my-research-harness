@@ -30,27 +30,49 @@ export function RecomputeButton({ block }: { block: ComponentBlockContext }) {
           : block.document!.project,
         { document: block.document!.path, ids: [block.id!] },
       )
-      const result: ComponentRunResult | undefined = response.results.find((item) => item.id === block.id)
+      const result: ComponentRunResult | undefined = response.results.find(
+        (item) => item.id === block.id,
+      )
       if (!result) throw new Error(`run response did not include ${block.id}`)
       if (result.status === 'failed') {
         setState({ phase: 'failed', message: result.error ?? 'component run failed' })
         return
       }
-      await queryClient.invalidateQueries({ queryKey: componentCacheQueryKey(block.document!, block.id!) })
+      await queryClient.invalidateQueries({
+        queryKey: componentCacheQueryKey(block.document!, block.id!),
+      })
       setState({ phase: result.status })
     } catch (cause) {
       setState({ phase: 'failed', message: cause instanceof Error ? cause.message : String(cause) })
     }
   }
 
-  const label = state.phase === 'pending' ? 'recomputing' : state.phase === 'idle' ? 'recompute' : state.phase
+  const label =
+    state.phase === 'pending' ? 'recomputing' : state.phase === 'idle' ? 'recompute' : state.phase
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs" data-component-recompute={state.phase}>
-      <Button type="button" variant="outline" size="sm" disabled={state.phase === 'pending'} onClick={run}>
-        {state.phase === 'pending' ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
+    <div
+      className="flex flex-wrap items-center gap-2 text-xs"
+      data-component-recompute={state.phase}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={state.phase === 'pending'}
+        onClick={run}
+      >
+        {state.phase === 'pending' ? (
+          <Loader2 className="animate-spin" aria-hidden />
+        ) : (
+          <RefreshCw aria-hidden />
+        )}
         {label}
       </Button>
-      {state.phase === 'failed' && <span role="alert" className="text-destructive">{state.message}</span>}
+      {state.phase === 'failed' && (
+        <span role="alert" className="text-destructive">
+          {state.message}
+        </span>
+      )}
     </div>
   )
 }

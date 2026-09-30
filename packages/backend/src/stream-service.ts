@@ -359,7 +359,9 @@ function parseLogResource(input: string): ReturnType<typeof ResourceIdSchema.par
 
 /** Directory listing that treats a missing directory as empty, nothing else. */
 async function readDirectoryEntries(directory: string): Promise<Dirent[]> {
-  return (await missingOrThrow(fs.readdir(directory, { withFileTypes: true, encoding: 'utf8' }))) ?? []
+  return (
+    (await missingOrThrow(fs.readdir(directory, { withFileTypes: true, encoding: 'utf8' }))) ?? []
+  )
 }
 
 function invalid(): never {

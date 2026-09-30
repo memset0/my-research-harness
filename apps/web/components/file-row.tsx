@@ -57,14 +57,7 @@ export interface FileRowProps {
   range?: { from: string; to: string }
 }
 
-export function FileRow({
-  project,
-  side,
-  entry,
-  sha,
-  submodule,
-  range,
-}: FileRowProps) {
+export function FileRow({ project, side, entry, sha, submodule, range }: FileRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [hasBeenExpanded, setHasBeenExpanded] = useState(false)
   const code = STATUS_LABEL[entry.status]
@@ -89,10 +82,7 @@ export function FileRow({
         className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent hover:text-accent-foreground"
       >
         <ChevronRight
-          className={cn(
-            'size-3.5 shrink-0 transition-transform',
-            expanded && 'rotate-90',
-          )}
+          className={cn('size-3.5 shrink-0 transition-transform', expanded && 'rotate-90')}
           aria-hidden
         />
         <span className={cn('w-3 shrink-0 text-center font-mono font-semibold', colorCls)}>
@@ -213,8 +203,7 @@ export function FileRowBody({
     )
   }
 
-  const message =
-    'error' in data && data.error?.message ? data.error.message : 'diff failed'
+  const message = 'error' in data && data.error?.message ? data.error.message : 'diff failed'
   return (
     <FileDiff
       filename={entry.path}
@@ -229,9 +218,7 @@ export function FileRowBody({
 
 function extractSkipReason(
   data: GitDiffResponse,
-):
-  | { reason: FileDiffSkipReason; sizeBytes?: number; maxBytes?: number }
-  | null {
+): { reason: FileDiffSkipReason; sizeBytes?: number; maxBytes?: number } | null {
   if ('ok' in data && data.ok === false && 'skipReason' in data) {
     if (data.skipReason === 'too-large') {
       return {

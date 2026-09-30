@@ -13,7 +13,8 @@
       "!**/.next",
       "!**/dist",
       "!**/build",
-      "!**/coverage"
+      "!**/coverage",
+      "!apps/web/components/ui"
     ]
   },
   "formatter": {
@@ -49,17 +50,5 @@
     "parser": {
       "tailwindDirectives": true
     }
-  },
-  "overrides": [
-    {
-      "includes": ["apps/web/components/ui/**"],
-      "linter": {
-        "rules": {
-          "correctness": {
-            "useExhaustiveDependencies": "off"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

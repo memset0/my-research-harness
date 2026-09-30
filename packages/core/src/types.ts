@@ -821,7 +821,6 @@ export interface AuthConfig {
   sessionSecret?: string
 }
 
-
 export interface SlurmConfig {
   /**
    * Cluster node total used as the denominator in the dashboard's
@@ -984,7 +983,6 @@ export const DEFAULT_POLL: PollConfig = {
   maxIntervalMs: 300_000,
   backoffFactor: 2,
 }
-
 
 export const DEFAULT_SLURM: SlurmConfig = {
   totalNodes: -1,

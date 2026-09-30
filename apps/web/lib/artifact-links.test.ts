@@ -71,10 +71,7 @@ describe('resolveBareArtifactReference', () => {
     // A live Report keeps its token even when a page claims it as legacy_id.
     const stillReported: ArtifactInventory = {
       ...INVENTORY,
-      reports: [
-        ...INVENTORY.reports,
-        { id: 'R0009', path: `${ROOT}/docs/reports/R0009-old.md` },
-      ],
+      reports: [...INVENTORY.reports, { id: 'R0009', path: `${ROOT}/docs/reports/R0009-old.md` }],
     }
     expect(resolveBareArtifactReference('R0009', stillReported)).toEqual({
       kind: 'report',
@@ -161,7 +158,11 @@ describe('resolveArtifactMarkdownHref', () => {
 
   it('resolves both wiki page forms and the canonical wiki route', () => {
     expect(
-      resolveArtifactMarkdownHref('../../wiki/finding/W0001-zero-snr.md', experimentSource, INVENTORY),
+      resolveArtifactMarkdownHref(
+        '../../wiki/finding/W0001-zero-snr.md',
+        experimentSource,
+        INVENTORY,
+      ),
     ).toMatchObject({ kind: 'wiki', id: 'W0001' })
     expect(
       resolveArtifactMarkdownHref(

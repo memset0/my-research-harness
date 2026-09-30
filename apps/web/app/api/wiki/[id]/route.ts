@@ -41,58 +41,58 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   if ('error' in target) return target.error
   const id = (await context.params).id
   return withWikiInvocation(runtime, target.project, 'wiki write', { id }, async () => {
-  if (!WIKI_ID_REGEX.test(id)) {
-    return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
-  }
-  const summary = runtime.wikiCache.getWikiSummary(target.project, id)
-  if (!summary) return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
-
-  let raw: unknown
-  try {
-    raw = await request.json()
-  } catch {
-    return wikiError(400, 'BAD_REQUEST', 'invalid JSON body')
-  }
-  const write = parseWikiWriteBody(raw)
-  if (!write) return wikiError(400, 'BAD_REQUEST', 'invalid write request')
-  const identityError = wikiWriteIdentityError(summary, write.content)
-  if (identityError) return wikiError(400, 'BAD_REQUEST', identityError)
-
-  const result = await runtime.wikiCache.putWikiPage(
-    target.project,
-    id,
-    write.content,
-    write.expectedMtime,
-    write.expectedHash,
-  )
-  if (!result.ok) {
-    if (result.code === 'NOT_FOUND') {
-      return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
+    if (!WIKI_ID_REGEX.test(id)) {
+      return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
     }
-    if (result.code === 'CONFLICT') {
-      return NextResponse.json(
-        {
-          error: { code: 'CONFLICT', message: 'wiki page changed on disk' },
-          currentMtime: result.currentMtime,
-          currentHash: result.currentHash,
-          currentContent: result.currentContent,
-        },
-        { status: 409 },
-      )
-    }
-    return wikiError(500, 'INTERNAL', result.message ?? 'wiki write failed')
-  }
+    const summary = runtime.wikiCache.getWikiSummary(target.project, id)
+    if (!summary) return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
 
-  if (write.expectedHash && result.hash === write.expectedHash) {
-    markJournalInvocationOutcome('noop')
-  }
-  const written = runtime.wikiCache.getWikiSummary(target.project, id) ?? summary
-  return NextResponse.json({
-    ok: true,
-    mtime: result.mtime,
-    hash: result.hash,
-    page: wikiPageDto(target.project, written, write.content, result.hash),
-    finalContent: write.content,
-  })
+    let raw: unknown
+    try {
+      raw = await request.json()
+    } catch {
+      return wikiError(400, 'BAD_REQUEST', 'invalid JSON body')
+    }
+    const write = parseWikiWriteBody(raw)
+    if (!write) return wikiError(400, 'BAD_REQUEST', 'invalid write request')
+    const identityError = wikiWriteIdentityError(summary, write.content)
+    if (identityError) return wikiError(400, 'BAD_REQUEST', identityError)
+
+    const result = await runtime.wikiCache.putWikiPage(
+      target.project,
+      id,
+      write.content,
+      write.expectedMtime,
+      write.expectedHash,
+    )
+    if (!result.ok) {
+      if (result.code === 'NOT_FOUND') {
+        return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
+      }
+      if (result.code === 'CONFLICT') {
+        return NextResponse.json(
+          {
+            error: { code: 'CONFLICT', message: 'wiki page changed on disk' },
+            currentMtime: result.currentMtime,
+            currentHash: result.currentHash,
+            currentContent: result.currentContent,
+          },
+          { status: 409 },
+        )
+      }
+      return wikiError(500, 'INTERNAL', result.message ?? 'wiki write failed')
+    }
+
+    if (write.expectedHash && result.hash === write.expectedHash) {
+      markJournalInvocationOutcome('noop')
+    }
+    const written = runtime.wikiCache.getWikiSummary(target.project, id) ?? summary
+    return NextResponse.json({
+      ok: true,
+      mtime: result.mtime,
+      hash: result.hash,
+      page: wikiPageDto(target.project, written, write.content, result.hash),
+      finalContent: write.content,
+    })
   })
 }

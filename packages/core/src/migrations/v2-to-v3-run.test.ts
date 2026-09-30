@@ -122,8 +122,7 @@ describe('rewriteV2RunReadme — v2 → v3 deterministic transform', () => {
     expect(v3b).toContain(NEW_TIME)
     expect(v3b).not.toContain(MIGRATION_TIME)
     // Replace timestamps and assert the rest matches
-    const norm = (s: string) =>
-      s.replace(/updated_at: .+$/m, 'updated_at: <T>')
+    const norm = (s: string) => s.replace(/updated_at: .+$/m, 'updated_at: <T>')
     expect(norm(v3b)).toBe(norm(v3a))
   })
 })

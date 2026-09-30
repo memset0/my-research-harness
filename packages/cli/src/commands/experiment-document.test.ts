@@ -10,10 +10,7 @@ import {
   runExperimentShow,
   runExperimentStatusSet,
 } from './experiment-doc.js'
-import {
-  runExperimentDocumentLint,
-  runExperimentDocumentRender,
-} from './experiment-document.js'
+import { runExperimentDocumentLint, runExperimentDocumentRender } from './experiment-document.js'
 
 const IMPORTED_RUN_ID = 'baseline-260810-120000'
 const IMPORTED_RUN_README = `---
@@ -210,10 +207,9 @@ variants:
 
     // `readFile()` on a directory fails. A whole-project scan would therefore
     // abort, while targeted member resolution must never open this README.
-    await fs.mkdir(
-      join(root, 'outputs', 'unrelated-260811-120000', 'README.md'),
-      { recursive: true },
-    )
+    await fs.mkdir(join(root, 'outputs', 'unrelated-260811-120000', 'README.md'), {
+      recursive: true,
+    })
 
     stdout = ''
     await runExperimentDelete({

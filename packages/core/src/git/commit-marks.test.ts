@@ -36,8 +36,7 @@ function findMark(marks: CommitMark[], sha: string, submodule = ''): CommitMark 
 describe('parseCsv / serializeCsv — round-trip + RFC 4180', () => {
   it('round-trips a simple 5-column row', () => {
     const csv =
-      'sha,status,note,updated_at,submodule\n' +
-      `${SHA_A},verified,,2026-05-15T12:00:00+08:00,\n`
+      'sha,status,note,updated_at,submodule\n' + `${SHA_A},verified,,2026-05-15T12:00:00+08:00,\n`
     const r = parseCommitMarksCsv(csv)
     expect(r.parseWarnings).toEqual([])
     expect(r.marks).toHaveLength(1)
@@ -67,9 +66,7 @@ describe('parseCsv / serializeCsv — round-trip + RFC 4180', () => {
   })
 
   it('legacy 4-column header reads as main-repo rows + parseWarning', () => {
-    const csv =
-      'sha,status,note,updated_at\n' +
-      `${SHA_A},verified,,2026-05-15T12:00:00+08:00\n`
+    const csv = 'sha,status,note,updated_at\n' + `${SHA_A},verified,,2026-05-15T12:00:00+08:00\n`
     const r = parseCommitMarksCsv(csv)
     expect(r.marks).toHaveLength(1)
     expect(r.marks[0]!.submodule).toBe('')
@@ -102,9 +99,7 @@ describe('parseCsv / serializeCsv — round-trip + RFC 4180', () => {
       submodule: '',
     }
     const csv = serializeCommitMarksCsv([mark])
-    expect(csv).toContain(
-      `${SHA_A},verified,"said ""hi"" then left",2026-05-13T08:00:00+08:00,`,
-    )
+    expect(csv).toContain(`${SHA_A},verified,"said ""hi"" then left",2026-05-13T08:00:00+08:00,`)
     const r = parseCommitMarksCsv(csv)
     expect(r.marks[0]!.note).toBe('said "hi" then left')
   })
@@ -201,15 +196,15 @@ describe('setCommitMark + readCommitMarks (round-trip on disk)', () => {
   })
 
   it('rejects invalid status', async () => {
-    await expect(
-      setCommitMark(root, SHA_A, { status: 'green' as never }),
-    ).rejects.toThrow(/invalid status/)
+    await expect(setCommitMark(root, SHA_A, { status: 'green' as never })).rejects.toThrow(
+      /invalid status/,
+    )
   })
 
   it('rejects invalid sha (shell metacharacters)', async () => {
-    await expect(
-      setCommitMark(root, 'foo;rm', { status: 'verified' }),
-    ).rejects.toThrow(/invalid sha/)
+    await expect(setCommitMark(root, 'foo;rm', { status: 'verified' })).rejects.toThrow(
+      /invalid sha/,
+    )
   })
 
   it('writes upgrade a legacy 4-column file to 5 columns', async () => {
@@ -221,8 +216,7 @@ describe('setCommitMark + readCommitMarks (round-trip on disk)', () => {
     const fs = await import('node:fs/promises')
     await fs.writeFile(
       path,
-      'sha,status,note,updated_at\n' +
-        `${SHA_M},verified,,2026-05-15T12:00:00+08:00\n`,
+      'sha,status,note,updated_at\n' + `${SHA_M},verified,,2026-05-15T12:00:00+08:00\n`,
       'utf8',
     )
     // Trigger a write — adds a new row, must also upgrade the header.

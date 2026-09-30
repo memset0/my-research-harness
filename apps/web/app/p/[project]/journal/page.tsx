@@ -6,11 +6,7 @@ import { getJournalData } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Journal' }
 
-export default async function JournalPage({
-  params,
-}: {
-  params: Promise<{ project: string }>
-}) {
+export default async function JournalPage({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params
   const decoded = decodeURIComponent(project)
 

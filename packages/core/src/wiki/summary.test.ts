@@ -349,7 +349,10 @@ updated_at: "2026-09-01T09:00:00+08:00"
 text
 `
     await write('docs/wiki/note/W0006-alpha.md', body('W0006'))
-    await write('docs/wiki/decision/W0007-alpha.md', body('W0007').replace('kind: note', 'kind: decision\nstatus: ACCEPTED'))
+    await write(
+      'docs/wiki/decision/W0007-alpha.md',
+      body('W0007').replace('kind: note', 'kind: decision\nstatus: ACCEPTED'),
+    )
 
     const projection = buildWikiProject(await discoverWikiPages(root), {
       experiments: [],

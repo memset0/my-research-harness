@@ -103,9 +103,11 @@ describe('parseHypotheses', () => {
 - **Last verified**: —
 `
     const parsed = parseHypotheses(swapped)
-    expect(parsed.parseWarnings.some(
-      (w) => w.field === 'H0004.Runs' && /MIGRATE_HYPOTHESIS_REFS/.test(w.message),
-    )).toBe(true)
+    expect(
+      parsed.parseWarnings.some(
+        (w) => w.field === 'H0004.Runs' && /MIGRATE_HYPOTHESIS_REFS/.test(w.message),
+      ),
+    ).toBe(true)
   })
 
   it('captures legend and summary table blocks', () => {
@@ -117,7 +119,11 @@ describe('parseHypotheses', () => {
   it('warns on duplicate hypothesis IDs', () => {
     const dup = `${SAMPLE}\n## H0001. duplicate\n- **Statement**: dup\n- **Origin**: x\n- **Status**: ❌ REFUTED\n- **Experiments**: —\n- **Evidence**:\n- **Caveats**:\n- **Last verified**: —\n`
     const parsed = parseHypotheses(dup)
-    expect(parsed.parseWarnings.some((w) => w.field === 'H0001' && /DUPLICATE_HYPOTHESIS_ID/.test(w.message))).toBe(true)
+    expect(
+      parsed.parseWarnings.some(
+        (w) => w.field === 'H0001' && /DUPLICATE_HYPOTHESIS_ID/.test(w.message),
+      ),
+    ).toBe(true)
     expect(parsed.entries.filter((e) => e.id === 'H0001')).toHaveLength(1)
   })
 

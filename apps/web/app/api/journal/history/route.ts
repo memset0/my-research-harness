@@ -36,9 +36,6 @@ export async function GET(request: NextRequest) {
       ),
     )
   } catch {
-    return NextResponse.json(
-      { error: { message: 'journal history read failed' } },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: { message: 'journal history read failed' } }, { status: 500 })
   }
 }

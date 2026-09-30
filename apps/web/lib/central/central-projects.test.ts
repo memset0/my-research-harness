@@ -11,10 +11,7 @@ import {
 } from '@memon/core'
 import { describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './backend-headers'
-import {
-  aggregateCentralProjects,
-  MAX_CENTRAL_PROJECTS_JSON_BYTES,
-} from './central-projects'
+import { aggregateCentralProjects, MAX_CENTRAL_PROJECTS_JSON_BYTES } from './central-projects'
 import { CentralHostRegistry } from './host-registry'
 
 const TOKEN_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'

@@ -119,5 +119,4 @@ describe('Backend read-only migration policy', () => {
     expect(add).toHaveBeenCalledWith('project-a', {})
     expect(revoke).toHaveBeenCalledWith('project-a', 'shr_abcdefgh')
   })
-
 })

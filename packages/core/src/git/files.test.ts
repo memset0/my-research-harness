@@ -125,9 +125,7 @@ describe('parsePorcelainV2WithFiles — synthetic stdout', () => {
     ].join('\n')
     const r = parsePorcelainV2WithFiles(stdout)
     if (!r.enabled) throw new Error('expected enabled')
-    expect(r.unstaged.map((e) => e.path)).toEqual([
-      'folder/a name with spaces.txt',
-    ])
+    expect(r.unstaged.map((e) => e.path)).toEqual(['folder/a name with spaces.txt'])
   })
 })
 
@@ -277,9 +275,7 @@ describe('readGitFileContents — arbitrary git refs', () => {
     await writeFile(join(root, 'app.ts'), 'v1\n', 'utf8')
     await git(root, ['add', 'app.ts'])
     await git(root, ['commit', '-m', 'v1'])
-    const shaV1 = (
-      await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })
-    ).stdout.trim()
+    const shaV1 = (await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim()
     await writeFile(join(root, 'app.ts'), 'v2\n', 'utf8')
     await git(root, ['add', 'app.ts'])
     await git(root, ['commit', '-m', 'v2'])
@@ -296,9 +292,7 @@ describe('readGitFileContents — arbitrary git refs', () => {
     await writeFile(join(root, 'app.ts'), 'child\n', 'utf8')
     await git(root, ['add', 'app.ts'])
     await git(root, ['commit', '-m', 'child'])
-    const headSha = (
-      await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })
-    ).stdout.trim()
+    const headSha = (await execFileP('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim()
 
     const r = await readGitFileContents(root, `${headSha}^`, 'app.ts')
     expect(r).toEqual({ ok: true, content: 'parent\n' })

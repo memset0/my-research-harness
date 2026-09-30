@@ -26,18 +26,9 @@ describe('ThemeToggle', () => {
   it('reports the System slot as active by default', async () => {
     renderWithProvider()
     await waitFor(() => {
-      expect(screen.getByRole('radio', { name: /system/i })).toHaveAttribute(
-        'aria-checked',
-        'true',
-      )
+      expect(screen.getByRole('radio', { name: /system/i })).toHaveAttribute('aria-checked', 'true')
     })
-    expect(screen.getByRole('radio', { name: /light/i })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    )
-    expect(screen.getByRole('radio', { name: /dark/i })).toHaveAttribute(
-      'aria-checked',
-      'false',
-    )
+    expect(screen.getByRole('radio', { name: /light/i })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: /dark/i })).toHaveAttribute('aria-checked', 'false')
   })
 })

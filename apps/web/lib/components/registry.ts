@@ -114,7 +114,8 @@ export function validatePayload(
   const parsed = validator.safeParse(stripHiddenKeys(value))
   if (parsed.success) return { ok: true, data: parsed.data as Record<string, unknown> }
   const issue = parsed.error.issues[0] as ZodIssue
-  const field = issue.code === 'unrecognized_keys' ? (issue.keys[0] ?? null) : dottedPath(issue.path) || null
+  const field =
+    issue.code === 'unrecognized_keys' ? (issue.keys[0] ?? null) : dottedPath(issue.path) || null
   return { ok: false, field, message: issue.message }
 }
 

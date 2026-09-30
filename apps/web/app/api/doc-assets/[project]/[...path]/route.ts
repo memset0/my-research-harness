@@ -129,7 +129,14 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   const stats = await stat(absolutePath).catch(() => null)
   if (!stats?.isFile()) return error(404, 'NOT_FOUND', 'document asset not found')
 
-  if (thumbnail) return serveThumbnail(request, runtime.config.media?.ffmpeg ?? 'ffmpeg', absolutePath, stats, includeBody)
+  if (thumbnail)
+    return serveThumbnail(
+      request,
+      runtime.config.media?.ffmpeg ?? 'ffmpeg',
+      absolutePath,
+      stats,
+      includeBody,
+    )
 
   const etag = `W/"${createHash('sha1').update(`${absolutePath}:${stats.size}:${stats.mtimeMs}`).digest('hex')}"`
   const headers = new Headers({
@@ -197,7 +204,11 @@ async function serveThumbnail(
     return new NextResponse(null, { status: 304, headers })
   }
   const jpeg = await extractVideoThumbnail(ffmpeg, absolutePath)
-  if (!jpeg) return error(404, 'THUMBNAIL_UNAVAILABLE', 'no thumbnail could be extracted from this video')
+  if (!jpeg)
+    return error(404, 'THUMBNAIL_UNAVAILABLE', 'no thumbnail could be extracted from this video')
   headers.set('content-length', String(jpeg.length))
-  return new NextResponse(includeBody && request.method !== 'HEAD' ? new Uint8Array(jpeg) : null, { status: 200, headers })
+  return new NextResponse(includeBody && request.method !== 'HEAD' ? new Uint8Array(jpeg) : null, {
+    status: 200,
+    headers,
+  })
 }

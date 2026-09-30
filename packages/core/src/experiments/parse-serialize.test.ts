@@ -159,7 +159,14 @@ describe('parseExperimentReadme + serializeExperimentReadme — Plan section', (
       warningsRaw: parsed.warningsRaw,
     })
 
-    const order = ['## Motivation', '## Method', '## Plan', '## Conclusion', '## Caveats', '## Warnings']
+    const order = [
+      '## Motivation',
+      '## Method',
+      '## Plan',
+      '## Conclusion',
+      '## Caveats',
+      '## Warnings',
+    ]
     let cursor = 0
     for (const heading of order) {
       const idx = out.indexOf(heading, cursor)

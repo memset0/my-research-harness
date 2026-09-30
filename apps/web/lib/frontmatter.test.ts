@@ -3,7 +3,8 @@ import { splitFrontmatter } from './frontmatter'
 
 describe('splitFrontmatter', () => {
   it('splits valid frontmatter from body', () => {
-    const src = '---\nhypothesis: H0001\nstatus: CONFIRMED\nexperiments:\n  - foo\n  - bar\n---\n# Findings\n\nbody text'
+    const src =
+      '---\nhypothesis: H0001\nstatus: CONFIRMED\nexperiments:\n  - foo\n  - bar\n---\n# Findings\n\nbody text'
     const { frontmatter, body } = splitFrontmatter(src)
     expect(frontmatter).toEqual({
       hypothesis: 'H0001',

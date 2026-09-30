@@ -120,7 +120,9 @@ describe('saveFileAccessSettings', () => {
   })
 
   it('saves cache periods beside the existing dump settings without hot-applying or mixing scheduler keys', async () => {
-    await writeConfig(`${CONFIG_WITH_COMMENTS}\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 15\n  wiki_ttl_seconds: 30\n  default_ttl_seconds: 1800\n`)
+    await writeConfig(
+      `${CONFIG_WITH_COMMENTS}\nfile_cache:\n  dump_path: ./.memon-cache/files.dump\n  dump_interval_seconds: 15\n  wiki_ttl_seconds: 30\n  default_ttl_seconds: 1800\n`,
+    )
     const before = await readPendingFileAccessSettings(configPath)
     const startup = {
       fileCache: {
@@ -150,11 +152,13 @@ describe('saveFileAccessSettings', () => {
   it('refuses cache-period edits without an operator-configured dump path', async () => {
     await writeConfig(CONFIG_WITH_COMMENTS)
     const before = await readPendingFileAccessSettings(configPath)
-    await expect(saveFileAccessSettings({
-      configPath,
-      revision: before.revision,
-      settings: { ...VALID_SETTINGS, wikiTtlMs: 60_000 },
-    })).rejects.toMatchObject({ code: 'CONFIG_SHAPE' })
+    await expect(
+      saveFileAccessSettings({
+        configPath,
+        revision: before.revision,
+        settings: { ...VALID_SETTINGS, wikiTtlMs: 60_000 },
+      }),
+    ).rejects.toMatchObject({ code: 'CONFIG_SHAPE' })
     expect(await fs.readFile(configPath, 'utf8')).toBe(CONFIG_WITH_COMMENTS)
   })
 

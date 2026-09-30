@@ -346,12 +346,22 @@ async function init(): Promise<Runtime> {
     const root = config.projects.find((project) => project.name === projectName)?.root
     const legacyCounts = new Map<string, number>()
     for (const run of runs) legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
-    if (root) for (const run of runs) {
-      const reference = projectRunPath(root, run.path)
-      const owners = exps.filter((experiment) => experiment.frontMatter.runs.includes(reference) || (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)))
-      run.frontMatter.experiment = owners.length === 1 ? owners[0]!.id : null
-    }
-    const result = computeMembership({ experiments: exps, runs, project: projectName, projectRoot: config.projects.find((project) => project.name === projectName)?.root })
+    if (root)
+      for (const run of runs) {
+        const reference = projectRunPath(root, run.path)
+        const owners = exps.filter(
+          (experiment) =>
+            experiment.frontMatter.runs.includes(reference) ||
+            (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)),
+        )
+        run.frontMatter.experiment = owners.length === 1 ? owners[0]!.id : null
+      }
+    const result = computeMembership({
+      experiments: exps,
+      runs,
+      project: projectName,
+      projectRoot: config.projects.find((project) => project.name === projectName)?.root,
+    })
     sharedAnomalies.set(projectName, result.anomalies)
     events.emit('anomaly', { project: projectName, count: result.anomalies.length })
   }
@@ -370,7 +380,9 @@ async function init(): Promise<Runtime> {
         experiments: Array.from(sharedExperiments.values()).filter(
           (e) => e.project === project.name,
         ),
-        runs: index.list({ project: project.name, includeDeprecated: true }).map((run) => ({ ...run, id: projectRunPath(project.root, run.path) })),
+        runs: index
+          .list({ project: project.name, includeDeprecated: true })
+          .map((run) => ({ ...run, id: projectRunPath(project.root, run.path) })),
         hypothesesMtime: hypotheses?.mtime ? hypotheses.mtime : null,
         hypothesisIds: (hypotheses?.value?.entries ?? []).map((entry) => entry.id),
         reportIds: reportsCache

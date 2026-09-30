@@ -157,9 +157,7 @@ describe('runFsVersionCheck (CLI entry)', () => {
       last_migrated_at: null,
     })
     const before = await fs.stat(join(projectRoot, '.memon/version.json'))
-    await runCapturing(() =>
-      runFsVersionCheck({ projectRoot, cwd: projectRoot, format: 'json' }),
-    )
+    await runCapturing(() => runFsVersionCheck({ projectRoot, cwd: projectRoot, format: 'json' }))
     const after = await fs.stat(join(projectRoot, '.memon/version.json'))
     expect(after.mtimeMs).toBe(before.mtimeMs)
     expect(after.size).toBe(before.size)

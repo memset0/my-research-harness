@@ -20,7 +20,12 @@ import { cn } from '../lib/utils'
 import { ListSkeleton } from './skeletons'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import { WikiKindBadge, WikiReviewBadge, WikiStaleIndicator, WikiStatusBadge } from './wiki-page-card'
+import {
+  WikiKindBadge,
+  WikiReviewBadge,
+  WikiStaleIndicator,
+  WikiStatusBadge,
+} from './wiki-page-card'
 import { useWikiPages, WikiDocumentView } from './wiki-shell'
 
 export type WikiPaneSurface = 'drawer' | 'split'
@@ -187,7 +192,10 @@ function WikiPaneSwitcher({
           {loading && pages.length === 0 ? (
             <ListSkeleton count={4} />
           ) : error && pages.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-3 py-5 text-center" data-wiki-switch-error="">
+            <div
+              className="flex flex-col items-center gap-2 px-3 py-5 text-center"
+              data-wiki-switch-error=""
+            >
               <p className="text-xs font-medium text-destructive">failed to load wiki pages</p>
               <p className="break-words text-[10px] text-muted-foreground">{error.message}</p>
               {onRetry && (

@@ -29,7 +29,12 @@ describe('datatable@1 filter matching', () => {
   })
 
   const columns = ['run', 'fid']
-  const rows = [['bf16', 14], ['bf16', 16], ['fp32', 13], ['fp32', 'n/a']]
+  const rows = [
+    ['bf16', 14],
+    ['bf16', 16],
+    ['fp32', 13],
+    ['fp32', 'n/a'],
+  ]
   const low: DatatableFilter = { label: 'low', where: { fid: { lt: 15 } } }
   const bf16: DatatableFilter = { label: 'bf16', where: { run: 'bf16' } }
 
@@ -38,9 +43,14 @@ describe('datatable@1 filter matching', () => {
   })
 
   it('combines where entries and active filters with AND', () => {
-    expect(filterRows(columns, rows, [low])).toEqual([['bf16', 14], ['fp32', 13]])
+    expect(filterRows(columns, rows, [low])).toEqual([
+      ['bf16', 14],
+      ['fp32', 13],
+    ])
     expect(filterRows(columns, rows, [low, bf16])).toEqual([['bf16', 14]])
-    expect(filterRows(columns, rows, [{ label: 'both', where: { run: 'fp32', fid: { lt: 15 } } }])).toEqual([['fp32', 13]])
+    expect(
+      filterRows(columns, rows, [{ label: 'both', where: { run: 'fp32', fid: { lt: 15 } } }]),
+    ).toEqual([['fp32', 13]])
   })
 })
 
@@ -48,7 +58,13 @@ describe('datatable@1 scatter model', () => {
   it('keeps rows sharing an x and counts non-numeric x or y', () => {
     const model = buildScatterModel(
       ['lr', 'fid', 'run'],
-      [[0.001, '14.10', 'a'], [0.001, 15, 'b'], [0.002, 13.2, 'a'], ['n/a', 12, 'b'], [0.003, null, 'a']],
+      [
+        [0.001, '14.10', 'a'],
+        [0.001, 15, 'b'],
+        [0.002, 13.2, 'a'],
+        ['n/a', 12, 'b'],
+        [0.003, null, 'a'],
+      ],
       { type: 'scatter', x: 'lr', y: 'fid', series: 'run' },
     )
     expect(model.series).toEqual(['a', 'b'])
@@ -63,7 +79,10 @@ describe('datatable@1 scatter model', () => {
   it('honours the tab and select choice', () => {
     const model = buildScatterModel(
       ['exp', 'x', 'y'],
-      [['E1', 1, 2], ['E2', 3, 4]],
+      [
+        ['E1', 1, 2],
+        ['E2', 3, 4],
+      ],
       { type: 'scatter', x: 'x', y: 'y', tabs: 'exp' },
       { tab: 'E2' },
     )

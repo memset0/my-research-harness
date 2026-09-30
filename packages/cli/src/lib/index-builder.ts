@@ -5,22 +5,14 @@
 // Poller on top to keep the index fresh in long-running mode. CLI commands
 // are short-lived and just snapshot the filesystem.
 
-import {
-  RunIndex,
-  discoverRuns,
-  readRunDir,
-  type Config,
-} from '@memon/core'
+import { RunIndex, discoverRuns, readRunDir, type Config } from '@memon/core'
 
 export interface BuildIndexOptions {
   /** Restrict to a single project by name. */
   project?: string
 }
 
-export async function buildIndex(
-  config: Config,
-  opts: BuildIndexOptions = {},
-): Promise<RunIndex> {
+export async function buildIndex(config: Config, opts: BuildIndexOptions = {}): Promise<RunIndex> {
   const idx = new RunIndex()
   for (const project of config.projects) {
     if (opts.project && project.name !== opts.project) continue

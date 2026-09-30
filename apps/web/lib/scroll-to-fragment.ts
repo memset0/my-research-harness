@@ -64,7 +64,10 @@ export function resetDriftedAncestors(surface: Element): void {
  * Click handler for same-document `#fragment` anchors. Leaves modified clicks
  * and unknown targets to the browser.
  */
-export function handleFragmentClick(event: React.MouseEvent<HTMLAnchorElement>, href: string): void {
+export function handleFragmentClick(
+  event: React.MouseEvent<HTMLAnchorElement>,
+  href: string,
+): void {
   if (!href.startsWith('#')) return
   if (event.defaultPrevented || event.button !== 0) return
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return

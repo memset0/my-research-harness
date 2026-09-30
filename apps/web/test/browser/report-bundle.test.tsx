@@ -88,7 +88,6 @@ describe('directory Report inbox rendering', () => {
       'id',
       'report-r0002-summary',
     )
-
   })
 
   it('threads FullReport.format into the Markdown resource base', async () => {
@@ -303,5 +302,4 @@ describe('directory Report inbox rendering', () => {
     expect(cards[0]).toHaveAttribute('data-report-card')
     expect(cards[0]).toHaveClass('rounded-md', 'border', 'bg-card')
   })
-
 })

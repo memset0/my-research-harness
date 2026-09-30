@@ -36,10 +36,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, query: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/git-commit?${query}`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/git-commit?${query}`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -67,10 +67,7 @@ describe('GET /api/projects/[project]/git-commit', () => {
   })
 
   it('400 missing sha', async () => {
-    const res = await GET(
-      req('project-a', '', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', '', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(400)
     expect(readGitCommit).not.toHaveBeenCalled()
   })

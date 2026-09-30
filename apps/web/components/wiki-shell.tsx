@@ -34,7 +34,11 @@ import {
   type MarkdownOutlineEntry,
   normalizeHeadingIdPrefix,
 } from '../lib/markdown-outline'
-import { handleFragmentClick, resetDriftedAncestors, scrollFragmentIntoSurface } from '../lib/scroll-to-fragment'
+import {
+  handleFragmentClick,
+  resetDriftedAncestors,
+  scrollFragmentIntoSurface,
+} from '../lib/scroll-to-fragment'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { setChecklistStatus } from '../lib/components/checklist/v1/update'
 import { cn } from '../lib/utils'
@@ -55,13 +59,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet'
 import {
   filterWikiPages,
@@ -261,7 +259,12 @@ function WikiRailFilters({
           Kind
         </Label>
         <Select value={kind} onValueChange={onKindChange}>
-          <SelectTrigger id="wiki-kind-filter" size="sm" className="w-full" data-slot="wiki-kind-filter">
+          <SelectTrigger
+            id="wiki-kind-filter"
+            size="sm"
+            className="w-full"
+            data-slot="wiki-kind-filter"
+          >
             <SelectValue placeholder="all kinds" />
           </SelectTrigger>
           <SelectContent>
@@ -334,7 +337,10 @@ function WikiCardList({
   // A failed list must stay distinguishable from a genuinely empty one.
   if (error && pages.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 px-3 py-6 text-center" data-wiki-rail-error="">
+      <div
+        className="flex flex-col items-center gap-2 px-3 py-6 text-center"
+        data-wiki-rail-error=""
+      >
         <p className="text-xs font-medium text-destructive">failed to load wiki pages</p>
         <p className="break-words text-[10px] text-muted-foreground">{error.message}</p>
         {onRetry && (
@@ -399,7 +405,9 @@ function WikiLandingState({
             <ListSkeleton count={3} />
           </div>
         ) : error ? (
-          <p className="max-w-md text-sm text-destructive">Failed to load wiki pages: {error.message}</p>
+          <p className="max-w-md text-sm text-destructive">
+            Failed to load wiki pages: {error.message}
+          </p>
         ) : pageCount > 0 ? (
           <p className="max-w-md text-sm text-muted-foreground" data-wiki-no-selection="">
             Select a wiki page from the page list to begin reading.
@@ -710,7 +718,11 @@ export function WikiDocumentView({
   const checklistWrite = useWikiChecklistWrite(project, page, bodyStartLine)
   const componentDocumentPath = page.resource ?? page.path
   const componentDocument = componentDocumentPath
-    ? { project: projectName(project), host: projectHost(project) ?? undefined, path: componentDocumentPath }
+    ? {
+        project: projectName(project),
+        host: projectHost(project) ?? undefined,
+        path: componentDocumentPath,
+      }
     : undefined
 
   return (
@@ -758,25 +770,30 @@ export function WikiDocumentView({
         data-wiki-unverified-body={wholeBodyUnverified ? '' : undefined}
       >
         <BodyTranslation
-          document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'wiki', id: page.id }}
+          document={{
+            host: projectHost(project) ?? undefined,
+            project: projectName(project),
+            kind: 'wiki',
+            id: page.id,
+          }}
           sources={translationSources('wiki', page)}
           sourceLanguage={page.language === 'zh' ? 'zh' : 'en'}
         >
-        <ReportHtmlZoomProvider>
-          <ChecklistWriteProvider value={checklistWrite}>
-            <Markdown
-              project={project}
-              resourceBaseUrl={
-                page.format === 'bundle' ? wikiResourceBaseUrl(project, page.id) : undefined
-              }
-              unverified={unverified}
-              headingIdPrefix={`wiki-${page.id}`}
-              document={componentDocument}
-            >
-              {body}
-            </Markdown>
-          </ChecklistWriteProvider>
-        </ReportHtmlZoomProvider>
+          <ReportHtmlZoomProvider>
+            <ChecklistWriteProvider value={checklistWrite}>
+              <Markdown
+                project={project}
+                resourceBaseUrl={
+                  page.format === 'bundle' ? wikiResourceBaseUrl(project, page.id) : undefined
+                }
+                unverified={unverified}
+                headingIdPrefix={`wiki-${page.id}`}
+                document={componentDocument}
+              >
+                {body}
+              </Markdown>
+            </ChecklistWriteProvider>
+          </ReportHtmlZoomProvider>
         </BodyTranslation>
       </div>
     </DocumentArtifactLinkProvider>

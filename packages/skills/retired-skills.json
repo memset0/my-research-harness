@@ -47,9 +47,7 @@
     },
     {
       "name": "memon-doctor",
-      "deposit_digests": [
-        "3871db4f8d5065b412baadeb1515aab6516c1774b99598eee6cf1e0e0a49ba68"
-      ]
+      "deposit_digests": ["3871db4f8d5065b412baadeb1515aab6516c1774b99598eee6cf1e0e0a49ba68"]
     },
     {
       "name": "memon-notify",
@@ -69,9 +67,7 @@
     },
     {
       "name": "memon-update-journal",
-      "deposit_digests": [
-        "d0c2eeeba19d26c6db972e5f8adc7df0692b14558c6901a609288c3137de2029"
-      ]
+      "deposit_digests": ["d0c2eeeba19d26c6db972e5f8adc7df0692b14558c6901a609288c3137de2029"]
     }
   ]
 }

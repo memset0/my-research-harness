@@ -74,10 +74,12 @@ async function loadDescriptors(): Promise<Loaded[]> {
   // Plain codepoint order, not `localeCompare`: these bytes are compared by
   // `--check` on every machine that builds the repo.
   loaded.sort((a, b) => {
-    if (a.descriptor.type !== b.descriptor.type) return a.descriptor.type < b.descriptor.type ? -1 : 1
+    if (a.descriptor.type !== b.descriptor.type)
+      return a.descriptor.type < b.descriptor.type ? -1 : 1
     return a.descriptor.version - b.descriptor.version
   })
-  if (loaded.length === 0) throw new Error(`no component descriptors under ${componentsDir.pathname}`)
+  if (loaded.length === 0)
+    throw new Error(`no component descriptors under ${componentsDir.pathname}`)
   return loaded
 }
 
@@ -91,7 +93,9 @@ const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 // ------------------------------------------------------------ TS artifacts
 
 function renderRegistry(loaded: Loaded[]): string {
-  const imports = loaded.map((e) => `import { descriptor as ${alias(e.descriptor)} } from './${e.dir}'`)
+  const imports = loaded.map(
+    (e) => `import { descriptor as ${alias(e.descriptor)} } from './${e.dir}'`,
+  )
   const list = loaded.map((e) => alias(e.descriptor)).join(', ')
   return `${BANNER}\n${imports.join('\n')}\n\nexport const GENERATED_DESCRIPTORS = [${list}] as const\n`
 }
@@ -177,7 +181,11 @@ function peel(node: ZodNode, lazies?: ZodNode[]): { node: ZodNode; optional: boo
   let optional = false
   for (let i = 0; i < 16; i += 1) {
     const def = current._def
-    if (def.typeName === 'ZodOptional' || def.typeName === 'ZodDefault' || def.typeName === 'ZodCatch') {
+    if (
+      def.typeName === 'ZodOptional' ||
+      def.typeName === 'ZodDefault' ||
+      def.typeName === 'ZodCatch'
+    ) {
       optional = true
       current = def.innerType as ZodNode
       continue
@@ -402,5 +410,3 @@ if (mode === '--write') {
   }
   console.log('Generated component docs are up to date.')
 }
-
-

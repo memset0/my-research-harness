@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import {
-  __limits,
-  __resetForTests,
-  clientIpFromHeaders,
-  consume,
-  refund,
-} from './rate-limit'
+import { __limits, __resetForTests, clientIpFromHeaders, consume, refund } from './rate-limit'
 
 beforeEach(() => __resetForTests())
 afterEach(() => __resetForTests())

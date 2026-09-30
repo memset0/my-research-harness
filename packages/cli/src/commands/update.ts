@@ -198,10 +198,7 @@ async function findSourceCheckout(cwd: string): Promise<string | null> {
   return null
 }
 
-const DIST_PATHS = [
-  join('packages', 'core', 'dist'),
-  join('packages', 'cli', 'dist'),
-] as const
+const DIST_PATHS = [join('packages', 'core', 'dist'), join('packages', 'cli', 'dist')] as const
 
 /**
  * Only the CLI's own dependency closure is installed: `@memon/cli` plus the
@@ -457,11 +454,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
         )
         return problems
       }
-      const reset = await run(
-        'git',
-        ['reset', '--keep', result.previousRevision as string],
-        source,
-      )
+      const reset = await run('git', ['reset', '--keep', result.previousRevision as string], source)
       if (!reset.ok) {
         problems.push(
           `git reset --keep to ${(result.previousRevision as string).slice(0, 12)} refused, so nothing was moved (local changes would have been discarded): ${tail(reset.stderr)}`,
@@ -647,7 +640,11 @@ async function readInstalledRelease(cliEntry: string, cwd: string): Promise<stri
 
 /** True when the caller should exit non-zero. */
 export function updateFailed(result: UpdateResult): boolean {
-  if (result.outcome === 'refused' || result.outcome === 'failed' || result.outcome === 'rolled_back') {
+  if (
+    result.outcome === 'refused' ||
+    result.outcome === 'failed' ||
+    result.outcome === 'rolled_back'
+  ) {
     return true
   }
   return result.steps.some((step) => step.outcome === 'failed')

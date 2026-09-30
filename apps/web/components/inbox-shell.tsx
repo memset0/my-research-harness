@@ -607,25 +607,46 @@ export function RenderedItem({
       )}
       {kind === 'reports' ? (
         <BodyTranslation
-          document={{ host: projectHost(project) ?? undefined, project: projectName(project), kind: 'report', id: sourceReportId ?? '' }}
+          document={{
+            host: projectHost(project) ?? undefined,
+            project: projectName(project),
+            kind: 'report',
+            id: sourceReportId ?? '',
+          }}
           sources={translationSources('report', { content })}
         >
-        <ReportHtmlZoomProvider>
-          <Markdown
-            project={project}
-            resourceBaseUrl={resourceBaseUrl}
-            tableOfContents={{ headingIdPrefix: `report-${sourceReportId ?? 'document'}` }}
-            document={sourceDocumentPath ? { project: projectName(project), host: projectHost(project) ?? undefined, path: sourceDocumentPath } : undefined}
-          >
-            {body}
-          </Markdown>
-        </ReportHtmlZoomProvider>
+          <ReportHtmlZoomProvider>
+            <Markdown
+              project={project}
+              resourceBaseUrl={resourceBaseUrl}
+              tableOfContents={{ headingIdPrefix: `report-${sourceReportId ?? 'document'}` }}
+              document={
+                sourceDocumentPath
+                  ? {
+                      project: projectName(project),
+                      host: projectHost(project) ?? undefined,
+                      path: sourceDocumentPath,
+                    }
+                  : undefined
+              }
+            >
+              {body}
+            </Markdown>
+          </ReportHtmlZoomProvider>
         </BodyTranslation>
       ) : (
         <Markdown
           project={project}
           resourceBaseUrl={resourceBaseUrl}
-          document={sourceDocumentPath ? { project: projectName(project), host: projectHost(project) ?? undefined, path: sourceDocumentPath } : undefined}
+          document={
+            sourceDocumentPath
+              ? {
+                  project: projectName(project),
+                  host: projectHost(project) ?? undefined,
+                  path: sourceDocumentPath,
+                }
+              : undefined
+          }
         >
           {body}
         </Markdown>
@@ -767,8 +788,7 @@ function MobileRailDrawer({
       <SheetContent side="right" className="w-80 p-0">
         <SheetHeader className="border-b px-3 py-3">
           <SheetTitle className="text-sm">
-            {'Reports'} ·{' '}
-            {projectHost(project) ? `${projectHost(project)}/` : ''}
+            {'Reports'} · {projectHost(project) ? `${projectHost(project)}/` : ''}
             {projectName(project)}
           </SheetTitle>
         </SheetHeader>

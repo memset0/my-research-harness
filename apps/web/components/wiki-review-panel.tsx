@@ -32,13 +32,7 @@ import { cn } from '../lib/utils'
 import { FileRow } from './file-row'
 import { ListSkeleton } from './skeletons'
 import { Button } from './ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 
 const WIKI_PATH_PREFIX = 'docs/wiki/'
 
@@ -63,8 +57,8 @@ export function WikiReviewPanel({
             {typeof project === 'string' ? project : `${project.host}/${project.project}`}
           </DialogTitle>
           <DialogDescription>
-            Wiki commits oldest first. Verification is sequential: only the oldest unverified
-            commit can be marked, and unverifying one cascades to every newer mark.
+            Wiki commits oldest first. Verification is sequential: only the oldest unverified commit
+            can be marked, and unverifying one cascades to every newer mark.
           </DialogDescription>
         </DialogHeader>
         {open && <WikiReviewBody project={project} />}
@@ -166,9 +160,7 @@ function WikiReviewBody({ project }: { project: ProjectTarget }) {
         ) : (
           commits.map((commit) => {
             const newerMarks = commits.filter(
-              (other) =>
-                other.verified &&
-                commits.indexOf(other) > commits.indexOf(commit),
+              (other) => other.verified && commits.indexOf(other) > commits.indexOf(commit),
             ).length
             return (
               <li
@@ -186,19 +178,14 @@ function WikiReviewBody({ project }: { project: ProjectTarget }) {
                       : 'border-muted-foreground/30 text-transparent',
                   )}
                   title={
-                    commit.verified
-                      ? `verified ${commit.verifiedAt ?? ''}`.trim()
-                      : 'not verified'
+                    commit.verified ? `verified ${commit.verifiedAt ?? ''}`.trim() : 'not verified'
                   }
                 >
                   <Check className="size-3" aria-hidden />
                   <span className="sr-only">{commit.verified ? 'verified' : 'not verified'}</span>
                 </span>
                 <span className="shrink-0 font-mono tabular-nums">{commit.sha.slice(0, 8)}</span>
-                <span
-                  className="shrink-0 text-muted-foreground"
-                  title={commit.authoredAt}
-                >
+                <span className="shrink-0 text-muted-foreground" title={commit.authoredAt}>
                   {formatRelativeTime(commit.authoredAt)}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{commit.subject}</span>

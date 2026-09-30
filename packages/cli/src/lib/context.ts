@@ -18,14 +18,9 @@ export interface CliFlags {
   project?: string
 }
 
-export async function resolveContext(
-  flags: CliFlags,
-): Promise<LoadCliContextResult> {
+export async function resolveContext(flags: CliFlags): Promise<LoadCliContextResult> {
   if (flags.projectRoot && flags.project) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      '--project-root cannot be combined with --project',
-    )
+    emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
   }
   try {
     return await loadCliContext({
@@ -54,10 +49,7 @@ export function singleProjectRoot(ctx: LoadCliContextResult): string {
 }
 
 /** Pick a project by name from the resolved config; error if missing. */
-export function projectByName(
-  ctx: LoadCliContextResult,
-  name: string,
-): Config['projects'][number] {
+export function projectByName(ctx: LoadCliContextResult, name: string): Config['projects'][number] {
   const found = ctx.config.projects.find((p) => p.name === name)
   if (!found) {
     emitErrorAndExit('NOT_FOUND', `project "${name}" not found in config`)

@@ -158,10 +158,7 @@ describe('memon run warning add', () => {
     expect(out.rowId).toMatch(/^w_/)
 
     // Warning row landed in the EXP DOC, not the run README
-    const expContent = await fs.readFile(
-      join(root, 'docs', 'experiments', 'E0001-foo.md'),
-      'utf8',
-    )
+    const expContent = await fs.readFile(join(root, 'docs', 'experiments', 'E0001-foo.md'), 'utf8')
     expect(expContent).toContain('## Warnings')
     expect(expContent).toContain('loss spike at step 1500')
     expect(expContent).toContain('foo-260501-100000') // Run column populated

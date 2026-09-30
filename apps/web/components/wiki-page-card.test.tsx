@@ -3,11 +3,7 @@ import type { WikiListItem } from '../lib/api'
 import { describe, expect, it } from 'vitest'
 import { filterWikiPages, sortWikiPages, WikiPageCard } from './wiki-page-card'
 
-function page(
-  id: string,
-  updatedAt: string,
-  overrides: Partial<WikiListItem> = {},
-): WikiListItem {
+function page(id: string, updatedAt: string, overrides: Partial<WikiListItem> = {}): WikiListItem {
   return {
     id,
     slug: `page-${id.toLowerCase()}`,
@@ -61,12 +57,12 @@ describe('wiki page rail cards', () => {
       }),
     ]
 
-    expect(filterWikiPages(pages, { kind: 'all', text: 'KERNEL' }).map((entry) => entry.id)).toEqual([
-      'W0002',
-    ])
-    expect(filterWikiPages(pages, { kind: 'finding', text: 'path' }).map((entry) => entry.id)).toEqual([
-      'W0002',
-    ])
+    expect(
+      filterWikiPages(pages, { kind: 'all', text: 'KERNEL' }).map((entry) => entry.id),
+    ).toEqual(['W0002'])
+    expect(
+      filterWikiPages(pages, { kind: 'finding', text: 'path' }).map((entry) => entry.id),
+    ).toEqual(['W0002'])
   })
 
   it('renders one native-link card with independent status, stale, and review signals', () => {

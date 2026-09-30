@@ -160,11 +160,7 @@ program
   .option('--include-deprecated', 'also list runs marked deprecated', false)
   .option('--deprecated-only', 'list ONLY runs marked deprecated', false)
   .action(
-    async (opts: {
-      project?: string
-      includeDeprecated?: boolean
-      deprecatedOnly?: boolean
-    }) => {
+    async (opts: { project?: string; includeDeprecated?: boolean; deprecatedOnly?: boolean }) => {
       const g = readGlobals()
       if (g.projectRoot && opts.project) {
         emitErrorAndExit('BAD_REQUEST', '--project-root cannot be combined with --project')
@@ -914,7 +910,10 @@ run
   )
   .option('--status <status>', 'PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN', 'PENDING')
   .option('--name <text>', 'short human label for this run')
-  .option('--created-at <iso>', 'ISO8601 with offset (default: the timestamp in the directory name)')
+  .option(
+    '--created-at <iso>',
+    'ISO8601 with offset (default: the timestamp in the directory name)',
+  )
   .option('--finished-at <iso>', 'ISO8601 with offset')
   .option('--host <name>', 'execution host')
   .option('--pid <n>', 'process id', (v) => Number(v))
@@ -1113,7 +1112,7 @@ const components = program
 
 components
   .command('run <document>')
-  .description('execute a document\'s executable component blocks and cache the results')
+  .description("execute a document's executable component blocks and cache the results")
   .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
   .option('--format <fmt>', 'output format: json | human')
   .option('--id <id>', 'only run this block id (repeatable)', collectOption, [])
@@ -1141,10 +1140,12 @@ wikiCommand(wikiKinds, 'ls', 'list all supported Wiki kinds').action(async (opts
   const { runWikiKinds } = await import('./commands/wiki.js')
   await runWikiKinds(wikiGlobals(opts))
 })
-wikiCommand(wikiKinds, 'show <kind>', 'explain a Wiki kind and its authoring rules').action(async (kind, opts) => {
-  const { runWikiKinds } = await import('./commands/wiki.js')
-  await runWikiKinds({ ...wikiGlobals(opts), kind })
-})
+wikiCommand(wikiKinds, 'show <kind>', 'explain a Wiki kind and its authoring rules').action(
+  async (kind, opts) => {
+    const { runWikiKinds } = await import('./commands/wiki.js')
+    await runWikiKinds({ ...wikiGlobals(opts), kind })
+  },
+)
 
 interface WikiLocalOptions {
   projectRoot?: string
@@ -1298,7 +1299,6 @@ wikiCommand(wiki, 'lint [page]', 'report diagnostics for one page or the whole w
   .action(async (page: string | undefined, opts: WikiLocalOptions & { strict?: boolean }) => {
     await runWikiLint({ ...wikiGlobals(opts), page, strict: opts.strict })
   })
-
 
 wikiCommand(wiki, 'backlinks <artifact>', 'list pages declaring an artifact source').action(
   async (artifact: string, opts: WikiLocalOptions) => {

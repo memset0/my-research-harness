@@ -6,11 +6,7 @@ import { getReportsList } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Reports' }
 
-export default async function ReportsPage({
-  params,
-}: {
-  params: Promise<{ project: string }>
-}) {
+export default async function ReportsPage({ params }: { params: Promise<{ project: string }> }) {
   const { project } = await params
   const decoded = decodeURIComponent(project)
 

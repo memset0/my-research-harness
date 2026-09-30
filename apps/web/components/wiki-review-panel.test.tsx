@@ -15,7 +15,9 @@ vi.mock('../lib/api', async (importOriginal) => {
   }
 })
 vi.mock('./file-row', () => ({
-  FileRow: ({ entry }: { entry: { path: string } }) => <div data-testid="review-file">{entry.path}</div>,
+  FileRow: ({ entry }: { entry: { path: string } }) => (
+    <div data-testid="review-file">{entry.path}</div>
+  ),
 }))
 
 import {
@@ -71,7 +73,9 @@ describe('WikiReviewPanel', () => {
 
     renderWithQuery(<WikiReviewPanel project="project-a" open onOpenChange={() => {}} />)
 
-    const verifyNext = await screen.findByRole('button', { name: `Verify next (${C2.slice(0, 8)})` })
+    const verifyNext = await screen.findByRole('button', {
+      name: `Verify next (${C2.slice(0, 8)})`,
+    })
     await userEvent.click(verifyNext)
     expect(await screen.findByText('docs/wiki/finding/W0002-change.md')).toBeInTheDocument()
     expect(screen.queryByText('src/unrelated.ts')).not.toBeInTheDocument()

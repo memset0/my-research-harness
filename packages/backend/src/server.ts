@@ -683,9 +683,7 @@ function resolveAllowedBackendRoute(pathname: string): AllowedBackendRoute | nul
     }
     const resourceId = ResourceIdSchema.safeParse(decodedId)
     if (!resourceId.success) return null
-    const key = reportMatch
-      ? BACKEND_REPORT_ROUTE
-      : BACKEND_CODE_REVIEW_ROUTE
+    const key = reportMatch ? BACKEND_REPORT_ROUTE : BACKEND_CODE_REVIEW_ROUTE
     if (key === BACKEND_REPORT_ROUTE && !/^R\d{4}$/.test(resourceId.data)) return null
     if (
       key === BACKEND_CODE_REVIEW_ROUTE &&
@@ -973,7 +971,6 @@ const STREAM_DATA_ROUTE_KEYS: readonly string[] = [
 function isStreamDataRoute(key: string): boolean {
   return STREAM_DATA_ROUTE_KEYS.includes(key)
 }
-
 
 function hasSingleValue(search: URLSearchParams, key: string): boolean {
   return search.getAll(key).length === 1
@@ -1478,7 +1475,9 @@ function ifRangeAllows(request: IncomingMessage, resource: BackendByteResource):
 
 function byteResourceHeaders(resource: BackendByteResource): Record<string, string> {
   return {
-    ...(resource.contentSecurityPolicy ? { 'content-security-policy': resource.contentSecurityPolicy } : {}),
+    ...(resource.contentSecurityPolicy
+      ? { 'content-security-policy': resource.contentSecurityPolicy }
+      : {}),
     'accept-ranges': 'bytes',
     'cache-control': 'private, no-cache',
     'content-type': resource.contentType,
@@ -1652,8 +1651,6 @@ export function createBackendHandler(options: BackendServerOptions): BackendHand
   const resolved = resolveOptions(options)
   return createResolvedBackendHandler(resolved)
 }
-
-
 
 function createResolvedBackendHandler(resolved: ResolvedBackendOptions): BackendHandler {
   return async (request, response) => {
@@ -2275,7 +2272,6 @@ function createResolvedBackendHandler(resolved: ResolvedBackendOptions): Backend
       }
       return
     }
-
 
     if (pathname === BACKEND_PROJECTS_PATH) {
       let actor: ReturnType<typeof decodeBackendActorContext>

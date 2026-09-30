@@ -19,7 +19,11 @@ export function validateFsVersionRecord(value: unknown): FsVersionRecord {
   }
   const v = value as Record<string, unknown>
 
-  if (typeof v.fs_convention_version !== 'number' || !Number.isInteger(v.fs_convention_version) || v.fs_convention_version < 1) {
+  if (
+    typeof v.fs_convention_version !== 'number' ||
+    !Number.isInteger(v.fs_convention_version) ||
+    v.fs_convention_version < 1
+  ) {
     throw new FsVersionSchemaError(
       `field "fs_convention_version" must be a positive integer; got ${describe(v.fs_convention_version)}`,
     )

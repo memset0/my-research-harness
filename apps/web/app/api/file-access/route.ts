@@ -68,7 +68,9 @@ function settingsError(error: FileAccessSettingsError): NextResponse {
     STATUS_BY_ERROR_CODE[error.code],
     error.code,
     error.message,
-    error.current ? { revision: error.current.revision, pending: error.current.pending } : undefined,
+    error.current
+      ? { revision: error.current.revision, pending: error.current.pending }
+      : undefined,
   )
 }
 

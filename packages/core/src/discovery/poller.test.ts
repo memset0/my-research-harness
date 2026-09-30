@@ -50,12 +50,9 @@ describe('Poller', () => {
     const target = join(dir, 't.txt')
     await fs.writeFile(target, 'hello')
 
-    const poller = new Poller(
-      { minIntervalMs: 10, maxIntervalMs: 80, backoffFactor: 2 },
-      () => {
-        // no-op — we never call it because mtime never changes
-      },
-    )
+    const poller = new Poller({ minIntervalMs: 10, maxIntervalMs: 80, backoffFactor: 2 }, () => {
+      // no-op — we never call it because mtime never changes
+    })
     poller.watch(target, (await fs.stat(target)).mtimeMs)
 
     // Let several ticks happen (10, 20, 40, 80, 80, 80...)
@@ -69,10 +66,7 @@ describe('Poller', () => {
     const target = join(dir, 't.txt')
     await fs.writeFile(target, 'hello')
 
-    const poller = new Poller(
-      { minIntervalMs: 10, maxIntervalMs: 200, backoffFactor: 4 },
-      () => {},
-    )
+    const poller = new Poller({ minIntervalMs: 10, maxIntervalMs: 200, backoffFactor: 4 }, () => {})
     poller.watch(target, (await fs.stat(target)).mtimeMs)
     // Allow one or two ticks to back off
     await sleep(80)

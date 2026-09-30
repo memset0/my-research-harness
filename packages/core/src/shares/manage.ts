@@ -126,9 +126,7 @@ export async function revokeShare(
     throw new ShareStoreError(`revokeShare: idOrLabel is required`)
   }
   const file = await readShares(projectRoot)
-  const matches = file.shares.filter(
-    (s) => s.id.startsWith(idOrLabel) || s.label === idOrLabel,
-  )
+  const matches = file.shares.filter((s) => s.id.startsWith(idOrLabel) || s.label === idOrLabel)
   if (matches.length === 0) {
     throw new ShareNotFoundError(`share not found: ${idOrLabel}`)
   }

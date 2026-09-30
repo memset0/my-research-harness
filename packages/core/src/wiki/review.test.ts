@@ -395,11 +395,7 @@ describe('outside a git worktree', () => {
   beforeEach(async () => {
     plain = await mkdtemp(join(tmpdir(), 'memon-wiki-nogit-'))
     await mkdir(join(plain, 'docs/wiki/finding'), { recursive: true })
-    await writeFile(
-      join(plain, ALPHA),
-      page('W0001', 'finding', 'alpha'),
-      'utf8',
-    )
+    await writeFile(join(plain, ALPHA), page('W0001', 'finding', 'alpha'), 'utf8')
   })
   afterEach(async () => {
     await rm(plain, { recursive: true, force: true })
@@ -495,9 +491,9 @@ describe('configured execution runner', () => {
       await expect(deriveWikiReview(root, [ALPHA], [], { exec })).rejects.toMatchObject({
         code: 'GIT_UNAVAILABLE',
       })
-      await expect(
-        writeWikiReviewMark(root, 'next', undefined, { exec }),
-      ).rejects.toMatchObject({ code: 'GIT_UNAVAILABLE' })
+      await expect(writeWikiReviewMark(root, 'next', undefined, { exec })).rejects.toMatchObject({
+        code: 'GIT_UNAVAILABLE',
+      })
       await expect(removeWikiReviewMark(root, 'a'.repeat(40), { exec })).rejects.toMatchObject({
         code: 'GIT_UNAVAILABLE',
       })

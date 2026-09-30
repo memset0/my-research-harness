@@ -143,7 +143,9 @@ export async function listDeprecatedRunIds(
     exclude: options.exclude ?? [],
   }
   const dirs = wanted
-    ? (await Promise.all([...wanted].map((reference) => resolveRunReference(project, reference)))).filter((path): path is string => path !== null)
+    ? (
+        await Promise.all([...wanted].map((reference) => resolveRunReference(project, reference)))
+      ).filter((path): path is string => path !== null)
     : await discoverRuns(project)
   const concurrency = options.readConcurrency ?? 16
   if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {

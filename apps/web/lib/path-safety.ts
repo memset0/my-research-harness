@@ -22,7 +22,5 @@ export function assertWithinProjectRoots(absoluteOrRelative: string, config: Con
       return normalized
     }
   }
-  throw new PathSafetyError(
-    `path "${absoluteOrRelative}" is outside any configured project root`,
-  )
+  throw new PathSafetyError(`path "${absoluteOrRelative}" is outside any configured project root`)
 }

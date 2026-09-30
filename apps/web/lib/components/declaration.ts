@@ -44,19 +44,28 @@ export function parseComponentDeclaration(info: string): ComponentDeclarationRes
   if (typeMatch[2] !== undefined) {
     version = Number(typeMatch[2])
     if (!Number.isInteger(version) || version < 1) {
-      return { kind: 'invalid', message: `component version must be a positive integer: ${tokens[1]}` }
+      return {
+        kind: 'invalid',
+        message: `component version must be a positive integer: ${tokens[1]}`,
+      }
     }
   }
   let id: string | null = null
   if (tokens.length >= 3) {
     const idMatch = ID_TOKEN.exec(tokens[2]!)
     if (!idMatch) {
-      return { kind: 'invalid', message: `expected \`#<id>\` after \`${tokens[1]}\`, got \`${tokens[2]}\`` }
+      return {
+        kind: 'invalid',
+        message: `expected \`#<id>\` after \`${tokens[1]}\`, got \`${tokens[2]}\``,
+      }
     }
     id = idMatch[1]!
   }
   if (tokens.length > 3) {
-    return { kind: 'invalid', message: `unexpected tokens after the block id: ${tokens.slice(3).join(' ')}` }
+    return {
+      kind: 'invalid',
+      message: `unexpected tokens after the block id: ${tokens.slice(3).join(' ')}`,
+    }
   }
   return { kind: 'component', declaration: { lang, type, version, id } }
 }

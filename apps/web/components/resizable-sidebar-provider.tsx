@@ -21,10 +21,7 @@ import * as React from 'react'
 import { SidebarProvider } from './ui/sidebar'
 import { useSidebarWidth } from '../hooks/use-sidebar-width'
 
-type ResizableSidebarProviderProps = Omit<
-  React.ComponentProps<typeof SidebarProvider>,
-  'style'
-> & {
+type ResizableSidebarProviderProps = Omit<React.ComponentProps<typeof SidebarProvider>, 'style'> & {
   style?: React.CSSProperties
 }
 

@@ -49,21 +49,34 @@ describe('GET /api/code-preview', () => {
     const res = await GET(req(`project=p&url=${enc(url)}`))
     expect(res.status).toBe(200)
     const j = await res.json()
-    expect(j).toMatchObject({ owner: 'acme', repo: 'demo', sha: 'abc123', path: 'src/foo.ts', startLine: 10, endLine: 10 })
+    expect(j).toMatchObject({
+      owner: 'acme',
+      repo: 'demo',
+      sha: 'abc123',
+      path: 'src/foo.ts',
+      startLine: 10,
+      endLine: 10,
+    })
     expect(j.lines.find((l: { n: number }) => l.n === 10).target).toBe(true)
     expect(j.lines.find((l: { n: number }) => l.n === 9).target).toBe(false)
-    expect(vi.mocked(readGitFileContents)).toHaveBeenCalledWith('/proj/p', 'abc123', 'src/foo.ts', { exec: undefined })
+    expect(vi.mocked(readGitFileContents)).toHaveBeenCalledWith('/proj/p', 'abc123', 'src/foo.ts', {
+      exec: undefined,
+    })
   })
 
   it('200 range preview marks the whole range as target', async () => {
     vi.mocked(getRuntime).mockResolvedValue(rt() as never)
     vi.mocked(readGitFileContents).mockResolvedValue({ ok: true, content: FILE } as never)
-    const res = await GET(req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/a.ts#L5-L8')}`))
+    const res = await GET(
+      req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/a.ts#L5-L8')}`),
+    )
     expect(res.status).toBe(200)
     const j = await res.json()
     expect(j.startLine).toBe(5)
     expect(j.endLine).toBe(8)
-    expect(j.lines.filter((l: { target: boolean }) => l.target).map((l: { n: number }) => l.n)).toEqual([5, 6, 7, 8])
+    expect(
+      j.lines.filter((l: { target: boolean }) => l.target).map((l: { n: number }) => l.n),
+    ).toEqual([5, 6, 7, 8])
   })
 
   it('400 when url is missing', async () => {
@@ -79,27 +92,35 @@ describe('GET /api/code-preview', () => {
 
   it('404 for an unknown project', async () => {
     vi.mocked(getRuntime).mockResolvedValue(rt() as never)
-    const res = await GET(req(`project=zzz&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`))
+    const res = await GET(
+      req(`project=zzz&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`),
+    )
     expect(res.status).toBe(404)
   })
 
   it('404 for an unmapped owner/repo', async () => {
     vi.mocked(getRuntime).mockResolvedValue(rt() as never)
-    const res = await GET(req(`project=p&url=${enc('https://github.com/other/repo/blob/s/x.ts#L1')}`))
+    const res = await GET(
+      req(`project=p&url=${enc('https://github.com/other/repo/blob/s/x.ts#L1')}`),
+    )
     expect(res.status).toBe(404)
   })
 
   it('404 when the file/sha is not found locally', async () => {
     vi.mocked(getRuntime).mockResolvedValue(rt() as never)
     vi.mocked(readGitFileContents).mockResolvedValue({ ok: false, reason: 'not-found' } as never)
-    const res = await GET(req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`))
+    const res = await GET(
+      req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`),
+    )
     expect(res.status).toBe(404)
   })
 
   it('graceful 200 with reason for a too-large/binary file', async () => {
     vi.mocked(getRuntime).mockResolvedValue(rt() as never)
     vi.mocked(readGitFileContents).mockResolvedValue({ ok: false, reason: 'binary' } as never)
-    const res = await GET(req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.bin#L1')}`))
+    const res = await GET(
+      req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.bin#L1')}`),
+    )
     expect(res.status).toBe(200)
     expect((await res.json()).reason).toBe('binary')
   })
@@ -109,7 +130,9 @@ describe('GET /api/code-preview', () => {
     vi.mocked(assertWithinProjectRoots).mockImplementationOnce(() => {
       throw new PathSafetyError('escape')
     })
-    const res = await GET(req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`))
+    const res = await GET(
+      req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`),
+    )
     expect(res.status).toBe(403)
   })
 })

@@ -4,11 +4,35 @@
   "method": "min-snr-gamma reweighted LoRA-head, 2k steps, 500 sample images",
   "high_band_threshold_cycles_per_pixel": 0.25,
   "rows": [
-    { "gamma": 1,  "fid": 8.92, "hf_band_ratio": 0.184, "low_band_ratio": 0.413, "verdict": "baseline" },
-    { "gamma": 3,  "fid": 8.89, "hf_band_ratio": 0.151, "low_band_ratio": 0.421, "verdict": "improved" },
-    { "gamma": 5,  "fid": 8.87, "hf_band_ratio": 0.139, "low_band_ratio": 0.428, "verdict": "best" },
-    { "gamma": 7,  "fid": 8.88, "hf_band_ratio": 0.142, "low_band_ratio": 0.426, "verdict": "near-best" },
-    { "gamma": 10, "fid": 8.95, "hf_band_ratio": 0.156, "low_band_ratio": 0.408, "verdict": "over-smoothed" }
+    {
+      "gamma": 1,
+      "fid": 8.92,
+      "hf_band_ratio": 0.184,
+      "low_band_ratio": 0.413,
+      "verdict": "baseline"
+    },
+    {
+      "gamma": 3,
+      "fid": 8.89,
+      "hf_band_ratio": 0.151,
+      "low_band_ratio": 0.421,
+      "verdict": "improved"
+    },
+    { "gamma": 5, "fid": 8.87, "hf_band_ratio": 0.139, "low_band_ratio": 0.428, "verdict": "best" },
+    {
+      "gamma": 7,
+      "fid": 8.88,
+      "hf_band_ratio": 0.142,
+      "low_band_ratio": 0.426,
+      "verdict": "near-best"
+    },
+    {
+      "gamma": 10,
+      "fid": 8.95,
+      "hf_band_ratio": 0.156,
+      "low_band_ratio": 0.408,
+      "verdict": "over-smoothed"
+    }
   ],
   "verdict": "H0002 CONFIRMED at gamma=5"
 }

@@ -34,10 +34,10 @@ function paramsFor(name: string) {
 }
 
 function req(name: string, headers: Record<string, string> = {}): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/projects/${name}/git-branches`,
-    { method: 'GET', headers },
-  )
+  return new NextRequest(`http://localhost/api/projects/${name}/git-branches`, {
+    method: 'GET',
+    headers,
+  })
 }
 
 beforeEach(() => {
@@ -55,20 +55,14 @@ beforeEach(() => {
 
 describe('GET /api/projects/[project]/git-branches', () => {
   it('200 with payload for owner', async () => {
-    const res = await GET(
-      req('project-a', { 'x-memon-role': 'owner' }),
-      paramsFor('project-a'),
-    )
+    const res = await GET(req('project-a', { 'x-memon-role': 'owner' }), paramsFor('project-a'))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(PAYLOAD)
     expect(readGitBranches).toHaveBeenCalledWith('/tmp/a', { exec: undefined })
   })
 
   it('404 unknown project', async () => {
-    const res = await GET(
-      req('nope', { 'x-memon-role': 'owner' }),
-      paramsFor('nope'),
-    )
+    const res = await GET(req('nope', { 'x-memon-role': 'owner' }), paramsFor('nope'))
     expect(res.status).toBe(404)
     expect(readGitBranches).not.toHaveBeenCalled()
   })

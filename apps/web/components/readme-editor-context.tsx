@@ -52,7 +52,16 @@ export function ReadmeEditorProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<ReadmeEditorContextValue>(
-    () => ({ open, collapsed, width, setOpen, toggleOpen, setCollapsed, toggleCollapsed, setWidth }),
+    () => ({
+      open,
+      collapsed,
+      width,
+      setOpen,
+      toggleOpen,
+      setCollapsed,
+      toggleCollapsed,
+      setWidth,
+    }),
     [open, collapsed, width, setOpen, toggleOpen, setCollapsed, toggleCollapsed, setWidth],
   )
 

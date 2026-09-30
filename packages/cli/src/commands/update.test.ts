@@ -133,10 +133,7 @@ beforeEach(async () => {
   // A previously built, *runnable* CLI: rollback must leave a node whose
   // `memon` still answers, not merely a restored file.
   await fs.mkdir(join(install, 'packages', 'cli', 'dist'), { recursive: true })
-  await writeFile(
-    join(install, 'packages', 'cli', 'dist', 'index.js'),
-    PREVIOUS_BUILD,
-  )
+  await writeFile(join(install, 'packages', 'cli', 'dist', 'index.js'), PREVIOUS_BUILD)
 })
 
 afterEach(async () => {
@@ -150,9 +147,7 @@ describe('memon update', () => {
     const skillsRoot = join(root, 'project')
     await fs.mkdir(skillsRoot, { recursive: true })
 
-    const result = await updateInstallation(
-      options({ skills: true, skillsRoots: [skillsRoot] }),
-    )
+    const result = await updateInstallation(options({ skills: true, skillsRoots: [skillsRoot] }))
 
     expect(result.outcome, JSON.stringify(result.steps)).toBe('updated')
     expect(result.selectedRevision).toBe(target)
@@ -233,9 +228,7 @@ describe('memon update', () => {
     // The failing build edited a tracked file; moving the ref back would
     // discard it, so the command reports manual repair instead.
     expect(result).toMatchObject({ outcome: 'failed', reason: 'rollback_failed' })
-    expect(await readFile(join(install, 'marker.txt'), 'utf8')).toBe(
-      'edited during the update\n',
-    )
+    expect(await readFile(join(install, 'marker.txt'), 'utf8')).toBe('edited during the update\n')
     expect(git(install, 'rev-parse', 'HEAD').trim()).toBe(target)
     expect(result.backup).toMatch(/memon-update-backup-/)
     expect(result.message).toMatch(/nothing was moved/)

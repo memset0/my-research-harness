@@ -7,7 +7,10 @@ describe('derivePayload', () => {
   it('parses YAML and JSON objects and wraps every other language as data', () => {
     expect(derivePayload('yaml', 'x: 1')).toEqual({ kind: 'static', value: { x: 1 } })
     expect(derivePayload('json', '{"x":1}')).toEqual({ kind: 'static', value: { x: 1 } })
-    expect(derivePayload('html', '<p>x</p>')).toEqual({ kind: 'static', value: { data: '<p>x</p>' } })
+    expect(derivePayload('html', '<p>x</p>')).toEqual({
+      kind: 'static',
+      value: { data: '<p>x</p>' },
+    })
   })
 
   it.each([
@@ -20,7 +23,10 @@ describe('derivePayload', () => {
 
   it('derives script and code executables with kwargs', () => {
     const script = derivePayload('yaml', 'script: scripts/a.py::collect\nmetric: fid')
-    expect(script).toEqual({ kind: 'executable', spec: { script: 'scripts/a.py::collect', kwargs: { metric: 'fid' } } })
+    expect(script).toEqual({
+      kind: 'executable',
+      spec: { script: 'scripts/a.py::collect', kwargs: { metric: 'fid' } },
+    })
     if (script.kind === 'executable') expect(executableFunctionName(script.spec)).toBe('collect')
     const code = derivePayload('yaml', 'code: |\n  def make(**kw):\n    return {}\nmetric: fid')
     expect(code.kind).toBe('executable')

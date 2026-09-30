@@ -4,11 +4,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { Render } from './render'
 
 vi.mock('next/dynamic', () => ({
-  default: () => ({ model }: { model: { series: string[] } }) => <div data-plot-series={model.series.join(',')} />,
+  default:
+    () =>
+    ({ model }: { model: { series: string[] } }) => (
+      <div data-plot-series={model.series.join(',')} />
+    ),
 }))
 
 const block = {
-  type: 'datatable', version: 1, id: 'chart', line: 1, payload: '', executable: false, document: null,
+  type: 'datatable',
+  version: 1,
+  id: 'chart',
+  line: 1,
+  payload: '',
+  executable: false,
+  document: null,
   resourceUrl: () => null,
 }
 
@@ -20,10 +30,23 @@ describe('datatable@1 renderer', () => {
         data={{
           columns: ['experiment', 'metric', 'run', 'step', 'value'],
           data: [
-            ['E1', 'loss', 'a', 2, 4], ['E1', 'loss', 'a', 1, 5], ['E1', 'fid', 'b', 1, 9],
-            ['E2', 'fid', 'c', 1, 8], ['E2', 'loss', 'd', 1, 'n/a'],
+            ['E1', 'loss', 'a', 2, 4],
+            ['E1', 'loss', 'a', 1, 5],
+            ['E1', 'fid', 'b', 1, 9],
+            ['E2', 'fid', 'c', 1, 8],
+            ['E2', 'loss', 'd', 1, 'n/a'],
           ],
-          views: [{ type: 'table' }, { type: 'line', x: 'step', y: 'value', series: 'run', tabs: 'experiment', select: 'metric' }],
+          views: [
+            { type: 'table' },
+            {
+              type: 'line',
+              x: 'step',
+              y: 'value',
+              series: 'run',
+              tabs: 'experiment',
+              select: 'metric',
+            },
+          ],
         }}
       />,
     )
@@ -33,9 +56,13 @@ describe('datatable@1 renderer', () => {
     const trigger = document.querySelector('[data-datatable-select="metric"]') as HTMLElement
     await userEvent.click(trigger)
     await userEvent.click(await screen.findByRole('option', { name: 'fid' }))
-    await waitFor(() => expect(document.querySelector('[data-plot-series]')).toHaveAttribute('data-plot-series', 'b'))
+    await waitFor(() =>
+      expect(document.querySelector('[data-plot-series]')).toHaveAttribute('data-plot-series', 'b'),
+    )
     await userEvent.click(screen.getByRole('tab', { name: 'E2' }))
-    await waitFor(() => expect(document.querySelector('[data-plot-series]')).toHaveAttribute('data-plot-series', 'c'))
+    await waitFor(() =>
+      expect(document.querySelector('[data-plot-series]')).toHaveAttribute('data-plot-series', 'c'),
+    )
     expect(screen.queryByText(/rows skipped/)).not.toBeInTheDocument()
     await userEvent.click(document.querySelector('[data-datatable-select="metric"]') as HTMLElement)
     await userEvent.click(await screen.findByRole('option', { name: 'loss' }))
@@ -44,10 +71,16 @@ describe('datatable@1 renderer', () => {
 
   const filtered = {
     columns: ['run', 'fid'],
-    data: [['bf16', 14], ['bf16', 16], ['fp32', 13], ['fp32', 17]],
+    data: [
+      ['bf16', 14],
+      ['bf16', 16],
+      ['fp32', 13],
+      ['fp32', 17],
+    ],
   }
   const rowCount = () => document.querySelector('[data-datatable-rowcount]')?.textContent
-  const bodyRuns = () => Array.from(document.querySelectorAll('tbody tr')).map((row) => row.textContent)
+  const bodyRuns = () =>
+    Array.from(document.querySelectorAll('tbody tr')).map((row) => row.textContent)
 
   it('applies a default filter in one mode, switches, and clears with All', async () => {
     render(
@@ -55,14 +88,16 @@ describe('datatable@1 renderer', () => {
         block={block}
         data={{
           ...filtered,
-          views: [{
-            type: 'table',
-            filter_mode: 'one',
-            filters: [
-              { label: 'fid < 15', where: { fid: { lt: 15 } }, default: true },
-              { label: 'bf16 only', where: { run: 'bf16' } },
-            ],
-          }],
+          views: [
+            {
+              type: 'table',
+              filter_mode: 'one',
+              filters: [
+                { label: 'fid < 15', where: { fid: { lt: 15 } }, default: true },
+                { label: 'bf16 only', where: { run: 'bf16' } },
+              ],
+            },
+          ],
         }}
       />,
     )
@@ -70,7 +105,10 @@ describe('datatable@1 renderer', () => {
     expect(rowCount()).toBe('2 of 4 rows')
     expect(bodyRuns()).toEqual(['bf1614', 'fp3213'])
     await userEvent.click(screen.getByRole('button', { name: 'bf16 only' }))
-    expect(screen.getByRole('button', { name: 'fid < 15' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'fid < 15' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
     expect(bodyRuns()).toEqual(['bf1614', 'bf1616'])
     await userEvent.click(screen.getByRole('button', { name: 'All' }))
     expect(rowCount()).toBe('4 of 4 rows')
@@ -82,14 +120,16 @@ describe('datatable@1 renderer', () => {
         block={block}
         data={{
           ...filtered,
-          views: [{
-            type: 'table',
-            filters: [
-              { label: 'fid < 15', where: { fid: { lt: 15 } } },
-              { label: 'bf16 only', where: { run: 'bf16' } },
-              { label: 'huge', where: { fid: { gt: 100 } } },
-            ],
-          }],
+          views: [
+            {
+              type: 'table',
+              filters: [
+                { label: 'fid < 15', where: { fid: { lt: 15 } } },
+                { label: 'bf16 only', where: { run: 'bf16' } },
+                { label: 'huge', where: { fid: { gt: 100 } } },
+              ],
+            },
+          ],
         }}
       />,
     )
@@ -100,7 +140,8 @@ describe('datatable@1 renderer', () => {
     expect(bodyRuns()).toEqual(['bf1614'])
     await userEvent.click(screen.getByRole('button', { name: 'huge' }))
     expect(screen.getByText('No rows match the active filters.')).toBeInTheDocument()
-    for (const name of ['fid < 15', 'bf16 only', 'huge']) await userEvent.click(screen.getByRole('button', { name }))
+    for (const name of ['fid < 15', 'bf16 only', 'huge'])
+      await userEvent.click(screen.getByRole('button', { name }))
     expect(rowCount()).toBe('4 of 4 rows')
   })
 
@@ -116,7 +157,11 @@ describe('datatable@1 renderer', () => {
         block={block}
         data={{
           columns: ['lr', 'fid', 'run'],
-          data: [[0.001, 14, 'a'], [0.001, 15, 'b'], ['n/a', 12, 'b']],
+          data: [
+            [0.001, 14, 'a'],
+            [0.001, 15, 'b'],
+            ['n/a', 12, 'b'],
+          ],
           views: [{ type: 'table' }, { type: 'scatter', x: 'lr', y: 'fid', series: 'run' }],
         }}
       />,

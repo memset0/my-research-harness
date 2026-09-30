@@ -249,7 +249,15 @@ async function runBlock(input: RunBlockInput): Promise<ComponentRunResult> {
     const durationMs = Date.now() - started
 
     if (spawned.error !== null) {
-      return writeFailure({ root, documentPath, id, componentType, sourceHash, durationMs, error: spawned.error })
+      return writeFailure({
+        root,
+        documentPath,
+        id,
+        componentType,
+        sourceHash,
+        durationMs,
+        error: spawned.error,
+      })
     }
     const data = readResult(spawned.stdout)
     if (typeof data === 'string') {
@@ -274,7 +282,8 @@ async function runBlock(input: RunBlockInput): Promise<ComponentRunResult> {
     })
     return { id, status: written.status, path: written.path, durationMs }
   } finally {
-    if (module.temporaryDir !== null) await fs.rm(module.temporaryDir, { recursive: true, force: true })
+    if (module.temporaryDir !== null)
+      await fs.rm(module.temporaryDir, { recursive: true, force: true })
   }
 }
 
@@ -390,7 +399,11 @@ function spawnPython(input: SpawnPythonInput): Promise<SpawnPythonResult> {
         return
       }
       if (overflow) {
-        finish({ stdout, stderr, error: `component produced more than ${MAX_OUTPUT_BYTES} bytes of output` })
+        finish({
+          stdout,
+          stderr,
+          error: `component produced more than ${MAX_OUTPUT_BYTES} bytes of output`,
+        })
         return
       }
       if (code === 0) {

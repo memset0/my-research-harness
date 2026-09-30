@@ -18,10 +18,7 @@ import { POST } from './route'
 const OWNER = { 'content-type': 'application/json', 'x-memon-role': 'owner' }
 
 /** `execution: null` configures a Project with no execution provider at all. */
-function runtime(
-  execution: unknown = { kind: 'local' },
-  overrides: Record<string, unknown> = {},
-) {
+function runtime(execution: unknown = { kind: 'local' }, overrides: Record<string, unknown> = {}) {
   return {
     config: {
       projects: [
@@ -55,10 +52,19 @@ describe('POST /api/components/run', () => {
 
   it('runs the document with the project interpreter and timeout, ignoring read_only', async () => {
     vi.mocked(getRuntime).mockResolvedValue(
-      runtime({ kind: 'local', python: '/opt/venv/bin/python', component_timeout_ms: 5000 }) as never,
+      runtime({
+        kind: 'local',
+        python: '/opt/venv/bin/python',
+        component_timeout_ms: 5000,
+      }) as never,
     )
     const results = [
-      { id: 'fid', status: 'updated', path: 'docs/wiki/note/W0004-x__assets/fid.json', durationMs: 12 },
+      {
+        id: 'fid',
+        status: 'updated',
+        path: 'docs/wiki/note/W0004-x__assets/fid.json',
+        durationMs: 12,
+      },
     ]
     vi.mocked(runDocumentComponents).mockResolvedValue(results as never)
 
@@ -92,7 +98,11 @@ describe('POST /api/components/run', () => {
     const response = await POST(
       post(
         { project: 'project-a', document: 'docs/wiki/note/W0004-x.md' },
-        { 'content-type': 'application/json', 'x-memon-role': 'viewer', 'x-memon-scope': 'project-a' },
+        {
+          'content-type': 'application/json',
+          'x-memon-role': 'viewer',
+          'x-memon-scope': 'project-a',
+        },
       ),
     )
     expect(response.status).toBe(403)
@@ -132,9 +142,7 @@ describe('POST /api/components/run', () => {
 
   it('409s a Host this instance does not serve and 400s an unknown project', async () => {
     vi.mocked(getRuntime).mockResolvedValue(runtime({ kind: 'local' }, { host: 'host-a' }) as never)
-    const remote = await POST(
-      post({ project: 'project-a', host: 'host-b', document: 'a.md' }),
-    )
+    const remote = await POST(post({ project: 'project-a', host: 'host-b', document: 'a.md' }))
     expect(remote.status).toBe(409)
     expect((await remote.json()).error).toMatchObject({
       code: 'EXECUTION_UNAVAILABLE',

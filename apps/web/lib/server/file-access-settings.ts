@@ -118,18 +118,22 @@ export type RestartAdapter =
 const FileAccessConfigViewSchema = z.object({
   [FILE_ACCESS_CONFIG_KEY]: z.record(z.string(), z.unknown()).optional(),
   [FILE_ACCESS_RESTART_CONFIG_KEY]: z.unknown().optional(),
-  fileCache: z.object({
-    dumpPath: z.string(),
-    dumpIntervalMs: z.number(),
-    wikiTtlMs: z.number(),
-    defaultTtlMs: z.number(),
-  }).optional(),
-  file_cache: z.object({
-    dump_path: z.string().optional(),
-    dump_interval_seconds: z.number().optional(),
-    wiki_ttl_seconds: z.number().optional(),
-    default_ttl_seconds: z.number().optional(),
-  }).optional(),
+  fileCache: z
+    .object({
+      dumpPath: z.string(),
+      dumpIntervalMs: z.number(),
+      wikiTtlMs: z.number(),
+      defaultTtlMs: z.number(),
+    })
+    .optional(),
+  file_cache: z
+    .object({
+      dump_path: z.string().optional(),
+      dump_interval_seconds: z.number().optional(),
+      wiki_ttl_seconds: z.number().optional(),
+      default_ttl_seconds: z.number().optional(),
+    })
+    .optional(),
 })
 
 /**

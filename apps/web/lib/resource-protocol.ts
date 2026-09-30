@@ -345,7 +345,12 @@ export function recordResourceResponse(
   const version = response.headers.get(RESOURCE_VERSION_HEADER)
   if (!version || !request.cacheable) return body
   const previous = versionCache.get(request.url)
-  if (previous && previous.version !== version && request.headers[ATTENTION_HEADER] === resourceAttentionId()) changedResources += 1
+  if (
+    previous &&
+    previous.version !== version &&
+    request.headers[ATTENTION_HEADER] === resourceAttentionId()
+  )
+    changedResources += 1
   versionCache.delete(request.url)
   versionCache.set(request.url, { version, body })
   if (versionCache.size > VERSION_CACHE_LIMIT) {

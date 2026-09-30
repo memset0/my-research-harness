@@ -48,7 +48,9 @@ export function scanFencedBlocks(body: string): FencedBlock[] {
     }
     const payload = lines
       .slice(index + 1, closeIndex)
-      .map((content) => (indent.length > 0 && content.startsWith(indent) ? content.slice(indent.length) : content))
+      .map((content) =>
+        indent.length > 0 && content.startsWith(indent) ? content.slice(indent.length) : content,
+      )
       .join('\n')
     blocks.push({ info, payload, line: index + 1, openIndex: index, closeIndex, indent, fence })
     index = closeIndex
@@ -61,6 +63,9 @@ export function scanFencedBlocks(body: string): FencedBlock[] {
  * a fence needs a longer one, otherwise the projection truncates the block.
  */
 export function markdownFenceFor(text: string): string {
-  const longest = [...text.matchAll(/`+/g)].reduce((max, match) => Math.max(max, match[0].length), 0)
+  const longest = [...text.matchAll(/`+/g)].reduce(
+    (max, match) => Math.max(max, match[0].length),
+    0,
+  )
   return '`'.repeat(Math.max(3, longest + 1))
 }

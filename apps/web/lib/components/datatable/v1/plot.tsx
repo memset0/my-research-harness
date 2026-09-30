@@ -6,7 +6,17 @@
  * bundle.
  */
 
-import { Bar, BarChart, CartesianGrid, Line, LineChart, Scatter, ScatterChart, XAxis, YAxis } from 'recharts'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  Scatter,
+  ScatterChart,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import {
   ChartContainer,
   ChartLegend,
@@ -23,7 +33,13 @@ import type { PlotModel, PlotPoint, ScatterModel, ScatterPoint } from './series'
  * install, so the first series takes the primary colour and the rest walk the
  * darker chart ramp.
  */
-const SERIES_COLORS = ['var(--primary)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
+const SERIES_COLORS = [
+  'var(--primary)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+]
 
 /**
  * Row key holding the source point. Series names are column values, so the
@@ -86,7 +102,10 @@ export function DatatablePlot({ view, model }: { view: DatatablePlotView; model:
                   aria-hidden
                 />
                 <span className="text-muted-foreground">{key}</span>
-                <span className="ml-auto font-mono font-medium tabular-nums text-foreground" data-datatable-raw="">
+                <span
+                  className="ml-auto font-mono font-medium tabular-nums text-foreground"
+                  data-datatable-raw=""
+                >
                   {raw}
                 </span>
               </div>
@@ -148,7 +167,13 @@ function seriesConfig(series: readonly string[]) {
  * One dot per row on two numeric axes. The tooltip prints the hovered row's
  * declared `x` and `y` cells, not recharts' formatted numbers.
  */
-export function DatatableScatter({ view, model }: { view: DatatablePlotView; model: ScatterModel }) {
+export function DatatableScatter({
+  view,
+  model,
+}: {
+  view: DatatablePlotView
+  model: ScatterModel
+}) {
   const { colors, config } = seriesConfig(model.series)
   const bySeries = model.series.map((name) => model.points.filter((point) => point.series === name))
   const tooltip = (
@@ -162,7 +187,11 @@ export function DatatableScatter({ view, model }: { view: DatatablePlotView; mod
           <div className="grid min-w-32 gap-1 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
             {model.series.length > 1 && (
               <div className="flex items-center gap-2 font-medium">
-                <span className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: color }} aria-hidden />
+                <span
+                  className="size-2.5 shrink-0 rounded-[2px]"
+                  style={{ backgroundColor: color }}
+                  aria-hidden
+                />
                 {point.series}
               </div>
             )}
@@ -172,7 +201,10 @@ export function DatatableScatter({ view, model }: { view: DatatablePlotView; mod
             ].map(([name, raw]) => (
               <div key={name} className="flex w-full items-center gap-2">
                 <span className="text-muted-foreground">{name}</span>
-                <span className="ml-auto font-mono font-medium tabular-nums text-foreground" data-datatable-raw="">
+                <span
+                  className="ml-auto font-mono font-medium tabular-nums text-foreground"
+                  data-datatable-raw=""
+                >
                   {raw}
                 </span>
               </div>
@@ -211,9 +243,17 @@ export function DatatableScatter({ view, model }: { view: DatatablePlotView; mod
         />
         {tooltip}
         {/* Legend in series first-appearance order, not recharts' default name sort. */}
-        {model.series.length > 1 && <ChartLegend itemSorter={null} content={<ChartLegendContent />} />}
+        {model.series.length > 1 && (
+          <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
+        )}
         {model.series.map((name, index) => (
-          <Scatter key={name} name={name} data={bySeries[index]} fill={colors[index]} isAnimationActive={false} />
+          <Scatter
+            key={name}
+            name={name}
+            data={bySeries[index]}
+            fill={colors[index]}
+            isAnimationActive={false}
+          />
         ))}
       </ScatterChart>
     </ChartContainer>

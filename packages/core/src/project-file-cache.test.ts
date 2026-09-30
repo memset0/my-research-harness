@@ -142,9 +142,11 @@ describe('snapshot observation cache', () => {
     const reopened = await ProjectFileCache.open({ dumpPath, ...OPTIONS })
     const sameNamespace = await reopened.namespaceId({ root: '/projects/alpha', mount: SSHFS })
     expect(sameNamespace).toBe(namespaceId)
-    expect(
-      await reopened.load(namespaceId, 'readFile', '/projects/alpha/data.bin'),
-    ).toEqual({ payload: { kind: 'file', bytes: binary }, fingerprint: 'binary', observedAtWall })
+    expect(await reopened.load(namespaceId, 'readFile', '/projects/alpha/data.bin')).toEqual({
+      payload: { kind: 'file', bytes: binary },
+      fingerprint: 'binary',
+      observedAtWall,
+    })
     expect((await reopened.load(namespaceId, 'readdir', '/projects/alpha/docs'))?.payload).toEqual({
       kind: 'dir',
       entries: [
@@ -152,13 +154,15 @@ describe('snapshot observation cache', () => {
         { name: 'latest', kind: 'symlink' },
       ],
     })
-    expect((await reopened.load(namespaceId, 'lstat', '/projects/alpha/data.bin'))?.payload).toEqual({
+    expect(
+      (await reopened.load(namespaceId, 'lstat', '/projects/alpha/data.bin'))?.payload,
+    ).toEqual({
       kind: 'stat',
       stats: { mode: 33_188n, size: 5n, mtimeMs: 12_345n, mtimeNs: 12_345_000_000n },
     })
-    expect((await reopened.load(namespaceId, 'readFile', '/projects/alpha/gone.md'))?.payload).toEqual(
-      { kind: 'missing', code: 'ENOENT' },
-    )
+    expect(
+      (await reopened.load(namespaceId, 'readFile', '/projects/alpha/gone.md'))?.payload,
+    ).toEqual({ kind: 'missing', code: 'ENOENT' })
     await reopened.close()
   })
 
@@ -166,17 +170,12 @@ describe('snapshot observation cache', () => {
     const first = await ProjectFileCache.open({ dumpPath, ...OPTIONS, dumpIntervalMs: 5 })
     const namespaceId = await first.namespaceId({ root: '/projects/periodic', mount: SSHFS })
     const queued = Promise.resolve('memory-only')
-    await first.put(
-      namespaceId,
-      'readFile',
-      '/projects/periodic/README.md',
-      {
-        payload: { kind: 'file', bytes: Buffer.from('periodic') },
-        fingerprint: 'periodic',
-        observedAtWall: Date.now(),
-        queued,
-      } as PersistedObservation,
-    )
+    await first.put(namespaceId, 'readFile', '/projects/periodic/README.md', {
+      payload: { kind: 'file', bytes: Buffer.from('periodic') },
+      fingerprint: 'periodic',
+      observedAtWall: Date.now(),
+      queued,
+    } as PersistedObservation)
 
     await awaitDump(dumpPath)
     const reopened = await ProjectFileCache.open({ dumpPath, ...OPTIONS })
@@ -274,9 +273,7 @@ describe('snapshot observation cache', () => {
     envelope.version = 999
     await nodeFs.writeFile(dumpPath, serialize(envelope))
     const wrongVersion = await ProjectFileCache.open({ dumpPath, ...OPTIONS })
-    expect(
-      await wrongVersion.load(namespaceId, 'readFile', '/projects/alpha/README.md'),
-    ).toBeNull()
+    expect(await wrongVersion.load(namespaceId, 'readFile', '/projects/alpha/README.md')).toBeNull()
     await wrongVersion.put(namespaceId, 'readFile', '/projects/alpha/new.md', {
       payload: { kind: 'file', bytes: Buffer.from('new') },
       fingerprint: 'new',
@@ -285,9 +282,9 @@ describe('snapshot observation cache', () => {
     await wrongVersion.close()
 
     const recovered = await ProjectFileCache.open({ dumpPath, ...OPTIONS })
-    expect((await recovered.load(namespaceId, 'readFile', '/projects/alpha/new.md'))?.payload).toEqual(
-      { kind: 'file', bytes: Buffer.from('new') },
-    )
+    expect(
+      (await recovered.load(namespaceId, 'readFile', '/projects/alpha/new.md'))?.payload,
+    ).toEqual({ kind: 'file', bytes: Buffer.from('new') })
     await recovered.close()
   })
 
@@ -353,9 +350,12 @@ describe('snapshot observation cache', () => {
     // more than 512 MiB of individually retained observations.
     envelope.entries = Array.from({ length: 129 }, (_, index) => {
       const path = `/projects/alpha/item-${index}`
-      return [`${namespaceId}\u0000readFile\u0000${path}`, {
-        value: { ...original, path },
-      }]
+      return [
+        `${namespaceId}\u0000readFile\u0000${path}`,
+        {
+          value: { ...original, path },
+        },
+      ]
     })
     await nodeFs.writeFile(dumpPath, serialize(envelope))
     const reopened = await ProjectFileCache.open({ dumpPath, ...OPTIONS })

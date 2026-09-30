@@ -35,12 +35,7 @@ export interface GitDiffDialogProps {
   onOpenHistory?: () => void
 }
 
-export function GitDiffDialog({
-  project,
-  open,
-  onOpenChange,
-  onOpenHistory,
-}: GitDiffDialogProps) {
+export function GitDiffDialog({ project, open, onOpenChange, onOpenHistory }: GitDiffDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -83,13 +78,9 @@ function BranchSummary({ project }: { project: ProjectTarget }) {
     staleTime: 5_000,
   })
   if (!data || data.enabled === false) {
-    return (
-      <span className="font-mono text-xs text-muted-foreground">
-        not a git repository
-      </span>
-    )
+    return <span className="font-mono text-xs text-muted-foreground">not a git repository</span>
   }
-  const branchLabel = data.detached ? `(${data.sha})` : data.branch ?? '?'
+  const branchLabel = data.detached ? `(${data.sha})` : (data.branch ?? '?')
   return (
     <span className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground">
       <GitBranch className="size-3.5 shrink-0" aria-hidden />
@@ -178,9 +169,7 @@ function RepoBlock({
         <p className="text-xs text-destructive">Failed to load file list.</p>
       ) : data.enabled === false ? (
         <p className="text-xs text-muted-foreground italic">
-          {data.reason === 'not-a-repo'
-            ? 'not initialised'
-            : `git unavailable: ${data.reason}`}
+          {data.reason === 'not-a-repo' ? 'not initialised' : `git unavailable: ${data.reason}`}
         </p>
       ) : (
         <div className="space-y-4">
@@ -261,12 +250,7 @@ function Section({
         <ul className="space-y-0.5">
           {entries.map((entry) => (
             <li key={`${entry.path}:${entry.origPath ?? ''}`}>
-              <FileRow
-                project={project}
-                side={side}
-                entry={entry}
-                submodule={submodule}
-              />
+              <FileRow project={project} side={side} entry={entry} submodule={submodule} />
             </li>
           ))}
         </ul>

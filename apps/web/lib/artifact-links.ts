@@ -169,9 +169,7 @@ export function resolveArtifactMarkdownHref(
   )
   if (pathMatches.length === 0) {
     const legacyReportId = reportIdFromProjectPath(candidate, sourcePath)
-    const target = legacyReportId
-      ? resolveBareArtifactReference(legacyReportId, inventory)
-      : null
+    const target = legacyReportId ? resolveBareArtifactReference(legacyReportId, inventory) : null
     return target ? { ...target, path: candidate, fragment: split.fragment } : null
   }
   if (pathMatches.length !== 1) return null
@@ -288,7 +286,10 @@ function reportIdFromProjectPath(candidate: string, sourcePath: string): string 
   const candidateDocs = projectDocsRoot(candidate)
   if (sourceDocs === null || candidateDocs !== sourceDocs) return null
   const digestPrefix = `${sourceDocs}/digests/`
-  if (candidate.startsWith(digestPrefix)) return /^(D\d{4})-\d{4}-\d{2}-\d{2}\.md$/.exec(candidate.slice(digestPrefix.length))?.[1] ?? null
+  if (candidate.startsWith(digestPrefix))
+    return (
+      /^(D\d{4})-\d{4}-\d{2}-\d{2}\.md$/.exec(candidate.slice(digestPrefix.length))?.[1] ?? null
+    )
   const prefix = `${sourceDocs}/reports/`
   if (!candidate.startsWith(prefix)) return null
   const tail = candidate.slice(prefix.length)

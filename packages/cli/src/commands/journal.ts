@@ -42,8 +42,7 @@ const RECEIPT_ORIGIN = 'invocation-receipt'
 const RECEIPT_TAG = 'INVOCATION'
 
 /** ISO8601 date-time that carries an explicit offset (or `Z`). */
-const ISO_INSTANT_REGEX =
-  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
+const ISO_INSTANT_REGEX = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
 /** `E<NNNN>` without a slug — accepted shorthand for the experiment filter. */
 const EXPERIMENT_ID_ONLY_REGEX = /^E\d{4}$/
 
@@ -250,11 +249,7 @@ function toReceiptEvent(record: JournalInvocationRecord): ReceiptDiagnosticEvent
     }
     if (detail.kind === 'target') {
       const bucket =
-        detail.type === 'experiment'
-          ? experimentIds
-          : detail.type === 'run'
-            ? runIds
-            : otherIds
+        detail.type === 'experiment' ? experimentIds : detail.type === 'run' ? runIds : otherIds
       if (!bucket.includes(detail.id)) bucket.push(detail.id)
       continue
     }
@@ -401,10 +396,7 @@ function resolveOriginFilter(
     return LEGACY_ORIGIN
   }
   if (value === 'invocation' || value === RECEIPT_ORIGIN) return RECEIPT_ORIGIN
-  emitErrorAndExit(
-    'BAD_REQUEST',
-    `--origin must be "legacy" or "invocation", got: ${raw}`,
-  )
+  emitErrorAndExit('BAD_REQUEST', `--origin must be "legacy" or "invocation", got: ${raw}`)
 }
 
 function resolveOutcomeFilter(raw: string | undefined): string | null {
@@ -617,8 +609,7 @@ function humanSummary(payload: JournalReadPayload): string {
 /** Legacy lines show their preserved text; receipts show typed facts only. */
 function describeBody(event: DiagnosticEvent): string {
   if (event.origin === LEGACY_ORIGIN) return event.body
-  const changed =
-    event.changedPaths.length > 0 ? ` files=${event.changedPaths.join(',')}` : ''
+  const changed = event.changedPaths.length > 0 ? ` files=${event.changedPaths.join(',')}` : ''
   const code = event.errorCode === null ? '' : ` code=${event.errorCode}`
   return `${event.command} (${event.invokedFrom}) outcome=${event.outcome}${code}${changed}`
 }

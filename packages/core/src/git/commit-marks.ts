@@ -91,9 +91,7 @@ export async function setCommitMark(
     updatedAt: formatIsoNow(),
     submodule,
   }
-  const existingIdx = marks.findIndex(
-    (m) => m.sha === sha && m.submodule === submodule,
-  )
+  const existingIdx = marks.findIndex((m) => m.sha === sha && m.submodule === submodule)
   if (existingIdx >= 0) {
     marks[existingIdx] = next
   } else {
@@ -113,9 +111,7 @@ export async function deleteCommitMark(
   const path = opts.csvPathOverride ?? join(projectRoot, COMMIT_MARKS_RELPATH)
   const { marks } = await readCommitMarks(projectRoot, opts)
   const before = marks.length
-  const next = marks.filter(
-    (m) => !(m.sha === sha && m.submodule === submodule),
-  )
+  const next = marks.filter((m) => !(m.sha === sha && m.submodule === submodule))
   if (next.length === before) return { deleted: false }
   await atomicWriteMarks(path, next)
   return { deleted: true }
@@ -136,23 +132,14 @@ function validateSha(sha: string): void {
 }
 
 function validateStatus(status: string): asserts status is CommitMarkStatus {
-  if (
-    status !== 'verified' &&
-    status !== 'suspicious' &&
-    status !== 'issue'
-  ) {
-    throw new Error(
-      `invalid status "${status}" (must be one of verified|suspicious|issue)`,
-    )
+  if (status !== 'verified' && status !== 'suspicious' && status !== 'issue') {
+    throw new Error(`invalid status "${status}" (must be one of verified|suspicious|issue)`)
   }
 }
 
 // --- atomic write --------------------------------------------------------
 
-async function atomicWriteMarks(
-  path: string,
-  marks: CommitMark[],
-): Promise<void> {
+async function atomicWriteMarks(path: string, marks: CommitMark[]): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const sorted = sortMarks(marks)
   const text = serializeCsv(sorted)
@@ -188,13 +175,7 @@ export function serializeCsv(marks: CommitMark[]): string {
   const lines = [HEADER_V5]
   for (const m of marks) {
     lines.push(
-      [
-        m.sha,
-        m.status,
-        quoteIfNeeded(m.note),
-        m.updatedAt,
-        quoteIfNeeded(m.submodule),
-      ].join(','),
+      [m.sha, m.status, quoteIfNeeded(m.note), m.updatedAt, quoteIfNeeded(m.submodule)].join(','),
     )
   }
   return `${lines.join('\n')}\n`
@@ -202,12 +183,7 @@ export function serializeCsv(marks: CommitMark[]): string {
 
 function quoteIfNeeded(s: string): string {
   if (s === '') return ''
-  if (
-    s.includes(',') ||
-    s.includes('"') ||
-    s.includes('\n') ||
-    s.includes('\r')
-  ) {
+  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
     return `"${s.replace(/"/g, '""')}"`
   }
   return s
@@ -238,9 +214,7 @@ export function parseCsv(text: string): ReadCommitMarksResult {
   for (let i = 1; i < records.length; i += 1) {
     const fields = records[i]!
     if (fields.length !== expectedCols) {
-      parseWarnings.push(
-        `row ${i + 1}: expected ${expectedCols} columns, got ${fields.length}`,
-      )
+      parseWarnings.push(`row ${i + 1}: expected ${expectedCols} columns, got ${fields.length}`)
       continue
     }
     const sha = fields[0]!
@@ -252,11 +226,7 @@ export function parseCsv(text: string): ReadCommitMarksResult {
       parseWarnings.push(`row ${i + 1}: invalid sha`)
       continue
     }
-    if (
-      status !== 'verified' &&
-      status !== 'suspicious' &&
-      status !== 'issue'
-    ) {
+    if (status !== 'verified' && status !== 'suspicious' && status !== 'issue') {
       parseWarnings.push(`row ${i + 1}: invalid status "${status}"`)
       continue
     }

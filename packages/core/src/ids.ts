@@ -31,9 +31,7 @@ export interface ParsedId {
 /** Format an integer as the canonical padded ID. Throws on out-of-range. */
 export function padId(prefix: IdPrefix, n: number): string {
   if (!Number.isInteger(n) || n < ID_MIN || n > ID_MAX) {
-    throw new RangeError(
-      `padId: n must be an integer in [${ID_MIN}, ${ID_MAX}]; got ${n}`,
-    )
+    throw new RangeError(`padId: n must be an integer in [${ID_MIN}, ${ID_MAX}]; got ${n}`)
   }
   return `${prefix}${String(n).padStart(ID_WIDTH, '0')}`
 }

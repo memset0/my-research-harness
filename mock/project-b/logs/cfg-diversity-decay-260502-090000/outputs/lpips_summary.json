@@ -7,8 +7,8 @@
   "rows": [
     { "cfg": 4.5, "mean_lpips": 0.41, "p99_lpips": 0.62, "drop_vs_baseline_pct": 0.0 },
     { "cfg": 7.5, "mean_lpips": 0.38, "p99_lpips": 0.59, "drop_vs_baseline_pct": -7.3 },
-    { "cfg": 10,  "mean_lpips": 0.31, "p99_lpips": 0.51, "drop_vs_baseline_pct": -24.4 },
-    { "cfg": 12,  "mean_lpips": 0.26, "p99_lpips": 0.43, "drop_vs_baseline_pct": -36.6 }
+    { "cfg": 10, "mean_lpips": 0.31, "p99_lpips": 0.51, "drop_vs_baseline_pct": -24.4 },
+    { "cfg": 12, "mean_lpips": 0.26, "p99_lpips": 0.43, "drop_vs_baseline_pct": -36.6 }
   ],
   "verdict": "H0002 PARTIAL — non-linear past CFG=7.5; need finer sweep"
 }

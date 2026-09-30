@@ -141,7 +141,10 @@ export function parseAgentList(raw: string | undefined): AgentName[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
   if (parts.length === 0) {
-    emitErrorAndExit('BAD_REQUEST', '--agent: empty list; expected one of claude,codex,opencode or "all"')
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      '--agent: empty list; expected one of claude,codex,opencode or "all"',
+    )
   }
   const hasAll = parts.includes('all')
   if (hasAll) {
@@ -230,7 +233,9 @@ function resolveTargets(input: InstallSkillsInput): ResolvedTargets {
 /** A memon checkout carries the skill package sources; installing into it would mirror them. */
 function isHarnessCheckout(root: string): boolean {
   try {
-    const manifest = JSON.parse(readFileSync(join(root, 'packages', 'skills', 'package.json'), 'utf8'))
+    const manifest = JSON.parse(
+      readFileSync(join(root, 'packages', 'skills', 'package.json'), 'utf8'),
+    )
     return manifest?.name === '@memon/skills'
   } catch {
     return false
@@ -264,7 +269,9 @@ async function loadRetirementRegistry(src: string): Promise<{
   } catch (err) {
     emitErrorAndExit('BAD_REQUEST', `malformed retirement registry at ${path}: ${String(err)}`)
   }
-  if (!(parsed && typeof parsed === 'object' && 'retired' in parsed && Array.isArray(parsed.retired))) {
+  if (
+    !(parsed && typeof parsed === 'object' && 'retired' in parsed && Array.isArray(parsed.retired))
+  ) {
     emitErrorAndExit('BAD_REQUEST', `retirement registry at ${path} has no "retired" array`)
   }
   if (!('schema_version' in parsed) || parsed.schema_version !== 1) {
@@ -272,8 +279,15 @@ async function loadRetirementRegistry(src: string): Promise<{
   }
   const deposits = new Map<string, Set<string>>()
   for (const entry of parsed.retired) {
-    const named = entry && typeof entry === 'object' && 'name' in entry && 'deposit_digests' in entry
-    if (!named || typeof entry.name !== 'string' || !/^memon-[a-z0-9-]+$/.test(entry.name) || !Array.isArray(entry.deposit_digests) || deposits.has(entry.name)) {
+    const named =
+      entry && typeof entry === 'object' && 'name' in entry && 'deposit_digests' in entry
+    if (
+      !named ||
+      typeof entry.name !== 'string' ||
+      !/^memon-[a-z0-9-]+$/.test(entry.name) ||
+      !Array.isArray(entry.deposit_digests) ||
+      deposits.has(entry.name)
+    ) {
       emitErrorAndExit(
         'BAD_REQUEST',
         `retirement registry at ${path} has an entry without a name and deposit_digests`,
@@ -420,9 +434,7 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
 
   const installed: InstalledTarget[] = []
   for (const target of resolved.targets) {
-    installed.push(
-      await installOne(target, src, sourceSkills, registry.deposits, !!input.dryRun),
-    )
+    installed.push(await installOne(target, src, sourceSkills, registry.deposits, !!input.dryRun))
   }
 
   const agentsLink = await maybeOfferAgentsLink({
@@ -439,7 +451,8 @@ export async function runInstallSkills(input: InstallSkillsInput): Promise<void>
     for (const t of installed) {
       const label = t.agent ? `target [${t.agent}]: ${t.path}` : `target: ${t.path}`
       lines.push(label)
-      const replacedCount = t.removed.length - t.unshipped.filter((d) => d.action === 'retired').length
+      const replacedCount =
+        t.removed.length - t.unshipped.filter((d) => d.action === 'retired').length
       lines.push(`  replaced ${replacedCount} memon-* dir(s); installed ${t.installed.length}`)
       for (const line of formatUnshippedLines(t.unshipped)) lines.push(line)
     }

@@ -54,10 +54,7 @@ describe('readFsVersion', () => {
 
   it('throws on schema violation (wrong field name)', async () => {
     await fs.mkdir(join(dir, '.memon'))
-    await fs.writeFile(
-      join(dir, '.memon/version.json'),
-      JSON.stringify({ version: 1 }),
-    )
+    await fs.writeFile(join(dir, '.memon/version.json'), JSON.stringify({ version: 1 }))
     await expect(readFsVersion(dir)).rejects.toThrow(FsVersionSchemaError)
     await expect(readFsVersion(dir)).rejects.toThrow(/fs_convention_version/)
   })

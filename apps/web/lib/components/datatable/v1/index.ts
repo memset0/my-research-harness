@@ -34,7 +34,10 @@ const filterOperators = z
     gte: z.number().optional(),
   })
   .strict()
-  .refine((operators) => Object.values(operators).some((value) => value !== undefined), 'needs at least one operator')
+  .refine(
+    (operators) => Object.values(operators).some((value) => value !== undefined),
+    'needs at least one operator',
+  )
 
 /** One column's condition: equal to a value, one of a list, or every given operator. */
 export const filterMatcher = z.union([z.array(filterScalar), filterOperators, filterScalar])
@@ -94,7 +97,9 @@ const schema = z.object({
     .string()
     .min(1)
     .optional()
-    .describe('One or two sentences of context shown under the title, e.g. how the numbers were produced.'),
+    .describe(
+      'One or two sentences of context shown under the title, e.g. how the numbers were produced.',
+    ),
   views: z
     .array(viewSchema)
     .min(1)
@@ -131,7 +136,8 @@ const example = [
 export const descriptor = defineComponent({
   type: 'datatable',
   version: 1,
-  description: 'A table of measured values with optional named row filters, optionally plotted as line, bar, or scatter views of the same rows.',
+  description:
+    'A table of measured values with optional named row filters, optionally plotted as line, bar, or scatter views of the same rows.',
   useWhen:
     'Use it whenever a document states more than two or three numbers: metrics per step, per configuration, or per host. Write the numbers you actually measured — one row per observation, long format (`run, step, metric, value`) rather than one column per run — and add a `line`/`bar` view when the shape of the numbers is the point, a `scatter` view when the relation between two measured columns is, and table `filters` when readers need to narrow a long table to named subsets. Use an executable payload (`script:`/`code:`) when the numbers come from logs that change; keep the block static when they are final. Do not use it for prose comparisons (plain Markdown), for an interactive plot (`embed@1`), or for a picture of a plot (`figure@1`).',
   schema,
@@ -205,13 +211,22 @@ export const descriptor = defineComponent({
   example,
   invalidExamples: [
     // A row that does not match `columns`.
-    { block: example.replace('  - [bf16, 10000, 18.9]', '  - [bf16, 10000]'), code: 'WIKI_COMPONENT_INVALID' },
+    {
+      block: example.replace('  - [bf16, 10000, 18.9]', '  - [bf16, 10000]'),
+      code: 'WIKI_COMPONENT_INVALID',
+    },
     // A view naming a column that does not exist.
     { block: example.replace('    x: step', '    x: epoch'), code: 'WIKI_COMPONENT_INVALID' },
     // Two roles of one view naming the same column.
-    { block: example.replace('    series: run', '    series: step'), code: 'WIKI_COMPONENT_INVALID' },
+    {
+      block: example.replace('    series: run', '    series: step'),
+      code: 'WIKI_COMPONENT_INVALID',
+    },
     // A table filter naming a column that does not exist.
-    { block: example.replace('where: { run: bf16 }', 'where: { host: bf16 }'), code: 'WIKI_COMPONENT_INVALID' },
+    {
+      block: example.replace('where: { run: bf16 }', 'where: { host: bf16 }'),
+      code: 'WIKI_COMPONENT_INVALID',
+    },
   ],
   fixtures: [
     'docs/wiki/finding/W0001-zero-snr-brightness.md',
