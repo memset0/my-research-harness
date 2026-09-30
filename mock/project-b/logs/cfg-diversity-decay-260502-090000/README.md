@@ -1,7 +1,6 @@
 ---
 id: cfg-diversity-decay-260502-090000
 name: cfg-diversity-decay
-experiment: E0002-cfg-diversity-decay
 status: FINISHED
 created_at: 2026-05-02T09:00:00+08:00
 updated_at: 2026-05-02T09:00:00+08:00

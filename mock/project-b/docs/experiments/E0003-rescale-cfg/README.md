@@ -4,7 +4,7 @@ slug: rescale-cfg
 title: "Rescale-CFG saturation envelope recovery"
 status: OPEN
 archived: false
-runs: [cfg-rescale-260503-130000]
+runs: ["logs/cfg-rescale-260503-130000"]
 hypotheses: [H0004]
 tags: [rescale-cfg, saturation, probe]
 created_at: 2026-05-03T13:05:00+08:00

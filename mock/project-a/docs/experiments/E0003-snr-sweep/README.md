@@ -4,7 +4,7 @@ slug: snr-sweep
 title: "min-SNR-γ loss-weighting sweep"
 status: OPEN
 archived: false
-runs: [snr-sweep-260430-160000]
+runs: ["logs/snr-sweep-260430-160000"]
 hypotheses: [H0002]
 tags: [diffusion, sweep, min-snr]
 created_at: 2026-04-30T16:05:00+08:00

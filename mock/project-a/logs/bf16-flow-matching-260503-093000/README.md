@@ -1,7 +1,6 @@
 ---
 id: bf16-flow-matching-260503-093000
 name: bf16-flow-matching
-experiment: E0005-bf16-flow-matching
 status: RUNNING
 created_at: 2026-05-03T09:45:00+08:00
 updated_at: 2026-05-03T09:45:00+08:00

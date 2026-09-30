@@ -1,7 +1,6 @@
 ---
 id: snr-sweep-260430-160000
 name: snr-sweep
-experiment: E0003-snr-sweep
 status: FINISHED
 created_at: 2026-04-30T16:05:00+08:00
 updated_at: 2026-04-30T16:05:00+08:00

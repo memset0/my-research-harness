@@ -1,7 +1,6 @@
 ---
 id: vae-decoder-profile-260503-100000
 name: vae-decoder-profile
-experiment: E0004-vae-decoder-profile
 status: FAILED
 created_at: 2026-05-03T10:00:00+08:00
 updated_at: 2026-05-03T10:00:00+08:00

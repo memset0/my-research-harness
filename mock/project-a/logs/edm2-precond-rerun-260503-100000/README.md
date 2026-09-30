@@ -1,7 +1,6 @@
 ---
 id: edm2-precond-rerun-260503-100000
 name: edm2-precond-rerun
-experiment: E0004-edm2-precond
 status: PENDING
 created_at: 2026-05-03T10:00:00+08:00
 updated_at: 2026-05-03T10:00:00+08:00

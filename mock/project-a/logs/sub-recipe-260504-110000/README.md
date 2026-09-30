@@ -1,7 +1,6 @@
 ---
 id: sub-recipe-260504-110000
 name: sub-recipe
-experiment: null
 status: FINISHED
 created_at: 2026-05-04T11:00:00+08:00
 updated_at: 2026-05-04T11:00:00+08:00

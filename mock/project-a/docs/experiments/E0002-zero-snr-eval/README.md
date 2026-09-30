@@ -4,7 +4,7 @@ slug: zero-snr-eval
 title: "Zero-SNR brightness vs composition tradeoff"
 status: OPEN
 archived: false
-runs: [zero-snr-eval-260502-110000]
+runs: ["logs/zero-snr-eval-260502-110000"]
 hypotheses: [H0003]
 tags: [zero-snr, brightness, compbench]
 created_at: 2026-05-02T11:05:00+08:00

@@ -1,7 +1,6 @@
 ---
 id: foo-260501-100000
 name: foo
-experiment: E0001-vpred-convergence
 status: RUNNING
 created_at: 2026-05-01T10:00:00+08:00
 updated_at: 2026-05-01T10:00:00+08:00

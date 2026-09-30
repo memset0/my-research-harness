@@ -1,7 +1,6 @@
 ---
 id: cfg-rescale-260503-130000
 name: cfg-rescale
-experiment: E0003-rescale-cfg
 status: RUNNING
 created_at: 2026-05-03T13:05:00+08:00
 updated_at: 2026-05-03T13:05:00+08:00

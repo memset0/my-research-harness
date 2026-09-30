@@ -4,7 +4,7 @@ slug: vae-decoder-profile
 title: "VAE decoder kernel profiling"
 status: OPEN
 archived: false
-runs: [vae-decoder-profile-260503-100000]
+runs: ["logs/vae-decoder-profile-260503-100000"]
 hypotheses: [H0003]
 tags: [profile, nsight, vae]
 created_at: 2026-05-03T10:00:00+08:00

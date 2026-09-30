@@ -1,7 +1,6 @@
 ---
 id: zero-snr-eval-260502-110000
 name: zero-snr-eval
-experiment: E0002-zero-snr-eval
 status: FINISHED
 created_at: 2026-05-02T11:05:00+08:00
 updated_at: 2026-05-02T11:05:00+08:00

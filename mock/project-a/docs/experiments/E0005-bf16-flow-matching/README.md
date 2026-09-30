@@ -4,7 +4,7 @@ slug: bf16-flow-matching
 title: "bf16 flow-matching low-σ stability"
 status: OPEN
 archived: false
-runs: [bf16-flow-matching-260503-093000]
+runs: ["logs/bf16-flow-matching-260503-093000"]
 hypotheses: [H0005]
 tags: [diffusion, flow-matching, bf16]
 created_at: 2026-05-03T09:45:00+08:00

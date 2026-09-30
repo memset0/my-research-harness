@@ -1,7 +1,6 @@
 ---
 id: edm2-precond-260503-080000
 name: edm2-precond
-experiment: E0004-edm2-precond
 status: FAILED
 created_at: 2026-05-03T08:05:00+08:00
 updated_at: 2026-05-03T08:05:00+08:00

@@ -1,7 +1,6 @@
 ---
 id: exp4-260503-110000
 name: exp4
-experiment: null
 status: FINISHED
 created_at: 2026-05-03T11:00:00+08:00
 updated_at: 2026-05-03T11:00:00+08:00

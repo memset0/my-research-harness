@@ -1,7 +1,6 @@
 ---
 id: sampler-equivalence-baseline-260501-090000
 name: sampler-equivalence-baseline
-experiment: E0001-sampler-equivalence
 status: FINISHED
 created_at: 2026-05-01T09:00:00+08:00
 updated_at: 2026-05-01T09:00:00+08:00

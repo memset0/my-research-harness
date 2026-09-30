@@ -1,7 +1,6 @@
 ---
 id: bar-260502-150000
 name: bar
-experiment: E0001-vpred-convergence
 status: FINISHED
 created_at: 2026-05-02T15:05:00+08:00
 updated_at: 2026-05-02T15:05:00+08:00
