@@ -396,4 +396,21 @@ describe('FS v6 to v7 membership migration', () => {
     await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow('blockers')
     expect(await fs.readFile(join(outside, 'README.md'), 'utf8')).toContain('experiment:')
   })
+
+  it('ignores a Wiki page component cache directory when allocating Digest identities', async () => {
+    const { root } = await fixture()
+    await fs.mkdir(join(root, 'docs/wiki/showcase/W0009-gallery__assets'), { recursive: true })
+    await fs.writeFile(join(root, 'docs/wiki/showcase/W0009-gallery__assets/chart.json'), '{}\n')
+    await fs.writeFile(
+      join(root, 'docs/wiki/showcase/W0009-gallery.md'),
+      '---\nid: W0009\nkind: showcase\ntitle: Gallery\n---\nBody\n',
+    )
+    await fs.mkdir(join(root, 'docs/digests'), { recursive: true })
+    await fs.writeFile(join(root, 'docs/digests/D0001-2026-05-04.md'), '# Summary\n')
+    const plan = await planMembershipMigration(root, { allowDirty: true })
+    expect(plan.blockers).toEqual([])
+    expect(plan.digests?.documents.map((document) => document.target)).toEqual([
+      expect.stringContaining('docs/wiki/digest/W0010-'),
+    ])
+  })
 })

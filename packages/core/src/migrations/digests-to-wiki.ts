@@ -66,6 +66,8 @@ async function wikiInventory(root: string): Promise<Array<{ path: string; hash: 
     for (const entry of entries) {
       if (!/^W\d{4}-/.test(entry.name)) continue
       if (entry.isSymbolicLink()) throw new Error(`Unsafe Wiki symlink: ${entry.name}`)
+      // `<stem>__assets/` holds a page's component execution caches, not a page.
+      if (entry.isDirectory() && entry.name.endsWith('__assets')) continue
       const path = `docs/wiki/${kind.name}/${entry.name}${entry.isDirectory() ? '/README.md' : ''}`
       const content = await readOptional(root, path)
       if (content === null) throw new Error(`Missing Wiki README: ${path}`)
