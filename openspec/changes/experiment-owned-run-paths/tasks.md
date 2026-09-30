@@ -6,10 +6,10 @@
 
 ## 2. Consumers
 
-- [ ] 2.1 Update Web member hydration, navigation, DTOs and query keys for paths; verify route/component tests and no-global-discovery I/O tests.
-  - [ ] 2.1.1 Derive `parentExperimentId` for run-change events (runtime poller, Web warnings writer, standalone mutation refresh) and the legacy `/p/<project>/r/<id>` redirect from Experiment declarations instead of the Run file; delete `apps/web/lib/experiments.ts` if it has no production importer.
-  - [ ] 2.1.2 Add a Web route/component test for two Runs with the same base name under different paths.
-  - [ ] 2.1.3 Add a Backend test proving `getExperiment` resolves members without global Run discovery.
+- [x] 2.1 Update Web member hydration, navigation, DTOs and query keys for paths; verify route/component tests and no-global-discovery I/O tests.
+  - [x] 2.1.1 Derive `parentExperimentId` for run-change events (runtime poller, Web warnings writer, standalone mutation refresh) and the legacy `/p/<project>/r/<id>` redirect from Experiment declarations instead of the Run file; delete `apps/web/lib/experiments.ts` if it has no production importer.
+  - [x] 2.1.2 Add a Web route/component test for two Runs with the same base name under different paths.
+  - [x] 2.1.3 Add a Backend test proving `getExperiment` resolves members without global Run discovery.
 - [ ] 2.2 Update results, citations, eligibility and doctor consumers for unambiguous references; verify reference-resolution and diagnostic tests.
   - [ ] 2.2.1 Add ambiguous-basename tests for results `runs`/`attempts`, Wiki citations and deprecation eligibility.
   - [ ] 2.2.2 Add the `LEGACY_RUN_ID_REF` Experiment lint warning and the `RUN_LEGACY_EXPERIMENT_FIELD` Run lint warning (design D2), with tests.

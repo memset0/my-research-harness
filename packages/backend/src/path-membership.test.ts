@@ -122,6 +122,41 @@ describe('Experiment-owned path membership API', () => {
     ).toEqual([])
   })
 
+  it('getExperiment performs no global Run discovery and reads no unrelated Run README', async () => {
+    const { root, experiment, reads } = await fixture()
+    const members = [`logs/${name}`, 'logs/a/trial-260909-020000', 'outputs/b/trial-260909-030000']
+    const unrelated = [
+      `outputs/c/${name}`, // same base name as a member, different path
+      ...Array.from({ length: 5 }, (_, index) => `logs/other-26090${index}-000000`),
+    ]
+    for (const path of [...members.slice(1), ...unrelated]) {
+      await fs.mkdir(join(root, path, 'out/deep'), { recursive: true })
+      await fs.writeFile(
+        join(root, path, 'README.md'),
+        `---\nid: ${path.split('/').at(-1)}\nstatus: FINISHED\ncreated_at: '2026-09-09T01:00:00Z'\n---\n`,
+      )
+    }
+    await fs.writeFile(
+      experiment,
+      (await fs.readFile(experiment, 'utf8')).replace('runs: []', `runs: [${members.join(', ')}]`),
+    )
+    const scan = vi.spyOn(projectFs, 'readdir')
+    const read = vi.spyOn(projectFs, 'readFile')
+    const detail = (await reads.getExperiment('research', experimentId)) as {
+      frontMatter: { runs: string[] }
+    }
+    expect(detail.frontMatter.runs).toEqual(members)
+    expect(
+      scan.mock.calls
+        .map(([path]) => String(path))
+        .filter((path) => /\/(logs|outputs)(\/|$)/.test(path)),
+    ).toEqual([])
+    const readmes = read.mock.calls
+      .map(([path]) => String(path))
+      .filter((path) => /\/(logs|outputs)\//.test(path))
+    for (const path of unrelated) expect(readmes).not.toContain(join(root, path, 'README.md'))
+  })
+
   it('deletes the Experiment without rewriting or locking its member Run', async () => {
     const { experiment, run, writes } = await fixture()
     await fs.writeFile(

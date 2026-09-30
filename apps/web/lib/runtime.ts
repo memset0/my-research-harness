@@ -70,6 +70,36 @@ export interface SlurmRuntimeState {
   supported: boolean
 }
 
+/**
+ * The Experiment that declares `run`, derived from Experiment `runs[]`
+ * declarations only (FS v7: the Run README never carries ownership). A
+ * canonical project-relative path matches directly; a legacy bare Run ID
+ * matches only when no other Run in the project shares that base name. Zero
+ * or several declaring Experiments yield null (the latter is a
+ * MISMATCH_EXPERIMENT_REF anomaly, never a guessed parent).
+ */
+export function declaredParentExperimentId(
+  experiments: Iterable<Experiment>,
+  root: string,
+  run: Run,
+  projectRuns: readonly Run[],
+): string | null {
+  let reference: string
+  try {
+    reference = projectRunPath(root, run.path)
+  } catch {
+    return null
+  }
+  const legacyUnique = projectRuns.filter((candidate) => candidate.id === run.id).length <= 1
+  const owners: string[] = []
+  for (const experiment of experiments) {
+    const runs = experiment.frontMatter.runs
+    if (runs.includes(reference) || (legacyUnique && runs.includes(run.id)))
+      owners.push(experiment.id)
+  }
+  return owners.length === 1 ? owners[0]! : null
+}
+
 export class Runtime {
   /** Set when init() resolves; used by /api/runtime/health */
   public warmupAt: number = Date.now()
@@ -112,6 +142,27 @@ export class Runtime {
      */
     public readonly slurm: SlurmRuntimeState,
   ) {}
+
+  /**
+   * Stamp `run` with the parent derived from the current Experiment
+   * declarations (the in-memory `frontMatter.experiment` is a projection,
+   * never the file's legacy field) and return it.
+   */
+  withDeclaredParent(run: Run): string | null {
+    const project = this.config.projects.find((candidate) => candidate.name === run.project)
+    const parent = project
+      ? declaredParentExperimentId(
+          Array.from(this.experiments.values()).filter(
+            (experiment) => experiment.project === project.name,
+          ),
+          project.root,
+          run,
+          this.index.list({ project: project.name, includeDeprecated: true }),
+        )
+      : null
+    run.frontMatter.experiment = parent
+    return parent
+  }
 
   /** Reset poll backoff for the experiment whose path matches `path`. */
   pokeByPath(path: string): void {
@@ -345,18 +396,9 @@ async function init(): Promise<Runtime> {
     // reference. Deprecation filtering belongs to the collection endpoints.
     const runs = index.list({ project: projectName, includeDeprecated: true })
     const root = config.projects.find((project) => project.name === projectName)?.root
-    const legacyCounts = new Map<string, number>()
-    for (const run of runs) legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
     if (root)
-      for (const run of runs) {
-        const reference = projectRunPath(root, run.path)
-        const owners = exps.filter(
-          (experiment) =>
-            experiment.frontMatter.runs.includes(reference) ||
-            (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)),
-        )
-        run.frontMatter.experiment = owners.length === 1 ? owners[0]!.id : null
-      }
+      for (const run of runs)
+        run.frontMatter.experiment = declaredParentExperimentId(exps, root, run, runs)
     const result = computeMembership({
       experiments: exps,
       runs,
@@ -506,6 +548,15 @@ async function init(): Promise<Runtime> {
       if (!projectMatch) return
       try {
         const exp = await readRunDir(path, projectMatch.name)
+        const parentExperimentId = declaredParentExperimentId(
+          Array.from(sharedExperiments.values()).filter(
+            (experiment) => experiment.project === projectMatch.name,
+          ),
+          projectMatch.root,
+          exp,
+          index.list({ project: projectMatch.name, includeDeprecated: true }),
+        )
+        exp.frontMatter.experiment = parentExperimentId
         index.set(exp)
         // A cited run's own update time feeds page staleness.
         wikiCache.invalidate(projectMatch.name)
@@ -513,7 +564,7 @@ async function init(): Promise<Runtime> {
           type: 'set',
           id: exp.id,
           experiment: exp,
-          parentExperimentId: exp.frontMatter.experiment ?? null,
+          parentExperimentId,
         })
       } catch {
         // If directory disappeared, drop from index silently

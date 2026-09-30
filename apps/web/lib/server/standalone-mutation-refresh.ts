@@ -12,12 +12,13 @@ export async function refreshStandaloneRun(
   if (!current) return
   try {
     const updated = await readRunDir(current.path, projectName)
+    const parentExperimentId = runtime.withDeclaredParent(updated)
     runtime.index.set(updated)
     runtime.events.emit('run-change', {
       type: 'set',
       id: updated.id,
       experiment: updated,
-      parentExperimentId: updated.frontMatter.experiment ?? null,
+      parentExperimentId,
     })
   } catch {
     // The shared service already committed. Runtime refresh is best-effort.

@@ -179,12 +179,13 @@ function mapOpError(err: WarningOpError): never {
 async function refreshIndex(rt: Runtime, expDir: string, projectName: string): Promise<void> {
   try {
     const updated = await readRunDir(expDir, projectName)
+    const parentExperimentId = rt.withDeclaredParent(updated)
     rt.index.set(updated)
     rt.events.emit('run-change', {
       type: 'set',
       id: updated.id,
       experiment: updated,
-      parentExperimentId: updated.frontMatter.experiment ?? null,
+      parentExperimentId,
     })
   } catch {
     // Best-effort; the write itself succeeded.
