@@ -24,7 +24,7 @@
 
 ## 6. Backend lifecycle removal
 
-- [ ] 6.1 Delete `packages/backend/src/{daemon,distribution,update}/` and `start-guards.ts` (+ tests), remove their exports and the `createBackendServer` boundary assertion; verify no remaining reference by grep and that backend typecheck plus server, project-routes and package-boundary tests pass
+- [x] 6.1 Delete `packages/backend/src/{daemon,distribution,update}/` and `start-guards.ts` (+ tests), remove their exports and the `createBackendServer` boundary assertion; verify no remaining reference by grep and that backend typecheck plus server, project-routes and package-boundary tests pass
 
 ## 7. Local gates
 

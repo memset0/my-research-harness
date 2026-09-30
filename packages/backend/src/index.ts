@@ -12,8 +12,6 @@ export {
   decodeBackendActorContext,
   MAX_BACKEND_ACTOR_CONTEXT_HEADER_BYTES,
 } from './actor-context.js'
-export * from './daemon/index.js'
-export * from './distribution/index.js'
 export {
   type BackendDocumentService,
   BackendDocumentServiceError,
@@ -142,20 +140,6 @@ export {
 } from './server.js'
 export * from './slurm-service.js'
 export {
-  assertBackendStartGuards,
-  assertRuntimeDirectoryPolicy,
-  BACKEND_START_GUARD_ERROR_CODES,
-  type BackendStartGuardDecision,
-  BackendStartGuardError,
-  type BackendStartGuardErrorCode,
-  type BackendStartPreflightInput,
-  type EvaluateBackendStartGuardsInput,
-  evaluateBackendStartGuards,
-  preflightBackendStart,
-  preflightRuntimeDirectory,
-  type RuntimeDirectoryPolicyOptions,
-} from './start-guards.js'
-export {
   type BackendByteResource,
   type BackendLogStreamEvent,
   type BackendStreamService,
@@ -165,4 +149,3 @@ export {
   type FilesystemStreamServiceOptions,
   type LogLinesInput,
 } from './stream-service.js'
-export * from './update/index.js'

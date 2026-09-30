@@ -1,8 +1,7 @@
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { createBackendServer } from './server.js'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -28,6 +27,16 @@ describe('Backend package boundary', () => {
       ),
     )
     expect(source.join('\n')).not.toMatch(/(?:from\s+['"]next|apps\/web|human-auth|basic-auth)/)
-    expect(createBackendServer).toBeTypeOf('function')
+  })
+
+  it('ships no retired daemon, distribution, update or start-guard lifecycle', async () => {
+    const entries = await readdir(join(packageRoot, 'src'))
+    expect(entries).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^(daemon|distribution|update|start-guards)/)]),
+    )
+    const backend = await import('./index.js')
+    for (const name of Object.keys(backend)) {
+      expect(name).not.toMatch(/Daemon|ReleaseStore|BackendRelease|StartGuard|UpdateActivation/)
+    }
   })
 })
