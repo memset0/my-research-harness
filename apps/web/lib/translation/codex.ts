@@ -197,7 +197,8 @@ type AdmissionQueue = { active: number; waiting: Array<() => void> }
 
 function acquireInvocation(signal?: AbortSignal, timeoutMs = 120_000): Promise<() => void> {
   const shared = globalThis as typeof globalThis & { __memonCodexAdmission?: AdmissionQueue }
-  const queue = (shared.__memonCodexAdmission ??= { active: 0, waiting: [] })
+  shared.__memonCodexAdmission ??= { active: 0, waiting: [] }
+  const queue = shared.__memonCodexAdmission
   if (signal?.aborted) return Promise.reject(new TranslationError('CANCELLED', 499))
   if (queue.active >= TRANSLATION_CONCURRENCY && queue.waiting.length >= 32)
     return Promise.reject(new TranslationError('QUEUE_FULL', 429))

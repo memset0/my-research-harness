@@ -1,19 +1,22 @@
-// The declaration grammar and the payload model exist twice: once in the
-// dashboard (`apps/web/lib/components/`) where the registry validates and
-// renders blocks, and once here where the CLI runner and structural lint need
-// them without a React dependency. Neither copy may drift, so this test runs
-// both over one fixture list and asserts identical results.
+// @vitest-environment node
+// The declaration grammar and the payload model exist twice: once here in the
+// dashboard, where 'use client' components import them (client code must not
+// pull `@memon/core` runtime), and once in `@memon/core`, where the CLI runner
+// and structural lint need them without a React dependency. Neither copy may
+// drift, so this test runs both over one fixture list and asserts identical
+// results. It lives in the dashboard because only this package may depend on
+// both sides; core never imports dashboard sources.
 
+import {
+  derivePayload as coreDerivePayload,
+  executableFunctionName as coreExecutableFunctionName,
+  parseComponentDeclaration as coreParseDeclaration,
+  stripHiddenKeys as coreStripHiddenKeys,
+} from '@memon/core'
 import { describe, expect, it } from 'vitest'
 
-import { parseComponentDeclaration as webParseDeclaration } from '../../../../apps/web/lib/components/declaration.js'
-import {
-  derivePayload as webDerivePayload,
-  executableFunctionName as webExecutableFunctionName,
-  stripHiddenKeys as webStripHiddenKeys,
-} from '../../../../apps/web/lib/components/payload.js'
-import { parseComponentDeclaration } from './declaration.js'
-import { derivePayload, executableFunctionName, stripHiddenKeys } from './payload.js'
+import { parseComponentDeclaration } from './declaration'
+import { derivePayload, executableFunctionName, stripHiddenKeys } from './payload'
 
 const INFO_STRINGS = [
   '',
@@ -66,7 +69,7 @@ const PAYLOADS: { lang: string; body: string }[] = [
 
 describe('declaration grammar parity', () => {
   it.each(INFO_STRINGS)('agrees on %j', (info) => {
-    expect(parseComponentDeclaration(info)).toEqual(webParseDeclaration(info))
+    expect(parseComponentDeclaration(info)).toEqual(coreParseDeclaration(info))
   })
 })
 
@@ -75,15 +78,15 @@ describe('payload derivation parity', () => {
     PAYLOADS.map((entry) => [`${entry.lang}: ${JSON.stringify(entry.body)}`, entry] as const),
   )('agrees on %s', (_label, entry) => {
     const mine = derivePayload(entry.lang, entry.body)
-    expect(mine).toEqual(webDerivePayload(entry.lang, entry.body))
+    expect(mine).toEqual(coreDerivePayload(entry.lang, entry.body))
     if (mine.kind === 'executable') {
-      expect(executableFunctionName(mine.spec)).toBe(webExecutableFunctionName(mine.spec))
+      expect(executableFunctionName(mine.spec)).toBe(coreExecutableFunctionName(mine.spec))
     }
   })
 
   it('agrees on stripping reserved keys', () => {
     const value = { a: 1, __md_file_path: 'x.md', __last_error: { message: 'boom' }, b: 2 }
-    expect(stripHiddenKeys(value)).toEqual(webStripHiddenKeys(value))
+    expect(stripHiddenKeys(value)).toEqual(coreStripHiddenKeys(value))
     expect(stripHiddenKeys(value)).toEqual({ a: 1, b: 2 })
   })
 })

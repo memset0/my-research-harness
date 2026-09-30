@@ -12,7 +12,7 @@
 // migration window only.
 
 import type { Dirent } from 'node:fs'
-import { basename, join, relative, sep } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { projectFs } from '../project-file-store.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'

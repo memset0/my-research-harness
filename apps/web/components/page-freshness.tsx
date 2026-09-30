@@ -39,6 +39,7 @@ export function PageFreshness({ project }: PageFreshnessProps) {
   const { refresh, refreshing, foreground, heartbeatMs, tick } = useResourceHeartbeat()
   // The shared heartbeat is also this label's clock: `tick` advances once per
   // pulse, so the age re-renders without a timer of its own.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the heartbeat clock that refreshes now
   const now = useMemo(() => Date.now(), [tick])
 
   const age = status.oldestVerifiedAt === null ? null : formatAge(now - status.oldestVerifiedAt)

@@ -1735,7 +1735,11 @@ async function commitScope(
   const ids: string[] = []
   let ctx: WikiContext | null = null
   for (const ref of refs) {
-    const id = WIKI_ID_REGEX.test(ref) ? ref : resolvePage((ctx ??= await loadWiki(input)), ref).id
+    let id = ref
+    if (!WIKI_ID_REGEX.test(ref)) {
+      ctx ??= await loadWiki(input)
+      id = resolvePage(ctx, ref).id
+    }
     if (!ids.includes(id)) ids.push(id)
   }
   // Default pathspec magic: `*` spans `/`, so one pattern per id covers the

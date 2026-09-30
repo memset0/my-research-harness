@@ -145,7 +145,9 @@ export function segmentMarkdownTree(
       }
       return
     }
-    node.children?.forEach((child, index) => visit(child, `${path}.${index}`))
+    node.children?.forEach((child, index) => {
+      visit(child, `${path}.${index}`)
+    })
   }
   visit(tree, 'body')
   return segments

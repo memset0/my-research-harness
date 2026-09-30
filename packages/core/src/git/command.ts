@@ -175,13 +175,14 @@ const GIT_CACHE_MAX_BYTES = 32 * 1024 * 1024
 
 function gitCache(): GitCacheState {
   const carrier = globalThis as typeof globalThis & { [GIT_CACHE]?: GitCacheState }
-  return (carrier[GIT_CACHE] ??= {
+  carrier[GIT_CACHE] ??= {
     entries: new Map(),
     wrappers: new WeakSet(),
     runnerIds: new WeakMap(),
     nextRunnerId: 0,
     bytes: 0,
-  })
+  }
+  return carrier[GIT_CACHE]
 }
 
 /**

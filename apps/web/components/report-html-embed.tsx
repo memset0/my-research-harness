@@ -107,6 +107,7 @@ export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedP
   const loadedRevisionRef = useRef<string | null>(null)
   const titleId = useId()
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a changed srcDoc must reload the inline document
   useEffect(() => {
     if (inline) {
       // An inline document is already in hand: mount it immediately and skip
@@ -294,6 +295,7 @@ export function ReportHtmlEmbed({ src, srcDoc, title, height }: ReportHtmlEmbedP
   // same-origin (a Report asset or an inline `srcdoc`), so it can be measured
   // directly; scripted content that draws after load is picked up by the
   // ResizeObserver on its body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: iframeAttempt re-measures a reloaded frame
   useEffect(() => {
     if (height !== 'auto' || phase !== 'ready') return
     let frameDocument: Document | null = null

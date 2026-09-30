@@ -168,9 +168,9 @@ it('handles Alt+T for only the most recently interacted-with body', async () => 
   const first = setup()
   const second = setup()
   await waitFor(() =>
-    screen
-      .getAllByRole('button', { name: 'Translate to Chinese' })
-      .forEach((button) => expect(button).not.toBeDisabled()),
+    screen.getAllByRole('button', { name: 'Translate to Chinese' }).forEach((button) => {
+      expect(button).not.toBeDisabled()
+    }),
   )
   fireEvent.pointerDown(second.container.querySelector('h1')!)
   fireEvent.keyDown(window, { key: 't', code: 'KeyT', altKey: true })
@@ -187,9 +187,9 @@ it('targets a visible reading dialog rather than the obscured background body', 
   const second = setup()
   second.container.setAttribute('role', 'dialog')
   await waitFor(() =>
-    screen
-      .getAllByRole('button', { name: 'Translate to Chinese' })
-      .forEach((button) => expect(button).not.toBeDisabled()),
+    screen.getAllByRole('button', { name: 'Translate to Chinese' }).forEach((button) => {
+      expect(button).not.toBeDisabled()
+    }),
   )
   fireEvent.pointerDown(first.container.querySelector('h1')!)
   fireEvent.keyDown(window, { key: 't', altKey: true })
@@ -203,9 +203,9 @@ it('skips a hidden previously selected reading root', async () => {
   const first = setup()
   const second = setup()
   await waitFor(() =>
-    screen
-      .getAllByRole('button', { name: 'Translate to Chinese' })
-      .forEach((button) => expect(button).not.toBeDisabled()),
+    screen.getAllByRole('button', { name: 'Translate to Chinese' }).forEach((button) => {
+      expect(button).not.toBeDisabled()
+    }),
   )
   fireEvent.pointerDown(first.container.querySelector('h1')!)
   first.container.style.display = 'none'

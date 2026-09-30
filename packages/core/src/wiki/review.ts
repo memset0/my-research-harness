@@ -558,7 +558,9 @@ function resolveWikiCommit(commits: WikiCommit[], sha: string): WikiCommit | und
 function commitOrder(commits: WikiCommit[] | null): Map<string, number> {
   const order = new Map<string, number>()
   if (!commits) return order
-  commits.forEach((c, i) => order.set(c.sha, i))
+  commits.forEach((c, i) => {
+    order.set(c.sha, i)
+  })
   return order
 }
 

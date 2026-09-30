@@ -305,7 +305,9 @@ export class BodyTranslationService {
           throw new TranslationError('CACHE_UNAVAILABLE')
         }
       }
-      entries.forEach((entry, index) => this.settle(entry, results[index]!))
+      entries.forEach((entry, index) => {
+        this.settle(entry, results[index]!)
+      })
     } catch (error) {
       const code = error instanceof TranslationError ? error.code : 'PROVIDER_FAILED'
       for (const entry of entries)

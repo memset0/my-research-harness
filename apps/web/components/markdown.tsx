@@ -168,6 +168,7 @@ export function Markdown({
 }) {
   const inheritedArtifactLinks = useContext(ArtifactLinkContext)
   const translation = useBodyTranslation()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: segments are collected per rendered body, so a new body starts a new map
   const translationSegments = useMemo(() => new Map<string, TranslationSegment>(), [children])
   const translationEnabled = translation !== null
   const translationPlugin = useMemo(

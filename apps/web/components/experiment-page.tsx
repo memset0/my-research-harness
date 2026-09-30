@@ -388,6 +388,7 @@ function ResultsSnapshotStatus({ updatedAt }: { updatedAt: string | null }) {
   // second timer; it stops moving when the tab is not in front, which is
   // exactly when nothing is being checked either.
   const { tick } = useResourceHeartbeat()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the heartbeat clock that refreshes now
   const now = useMemo(() => Date.now(), [tick])
 
   return (

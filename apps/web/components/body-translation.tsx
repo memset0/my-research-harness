@@ -155,6 +155,7 @@ export function BodyTranslation({
     return () => window.removeEventListener('keydown', toggle, true)
   }, [role])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: readinessCheck is a re-check trigger bumped by the retry control
   useEffect(() => {
     if (role !== 'owner') return
     setAvailability(null)
@@ -167,6 +168,7 @@ export function BodyTranslation({
     return () => controller.abort()
   }, [role, readinessCheck])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identity/role changes must abort an in-flight translation
   useEffect(() => {
     const stop = () => {
       abort.current?.abort()
@@ -404,6 +406,7 @@ export function TranslationText({
       lang={context.target}
       className="mt-1 block border-l-2 border-primary/30 pl-3 text-foreground"
       data-slot="body-translation"
+      role="note"
       aria-label={chinese ? '机器译文' : 'Machine translation'}
     >
       {render(markdown)}

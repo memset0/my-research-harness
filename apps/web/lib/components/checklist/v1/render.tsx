@@ -46,6 +46,7 @@ export const Render: ComponentRenderer<Checklist> = ({ data, block }) => {
       >
         {data.items.map((item, index) => (
           <ChecklistRow
+            // biome-ignore lint/suspicious/noArrayIndexKey: items are addressed by position; the key is their outline number
             key={`${index + 1}`}
             item={item}
             number={`${index + 1}`}
@@ -134,6 +135,7 @@ function ChecklistRow({
         <ol className="@container ml-5 flex list-none flex-col gap-2 p-0">
           {item.children.map((child, index) => (
             <ChecklistRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: items are addressed by position; the key is their outline number
               key={`${number}.${index + 1}`}
               item={child}
               number={`${number}.${index + 1}`}

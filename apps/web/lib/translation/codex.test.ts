@@ -173,7 +173,7 @@ it('shares two Codex slots with readiness and removes cancelled waiters', async 
     expect(await third).toBe('ready')
     expect(controllers[1]!.signal.aborted).toBe(false)
   } finally {
-    controllers.forEach((controller) => controller.abort())
+    for (const controller of controllers) controller.abort()
     await Promise.all([first, second, third, cancelled])
   }
 }, 15_000)

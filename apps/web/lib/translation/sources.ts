@@ -42,7 +42,7 @@ export function translationSources(kind: TranslationKind, value: unknown): Trans
     add(item.title, 'literal')
     for (const key of ['description', 'question', 'rationale', 'outcome']) add(item[key])
     for (const key of ['acceptanceCriteria', 'successCriteria']) {
-      if (Array.isArray(item[key])) item[key].forEach((text: unknown) => add(text))
+      if (Array.isArray(item[key])) for (const text of item[key] as unknown[]) add(text)
     }
     if (Array.isArray(item.children)) item.children.forEach(visit)
   }
@@ -54,7 +54,7 @@ export function translationSources(kind: TranslationKind, value: unknown): Trans
     const results = record(record(documents.results).data)
     for (const annotation of Object.values(record(results.columnAnnotations))) {
       add(record(annotation).description)
-      Object.values(record(record(annotation).valueDescriptions)).forEach((text) => add(text))
+      for (const text of Object.values(record(record(annotation).valueDescriptions))) add(text)
     }
     if (Array.isArray(results.variants))
       for (const variant of results.variants) {

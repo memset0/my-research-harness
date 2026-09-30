@@ -221,7 +221,7 @@ describe('WikiCache', () => {
     const log = cache.getReviewLog('project-a')
     expect(log?.verifiedThrough).toBe('a'.repeat(40))
     expect(log?.commits.map((commit) => commit.verified)).toEqual([true, false])
-    expect(log?.commits[0]!.note).toBe('looks right')
+    expect(log?.commits[0]?.note).toBe('looks right')
 
     // No further git once warmed: serving the list and the log is snapshot-only.
     const derivations = derive.mock.calls.length

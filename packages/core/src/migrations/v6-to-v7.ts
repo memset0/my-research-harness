@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { type Dirent, promises as fs } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
@@ -73,7 +73,7 @@ export async function planMembershipMigration(
   }
   const runPaths: string[] = []
   const walk = async (directory: string) => {
-    let entries
+    let entries: Dirent[]
     try {
       entries = await fs.readdir(join(root, directory), { withFileTypes: true })
     } catch (error) {

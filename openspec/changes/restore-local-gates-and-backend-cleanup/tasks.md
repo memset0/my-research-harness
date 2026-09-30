@@ -9,8 +9,8 @@
 
 ## 3. Standalone core typecheck and lint errors
 
-- [ ] 3.1 Move the declaration/payload parity test to `apps/web/lib/components/shared-grammar.test.ts` (core side via `@memon/core`), delete the core copy, and verify `pnpm --filter @memon/core typecheck` passes and the moved test passes
-- [ ] 3.2 Fix the remaining Biome errors in core, backend and web (excluding `components/ui/`) and the unused imports in `discovery/discover.ts` and `mutation-service.ts`; verify `pnpm exec biome lint .` reports zero errors and the affected component tests pass
+- [x] 3.1 Move the declaration/payload parity test to `apps/web/lib/components/shared-grammar.test.ts` (core side via `@memon/core`), delete the core copy, and verify `pnpm --filter @memon/core typecheck` passes and the moved test passes
+- [x] 3.2 Fix the remaining Biome errors in core, backend and web (excluding `components/ui/`) and the unused imports in `discovery/discover.ts` and `mutation-service.ts`; verify `pnpm exec biome lint .` reports zero errors and the affected component tests pass
 
 ## 4. Local-offset timestamps
 

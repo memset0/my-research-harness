@@ -184,7 +184,8 @@ const RUNTIME_KEY = Symbol.for('memon.web-runtime.v1')
 
 export async function getRuntime(): Promise<Runtime> {
   const shared = globalThis as typeof globalThis & { [RUNTIME_KEY]?: Promise<Runtime> }
-  return (shared[RUNTIME_KEY] ??= init())
+  shared[RUNTIME_KEY] ??= init()
+  return shared[RUNTIME_KEY]
 }
 
 async function init(): Promise<Runtime> {

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, dirname, join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import {
   applyWarningOp,
   discoverExperiments,
