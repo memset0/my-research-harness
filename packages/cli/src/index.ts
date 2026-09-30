@@ -434,7 +434,10 @@ experiment
   .description('allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>/README.md')
   .option('--title <text>', 'human-readable title')
   .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
-  .option('--from-run <run-dir>', 'bind an existing run as the first member')
+  .option(
+    '--from-run <run-dir>',
+    'declare an existing run (project-relative path or unique id) as the first member',
+  )
   .action(async (slug: string, opts: { title?: string; hypotheses?: string; fromRun?: string }) => {
     const g = readGlobals()
     const hyps = opts.hypotheses
@@ -455,7 +458,7 @@ experiment
 experiment
   .command('rename <id-or-slug> <new-slug>')
   .description(
-    "rename an experiment's slug (NNNN preserved); cascades through bound runs and hypotheses.md",
+    "rename an experiment's slug (NNNN preserved); updates hypotheses.md, member run paths stay valid",
   )
   .action(async (idOrSlug: string, newSlug: string) => {
     const g = readGlobals()
@@ -592,7 +595,7 @@ experimentSection
 
 experiment
   .command('link <id-or-slug> <run-dir-or-id>')
-  .description('bidirectionally bind a run to an experiment')
+  .description("add a run's project-relative path to the experiment's runs (run README untouched)")
   .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
     const g = readGlobals()
     await runExperimentLink({ ...g, experimentIdOrSlug, runIdOrDir })
@@ -600,7 +603,7 @@ experiment
 
 experiment
   .command('unlink <id-or-slug> <run-dir-or-id>')
-  .description('clear the binding on both sides')
+  .description("remove a run from the experiment's runs (run README untouched)")
   .action(async (experimentIdOrSlug: string, runIdOrDir: string) => {
     const g = readGlobals()
     await runExperimentUnlink({ ...g, experimentIdOrSlug, runIdOrDir })
@@ -609,7 +612,7 @@ experiment
 experiment
   .command('delete <id-or-slug>')
   .description(
-    'delete an experiment doc; cascade-unlinks runs (requires --force when bound runs exist)',
+    'delete an experiment doc, releasing its declared runs (requires --force when runs are declared)',
   )
   .option('--force', 'cascade-unlink without prompting', false)
   .action(async (experimentIdOrSlug: string, opts: { force?: boolean }) => {
@@ -854,7 +857,9 @@ const run = program
 
 run
   .command('rename <id-or-dir> <new-slug>')
-  .description("rename a run's slug (timestamp suffix preserved); updates parent exp's runs[]")
+  .description(
+    "rename a run's slug (timestamp suffix preserved); updates the declaring exp's runs path",
+  )
   .action(async (runIdOrDir: string, newSlug: string) => {
     const g = readGlobals()
     await runRunRename({ ...g, runIdOrDir, newSlug })
