@@ -28,8 +28,32 @@
 ## 4. Integration
 
 - [ ] 4.1 Run selected cross-surface regression tests and compare cold/warm membership I/O against unrelated Run counts; record actual results and limitations.
-  - [ ] 4.1.1 Add a spy-based I/O test (3 members, N = 3 and N = 50 unrelated Runs, cold and warm caches) asserting member reads do not scale with N (design D5), and record the measured counts below.
+  - [x] 4.1.1 Add a spy-based I/O test (3 members, N = 3 and N = 50 unrelated Runs, cold and warm caches) asserting member reads do not scale with N (design D5), and record the measured counts below.
 - [x] 4.2 Reconcile the residual v6-model tests with the path model (backend Run inventory ids, CLI member paths, rename without Run rewrites, retired one-side-only panel notice), restore walk-derived `@` Run reference identities in the wiki artifact inventory (base name and path), keep bare-id Run lookup behind automatic priority, and add the `wiki-store` delta; verify with the affected core/backend/cli/web test files and the full local suite.
+
+## 4.1 measurement record
+
+`packages/core/src/experiments/member-io.test.ts` reads one Experiment with 3
+declared path members (bundle read, deprecation eligibility restricted to the
+declared ids, then `resolveDeclaredRunPath` + `readRunDir` per member) inside a
+persistent-cache project file context, first cold (new storage group) and then
+warm (same group). Each unrelated Run has its own output subtree, and one shares
+a member's base name under another root.
+
+| Case | `discoverRuns` | `scanProjectRoot` | Run README reads (all members) | Unrelated README reads | Run-root listings | Physical ops |
+|---|---|---|---|---|---|---|
+| N = 3, cold | 0 | 0 | 6 | 0 | 0 | 22 |
+| N = 3, warm | 0 | 0 | 6 | 0 | 0 | 0 |
+| N = 50, cold | 0 | 0 | 6 | 0 | 0 | 22 |
+| N = 50, warm | 0 | 0 | 6 | 0 | 0 | 0 |
+
+The 6 logical README reads are 2 per member (eligibility flag, then the Run
+record); warm reads are all cache hits. For contrast, the same Experiment
+declaring two legacy bare IDs costs 2 `discoverRuns` walks (one per bare
+reference in eligibility) and 12 Run-root listings, which is why writers emit
+paths and lint flags `LEGACY_RUN_ID_REF`. Limitations: test-level counts on a
+local temporary directory, no SSHFS latency and no operator-project benchmark
+(design D5).
 
 ## Current preparation checkpoint
 
