@@ -341,4 +341,59 @@ describe('FS v6 to v7 membership migration', () => {
     expect(plan.blockers.join('\n')).toContain('Unresolved')
     expect(plan.warnings).toHaveLength(1)
   })
+
+  it('keeps a README-less declared member as a warning and plans nothing for it', async () => {
+    const { root, base, experiment } = await fixture()
+    const empty = 'logs/empty-260908-130000'
+    await fs.mkdir(join(root, empty, 'out'), { recursive: true })
+    await fs.writeFile(
+      experiment,
+      `---\nid: E0001-trial\nruns: [${run}, empty-260908-130000]\n---\nBody\n`,
+    )
+    const plan = await planMembershipMigration(root, { allowDirty: true })
+    expect(plan.blockers).toEqual([])
+    expect(plan.warnings).toEqual([`MEMBER_README_MISSING: ${empty}`])
+    expect(plan.files.some((file) => file.path.startsWith(empty))).toBe(false)
+    await applyMembershipMigration(plan, join(base, 'backup'))
+    expect(await fs.readFile(experiment, 'utf8')).toContain(`runs: ["logs/${run}","${empty}"]`)
+    expect(await fs.readdir(join(root, empty))).toEqual(['out'])
+  })
+
+  it('accepts an in-project Run symlink under its declared path', async () => {
+    const { root, base, experiment } = await fixture()
+    const alias = 'logs/alias-260908-140000'
+    await fs.mkdir(join(root, 'logs/raw-output-dir'), { recursive: true })
+    await fs.writeFile(
+      join(root, 'logs/raw-output-dir/README.md'),
+      `---\nexperiment: E0001-trial\ncustom: 'keep me'\n---\nAliased\n`,
+    )
+    await fs.symlink(join(root, 'logs/raw-output-dir'), join(root, alias))
+    await fs.writeFile(experiment, `---\nid: E0001-trial\nruns: [${run}, ${alias}]\n---\nBody\n`)
+    const plan = await planMembershipMigration(root, { allowDirty: true })
+    expect(plan.blockers).toEqual([])
+    expect(plan.files.map((file) => file.path)).toContain(`${alias}/README.md`)
+    await applyMembershipMigration(plan, join(base, 'backup'))
+    // The declaration keeps the symlink path; the target README loses only
+    // its legacy ownership field, and the link itself is untouched.
+    expect(await fs.readFile(experiment, 'utf8')).toContain(`"${alias}"]`)
+    expect((await fs.lstat(join(root, alias))).isSymbolicLink()).toBe(true)
+    expect(await fs.readFile(join(root, 'logs/raw-output-dir/README.md'), 'utf8')).toBe(
+      "---\ncustom: 'keep me'\n---\nAliased\n",
+    )
+  })
+
+  it('blocks a declared Run symlink that escapes the project root', async () => {
+    const { root, base, experiment } = await fixture()
+    const outside = join(base, 'outside-run')
+    await fs.mkdir(outside, { recursive: true })
+    await fs.writeFile(join(outside, 'README.md'), '---\nexperiment: E0001-trial\n---\nsecret\n')
+    const alias = 'logs/escape-260908-150000'
+    await fs.symlink(outside, join(root, alias))
+    await fs.writeFile(experiment, `---\nid: E0001-trial\nruns: [${run}, ${alias}]\n---\n`)
+    const plan = await planMembershipMigration(root, { allowDirty: true })
+    expect(plan.blockers.join('\n')).toContain('escapes the project root')
+    expect(plan.files.some((file) => file.path.startsWith(alias))).toBe(false)
+    await expect(applyMembershipMigration(plan, join(base, 'backup'))).rejects.toThrow('blockers')
+    expect(await fs.readFile(join(outside, 'README.md'), 'utf8')).toContain('experiment:')
+  })
 })

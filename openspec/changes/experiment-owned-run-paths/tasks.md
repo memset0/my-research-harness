@@ -19,7 +19,7 @@
 
 - [x] 3.1 Implement a reusable read-only batch planner and fingerprinted apply/verifier with backups and recovery; test ambiguity, missing targets, conflicts, interruption and idempotence.
 - [ ] 3.2 Add the seven-section v6-to-v7 guide and FS/version gates; verify migration guide and release-policy tests.
-  - [ ] 3.2.1 Relax the planner for README-less declared members and in-project symlinks (design D4), with fixtures for both plus an escaping symlink.
+  - [x] 3.2.1 Relax the planner for README-less declared members and in-project symlinks (design D4), with fixtures for both plus an escaping symlink.
   - [ ] 3.2.2 Align `packages/core/migrations/v6-to-v7.md` with `fs-migration-guide-authoring` and sync the migrations README, the operator script note, the migrate-fs skill and the README marker example (design D6).
   - [ ] 3.2.3 Convert `mock/project-a` and `mock/project-b` to v7 declarations with the keep-version script and update affected tests (design D3).
   - The constant/release bump itself (`FS_CONVENTION_VERSION = 7`, `MEMON_RELEASE = '7.0.0'`) belongs to the release commit, not this task.

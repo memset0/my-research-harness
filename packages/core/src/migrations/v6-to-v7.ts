@@ -72,6 +72,7 @@ export async function planMembershipMigration(
     plan.files.push({ path, before, after, hash: hash(before) })
   }
   const runPaths: string[] = []
+  const symlinkRuns = new Set<string>()
   const walk = async (directory: string) => {
     let entries: Dirent[]
     try {
@@ -81,10 +82,18 @@ export async function planMembershipMigration(
       throw error
     }
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      if (entry.name.startsWith('.')) continue
       const path = `${directory}/${entry.name}`
-      if (/^.+-\d{6}-\d{6}$/.test(entry.name)) runPaths.push(path)
-      else await walk(path)
+      const runNamed = /^.+-\d{6}-\d{6}$/.test(entry.name)
+      // A Run-named symlink is a candidate Run path (containment is checked
+      // before anything behind it is read); other symlinks are never followed.
+      if (entry.isSymbolicLink() && runNamed) {
+        runPaths.push(path)
+        symlinkRuns.add(path)
+      } else if (entry.isDirectory()) {
+        if (runNamed) runPaths.push(path)
+        else await walk(path)
+      }
     }
   }
   for (const directory of ['logs', 'outputs', 'experiments']) await walk(directory)
@@ -102,6 +111,31 @@ export async function planMembershipMigration(
         `Unresolved or ambiguous Run reference: ${reference}; candidates: ${matches.join(', ') || '(none)'}`,
       )
     return matches[0]!
+  }
+  // A declared Run path may be a symlink when its real path stays inside the
+  // project; it is processed under the declared path, never rewritten to
+  // its target. A symlink escaping the project is refused before any read.
+  const containedRunDirectory = async (path: string): Promise<void> => {
+    if (!symlinkRuns.has(path)) return
+    const real = await fs.realpath(join(root, path))
+    const local = relative(root, real)
+    if (local === '' || local === '..' || local.startsWith(`..${sep}`))
+      throw new Error(`Run path symlink escapes the project root: ${path}`)
+    if (!(await fs.stat(real)).isDirectory())
+      throw new Error(`Run path is not a directory: ${path}`)
+  }
+  // A declared member without README.md has no legacy Run field to strip:
+  // keep the declaration, plan nothing for the directory, and warn.
+  const readmelessMembers = new Set<string>()
+  const checkMember = async (path: string): Promise<void> => {
+    await containedRunDirectory(path)
+    try {
+      await safeFile(root, `${path}/README.md`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if (!readmelessMembers.has(path)) plan.warnings.push(`MEMBER_README_MISSING: ${path}`)
+      readmelessMembers.add(path)
+    }
   }
   const owners = new Map<string, string>()
   const experimentRoot = join(root, 'docs/experiments')
@@ -129,7 +163,7 @@ export async function planMembershipMigration(
         throw new Error('runs must be an array')
       const runs = ((header.runs ?? []) as unknown[]).map(resolveRef)
       for (const run of runs) {
-        await safeFile(root, `${run}/README.md`)
+        await checkMember(run)
         if (owners.has(run))
           throw new Error(`Duplicate membership for ${run}: ${owners.get(run)}, ${id}`)
         owners.set(run, id)
@@ -187,10 +221,32 @@ export async function planMembershipMigration(
       plan.blockers.push(`${path}: ${(error as Error).message}`)
     }
   }
-  for (const directory of runPaths) {
+  const plannedReadmes = new Set<string>()
+  // Declared paths first, so a README reachable through both a declared
+  // symlink and its undeclared real directory is judged under its owner.
+  const ordered = [...runPaths].sort(
+    (left, right) => Number(owners.has(right)) - Number(owners.has(left)),
+  )
+  for (const directory of ordered) {
     const path = `${directory}/README.md`
+    if (readmelessMembers.has(directory)) continue
+    if (symlinkRuns.has(directory) && !owners.has(directory)) {
+      try {
+        await containedRunDirectory(directory)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+          plan.warnings.push(`Skipped undeclared Run symlink: ${(error as Error).message}`)
+        continue
+      }
+    }
     try {
-      const before = await fs.readFile(await safeFile(root, path), 'utf8')
+      const target = await safeFile(root, path)
+      // The same README can be reachable through a symlinked and a real Run
+      // path; plan it once.
+      const real = await fs.realpath(target)
+      if (plannedReadmes.has(real)) continue
+      plannedReadmes.add(real)
+      const before = await fs.readFile(target, 'utf8')
       const header = frontmatter(before)
       if (header.experiment && owners.get(directory) !== header.experiment) {
         if (!owners.has(directory) && options.dropRunOnlyClaims) plan.droppedClaims.push(directory)

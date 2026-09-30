@@ -34,8 +34,12 @@ node scripts/migrate-v6-to-v7.mjs plan "$PROJECT_ROOT" "$PLAN_FILE"
 The plan is read-only. It resolves Experiment README members and result
 `runs`/`attempts` to project-root-relative directory paths, removes obsolete
 Run README parent fields, and prepares the FS marker update. It never copies,
-moves or traverses Run outputs. Missing referenced READMEs and ambiguous IDs
-block application; unreferenced directories without READMEs remain untouched.
+moves or traverses Run outputs. Missing referenced Run directories and
+ambiguous IDs block application. A declared directory without a README is kept
+with a `MEMBER_README_MISSING` warning and planned for no change; unreferenced
+directories without READMEs remain untouched. A declared Run path that is a
+symlink resolving inside the project is processed under its declared path; one
+resolving outside the project blocks application.
 
 Use `--allow-dirty` only after explicit approval to migrate a dirty worktree.
 Use `--drop-run-only-claims` only after approval to discard those legacy claims;
