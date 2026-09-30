@@ -1,4 +1,5 @@
 import { relative } from 'node:path'
+import { formatIsoLocal } from '../time.js'
 import type { Experiment, ExperimentMembershipAnomaly, Run } from '../types.js'
 
 export interface MembershipResult {
@@ -17,12 +18,12 @@ export interface MembershipInput {
    */
   project: string
   projectRoot?: string
-  /** ISO8601 with offset; default `new Date().toISOString()`-with-local-offset. */
+  /** ISO8601 with the local offset; defaults to now. */
   detectedAt?: string
 }
 
 export function computeMembership(input: MembershipInput): MembershipResult {
-  const detectedAt = input.detectedAt ?? new Date().toISOString()
+  const detectedAt = input.detectedAt ?? formatIsoLocal(new Date())
   const project = input.project
 
   const runByDir = new Map<string, Run>()

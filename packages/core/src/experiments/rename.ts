@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path'
 import { padId, parseId } from '../ids.js'
 import { appendJournalEvent } from '../journal/append.js'
 import { projectFs as fs } from '../project-file-store.js'
-import { parseSlugFromRunDir } from '../time.js'
+import { formatIsoLocal, parseSlugFromRunDir } from '../time.js'
 import { discoverExperiments, readExperimentDoc } from './discover.js'
 import { resolveExperimentId } from './id.js'
 import { serializeExperimentReadme } from './serialize.js'
@@ -47,7 +47,7 @@ export async function renameExperiment(
   newSlug: string,
   options: RenameExperimentOptions = {},
 ): Promise<RenameExperimentResult> {
-  const now = options.now ?? defaultNowIso
+  const now = options.now ?? (() => formatIsoLocal(new Date()))
 
   if (!SLUG_RE.test(newSlug)) {
     throw new RenameExperimentError('BAD_REQUEST', `new slug "${newSlug}" must match ${SLUG_RE}`)
@@ -205,13 +205,4 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.cli.tmp`)
   await fs.writeFile(tmp, content, 'utf8')
   await fs.rename(tmp, path)
-}
-
-function defaultNowIso(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const offsetMin = -d.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const absMin = Math.abs(offsetMin)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(absMin / 60))}:${pad(absMin % 60)}`
 }

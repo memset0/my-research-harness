@@ -114,6 +114,15 @@ describe('computeMembership — single-sided anomalies', () => {
     expect(anomalies).toEqual([])
   })
 
+  it('stamps anomalies with a local-offset detection time by default', () => {
+    const r = run('dup-260501-100000', null)
+    const e = exp('E0001-a', 'a', ['ghost-260501-100000'])
+    const { anomalies } = computeMembership({ experiments: [e], runs: [r], project: 'p' })
+    expect(anomalies.length).toBeGreaterThan(0)
+    for (const anomaly of anomalies)
+      expect(anomaly.detectedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+  })
+
   it('ignores retired Run-only claims', () => {
     const r = run('orphan-260501-100000', 'E0099-ghost')
     const { anomalies } = computeMembership({ experiments: [], runs: [r], project: 'p' })

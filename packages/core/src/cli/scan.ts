@@ -14,6 +14,7 @@ import { readRunDir } from '../discovery/read.js'
 import { isStaleRunning } from '../discovery/stale.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
 import { projectFs as fs } from '../project-file-store.js'
+import { formatIsoLocal } from '../time.js'
 import type { ParsedHypotheses, Run } from '../types.js'
 
 export interface IndexedRun extends Run {
@@ -138,7 +139,7 @@ export async function scanProjectRoot(
 
   return {
     projectRoot: abs,
-    scannedAt: new Date().toISOString(),
+    scannedAt: formatIsoLocal(new Date()),
     experiments,
     hypotheses: { path: hypotheses ? hypothesesPath : null, ...emptyOr(hypotheses, EMPTY_HYP) },
   }

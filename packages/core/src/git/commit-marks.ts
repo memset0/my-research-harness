@@ -19,6 +19,7 @@
 
 import { dirname, join } from 'node:path'
 import { projectFs } from '../project-file-store.js'
+import { formatIsoLocal } from '../time.js'
 
 const { mkdir, readFile, rename, rm, writeFile } = projectFs
 
@@ -88,7 +89,7 @@ export async function setCommitMark(
     sha,
     status: input.status,
     note: input.note ?? '',
-    updatedAt: formatIsoNow(),
+    updatedAt: formatIsoLocal(new Date()),
     submodule,
   }
   const existingIdx = marks.findIndex((m) => m.sha === sha && m.submodule === submodule)
@@ -293,24 +294,4 @@ function parseCsvRecords(text: string): string[][] {
     records.push(row)
   }
   return records
-}
-
-// --- timestamp -----------------------------------------------------------
-
-function formatIsoNow(): string {
-  // ISO 8601 with the local timezone offset — matches the rest of memon's
-  // on-disk timestamp convention (per CLAUDE.md "All timestamps ISO8601
-  // with timezone offset").
-  const d = new Date()
-  const tzMinutes = -d.getTimezoneOffset()
-  const sign = tzMinutes >= 0 ? '+' : '-'
-  const tzMag = Math.abs(tzMinutes)
-  const tzH = String(Math.floor(tzMag / 60)).padStart(2, '0')
-  const tzM = String(tzMag % 60).padStart(2, '0')
-  const pad = (n: number, width = 2): string => String(n).padStart(width, '0')
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
-    `${sign}${tzH}:${tzM}`
-  )
 }

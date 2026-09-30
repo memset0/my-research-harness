@@ -215,6 +215,9 @@ describe('FilesystemDocumentService', () => {
       await service.getCodeReview('research', 'code-review/2026-08-26-review'),
     )
     expect(after.frontmatter.commits[0]?.reviewed).toBe(true)
+    expect(String(after.frontmatter.updatedAt)).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/,
+    )
     BackendDocumentConflictResponseSchema.parse(
       await service.patchCodeReview('research', 'code-review/2026-08-26-review', {
         op: 'todo',

@@ -94,13 +94,8 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
   let createdAt = ''
   if (tail?.groups) {
     name = tail.groups.name!
-    const yy = tail.groups.yy!
-    const mm = tail.groups.mm!
-    const dd = tail.groups.dd!
-    const hh = tail.groups.hh!
-    const mi = tail.groups.mi!
-    const ss = tail.groups.ss!
-    createdAt = `20${yy}-${mm}-${dd}T${hh}:${mi}:${ss}${getLocalOffset()}`
+    // Offset in effect at that wall-clock time, so DST boundaries are right.
+    createdAt = parseTimestampFromRunDir(id) ?? ''
   }
   return {
     frontMatter: {
@@ -153,13 +148,4 @@ function synthesizeFromDirname(id: string, _projectName: string): ParsedReadme {
     // No frontmatter block at all, so no declared keys.
     frontMatterKeys: [],
   }
-}
-
-function getLocalOffset(): string {
-  const offsetMin = -new Date().getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const abs = Math.abs(offsetMin)
-  const hh = String(Math.floor(abs / 60)).padStart(2, '0')
-  const mm = String(abs % 60).padStart(2, '0')
-  return `${sign}${hh}:${mm}`
 }

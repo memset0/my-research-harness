@@ -15,7 +15,7 @@
 
 ## 4. Local-offset timestamps
 
-- [ ] 4.1 Replace `toISOString()` in `cli/scan.ts`, `experiments/membership.ts` and backend `document-service.ts` with `formatIsoLocal`, replace the duplicate formatters in `project-file-store.ts`, `experiments/rename.ts`, `git/commit-marks.ts` and `discovery/read.ts` with `time.ts` helpers, add offset assertions, and verify the time, membership, rename, scan and document-service tests pass
+- [x] 4.1 Replace `toISOString()` in `cli/scan.ts`, `experiments/membership.ts` and backend `document-service.ts` with `formatIsoLocal`, replace the duplicate formatters in `project-file-store.ts`, `experiments/rename.ts`, `git/commit-marks.ts` and `discovery/read.ts` with `time.ts` helpers, add offset assertions, and verify the time, membership, rename, scan and document-service tests pass
 
 ## 5. CLI structured exits
 

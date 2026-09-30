@@ -331,7 +331,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
             currentHash: current.hash,
           })
         }
-        const now = new Date().toISOString()
+        const now = formatIsoLocal(new Date())
         const next =
           input.op === 'commit'
             ? toggleCommitReviewed(current.content, input.sha, input.reviewed, now)

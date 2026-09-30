@@ -130,6 +130,7 @@ describe('research collections exclude deprecated runs by default', () => {
     await deprecateRun(failed, { now: NOW })
 
     const normal = await scanProjectRoot(root)
+    expect(normal.scannedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
     expect(normal.experiments.map((run) => run.id)).toEqual(['kept-260901-100600'])
     expect(normal.experiments[0]?.deprecated).toBe(false)
 

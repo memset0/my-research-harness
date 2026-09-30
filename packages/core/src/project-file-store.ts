@@ -76,6 +76,7 @@ import {
   ProjectStats,
   type StatsFields,
 } from './project-io.js'
+import { formatIsoLocal } from './time.js'
 
 export { configureProjectFileCache, type FileCacheOptions } from './project-file-cache.js'
 
@@ -1821,7 +1822,7 @@ class ProjectFileStore {
 
     return {
       epoch: this.epoch,
-      generatedAt: isoWithOffset(new Date()),
+      generatedAt: formatIsoLocal(new Date()),
       windowMs: effectiveWindow,
       availableWindowsMs: [...METRIC_WINDOWS_MS],
       options: this.effectiveOptions(),
@@ -2156,19 +2157,6 @@ function missingErrorOf(observation: Observation, absolutePath: string): NodeJS.
   error.syscall = 'access'
   error.path = absolutePath
   return error
-}
-
-function isoWithOffset(date: Date): string {
-  const offsetMinutes = -date.getTimezoneOffset()
-  const sign = offsetMinutes >= 0 ? '+' : '-'
-  const abs = Math.abs(offsetMinutes)
-  const pad = (value: number): string => String(value).padStart(2, '0')
-  const local = new Date(date.getTime() + offsetMinutes * 60_000)
-  return (
-    `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}` +
-    `T${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}` +
-    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
-  )
 }
 
 // ---------------------------------------------------------------------------
