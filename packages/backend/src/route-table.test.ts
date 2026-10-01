@@ -2,14 +2,8 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { BACKEND_API_PREFIX } from './http/paths.js'
 import { compileRouteTable, type PreflightResult, preflight, routeMethods } from './http/route.js'
-import {
-  type AllowedBackendRoute,
-  BACKEND_ROUTE_ALLOW_LIST,
-  legacyPreflight,
-  legacyRouteClass,
-  resolveAllowedBackendRoute,
-} from './legacy-routes.js'
 import { BACKEND_ROUTES } from './routes/index.js'
+import { BACKEND_ROUTE_ALLOW_LIST } from './server.js'
 
 const table = compileRouteTable(BACKEND_ROUTES)
 const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const
@@ -177,41 +171,7 @@ function relevantKeys(pathname: string, method: string): string[] {
   return Object.keys(spec.fields).sort()
 }
 
-/** Legacy route fields, renamed to the template placeholder they fill. */
-function legacyParams(route: AllowedBackendRoute): Record<string, string> {
-  const asset = route.reportId !== undefined || route.key.includes('wiki-assets')
-  const byName: Record<string, string | undefined> = {
-    project: route.project,
-    id: asset
-      ? (route.reportId ?? route.wikiId)
-      : (route.resourceId ?? route.shareId ?? route.wikiId),
-    path: route.resourceId,
-    rowId: route.warningRowId,
-    sha: route.gitRef ?? route.wikiSha,
-    artifact: route.wikiArtifact,
-  }
-  return Object.fromEntries(placeholders(route.key).map((name) => [name, byName[name] ?? '']))
-}
-
 type Outcome = Record<string, unknown>
-
-function legacyOutcome(
-  method: string,
-  pathname: string,
-  search: URLSearchParams,
-  readOnly: boolean,
-) {
-  const result = legacyPreflight({ method, pathname, search, readOnly })
-  if (result.outcome === 'not-found') return { outcome: 'not-found' }
-  const base: Outcome = {
-    outcome: result.outcome,
-    key: result.route.key,
-    params: legacyParams(result.route),
-  }
-  if (result.outcome === 'method-not-allowed') base.allow = [...result.allow]
-  if (result.outcome === 'dispatch') base.routeClass = legacyRouteClass(result.route.key, method)
-  return base
-}
 
 function newOutcome(result: PreflightResult<(typeof BACKEND_ROUTES)[number]>): Outcome {
   if (result.outcome === 'not-found') return { outcome: 'not-found' }
@@ -228,26 +188,26 @@ function newOutcome(result: PreflightResult<(typeof BACKEND_ROUTES)[number]>): O
 }
 
 describe('declarative Backend route table', () => {
-  it('derives the same allow-list as the legacy constant table', () => {
+  it('exports the method allow-list derived from the table', () => {
     const derived = Object.fromEntries(
       BACKEND_ROUTES.map((route) => [route.key, routeMethods(route)]),
     )
-    const legacy = Object.fromEntries(
+    const exported = Object.fromEntries(
       Object.entries(BACKEND_ROUTE_ALLOW_LIST).map(([key, methods]) => [key, [...methods]]),
     )
-    expect(derived).toEqual(legacy)
+    expect(exported).toEqual(derived)
+    expect(Object.keys(exported)).toHaveLength(BACKEND_ROUTES.length)
+    expect(new Set(BACKEND_ROUTES.map((route) => route.key)).size).toBe(BACKEND_ROUTES.length)
   })
 
-  it('makes every routing decision exactly as the legacy resolver, query validator and dispatch did', () => {
+  it('makes every routing decision the legacy tables made (pinned digest)', () => {
     const random = mulberry32(0x5eed)
     const digest = createHash('sha256')
-    const mismatches: string[] = []
     let compared = 0
     const outcomes = new Map<string, number>()
     for (const pathname of corpusPaths()) {
-      // Neither side matches the path: routing never consults method or query.
-      const unrouted =
-        table.match(pathname) === null && resolveAllowedBackendRoute(pathname) === null
+      // An unmatched path never consults method or query.
+      const unrouted = table.match(pathname) === null
       for (const method of unrouted ? (['GET'] as const) : METHODS) {
         const relevant = relevantKeys(pathname, method)
         const queries = [new URLSearchParams()]
@@ -256,21 +216,16 @@ describe('declarative Backend route table', () => {
           queries.push(sampleQuery(random, relevant))
         for (const search of queries) {
           for (const readOnly of method === 'GET' || method === 'HEAD' ? [false] : [false, true]) {
-            const expected = legacyOutcome(method, pathname, search, readOnly)
             const actual = newOutcome(preflight(table, { method, pathname, search, readOnly }))
             compared++
             const tally = `${actual.outcome}:${String(actual.key ?? '')}`
             outcomes.set(tally, (outcomes.get(tally) ?? 0) + 1)
             const line = JSON.stringify([method, pathname, search.toString(), readOnly, actual])
             digest.update(`${line}\n`)
-            if (JSON.stringify(expected) !== JSON.stringify(actual) && mismatches.length < 20) {
-              mismatches.push(`${line}\n  legacy: ${JSON.stringify(expected)}`)
-            }
           }
         }
       }
     }
-    expect(mismatches).toEqual([])
     expect(compared).toBeGreaterThan(100_000)
     // Every route is reached and also rejected by its query rules.
     for (const route of BACKEND_ROUTES) {
@@ -307,5 +262,11 @@ describe('declarative Backend route table', () => {
   })
 })
 
-/** SHA-256 of every decision over the deterministic corpus, recorded against the legacy tables. */
+/**
+ * SHA-256 of every routing decision over the deterministic corpus. It was
+ * recorded while the legacy allow-list, regex resolver and query validator
+ * still existed and the decisions were proven identical to theirs (commit
+ * "introduce the declarative route table and prove parity with the legacy
+ * tables"). A table change that alters any decision changes this digest.
+ */
 const ROUTE_DECISION_DIGEST = '91fcb9ffa723f01e3fd99aea9f01e58ef7f5b5189f85010cfdf51a6b77aa8c91'

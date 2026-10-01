@@ -16,7 +16,7 @@
 
 ## 4. Remove the legacy tables
 
-- [ ] 4.1 Delete `legacy-routes.ts`; keep the parity corpus in `route-table.test.ts` pinned to the recorded digest and the literal-template-path assertion; verify the Backend suite passes and `grep -r legacyPreflight packages/backend/src` is empty.
+- [x] 4.1 Delete `legacy-routes.ts`; keep the parity corpus in `route-table.test.ts` pinned to the recorded digest and the literal-template-path assertion; verify the Backend suite passes and `grep -r legacyPreflight packages/backend/src` is empty.
 
 ## 5. Unified error mapping
 
