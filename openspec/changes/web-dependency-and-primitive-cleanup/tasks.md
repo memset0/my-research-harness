@@ -1,8 +1,8 @@
 ## 1. Unused dependencies
 
-- [ ] 1.1 Grep each audited candidate (`@radix-ui/react-*` x8, `@hugeicons/*`, `date-fns`, `date-fns-tz`, `cn`, `tailwindcss-animate`, `@tanstack/react-table`) across Web `.ts/.tsx/.css/.mjs` sources; confirm zero references, that every `components/ui/*` imports from `radix-ui`, and that `globals.css` imports `tw-animate-css`
-- [ ] 1.2 Check whether `js-yaml` and `yaml` are both imported by Web code; keep both if so and record the reason in proposal.md
-- [ ] 1.3 Remove the zero-reference packages from `apps/web/package.json`, run `pnpm install`, and verify `pnpm -r typecheck` passes and `pnpm --filter @memon/web build` succeeds
+- [x] 1.1 Grep each audited candidate (`@radix-ui/react-*` x8, `@hugeicons/*`, `date-fns`, `date-fns-tz`, `cn`, `tailwindcss-animate`, `@tanstack/react-table`) across Web `.ts/.tsx/.css/.mjs` sources; confirm zero references, that every `components/ui/*` imports from `radix-ui`, and that `globals.css` imports `tw-animate-css`
+- [x] 1.2 Check whether `js-yaml` and `yaml` are both imported by Web code; keep both if so and record the reason in proposal.md
+- [x] 1.3 Remove the zero-reference packages from `apps/web/package.json`, run `pnpm install`, and verify `pnpm -r typecheck` passes and `pnpm --filter @memon/web build` succeeds
 
 ## 2. Regenerate shadcn primitives
 
