@@ -46,8 +46,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { type Dirent, promises as nodeFs, type PathLike, type Stats } from 'node:fs'
 import type * as FsPromisesModule from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { LRUCache } from 'lru-cache'
 import {
   containingMount,
@@ -61,27 +60,56 @@ import {
   getProjectFileCache,
   isPersistedOperation,
   type PersistedOperation,
-  type PersistedPayload,
   type ProjectFileCache,
   projectFileTtlMs,
 } from './project-file-cache.js'
 import {
   getProjectFileContext as currentProjectFileContext,
-  FILE_OPERATION_REASONS,
-  type FileOperationReason,
   notifyProjectFilesChanged,
   type ProjectFileContext,
   projectFileContextStorage,
 } from './project-file-context.js'
+import { monotonic } from './project-file-store/clock.js'
+import { containedRealPath, resolveTargetPath } from './project-file-store/containment.js'
 import {
-  type DirEntryData,
-  type DirEntryKind,
-  executeProjectIo,
-  getProjectIo,
-  type MutationMethod,
-  ProjectStats,
-  type StatsFields,
-} from './project-io.js'
+  DEFAULT_FILE_ACCESS_OPTIONS,
+  type FileOperationGroupState,
+  type FileOperationMetrics,
+  type FileOperationName,
+  type FileOperationOrigin,
+  isHumanFileOperationReason,
+  type ObservedOperation,
+  type ProjectFileStatus,
+  RESET_REASON,
+} from './project-file-store/contract.js'
+import {
+  containmentError,
+  mountUnavailableError,
+  queueFullError,
+  readOnlyError,
+} from './project-file-store/errors.js'
+import {
+  METRIC_BUCKET_COUNT,
+  METRIC_BUCKET_MS,
+  METRIC_WINDOWS_MS,
+  MetricsRegistry,
+  round3,
+} from './project-file-store/metrics.js'
+import {
+  CachedDirent,
+  type DirValue,
+  dirObservation,
+  type FileValue,
+  fileObservation,
+  missingErrorOf,
+  type Observation,
+  observationFromPersisted,
+  pathObservation,
+  persistedPayloadOf,
+  statObservation,
+  toNegativeOrThrow,
+} from './project-file-store/observation.js'
+import { executeProjectIo, getProjectIo, type MutationMethod, ProjectStats } from './project-io.js'
 import { formatIsoLocal } from './time.js'
 import type { FileAccessOptions } from './types.js'
 
@@ -93,191 +121,24 @@ export {
   type ProjectFileContext,
   type ProjectFilesChangedListener,
 } from './project-file-context.js'
+export {
+  DEFAULT_FILE_ACCESS_OPTIONS,
+  type FileOperationCounters,
+  type FileOperationGroupState,
+  type FileOperationLatency,
+  type FileOperationMetrics,
+  type FileOperationName,
+  type FileOperationOrigin,
+  type FileOperationSeries,
+  isHumanFileOperationReason,
+  type ProjectFileStatus,
+  parseFileOperationReason,
+} from './project-file-store/contract.js'
 export type { FileAccessOptions } from './types.js'
-
-// ---------------------------------------------------------------------------
-// Public contract
-// ---------------------------------------------------------------------------
-
-/** Reasons that represent a person waiting on the answer right now. */
-const HUMAN_REASON: Record<FileOperationReason, boolean> = {
-  open: true,
-  focus: true,
-  manual: true,
-  heartbeat: false,
-  automatic: false,
-  write: true,
-}
-
-/**
- * Reasons that discard the current freshness lifetime and re-verify now.
- *
- * Opening or focusing a page is deliberately NOT one of them: those are the
- * navigations a person performs constantly, and forcing physical I/O for each
- * one is what made a remote project feel unusable. They still count as human
- * demand (queue priority, attention lease) and they still serve the cached
- * observation. An explicit refresh (`manual`) and a write are the events that
- * mean "look again now".
- */
-const RESET_REASON: Record<FileOperationReason, boolean> = {
-  open: false,
-  focus: false,
-  manual: true,
-  heartbeat: false,
-  automatic: false,
-  write: true,
-}
-
-/** Narrow an `X-Memon-Reason` header value; unknown values become undefined. */
-export function parseFileOperationReason(
-  raw: string | null | undefined,
-): FileOperationReason | undefined {
-  if (raw === null || raw === undefined) return undefined
-  const value = raw.trim().toLowerCase()
-  return (FILE_OPERATION_REASONS as readonly string[]).includes(value)
-    ? (value as FileOperationReason)
-    : undefined
-}
-
-export function isHumanFileOperationReason(reason: FileOperationReason | undefined): boolean {
-  return reason !== undefined && HUMAN_REASON[reason]
-}
-
-export const DEFAULT_FILE_ACCESS_OPTIONS: FileAccessOptions = {
-  concurrency: 10,
-  heartbeatMs: 30_000,
-  leaseMs: 90_000,
-  fileMinMs: 5_000,
-  fileMaxMs: 30_000,
-  directoryMinMs: 15_000,
-  directoryMaxMs: 60_000,
-  maintenanceMinMs: 300_000,
-  maintenanceMaxMs: 900_000,
-  failureMinMs: 15_000,
-  failureMaxMs: 300_000,
-  backoffFactor: 2,
-}
-
-export type FileOperationName = 'readFile' | 'readdir' | 'stat' | 'lstat' | 'realpath' | 'write'
-export type FileOperationOrigin = 'human' | 'automatic'
-
-/** Operations that own a cache entry (`write` is scheduled but never cached). */
-type ObservedOperation = Exclude<FileOperationName, 'write'>
-
-export interface ProjectFileStatus {
-  /** Process instance token; invalidates every client version assumption. */
-  epoch: string
-  /** Wall-clock ms of the oldest successful observation in scope, null when none. */
-  oldestVerifiedAt: number | null
-  /** True when some dependency in scope has no successful observation yet. */
-  incomplete: boolean
-  queued: number
-  checking: number
-  /**
-   * Errno-style CODE only (for example `EACCES`, `ENXIO`, `EIO`), never a
-   * message, root or path: this object is serialized into a browser response
-   * header.
-   */
-  error: string | null
-  /** Dependency observation vector token — NOT a semantic body hash. */
-  version: string
-  /**
-   * True when this root is read directly (`storage: local`): nothing is
-   * scheduled or cached, so there is no freshness to report and `version`
-   * is the constant `'direct'`.
-   */
-  direct?: boolean
-}
-
-export interface FileOperationLatency {
-  meanMs: number
-  p95Ms: number
-}
-
-export interface FileOperationCounters {
-  /** Physical operations completed in the window (a shared op counts once). */
-  samples: number
-  errors: number
-  cacheHits: number
-  /** Extra callers that joined an existing task instead of adding I/O. */
-  coalesced: number
-  /** Application bytes returned by physical reads. */
-  readBytes: number
-  queueWaitMs: FileOperationLatency
-  executionMs: FileOperationLatency
-}
-
-export interface FileOperationSeries extends FileOperationCounters {
-  storageGroup: string
-  operation: FileOperationName
-  origin: FileOperationOrigin
-}
-
-export interface FileOperationGroupState {
-  storageGroup: string
-  concurrency: number
-  inFlight: number
-  queued: number
-  oldestWaitingAgeMs: number | null
-}
-
-export interface FileOperationMetrics {
-  epoch: string
-  /** ISO8601 with timezone offset. */
-  generatedAt: string
-  windowMs: number
-  availableWindowsMs: number[]
-  options: FileAccessOptions
-  overall: FileOperationCounters
-  byOrigin: Record<FileOperationOrigin, FileOperationCounters>
-  byOperation: Record<FileOperationName, FileOperationCounters>
-  series: FileOperationSeries[]
-  groups: FileOperationGroupState[]
-  inFlight: number
-  queued: number
-  oldestWaitingAgeMs: number | null
-  cacheEntries: number
-  cachedContentBytes: number
-}
 
 // ---------------------------------------------------------------------------
 // Internal state shapes
 // ---------------------------------------------------------------------------
-
-/** Directory entry kinds and stat fields travel with the isolated worker. */
-type CachedDirEntry = DirEntryData
-
-interface FileValue {
-  kind: 'file'
-  bytes: Buffer
-  /** Lazily memoised utf8 decode — most project documents are read as utf8. */
-  text?: string
-}
-interface DirValue {
-  kind: 'dir'
-  entries: CachedDirEntry[]
-}
-interface StatValue {
-  kind: 'stat'
-  stats: Stats
-}
-interface PathValue {
-  kind: 'path'
-  target: string
-}
-
-type PresentValue = FileValue | DirValue | StatValue | PathValue
-
-/** A successful observation: either present data or a successful "missing". */
-interface Observation {
-  present: boolean
-  value: PresentValue | null
-  /** The original ENOENT/ENOTDIR error, replayed on cached-missing hits. */
-  missingError: NodeJS.ErrnoException | null
-  fingerprint: string
-  /** Cached content bytes attributable to this observation. */
-  bytes: number
-}
 
 interface StoreEntry {
   key: string
@@ -378,536 +239,6 @@ const ATTENTION_SWEEP_INTERVAL_MS = 1_000
 const MAX_QUEUED_PER_GROUP = 2_048
 /** Mount-table snapshot lifetime; the read is OS-local, never remote. */
 const MOUNT_TABLE_TTL_MS = 1_000
-
-const METRIC_BUCKET_MS = 5_000
-const METRIC_BUCKET_COUNT = 180
-const METRIC_WINDOWS_MS = [60_000, 300_000, 900_000]
-const HISTOGRAM_BOUNDS = [
-  1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536,
-  131_072,
-]
-const HISTOGRAM_LEN = HISTOGRAM_BOUNDS.length + 1
-
-const ALL_OPERATIONS: FileOperationName[] = [
-  'readFile',
-  'readdir',
-  'stat',
-  'lstat',
-  'realpath',
-  'write',
-]
-
-function monotonic(): number {
-  return performance.now()
-}
-
-// ---------------------------------------------------------------------------
-// Bounded rolling metrics
-// ---------------------------------------------------------------------------
-
-interface MetricBucket {
-  slot: number
-  samples: number
-  errors: number
-  cacheHits: number
-  coalesced: number
-  readBytes: number
-  execSum: number
-  waitSum: number
-  exec: Uint32Array
-  wait: Uint32Array
-}
-
-interface MetricSeriesState {
-  storageGroup: string
-  operation: FileOperationName
-  origin: FileOperationOrigin
-  buckets: (MetricBucket | undefined)[]
-}
-
-interface Accumulator {
-  samples: number
-  errors: number
-  cacheHits: number
-  coalesced: number
-  readBytes: number
-  execSum: number
-  waitSum: number
-  exec: Uint32Array
-  wait: Uint32Array
-}
-
-function createAccumulator(): Accumulator {
-  return {
-    samples: 0,
-    errors: 0,
-    cacheHits: 0,
-    coalesced: 0,
-    readBytes: 0,
-    execSum: 0,
-    waitSum: 0,
-    exec: new Uint32Array(HISTOGRAM_LEN),
-    wait: new Uint32Array(HISTOGRAM_LEN),
-  }
-}
-
-function histogramIndex(valueMs: number): number {
-  for (let i = 0; i < HISTOGRAM_BOUNDS.length; i += 1) {
-    if (valueMs <= HISTOGRAM_BOUNDS[i]!) return i
-  }
-  return HISTOGRAM_BOUNDS.length
-}
-
-function percentileMs(hist: Uint32Array, total: number, ratio: number): number {
-  if (total === 0) return 0
-  const target = Math.max(1, Math.ceil(total * ratio))
-  let cumulative = 0
-  for (let i = 0; i < hist.length; i += 1) {
-    cumulative += hist[i]!
-    if (cumulative >= target) {
-      const bound = HISTOGRAM_BOUNDS[i]
-      return bound ?? HISTOGRAM_BOUNDS[HISTOGRAM_BOUNDS.length - 1]! * 2
-    }
-  }
-  return HISTOGRAM_BOUNDS[HISTOGRAM_BOUNDS.length - 1]! * 2
-}
-
-function round3(value: number): number {
-  return Math.round(value * 1000) / 1000
-}
-
-function toCounters(acc: Accumulator): FileOperationCounters {
-  return {
-    samples: acc.samples,
-    errors: acc.errors,
-    cacheHits: acc.cacheHits,
-    coalesced: acc.coalesced,
-    readBytes: acc.readBytes,
-    queueWaitMs: {
-      meanMs: acc.samples === 0 ? 0 : round3(acc.waitSum / acc.samples),
-      p95Ms: percentileMs(acc.wait, acc.samples, 0.95),
-    },
-    executionMs: {
-      meanMs: acc.samples === 0 ? 0 : round3(acc.execSum / acc.samples),
-      p95Ms: percentileMs(acc.exec, acc.samples, 0.95),
-    },
-  }
-}
-
-class MetricsRegistry {
-  private readonly series = new Map<string, MetricSeriesState>()
-
-  private seriesFor(
-    storageGroup: string,
-    operation: FileOperationName,
-    origin: FileOperationOrigin,
-  ): MetricSeriesState {
-    const key = `${storageGroup}\u0000${operation}\u0000${origin}`
-    let state = this.series.get(key)
-    if (state === undefined) {
-      state = {
-        storageGroup,
-        operation,
-        origin,
-        buckets: new Array<MetricBucket | undefined>(METRIC_BUCKET_COUNT),
-      }
-      this.series.set(key, state)
-    }
-    return state
-  }
-
-  private bucketFor(state: MetricSeriesState): MetricBucket {
-    const slot = Math.floor(monotonic() / METRIC_BUCKET_MS)
-    const index = ((slot % METRIC_BUCKET_COUNT) + METRIC_BUCKET_COUNT) % METRIC_BUCKET_COUNT
-    let bucket = state.buckets[index]
-    if (bucket === undefined) {
-      bucket = {
-        slot,
-        samples: 0,
-        errors: 0,
-        cacheHits: 0,
-        coalesced: 0,
-        readBytes: 0,
-        execSum: 0,
-        waitSum: 0,
-        exec: new Uint32Array(HISTOGRAM_LEN),
-        wait: new Uint32Array(HISTOGRAM_LEN),
-      }
-      state.buckets[index] = bucket
-    } else if (bucket.slot !== slot) {
-      bucket.slot = slot
-      bucket.samples = 0
-      bucket.errors = 0
-      bucket.cacheHits = 0
-      bucket.coalesced = 0
-      bucket.readBytes = 0
-      bucket.execSum = 0
-      bucket.waitSum = 0
-      bucket.exec.fill(0)
-      bucket.wait.fill(0)
-    }
-    return bucket
-  }
-
-  recordOperation(
-    storageGroup: string,
-    operation: FileOperationName,
-    origin: FileOperationOrigin,
-    sample: { waitMs: number; execMs: number; bytes: number; error: boolean },
-  ): void {
-    const bucket = this.bucketFor(this.seriesFor(storageGroup, operation, origin))
-    bucket.samples += 1
-    bucket.execSum += sample.execMs
-    bucket.waitSum += sample.waitMs
-    const execSlot = histogramIndex(sample.execMs)
-    const waitSlot = histogramIndex(sample.waitMs)
-    bucket.exec[execSlot] = bucket.exec[execSlot]! + 1
-    bucket.wait[waitSlot] = bucket.wait[waitSlot]! + 1
-    bucket.readBytes += sample.bytes
-    if (sample.error) bucket.errors += 1
-  }
-
-  recordCacheHit(
-    storageGroup: string,
-    operation: FileOperationName,
-    origin: FileOperationOrigin,
-  ): void {
-    this.bucketFor(this.seriesFor(storageGroup, operation, origin)).cacheHits += 1
-  }
-
-  recordCoalesced(
-    storageGroup: string,
-    operation: FileOperationName,
-    origin: FileOperationOrigin,
-  ): void {
-    this.bucketFor(this.seriesFor(storageGroup, operation, origin)).coalesced += 1
-  }
-
-  snapshot(windowMs: number): {
-    overall: FileOperationCounters
-    byOrigin: Record<FileOperationOrigin, FileOperationCounters>
-    byOperation: Record<FileOperationName, FileOperationCounters>
-    series: FileOperationSeries[]
-  } {
-    const currentSlot = Math.floor(monotonic() / METRIC_BUCKET_MS)
-    const oldestSlot = currentSlot - Math.max(1, Math.ceil(windowMs / METRIC_BUCKET_MS)) + 1
-
-    const overall = createAccumulator()
-    const byOrigin: Record<FileOperationOrigin, Accumulator> = {
-      human: createAccumulator(),
-      automatic: createAccumulator(),
-    }
-    const byOperation = {} as Record<FileOperationName, Accumulator>
-    for (const operation of ALL_OPERATIONS) byOperation[operation] = createAccumulator()
-    const series: FileOperationSeries[] = []
-
-    for (const state of this.series.values()) {
-      const acc = createAccumulator()
-      for (const bucket of state.buckets) {
-        if (bucket === undefined) continue
-        if (bucket.slot < oldestSlot || bucket.slot > currentSlot) continue
-        mergeBucket(acc, bucket)
-      }
-      if (acc.samples === 0 && acc.cacheHits === 0 && acc.coalesced === 0) continue
-      mergeAccumulator(overall, acc)
-      mergeAccumulator(byOrigin[state.origin], acc)
-      mergeAccumulator(byOperation[state.operation], acc)
-      series.push({
-        storageGroup: state.storageGroup,
-        operation: state.operation,
-        origin: state.origin,
-        ...toCounters(acc),
-      })
-    }
-
-    series.sort(
-      (a, b) =>
-        a.storageGroup.localeCompare(b.storageGroup) ||
-        a.operation.localeCompare(b.operation) ||
-        a.origin.localeCompare(b.origin),
-    )
-
-    const operations = {} as Record<FileOperationName, FileOperationCounters>
-    for (const operation of ALL_OPERATIONS) {
-      operations[operation] = toCounters(byOperation[operation])
-    }
-
-    return {
-      overall: toCounters(overall),
-      byOrigin: {
-        human: toCounters(byOrigin.human),
-        automatic: toCounters(byOrigin.automatic),
-      },
-      byOperation: operations,
-      series,
-    }
-  }
-}
-
-function mergeBucket(acc: Accumulator, bucket: MetricBucket): void {
-  acc.samples += bucket.samples
-  acc.errors += bucket.errors
-  acc.cacheHits += bucket.cacheHits
-  acc.coalesced += bucket.coalesced
-  acc.readBytes += bucket.readBytes
-  acc.execSum += bucket.execSum
-  acc.waitSum += bucket.waitSum
-  for (let i = 0; i < HISTOGRAM_LEN; i += 1) {
-    acc.exec[i] = acc.exec[i]! + bucket.exec[i]!
-    acc.wait[i] = acc.wait[i]! + bucket.wait[i]!
-  }
-}
-
-function mergeAccumulator(target: Accumulator, source: Accumulator): void {
-  target.samples += source.samples
-  target.errors += source.errors
-  target.cacheHits += source.cacheHits
-  target.coalesced += source.coalesced
-  target.readBytes += source.readBytes
-  target.execSum += source.execSum
-  target.waitSum += source.waitSum
-  for (let i = 0; i < HISTOGRAM_LEN; i += 1) {
-    target.exec[i] = target.exec[i]! + source.exec[i]!
-    target.wait[i] = target.wait[i]! + source.wait[i]!
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Errors and small helpers
-// ---------------------------------------------------------------------------
-
-function readOnlyError(syscall: string, path: string): NodeJS.ErrnoException {
-  const error = new Error(
-    `EROFS: read-only project file access, ${syscall} '${path}'`,
-  ) as NodeJS.ErrnoException
-  error.code = 'EROFS'
-  error.errno = -30
-  error.syscall = syscall
-  error.path = path
-  return error
-}
-
-/**
- * Refusal for a path outside its project file context root, including through
- * a symlink. This is an access error, never a "missing" observation. A request
- * that legitimately spans several projects must open one context per root.
- */
-function containmentError(syscall: string, path: string, root: string): NodeJS.ErrnoException {
-  const error = new Error(
-    `EACCES: path escapes the project file context root '${root}', ${syscall} '${path}'`,
-  ) as NodeJS.ErrnoException
-  error.code = 'EACCES'
-  error.errno = -13
-  error.syscall = syscall
-  error.path = path
-  return error
-}
-
-/** Refusal when a storage group already has the maximum pending operations. */
-function queueFullError(path: string): NodeJS.ErrnoException {
-  const error = new Error(
-    `EBUSY: project file operation queue is full, read '${path}'`,
-  ) as NodeJS.ErrnoException
-  error.code = 'EBUSY'
-  error.errno = -16
-  error.syscall = 'read'
-  error.path = path
-  return error
-}
-
-/**
- * Refusal when the storage behind a project root is gone or was replaced. A
- * vanished SSHFS mountpoint frequently reverts to an ordinary empty local
- * directory, and publishing that as an empty project would look like every
- * file was deleted.
- */
-function mountUnavailableError(syscall: string, root: string): NodeJS.ErrnoException {
-  const error = new Error(
-    `ENXIO: project storage mount is unavailable or was replaced, ${syscall} '${root}'`,
-  ) as NodeJS.ErrnoException
-  error.code = 'ENXIO'
-  error.errno = -6
-  error.syscall = syscall
-  error.path = root
-  return error
-}
-
-/**
- * Minimal `Dirent` reconstruction for cached listings. Node's `Dirent` is not
- * publicly constructible, and callers only use the name plus the type
- * predicates.
- */
-class CachedDirent {
-  readonly name: string
-  readonly parentPath: string
-  private readonly kind: DirEntryKind
-
-  constructor(name: string, parentPath: string, kind: DirEntryKind) {
-    this.name = name
-    this.parentPath = parentPath
-    this.kind = kind
-  }
-
-  /** Deprecated alias Node still exposes. */
-  get path(): string {
-    return this.parentPath
-  }
-
-  isFile(): boolean {
-    return this.kind === 'file'
-  }
-  isDirectory(): boolean {
-    return this.kind === 'directory'
-  }
-  isSymbolicLink(): boolean {
-    return this.kind === 'symlink'
-  }
-  isBlockDevice(): boolean {
-    return false
-  }
-  isCharacterDevice(): boolean {
-    return false
-  }
-  isFIFO(): boolean {
-    return false
-  }
-  isSocket(): boolean {
-    return false
-  }
-}
-
-function fileObservation(bytes: Buffer): Observation {
-  return {
-    present: true,
-    value: { kind: 'file', bytes },
-    missingError: null,
-    fingerprint: `f:${bytes.length}:${createHash('sha1').update(bytes).digest('hex')}`,
-    bytes: bytes.length,
-  }
-}
-
-function dirObservation(entries: CachedDirEntry[]): Observation {
-  const hash = createHash('sha1')
-  for (const name of entries.map((entry) => `${entry.kind[0]}${entry.name}`).sort()) {
-    hash.update(name)
-    hash.update('\u0000')
-  }
-  return {
-    present: true,
-    value: { kind: 'dir', entries },
-    missingError: null,
-    fingerprint: `d:${entries.length}:${hash.digest('hex')}`,
-    bytes: 0,
-  }
-}
-
-function statObservation(fields: StatsFields): Observation {
-  return {
-    present: true,
-    value: { kind: 'stat', stats: new ProjectStats(fields) as unknown as Stats },
-    missingError: null,
-    fingerprint: `s:${String(fields.mtimeMs)}:${String(fields.size)}:${String(fields.ino)}:${String(fields.mode)}`,
-    bytes: 0,
-  }
-}
-
-function pathObservation(target: string): Observation {
-  return {
-    present: true,
-    value: { kind: 'path', target },
-    missingError: null,
-    fingerprint: `p:${target}`,
-    bytes: 0,
-  }
-}
-
-function missingObservation(error: NodeJS.ErrnoException): Observation {
-  return {
-    present: false,
-    value: null,
-    missingError: error,
-    fingerprint: `missing:${error.code ?? 'ENOENT'}`,
-    bytes: 0,
-  }
-}
-
-function resolveTargetPath(target: PathLike): string | null {
-  if (typeof target === 'string') return resolve(target)
-  if (Buffer.isBuffer(target)) return resolve(target.toString('utf8'))
-  if (target instanceof URL) {
-    if (target.protocol !== 'file:') return null
-    return resolve(fileURLToPath(target))
-  }
-  return null
-}
-
-/**
- * Symlink-aware containment. `keepFinalLink` leaves the last component
- * unresolved (for `lstat`, which must observe the link itself) while still
- * requiring its parent chain to stay inside the root.
- *
- * `resolveReal` performs the physical resolution (the deepest existing
- * ancestor, remainder kept lexically) in the storage group's isolated worker;
- * the decision itself stays here.
- */
-async function containedRealPath(
-  rootReal: string,
-  target: string,
-  syscall: string,
-  keepFinalLink: boolean,
-  resolveReal: (path: string) => Promise<string>,
-): Promise<string> {
-  const anchor = keepFinalLink ? dirname(target) : target
-  const resolved = await resolveReal(anchor)
-  const full = keepFinalLink ? join(resolved, basename(target)) : resolved
-  if (!isWithinPath(rootReal, resolved) || !isWithinPath(rootReal, full)) {
-    throw containmentError(syscall, target, rootReal)
-  }
-  return full
-}
-
-/** The persistable form of a successful observation, or null when it is not persistable. */
-function persistedPayloadOf(observation: Observation): PersistedPayload | null {
-  if (!observation.present) {
-    return { kind: 'missing', code: observation.missingError?.code ?? 'ENOENT' }
-  }
-  const value = observation.value
-  if (value === null) return null
-  switch (value.kind) {
-    case 'file':
-      return { kind: 'file', bytes: value.bytes }
-    case 'dir':
-      return { kind: 'dir', entries: value.entries }
-    case 'stat':
-      return { kind: 'stat', stats: { ...(value.stats as unknown as StatsFields) } }
-    case 'path':
-      // Symlink resolutions are re-observed after a restart: nothing is
-      // persisted that would let a moved link answer from a stale target.
-      return null
-  }
-}
-
-/** Rebuild the in-memory observation a persisted row describes. */
-function observationFromPersisted(payload: PersistedPayload, path: string): Observation {
-  switch (payload.kind) {
-    case 'file':
-      return fileObservation(payload.bytes)
-    case 'dir':
-      return dirObservation(payload.entries)
-    case 'stat':
-      return statObservation(payload.stats)
-    case 'missing': {
-      const error = new Error(
-        `${payload.code}: no such file or directory, access '${path}'`,
-      ) as NodeJS.ErrnoException
-      error.code = payload.code
-      error.errno = payload.code === 'ENOTDIR' ? -20 : -2
-      error.syscall = 'access'
-      error.path = path
-      return missingObservation(error)
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // The store
@@ -2097,26 +1428,6 @@ class ProjectFileStore {
     group.active -= 1
     this.dispatch(group)
   }
-}
-
-/** ENOENT / ENOTDIR are successful negative observations; everything else is an error. */
-function toNegativeOrThrow(error: unknown): Observation {
-  const err = error as NodeJS.ErrnoException
-  if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return missingObservation(err)
-  throw err
-}
-
-/** The replayable negative error for a cached-missing observation. */
-function missingErrorOf(observation: Observation, absolutePath: string): NodeJS.ErrnoException {
-  if (observation.missingError !== null) return observation.missingError
-  const error = new Error(
-    `ENOENT: no such file or directory, access '${absolutePath}'`,
-  ) as NodeJS.ErrnoException
-  error.code = 'ENOENT'
-  error.errno = -2
-  error.syscall = 'access'
-  error.path = absolutePath
-  return error
 }
 
 // ---------------------------------------------------------------------------

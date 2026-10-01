@@ -6,7 +6,7 @@
 
 ## 2. Split metrics, errors and observation
 
-- [ ] 2.1 Move `monotonic`, the public contract, rolling metrics, errno builders, observation values/constructors and containment helpers into `project-file-store/{clock,contract,metrics,errors,observation,containment}.ts`; verify `pnpm --filter @memon/core test` and `pnpm --filter @memon/core typecheck` pass
+- [x] 2.1 Move `monotonic`, the public contract, rolling metrics, errno builders, observation values/constructors and containment helpers into `project-file-store/{clock,contract,metrics,errors,observation,containment}.ts`; verify `pnpm --filter @memon/core test` and `pnpm --filter @memon/core typecheck` pass
 
 ## 3. Extract the scheduler
 
