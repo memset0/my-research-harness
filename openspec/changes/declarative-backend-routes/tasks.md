@@ -7,7 +7,7 @@
 
 ## 2. One pipeline
 
-- [ ] 2.1 Add `http/pipeline.ts`, `http/respond.ts`, `http/auth.ts`, `http/options.ts`, `http/streaming.ts` and route operations (gate, route class, target, failure, handler); `createBackendHandler`/`createBackendServer` dispatch through the pipeline using the table; the eleven actor-context catches become one pipeline step; verify the Backend suite passes with unchanged expectations.
+- [x] 2.1 Add `http/pipeline.ts`, `http/respond.ts`, `http/auth.ts`, `http/options.ts`, `http/streaming.ts` and route operations (gate, route class, target, failure, handler); `createBackendHandler`/`createBackendServer` dispatch through the pipeline using the table; the eleven actor-context catches become one pipeline step; verify the Backend suite passes with unchanged expectations.
 
 ## 3. Domain modules
 

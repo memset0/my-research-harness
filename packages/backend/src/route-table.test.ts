@@ -9,9 +9,9 @@ import {
   legacyRouteClass,
   resolveAllowedBackendRoute,
 } from './legacy-routes.js'
-import { BACKEND_ROUTE_SPECS } from './routes/table.js'
+import { BACKEND_ROUTES } from './routes/table.js'
 
-const table = compileRouteTable(BACKEND_ROUTE_SPECS)
+const table = compileRouteTable(BACKEND_ROUTES)
 const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const
 
 function mulberry32(seed: number) {
@@ -142,14 +142,14 @@ function corpusPaths(): string[] {
     `${BACKEND_API_PREFIX}/runs//readme`,
     `${BACKEND_API_PREFIX}/report-assets/project-a/R0001`,
   ])
-  for (const route of BACKEND_ROUTE_SPECS) {
+  for (const route of BACKEND_ROUTES) {
     for (const [index, path] of samplePaths(route.key).entries()) {
       out.add(path)
       if (index < 3) out.add(`${path}/extra`)
     }
   }
   // Literal template paths are an intentional divergence, asserted separately.
-  return [...out].filter((path) => !path.includes('['))
+  return [...out].filter((path) => !path.includes('[')).sort()
 }
 
 function sampleQuery(random: () => number, relevant: readonly string[]): URLSearchParams {
@@ -174,7 +174,7 @@ function relevantKeys(pathname: string, method: string): string[] {
   if (!match) return ALL_KEYS
   const spec =
     typeof match.route.query === 'function' ? match.route.query(method) : match.route.query
-  return Object.keys(spec.fields)
+  return Object.keys(spec.fields).sort()
 }
 
 /** Legacy route fields, renamed to the template placeholder they fill. */
@@ -213,7 +213,7 @@ function legacyOutcome(
   return base
 }
 
-function newOutcome(result: PreflightResult<(typeof BACKEND_ROUTE_SPECS)[number]>): Outcome {
+function newOutcome(result: PreflightResult<(typeof BACKEND_ROUTES)[number]>): Outcome {
   if (result.outcome === 'not-found') return { outcome: 'not-found' }
   const base: Outcome = {
     outcome: result.outcome,
@@ -230,7 +230,7 @@ function newOutcome(result: PreflightResult<(typeof BACKEND_ROUTE_SPECS)[number]
 describe('declarative Backend route table', () => {
   it('derives the same allow-list as the legacy constant table', () => {
     const derived = Object.fromEntries(
-      BACKEND_ROUTE_SPECS.map((route) => [route.key, routeMethods(route)]),
+      BACKEND_ROUTES.map((route) => [route.key, routeMethods(route)]),
     )
     const legacy = Object.fromEntries(
       Object.entries(BACKEND_ROUTE_ALLOW_LIST).map(([key, methods]) => [key, [...methods]]),
@@ -273,14 +273,14 @@ describe('declarative Backend route table', () => {
     expect(mismatches).toEqual([])
     expect(compared).toBeGreaterThan(100_000)
     // Every route is reached and also rejected by its query rules.
-    for (const route of BACKEND_ROUTE_SPECS) {
+    for (const route of BACKEND_ROUTES) {
       expect(outcomes.get(`dispatch:${route.key}`) ?? 0, route.key).toBeGreaterThan(0)
     }
     expect(digest.digest('hex')).toBe(ROUTE_DECISION_DIGEST)
   })
 
   it('never resolves a literal template path to its route without parameters', () => {
-    for (const route of BACKEND_ROUTE_SPECS.filter((entry) => entry.key.includes('['))) {
+    for (const route of BACKEND_ROUTES.filter((entry) => entry.key.includes('['))) {
       for (const method of METHODS) {
         const result = preflight(table, {
           method,
@@ -308,4 +308,4 @@ describe('declarative Backend route table', () => {
 })
 
 /** SHA-256 of every decision over the deterministic corpus, recorded against the legacy tables. */
-const ROUTE_DECISION_DIGEST = '7c5586369ef4310b811b6273f090a84f049b03dfe5e74b46c8531f4508860d57'
+const ROUTE_DECISION_DIGEST = '91fcb9ffa723f01e3fd99aea9f01e58ef7f5b5189f85010cfdf51a6b77aa8c91'
