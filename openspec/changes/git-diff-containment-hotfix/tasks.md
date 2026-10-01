@@ -9,3 +9,5 @@
 - [x] 2.1 Alias `@memon/backend` to its source in `apps/web/vitest.config.ts` and verify the Web git route tests pass with `packages/backend/dist` temporarily moved aside.
 - [x] 2.2 Make root `scripts.test` rebuild `@memon/core` and `@memon/backend` before `pnpm -r test`, add the root-entry rule to AGENTS.md §6.1, and verify root `pnpm test` (Node 22.19.0) exits 0 with 0 failures across core, backend, skills, web and cli.
 - [x] 2.3 Verify `pnpm -r typecheck` and `biome check .` report 0 errors.
+
+- [x] Follow-up: AGENTS.md §1 now names `resolveContained()` in `containment.ts` instead of the removed `containedRealpath` / per-service `isWithin` helpers.

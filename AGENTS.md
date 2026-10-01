@@ -23,9 +23,9 @@ repository-specific requirements at the end of this file supplement it.
 - **Path containment.** Web routes that accept a path parameter MUST pass it
   through `assertWithinProjectRoots()` (`apps/web/lib/server/path-safety.ts`) before
   touching the filesystem. `@memon/backend` services do not use that helper;
-  each resolves against the project root and applies its own realpath
-  containment check (e.g. `isWithin` in `document-service.ts` /
-  `stream-service.ts`, `containedRealpath` in `git-service.ts`). Any new
+  they resolve every path with `resolveContained()` from
+  `packages/backend/src/containment.ts` (realpath containment, with
+  `mustExist: false` for git paths that may be absent from the worktree). Any new
   path-taking code MUST do one or the other.
 - **Optimistic locking for README/document writes.** Writers carry
   `expectedMtime` plus `expectedHash` (low-resolution mtime on NFS); a
