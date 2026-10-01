@@ -201,7 +201,7 @@ Client IP SHALL be derived from the last entry of the `X-Forwarded-For` request 
 
 ### Requirement: Endpoint classification for future read-only public-share
 
-Every HTTP route SHALL be classified in `apps/web/lib/auth/route-classes.ts` as one of `anon | read | mutating`. Each rule SHALL also declare a `projectFor(method, pathname, searchParams)` function that returns:
+Every HTTP route SHALL be classified in `apps/web/lib/server/auth/route-classes.ts` as one of `anon | read | mutating`. Each rule SHALL also declare a `projectFor(method, pathname, searchParams)` function that returns:
 
 - a project name (string),
 - `'multi'` (the route legitimately aggregates across projects; handler must filter via `req.scopeProjects`),

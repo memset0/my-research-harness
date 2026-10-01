@@ -48,7 +48,7 @@ SHALL parse this block and apply these defaults / validation:
 
 ### Requirement: Startup capability probe for `squeue --me`
 
-The web server runtime (`apps/web/lib/runtime.ts` `init()`) SHALL probe `squeue` capability once during initialization when `Config.slurm.totalNodes !== -1`, AFTER config + auth init and BEFORE warmup.
+The web server runtime (`apps/web/lib/server/runtime.ts` `init()`) SHALL probe `squeue` capability once during initialization when `Config.slurm.totalNodes !== -1`, AFTER config + auth init and BEFORE warmup.
 
 The probe SHALL:
 
@@ -278,7 +278,7 @@ state (no kill-job buttons, no submission affordances). It is read-only.
 ### Requirement: `squeue --me` parser handles `-O` formatted output
 
 The runtime SHALL provide a function `runSqueueMe()` (in
-`apps/web/lib/slurm/squeue.ts`) that executes
+`apps/web/lib/server/slurm/squeue.ts`) that executes
 `execFile('squeue', ['--me', '--noheader', '-O', 'JobID:|,Partition:|,Name:|,StateCompact:|,TimeUsed:|,NumNodes:|,NodeList:|'], { timeout: 10000, maxBuffer: 262144 })`
 and parses the stdout into an array of structured rows.
 
