@@ -121,11 +121,14 @@ src/routes/runs-experiments.ts Run/Experiment reads, Journal, mutations, warning
 src/routes/documents-wiki.ts  Reports, code reviews, READMEs, Wiki, Wiki review
 src/routes/git.ts             Git reads, commit marks, code preview
 src/routes/stream-assets.ts   events, logs, Report/Wiki assets
+src/routes/shared.ts          parameter parsers, query helpers, policies, response helpers
 src/routes/index.ts           BACKEND_ROUTES = concatenation
 src/containment.ts            isContained / resolveContained
 ```
 
-`server.ts` imports only `./http/*` and `./routes/*`; a package-boundary test forbids it from
+`server.ts` imports only `./http/*` and `./routes/*`, and derives the public
+`BACKEND_ROUTE_ALLOW_LIST` from the table (its static type widens from literal keys to
+`Record<string, readonly string[]>`; no consumer relies on the literal key type); a package-boundary test forbids it from
 importing any `*-service` module (D7).
 
 ### D5. One error mapping

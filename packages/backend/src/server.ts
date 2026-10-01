@@ -12,7 +12,7 @@ import { resolveOptions } from './http/options.js'
 import { createRouteHandler } from './http/pipeline.js'
 import { writeError } from './http/respond.js'
 import { compileRouteTable, routeMethods } from './http/route.js'
-import { BACKEND_ROUTES } from './routes/table.js'
+import { BACKEND_ROUTES } from './routes/index.js'
 
 export type {
   BackendHandler,

@@ -9,7 +9,7 @@ import {
   legacyRouteClass,
   resolveAllowedBackendRoute,
 } from './legacy-routes.js'
-import { BACKEND_ROUTES } from './routes/table.js'
+import { BACKEND_ROUTES } from './routes/index.js'
 
 const table = compileRouteTable(BACKEND_ROUTES)
 const METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const

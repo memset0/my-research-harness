@@ -12,7 +12,7 @@
 ## 3. Domain modules
 
 - [x] 3.1 Move runs/experiments and projects/shares route entries with their handlers into `routes/runs-experiments.ts` and `routes/projects-shares.ts`; verify the Backend suite passes.
-- [ ] 3.2 Move documents/wiki, git and stream/asset route entries into `routes/documents-wiki.ts`, `routes/git.ts`, `routes/stream-assets.ts`, assemble them in `routes/index.ts`, and reduce `server.ts` to assembly (≤ 400 lines, every module ≤ 800 lines, checked with `wc -l`); verify the Backend suite passes.
+- [x] 3.2 Move documents/wiki, git and stream/asset route entries into `routes/documents-wiki.ts`, `routes/git.ts`, `routes/stream-assets.ts`, assemble them in `routes/index.ts`, and reduce `server.ts` to assembly (≤ 400 lines, every module ≤ 800 lines, checked with `wc -l`); verify the Backend suite passes.
 
 ## 4. Remove the legacy tables
 
