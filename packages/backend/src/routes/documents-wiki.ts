@@ -21,6 +21,7 @@ import {
   BackendWikiWriteResponseSchema,
   ResourceIdSchema,
 } from '@memon/core'
+import { respondConditionally } from '../conditional-read.js'
 import { BackendDocumentServiceError } from '../document-service.js'
 import {
   BACKEND_CODE_REVIEW_ROUTE,
@@ -98,8 +99,10 @@ const inventoryList =
   ) =>
   async (ctx: RouteContext) => {
     const inventoryOnly = ctx.search.get('inventory') === '1'
-    const result = await list(ctx, inventoryOnly)
-    writeJson(ctx.response, 200, inventoryOnly ? inventory.parse(result) : full.parse(result))
+    await respondConditionally(ctx, async () => {
+      const result = await list(ctx, inventoryOnly)
+      return inventoryOnly ? inventory.parse(result) : full.parse(result)
+    })
   }
 
 /** README read/write addressed by Run or Experiment id. */

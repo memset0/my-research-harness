@@ -8,9 +8,15 @@
 //   request   X-Memon-Attention      opaque per-tab id
 //             X-Memon-Reason         open | focus | manual | heartbeat | automatic | write
 //             X-Memon-Known-Version  semantic version this tab already holds
+//             If-None-Match          list validator this tab already holds
 //   response  X-Memon-Resource-Version  semantic hash of the body
 //             X-Memon-File-Status       JSON getProjectFileStatus() for the request
 //             X-Memon-Epoch             store epoch; a new epoch voids known versions
+//
+// List and inventory responses also carry an `ETag` validator derived from the
+// server's file observations. Sending it back lets the server answer `304`
+// without recomputing the body. The header is set explicitly, which makes the
+// browser bypass its HTTP cache for that fetch, so the `304` reaches us.
 //
 // A `304` means "your known version is still current": we hand back the exact
 // object we returned last time, so TanStack Query sees referential equality and
@@ -62,12 +68,16 @@ export const KNOWN_VERSION_HEADER = 'X-Memon-Known-Version'
 export const RESOURCE_VERSION_HEADER = 'X-Memon-Resource-Version'
 export const FILE_STATUS_HEADER = 'X-Memon-File-Status'
 export const EPOCH_HEADER = 'X-Memon-Epoch'
+export const IF_NONE_MATCH_HEADER = 'If-None-Match'
+export const ETAG_HEADER = 'ETag'
 
 /** Bodies retained for conditional requests. Bounded; oldest entry evicted first. */
 const VERSION_CACHE_LIMIT = 256
 
 interface CachedResource {
-  version: string
+  version: string | null
+  /** List validator, when the response carried one. */
+  etag: string | null
   body: unknown
 }
 
@@ -285,7 +295,8 @@ export function beginResourceRequest(
     [REASON_HEADER]: reason,
   }
   const cached = cacheable && allowConditional ? versionCache.get(url) : undefined
-  if (cached) headers[KNOWN_VERSION_HEADER] = cached.version
+  if (cached?.version) headers[KNOWN_VERSION_HEADER] = cached.version
+  if (cached?.etag) headers[IF_NONE_MATCH_HEADER] = cached.etag
   return { url, reason, cacheable, conditional: cached !== undefined, headers }
 }
 
@@ -343,16 +354,18 @@ export function recordResourceResponse(
   applyEpoch(response)
   rememberStatus(request, response)
   const version = response.headers.get(RESOURCE_VERSION_HEADER)
-  if (!version || !request.cacheable) return body
+  const etag = response.headers.get(ETAG_HEADER)
+  if ((!version && !etag) || !request.cacheable) return body
   const previous = versionCache.get(request.url)
   if (
     previous &&
+    version &&
     previous.version !== version &&
     request.headers[ATTENTION_HEADER] === resourceAttentionId()
   )
     changedResources += 1
   versionCache.delete(request.url)
-  versionCache.set(request.url, { version, body })
+  versionCache.set(request.url, { version, etag, body })
   if (versionCache.size > VERSION_CACHE_LIMIT) {
     const oldest = versionCache.keys().next()
     if (!oldest.done) versionCache.delete(oldest.value)

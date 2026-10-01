@@ -29,9 +29,9 @@
 
 ## 5. Conditional list heartbeats (D5)
 
-- [ ] 5.1 Add the dependency recorder, validator LRU and conditional read operation; make the list/inventory routes conditional with `ETag` + `Cache-Control: private, no-cache`; verify route tests for 304 on unchanged, 200 on changed, unknown validator, and authorization before the check
-- [ ] 5.2 Pass backend `304`s through the direct runtime with freshness headers; verify a direct-runtime test
-- [ ] 5.3 Store validators in the browser resource protocol and send `If-None-Match`; verify resource-protocol / `jsonFetch` tests (header sent, 304 reuses the same object, evicted body retries)
+- [x] 5.1 Add the dependency recorder, validator LRU and conditional read operation; make the list/inventory routes conditional with `ETag` + `Cache-Control: private, no-cache`; verify route tests for 304 on unchanged, 200 on changed, unknown validator, and authorization before the check
+- [x] 5.2 Pass backend `304`s through the direct runtime with freshness headers; verify a direct-runtime test
+- [x] 5.3 Store validators in the browser resource protocol and send `If-None-Match`; verify resource-protocol / `jsonFetch` tests (header sent, 304 reuses the same object, evicted body retries)
 
 ## 6. Interface fixes (D6)
 

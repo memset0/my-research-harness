@@ -26,6 +26,7 @@ import {
   BackendWarningMutationResponseSchema,
   BackendWarningsResponseSchema,
 } from '@memon/core'
+import { respondConditionally } from '../conditional-read.js'
 import {
   BACKEND_ANOMALIES_ROUTE,
   BACKEND_EXPERIMENT_ARCHIVE_ROUTE,
@@ -80,15 +81,25 @@ const id = { id: resourceParam }
 
 // --- Project data reads ------------------------------------------------------
 
-const projectRead = (handle: (ctx: RouteContext) => Promise<unknown>): RouteOperation =>
+const projectRead = (
+  handle: (ctx: RouteContext) => Promise<unknown>,
+  /** List reads answer `If-None-Match` from the summary index (`ETag`/304). */
+  conditional: (ctx: RouteContext) => boolean = () => false,
+): RouteOperation =>
   op(read, {
     project: 'query',
     available: requireProject(({ options }) => options.projectService !== undefined),
     failure: httpError(500, 'INTERNAL', 'Backend Project read failed'),
     async handle(ctx) {
+      if (conditional(ctx)) {
+        await respondConditionally(ctx, () => handle(ctx))
+        return
+      }
       writeJson(ctx.response, 200, await handle(ctx))
     },
   })
+
+const always = () => true
 
 /** Project data reads answer an unserved method with 404, not 405. */
 const projectDataRoute = (
@@ -337,7 +348,7 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
       return inventoryOnly
         ? BackendResourceInventoryResponseSchema.parse(result)
         : BackendExperimentListResponseSchema.parse(result)
-    }),
+    }, always),
     POST: experimentMutation(createExperiment),
   }),
   projectDataRoute(
@@ -382,8 +393,10 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     id,
   ),
   projectDataRoute(BACKEND_HYPOTHESES_ROUTE, projectQuery(), {
-    GET: projectRead(async ({ options, project }) =>
-      BackendHypothesesResponseSchema.parse(await options.projectService!.getHypotheses(project)),
+    GET: projectRead(
+      async ({ options, project }) =>
+        BackendHypothesesResponseSchema.parse(await options.projectService!.getHypotheses(project)),
+      always,
     ),
   }),
   projectDataRoute(
@@ -394,25 +407,29 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
       countOnly: optional(oneOf('1')),
     }),
     {
-      GET: projectRead(async ({ options, project, search }) => {
-        const service = options.projectService!
-        if (search.get('countOnly') === '1' && service.getJournalCount) {
-          return BackendJournalCountResponseSchema.parse(await service.getJournalCount(project))
-        }
-        const journal = BackendJournalResponseSchema.parse(await service.getJournal(project))
-        if (search.get('countOnly') === '1') {
-          return BackendJournalCountResponseSchema.parse({ totalEvents: journal.events.length })
-        }
-        const before = search.get('before')
-        const limit = search.get('limit')
-        const events = before
-          ? journal.events.filter((event) => event.timestamp < before)
-          : journal.events
-        return BackendJournalResponseSchema.parse({
-          ...journal,
-          events: limit ? events.slice(0, Number(limit)) : events,
-        })
-      }),
+      GET: projectRead(
+        async ({ options, project, search }) => {
+          const service = options.projectService!
+          if (search.get('countOnly') === '1' && service.getJournalCount) {
+            return BackendJournalCountResponseSchema.parse(await service.getJournalCount(project))
+          }
+          const journal = BackendJournalResponseSchema.parse(await service.getJournal(project))
+          if (search.get('countOnly') === '1') {
+            return BackendJournalCountResponseSchema.parse({ totalEvents: journal.events.length })
+          }
+          const before = search.get('before')
+          const limit = search.get('limit')
+          const events = before
+            ? journal.events.filter((event) => event.timestamp < before)
+            : journal.events
+          return BackendJournalResponseSchema.parse({
+            ...journal,
+            events: limit ? events.slice(0, Number(limit)) : events,
+          })
+        },
+        ({ options, search }) =>
+          search.get('countOnly') === '1' && options.projectService?.getJournalCount !== undefined,
+      ),
     },
   ),
   {
@@ -442,8 +459,10 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     },
   },
   projectDataRoute(BACKEND_ANOMALIES_ROUTE, projectQuery(), {
-    GET: projectRead(async ({ options, project }) =>
-      BackendAnomaliesResponseSchema.parse(await options.projectService!.getAnomalies(project)),
+    GET: projectRead(
+      async ({ options, project }) =>
+        BackendAnomaliesResponseSchema.parse(await options.projectService!.getAnomalies(project)),
+      always,
     ),
   }),
   {

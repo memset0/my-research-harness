@@ -549,6 +549,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     marks: WikiReviewMark[],
   ): Promise<Map<string, WikiReview> | null> {
     try {
+      await this.gitMarker(project)
       return await deriveWikiReview(project.root, pagePaths, marks, this.wikiGitOptions(project))
     } catch (error) {
       if (
@@ -646,6 +647,32 @@ export class FilesystemDocumentService implements BackendDocumentService {
         Math.max(this.policy.walkRefreshMs, RUN_INVENTORY_REFRESH_MS),
         (target) => discoverRuns(target, { includeArchived: true }),
       ),
+    )
+  }
+
+  /**
+   * A fingerprint of the Project's git state for conditional wiki reads: the
+   * index and HEAD reflog of an ordinary `.git` directory (commits, checkouts
+   * and staging touch them). Without one, a 60 s time bucket stands in, so a
+   * validator never outlives a minute of unobserved history.
+   */
+  private async gitMarker(project: ProjectConfig): Promise<void> {
+    const git = join(project.root, '.git')
+    await projectReadIndex(project.root).observe(
+      `git:${git}`,
+      this.policy.listMaxAgeMs,
+      async () => {
+        const [directory, index, reflog] = await Promise.all([
+          statObservation(git),
+          statObservation(join(git, 'index')),
+          statObservation(join(git, 'logs', 'HEAD')),
+        ])
+        if (directory.observed?.isDirectory()) {
+          return { fingerprint: `git:${index.fingerprint ?? '-'}:${reflog.fingerprint ?? '-'}` }
+        }
+        return { fingerprint: `bucket:${Math.floor(Date.now() / 60_000)}` }
+      },
+      async () => true,
     )
   }
 

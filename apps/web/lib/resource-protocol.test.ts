@@ -6,8 +6,10 @@ import {
   beginResourceRequest,
   consumeResourceChanges,
   EPOCH_HEADER,
+  ETAG_HEADER,
   FILE_STATUS_HEADER,
   getResourceStatusSnapshot,
+  IF_NONE_MATCH_HEADER,
   KNOWN_VERSION_HEADER,
   markResourceOpen,
   REASON_HEADER,
@@ -113,6 +115,36 @@ describe('resource request headers', () => {
     )
     expect(beginResourceRequest('/api/wiki').headers[KNOWN_VERSION_HEADER]).toBe('v1')
     expect(beginResourceRequest('/api/reports').headers[KNOWN_VERSION_HEADER]).toBeUndefined()
+  })
+})
+
+describe('list validators', () => {
+  it('sends the remembered ETag back as If-None-Match next to the known version', () => {
+    recordResourceResponse(
+      beginResourceRequest('/api/experiments?project=p'),
+      jsonResponse({
+        [RESOURCE_VERSION_HEADER]: 'v1',
+        [ETAG_HEADER]: 'W/"abc"',
+        [FILE_STATUS_HEADER]: statusHeader(),
+      }),
+      { experiments: [] },
+    )
+    const next = beginResourceRequest('/api/experiments?project=p')
+    expect(next.headers[IF_NONE_MATCH_HEADER]).toBe('W/"abc"')
+    expect(next.headers[KNOWN_VERSION_HEADER]).toBe('v1')
+    expect(next.conditional).toBe(true)
+  })
+
+  it('omits If-None-Match on the unconditional retry and for unseen urls', () => {
+    recordResourceResponse(
+      beginResourceRequest('/api/wiki'),
+      jsonResponse({ [ETAG_HEADER]: 'W/"w"' }),
+      { pages: [] },
+    )
+    expect(beginResourceRequest('/api/wiki', undefined, false).headers[IF_NONE_MATCH_HEADER]).toBe(
+      undefined,
+    )
+    expect(beginResourceRequest('/api/reports').headers[IF_NONE_MATCH_HEADER]).toBeUndefined()
   })
 })
 

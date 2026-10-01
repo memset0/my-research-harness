@@ -131,6 +131,26 @@ describe('direct central resource priority', () => {
   })
 })
 
+describe('direct central conditional lists', () => {
+  it('passes a backend 304 through with the validator and freshness headers', async () => {
+    const runtime = directCentralRuntime(config)
+    const url = 'http://central.test/api/hypotheses?host=local&project=research'
+    const first = await runtime.dispatch({ request: new Request(url), actor: { role: 'owner' } })
+    expect(first.status).toBe(200)
+    const etag = first.headers.get('etag')
+    expect(etag).toMatch(/^W\/"/)
+    expect(first.headers.get('cache-control')).toBe('private, no-cache')
+    const again = await runtime.dispatch({
+      request: new Request(url, { headers: { 'if-none-match': etag! } }),
+      actor: { role: 'owner' },
+    })
+    expect(again.status).toBe(304)
+    expect(again.headers.get('etag')).toBe(etag)
+    expect(again.headers.get('x-memon-epoch')).toBe(runtime.instanceEpoch)
+    expect(await again.text()).toBe('')
+  })
+})
+
 describe('direct central storage mode', () => {
   /** The storage mode the request context carried, or `'no-context'`. */
   async function contextStorage(projects: readonly ProjectConfig[]): Promise<unknown> {

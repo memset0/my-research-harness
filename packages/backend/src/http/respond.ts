@@ -15,11 +15,17 @@ import {
   MAX_BACKEND_GIT_CONTROL_BODY_BYTES,
 } from './paths.js'
 
-export function endJson(response: ServerResponse, status: number, payload: string): void {
+export function endJson(
+  response: ServerResponse,
+  status: number,
+  payload: string,
+  headers: Record<string, string> = {},
+): void {
   response.writeHead(status, {
     'cache-control': 'no-store',
     'content-length': Buffer.byteLength(payload),
     'content-type': 'application/json; charset=utf-8',
+    ...headers,
   })
   response.end(payload)
 }
@@ -29,6 +35,7 @@ export function writeJson(
   status: number,
   body: unknown,
   maxBytes = MAX_BACKEND_CONTROL_JSON_BYTES,
+  headers: Record<string, string> = {},
 ): void {
   const payload = JSON.stringify(body)
   if (Buffer.byteLength(payload) > maxBytes) {
@@ -44,7 +51,7 @@ export function writeJson(
     endJson(response, 500, boundedError)
     return
   }
-  endJson(response, status, payload)
+  endJson(response, status, payload, headers)
 }
 
 export function writeError(
