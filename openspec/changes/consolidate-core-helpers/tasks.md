@@ -6,8 +6,8 @@
 
 ## 2. Frontmatter splitting (D2)
 
-- [ ] 2.1 Add `splitFrontmatter` and route wiki, code-review, frontmatter-patch, deprecation, journal append, v6→v7 and digests-to-wiki through it
-- [ ] 2.2 Add a cross-fixture table test (BOM / CRLF / none / empty / unterminated) over the splitter and its consumers
+- [x] 2.1 Add `splitFrontmatter` and route wiki, code-review, frontmatter-patch, deprecation, journal append and v6→v7 through it (digests-to-wiki already goes through the wiki parser)
+- [x] 2.2 Add a cross-fixture table test (BOM / CRLF / none / empty / unterminated) over the splitter and its consumers
 
 ## 3. Atomic writes (D3)
 

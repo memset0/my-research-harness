@@ -18,6 +18,7 @@
 
 import { basename, dirname, join, resolve } from 'node:path'
 import { projectRunPath, resolveRunReference } from '../experiments/run-path.js'
+import { splitFrontmatter } from '../frontmatter.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { parseReadme } from '../readme/parse.js'
@@ -195,13 +196,11 @@ export interface ListDeprecatedRunIdsOptions {
 
 /** Read only the flag from the leading YAML block, never parse the Run body. */
 function readDeprecatedFlag(content: string): boolean {
-  const opening = /^\uFEFF?---[ \t]*\r?\n/.exec(content)
-  if (!opening) return false
-  const closing = /^(?:---|\.\.\.)[ \t]*(?=\r?\n|$)/gm
-  closing.lastIndex = opening[0].length
-  const close = closing.exec(content)
-  if (!close) throw new Error('Run eligibility frontmatter is not terminated')
-  const data = yamlEngine.parse(content.slice(opening[0].length, close.index))
+  const split = splitFrontmatter(content)
+  if (split.status === 'none') return false
+  if (split.status === 'unterminated')
+    throw new Error('Run eligibility frontmatter is not terminated')
+  const data = yamlEngine.parse(split.raw)
   if (data === null || data === undefined) return false
   if (typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('Run eligibility frontmatter must be a YAML mapping')

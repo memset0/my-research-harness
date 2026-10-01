@@ -159,6 +159,8 @@ export {
   type ExperimentDisplaySection,
   type ExperimentDocumentView,
 } from './experiments/view.js'
+export type { FrontmatterSplit } from './frontmatter.js'
+export { splitFrontmatter } from './frontmatter.js'
 export type { FsVersionRecord, FsVersionStatus } from './fs-version/index.js'
 export {
   computeFsVersionStatus,

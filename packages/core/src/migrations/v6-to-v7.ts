@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { type Dirent, promises as fs } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
+import { splitFrontmatter } from '../frontmatter.js'
 import { isRunPath, RUN_DIR_REGEX } from '../ids.js'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { formatIsoLocal } from '../time.js'
@@ -30,9 +31,9 @@ export interface MembershipMigrationPlan {
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 
 function frontmatter(content: string): Record<string, unknown> {
-  const match = /^\uFEFF?---[^\S\n]*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content)
-  if (!match) throw new Error('Missing or unterminated frontmatter')
-  const document = parseDocument(match[1]!)
+  const split = splitFrontmatter(content)
+  if (split.status !== 'ok') throw new Error('Missing or unterminated frontmatter')
+  const document = parseDocument(split.raw)
   if (document.errors.length || !isMap(document.contents)) throw new Error('Malformed frontmatter')
   return document.toJS() as Record<string, unknown>
 }

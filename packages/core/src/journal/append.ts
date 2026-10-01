@@ -17,6 +17,7 @@
 
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { splitFrontmatter } from '../frontmatter.js'
 import type { JournalEvent, JournalEventTag } from '../types.js'
 import { captureLegacyJournalEvent } from './invocation.js'
 import { formatJournalEvent } from './serialize.js'
@@ -60,8 +61,7 @@ export async function appendJournalEvent(input: AppendJournalInput): Promise<voi
 // ---------- internals ----------
 
 function hasFrontmatter(content: string): boolean {
-  if (!content.startsWith('---\n')) return false
-  return content.indexOf('\n---\n', 4) !== -1 || content.indexOf('\n---', 4) !== -1
+  return splitFrontmatter(content).status === 'ok'
 }
 
 function appendAfterFrontmatter(content: string, line: string): string {

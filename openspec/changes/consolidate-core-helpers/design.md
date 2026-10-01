@@ -75,7 +75,10 @@ optional BOM, opener `---[ \t]*` + LF/CRLF, terminator = first line that is
 `---` or `...` with optional trailing spaces/tabs, body = bytes after the
 terminator line. Callers: `wiki/frontmatter.ts`, `code-review/parse.ts`,
 `readme/frontmatter-patch.ts`, `discovery/deprecation.ts`,
-`journal/append.ts`, `migrations/v6-to-v7.ts`, `migrations/digests-to-wiki.ts`.
+`journal/append.ts`, `migrations/v6-to-v7.ts`. `migrations/digests-to-wiki.ts`
+already splits through `parseWikiFrontmatter`; its extra
+`/^\uFEFF?---/` "looks like frontmatter" refusal is kept on purpose, because
+relaxing it would let a malformed Digest migrate as plain body text.
 
 The previous splitters differed: wiki/code-review rejected a BOM and an empty
 block (`---\n---`), accepted `\n---suffix` as a terminator; journal append

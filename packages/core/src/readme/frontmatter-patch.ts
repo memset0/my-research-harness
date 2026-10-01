@@ -10,6 +10,7 @@
 // source and the entire body are copied without reformatting.
 
 import { isMap, isNode, isScalar, parseDocument } from 'yaml'
+import { splitFrontmatter } from '../frontmatter.js'
 
 /** Keys this module knows how to write. */
 export type PatchableRunFrontMatterKey =
@@ -61,14 +62,13 @@ export class RunFrontMatterPatchError extends Error {
 export function patchRunFrontMatter(content: string, patch: RunFrontMatterPatch): string {
   const entries = Object.entries(patch).filter(([, value]) => value !== undefined)
   if (entries.length === 0) return content
-  const opening = /^\uFEFF?---[ \t]*\r?\n/.exec(content)
-  if (!opening)
+  const split = splitFrontmatter(content)
+  if (split.status === 'none')
     throw new RunFrontMatterPatchError('README.md has no YAML frontmatter block to patch')
-  const closing = /^(?:---|\.\.\.)[ \t]*(?=\r?\n|$)/gm
-  closing.lastIndex = opening[0].length
-  const close = closing.exec(content)
-  if (!close) throw new RunFrontMatterPatchError('README.md frontmatter block is not terminated')
-  const source = content.slice(opening[0].length, close.index)
+  if (split.status === 'unterminated')
+    throw new RunFrontMatterPatchError('README.md frontmatter block is not terminated')
+  const prefix = content.slice(0, split.rawStart)
+  const source = content.slice(split.rawStart, split.terminatorStart)
   const document = parseDocument(source)
   if (document.errors.length > 0 || (document.contents && !isMap(document.contents))) {
     throw new RunFrontMatterPatchError('README.md frontmatter must be a valid YAML mapping')
@@ -116,7 +116,7 @@ export function patchRunFrontMatter(content: string, patch: RunFrontMatterPatch)
     }
   }
   if (additions.length > 0) {
-    const newline = opening[0].endsWith('\r\n') ? '\r\n' : '\n'
+    const newline = prefix.endsWith('\r\n') ? '\r\n' : '\n'
     const at = mapping?.flow
       ? pairs.length > 0
         ? nodeRange(pairs[0]!.key)![0]
@@ -142,7 +142,7 @@ export function patchRunFrontMatter(content: string, patch: RunFrontMatterPatch)
     const edit = merged[index]!
     result = result.slice(0, edit.start) + edit.text + result.slice(edit.end)
   }
-  return opening[0] + result + content.slice(close.index)
+  return prefix + result + content.slice(split.terminatorStart)
 }
 
 function nodeRange(node: unknown) {

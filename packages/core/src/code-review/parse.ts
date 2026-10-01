@@ -9,12 +9,9 @@
 // avoided on the write path.
 
 import yaml from 'js-yaml'
+import { splitFrontmatter } from '../frontmatter.js'
 import { CodeReviewFrontMatterRawSchema } from '../schemas.js'
 import type { CodeReviewCompletion, CodeReviewFrontMatter } from '../types.js'
-
-// Opening `---`, lazy frontmatter capture, closing `---` at line start, then
-// the verbatim body. Tolerates CRLF and a missing trailing newline.
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n)?([\s\S]*)$/
 
 export interface SplitCodeReview {
   /** Raw YAML mapping (snake_case, as written). */
@@ -29,17 +26,17 @@ export interface SplitCodeReview {
  * the frontmatter is not a mapping.
  */
 export function splitCodeReviewFrontmatter(content: string): SplitCodeReview | null {
-  const m = FRONTMATTER_RE.exec(content)
-  if (!m) return null
+  const split = splitFrontmatter(content)
+  if (split.status !== 'ok') return null
   let data: unknown
   try {
-    data = yaml.load(m[1] ?? '', { schema: yaml.JSON_SCHEMA })
+    data = yaml.load(split.raw, { schema: yaml.JSON_SCHEMA })
   } catch {
     return null
   }
   if (data == null) data = {}
   if (typeof data !== 'object' || Array.isArray(data)) return null
-  return { data: data as Record<string, unknown>, body: m[2] ?? '' }
+  return { data: data as Record<string, unknown>, body: split.body }
 }
 
 export interface ParsedCodeReview {

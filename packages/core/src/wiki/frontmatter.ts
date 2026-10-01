@@ -9,12 +9,8 @@
 // place.
 
 import yaml from 'js-yaml'
-
+import { splitFrontmatter } from '../frontmatter.js'
 import type { WikiDeprecation, WikiFrontmatter } from './types.js'
-
-// Opening `---`, lazy frontmatter capture, closing `---` at line start, then
-// the verbatim body. Tolerates CRLF and a missing trailing newline.
-const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n)?([\s\S]*)$/
 
 export interface ParsedWikiFrontmatter {
   /** null when the file has no frontmatter block or its YAML is unusable. */
@@ -33,10 +29,10 @@ export interface ParsedWikiFrontmatter {
  * show it, and the caller turns `frontmatter === null` into diagnostics.
  */
 export function parseWikiFrontmatter(content: string): ParsedWikiFrontmatter {
-  const match = FRONTMATTER_REGEX.exec(content)
-  if (!match) return { frontmatter: null, body: content, raw: '', error: 'missing frontmatter' }
-  const raw = match[1] ?? ''
-  const body = match[2] ?? ''
+  const split = splitFrontmatter(content)
+  if (split.status !== 'ok')
+    return { frontmatter: null, body: content, raw: '', error: 'missing frontmatter' }
+  const { raw, body } = split
   let data: unknown
   try {
     data = yaml.load(raw, { schema: yaml.JSON_SCHEMA })

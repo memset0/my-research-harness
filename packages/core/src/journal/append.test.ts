@@ -32,6 +32,24 @@ describe('appendJournalEvent', () => {
     expect(content).toContain('[CREATE]')
   })
 
+  it.each([
+    ['CRLF', '---\r\nlast_digest_at: null\r\n---\r\n\r\n'],
+    ['BOM', '\uFEFF---\nlast_digest_at: null\n---\n\n'],
+    ['empty block', '---\n---\n\n'],
+  ])('recognizes existing %s frontmatter instead of prepending a second block', async (_, initial) => {
+    const path = join(dir, 'journal.md')
+    await fs.writeFile(path, initial)
+    await appendJournalEvent({
+      path,
+      event: { timestamp: '2026-05-03T08:28:00+08:00', tag: 'CREATE', body: 'x' },
+    })
+    const content = await fs.readFile(path, 'utf8')
+    expect(content.startsWith(initial)).toBe(true)
+    expect(content.match(/last_digest_at/g)?.length ?? 0).toBe(
+      initial.includes('last_digest_at') ? 1 : 0,
+    )
+  })
+
   it('appends to an existing file without modifying frontmatter', async () => {
     const path = join(dir, 'journal.md')
     const initial = `---
