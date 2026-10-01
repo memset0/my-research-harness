@@ -47,6 +47,24 @@ concurrent task; this change does not touch them.
   scratch copies of the mock projects and has no central block; it is stopped
   and its config (with the first-run password) deleted afterwards.
 
+- **Accept the upstream `cn` package import.** The current registry output
+  for the configured style imports `cn` from the `cn` npm package (a
+  clsx + tailwind-merge drop-in) rather than `@/lib/utils`, and `shadcn add`
+  adds it to `package.json`. Rewriting the import back would be a hand edit of
+  a primitive, so the regenerated files keep it and `cn@^0.4.0` stays declared.
+  Application code keeps using `@/lib/utils`.
+- **Call-site overrides for upstream style drift.** Observed drift after
+  regeneration and its handling, all via call-site `className` (no wrapper was
+  needed because every imported export exists upstream):
+  - `PopoverContent` is now `flex flex-col gap-4`: the four switcher popovers
+    rendered with `p-0` and a header + list get `gap-0`.
+  - `ContextMenuSubTrigger` no longer styles `data-disabled`: the two results
+    column sub-menus pass the disabled styling at the call site.
+  - `TableCell` is now `align-middle`: the results grid cells and the journal
+    table opt back into `align-top` (the datatable component already did).
+  - Accepted as upstream look: table header height/colour, popover/hover-card
+    padding and ring, context-menu item density.
+
 ## Risks / Trade-offs
 
 - [Upstream primitive styling differs from the hand-written one (density,

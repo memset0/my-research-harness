@@ -100,7 +100,7 @@ function InvocationLedger({ project }: { project: ProjectTarget }) {
             <TableHead>parameters</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody className="[&_td]:align-top">
           {records.map((record) => (
             <TableRow key={record.id}>
               <TableCell>

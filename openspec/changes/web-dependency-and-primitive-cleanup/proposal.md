@@ -16,7 +16,10 @@ dialog system.
 - Remove the unused Web dependencies listed above from `apps/web/package.json`
   and refresh `pnpm-lock.yaml`. `js-yaml` and `yaml` both stay because each is
   imported by Web code (frontmatter parsing vs. comment-preserving YAML
-  document edits).
+  document edits). The stale `cn@^0.3.0` declaration is dropped as unused, but
+  the regenerated primitives reintroduce `cn@^0.4.0`: the current shadcn
+  registry for this style imports `cn` from that package and declares it as a
+  component dependency, so it is a real runtime dependency again.
 - Regenerate `components/ui/{context-menu,popover,table,hover-card}.tsx` with
   `shadcn add --overwrite --yes`. Any application-specific styling or export
   the upstream file does not provide moves into a wrapper component outside

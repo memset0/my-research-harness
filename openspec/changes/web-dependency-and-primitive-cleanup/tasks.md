@@ -6,9 +6,9 @@
 
 ## 2. Regenerate shadcn primitives
 
-- [ ] 2.1 Back up the current `context-menu`, `popover`, `table`, `hover-card` primitives to scratch space and record their git history
-- [ ] 2.2 Run `pnpm dlx shadcn@latest add context-menu popover table hover-card --overwrite --yes` in `apps/web`; verify only those four files (and no theme tokens or unrelated files) changed
-- [ ] 2.3 Reconcile every app import of the four primitives against the generated exports; move any non-upstream export or styling into a wrapper outside `components/ui/` and update importers; verify `pnpm --filter @memon/web typecheck` passes and the results-table, wiki, report, inbox, journal, datatable, and permalink-preview tests pass
+- [x] 2.1 Back up the current `context-menu`, `popover`, `table`, `hover-card` primitives to scratch space and record their git history
+- [x] 2.2 Run `pnpm dlx shadcn@latest add context-menu popover table hover-card --overwrite --yes` in `apps/web`; verify only those four files plus the `cn` dependency the registry declares (no theme tokens or unrelated files) changed
+- [x] 2.3 Reconcile every app import of the four primitives against the generated exports; move any non-upstream export or styling into a wrapper outside `components/ui/` and update importers; verify `pnpm --filter @memon/web typecheck` passes and the results-table, wiki, report, inbox, journal, datatable, and permalink-preview tests pass
 
 ## 3. AlertDialog confirmations
 

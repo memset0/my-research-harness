@@ -665,7 +665,7 @@ function WikiIdentity({
             <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 p-0" aria-label="Switch wiki page">
+        <PopoverContent align="start" className="w-80 gap-0 p-0" aria-label="Switch wiki page">
           <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
             <span>Wiki</span>
             <span className="tabular-nums">{pages.length}</span>

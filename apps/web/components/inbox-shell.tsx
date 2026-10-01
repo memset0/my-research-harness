@@ -558,7 +558,7 @@ function SelectedArtifactIdentity({
             <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 p-0" aria-label="Switch report">
+        <PopoverContent align="start" className="w-80 gap-0 p-0" aria-label="Switch report">
           <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
             <span>Reports</span>
             <span className="tabular-nums">{items.length}</span>

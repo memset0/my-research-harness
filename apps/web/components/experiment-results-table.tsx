@@ -1348,7 +1348,11 @@ export function ExperimentResultsTable({
                           <>
                             <ContextMenuSeparator />
                             <ContextMenuSub>
-                              <ContextMenuSubTrigger inset disabled={!resultsViews.canMutate}>
+                              <ContextMenuSubTrigger
+                                inset
+                                disabled={!resultsViews.canMutate}
+                                className="data-disabled:pointer-events-none data-disabled:opacity-50"
+                              >
                                 <ArrowUp className="mr-2 size-4" />
                                 SOTA highlight
                               </ContextMenuSubTrigger>
@@ -1385,7 +1389,11 @@ export function ExperimentResultsTable({
                               </ContextMenuSubContent>
                             </ContextMenuSub>
                             <ContextMenuSub>
-                              <ContextMenuSubTrigger inset disabled={!resultsViews.canMutate}>
+                              <ContextMenuSubTrigger
+                                inset
+                                disabled={!resultsViews.canMutate}
+                                className="data-disabled:pointer-events-none data-disabled:opacity-50"
+                              >
                                 <Columns3 className="mr-2 size-4" />
                                 Decimal places
                               </ContextMenuSubTrigger>
@@ -1464,7 +1472,7 @@ export function ExperimentResultsTable({
                             <TableCell
                               key={column.id}
                               className={cn(
-                                'min-w-24 max-w-[32rem] border-r px-2.5 py-2 last:border-r-0',
+                                'min-w-24 max-w-[32rem] border-r px-2.5 py-2 align-top last:border-r-0',
                                 column.kind === 'variant' && 'min-w-52',
                                 pinSticky && 'sticky z-10',
                                 metric && 'bg-sky-50/40 dark:bg-sky-950/15',

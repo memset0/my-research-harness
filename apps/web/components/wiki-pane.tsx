@@ -181,7 +181,7 @@ function WikiPaneSwitcher({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-80 max-w-[calc(100vw-2rem)] p-0"
+        className="w-80 max-w-[calc(100vw-2rem)] gap-0 p-0"
         aria-label="Switch wiki page"
       >
         <div className="flex items-center justify-between border-b px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
