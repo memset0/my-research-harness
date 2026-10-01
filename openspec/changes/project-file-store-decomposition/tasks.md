@@ -1,8 +1,8 @@
 ## 1. Tests before the split (D1)
 
-- [ ] 1.1 Add `project-file-store.scheduling.test.ts` covering queue saturation (a), promotion and aging (b), success/failure backoff and reset (c), storage loss and recovery (d), and caller abort on an isolated read; verify `pnpm --filter @memon/core exec vitest run src/project-file-store.scheduling.test.ts` passes deterministically in < 10 s with no production edits
-- [ ] 1.2 Add `project-io.test.ts` covering worker crash and respawn, full channel, start failure, shutdown of pending work, errno revival, non-cloneable mutate fallback and pool sizing (e); verify it passes in < 10 s
-- [ ] 1.3 Record the coverage snapshot (public methods reached by 1.1/1.2) and any bugs found in design.md; verify `pnpm --filter @memon/core test` passes
+- [x] 1.1 Add `project-file-store.scheduling.test.ts` covering queue saturation (a), promotion and aging (b), success/failure backoff and reset (c), storage loss and recovery (d), and caller abort on an isolated read; verify `pnpm --filter @memon/core exec vitest run src/project-file-store.scheduling.test.ts` passes deterministically in < 10 s with no production edits
+- [x] 1.2 Add `project-io.test.ts` covering worker crash and respawn, full channel, start failure, shutdown of pending work, errno revival, non-cloneable mutate fallback and pool sizing (e); verify it passes in < 10 s
+- [x] 1.3 Record the coverage snapshot (public methods reached by 1.1/1.2) and any bugs found in design.md; verify `pnpm --filter @memon/core test` passes
 
 ## 2. Split metrics, errors and observation
 

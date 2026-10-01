@@ -100,7 +100,28 @@ Test matrix:
 | (e) | pool sizing | `UV_THREADPOOL_SIZE = clamp(ceil(concurrency)+4, 8, 128)` |
 | (e) timeout | caller abort on an isolated read | caller gets `AbortError`; worker finishes and the slot is released (there is no operation timeout by design) |
 
-Coverage snapshot: filled in by task 2.4 after the tests land.
+Coverage snapshot (what the D1 tests reach; 14 store tests + 11 pool tests,
+~0.4 s together):
+
+- Store public functions: `withProjectFileContext`, `configureProjectFileStore`,
+  `getProjectFileStatus` (root and attention-scoped), `getFileOperationMetrics`,
+  `projectFs.readFile` (cached and abortable raw path), `projectFs.stat`.
+- `ProjectFileStore` methods: `configure`, `effectiveOptions`, `noteStorage`,
+  `status`, `metricsSnapshot`, `containedTarget`, `readFileValue`,
+  `statValue`, `rawReadFile`, and internally `observe`, `resetSchedule`,
+  `touchAttention`, `schedule`, `takeOldestAutomatic`, `takeNext` (aging),
+  `dispatch`, `execute`, `settle`, `applySuccess`, `applyFailure`,
+  `realRoot`, `assertMountIdentity`, `mountTable`.
+- Not reached by D1 (already covered by `project-file-store.test.ts`,
+  `project-file-cache.test.ts` and the domain suites): `listDirValue`,
+  `realpathValue`, `rawStat`, `rawAccess`, `mutate`/`acquire`/`release`,
+  `adoptWrite`, `invalidate`, persistence bridge.
+- `project-io.ts`: `getProjectIo`, `shutdownProjectIo`, `executeProjectIo`
+  (allowlist refusal, direct mutation), pool `configure` / `readFile` /
+  `readdir` / `stat` / `realpath` / `realpathNearest` / `access` / `mutate`,
+  worker `send` / `ensure` / `spawn` / `receive` / `crash` / `dispose`.
+  Not reached: child-entry fallback through `@memon/core` resolution,
+  `direntKindOf`, parent-side `realpathNearest()`.
 
 ### D2 Module split
 Target layout under `packages/core/src/project-file-store/` (dependency
@@ -163,5 +184,25 @@ None: internal refactor; rollback is a revert of the refactor commits.
 
 ## Future
 
-Bugs and oddities found while writing the D1 tests (not fixed here) are listed
-by task 2.4.
+Found while writing the D1 tests; deliberately not fixed in this change (D3):
+
+1. **Uncached operations bypass the group slot budget.** `rawReadFile`
+   (abort signal or non-default flag), `rawStat` (`bigint`), `rawAccess`
+   (write check), the containment resolution done by `projectFs.open`, and
+   `realRoot` / `containedTarget` resolutions call the worker directly: they
+   hold no scheduler slot and are not metered, so the "actual concurrency"
+   limit of `file-operation-scheduler` is not a hard bound for them.
+2. **Queue-full refusals are invisible in status and metrics.** The `EBUSY`
+   for a new or displaced task neither sets the entry's error code nor counts
+   as a metric error, so the footer shows no error while reads are refused.
+3. **`EBUSY` always reports `syscall: 'read'`**, also for `stat`, `lstat`,
+   `readdir` and `realpath` refusals.
+4. **Aged automatic tasks can still be displaced.** `takeOldestAutomatic`
+   picks any non-human task, including automatic work that already earned
+   human-equal priority through aging.
+5. **The real root is memoised for the process lifetime.** A root whose
+   symlink target is changed keeps resolving to the old real path until
+   restart (the mount guard only checks mount identity).
+6. **A worker `error` event while the channel is still connected** rejects
+   every pending request but keeps the child, so later requests go to a
+   process that already reported an error.
