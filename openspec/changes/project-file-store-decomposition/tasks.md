@@ -19,4 +19,4 @@
 ## 5. DAG guard and final verification
 
 - [x] 5.1 Add an import-graph test asserting `project-file-store/*` is acyclic, never reaches `git/**`, and `git/command.ts` never reaches it; verify the test passes and fails when a cycle is introduced locally
-- [ ] 5.2 Run `pnpm --filter @memon/backend test`, the web `lib/server` file-access tests, `pnpm -r typecheck` and `biome check .`; verify 0 failures and 0 Biome errors, then `openspec validate project-file-store-decomposition --strict`
+- [x] 5.2 Run `pnpm --filter @memon/backend test`, the web `lib/server` file-access tests, `pnpm -r typecheck` and `biome check .`; verify 0 failures and 0 Biome errors, then `openspec validate project-file-store-decomposition --strict`
