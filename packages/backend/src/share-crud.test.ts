@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import {
   type ActorContext,
   ActorContextSchema,
@@ -8,6 +7,7 @@ import {
   BackendShareListResponseSchema,
   BackendShareRevokeResponseSchema,
 } from '@memon/core'
+import { actorHeader, startBackend as listenOnLoopback } from '@memon/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { type BackendServerOptions, createBackendServer } from './server.js'
@@ -45,11 +45,7 @@ afterEach(async () => {
   openServers.clear()
 })
 
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
-
-async function startBackend(overrides: Partial<BackendServerOptions> = {}): Promise<string> {
+function startBackend(overrides: Partial<BackendServerOptions> = {}): Promise<string> {
   const server = createBackendServer({
     hostId: 'host-a',
     serviceTokens: { current: SERVICE_TOKEN },
@@ -57,15 +53,7 @@ async function startBackend(overrides: Partial<BackendServerOptions> = {}): Prom
     revision: '0123456789abcdef',
     ...overrides,
   })
-  openServers.add(server)
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  return listenOnLoopback(server, openServers)
 }
 
 async function request(

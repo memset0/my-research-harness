@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net'
 import {
   type ActorContext,
   ActorContextSchema,
@@ -6,6 +5,7 @@ import {
   BackendErrorResponseSchema,
   BackendProjectsResponseSchema,
 } from '@memon/core'
+import { startBackend as listenOnLoopback } from '@memon/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import {
@@ -72,18 +72,8 @@ function options(
   }
 }
 
-async function startBackend(serverOptions: BackendServerOptions): Promise<string> {
-  const server = createBackendServer(serverOptions)
-  openServers.add(server)
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  const address = server.address() as AddressInfo
-  return `http://127.0.0.1:${address.port}`
+function startBackend(serverOptions: BackendServerOptions): Promise<string> {
+  return listenOnLoopback(createBackendServer(serverOptions), openServers)
 }
 
 async function projectsRequest(

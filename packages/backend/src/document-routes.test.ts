@@ -17,6 +17,7 @@ import {
   BackendResourceInventoryResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
+import { createBackendRequest } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { FilesystemDocumentService } from './document-service.js'
@@ -106,29 +107,11 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
-
-async function request(
-  path: string,
-  options: {
-    actor?: ActorContext
-    service?: boolean
-    method?: string
-    body?: unknown
-  } = {},
-): Promise<Response> {
-  const headers = new Headers()
-  if (options.service !== false) headers.set('authorization', `Bearer ${SERVICE_TOKEN}`)
-  if (options.actor) headers.set(BACKEND_ACTOR_CONTEXT_HEADER, actorHeader(options.actor))
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
-  return fetch(`${origin}${path}`, {
-    method: options.method,
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  })
-}
+const request = createBackendRequest<ActorContext>({
+  origin: () => origin,
+  token: SERVICE_TOKEN,
+  actorHeaderName: BACKEND_ACTOR_CONTEXT_HEADER,
+})
 
 function expectPathFree(value: unknown): void {
   const serialized = JSON.stringify(value)

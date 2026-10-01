@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import {
   type ActorContext,
   ActorContextSchema,
@@ -22,12 +20,12 @@ import {
   BackendGitSubmodulesResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
+import { actorHeader, createBackendRequest, git } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { FilesystemGitService } from './git-service.js'
 import { createBackendServer } from './server.js'
 
-const exec = promisify(execFile)
 const SERVICE_TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const CAPABILITIES = {
   projects: true,
@@ -46,11 +44,6 @@ let origin = ''
 let firstSha = ''
 let secondSha = ''
 let server: ReturnType<typeof createBackendServer>
-
-async function git(cwd: string, ...args: string[]): Promise<string> {
-  const result = await exec('git', args, { cwd })
-  return result.stdout.trim()
-}
 
 async function initializeRepo(directory: string): Promise<void> {
   await fs.mkdir(directory, { recursive: true })
@@ -125,29 +118,11 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
-
-async function request(
-  path: string,
-  options: {
-    actor?: ActorContext
-    service?: boolean
-    method?: string
-    body?: unknown
-  } = {},
-): Promise<Response> {
-  const headers = new Headers()
-  if (options.service !== false) headers.set('authorization', `Bearer ${SERVICE_TOKEN}`)
-  if (options.actor) headers.set(BACKEND_ACTOR_CONTEXT_HEADER, actorHeader(options.actor))
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
-  return fetch(`${origin}${path}`, {
-    method: options.method,
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  })
-}
+const request = createBackendRequest<ActorContext>({
+  origin: () => origin,
+  token: SERVICE_TOKEN,
+  actorHeaderName: BACKEND_ACTOR_CONTEXT_HEADER,
+})
 
 function expectNoAbsolutePath(value: unknown): void {
   expect(JSON.stringify(value)).not.toContain(root)

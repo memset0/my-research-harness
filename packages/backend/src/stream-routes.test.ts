@@ -12,6 +12,7 @@ import {
   BackendLogLinesResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
+import { actorHeader } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { createBackendServer } from './server.js'
@@ -41,10 +42,6 @@ let rootB = ''
 let origin = ''
 let server: ReturnType<typeof createBackendServer>
 let service: FilesystemStreamService
-
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
 
 const owner = ActorContextSchema.parse({ role: 'owner' })
 

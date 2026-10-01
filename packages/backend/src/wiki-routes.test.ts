@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import {
   type ActorContext,
   ActorContextSchema,
@@ -18,6 +16,7 @@ import {
   BackendWikiWriteResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
+import { createBackendRequest, git } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { FilesystemDocumentService } from './document-service.js'
@@ -26,7 +25,6 @@ import { FilesystemProjectService } from './project-service.js'
 import { createBackendServer } from './server.js'
 import { FilesystemStreamService } from './stream-service.js'
 
-const exec = promisify(execFile)
 const SERVICE_TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const CAPABILITIES = {
   projects: true,
@@ -127,10 +125,6 @@ const viewer = ActorContextSchema.parse({
   role: 'viewer',
   scopes: [{ host: 'host-a', project: 'research' }],
 })
-
-async function git(cwd: string, ...args: string[]): Promise<string> {
-  return (await exec('git', args, { cwd })).stdout.trim()
-}
 
 async function writeFixtures(target: string): Promise<void> {
   await Promise.all([
@@ -236,28 +230,11 @@ afterAll(async () => {
   ])
 })
 
-async function request(
-  path: string,
-  options: {
-    actor?: ActorContext
-    method?: string
-    body?: unknown
-    base?: string
-  } = {},
-): Promise<Response> {
-  const headers = new Headers({ authorization: `Bearer ${SERVICE_TOKEN}` })
-  if (options.actor) headers.set(BACKEND_ACTOR_CONTEXT_HEADER, actorHeader(options.actor))
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
-  return fetch(`${options.base ?? origin}${path}`, {
-    method: options.method,
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  })
-}
-
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
+const request = createBackendRequest<ActorContext>({
+  origin: () => origin,
+  token: SERVICE_TOKEN,
+  actorHeaderName: BACKEND_ACTOR_CONTEXT_HEADER,
+})
 
 describe('Backend wiki routes', () => {
   it('lists and reads pages through the strict, path-free envelopes', async () => {

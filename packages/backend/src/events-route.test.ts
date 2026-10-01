@@ -1,10 +1,10 @@
-import type { AddressInfo } from 'node:net'
 import {
   type BackendCapabilities,
   BackendErrorResponseSchema,
   BackendEventFrameSchema,
   BackendMetadataSchema,
 } from '@memon/core'
+import { startBackend as listenOnLoopback } from '@memon/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackendEventStream, type BackendEventTimer } from './event-stream.js'
 import {
@@ -60,18 +60,8 @@ afterEach(async () => {
   openServers.clear()
 })
 
-async function startBackend(options: BackendServerOptions): Promise<string> {
-  const server = createBackendServer(options)
-  openServers.add(server)
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  const address = server.address() as AddressInfo
-  return `http://127.0.0.1:${address.port}`
+function startBackend(options: BackendServerOptions): Promise<string> {
+  return listenOnLoopback(createBackendServer(options), openServers)
 }
 
 function options(eventStream: BackendEventStream): BackendServerOptions {

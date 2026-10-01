@@ -6,6 +6,7 @@ import {
   type BackendCapabilities,
   BackendReadmeResponseSchema,
 } from '@memon/core'
+import { actorHeader } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { FilesystemDocumentService } from './document-service.js'
@@ -52,10 +53,6 @@ afterAll(async () => {
     server.close((error) => (error ? reject(error) : resolveClose()))
   })
 })
-
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
 
 async function request(path: string, actor: ActorContext): Promise<Response> {
   return fetch(`${origin}${path}`, {

@@ -15,6 +15,7 @@ import {
   BackendRunResponseSchema,
   BackendRunsResponseSchema,
 } from '@memon/core'
+import { createBackendRequest } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { FilesystemProjectService } from './project-service.js'
@@ -64,19 +65,11 @@ afterAll(async () => {
   })
 })
 
-function actorHeader(actor: ActorContext): string {
-  return Buffer.from(JSON.stringify(actor), 'utf8').toString('base64url')
-}
-
-async function request(
-  path: string,
-  options: { actor?: ActorContext; service?: boolean; method?: string } = {},
-): Promise<Response> {
-  const headers = new Headers()
-  if (options.service !== false) headers.set('authorization', `Bearer ${SERVICE_TOKEN}`)
-  if (options.actor) headers.set(BACKEND_ACTOR_CONTEXT_HEADER, actorHeader(options.actor))
-  return fetch(`${origin}${path}`, { method: options.method, headers })
-}
+const request = createBackendRequest<ActorContext>({
+  origin: () => origin,
+  token: SERVICE_TOKEN,
+  actorHeaderName: BACKEND_ACTOR_CONTEXT_HEADER,
+})
 
 describe('Backend initial Project data routes', () => {
   const owner = ActorContextSchema.parse({ role: 'owner' })

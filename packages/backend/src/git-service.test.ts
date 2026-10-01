@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import {
   BackendCodePreviewResponseSchema,
   BackendCommitMarkDeleteResponseSchema,
@@ -18,19 +16,14 @@ import {
   BackendGitSubmodulesResponseSchema,
   type ProjectConfig,
 } from '@memon/core'
+import { git } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type BackendGitServiceError, FilesystemGitService } from './git-service.js'
 
-const exec = promisify(execFile)
 let root = ''
 let firstSha = ''
 let secondSha = ''
 let service: FilesystemGitService
-
-async function git(cwd: string, ...args: string[]): Promise<string> {
-  const result = await exec('git', args, { cwd })
-  return result.stdout.trim()
-}
 
 async function initializeRepo(directory: string): Promise<void> {
   await fs.mkdir(directory, { recursive: true })

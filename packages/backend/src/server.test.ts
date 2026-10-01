@@ -1,5 +1,4 @@
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import {
   BACKEND_API_MAJOR,
   type BackendCapabilities,
@@ -7,6 +6,7 @@ import {
   BackendMetadataSchema,
   MEMON_RELEASE,
 } from '@memon/core'
+import { startBackend as listenOnLoopback } from '@memon/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type BackendServerOptions, createBackendHandler, createBackendServer } from './server.js'
 
@@ -54,18 +54,8 @@ function options(
   }
 }
 
-async function startBackend(serverOptions: BackendServerOptions): Promise<string> {
-  const server = createBackendServer(serverOptions)
-  openServers.add(server)
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  const address = server.address() as AddressInfo
-  return `http://127.0.0.1:${address.port}`
+function startBackend(serverOptions: BackendServerOptions): Promise<string> {
+  return listenOnLoopback(createBackendServer(serverOptions), openServers)
 }
 
 async function request(
