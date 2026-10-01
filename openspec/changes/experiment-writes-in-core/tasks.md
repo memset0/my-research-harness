@@ -13,8 +13,8 @@
 
 ## 3. Backend adapter
 
-- [ ] 3.1 Rewrite `FilesystemMutationService` methods as adapters over core (resolution, required locks, receipts with file-change details, error/message mapping) injecting `projectFs`; verify with `pnpm --filter @memon/backend test`
-- [ ] 3.2 Add the Backend half of the byte-identical test against the shared golden fixture and verify it passes
+- [x] 3.1 Rewrite `FilesystemMutationService` methods as adapters over core (resolution, required locks, receipts with file-change details, error/message mapping) injecting `projectFs`; verify with `pnpm --filter @memon/backend test`
+- [x] 3.2 Add the Backend half of the byte-identical test against the shared golden fixture and verify it passes
 
 ## 4. Standalone Web adapter
 

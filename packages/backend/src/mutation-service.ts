@@ -1,45 +1,49 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { dirname, join, relative, sep } from 'node:path'
+// Backend adapter over the shared @memon/core mutation primitives.
+//
+// The primitives own every document change (and therefore the bytes every
+// surface writes). This adapter owns what is Backend-specific: Project lookup
+// and Run/Experiment resolution through the cached walks, the required
+// optimistic-lock policy, one invocation receipt per call with typed
+// file-change details, and the mapping of core `MutationError`s onto
+// `BackendMutationError` with the messages the wire has always carried. All
+// filesystem access goes through `projectFs`, so scheduling, containment and
+// cache invalidation are unchanged.
+
+import { join, relative, sep } from 'node:path'
 import {
-  applyWarningOp,
+  createExperiment,
   declaredRunOwner,
-  discoverExperiments,
-  EXPERIMENT_DIR_REGEX,
-  emptyImplementationDocument,
-  emptyInvestigationDocument,
-  emptyResultsDocument,
-  formatIsoLocal,
+  deleteExperiment,
+  type FileChange,
   projectFs as fs,
-  generateRowId,
   type JournalInvocationContext,
   type JournalInvocationDetail,
   JournalRecordingError,
-  nextExperimentId,
+  linkExperimentRun,
+  MutationError,
+  type MutationFs,
+  mutateDocumentWarning,
   type ProjectConfig,
   parseExperimentReadme,
   parseReadme,
-  projectRunPath,
   ResourceIdSchema,
   type Run,
   readExperimentDoc,
   readRunDir,
-  reserializeReadme,
   resolveRunReference,
-  serializeExperimentReadme,
-  serializeImplementationYaml,
-  serializeInvestigationYaml,
-  serializeResultsYaml,
-  WarningOpError,
+  setExperimentArchived,
+  setExperimentStatus,
+  setRunArchiveState,
+  setRunStatus,
+  sha1,
+  unlinkExperimentRun,
   withJournalInvocation,
+  writeExperimentReadme,
+  writeRunReadme,
 } from '@memon/core'
 
-const EXPERIMENTS_SUBDIR = 'docs/experiments'
-const CANONICAL_EXPERIMENT_BUNDLE_FILES = new Set([
-  'README.md',
-  'implementation.yaml',
-  'investigation.yaml',
-  'results.yaml',
-])
+/** `projectFs` is an `fs/promises`-compatible facade; it satisfies the port. */
+const port = fs as unknown as MutationFs
 
 export class BackendMutationError extends Error {
   constructor(
@@ -226,7 +230,7 @@ export class FilesystemMutationService implements BackendMutationService {
   private async experiment(project: ProjectConfig, projectName: string, id: string) {
     const experiment = await readExperimentDoc(project.root, projectName, id)
     if (!experiment) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Experiment not found')
-    return experiment
+    return { id, path: experiment.path }
   }
   /**
    * The invocation-ledger boundary for every non-readonly service call.
@@ -251,7 +255,13 @@ export class FilesystemMutationService implements BackendMutationService {
       return await withJournalInvocation(
         project.root,
         { command, origin: 'web', parameters },
-        action,
+        async (ctx) => {
+          try {
+            return await action(ctx)
+          } catch (error) {
+            throw toBackendError(error)
+          }
+        },
         { standalone: true },
       )
     } catch (error) {
@@ -267,6 +277,17 @@ export class FilesystemMutationService implements BackendMutationService {
       throw error
     }
   }
+  /** Contribute typed file-change details, or mark the call a no-op. */
+  private settle(
+    project: ProjectConfig,
+    ctx: JournalInvocationContext,
+    changes: readonly FileChange[],
+  ): void {
+    if (changes.length === 0) ctx.markOutcome('noop')
+    for (const change of changes) {
+      ctx.addDetail(fileChange(project.root, change.path, change.before, change.after))
+    }
+  }
   async setRunStatus(projectName: string, id: string, input: StatusMutationInput) {
     const project = this.project(projectName)
     return this.record(
@@ -276,56 +297,22 @@ export class FilesystemMutationService implements BackendMutationService {
       async (ctx) => {
         const run = await this.run(project, projectName, id)
         ctx.addDetail({ kind: 'target', type: 'run', id })
-        return this.mutate(
-          join(run.path, 'README.md'),
-          input.expectedMtime,
-          input.expectedHash,
-          async (content) => {
-            const doc = parseReadme(content)
-            const prev = doc.frontMatter.status
-            if (prev === input.status)
-              return {
-                content: null,
-                result: {
-                  ok: true,
-                  mtime: 0,
-                  unchanged: true,
-                  prevStatus: prev,
-                  nextStatus: prev,
-                } as MutationResult,
-              }
-            if (input.status === 'RUNNING' && doc.frontMatter.archived)
-              throw new BackendMutationError('FORBIDDEN', 'Archived Run cannot become RUNNING')
-            const updatedAt = formatIsoLocal(this.now())
-            doc.frontMatter.status = input.status as never
-            doc.frontMatter.updatedAt = updatedAt
-            if (
-              (input.status === 'FINISHED' || input.status === 'FAILED') &&
-              doc.frontMatter.finishedAt === null
-            ) {
-              doc.frontMatter.finishedAt = updatedAt
-            }
-            if (
-              (input.status === 'RUNNING' || input.status === 'PENDING') &&
-              doc.frontMatter.finishedAt !== null
-            ) {
-              doc.frontMatter.finishedAt = null
-            }
-            return {
-              content: reserializeReadme(doc),
-              result: {
-                ok: true,
-                mtime: 0,
-                prevStatus: prev,
-                nextStatus: input.status,
-                ...(doc.frontMatter.archived ? { warning: 'archived' as const } : {}),
-              },
-            }
-          },
-          project,
-          ctx,
-          true,
-        )
+        const result = await setRunStatus({
+          fs: port,
+          now: this.now,
+          readmePath: join(run.path, 'README.md'),
+          status: input.status as never,
+          lock: lockOf(input.expectedMtime, input.expectedHash),
+        })
+        this.settle(project, ctx, result.changes)
+        return {
+          ok: true as const,
+          mtime: result.mtime,
+          ...(result.changed ? {} : { unchanged: true }),
+          prevStatus: result.prevStatus,
+          nextStatus: result.nextStatus,
+          ...(result.changed && result.archived ? { warning: 'archived' as const } : {}),
+        } satisfies MutationResult
       },
     )
   }
@@ -338,30 +325,20 @@ export class FilesystemMutationService implements BackendMutationService {
       async (ctx) => {
         const run = await this.run(project, projectName, id)
         ctx.addDetail({ kind: 'target', type: 'run', id })
-        return this.mutate(
-          join(run.path, 'README.md'),
-          input.expectedMtime,
-          undefined,
-          async (content) => {
-            const doc = parseReadme(content)
-            if (doc.frontMatter.archived === input.archived)
-              return {
-                content: null,
-                result: { ok: true, mtime: 0, unchanged: true, archived: input.archived },
-              }
-            if (input.archived && doc.frontMatter.status === 'RUNNING')
-              throw new BackendMutationError('FORBIDDEN', 'RUNNING Run cannot be archived')
-            doc.frontMatter.archived = input.archived
-            doc.frontMatter.updatedAt = formatIsoLocal(this.now())
-            return {
-              content: reserializeReadme(doc),
-              result: { ok: true, mtime: 0, archived: input.archived },
-            }
-          },
-          project,
-          ctx,
-          true,
-        )
+        const result = await setRunArchiveState({
+          fs: port,
+          now: this.now,
+          readmePath: join(run.path, 'README.md'),
+          archived: input.archived,
+          lock: lockOf(input.expectedMtime),
+        })
+        this.settle(project, ctx, result.changes)
+        return {
+          ok: true as const,
+          mtime: result.mtime,
+          ...(result.changed ? {} : { unchanged: true }),
+          archived: input.archived,
+        } satisfies MutationResult
       },
     )
   }
@@ -372,35 +349,23 @@ export class FilesystemMutationService implements BackendMutationService {
       'experiment status set',
       { experiment: id, status: input.status },
       async (ctx) => {
-        const found = await this.experiment(project, projectName, id)
+        const experiment = await this.experiment(project, projectName, id)
         ctx.addDetail({ kind: 'target', type: 'experiment', id })
-        return this.mutate(
-          found.path,
-          input.expectedMtime,
-          input.expectedHash,
-          async (content) => {
-            const doc = parseExperimentReadme(content, id)
-            const prev = doc.frontMatter.status
-            if (prev === input.status)
-              return {
-                content: null,
-                result: { ok: true, mtime: 0, unchanged: true, prevStatus: prev, nextStatus: prev },
-              }
-            doc.frontMatter.status = input.status as never
-            doc.frontMatter.updatedAt = formatIsoLocal(this.now())
-            return {
-              content: serializeExperimentReadme({
-                frontMatter: doc.frontMatter,
-                sections: doc.sections,
-                warningsRaw: doc.warningsRaw,
-                rawBody: doc.body,
-              }),
-              result: { ok: true, mtime: 0, prevStatus: prev, nextStatus: input.status },
-            }
-          },
-          project,
-          ctx,
-        )
+        const result = await setExperimentStatus({
+          fs: port,
+          now: this.now,
+          experiment,
+          status: input.status as never,
+          lock: lockOf(input.expectedMtime, input.expectedHash),
+        })
+        this.settle(project, ctx, result.changes)
+        return {
+          ok: true as const,
+          mtime: result.mtime,
+          ...(result.changed ? {} : { unchanged: true }),
+          prevStatus: result.prevStatus,
+          nextStatus: result.nextStatus,
+        } satisfies MutationResult
       },
     )
   }
@@ -411,34 +376,22 @@ export class FilesystemMutationService implements BackendMutationService {
       'experiment archive set',
       { experiment: id, archived: input.archived },
       async (ctx) => {
-        const found = await this.experiment(project, projectName, id)
+        const experiment = await this.experiment(project, projectName, id)
         ctx.addDetail({ kind: 'target', type: 'experiment', id })
-        return this.mutate(
-          found.path,
-          input.expectedMtime,
-          undefined,
-          async (content) => {
-            const doc = parseExperimentReadme(content, id)
-            if (doc.frontMatter.archived === input.archived)
-              return {
-                content: null,
-                result: { ok: true, mtime: 0, unchanged: true, archived: input.archived },
-              }
-            doc.frontMatter.archived = input.archived
-            doc.frontMatter.updatedAt = formatIsoLocal(this.now())
-            return {
-              content: serializeExperimentReadme({
-                frontMatter: doc.frontMatter,
-                sections: doc.sections,
-                warningsRaw: doc.warningsRaw,
-                rawBody: doc.body,
-              }),
-              result: { ok: true, mtime: 0, archived: input.archived },
-            }
-          },
-          project,
-          ctx,
-        )
+        const result = await setExperimentArchived({
+          fs: port,
+          now: this.now,
+          experiment,
+          archived: input.archived,
+          lock: lockOf(input.expectedMtime),
+        })
+        this.settle(project, ctx, result.changes)
+        return {
+          ok: true as const,
+          mtime: result.mtime,
+          ...(result.changed ? {} : { unchanged: true }),
+          archived: input.archived,
+        } satisfies MutationResult
       },
     )
   }
@@ -447,55 +400,38 @@ export class FilesystemMutationService implements BackendMutationService {
     return this.record(project, 'run readme write', { run: id }, async (ctx) => {
       const run = await this.run(project, projectName, id)
       ctx.addDetail({ kind: 'target', type: 'run', id })
-      const path = join(run.path, 'README.md')
-      let lock: LockedDocument
-      try {
-        lock = await readLockedDocument(path, input.expectedMtime, input.expectedHash)
-      } catch (error) {
-        if (
-          error instanceof BackendMutationError &&
-          error.code === 'CONFLICT' &&
-          error.current?.content !== undefined &&
-          canonicalRunSansUpdatedAt(input.content) ===
-            canonicalRunSansUpdatedAt(error.current.content)
-        ) {
-          // The requested content is already on disk: the invocation happened
-          // but changed nothing, which is a `noop` receipt, not a success.
-          ctx.markOutcome('noop')
-          return {
-            ok: true as const,
-            mtime: error.current.mtime,
-            hash: error.current.hash,
-            finalContent: error.current.content,
-            activityRecorded: false,
-          }
+      // The Web editor contract: the server stamps `updated_at` and returns
+      // the canonical `finalContent`.
+      const result = await writeRunReadme({
+        fs: port,
+        now: this.now,
+        readmePath: join(run.path, 'README.md'),
+        content: input.content,
+        updatedAt: 'stamp',
+        lock: lockOf(input.expectedMtime, input.expectedHash),
+      })
+      if (!result.changed) {
+        // The requested content is already on disk: the invocation happened
+        // but changed nothing, which is a `noop` receipt, not a success.
+        ctx.markOutcome('noop')
+        return {
+          ok: true as const,
+          mtime: result.mtime,
+          hash: result.hash,
+          finalContent: result.finalContent,
+          activityRecorded: false,
         }
-        throw error
       }
-      const previous = parseReadme(lock.content)
-      const next = parseReadme(input.content)
-      const prevStatus = previous.frontMatter.status
-      const nextStatus = next.frontMatter.status
-      const prevArchived = previous.frontMatter.archived
-      const nextArchived = next.frontMatter.archived
-      if (nextArchived && nextStatus === 'RUNNING') {
-        throw new BackendMutationError('FORBIDDEN', 'RUNNING Run cannot be archived')
-      }
-      next.frontMatter.updatedAt = formatIsoLocal(this.now())
-      const finalContent = reserializeReadme(next)
-      // A single atomic replace either lands or leaves the file untouched, so
-      // there is nothing to undo on failure — and no rollback that could
-      // overwrite a concurrent writer's content.
-      await atomicReplace(path, finalContent)
-      ctx.addDetail(fileChange(project.root, path, lock.content, finalContent))
-      const stat = await fs.stat(path)
+      this.settle(project, ctx, result.changes)
       return {
         ok: true as const,
-        mtime: stat.mtimeMs,
-        hash: sha1(finalContent),
-        finalContent,
-        ...(prevStatus !== nextStatus ? { prevStatus, nextStatus } : {}),
-        ...(prevArchived ? { warning: 'archived' as const } : {}),
+        mtime: result.mtime,
+        hash: result.hash,
+        finalContent: result.finalContent,
+        ...(result.prevStatus !== result.nextStatus
+          ? { prevStatus: result.prevStatus!, nextStatus: result.nextStatus! }
+          : {}),
+        ...(result.prevArchived ? { warning: 'archived' as const } : {}),
         activityRecorded: true,
       }
     })
@@ -505,32 +441,23 @@ export class FilesystemMutationService implements BackendMutationService {
     return this.record(project, 'experiment readme write', { experiment: id }, async (ctx) => {
       const experiment = await this.experiment(project, projectName, id)
       ctx.addDetail({ kind: 'target', type: 'experiment', id })
-      const lock = await readLockedDocument(
-        experiment.path,
-        input.expectedMtime,
-        input.expectedHash,
-      )
-      const previous = parseExperimentReadme(lock.content, id)
-      const next = parseExperimentReadme(input.content, id)
-      const prevStatus = previous.frontMatter.status
-      const nextStatus = next.frontMatter.status
-      next.frontMatter.updatedAt = formatIsoLocal(this.now())
-      const finalContent = serializeExperimentReadme({
-        frontMatter: next.frontMatter,
-        sections: next.sections,
-        warningsRaw: next.warningsRaw,
-        rawBody: next.body,
+      const result = await writeExperimentReadme({
+        fs: port,
+        now: this.now,
+        experiment,
+        content: input.content,
+        lock: lockOf(input.expectedMtime, input.expectedHash),
       })
-      await atomicReplace(experiment.path, finalContent)
-      ctx.addDetail(fileChange(project.root, experiment.path, lock.content, finalContent))
-      const stat = await fs.stat(experiment.path)
+      this.settle(project, ctx, result.changes)
       return {
         ok: true as const,
-        mtime: stat.mtimeMs,
-        hash: sha1(finalContent),
-        finalContent,
-        ...(prevStatus !== nextStatus ? { prevStatus, nextStatus } : {}),
-        ...(previous.frontMatter.archived ? { warning: 'archived' as const } : {}),
+        mtime: result.mtime,
+        hash: result.hash,
+        finalContent: result.finalContent,
+        ...(result.prevStatus !== result.nextStatus
+          ? { prevStatus: result.prevStatus, nextStatus: result.nextStatus }
+          : {}),
+        ...(result.prevArchived ? { warning: 'archived' as const } : {}),
         activityRecorded: true,
       }
     })
@@ -542,161 +469,44 @@ export class FilesystemMutationService implements BackendMutationService {
       project,
       'experiment create',
       { slug: input.slug, ...(input.fromRun ? { fromRun: input.fromRun } : {}) },
-      (ctx) => this.applyExperimentCreate(project, projectName, input, ctx),
-    )
-  }
-
-  private async applyExperimentCreate(
-    project: ProjectConfig,
-    projectName: string,
-    input: ExperimentCreateInput,
-    ctx: JournalInvocationContext,
-  ) {
-    const existing = (await discoverExperiments(project.root, projectName)).experiments
-    for (const experiment of existing) {
-      if (experiment.frontMatter.slug === input.slug) {
-        throw new BackendMutationError('BAD_REQUEST', 'Experiment slug already exists')
-      }
-      if (
-        experiment.frontMatter.slug.startsWith(`${input.slug}-`) ||
-        input.slug.startsWith(`${experiment.frontMatter.slug}-`)
-      ) {
-        throw new BackendMutationError('BAD_REQUEST', 'Experiment slug prefix collides')
-      }
-    }
-
-    let importedRun: Run | null = null
-    let importedLock: LockedDocument | null = null
-    if (input.fromRun) {
-      importedRun = await this.run(project, projectName, input.fromRun)
-      if (importedRun.frontMatter.experiment) {
-        throw new BackendMutationError('BAD_STATE', 'Run already belongs to an Experiment')
-      }
-      if (input.fromRunExpectedMtime === undefined || input.fromRunExpectedHash === undefined) {
-        throw new BackendMutationError('BAD_REQUEST', 'fromRun optimistic lock is required')
-      }
-      importedLock = await readLockedDocument(
-        join(importedRun.path, 'README.md'),
-        input.fromRunExpectedMtime,
-        input.fromRunExpectedHash,
-      )
-    }
-
-    const experimentsDirectory = join(project.root, EXPERIMENTS_SUBDIR)
-    await fs.mkdir(experimentsDirectory, { recursive: true })
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const prefix = await nextExperimentId(project.root)
-      const id = `${prefix}-${input.slug}`
-      if (!EXPERIMENT_DIR_REGEX.test(id)) {
-        throw new BackendMutationError('INTERNAL', 'Experiment allocator returned invalid data')
-      }
-      const directory = join(experimentsDirectory, id)
-      try {
-        await fs.mkdir(directory)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
-        throw error
-      }
-
-      const timestamp = formatIsoLocal(this.now())
-      const readmePath = join(directory, 'README.md')
-      const initialResults = emptyResultsDocument()
-      if (importedRun) {
-        const unsuccessful = ['FAILED', 'INTERRUPTED', 'UNKNOWN'].includes(
-          importedRun.frontMatter.status,
-        )
-        initialResults.variants.push({
-          id: 'V0001',
-          name: `Imported ${importedRun.frontMatter.name || importedRun.id}`,
-          status: importedVariantStatus(importedRun.frontMatter.status),
-          description: 'Imported from an existing Run; refine this Variant before reuse.',
-          parameters: {},
-          metrics: {},
-          runs: unsuccessful ? [] : [projectRunPath(project.root, importedRun.path)],
-          attempts: unsuccessful ? [projectRunPath(project.root, importedRun.path)] : [],
-          ...(importedRun.frontMatter.entry
-            ? { provenance: { entry: importedRun.frontMatter.entry } }
-            : {}),
-        })
-      }
-      const content = serializeExperimentReadme({
-        frontMatter: {
-          id,
+      async (ctx) => {
+        let importedRun: Run | null = null
+        if (input.fromRun) {
+          importedRun = await this.run(project, projectName, input.fromRun)
+          if (importedRun.frontMatter.experiment) {
+            throw new BackendMutationError('BAD_STATE', 'Run already belongs to an Experiment')
+          }
+          if (input.fromRunExpectedMtime === undefined || input.fromRunExpectedHash === undefined) {
+            throw new BackendMutationError('BAD_REQUEST', 'fromRun optimistic lock is required')
+          }
+        }
+        const created = await createExperiment({
+          fs: port,
+          now: this.now,
+          projectRoot: project.root,
+          projectName,
           slug: input.slug,
-          title: input.title ?? input.slug,
-          status: 'OPEN',
-          archived: false,
-          runs: importedRun ? [projectRunPath(project.root, importedRun.path)] : [],
+          ...(input.title === undefined ? {} : { title: input.title }),
           hypotheses: input.hypotheses ?? [],
           tags: input.tags ?? [],
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-        sections: {
-          motivation: null,
-          method: null,
-          plan: null,
-          conclusion: null,
-          caveats: null,
-        },
-        warningsRaw: null,
-      })
-      const managed: Array<[string, string]> = [
-        [readmePath, content],
-        [
-          join(directory, 'implementation.yaml'),
-          serializeImplementationYaml(emptyImplementationDocument()),
-        ],
-        [
-          join(directory, 'investigation.yaml'),
-          serializeInvestigationYaml(emptyInvestigationDocument()),
-        ],
-        [join(directory, 'results.yaml'), serializeResultsYaml(initialResults)],
-      ]
-      const importedReadmePath = importedRun ? join(importedRun.path, 'README.md') : null
-      let importedPostimage: string | null = null
-      try {
-        await Promise.all(
-          managed.map(([file, body]) => fs.writeFile(file, body, { encoding: 'utf8', flag: 'wx' })),
-        )
-      } catch (error) {
-        // Restore the imported Run only while it still holds exactly the
-        // postimage this operation wrote. Another writer's content is never
-        // overwritten to make a rollback look clean; that case is partial.
-        const restored =
-          importedLock && importedReadmePath && importedPostimage !== null
-            ? await restorePostimage(importedReadmePath, importedPostimage, importedLock.content)
-            : true
-        await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)
-        if (!restored) {
-          ctx.markOutcome('partial', 'ROLLBACK_BLOCKED')
-          throw new BackendMutationError(
-            'PARTIAL',
-            'Experiment create failed and the imported Run could not be safely restored',
-          )
+          importedRun,
+          ...(importedRun
+            ? {
+                importedRunLock: lockOf(input.fromRunExpectedMtime, input.fromRunExpectedHash),
+              }
+            : {}),
+        })
+        ctx.addDetail({ kind: 'target', type: 'experiment', id: created.id })
+        this.settle(project, ctx, created.changes)
+        return {
+          ok: true as const,
+          id: created.id,
+          resource: portableResource(project.root, created.readmePath),
+          mtime: created.mtime,
+          hash: created.hash,
         }
-        throw error
-      }
-      ctx.addDetail({ kind: 'target', type: 'experiment', id })
-      for (const [file, body] of managed) {
-        ctx.addDetail(fileChange(project.root, file, null, body))
-      }
-      if (importedRun && importedLock && importedReadmePath && importedPostimage !== null) {
-        ctx.addDetail({ kind: 'target', type: 'run', id: importedRun.id })
-        ctx.addDetail(
-          fileChange(project.root, importedReadmePath, importedLock.content, importedPostimage),
-        )
-      }
-      const fileStat = await fs.stat(readmePath)
-      return {
-        ok: true as const,
-        id,
-        resource: portableResource(project.root, readmePath),
-        mtime: fileStat.mtimeMs,
-        hash: sha1(content),
-      }
-    }
-    throw new BackendMutationError('INTERNAL', 'Experiment id allocation failed')
+      },
+    )
   }
 
   async bindExperiment(
@@ -710,85 +520,36 @@ export class FilesystemMutationService implements BackendMutationService {
       project,
       `experiment ${operation}`,
       { experiment: id, run: input.run, operation },
-      (ctx) => this.applyExperimentBind(operation, project, projectName, id, input, ctx),
+      async (ctx) => {
+        const experiment = await this.experiment(project, projectName, id)
+        const run = await this.run(project, projectName, input.run)
+        const bind = operation === 'link' ? linkExperimentRun : unlinkExperimentRun
+        const result = await bind({
+          fs: port,
+          now: this.now,
+          projectRoot: project.root,
+          experiment,
+          run,
+          lock: lockOf(input.expectedMtime, input.expectedHash),
+          runLock: lockOf(input.expectedRunMtime, input.expectedRunHash),
+        })
+        ctx.addDetail({ kind: 'target', type: 'experiment', id })
+        ctx.addDetail({ kind: 'target', type: 'run', id: run.id })
+        this.settle(project, ctx, result.changes)
+        // The Run README is locked (always, here) but never written: its
+        // reported state is the one read under that lock.
+        const runDocument = result.runDocument!
+        return {
+          ok: true as const,
+          experimentId: id,
+          runId: result.runPath,
+          experimentMtime: result.mtime,
+          experimentHash: result.hash,
+          runMtime: runDocument.mtime,
+          runHash: runDocument.hash,
+        }
+      },
     )
-  }
-
-  private async applyExperimentBind(
-    operation: 'link' | 'unlink',
-    project: ProjectConfig,
-    projectName: string,
-    id: string,
-    input: ExperimentBindInput,
-    ctx: JournalInvocationContext,
-  ) {
-    const experiment = await this.experiment(project, projectName, id)
-    const run = await this.run(project, projectName, input.run)
-    const experimentLock = await readLockedDocument(
-      experiment.path,
-      input.expectedMtime,
-      input.expectedHash,
-    )
-    const runPath = join(run.path, 'README.md')
-    const runLock = await readLockedDocument(runPath, input.expectedRunMtime, input.expectedRunHash)
-    const parsedExperiment = parseExperimentReadme(experimentLock.content, id)
-    if (operation === 'link' && run.frontMatter.experiment && run.frontMatter.experiment !== id) {
-      throw new BackendMutationError('BAD_STATE', 'Run already belongs to another Experiment')
-    }
-    const timestamp = formatIsoLocal(this.now())
-    parsedExperiment.frontMatter.runs =
-      operation === 'link'
-        ? [
-            ...new Set([
-              ...parsedExperiment.frontMatter.runs.filter((reference) => reference !== run.id),
-              projectRunPath(project.root, run.path),
-            ]),
-          ]
-        : parsedExperiment.frontMatter.runs.filter(
-            (runId) => runId !== projectRunPath(project.root, run.path) && runId !== run.id,
-          )
-    parsedExperiment.frontMatter.updatedAt = timestamp
-    const nextRun = runLock.content
-    const nextExperiment = serializeExperimentReadme({
-      frontMatter: parsedExperiment.frontMatter,
-      sections: parsedExperiment.sections,
-      warningsRaw: parsedExperiment.warningsRaw,
-      rawBody: parsedExperiment.body,
-    })
-    try {
-      await atomicReplace(experiment.path, nextExperiment)
-    } catch (error) {
-      // Each file is restored only while it still holds this operation's
-      // postimage. A file that moved on underneath us is left alone and the
-      // caller is told the bind is partial instead of all-or-nothing.
-      const restored = await Promise.all([
-        restorePostimage(experiment.path, nextExperiment, experimentLock.content),
-      ])
-      if (restored.includes(false)) {
-        ctx.markOutcome('partial', 'ROLLBACK_BLOCKED')
-        throw new BackendMutationError(
-          'PARTIAL',
-          `Experiment ${operation} failed and its documents could not be safely restored`,
-        )
-      }
-      throw error
-    }
-    ctx.addDetail({ kind: 'target', type: 'experiment', id })
-    ctx.addDetail({ kind: 'target', type: 'run', id: run.id })
-    ctx.addDetail(fileChange(project.root, experiment.path, experimentLock.content, nextExperiment))
-    const [runStat, experimentStat] = await Promise.all([
-      fs.stat(runPath),
-      fs.stat(experiment.path),
-    ])
-    return {
-      ok: true as const,
-      experimentId: id,
-      runId: projectRunPath(project.root, run.path),
-      experimentMtime: experimentStat.mtimeMs,
-      experimentHash: sha1(nextExperiment),
-      runMtime: runStat.mtimeMs,
-      runHash: sha1(nextRun),
-    }
   }
 
   async deleteExperiment(projectName: string, id: string, input: ExperimentDeleteInput) {
@@ -797,48 +558,23 @@ export class FilesystemMutationService implements BackendMutationService {
       project,
       'experiment delete',
       { experiment: id, force: input.force },
-      (ctx) => this.applyExperimentDelete(project, projectName, id, input, ctx),
+      async (ctx) => {
+        const experiment = await this.experiment(project, projectName, id)
+        if (new Set(input.runLocks.map((lock) => lock.run)).size !== input.runLocks.length) {
+          throw new BackendMutationError('BAD_REQUEST', 'Run locks contain duplicate ids')
+        }
+        const result = await deleteExperiment({
+          fs: port,
+          now: this.now,
+          experiment,
+          force: input.force,
+          lock: lockOf(input.expectedMtime, input.expectedHash),
+        })
+        ctx.addDetail({ kind: 'target', type: 'experiment', id })
+        this.settle(project, ctx, result.changes)
+        return { ok: true as const, deletedId: id, cascadedRuns: result.cascadedRuns }
+      },
     )
-  }
-
-  private async applyExperimentDelete(
-    project: ProjectConfig,
-    projectName: string,
-    id: string,
-    input: ExperimentDeleteInput,
-    ctx: JournalInvocationContext,
-  ) {
-    const experiment = await this.experiment(project, projectName, id)
-    const experimentLock = await readLockedDocument(
-      experiment.path,
-      input.expectedMtime,
-      input.expectedHash,
-    )
-    const parsedExperiment = parseExperimentReadme(experimentLock.content, id)
-    const memberIds = [...parsedExperiment.frontMatter.runs]
-    if (!input.force && memberIds.length > 0) {
-      throw new BackendMutationError('BAD_REQUEST', 'Experiment has member Runs')
-    }
-    const lockMap = new Map(input.runLocks.map((lock) => [lock.run, lock]))
-    if (lockMap.size !== input.runLocks.length) {
-      throw new BackendMutationError('BAD_REQUEST', 'Run locks contain duplicate ids')
-    }
-
-    const target = experiment.path.endsWith(`${id}.md`) ? experiment.path : dirname(experiment.path)
-    if (!input.force && target !== experiment.path) {
-      const siblings = (await fs.readdir(target)).filter(
-        (name) => !CANONICAL_EXPERIMENT_BUNDLE_FILES.has(name),
-      )
-      if (siblings.length > 0) {
-        throw new BackendMutationError('BAD_REQUEST', 'Experiment bundle contains scratch files')
-      }
-    }
-    const quarantine = join(dirname(target), `.memon-delete-${id}-${randomUUID()}`)
-    await fs.rename(target, quarantine)
-    await fs.rm(quarantine, { recursive: true, force: true }).catch(() => undefined)
-    ctx.addDetail({ kind: 'target', type: 'experiment', id })
-    ctx.addDetail(fileChange(project.root, experiment.path, experimentLock.content, null))
-    return { ok: true as const, deletedId: id, cascadedRuns: memberIds }
   }
   async mutateWarning(
     kind: 'run' | 'experiment',
@@ -868,210 +604,113 @@ export class FilesystemMutationService implements BackendMutationService {
         ...(input.category ? { category: input.category } : {}),
         ...(input.run ? { run: input.run } : {}),
       },
-      (ctx) => this.applyWarningMutation(kind, project, projectName, id, input, ctx),
+      async (ctx) => {
+        const path = await this.warningPath(kind, project, projectName, id)
+        const result = await mutateDocumentWarning({
+          fs: port,
+          now: this.now,
+          path,
+          op: input.op,
+          ...(input.rowId === undefined ? {} : { rowId: input.rowId }),
+          ...(input.category === undefined ? {} : { category: input.category }),
+          ...(input.message === undefined ? {} : { message: input.message }),
+          ...(input.note === undefined ? {} : { note: input.note }),
+          run: input.run ?? null,
+          lock: lockOf(input.expectedMtime, input.expectedHash),
+        })
+        ctx.addDetail({ kind: 'target', type: kind === 'run' ? 'run' : 'experiment', id })
+        this.settle(project, ctx, result.changes)
+        const parsed =
+          kind === 'run' ? parseReadme(result.content) : parseExperimentReadme(result.content, id)
+        return {
+          ok: true as const,
+          warnings: parsed.warnings,
+          mtime: result.mtime,
+          hash: result.hash,
+          ...(result.rowId ? { rowId: result.rowId } : {}),
+        }
+      },
     )
   }
-
-  private async applyWarningMutation(
+  async listWarnings(kind: 'run' | 'experiment', projectName: string, id: string) {
+    const project = this.project(projectName)
+    const path = await this.warningPath(kind, project, projectName, id)
+    const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
+    const parsed = kind === 'run' ? parseReadme(content) : parseExperimentReadme(content, id)
+    return { warnings: parsed.warnings, mtime: stat.mtimeMs, hash: sha1(content) }
+  }
+  private async warningPath(
     kind: 'run' | 'experiment',
     project: ProjectConfig,
     projectName: string,
     id: string,
-    input: {
-      op: 'add' | 'resolve' | 'reopen' | 'delete'
-      rowId?: string
-      category?: string
-      message?: string
-      note?: string
-      run?: string | null
-      expectedMtime: number
-      expectedHash: string
-    },
-    ctx: JournalInvocationContext,
-  ) {
-    let path: string
-    if (kind === 'run') {
-      path = join((await this.run(project, projectName, id)).path, 'README.md')
-    } else {
-      path = (await this.experiment(project, projectName, id)).path
-    }
-    const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
-    const hash = createHash('sha1').update(content).digest('hex')
-    if (stat.mtimeMs !== input.expectedMtime || hash !== input.expectedHash)
-      throw new BackendMutationError('CONFLICT', 'Document changed', {
-        mtime: stat.mtimeMs,
-        hash,
-        content,
-      })
-    const created = formatIsoLocal(this.now())
-    const rowId = input.rowId ?? generateRowId(created)
-    const op =
-      input.op === 'add'
-        ? {
-            op: 'add' as const,
-            category: input.category ?? 'other',
-            message: input.message ?? '',
-            created,
-            rowId,
-            run: input.run ?? null,
-          }
-        : input.op === 'resolve'
-          ? { op: 'resolve' as const, rowId, resolved: created, note: input.note ?? '' }
-          : input.op === 'reopen'
-            ? { op: 'reopen' as const, rowId }
-            : { op: 'delete' as const, rowId }
-    let next: ReturnType<typeof applyWarningOp>
-    try {
-      next = applyWarningOp(content, op)
-    } catch (error) {
-      if (error instanceof WarningOpError) {
-        if (error.code === 'NOT_FOUND') {
-          throw new BackendMutationError('RESOURCE_NOT_FOUND', error.message)
-        }
-        if (error.code === 'NOT_TABLE') {
-          throw new BackendMutationError('WARNINGS_SECTION_NOT_TABLE', error.message)
-        }
-        throw new BackendMutationError('BAD_REQUEST', error.message)
-      }
-      throw error
-    }
-    await atomicReplace(path, next.content)
-    ctx.addDetail({ kind: 'target', type: kind === 'run' ? 'run' : 'experiment', id })
-    ctx.addDetail(fileChange(project.root, path, content, next.content))
-    const nextStat = await fs.stat(path)
-    const parsed =
-      kind === 'run' ? parseReadme(next.content) : parseExperimentReadme(next.content, id)
-    return {
-      ok: true as const,
-      warnings: parsed.warnings,
-      mtime: nextStat.mtimeMs,
-      hash: createHash('sha1').update(next.content).digest('hex'),
-      ...(next.rowId ? { rowId: next.rowId } : {}),
-    }
-  }
-  async listWarnings(kind: 'run' | 'experiment', projectName: string, id: string) {
-    const project = this.project(projectName)
-    let path: string
-    if (kind === 'run') {
-      path = join((await this.run(project, projectName, id)).path, 'README.md')
-    } else {
-      path = (await this.experiment(project, projectName, id)).path
-    }
-    const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
-    const parsed = kind === 'run' ? parseReadme(content) : parseExperimentReadme(content, id)
-    return {
-      warnings: parsed.warnings,
-      mtime: stat.mtimeMs,
-      hash: createHash('sha1').update(content).digest('hex'),
-    }
-  }
-  /**
-   * Read-modify-write one document under the caller's optimistic lock, inside
-   * the caller's ledger invocation. A no-op is marked as such (the invocation
-   * still happened), a stale lock throws `CONFLICT`, and a successful write
-   * contributes its typed file change to the receipt. Receipt persistence is
-   * the ledger's job and never rolls this write back.
-   */
-  private async mutate(
-    path: string,
-    expectedMtime: number | undefined,
-    expectedHash: string | undefined,
-    transform: (content: string) => Promise<{ content: string | null; result: MutationResult }>,
-    project: ProjectConfig,
-    ctx: JournalInvocationContext,
-    allowNoopWithStaleLock = false,
-  ) {
-    const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
-    const hash = createHash('sha1').update(content).digest('hex')
-    const next = await transform(content)
-    if (next.content === null && allowNoopWithStaleLock) {
-      ctx.markOutcome('noop')
-      return { ...next.result, mtime: stat.mtimeMs }
-    }
-    if (
-      (expectedMtime !== undefined && stat.mtimeMs !== expectedMtime) ||
-      (expectedHash && hash !== expectedHash)
-    )
-      throw new BackendMutationError('CONFLICT', 'Document changed', {
-        mtime: stat.mtimeMs,
-        hash,
-        content,
-      })
-    if (next.content === null) {
-      ctx.markOutcome('noop')
-      return { ...next.result, mtime: stat.mtimeMs }
-    }
-    const temp = join(dirname(path), `.memon-mutation-${process.pid}-${Date.now()}.tmp`)
-    await fs.writeFile(temp, next.content, 'utf8')
-    await fs.rename(temp, path)
-    ctx.addDetail(fileChange(project.root, path, content, next.content))
-    return { ...next.result, mtime: (await fs.stat(path)).mtimeMs }
+  ): Promise<string> {
+    return kind === 'run'
+      ? join((await this.run(project, projectName, id)).path, 'README.md')
+      : (await this.experiment(project, projectName, id)).path
   }
 }
 
-interface LockedDocument {
-  content: string
-  mtime: number
-  hash: string
-}
-
-function sha1(content: string): string {
-  return createHash('sha1').update(content).digest('hex')
-}
-
-function canonicalRunSansUpdatedAt(content: string): string {
-  const parsed = parseReadme(content)
-  parsed.frontMatter.updatedAt = ''
-  return reserializeReadme(parsed)
-}
-
-async function readLockedDocument(
-  path: string,
-  expectedMtime: number,
-  expectedHash: string,
-): Promise<LockedDocument> {
-  const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
-  const hash = sha1(content)
-  if (stat.mtimeMs !== expectedMtime || hash !== expectedHash) {
-    throw new BackendMutationError('CONFLICT', 'Document changed', {
-      mtime: stat.mtimeMs,
-      hash,
-      content,
-    })
+/** A lock from optional fields; omitted fields are not checked. */
+function lockOf(expectedMtime?: number, expectedHash?: string) {
+  return {
+    ...(expectedMtime === undefined ? {} : { expectedMtime }),
+    ...(expectedHash ? { expectedHash } : {}),
   }
-  return { content, mtime: stat.mtimeMs, hash }
 }
 
-async function atomicReplace(path: string, content: string): Promise<void> {
-  const original = await fs.stat(path)
-  const temporary = join(dirname(path), `.memon-${process.pid}-${randomUUID()}.tmp`)
-  try {
-    await fs.writeFile(temporary, content, { encoding: 'utf8', mode: original.mode })
-    await fs.rename(temporary, path)
-  } catch (error) {
-    await fs.unlink(temporary).catch(() => undefined)
-    throw error
+/**
+ * Map a core `MutationError` onto the Backend's error with the messages the
+ * wire has always carried. Anything else passes through unchanged.
+ */
+function toBackendError(error: unknown): unknown {
+  if (!(error instanceof MutationError)) return error
+  switch (error.code) {
+    case 'CONFLICT':
+      return new BackendMutationError('CONFLICT', 'Document changed', error.current)
+    case 'NOT_FOUND':
+      return new BackendMutationError(
+        'RESOURCE_NOT_FOUND',
+        error.reason === 'MISSING_DOCUMENT' ? 'Document not found' : error.message,
+      )
+    case 'BAD_REQUEST': {
+      const message =
+        error.reason === 'DUPLICATE_SLUG'
+          ? 'Experiment slug already exists'
+          : error.reason === 'SLUG_PREFIX_COLLISION'
+            ? 'Experiment slug prefix collides'
+            : error.reason === 'HAS_MEMBERS'
+              ? 'Experiment has member Runs'
+              : error.reason === 'HAS_SCRATCH'
+                ? 'Experiment bundle contains scratch files'
+                : error.message
+      return new BackendMutationError('BAD_REQUEST', message)
+    }
+    case 'BAD_STATE':
+      return error.reason === 'ALLOCATION_EXHAUSTED'
+        ? new BackendMutationError('INTERNAL', 'Experiment id allocation failed')
+        : new BackendMutationError(
+            'BAD_STATE',
+            error.reason === 'RUN_ALREADY_OWNED'
+              ? 'Run already belongs to another Experiment'
+              : error.message,
+          )
+    case 'FORBIDDEN':
+      return new BackendMutationError(
+        'FORBIDDEN',
+        error.reason === 'ARCHIVED_RUNNING'
+          ? 'Archived Run cannot become RUNNING'
+          : 'RUNNING Run cannot be archived',
+      )
+    case 'WARNINGS_SECTION_NOT_TABLE':
+      return new BackendMutationError('WARNINGS_SECTION_NOT_TABLE', error.message)
+    default:
+      return new BackendMutationError('INTERNAL', error.message)
   }
 }
 
 function portableResource(root: string, absolutePath: string): string {
   return ResourceIdSchema.parse(relative(root, absolutePath).split(sep).join('/'))
-}
-
-function importedVariantStatus(status: string) {
-  switch (status) {
-    case 'FINISHED':
-      return 'COMPLETED' as const
-    case 'RUNNING':
-      return 'RUNNING' as const
-    case 'FAILED':
-    case 'INTERRUPTED':
-      return 'FAILED' as const
-    case 'UNKNOWN':
-      return 'INCONCLUSIVE' as const
-    default:
-      return 'PLANNED' as const
-  }
 }
 
 /**
@@ -1090,27 +729,5 @@ function fileChange(
     path: relative(root, absolutePath).split(sep).join('/'),
     before: preimage === null ? null : sha1(preimage),
     after: postimage === null ? null : sha1(postimage),
-  }
-}
-
-/**
- * Restore one file to its preimage, but only while it still holds exactly the
- * postimage this operation wrote. A file that an intervening writer changed is
- * left untouched and reported as an unsafe rollback, so a failed mutation can
- * never overwrite someone else's edit to look atomic.
- */
-async function restorePostimage(
-  path: string,
-  postimage: string,
-  preimage: string,
-): Promise<boolean> {
-  const current = await fs.readFile(path, 'utf8').catch(() => null)
-  if (current === preimage) return true
-  if (current !== postimage) return false
-  try {
-    await atomicReplace(path, preimage)
-    return true
-  } catch {
-    return false
   }
 }
