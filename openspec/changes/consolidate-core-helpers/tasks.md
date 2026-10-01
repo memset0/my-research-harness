@@ -26,7 +26,10 @@
 
 ## 6. Root exports (D6)
 
-- [ ] 6.1 Grep every audit-named candidate across apps, packages, scripts and skills; remove zero-consumer root exports and record the list here
+- [x] 6.1 Grep every audit-named candidate across apps, packages, scripts and skills; remove zero-consumer root exports and record the list here
+  - Removed (zero references outside `packages/core/src`; files kept): `migrateV3ToV4`, `rewriteV3ExpDoc`, `rewriteV3RunReadme`, types `MigrateV3ToV4Options`, `MigrateV3ToV4Result`, `MigrateV3ToV4Stat`, `RewriteV3ExpInput`, `RewriteV3ExpResult`, `RewriteV3RunInput`, `RewriteV3RunResult`; `parseCommitMarksCsv`, `serializeCommitMarksCsv`; `CACHE_VERSION`, `defaultCacheDir`, `loadCache`, `saveCache`, types `CacheOptions`, `CacheRecord`
+  - Not root-exported from the start (internal or test-only): `atomicTempPath`, `EXPERIMENT_MENTION_SOURCE`, `isRunDirName`, `isSlug`, `RUN_PATH_SHAPE_REGEX`, `RUN_ROOT_DIRECTORIES`, `runSlugFromDirName`
+  - `migrations/v2-to-v3-run.ts` was already not root-exported; `migrations/v3-to-v4.ts` is now reachable only from its own test
 
 ## 7. Parser field helpers (D7)
 

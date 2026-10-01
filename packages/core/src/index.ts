@@ -4,7 +4,7 @@
 // config loaders are added by phases 3-5.
 
 export type { AtomicWriteFs, WriteFileAtomicOptions } from './atomic-write.js'
-export { atomicTempPath, writeFileAtomic } from './atomic-write.js'
+export { writeFileAtomic } from './atomic-write.js'
 export * from './backend-negotiation.js'
 export * from './backend-protocol.js'
 export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'
@@ -189,9 +189,7 @@ export {
   COMMIT_MARK_STATUSES,
   COMMIT_MARKS_RELPATH,
   deleteCommitMark,
-  parseCsv as parseCommitMarksCsv,
   readCommitMarks,
-  serializeCsv as serializeCommitMarksCsv,
   setCommitMark,
 } from './git/commit-marks.js'
 export type {
@@ -239,7 +237,6 @@ export { readGitSubmodules } from './git/submodules.js'
 export { parseExperimentRefList, parseHypotheses } from './hypotheses/parse.js'
 export type { IdPrefix, ParsedId } from './ids.js'
 export {
-  EXPERIMENT_MENTION_SOURCE,
   EXPERIMENT_REF_REGEX,
   extractRunMentions,
   ID_MAX,
@@ -248,15 +245,10 @@ export {
   ID_REGEX,
   ID_WIDTH,
   isId,
-  isRunDirName,
-  isSlug,
   padId,
   parseId,
   RUN_MENTION_SOURCE,
-  RUN_PATH_SHAPE_REGEX,
-  RUN_ROOT_DIRECTORIES,
   RUN_TIMESTAMP_TAIL_REGEX,
-  runSlugFromDirName,
   SLUG_REGEX,
   SLUG_SOURCE,
   SLUG_STRICT_REGEX,
@@ -304,13 +296,6 @@ export {
   reserializeJournal,
   serializeJournal,
 } from './journal/serialize.js'
-export type { CacheOptions, CacheRecord } from './log/cache.js'
-export {
-  CACHE_VERSION,
-  defaultCacheDir,
-  loadCache,
-  saveCache,
-} from './log/cache.js'
 export type {
   AppendResult,
   LineIndexOptions,
@@ -318,20 +303,6 @@ export type {
   LineRangeOptions,
 } from './log/line-index.js'
 export { DEFAULT_ANCHOR_EVERY, LineIndex } from './log/line-index.js'
-export type {
-  MigrateV3ToV4Options,
-  MigrateV3ToV4Result,
-  MigrateV3ToV4Stat,
-  RewriteV3ExpInput,
-  RewriteV3ExpResult,
-  RewriteV3RunInput,
-  RewriteV3RunResult,
-} from './migrations/v3-to-v4.js'
-export {
-  migrateV3ToV4,
-  rewriteV3ExpDoc,
-  rewriteV3RunReadme,
-} from './migrations/v3-to-v4.js'
 export {
   type ApplyMembershipMigrationOptions,
   applyMembershipMigration,
