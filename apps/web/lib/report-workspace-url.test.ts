@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { ProjectRefSchema } from '@memon/core'
 import { describe, expect, it } from 'vitest'
 import {

@@ -1,4 +1,4 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
-import { memonVitestPreset } from '../test-utils/src/vitest-preset'
+import { memonVitestPreset } from './src/vitest-preset'
 
 export default mergeConfig(memonVitestPreset, defineConfig({}))

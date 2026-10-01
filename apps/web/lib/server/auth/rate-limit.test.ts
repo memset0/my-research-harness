@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { __limits, __resetForTests, clientIpFromHeaders, consume, refund } from './rate-limit'
 

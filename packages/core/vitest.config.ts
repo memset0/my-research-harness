@@ -1,9 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, mergeConfig } from 'vitest/config'
+import { memonVitestPreset } from '../test-utils/src/vitest-preset'
 
-export default defineConfig({
-  test: {
-    include: ['src/**/*.test.ts'],
-    globals: false,
-    environment: 'node',
-  },
-})
+export default mergeConfig(memonVitestPreset, defineConfig({}))

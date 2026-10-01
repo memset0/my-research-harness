@@ -143,17 +143,25 @@ synchronous env-identity `git` in `update.test.ts`).
 
 ### D4. One vitest preset
 
-`packages/test-utils/vitest.preset.ts` exports a `UserConfig` merged by every
-package's `vitest.config.ts` via `mergeConfig`: `testTimeout: 30_000` (the
-CLI's existing value, now uniform), `reporters: ['default']`, `globals: false`,
-`environment: 'node'`, aliases for `server-only` (stub in test-utils) and
+`packages/test-utils/src/vitest-preset.ts` exports `memonVitestPreset`, merged
+by every package's `vitest.config.ts` via `mergeConfig`: `testTimeout: 30_000`
+(the CLI's existing value, now uniform), `reporters: ['default']`,
+`globals: false`, `environment: 'node'`, `include: ['src/**/*.test.ts']`, aliases for `server-only` (stub in test-utils) and
 `@memon/test-utils`, plus `workspaceSource(pkg)` returning a package's
-`src/index.ts` for source aliases. It lives in test-utils rather than at the
-repository root because the root has no `vitest` dependency to type it.
+`src/index.ts` for source aliases. It lives in test-utils' `src/` (inside its
+composite project, so the Web typecheck sees its declarations) rather than at
+the repository root, because the root has no `vitest` dependency to type it.
+The old `apps/web/test/server-only-stub.ts` moves into test-utils.
 Backend and skills gain `vitest.config.ts`. Web keeps `environment: 'jsdom'`;
 Web tests that never touch DOM APIs gain `// @vitest-environment node` (only
 the comment line changes), and each converted file is run under node before it
-is kept.
+is kept: 27 `.ts` files without Testing Library or `document`/`window`/storage/
+`navigator` usage were converted and all pass under node, leaving 60 Web files
+on the jsdom default.
+
+Commit order note: the preset commit lands before the helper-adoption commits,
+because the adopted tests resolve `@memon/test-utils` through the preset's
+alias.
 
 ### D5. Web test location convention (documented only)
 

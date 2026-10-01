@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from 'vitest'
 import * as edits from './definition-edits'
 import { DEFAULT_RESULTS_VIEW_DEFINITION, type ExperimentResultsViewDefinition } from './views'

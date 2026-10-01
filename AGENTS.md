@@ -258,6 +258,11 @@ the applicable active change artifacts; keep artifacts aligned with the code.
 - Full and archive gates run the root `pnpm test`, which rebuilds the
   `@memon/core` and `@memon/backend` dist first; never report a gate from a bare
   `pnpm -r test`, whose suites may import a stale build.
+- Shared test fixtures and helpers come from `@memon/test-utils`
+  (`packages/test-utils`), and every package's `vitest.config.ts` extends
+  `memonVitestPreset` from `packages/test-utils/src/vitest-preset.ts`; extend
+  those instead of copying a helper into a test file. Web tests that need no
+  DOM declare `// @vitest-environment node`.
 - Before archiving (after the user confirms readiness), run the full unit-test
   suite locally; on failure, stop the archive, report and fix. If the user
   explicitly asks to archive directly, the full suite may be skipped — say so;

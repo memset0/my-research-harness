@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { WIKI_KIND_REGISTRY } from '@memon/core'
 import configuration from '@memon/core/wiki-kinds.json'
 import { describe, expect, it, vi } from 'vitest'
