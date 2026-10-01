@@ -20,6 +20,7 @@ import {
   type CodeReviewSummary,
   type Config,
   computeMembership,
+  computeMembershipFromDisk,
   configureProjectFileCache,
   configureProjectFileStore,
   deriveCompletion,
@@ -134,7 +135,7 @@ export class Runtime {
      * `experiments` / `anomaliesByProject` maps and emit the same SSE
      * `anomaly` topic on each recompute).
      */
-    public readonly recomputeAnomalies: (projectName: string) => void,
+    public readonly recomputeAnomalies: (projectName: string) => Promise<void>,
     /**
      * Slurm feature state captured at init time. `/api/slurm/status` reads
      * this; when `enabled === false` the API short-circuits to
@@ -389,7 +390,12 @@ async function init(): Promise<Runtime> {
   // poll-driven mutations and API-route reads see the same Map.
   const sharedExperiments: Map<string, Experiment> = new Map()
   const sharedAnomalies: Map<string, ExperimentMembershipAnomaly[]> = new Map()
-  const recomputeAnomalies = (projectName: string) => {
+  // A recompute reads declared Run paths from disk, so overlapping calls may
+  // finish out of order; only the newest call per project publishes.
+  const anomalyGenerations = new Map<string, number>()
+  const recomputeAnomalies = async (projectName: string): Promise<void> => {
+    const generation = (anomalyGenerations.get(projectName) ?? 0) + 1
+    anomalyGenerations.set(projectName, generation)
     const exps = Array.from(sharedExperiments.values()).filter((e) => e.project === projectName)
     // Membership needs the full Run set: a deprecated Run is still bound to
     // its Experiment, and hiding it here would report it as a phantom
@@ -399,12 +405,15 @@ async function init(): Promise<Runtime> {
     if (root)
       for (const run of runs)
         run.frontMatter.experiment = declaredParentExperimentId(exps, root, run, runs)
-    const result = computeMembership({
-      experiments: exps,
-      runs,
-      project: projectName,
-      projectRoot: config.projects.find((project) => project.name === projectName)?.root,
-    })
+    // Path declarations are classified by the declared path on disk, so an
+    // excluded or depth-pruned Run is still a member, never a phantom.
+    const membershipInput = { experiments: exps, runs, project: projectName }
+    const result = root
+      ? await computeMembershipFromDisk({ ...membershipInput, projectRoot: root }).catch(() =>
+          computeMembership({ ...membershipInput, projectRoot: root }),
+        )
+      : computeMembership(membershipInput)
+    if (anomalyGenerations.get(projectName) !== generation) return
     sharedAnomalies.set(projectName, result.anomalies)
     events.emit('anomaly', { project: projectName, count: result.anomalies.length })
   }
@@ -498,7 +507,7 @@ async function init(): Promise<Runtime> {
             }
           }
           events.emit('code-reviews-change', { project: expDirMatch.name })
-          recomputeAnomalies(expDirMatch.name)
+          await recomputeAnomalies(expDirMatch.name)
           // Cited-Experiment times drive `stale` / `citedBy`.
           wikiCache.invalidate(expDirMatch.name)
           events.emit('experiment-change', { type: 'rediscover', project: expDirMatch.name })
@@ -527,7 +536,7 @@ async function init(): Promise<Runtime> {
               if (previous) unwatchExperimentBundle(poller, previous)
               sharedExperiments.delete(expId)
             }
-            recomputeAnomalies(expFileMatch.name)
+            await recomputeAnomalies(expFileMatch.name)
             wikiCache.invalidate(expFileMatch.name)
             events.emit('experiment-change', {
               type: updated ? 'set' : 'delete',
@@ -700,9 +709,9 @@ async function init(): Promise<Runtime> {
     recomputeAnomalies,
     slurm,
   )
-  for (const [projectName] of experimentsByProject) {
-    recomputeAnomalies(projectName)
-  }
+  await Promise.all(
+    [...experimentsByProject.keys()].map((projectName) => recomputeAnomalies(projectName)),
+  )
 
   return runtime
 }

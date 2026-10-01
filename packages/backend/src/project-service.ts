@@ -16,7 +16,7 @@ import {
   type BackendRunSummary,
   BackendRunsResponseSchema,
   buildExperimentDocumentView,
-  computeMembership,
+  computeMembershipFromDisk,
   declaredRunOwner,
   discoverExperiments,
   discoverRuns,
@@ -687,6 +687,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
         projectName: project.name,
         include: project.include,
         exclude: project.exclude,
+        ...(project.runDepth === undefined ? {} : { runDepth: project.runDepth }),
       }),
       discoverExperiments(project.root, project.name),
     ])
@@ -709,7 +710,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
         snapshot.experiments.map((run) => [projectRunPath(project.root, run.path), run]),
       ),
       experiments: experimentResult.experiments,
-      membership: computeMembership({
+      // Path declarations are classified from the declared path on disk, so
+      // an excluded or depth-pruned Run directory is a member, not a phantom.
+      membership: await computeMembershipFromDisk({
         experiments: experimentResult.experiments,
         runs: snapshot.experiments,
         project: project.name,

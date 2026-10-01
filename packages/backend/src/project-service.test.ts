@@ -517,6 +517,40 @@ conclusion
     }
   })
 
+  it('classifies declared Run paths from disk and honours the Project run depth', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-phantom-from-disk-'))
+    const id = 'E0001-grp'
+    const excluded = 'outputs/batch/grp-a-260101-000000'
+    const deep = 'logs/x/y/grp-deep-260101-000001'
+    const missing = 'logs/grp-missing-260101-000002'
+    try {
+      const bundle = join(root, 'docs', 'experiments', id)
+      await fs.mkdir(bundle, { recursive: true })
+      await fs.writeFile(
+        join(bundle, 'README.md'),
+        `---\nid: ${id}\nslug: grp\ntitle: Group\nstatus: OPEN\nruns: ${JSON.stringify([excluded, deep, missing])}\n---\n`,
+      )
+      for (const run of [excluded, deep]) {
+        await fs.mkdir(join(root, run), { recursive: true })
+        await fs.writeFile(join(root, run, 'README.md'), '---\nstatus: FINISHED\n---\n')
+      }
+      await fs.mkdir(join(root, 'logs', 'grp-top-260101-000003'), { recursive: true })
+      const service = new FilesystemProjectService([
+        { name: 'disk', root, include: [], exclude: ['outputs'], runDepth: 1 },
+      ])
+
+      const anomalies = BackendAnomaliesResponseSchema.parse(await service.getAnomalies('disk'))
+      const phantoms = anomalies.anomalies
+        .filter((anomaly) => anomaly.code === 'PHANTOM_RUN_REF')
+        .map((anomaly) => anomaly.runId)
+      expect(phantoms).toEqual([missing])
+      const runs = BackendRunsResponseSchema.parse(await service.listRuns('disk')).runs
+      expect(runs.map((run) => run.id)).toEqual(['logs/grp-top-260101-000003'])
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns strict hypotheses, journal, and computed anomaly DTOs', async () => {
     const service = new FilesystemProjectService([project('project-a')])
     const hypotheses = BackendHypothesesResponseSchema.parse(

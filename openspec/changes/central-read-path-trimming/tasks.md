@@ -1,3 +1,7 @@
+## 0. Adopt the bounded-run-discovery core helpers
+
+- [x] 0.1 Classify `PHANTOM_RUN_REF` from the declared path on disk in the backend composition (`computeMembershipFromDisk`) and the standalone runtime (async `recomputeAnomalies`), and pass `runDepth` to `scanProjectRoot`; verify a backend test (excluded and depth-pruned declarations are members, only the missing path is a phantom) and a runtime integration test
+
 ## 1. Request-scoped root realpath (D1)
 
 - [ ] 1.1 Add a backend request scope opened by the route pipeline and memoize the Project root real path in `resolveContained`; verify with containment tests (memo hit inside a scope, unchanged behaviour outside, symlink escape still rejected)

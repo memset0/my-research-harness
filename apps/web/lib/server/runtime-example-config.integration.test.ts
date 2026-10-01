@@ -65,3 +65,38 @@ describe('direct web runtime with only config.example.yml', () => {
     )
   })
 })
+
+describe('direct web runtime anomalies', () => {
+  it('classifies declared Run paths from disk when composing anomalies', async () => {
+    const root = join(workspace, 'project')
+    const bundle = join(root, 'docs', 'experiments', 'E0001-grp')
+    await fs.mkdir(bundle, { recursive: true })
+    await fs.writeFile(
+      join(bundle, 'README.md'),
+      '---\nid: E0001-grp\nslug: grp\ntitle: Group\nstatus: OPEN\nruns: ["outputs/b/grp-a-260101-000000", "logs/grp-missing-260101-000001"]\n---\n',
+    )
+    await fs.mkdir(join(root, 'outputs', 'b', 'grp-a-260101-000000'), { recursive: true })
+    const configPath = join(workspace, 'config.yml')
+    await fs.writeFile(
+      configPath,
+      `projects:\n  - name: project-a\n    root: ${JSON.stringify(root)}\n    exclude: [outputs]\nauth:\n  username: owner\n  password: integration-password\n  session_secret: ${'s'.repeat(64)}\n`,
+    )
+    const program = `
+      void (async () => {
+        const { getRuntime } = await import(${JSON.stringify(runtimeModuleUrl)})
+        const runtime = await getRuntime()
+        const anomalies = runtime.anomaliesByProject.get('project-a') ?? []
+        process.stdout.write('\\n@@' + JSON.stringify(anomalies.map((a) => [a.code, a.runId])))
+        process.exit(0)
+      })()
+    `
+    const { stdout } = await execFileAsync(tsxBinary, ['--eval', program], {
+      cwd: workspace,
+      env: { ...process.env, MEMON_CONFIG_PATH: configPath },
+      timeout: 30_000,
+    })
+    expect(JSON.parse(stdout.slice(stdout.lastIndexOf('@@') + 2))).toEqual([
+      ['PHANTOM_RUN_REF', 'logs/grp-missing-260101-000001'],
+    ])
+  })
+})

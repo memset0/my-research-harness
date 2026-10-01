@@ -43,7 +43,7 @@ export async function refreshStandaloneExperiment(
     const updated = await readExperimentDoc(project.root, projectName, id)
     if (!updated) return
     runtime.experiments.set(id, updated)
-    runtime.recomputeAnomalies(projectName)
+    await runtime.recomputeAnomalies(projectName)
     runtime.events.emit('experiment-change', { type: 'set', id, experiment: updated })
   } catch {
     // The shared service already committed. Runtime refresh is best-effort.
@@ -76,7 +76,7 @@ export async function refreshStandaloneLifecycle(
 ): Promise<void> {
   if (operation === 'delete') {
     runtime.experiments.delete(experimentId)
-    runtime.recomputeAnomalies(projectName)
+    await runtime.recomputeAnomalies(projectName)
     runtime.events.emit('experiment-change', { type: 'delete', id: experimentId })
   } else {
     await refreshStandaloneExperiment(runtime, projectName, experimentId)

@@ -192,6 +192,20 @@ cache entry; either path ends with zero body recomputation on the server.
    before the memo, cheaply); `BodyTranslation` requests status from
    `requestIdleCallback` (fallback `setTimeout` 1.5 s) after mount.
 
+### Adopting the parallel discovery change
+
+The core change `bounded-run-discovery` (already on main) classifies
+`PHANTOM_RUN_REF` for path declarations by the declared path on disk and adds
+a per-Project `run_depth`. Central adopts both: the Backend composition calls
+`computeMembershipFromDisk` and passes `runDepth` to `scanProjectRoot`; the
+standalone runtime's `recomputeAnomalies` becomes async for the disk check
+(only the newest recompute per Project publishes). When the composition later
+moves onto the summary index (D4) the declared-path map is built from indexed
+Run entries — an existing contained directory yields its Run record, anything
+else null — and passed to `computeMembership` as `declaredRuns`, which is the
+same classification at one fingerprint per declared path. Direct `discoverRuns`
+callers pick up `runDepth` from the Project config automatically.
+
 ## Risks / Trade-offs
 
 - NFS attribute caching (`acregmax`) can delay a fingerprint change by up to
@@ -221,7 +235,5 @@ Filled in after implementation (same harness, same page set).
 
 - Persist the index per Project (`.memon/index/`) maintained by every memon
   writer, with the same fingerprint validation (FS v8 option B).
-- Adopt the parallel change's direct-path PHANTOM classification and bounded
-  walk depth in central composition.
 - `storage: network` with TTLs for mounted Projects once measured.
 - Git-status polling (10 s per Project) is now the largest periodic cost left.
