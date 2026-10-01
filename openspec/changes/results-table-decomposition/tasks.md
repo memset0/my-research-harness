@@ -1,8 +1,8 @@
 ## 1. Pure logic (D1)
 
-- [ ] 1.1 Create `apps/web/lib/experiment-results/{types,columns,format,filters,sorting,sota,layout}.ts` with the component's React-free helpers, exported
-- [ ] 1.2 Add table-driven unit tests for each module (empty table, missing column, mixed types, NaN, duplicate rows)
-- [ ] 1.3 Make `experiment-results-table.tsx` import the modules; existing 15 table tests pass
+- [x] 1.1 Create `apps/web/lib/experiment-results/{types,columns,format,filters,sorting,sota,layout}.ts` with the component's React-free helpers, exported
+- [x] 1.2 Add table-driven unit tests for each module (empty table, missing column, mixed types, NaN, duplicate rows)
+- [x] 1.3 Make `experiment-results-table.tsx` import the modules; existing 15 table tests pass
 
 ## 2. Merged validation (D2)
 

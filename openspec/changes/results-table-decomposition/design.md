@@ -45,6 +45,12 @@ The behavioral safety net is `components/experiment-results-table.test.tsx`
 | `transient-state.ts` | reducer for mounted-only state |
 | `views.ts` | View types, scope helpers, the merged validator (D2) |
 
+NaN handling is made explicit while moving: a NaN metric sorts after every
+number in both directions (as empty values do) instead of feeding `NaN` into the
+comparator, and a NaN value is incomparable in a filter (it never satisfies
+`=`, `>`, `<`; `≠` behaves as before). Previously the comparator returned `NaN`,
+which made the resulting order engine-dependent.
+
 Alternatives: keeping helpers in the component file but exported — rejected,
 the file would stay a client module pulling React and shadcn into pure tests.
 

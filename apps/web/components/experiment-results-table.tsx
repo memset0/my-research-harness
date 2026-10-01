@@ -1,9 +1,6 @@
 'use client'
 
 import type {
-  ResultColumnAnnotation,
-  ResultScalar,
-  ResultColumn as ResultSchemaColumn,
   ResultsDocument,
   ResultsVariantEligibility,
   ResultVariant,
@@ -36,7 +33,6 @@ import {
 import Link from 'next/link'
 import {
   type ComponentProps,
-  type CSSProperties,
   type DragEvent,
   Fragment,
   type ReactNode,
@@ -47,6 +43,44 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { type ProjectTarget, projectWebPath } from '../lib/api'
+import {
+  buildColumns,
+  distinctValues,
+  resultValueDescription,
+} from '../lib/experiment-results/columns'
+import { filterVariants } from '../lib/experiment-results/filters'
+import {
+  gitBlobUrl,
+  gitCommitUrl,
+  keyedLines,
+  operatorSymbol,
+  parseWandbUrl,
+  plainCellValue,
+  sortActionLabel,
+  sortDirectionLabel,
+  sortDirectionSymbol,
+  sotaRankClass,
+} from '../lib/experiment-results/format'
+import {
+  computePinLayout,
+  dropEdgeAt,
+  EMPTY_PIN_LAYOUT,
+  pinnedColumnStyle,
+  pinnedOpaqueBackground,
+  reorderIds,
+  reorderItems,
+  samePinLayout,
+} from '../lib/experiment-results/layout'
+import { effectiveSortRules, sortVariants } from '../lib/experiment-results/sorting'
+import { computeSotaRanks } from '../lib/experiment-results/sota'
+import type {
+  DragItem,
+  DragKind,
+  DropEdge,
+  PinLayout,
+  ResultTableColumn,
+  SotaRank,
+} from '../lib/experiment-results/types'
 import type {
   ExperimentResultsViewDefinition,
   ResultsViewPinSide,
@@ -100,44 +134,12 @@ type SortDirection = ResultsViewSortDirection
 type PinSide = ResultsViewPinSide
 type RowFilterOperator = ResultsViewRowFilterOperator
 type RowOverride = ResultsViewRowOverride
-type DragKind = 'column' | 'row-filter' | 'sort-rule'
-type DropEdge = 'before' | 'after'
-type ResultValue = ResultScalar | string[] | undefined
-type ColumnKind =
-  | 'variant'
-  | 'status'
-  | 'schema'
-  | 'entry'
-  | 'recipe'
-  | 'commit'
-  | 'runs'
-  | 'attempts'
-
-interface ResultTableColumn {
-  id: string
-  label: string
-  kind: ColumnKind
-  schema?: ResultSchemaColumn
-  annotation?: ResultColumnAnnotation
-  getValue: (variant: ResultVariant) => ResultValue
-}
 
 type SotaMode = ResultsViewSotaMode
 
 type ResultsTablePreferences = ExperimentResultsViewDefinition
 type RowFilter = ResultsViewRowFilter
 type SortRule = ResultsViewSortRule
-
-interface PinLayout {
-  sticky: boolean
-  leftOffsets: Record<string, number>
-  rightOffsets: Record<string, number>
-}
-
-interface DragItem {
-  kind: DragKind
-  id: string
-}
 
 const DEFAULT_PREFERENCES: ResultsTablePreferences = {
   hiddenColumnIds: [],
@@ -150,8 +152,6 @@ const DEFAULT_PREFERENCES: ResultsTablePreferences = {
   sotaModes: {},
   decimalPlaces: {},
 }
-
-const EMPTY_PIN_LAYOUT: PinLayout = { sticky: false, leftOffsets: {}, rightOffsets: {} }
 
 const STATUS_CLASS: Record<VariantStatus, string> = {
   PLANNED:
@@ -291,16 +291,7 @@ export function ExperimentResultsTable({
   )
   const sortedVariants = useMemo(
     () =>
-      sortVariants(
-        filteredVariants,
-        columns,
-        temporarySort
-          ? [
-              temporarySort,
-              ...defaultSortRules.filter((rule) => rule.columnId !== temporarySort.columnId),
-            ]
-          : defaultSortRules,
-      ),
+      sortVariants(filteredVariants, columns, effectiveSortRules(temporarySort, defaultSortRules)),
     [columns, defaultSortRules, filteredVariants, temporarySort],
   )
   const hasVisibleRows = filteredVariants.length > 0
@@ -632,32 +623,17 @@ export function ExperimentResultsTable({
     if (!table || !container) return
 
     const measure = () => {
-      const headers = Array.from(table.querySelectorAll<HTMLElement>('thead [data-column-id]'))
-      const leftHeaders = headers.filter((header) => header.dataset.pinned === 'left')
-      const rightHeaders = headers.filter((header) => header.dataset.pinned === 'right')
-      const pinnedWidth = [...leftHeaders, ...rightHeaders].reduce(
-        (total, header) => total + header.getBoundingClientRect().width,
-        0,
+      const next = computePinLayout(
+        Array.from(table.querySelectorAll<HTMLElement>('thead [data-column-id]')).flatMap(
+          (header) => {
+            const side = header.dataset.pinned
+            const columnId = header.dataset.columnId
+            if ((side !== 'left' && side !== 'right') || !columnId) return []
+            return [{ columnId, side, width: header.getBoundingClientRect().width }] as const
+          },
+        ),
+        container.clientWidth,
       )
-      const sticky = pinnedWidth > 0 && pinnedWidth < container.clientWidth
-      const leftOffsets: Record<string, number> = {}
-      const rightOffsets: Record<string, number> = {}
-
-      let left = 0
-      for (const header of leftHeaders) {
-        const columnId = header.dataset.columnId
-        if (columnId) leftOffsets[columnId] = left
-        left += header.getBoundingClientRect().width
-      }
-
-      let right = 0
-      for (const header of [...rightHeaders].reverse()) {
-        const columnId = header.dataset.columnId
-        if (columnId) rightOffsets[columnId] = right
-        right += header.getBoundingClientRect().width
-      }
-
-      const next = { sticky, leftOffsets, rightOffsets }
       setPinLayout((current) => (samePinLayout(current, next) ? current : next))
     }
 
@@ -1966,73 +1942,6 @@ function ColumnOptionSummary({
   )
 }
 
-function buildColumns(
-  document: ResultsDocument,
-  excludedRuns: ReadonlySet<string>,
-): ResultTableColumn[] {
-  return [
-    {
-      id: 'variant',
-      label: 'Variant',
-      kind: 'variant',
-      getValue: (variant) => `${variant.id} ${variant.name}`,
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      kind: 'status',
-      getValue: (variant) => variant.status,
-    },
-    ...document.columns.map(
-      (schema): ResultTableColumn => ({
-        id: `schema:${schema.key}`,
-        label: schema.label,
-        kind: 'schema',
-        schema,
-        annotation: document.columnAnnotations?.[schema.key],
-        getValue: (variant) =>
-          schema.group === 'parameter'
-            ? variant.parameters[schema.key]
-            : variant.metrics[schema.key],
-      }),
-    ),
-    {
-      id: 'entry',
-      label: 'Entry',
-      kind: 'entry',
-      getValue: (variant) => variant.provenance?.entry,
-    },
-    {
-      id: 'recipe',
-      label: 'Recipe',
-      kind: 'recipe',
-      getValue: (variant) => variant.provenance?.recipe,
-    },
-    {
-      id: 'commit',
-      label: 'Commit',
-      kind: 'commit',
-      getValue: (variant) => variant.provenance?.commit,
-    },
-    {
-      id: 'runs',
-      label: 'Runs',
-      kind: 'runs',
-      getValue: (variant) =>
-        excludedRuns.size === 0 ? variant.runs : variant.runs.filter((id) => !excludedRuns.has(id)),
-    },
-    {
-      id: 'attempts',
-      label: 'Attempts',
-      kind: 'attempts',
-      getValue: (variant) =>
-        excludedRuns.size === 0
-          ? variant.attempts
-          : variant.attempts.filter((id) => !excludedRuns.has(id)),
-    },
-  ]
-}
-
 function ResultCell({
   column,
   variant,
@@ -2048,7 +1957,7 @@ function ResultCell({
   project: ProjectTarget
   experimentId: string
   declaredRunIds: ReadonlySet<string>
-  sotaRank?: number
+  sotaRank?: SotaRank
   decimalPlaces?: number
   eligibility?: ResultsVariantEligibility
 }) {
@@ -2135,14 +2044,7 @@ function ResultCell({
   const content = renderCellText(text)
   const hasDecimalFormat =
     decimalPlaces !== undefined && typeof value === 'number' && Number.isFinite(value)
-  const sotaClass =
-    sotaRank === 1
-      ? 'font-bold underline'
-      : sotaRank === 2
-        ? 'font-bold'
-        : sotaRank === 3
-          ? 'underline'
-          : ''
+  const sotaClass = sotaRankClass(sotaRank)
   return column.kind === 'schema' ? (
     <span
       className={cn(
@@ -2220,17 +2122,6 @@ function AnnotationTooltip({
   )
 }
 
-function resultValueDescription(
-  column: ResultTableColumn,
-  variant: ResultVariant,
-): string | undefined {
-  const descriptions = column.annotation?.valueDescriptions
-  if (!descriptions) return undefined
-  const value = column.getValue(variant)
-  if (value === null || value === undefined || Array.isArray(value)) return undefined
-  return descriptions[String(value)]
-}
-
 function SortIcon({ direction }: { direction: SortDirection | null }) {
   if (direction === 'asc') return <ArrowUp data-icon="inline-end" aria-hidden />
   if (direction === 'desc') return <ArrowDown data-icon="inline-end" aria-hidden />
@@ -2241,168 +2132,8 @@ function EmptyValue() {
   return <span className="text-muted-foreground">—</span>
 }
 
-function filterVariants(
-  variants: ResultVariant[],
-  columns: ResultTableColumn[],
-  filters: RowFilter[],
-  overrides: Record<string, RowOverride>,
-  showAllRows: boolean,
-): ResultVariant[] {
-  if (showAllRows) return variants
-  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
-  return variants.filter((variant) => {
-    const override = overrides[variant.id]
-    if (override === 'include') return true
-    if (override === 'exclude') return false
-    return filters.every((filter) => {
-      const column = columnsById.get(filter.columnId)
-      return column ? matchesRowFilter(column.getValue(variant), filter) : true
-    })
-  })
-}
-
-function matchesRowFilter(value: ResultValue, filter: RowFilter): boolean {
-  const values = Array.isArray(value) ? (value.length > 0 ? value : [undefined]) : [value]
-  if (filter.operator === 'neq') {
-    return values.every((item) => !matchesScalarFilter(item, 'eq', filter.value))
-  }
-  return values.some((item) => matchesScalarFilter(item, filter.operator, filter.value))
-}
-
-function matchesScalarFilter(
-  value: ResultScalar | string | undefined,
-  operator: RowFilterOperator,
-  target: string,
-): boolean {
-  const comparison = compareFilterValues(value, target)
-  if (comparison === null) return false
-  if (operator === 'eq') return comparison === 0
-  if (operator === 'neq') return comparison !== 0
-  if (operator === 'gt') return comparison > 0
-  return comparison < 0
-}
-
-function compareFilterValues(
-  value: ResultScalar | string | undefined,
-  target: string,
-): number | null {
-  if (value === null || value === undefined || value === '') {
-    return target === '' ? 0 : null
-  }
-  if (typeof value === 'number') {
-    const numericTarget = Number(target)
-    return Number.isFinite(numericTarget) ? value - numericTarget : null
-  }
-  if (typeof value === 'boolean') {
-    const normalizedTarget = target.trim().toLowerCase()
-    if (normalizedTarget !== 'true' && normalizedTarget !== 'false') return null
-    return Number(value) - Number(normalizedTarget === 'true')
-  }
-  return new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare(
-    String(value).replace(/<br\s*\/?>/gi, '\n'),
-    target,
-  )
-}
-
-function sortVariants(
-  variants: ResultVariant[],
-  columns: ResultTableColumn[],
-  rules: ReadonlyArray<Omit<SortRule, 'id'>>,
-): ResultVariant[] {
-  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
-  return variants
-    .map((variant, index) => ({ variant, index }))
-    .sort((left, right) => {
-      for (const rule of rules) {
-        const column = columnsById.get(rule.columnId)
-        if (!column) continue
-        const comparison = compareSortValues(
-          column.getValue(left.variant),
-          column.getValue(right.variant),
-          rule.direction,
-        )
-        if (comparison !== 0) return comparison
-      }
-      const variantIdComparison = new Intl.Collator(undefined, {
-        numeric: true,
-        sensitivity: 'base',
-      }).compare(left.variant.id, right.variant.id)
-      return variantIdComparison || left.index - right.index
-    })
-    .map(({ variant }) => variant)
-}
-
-function compareSortValues(
-  left: ResultValue,
-  right: ResultValue,
-  direction: SortDirection,
-): number {
-  const leftEmpty = isEmptyValue(left)
-  const rightEmpty = isEmptyValue(right)
-  if (leftEmpty || rightEmpty) {
-    if (leftEmpty && rightEmpty) return 0
-    return leftEmpty ? 1 : -1
-  }
-  const comparison = compareValues(left, right)
-  return direction === 'asc' ? comparison : -comparison
-}
-
-function compareValues(left: ResultValue, right: ResultValue): number {
-  if (typeof left === 'number' && typeof right === 'number') return left - right
-  if (typeof left === 'boolean' && typeof right === 'boolean') return Number(left) - Number(right)
-  return new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare(
-    valueText(left),
-    valueText(right),
-  )
-}
-
-function distinctValues(variants: ResultVariant[], column: ResultTableColumn): string[] {
-  const values = new Set<string>()
-  for (const variant of variants) {
-    const value = column.getValue(variant)
-    if (Array.isArray(value)) {
-      for (const item of value) values.add(displayText(item))
-    } else if (!isEmptyValue(value)) {
-      values.add(displayText(value))
-    }
-  }
-  return Array.from(values).sort((left, right) =>
-    new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare(left, right),
-  )
-}
-
-function plainCellValue(column: ResultTableColumn, variant: ResultVariant): string {
-  return valueText(column.getValue(variant)).replace(/<br\s*\/?>/gi, '\n') || '—'
-}
-
-function valueText(value: ResultValue): string {
-  if (Array.isArray(value)) return value.join('\n')
-  if (value === null || value === undefined || value === '') return ''
-  return String(value)
-}
-
-function displayText(value: ResultValue): string {
-  return valueText(value).replace(/<br\s*\/?>/gi, '\n') || '—'
-}
-
-function isEmptyValue(value: ResultValue): boolean {
-  return (
-    value === null ||
-    value === undefined ||
-    value === '' ||
-    (Array.isArray(value) && value.length === 0)
-  )
-}
-
 function renderTextWithBreaks(value: string): ReactNode {
-  const lines = value.split(/(?:<br\s*\/?>|\r?\n)/gi)
-  const occurrences = new Map<string, number>()
-  const keyedLines = lines.map((line) => {
-    const occurrence = (occurrences.get(line) ?? 0) + 1
-    occurrences.set(line, occurrence)
-    return { key: `${line}\0${occurrence}`, line }
-  })
-  return keyedLines.map(({ key, line }, position) => (
+  return keyedLines(value).map(({ key, line }, position) => (
     <Fragment key={key}>
       {position > 0 && <br />}
       {line}
@@ -2411,12 +2142,7 @@ function renderTextWithBreaks(value: string): ReactNode {
 }
 
 function renderCellText(value: string): ReactNode {
-  const lines = value.split(/(?:<br\s*\/?>|\r?\n)/gi)
-  const occurrences = new Map<string, number>()
-  return lines.map((line, position) => {
-    const occurrence = (occurrences.get(line) ?? 0) + 1
-    occurrences.set(line, occurrence)
-    const key = `${line}\0${occurrence}`
+  return keyedLines(value).map(({ key, line }, position) => {
     const wandbUrl = parseWandbUrl(line)
     return (
       <Fragment key={key}>
@@ -2452,60 +2178,8 @@ function WandbLink({ href, label }: { href: string; label: string }) {
   )
 }
 
-function parseWandbUrl(value: string): { href: string; label: string } | null {
-  const href = value.trim()
-  if (href !== value || href.length === 0) return null
-  let url: URL
-  try {
-    url = new URL(href)
-  } catch {
-    return null
-  }
-  const hostname = url.hostname.toLowerCase()
-  if (
-    (url.protocol !== 'https:' && url.protocol !== 'http:') ||
-    (hostname !== 'wandb.ai' && !hostname.endsWith('.wandb.ai'))
-  ) {
-    return null
-  }
-  const lastSegment = url.pathname.split('/').filter(Boolean).at(-1)
-  if (!lastSegment) return { href, label: hostname }
-  try {
-    return { href, label: decodeURIComponent(lastSegment) }
-  } catch {
-    return { href, label: lastSegment }
-  }
-}
-
 function dropEdge(event: DragEvent<HTMLElement>): DropEdge {
-  const bounds = event.currentTarget.getBoundingClientRect()
-  return event.clientX > bounds.left + bounds.width / 2 ? 'after' : 'before'
-}
-
-function reorderIds(ids: string[], sourceId: string, targetId: string, edge: DropEdge): string[] {
-  if (sourceId === targetId) return ids
-  const sourceIndex = ids.indexOf(sourceId)
-  if (sourceIndex < 0 || !ids.includes(targetId)) return ids
-  const next = ids.filter((id) => id !== sourceId)
-  const targetIndex = next.indexOf(targetId)
-  next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, sourceId)
-  return next.every((id, index) => id === ids[index]) ? ids : next
-}
-
-function reorderItems<T extends { id: string }>(
-  items: T[],
-  sourceId: string,
-  targetId: string,
-  edge: DropEdge,
-): T[] {
-  const currentIds = items.map((item) => item.id)
-  const nextIds = reorderIds(currentIds, sourceId, targetId, edge)
-  if (nextIds === currentIds) return items
-  const itemsById = new Map(items.map((item) => [item.id, item] as const))
-  const next = nextIds
-    .map((id) => itemsById.get(id))
-    .filter((item): item is T => item !== undefined)
-  return next.every((item, index) => item === items[index]) ? items : next
+  return dropEdgeAt(event.clientX, event.currentTarget.getBoundingClientRect())
 }
 
 function normalizeColumnOrderIds(value: unknown, defaultIds: string[]): string[] {
@@ -2643,152 +2317,6 @@ function isRowFilterOperator(value: unknown): value is RowFilterOperator {
   return value === 'eq' || value === 'neq' || value === 'gt' || value === 'lt'
 }
 
-function operatorSymbol(operator: RowFilterOperator): string {
-  if (operator === 'eq') return '='
-  if (operator === 'neq') return '≠'
-  if (operator === 'gt') return '>'
-  return '<'
-}
-
-function pinnedOpaqueBackground(
-  metric: boolean,
-  starred: boolean,
-  surface: 'header' | 'cell',
-): string {
-  if (starred) return '!bg-amber-50 dark:!bg-amber-950'
-  if (metric) return '!bg-sky-50 dark:!bg-sky-950'
-  return surface === 'header' ? '!bg-muted' : '!bg-background'
-}
-
-function pinnedColumnStyle(
-  columnId: string,
-  side: PinSide | undefined,
-  layout: PinLayout,
-): CSSProperties | undefined {
-  if (!side || !layout.sticky) return undefined
-  return side === 'left'
-    ? { left: layout.leftOffsets[columnId] ?? 0 }
-    : { right: layout.rightOffsets[columnId] ?? 0 }
-}
-
-function samePinLayout(left: PinLayout, right: PinLayout): boolean {
-  if (left.sticky !== right.sticky) return false
-  const sameOffsets = (a: Record<string, number>, b: Record<string, number>) => {
-    const keys = Object.keys(a)
-    return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
-  }
-  return (
-    sameOffsets(left.leftOffsets, right.leftOffsets) &&
-    sameOffsets(left.rightOffsets, right.rightOffsets)
-  )
-}
-
-function sortActionLabel(direction: SortDirection | null): string {
-  if (direction === 'asc') return 'temporarily sorted ascending; activate for descending'
-  if (direction === 'desc') return 'temporarily sorted descending; activate for default sort'
-  return 'default sort; activate for temporary ascending'
-}
-
-function sortDirectionSymbol(direction: SortDirection): string {
-  return direction === 'asc' ? '↑' : '↓'
-}
-
-function sortDirectionLabel(direction: SortDirection): string {
-  return direction === 'asc' ? 'ascending' : 'descending'
-}
-
-function gitBlobUrl(variant: ResultVariant, path: string): string | null {
-  const repository = variant.provenance?.repo
-  const commit = variant.provenance?.commit
-  if (!repository || !commit || !isSafeRelativePath(path)) return null
-  const base = normalizedRepositoryUrl(repository)
-  if (!base) return null
-  const encodedPath = path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')
-  return `${base}/blob/${encodeURIComponent(commit)}/${encodedPath}`
-}
-
-function gitCommitUrl(variant: ResultVariant): string | null {
-  const repository = variant.provenance?.repo
-  const commit = variant.provenance?.commit
-  if (!repository || !commit) return null
-  const base = normalizedRepositoryUrl(repository)
-  return base ? `${base}/commit/${encodeURIComponent(commit)}` : null
-}
-
-function normalizedRepositoryUrl(repository: string): string | null {
-  let url: URL
-  try {
-    url = new URL(repository)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-  url.search = ''
-  url.hash = ''
-  url.pathname = url.pathname.replace(/\/+$/, '').replace(/\.git$/i, '')
-  return url.toString().replace(/\/$/, '')
-}
-
-function isSafeRelativePath(path: string): boolean {
-  const normalized = path.replaceAll('\\', '/')
-  return (
-    normalized.length > 0 &&
-    !normalized.startsWith('/') &&
-    !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(normalized) &&
-    !normalized.split('/').includes('..')
-  )
-}
-
-// ── Display enhancement helpers ──────────────────────────────────────────────
-
-type SotaRank = 1 | 2 | 3 | undefined
-
-interface SotaRanking {
-  /** Map from variant id to its SOTA rank (1 = best, 2 = second, 3 = third). */
-  ranks: Map<string, SotaRank>
-  /** Whether the ranking is active (mode is not 'off'). */
-  active: boolean
-}
-
-function computeSotaRanks(
-  variants: ResultVariant[],
-  columns: ResultTableColumn[],
-  modes: Record<string, SotaMode>,
-  eligibilityByVariant: ReadonlyMap<string, ResultsVariantEligibility>,
-): Map<string, SotaRanking> {
-  const result = new Map<string, SotaRanking>()
-  for (const column of columns) {
-    if (column.schema?.group !== 'metric') continue
-    const mode = modes[column.id] ?? 'off'
-    if (mode === 'off') continue
-
-    // Collect finite numeric values for this column, preserving variant order.
-    const entries: Array<{ variantId: string; value: number }> = []
-    for (const variant of variants) {
-      const eligibility = eligibilityByVariant.get(variant.id)
-      if (eligibility && eligibility.metricsValidity !== 'valid') continue
-      const raw = column.getValue(variant)
-      if (typeof raw === 'number' && Number.isFinite(raw)) {
-        entries.push({ variantId: variant.id, value: raw })
-      }
-    }
-    if (entries.length === 0) continue
-
-    // Sort by value according to the mode direction.
-    const sorted = entries
-      .slice()
-      .sort((a, b) => (mode === 'higher-is-better' ? b.value - a.value : a.value - b.value))
-
-    // Assign ranks: best = 1, second = 2, third = 3.
-    const ranks = new Map<string, SotaRank>()
-    for (let i = 0; i < sorted.length && i < 3; i++) {
-      ranks.set(sorted[i]!.variantId, (i + 1) as SotaRank)
-    }
-    result.set(column.id, { ranks, active: true })
-  }
-  return result
-}
-
 function normalizeSotaModes(
   value: unknown,
   validColumnIds: ReadonlySet<string>,
@@ -2819,58 +2347,4 @@ function normalizeDecimalPlaces(
     }
   }
   return result
-}
-
-function sotaModeLabel(mode: SotaMode): string {
-  if (mode === 'higher-is-better') return 'Higher is better'
-  if (mode === 'lower-is-better') return 'Lower is better'
-  return 'SOTA highlight off'
-}
-
-function sotaModeIcon(mode: SotaMode): ReactNode {
-  if (mode === 'higher-is-better') return <ArrowUp className="size-3" aria-hidden />
-  if (mode === 'lower-is-better') return <ArrowDown className="size-3" aria-hidden />
-  return <Minus className="size-3" aria-hidden />
-}
-
-function SotaModeToggle({ mode, onToggle }: { mode: SotaMode; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-label={sotaModeLabel(mode)}
-      title={sotaModeLabel(mode)}
-      className={cn(
-        'inline-flex size-5 items-center justify-center rounded opacity-70 transition-opacity hover:opacity-100',
-        mode === 'off' && 'text-muted-foreground',
-      )}
-    >
-      {sotaModeIcon(mode)}
-    </button>
-  )
-}
-
-function DecimalPlacesInput({
-  places,
-  onChange,
-}: {
-  places: number
-  onChange: (n: number) => void
-}) {
-  return (
-    <Input
-      type="number"
-      min={0}
-      max={10}
-      step={1}
-      value={places}
-      onChange={(event) => {
-        const raw = Number(event.target.value)
-        onChange(Number.isFinite(raw) ? raw : 0)
-      }}
-      aria-label="Decimal places for metric column"
-      title={`Show ${places} decimal place${places === 1 ? '' : 's'}`}
-      className="h-5 w-8 rounded px-1 text-[10px] tabular-nums"
-    />
-  )
 }
