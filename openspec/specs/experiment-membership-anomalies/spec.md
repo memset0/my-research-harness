@@ -1,7 +1,7 @@
 # experiment-membership-anomalies Specification
 
 ## Purpose
-TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+Detects inconsistencies in Experiment-declared Run membership, such as declared Run paths that are missing or ambiguous, the same path claimed by several Experiments, and Experiment slug-uniqueness violations, and reports them without repairing anything. An unassigned Run is valid and is not an anomaly. It serves the owner through `GET /api/anomalies`, the `anomaly` SSE topic and a dashboard banner, recomputed whenever declarations change; detection lives in `@memon/core` membership code.
 
 ## Requirements
 

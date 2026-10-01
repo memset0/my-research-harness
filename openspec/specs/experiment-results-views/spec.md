@@ -1,7 +1,8 @@
 # experiment-results-views Specification
 
 ## Purpose
-TBD - created by archiving change centralize-experiment-results-views. Update Purpose after archive.
+Defines Results Views: named, shared arrangements of an Experiment's Results table (filters, column visibility and order, sorting, pinning, row overrides and formatting) bound to one exact Experiment identity. Owners create and edit Views, and share viewers can read every View in their scope but cannot change them. Views are owned durably by the central service's SQLite store (`apps/web/lib/server/experiment-results-views-store.ts`); the Results data itself stays in the Experiment's `results.yaml`.
+
 ## Requirements
 ### Requirement: Results Views are shared Experiment resources
 

@@ -1,7 +1,7 @@
 # run-edit Specification
 
 ## Purpose
-TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+Defines the write paths for Run READMEs: optimistic-locked README writes from the dashboard, idempotent status and archive routes, the `updated_at` save handshake, `memon run rename` and `memon run status set`, and the rule that Runs store no warnings of their own. It serves both dashboard editors and agents driving Runs from the CLI. Run README files are the source of truth; writes go through `@memon/core`, `packages/cli` and `packages/backend`.
 
 ## Requirements
 

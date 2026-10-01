@@ -1,7 +1,8 @@
 # archive-frontmatter Specification
 
 ## Purpose
-TBD - created by archiving change lifecycle-frontmatter-v4. Update Purpose after archive.
+Defines the human-only `archived` frontmatter flag on Run READMEs and Experiment READMEs, which hides finished or abandoned work from default listings without deleting it. It covers the archive/unarchive writes, the guard against archiving a `RUNNING` Run, the soft warning on edits to archived items, and the dashboard's archived display modes. The flag lives in each document's frontmatter; parsing and writes are implemented in `@memon/core` and surfaced through `packages/cli` and `apps/web`.
+
 ## Requirements
 ### Requirement: `archived` is a frontmatter boolean on both run README and experiment doc
 

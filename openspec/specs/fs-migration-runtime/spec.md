@@ -1,7 +1,7 @@
 # fs-migration-runtime Specification
 
 ## Purpose
-TBD - created by archiving change fs-convention-migration-system. Update Purpose after archive.
+Defines how a project whose on-disk layout is older than the installed `FS_CONVENTION_VERSION` is detected and migrated: mandatory user confirmation, a clean worktree and per-step commits in git mode, backup tarballs otherwise, and staged approval for semantic steps. It serves operators upgrading research projects, with the `memon-migrate-fs` skill orchestrating the protocol. The per-version guides under `packages/core/migrations/` are the executable contract; the version marker itself is owned by `fs-version-tracking`.
 
 ## Requirements
 

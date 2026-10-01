@@ -1,7 +1,7 @@
 # experiment-readme Specification
 
 ## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+Defines the Experiment bundle README at `docs/experiments/E<NNNN>-<slug>/README.md`: its frontmatter schema, slug rules, canonical H2 sections, Warnings table, human-only `ExperimentStatus`, `archived` flag and declaration-owned Run membership. It is the contract shared by every reader and writer of Experiment documents, including the CLI, backend, dashboard and skills. Parsing and serialisation live in `@memon/core` (`experiments/`); the structured YAML companions are specified by `structured-experiment-sections`.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # experiment-discovery Specification
 
 ## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+Defines how memon finds Experiment bundles under `<projectRoot>/docs/experiments/E<NNNN>-<slug>/`, keeps them fresh with exponential-backoff polling instead of filesystem watchers, and derives Run membership from Experiment declarations. It serves the CLI, backend and dashboard listings and free-text search. Discovery is implemented in `@memon/core` (`experiments/`); the document format itself is owned by `experiment-readme` and `structured-experiment-sections`.
 
 ## Requirements
 

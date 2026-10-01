@@ -1,7 +1,7 @@
 # run-readme Specification
 
 ## Purpose
-TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+Defines the Run record, the `README.md` inside a `<slug>-<YYMMDD>-<HHMMSS>/` run directory: its location, frontmatter schema and defaults, body sections, the uppercase Run status enum, the `archived` flag, and graceful degradation when parsing fails. Under FS v7 a Run does not persist its Experiment ownership; membership is declared by the Experiment. Parsing and serialisation live in `@memon/core` (`readme/`) and are shared by the CLI, backend and dashboard.
 
 ## Requirements
 

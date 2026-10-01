@@ -1,7 +1,8 @@
 # hypotheses Specification
 
 ## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+Defines `docs/hypotheses.md`, the single per-project file that records research hypotheses, their five-state status legend, per-entry fields, and the Experiment and Run cross-references that link evidence to each claim. It serves humans and agents tracking which hypotheses are confirmed, refuted or still open, and the dashboard's hypotheses page. The Markdown file is the source of truth; parsing lives in `@memon/core` (`hypotheses/`), and `memon hypo list` / `memon hypo show` read it from the CLI.
+
 ## Requirements
 ### Requirement: HYPOTHESES.md location
 

@@ -1,7 +1,7 @@
 # fs-version-tracking Specification
 
 ## Purpose
-TBD - created by archiving change fs-convention-migration-system. Update Purpose after archive.
+Defines the filesystem convention version: the integer `FS_CONVENTION_VERSION` exported by `@memon/core` and the per-project marker `.memon/version.json` that records which convention a project is on. It lets the CLI, backend and migration runtime detect a mismatch before reading or writing project files. The constant and the marker read/write API live in `@memon/core` (`fs-version/`); migrating between versions belongs to `fs-migration-runtime`.
 
 ## Requirements
 

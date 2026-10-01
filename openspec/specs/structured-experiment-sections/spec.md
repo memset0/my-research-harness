@@ -1,7 +1,7 @@
 # structured-experiment-sections Specification
 
 ## Purpose
-TBD - created by archiving change structured-experiment-docs-v6. Update Purpose after archive.
+Defines the schema-versioned `implementation.yaml`, `investigation.yaml` and `results.yaml` files beside an Experiment's README as the authoritative sources of its Implementation, Investigation and Results sections, including Variants, enum columns and sparse column annotations. It serves agents that edit the YAML directly and readers that see deterministic Markdown projections in the CLI and dashboard. Schemas, validation and projection live in `@memon/core` (`experiments/documents.ts`).
 
 ## Requirements
 

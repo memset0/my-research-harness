@@ -1,7 +1,7 @@
 # experiment-edit Specification
 
 ## Purpose
-TBD - created by archiving change add-write-flow. Update Purpose after archive.
+Defines the write paths for Experiment documents and the Experiment detail page: optimistic-locked README writes, the `memon experiment` create, link, unlink, delete, rename and status commands, Warnings section writes, and the Run panels shown inside an Experiment. It serves both human editors in the dashboard and agents using the CLI. The bundle files under `docs/experiments/E<NNNN>-<slug>/` are the source of truth; write logic lives in `@memon/core`, `packages/cli` and `packages/backend`, with the UI in `apps/web`.
 
 ## Requirements
 
