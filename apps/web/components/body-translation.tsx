@@ -56,6 +56,19 @@ const MESSAGES: Record<string, string> = {
 const describe = (code: string) => MESSAGES[code] ?? 'Translation failed. Try again'
 let lastReadingRoot: HTMLElement | null = null
 
+/** Delay used where `requestIdleCallback` is unavailable. */
+export const READINESS_FALLBACK_DELAY_MS = 1500
+
+/** Run `task` once the browser is idle; returns a cancel function. */
+function deferUntilIdle(task: () => void): () => void {
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(task, { timeout: 5000 })
+    return () => window.cancelIdleCallback(handle)
+  }
+  const timer = window.setTimeout(task, READINESS_FALLBACK_DELAY_MS)
+  return () => window.clearTimeout(timer)
+}
+
 function visible(element: Element): boolean {
   if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false
   for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
@@ -160,12 +173,21 @@ export function BodyTranslation({
     if (role !== 'owner') return
     setAvailability(null)
     const controller = new AbortController()
-    jsonRequest('/api/translations/status', { signal: controller.signal })
-      .then(() => setAvailability('ready'))
-      .catch((error: Error) => {
-        if (!controller.signal.aborted) setAvailability(error.message)
-      })
-    return () => controller.abort()
+    // Readiness is not needed to render the page: ask only once the browser is
+    // idle (or after a short delay where idle callbacks are unavailable), so
+    // the probe never competes with the page's own first requests.
+    const check = () => {
+      jsonRequest('/api/translations/status', { signal: controller.signal })
+        .then(() => setAvailability('ready'))
+        .catch((error: Error) => {
+          if (!controller.signal.aborted) setAvailability(error.message)
+        })
+    }
+    const cancel = deferUntilIdle(check)
+    return () => {
+      cancel()
+      controller.abort()
+    }
   }, [role, readinessCheck])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: identity/role changes must abort an in-flight translation

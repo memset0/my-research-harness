@@ -37,7 +37,7 @@
 
 - [x] 6.1 Paginate the Run list (`limit`, `cursor`, `nextCursor`) in the backend route and the standalone route; verify paging and bad-cursor tests
 - [x] 6.2 Resolve `/api/runs/<id>/files` by path through the Backend service; verify a route test without a legacy index entry
-- [ ] 6.3 Memoize translation readiness server-side and defer the client readiness request until idle; verify a status-route memo test and the component test
+- [x] 6.3 Memoize translation readiness server-side and defer the client readiness request until idle; verify a status-route memo test and the component test
 
 ## 7. Verification and measurements
 

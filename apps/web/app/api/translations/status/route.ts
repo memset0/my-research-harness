@@ -7,14 +7,19 @@ import {
   translationResponse,
   translationService,
 } from '../../../../lib/server/translation/http'
+import { translationReadiness } from '../../../../lib/server/translation/readiness'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
     assertTranslationOwner(request)
-    await (await translationService()).checkCache()
-    await runCodexTranslation(translationOptions(), null, request.signal)
+    // Disabled is decided from the environment, before any probe.
+    const options = translationOptions()
+    await translationReadiness(async () => {
+      await (await translationService()).checkCache()
+      await runCodexTranslation(options, null)
+    })
     return translationResponse({ ready: true, model: TRANSLATION_MODEL })
   } catch (error) {
     return translationFailure(error)

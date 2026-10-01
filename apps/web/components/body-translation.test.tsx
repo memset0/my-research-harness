@@ -6,6 +6,12 @@ import { BodyTranslation } from './body-translation'
 import { Markdown } from './markdown'
 import { SessionProvider } from './session-provider'
 
+// Readiness is requested once the browser is idle; run idle work promptly.
+function stubIdle() {
+  vi.stubGlobal('requestIdleCallback', (task: () => void) => setTimeout(task, 0))
+  vi.stubGlobal('cancelIdleCallback', (handle: number) => clearTimeout(handle))
+}
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -16,6 +22,7 @@ const sources = [{ format: 'markdown' as const, text }]
 const manifest = createTranslationManifest(sources)
 function setup(role: 'owner' | 'viewer' = 'owner', sourceLanguage: 'en' | 'zh' = 'en') {
   vi.stubGlobal('crypto', webcrypto)
+  stubIdle()
   const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
     if (url.includes('/status')) return Response.json({ ready: true })
     if (!options?.method) return Response.json(manifest)
@@ -216,6 +223,30 @@ it('skips a hidden previously selected reading root', async () => {
   expect(first.container.querySelector('[data-slot="body-translation"]')).toBeNull()
 })
 
+it('defers the readiness request until the browser is idle', async () => {
+  vi.stubGlobal('crypto', webcrypto)
+  const idle: Array<() => void> = []
+  vi.stubGlobal('requestIdleCallback', (task: () => void) => idle.push(task))
+  vi.stubGlobal('cancelIdleCallback', () => undefined)
+  const fetcher = vi.fn(async (_url: string) => Response.json({ ready: true }))
+  vi.stubGlobal('fetch', fetcher)
+  render(
+    <SessionProvider value={{ role: 'owner', scopeProjects: [] }}>
+      <BodyTranslation
+        document={{ project: 'project-a', kind: 'wiki', id: 'W0001' }}
+        sources={sources}
+      >
+        <Markdown>{text}</Markdown>
+      </BodyTranslation>
+    </SessionProvider>,
+  )
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(idle).toHaveLength(1)
+  idle[0]!()
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+  expect(String(fetcher.mock.calls[0]![0])).toContain('/api/translations/status')
+})
+
 it('does not offer or request translation for viewers', () => {
   const { fetcher } = setup('viewer')
   expect(screen.queryByRole('button')).toBeNull()
@@ -249,6 +280,7 @@ it('renders a fully cached manifest without any translation POST', async () => {
 
 it('does not wait for Codex readiness before reading cached translations', async () => {
   vi.stubGlobal('crypto', webcrypto)
+  stubIdle()
   const fetcher = vi.fn(async (url: string) => {
     if (url.includes('/status')) return new Promise<Response>(() => undefined)
     return Response.json({ ...manifest, cachedResults: manifest.segments })
