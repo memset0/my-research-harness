@@ -1,4 +1,5 @@
 import { dirname, join } from 'node:path'
+import { writeFileAtomic } from '../atomic-write.js'
 import { padId, parseId, RUN_TIMESTAMP_TAIL_REGEX, SLUG_REGEX } from '../ids.js'
 import { appendJournalEvent } from '../journal/append.js'
 import { projectFs as fs } from '../project-file-store.js'
@@ -143,7 +144,7 @@ export async function renameExperiment(
       rawSections: parsed.rawSections,
       rawBody: parsed.body,
     })
-    await atomicWrite(newReadmePath, serialized)
+    await writeFileAtomic(newReadmePath, serialized)
   }
 
   const warnings: RenameExperimentWarning[] = []
@@ -198,11 +199,5 @@ async function substituteHypothesesId(
   const re = new RegExp(`(?<![A-Za-z0-9-])${escaped}(?![A-Za-z0-9-])`, 'g')
   const next = content.replace(re, newId)
   if (next === content) return
-  await atomicWrite(hypothesesPath, next)
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.cli.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
+  await writeFileAtomic(hypothesesPath, next)
 }

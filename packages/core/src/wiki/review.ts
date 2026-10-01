@@ -38,8 +38,9 @@
 // mistaken for a clean, fully verified wiki.
 
 import { execFile } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { dirname as posixDirname, join as posixJoin } from 'node:path/posix'
+import { writeFileAtomic } from '../atomic-write.js'
 import {
   cachedGitCommand,
   type GitCommandResult,
@@ -55,7 +56,7 @@ import { type ReviewState, WIKI_DIR_RELPATH, type WikiReview } from './types.js'
 
 // The review store is project content: reads and writes go through the shared
 // project file facade so they are cached, scheduled and read-only aware.
-const { mkdir, readFile, rename, rm, writeFile } = projectFs
+const { readFile } = projectFs
 
 /** Path of the review store, relative to the project root. */
 export const WIKI_REVIEW_RELPATH = '.memon/wiki-review.csv'
@@ -583,20 +584,7 @@ async function writeMarks(
     if (ib === undefined) return -1
     return ia - ib
   })
-  await mkdir(dirname(path), { recursive: true })
-  const text = serializeWikiReviewCsv(sorted)
-  const tmp = `${path}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`
-  try {
-    await writeFile(tmp, text, 'utf8')
-    await rename(tmp, path)
-  } catch (err) {
-    try {
-      await rm(tmp, { force: true })
-    } catch {
-      /* swallow cleanup failure */
-    }
-    throw err
-  }
+  await writeFileAtomic(path, serializeWikiReviewCsv(sorted), { mkdir: true })
 }
 
 // --- CSV (RFC 4180) ------------------------------------------------------

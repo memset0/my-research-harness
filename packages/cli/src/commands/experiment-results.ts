@@ -1,12 +1,3 @@
-// `memon experiment results <id-or-slug>` — read experiment results as a
-// selectable, multi-format table.
-//
-// Table/summary are read-only projections. Annotation set is an optional,
-// focused convenience; agents may still edit results.yaml directly.
-
-import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
-
 import {
   type Experiment,
   type ResultColumn,
@@ -19,6 +10,7 @@ import {
   renderResultColumnAnnotationsMarkdown,
   resolveExperimentId,
   upsertResultColumnAnnotationYaml,
+  writeFileAtomic,
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
@@ -298,7 +290,7 @@ export async function runExperimentResultsAnnotationSet(
   } catch (error) {
     emitErrorAndExit('BAD_REQUEST', (error as Error).message)
   }
-  if (result.changed) await atomicWrite(path, result.content)
+  if (result.changed) await writeFileAtomic(path, result.content)
   emitJson({
     ok: true,
     experimentId: experiment.id,
@@ -484,18 +476,4 @@ function resolveFormat(raw: string): TableFormat {
 function resolveSummaryFormat(raw: string): 'json' | 'human' | 'markdown' {
   const normalized = raw.toLowerCase()
   return ['human', 'markdown'].includes(normalized) ? (normalized as 'human' | 'markdown') : 'json'
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const temporaryPath = join(
-    dirname(path),
-    `.${Date.now()}-${Math.random().toString(36).slice(2)}.results-annotation.tmp`,
-  )
-  try {
-    await fs.writeFile(temporaryPath, content, 'utf8')
-    await fs.rename(temporaryPath, path)
-  } catch (error) {
-    await fs.rm(temporaryPath, { force: true }).catch(() => {})
-    throw error
-  }
 }

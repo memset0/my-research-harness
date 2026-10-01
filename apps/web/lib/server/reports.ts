@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Dirent } from 'node:fs'
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
-import { extractTitle, projectFs as fs } from '@memon/core'
+import { extname, join, relative, resolve, sep } from 'node:path'
+import { extractTitle, projectFs as fs, writeFileAtomic } from '@memon/core'
 import { splitFrontmatter } from '../frontmatter'
 
 const REPORT_FILE_RE = /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
@@ -166,14 +166,11 @@ export async function writeReport(
     }
   }
 
-  const tmp = join(dirname(entry.path), `.${basename(entry.path)}.${process.pid}.${Date.now()}.tmp`)
   try {
-    await fs.writeFile(tmp, content, 'utf8')
-    await fs.rename(tmp, entry.path)
+    await writeFileAtomic(entry.path, content)
     const nextStat = await fs.stat(entry.path)
     return { ok: true, mtime: nextStat.mtimeMs, hash: sha1(content) }
   } catch (err) {
-    await fs.unlink(tmp).catch(() => undefined)
     return { ok: false, code: 'ERROR', message: (err as Error).message }
   }
 }

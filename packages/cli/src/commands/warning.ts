@@ -14,13 +14,14 @@
 
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import {
   type ApplyWarningOpResult,
   appendJournalEvent,
   applyWarningOp,
   discoverExperiments,
   EXPERIMENT_DIR_REGEX,
+  formatIsoLocal,
   generateRowId,
   parseReadme,
   RunTargetIndex,
@@ -28,6 +29,7 @@ import {
   type Warning,
   type WarningCategory,
   WarningOpError,
+  writeFileAtomic,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
@@ -119,21 +121,6 @@ async function readWithLock(
   return { content, mtime, hash }
 }
 
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.cli.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
-}
-
-function nowIso(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const offsetMin = -d.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const absMin = Math.abs(offsetMin)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(absMin / 60))}:${pad(absMin % 60)}`
-}
-
 function mapWarningOpError(err: WarningOpError): never {
   switch (err.code) {
     case 'NOT_FOUND':
@@ -184,7 +171,7 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
   }
   const runAttribution = target.isExpDoc ? (input.run ?? null) : null
   const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  const created = nowIso()
+  const created = formatIsoLocal(new Date())
   const rowId = generateRowId(created)
   let result: ApplyWarningOpResult
   try {
@@ -200,7 +187,7 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
     if (err instanceof WarningOpError) mapWarningOpError(err)
     throw err
   }
-  await atomicWrite(target.readmePath, result.content)
+  await writeFileAtomic(target.readmePath, result.content)
   const newStat = await fs.stat(target.readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
@@ -271,7 +258,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
   }
   const target = await resolveTarget(input, input.runId)
   const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  const resolved = nowIso()
+  const resolved = formatIsoLocal(new Date())
   let result: ApplyWarningOpResult
   try {
     result = applyWarningOp(lock.content, {
@@ -284,7 +271,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
     if (err instanceof WarningOpError) mapWarningOpError(err)
     throw err
   }
-  await atomicWrite(target.readmePath, result.content)
+  await writeFileAtomic(target.readmePath, result.content)
   const newStat = await fs.stat(target.readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   const after = result.after!
@@ -320,14 +307,14 @@ export async function runWarningReopen(input: WarningReopenInput): Promise<void>
     if (err instanceof WarningOpError) mapWarningOpError(err)
     throw err
   }
-  await atomicWrite(target.readmePath, result.content)
+  await writeFileAtomic(target.readmePath, result.content)
   const newStat = await fs.stat(target.readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   const after = result.after!
   await appendJournalEvent({
     path: join(target.projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'WARNING',
       body: `\`${target.targetId}\` op=reopen rowId=${input.rowId} run=${after.run ?? 'null'}`,
     },
@@ -356,14 +343,14 @@ export async function runWarningDelete(input: WarningDeleteInput): Promise<void>
     if (err instanceof WarningOpError) mapWarningOpError(err)
     throw err
   }
-  await atomicWrite(target.readmePath, result.content)
+  await writeFileAtomic(target.readmePath, result.content)
   const newStat = await fs.stat(target.readmePath)
   const newHash = createHash('sha1').update(result.content).digest('hex')
   const deleted = result.deleted!
   await appendJournalEvent({
     path: join(target.projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'WARNING',
       body: `\`${target.targetId}\` op=delete rowId=${input.rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },

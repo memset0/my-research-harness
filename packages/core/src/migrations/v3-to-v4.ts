@@ -13,7 +13,8 @@
 // fs-migration-guide-authoring/spec.md).
 
 import { existsSync, promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { writeFileAtomic } from '../atomic-write.js'
 import { ARCHIVED_SIDECAR } from './../discovery/archive.js'
 import { type ParsedExperiment, parseExperimentReadme } from '../experiments/parse.js'
 import { serializeExperimentReadme } from '../experiments/serialize.js'
@@ -160,7 +161,7 @@ export async function migrateV3ToV4(options: MigrateV3ToV4Options): Promise<Migr
       migrationTime: options.migrationTime,
     })
     if (!rewrite.unchanged) {
-      await atomicWrite(readmePath, rewrite.content)
+      await writeFileAtomic(readmePath, rewrite.content, { fs })
     }
     let sidecarDeleted = false
     // Always clean up sidecar after a successful README state — whether
@@ -193,18 +194,12 @@ export async function migrateV3ToV4(options: MigrateV3ToV4Options): Promise<Migr
       migrationTime: options.migrationTime,
     })
     if (!rewrite.unchanged) {
-      await atomicWrite(expPath, rewrite.content)
+      await writeFileAtomic(expPath, rewrite.content, { fs })
     }
     expStats.push({ path: expPath, changed: !rewrite.unchanged })
   }
 
   return { runStats, expStats }
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.v3v4.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
 }
 
 // Silence unused import in some build modes (TS strict).

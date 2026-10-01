@@ -6,11 +6,12 @@
 
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import {
   type ApplyWarningOpResult,
   appendJournalEvent,
   applyWarningOp,
+  formatIsoLocal,
   generateRowId,
   parseReadme,
   readRunDir,
@@ -19,6 +20,7 @@ import {
   type WarningCategory,
   type WarningOp,
   WarningOpError,
+  writeFileAtomic,
 } from '@memon/core'
 import { assertWithinProjectRoots, PathSafetyError } from './path-safety'
 import type { Runtime } from './runtime'
@@ -145,21 +147,6 @@ async function readWithLock(
   return { content, mtime, hash }
 }
 
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}.${Math.random().toString(36).slice(2)}.warn.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
-}
-
-function nowIso(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const offsetMin = -d.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const abs = Math.abs(offsetMin)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
-}
-
 function quoteForJournal(s: string): string {
   return JSON.stringify(s.replace(/\n/g, ' '))
 }
@@ -263,7 +250,7 @@ export async function addWarning(rt: Runtime, id: string, input: AddInput): Prom
   }
   const r = resolveExp(rt, id)
   const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
-  const created = nowIso()
+  const created = formatIsoLocal(new Date())
   const rowId = generateRowId(created)
   const op: WarningOp = {
     op: 'add',
@@ -279,7 +266,7 @@ export async function addWarning(rt: Runtime, id: string, input: AddInput): Prom
     if (err instanceof WarningOpError) mapOpError(err)
     throw err
   }
-  await atomicWrite(r.readmePath, result.content)
+  await writeFileAtomic(r.readmePath, result.content, { fs })
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
@@ -319,7 +306,7 @@ export async function patchWarning(
   }
   const r = resolveExp(rt, id)
   const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
-  const ts = nowIso()
+  const ts = formatIsoLocal(new Date())
   const op: WarningOp =
     input.op === 'resolve'
       ? { op: 'resolve', rowId, resolved: ts, note: input.note! }
@@ -331,7 +318,7 @@ export async function patchWarning(
     if (err instanceof WarningOpError) mapOpError(err)
     throw err
   }
-  await atomicWrite(r.readmePath, result.content)
+  await writeFileAtomic(r.readmePath, result.content, { fs })
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   const body =
@@ -362,14 +349,14 @@ export async function deleteWarning(
     if (err instanceof WarningOpError) mapOpError(err)
     throw err
   }
-  await atomicWrite(r.readmePath, result.content)
+  await writeFileAtomic(r.readmePath, result.content, { fs })
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   const deleted = result.deleted!
   await appendJournalEvent({
     path: join(r.projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'WARNING',
       body: `\`${r.exp.id}\` op=delete rowId=${rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },
@@ -424,7 +411,7 @@ export async function addExpDocWarning(
   }
   const r = resolveExpDoc(rt, expId)
   const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
-  const created = nowIso()
+  const created = formatIsoLocal(new Date())
   const rowId = generateRowId(created)
   const op: WarningOp = {
     op: 'add',
@@ -441,7 +428,7 @@ export async function addExpDocWarning(
     if (err instanceof WarningOpError) mapOpError(err)
     throw err
   }
-  await atomicWrite(r.readmePath, result.content)
+  await writeFileAtomic(r.readmePath, result.content, { fs })
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   await appendJournalEvent({
@@ -477,7 +464,7 @@ export async function patchExpDocWarning(
   }
   const r = resolveExpDoc(rt, expId)
   const lock = await readWithLock(r.readmePath, input.expectedMtime, input.expectedHash)
-  const ts = nowIso()
+  const ts = formatIsoLocal(new Date())
   const op: WarningOp =
     input.op === 'resolve'
       ? { op: 'resolve', rowId, resolved: ts, note: input.note! }
@@ -489,7 +476,7 @@ export async function patchExpDocWarning(
     if (err instanceof WarningOpError) mapOpError(err)
     throw err
   }
-  await atomicWrite(r.readmePath, result.content)
+  await writeFileAtomic(r.readmePath, result.content, { fs })
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   const after = result.after!
@@ -524,14 +511,14 @@ export async function deleteExpDocWarning(
     if (err instanceof WarningOpError) mapOpError(err)
     throw err
   }
-  await atomicWrite(r.readmePath, result.content)
+  await writeFileAtomic(r.readmePath, result.content, { fs })
   const stat = await fs.stat(r.readmePath)
   const hash = createHash('sha1').update(result.content).digest('hex')
   const deleted = result.deleted!
   await appendJournalEvent({
     path: join(r.projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'WARNING',
       body: `\`${expId}\` op=delete rowId=${rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },

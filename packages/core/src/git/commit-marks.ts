@@ -17,11 +17,12 @@
 // `submodule = ''`. The writer always emits the 5-column form, so the
 // first write after deployment upgrades the file in place.
 
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { writeFileAtomic } from '../atomic-write.js'
 import { projectFs } from '../project-file-store.js'
 import { formatIsoLocal } from '../time.js'
 
-const { mkdir, readFile, rename, rm, writeFile } = projectFs
+const { readFile } = projectFs
 
 export const COMMIT_MARKS_RELPATH = '.memon/commit-marks.csv'
 
@@ -141,21 +142,7 @@ function validateStatus(status: string): asserts status is CommitMarkStatus {
 // --- atomic write --------------------------------------------------------
 
 async function atomicWriteMarks(path: string, marks: CommitMark[]): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const sorted = sortMarks(marks)
-  const text = serializeCsv(sorted)
-  const tmp = `${path}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`
-  try {
-    await writeFile(tmp, text, 'utf8')
-    await rename(tmp, path)
-  } catch (err) {
-    try {
-      await rm(tmp, { force: true })
-    } catch {
-      /* swallow cleanup failure */
-    }
-    throw err
-  }
+  await writeFileAtomic(path, serializeCsv(sortMarks(marks)), { mkdir: true })
 }
 
 function sortMarks(marks: CommitMark[]): CommitMark[] {

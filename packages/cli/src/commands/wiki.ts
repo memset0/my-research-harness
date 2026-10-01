@@ -71,6 +71,7 @@ import {
   type WikiSummary,
   wikiContentHash,
   wikiStringList,
+  writeFileAtomic,
   writeWikiReviewMark,
 } from '@memon/core'
 
@@ -335,13 +336,6 @@ function nextWikiId(ctx: WikiContext): string {
   }
   if (max >= 9999) emitErrorAndExit('CONFLICT', 'wiki id space exhausted (W9999 allocated)')
   return padId('W', max + 1)
-}
-
-/** Temp-file + rename, so a reader never observes a half-written page. */
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.wiki.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
 }
 
 type CliWikiSummary = Omit<WikiSummary, 'mtime' | 'stale' | 'staleSources' | 'review'>
@@ -749,7 +743,7 @@ export async function runWikiMove(input: WikiMoveInput): Promise<void> {
     const patch: Record<string, unknown> = { kind, updated_at: formatIsoLocal(new Date()) }
     if (vocabulary.length === 0) patch.status = undefined
     else if (status !== undefined) patch.status = status
-    await atomicWrite(
+    await writeFileAtomic(
       readme,
       serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body),
     )
@@ -828,7 +822,7 @@ export async function runWikiSet(input: WikiSetInput): Promise<void> {
   const tags = applyListEdit(summary.tags, input.addTag, input.rmTag)
   if (tags) patch.tags = tags
 
-  await atomicWrite(
+  await writeFileAtomic(
     page.absolutePath,
     serializeWikiPage(updateWikiFrontmatter(parsed.frontmatter, patch), parsed.body),
   )
@@ -903,7 +897,7 @@ export async function runWikiDeprecate(input: WikiDeprecateInput): Promise<void>
     reason: input.reason.trim(),
     ...(input.supersededBy === undefined ? {} : { superseded_by: input.supersededBy }),
   }
-  await atomicWrite(
+  await writeFileAtomic(
     page.absolutePath,
     serializeWikiPage(
       updateWikiFrontmatter(parsed.frontmatter, { deprecated, updated_at: now }),
@@ -929,7 +923,7 @@ export async function runWikiUndeprecate(input: WikiUndeprecateInput): Promise<v
       `${summary.path} has no readable YAML frontmatter; fix it by hand first`,
     )
   }
-  await atomicWrite(
+  await writeFileAtomic(
     page.absolutePath,
     serializeWikiPage(
       updateWikiFrontmatter(parsed.frontmatter, {
@@ -1177,7 +1171,7 @@ export async function runWikiMigrateReport(input: WikiMigrateReportInput): Promi
       if (derived.length > 0) patch.sources = derived
     }
 
-    await atomicWrite(readme, serializeWikiPage(updateWikiFrontmatter(existing, patch), body))
+    await writeFileAtomic(readme, serializeWikiPage(updateWikiFrontmatter(existing, patch), body))
 
     // Lint only the page in its new home before the Report is destroyed.
     const summary = await changedPageSummary(ctx, newRelative)

@@ -5,7 +5,8 @@
 // honor the sidecar only as a narrow fallback when the README lacks the
 // canonical `archived` field entirely.
 
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { writeFileAtomic } from '../atomic-write.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme } from '../readme/serialize.js'
@@ -63,7 +64,7 @@ export async function setRunArchived(
   }
   parsed.frontMatter.archived = target
   parsed.frontMatter.updatedAt = options.now
-  await atomicWrite(readmePath, reserializeReadme(parsed))
+  await writeFileAtomic(readmePath, reserializeReadme(parsed))
   return { archived: target, noop: false, prevArchived, prevStatus }
 }
 
@@ -81,15 +82,6 @@ export async function unarchiveRun(
   options: SetArchivedOptions,
 ): Promise<ArchiveResult> {
   return setRunArchived(runDir, false, options)
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(
-    dirname(path),
-    `.${Date.now()}-${Math.random().toString(36).slice(2)}.archive.tmp`,
-  )
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
 }
 
 /**

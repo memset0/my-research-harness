@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import {
   addJournalInvocationDetail,
   BackendCodeReviewPatchResponseSchema,
@@ -61,6 +61,7 @@ import {
   type WikiSummary,
   wikiStringList,
   withJournalInvocation,
+  writeFileAtomic,
   writeWikiReviewMark,
 } from '@memon/core'
 import {
@@ -433,7 +434,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
         })
       }
       const content = nextWikiContent(input.content, current, summary)
-      await writeFileAtomically(absolutePath, content, stat.mode)
+      await writeFileAtomic(absolutePath, content, { mode: stat.mode })
       addJournalInvocationDetail({
         kind: 'file-change',
         path: relative(project.root, absolutePath).split(sep).join('/'),
@@ -685,7 +686,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
       })
     }
     const original = await fs.stat(entry.absolutePath)
-    await writeFileAtomically(entry.absolutePath, input.content, original.mode)
+    await writeFileAtomic(entry.absolutePath, input.content, { mode: original.mode })
     const stat = await fs.stat(entry.absolutePath)
     addJournalInvocationDetail({
       kind: 'file-change',
@@ -953,25 +954,6 @@ function wikiReviewProjection(commits: WikiCommit[], marks: WikiReviewMark[]) {
         ...(mark?.note ? { note: mark.note } : {}),
       }
     }),
-  }
-}
-
-/** Replace a file through a `.tmp` sibling + rename, preserving its mode. */
-async function writeFileAtomically(
-  absolutePath: string,
-  content: string,
-  mode: number,
-): Promise<void> {
-  const temp = join(
-    dirname(absolutePath),
-    `.${basename(absolutePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
-  )
-  try {
-    await fs.writeFile(temp, content, { encoding: 'utf8', mode })
-    await fs.rename(temp, absolutePath)
-  } catch (error) {
-    await fs.unlink(temp).catch(() => undefined)
-    throw error
   }
 }
 

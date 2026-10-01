@@ -16,7 +16,7 @@
 // retired: no supported code path writes a value into it.
 
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { writeFileAtomic } from '../atomic-write.js'
 import { splitFrontmatter } from '../frontmatter.js'
 import type { JournalEvent, JournalEventTag } from '../types.js'
 import { captureLegacyJournalEvent } from './invocation.js'
@@ -41,7 +41,7 @@ export async function appendJournalEvent(input: AppendJournalInput): Promise<voi
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       // Seed and append
-      await atomicWrite(path, `${SEED}${line}\n`)
+      await writeFileAtomic(path, `${SEED}${line}\n`, { fs, mkdir: true })
       return
     }
     throw err
@@ -50,12 +50,12 @@ export async function appendJournalEvent(input: AppendJournalInput): Promise<voi
   if (!hasFrontmatter(existing)) {
     // Prepend seed frontmatter, preserving any existing body lines
     const updated = `${SEED}${existing.trimStart()}${existing.endsWith('\n') ? '' : '\n'}${line}\n`
-    await atomicWrite(path, updated)
+    await writeFileAtomic(path, updated, { fs, mkdir: true })
     return
   }
 
   const updated = appendAfterFrontmatter(existing, line)
-  await atomicWrite(path, updated)
+  await writeFileAtomic(path, updated, { fs, mkdir: true })
 }
 
 // ---------- internals ----------
@@ -70,15 +70,4 @@ function appendAfterFrontmatter(content: string, line: string): string {
     return `${content}${line}\n`
   }
   return `${content}\n${line}\n`
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const dir = dirname(path)
-  // v2 path is `<root>/docs/journal.md`; the `docs/` parent may not exist yet
-  // for a brand-new project (or a fresh test fixture). Idempotent mkdir -p
-  // so the first append succeeds without forcing every caller to pre-create.
-  await fs.mkdir(dir, { recursive: true })
-  const tmp = join(dir, `.${Date.now()}-${Math.random().toString(36).slice(2)}.journal.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
 }

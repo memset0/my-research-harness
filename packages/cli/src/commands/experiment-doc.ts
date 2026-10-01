@@ -18,6 +18,7 @@ import {
   emptyImplementationDocument,
   emptyInvestigationDocument,
   emptyResultsDocument,
+  formatIsoLocal,
   nextExperimentId,
   projectRunPath,
   type Run,
@@ -29,6 +30,7 @@ import {
   serializeImplementationYaml,
   serializeInvestigationYaml,
   serializeResultsYaml,
+  writeFileAtomic,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
@@ -182,7 +184,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     const expDir = join(projectRoot, EXPERIMENTS_SUBDIR, fullId)
     await fs.mkdir(expDir, { recursive: true })
     const filepath = join(expDir, 'README.md')
-    const now = nowIso()
+    const now = formatIsoLocal(new Date())
     const initialRuns: string[] = []
     if (importedRun) {
       // The run must be unbound, or already claim this exp (in the normal
@@ -369,8 +371,8 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
   if (!exp.frontMatter.runs.includes(projectRunPath(projectRoot, run.path))) {
     exp.frontMatter.runs.push(projectRunPath(projectRoot, run.path))
   }
-  exp.frontMatter.updatedAt = nowIso()
-  await atomicWrite(
+  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
+  await writeFileAtomic(
     exp.path,
     serializeExperimentReadme({
       frontMatter: exp.frontMatter,
@@ -384,7 +386,7 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'BIND',
       body: `\`${expId}\` op=link run=${run.id}`,
     },
@@ -413,8 +415,8 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
   exp.frontMatter.runs = exp.frontMatter.runs.filter(
     (reference) => reference !== projectRunPath(projectRoot, run.path) && reference !== run.id,
   )
-  exp.frontMatter.updatedAt = nowIso()
-  await atomicWrite(
+  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
+  await writeFileAtomic(
     exp.path,
     serializeExperimentReadme({
       frontMatter: exp.frontMatter,
@@ -428,7 +430,7 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'BIND',
       body: `\`${expId}\` op=unlink run=${run.id}`,
     },
@@ -478,8 +480,8 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
   const prevArchived = exp.frontMatter.archived
   const nextStatus = input.to as ExperimentStatus
   exp.frontMatter.status = nextStatus
-  exp.frontMatter.updatedAt = nowIso()
-  await atomicWrite(
+  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
+  await writeFileAtomic(
     exp.path,
     serializeExperimentReadme({
       frontMatter: exp.frontMatter,
@@ -496,7 +498,7 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
     await appendJournalEvent({
       path: join(projectRoot, 'docs', 'journal.md'),
       event: {
-        timestamp: nowIso(),
+        timestamp: formatIsoLocal(new Date()),
         tag: 'EXP_STATUS',
         body: `\`${expId}\` ${prevStatus} → ${nextStatus}`,
       },
@@ -553,8 +555,8 @@ async function setExperimentArchived(
   }
 
   exp.frontMatter.archived = target
-  exp.frontMatter.updatedAt = nowIso()
-  await atomicWrite(
+  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
+  await writeFileAtomic(
     exp.path,
     serializeExperimentReadme({
       frontMatter: exp.frontMatter,
@@ -567,7 +569,7 @@ async function setExperimentArchived(
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'ARCHIVE',
       body: `\`${expId}\` op=${target ? 'archive' : 'unarchive'}`,
     },
@@ -642,7 +644,7 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'EXPERIMENT',
       body: `\`${expId}\` op=delete cascaded-runs=${JSON.stringify(memberRuns)}`,
     },
@@ -663,19 +665,4 @@ async function resolveOrFail(projectRoot: string, idOrSlug: string): Promise<str
     emitErrorAndExit('NOT_FOUND', `no experiment matches "${idOrSlug}" in ${projectRoot}`)
   }
   return resolved
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.cli.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
-}
-
-function nowIso(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const offsetMin = -d.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const absMin = Math.abs(offsetMin)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(absMin / 60))}:${pad(absMin % 60)}`
 }

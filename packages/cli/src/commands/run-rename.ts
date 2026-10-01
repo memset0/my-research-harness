@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import {
   appendJournalEvent,
   declaredRunOwner,
+  formatIsoLocal,
   parseReadme,
   parseSlugFromRunDir,
   projectRunPath,
@@ -25,6 +26,7 @@ import {
   reserializeReadme,
   SLUG_REGEX,
   serializeExperimentReadme,
+  writeFileAtomic,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
@@ -138,8 +140,8 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
     const parsed = parseReadme(content)
     parsed.frontMatter.id = newId
     parsed.frontMatter.name = input.newSlug
-    parsed.frontMatter.updatedAt = nowIso()
-    await atomicWrite(readmePath, reserializeReadme(parsed))
+    parsed.frontMatter.updatedAt = formatIsoLocal(new Date())
+    await writeFileAtomic(readmePath, reserializeReadme(parsed))
   }
 
   // Step 3: update the parent experiment's runs[] entry atomically. Re-read
@@ -149,8 +151,8 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
     const exp = await readExperimentDoc(projectRoot, projectName, claimedExpId)
     if (exp) {
       exp.frontMatter.runs = exp.frontMatter.runs.map((r) => (r === oldPath ? newReference : r))
-      exp.frontMatter.updatedAt = nowIso()
-      await atomicWrite(
+      exp.frontMatter.updatedAt = formatIsoLocal(new Date())
+      await writeFileAtomic(
         exp.path,
         serializeExperimentReadme({
           frontMatter: exp.frontMatter,
@@ -170,7 +172,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
         const escaped = oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         const token = new RegExp(`(?<![A-Za-z0-9._-])${escaped}(?![A-Za-z0-9._-])`, 'g')
         const rewritten = results.raw.replace(token, newReference)
-        if (rewritten !== results.raw) await atomicWrite(results.path, rewritten)
+        if (rewritten !== results.raw) await writeFileAtomic(results.path, rewritten)
       }
     }
   }
@@ -178,26 +180,11 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: nowIso(),
+      timestamp: formatIsoLocal(new Date()),
       tag: 'RENAME',
       body: `op=run-rename old=${oldId} new=${newId}`,
     },
   })
 
   emitJson({ ok: true, oldId, newId })
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${Math.random().toString(36).slice(2)}.cli.tmp`)
-  await fs.writeFile(tmp, content, 'utf8')
-  await fs.rename(tmp, path)
-}
-
-function nowIso(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const offsetMin = -d.getTimezoneOffset()
-  const sign = offsetMin >= 0 ? '+' : '-'
-  const absMin = Math.abs(offsetMin)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${pad(Math.floor(absMin / 60))}:${pad(absMin % 60)}`
 }

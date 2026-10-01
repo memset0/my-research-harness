@@ -3,6 +3,8 @@
 // Re-exports types, parsers, serializers. Discovery, polling, log tail, and
 // config loaders are added by phases 3-5.
 
+export type { AtomicWriteFs, WriteFileAtomicOptions } from './atomic-write.js'
+export { atomicTempPath, writeFileAtomic } from './atomic-write.js'
 export * from './backend-negotiation.js'
 export * from './backend-protocol.js'
 export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'

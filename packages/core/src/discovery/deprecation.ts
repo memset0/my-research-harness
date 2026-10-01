@@ -16,7 +16,8 @@
 // legacy rich README keeps its body verbatim and a minimal record is not
 // promoted into the old narrative layout.
 
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+import { writeFileAtomic } from '../atomic-write.js'
 import { projectRunPath, resolveRunReference } from '../experiments/run-path.js'
 import { splitFrontmatter } from '../frontmatter.js'
 import { projectFs as fs } from '../project-file-store.js'
@@ -104,7 +105,7 @@ export async function setRunDeprecated(
     deprecated: target ? true : null,
     updated_at: now,
   })
-  await atomicWrite(readmePath, next)
+  await writeFileAtomic(readmePath, next)
   const after = await fs.stat(readmePath)
   return { runDir, prev, next: target, noop: false, mtime: after.mtimeMs }
 }
@@ -209,14 +210,4 @@ function readDeprecatedFlag(content: string): boolean {
   if (flag === undefined) return false
   if (typeof flag !== 'boolean') throw new Error('Run deprecated field must be boolean')
   return flag
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = join(dirname(path), `.${Date.now()}-${process.pid}.tmp`)
-  try {
-    await fs.writeFile(tmp, content, 'utf8')
-    await fs.rename(tmp, path)
-  } finally {
-    await fs.rm(tmp, { force: true }).catch(() => {})
-  }
 }

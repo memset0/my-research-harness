@@ -11,8 +11,8 @@
 
 ## 3. Atomic writes (D3)
 
-- [ ] 3.1 Add `writeFileAtomic` with tests (success, failure cleanup, mode, fsync option)
-- [ ] 3.2 Replace every temp-file-plus-rename copy in core, CLI, backend, `apps/web/lib/warnings.ts` and `apps/web/lib/server/reports.ts`; replace `nowIso` copies with `formatIsoLocal`
+- [x] 3.1 Add `writeFileAtomic` with tests (success, failure cleanup, mode, fsync option)
+- [x] 3.2 Replace every temp-file-plus-rename copy in core, CLI, backend, `apps/web/lib/warnings.ts` and `apps/web/lib/server/reports.ts`; replace `nowIso` copies with `formatIsoLocal`
 
 ## 4. Git helpers (D4)
 

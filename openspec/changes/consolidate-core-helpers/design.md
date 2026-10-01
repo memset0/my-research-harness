@@ -103,8 +103,9 @@ mkdir? })`. Temp name: `.<basename>.<pid>.<time>.<random>.tmp` in the target
 directory (no test depends on the old per-site suffixes, so names are
 unified). Default fs is `projectFs` (native outside a project-file context,
 identical to the previous CLI behaviour); sites that previously used
-`node:fs` directly inside Web/Backend contexts (journal append, commit marks,
-wiki review, Web warnings, v3→v4) pass `fs: nodeFs` to keep their routing.
+`node:fs` directly (journal append, v3→v4, Web warnings) pass that module as
+`fs` to keep their routing; commit marks, wiki review, archive, deprecation,
+Experiment rename, Report and Backend document writes keep `projectFs`.
 fsync is off by default (NFS cost) and only performed when `fsync: true`.
 On failure the temp file is removed. The seven `nowIso` copies become
 `formatIsoLocal(new Date())`.
