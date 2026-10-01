@@ -84,7 +84,10 @@ in the operator's local notes: unstaged, untracked, commit and range diffs all
    - `apps/web/vitest.config.ts` aliases `@memon/backend` to
      `../../packages/backend/src/index.ts`. Verified: with
      `packages/backend/dist` moved away, the Web git route tests resolve and run
-     against source (reproducing the same failures before the fix). The alias is
+     against source (reproducing the same failures before the fix), and a
+     throwaway probe test saw `FilesystemGitService` from `@memon/backend` be
+     the very class exported by `packages/backend/src/git-service.ts` with the
+     alias and a different (dist) class without it. The alias is
      test-only, so the Next build and client bundles are unaffected, and
      backend modules already run under Vite in their own package tests. Web
      `typecheck` still reads the backend `.d.ts` from `dist/`, and backend
@@ -102,4 +105,18 @@ in the operator's local notes: unstaged, untracked, commit and range diffs all
   so a source/dist divergence would show up in backend typecheck/tests.
 - [Ancestor walk adds `realpath` calls for absent paths] → bounded by path
   depth and only on the absent branch; negligible next to the Git subprocesses.
-- [Root `pnpm test` is ~10 s slower] → acceptable for a full gate.
+- [Root `pnpm test` is ~10 s slower] → acceptable for a full gate (measured
+  49 s wall including both builds under Node 22.19.0).
+- [Dangling symlink inside the Project] → `realpath` reports it as absent, so
+  the walk continues above it and the path counts as contained; nothing can
+  exist at or below a dangling link, so the readers find no working file and
+  no outside content is read.
+
+## Verification
+
+- `git-diff/route.test.ts` 20/20; all `app/api/projects/[project]/git-*`
+  route tests 7 files / 57; backend 31 files / 285 (6 new cases, the two new
+  `git-service.test.ts` cases fail on the pre-fix code).
+- Root `pnpm test` (Node 22.19.0): core 78 / 975, skills 2 / 8, backend
+  31 / 285, cli 23 / 298, web 192 / 1636 — 0 failed, exit 0.
+- `pnpm -r typecheck` clean; `biome check .` 0 errors.
