@@ -1,9 +1,15 @@
-import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { type Dirent, promises as fs } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { splitFrontmatter } from '../frontmatter.js'
+import {
+  execFileGitCommand,
+  type GitCommandRunner,
+  gitCommandStdoutText,
+  isGitCommandFailure,
+  toGitExecFailure,
+} from '../git/command.js'
 import { isRunPath, RUN_DIR_REGEX } from '../ids.js'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { formatIsoLocal } from '../time.js'
@@ -277,10 +283,20 @@ export async function planMembershipMigration(
   return plan
 }
 
+export interface ApplyMembershipMigrationOptions {
+  /** Git transport for the worktree probes; defaults to local `execFile`. */
+  git?: GitCommandRunner
+}
+
+const GIT_PROBE_TIMEOUT_MS = 30_000
+const GIT_PROBE_MAX_BUFFER = 64 * 1024 * 1024
+
 export async function applyMembershipMigration(
   plan: MembershipMigrationPlan,
   backupDirectory: string,
+  options: ApplyMembershipMigrationOptions = {},
 ): Promise<void> {
+  const git = options.git ?? execFileGitCommand
   if (plan.version !== 1 || plan.blockers.length) throw new Error('Migration plan has blockers')
   const root = await fs.realpath(plan.root)
   if (!plan.keepVersion && !plan.digests)
@@ -292,25 +308,17 @@ export async function applyMembershipMigration(
   const backup = resolve(backupDirectory)
   if (backup === root || backup.startsWith(root + sep))
     throw new Error('Backup must be outside the project')
-  const inGit = (() => {
-    try {
-      return (
-        execFileSync('git', ['rev-parse', '--show-toplevel'], {
-          cwd: root,
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        }).trim() === root
-      )
-    } catch {
-      return false
-    }
-  })()
+  const probe = { cwd: root, timeoutMs: GIT_PROBE_TIMEOUT_MS, maxBuffer: GIT_PROBE_MAX_BUFFER }
+  const toplevel = await git('git', ['rev-parse', '--show-toplevel'], probe).catch(() => null)
+  const inGit =
+    toplevel !== null &&
+    !isGitCommandFailure(toplevel) &&
+    gitCommandStdoutText(toplevel).trim() === root
   if (inGit && !plan.allowDirty) {
-    const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], {
-      cwd: root,
-      encoding: 'utf8',
-    })
-    if (status.trim())
+    const status = await git('git', ['status', '--porcelain', '--untracked-files=normal'], probe)
+    if (isGitCommandFailure(status))
+      throw new Error(`git status failed: ${toGitExecFailure(status).err.message}`)
+    if (gitCommandStdoutText(status).trim())
       throw new Error('Dirty worktree; explicit scoped migration approval is required')
   }
   if (new Set(plan.files.map((file) => file.path)).size !== plan.files.length)

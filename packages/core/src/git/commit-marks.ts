@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import { writeFileAtomic } from '../atomic-write.js'
 import { projectFs } from '../project-file-store.js'
 import { formatIsoLocal } from '../time.js'
+import { parseCsvRecords, quoteCsvField } from './csv.js'
 
 const { readFile } = projectFs
 
@@ -163,18 +164,10 @@ export function serializeCsv(marks: CommitMark[]): string {
   const lines = [HEADER_V5]
   for (const m of marks) {
     lines.push(
-      [m.sha, m.status, quoteIfNeeded(m.note), m.updatedAt, quoteIfNeeded(m.submodule)].join(','),
+      [m.sha, m.status, quoteCsvField(m.note), m.updatedAt, quoteCsvField(m.submodule)].join(','),
     )
   }
   return `${lines.join('\n')}\n`
-}
-
-function quoteIfNeeded(s: string): string {
-  if (s === '') return ''
-  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-    return `"${s.replace(/"/g, '""')}"`
-  }
-  return s
 }
 
 export function parseCsv(text: string): ReadCommitMarksResult {
@@ -221,64 +214,4 @@ export function parseCsv(text: string): ReadCommitMarksResult {
     marks.push({ sha, status, note, updatedAt, submodule })
   }
   return { marks, parseWarnings }
-}
-
-function parseCsvRecords(text: string): string[][] {
-  const records: string[][] = []
-  let row: string[] = []
-  let field = ''
-  let inQuotes = false
-  let i = 0
-  let fieldStartedQuoted = false
-  while (i < text.length) {
-    const ch = text[i]!
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i += 2
-          continue
-        }
-        inQuotes = false
-        i += 1
-        continue
-      }
-      field += ch
-      i += 1
-      continue
-    }
-    // Not in quotes.
-    if (ch === '"' && field === '' && !fieldStartedQuoted) {
-      inQuotes = true
-      fieldStartedQuoted = true
-      i += 1
-      continue
-    }
-    if (ch === ',') {
-      row.push(field)
-      field = ''
-      fieldStartedQuoted = false
-      i += 1
-      continue
-    }
-    if (ch === '\n' || ch === '\r') {
-      row.push(field)
-      field = ''
-      fieldStartedQuoted = false
-      if (!(row.length === 1 && row[0] === '')) {
-        records.push(row)
-      }
-      row = []
-      if (ch === '\r' && text[i + 1] === '\n') i += 2
-      else i += 1
-      continue
-    }
-    field += ch
-    i += 1
-  }
-  if (field !== '' || row.length > 0) {
-    row.push(field)
-    records.push(row)
-  }
-  return records
 }

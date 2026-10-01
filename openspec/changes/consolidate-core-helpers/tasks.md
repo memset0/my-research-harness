@@ -16,8 +16,8 @@
 
 ## 4. Git helpers (D4)
 
-- [ ] 4.1 Extract `git/csv.ts` and `git/run.ts`; use them from commit-marks, wiki review, history and submodules
-- [ ] 4.2 Route v6→v7 migration git probes through `GitCommandRunner` and keep the migration tests green
+- [x] 4.1 Extract `git/csv.ts` and `git/run.ts`; use them from commit-marks, wiki review, history and submodules
+- [x] 4.2 Route v6→v7 migration git probes through `GitCommandRunner` and keep the migration tests green
 
 ## 5. Import cycle (D5)
 

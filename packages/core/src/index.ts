@@ -333,6 +333,7 @@ export {
   rewriteV3RunReadme,
 } from './migrations/v3-to-v4.js'
 export {
+  type ApplyMembershipMigrationOptions,
   applyMembershipMigration,
   type MembershipMigrationPlan,
   planMembershipMigration,

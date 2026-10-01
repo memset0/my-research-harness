@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { GitCommandRunner } from '../git/command.js'
 import { applyDigestWikiMigration, verifyDigestWikiMigration } from './digests-to-wiki.js'
 import {
   applyMembershipMigration,
@@ -233,6 +234,22 @@ describe('FS v6 to v7 membership migration', () => {
     expect(
       finalUpgrade.files.filter((file) => file.before !== file.after).map((file) => file.path),
     ).toEqual(['.memon/version.json'])
+  })
+
+  it('probes the worktree through the injected GitCommandRunner', async () => {
+    const { root, base } = await fixture()
+    const realRoot = await fs.realpath(root)
+    const calls: string[][] = []
+    const git: GitCommandRunner = async (_bin, args) => {
+      calls.push([...args])
+      if (args[0] === 'rev-parse') return { stdout: `${realRoot}\n`, stderr: '', code: 0 }
+      return { stdout: ' M docs/x.md\n', stderr: '', code: 0 }
+    }
+    const plan = await planMembershipMigration(root)
+    await expect(applyMembershipMigration(plan, join(base, 'backup'), { git })).rejects.toThrow(
+      'Dirty worktree',
+    )
+    expect(calls.map((args) => args[0])).toEqual(['rev-parse', 'status'])
   })
 
   it('refuses dirty Git worktrees without the explicit scoped override', async () => {

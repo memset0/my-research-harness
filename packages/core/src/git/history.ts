@@ -13,15 +13,13 @@
 // user-provided ref / sha before invoking — the readers pass them verbatim
 // to git.
 
-import {
-  cachedGitCommand,
-  type GitCommandRunner,
-  gitCommandStdoutText,
-  isGitCommandFailure,
-  toGitExecFailure,
-} from './command.js'
-
+import { cachedGitCommand, type GitCommandRunner } from './command.js'
 import type { GitFileEntry, GitFileStatus } from './files.js'
+import {
+  type GitExecFail as ExecFail,
+  type GitExecOk as ExecOk,
+  runGit as runGitWithLimit,
+} from './run.js'
 
 const DEFAULT_TIMEOUT_MS = 5000
 
@@ -110,29 +108,17 @@ export interface ReadGitHistoryOptions {
 
 // --- exec helper ---------------------------------------------------------
 
-interface ExecOk {
-  ok: true
-  stdout: string
-  stderr: string
-}
-interface ExecFail {
-  ok: false
-  err: { code?: string | number; killed?: boolean; message: string }
-  stderr: string
-}
+const MAX_BUFFER = 8 * 1024 * 1024
 
-async function runGit(
+/** `runGit` with this reader's output limit. */
+function runGit(
   exec: GitCommandRunner,
   bin: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
 ): Promise<ExecOk | ExecFail> {
-  const result = await exec(bin, args, { cwd, timeoutMs, maxBuffer: 8 * 1024 * 1024 })
-  if (isGitCommandFailure(result)) {
-    return { ok: false, ...toGitExecFailure(result) }
-  }
-  return { ok: true, stdout: gitCommandStdoutText(result), stderr: result.stderr }
+  return runGitWithLimit(exec, bin, args, cwd, timeoutMs, MAX_BUFFER)
 }
 
 function classifyEnabledFalseError(fail: ExecFail): {
