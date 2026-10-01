@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { CodeReviewDetail } from '../../../../../components/code-review-detail'
 import { getQueryClient } from '../../../../../lib/get-query-client'
+import { queryKeys } from '../../../../../lib/query-keys'
 import { getCodeReview, getCodeReviewsList } from '../../../../../lib/server/data'
 
 // Project-wide: code-review/<date>-<slug>
@@ -37,11 +38,11 @@ export default async function CodeReviewDetailPage({
   const queryClient = getQueryClient()
   await Promise.all([
     queryClient.prefetchQuery({
-      queryKey: ['code-reviews', decodedProject],
+      queryKey: queryKeys.codeReviews(decodedProject),
       queryFn: () => getCodeReviewsList(decodedProject),
     }),
     queryClient.prefetchQuery({
-      queryKey: ['code-review', decodedProject, decodedId],
+      queryKey: queryKeys.codeReview(decodedProject, decodedId),
       queryFn: () => getCodeReview(decodedProject, decodedId),
     }),
   ])

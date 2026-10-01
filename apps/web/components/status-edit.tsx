@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ApiError, type ProjectTarget, patchExperimentStatus, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { StatusPill } from './status-pill'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { ViewerGuard } from './viewer-guard'
@@ -38,7 +39,6 @@ export function StatusEdit({
 }) {
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
-  const projectKey = project ? projectQueryKey(project) : []
 
   const onChange = async (next: string) => {
     if (next === status) return
@@ -55,7 +55,7 @@ export function StatusEdit({
           description: 'Reload to see the latest content, then try again.',
           action: {
             label: 'Reload',
-            onClick: () => queryClient.invalidateQueries({ queryKey: ['run', ...projectKey, id] }),
+            onClick: () => queryClient.invalidateQueries({ queryKey: queryKeys.run(project, id) }),
           },
         })
       } else if ('error' in res && res.error?.code === 'ARCHIVE_RUNNING_FORBIDDEN') {
@@ -69,8 +69,8 @@ export function StatusEdit({
         if ('warning' in res && res.warning === 'archived') {
           toast.warning(`${id} is archived; modifying anyway`)
         }
-        queryClient.invalidateQueries({ queryKey: ['run', ...projectKey, id] })
-        queryClient.invalidateQueries({ queryKey: ['runs', ...projectKey] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.run(project, id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.runs(project) })
       }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message

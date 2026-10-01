@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { WikiShell } from '../../../../../components/wiki-shell'
 import { getQueryClient } from '../../../../../lib/get-query-client'
+import { queryKeys } from '../../../../../lib/query-keys'
 import { getWikiPage } from '../../../../../lib/server/data'
 
 const ID_REGEX = /^W\d{4}$/
@@ -34,7 +35,7 @@ export default async function WikiDetailPage({
   // client, so the reading surface never waits for it.
   const queryClient = getQueryClient()
   await queryClient.prefetchQuery({
-    queryKey: ['wiki-page', decodedProject, decodedId],
+    queryKey: queryKeys.wikiPage(decodedProject, decodedId),
     queryFn: () => getWikiPage(decodedProject, decodedId),
   })
 

@@ -6,6 +6,7 @@ import * as React from 'react'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { type CodePreview, fetchCodePreview, type ProjectTarget, projectQueryKey } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { queryKeys } from '../lib/query-keys'
 
 // Client-side mirror of the server's permalink shape check (see
 // @memon/core parseGithubPermalink). This only decides whether a link is
@@ -40,7 +41,7 @@ export function GithubPermalinkPreview({
 }) {
   const [open, setOpen] = React.useState(false)
   const query = useQuery<CodePreview>({
-    queryKey: ['code-preview', ...projectQueryKey(project), href],
+    queryKey: queryKeys.codePreview(project, href),
     queryFn: () => fetchCodePreview(project, href),
     enabled: open,
     staleTime: 5 * 60_000,

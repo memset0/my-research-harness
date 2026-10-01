@@ -2,6 +2,7 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { InboxShell } from '../../../../components/inbox-shell'
 import { getQueryClient } from '../../../../lib/get-query-client'
+import { queryKeys } from '../../../../lib/query-keys'
 import { getReportsList } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Reports' }
@@ -12,7 +13,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ projec
 
   const queryClient = getQueryClient()
   await queryClient.prefetchQuery({
-    queryKey: ['reports', decoded],
+    queryKey: queryKeys.reports(decoded),
     queryFn: () => getReportsList(decoded),
   })
 

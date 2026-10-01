@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { fetchExperiments, type IndexedRun } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { WarningBadge } from './colored-badge'
 import { ListSkeleton } from './skeletons'
@@ -17,7 +18,7 @@ const STATUS_VALUES = ['PENDING', 'RUNNING', 'FINISHED', 'FAILED', 'UNKNOWN'] as
 
 export function ExperimentList({ project }: { project: string }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['runs', project],
+    queryKey: queryKeys.runs(project),
     queryFn: () => fetchExperiments(project),
   })
   const [search, setSearch] = useState('')

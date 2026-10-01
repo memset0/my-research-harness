@@ -26,6 +26,7 @@ import {
   type ReportListItem,
 } from '../lib/api'
 import { splitFrontmatter } from '../lib/frontmatter'
+import { queryKeys } from '../lib/query-keys'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
 import { cn } from '../lib/utils'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
@@ -176,7 +177,7 @@ function useItemsList(
   project: ProjectTarget,
 ): { items: CommonItem[]; isLoading: boolean; error: Error | null; refetch: () => void } {
   const reportsQ = useQuery({
-    queryKey: ['reports', ...projectQueryKey(project)],
+    queryKey: queryKeys.reports(project),
     queryFn: () => fetchReports(project),
     enabled: kind === 'reports',
     staleTime: 5_000,
@@ -210,7 +211,7 @@ function useSelectedItem(
   selectedId: string | null,
 ): { data: FullItem | undefined; isLoading: boolean; error: Error | null } {
   const reportQ = useQuery({
-    queryKey: ['report', ...projectQueryKey(project), selectedId],
+    queryKey: queryKeys.report(project, selectedId),
     queryFn: () => fetchReport(project, selectedId!),
     enabled: kind === 'reports' && !!selectedId,
   })
@@ -700,7 +701,7 @@ function InboxEditor({
 
   async function save() {
     setSaving(true)
-    const detailKey = ['report', ...projectQueryKey(project), data.id]
+    const detailKey = queryKeys.report(project, data.id)
     try {
       const res = await putReport(project, data.id, {
         content: buffer,
@@ -713,7 +714,7 @@ function InboxEditor({
       setKnownHash(res.hash)
       // Invalidate the detail query so the rendered pane reflects the save.
       queryClient.invalidateQueries({ queryKey: detailKey })
-      queryClient.invalidateQueries({ queryKey: ['reports', project] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.reportsRawTarget(project) })
       toast.success('saved')
       onClose()
     } catch (err) {

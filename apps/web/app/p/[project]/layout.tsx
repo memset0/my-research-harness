@@ -9,6 +9,7 @@ import { ResizableSidebarProvider } from '../../../components/resizable-sidebar-
 import { SidebarInset } from '../../../components/ui/sidebar'
 import { WorkspaceSplitOutlet } from '../../../components/workspace-pane-provider'
 import { getQueryClient } from '../../../lib/get-query-client'
+import { queryKeys } from '../../../lib/query-keys'
 import { readIdentityFromHeaders } from '../../../lib/server/auth/request-context'
 import { aggregateCentralProjects } from '../../../lib/server/central/central-projects'
 import { getCentralFleet } from '../../../lib/server/central/fleet-runtime'
@@ -97,7 +98,7 @@ export default async function ProjectLayout({
   // prefetches the Run index: no mounted shell surface reads it, and doing
   // so would walk every Run folder on each project page render.
   const queryClient = getQueryClient()
-  await queryClient.prefetchQuery({ queryKey: ['projects'], queryFn: getProjectsData })
+  await queryClient.prefetchQuery({ queryKey: queryKeys.projects(), queryFn: getProjectsData })
 
   // shadcn pattern: read the `sidebar_state` cookie on the server so the
   // initial SSR HTML renders in the user's persisted open/collapsed state

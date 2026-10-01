@@ -20,6 +20,7 @@ import {
   patchRunArchived,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
@@ -45,7 +46,6 @@ export function ArchiveToggle({
 }) {
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
-  const projectKey = project ? projectQueryKey(project) : []
 
   // Hard rule: disable the archive action when targetting a run currently
   // RUNNING. Unarchive is always allowed.
@@ -68,7 +68,8 @@ export function ArchiveToggle({
             label: 'Reload',
             onClick: () =>
               queryClient.invalidateQueries({
-                queryKey: [kind === 'run' ? 'run' : 'experiment', ...projectKey, id],
+                queryKey:
+                  kind === 'run' ? queryKeys.run(project, id) : queryKeys.experiment(project, id),
               }),
           },
         })
@@ -80,13 +81,13 @@ export function ArchiveToggle({
       } else if ('archived' in res) {
         toast.success(target ? `Archived ${id}` : `Unarchived ${id}`)
         if (kind === 'run') {
-          queryClient.invalidateQueries({ queryKey: ['run', ...projectKey, id] })
-          queryClient.invalidateQueries({ queryKey: ['runs', ...projectKey] })
+          queryClient.invalidateQueries({ queryKey: queryKeys.run(project, id) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.runs(project) })
         } else {
           queryClient.invalidateQueries({
-            queryKey: ['experiment', ...projectKey, id],
+            queryKey: queryKeys.experiment(project, id),
           })
-          queryClient.invalidateQueries({ queryKey: ['experiments', ...projectKey] })
+          queryClient.invalidateQueries({ queryKey: queryKeys.experiments(project) })
         }
       }
     } catch (err) {

@@ -12,6 +12,7 @@ import {
   patchCodeReviewProgress,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { SuccessBadge } from './colored-badge'
 import { Markdown } from './markdown'
@@ -33,7 +34,7 @@ function counts(fm: CodeReviewFrontMatter) {
 
 export function CodeReviewDetail({ project, id }: { project: ProjectTarget; id: string }) {
   const qc = useQueryClient()
-  const key = ['code-review', ...projectQueryKey(project), id] as const
+  const key = queryKeys.codeReview(project, id)
   const { data, isLoading } = useQuery({
     queryKey: key,
     queryFn: () => fetchCodeReview(project, id),
@@ -64,7 +65,7 @@ export function CodeReviewDetail({ project, id }: { project: ProjectTarget; id: 
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: key })
-      qc.invalidateQueries({ queryKey: ['code-reviews', ...projectQueryKey(project)] })
+      qc.invalidateQueries({ queryKey: queryKeys.codeReviews(project) })
     },
   })
 

@@ -12,6 +12,7 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { RenderedItem, reportResourceBaseUrl } from './inbox-shell'
 import { ListSkeleton } from './skeletons'
@@ -36,12 +37,12 @@ export function ReportPane({
   onClose: () => void
 }) {
   const list = useQuery({
-    queryKey: ['reports-inventory', ...projectQueryKey(project)],
+    queryKey: queryKeys.reportsInventory(project),
     queryFn: () => fetchReportsInventory(project),
     staleTime: 5_000,
   })
   const detail = useQuery({
-    queryKey: ['report', ...projectQueryKey(project), reportId],
+    queryKey: queryKeys.report(project, reportId),
     queryFn: () => fetchReport(project, reportId),
   })
   const reports = useMemo(

@@ -14,6 +14,7 @@ import {
   type ProjectTarget,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 
 export type TabKind = 'experiments' | 'hypotheses' | 'journal' | 'reports' | 'code-review' | 'wiki'
@@ -77,29 +78,12 @@ interface TabCountResult {
 
 function useTabCount(kind: TabKind, project: ProjectTarget): TabCountResult {
   const q = useQuery({
-    queryKey: [tabQueryRoot(kind), ...projectQueryKey(project)],
+    queryKey: queryKeys.tabCollection(kind, project),
     queryFn: () => fetchTabCollection(kind, project),
     select: countTabCollection,
     staleTime: 5_000,
   })
   return { value: q.data, isLoading: q.isLoading }
-}
-
-function tabQueryRoot(kind: TabKind): string {
-  switch (kind) {
-    case 'experiments':
-      return 'experiments-inventory'
-    case 'hypotheses':
-      return 'hypotheses'
-    case 'journal':
-      return 'journal-count'
-    case 'reports':
-      return 'reports-inventory'
-    case 'code-review':
-      return 'code-reviews-inventory'
-    case 'wiki':
-      return 'wiki-inventory'
-  }
 }
 
 type TabCollection =

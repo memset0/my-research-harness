@@ -13,6 +13,7 @@ import {
   projectQueryKey,
 } from '../lib/api'
 import type { ArtifactTarget } from '../lib/artifact-links'
+import { queryKeys } from '../lib/query-keys'
 import { buildArtifactNavigationHref } from '../lib/report-workspace-url'
 import { MarkdownArtifactLinkProvider, type MarkdownArtifactSourceSurface } from './markdown'
 
@@ -32,17 +33,17 @@ export function DocumentArtifactLinkProvider({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const reportsQuery = useQuery({
-    queryKey: ['reports-inventory', ...projectQueryKey(project)],
+    queryKey: queryKeys.reportsInventory(project),
     queryFn: () => fetchReportsInventory(project),
     staleTime: 5_000,
   })
   const experimentsQuery = useQuery({
-    queryKey: ['experiments-inventory', ...projectQueryKey(project)],
+    queryKey: queryKeys.experimentsInventory(project),
     queryFn: () => fetchExperimentsInventory(project),
     staleTime: 5_000,
   })
   const wikiQuery = useQuery({
-    queryKey: ['wiki-inventory', ...projectQueryKey(project)],
+    queryKey: queryKeys.wikiInventory(project),
     queryFn: () => fetchWikiInventory(project),
     staleTime: 5_000,
   })

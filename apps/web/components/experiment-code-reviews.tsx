@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { fetchCodeReviews, type ProjectTarget, projectQueryKey, projectWebPath } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { SuccessBadge } from './colored-badge'
 import { Badge } from './ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -22,7 +23,7 @@ export function ExperimentCodeReviews({
   experimentId: string
 }) {
   const { data } = useQuery({
-    queryKey: ['code-reviews', ...projectQueryKey(project)],
+    queryKey: queryKeys.codeReviews(project),
     queryFn: () => fetchCodeReviews(project),
     staleTime: 5_000,
   })

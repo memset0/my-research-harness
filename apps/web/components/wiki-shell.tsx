@@ -40,6 +40,7 @@ import {
   type MarkdownOutlineEntry,
   normalizeHeadingIdPrefix,
 } from '../lib/markdown-outline'
+import { queryKeys } from '../lib/query-keys'
 import {
   handleFragmentClick,
   resetDriftedAncestors,
@@ -93,7 +94,7 @@ export function wikiResourceBaseUrl(project: ProjectTarget, wikiId: string): str
 
 export function useWikiPages(project: ProjectTarget) {
   const query = useQuery({
-    queryKey: ['wiki', ...projectQueryKey(project)],
+    queryKey: queryKeys.wiki(project),
     queryFn: () => fetchWiki(project),
     staleTime: 5_000,
   })
@@ -127,7 +128,7 @@ export function WikiShell({
   )
 
   const detail = useQuery({
-    queryKey: ['wiki-page', ...projectQueryKey(project), selectedId],
+    queryKey: queryKeys.wikiPage(project, selectedId),
     queryFn: () => fetchWikiPage(project, selectedId!),
     enabled: selectedId !== null,
   })
@@ -812,10 +813,7 @@ function useWikiChecklistWrite(
 ): ChecklistWriteContextValue {
   const queryClient = useQueryClient()
   const isOwner = useIsOwner()
-  const detailKey = useMemo(
-    () => ['wiki-page', ...projectQueryKey(project), page.id],
-    [project, page.id],
-  )
+  const detailKey = useMemo(() => queryKeys.wikiPage(project, page.id), [project, page.id])
   const mutation = useMutation({
     mutationFn: (edit: ChecklistToggle) =>
       putWikiPage(project, page.id, {
@@ -831,7 +829,7 @@ function useWikiChecklistWrite(
       }),
     onSuccess: (result) => {
       queryClient.setQueryData(detailKey, result.page)
-      queryClient.invalidateQueries({ queryKey: ['wiki', ...projectQueryKey(project)] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.wiki(project) })
     },
     onError: (error: Error) => {
       if (error instanceof ApiError && error.status === 409 && error.code === 'CONFLICT') {
@@ -945,10 +943,7 @@ function WikiEditor({
   const [buffer, setBuffer] = useState(page.content)
   const [knownMtime, setKnownMtime] = useState(page.mtime)
   const [knownHash, setKnownHash] = useState(page.hash)
-  const detailKey = useMemo(
-    () => ['wiki-page', ...projectQueryKey(project), page.id],
-    [project, page.id],
-  )
+  const detailKey = useMemo(() => queryKeys.wikiPage(project, page.id), [project, page.id])
 
   // Lock inputs intentionally remain pinned to the snapshot that opened the
   // editor. An SSE refresh may update `page` while the user is typing; adopting
@@ -966,9 +961,9 @@ function WikiEditor({
       setKnownMtime(result.page.mtime)
       setKnownHash(result.page.hash)
       queryClient.setQueryData(detailKey, result.page)
-      queryClient.invalidateQueries({ queryKey: ['wiki', ...projectQueryKey(project)] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.wiki(project) })
       queryClient.invalidateQueries({
-        queryKey: ['wiki-inventory', ...projectQueryKey(project)],
+        queryKey: queryKeys.wikiInventory(project),
       })
       toast.success('saved')
       onClose()

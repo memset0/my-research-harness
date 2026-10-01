@@ -20,6 +20,7 @@ import {
   type ProjectTarget,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { FileDiff, type FileDiffSkipReason } from './file-diff'
 
@@ -127,16 +128,15 @@ export function FileRowBody({
   // submodule), and `range.from` / `range.to` (range side). Distinct cache
   // slots per (path, side, refs) tuple — same path can appear in different
   // repos and different commit windows during a single dialog session.
-  const queryKey = [
-    'git-diff',
-    ...projectQueryKey(project),
+  const queryKey = queryKeys.gitDiff(
+    project,
     entry.path,
     side,
     sha,
     submodule,
     range?.from,
     range?.to,
-  ] as const
+  )
   const { data, isPending, isError, error } = useQuery({
     queryKey,
     queryFn: () =>

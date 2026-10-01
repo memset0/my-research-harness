@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useIsDesktop } from '@/hooks/use-is-desktop'
 import { type FullExperiment, fetchExperiment, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { WarningBadge } from './colored-badge'
 import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { EditReadmeButton } from './edit-readme-button'
@@ -21,7 +22,7 @@ import { WarningsCard } from './warnings-card'
 
 export function ExperimentDetail({ project, id }: { project: string; id: string }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['run', ...projectQueryKey(project), id],
+    queryKey: queryKeys.run(project, id),
     queryFn: () => fetchExperiment(project, id),
   })
 
@@ -84,7 +85,7 @@ function ExperimentDetailLayout({ exp, project }: { exp: FullExperiment; project
                       only way to pull new content for this README. */}
                   <ManualRefreshButton
                     label="Reload this run from disk"
-                    queryKeys={[['run', ...projectQueryKey(project), exp.id]]}
+                    queryKeys={[queryKeys.run(project, exp.id)]}
                   />
                   {exp.hasReadme && exp.path && <EditReadmeButton path={exp.path} runId={exp.id} />}
                 </div>

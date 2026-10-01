@@ -87,14 +87,19 @@ lib/                       client-safe or shared (hooks, fetchers, URL helpers,
 `lib/query-keys.ts` exports `queryKeys`, an object of constructors returning
 `as const` tuples. Project-scoped keys spread `projectQueryKey(target)` (so a
 plain string project yields `[root, project, …]` and a Host-qualified one
-`[root, host, project, …]`), exactly as the call sites already did.
+`[root, host, project, …]`), exactly as the call sites already did. The
+Project-addressing helpers (`ProjectTarget`, `projectName`, `projectHost`,
+`projectQueryKey`, `projectSearchParams`, `projectWebPath`) move from
+`lib/api.ts` into the pure `lib/project-target.ts` (re-exported by `lib/api.ts`)
+so the factory does not depend on the fetcher module — tests that mock
+`lib/api` wholesale would otherwise lose `projectQueryKey`.
 
 | Constructor | Runtime shape |
 |---|---|
 | `projects()` / `hosts()` / `slurmStatus()` | `['projects']` / `['hosts']` / `['slurm-status']` |
 | `allRuns()` | `['runs']` (prefix used for cross-project invalidation) |
-| `runs(p)` / `run(p,id)` / `runFiles(p,id)` | `['runs',…P]` / `['run',…P,id]` / `['run-files',…P,id]` |
-| `experiments(p)` / `experiment(p,id)` / `experimentsInventory(p)` | `['experiments',…P]` / `['experiment',…P,id]` / `['experiments-inventory',…P]` |
+| `runs(p?)` / `run(p?,id)` / `runFiles(p,id)` | `['runs',…P]` / `['run',…P,id]` / `['run-files',…P,id]`; `P` is empty when `p` is absent |
+| `experiments(p?)` / `experiment(p?,id)` / `experimentsInventory(p)` | `['experiments',…P]` / `['experiment',…P,id]` / `['experiments-inventory',…P]` |
 | `hypotheses(p)` / `journal(p)` / `journalHistory(p)` / `journalCount(p)` | `[root,…P]` |
 | `reports(p)` / `report(p,id)` / `reportsInventory(p)` | `['reports',…P]` / `['report',…P,id]` / `['reports-inventory',…P]` |
 | `reportsRawTarget(p)` | `['reports', p]` — preserves one legacy spelling (see Risks) |
@@ -107,10 +112,12 @@ plain string project yields `[root, project, …]` and a Host-qualified one
 | `fileAccess(windowMs)` / `docAsset(project,host,path)` | `['file-access',ms]` / `['doc-asset',project,host,path]` |
 | `tabCollection(kind,p)` | delegates to the inventory/count constructor for that tab |
 
-Root strings are exported as `QUERY_ROOTS` so resource-policy classifiers can
-reference them. The final set of constructors is whatever the call-site survey
-finds; each one gets an inline snapshot test for a string and a Host-qualified
-target. Alternative considered: hierarchical `['project', p, 'runs']` keys —
+The survey produced 42 constructors; each has an inline snapshot test for a
+string and (where Project-scoped) a Host-qualified target, plus a snapshot of
+the constructor name list so a new constructor cannot land without one. The
+root-classification sets in `lib/resource-policy.ts` and
+`components/resource-heartbeat-provider.tsx` stay as they are (they classify
+roots, they do not build keys). Alternative considered: hierarchical `['project', p, 'runs']` keys —
 rejected because it changes runtime shapes and breaks SSR dehydration matches.
 
 ### D3. Shared DTO types

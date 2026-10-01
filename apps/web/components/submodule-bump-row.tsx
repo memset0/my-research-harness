@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { fetchGitRange, type GitFileEntry, type ProjectTarget, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { FileRow } from './file-row'
 
@@ -97,7 +98,7 @@ function SubmoduleBumpBody({
   toSha: string
 }) {
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['git-range', ...projectQueryKey(project), submodule, fromSha, toSha] as const,
+    queryKey: queryKeys.gitRange(project, submodule, fromSha, toSha),
     queryFn: () => fetchGitRange(project, fromSha, toSha, submodule),
     staleTime: Infinity,
     retry: false,

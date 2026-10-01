@@ -21,6 +21,7 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitHistoryDialog } from './git-history-dialog'
@@ -41,7 +42,7 @@ export function ProjectFooter({ project }: ProjectFooterProps) {
   // Same query key as `<GitStatusPill />` so this read deduplicates with
   // the pill's poll — we don't fire an extra request.
   const { data } = useQuery({
-    queryKey: ['git-status', ...projectQueryKey(project)],
+    queryKey: queryKeys.gitStatus(project),
     queryFn: () => fetchGitStatus(project),
     staleTime: 5_000,
     retry: false,

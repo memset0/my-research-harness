@@ -9,13 +9,14 @@ import { ResizableSidebarProvider } from '../../components/resizable-sidebar-pro
 import { SidebarInset, SidebarTrigger } from '../../components/ui/sidebar'
 import { WorkspaceSplitOutlet } from '../../components/workspace-pane-provider'
 import { getQueryClient } from '../../lib/get-query-client'
+import { queryKeys } from '../../lib/query-keys'
 import { getProjectsData } from '../../lib/server/data'
 
 export default async function ManageLayout({ children }: { children: React.ReactNode }) {
   // SSR-prefetch the project list so the sidebar's project tree renders
   // in the initial HTML (no "No projects configured" flash on first paint).
   const queryClient = getQueryClient()
-  await queryClient.prefetchQuery({ queryKey: ['projects'], queryFn: getProjectsData })
+  await queryClient.prefetchQuery({ queryKey: queryKeys.projects(), queryFn: getProjectsData })
 
   // Match `/p/[project]/layout.tsx`: read `sidebar_state` so the collapse
   // state survives navigation across the project / manage boundary.

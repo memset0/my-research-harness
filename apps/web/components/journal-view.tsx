@@ -11,6 +11,7 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { SuccessBadge, WarningBadge } from './colored-badge'
 import { useIsOwner } from './session-provider'
 import { ListSkeleton } from './skeletons'
@@ -73,7 +74,7 @@ function changedPaths(record: JournalInvocationRecordView): string[] {
  */
 function InvocationLedger({ project }: { project: ProjectTarget }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['journal-history', ...projectQueryKey(project)],
+    queryKey: queryKeys.journalHistory(project),
     queryFn: () => fetchJournalHistory(project, { limit: 200 }),
   })
 
@@ -140,7 +141,7 @@ function InvocationLedger({ project }: { project: ProjectTarget }) {
 export function JournalView({ project }: { project: ProjectTarget }) {
   const isOwner = useIsOwner()
   const { data, isLoading, error } = useQuery({
-    queryKey: ['journal', ...projectQueryKey(project)],
+    queryKey: queryKeys.journal(project),
     queryFn: () => fetchJournal(project, { limit: 200 }),
   })
 

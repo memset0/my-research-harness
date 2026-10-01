@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { fetchHypotheses, type ProjectTarget, projectQueryKey, projectWebPath } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { ListSkeleton } from './skeletons'
 import { HypothesisStatusPill } from './status-pill'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
@@ -13,7 +14,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 export function HypothesisView({ project }: { project: ProjectTarget }) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['hypotheses', ...projectQueryKey(project)],
+    queryKey: queryKeys.hypotheses(project),
     queryFn: () => fetchHypotheses(project),
   })
 

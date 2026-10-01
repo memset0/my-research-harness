@@ -15,6 +15,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { type CommitMark, type CommitMarkStatus, deleteCommitMark, setCommitMark } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
@@ -92,7 +93,7 @@ export function CommitMarkEditor({
       )
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['commit-marks', project] })
+      qc.invalidateQueries({ queryKey: queryKeys.commitMarks(project) })
       onMutated?.()
     },
   })
@@ -100,7 +101,7 @@ export function CommitMarkEditor({
   const deleteMutation = useMutation({
     mutationFn: () => deleteCommitMark(project, sha, submodule),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['commit-marks', project] })
+      qc.invalidateQueries({ queryKey: queryKeys.commitMarks(project) })
       setStatus(null)
       setNote('')
       onMutated?.()

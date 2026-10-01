@@ -27,47 +27,21 @@ import type {
   WikiPage,
   WikiSummary,
 } from '@memon/core'
+import { type ProjectTarget, projectHost, projectName } from './project-target'
 import {
   beginResourceRequest,
   recordResourceResponse,
   resolveNotModified,
 } from './resource-protocol'
 
-export type ProjectTarget = string | ProjectRef
-
-export function projectName(target: ProjectTarget): string {
-  return typeof target === 'string' ? target : target.project
-}
-
-export function projectHost(target: ProjectTarget): string | null {
-  return typeof target === 'string' ? null : target.host
-}
-
-export function projectSearchParams(target: ProjectTarget): URLSearchParams {
-  const params = new URLSearchParams()
-  const host = projectHost(target)
-  if (host) params.set('host', host)
-  params.set('project', projectName(target))
-  return params
-}
-
-export function projectQueryKey(
-  target: ProjectTarget,
-): readonly [project: string] | readonly [host: string, project: string] {
-  const host = projectHost(target)
-  return host ? ([host, projectName(target)] as const) : ([projectName(target)] as const)
-}
-
-/** Canonical browser path for a standalone or Host-qualified Project. */
-export function projectWebPath(target: ProjectTarget, suffix = ''): string {
-  if (suffix !== '' && !suffix.startsWith('/')) {
-    throw new Error('Project path suffix must be empty or start with /')
-  }
-  const project = encodeURIComponent(projectName(target))
-  const host = projectHost(target)
-  const base = host ? `/h/${encodeURIComponent(host)}/p/${project}` : `/p/${project}`
-  return `${base}${suffix}`
-}
+export {
+  type ProjectTarget,
+  projectHost,
+  projectName,
+  projectQueryKey,
+  projectSearchParams,
+  projectWebPath,
+} from './project-target'
 
 function projectQueryUrl(path: string, target: ProjectTarget, extras?: URLSearchParams): string {
   const host = projectHost(target)

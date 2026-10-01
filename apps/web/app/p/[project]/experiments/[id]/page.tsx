@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { ExperimentDetail } from '../../../../../components/experiment-detail'
 import { projectQueryKey } from '../../../../../lib/api'
 import { getQueryClient } from '../../../../../lib/get-query-client'
+import { queryKeys } from '../../../../../lib/query-keys'
 import { getExperimentData } from '../../../../../lib/server/data'
 
 // Legacy Run detail URL, still linked from the experiment list, hypotheses
@@ -36,7 +37,7 @@ export default async function ExperimentPage({ params }: { params: Params }) {
   // Pre-populate the exact key ExperimentDetail reads so the client's
   // useQuery sees the data on mount without a fetch flash.
   const queryClient = getQueryClient()
-  queryClient.setQueryData(['run', ...projectQueryKey(decodedProject), decodedId], run)
+  queryClient.setQueryData(queryKeys.run(decodedProject, decodedId), run)
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>

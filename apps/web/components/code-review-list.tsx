@@ -10,6 +10,7 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { SuccessBadge } from './colored-badge'
 import { Badge } from './ui/badge'
@@ -29,7 +30,7 @@ function CompletionBadge({ c }: { c: CodeReviewCompletion }) {
 
 export function CodeReviewList({ project }: { project: ProjectTarget }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['code-reviews', ...projectQueryKey(project)],
+    queryKey: queryKeys.codeReviews(project),
     queryFn: () => fetchCodeReviews(project),
   })
   const items = data?.codeReviews ?? []

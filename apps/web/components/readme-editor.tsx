@@ -16,6 +16,7 @@ import {
   putReadme,
   putRunReadme,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { readPlainPref, writePlainPref } from '../lib/readme-editor-prefs'
 import { ReadmeEditorToolbar } from './readme-editor-toolbar'
 import { ReadmeMonaco } from './readme-monaco'
@@ -209,9 +210,9 @@ export function ReadmeEditorBody({
         toast.success(`Saved · mtime ${new Date(ok.mtime).toLocaleTimeString()}`)
         safeRemove(draftKey(diskMtime))
         queryClient.invalidateQueries({
-          queryKey: ['run', ...(target ? projectQueryKey(target.project) : []), runId],
+          queryKey: queryKeys.run(target?.project, runId),
         })
-        queryClient.invalidateQueries({ queryKey: ['runs'] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.allRuns() })
         // Server returns the canonical `finalContent` (post-bump,
         // post-pretty-print). Adopt it as both buffer + baseline so the
         // editor's notion of "disk" matches what's actually on disk.
@@ -247,9 +248,9 @@ export function ReadmeEditorBody({
         toast.success('Saved (overwrote conflicting changes)')
         if (diskMtime !== null) safeRemove(draftKey(diskMtime))
         queryClient.invalidateQueries({
-          queryKey: ['run', ...(target ? projectQueryKey(target.project) : []), runId],
+          queryKey: queryKeys.run(target?.project, runId),
         })
-        queryClient.invalidateQueries({ queryKey: ['runs'] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.allRuns() })
         const newContent = ok.finalContent ?? content
         setContent(newContent)
         setDiskContent(newContent)

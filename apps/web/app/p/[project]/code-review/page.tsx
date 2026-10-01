@@ -2,6 +2,7 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { CodeReviewList } from '../../../../components/code-review-list'
 import { getQueryClient } from '../../../../lib/get-query-client'
+import { queryKeys } from '../../../../lib/query-keys'
 import { getCodeReviewsList } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Code review' }
@@ -12,7 +13,7 @@ export default async function CodeReviewPage({ params }: { params: Promise<{ pro
 
   const queryClient = getQueryClient()
   await queryClient.prefetchQuery({
-    queryKey: ['code-reviews', decoded],
+    queryKey: queryKeys.codeReviews(decoded),
     queryFn: () => getCodeReviewsList(decoded),
   })
 

@@ -30,6 +30,7 @@ import {
   requestFileAccessRestart,
   saveFileAccessSettings,
 } from '../lib/file-access-api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { useIsOwner } from './session-provider'
 import { Badge } from './ui/badge'
@@ -175,7 +176,7 @@ export function FileAccessSettingsPanel() {
   } | null>(null)
 
   const query = useQuery({
-    queryKey: ['file-access', windowMs],
+    queryKey: queryKeys.fileAccess(windowMs),
     queryFn: () => fetchFileAccessSettings(windowMs),
     enabled: isOwner,
   })
@@ -272,7 +273,7 @@ export function FileAccessSettingsPanel() {
         windowMs,
       })
       if (response.ok) {
-        queryClient.setQueryData(['file-access', windowMs], response)
+        queryClient.setQueryData(queryKeys.fileAccess(windowMs), response)
         setDraft(toDraft(response.data.pending))
         setBaselineRevision(response.data.revision)
         toast.success('Saved. Restart to activate.')
@@ -313,7 +314,7 @@ export function FileAccessSettingsPanel() {
       await new Promise<void>((resolve) => setTimeout(resolve, 2_000))
       const response = await fetchFileAccessSettings(windowMs).catch(() => null)
       if (!response?.ok) continue
-      queryClient.setQueryData(['file-access', windowMs], response)
+      queryClient.setQueryData(queryKeys.fileAccess(windowMs), response)
       if (
         !response.data.restartRequired &&
         response.data.metrics &&

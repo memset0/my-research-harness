@@ -16,6 +16,7 @@ import {
   projectName,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
@@ -93,12 +94,12 @@ export function AppSidebar() {
   const activeExpDocId = decodeURIComponent(pathname.match(/\/e\/([^/]+)/)?.[1] ?? '')
 
   const { data: projectsData } = useQuery({
-    queryKey: ['projects'],
+    queryKey: queryKeys.projects(),
     queryFn: fetchProjects,
     staleTime: 60_000,
   })
   const { data: hostsData } = useQuery({
-    queryKey: ['hosts'],
+    queryKey: queryKeys.hosts(),
     queryFn: fetchHosts,
     staleTime: 10_000,
     retry: false,
@@ -409,7 +410,7 @@ function ProjectGroup({
   // projects (`enabled: false` or query pending) the pill returns null
   // and we skip the click target so nothing reactable sits in the row.
   const { data: gitStatus } = useQuery({
-    queryKey: ['git-status', ...projectQueryKey(target)],
+    queryKey: queryKeys.gitStatus(target),
     queryFn: () => fetchGitStatus(target),
     staleTime: 5_000,
     retry: false,
@@ -592,7 +593,7 @@ function ProjectExperimentDocs({
   // collapsed section, or a section merely restored from persisted state on a
   // non-project route, stays bandwidth-free until the user expands it.
   const { data, isLoading } = useQuery({
-    queryKey: ['experiments-inventory', ...projectQueryKey(project)],
+    queryKey: queryKeys.experimentsInventory(project),
     queryFn: () => fetchExperimentsInventory(project),
     enabled,
     staleTime: 5_000,

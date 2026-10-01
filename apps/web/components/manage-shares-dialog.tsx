@@ -13,6 +13,7 @@ import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { type ProjectTarget, projectHost, projectName, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { useSession } from './session-provider'
 import { Button } from './ui/button'
 import {
@@ -152,7 +153,7 @@ export function ManageSharesDialog({ project }: Props) {
   const queryClient = useQueryClient()
 
   const { data: shares, isLoading } = useQuery({
-    queryKey: ['project-shares', ...projectQueryKey(project)],
+    queryKey: queryKeys.projectShares(project),
     queryFn: () => fetchShares(project),
     enabled: open && role === 'owner',
     staleTime: 5_000,
@@ -175,7 +176,7 @@ export function ManageSharesDialog({ project }: Props) {
       setExpires('never')
       await copyToClipboard(created.share_url)
       toast.success('Share created — URL copied to clipboard')
-      queryClient.invalidateQueries({ queryKey: ['project-shares', ...projectQueryKey(project)] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
     },
     onError: (err) => toast.error(`Could not create share: ${(err as Error).message}`),
   })
@@ -184,7 +185,7 @@ export function ManageSharesDialog({ project }: Props) {
     mutationFn: (id: string) => deleteShare(project, id),
     onSuccess: () => {
       toast.success('Share revoked')
-      queryClient.invalidateQueries({ queryKey: ['project-shares', ...projectQueryKey(project)] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.projectShares(project) })
       setConfirmId(null)
     },
     onError: (err) => toast.error(`Could not revoke: ${(err as Error).message}`),

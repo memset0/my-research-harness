@@ -11,6 +11,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { GitBranch } from 'lucide-react'
 import { fetchGitStatus, type GitStatus, type ProjectTarget, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { useRuntimeConfig } from '../lib/runtime-config'
 import { cn } from '../lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
@@ -29,7 +30,7 @@ export function GitStatusPill({ project, variant, className }: GitStatusPillProp
   const { gitStatus } = useRuntimeConfig()
   const intervalMs = gitStatus.intervalMs
   const { data, isPending, isError } = useQuery({
-    queryKey: ['git-status', ...projectQueryKey(project)],
+    queryKey: queryKeys.gitStatus(project),
     queryFn: () => fetchGitStatus(project),
     refetchInterval: intervalMs,
     staleTime: Math.max(0, Math.floor(intervalMs / 2)),

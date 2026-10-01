@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { fetchWikiBacklinks, type ProjectTarget, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { setWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
@@ -31,7 +32,7 @@ export function ExperimentWikiCitations({
 }) {
   const [open, setOpen] = useState(false)
   const { data, error } = useQuery({
-    queryKey: ['wiki-backlinks', ...projectQueryKey(project), experimentId],
+    queryKey: queryKeys.wikiBacklinks(project, experimentId),
     queryFn: () => fetchWikiBacklinks(project, experimentId),
     enabled: open,
   })

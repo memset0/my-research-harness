@@ -12,6 +12,7 @@ import {
   type ProjectTarget,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader } from './ui/card'
@@ -48,7 +49,7 @@ export function LogViewer({
 }) {
   const selector = runResource ?? expPath
   const { data: filesData } = useQuery({
-    queryKey: ['log-files', ...projectQueryKey(project), selector],
+    queryKey: queryKeys.logFiles(project, selector),
     queryFn: () => fetchLogFiles(project, selector!, expPath),
     enabled: Boolean(selector),
     staleTime: 30_000,

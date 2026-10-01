@@ -20,6 +20,7 @@ import {
   type WarningRecord,
   type WarningsOpResponse,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { SuccessBadge, WarningBadge } from './colored-badge'
 import { TimestampLocal } from './timestamp'
@@ -121,7 +122,7 @@ export function WarningsCard({
       setWarnings(out.warnings)
       setMtime(out.mtime)
       setHash(out.hash)
-      qc.invalidateQueries({ queryKey: ['run', ...projectQueryKey(project), runId] })
+      qc.invalidateQueries({ queryKey: queryKeys.run(project, runId) })
     },
     [project, runId, qc],
   )
@@ -129,7 +130,7 @@ export function WarningsCard({
   const handleConflict = useCallback(async () => {
     toast.error('Warnings: someone else changed this README — refreshing')
     await refetch()
-    qc.invalidateQueries({ queryKey: ['run', ...projectQueryKey(project), runId] })
+    qc.invalidateQueries({ queryKey: queryKeys.run(project, runId) })
   }, [project, runId, qc, refetch])
 
   const openCount = warnings.filter((w) => w.status === 'OPEN').length

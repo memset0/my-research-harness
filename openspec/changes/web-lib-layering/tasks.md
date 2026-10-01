@@ -8,8 +8,8 @@
 
 ## 2. Query key factory (D2)
 
-- [ ] 2.1 Add `apps/web/lib/query-keys.ts` with one `as const` constructor per surveyed key root/shape and an inline-snapshot test per constructor (string and Host-qualified targets); verify the test passes
-- [ ] 2.2 Replace every `queryKey` literal, `invalidateQueries` / `setQueryData` / `getQueryData` / `cancelQueries` / `prefetchQuery` key and manual-refresh key in `app/` and `components/` with factory calls, keeping runtime shapes byte-identical; verify `grep` finds no remaining key literal outside `lib/query-keys.ts` and the web suite passes
+- [x] 2.1 Add `apps/web/lib/query-keys.ts` with one `as const` constructor per surveyed key root/shape and an inline-snapshot test per constructor (string and Host-qualified targets); verify the test passes
+- [x] 2.2 Replace every `queryKey` literal, `invalidateQueries` / `setQueryData` / `getQueryData` / `cancelQueries` / `prefetchQuery` key and manual-refresh key in `app/` and `components/` with factory calls, keeping runtime shapes byte-identical; verify `grep` finds no remaining key literal outside `lib/query-keys.ts` and the web suite passes
 
 ## 3. Shared response DTOs (D3)
 

@@ -15,6 +15,7 @@ import {
   projectWebPath,
   type WikiListItem,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { switchWikiWorkspaceUrl } from '../lib/wiki-workspace-url'
 import { ListSkeleton } from './skeletons'
@@ -47,7 +48,7 @@ export function WikiPane({
 }) {
   const list = useWikiPages(project)
   const detail = useQuery({
-    queryKey: ['wiki-page', ...projectQueryKey(project), wikiId],
+    queryKey: queryKeys.wikiPage(project, wikiId),
     queryFn: () => fetchWikiPage(project, wikiId),
   })
   const selectedSummary = list.pages.find((page) => page.id === wikiId)

@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ApiError, type ProjectTarget, patchExperimentStatusV4, projectQueryKey } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { ExperimentStatusPill } from './status-pill'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
@@ -29,7 +30,6 @@ export function ExperimentStatusEdit({
 }) {
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
-  const projectKey = project ? projectQueryKey(project) : []
 
   const onChange = async (next: string) => {
     if (next === status) return
@@ -49,7 +49,7 @@ export function ExperimentStatusEdit({
             label: 'Reload',
             onClick: () =>
               queryClient.invalidateQueries({
-                queryKey: ['experiment', ...projectKey, expId],
+                queryKey: queryKeys.experiment(project, expId),
               }),
           },
         })
@@ -59,9 +59,9 @@ export function ExperimentStatusEdit({
           toast.warning(`${expId} is archived; modifying anyway`)
         }
         queryClient.invalidateQueries({
-          queryKey: ['experiment', ...projectKey, expId],
+          queryKey: queryKeys.experiment(project, expId),
         })
-        queryClient.invalidateQueries({ queryKey: ['experiments', ...projectKey] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.experiments(project) })
       }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message

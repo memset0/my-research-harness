@@ -17,6 +17,7 @@ import {
   projectName,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
 import { FileRow } from './file-row'
 import { Button } from './ui/button'
@@ -73,7 +74,7 @@ export function GitDiffDialog({ project, open, onOpenChange, onOpenHistory }: Gi
 
 function BranchSummary({ project }: { project: ProjectTarget }) {
   const { data } = useQuery({
-    queryKey: ['git-status', ...projectQueryKey(project)],
+    queryKey: queryKeys.gitStatus(project),
     queryFn: () => fetchGitStatus(project),
     staleTime: 5_000,
   })
@@ -140,9 +141,7 @@ function RepoBlock({
   submodule: string | undefined
   title: string
 }) {
-  const queryKey = submodule
-    ? (['git-status-files', ...projectQueryKey(project), submodule] as const)
-    : (['git-status-files', ...projectQueryKey(project)] as const)
+  const queryKey = queryKeys.gitStatusFiles(project, submodule)
   const { data, isPending, isError } = useQuery({
     queryKey,
     queryFn: () => fetchGitStatusFiles(project, submodule),
@@ -202,7 +201,7 @@ function RepoBlock({
 
 function SubmoduleBlocks({ project, open }: { project: ProjectTarget; open: boolean }) {
   const { data } = useQuery({
-    queryKey: ['submodules', ...projectQueryKey(project)],
+    queryKey: queryKeys.submodules(project),
     queryFn: () => fetchSubmodules(project),
     enabled: open,
     staleTime: Infinity,

@@ -25,6 +25,7 @@ import {
   type GitSubmoduleEntry,
 } from '../lib/api'
 import { formatRelativeTime } from '../lib/format-relative-time'
+import { queryKeys } from '../lib/query-keys'
 import { useDiffViewMode } from '../lib/use-diff-view-mode'
 import { cn } from '../lib/utils'
 import { CommitMarkBadge } from './commit-mark-badge'
@@ -85,14 +86,14 @@ function HistoryBody({ project }: { project: string }) {
   const [selectedSubmodule, setSelectedSubmodule] = useState<string>('')
 
   const submodulesQuery = useQuery({
-    queryKey: ['submodules', project],
+    queryKey: queryKeys.submodules(project),
     queryFn: () => fetchSubmodules(project),
     staleTime: Infinity,
     retry: false,
   })
 
   const branchesQuery = useQuery({
-    queryKey: ['git-branches', project, selectedSubmodule],
+    queryKey: queryKeys.gitBranches(project, selectedSubmodule),
     queryFn: () => fetchGitBranches(project, selectedSubmodule || undefined),
     staleTime: Infinity,
     retry: false,
@@ -120,7 +121,7 @@ function HistoryBody({ project }: { project: string }) {
       : effectiveRef
 
   const logQuery = useQuery({
-    queryKey: ['git-log', project, selectedSubmodule, gitRev],
+    queryKey: queryKeys.gitLog(project, selectedSubmodule, gitRev),
     queryFn: () => fetchGitLog(project, gitRev!, 100, selectedSubmodule || undefined),
     enabled: Boolean(gitRev),
     staleTime: Infinity,
@@ -130,7 +131,7 @@ function HistoryBody({ project }: { project: string }) {
   // Per-project verification marks. Lazy on dialog open; the editor's
   // TanStack mutation invalidates this query so badges update inline.
   const marksQuery = useQuery({
-    queryKey: ['commit-marks', project],
+    queryKey: queryKeys.commitMarks(project),
     queryFn: () => fetchCommitMarks(project),
     staleTime: Infinity,
     retry: false,
@@ -139,11 +140,11 @@ function HistoryBody({ project }: { project: string }) {
 
   function onRefresh() {
     qc.invalidateQueries({
-      queryKey: ['git-branches', project, selectedSubmodule],
+      queryKey: queryKeys.gitBranches(project, selectedSubmodule),
     })
     if (gitRev) {
       qc.invalidateQueries({
-        queryKey: ['git-log', project, selectedSubmodule, gitRev],
+        queryKey: queryKeys.gitLog(project, selectedSubmodule, gitRev),
       })
     }
   }
@@ -471,7 +472,7 @@ function CommitDetail({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ['git-commit', project, submodule, sha],
+    queryKey: queryKeys.gitCommit(project, submodule, sha),
     queryFn: () => fetchGitCommit(project, sha!, submodule || undefined),
     enabled: Boolean(sha),
     staleTime: Infinity,

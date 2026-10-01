@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { InboxShell } from '../../../../../components/inbox-shell'
 import { getQueryClient } from '../../../../../lib/get-query-client'
+import { queryKeys } from '../../../../../lib/query-keys'
 import { getReport, getReportsList } from '../../../../../lib/server/data'
 
 const ID_REGEX = /^R\d{4}$/
@@ -33,11 +34,11 @@ export default async function ReportDetailPage({
   const queryClient = getQueryClient()
   await Promise.all([
     queryClient.prefetchQuery({
-      queryKey: ['reports', decodedProject],
+      queryKey: queryKeys.reports(decodedProject),
       queryFn: () => getReportsList(decodedProject),
     }),
     queryClient.prefetchQuery({
-      queryKey: ['report', decodedProject, decodedId],
+      queryKey: queryKeys.report(decodedProject, decodedId),
       queryFn: () => getReport(decodedProject, decodedId),
     }),
   ])

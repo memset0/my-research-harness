@@ -2,6 +2,7 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { WikiShell } from '../../../../components/wiki-shell'
 import { getQueryClient } from '../../../../lib/get-query-client'
+import { queryKeys } from '../../../../lib/query-keys'
 import { getWikiList } from '../../../../lib/server/data'
 
 export const metadata: Metadata = { title: 'Wiki' }
@@ -12,7 +13,7 @@ export default async function WikiPage({ params }: { params: Promise<{ project: 
 
   const queryClient = getQueryClient()
   await queryClient.prefetchQuery({
-    queryKey: ['wiki', decoded],
+    queryKey: queryKeys.wiki(decoded),
     queryFn: () => getWikiList(decoded),
   })
 

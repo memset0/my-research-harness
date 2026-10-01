@@ -31,6 +31,7 @@ import {
   projectName,
   projectQueryKey,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { ExperimentStatusPill } from './status-pill'
 import { Badge } from './ui/badge'
@@ -47,7 +48,7 @@ function projectBasePath(project: ProjectTarget): string {
 
 export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
   const { data: expData, isLoading: expLoading } = useQuery({
-    queryKey: ['experiments', ...projectQueryKey(project)],
+    queryKey: queryKeys.experiments(project),
     queryFn: () => fetchExperimentDocs(project),
   })
 

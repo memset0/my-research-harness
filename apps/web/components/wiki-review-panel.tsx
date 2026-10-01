@@ -28,6 +28,7 @@ import {
   unmarkWikiReview,
 } from '../lib/api'
 import { formatRelativeTime } from '../lib/format-relative-time'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { FileRow } from './file-row'
 import { ListSkeleton } from './skeletons'
@@ -79,7 +80,7 @@ export function WikiReviewPanel({
 
 function WikiReviewBody({ project }: { project: ProjectTarget }) {
   const queryClient = useQueryClient()
-  const reviewKey = useMemo(() => ['wiki-review', ...projectQueryKey(project)], [project])
+  const reviewKey = useMemo(() => queryKeys.wikiReview(project), [project])
   const log = useQuery({
     queryKey: reviewKey,
     queryFn: () => fetchWikiReview(project),
@@ -95,7 +96,7 @@ function WikiReviewBody({ project }: { project: ProjectTarget }) {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: reviewKey })
-    queryClient.invalidateQueries({ queryKey: ['wiki', ...projectQueryKey(project)] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.wiki(project) })
   }
 
   const verify = useMutation({
@@ -311,7 +312,7 @@ function WikiCommitFiles({ project, sha }: { project: ProjectTarget; sha: string
   // list carried by the review log rather than pretending to fetch it.
   const enabled = projectHost(project) === null
   const detail = useQuery({
-    queryKey: ['git-commit', ...projectQueryKey(project), sha],
+    queryKey: queryKeys.gitCommitAtRoot(project, sha),
     queryFn: () => fetchGitCommit(project, sha),
     enabled,
     staleTime: Number.POSITIVE_INFINITY,

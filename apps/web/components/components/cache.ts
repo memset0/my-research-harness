@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ComponentDocumentRef } from '../../lib/components/types'
 import { cacheFileUrl, componentAssetsDir } from '../../lib/components/urls'
+import { queryKeys } from '../../lib/query-keys'
 
 export type ComponentCacheState =
   | { phase: 'loading' }
@@ -12,7 +13,7 @@ export type ComponentCacheState =
 
 export function componentCacheQueryKey(doc: ComponentDocumentRef, id: string): readonly unknown[] {
   const cachePath = `${componentAssetsDir(doc.path)}/${id}.json`
-  return ['doc-asset', doc.project, doc.host ?? null, cachePath] as const
+  return queryKeys.docAsset(doc.project, doc.host ?? null, cachePath)
 }
 
 export function useComponentCache(doc: ComponentDocumentRef, id: string): ComponentCacheState {

@@ -26,6 +26,7 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { translationSources } from '../lib/translation/sources'
 import { cn } from '../lib/utils'
 import { ArchiveToggle } from './archive-toggle'
@@ -61,7 +62,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['experiment', ...projectQueryKey(project), experimentId],
+    queryKey: queryKeys.experiment(project, experimentId),
     queryFn: () => fetchExperimentDoc(project, experimentId),
   })
 
@@ -612,11 +613,11 @@ function RunBody({
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['run', ...projectQueryKey(project), runId],
+    queryKey: queryKeys.run(project, runId),
     queryFn: () => fetchExperiment(project, runId),
   })
   const { data: files } = useQuery({
-    queryKey: ['run-files', ...projectQueryKey(project), runId],
+    queryKey: queryKeys.runFiles(project, runId),
     queryFn: () => fetchRunFiles(project, runId, 3),
   })
 
@@ -655,10 +656,7 @@ function RunBody({
         <EditMarkdownButton path={run.path} target={{ kind: 'run', id: runId, project }} />
         <ManualRefreshButton
           label="Reload this run from disk"
-          queryKeys={[
-            ['run', ...projectQueryKey(project), runId],
-            ['run-files', ...projectQueryKey(project), runId],
-          ]}
+          queryKeys={[queryKeys.run(project, runId), queryKeys.runFiles(project, runId)]}
         />
         {run.frontMatter.deprecated && (
           <Badge variant="outline">deprecated — excluded from research</Badge>

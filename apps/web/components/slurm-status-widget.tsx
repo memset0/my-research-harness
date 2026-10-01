@@ -5,6 +5,7 @@ import { AlertTriangle, Server } from 'lucide-react'
 import { useState } from 'react'
 import { useIsMobile } from '../hooks/use-mobile'
 import { fetchSlurmStatus, type SlurmJobJson, type SlurmStatus } from '../lib/api'
+import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
 import { Badge } from './ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
@@ -16,7 +17,7 @@ export function SlurmStatusWidget() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const { data } = useQuery({
-    queryKey: ['slurm-status'],
+    queryKey: queryKeys.slurmStatus(),
     queryFn: fetchSlurmStatus,
     refetchInterval: 30_000,
     staleTime: 25_000,
