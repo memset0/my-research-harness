@@ -240,7 +240,59 @@ ships together with its only client. Rollback is the previous release.
 
 ## Measurements
 
-Filled in after implementation (same harness, same page set).
+Same read-only harness and page set as the baseline: one fresh Node process
+per page loading the direct central runtime against the operator project
+(about 1,300 Runs, 30 Experiments, 36 wiki pages, `outputs/` excluded),
+requests of a page fired concurrently, run serially 1 s apart, every write
+to the project blocked. "Cold" is the first pass of a fresh process, "warm"
+the immediate repeat, "heartbeat" a third pass that re-sends each URL with
+the `If-None-Match` / known-version headers the browser would send. Counts are
+Node fs calls (stat+lstat+access / readdir / read / realpath); times are the
+harness wall clock for the page. Baseline: v7.3.0 release code; after: this
+change (central read policy).
+
+| Page | ops before cold / warm / heartbeat | ops after cold / warm / heartbeat | warm wall before → after |
+|---|---|---|---|
+| Layout floor (6 inventories) | 159 / 159 / 159 | 126 / 2 / 0 | 33 → 13 ms |
+| Project home (+ Experiment list) | 430 / 430 / 430 | 186 / 2 / 0 | 324 → 15 ms |
+| Experiment detail, 448 members | 2,465 / 2,465 / 2,465 | 2,877 / 494 / 491 | 236 → 161 ms |
+| Experiment detail, 1 member | 230 / 230 / 230 | 162 / 14 / 11 | 39 → 29 ms |
+| Wiki list | 8,809 / 8,701 / 8,701 | 7,813 / 9 / 0 | 713 → 194 ms |
+| Wiki page (with list) | 12,043 / 11,935 / 11,935 | 7,818 / 14 / 5 | 954 → 284 ms |
+| Reports (list + one Report) | 285 / 285 / 285 | 176 / 7 / 4 | 38 → 17 ms |
+| Anomalies | 5,424 / 5,424 / 5,424 | 4,806 / 1 / 0 | 600 → 63 ms |
+| Log tail | 9 / 6 / 6 | 9 / 6 / 6 | 7 → 7 ms |
+
+| Run detail (service level, warm) | before | after |
+|---|---|---|
+| `getRun` by path | 39 (31 reads) | 39 (1 read; parent lookup is 30 fingerprint stats) |
+| `getRun` by base name | 143 | 143 (Run walk) |
+| `getRunFiles` depth 3 | 365 / 151 | 365 / 151 (unchanged; now reachable in direct mode) |
+
+Response sizes: the Experiment list fell from 650 KB to 21 KB (home page
+total 662 KB → 33 KB); detail responses are unchanged. Heartbeat responses
+for every list are `304` with an empty body.
+
+Reading the table honestly:
+
+- Warm and heartbeat costs meet the goals (layout ≈0, home ≈0, Experiment
+  detail ≈490 ≈ one stat per member, wiki list 9, anomalies 1). They rely on
+  the 60 s / 300 s central list windows; with the strict policy a warm list
+  costs one stat per observed file instead of zero.
+- Cold costs (first request after a restart) are not all lower: the
+  448-member detail costs 2,877 against 2,465, because loading a Run summary
+  verifies containment with real paths and stats the Run directory as well as
+  its README. Every later request pays only the fingerprint stat. The layout
+  floor cold is 126, not ≈25: the first wiki inventory still reads each page
+  once to learn its id and legacy id.
+- Anomalies changed by the adopted disk classification: before 651
+  (6 `PHANTOM_RUN_REF`, 645 `RUN_SLUG_PREFIX_VIOLATION`), after 649 (0
+  phantom, 649 slug violations); the excluded `outputs/` declarations are
+  members again.
+- Browser check on a preview of this build (central role, scratch copy of the
+  mock project): the list renders titles, statuses and tags from the slim
+  rows, the detail page renders, CSS tokens resolve, no page errors, and the
+  open list tab's 30 s heartbeats carry `If-None-Match` and receive `304`.
 
 ## Future
 

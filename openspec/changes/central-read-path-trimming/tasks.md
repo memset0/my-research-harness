@@ -41,6 +41,6 @@
 
 ## 7. Verification and measurements
 
-- [ ] 7.1 Run backend tests, affected web tests, the full web suite, `pnpm typecheck` and `biome check .`; record the numbers
-- [ ] 7.2 Build the web app in the checkout, preview on 3742 with a scratch mock copy, check the Experiment list and detail HTML, CSS tokens, then clean up
-- [ ] 7.3 Re-run the read-only harness on the same page set and record the before/after table in design.md
+- [x] 7.1 Run backend tests, affected web tests, the full web suite, `pnpm typecheck` and `biome check .`; record the numbers
+- [x] 7.2 Build the web app in the checkout, preview on 3742 with a scratch mock copy, check the Experiment list and detail HTML, CSS tokens, then clean up
+- [x] 7.3 Re-run the read-only harness on the same page set and record the before/after table in design.md
