@@ -1,4 +1,5 @@
 import { relative } from 'node:path'
+import { runSlugFromDirName } from '../ids.js'
 import { formatIsoLocal } from '../time.js'
 import type { Experiment, ExperimentMembershipAnomaly, Run } from '../types.js'
 
@@ -148,14 +149,12 @@ export function computeMembership(input: MembershipInput): MembershipResult {
     }
   }
 
-  const runDirRe = /^(?<slug>[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*)-\d{6}-\d{6}$/
   for (const exp of input.experiments) {
     for (const runDir of exp.frontMatter.runs) {
       const run = runByDir.get(runDir)
       if (!run) continue // PHANTOM already reported
-      const m = runDirRe.exec(run.id)
-      if (!m?.groups) continue
-      const runSlug = m.groups.slug!
+      const runSlug = runSlugFromDirName(run.id)
+      if (runSlug === null) continue
       if (!runSlug.startsWith(exp.frontMatter.slug)) {
         anomalies.push({
           code: 'RUN_SLUG_PREFIX_VIOLATION',

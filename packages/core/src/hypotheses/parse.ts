@@ -27,7 +27,13 @@
 //   * Unknown labeled bullets are kept in `extraFields` for debugging /
 //     forward-compat (not surfaced via the typed Hypothesis, but warned about).
 
-import { parseId } from '../ids.js'
+import {
+  EXPERIMENT_DIR_REGEX,
+  EXPERIMENT_MENTION_SOURCE,
+  extractRunMentions,
+  isRunDirName,
+  parseId,
+} from '../ids.js'
 import { splitH2Sections } from '../readme/sections.js'
 import type { Hypothesis, HypothesisStatus, ParsedHypotheses, ParseIssue } from '../types.js'
 import { HYPOTHESIS_STATUS_EMOJI, HYPOTHESIS_STATUS_VALUES } from '../types.js'
@@ -40,13 +46,9 @@ const HYPOTHESIS_HEADING_REGEX = /^(H\d{4})\.\s*(.*)$/
 const HYPOTHESIS_HEADING_LOOSE_REGEX = /^H\d+\.\s*/
 const LABEL_LINE_REGEX = /^-\s+\*\*([\w\s]+)\*\*\s*:\s*(.*)$/
 const SUB_BULLET_REGEX = /^\s+-\s+(.*)$/
-// Run dir basename pattern: `<slug>-yymmdd-hhmmss`.
-const RUN_ID_REGEX = /[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}/g
-// v3 experiment doc id: `E<NNNN>-<slug>` where slug starts with a-z0-9.
-const EXPERIMENT_DOC_ID_REGEX = /E\d{4}-[a-z0-9][a-z0-9-]*[a-z0-9]/g
-// Canonical exact-match check for a single token (used by helper below).
-const EXPERIMENT_DOC_ID_EXACT = /^E\d{4}-[a-z0-9][a-z0-9-]*[a-z0-9]$/
-const RUN_ID_EXACT = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
+// Experiment and Run patterns come from `ids.ts`: an exact reference accepts
+// every name discovery accepts (one-character slugs included).
+const EXPERIMENT_DOC_ID_REGEX = new RegExp(EXPERIMENT_MENTION_SOURCE, 'g')
 
 /**
  * v3 task 3.5: split a free-form references field into v3 experiment doc
@@ -76,12 +78,12 @@ export function parseExperimentRefList(text: string): {
   for (const m of text.matchAll(EXPERIMENT_DOC_ID_REGEX)) {
     if (seen.has(m[0])) continue
     seen.add(m[0])
-    if (EXPERIMENT_DOC_ID_EXACT.test(m[0])) experiments.push(m[0])
+    if (EXPERIMENT_DIR_REGEX.test(m[0])) experiments.push(m[0])
   }
-  for (const m of text.matchAll(RUN_ID_REGEX)) {
-    if (seen.has(m[0])) continue
-    seen.add(m[0])
-    if (RUN_ID_EXACT.test(m[0])) runs.push(m[0])
+  for (const name of extractRunMentions(text)) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    if (isRunDirName(name)) runs.push(name)
   }
   return { experiments, runs }
 }
@@ -288,7 +290,6 @@ function extractLabeledFields(body: string): Map<string, string[]> {
     const subMatch = SUB_BULLET_REGEX.exec(line)
     if (subMatch && currentLabel !== null && !inlineSet) {
       fields.get(currentLabel)!.push(subMatch[1]!.trim())
-      continue
     }
     // ignore non-matching lines (blank lines, prose, etc.)
   }

@@ -1370,6 +1370,21 @@ describe('memon wiki migrate-report', () => {
     expect(await pathExists('docs/reports/R0007-bf16-drift.md')).toBe(false)
   })
 
+  it('seeds sources with discoverable Run names the legacy token cannot see', async () => {
+    await write(
+      'docs/reports/R0008-cjk.md',
+      `---\nid: R0008\ntitle: cjk\ncreated_at: 2026-08-13T00:00:00+00:00\nupdated_at: 2026-08-13T00:00:00+00:00\n---\n\n# cjk\n\nMeasured in E0002, foo-260501-100000 and 模型-260501-100000.\n`,
+    )
+    const run = await runCapturing(() =>
+      runWikiMigrateReport({ ...globals(), report: 'R0008', kind: 'finding' }),
+    )
+    expect(run.exitCode).toBeNull()
+    const content = await readFile(jsonAs<{ newPath: string }>(run.stdout).newPath)
+    expect(content).toContain('- E0002')
+    expect(content).toContain('- foo-260501-100000')
+    expect(content).toContain('- 模型-260501-100000')
+  })
+
   it('migrates a bundle with all of its assets', async () => {
     await write(
       'docs/reports/R0011-kernel-map/README.md',

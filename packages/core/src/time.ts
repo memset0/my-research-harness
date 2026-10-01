@@ -5,6 +5,8 @@
 // We never write UTC-converted timestamps because that loses the writer's
 // real-world clock context.
 
+import { runSlugFromDirName } from './ids.js'
+
 /**
  * Format a Date as `yymmdd-hhmmss` in local time, suitable for use as the
  * tail of an experiment directory name (matching RUN_DIR_REGEX).
@@ -48,8 +50,7 @@ export function formatIsoLocal(d: Date): string {
  * doesn't look like a run dir.
  */
 export function parseSlugFromRunDir(dirName: string): string | null {
-  const m = dirName.match(/^(.+)-\d{6}-\d{6}$/)
-  return m ? (m[1] ?? null) : null
+  return runSlugFromDirName(dirName)
 }
 
 /**

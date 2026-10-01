@@ -70,6 +70,31 @@ describe('v6 Experiment document CLI', () => {
     return JSON.parse(stdout).id as string
   }
 
+  it('create keeps the strict slug rule for new Experiments', async () => {
+    const realExit = process.exit
+    const realStderr = process.stderr.write
+    let code: number | undefined
+    let stderr = ''
+    process.exit = ((value?: number) => {
+      code = value ?? 0
+      throw new Error('exit')
+    }) as typeof process.exit
+    process.stderr.write = ((chunk: unknown) => {
+      stderr += String(chunk)
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await expect(
+        runExperimentCreate({ projectRoot: root, cwd: root, slug: 'a', title: 'A' }),
+      ).rejects.toThrow('exit')
+    } finally {
+      process.exit = realExit
+      process.stderr.write = realStderr
+    }
+    expect(code).toBe(2)
+    expect(stderr).toContain('BAD_REQUEST')
+  })
+
   it('create writes a canonical README and all three schema-versioned YAML files', async () => {
     const id = await create()
     const directory = join(root, 'docs', 'experiments', id)

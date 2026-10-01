@@ -1,5 +1,5 @@
 import { dirname, join } from 'node:path'
-import { padId, parseId } from '../ids.js'
+import { padId, parseId, RUN_TIMESTAMP_TAIL_REGEX, SLUG_REGEX } from '../ids.js'
 import { appendJournalEvent } from '../journal/append.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { formatIsoLocal, parseSlugFromRunDir } from '../time.js'
@@ -7,8 +7,8 @@ import { discoverExperiments, readExperimentDoc } from './discover.js'
 import { resolveExperimentId } from './id.js'
 import { serializeExperimentReadme } from './serialize.js'
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]?$/
-const TIMESTAMP_TAIL_RE = /-\d{6}-\d{6}$/
+const SLUG_RE = SLUG_REGEX
+const TIMESTAMP_TAIL_RE = RUN_TIMESTAMP_TAIL_REGEX
 
 export interface RenameExperimentWarning {
   code: 'RUN_SLUG_PREFIX_VIOLATION'

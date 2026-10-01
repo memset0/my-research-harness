@@ -1,21 +1,12 @@
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { discoverRuns } from '../discovery/discover.js'
+import { isRunPath } from '../ids.js'
 import { projectFs as fs } from '../project-file-store.js'
 import type { ProjectConfig } from '../types.js'
 import { listExperimentPaths } from './discover.js'
 import { parseExperimentReadme } from './parse.js'
 
-export function isRunPath(value: string): boolean {
-  const parts = value.split('/')
-  return (
-    parts.length >= 2 &&
-    ['logs', 'outputs', 'experiments'].includes(parts[0]!) &&
-    !/[\\\0]/.test(value) &&
-    !/%(?:2f|5c)/i.test(value) &&
-    parts.every((part) => part !== '' && part !== '.' && part !== '..') &&
-    /^.+-\d{6}-\d{6}$/.test(parts.at(-1)!)
-  )
-}
+export { isRunPath }
 
 export function projectRunPath(root: string, directory: string): string {
   const path = relative(resolve(root), resolve(directory)).split(sep).join('/')

@@ -27,6 +27,8 @@ import {
   cachedGitCommand,
   type DiscoveredWikiPage,
   discoverWikiPages,
+  EXPERIMENT_REF_REGEX,
+  extractRunMentions,
   formatIsoLocal,
   getWikiKind,
   gitCommandStdoutText,
@@ -38,8 +40,10 @@ import {
   parseId,
   parseWikiFrontmatter,
   REPORT_FILENAME_REGEX,
+  RUN_MENTION_SOURCE,
   readWikiReviewMarks,
   removeWikiReviewMark,
+  SLUG_SOURCE,
   serializeWikiPage,
   updateWikiFrontmatter,
   verifiedThroughMark,
@@ -75,11 +79,14 @@ import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
 import { emitJson } from '../lib/output.js'
 
-const REPORT_DIR_REGEX = /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/
+const REPORT_DIR_REGEX = new RegExp(`^R(\\d{4})-(${SLUG_SOURCE})$`)
 const REPORTS_SUBDIR = 'docs/reports'
 /** Evidence tokens a migrated Report body can supply as `sources`. */
-const EVIDENCE_TOKEN_REGEX =
-  /\b(E\d{4}(?:-[a-z0-9][a-z0-9-]*)?(?:\/V\d{4})?|H\d{4}|[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6})\b/g
+const EVIDENCE_TOKEN_REGEX = new RegExp(
+  `\\b(E\\d{4}(?:-${SLUG_SOURCE})?(?:\\/V\\d{4})?|H\\d{4}|${RUN_MENTION_SOURCE})\\b`,
+  'g',
+)
+const LEGACY_RUN_MENTION = new RegExp(RUN_MENTION_SOURCE)
 const GIT_TIMEOUT_MS = 30_000
 const GIT_MAX_BUFFER = 64 * 1024 * 1024
 const WIKI_BUNDLE_MAX_DEPTH = 8
@@ -356,7 +363,7 @@ function listEntry(summary: WikiSummary): CliWikiSummary {
 
 /** Raw source aliases derivable from syntax alone, without target lookup. */
 function sourceKeys(source: string): string[] {
-  const match = /^(E\d{4})(?:-([a-z0-9][a-z0-9-]*))?(?:\/V\d{4})?$/.exec(source)
+  const match = EXPERIMENT_REF_REGEX.exec(source)
   if (!match) return [source]
   const head = source.split('/')[0]!
   return [...new Set([source, head, match[1]!])]
@@ -1222,6 +1229,10 @@ function deriveSources(body: string): string[] {
   for (const match of body.matchAll(EVIDENCE_TOKEN_REGEX)) {
     const token = match[1]!
     if (!out.includes(token)) out.push(token)
+  }
+  // Discoverable Run names the legacy token cannot see (non-ASCII, dots…).
+  for (const name of extractRunMentions(body)) {
+    if (!LEGACY_RUN_MENTION.test(name) && !out.includes(name)) out.push(name)
   }
   return out
 }

@@ -235,14 +235,27 @@ export { readGitSubmodules } from './git/submodules.js'
 export { parseExperimentRefList, parseHypotheses } from './hypotheses/parse.js'
 export type { IdPrefix, ParsedId } from './ids.js'
 export {
+  EXPERIMENT_MENTION_SOURCE,
+  EXPERIMENT_REF_REGEX,
+  extractRunMentions,
   ID_MAX,
   ID_MIN,
   ID_PREFIXES,
   ID_REGEX,
   ID_WIDTH,
   isId,
+  isRunDirName,
+  isSlug,
   padId,
   parseId,
+  RUN_MENTION_SOURCE,
+  RUN_PATH_SHAPE_REGEX,
+  RUN_ROOT_DIRECTORIES,
+  RUN_TIMESTAMP_TAIL_REGEX,
+  runSlugFromDirName,
+  SLUG_REGEX,
+  SLUG_SOURCE,
+  SLUG_STRICT_REGEX,
 } from './ids.js'
 export { appendJournalEvent } from './journal/append.js'
 export type {

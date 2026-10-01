@@ -19,16 +19,18 @@ import {
   parseReadme,
   parseSlugFromRunDir,
   projectRunPath,
+  RUN_TIMESTAMP_TAIL_REGEX,
   RunTargetIndex,
   readExperimentDoc,
   reserializeReadme,
+  SLUG_REGEX,
   serializeExperimentReadme,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson } from '../lib/output.js'
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]?$/
+const SLUG_RE = SLUG_REGEX
 
 export interface RunRenameInput {
   projectRoot?: string
@@ -41,7 +43,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   if (!SLUG_RE.test(input.newSlug)) {
     emitErrorAndExit('BAD_REQUEST', `new slug "${input.newSlug}" must match ${SLUG_RE}`)
   }
-  if (/-\d{6}-\d{6}$/.test(input.newSlug)) {
+  if (RUN_TIMESTAMP_TAIL_REGEX.test(input.newSlug)) {
     emitErrorAndExit(
       'BAD_REQUEST',
       `new slug "${input.newSlug}" must NOT include a timestamp tail; provide the slug only`,

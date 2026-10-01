@@ -24,6 +24,7 @@ import {
   readExperimentDoc,
   resolveExperimentId,
   resolveRunTarget,
+  SLUG_STRICT_REGEX,
   serializeExperimentReadme,
   serializeImplementationYaml,
   serializeInvestigationYaml,
@@ -131,7 +132,8 @@ export interface ExperimentCreateInput {
   fromRun?: string | undefined
 }
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/
+/** New Experiment slugs use the strict creation rule. */
+const SLUG_RE = SLUG_STRICT_REGEX
 
 export async function runExperimentCreate(input: ExperimentCreateInput): Promise<void> {
   if (!SLUG_RE.test(input.slug)) {

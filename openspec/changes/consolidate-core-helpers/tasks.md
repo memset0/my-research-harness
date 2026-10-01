@@ -1,8 +1,8 @@
 ## 1. Identifier patterns (D1)
 
-- [ ] 1.1 Add slug, Run, Experiment, Run path and mention patterns plus validators to `packages/core/src/ids.ts`; re-export old names from `types.ts`
-- [ ] 1.2 Replace local patterns in core (`experiments/{parse,rename,run-path,membership}.ts`, `hypotheses/parse.ts`, `wiki/{lint,staleness}.ts`, `time.ts`, `migrations/v6-to-v7.ts`), CLI (`experiment-doc.ts`, `run-rename.ts`, `warning.ts`, `wiki.ts`) and backend (`project-service.ts`)
-- [ ] 1.3 Add "still referenceable" tests for every unified location and run the affected test files
+- [x] 1.1 Add slug, Run, Experiment, Run path and mention patterns plus validators to `packages/core/src/ids.ts`; re-export old names from `types.ts`
+- [x] 1.2 Replace local patterns in core (`experiments/{parse,rename,run-path,membership}.ts`, `hypotheses/parse.ts`, `wiki/{lint,staleness}.ts`, `time.ts`, `migrations/v6-to-v7.ts`), CLI (`experiment-doc.ts`, `run-rename.ts`, `warning.ts`, `wiki.ts`) and backend (`project-service.ts`)
+- [x] 1.3 Add "still referenceable" tests for every unified location and run the affected test files
 
 ## 2. Frontmatter splitting (D2)
 

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { type Dirent, promises as fs } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
-import { isRunPath } from '../experiments/run-path.js'
+import { isRunPath, RUN_DIR_REGEX } from '../ids.js'
 import { patchRunFrontMatter } from '../readme/frontmatter-patch.js'
 import { formatIsoLocal } from '../time.js'
 import {
@@ -84,7 +84,7 @@ export async function planMembershipMigration(
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue
       const path = `${directory}/${entry.name}`
-      const runNamed = /^.+-\d{6}-\d{6}$/.test(entry.name)
+      const runNamed = RUN_DIR_REGEX.test(entry.name)
       // A Run-named symlink is a candidate Run path (containment is checked
       // before anything behind it is read); other symlinks are never followed.
       if (entry.isSymbolicLink() && runNamed) {

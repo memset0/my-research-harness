@@ -14,7 +14,7 @@
 import matter from 'gray-matter'
 import type { ZodError } from 'zod'
 
-import { isId } from '../ids.js'
+import { isId, RUN_DIR_REGEX } from '../ids.js'
 import { splitH2Sections } from '../readme/sections.js'
 import { ExperimentFrontMatterRawSchema } from '../schemas.js'
 import { normalizeExperimentStatus } from '../status.js'
@@ -371,15 +371,13 @@ function stringArray(v: unknown): string[] {
   return v.filter((x): x is string => typeof x === 'string')
 }
 
-const RUN_DIR_RE = /^.+-\d{6}-\d{6}$/
-
 function validatedRunRefs(v: unknown, warnings: ParseIssue[]): string[] {
   if (!Array.isArray(v)) return []
   const out: string[] = []
   for (const elem of v) {
     if (typeof elem !== 'string') continue
     if (
-      RUN_DIR_RE.test(elem) &&
+      RUN_DIR_REGEX.test(elem) &&
       !/[\\\0]/.test(elem) &&
       elem.split('/').every((part) => part !== '.' && part !== '..' && part !== '')
     ) {

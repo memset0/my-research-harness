@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import { isRunPath } from '../experiments/run-path.js'
+import { EXPERIMENT_REF_REGEX, isRunDirName, isRunPath } from '../ids.js'
 // Evidence resolution: `sources` -> project artifacts -> staleness + backlinks.
 //
 // A source is one of `E<NNNN>[-<slug>]`, `E<NNNN>[-<slug>]/V<NNNN>` (a Variant
@@ -15,10 +15,8 @@ import type { Experiment, Run } from '../types.js'
 import { WIKI_ID_REGEX } from './types.js'
 
 /** `E<NNNN>`, optional `-<slug>`, optional `/V<NNNN>`. */
-const EXPERIMENT_SOURCE_REGEX = /^(E\d{4})(?:-([a-z0-9][a-z0-9-]*))?(?:\/(V\d{4}))?$/
+const EXPERIMENT_SOURCE_REGEX = EXPERIMENT_REF_REGEX
 const HYPOTHESIS_SOURCE_REGEX = /^H\d{4}$/
-/** Run directory base name: `<slug>-<YYMMDD>-<HHMMSS>`. */
-const RUN_SOURCE_REGEX = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
 
 export type WikiSourceKind = 'experiment' | 'variant' | 'hypothesis' | 'wiki' | 'run'
 
@@ -28,7 +26,7 @@ export function wikiSourceKind(source: string): WikiSourceKind | null {
   if (experiment) return experiment[3] === undefined ? 'experiment' : 'variant'
   if (HYPOTHESIS_SOURCE_REGEX.test(source)) return 'hypothesis'
   if (WIKI_ID_REGEX.test(source)) return 'wiki'
-  if (RUN_SOURCE_REGEX.test(source) || isRunPath(source)) return 'run'
+  if (isRunDirName(source) || isRunPath(source)) return 'run'
   return null
 }
 
@@ -56,7 +54,7 @@ export function collectWikiSourceReferences(sources: Iterable<string>): WikiSour
       experiments.add(experiment[1]!)
       continue
     }
-    if (RUN_SOURCE_REGEX.test(source) || isRunPath(source)) runs.add(source)
+    if (isRunDirName(source) || isRunPath(source)) runs.add(source)
   }
   return { experiments: [...experiments], runs: [...runs] }
 }
@@ -264,7 +262,7 @@ function resolveSource(
     }
   }
 
-  if (RUN_SOURCE_REGEX.test(source) || isRunPath(source)) {
+  if (isRunDirName(source) || isRunPath(source)) {
     const run = deps.runsById.get(source)
     if (!run) return unresolved
     return {

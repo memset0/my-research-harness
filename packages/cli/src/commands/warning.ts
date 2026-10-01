@@ -20,6 +20,7 @@ import {
   appendJournalEvent,
   applyWarningOp,
   discoverExperiments,
+  EXPERIMENT_DIR_REGEX,
   generateRowId,
   parseReadme,
   RunTargetIndex,
@@ -32,7 +33,7 @@ import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson } from '../lib/output.js'
 
-const EXP_ID_RE = /^E\d{4}-[a-z0-9][a-z0-9-]*$/
+const EXP_ID_RE = EXPERIMENT_DIR_REGEX
 
 interface ResolvedTarget {
   readmePath: string

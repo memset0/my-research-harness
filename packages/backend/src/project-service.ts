@@ -42,6 +42,7 @@ import {
   ResourceIdSchema,
   type ResultsDocument,
   type ResultsVariantEligibility,
+  RUN_TIMESTAMP_TAIL_REGEX,
   type Run,
   readExperimentDoc,
   readJournalActivity,
@@ -332,7 +333,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
           const id = basename(path)
           return {
             id: projectRunPath(project.root, path),
-            slug: id.replace(/-\d{6}-\d{6}$/, ''),
+            slug: id.replace(RUN_TIMESTAMP_TAIL_REGEX, ''),
             resource: portableProjectResource(project, join(path, 'README.md')),
           }
         }),

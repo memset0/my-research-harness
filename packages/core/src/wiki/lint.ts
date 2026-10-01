@@ -5,6 +5,13 @@
 // dashboard, and the Backend surface verbatim. `lintWikiPage` covers one page;
 // `lintWikiProject` covers the cross-page uniqueness rules.
 
+import {
+  EXPERIMENT_REF_REGEX,
+  extractRunMentions,
+  isRunDirName,
+  RUN_MENTION_SOURCE,
+  RUN_PATH_SHAPE_REGEX,
+} from '../ids.js'
 import { COMPONENT_TYPES } from './component-names.generated.js'
 import { maskWikiCode, parseWikiComponentBlocks } from './components.js'
 import {
@@ -42,15 +49,11 @@ const LINK_REFERENCE_REGEX = /\]\(\s*@([^)\s]+?)\s*\)/g
 /** Bare `@ref` mentions; the leading guard keeps `mail@example.com` out. */
 const BARE_REFERENCE_REGEX =
   /(^|[^\w`/@.])@([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?)/g
-const EXPERIMENT_REF_REGEX = /^(E\d{4})(?:-([a-z0-9][a-z0-9-]*))?$/
 const HYPOTHESIS_REF_REGEX = /^H\d{4}$/
-const RUN_REF_REGEX = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
 /** Canonical project-relative Run path, the unambiguous form of a Run reference. */
-const RUN_PATH_REF_REGEX =
-  /^(?:logs|outputs|experiments)\/(?:[^/]+\/)*[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}$/
+const RUN_PATH_REF_REGEX = RUN_PATH_SHAPE_REGEX
 /** Any evidence token a `finding` body must carry. */
-const EVIDENCE_TOKEN_REGEX =
-  /\bE\d{4}\b|\bV\d{4}\b|\b[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*-\d{6}-\d{6}\b/
+const EVIDENCE_TOKEN_REGEX = new RegExp(`\\bE\\d{4}\\b|\\bV\\d{4}\\b|\\b${RUN_MENTION_SOURCE}\\b`)
 
 /** Artifact ids the `@` reference resolver checks against. */
 export interface WikiArtifactInventory {
@@ -262,7 +265,7 @@ export function resolvesWikiReference(ref: string, inventory: WikiArtifactInvent
       (inventory.reportIds ?? []).includes(ref) || (inventory.wikiLegacyIds ?? []).includes(ref)
     )
   }
-  if (RUN_REF_REGEX.test(ref)) return inventory.runIds.includes(ref)
+  if (isRunDirName(ref)) return inventory.runIds.includes(ref)
   return false
 }
 
@@ -508,7 +511,11 @@ function lintEvidence(
 ): void {
   const policy = getWikiKind(page.kind)?.policy
   if (!policy) return
-  if (policy.bodyEvidenceWarning && !EVIDENCE_TOKEN_REGEX.test(masked)) {
+  if (
+    policy.bodyEvidenceWarning &&
+    !EVIDENCE_TOKEN_REGEX.test(masked) &&
+    extractRunMentions(masked).length === 0
+  ) {
     diagnostics.push({
       code: 'WIKI_CLAIM_WITHOUT_EVIDENCE',
       severity: 'warn',

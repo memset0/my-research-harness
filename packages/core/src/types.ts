@@ -97,10 +97,10 @@ export interface ParseIssue {
 }
 
 /**
- * Regex matching experiment directory base names: `<name>-yymmdd-hhmmss`.
- * Per spec experiment-discovery, parent directory name is irrelevant.
+ * Run directory base names (`<name>-yymmdd-hhmmss`) and Experiment folder
+ * names are defined once in `ids.ts`; re-exported here for existing imports.
  */
-export const RUN_DIR_REGEX = /^.+-\d{6}-\d{6}$/
+export { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX, RUN_DIR_REGEX } from './ids.js'
 
 /**
  * Regex matching report file basenames under `<projectRoot>/docs/reports/`:
@@ -294,23 +294,6 @@ export interface Run {
 }
 
 // ---------- Experiment Doc (v6 — README + managed YAML documents) ----------
-
-/**
- * v5: regex matching experiment doc folder names under
- * `<projectRoot>/docs/experiments/`: `E<NNNN>-<slug>` (no extension) where
- * slug is kebab-case alphanumeric (`[a-z0-9][a-z0-9-]*`). The folder
- * contains the experiment's `README.md` plus any user-owned scratch files
- * (smoke scripts, sbatch templates, multi-launch helpers).
- */
-export const EXPERIMENT_DIR_REGEX = /^E(\d{4})-([a-z0-9][a-z0-9-]*)$/
-
-/**
- * v4 legacy: regex matching the old single-file experiment doc layout.
- * Retained for the v4→v5 migration window so discovery can surface
- * `LEGACY_LAYOUT` warnings when a project hasn't migrated yet. After
- * migration, no `.md` files remain at this layer.
- */
-export const EXPERIMENT_FILENAME_REGEX = /^E(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/
 
 export interface ExperimentFrontMatter {
   /** Canonical id, e.g. `E0001-zero-snr-fix`. Must equal the file basename's `E<NNNN>-<slug>` portion. */

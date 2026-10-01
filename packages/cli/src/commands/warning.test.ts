@@ -433,6 +433,25 @@ describe('memon experiment warning * — v5 exp doc', () => {
     expect(journal).toContain('run=bar-260501-100000')
   })
 
+  it('addresses an Experiment folder with a one-character slug (still referenceable)', async () => {
+    const expDir = join(root, 'docs', 'experiments', 'E0002-a')
+    await fs.mkdir(expDir, { recursive: true })
+    const path = join(expDir, 'README.md')
+    await fs.writeFile(
+      path,
+      EXP_README_BASE.replace('id: E0001-foo', 'id: E0002-a').replace('slug: foo', 'slug: a'),
+    )
+    await runWarningAdd({
+      cwd: root,
+      projectRoot: root,
+      runId: 'E0002-a',
+      category: 'result',
+      message: 'one-character slug target',
+    })
+    expect(lastJsonStdout().ok).toBe(true)
+    expect(await fs.readFile(path, 'utf8')).toContain('one-character slug target')
+  })
+
   it('returns NOT_FOUND on a missing exp id', async () => {
     let exit: ExitCalled | undefined
     try {
