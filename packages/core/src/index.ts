@@ -113,8 +113,16 @@ export {
   validateExperimentManagedDocuments,
 } from './experiments/documents.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
-export type { MembershipInput, MembershipResult } from './experiments/membership.js'
-export { computeMembership } from './experiments/membership.js'
+export type {
+  MembershipInput,
+  MembershipResult,
+  ResolveDeclaredRunsInput,
+} from './experiments/membership.js'
+export {
+  computeMembership,
+  computeMembershipFromDisk,
+  resolveDeclaredRuns,
+} from './experiments/membership.js'
 export type {
   CreateExperimentInput,
   CreateExperimentResult,

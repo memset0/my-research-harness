@@ -16,8 +16,8 @@
 
 ## 4. Direct-path phantom classification
 
-- [ ] 4.1 Add `declaredRuns` input to `computeMembership`, plus `resolveDeclaredRuns` and `computeMembershipFromDisk`; verify membership tests (excluded-but-existing path is a member, README-less directory is a member with `hasReadme: false`, missing path is PHANTOM, legacy base names unchanged, default behaviour unchanged)
-- [ ] 4.2 Read-only check on an operator project: compute anomalies with the old and new paths without writing files and record the PHANTOM counts in the apply report
+- [x] 4.1 Add `declaredRuns` input to `computeMembership`, plus `resolveDeclaredRuns` and `computeMembershipFromDisk`; verify membership tests (excluded-but-existing path is a member, README-less directory is a member with `hasReadme: false`, missing path is PHANTOM, legacy base names unchanged, default behaviour unchanged)
+- [x] 4.2 Read-only check on an operator project: compute anomalies with the old and new paths without writing files and record the PHANTOM counts in the apply report
 
 ## 5. Verification
 
