@@ -169,15 +169,27 @@ with a redirect to `/p/[project]/e/<E-id-of-parent>?run=<run-dir>` per
 
 ### Requirement: shadcn primitives replace hand-rolled UI components
 
-The repo SHALL adopt shadcn/ui versions of `Button`, `Card`, `Badge`, `Dialog`, `Tabs`, `Tooltip`, `Collapsible`, `DropdownMenu`, `ScrollArea`, `Separator`, and `Sidebar`. The previous hand-rolled components in `components/ui.tsx` SHALL be replaced or re-exported from the new files so that import paths remain stable.
+The repo SHALL adopt shadcn/ui versions of its UI primitives (including `Button`, `Card`, `Badge`, `Dialog`, `AlertDialog`, `Tabs`, `Tooltip`, `Collapsible`, `DropdownMenu`, `ContextMenu`, `Popover`, `HoverCard`, `Table`, `ScrollArea`, `Separator`, and `Sidebar`). Each primitive file under `apps/web/components/ui/` SHALL be the output of the shadcn CLI (`shadcn add <name>`, run non-interactively against the committed `components.json` from a real `shadcn init`) and SHALL NOT be edited by hand. Domain-specific variants, extra exports, or styling SHALL live in wrapper components outside `components/ui/` that compose the primitive, so re-running `shadcn add <name> --overwrite` never discards application behavior.
+
+Owner-facing confirmation prompts (for example discarding an unsaved draft or removing a verification mark) SHALL use the shadcn `AlertDialog` primitive with a Cancel action and an explicit confirm action. The Web app SHALL NOT call the browser-native `window.confirm`, `window.alert`, or `window.prompt`.
+
+#### Scenario: Primitive regeneration is lossless
+- **WHEN** `shadcn add <name> --overwrite --yes` is re-run for any primitive under `apps/web/components/ui/`
+- **THEN** the working tree shows no diff for that file, and every application import still resolves and type-checks
 
 #### Scenario: No breaking import changes
-- **WHEN** other components (e.g. `experiment-list.tsx`) `import { Button, Card, Badge, StatusPill } from './ui'`
-- **THEN** those imports continue to resolve without code changes; the underlying implementation is now backed by shadcn
+- **WHEN** application components import a primitive from `@/components/ui/<name>` (or the equivalent relative path) after that primitive is regenerated
+- **THEN** those imports continue to resolve; any export the app needs that upstream does not provide comes from a wrapper component outside `components/ui/`
 
 #### Scenario: Manual install (not interactive)
-- **WHEN** adding shadcn components to the repo
-- **THEN** component sources are committed directly under `apps/web/components/ui/*.tsx` (NOT installed via interactive `shadcn init` which has previously failed in this environment)
+- **WHEN** a new shadcn component is added to the repo
+- **THEN** it is installed with the non-interactive `shadcn add <name> --yes` using the committed `components.json` from a real `shadcn init`, not hand-written or copied into `apps/web/components/ui/`
+
+#### Scenario: Confirmation uses AlertDialog
+- **WHEN** the owner triggers an action that requires confirmation, such as switching commits with an unsaved note draft or unverifying a wiki review commit
+- **THEN** a themed AlertDialog opens with Cancel and a confirm action
+- **AND** choosing Cancel, pressing Escape, or closing the dialog leaves state unchanged
+- **AND** only the confirm action performs the original effect
 
 ### Requirement: Typography size convention
 
@@ -199,38 +211,48 @@ The intent is a stable visual hierarchy — tiny label → small value → mediu
 
 ### Requirement: Status display uses colored Badge with lucide icon
 
-Run status (`PENDING` / `RUNNING` / `FINISHED` / `INTERRUPTED` / `FAILED` / `UNKNOWN`), experiment-doc status (`OPEN` / `RESOLVED` / `ABANDONED`), and hypothesis status (`CONFIRMED` / `REFUTED` / `PARTIAL` / `OPEN` / `DEFERRED`) SHALL render in the UI as a `<Badge variant="outline">` with a `lucide-react` icon plus the enum string. The on-disk `docs/journal.md` / `docs/hypotheses.md` / `README.md` / experiment-doc files continue to use the canonical emoji per the parsing spec; the **emoji is never shown in the rendered UI**.
+Run status (`PENDING` / `RUNNING` / `FINISHED` / `INTERRUPTED` / `FAILED` / `UNKNOWN`), experiment-doc status (`OPEN` / `RESOLVED` / `ABANDONED`), and hypothesis status (`CONFIRMED` / `REFUTED` / `PARTIAL` / `OPEN` / `DEFERRED`) SHALL render in the UI as a `<Badge variant="outline">` with a `lucide-react` icon plus the enum string. A status emoji SHALL never be shown in the rendered UI. On disk, Run README and experiment-doc frontmatter store only the bare enum string; `docs/hypotheses.md` is the only file whose status notation uses emoji, which the hypotheses parser maps back to the enum before rendering.
 
-Run-status color and icon mapping:
+Run-status color family and icon mapping (each color family has light and dark variants):
 
-| Status | Badge color (Tailwind / shadcn) | Lucide icon |
+| Status | Badge color family | Lucide icon |
 |---|---|---|
-| `PENDING` | `bg-muted text-muted-foreground border-border` (neutral gray) | `Circle` |
-| `RUNNING` | `bg-sky-100 text-sky-800 border-sky-300` (blue) | `Loader2` (spinning) |
-| `FINISHED` | `bg-emerald-100 text-emerald-800 border-emerald-300` (green) | `CheckCircle2` |
-| `INTERRUPTED` | `bg-amber-100 text-amber-800 border-amber-300` (yellow / amber) | `PauseCircle` |
-| `FAILED` | `bg-red-100 text-red-800 border-red-300` (red) | `XCircle` |
-| `UNKNOWN` | `bg-rose-50 text-rose-900 border-rose-200` (deeper / muted-red, distinct from `FAILED`) | `HelpCircle` |
+| `PENDING` | slate (neutral gray) | `Clock` |
+| `RUNNING` | sky (blue) | `Loader2` (spinning unless archived) |
+| `FINISHED` | emerald (green) | `CheckCircle2` |
+| `INTERRUPTED` | amber (yellow) | `PauseCircle` |
+| `FAILED` | red | `XCircle` |
+| `UNKNOWN` | rose (deeper / muted red, distinct from `FAILED`) | `HelpCircle` |
 
-`UNKNOWN` SHALL render in a deeper / muted-red tone (the rose family) so it is visually separable from `FAILED` (the red family) at-a-glance, while still reading as "needs attention" rather than "neutral."
+`UNKNOWN` SHALL render in the rose family so it is visually separable from `FAILED` (the red family) at-a-glance, while still reading as "needs attention" rather than "neutral."
 
-ExperimentStatus color and icon mapping:
+ExperimentStatus color family and icon mapping:
 
-| Status | Badge color | Lucide icon |
+| Status | Badge color family | Lucide icon |
 |---|---|---|
-| `OPEN` | `bg-sky-100 text-sky-800 border-sky-300` (blue, mirrors `RUNNING`'s family) | `CircleDot` |
-| `RESOLVED` | `bg-emerald-100 text-emerald-800 border-emerald-300` (green) | `CheckCircle2` |
-| `ABANDONED` | `bg-stone-100 text-stone-800 border-stone-300` (warm gray) | `XCircle` |
+| `OPEN` | sky (blue, mirrors `RUNNING`'s family) | `CircleDot` |
+| `RESOLVED` | emerald (green) | `CheckCircle2` |
+| `ABANDONED` | stone (warm gray) | `XCircle` |
 
-Each status SHALL be composed via `cn()` over shadcn `Badge` (never by forking `badge.tsx`). Hypothesis-status mapping is unchanged from the prior version of this requirement.
+Hypothesis-status color family and icon mapping:
 
-Stale-RUNNING marker SHALL render as a `lucide-react AlertTriangle` icon next to (or inside) the badge — not the ⚠ emoji.
+| Status | Badge color family | Lucide icon |
+|---|---|---|
+| `CONFIRMED` | emerald (green) | `CheckCircle2` |
+| `REFUTED` | red | `XCircle` |
+| `PARTIAL` | amber | `CircleDot` |
+| `OPEN` | sky (blue) | `Circle` |
+| `DEFERRED` | muted theme tokens | `CircleSlash` |
 
-Archived items (per `archive-frontmatter`'s "Visual treatment of archived items") SHALL render their status pill in a desaturated variant of the same color family (e.g. `bg-emerald-50 text-emerald-600 border-emerald-200` for `RESOLVED`-archived in place of the active variant), prefixed by a `lucide Archive` icon.
+Each status SHALL be composed via `cn()` over shadcn `Badge` (never by forking `badge.tsx`).
+
+Stale-RUNNING marker SHALL render as an amber `lucide-react AlertTriangle` icon next to the badge — not the ⚠ emoji.
+
+Archived items (per `archive-frontmatter`'s "Visual treatment of archived items") SHALL render their status pill in a desaturated variant of the same color family, prefixed by a `lucide Archive` icon.
 
 #### Scenario: Run status pill — PENDING
 - **WHEN** rendering a run with status PENDING
-- **THEN** the pill shows a `Circle` icon + the text `PENDING` on a neutral-gray Badge
+- **THEN** the pill shows a `Clock` icon + the text `PENDING` on a slate (neutral-gray) Badge
 
 #### Scenario: Run status pill — RUNNING
 - **WHEN** rendering a run with status RUNNING
@@ -251,11 +273,11 @@ Archived items (per `archive-frontmatter`'s "Visual treatment of archived items"
 #### Scenario: Run status pill — UNKNOWN distinct from FAILED
 - **WHEN** rendering a run with status UNKNOWN
 - **THEN** the pill shows a `HelpCircle` icon + the text `UNKNOWN` on a rose Badge (deeper / muted-red)
-- **AND** the badge color resolves to a different oklch() value than the FAILED pill on the same page
+- **AND** the badge color resolves to a different value than the FAILED pill on the same page
 
 #### Scenario: Stale-RUNNING marker
-- **WHEN** the experiment status is RUNNING and `stale` is true (no directory activity for >1h)
-- **THEN** an `AlertTriangle` lucide icon is rendered immediately adjacent to the badge in an amber color; the text `⚠` does not appear in the DOM
+- **WHEN** the run status is RUNNING and `stale` is true (no directory activity for >1h)
+- **THEN** an amber `AlertTriangle` lucide icon is rendered immediately adjacent to the badge; the text `⚠` does not appear in the DOM
 
 #### Scenario: Hypothesis status pill
 - **WHEN** rendering a hypothesis card with status PARTIAL
@@ -277,8 +299,9 @@ Archived items (per `archive-frontmatter`'s "Visual treatment of archived items"
 
 #### Scenario: Archived overlay desaturates the status pill
 - **WHEN** rendering any item with `archived: true` (run or exp)
-- **THEN** the status pill SHALL render in the desaturated variant of its color family (e.g. `bg-emerald-50` instead of `bg-emerald-100` for a RESOLVED-archived exp)
+- **THEN** the status pill SHALL render in the desaturated variant of its color family
 - **AND** a `lucide Archive` icon prefixes the status pill in the same Badge
+- **AND** an archived RUNNING pill's `Loader2` icon does not spin
 
 ### Requirement: Hypothesis summary uses structured tags, not raw markdown
 

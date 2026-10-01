@@ -500,96 +500,36 @@ keep its current visual layout and click-through behavior.
 - **THEN** the panel for that run animates open (no longer starts
   open without animation)
 
-### Requirement: `## Plan` section edits go through the existing markdown write path
-
-Edits to an experiment doc's `## Plan` section SHALL be performed via
-the existing `PUT /api/experiments/:id/readme` endpoint (the same path
-used for editing any other experiment doc body section). No new API
-endpoint is introduced for Plan in v1.
-
-The frontend save handshake for Plan edits SHALL be identical to the
-handshake already specified for experiment doc writes
-(`expectedMtime` + `expectedHash`, `updated_at` rewritten in the
-editor buffer to `now()`-with-offset, `finalContent` re-baselined on
-200, conflict UI on 409).
-
-The `PUT /api/experiments/:id/readme` endpoint SHALL preserve the
-`## Plan` section body verbatim through the parse → mutate → serialize
-cycle: a write that does not target Plan SHALL NOT alter Plan's body
-(byte-for-byte, modulo trailing whitespace normalization the
-serializer already performs on every section).
-
-After a successful Plan edit, the backend SHALL fire the existing
-`experiment-change` SSE topic (no new topic is introduced for Plan).
-The TanStack query keys `['experiment', id]` and
-`['experiments', project]` SHALL be invalidated by the existing
-listener wiring.
-
-#### Scenario: Plan edit via Edit markdown dialog persists
-- **GIVEN** an experiment doc with `## Plan` body containing
-  `- [ ] Try LR=3e-4` open in the Edit markdown dialog
-- **WHEN** the user changes that line to `- [x] Try LR=3e-4` and
-  clicks Save
-- **THEN** the POST body's serialized markdown contains the updated
-  `[x]` marker; the response is 200; the returned `finalContent`
-  contains the new marker; the `experiment-change` SSE topic fires
-  for that experiment
-
-#### Scenario: Non-Plan edit preserves Plan body byte-exact
-- **GIVEN** an experiment doc with a non-empty `## Plan` body
-  containing nested checkboxes
-- **WHEN** the user opens the Edit markdown dialog, modifies only the
-  `## Method` body, and saves
-- **THEN** the on-disk file's `## Plan` body after the write equals
-  its body before the write (modulo trailing-whitespace normalization)
-
-#### Scenario: Plan edit on a doc with no prior Plan section
-- **GIVEN** a legacy experiment doc with no `## Plan` heading
-- **WHEN** the user opens the Edit markdown dialog (which renders
-  the empty-Plan placeholder), adds a `- [ ] First task` line under
-  a freshly-typed `## Plan` heading, and saves
-- **THEN** the response is 200; the on-disk file now contains a
-  `## Plan` H2 in the canonical position (after Method, before
-  Conclusion) with the new task line
-
-#### Scenario: Concurrent Plan edit conflict surfaces 409
-- **GIVEN** two browser tabs open the same experiment doc and both
-  observe `expectedMtime: M0`
-- **WHEN** tab A saves a Plan edit and the disk mtime advances to M1,
-  then tab B saves its own Plan edit with `expectedMtime: M0`
-- **THEN** tab B receives 409 with the current on-disk content,
-  `mtime: M1`, and `hash`; tab B's editor buffer is restored and the
-  conflict UI shows
-
 ### Requirement: `memon experiment status set` writes status + appends [EXP_STATUS] atomically
 
-`memon experiment status set <id> --project-root <path> --to <STATUS> --expected-mtime <ms>` SHALL:
-1. Read the exp doc at `docs/experiments/<id>.md`
-2. Verify its mtime matches `--expected-mtime`; if not, exit 9 with `CONFLICT` and emit current content + mtime to stdout
-3. Apply `<STATUS>` (a value from the `ExperimentStatus` enum: `OPEN` / `RESOLVED` / `ABANDONED`) to the frontmatter
-4. Atomically write the new doc (temp file + rename), bumping `updated_at`
-5. Append a `[EXP_STATUS] \`<id>\` <FROM> → <TO>` event to JOURNAL.md if status actually changed
-6. If the on-disk doc has `archived: true`, emit the soft warning per `archive-frontmatter`
+`memon experiment status set <exp-id-or-slug> --project-root <path> --to <STATUS> --expected-mtime <ms>` with an Experiment identifier (`E<NNNN>-<slug>` or a slug resolvable per `resolveExperimentId`) SHALL:
+1. Resolve the Experiment and read its bundle README at `docs/experiments/E<NNNN>-<slug>/README.md`
+2. Verify the README's mtime matches `--expected-mtime`; if not, exit 9 with `CONFLICT` and emit the current content to stdout
+3. Apply `<STATUS>` (a value from the `ExperimentStatus` enum: `OPEN` / `RESOLVED` / `ABANDONED`) to the frontmatter, preserving every other frontmatter field and the body
+4. Atomically write the README (temp file + rename), bumping `updated_at` to the current time with offset
+5. When the status actually changed, record the transition (`<FROM>` → `<TO>`) as a detail of this invocation's automatic activity receipt per `journal`; the legacy `docs/journal.md` file SHALL NOT be appended to or rewritten
+6. If the on-disk README has `archived: true`, emit the soft warning per `archive-frontmatter`
 
-If the experiment doc is missing, the command SHALL exit 4 with `NOT_FOUND`. If `<STATUS>` is not in the `ExperimentStatus` enum, the command SHALL exit 2 with `BAD_REQUEST`.
+If `<STATUS>` is not in the `ExperimentStatus` enum, the command SHALL exit 2 with `BAD_REQUEST`. If the Experiment cannot be resolved, the command SHALL exit 4 with `NOT_FOUND`. A Run directory id (`<slug>-<YYMMDD>-<HHMMSS>`) SHALL instead be handled as the deprecated alias of `memon run status set` (with its deprecation banner); an identifier matching neither form SHALL exit 2 with `BAD_REQUEST`.
 
 #### Scenario: Successful status set
-- **GIVEN** an exp doc `E0001-zero-snr-fix` with `status: OPEN`
+- **GIVEN** an Experiment bundle `docs/experiments/E0001-zero-snr-fix/` whose README has `status: OPEN`
 - **WHEN** the user runs `memon experiment status set E0001-zero-snr-fix --project-root <p> --to RESOLVED --expected-mtime <current>`
-- **THEN** the doc's frontmatter has `status: RESOLVED`
-- **AND** JOURNAL has a new line `[EXP_STATUS] \`E0001-zero-snr-fix\` OPEN → RESOLVED`
-- **AND** stdout `{"ok":true,"mtime":<n>,"prevStatus":"OPEN","nextStatus":"RESOLVED"}`
+- **THEN** the bundle README's frontmatter has `status: RESOLVED` and a refreshed `updated_at`
+- **AND** the invocation's activity receipt records the `OPEN` → `RESOLVED` transition for `E0001-zero-snr-fix`
+- **AND** stdout is JSON containing `"ok":true`, the new `mtime`, `"prevStatus":"OPEN"` and `"nextStatus":"RESOLVED"`
+- **AND** `docs/journal.md` is not modified
 
 #### Scenario: Status unchanged → no JOURNAL event
 - **WHEN** the requested status equals the current status
-- **THEN** the doc is rewritten (new mtime returned) but no JOURNAL event is appended; stdout has `journalAppended: false`
+- **THEN** the README is rewritten (new mtime returned) but no status transition is recorded and `docs/journal.md` is not touched; stdout has `journalAppended: false`
 
 #### Scenario: Out-of-enum value rejected
 - **WHEN** the user runs `... --to CONCLUDED`
-- **THEN** the command exits 2 with `{"error":{"code":"BAD_REQUEST","message":"unknown ExperimentStatus value 'CONCLUDED'; expected OPEN|RESOLVED|ABANDONED"}}`
+- **THEN** the command exits 2 with `BAD_REQUEST` naming the allowed values `OPEN`, `RESOLVED`, `ABANDONED`, and nothing is written
 
 #### Scenario: Status set on archived exp emits warning
-- **GIVEN** an exp doc with `status: OPEN, archived: true`
+- **GIVEN** an Experiment README with `status: OPEN, archived: true`
 - **WHEN** the user runs `memon experiment status set <id> --to ABANDONED --expected-mtime <current>`
 - **THEN** stderr contains `warning: <id> is archived; modifying anyway`
 - **AND** stdout JSON additionally contains `"warning":"archived"`
@@ -597,19 +537,19 @@ If the experiment doc is missing, the command SHALL exit 4 with `NOT_FOUND`. If 
 
 ### Requirement: Web `PUT /api/experiments/:id/readme` accepts new fields
 
-The endpoint SHALL accept exp doc content whose frontmatter includes the v4-canonical `status: <ExperimentStatus>` and `archived: <boolean>` fields. The endpoint SHALL apply the soft-warning path per `archive-frontmatter` when the on-disk doc has `archived: true`. The endpoint SHALL NOT apply any hard-rule constraint between exp status and exp archive (the cannot-archive-RUNNING rule is run-specific).
+The endpoint SHALL accept exp doc content whose frontmatter includes the v4-canonical `status: <ExperimentStatus>` and `archived: <boolean>` fields and SHALL write it to the Experiment's bundle README `docs/experiments/E<NNNN>-<slug>/README.md`. The endpoint SHALL apply the soft-warning path per `archive-frontmatter` when the on-disk doc has `archived: true`. The endpoint SHALL NOT apply any hard-rule constraint between exp status and exp archive (the cannot-archive-RUNNING rule is run-specific).
 
-The response body for a successful status-changing write SHALL include `prevStatus` and `nextStatus` so the web client can correlate with the corresponding `[EXP_STATUS]` JOURNAL event for cache invalidation.
+The response body for a successful status-changing write SHALL include `prevStatus` and `nextStatus`. A write that changes the document SHALL record an automatic invocation receipt per `journal` and publish the `journal-change` event so subscribers can refresh diagnostic history; the legacy `docs/journal.md` file SHALL NOT be appended to.
 
 #### Scenario: Successful write with status change
 - **GIVEN** an exp doc on disk with `status: OPEN, archived: false`, `mtime: M0`
-- **WHEN** the client POSTs new content with `status: ABANDONED, archived: false`, `expectedMtime: M0, expectedHash: H0`
+- **WHEN** the client sends new content with `status: ABANDONED, archived: false`, `expectedMtime: M0, expectedHash: H0`
 - **THEN** the response is 200 with `{ ok: true, mtime: <new>, hash: <new>, finalContent: '...', prevStatus: 'OPEN', nextStatus: 'ABANDONED' }`
-- **AND** an `[EXP_STATUS] OPEN → ABANDONED` JOURNAL event is appended
+- **AND** an invocation receipt is recorded, a `journal-change` event is published, and `docs/journal.md` is unchanged
 
 #### Scenario: Soft warning when archived
 - **GIVEN** an exp doc with `archived: true`
-- **WHEN** the client POSTs a body change
+- **WHEN** the client sends a body change
 - **THEN** the response includes `warning: 'archived'` in addition to the success fields
 - **AND** the web client surfaces a sonner toast
 

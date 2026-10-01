@@ -5,33 +5,6 @@ Defines the Experiment bundle README at `docs/experiments/E<NNNN>-<slug>/README.
 
 ## Requirements
 
-### Requirement: Status enum with uppercase canonical form
-
-The `status` field SHALL be stored in uppercase canonical form (`PENDING`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/`UNKNOWN`). The frontend SHALL render each status with a fixed emoji prefix:
-
-| Emoji | Status        |
-|:-----:|---------------|
-| 📝    | `PENDING`     |
-| 🟢    | `RUNNING`     |
-| ✅    | `FINISHED`    |
-| ⏸️    | `INTERRUPTED` |
-| ❌    | `FAILED`      |
-| ❓    | `UNKNOWN`     |
-
-The semantic boundaries between values mirror those in `run-readme` (the run-side spec is authoritative for value semantics; this table is the legacy v2 enum reference and is here for back-compat with code paths that still use it).
-
-#### Scenario: Lowercase status normalized at parse
-- **WHEN** a `README.md` has `status: running` in front matter
-- **THEN** the parser produces a parse warning AND normalizes the in-memory value to `RUNNING`
-
-#### Scenario: Lowercase INTERRUPTED normalized at parse
-- **WHEN** a `README.md` has `status: interrupted` in front matter
-- **THEN** the parser produces a parse warning AND normalizes the in-memory value to `INTERRUPTED`
-
-#### Scenario: Unknown enum value
-- **WHEN** a `README.md` has `status: completed` (not in the enum)
-- **THEN** the parser produces a structured error and the index entry uses `status: UNKNOWN`
-
 ### Requirement: Experiment doc location and front matter schema
 
 Each experiment SHALL be described by a single markdown file at
@@ -335,13 +308,7 @@ or `null` when the warning is exp-scoped.
 
 The `status` field on `ExperimentFrontMatter` SHALL be stored in uppercase canonical form, drawn from the `ExperimentStatus` enum: `OPEN` / `RESOLVED` / `ABANDONED`. Lowercase or mixed-case values surface a parse warning AND the in-memory value is normalised to uppercase. Out-of-enum values surface a structured error and the in-memory value defaults to `OPEN` (so the doc remains usable). Missing values default to `OPEN` per the schema requirement above.
 
-The frontend SHALL render each value with a fixed emoji prefix on disk (markdown body, never UI):
-
-| Emoji | Status       |
-|:-----:|--------------|
-| 🔵    | `OPEN`       |
-| ✅    | `RESOLVED`   |
-| ⚫    | `ABANDONED`  |
+The frontmatter SHALL hold only the bare enum string; no emoji or other prefix is part of the stored value. The Web UI SHALL render each value as an icon plus the enum string per `web-layout`'s "Status display uses colored Badge with lucide icon" requirement and SHALL NOT render a status emoji.
 
 Semantic boundaries:
 - `OPEN` — the investigation is in progress. Default for new experiments. Does NOT mean "currently running" — an experiment with all-FINISHED member runs that the user hasn't yet declared resolved is still `OPEN`. Use `OPEN` whenever the user has not yet asserted a terminal lifecycle decision.
@@ -362,7 +329,12 @@ Semantic boundaries:
 - **GIVEN** an experiment whose 5 member runs all have `status: FINISHED`
 - **WHEN** the discovery layer re-indexes the experiment
 - **THEN** the experiment's `status` is unchanged from whatever the doc's frontmatter says (typically `OPEN`)
-- **AND** no `[EXP_STATUS]` event appears in JOURNAL.md as a side-effect of the re-index
+- **AND** re-indexing writes no status-change record or activity receipt as a side-effect
+
+#### Scenario: Web renders an icon, never an emoji
+- **WHEN** the Web UI renders an experiment with `status: RESOLVED`
+- **THEN** the status shows an icon plus the text `RESOLVED`
+- **AND** no status emoji appears in the rendered DOM
 
 ### Requirement: Experiment frontmatter `archived` field
 
@@ -394,3 +366,17 @@ For FS v7, Experiment README `runs` SHALL be the sole membership authority and S
 #### Scenario: Writers emit canonical paths
 - **WHEN** any CLI, Backend or Web mutation adds, renames or rewrites a member declaration
 - **THEN** the written `runs` entry is the project-relative Run directory path, never a bare Run ID
+
+### Requirement: Experiment hypothesis references are validated like Run ones
+
+The Experiment frontmatter parser SHALL validate `hypotheses` elements with
+the same rule and diagnostics as the Run frontmatter parser: a non-string
+element SHALL be dropped with an `INVALID_HYPOTHESIS_REF` warning, and a
+string that is not canonical `H<NNNN>` SHALL be dropped with an
+`INVALID_HYPOTHESIS_REF` warning naming the element.
+
+#### Scenario: Non-string hypothesis element warns
+- **GIVEN** an Experiment README with `hypotheses: [H0001, 7]`
+- **WHEN** it is parsed
+- **THEN** `hypotheses` is `["H0001"]` and an `INVALID_HYPOTHESIS_REF`
+  warning reports the dropped non-string element
