@@ -7,12 +7,12 @@
 - [x] 2.1 Add a counting fake for directory listings and a listing-count test (200 non-Run dirs × 50 children + 100 Run dirs × 20 children) proving listings do not grow with Run contents and Run-shaped directories without README stop the walk; verify with the core discovery tests
 - [x] 2.2 Document the non-nesting rule at the walk and verify core tests still pass
 
-## 3. Configurable depth
+## 3. Declared Run locations
 
-- [x] 3.1 Add `run_depth` (1|2) to the Project raw schema, `ProjectConfig.runDepth`, and the loader; verify config tests for accepted values, rejection of 0/3, and absence
-- [x] 3.2 Bound the walk by `project.runDepth`; verify the counting test (depth 1 = number of entry dirs, depth 2 = entry dirs + non-Run children) and the mock snapshot under the default
-- [x] 3.3 Accept `runDepth` in `scanProjectRoot`, `RunTargetIndex.open` and `resolveRunTarget`; verify with core tests
-- [x] 3.4 Add the CLI global `--run-depth <1|2>` with validation and propagate it to scan, list/show/search and Run target resolution; verify with CLI tests (bounded scan, invalid value, path target ignores the bound)
+- [x] 3.1 Add `run_dirs` (validated segment-glob patterns) to the Project raw schema, `ProjectConfig.runDirs`, and the loader, replacing the unreleased `run_depth`; verify config tests for accepted patterns, rejection of `**`, `..`, `.`, absolute, empty segments, non-Run-root first segment and an empty list, and absence
+- [x] 3.2 Expand `project.runDirs` without recursion in the walk; verify the counting test (`["logs/*", "outputs/*"]` = 2 listings, `["outputs/*/*"]` = 1 + non-Run children of `outputs/`, overlapping patterns share listings, partial globs), the `RUN_DIR_PATTERN_NON_RUN` callback, and the unchanged mock snapshot under the default
+- [x] 3.3 Accept `runDirs` in `scanProjectRoot`, `RunTargetIndex.open` and `resolveRunTarget`, keeping path targets independent of the patterns; verify with core tests
+- [x] 3.4 Replace the CLI `--run-depth` with a repeatable global `--run-dir <pattern>` (invalid → `BAD_REQUEST`, exit 2) propagated to scan, list/show/search and Run target resolution; verify with CLI tests and the built binary
 
 ## 4. Direct-path phantom classification
 
