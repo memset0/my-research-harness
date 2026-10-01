@@ -18,4 +18,4 @@
 
 ## 4. Close-out
 
-- [ ] 4.1 Align proposal/design/specs with what was implemented and verify `openspec validate web-lib-layering --type change --strict` passes
+- [x] 4.1 Align proposal/design/specs with what was implemented and verify `openspec validate web-lib-layering --type change --strict` passes

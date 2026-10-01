@@ -22,13 +22,16 @@ route can drift from what its fetcher claims without any compile error.
   query key, and route all `queryKey`, `invalidateQueries`, `setQueryData`,
   `getQueryData`, `cancelQueries`, `prefetchQuery` and manual-refresh keys
   through it. Runtime key shapes stay byte-identical; a snapshot test locks
-  each constructor.
+  each constructor. The Project-addressing helpers move into the pure
+  `lib/project-target.ts` (re-exported by `lib/api.ts`).
 - Add `apps/web/lib/dto/<domain>.ts` holding the response types now declared in
   `lib/api.ts`; `lib/api.ts` re-exports them for existing imports, and the
   matching `app/api/**/route.ts` handlers check their JSON bodies against the
-  same types with `satisfies`. Wire shapes do not change; where a client type
-  disagrees with what its route actually emits, the type is corrected to the
-  route's output.
+  same types with `satisfies` (or `satisfies Wire<Dto>` where the backend wire
+  schema types statuses as plain strings). Response shapes that fetchers spelled
+  inline get names. Wire shapes do not change; where a client type disagrees
+  with what its route actually emits, the type is corrected to the route's
+  output (see design.md for the list).
 - Update the API route manifest's direct-Runtime inventory and every import
   path for the moved files.
 - No HTTP, wire, rendering or on-disk behavior changes. The `/p` and `/h` page
