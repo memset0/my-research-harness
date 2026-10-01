@@ -1,7 +1,8 @@
 # log-viewer Specification
 
 ## Purpose
-TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+Defines how the dashboard shows a Run's log files: a default tail with absolute line numbers, scroll-up paging, SSE auto-follow while scrolled to the bottom, and line-range reads. It relies on a cached, incrementally updated `LineIndex`, optionally persisted to disk, so large logs are never loaded whole. The index lives in `@memon/core` (`log/`); the viewer and `/api/log` routes live in `apps/web`, with the richer tools specified by `log-viewer-tools`.
+
 ## Requirements
 ### Requirement: Default tail of last 100 lines with absolute line numbers
 

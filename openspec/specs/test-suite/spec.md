@@ -1,7 +1,7 @@
 # test-suite Specification
 
 ## Purpose
-TBD - created by archiving change add-test-suite. Update Purpose after archive.
+Defines memon's automated test expectations: the `apps/web` vitest + jsdom environment run from the root `pnpm test`, component and route tests against real fixtures, read-flow and migration regression tests over `./mock/`, browser-level UI regression coverage, and green local pre-commit gates. It serves contributors and agents verifying a change before commit and archive. Tests live beside the code in each package, and the pre-commit gates are configured in `lefthook.yml`.
 
 ## Requirements
 

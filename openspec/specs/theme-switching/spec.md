@@ -1,7 +1,8 @@
 # theme-switching Specification
 
 ## Purpose
-TBD - created by archiving change support-dark-mode. Update Purpose after archive.
+Lets each viewer choose a light, dark or system theme for the dashboard from a toggle in the sidebar header, applied without a flash of the wrong theme on first paint. The preference is a per-browser client-side setting and leaves server state untouched. Implemented in `apps/web` (`components/theme-provider.tsx` and `components/theme-toggle.tsx`) on top of the shadcn theme tokens.
+
 ## Requirements
 ### Requirement: Three-mode theme preference
 

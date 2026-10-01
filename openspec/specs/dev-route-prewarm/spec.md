@@ -1,7 +1,7 @@
 # dev-route-prewarm Specification
 
 ## Purpose
-TBD - created by archiving change dev-route-prewarm. Update Purpose after archive.
+Keeps development-mode dashboard navigation responsive by issuing authenticated requests against a fixed set of routes once the custom server is listening, so Next.js compiles them before the first user click. It applies only when `NODE_ENV` is not `production`, never blocks boot, and reports progress on stdout. Implemented in `apps/web/lib/route-prewarm.ts` and invoked from `apps/web/server.ts`.
 
 ## Requirements
 

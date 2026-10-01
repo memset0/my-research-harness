@@ -1,7 +1,8 @@
 # log-viewer-tools Specification
 
 ## Purpose
-TBD - created by archiving change add-sidebar-and-log-tools. Update Purpose after archive.
+Extends the log viewer with multi-file tabs over the backend's log-file enumeration, in-log substring search with highlight and navigation, ANSI colour rendering, and line selection with URL-hash permalinks. It serves users inspecting Run output in the browser without leaving the dashboard. Implemented in `apps/web` (`/api/log-files` and the log viewer component) on top of `log-viewer`.
+
 ## Requirements
 ### Requirement: Backend log file enumeration
 

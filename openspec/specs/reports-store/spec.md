@@ -1,7 +1,8 @@
 # reports-store Specification
 
 ## Purpose
-TBD - created by archiving change inbox-reports-and-digests. Update Purpose after archive.
+Defines project Reports under `docs/reports/`, both legacy single-file reports and opt-in directory bundles (including framework-agnostic static HTML visualization bundles), and the list, read and optimistic-locked write APIs that serve them from a polling-backed cache. It serves the dashboard's Reports pages and agents writing reports with the `memon-write-report` skill. The files are the source of truth; long-lived knowledge can move into the Wiki through `memon wiki migrate-report`, and the reading UI is specified by `report-workspace`.
+
 ## Requirements
 ### Requirement: GET /api/reports?project=NAME lists all reports
 

@@ -1,8 +1,7 @@
 # document-components Specification
 
 ## Purpose
-
-TBD
+Defines component blocks, fenced code blocks declared `<lang> <type>@<N> #<id>`, that turn data, media and trusted HTML embedded in Markdown into rendered components on every memon Markdown surface. It covers the declaration syntax, payload normalisation and the shipped `datatable@1`, `figure@1`, `embed@1` and `checklist@1` types. The descriptor directories under `apps/web/lib/components/<type>/v<N>/` are the single source of truth; the CLI treats blocks as opaque code, and executable payloads are covered by `component-execution`.
 
 ## Requirements
 

@@ -1,8 +1,7 @@
 # component-execution Specification
 
 ## Purpose
-
-TBD
+Defines how an executable `yaml` component payload (a `script:` reference or inline `code:` holding one Python function) is run on explicit request and how its JSON result is cached as `<stem>__assets/<id>.json` beside the document. It serves Wiki pages and other Markdown documents whose datasets are computed from project files, through `memon components run` and the dashboard's recompute action. Execution and caching live in `@memon/core` (`components/`); rendering the result is owned by `document-components`.
 
 ## Requirements
 
