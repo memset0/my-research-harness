@@ -68,6 +68,11 @@ export {
   type GitRangeInput,
   type GitRepoSelector,
 } from './git-service.js'
+export {
+  BackendExperimentListResponseSchema,
+  type BackendExperimentListRow,
+  BackendExperimentListRowSchema,
+} from './indexed-experiments.js'
 export * from './mutation-service.js'
 export {
   type BackendProjectReadService,

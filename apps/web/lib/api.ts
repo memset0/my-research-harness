@@ -67,6 +67,7 @@ export type {
   ExperimentDocDetail,
   ExperimentDocSummary,
   ExperimentDocsResponse,
+  ExperimentListRow,
   ExperimentManagedDocumentPayload,
   ExperimentManagedDocumentsPayload,
   ExperimentResultsSnapshot,

@@ -19,7 +19,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
   }
 })
 
-import { fetchExperimentDocs } from '../../lib/api'
+import { type ExperimentDocsResponse, fetchExperimentDocs } from '../../lib/api'
 
 const SAMPLE_DOCS = {
   experiments: [
@@ -27,22 +27,20 @@ const SAMPLE_DOCS = {
       id: 'E0001-fsdp',
       project: 'project-a',
       path: '/p/a/docs/experiments/E0001-fsdp.md',
-      mtime: 1000,
       readmeMtime: 1000,
+      runCount: 2,
+      hypothesisCount: 1,
+      openWarningCount: 0,
       frontMatter: {
         id: 'E0001-fsdp',
         slug: 'fsdp',
         title: 'FSDP collective overlap study',
         status: 'OPEN' as const,
         archived: false,
-        runs: ['fsdp-260501-100000', 'fsdp-260502-150000'],
-        hypotheses: ['H0007'],
         tags: ['moe'],
         createdAt: '2026-05-01T08:00:00+08:00',
         updatedAt: '2026-05-02T18:00:00+08:00',
       },
-      sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
-      warningsRaw: null,
       parseErrors: [],
       parseWarnings: [],
       effectiveCreatedAt: '2026-05-01T08:00:00+08:00',
@@ -52,29 +50,27 @@ const SAMPLE_DOCS = {
       id: 'E0002-attention',
       project: 'project-a',
       path: '/p/a/docs/experiments/E0002-attention.md',
-      mtime: 2000,
       readmeMtime: 2000,
+      runCount: 0,
+      hypothesisCount: 0,
+      openWarningCount: 0,
       frontMatter: {
         id: 'E0002-attention',
         slug: 'attention',
         title: 'Attention cache study',
         status: 'OPEN' as const,
         archived: false,
-        runs: [],
-        hypotheses: [],
         tags: [],
         createdAt: '2026-05-03T08:00:00+08:00',
         updatedAt: '2026-05-03T08:00:00+08:00',
       },
-      sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
-      warningsRaw: null,
       parseErrors: [],
       parseWarnings: [],
       effectiveCreatedAt: '2026-05-03T08:00:00+08:00',
       effectiveUpdatedAt: '2026-05-03T08:00:00+08:00',
     },
   ],
-}
+} satisfies ExperimentDocsResponse
 
 describe('ExperimentCardGrid — list grid renders v3 exp docs', () => {
   beforeEach(() => {
@@ -125,22 +121,20 @@ const ARCHIVED_DOC = {
   id: 'E0099-old-thing',
   project: 'project-a',
   path: '/p/a/docs/experiments/E0099-old-thing.md',
-  mtime: 99,
   readmeMtime: 99,
+  runCount: 0,
+  hypothesisCount: 0,
+  openWarningCount: 0,
   frontMatter: {
     id: 'E0099-old-thing',
     slug: 'old-thing',
     title: 'old archived investigation',
     status: 'ABANDONED' as const,
     archived: true,
-    runs: [],
-    hypotheses: [],
     tags: [],
     createdAt: '2026-04-01T00:00:00+08:00',
     updatedAt: '2026-04-15T00:00:00+08:00',
   },
-  sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
-  warningsRaw: null,
   parseErrors: [],
   parseWarnings: [],
   effectiveCreatedAt: '2026-04-01T00:00:00+08:00',

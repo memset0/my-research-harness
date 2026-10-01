@@ -6,7 +6,6 @@ import {
   BackendAnomaliesResponseSchema,
   type BackendCapabilities,
   BackendExperimentResponseSchema,
-  BackendExperimentsResponseSchema,
   BackendHypothesesResponseSchema,
   BackendJournalCountResponseSchema,
   BackendJournalHistoryResponseSchema,
@@ -18,6 +17,7 @@ import {
 import { createBackendRequest } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
+import { BackendExperimentListResponseSchema } from './indexed-experiments.js'
 import { FilesystemProjectService } from './project-service.js'
 import { createBackendServer } from './server.js'
 
@@ -90,7 +90,7 @@ describe('Backend initial Project data routes', () => {
     expect(runDetail).not.toHaveProperty('run')
     expect(runDetail).not.toHaveProperty('path')
 
-    const experiments = BackendExperimentsResponseSchema.parse(
+    const experiments = BackendExperimentListResponseSchema.parse(
       await (
         await request('/api/backend/v1/experiments?project=project-a', { actor: owner })
       ).json(),

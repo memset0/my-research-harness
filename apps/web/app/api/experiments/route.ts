@@ -1,8 +1,5 @@
-import { BackendProjectServiceError } from '@memon/backend'
-import {
-  BackendExperimentsResponseSchema,
-  BackendResourceInventoryResponseSchema,
-} from '@memon/core'
+import { BackendExperimentListResponseSchema, BackendProjectServiceError } from '@memon/backend'
+import { BackendResourceInventoryResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { ExperimentCreateResponse, ExperimentDocsResponse } from '@/lib/dto/experiments'
 import type { Wire } from '@/lib/dto/wire'
@@ -40,7 +37,7 @@ export async function GET(req: NextRequest) {
       })
     }
     const experiments = responses.flatMap(
-      (response) => BackendExperimentsResponseSchema.parse(response).experiments,
+      (response) => BackendExperimentListResponseSchema.parse(response).experiments,
     )
     return NextResponse.json({
       experiments: experiments.map((experiment) =>

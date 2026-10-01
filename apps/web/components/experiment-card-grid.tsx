@@ -24,7 +24,7 @@ import { CalendarDays, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import {
-  type ExperimentDocSummary,
+  type ExperimentListRow,
   fetchExperimentDocs,
   type ProjectTarget,
   projectHost,
@@ -80,7 +80,7 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
 
   const experiments = expData?.experiments ?? []
 
-  const sortFn = (a: ExperimentDocSummary, b: ExperimentDocSummary) =>
+  const sortFn = (a: ExperimentListRow, b: ExperimentListRow) =>
     b.effectiveUpdatedAt.localeCompare(a.effectiveUpdatedAt)
 
   const active = experiments
@@ -139,7 +139,7 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
   )
 }
 
-function CardList({ project, exps }: { project: ProjectTarget; exps: ExperimentDocSummary[] }) {
+function CardList({ project, exps }: { project: ProjectTarget; exps: ExperimentListRow[] }) {
   return (
     <div className="flex flex-col gap-3">
       {exps.map((exp) => (
@@ -156,7 +156,7 @@ function ArchivedBucket({
   onToggle,
 }: {
   project: ProjectTarget
-  archived: ExperimentDocSummary[]
+  archived: ExperimentListRow[]
   revealed: boolean
   onToggle: () => void
 }) {
@@ -181,7 +181,7 @@ function ArchivedBucket({
   )
 }
 
-function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: ExperimentDocSummary }) {
+function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: ExperimentListRow }) {
   const archived = exp.frontMatter.archived
   const basePath = projectBasePath(project)
   return (

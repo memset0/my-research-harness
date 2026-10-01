@@ -6,7 +6,6 @@ import {
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
   BackendExperimentResultsResponseSchema,
-  BackendExperimentsResponseSchema,
   BackendHypothesesResponseSchema,
   BackendJournalResponseSchema,
   BackendResourceInventoryResponseSchema,
@@ -21,6 +20,7 @@ import {
   serializeResultsYaml,
 } from '@memon/core'
 import { describe, expect, it, vi } from 'vitest'
+import { BackendExperimentListResponseSchema } from './indexed-experiments.js'
 import { FilesystemProjectService } from './project-service.js'
 
 const fixtureRoot = resolve(process.cwd(), '../../mock/project-a')
@@ -188,7 +188,9 @@ describe('FilesystemProjectService safe reads', () => {
 
   it('lists Experiment docs and reads one document without absolute filesystem fields', async () => {
     const service = new FilesystemProjectService([project('project-a')])
-    const list = BackendExperimentsResponseSchema.parse(await service.listExperiments('project-a'))
+    const list = BackendExperimentListResponseSchema.parse(
+      await service.listExperiments('project-a'),
+    )
     expect(list.experiments.length).toBeGreaterThan(0)
     const detail = BackendExperimentResponseSchema.parse(
       await service.getExperiment('project-a', list.experiments[0]!.id),
@@ -271,7 +273,7 @@ conclusion
       // ...and the Experiment list is unaffected, because it never reaches a
       // Run: it projects each Experiment document's own timestamps and ships
       // no member roster at all.
-      const list = BackendExperimentsResponseSchema.parse(await service.listExperiments('lean'))
+      const list = BackendExperimentListResponseSchema.parse(await service.listExperiments('lean'))
       expect(list.experiments.map((experiment) => experiment.id)).toEqual(['E0001-lean'])
       expect(list.experiments[0]).not.toHaveProperty('memberRuns')
       expect(list.experiments[0]).toMatchObject({
@@ -459,11 +461,24 @@ conclusion
         }),
       )
       const service = new FilesystemProjectService([project('managed-project', root)])
-      const list = BackendExperimentsResponseSchema.parse(
+      const touched = [vi.spyOn(core.projectFs, 'stat'), vi.spyOn(core.projectFs, 'readFile')]
+      const list = BackendExperimentListResponseSchema.parse(
         await service.listExperiments('managed-project'),
       )
+      const yamlTouches = touched.flatMap((spy) =>
+        spy.mock.calls.map(([path]) => String(path)).filter((path) => path.endsWith('.yaml')),
+      )
+      expect(yamlTouches).toEqual([])
+      for (const spy of touched) spy.mockRestore()
       expect(list.experiments[0]).not.toHaveProperty('documents')
       expect(list.experiments[0]).not.toHaveProperty('documentSections')
+      // Slim list row: counts instead of rosters, no bodies, no bundle mtime.
+      for (const key of ['sections', 'warningsRaw', 'mtime']) {
+        expect(list.experiments[0]).not.toHaveProperty(key)
+      }
+      expect(list.experiments[0]!.frontMatter).not.toHaveProperty('runs')
+      expect(list.experiments[0]!.frontMatter).not.toHaveProperty('hypotheses')
+      expect(list.experiments[0]).toMatchObject({ runCount: 0, openWarningCount: 0 })
 
       const detail = BackendExperimentResponseSchema.parse(
         await service.getExperiment('managed-project', 'E0001-managed'),

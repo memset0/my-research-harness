@@ -16,8 +16,8 @@
 
 ## 3. Slim Experiment list rows (D3)
 
-- [ ] 3.1 Build Experiment list rows from README.md through the index with the slim row schema (counts, no sections/warningsRaw/mtime/runs/hypotheses; MISSING_README, LEGACY_LAYOUT and MIGRATION_COLLISION preserved); verify backend list tests and that no YAML file is touched
-- [ ] 3.2 Update the web DTO (`ExperimentListRow`), the standalone `/api/experiments` route, the card grid and their tests; verify `pnpm --filter @memon/web` affected tests and typecheck
+- [x] 3.1 Build Experiment list rows from README.md through the index with the slim row schema (counts, no sections/warningsRaw/mtime/runs/hypotheses; MISSING_README, LEGACY_LAYOUT and MIGRATION_COLLISION preserved); verify backend list tests and that no YAML file is touched
+- [x] 3.2 Update the web DTO (`ExperimentListRow`), the standalone `/api/experiments` route, the card grid and their tests; verify `pnpm --filter @memon/web` affected tests and typecheck
 
 ## 4. Summary index consumers and validation windows (D4)
 

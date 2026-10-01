@@ -5,7 +5,6 @@ import {
   BackendExperimentResultsResponseSchema,
   type BackendExperimentSummary,
   BackendExperimentSummarySchema,
-  BackendExperimentsResponseSchema,
   BackendHypothesesResponseSchema,
   BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
@@ -30,7 +29,6 @@ import {
   isRunDeprecated,
   isStaleRunning,
   listExperimentIds,
-  listExperimentPaths,
   type MembershipResult,
   matchesRunDeprecationFilter,
   type ParsedHypotheses,
@@ -56,6 +54,12 @@ import type {
   BackendWikiArtifactReferences,
   BackendWikiArtifacts,
 } from './document-service.js'
+import {
+  BackendExperimentListResponseSchema,
+  experimentListing,
+  experimentListRow,
+  indexedExperimentDocuments,
+} from './indexed-experiments.js'
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import {
@@ -400,19 +404,33 @@ export class FilesystemProjectService implements BackendProjectReadService {
    */
   async listExperiments(projectName: string, options: InventoryListOptions = {}) {
     const project = this.requireProject(projectName)
+    const maxAge = this.policy.listMaxAgeMs
     if (options.inventoryOnly) {
-      const paths = await withAutomaticProjectFileContext(() => listExperimentPaths(project.root))
+      const { folders, legacy } = await withAutomaticProjectFileContext(() =>
+        experimentListing(project, maxAge),
+      )
+      const items = new Map<string, string>()
+      for (const [id, entry] of folders) {
+        if (entry.type === 'dir') items.set(id, `docs/experiments/${entry.name}/README.md`)
+      }
+      for (const [id, entry] of legacy) {
+        if (entry.type === 'file' && !items.has(id)) items.set(id, `docs/experiments/${entry.name}`)
+      }
       return BackendResourceInventoryResponseSchema.parse({
-        items: [...paths].map(([id, resource]) => ({
-          id,
-          slug: id.slice('E0000-'.length),
-          resource: ResourceIdSchema.parse(resource),
-        })),
+        items: [...items]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([id, resource]) => ({
+            id,
+            slug: id.slice('E0000-'.length),
+            resource: ResourceIdSchema.parse(resource),
+          })),
       })
     }
-    const { experiments } = await discoverExperiments(project.root, project.name)
-    return BackendExperimentsResponseSchema.parse({
-      experiments: experiments.map((experiment) => safeExperimentSummary(experiment, project)),
+    const documents = await indexedExperimentDocuments(project, maxAge)
+    return BackendExperimentListResponseSchema.parse({
+      experiments: documents.map((document) =>
+        experimentListRow(project, document, portableReadmeResource(project, document.path)),
+      ),
     })
   }
 

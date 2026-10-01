@@ -12,7 +12,6 @@ import {
   BackendExperimentDeleteResponseSchema,
   BackendExperimentResponseSchema,
   BackendExperimentResultsResponseSchema,
-  BackendExperimentsResponseSchema,
   BackendHypothesesResponseSchema,
   BackendJournalCountResponseSchema,
   BackendJournalHistoryResponseSchema,
@@ -58,6 +57,7 @@ import {
 } from '../http/pipeline.js'
 import { readBoundedJsonRequest, writeError, writeJson } from '../http/respond.js'
 import type { QuerySpec } from '../http/route.js'
+import { BackendExperimentListResponseSchema } from '../indexed-experiments.js'
 import {
   emptyOr,
   inventoryField,
@@ -336,7 +336,7 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
       const result = await options.projectService!.listExperiments(project, { inventoryOnly })
       return inventoryOnly
         ? BackendResourceInventoryResponseSchema.parse(result)
-        : BackendExperimentsResponseSchema.parse(result)
+        : BackendExperimentListResponseSchema.parse(result)
     }),
     POST: experimentMutation(createExperiment),
   }),

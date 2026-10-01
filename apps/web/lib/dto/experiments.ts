@@ -137,8 +137,34 @@ export interface ExperimentResultsSnapshot {
   warnings: ParseIssue[]
 }
 
+/**
+ * One row of the Experiment list (`GET /api/experiments`). Built from the
+ * README alone: counts replace the `runs` / `hypotheses` rosters and the
+ * Warnings table, and section bodies, `warningsRaw` and the bundle activity
+ * `mtime` are detail-only. Anything else comes from the detail endpoint.
+ */
+export interface ExperimentListRow {
+  id: string
+  project: string
+  /** Standalone-only absolute path; central responses omit it. */
+  path?: string
+  resource?: string
+  /** README.md's own mtime. */
+  readmeMtime: number
+  frontMatter: Omit<ExperimentDocSummary['frontMatter'], 'runs' | 'hypotheses'>
+  /** Declared `runs` entries. */
+  runCount: number
+  hypothesisCount: number
+  /** Warnings rows whose status is OPEN. */
+  openWarningCount: number
+  parseErrors: { message: string }[]
+  parseWarnings: { message: string }[]
+  effectiveCreatedAt: string
+  effectiveUpdatedAt: string
+}
+
 export interface ExperimentDocsResponse {
-  experiments: ExperimentDocSummary[]
+  experiments: ExperimentListRow[]
 }
 
 export interface ExperimentBindInput {
