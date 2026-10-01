@@ -26,7 +26,33 @@ function importSpecifiers(source: string): string[] {
   return [...source.matchAll(pattern)].map((match) => match[1]!)
 }
 
+/**
+ * Local modules `server.ts` may import: the HTTP layer and the route table.
+ * Service implementations are reached only through route modules.
+ */
+function serverImportViolations(source: string): string[] {
+  return importSpecifiers(source).filter(
+    (specifier) =>
+      /-service(?:\.js)?$/.test(specifier) ||
+      (specifier.startsWith('.') && !/^\.\/(?:http|routes)\//.test(specifier)),
+  )
+}
+
 describe('Backend package boundary', () => {
+  it('keeps server.ts an assembly of the HTTP layer and route modules', async () => {
+    const server = await readFile(join(packageRoot, 'src', 'server.ts'), 'utf8')
+    expect(serverImportViolations(server)).toEqual([])
+    // The guard itself rejects a direct service import.
+    expect(
+      serverImportViolations(
+        "import { FilesystemProjectService } from './project-service.js'\nimport { x } from './routes/index.js'\n",
+      ),
+    ).toEqual(['./project-service.js'])
+    expect(serverImportViolations("export * from './stream-service.js'\n")).toEqual([
+      './stream-service.js',
+    ])
+  })
+
   it('publishes one independent dist entry with no Web or human-auth dependency in any Backend or Core source file', async () => {
     const packageJson = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as {
       main?: string

@@ -30,5 +30,5 @@
 
 ## 7. Boundary and verification
 
-- [ ] 7.1 Extend `package-boundary.test.ts` to assert `server.ts` imports no `*-service` module (only `./http/*` and `./routes/*` locally); verify it passes and fails when such an import is added.
+- [x] 7.1 Extend `package-boundary.test.ts` to assert `server.ts` imports no `*-service` module (only `./http/*` and `./routes/*` locally); verify it passes and fails when such an import is added.
 - [ ] 7.2 Run `pnpm --filter @memon/backend test`, `pnpm --filter @memon/web test -- lib/central`, `pnpm -r typecheck` and `pnpm exec biome check .` and record the results; run `openspec validate declarative-backend-routes --type change --strict`.
