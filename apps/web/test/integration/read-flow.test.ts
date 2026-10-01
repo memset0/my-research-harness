@@ -87,18 +87,21 @@ describe('integration: v3 read flow against mock fixtures', () => {
       const body = (await res.json()) as {
         experiments: Array<{
           id: string
-          mtime: number
           readmeMtime: number
+          runCount: number
           effectiveCreatedAt: string
           effectiveUpdatedAt: string
-          frontMatter: { runs: string[] }
+          frontMatter: Record<string, unknown>
         }>
       }
       expect(body.experiments.length).toBeGreaterThanOrEqual(1)
       for (const e of body.experiments) {
         expect(e.id).toMatch(/^E\d{4}-/)
         expect(e.readmeMtime).toBeGreaterThan(0)
-        expect(e.mtime).toBeGreaterThanOrEqual(e.readmeMtime)
+        // Slim list row: counts instead of rosters, no bundle activity mtime.
+        expect(e).not.toHaveProperty('mtime')
+        expect(e.frontMatter).not.toHaveProperty('runs')
+        expect(e.runCount).toBeGreaterThanOrEqual(0)
         expect(e.effectiveCreatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
         expect(e.effectiveUpdatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
         // effective range is closed: created ≤ updated
