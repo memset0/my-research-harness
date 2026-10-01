@@ -9,9 +9,20 @@
     "types": ["node"],
     "paths": {
       "@memon/core": ["../core/src/index.ts"],
-      "@memon/skills": ["../skills/src/index.ts"]
+      "@memon/skills": ["../skills/src/index.ts"],
+      "@memon/test-utils": ["../test-utils/src/index.ts"]
     }
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../core" }, { "path": "../skills" }]
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../skills"
+    },
+    {
+      "path": "../test-utils"
+    }
+  ]
 }

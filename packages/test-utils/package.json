@@ -1,0 +1,19 @@
+{
+  "name": "@memon/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared test fixtures and helpers for memon workspace test suites (source-only, test-time only)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.9"
+  }
+}

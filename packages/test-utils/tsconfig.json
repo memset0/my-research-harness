@@ -6,19 +6,7 @@
     "rootDir": "./src",
     "outDir": "./node_modules/.cache/tsbuild",
     "tsBuildInfoFile": "./node_modules/.cache/tsbuild/tsconfig.tsbuildinfo",
-    "types": ["node"],
-    "paths": {
-      "@memon/core": ["../core/src/index.ts"],
-      "@memon/test-utils": ["../test-utils/src/index.ts"]
-    }
+    "types": ["node"]
   },
-  "include": ["src/**/*"],
-  "references": [
-    {
-      "path": "../core"
-    },
-    {
-      "path": "../test-utils"
-    }
-  ]
+  "include": ["src/**/*"]
 }

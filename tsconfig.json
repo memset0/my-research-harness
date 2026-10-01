@@ -1,10 +1,23 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/skills" },
-    { "path": "./packages/backend" },
-    { "path": "./packages/cli" },
-    { "path": "./apps/web/tsconfig.typecheck.json" }
+    {
+      "path": "./packages/test-utils"
+    },
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/skills"
+    },
+    {
+      "path": "./packages/backend"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./apps/web/tsconfig.typecheck.json"
+    }
   ]
 }
