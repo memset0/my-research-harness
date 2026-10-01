@@ -9,10 +9,10 @@
 
 ## 2. Summary index foundation and readdir-only inventories (D2)
 
-- [ ] 2.1 Add `ProjectReadIndex` (fingerprinted file entries, directory listings, real-path observations, shared in-flight loads, registry by root, invalidation) with unit tests for fresh/stale/changed/missing/failed-load cases
-- [ ] 2.2 Serve the wiki inventory from listings plus indexed page frontmatter; verify a warm inventory reads no page body (fs-counting test) and identities/legacy ids are unchanged
-- [ ] 2.3 Serve the code-review inventory with one `docs/` real path and lexical containment for listed real directories (symlinked directories fall back to `resolveContained`); verify ids and a symlink-escape test
-- [ ] 2.4 Serve the Report inventory and the Journal count from the index; verify counts and a warm count reads no Journal body
+- [x] 2.1 Add `ProjectReadIndex` (fingerprinted file entries, directory listings, real-path observations, shared in-flight loads, registry by root, invalidation) with unit tests for fresh/stale/changed/missing/failed-load cases
+- [x] 2.2 Serve the wiki inventory from listings plus indexed page frontmatter; verify a warm inventory reads no page body (fs-counting test) and identities/legacy ids are unchanged
+- [x] 2.3 Serve the code-review inventory with one `docs/` real path and lexical containment for listed real directories (symlinked directories fall back to `resolveContained`); verify ids and a symlink-escape test
+- [x] 2.4 Serve the Report inventory and the Journal count from the index; verify counts and a warm count reads no Journal body
 
 ## 3. Slim Experiment list rows (D3)
 

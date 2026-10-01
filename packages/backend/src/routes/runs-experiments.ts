@@ -395,9 +395,11 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     }),
     {
       GET: projectRead(async ({ options, project, search }) => {
-        const journal = BackendJournalResponseSchema.parse(
-          await options.projectService!.getJournal(project),
-        )
+        const service = options.projectService!
+        if (search.get('countOnly') === '1' && service.getJournalCount) {
+          return BackendJournalCountResponseSchema.parse(await service.getJournalCount(project))
+        }
+        const journal = BackendJournalResponseSchema.parse(await service.getJournal(project))
         if (search.get('countOnly') === '1') {
           return BackendJournalCountResponseSchema.parse({ totalEvents: journal.events.length })
         }

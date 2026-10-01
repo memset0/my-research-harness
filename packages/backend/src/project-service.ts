@@ -1,4 +1,4 @@
-import { basename, join, relative, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import {
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
@@ -36,6 +36,7 @@ import {
   type ParsedHypotheses,
   type ProjectConfig,
   parseHypotheses,
+  parseJournal,
   projectResultsRunEligibility,
   projectRunPath,
   ResourceIdSchema,
@@ -57,6 +58,12 @@ import type {
 } from './document-service.js'
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
+import {
+  projectReadIndex,
+  type ReadPolicy,
+  registerProjectRoots,
+  STRICT_READ_POLICY,
+} from './read-index.js'
 import { strictDeprecatedFlag } from './run-eligibility.js'
 import { resolveRunPath, resolveRunReferencePath } from './run-path.js'
 
@@ -106,6 +113,7 @@ export interface BackendProjectReadService {
   getRunFiles(project: string, id: string, depth: number): Promise<unknown>
   getHypotheses(project: string): Promise<unknown>
   getJournal(project: string): Promise<unknown>
+  getJournalCount?(project: string): Promise<{ totalEvents: number }>
   getJournalHistory(project: string, limit?: number): Promise<unknown>
   getAnomalies(project: string): Promise<unknown>
 }
@@ -156,7 +164,11 @@ export class FilesystemProjectService implements BackendProjectReadService {
   private readonly projects = new Map<string, ProjectConfig>()
   private readonly compositions = new Map<string, ProjectCompositionState>()
 
-  constructor(projects: readonly ProjectConfig[]) {
+  private readonly policy: ReadPolicy
+
+  constructor(projects: readonly ProjectConfig[], options: { readPolicy?: ReadPolicy } = {}) {
+    registerProjectRoots(projects)
+    this.policy = options.readPolicy ?? STRICT_READ_POLICY
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
@@ -528,13 +540,16 @@ export class FilesystemProjectService implements BackendProjectReadService {
     })
   }
 
-  /** Depends on `docs/hypotheses.md` alone. */
+  /** Depends on `docs/hypotheses.md` alone, parsed once per fingerprint. */
   async getHypotheses(projectName: string) {
     const project = this.requireProject(projectName)
-    const content = await missingOrThrow(
-      fs.readFile(join(project.root, 'docs', 'hypotheses.md'), 'utf8'),
-    )
-    const hypotheses = content === null ? EMPTY_HYPOTHESES : parseHypotheses(content)
+    const hypotheses =
+      (await projectReadIndex(project.root).file(
+        join(project.root, 'docs', 'hypotheses.md'),
+        'hypotheses',
+        this.policy.listMaxAgeMs,
+        (content) => parseHypotheses(content),
+      )) ?? EMPTY_HYPOTHESES
     return BackendHypothesesResponseSchema.parse({
       project: projectName,
       legendBlock: hypotheses.legendBlock,
@@ -562,6 +577,21 @@ export class FilesystemProjectService implements BackendProjectReadService {
       ...journal,
       events: [...events].reverse(),
     })
+  }
+
+  /**
+   * Number of legacy Journal events, counted once per `docs/journal.md`
+   * fingerprint so a tab badge never re-reads the history.
+   */
+  async getJournalCount(projectName: string): Promise<{ totalEvents: number }> {
+    const project = this.requireProject(projectName)
+    const total = await projectReadIndex(project.root).file(
+      join(resolve(project.root), 'docs', 'journal.md'),
+      'journal-count',
+      this.policy.listMaxAgeMs,
+      (content) => parseJournal(content).events.length,
+    )
+    return { totalEvents: total ?? 0 }
   }
 
   /**

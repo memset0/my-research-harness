@@ -10,7 +10,6 @@ import {
   BackendReadmeResponseSchema,
   BackendReportResponseSchema,
   BackendReportsResponseSchema,
-  type BackendResourceInventoryItem,
   BackendResourceInventoryResponseSchema,
   BackendWikiBacklinksSchema,
   type BackendWikiConflictResponse,
@@ -71,9 +70,15 @@ import {
   gitCommandRunnerFor,
   resolveProjectExecution,
 } from './execution-service.js'
+import {
+  indexedCodeReviewInventory,
+  indexedReportInventory,
+  indexedWikiPages,
+} from './indexed-documents.js'
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
+import { type ReadPolicy, registerProjectRoots, STRICT_READ_POLICY } from './read-index.js'
 import { RunInventory, type RunInventoryWalk } from './run-inventory.js'
 
 export class BackendDocumentServiceError extends Error {
@@ -205,6 +210,8 @@ export interface FilesystemDocumentServiceOptions {
   execution?: BackendExecutionResolver
   /** Override for the Run-directory walk behind the shared wiki Run inventory. */
   runWalk?: RunInventoryWalk
+  /** Summary-index validation windows; strict (validate every read) by default. */
+  readPolicy?: ReadPolicy
 }
 
 /** Read the cited artifacts' metadata without unrelated archive-policy reads. */
@@ -230,11 +237,15 @@ export class FilesystemDocumentService implements BackendDocumentService {
   /** One Run-directory walk shared by every wiki projection of a Project. */
   private readonly runInventory: RunInventory
 
+  private readonly policy: ReadPolicy
+
   constructor(projects: readonly ProjectConfig[], options: FilesystemDocumentServiceOptions = {}) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
     }
+    registerProjectRoots(projects)
+    this.policy = options.readPolicy ?? STRICT_READ_POLICY
     this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
     this.resolveExecution = options.execution ?? resolveProjectExecution
     this.runInventory = new RunInventory(
@@ -250,7 +261,9 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const project = this.requireProject(projectName)
     if (options.inventoryOnly) {
       return BackendResourceInventoryResponseSchema.parse({
-        items: await withAutomaticProjectFileContext(() => this.discoverReportInventory(project)),
+        items: await withAutomaticProjectFileContext(() =>
+          indexedReportInventory(project, this.policy),
+        ),
       })
     }
     const reports = await this.discoverReports(project)
@@ -283,7 +296,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     if (options.inventoryOnly) {
       return BackendResourceInventoryResponseSchema.parse({
         items: await withAutomaticProjectFileContext(() =>
-          this.discoverCodeReviewInventory(project),
+          indexedCodeReviewInventory(project, this.policy),
         ),
       })
     }
@@ -382,7 +395,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const project = this.requireProject(projectName)
     if (options.inventoryOnly) {
       const pages = await withAutomaticProjectFileContext(() =>
-        discoverWikiPages(project.root, { inventoryOnly: true }),
+        indexedWikiPages(project, this.policy, { assets: false }),
       )
       return BackendWikiInventoryResponseSchema.parse({
         pages: pages.map((page) => {
@@ -719,85 +732,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
     })
   }
 
-  private async discoverReportInventory(
-    project: ProjectConfig,
-  ): Promise<BackendResourceInventoryItem[]> {
-    const directory = join(project.root, 'docs', 'reports')
-    if (!(await existsWithin(project.root, directory))) return []
-    const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
-    const items: BackendResourceInventoryItem[] = []
-    for (const entry of entries) {
-      const file = entry.isFile() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name) : null
-      const bundle = entry.isDirectory() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/.exec(entry.name) : null
-      const match = file ?? bundle
-      if (!match) continue
-      items.push({
-        id: `R${match[1]}`,
-        slug: match[2]!,
-        resource: ResourceIdSchema.parse(`docs/reports/${entry.name}${bundle ? '/README.md' : ''}`),
-      })
-    }
-    return items.sort(
-      (left, right) =>
-        right.id.localeCompare(left.id) || left.resource.localeCompare(right.resource),
-    )
-  }
-
-  private async discoverCodeReviewInventory(
-    project: ProjectConfig,
-  ): Promise<BackendResourceInventoryItem[]> {
-    const docs = join(project.root, 'docs')
-    if (!(await existsWithin(project.root, docs))) return []
-    const candidates: Array<{ relativePath: string; slug: string }> = []
-    const flatDirectory = join(docs, 'code-review')
-    if (await existsWithin(project.root, flatDirectory)) {
-      const flat = (await missingOrThrow(fs.readdir(flatDirectory, { withFileTypes: true }))) ?? []
-      for (const entry of flat) {
-        const match = entry.isFile()
-          ? /^\d{4}-\d{2}-\d{2}-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
-          : null
-        if (match) candidates.push({ relativePath: `code-review/${entry.name}`, slug: match[1]! })
-      }
-    }
-    const experimentsDirectory = join(docs, 'experiments')
-    if (await existsWithin(project.root, experimentsDirectory)) {
-      const experiments =
-        (await missingOrThrow(fs.readdir(experimentsDirectory, { withFileTypes: true }))) ?? []
-      for (const experiment of experiments) {
-        if (!experiment.isDirectory() || !/^E\d{4}-[a-z0-9-]+$/.test(experiment.name)) continue
-        const reviewsDirectory = join(experimentsDirectory, experiment.name, 'code-review')
-        if (!(await existsWithin(project.root, reviewsDirectory))) continue
-        const entries =
-          (await missingOrThrow(fs.readdir(reviewsDirectory, { withFileTypes: true }))) ?? []
-        for (const entry of entries) {
-          const match = entry.isFile()
-            ? /^\d{4}-\d{2}-\d{2}-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name)
-            : null
-          if (match) {
-            candidates.push({
-              relativePath: `experiments/${experiment.name}/code-review/${entry.name}`,
-              slug: match[1]!,
-            })
-          }
-        }
-      }
-    }
-    return candidates
-      .map(({ relativePath, slug }) => ({
-        id: relativePath.replace(/\.md$/, ''),
-        slug,
-        resource: ResourceIdSchema.parse(`docs/${relativePath}`),
-      }))
-      .sort((left, right) => right.id.localeCompare(left.id))
-  }
-
   /**
    * Report ids only, for `@R<NNNN>` reference resolution. Canonically named
    * files and bundle directories provide identities without opening them;
    * the detail reader validates the selected document when requested.
    */
   private async listReportIds(project: ProjectConfig): Promise<string[]> {
-    return (await this.discoverReportInventory(project)).map((item) => item.id)
+    return (await indexedReportInventory(project, this.policy)).map((item) => item.id)
   }
 
   private async discoverReports(project: ProjectConfig): Promise<DocumentEntry[]> {
