@@ -1,4 +1,4 @@
-import { relative, resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
 import {
   BackendCodePreviewResponseSchema,
   BackendCommitMarkDeleteResponseSchema,
@@ -14,7 +14,6 @@ import {
   BackendGitStatusResponseSchema,
   BackendGitSubmodulesResponseSchema,
   deleteCommitMark,
-  projectFs as fs,
   type GitCommandRunner,
   type GitFileStatus,
   type ProjectConfig,
@@ -32,6 +31,7 @@ import {
   setCommitMark,
   sliceContext,
 } from '@memon/core'
+import { PathContainmentError, resolveContained } from './containment.js'
 import {
   BackendExecutionError,
   type BackendExecutionProvider,
@@ -289,7 +289,7 @@ export class FilesystemGitService implements BackendGitService {
     if (!path.success) invalid()
     const repoRoot = this.trustedConfiguredPaths
       ? mapping.path
-      : await containedRealpath(project.root, mapping.path)
+      : await configuredPathWithin(project.root, mapping.path)
     const base = {
       owner: link.owner,
       repo: link.repo,
@@ -393,7 +393,7 @@ export class FilesystemGitService implements BackendGitService {
     return {
       cwd: this.trustedConfiguredPaths
         ? resolve(project.root, matches[0]!.path)
-        : await containedRealpath(project.root, resolve(project.root, matches[0]!.path)),
+        : await configuredPathWithin(project.root, resolve(project.root, matches[0]!.path)),
       submodule: matches[0]!.name,
       exec,
     }
@@ -416,11 +416,14 @@ function redactFailure<T extends { enabled: boolean }>(value: T) {
     : { enabled: false as const, reason: (value as T & { reason: string }).reason }
 }
 
-async function containedRealpath(projectRoot: string, target: string): Promise<string> {
-  const [root, realTarget] = await Promise.all([fs.realpath(projectRoot), fs.realpath(target)])
-  const rel = relative(root, realTarget)
-  if (rel === '..' || rel.startsWith(`..${sep}`) || rel.startsWith(sep)) invalid()
-  return realTarget
+/** Real path of a configured Git path, which must resolve inside the Project. */
+async function configuredPathWithin(projectRoot: string, target: string): Promise<string> {
+  try {
+    return await resolveContained(projectRoot, target, { realPathOnly: true })
+  } catch (error) {
+    if (error instanceof PathContainmentError) invalid()
+    throw error
+  }
 }
 
 /**
@@ -430,10 +433,9 @@ async function containedRealpath(projectRoot: string, target: string): Promise<s
  */
 async function assertExistingTargetWithin(root: string, target: string): Promise<void> {
   try {
-    await containedRealpath(root, target)
+    await resolveContained(root, target, { allowMissing: true, realPathOnly: true })
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT' || code === 'ENOTDIR') return
+    if (error instanceof PathContainmentError) invalid()
     throw error
   }
 }

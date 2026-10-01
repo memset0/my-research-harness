@@ -164,23 +164,30 @@ Status changes (all others unchanged):
 5xx messages are normalized ("Backend mutation failed"); 4xx messages for the same class are the
 class's single message (for example Wiki-review document errors and README lookups now use the
 generic document / Project resource messages instead of branch-specific text). Covered by
-`error-mapping.test.ts` (one case per error class plus wire tests for every row above except the
-unreachable 401 actor case, which is unit-tested). Web was checked read-only: no client branch depends on 422 or 404 from
+`error-mapping.test.ts`: one case per error class, plus wire tests for the INVALID_RESOURCE,
+413 and status/archive/warning rows (the 401 actor case is unreachable over the wire because the
+pipeline only decodes after service authentication, so it is unit-tested). Web was checked read-only: no client branch depends on 422 or 404 from
 these Backend routes (Web's 422 checks are for `ARCHIVE_RUNNING_FORBIDDEN` and for the standalone
 results route, which maps the service error itself).
 
 ### D6. Containment and byte streams
 
-`containment.ts` exports `isContained(root, target)` (pure lexical rule shared by every caller,
-including the SSH command-path mapper) and `resolveContained(projectRoot, relPath, { allowMissing })`
-(lexical check, `projectFs.realpath` of root and target, containment of the real path; returns
-`null` for a missing path when allowed, throws `PathContainmentError` on escape). Document, Git
-and stream services translate `PathContainmentError` into their own `INVALID_RESOURCE`.
+`containment.ts` exports `isContained(root, target)` (the pure lexical rule shared by every caller,
+including the SSH command-path mapper) and `resolveContained(projectRoot, relPath, options)`:
+lexical check, `projectFs.realpath` of root and target in parallel, containment of the real path.
+`allowMissing` turns a missing target (`ENOENT`/`ENOTDIR`) into `null` (an unreadable root still
+propagates); `realPathOnly` skips the lexical check for configured Git mapping/submodule paths,
+which may reach into the Project through a link from outside it (their previous semantics).
+Escapes throw `PathContainmentError`, which the document, Git and stream services translate into
+their own `INVALID_RESOURCE`. The document service now also applies the lexical check (its targets
+are always built under the root, so this only adds strictness); the stream service maps a missing
+path component (`ENOTDIR`) to not-found like `ENOENT`.
+
 `FilesystemStreamService.openByteStream()` returns a `PassThrough` immediately and fills it from
-`projectFs.open(path, 'r')` → `FileHandle.createReadStream({ start, end, highWaterMark })`;
-destroying the returned stream before the open resolves closes the handle. Inside a Project file
-context this applies the store's containment and read-only checks; outside one it is the native
-open, as before.
+`projectFs.open(path, 'r')` → `FileHandle.createReadStream({ start, end, highWaterMark })` via
+`pipeline()`; destroying the returned stream before or after the open resolves closes the handle,
+and an open failure surfaces as a stream error. Inside a Project file context this applies the
+store's containment and read-only checks to the open; outside one it is the native open, as before.
 
 ## Risks / Trade-offs
 

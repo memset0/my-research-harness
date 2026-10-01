@@ -64,6 +64,7 @@ import {
   writeFileAtomic,
   writeWikiReviewMark,
 } from '@memon/core'
+import { PathContainmentError, resolveContained } from './containment.js'
 import {
   BackendExecutionError,
   type BackendExecutionResolver,
@@ -722,7 +723,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     project: ProjectConfig,
   ): Promise<BackendResourceInventoryItem[]> {
     const directory = join(project.root, 'docs', 'reports')
-    if (!(await isWithin(project.root, directory))) return []
+    if (!(await existsWithin(project.root, directory))) return []
     const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
     const items: BackendResourceInventoryItem[] = []
     for (const entry of entries) {
@@ -746,10 +747,10 @@ export class FilesystemDocumentService implements BackendDocumentService {
     project: ProjectConfig,
   ): Promise<BackendResourceInventoryItem[]> {
     const docs = join(project.root, 'docs')
-    if (!(await isWithin(project.root, docs))) return []
+    if (!(await existsWithin(project.root, docs))) return []
     const candidates: Array<{ relativePath: string; slug: string }> = []
     const flatDirectory = join(docs, 'code-review')
-    if (await isWithin(project.root, flatDirectory)) {
+    if (await existsWithin(project.root, flatDirectory)) {
       const flat = (await missingOrThrow(fs.readdir(flatDirectory, { withFileTypes: true }))) ?? []
       for (const entry of flat) {
         const match = entry.isFile()
@@ -759,13 +760,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
       }
     }
     const experimentsDirectory = join(docs, 'experiments')
-    if (await isWithin(project.root, experimentsDirectory)) {
+    if (await existsWithin(project.root, experimentsDirectory)) {
       const experiments =
         (await missingOrThrow(fs.readdir(experimentsDirectory, { withFileTypes: true }))) ?? []
       for (const experiment of experiments) {
         if (!experiment.isDirectory() || !/^E\d{4}-[a-z0-9-]+$/.test(experiment.name)) continue
         const reviewsDirectory = join(experimentsDirectory, experiment.name, 'code-review')
-        if (!(await isWithin(project.root, reviewsDirectory))) continue
+        if (!(await existsWithin(project.root, reviewsDirectory))) continue
         const entries =
           (await missingOrThrow(fs.readdir(reviewsDirectory, { withFileTypes: true }))) ?? []
         for (const entry of entries) {
@@ -810,7 +811,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
       const absolutePath = bundle
         ? join(directory, entry.name, 'README.md')
         : join(directory, entry.name)
-      if (!(await isWithin(project.root, absolutePath))) continue
+      if (!(await existsWithin(project.root, absolutePath))) continue
       const content = await missingOrThrow(fs.readFile(absolutePath, 'utf8'))
       const stat = await missingOrThrow(fs.stat(absolutePath))
       if (content === null || !stat?.isFile()) continue
@@ -852,7 +853,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const out: DocumentEntry[] = []
     for (const relativePath of paths) {
       const absolutePath = join(docs, relativePath)
-      if (!(await isWithin(project.root, absolutePath))) continue
+      if (!(await existsWithin(project.root, absolutePath))) continue
       const content = await missingOrThrow(fs.readFile(absolutePath, 'utf8'))
       const stat = await missingOrThrow(fs.stat(absolutePath))
       if (content === null || !stat?.isFile()) continue
@@ -1002,9 +1003,13 @@ function codeReviewSummary(project: ProjectConfig, entry: DocumentEntry) {
 }
 
 async function assertWithin(projectRoot: string, target: string): Promise<void> {
-  const [realRoot, realTarget] = await Promise.all([fs.realpath(projectRoot), fs.realpath(target)])
-  if (!contains(realRoot, realTarget)) {
-    throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Resource escapes Project')
+  try {
+    await resolveContained(projectRoot, target)
+  } catch (error) {
+    if (error instanceof PathContainmentError) {
+      throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Resource escapes Project')
+    }
+    throw error
   }
 }
 
@@ -1013,17 +1018,13 @@ async function assertWithin(projectRoot: string, target: string): Promise<void> 
  * and resolution is simply skipped. An unreadable path is not skipped: only
  * absence yields `false`, everything else propagates.
  */
-async function isWithin(projectRoot: string, target: string): Promise<boolean> {
-  const [realRoot, realTarget] = await Promise.all([
-    fs.realpath(projectRoot),
-    missingOrThrow(fs.realpath(target)),
-  ])
-  return realTarget !== null && contains(realRoot, realTarget)
-}
-
-function contains(realRoot: string, realTarget: string): boolean {
-  const rel = relative(realRoot, realTarget)
-  return !(rel === '..' || rel.startsWith(`..${sep}`) || rel.startsWith(sep))
+async function existsWithin(projectRoot: string, target: string): Promise<boolean> {
+  try {
+    return (await resolveContained(projectRoot, target, { allowMissing: true })) !== null
+  } catch (error) {
+    if (error instanceof PathContainmentError) return false
+    throw error
+  }
 }
 
 function notFound(): BackendDocumentServiceError {

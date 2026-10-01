@@ -22,6 +22,7 @@ import { execFile } from 'node:child_process'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { GitCommandRunner, ProjectConfig, ProjectExecutionConfig } from '@memon/core'
 import { cachedGitCommand } from '@memon/core'
+import { isContained } from './containment.js'
 
 export type BackendExecutionErrorCode =
   | 'EXECUTION_UNAVAILABLE'
@@ -238,14 +239,14 @@ export function createSshExecutionProvider(
   const resolvePath = (absoluteLocalPath: string): string => {
     const absolute = resolve(absoluteLocalPath)
     if (absolute === localRoot) return remoteRoot
-    const rel = relative(localRoot, absolute)
-    if (rel === '') return remoteRoot
-    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    if (!isContained(localRoot, absolute)) {
       throw new BackendExecutionError(
         'EXECUTION_OUTSIDE_PROJECT',
         'Command path escapes the Project root',
       )
     }
+    const rel = relative(localRoot, absolute)
+    if (rel === '') return remoteRoot
     return `${remoteRoot}/${rel.split(sep).join('/')}`
   }
 

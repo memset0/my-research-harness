@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, type Dirent } from 'node:fs'
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
-import type { Readable } from 'node:stream'
+import type { Dirent } from 'node:fs'
+import { basename, dirname, extname, join } from 'node:path'
+import { PassThrough, type Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import {
   BackendLogFilesResponseSchema,
   BackendLogLinesResponseSchema,
@@ -11,6 +12,7 @@ import {
   type ProjectConfig,
   ResourceIdSchema,
 } from '@memon/core'
+import { isContained, PathContainmentError, resolveContained } from './containment.js'
 import { missingOrThrow } from './missing-path.js'
 
 const LOG_EXTENSIONS = new Set(['.log', '.txt', '.out', '.err'])
@@ -248,7 +250,7 @@ export class FilesystemStreamService implements BackendStreamService {
     const bundle = await this.resolveContained(project, bundleResource, 'directory')
     const assetResource = `${bundleResource}/${resource}`
     const resolved = await this.resolveContained(project, assetResource, 'file')
-    if (!isWithin(bundle.realPath, resolved.realPath)) invalid()
+    if (!isContained(bundle.realPath, resolved.realPath)) invalid()
     const version = createHash('sha1')
       .update(`${resolved.stat.size}:${resolved.stat.mtimeMs}:${resolved.stat.ino}`)
       .digest('hex')
@@ -265,10 +267,7 @@ export class FilesystemStreamService implements BackendStreamService {
   }
 
   openByteStream(resource: BackendByteResource, range?: ByteRangeInput): Readable {
-    return createReadStream(resource.absolutePath, {
-      ...(range ? { start: range.start, end: range.end } : {}),
-      highWaterMark: 64 * 1024,
-    })
+    return openProjectByteStream(resource.absolutePath, range)
   }
 
   private requireProject(name: string): ProjectConfig {
@@ -320,23 +319,18 @@ export class FilesystemStreamService implements BackendStreamService {
     kind: 'file' | 'directory',
   ) {
     const parsed = parseResource(resource)
-    const lexicalRoot = resolve(project.root)
-    const lexicalTarget = resolve(lexicalRoot, parsed)
-    if (!isWithin(lexicalRoot, lexicalTarget)) invalid()
-    let realRoot: string
-    let realPath: string
+    let realPath: string | null
     try {
-      ;[realRoot, realPath] = await Promise.all([
-        fs.realpath(lexicalRoot),
-        fs.realpath(lexicalTarget),
-      ])
+      realPath = await resolveContained(project.root, parsed, { allowMissing: true })
     } catch (error) {
+      if (error instanceof PathContainmentError) invalid()
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Resource not found')
       }
       throw error
     }
-    if (!isWithin(realRoot, realPath)) invalid()
+    if (realPath === null)
+      throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Resource not found')
     const stat = await fs.stat(realPath)
     if ((kind === 'file' && !stat.isFile()) || (kind === 'directory' && !stat.isDirectory())) {
       throw new BackendStreamServiceError('RESOURCE_NOT_FOUND', 'Resource kind is invalid')
@@ -368,9 +362,36 @@ function invalid(): never {
   throw new BackendStreamServiceError('INVALID_RESOURCE', 'Stream resource is invalid')
 }
 
-function isWithin(root: string, target: string): boolean {
-  const rel = relative(root, target)
-  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !rel.startsWith(sep))
+const BYTE_STREAM_CHUNK_BYTES = 64 * 1024
+
+/**
+ * Stream a Project file's bytes through the Project file facade, so the
+ * active file context's containment, read-only and storage policy apply to
+ * the open exactly as to every other read. The result is returned
+ * synchronously (callers pipe it straight into a response) and is filled
+ * once the handle opens; open failures surface as a stream error, and
+ * destroying the stream early closes the handle.
+ */
+export function openProjectByteStream(absolutePath: string, range?: ByteRangeInput): Readable {
+  const output = new PassThrough({ highWaterMark: BYTE_STREAM_CHUNK_BYTES })
+  void fs.open(absolutePath, 'r').then(
+    (handle) => {
+      if (output.destroyed) {
+        void handle.close().catch(() => undefined)
+        return
+      }
+      const source = handle.createReadStream({
+        ...(range ? { start: range.start, end: range.end } : {}),
+        highWaterMark: BYTE_STREAM_CHUNK_BYTES,
+        autoClose: true,
+      })
+      // pipeline() destroys the source (closing the handle) when the output
+      // is destroyed, and forwards a source error to the output.
+      pipeline(source, output).catch(() => undefined)
+    },
+    (error: unknown) => output.destroy(error as Error),
+  )
+  return output
 }
 
 function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {

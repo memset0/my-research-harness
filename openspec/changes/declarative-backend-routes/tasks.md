@@ -25,8 +25,8 @@
 
 ## 6. Containment and byte streams
 
-- [ ] 6.1 Add `containment.ts` (`isContained`, `resolveContained`, `PathContainmentError`) with unit tests, and replace the document, Git, stream and execution-service copies; verify `grep -n "function isWithin\|function contains\|function containedRealpath" packages/backend/src` is empty and the Backend suite passes.
-- [ ] 6.2 Stream byte assets through `projectFs.open` with a synchronous `PassThrough` result, keeping ranges, backpressure and cancellation; add a test that a streamed asset opened inside a Project file context goes through the facade and that early destroy closes the handle; verify the Backend suite passes.
+- [x] 6.1 Add `containment.ts` (`isContained`, `resolveContained`, `PathContainmentError`) with unit tests, and replace the document, Git, stream and execution-service copies; verify `grep -n "function isWithin\|function contains\|function containedRealpath" packages/backend/src` is empty and the Backend suite passes.
+- [x] 6.2 Stream byte assets through `projectFs.open` with a synchronous `PassThrough` result, keeping ranges, backpressure and cancellation; add a test that a streamed asset opened inside a Project file context goes through the facade and that early destroy closes the handle; verify the Backend suite passes.
 
 ## 7. Boundary and verification
 
