@@ -25,7 +25,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `pnpm --filter @memon/web typecheck`, Biome on touched files, `pnpm --filter @memon/web test`
-- [ ] 5.2 `pnpm --filter @memon/web build` in the checkout (not a live build output)
-- [ ] 5.3 F1: temporary mock copy + temporary config on a free port; grep the Experiment page HTML for the Results table `data-slot="table"`, a mock header label and a cell value; grep the served stylesheet for `--background`, `--foreground`, `--card`, `--muted`, `--border` oklch values; stop the server and delete temporary files
-- [ ] 5.4 `openspec validate results-table-decomposition --strict`
+- [x] 5.1 `pnpm --filter @memon/web typecheck`, Biome on touched files, `pnpm --filter @memon/web test` (all files of this change pass; the only failures, 10 cases in `app/api/projects/[project]/git-diff/route.test.ts`, are outside this change and appeared after concurrent backend commits — the suite was fully green at the D2 commit)
+- [x] 5.2 `pnpm --filter @memon/web build` in the checkout (not a live build output)
+- [x] 5.3 F1: temporary mock copy (with an added Experiment carrying `results.yaml`) + temporary config on a free port, production start; the Experiment page body is client-rendered, so verify (a) the page's served JS chunk contains the new `data-slot`/`data-*` markers, (b) the Experiment API returns the Results document, (c) a server render of the built component from that API payload contains the Results table `data-slot="table"`, the mock header labels and cell values, and (d) the served stylesheets define `--background`, `--foreground`, `--card`, `--muted`, `--border` as oklch and contain the Tailwind classes the new components use; stop the server and delete temporary files (no headless browser could run on this host)
+- [x] 5.4 `openspec validate results-table-decomposition --strict`
