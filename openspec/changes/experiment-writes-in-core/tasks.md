@@ -18,7 +18,7 @@
 
 ## 4. Standalone Web adapter
 
-- [ ] 4.1 Replace the standalone lock helper with core `readDocumentLock` and keep response shapes; verify with the `app/api/**` and `lib/server/**` vitest subset
+- [x] 4.1 Replace the standalone lock helper with core `readDocumentLock` and keep response shapes; verify with the `app/api/**` and `lib/server/**` vitest subset
 
 ## 5. Route fixes
 

@@ -1,8 +1,13 @@
 import 'server-only'
 
-import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { projectFs as fs, readExperimentDoc, readRunDir } from '@memon/core'
+import {
+  type MutationFs,
+  projectFs,
+  readDocumentLock,
+  readExperimentDoc,
+  readRunDir,
+} from '@memon/core'
 import type { Runtime } from './runtime'
 
 export async function refreshStandaloneRun(
@@ -90,12 +95,13 @@ export function projectDocumentPath(
   return join(project.root, ...resource.split('/'))
 }
 
-export async function standaloneDocumentLock(
+/**
+ * The optimistic lock a standalone caller would have sent for `path`, for Web
+ * requests that omit one. Read through the shared core lock reader over
+ * `projectFs`, the same port the Backend service writes through.
+ */
+export function standaloneDocumentLock(
   path: string,
 ): Promise<{ expectedMtime: number; expectedHash: string }> {
-  const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
-  return {
-    expectedMtime: stat.mtimeMs,
-    expectedHash: createHash('sha1').update(content).digest('hex'),
-  }
+  return readDocumentLock(projectFs as unknown as MutationFs, path)
 }
