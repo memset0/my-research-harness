@@ -42,4 +42,5 @@
 
 ## 9. Verification
 
-- [ ] 9.1 Run the full core, backend and CLI test suites, `pnpm -r typecheck` and `pnpm exec biome check .`; `openspec validate consolidate-core-helpers --type change --strict`
+- [x] 9.1 Run the full core, backend and CLI test suites, `pnpm -r typecheck` and `pnpm exec biome check .`; `openspec validate consolidate-core-helpers --type change --strict`
+  - core 76 files / 950 tests, backend 27 / 234, CLI 22 / 295 — all passed; `pnpm -r typecheck` clean; `biome check .` 0 errors; strict validation passed

@@ -129,9 +129,10 @@ symbols so duplicated bundles share them. The store uses the leaf's context
 storage and notifies listeners where it called `invalidateGitOperations`;
 `git/command.ts` reads the context from the leaf and registers
 `invalidateGitOperations` as a listener at module load (the cache only exists
-once that module is loaded). `ProjectFileContext`, `FileAccessOptions`,
-`FileCacheOptions` and related option types move to `types.ts`; the store
-re-exports them. An import-graph test reads the source and asserts that
+once that module is loaded). `ProjectFileContext` and `FileOperationReason`
+live in the leaf module; `FileAccessOptions` and `FileCacheOptions` move to
+`types.ts`. The store (and `project-file-cache.ts`) re-export all of them, so
+the public API is unchanged. An import-graph test reads the source and asserts that
 `git/command.ts` and `types.ts` import nothing from `project-file-store`, and
 the store imports nothing from `git/`.
 
