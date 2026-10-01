@@ -130,3 +130,17 @@ Requests SHALL be evaluated in this order: service authentication, canonical-pat
 #### Scenario: Literal template path
 - **WHEN** a request targets a path that spells a template literally, such as `/projects/[project]/shares`
 - **THEN** the bracket text is validated as the parameter value, so this request is `404` `NOT_FOUND` instead of being answered as if it had no parameters
+
+### Requirement: Standalone Results snapshot reports invalid results with the central status
+
+Standalone `GET /api/experiments/:id/results` SHALL answer a `results.yaml`
+that exists but fails to parse or validate with status `400`, the same status
+central returns for that failure. The body SHALL keep its existing shape:
+`{"error":{"code":"INVALID_RESULTS","message":…},"diagnostics":[…],"updatedAt":…}`.
+A missing `results.yaml` SHALL remain `404` `RESULTS_NOT_FOUND`.
+
+#### Scenario: Malformed results.yaml in standalone
+- **GIVEN** an Experiment whose `results.yaml` is not valid YAML
+- **WHEN** a standalone client requests its Results snapshot
+- **THEN** the response is `400` with code `INVALID_RESULTS` and the parser
+  diagnostics, instead of `422`
