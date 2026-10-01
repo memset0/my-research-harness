@@ -32,13 +32,9 @@ async function handleGET(req: NextRequest, { params }: { params: Promise<{ id: s
       { status: 400 },
     )
   }
-  const current = runtime.index.get(id)
-  if (!current || current.project !== project.data) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: `run "${id}" not found` } },
-      { status: 404 },
-    )
-  }
+  // The Run is resolved by path (or unique directory name) through the
+  // Project's own resolver; a legacy in-memory index is empty when central
+  // serves the Project directly, so it must not gate this read.
   try {
     const portable = BackendRunFilesResponseSchema.parse(
       await standaloneServices(runtime.config).projects.getRunFiles(
@@ -49,13 +45,12 @@ async function handleGET(req: NextRequest, { params }: { params: Promise<{ id: s
     )
     return NextResponse.json({
       ...portable,
-      runPath: current.path,
       tree: legacyFileTree(portable.tree),
     } satisfies RunFilesResponse)
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {
       return NextResponse.json(
-        { error: { code: 'NOT_FOUND', message: 'run files not found' } },
+        { error: { code: 'NOT_FOUND', message: `run "${id}" not found` } },
         { status: 404 },
       )
     }

@@ -52,9 +52,8 @@ tags: []
     config: {
       projects: [{ name: 'research', root, include: [], exclude: [] }],
     },
-    index: {
-      get: (id: string) => (id === RUN_ID ? { id, project: 'research', path: runRoot } : null),
-    },
+    // Direct mode: the legacy Run index is empty and must not gate the read.
+    index: { get: () => null },
     projectFor: () => ({ name: 'research', root }),
   } as never)
 })
@@ -86,8 +85,23 @@ describe('GET /api/runs/:id/files', () => {
     expect(serialized).not.toContain('escape')
     expect(serialized).not.toContain(root)
     expect(serialized).not.toMatch(/"(?:path|root|cwd|absolutePath)"\s*:/)
-    expect(runPath).toBe(runRoot)
+    // No absolute Run path crosses the boundary.
+    expect(runPath).toBeUndefined()
     expect(raw.tree.path).toBe('.')
+  })
+
+  it('resolves a project-relative Run path and reports an unknown Run as 404', async () => {
+    const byPath = await GET(
+      new NextRequest(`http://localhost/api/runs/logs%2F${RUN_ID}/files?project=research`),
+      { params: Promise.resolve({ id: `logs/${RUN_ID}` }) },
+    )
+    expect(byPath.status).toBe(200)
+    expect((await byPath.json()).resource).toBe(`logs/${RUN_ID}`)
+    const missing = await GET(
+      new NextRequest('http://localhost/api/runs/logs%2Fnone-260501-100000/files?project=research'),
+      { params: Promise.resolve({ id: 'logs/none-260501-100000' }) },
+    )
+    expect(missing.status).toBe(404)
   })
 
   it('requires an exact Project and bounded depth', async () => {
