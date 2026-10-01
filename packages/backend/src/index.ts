@@ -74,6 +74,7 @@ export {
   BackendProjectServiceError,
   FilesystemProjectService,
 } from './project-service.js'
+export { withRequestScope } from './request-scope.js'
 export {
   BACKEND_ANOMALIES_ROUTE,
   BACKEND_API_PREFIX,

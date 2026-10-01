@@ -4,8 +4,8 @@
 
 ## 1. Request-scoped root realpath (D1)
 
-- [ ] 1.1 Add a backend request scope opened by the route pipeline and memoize the Project root real path in `resolveContained`; verify with containment tests (memo hit inside a scope, unchanged behaviour outside, symlink escape still rejected)
-- [ ] 1.2 Add the backend Run path resolver mirroring `resolveDeclaredRunPath` with the memoized root and use it for Run detail, Run files, wiki citations and eligibility; verify with project-service tests and a resolver test counting root realpaths
+- [x] 1.1 Add a backend request scope opened by the route pipeline and memoize the Project root real path in `resolveContained`; verify with containment tests (memo hit inside a scope, unchanged behaviour outside, symlink escape still rejected)
+- [x] 1.2 Add the backend Run path resolver mirroring `resolveDeclaredRunPath` with the memoized root and use it for Run detail, Run files, wiki citations and eligibility; verify with project-service tests and a resolver test counting root realpaths
 
 ## 2. Summary index foundation and readdir-only inventories (D2)
 

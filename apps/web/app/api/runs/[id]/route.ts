@@ -1,4 +1,4 @@
-import { BackendProjectServiceError } from '@memon/backend'
+import { BackendProjectServiceError, withRequestScope } from '@memon/backend'
 import { BackendRunResponseSchema } from '@memon/core'
 import { NextResponse } from 'next/server'
 import type { FullExperiment } from '@/lib/dto/runs'
@@ -37,4 +37,8 @@ async function handleGET(request: Request, context: { params: Promise<{ id: stri
   )
 }
 
-export const GET = withValidRunId(handleGET)
+// One request scope: the Project root's real path is resolved once.
+export const GET = withValidRunId(
+  (request: Parameters<typeof handleGET>[0], context: Parameters<typeof handleGET>[1]) =>
+    withRequestScope(() => handleGET(request, context)),
+)

@@ -15,6 +15,7 @@ import {
   BackendActorContextError,
   decodeBackendActorContext,
 } from '../actor-context.js'
+import { withRequestScope } from '../request-scope.js'
 import { authenticates } from './auth.js'
 import { type HttpError, httpError, toHttpError } from './errors.js'
 import type { BackendHandler, ResolvedBackendOptions } from './options.js'
@@ -222,16 +223,20 @@ export function createRouteHandler(
     }
 
     try {
-      await operation.handle({
-        request,
-        response,
-        method: method as HttpMethod,
-        search,
-        params,
-        project: project ?? ('' as ProjectName),
-        actor,
-        options,
-      })
+      // One request scope per handler: the Project root's real path is
+      // resolved once and shared by every containment check below it.
+      await withRequestScope(() =>
+        operation.handle({
+          request,
+          response,
+          method: method as HttpMethod,
+          search,
+          params,
+          project: project ?? ('' as ProjectName),
+          actor,
+          options,
+        }),
+      )
     } catch (error) {
       if (response.headersSent) {
         if (!response.destroyed && !response.writableEnded) response.end()

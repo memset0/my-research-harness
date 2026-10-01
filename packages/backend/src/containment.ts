@@ -8,6 +8,7 @@
 
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { projectFs as fs } from '@memon/core'
+import { realProjectRoot } from './request-scope.js'
 
 export class PathContainmentError extends Error {
   constructor(message = 'Path escapes the Project root') {
@@ -77,8 +78,9 @@ export async function resolveContained(
     if (!isContained(root, target)) throw new PathContainmentError()
     return target
   }
+  // The root's real path is shared by every resolution of one request.
   const [root, target] = await Promise.allSettled([
-    fs.realpath(lexicalRoot),
+    realProjectRoot(lexicalRoot),
     fs.realpath(lexicalTarget),
   ])
   // An unreadable Project root is never "missing": it always propagates.

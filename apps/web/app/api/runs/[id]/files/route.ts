@@ -1,4 +1,4 @@
-import { BackendProjectServiceError } from '@memon/backend'
+import { BackendProjectServiceError, withRequestScope } from '@memon/backend'
 import {
   BackendRunFilesResponseSchema,
   type BackendRunFileTreeNode,
@@ -74,4 +74,8 @@ function legacyFileTree(node: BackendRunFileTreeNode): BackendRunFileTreeNode & 
   }
 }
 
-export const GET = withValidRunId(handleGET)
+// One request scope: the Project root's real path is resolved once.
+export const GET = withValidRunId(
+  (request: Parameters<typeof handleGET>[0], context: Parameters<typeof handleGET>[1]) =>
+    withRequestScope(() => handleGET(request, context)),
+)

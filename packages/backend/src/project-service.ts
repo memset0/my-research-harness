@@ -29,7 +29,6 @@ import {
   invalidateProjectFile,
   isRunDeprecated,
   isStaleRunning,
-  listDeprecatedRunIds,
   listExperimentIds,
   listExperimentPaths,
   type MembershipResult,
@@ -48,8 +47,6 @@ import {
   readJournalActivity,
   readProjectJournal,
   readRunDir,
-  resolveDeclaredRunPath,
-  resolveRunReference,
   runArchivedFromRun,
   scanProjectRoot,
 } from '@memon/core'
@@ -60,6 +57,8 @@ import type {
 } from './document-service.js'
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
+import { strictDeprecatedFlag } from './run-eligibility.js'
+import { resolveRunPath, resolveRunReferencePath } from './run-path.js'
 
 export class BackendProjectServiceError extends Error {
   constructor(
@@ -274,7 +273,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
         async (reference) => {
           if (reference.includes('/')) {
             try {
-              return await resolveDeclaredRunPath(project.root, reference)
+              return await resolveRunPath(project.root, reference)
             } catch {
               return null
             }
@@ -457,7 +456,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   async getRunFiles(projectName: string, id: string, depth: number) {
     const project = this.requireProject(projectName)
-    const runPath = await resolveRunReference(project, id)
+    const runPath = await withAutomaticProjectFileContext(() =>
+      resolveRunReferencePath(project, id, () => discoverRuns(project, { includeArchived: true })),
+    )
     if (!runPath) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const runRoot = await fs.realpath(runPath)
     let truncated = false
@@ -618,7 +619,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
    * the caller's priority.
    */
   private async readRun(project: ProjectConfig, id: string): Promise<IndexedRun> {
-    const path = await withAutomaticProjectFileContext(() => resolveRunReference(project, id))
+    const path = await withAutomaticProjectFileContext(() =>
+      resolveRunReferencePath(project, id, () => discoverRuns(project, { includeArchived: true })),
+    )
     if (!path) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const run = await readRunDir(path, project.name)
     run.frontMatter.experiment = await withAutomaticProjectFileContext(() =>
@@ -830,15 +833,10 @@ async function experimentRunEligibility(
   let deprecatedRuns: string[]
   try {
     deprecatedRuns = await withAutomaticProjectFileContext(() =>
-      listDeprecatedRunIds(project.root, {
-        projectName: project.name,
-        include: project.include,
-        exclude: project.exclude,
-        ids: [
-          ...experiment.frontMatter.runs,
-          ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
-        ],
-      }),
+      deprecatedRunIds(project, [
+        ...experiment.frontMatter.runs,
+        ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
+      ]),
     )
   } catch {
     throw new BackendProjectServiceError(
@@ -851,6 +849,37 @@ async function experimentRunEligibility(
     variantEligibility: projectResultsRunEligibility(results, deprecatedRuns),
   }
 }
+
+/**
+ * Deprecated ids among `ids` (declared paths or legacy base names). A missing
+ * Run or README is not deprecated; unreadable or malformed eligibility
+ * metadata throws. The Run walk runs only when a base name needs it.
+ */
+async function deprecatedRunIds(project: ProjectConfig, ids: readonly string[]): Promise<string[]> {
+  if (ids.length === 0) return []
+  const wanted = new Set(ids)
+  let walk: Promise<readonly string[]> | undefined
+  const walkOnce = () => {
+    walk ??= discoverRuns(project, { includeArchived: true })
+    return walk
+  }
+  const dirs = (
+    await mapWithConcurrency([...wanted], ELIGIBILITY_CONCURRENCY, (reference) =>
+      resolveRunReferencePath(project, reference, walkOnce),
+    )
+  ).filter((dir): dir is string => dir !== null)
+  const deprecated: string[] = []
+  await mapWithConcurrency(dirs, ELIGIBILITY_CONCURRENCY, async (dir) => {
+    const content = await missingOrThrow(fs.readFile(join(dir, 'README.md'), 'utf8'))
+    if (content === null || !strictDeprecatedFlag(content)) return
+    const path = projectRunPath(project.root, dir)
+    if (wanted.has(path)) deprecated.push(path)
+    if (wanted.has(basename(dir))) deprecated.push(basename(dir))
+  })
+  return [...new Set(deprecated)].sort()
+}
+
+const ELIGIBILITY_CONCURRENCY = 16
 
 function safeManagedDocuments(
   experiment: Experiment,
