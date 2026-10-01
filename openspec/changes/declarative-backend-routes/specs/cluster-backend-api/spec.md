@@ -47,7 +47,7 @@ Project bytes served as asset streams SHALL be opened through the same project f
 ### Requirement: Backend routes derive from one declarative table
 The in-process Backend request handler SHALL resolve every route from a single declarative route table. Each entry SHALL declare its path pattern and parameter validation, its accepted query parameters, the methods it serves and, per method, its actor route class (`read`, `mutating` or `shell`, or none for instance metadata and events), its read-only policy and its handler. Path resolution, query validation, the method allow-list, the `405` `Allow` header, route-class authorization and the read-only refusal SHALL all be derived from that table; no second list of routes, methods or query rules SHALL exist.
 
-Requests SHALL be evaluated in this order: service authentication, canonical-path check, route match, query validation, method check, read-only policy, capability availability, actor-context decoding, actor authorization, handler. A path that does not match a registered pattern, whose parameters fail validation, or whose query carries an unregistered, duplicated or invalid parameter SHALL return `404` `NOT_FOUND`. A literal template path (for example one containing `[id]`) SHALL NOT resolve to a route.
+Requests SHALL be evaluated in this order: service authentication, canonical-path check, route match, query validation, method check, read-only policy, capability availability, actor-context decoding, actor authorization, handler. A path that does not match a registered pattern, whose parameters fail validation, or whose query carries an unregistered, duplicated or invalid parameter SHALL return `404` `NOT_FOUND`. A literal template path (for example one containing `[id]`) SHALL NOT resolve to its route without parameters; its bracket text is an ordinary parameter value and is validated as such.
 
 #### Scenario: Route table is the single source
 - **WHEN** a route, method or query parameter is added to the Backend
@@ -62,5 +62,5 @@ Requests SHALL be evaluated in this order: service authentication, canonical-pat
 - **THEN** the response is `405` `METHOD_NOT_ALLOWED` with an `Allow` header listing the declared methods, except Project data read routes, which answer `404` as before
 
 #### Scenario: Literal template path
-- **WHEN** a request targets a path that spells a template literally, such as `/runs/[id]`
-- **THEN** the response is `404` `NOT_FOUND`
+- **WHEN** a request targets a path that spells a template literally, such as `/projects/[project]/shares`
+- **THEN** the bracket text is validated as the parameter value, so this request is `404` `NOT_FOUND` instead of being answered as if it had no parameters

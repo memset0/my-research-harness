@@ -79,7 +79,9 @@ the new `preflight()` returns the same outcome, route key, parameters, `Allow` s
 and read-only decision for both read-only modes. It also records a SHA-256 digest of the full
 outcome list. When the legacy file is deleted, the test keeps the corpus and asserts the recorded
 digest, so the table cannot drift silently. The only intentional divergence — literal template
-paths — is excluded from the comparison and asserted separately.
+paths — is excluded from the comparison and asserted separately. Paths that neither side can route
+are compared once (routing never reads their method or query); routable paths are compared for
+all methods with 28 fixed boundary queries plus 8 seeded random ones (about 105k decisions).
 
 ### D3. Pipeline order
 
@@ -154,7 +156,7 @@ Status changes (all others unchanged):
 | Run/Experiment status+archive, warnings | `JournalRecordingError` | 400 `BAD_REQUEST` | 500 `<journal code>` |
 | Experiment create/delete/link/unlink | `BackendProjectServiceError` / `BackendDocumentServiceError` leaking from the service | 400 `BAD_REQUEST` | 400 / 404 / 409 per class |
 | Project data reads | `BackendDocumentServiceError` leaking from the service | 500 `INTERNAL` | 400 / 404 / 409 per class |
-| any route | literal template path (e.g. `/runs/[id]`) | aliased the route (e.g. `/projects/[project]/shares` answered metadata) | 404 `NOT_FOUND` |
+| any route | literal template path (e.g. `/projects/[project]/shares`) | resolved the route with no parameters (that path answered instance metadata) | bracket text is a validated parameter: 404 when invalid, otherwise an ordinary lookup |
 
 5xx messages are normalized ("Backend mutation failed"); 4xx messages for the same class are the
 class's single message. Web was checked read-only: no client branch depends on 422 or 404 from

@@ -1,9 +1,9 @@
 ## 1. Declarative route table (coexisting with the legacy tables)
 
-- [ ] 1.1 Move the `BACKEND_*` path constants and size limits into `http/paths.ts` and re-export them unchanged from `server.ts`; verify `pnpm --filter @memon/backend typecheck` and the Backend suite pass.
-- [ ] 1.2 Move the legacy allow-list, regex resolver, query validator and family key lists verbatim into `legacy-routes.ts`, adding `legacyPreflight()` and `legacyRouteClass()`; `server.ts` keeps using them; verify the Backend suite passes unchanged.
-- [ ] 1.3 Add `http/route.ts` (route types, matcher, query evaluation, `preflight()`) and the declarative route table with params, query specs, methods, route class and read-only policy; verify typecheck.
-- [ ] 1.4 Add `route-table.test.ts` comparing `preflight()` with `legacyPreflight()`/`legacyRouteClass()` over the deterministic corpus in both read-only modes and recording the outcome digest; verify it passes together with the Backend suite.
+- [x] 1.1 Move the `BACKEND_*` path constants and size limits into `http/paths.ts` and re-export them unchanged from `server.ts`; verify `pnpm --filter @memon/backend typecheck` and the Backend suite pass.
+- [x] 1.2 Move the legacy allow-list, regex resolver, query validator and family key lists verbatim into `legacy-routes.ts`, adding `legacyPreflight()` and `legacyRouteClass()`; `server.ts` keeps using them; verify the Backend suite passes unchanged.
+- [x] 1.3 Add `http/route.ts` (route types, matcher, query evaluation, `preflight()`) and the declarative route table with params, query specs, methods, route class and read-only policy; verify typecheck.
+- [x] 1.4 Add `route-table.test.ts` comparing `preflight()` with `legacyPreflight()`/`legacyRouteClass()` over the deterministic corpus in both read-only modes and recording the outcome digest; verify it passes together with the Backend suite.
 
 ## 2. One pipeline
 
