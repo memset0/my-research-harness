@@ -199,3 +199,14 @@ Config-only. Rollback is reverting the commits; no on-disk or wire state.
   import) so a never-built CLI-only export can build the CLI.
 - Adopt `@memon/test-utils` in core tests and in the remaining ad-hoc
   `mkdtemp` sites.
+
+## Verification record
+
+- Typecheck: baseline warm `pnpm -r typecheck` 12-14 s (hook 12.8 s). New root
+  `pnpm typecheck`: cold with no cache 22.7 s, no-change 0.6 s (hook 0.64 s),
+  CLI-only or Web-only edit 2-4 s, core API change rebuilding every dependent
+  about 18-21 s (one `tsc -b` process, serial). With all `dist/` removed it is
+  green and creates no `dist/`; changing `formatIsoLocal`'s signature without a
+  build reports errors in core, backend, cli and web.
+- Root `pnpm test` on Node 22.19.0: test-utils 6, core 1005, skills 8,
+  backend 285, cli 298, web 1636; 0 failed. `biome check .` 0 errors.

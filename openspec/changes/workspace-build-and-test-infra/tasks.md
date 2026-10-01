@@ -18,4 +18,4 @@
 
 - [x] 3.1 Add `packages/test-utils/src/vitest-preset.ts` (timeout, reporter, `server-only` stub, aliases) and make every package's `vitest.config.ts` extend it, adding configs for backend and skills; verify each package suite runs
 - [x] 3.2 Mark Web tests that need no DOM with `// @vitest-environment node`, keeping only files that pass under node; verify the Web suite passes
-- [ ] 3.3 Run root `pnpm test` under Node 22.19.0, `biome check .`, the root typecheck, and `openspec validate workspace-build-and-test-infra --type change --strict`; all green
+- [x] 3.3 Run root `pnpm test` under Node 22.19.0, `biome check .`, the root typecheck, and `openspec validate workspace-build-and-test-infra --type change --strict`; all green
