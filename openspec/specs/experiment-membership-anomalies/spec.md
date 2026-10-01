@@ -2,95 +2,8 @@
 
 ## Purpose
 TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+
 ## Requirements
-### Requirement: Three anomaly classes
-
-The system SHALL detect three classes of inconsistency between the
-experiment side and the run side of the bidirectional binding. Each
-anomaly is an in-memory record produced by the indexer:
-
-| Code | Trigger |
-|---|---|
-| `ORPHAN_RUN` | a run dir exists, has empty/no `experiment:` field, and is in no exp's `runs[]` |
-| `PHANTOM_RUN_REF` | an exp's `runs[]` lists a name that is not a discovered run dir, or the named dir has no README |
-| `MISMATCH_EXPERIMENT_REF` | a run says `experiment: E_a` but `E_a.runs[]` doesn't contain it; OR `E.runs[]` contains a run whose `experiment:` field names a different exp |
-
-Each anomaly record SHALL carry:
-- `code` (one of the three above, or one of the slug-uniqueness codes
-  defined in the "Slug-uniqueness anomalies" requirement)
-- `project` (top-level project name)
-- `runId` (when the anomaly involves a run)
-- `experimentId` (when the anomaly involves an experiment)
-- `message` (human-readable single-sentence description)
-- `detectedAt` (ISO8601 with offset)
-
-Note: this requirement was named "Three anomaly classes" historically.
-The actual on-the-wire `ExperimentMembershipAnomalyCode` union is now
-SIX codes — the three binding codes here plus the three
-slug-uniqueness codes. The title is preserved for backward reference
-in commit logs and earlier change archives.
-
-#### Scenario: ORPHAN_RUN detected
-- **GIVEN** run `foo-260501-100000` with no `experiment:` field, and no
-  experiment doc lists it in `runs[]`
-- **WHEN** the indexer evaluates anomalies
-- **THEN** the anomaly set contains a `ORPHAN_RUN` record naming
-  `foo-260501-100000`
-
-#### Scenario: PHANTOM_RUN_REF detected
-- **GIVEN** an experiment `E0001-foo` with `runs: ["bar-260502-100000"]`
-  but `bar-260502-100000` does not exist on disk
-- **WHEN** the indexer evaluates anomalies
-- **THEN** the anomaly set contains a `PHANTOM_RUN_REF` record naming the
-  exp and the missing run
-
-#### Scenario: MISMATCH_EXPERIMENT_REF detected
-- **GIVEN** run `qux-260503-100000` with `experiment: E0003-baz`, and
-  `E0003-baz.runs[]` does NOT contain `qux-260503-100000`
-- **WHEN** the indexer evaluates anomalies
-- **THEN** the anomaly set contains a `MISMATCH_EXPERIMENT_REF` record
-  naming both sides
-
-### Requirement: Membership is the intersection
-
-A run SHALL be considered a member of experiment `E` only when BOTH the
-run's `experiment:` field equals `E.id` AND `E.runs[]` contains the run's
-dir base name. Single-sided claims do NOT count as membership and instead
-surface as anomalies.
-
-API responses for an experiment SHALL list only confirmed members in
-`runs[]`; phantom entries SHALL NOT appear in this list (they appear in
-the anomaly stream instead).
-
-#### Scenario: Confirmed binding
-- **GIVEN** run `r1` with `experiment: E0001` and `E0001.runs: ["r1"]`
-- **WHEN** the API returns `E0001`'s detail
-- **THEN** `runs[]` includes `r1`
-
-#### Scenario: One-sided claim does not count
-- **GIVEN** run `r2` with `experiment: E0001` but `E0001.runs[]` does
-  NOT contain `r2`
-- **WHEN** the API returns `E0001`'s detail
-- **THEN** `runs[]` does NOT include `r2`, AND `/api/anomalies` lists a
-  `MISMATCH_EXPERIMENT_REF` for the pair
-
-### Requirement: Anomaly recompute on mtime change
-
-The system SHALL re-evaluate anomaly state on every observed mtime
-advance to either an experiment doc or a run README. The recompute
-SHALL cover every experiment that is referenced by either side of the
-change:
-- For an experiment doc edit: re-evaluate the named experiment.
-- For a run README edit: re-evaluate (a) the experiment named in the run's
-  pre-edit `experiment:` field, and (b) the experiment named in the run's
-  post-edit `experiment:` field, if different.
-
-#### Scenario: Run is rebound to a different experiment
-- **GIVEN** a run with `experiment: E0001`, both sides agreeing
-- **WHEN** the user edits the run to `experiment: E0002` (and `E0001.runs`
-  still lists it)
-- **THEN** the next index pass produces a `MISMATCH_EXPERIMENT_REF` for
-  both `(run, E0001)` and `(run, E0002)`; manual cleanup is expected
 
 ### Requirement: Anomaly stream API
 
@@ -168,17 +81,17 @@ When the project has zero anomalies, the card SHALL NOT render.
 ### Requirement: Slug-uniqueness anomalies
 
 The membership join SHALL surface three v3 slug-uniqueness anomaly
-codes in addition to the three binding-class anomalies (`ORPHAN_RUN`,
-`PHANTOM_RUN_REF`, `MISMATCH_EXPERIMENT_REF`). These live on the
+codes in addition to the declaration anomalies (`PHANTOM_RUN_REF`,
+`MISMATCH_EXPERIMENT_REF`). These live on the
 same `ExperimentMembershipAnomaly` shape (same `code` / `project` /
 `runId` / `experimentId` / `message` / `detectedAt` fields) and
-appear in the same `/api/anomalies` and `memon doctor` surfaces:
+appear in the same `/api/anomalies` surface and in structural lint:
 
 | Code | Severity | Trigger |
 |---|---|---|
 | `DUPLICATE_EXPERIMENT_SLUG` | error | two exp docs share the same slug — normally impossible (the create-time allocator forbids it), but possible if someone manually copies a file |
 | `EXPERIMENT_SLUG_PREFIX_COLLISION` | error | one exp slug is a prefix of another (e.g. `fsdp` and `fsdp-collective`) — ambiguous when resolving run ids by prefix to their parent exp |
-| `RUN_SLUG_PREFIX_VIOLATION` | info | a confirmed-member run's slug doesn't start with its parent exp's slug; the CLI emits this as a soft warning at link-time and it surfaces here for already-bound runs too |
+| `RUN_SLUG_PREFIX_VIOLATION` | info | a declared member run's slug doesn't start with its declaring exp's slug; the CLI emits this as a soft warning at link-time and it surfaces here for already-declared runs too |
 
 Each anomaly emits a record per OFFENDING entity (e.g.
 `DUPLICATE_EXPERIMENT_SLUG` emits one record per colliding exp doc,
@@ -205,16 +118,61 @@ change). Only EXPERIMENT slug uniqueness is enforced.
 #### Scenario: RUN_SLUG_PREFIX_VIOLATION detected
 - **GIVEN** an exp `E0001-fsdp` whose `runs[]` includes
   `attention-260501-100000` (run slug "attention" doesn't start with
-  exp slug "fsdp"), with both sides agreeing on the binding
+  exp slug "fsdp"), declared by no other Experiment
 - **WHEN** the indexer evaluates anomalies
 - **THEN** the anomaly set contains a `RUN_SLUG_PREFIX_VIOLATION`
   record naming the exp + the run
 
 #### Scenario: Run slug repeat across timestamps does not fire
 - **GIVEN** runs `foo-260501-100000` and `foo-260601-200000` both
-  bound to `E0001-foo`
+  declared by `E0001-foo`
 - **WHEN** the indexer evaluates anomalies
 - **THEN** NO `DUPLICATE_RUN_SLUG` (or any other slug-collision
   anomaly) record is emitted for the pair — run slugs MAY repeat
   across distinct timestamps
 
+### Requirement: FS v7 validation checks declarations rather than intersections
+For FS v7, declaration validation SHALL replace the v6 bidirectional three-class model and confirmed-member intersection. It SHALL report malformed/unsafe paths, missing or unreadable targets, duplicate paths in one Experiment and the same path claimed by multiple Experiments. It SHALL NOT classify an unassigned Run or the absence of a Run parent field as an ownership anomaly. Unrelated Experiment identity checks remain in force.
+
+#### Scenario: Two owners claim one path
+- **WHEN** two Experiments list the same canonical Run path
+- **THEN** validation reports both owners and refuses an operation that would create that conflict
+
+#### Scenario: Missing member is not erased
+- **WHEN** a declared member directory is missing
+- **THEN** validation reports the missing target and preserves its declared membership for repair
+
+### Requirement: Declaration anomaly records
+
+The indexer SHALL produce in-memory anomaly records from Experiment declarations alone:
+
+| Code | Trigger |
+|---|---|
+| `PHANTOM_RUN_REF` | an Experiment `runs[]` entry resolves to no Run directory, to a directory without a README, or to an ambiguous legacy base name |
+| `MISMATCH_EXPERIMENT_REF` | the same Run path is declared by more than one Experiment |
+
+`ORPHAN_RUN` remains in the wire code union for compatibility but SHALL NOT be emitted: an unassigned Run is valid. A legacy Run `experiment` field is reported by Run structural lint, never as a membership anomaly. Each record SHALL carry `code` (one of the codes above or a slug-uniqueness code), `project`, `runId` (the declared reference) when a Run is involved, `experimentId` when an Experiment is involved, a one-sentence `message` and `detectedAt` (ISO8601 with offset).
+
+#### Scenario: PHANTOM_RUN_REF detected
+- **GIVEN** an experiment `E0001-foo` with `runs: ["logs/bar-260502-100000"]` but that directory does not exist
+- **WHEN** the indexer evaluates anomalies
+- **THEN** the anomaly set contains a `PHANTOM_RUN_REF` record naming the exp and the missing path, and the declaration is kept
+
+#### Scenario: Duplicate owners detected
+- **GIVEN** `E0001-foo` and `E0002-bar` both declare `logs/qux-260503-100000`
+- **WHEN** the indexer evaluates anomalies
+- **THEN** each Experiment gets a `MISMATCH_EXPERIMENT_REF` record for that path and neither lists it as a confirmed member
+
+#### Scenario: Unassigned Run is not an anomaly
+- **GIVEN** a Run that no Experiment declares
+- **WHEN** the indexer evaluates anomalies
+- **THEN** no anomaly record names that Run
+
+### Requirement: Anomaly recompute on declaration change
+
+The system SHALL re-evaluate a project's anomalies whenever an Experiment document changes, is created or is deleted, and whenever a Run directory appears or disappears. Editing a Run README SHALL NOT change ownership, so it needs no ownership recompute beyond refreshing that Run's displayed data.
+
+#### Scenario: Declaration moves a Run
+- **GIVEN** `E0001` declares `logs/r-260501-100000`
+- **WHEN** the path is removed from `E0001.runs[]` and added to `E0002.runs[]`
+- **THEN** the next recompute shows the Run under `E0002` only, with no anomaly

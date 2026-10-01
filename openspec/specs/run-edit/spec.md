@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Run README write with optimistic mtime + content hash
 
 The system SHALL accept run README writes via `PUT /api/runs/:id/readme`
@@ -170,31 +172,34 @@ The CLI SHALL expose `memon run rename <run-id-or-dir> <new-slug>
    error code. Run slugs themselves MAY repeat across different
    timestamps — the timestamp suffix already disambiguates the dir
    name, so a slug-only check would reject legitimate reruns.
-5. If the run has a parent experiment (`experiment:` field set), update
-   that experiment's `runs[]` array atomically — replace the old dir name
-   with the new dir name. If the run claims experiment `E_a` but `E_a`'s
-   `runs[]` does NOT list this run (a `MISMATCH_EXPERIMENT_REF` anomaly),
-   the rename SHALL fail with `BAD_STATE` and instruct the user to
-   reconcile the binding first.
+5. If an Experiment declares the run, replace the old project-relative
+   path with the new one in that Experiment's `runs[]` and in its
+   `results.yaml` Variant `runs`/`attempts`, re-reading the Experiment
+   after the directory move so concurrent edits are not replaced. The
+   owner is derived from Experiment declarations only; when more than one
+   Experiment declares the run, or the owner lists it only by a legacy
+   bare ID, the rename SHALL fail with `BAD_STATE` and instruct the user
+   to reconcile the declarations first.
 6. `git mv` (or `fs.rename`) the directory.
 7. Update the run README's frontmatter `id` field to the new dir name.
 8. Append a `[RENAME]` event to JOURNAL with body `{old, new}`.
 
 The command SHALL NOT touch the run's timestamp suffix. It SHALL NOT
 change `created_at` or `updated_at` (the rename is a naming op, not a
-content edit). It SHALL NOT update the parent experiment's `updated_at`.
+content edit). Rewriting the declaring Experiment's `runs[]` bumps that Experiment's
+`updated_at` like any other declaration edit.
 
 The command SHALL warn but not block if the soft prefix rule is violated
 (experiment slug is a prefix of the new run slug). The warning is to
 stderr; exit code 0.
 
 #### Scenario: Rename updates experiment back-reference
-- **GIVEN** a run `foo-260501-100000` with `experiment: E0001-foo` and
-  `E0001-foo.runs: ["foo-260501-100000"]`
+- **GIVEN** a run `logs/foo-260501-100000` and
+  `E0001-foo.runs: ["logs/foo-260501-100000"]`
 - **WHEN** the user runs `memon run rename foo-260501-100000 foo-baseline`
-- **THEN** the dir is now `foo-baseline-260501-100000`,
-  `E0001-foo.runs` is `["foo-baseline-260501-100000"]`, and a `[RENAME]`
-  event is appended to JOURNAL
+- **THEN** the dir is now `logs/foo-baseline-260501-100000`,
+  `E0001-foo.runs` is `["logs/foo-baseline-260501-100000"]`, and a `[RENAME]`
+  event is recorded
 
 #### Scenario: Dir-name collision rejected
 - **GIVEN** runs `foo-260501-100000` and `bar-260501-100000` exist
@@ -211,11 +216,11 @@ stderr; exit code 0.
   project at distinct timestamps, which is allowed
 
 #### Scenario: Anomaly state blocks rename
-- **GIVEN** a run claims `experiment: E0001-foo` but `E0001-foo.runs[]`
-  does not list it (a `MISMATCH_EXPERIMENT_REF`)
+- **GIVEN** both `E0001-foo.runs[]` and `E0002-bar.runs[]` declare the
+  run (a `MISMATCH_EXPERIMENT_REF`)
 - **WHEN** the user attempts `memon run rename` on this run
 - **THEN** the command exits with `BAD_STATE` and stderr names the
-  anomaly; the user must reconcile via `memon experiment link/unlink`
+  conflict; the user must reconcile via `memon experiment unlink`
   first
 
 ### Requirement: Run-side warnings do not exist in v3
@@ -290,4 +295,3 @@ When the target run has on-disk `archived: true`, the CLI SHALL emit the soft wa
 - **THEN** stderr contains `warning: <id> is archived; modifying anyway`
 - **AND** stdout JSON additionally contains `"warning":"archived"`
 - **AND** the status transitions to INTERRUPTED
-

@@ -518,15 +518,33 @@ The CLI SHALL use this exit code table for all subcommands. Skills depend on the
 |---|---|
 | 0 | success |
 | 1 | generic / unclassified failure |
-| 2 | usage / flag error (commander default) |
+| 2 | usage / flag error (including Commander option and argument parse failures) |
 | 4 | NOT_FOUND (resource doesn't exist) |
 | 9 | CONFLICT (mtime / hash lock failure — skill should refresh and retry) |
 | 11 | MEMON_TOO_OLD (project's `fs_convention_version` exceeds `FS_CONVENTION_VERSION`; user must upgrade memon) |
 | 13 | FORBIDDEN (path safety / permission) |
 
+Every classified failure (BAD_REQUEST, NOT_FOUND, CONFLICT, FORBIDDEN, MEMON_TOO_OLD) SHALL be written to stderr as the structured envelope `{"error":{"code","message","details?"}}` in both human and JSON output modes, and SHALL be recorded in the invocation receipt with the same code, so a lock conflict is recorded as a conflict rather than as an interrupted invocation. The exit code SHALL be derived from the error code by this table.
+
 #### Scenario: Skill retries on exit 9
 - **WHEN** any write command exits with code 9
 - **THEN** the stderr JSON has `error.code === "CONFLICT"` and stdout/stderr include enough state for the caller to retry without losing intent (current mtime + current content for README writes; current frontmatter for digest-mark)
+
+#### Scenario: Status and README lock conflicts use the structured envelope
+- **WHEN** `memon run status set`, `memon run readme write`, `memon experiment status set` or a `memon experiment warning` write finds the on-disk mtime or hash differs from the expected value
+- **THEN** the command exits 9
+- **AND** stderr is one `{"error":{"code":"CONFLICT",…,"details":{…}}}` line whose `details` carries the current mtime (and the current or actual hash when a hash was compared)
+- **AND** the invocation receipt records the outcome as a conflict
+
+#### Scenario: Missing hypothesis or run exits 4
+- **WHEN** `memon hypo show <id>` names a hypothesis that does not exist, or `memon show <id>` names a run that does not exist
+- **THEN** the command exits 4
+- **AND** stderr carries `{"error":{"code":"NOT_FOUND",…}}` and stdout is empty, regardless of `--format`
+
+#### Scenario: Parser failure exits 2
+- **WHEN** Commander rejects the command line (unknown option, missing required argument, invalid choice)
+- **THEN** the command exits 2
+- **AND** the invocation receipt, when one is written, records `BAD_REQUEST`
 
 #### Scenario: Forward-incompatible project root exits 11
 - **GIVEN** `<root>/.memon/version.json` has `fs_convention_version: 5` and the running memon has `FS_CONVENTION_VERSION === 3`
@@ -673,7 +691,7 @@ memon experiment warning delete   <id> <rowId>
 memon experiment warning list     <id> [--status open|resolved|all]
 ```
 
-The `id` argument SHALL accept either the canonical `E<NNNN>-<slug>` form or the slug alone (when the slug uniquely identifies an experiment). The `--run <run-dir>` option on `warning add` populates the `Run` column of the new row; absence means the warning is exp-scoped (rendered as `—`).
+The `id` argument SHALL accept either the canonical `E<NNNN>-<slug>` form or the slug alone (when the slug uniquely identifies an experiment). The `link`/`unlink` `<run-dir-or-id>` argument and `--from-run` accept a project-relative Run path or a unique Run ID; an ambiguous ID is rejected with its candidate paths. These commands edit the Experiment declaration only. The `--run <run-dir>` option on `warning add` populates the `Run` column of the new row; absence means the warning is exp-scoped (rendered as `—`).
 
 The `experiment create` and `experiment rename` commands' behaviors are detailed in the `experiment-edit` capability; the `experiment link` / `unlink` / `delete` commands' behaviors are detailed there as well.
 
@@ -723,20 +741,21 @@ same dirs, with these v3-specific differences:
 - `run readme write` updates the `updated_at` field in the supplied
   content per `run-edit`'s save handshake (the CLI does NOT auto-bump
   `updated_at`; it accepts whatever the caller sends).
-- `run rename` updates the parent experiment's `runs[]` array
-  atomically.
+- `run rename` rewrites the declaring Experiment's `runs[]` path (the
+  owner is derived from Experiment declarations); it never reads or
+  writes a Run-side parent field.
 
 #### Scenario: `run ls` returns JSON list
 - **WHEN** the user runs `memon run ls --project-root <p>`
 - **THEN** stdout is `{"runs": [...]}` with one entry per run dir,
-  including the parent `experiment` field when set
+  including the parent Experiment derived from declarations when one exists
 
 #### Scenario: `run rename` updates parent exp atomically
-- **WHEN** a run with `experiment: E0001-foo` is renamed via `memon run
+- **WHEN** a run declared by `E0001-foo` is renamed via `memon run
   rename`
 - **THEN** the corresponding `E0001-foo.runs[]` entry is updated to the
-  new dir name in the same operation; both files are atomically
-  consistent post-command
+  new project-relative path in the same operation, and the Run README
+  gains no `experiment` field
 
 ### Requirement: `memon share` subcommand family
 

@@ -19,7 +19,7 @@ layout segments, the project layout (`/p/[project]/layout.tsx`) SHALL
 set its own `title.template` that bakes the project name and the trailing
 ` · memon` suffix into a single format string. Pages under
 `/p/[project]/**` SHALL therefore emit only the segment-specific
-prefix (e.g. `Digests`, `D0001 · Digests`), and the project layout's
+prefix (e.g. `Reports`, `R0001 · Reports`), and the project layout's
 template prepends `· <project> · memon`.
 
 The template separator SHALL be the middle-dot character `·` (U+00B7)
@@ -49,42 +49,6 @@ be `<project> · memon`.
 #### Scenario: Project list renders project name
 - **WHEN** the user navigates to `/p/my-project`
 - **THEN** the rendered `<title>` is `my-project · memon`
-
-### Requirement: Project sub-page titles
-
-Each project sub-page route (`digests`, `reports`, `hypotheses`, `journal`) SHALL emit a title of the form `<Section> · <project>`, where `<Section>` is the capitalized English noun for the page (`Digests`, `Reports`, `Hypotheses`, `Journal` respectively) and `<project>` is the decoded project name from the URL.
-
-#### Scenario: Digests list
-- **WHEN** the user navigates to `/p/my-project/digests`
-- **THEN** the rendered `<title>` is `Digests · my-project · memon`
-
-#### Scenario: Reports list
-- **WHEN** the user navigates to `/p/my-project/reports`
-- **THEN** the rendered `<title>` is `Reports · my-project · memon`
-
-#### Scenario: Hypotheses page
-- **WHEN** the user navigates to `/p/my-project/hypotheses`
-- **THEN** the rendered `<title>` is `Hypotheses · my-project · memon`
-
-#### Scenario: Journal page
-- **WHEN** the user navigates to `/p/my-project/journal`
-- **THEN** the rendered `<title>` is `Journal · my-project · memon`
-
-### Requirement: Digest and Report detail titles
-
-Digest and Report detail routes SHALL emit a title of the form `<id> · <Section> · <project>`, where `<id>` is the raw decoded id (e.g. `D0007`, `R0123`) and `<Section>` is `Digests` or `Reports` respectively.
-
-If the id does not match the expected `D\d{4}` / `R\d{4}` shape, the
-page already returns a Next.js 404 and the title is irrelevant — but
-`generateMetadata` SHALL still return without throwing.
-
-#### Scenario: Digest detail
-- **WHEN** the user navigates to `/p/my-project/digests/D0007`
-- **THEN** the rendered `<title>` is `D0007 · Digests · my-project · memon`
-
-#### Scenario: Report detail
-- **WHEN** the user navigates to `/p/my-project/reports/R0123`
-- **THEN** the rendered `<title>` is `R0123 · Reports · my-project · memon`
 
 ### Requirement: Experiment detail title
 
@@ -160,7 +124,7 @@ The wiki list route `/p/<project>/wiki` SHALL emit a title of the form `Wiki · 
 
 If the id does not match the expected `W\d{4}` shape, the page already returns a Next.js 404 and the title is irrelevant — but `generateMetadata` SHALL still return without throwing.
 
-Report titles are unaffected: `/p/<project>/reports` and `/p/<project>/reports/<id>` keep the titles specified by the requirements "Project sub-page titles" and "Digest and Report detail titles".
+Report titles are unaffected: `/p/<project>/reports` and `/p/<project>/reports/<id>` keep the titles specified by the requirements "Project section page titles" and "Report detail titles".
 
 #### Scenario: Wiki list
 - **WHEN** the user navigates to `/p/my-project/wiki`
@@ -177,3 +141,29 @@ Report titles are unaffected: `/p/<project>/reports` and `/p/<project>/reports/<
 #### Scenario: Malformed wiki id does not throw
 - **WHEN** the user navigates to `/p/my-project/wiki/nope`
 - **THEN** `generateMetadata` returns a fallback title without throwing and the page body owns the 404 response
+
+### Requirement: Project section page titles
+
+Each project sub-page route (`reports`, `hypotheses`, `journal`) SHALL emit a title of the form `<Section> · <project>`, where `<Section>` is the capitalized English noun for the page (`Reports`, `Hypotheses`, `Journal` respectively) and `<project>` is the decoded project name from the URL.
+
+#### Scenario: Reports list
+- **WHEN** the user navigates to `/p/my-project/reports`
+- **THEN** the rendered `<title>` is `Reports · my-project · memon`
+
+#### Scenario: Hypotheses page
+- **WHEN** the user navigates to `/p/my-project/hypotheses`
+- **THEN** the rendered `<title>` is `Hypotheses · my-project · memon`
+
+#### Scenario: Journal page
+- **WHEN** the user navigates to `/p/my-project/journal`
+- **THEN** the rendered `<title>` is `Journal · my-project · memon`
+
+### Requirement: Report detail titles
+
+Report detail routes SHALL emit a title of the form `<id> · Reports · <project>`, where `<id>` is the raw decoded id (e.g. `R0123`).
+
+If the id does not match the expected `R\d{4}` shape, the page already returns a Next.js 404 and the title is irrelevant — but `generateMetadata` SHALL still return without throwing.
+
+#### Scenario: Report detail
+- **WHEN** the user navigates to `/p/my-project/reports/R0123`
+- **THEN** the rendered `<title>` is `R0123 · Reports · my-project · memon`

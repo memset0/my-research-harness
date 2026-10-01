@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change fs-convention-migration-system. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: `FS_CONVENTION_VERSION` is an integer constant exported from `@memon/core`
 
 `@memon/core` SHALL export `FS_CONVENTION_VERSION`, a positive integer
@@ -114,28 +116,26 @@ Both functions SHALL call `assertWithinProjectRoots()` (the existing path-safety
 - **WHEN** `readFsVersion(<root>)` or `writeFsVersion(<root>, record)` is called
 - **THEN** it throws the same `PATH_OUTSIDE_PROJECT_ROOTS` error that other path-accepting APIs throw
 
-### Requirement: Value after this change is 6 with per-file schema compatibility
+### Requirement: Value after this change is 7 with Experiment-owned Run paths
 
-`FS_CONVENTION_VERSION` SHALL equal `6`. Core SHALL publish the expected schema version for each structured YAML kind. A project marker and its files SHALL be treated as inconsistent when the global marker says v6 but a required sidecar is missing, has no schema version, is older, or is newer than supported.
+`FS_CONVENTION_VERSION` SHALL equal `7`, and `MEMON_RELEASE` SHALL start the matching `7.0.0` release. FS v7 keeps every v6 per-file YAML schema version; its breaking changes are that Experiment `runs` declare project-relative Run paths as the sole membership authority, Run READMEs no longer carry `experiment`, and legacy `docs/digests/` files become `digest`-kind Wiki pages. A marker SHALL claim v7 only after the reviewed v6-to-v7 migration has verified those invariants.
 
 #### Scenario: Constant has the new value
-- **WHEN** this change is archived
-- **THEN** `FS_CONVENTION_VERSION === 6` in `packages/core/src/version.ts`
-- **AND** the staged v5-to-v6 migration guide and validator exist
+- **WHEN** the v7 release commit lands
+- **THEN** `FS_CONVENTION_VERSION === 7` and `MEMON_RELEASE === '7.0.0'` in `packages/core/src/version.ts`
+- **AND** `packages/core/migrations/v6-to-v7.md` exists and follows the guide-authoring spec
 
-#### Scenario: Schema after first install on v4
+#### Scenario: Fresh install
 - **GIVEN** a project root with no prior `.memon/` directory
-- **WHEN** the current v6 skills are installed
-- **THEN** the new marker records `fs_convention_version: 6`
-- **AND** each subsequently created structured YAML file uses the schema version expected for its document kind
+- **WHEN** v7 skills are installed
+- **THEN** the new marker records `fs_convention_version: 7` and each created structured YAML file uses the unchanged v6 per-kind schema version
 
-#### Scenario: last_migrated_at advances after v3→v4 migration
-- **GIVEN** a legacy project is still migrating through the v3-to-v4 step
-- **WHEN** that step succeeds before later steps continue to v6
-- **THEN** `last_migrated_at` advances for the completed v3-to-v4 step
-- **AND** the global marker does not claim v6 until all later staged migration work is published successfully
+#### Scenario: v6 marker under v7 tooling
+- **GIVEN** a project whose marker records `fs_convention_version: 6`
+- **WHEN** `memon fs-version check` runs with v7 tooling
+- **THEN** it reports `behind` and recommends the reviewed v6-to-v7 migration; it does not rewrite the marker
 
-#### Scenario: Partial YAML migration blocks v6 completion
-- **GIVEN** the marker says v6 but one `results.yaml` remains at an unsupported version
-- **WHEN** doctor or structured lint runs
+#### Scenario: Partial YAML migration still blocks completion
+- **GIVEN** the marker says v7 but one `results.yaml` remains at an unsupported schema version
+- **WHEN** structured lint runs
 - **THEN** it reports an FS/YAML version mismatch and exits non-zero

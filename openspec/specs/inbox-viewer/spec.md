@@ -5,68 +5,6 @@ Display report and historical digest documents with appropriate navigation and s
 
 ## Requirements
 
-### Requirement: Desktop inbox layout (≥ md breakpoint)
-
-The dashboard SHALL provide an inbox-shaped layout for browsing per-project
-markdown artifact families. On viewports at the `md` breakpoint or wider, the
-layout SHALL render two columns by default: a left rail (~280–320 px) holding a
-scrollable list of items, and a right pane (flex) holding the rendered markdown
-of the currently selected item. The active item in the rail SHALL be visually
-highlighted.
-
-On Report routes, the desktop rail SHALL include an accessible control that
-lets the user hide it. Hiding the rail SHALL remove it from the layout and let
-the right pane reclaim the available width. A corresponding accessible control
-SHALL remain visible in the right pane so the user can show the rail again. The
-rail SHALL be shown by default when the Report inbox mounts. Digest routes SHALL
-retain their always-visible desktop rail.
-
-When the user clicks Edit, the layout SHALL add a Monaco editor to the right of
-the rendered markdown. This produces three columns when the list rail is shown
-and two columns when a Report user has hidden the list rail. Closing the editor
-(Save or Cancel) SHALL preserve the current Report rail visibility and remove
-the editor.
-
-#### Scenario: Two-column read mode default
-
-- **WHEN** the user opens an inbox URL at desktop width
-- **THEN** the layout renders the left rail (file list) and the right pane
-  (rendered markdown of the selected item, or empty-state if none selected)
-- **AND** no Monaco editor is mounted
-
-#### Scenario: Report picker can be hidden and restored
-
-- **GIVEN** the user opens a Report detail route at desktop width
-- **WHEN** the user activates the Hide reports control
-- **THEN** the Report rail is removed and the rendered Report pane expands into
-  the reclaimed width
-- **AND** a Show reports control remains visible and keyboard accessible
-- **WHEN** the user activates Show reports
-- **THEN** the Report rail returns with the same active Report selected
-
-#### Scenario: Digest rail remains always visible
-
-- **WHEN** the user opens a Digest detail route at desktop width
-- **THEN** the left Digest rail is visible
-- **AND** Report-specific Hide reports and Show reports controls are absent
-
-#### Scenario: Switch to three-column edit mode
-
-- **GIVEN** the user is reading a Report at desktop width
-- **WHEN** the user clicks the Edit button in the right pane's header
-- **THEN** the layout adds a Monaco editor pane (~440 px) to the right of the
-  rendered markdown, and the rendered markdown stays visible as a live preview
-- **AND** the editor mounts with the current file's content as its initial value
-- **AND** the layout has three columns when the Report rail is shown and two
-  columns when it is hidden
-
-#### Scenario: Return to read mode on save
-
-- **WHEN** the user clicks Save in the editor and the write succeeds
-- **THEN** the editor pane unmounts and the rendered markdown updates to reflect
-  the saved content
-- **AND** a Report rail returns to its pre-edit shown or hidden state
-
 ### Requirement: Mobile inbox layout (< md breakpoint)
 
 On viewports narrower than the `md` breakpoint, the layout SHALL render a single column showing the rendered markdown of the currently selected item (or an empty-state when none is selected). A floating action button (FAB) SHALL be anchored at `bottom-right` and SHALL be visible only on mobile (`md:hidden`). Tapping the FAB SHALL open a Sheet drawer from the right edge containing the same scrollable item list. Selecting an item from the drawer SHALL navigate to that item's URL and close the drawer.
@@ -119,7 +57,7 @@ The editor SHALL submit writes with `expectedMtime` and `expectedHash` (sha1 of 
 
 ### Requirement: Live updates from external writes
 
-The inbox SHALL react to file additions, deletions, and content edits performed outside the dashboard (by a skill writing a new digest, or `code` editing a report) without a full-page reload. The trigger SHALL be the same SSE invalidation channel the existing Poller uses for experiments / journal / hypotheses, extended with `reports` and `digests` event kinds.
+The inbox SHALL react to file additions, deletions, and content edits performed outside the dashboard (by a skill writing a new report, or `code` editing a report) without a full-page reload. The trigger SHALL be the same SSE invalidation channel the existing Poller uses for experiments / journal / hypotheses, extended with the `reports` event kind.
 
 #### Scenario: New file appears in the rail
 - **WHEN** a skill writes a new file matching the kind's filename pattern to the watched directory
@@ -129,50 +67,6 @@ The inbox SHALL react to file additions, deletions, and content edits performed 
 #### Scenario: External edit refreshes rendered view
 - **WHEN** an external process edits the currently-selected file
 - **THEN** the rendered markdown view updates to reflect the new content (assuming no editor is open; if the editor is open the user receives the conflict toast on save instead)
-
-### Requirement: Empty state copy is kind-specific
-
-The inbox SHALL render kind-specific empty states. Reports SHALL identify memon-write-report as the authoring workflow. Digests SHALL describe the surface as historical documents and direct new research synthesis to Wiki, without advertising the removed digest skill or Journal cursor. Copy SHALL remain a property of the shared layout rather than hardcoded behavior.
-
-#### Scenario: Empty reports directory
-- **WHEN** a project has no matching Report files
-- **THEN** the pane points to memon-write-report and the rail shows an empty placeholder
-
-#### Scenario: Empty digests directory
-- **WHEN** a project has no matching Digest files
-- **THEN** the pane identifies a historical digest collection and does not offer the retired digest skill
-
-### Requirement: Frontmatter property panel above rendered body
-
-When the currently-selected report or digest content begins with a YAML frontmatter block (a `---\n` opening fence followed by a `\n---` closing fence at the start of the file), the right pane SHALL split the content into (a) frontmatter and (b) body, and SHALL render the frontmatter as a Notion-style property panel above the rendered markdown body. The literal `---` fences SHALL NOT appear in the rendered output, and the keys/values inside the frontmatter SHALL NOT be passed to the markdown renderer.
-
-The property panel SHALL render as a 2-column key/value grid:
-- The label cell SHALL display the YAML key (lowercase, monospace, muted color) with stable left-aligned width across rows.
-- The value cell SHALL display the parsed value with type-aware formatting: arrays as inline badge chips (one badge per element), strings/numbers/booleans as plain monospace text, and `null`/empty values as a dim em-dash placeholder.
-
-When the file has NO leading frontmatter block, the panel SHALL be omitted and the body SHALL render as today (without spurious `---` artifacts, since none are present in the source).
-
-When the leading `---\n…\n---` block fails to parse as YAML, the renderer SHALL fall back to passing the entire original content (including fences) to the markdown renderer; no panel is shown.
-
-#### Scenario: Report with frontmatter renders panel and clean body
-- **GIVEN** a report whose content starts with `---\nhypothesis: H0001\nstatus: CONFIRMED\nexperiments: [foo-260503-082800, bar-260504-091500]\n---\n# Findings\n…`
-- **WHEN** the user selects that report
-- **THEN** the right pane renders a property panel with rows `hypothesis: H0001`, `status: CONFIRMED`, `experiments: <two badges>`, followed below by the rendered markdown body starting at `# Findings`
-- **AND** no `---` characters or raw frontmatter text are visible in the rendered surface
-
-#### Scenario: Digest without frontmatter renders body only
-- **GIVEN** a digest whose content begins directly with `# 2026-05-03`
-- **WHEN** the user selects that digest
-- **THEN** the right pane renders only the markdown body, with no property panel above it
-
-#### Scenario: Malformed frontmatter falls back gracefully
-- **GIVEN** a report whose content starts with `---\nbroken: [unbalanced\n---\nbody…`
-- **WHEN** the user selects that report
-- **THEN** the right pane shows no panel and renders the full original content via the markdown renderer (the user can still read the body and open the editor to fix the frontmatter)
-
-#### Scenario: Editor still operates on the full file
-- **WHEN** the user clicks Edit on a report with frontmatter
-- **THEN** the Monaco buffer is initialised with the complete on-disk content INCLUDING the `---` fences and frontmatter keys (the panel is a render-side concern, not a storage transformation)
 
 ### Requirement: Inline code in inbox markdown is a chip, not styled prose
 
@@ -200,7 +94,102 @@ The chip styling SHALL apply ONLY to inline `<code>`. Code rendered inside fence
 - **THEN** the inner `<code>` element inside the `<pre>` has a transparent background, zero padding, and no border-radius — the visible block styling comes from the surrounding `<pre>`
 - **AND** the chip's muted background does NOT appear on either the `<code>` or the `<pre>`
 
-### Requirement: No horizontal scrollbar on the detail pane
+### Requirement: Desktop Report inbox layout (≥ md breakpoint)
+
+The dashboard SHALL provide an inbox-shaped layout for browsing per-project
+markdown artifact families. On viewports at the `md` breakpoint or wider, the
+layout SHALL render two columns by default: a left rail (~280–320 px) holding a
+scrollable list of items, and a right pane (flex) holding the rendered markdown
+of the currently selected item. The active item in the rail SHALL be visually
+highlighted.
+
+On Report routes, the desktop rail SHALL include an accessible control that
+lets the user hide it. Hiding the rail SHALL remove it from the layout and let
+the right pane reclaim the available width. A corresponding accessible control
+SHALL remain visible in the right pane so the user can show the rail again. The
+rail SHALL be shown by default when the Report inbox mounts.
+
+When the user clicks Edit, the layout SHALL add a Monaco editor to the right of
+the rendered markdown. This produces three columns when the list rail is shown
+and two columns when a Report user has hidden the list rail. Closing the editor
+(Save or Cancel) SHALL preserve the current Report rail visibility and remove
+the editor.
+
+#### Scenario: Two-column read mode default
+
+- **WHEN** the user opens an inbox URL at desktop width
+- **THEN** the layout renders the left rail (file list) and the right pane
+  (rendered markdown of the selected item, or empty-state if none selected)
+- **AND** no Monaco editor is mounted
+
+#### Scenario: Report picker can be hidden and restored
+
+- **GIVEN** the user opens a Report detail route at desktop width
+- **WHEN** the user activates the Hide reports control
+- **THEN** the Report rail is removed and the rendered Report pane expands into
+  the reclaimed width
+- **AND** a Show reports control remains visible and keyboard accessible
+- **WHEN** the user activates Show reports
+- **THEN** the Report rail returns with the same active Report selected
+
+#### Scenario: Switch to three-column edit mode
+
+- **GIVEN** the user is reading a Report at desktop width
+- **WHEN** the user clicks the Edit button in the right pane's header
+- **THEN** the layout adds a Monaco editor pane (~440 px) to the right of the
+  rendered markdown, and the rendered markdown stays visible as a live preview
+- **AND** the editor mounts with the current file's content as its initial value
+- **AND** the layout has three columns when the Report rail is shown and two
+  columns when it is hidden
+
+#### Scenario: Return to read mode on save
+
+- **WHEN** the user clicks Save in the editor and the write succeeds
+- **THEN** the editor pane unmounts and the rendered markdown updates to reflect
+  the saved content
+- **AND** a Report rail returns to its pre-edit shown or hidden state
+
+### Requirement: Report inbox empty state names its authoring workflow
+
+The inbox SHALL render kind-specific empty states. Reports SHALL identify memon-write-report as the authoring workflow. Copy SHALL remain a property of the shared layout rather than hardcoded behavior.
+
+#### Scenario: Empty reports directory
+- **WHEN** a project has no matching Report files
+- **THEN** the pane points to memon-write-report and the rail shows an empty placeholder
+
+### Requirement: Report frontmatter property panel above rendered body
+
+When the currently-selected Report content begins with a YAML frontmatter block (a `---\n` opening fence followed by a `\n---` closing fence at the start of the file), the right pane SHALL split the content into (a) frontmatter and (b) body, and SHALL render the frontmatter as a Notion-style property panel above the rendered markdown body. The literal `---` fences SHALL NOT appear in the rendered output, and the keys/values inside the frontmatter SHALL NOT be passed to the markdown renderer.
+
+The property panel SHALL render as a 2-column key/value grid:
+- The label cell SHALL display the YAML key (lowercase, monospace, muted color) with stable left-aligned width across rows.
+- The value cell SHALL display the parsed value with type-aware formatting: arrays as inline badge chips (one badge per element), strings/numbers/booleans as plain monospace text, and `null`/empty values as a dim em-dash placeholder.
+
+When the file has NO leading frontmatter block, the panel SHALL be omitted and the body SHALL render as today (without spurious `---` artifacts, since none are present in the source).
+
+When the leading `---\n…\n---` block fails to parse as YAML, the renderer SHALL fall back to passing the entire original content (including fences) to the markdown renderer; no panel is shown.
+
+#### Scenario: Report with frontmatter renders panel and clean body
+- **GIVEN** a report whose content starts with `---\nhypothesis: H0001\nstatus: CONFIRMED\nexperiments: [foo-260503-082800, bar-260504-091500]\n---\n# Findings\n…`
+- **WHEN** the user selects that report
+- **THEN** the right pane renders a property panel with rows `hypothesis: H0001`, `status: CONFIRMED`, `experiments: <two badges>`, followed below by the rendered markdown body starting at `# Findings`
+- **AND** no `---` characters or raw frontmatter text are visible in the rendered surface
+
+#### Scenario: Report without frontmatter renders body only
+- **GIVEN** a report whose content begins directly with `# 2026-05-03`
+- **WHEN** the user selects that report
+- **THEN** the right pane renders only the markdown body, with no property panel above it
+
+#### Scenario: Malformed frontmatter falls back gracefully
+- **GIVEN** a report whose content starts with `---\nbroken: [unbalanced\n---\nbody…`
+- **WHEN** the user selects that report
+- **THEN** the right pane shows no panel and renders the full original content via the markdown renderer (the user can still read the body and open the editor to fix the frontmatter)
+
+#### Scenario: Editor still operates on the full file
+- **WHEN** the user clicks Edit on a report with frontmatter
+- **THEN** the Monaco buffer is initialised with the complete on-disk content INCLUDING the `---` fences and frontmatter keys (the panel is a render-side concern, not a storage transformation)
+
+### Requirement: No horizontal scrollbar on the Report detail pane
 
 The inbox-shell's detail pane SHALL NOT produce a horizontal
 scrollbar at any of its scroll-context layers (the right `<main>`
@@ -228,14 +217,7 @@ vertically.
 - **AND** the `<pre>` block's own `overflow-x: auto` (from the
   prose typography defaults) is preserved
 
-#### Scenario: Digests detail produces no horizontal scrollbar
-- **GIVEN** the user opens `/p/<project>/digests/<id>` with any
-  digest content
-- **WHEN** the page renders
-- **THEN** the same `overflow-x-hidden` pairing applies (the same
-  inbox-shell powers Digests)
-
-### Requirement: Rendered Report body uses a distinct document surface
+### Requirement: Selected Reports use a distinct document surface
 
 The scrollable body area containing a selected Report's frontmatter properties
 and rendered Markdown SHALL use the semantic card background rather than
@@ -245,9 +227,8 @@ in the dark theme it SHALL use the theme's card color instead of forcing a light
 color. The document background SHALL cover the available reading pane below its
 toolbar, including space beyond short Report content.
 
-This treatment SHALL be scoped to selected Reports. Digest reading surfaces and
-Report/Digest empty, loading, and error states SHALL retain their existing
-background behavior.
+This treatment SHALL be scoped to selected Reports. Report empty, loading, and
+error states SHALL retain their existing background behavior.
 
 #### Scenario: Report body is white in the light theme
 
@@ -265,12 +246,7 @@ background behavior.
 - **THEN** the Report reading surface uses the dark card token
 - **AND** no hard-coded white surface is introduced
 
-#### Scenario: Digest body is unchanged
-
-- **WHEN** the user opens `/p/<project>/digests/<id>`
-- **THEN** its rendered body keeps the existing inbox background treatment
-
-### Requirement: Report picker entries use compact selectable cards
+### Requirement: Report picker entries render as compact selectable cards
 
 Each Report entry in the desktop rail and mobile Report-list Sheet SHALL render
 as one compact card-like link. The list SHALL use consistent inset padding and
@@ -283,8 +259,6 @@ provide a subtle accent treatment, keyboard focus SHALL have a visible focus
 ring, and the selected Report SHALL have a primary-border (or equivalently
 prominent semantic) active treatment. These states SHALL use the existing
 compact selectable-card rhythm without copying unrelated actions or metadata.
-
-Digest picker entries SHALL keep their existing row presentation.
 
 #### Scenario: Report entries render as spaced cards
 
@@ -309,13 +283,7 @@ Digest picker entries SHALL keep their existing row presentation.
 - **AND** an unselected card receives a subtle accent treatment on hover
 - **AND** keyboard focus is visibly indicated by the standard focus ring
 
-#### Scenario: Digest entries retain row styling
-
-- **WHEN** the Digest picker renders
-- **THEN** its entries keep the existing divider-row presentation rather than
-  adopting the Report card treatment
-
-### Requirement: Report frontmatter timestamps are human-readable
+### Requirement: Report frontmatter timestamps render human-readable
 
 When a selected Report's frontmatter contains the canonical `created_at` or
 `updated_at` key with a valid ISO 8601 timestamp, the property panel SHALL
@@ -327,7 +295,7 @@ The formatted value SHALL expose the source ISO timestamp, or its normalized ISO
 equivalent for a parsed date value, as secondary hover information. An invalid
 timestamp SHALL fall back to the existing scalar presentation, and an empty
 value SHALL retain the existing em-dash placeholder. Other Report frontmatter
-keys and all Digest frontmatter values SHALL retain their existing formatting.
+keys SHALL retain their existing formatting.
 
 #### Scenario: Valid Report timestamps use local date-time formatting
 
@@ -352,14 +320,13 @@ keys and all Digest frontmatter values SHALL retain their existing formatting.
 - **THEN** the invalid scalar remains visible unchanged
 - **AND** the empty value renders the existing em-dash placeholder
 
-#### Scenario: Non-time and Digest frontmatter formatting is unchanged
+#### Scenario: Non-time frontmatter formatting is unchanged
 
-- **WHEN** the property panel renders another Report key or any Digest
-  frontmatter key
+- **WHEN** the property panel renders another Report key
 - **THEN** strings, numbers, booleans, arrays, objects, and timestamp-looking
   values keep their existing formatting behavior
 
-### Requirement: Report picker visibility persists across visits
+### Requirement: Desktop Report picker visibility persists across visits
 
 The shown/hidden state of the desktop Report picker SHALL be a user preference
 shared across Report inbox routes and projects. With no saved preference, the
@@ -373,7 +340,7 @@ existing owner-keyed UI-preferences store. Viewer and anonymous sessions SHALL
 remain browser-local and SHALL NOT read or write owner preference storage.
 
 This preference SHALL control only the desktop Report rail. The mobile
-Report-list Sheet and all Digest rails SHALL retain their existing behavior.
+Report-list Sheet SHALL retain its existing behavior.
 
 #### Scenario: First visit defaults to shown
 
@@ -419,15 +386,13 @@ Report-list Sheet and all Digest rails SHALL retain their existing behavior.
 - **THEN** only browser storage is updated
 - **AND** no owner UI-preference row is read or written
 
-#### Scenario: Mobile and Digest navigation are unaffected
+#### Scenario: Mobile navigation is unaffected
 
 - **GIVEN** the persisted desktop Report picker preference is hidden
-- **WHEN** the user opens the Report inbox below the desktop breakpoint or opens
-  a Digest inbox
+- **WHEN** the user opens the Report inbox below the desktop breakpoint
 - **THEN** the mobile Report-list Sheet remains available
-- **AND** the Digest desktop rail remains visible
 
-### Requirement: Collapsed Report identity opens a quick switcher
+### Requirement: Collapsed Report identity opens a Report quick switcher
 
 When a selected Report is displayed at desktop width and the Report picker is
 hidden, the toolbar's current Report identity SHALL combine the Report ID and
@@ -450,7 +415,7 @@ message.
 When the desktop picker is shown, the Report identity SHALL remain ordinary
 toolbar metadata and SHALL NOT open a duplicate quick switcher. On mobile, the
 identity SHALL remain non-interactive and the existing Report-list Sheet SHALL
-remain the switching surface. Digest toolbars SHALL NOT gain this trigger.
+remain the switching surface.
 
 #### Scenario: Collapsed identity opens the Report list
 
@@ -485,22 +450,22 @@ remain the switching surface. Digest toolbars SHALL NOT gain this trigger.
 - **THEN** the Popover closes
 - **AND** keyboard focus returns to the identity trigger
 
-#### Scenario: Expanded, mobile, and Digest identities stay non-interactive
+#### Scenario: Expanded and mobile identities stay non-interactive
 
-- **WHEN** the Report rail is expanded, the Report page is below the desktop
-  breakpoint, or a Digest is selected
+- **WHEN** the Report rail is expanded or the Report page is below the desktop
+  breakpoint
 - **THEN** the current artifact identity does not expose the Report
   quick-switch trigger
 - **AND** the existing desktop rail or mobile Sheet remains the applicable
   switching mechanism
 
-### Requirement: Report bodies begin with a generated table of contents
+### Requirement: Report bodies open with a generated table of contents
 
 The full-page and side-pane Report reading surfaces SHALL generate an accessible table of contents from the Report Markdown's level-two through level-six headings. The table of contents SHALL appear after any frontmatter presentation and before the rendered Markdown body, SHALL omit the document-level H1 title, and SHALL not render when the body has no eligible section headings.
 
 Each directory entry SHALL link to the matching rendered heading. Heading IDs SHALL be stable for the same content, scoped with a Report-specific prefix so they do not collide with the left document, preserve readable Unicode heading text, and disambiguate repeated heading labels deterministically. Visual indentation SHALL reflect the source heading depth.
 
-Digest bodies and Markdown surfaces outside Report rendering SHALL retain their existing behavior without a generated table of contents.
+Markdown surfaces outside Report rendering SHALL NOT receive this Report-prefixed table of contents; any outline they render is specified by their owning capability.
 
 #### Scenario: Full Report exposes linked sections
 - **GIVEN** a full-page Report body contains an H1 title, two H2 sections, and an H3 subsection
@@ -521,14 +486,6 @@ Digest bodies and Markdown surfaces outside Report rendering SHALL retain their 
 - **THEN** repeated labels receive distinct deterministic target IDs
 - **AND** Unicode labels remain readable in the directory and target anchors
 
-#### Scenario: Empty outlines and Digests remain absent
-- **WHEN** a Report contains only its H1 title, or a Digest contains section headings
+#### Scenario: Empty outlines remain absent
+- **WHEN** a Report contains only its H1 title
 - **THEN** no generated Report table of contents is rendered for that body
-
-### Requirement: Managed inbox editing excludes historical digests
-
-Desktop/mobile edit and optimistic-save behavior SHALL continue to apply to supported editable artifacts such as Reports. Digest routes SHALL remain read-only with no Edit action, Monaco mutation mode or PUT call. Existing read layout, selection, mobile navigation, frontmatter display and external-file refresh SHALL remain available.
-
-#### Scenario: Digest route on mobile
-- **WHEN** an owner opens a historical Digest on a narrow viewport
-- **THEN** reading and file selection work but no edit Sheet can be opened

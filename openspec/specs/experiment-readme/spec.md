@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Status enum with uppercase canonical form
 
 The `status` field SHALL be stored in uppercase canonical form (`PENDING`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/`UNKNOWN`). The frontend SHALL render each status with a fixed emoji prefix:
@@ -51,11 +53,13 @@ Required front matter fields:
   edit; SHALL NOT be auto-rewritten by the parser
 
 Optional front matter fields:
-- `runs` (array of strings) — run dir base names (e.g.
-  `["zero-snr-260502-110000"]`). Each element SHALL match the run dir
-  regex `^.+-\d{6}-\d{6}$`. Elements that don't match SHALL be dropped
-  from the parsed array with a structured warning
-  `code: 'INVALID_RUN_REF'`.
+- `runs` (array of strings) — the sole Run-membership authority:
+  canonical POSIX project-root-relative Run directory paths (e.g.
+  `["logs/zero-snr-260502-110000"]`) under a supported Run root. A legacy
+  bare Run directory base name is still accepted on read (see
+  "FS v7 Experiment declarations own membership") but is never written.
+  Elements that are neither SHALL be dropped from the parsed array with a
+  structured warning `code: 'INVALID_RUN_REF'`.
 - `hypotheses` (array of strings) — `H<NNNN>` IDs (4-digit zero-padded);
   invalid elements surface `INVALID_HYPOTHESIS_REF` and are dropped, the
   rest of the array stays.
@@ -79,8 +83,8 @@ Canonical key order in the YAML output: `id`, `slug`, `title`, `status`, `archiv
   index entry uses the filename-derived id
 
 #### Scenario: Invalid run reference dropped
-- **WHEN** `runs: [zero-snr-260502-110000, totally-invalid-name]`
-- **THEN** the parser stores `["zero-snr-260502-110000"]` and surfaces an
+- **WHEN** `runs: [logs/zero-snr-260502-110000, totally-invalid-name]`
+- **THEN** the parser stores `["logs/zero-snr-260502-110000"]` and surfaces an
   `INVALID_RUN_REF` warning naming the dropped element
 
 #### Scenario: Missing status field defaults to OPEN with parse warning
@@ -229,8 +233,9 @@ preceded by a single descriptive paragraph but SHALL NOT contain other
 prose between rows.
 
 The `Run` column value (when present) SHALL be either:
-- the run dir base name of the run that the warning applies to (e.g.
-  `zero-snr-260502-110000`), OR
+- the Run that the warning applies to, as its project-relative directory
+  path (e.g. `logs/zero-snr-260502-110000`) or, for legacy rows, its
+  directory base name (resolved only when unambiguous), OR
 - `—` (em dash, or empty) when the warning applies to the experiment as
   a whole and is not attributable to a specific run.
 
@@ -326,31 +331,6 @@ or `null` when the warning is exp-scoped.
   cleared (`—` or blank), `Created` and `Run` are preserved, and a
   `[WARNING]` reopen event is appended
 
-### Requirement: Bidirectional binding via `runs[]` frontmatter
-
-The experiment frontmatter `runs[]` array SHALL list run dir base names.
-Each entry that names a discovered run with a matching `experiment:`
-back-reference is a confirmed member. Entries that do not match either
-side surface as anomalies (see `experiment-membership-anomalies`).
-
-`memon experiment link <id> <run>` SHALL update both the exp's `runs[]`
-and the run's `experiment:` field atomically.
-
-`memon experiment unlink <id> <run>` SHALL remove the run dir name from
-the exp's `runs[]` AND clear the run's `experiment:` field atomically.
-
-#### Scenario: Link is bidirectional
-- **GIVEN** an exp `E0001-foo` and an unbound run `bar-260501-100000`
-- **WHEN** the user runs `memon experiment link E0001-foo bar-260501-100000`
-- **THEN** `E0001-foo.runs[]` contains `"bar-260501-100000"` AND the
-  run's `experiment:` field is `E0001-foo`
-
-#### Scenario: Unlink clears both sides
-- **GIVEN** a confirmed binding
-- **WHEN** the user runs `memon experiment unlink E0001-foo bar-260501-100000`
-- **THEN** `E0001-foo.runs[]` no longer contains `bar-260501-100000` AND
-  the run's `experiment:` field is empty/absent
-
 ### Requirement: ExperimentStatus enum with uppercase canonical form and human-only writes
 
 The `status` field on `ExperimentFrontMatter` SHALL be stored in uppercase canonical form, drawn from the `ExperimentStatus` enum: `OPEN` / `RESOLVED` / `ABANDONED`. Lowercase or mixed-case values surface a parse warning AND the in-memory value is normalised to uppercase. Out-of-enum values surface a structured error and the in-memory value defaults to `OPEN` (so the doc remains usable). Missing values default to `OPEN` per the schema requirement above.
@@ -398,3 +378,19 @@ The exp doc frontmatter SHALL carry a required `archived: boolean` field per the
 - **THEN** the index entry shows `archived: true`
 - **AND** the dashboard list view (with default checkbox unchecked) hides the doc from the active section
 
+### Requirement: FS v7 Experiment declarations own membership
+For FS v7, Experiment README `runs` SHALL be the sole membership authority and SHALL contain canonical project-root-relative Run directory paths. This replaces the v6 basename-only `runs` field rules. Missing `runs` means no members; duplicates and malformed references SHALL be diagnosed, not silently discarded. Reads are compatible and writes are canonical: a legacy bare Run ID remains readable (resolved only when unique) and draws a lint warning, while every writer emits project-relative paths. Experiment bundle structure and unrelated fields SHALL remain unchanged.
+
+#### Scenario: Direct declared membership
+- **WHEN** an Experiment declares `runs: [logs/batch/train-260901-090000]`
+- **THEN** the declared member is that project-relative directory without requiring a Run parent field
+
+#### Scenario: Legacy ID in a v7 document
+- **WHEN** a v7 Experiment declares a bare Run ID
+- **THEN** readers keep the declaration and resolve it only when exactly one Run directory has that base name, using one Run-root directory walk and never opening unrelated Run READMEs
+- **AND** structural lint reports `LEGACY_RUN_ID_REF` (warning) asking for the project-relative path
+- **AND** an ambiguous base name is rejected with its candidate paths rather than resolved to the first match
+
+#### Scenario: Writers emit canonical paths
+- **WHEN** any CLI, Backend or Web mutation adds, renames or rewrites a member declaration
+- **THEN** the written `runs` entry is the project-relative Run directory path, never a bare Run ID

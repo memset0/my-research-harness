@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change add-write-flow. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Experiment doc write with optimistic mtime + content hash
 
 The system SHALL accept experiment doc writes via
@@ -72,10 +74,10 @@ The command SHALL:
    row). The folder is also the experiment's sanctioned local scratch
    space; the create step creates only the folder + README, and
    nothing else inside.
-5. If `--from-run <run-dir>` is given, validate the run exists, write
-   `experiment: <new-id>` into the run's frontmatter, and add the run dir
-   name to the new exp's `runs[]`. The run SHALL NOT already have a
-   different `experiment:` value (would surface a `BAD_STATE` error).
+5. If `--from-run <run-dir>` is given, validate the run exists and add
+   its project-relative path to the new exp's `runs[]` without writing
+   the Run README. The run SHALL NOT already be declared by a different
+   Experiment (would surface a `BAD_STATE` error).
 6. Append a `[EXPERIMENT]` event with `op=create` to JOURNAL.
 
 The command SHALL be retried up to 5 times if step 4's directory or
@@ -112,9 +114,9 @@ after 5 failures, exit with `BAD_STATE`.
 
 #### Scenario: --from-run binds existing run
 - **WHEN** the user runs `memon experiment create foo --from-run
-  bar-260501-100000`
-- **THEN** the new exp's `runs[]` contains `bar-260501-100000`, and the
-  run's `experiment:` field equals the new exp's id
+  bar-260501-100000` and that Run lives at `logs/bar-260501-100000`
+- **THEN** the new exp's `runs[]` contains `logs/bar-260501-100000`, and the
+  Run README bytes and mtime are unchanged
 
 #### Scenario: Slug prefix collision rejected
 - **GIVEN** `E0001-foo` already exists (as a v5 folder)
@@ -127,18 +129,18 @@ after 5 failures, exit with `BAD_STATE`.
 `memon experiment link <id> <run-dir-or-id> [--project-root <p>]` SHALL:
 1. Validate the experiment doc exists.
 2. Validate the run exists.
-3. Refuse if the run already has a different `experiment:` field
+3. Refuse if a different Experiment already declares the run
    (`BAD_STATE`); print the conflicting exp id.
-4. Append the run dir name to the exp's `runs[]` (if not already
-   present).
-5. Set the run's `experiment:` field to the exp id.
+4. Append the run's project-relative path to the exp's `runs[]` (if not
+   already present), replacing a legacy bare-ID entry for the same Run.
+5. Leave the Run README untouched.
 6. Append a `[BIND]` event with `op=link` to JOURNAL.
 7. Print a non-blocking warning (stderr) if the run slug does NOT have
    the experiment slug as a prefix.
 
 `memon experiment unlink <id> <run-dir-or-id>` SHALL undo the binding:
-remove the run dir name from `exp.runs[]`, clear the run's
-`experiment:` field, append a `[BIND]` event with `op=unlink`.
+remove the run's path (or a legacy bare-ID entry for it) from
+`exp.runs[]` without touching the Run README, append a `[BIND]` event with `op=unlink`.
 
 #### Scenario: Link respects soft prefix rule
 - **GIVEN** `E0001-zero-snr-fix` and an unbound run `cfg-rescale-260502-...`
@@ -148,7 +150,7 @@ remove the run dir name from `exp.runs[]`, clear the run's
   `RUN_SLUG_PREFIX_VIOLATION` warning
 
 #### Scenario: Link rejected when run already bound elsewhere
-- **GIVEN** a run with `experiment: E0002-bar`
+- **GIVEN** a run declared in `E0002-bar.runs[]`
 - **WHEN** the user runs `memon experiment link E0001-foo <that-run>`
 - **THEN** the command exits with `BAD_STATE` and stderr names the
   conflicting exp id `E0002-bar`; the user must `unlink` first
@@ -157,26 +159,29 @@ remove the run dir name from `exp.runs[]`, clear the run's
 
 `memon experiment delete <id> [--force] [--project-root <p>]` SHALL:
 1. Read the exp doc.
-2. For each run in `exp.runs[]`, clear the run's `experiment:` field.
-3. Delete the exp doc file.
+2. Release its members by removing the declaration itself; no Run
+   README is rewritten.
+3. Delete the exp doc folder (the four canonical bundle files; other
+   scratch content only with `--force`).
 4. Append a `[EXPERIMENT]` event with `op=delete` and the deleted
    `runs[]` payload to JOURNAL.
 
-Without `--force`, the command SHALL prompt for confirmation listing
-the cascade impact (the runs that will be unbound). With `--force`, no
-prompt is shown.
+Without `--force`, the command SHALL refuse when the experiment still
+declares member runs, naming how many would be released (JSON mode cannot
+prompt). With `--force`, the deletion proceeds.
 
 #### Scenario: Delete cascades and prompts
 - **GIVEN** an exp `E0001-foo` with three confirmed runs
 - **WHEN** the user runs `memon experiment delete E0001-foo` (no
   --force)
-- **THEN** the CLI prompts "This will unbind 3 runs. Continue? [y/N]";
-  on `y` the file is deleted, the three runs have their `experiment:`
-  cleared, and JOURNAL has a `[EXPERIMENT] op=delete` event
+- **THEN** the CLI refuses and names the 3 declared runs that `--force`
+  would release; nothing is deleted and no Run README changes
 
 #### Scenario: --force skips prompt
 - **WHEN** the same command runs with `--force`
-- **THEN** no prompt appears and the cascade applies immediately
+- **THEN** the experiment folder is deleted, the three Runs are no longer
+  declared by any Experiment, their README bytes are unchanged, and the
+  deletion is recorded with the released `runs[]` payload
 
 ### Requirement: Section-bound writes for the experiment Warnings section in the web UI
 
@@ -267,7 +272,6 @@ and returns `EISDIR` when handed a directory.
   `GET /api/runs/:id`, joins `/README.md`, and reads the resulting
   file path — and the resulting `Could not load README` error path
   is NOT triggered (the legacy `EISDIR` regression must not return)
-
 
 ### Requirement: Files-in-run-dir tree display
 
@@ -399,7 +403,6 @@ appear in the panel.
 - **WHEN** the action stripe renders
 - **THEN** its primary actions appear in this order: `Edit markdown`, `+ Note`
 - **AND** `StatusEdit` and any parse-errors Badge follow those actions
-
 
 #### Scenario: Action bar is above the frontmatter
 - **WHEN** the panel renders
@@ -694,7 +697,7 @@ The CLI SHALL expose `memon experiment rename <id-or-slug> <new-slug> [--project
 5. Refuse with `EXPERIMENT_SLUG_PREFIX_COLLISION` when another existing experiment has slug equal to `new-slug`, OR when `new-slug` is a prefix of another experiment's slug or vice versa (same uniqueness rule as `memon experiment create`).
 6. On a v5 record, rename the experiment folder from `docs/experiments/<oldId>` to `docs/experiments/<newId>` via `fs.rename`. On the legacy v4 file form (`exp.path` ends in `<oldId>.md`), rename the single `.md` file to `<newId>.md`.
 7. Open the post-rename README, set `frontMatter.id = newId`, `frontMatter.slug = new-slug`, `frontMatter.updated_at = nowIso()`, and atomic-write the re-serialized content.
-8. For each id in the exp doc's `frontMatter.runs`, resolve the run via `scanProjectRoot`. When the run's `frontMatter.experiment` equals `oldId`, rewrite it to `newId` (bumping `updated_at`); leave unrelated mismatches alone.
+8. Leave member Runs untouched: their project-relative declarations stay valid, and no Run README is read for ownership or rewritten. Member Run slugs are checked only for the soft prefix warning.
 9. Read `<projectRoot>/docs/hypotheses.md` and perform a token substitution of `oldId` → `newId` over the body. The substitution SHALL use word-boundary semantics (`\bE\d{4}-[a-z0-9-]+\b`) so that `oldId` cannot match a substring of an unrelated longer token. The atomic-write SHALL be skipped when the file content is unchanged.
 10. Append one `[RENAME]` event to `docs/journal.md` with body `op=experiment-rename old=<oldId> new=<newId>`.
 
@@ -704,14 +707,14 @@ The command SHALL NOT roll back on partial failure. The validate-first posture c
 
 #### Scenario: Successful rename rewrites exp folder, bound runs, and hypotheses
 - **GIVEN** a project root with:
-  - Experiment folder `docs/experiments/E0001-foo/README.md` with `frontMatter.runs = ['foo-260501-100000', 'foo-260502-110000']`
-  - Two bound runs `foo-260501-100000/README.md` and `foo-260502-110000/README.md`, each with `frontMatter.experiment = 'E0001-foo'`
+  - Experiment folder `docs/experiments/E0001-foo/README.md` with `frontMatter.runs = ['logs/foo-260501-100000', 'logs/foo-260502-110000']`
+  - Two declared runs `logs/foo-260501-100000/README.md` and `logs/foo-260502-110000/README.md` with no `experiment` field
   - A hypothesis in `docs/hypotheses.md` with `**Experiments**: E0001-foo` in its body
 - **WHEN** the user runs `memon experiment rename E0001-foo zero-snr --project-root <root>`
 - **THEN** stdout is `{"ok":true,"oldId":"E0001-foo","newId":"E0001-zero-snr"}`
 - **AND** the folder `docs/experiments/E0001-zero-snr/` exists; `docs/experiments/E0001-foo/` does not
 - **AND** the new folder's `README.md` frontmatter has `id: E0001-zero-snr`, `slug: zero-snr`, and `updated_at` bumped
-- **AND** both bound runs' READMEs have `experiment: E0001-zero-snr` (updated atomically)
+- **AND** both declared runs' README bytes and mtimes are unchanged, and `runs[]` still lists the same two paths
 - **AND** `docs/hypotheses.md` contains `E0001-zero-snr` where `E0001-foo` previously appeared, with no other body changes
 - **AND** `docs/journal.md` gains one new line: `- <ISO> [RENAME] op=experiment-rename old=E0001-foo new=E0001-zero-snr`
 
@@ -780,3 +783,14 @@ The command SHALL NOT roll back on partial failure. The validate-first posture c
 - **THEN** the rename succeeds
 - **AND** `docs/hypotheses.md`'s mtime is unchanged (no write
   performed because content is unchanged)
+
+### Requirement: FS v7 membership edits are one-sided
+For FS v7, create-from-run, link, unlink, rename and delete SHALL update Experiment-owned declarations without rewriting a Run README to assign or clear ownership. This replaces v6 bidirectional binding edits. Existing access control, optimistic concurrency and journal invocation recording SHALL remain enforced.
+
+#### Scenario: Link then unlink
+- **WHEN** an authorized caller links and unlinks a valid Run path
+- **THEN** only the Experiment membership declaration and normal audit state change, and Run README bytes and mtime remain unchanged
+
+#### Scenario: Rename Experiment
+- **WHEN** an Experiment is renamed
+- **THEN** its project-relative member paths remain valid without rewriting member Run frontmatter

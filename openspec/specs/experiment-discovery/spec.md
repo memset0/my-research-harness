@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change add-memon-mvp. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Experiment doc discovery scans `docs/experiments/`
 
 For every configured project root, the system SHALL scan
@@ -47,35 +49,6 @@ are not used.
 - **THEN** its poll interval has reached `poll.max_interval_ms` and stays
   there until a change is observed
 
-### Requirement: Membership computation joins exp and run indices
-
-The system SHALL maintain a join over the experiment index and the run
-index that produces, for each experiment, a list of confirmed member
-runs. A run is considered a confirmed member iff:
-1. The run's frontmatter `experiment:` field equals the experiment's `id`
-   (`E<NNNN>-<slug>`).
-2. The experiment's frontmatter `runs[]` contains the run's dir base
-   name.
-
-The join SHALL produce two side outputs alongside the member list:
-- The set of anomalies for the experiment, per
-  `experiment-membership-anomalies`.
-- The effective times (`effective_created_at`, `effective_updated_at`)
-  per `experiment-readme`.
-
-#### Scenario: Confirmed member shows in membership
-- **GIVEN** run `r1` with `experiment: E0001` and `E0001.runs: ["r1"]`
-- **WHEN** the join runs
-- **THEN** `E0001`'s confirmed members include `r1`; no anomaly is
-  emitted for the pair
-
-#### Scenario: One-sided claim surfaces anomaly, not membership
-- **GIVEN** run `r2` with `experiment: E0001` but `E0001.runs[]` omits
-  `r2`
-- **WHEN** the join runs
-- **THEN** `E0001`'s confirmed members do NOT include `r2`; the anomaly
-  set contains `MISMATCH_EXPERIMENT_REF` for the pair
-
 ### Requirement: Active-attention reset for experiments
 
 The system SHALL reset the experiment-doc poll interval to
@@ -100,3 +73,35 @@ removed `project` (sub-project) field is NOT a search target in v3.
 - **WHEN** the user searches `brightness`
 - **THEN** that experiment is in the result set
 
+### Requirement: Membership derives from Experiment declarations
+
+The system SHALL compute, for each experiment, its member Runs from its `runs[]` declarations only. A declared path that resolves to exactly one Run directory under a supported Run root, and that no other Experiment declares, is a confirmed member; a legacy bare base name counts only when it is unique. A Run README `experiment` field SHALL NOT add, remove or redirect membership. The join SHALL still produce the anomalies per `experiment-membership-anomalies` and the effective times per `experiment-readme`. A displayed parent for a Run is the single Experiment that declares it, or none.
+
+#### Scenario: Confirmed member shows in membership
+- **GIVEN** `E0001.runs: ["logs/r1-260501-100000"]` and that Run directory exists without an `experiment` field
+- **WHEN** the join runs
+- **THEN** `E0001`'s confirmed members include `logs/r1-260501-100000` and no anomaly is emitted
+
+#### Scenario: Legacy Run-side claim is ignored
+- **GIVEN** Run `logs/r2-260501-100000` still carries `experiment: E0001` but no Experiment declares it
+- **WHEN** the join runs
+- **THEN** it is not a member of `E0001`, it has no displayed parent, and only Run lint reports the obsolete field
+
+### Requirement: Generated timestamps carry the local offset
+
+Every timestamp memon generates for a scan result, a membership anomaly, a synthesized Run `created_at`, a code-review `updated_at`, a commit-mark `updatedAt`, a rename `updated_at` or a project-store metric SHALL be ISO8601 with the writer's local timezone offset (`YYYY-MM-DDTHH:MM:SS±HH:MM`). None of them SHALL be a UTC `Z` timestamp. All of them SHALL come from one shared formatter so their shape cannot drift.
+
+#### Scenario: Scan result is stamped with a local offset
+
+- **WHEN** a project root is scanned
+- **THEN** the result's `scannedAt` matches `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$`
+
+#### Scenario: Membership anomaly default detection time
+
+- **WHEN** membership is computed without an explicit detection time
+- **THEN** every anomaly's `detectedAt` carries a numeric offset and no `Z` suffix
+
+#### Scenario: Code-review toggle writes a local timestamp
+
+- **WHEN** a code-review commit or todo item is toggled through the central document service
+- **THEN** the `updated_at` written to disk carries a numeric offset and no `Z` suffix

@@ -228,7 +228,6 @@ The current classifications are:
 - `/api/projects/<project>/...` → first segment after `/api/projects/`.
 - `/api/runs?project=P` → P; `/api/runs/<id>` → RunIndex lookup → run's project; if id not in index → `null`.
 - `/api/experiments?project=P` → P; `/api/experiments/<id>` → ExperimentIndex lookup.
-- `/api/digests?project=P` → P; `/api/digests/<id>` → DigestStore lookup.
 - `/api/reports?project=P` → P; `/api/reports/<id>` → ReportStore lookup.
 - `/api/anomalies?project=P` → P; otherwise `'multi'`.
 - `/api/events` → `'multi'` (SSE; filter in handler).
@@ -242,7 +241,6 @@ The current classifications are:
 #### Scenario: Mutating route rejects anonymous
 - **WHEN** an anonymous `PUT /api/experiments/foo/readme` is received
 - **THEN** the response is 401 with `WWW-Authenticate: Basic realm="memon"` (for API) or 302 to /login (for HTML)
-
 
 #### Scenario: Mutating route rejects viewer
 - **WHEN** a viewer (valid `memon-shares`) does `PUT /api/experiments/X/readme`
@@ -403,7 +401,7 @@ not evaluated on mutating routes.
 For mutating routes, the share cookie is not decoded. Without owner identity,
 the request gets 401/302.
 
-`/p/<project>` and `/api/projects/<project>` paths SHALL extract the project from the first path segment. `?project=<P>` query params SHALL extract from the query. `/api/runs/<id>`, `/api/experiments/<id>`, `/api/digests/<id>`, `/api/reports/<id>` SHALL extract via in-memory index lookup using the request's runtime cache; if the id is unknown to the cache, `projectFor` returns `null` (the handler will likely 404 anyway).
+`/p/<project>` and `/api/projects/<project>` paths SHALL extract the project from the first path segment. `?project=<P>` query params SHALL extract from the query. `/api/runs/<id>`, `/api/experiments/<id>`, `/api/reports/<id>` SHALL extract via in-memory index lookup using the request's runtime cache; if the id is unknown to the cache, `projectFor` returns `null` (the handler will likely 404 anyway).
 
 #### Scenario: Owner read across all projects
 - **WHEN** an owner GETs `/p/project-b` (with valid session)
@@ -427,7 +425,6 @@ the request gets 401/302.
 - **THEN** middleware does NOT decode the share cookie (mode 3 not evaluated on `mutating`)
 - **AND** the response is 401 with `WWW-Authenticate: Basic realm="memon"` (API path)
 - **AND** the rate-limit token consumed for this request is NOT refunded
-
 
 #### Scenario: Viewer attempting id-resolved cross-project read
 - **WHEN** a viewer with scope `{"project-a"}` GETs `/api/runs/<id-belonging-to-project-b>`
@@ -653,3 +650,22 @@ The root client provider SHALL subscribe to `/api/events` only for an injected `
 - **WHEN** an anonymous browser renders `/login`
 - **THEN** no `/api/events` EventSource is created
 - **AND** the login form remains the only authentication prompt
+
+### Requirement: Server-rendered project pages hydrate only resources of the requested project
+
+A server-rendered page under `/p/<project>/…` that resolves a resource by id (for example the Run detail page `/p/<project>/experiments/<id>`) SHALL verify that the resolved resource belongs to `<project>` before rendering, generating metadata, or dehydrating any of its data into the HTML. A resource that exists only in another project SHALL produce the same 404 as a missing id, and its title, README body or frontmatter SHALL NOT appear in the response. This applies to owners and viewers alike; for a viewer, route-level scope checks on `<project>` are therefore sufficient to keep another project's content out of the page.
+
+#### Scenario: Viewer requests another project's Run through an in-scope URL
+
+- **GIVEN** a viewer whose share scope covers `project-a` only
+- **AND** a Run id that exists in `project-b` but not in `project-a`
+- **WHEN** the viewer requests `/p/project-a/experiments/<that id>`
+- **THEN** the response is a 404
+- **AND** neither the HTML nor the page title contains that Run's README content or slug
+
+#### Scenario: Matching project renders with a usable prefetch
+
+- **GIVEN** a Run that belongs to `project-a`
+- **WHEN** an authorized user requests `/p/project-a/experiments/<id>`
+- **THEN** the page renders the Run detail
+- **AND** the dehydrated query uses the same key the client detail component reads, so no duplicate fetch is required on mount

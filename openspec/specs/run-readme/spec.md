@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change new-experiment-system. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Run README location and front matter schema
 
 Each run SHALL be described by a `README.md` at the run-directory root
@@ -21,10 +23,11 @@ Required front matter fields:
 - `command` (string) — full command line as actually invoked
 
 Optional front matter fields:
-- `experiment` (string) — the parent experiment's full ID,
-  `^E\d{4}-[a-z0-9-]+$`. When present, the run participates in
-  bidirectional binding with the named experiment (see
-  `experiment-membership-anomalies` capability).
+- `experiment` (string) — **legacy, retired in FS v7**. Serializers and
+  authoring tools SHALL NOT emit it. When still present the parser reads
+  it for compatibility only, structural lint reports
+  `RUN_LEGACY_EXPERIMENT_FIELD` (warning), and membership ignores it; a
+  displayed parent is derived from Experiment declarations.
 - `updated_at` (ISO8601 with offset) — set on every web/CLI edit; defaults to
   `created_at` when absent
 - `finished_at` (ISO8601 with offset, or null)
@@ -44,10 +47,10 @@ warning, no error, no preservation in the index entry.
   AND the index entry still loads with `command: null`
 
 #### Scenario: experiment field references a parent experiment
-- **WHEN** the front matter contains `experiment: E0001-zero-snr-fix`
-- **THEN** the index entry's `experiment` field equals exactly
-  `"E0001-zero-snr-fix"` AND the indexer flags this run for membership
-  evaluation against that experiment
+- **WHEN** the front matter still contains the legacy `experiment: E0001-zero-snr-fix`
+- **THEN** parsing succeeds, structural lint reports
+  `RUN_LEGACY_EXPERIMENT_FIELD`, and membership is decided only by
+  Experiment `runs` declarations
 
 #### Scenario: Legacy fields are ignored
 - **WHEN** a run `README.md` still contains `project: foo`, `hypotheses: [H0001]`,
@@ -198,3 +201,13 @@ in lists) and SHALL surface the parse status to the frontend.
 - **THEN** the index entry has `parseError: <message>`, the body is still
   rendered, and the frontend shows a warning banner
 
+### Requirement: FS v7 Runs do not persist Experiment ownership
+For FS v7, the v6 optional `experiment` frontmatter field SHALL be retired. Serializers and authoring tools SHALL NOT emit it. Validation SHALL flag a remaining legacy field and SHALL NOT use it as ownership authority. Run ID and lifecycle fields remain Run-local; an unassigned Run is valid. Any displayed parent SHALL derive only from Experiment declarations.
+
+#### Scenario: Run lacks parent field
+- **WHEN** a valid v7 Run README has no `experiment` field
+- **THEN** parsing succeeds without a missing-parent warning
+
+#### Scenario: Conflicting legacy field
+- **WHEN** a leftover Run field disagrees with the Experiment declaration
+- **THEN** it is reported as an obsolete field and does not redirect membership

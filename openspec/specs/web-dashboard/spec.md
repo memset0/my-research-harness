@@ -12,7 +12,7 @@ The dashboard SHALL display a project selector in the top navigation showing the
 - For an **owner** session, the selector SHALL list all projects from the resolved `config.yml`.
 - For a **viewer** session, the selector SHALL list ONLY projects in `useSession().scopeProjects`. If the scope contains exactly one project, the selector SHALL be replaced by a read-only `<span>` label naming the project. If the scope contains multiple projects, the selector renders a dropdown over those names.
 
-Switching project (where applicable) SHALL update the experiment list, hypothesis view, journal view, reports inbox, and digests inbox to that project's data without full page reload, the same as today.
+Switching project (where applicable) SHALL update the experiment list, hypothesis view, journal view, reports inbox, and wiki to that project's data without full page reload, the same as today.
 
 #### Scenario: Owner switching projects
 - **WHEN** an owner clicks a different project in the selector
@@ -160,31 +160,6 @@ When the project has zero anomalies, the banner does not render.
 - **THEN** the scrollable list `<ul>` carries the class
   `max-h-[20vh]` (NOT `max-h-[40vh]` — the historic value)
 
-### Requirement: Orphan run cards in the grid
-
-The list page SHALL render orphan runs as special grey-bordered cards
-mixed into the experiment grid. Orphan runs (those with no parent
-experiment, per `experiment-membership-anomalies`) SHALL be
-distinguishable from experiment cards by header style:
-
-- Header reads `⚠ Unassigned: <run-dir-name>` instead of an exp id +
-  status counter.
-- The card body shows a single-row table for the orphan run (status,
-  created_at, files-count) — no embedded multi-row table.
-- The card has no tag/time footer.
-- Action button `Link to experiment...` opens a modal listing the
-  project's experiments to bind to.
-
-Orphan cards SHALL be sortable by the same controls as exp cards
-(orphan card's "effective times" are the run's own `created_at` /
-`updated_at`).
-
-#### Scenario: Orphan card rendered next to exp cards
-- **GIVEN** the project has 4 experiments and 1 orphan run
-- **WHEN** the user opens the list page
-- **THEN** the grid contains 5 cards total — 4 with the exp header
-  style, 1 with the orphan grey-bordered header style
-
 ### Requirement: Experiment-doc detail page (v3)
 
 The route `/p/<project>/e/<E-id-slug>` SHALL render an experiment detail
@@ -314,21 +289,20 @@ Legacy run-detail URLs SHALL redirect to the new exp-detail URL with a
 `?run=` query param. The route `/p/<project>/r/<run-dir>` (and its v2
 form `/p/<project>/experiments/<run-dir>`) SHALL respond with a 308
 (or client-side replace) to `/p/<project>/e/<E-id-of-parent>?run=<run-dir>`
-when the run has a confirmed parent experiment. When the run has no
-parent (orphan), the redirect SHALL go to `/p/<project>` and the page
-SHALL scroll to the orphan card for that run.
+when exactly one Experiment declares the run (the parent is derived
+from Experiment declarations, never from a Run README field). When no
+Experiment declares it, the redirect SHALL go to `/p/<project>`.
 
 #### Scenario: Bound run redirects with run param
-- **GIVEN** a run `bar-260501-100000` bound to `E0001-foo`
+- **GIVEN** a run `bar-260501-100000` declared by `E0001-foo`
 - **WHEN** the user navigates to `/p/<project>/r/bar-260501-100000`
 - **THEN** the URL is rewritten to
   `/p/<project>/e/E0001-foo?run=bar-260501-100000`
 
 #### Scenario: Orphan run redirects to project list
-- **GIVEN** an orphan run `solo-260501-100000`
+- **GIVEN** a run `solo-260501-100000` that no Experiment declares
 - **WHEN** the user navigates to `/p/<project>/r/solo-260501-100000`
-- **THEN** the URL is rewritten to `/p/<project>` and the page scrolls
-  to the orphan card
+- **THEN** the URL is rewritten to `/p/<project>`
 
 ### Requirement: List-page section ordering
 
@@ -635,7 +609,7 @@ in `<ViewerGuard>` (or, equivalently, take a `disabled` prop driven by
 The application sidebar (`apps/web/components/app-sidebar.tsx`) SHALL render different content for owner vs. viewer sessions:
 
 - **Owner**: full project list (unchanged from today).
-- **Viewer**: ONLY the projects listed in `useSession().scopeProjects`. The project switcher dropdown SHALL be replaced by a read-only label when `scopeProjects.length === 1`. Sidebar nav-items that are inherently project-scoped (Experiments, Hypotheses, Journal, Reports, Wiki, Digests) SHALL link into the scope-set project; nav-items that aggregate across projects (e.g., a global "All anomalies" link) SHALL either be hidden OR filtered by scope.
+- **Viewer**: ONLY the projects listed in `useSession().scopeProjects`. The project switcher dropdown SHALL be replaced by a read-only label when `scopeProjects.length === 1`. Sidebar nav-items that are inherently project-scoped (Experiments, Hypotheses, Journal, Reports, Wiki) SHALL link into the scope-set project; nav-items that aggregate across projects (e.g., a global "All anomalies" link) SHALL either be hidden OR filtered by scope.
 - **Anon**: sidebar SHALL be hidden or replaced by the login-page chrome only.
 
 #### Scenario: Viewer with single-project scope
@@ -748,7 +722,7 @@ The page SHALL display a small "Powered by memon" footer and SHALL look at home 
 
 The per-project navigation SHALL include a "Code review" entry that links to
 `/p/<project>/code-review`, shown alongside the existing experiments /
-hypotheses / journal / reports / digests surfaces and marked active when the
+hypotheses / journal / reports / wiki surfaces and marked active when the
 current path is under `/p/<project>/code-review`. The detail route
 `/p/<project>/code-review/<...id>` SHALL be reachable both from that list and
 from the experiment detail page's associated-reviews panel.

@@ -47,7 +47,7 @@ If the heading is absent on first run, the skill SHALL interactively seed it: in
 
 ### Requirement: Numeric IDs are 4-digit zero-padded across all skill outputs
 
-All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, digest `D<NNNN>`, report `R<NNNN>`, wiki page `W<NNNN>`, and the legacy `R<NNNN>` form preserved in a migrated page's `legacy_id`) SHALL use the canonical 4-digit zero-padded form per the `hypotheses` capability. Skills that compute `next_n + 1` SHALL format the result with `printf '%04d'` (or equivalent) before constructing the filename or id string. Skills SHALL NOT emit unpadded ids (`H1`, `D7`, `R42`, `W42`).
+All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, report `R<NNNN>`, wiki page `W<NNNN>`, and the legacy `R<NNNN>` / `D<NNNN>` forms preserved in a migrated page's `legacy_id`) SHALL use the canonical 4-digit zero-padded form per the `hypotheses` capability. Skills that compute `next_n + 1` SHALL format the result with `printf '%04d'` (or equivalent) before constructing the filename or id string. Skills SHALL NOT emit unpadded ids (`H1`, `D7`, `R42`, `W42`).
 
 #### Scenario: Report filename uses %04d
 - **WHEN** `memon-write-report` computes the next N as 42 with slug `bf16-investigation`
@@ -63,7 +63,7 @@ All numeric identifiers emitted by skills (hypothesis `H<NNNN>`, digest `D<NNNN>
 
 ### Requirement: Spec-mutating skills SHALL preflight-check the FS convention version
 
-Every memon skill that reads or writes spec files (the per-experiment `<runDir>/README.md`, the project's `<projectRoot>/docs/hypotheses.md`, `<projectRoot>/docs/journal.md`, or any file under `<projectRoot>/docs/digests/`, `<projectRoot>/docs/reports/`, or `<projectRoot>/docs/wiki/`) SHALL invoke `memon fs-version check --project-root <p> --format json` as the first executable step in its workflow body, parse the result, and branch as follows:
+Every memon skill that reads or writes spec files (the per-experiment `<runDir>/README.md`, the project's `<projectRoot>/docs/hypotheses.md`, `<projectRoot>/docs/journal.md`, or any file under `<projectRoot>/docs/reports/` or `<projectRoot>/docs/wiki/`) SHALL invoke `memon fs-version check --project-root <p> --format json` as the first executable step in its workflow body, parse the result, and branch as follows:
 
 - `status === "match"`: proceed with the rest of the skill.
 - `status === "behind"`: surface the gap to the user (current version, expected version), recommend invoking `memon-migrate-fs`, and stop. The skill SHALL NOT proceed to read or write any spec file.
@@ -75,11 +75,9 @@ This preflight section SHALL appear in the skill body using consistent language 
 The following skills are subject to this requirement (matching the user-invoked skill set plus the model-invocable append-* skills):
 - `memon-write-script` — writes launcher scripts (does not directly mutate spec files, but is part of the run-experiment workflow that does).
 - `memon-run-experiment` — writes `<runDir>/README.md`.
-- `memon-digest-journal` — reads `docs/journal.md`, writes digests, advances cursor.
 - `memon-write-report` — writes report files under `docs/reports/`.
 - `memon-wiki` — writes wiki pages under `docs/wiki/`.
 - `memon-propose` — writes proposal artifacts.
-- `memon-append-journal` — appends event lines to `docs/journal.md`.
 - `memon-append-warning` — appends warning rows to `<runDir>/README.md`.
 - `memon-migrate-fs` itself is exempt from preflight (it IS the migration entry; it reads `.memon/version.json` directly as part of its own protocol).
 
@@ -376,7 +374,7 @@ Expected domain-state and validation failures SHALL NOT automatically be labeled
 
 ### Requirement: Three narrative artifacts divide the project's prose surface
 
-Reports SHALL remain theme-keyed snapshots authored by their Report skill. Wiki pages SHALL remain living, source-linked knowledge maintained by the Wiki skill. Historical Digests SHALL remain readable, but no managed digest authoring skill or Journal cursor advancement SHALL be required. A writer SHALL stay within its owning artifact and preserve research history.
+Reports SHALL remain theme-keyed snapshots authored by their Report skill. Wiki pages SHALL remain living, source-linked knowledge maintained by the Wiki skill. Historical Digests SHALL survive only as ordinary Wiki pages of kind `digest` (keeping their `D<NNNN>` identity in `legacy_id`) after the reviewed v7 migration; no standalone Digest surface, managed digest authoring skill or Journal cursor advancement SHALL be required. A writer SHALL stay within its owning artifact and preserve research history.
 
 #### Scenario: Maintaining current knowledge
 - **WHEN** accepted findings change
@@ -458,3 +456,14 @@ Every bundled `memon-*` skill and the shared `PREFLIGHT.md` SHALL have exactly o
 #### Scenario: Harness development skills stay
 - **WHEN** `.claude/skills/` holds only `openspec-*` skills
 - **THEN** the guard passes
+
+### Requirement: Skills author and migrate v7 membership consistently
+Managed Run, Experiment, analysis/report and migration skills SHALL teach Experiment-only path declarations and SHALL NOT write Run ownership fields or prescribe bidirectional repair for v7. They SHALL distinguish membership from result/provenance semantics, use path-qualified references when needed, preserve FS preflight checks, and require explicit reviewed migration application. Generated examples SHALL use neutral project-relative paths.
+
+#### Scenario: Skill creates a Run for an Experiment
+- **WHEN** a skill creates and records a v7 Run
+- **THEN** it records the Run's project-relative path in the Experiment and does not add `experiment` to the Run README
+
+#### Scenario: Skill encounters legacy project
+- **WHEN** a v7 authoring skill sees a v6 project
+- **THEN** it directs the user to the reviewed migration procedure instead of updating the version marker or relationship fields opportunistically
