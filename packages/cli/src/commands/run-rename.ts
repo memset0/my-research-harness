@@ -16,6 +16,7 @@ import {
   SLUG_REGEX,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
@@ -46,7 +47,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
 
   // One bounded discovery pass: the index answers the dir-name collision
   // check without reading any other run.
-  const index = await RunTargetIndex.open(projectRoot, { projectName })
+  const index = await RunTargetIndex.open(projectRoot, { projectName, ...runWalkOptions() })
   const target = await index.read(input.runIdOrDir)
   if (!target) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found in ${projectRoot}`)

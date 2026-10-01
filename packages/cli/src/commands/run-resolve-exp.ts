@@ -10,6 +10,7 @@
 
 import { resolveRunTarget } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 
 export interface RunResolveExpInput {
@@ -24,7 +25,7 @@ export async function runResolveExp(input: RunResolveExpInput): Promise<void> {
 
   // Resolve the single named Run: bounded dir discovery, then one README
   // read. Unrelated Runs and `docs/hypotheses.md` are never touched.
-  const target = await resolveRunTarget(projectRoot, input.runIdOrDir)
+  const target = await resolveRunTarget(projectRoot, input.runIdOrDir, runWalkOptions())
   if (!target) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found in ${projectRoot}`)
   }

@@ -183,6 +183,10 @@ export const ProjectConfigRawSchema = z
     root: z.string().min(1),
     include: z.array(z.string()).optional(),
     exclude: z.array(z.string()).optional(),
+    // Deepest level below a Run entry directory at which the Run walk looks
+    // for Run directories (1 = `logs/<run>`, 2 = `logs/<group>/<run>`).
+    // Absent keeps the unbounded walk.
+    run_depth: z.union([z.literal(1), z.literal(2)]).optional(),
     // Per-project GitHub owner/repo -> local path mappings, for code-preview.
     // `path` is relative to the project root ('.' = main repo, else a submodule).
     github: z

@@ -18,8 +18,13 @@ import { existsSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { discoverRuns } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
-import { declaredRunOwner, projectRunPath, resolveRunReference } from '../experiments/run-path.js'
-import type { Run } from '../types.js'
+import {
+  declaredRunOwner,
+  projectRunPath,
+  resolveDeclaredRunPath,
+  resolveRunReference,
+} from '../experiments/run-path.js'
+import type { Run, RunDepth } from '../types.js'
 import { ScanError } from './scan.js'
 
 export interface RunTargetOptions {
@@ -29,6 +34,11 @@ export interface RunTargetOptions {
   include?: string[]
   /** Optional discovery exclusions inherited from a configured Project. */
   exclude?: string[]
+  /**
+   * Optional Run walk depth bound (`run_depth`). Only base-name lookups walk;
+   * project-relative paths resolve directly and ignore it.
+   */
+  runDepth?: RunDepth
   /** Maximum concurrent Run directory reads in `runs()`. */
   readConcurrency?: number
 }
@@ -45,6 +55,7 @@ const DEFAULT_READ_CONCURRENCY = 16
 export class RunTargetIndex {
   /** Run dir base name -> matching absolute dirs, in discovery (sorted) order. */
   private readonly dirsById: ReadonlyMap<string, string[]>
+  private readonly root: string
   private readonly projectName: string
   private readonly readConcurrency: number
   /** Per-instance memo so one command resolves a given id at most once. */
@@ -53,10 +64,12 @@ export class RunTargetIndex {
 
   private constructor(
     dirsById: ReadonlyMap<string, string[]>,
+    root: string,
     projectName: string,
     readConcurrency: number,
   ) {
     this.dirsById = dirsById
+    this.root = root
     this.projectName = projectName
     this.readConcurrency = readConcurrency
   }
@@ -83,6 +96,7 @@ export class RunTargetIndex {
       root: abs,
       include: options.include ?? [],
       exclude: options.exclude ?? [],
+      ...(options.runDepth === undefined ? {} : { runDepth: options.runDepth }),
     })
     const dirsById = new Map<string, string[]>()
     for (const path of paths) {
@@ -92,7 +106,12 @@ export class RunTargetIndex {
       if (existing) existing.push(path)
       else dirsById.set(id, [path])
     }
-    return new RunTargetIndex(dirsById, options.projectName ?? '(project-root)', readConcurrency)
+    return new RunTargetIndex(
+      dirsById,
+      abs,
+      options.projectName ?? '(project-root)',
+      readConcurrency,
+    )
   }
 
   /** True when the project has a Run directory with this base name. */
@@ -111,7 +130,7 @@ export class RunTargetIndex {
     if (memo) return memo
     const candidates = this.dirsById.get(id)
     let pending: Promise<string | null>
-    if (!candidates) pending = Promise.resolve(null)
+    if (!candidates) pending = this.undiscoveredPath(id)
     else if (candidates.length === 1) pending = Promise.resolve(candidates[0]!)
     else pending = this.read(id).then((run) => run?.path ?? null)
     this.dirs.set(id, pending)
@@ -155,9 +174,26 @@ export class RunTargetIndex {
 
   private async readUncached(id: string): Promise<Run | null> {
     const candidates = this.dirsById.get(id)
-    if (!candidates) return null
+    if (!candidates) {
+      const path = await this.undiscoveredPath(id)
+      return path === null ? null : readRunDir(path, this.projectName)
+    }
     if (candidates.length === 1) return readRunDir(candidates[0]!, this.projectName)
     throw new Error(`Ambiguous Run ID; use a project-relative path: ${id}`)
+  }
+
+  /**
+   * A project-relative Run path the walk did not reach (excluded or beyond
+   * `runDepth`) still resolves directly: path targets never depend on the
+   * walk. Base names and missing / unsafe paths resolve to null.
+   */
+  private async undiscoveredPath(id: string): Promise<string | null> {
+    if (!id.includes('/')) return null
+    try {
+      return await resolveDeclaredRunPath(this.root, id)
+    } catch {
+      return null
+    }
   }
 }
 
@@ -177,6 +213,7 @@ export async function resolveRunTarget(
       name: options.projectName ?? '(project-root)',
       include: options.include ?? [],
       exclude: options.exclude ?? [],
+      ...(options.runDepth === undefined ? {} : { runDepth: options.runDepth }),
     },
     id,
   )

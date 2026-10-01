@@ -22,4 +22,21 @@ describe('discoverRuns default-config compatibility', () => {
       expect(found.map((path) => relative(root, path))).toEqual(expected)
     })
   }
+
+  it('bounds the mock walks with run_depth', async () => {
+    const at = async (project: string, runDepth: 1 | 2) => {
+      const root = resolve(MOCK_ROOT, project)
+      const found = await discoverRuns({ name: project, root, include: [], exclude: [], runDepth })
+      return found.map((path) => relative(root, path))
+    }
+    const shallow = (paths: string[], depth: number) =>
+      paths.filter((path) => path.split('/').length - 1 <= depth)
+    for (const project of Object.keys(SNAPSHOT)) {
+      expect(await at(project, 1)).toEqual(shallow(SNAPSHOT[project]!, 1))
+      expect(await at(project, 2)).toEqual(shallow(SNAPSHOT[project]!, 2))
+    }
+    // The bundled mocks exercise both bounds.
+    expect(shallow(SNAPSHOT['project-a']!, 1)).not.toEqual(SNAPSHOT['project-a'])
+    expect(shallow(SNAPSHOT['project-b']!, 2)).not.toEqual(SNAPSHOT['project-b'])
+  })
 })

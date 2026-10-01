@@ -749,11 +749,21 @@ export type ProjectExecutionConfig =
       knownHostsFile?: string
     }
 
+/** Allowed values of a Project's `run_depth` bound on the Run walk. */
+export type RunDepth = 1 | 2
+
 export interface ProjectConfig {
   name: string
   root: string // absolute path
   include: string[]
   exclude: string[]
+  /**
+   * Deepest level below a Run entry directory (`logs/`, `outputs/`,
+   * `experiments/`) at which a Run directory may sit: `1` = `logs/<run>`,
+   * `2` = also `logs/<group>/<run>`. Absent = unbounded (the historical
+   * walk). Config key `run_depth`.
+   */
+  runDepth?: RunDepth
   /**
    * Host namespace this Project belongs to. Present iff the instance serves
    * host-qualified `{host, project}` identity; absent for the standalone

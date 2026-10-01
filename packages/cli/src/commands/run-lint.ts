@@ -8,6 +8,7 @@
 
 import { lintRun, RunTargetIndex, readRunDir } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitLintDiagnostics, type OutputFormat } from '../lib/output.js'
 
@@ -25,7 +26,7 @@ export async function runRunLint(input: RunLintInput): Promise<void> {
   // Explicit-id inspection: archived and deprecated Runs resolve too, because
   // linting the structure of a record you have excluded from research is
   // exactly when you need it.
-  const index = await RunTargetIndex.open(projectRoot)
+  const index = await RunTargetIndex.open(projectRoot, runWalkOptions())
   const runDir = await index.dir(input.runId)
   if (!runDir) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runId}" not found in ${projectRoot}`)

@@ -6,6 +6,7 @@
 // are short-lived and just snapshot the filesystem.
 
 import { type Config, discoverRuns, RunIndex, readRunDir } from '@memon/core'
+import { runWalkOptions } from './discovery-options.js'
 
 export interface BuildIndexOptions {
   /** Restrict to a single project by name. */
@@ -16,7 +17,7 @@ export async function buildIndex(config: Config, opts: BuildIndexOptions = {}): 
   const idx = new RunIndex()
   for (const project of config.projects) {
     if (opts.project && project.name !== opts.project) continue
-    const dirs = await discoverRuns(project)
+    const dirs = await discoverRuns({ ...project, ...runWalkOptions() })
     await Promise.all(
       dirs.map(async (dir) => {
         try {

@@ -92,6 +92,31 @@ describe('project storage mode', () => {
   })
 })
 
+describe('project run_depth', () => {
+  it('leaves the Run walk unbounded when the key is absent', async () => {
+    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects.map((project) => project.runDepth)).toEqual([undefined, undefined])
+  })
+
+  it('accepts 1 and 2', async () => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects:\n  - { name: alpha, root: ./alpha, run_depth: 1 }\n  - { name: beta, root: ./beta, run_depth: 2 }\n',
+    )
+    const cfg = await loadConfig({ cwd: dir })
+    expect(cfg!.projects.map((project) => project.runDepth)).toEqual([1, 2])
+  })
+
+  it.each([0, 3, '1'])('rejects run_depth %j naming the key', async (value) => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      `projects: [{ name: alpha, root: ./alpha, run_depth: ${JSON.stringify(value)} }]\n`,
+    )
+    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/run_depth/)
+  })
+})
+
 describe('persistent file cache config', () => {
   it('requires an explicit instance dump when any project opts in', async () => {
     await fs.writeFile(

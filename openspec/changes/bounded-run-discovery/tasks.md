@@ -9,10 +9,10 @@
 
 ## 3. Configurable depth
 
-- [ ] 3.1 Add `run_depth` (1|2) to the Project raw schema, `ProjectConfig.runDepth`, and the loader; verify config tests for accepted values, rejection of 0/3, and absence
-- [ ] 3.2 Bound the walk by `project.runDepth`; verify the counting test (depth 1 = number of entry dirs, depth 2 = entry dirs + non-Run children) and the mock snapshot under the default
-- [ ] 3.3 Accept `runDepth` in `scanProjectRoot`, `RunTargetIndex.open` and `resolveRunTarget`; verify with core tests
-- [ ] 3.4 Add the CLI global `--run-depth <1|2>` with validation and propagate it to scan, list/show/search and Run target resolution; verify with CLI tests (bounded scan, invalid value, path target ignores the bound)
+- [x] 3.1 Add `run_depth` (1|2) to the Project raw schema, `ProjectConfig.runDepth`, and the loader; verify config tests for accepted values, rejection of 0/3, and absence
+- [x] 3.2 Bound the walk by `project.runDepth`; verify the counting test (depth 1 = number of entry dirs, depth 2 = entry dirs + non-Run children) and the mock snapshot under the default
+- [x] 3.3 Accept `runDepth` in `scanProjectRoot`, `RunTargetIndex.open` and `resolveRunTarget`; verify with core tests
+- [x] 3.4 Add the CLI global `--run-depth <1|2>` with validation and propagate it to scan, list/show/search and Run target resolution; verify with CLI tests (bounded scan, invalid value, path target ignores the bound)
 
 ## 4. Direct-path phantom classification
 

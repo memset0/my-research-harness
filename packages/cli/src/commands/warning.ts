@@ -30,6 +30,7 @@ import {
   type WarningCategory,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
@@ -66,7 +67,7 @@ async function resolveTarget(
   // Legacy v2 form: id is a run dir base name. Resolve the DIRECTORY only —
   // the shared write primitive reads and locks the README itself, and no other run
   // is touched.
-  const index = await RunTargetIndex.open(projectRoot)
+  const index = await RunTargetIndex.open(projectRoot, runWalkOptions())
   const runDir = await index.dir(idOrSlug)
   if (!runDir) {
     emitErrorAndExit(

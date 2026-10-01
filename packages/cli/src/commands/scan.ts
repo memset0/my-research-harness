@@ -5,6 +5,7 @@
 // `memon journal read`.
 
 import { type ProjectSnapshot, ScanError, scanProjectRoot } from '@memon/core'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
@@ -26,6 +27,7 @@ export async function runScan(input: ScanCmdInput): Promise<void> {
       includeArchived: input.includeArchived || input.archivedOnly,
       includeDeprecated: input.includeDeprecated,
       deprecatedOnly: input.deprecatedOnly,
+      ...runWalkOptions(),
     })
   } catch (err) {
     if (err instanceof ScanError) {

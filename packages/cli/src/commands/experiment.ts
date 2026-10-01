@@ -18,6 +18,7 @@ import {
   writeRunReadme,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
@@ -36,7 +37,7 @@ async function resolveRun(
   const projectRoot = singleProjectRoot(r)
   // Locate the run DIRECTORY only: the primitive reads (and locks) the README
   // itself, and no other run is touched. Archived runs resolve too.
-  const index = await RunTargetIndex.open(projectRoot)
+  const index = await RunTargetIndex.open(projectRoot, runWalkOptions())
   const runDir = await index.dir(runId)
   if (!runDir) {
     emitErrorAndExit('NOT_FOUND', `experiment "${runId}" not found in ${projectRoot}`)

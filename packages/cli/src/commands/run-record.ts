@@ -34,6 +34,7 @@ import {
   serializeMinimalRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
@@ -178,7 +179,7 @@ async function resolveRunDir(projectRoot: string, target: string): Promise<strin
     }
     return runDir
   }
-  const index = await RunTargetIndex.open(projectRoot)
+  const index = await RunTargetIndex.open(projectRoot, runWalkOptions())
   const runDir = await index.dir(target)
   if (!runDir) {
     emitErrorAndExit(

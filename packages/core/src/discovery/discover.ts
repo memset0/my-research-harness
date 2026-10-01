@@ -52,7 +52,8 @@ export interface DiscoverOptions {
 
 /**
  * Returns absolute Run paths under `project.root/{logs,outputs,experiments}`,
- * applying default + user excludes. The project root itself is never listed.
+ * applying default + user excludes and the optional `project.runDepth` bound.
+ * The project root itself is never listed.
  *
  * This is the ONE sanctioned recursive project traversal, and it composes
  * shared cached direct listings (`projectFs.readdir`) rather than a recursive
@@ -108,7 +109,12 @@ export async function discoverRuns(
     else next()
   }
 
-  const walk = async (directory: string): Promise<void> => {
+  // `run_depth` bound: an entry directory is level 0, its children level 1.
+  // A child at level `runDepth` may still be recorded as a Run but is never
+  // listed. Absent = unbounded (the historical walk).
+  const runDepth = project.runDepth ?? Number.POSITIVE_INFINITY
+
+  const walk = async (directory: string, level: number): Promise<void> => {
     let entries: Dirent[]
     await acquire()
     try {
@@ -134,9 +140,9 @@ export async function discoverRuns(
         if (matchesInclude(relativePath)) found.push(absolute)
         continue
       }
-      descend.push(absolute)
+      if (level + 1 < runDepth) descend.push(absolute)
     }
-    await Promise.all(descend.map(walk))
+    await Promise.all(descend.map((child) => walk(child, level + 1)))
   }
 
   await Promise.all(
@@ -150,7 +156,7 @@ export async function discoverRuns(
         if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return
         throw error
       }
-      await walk(directory)
+      await walk(directory, 0)
     }),
   )
 

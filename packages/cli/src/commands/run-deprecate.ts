@@ -28,6 +28,7 @@ import {
   undeprecateRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
@@ -51,7 +52,7 @@ export async function runRunUndeprecate(input: RunDeprecationInput): Promise<voi
 async function apply(input: RunDeprecationInput, target: boolean): Promise<void> {
   const context = await resolveContext(input)
   const projectRoot = singleProjectRoot(context)
-  const index = await RunTargetIndex.open(projectRoot)
+  const index = await RunTargetIndex.open(projectRoot, runWalkOptions())
   const runDir = await index.dir(input.runId)
   if (!runDir) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runId}" not found in ${projectRoot}`)

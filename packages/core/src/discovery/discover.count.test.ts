@@ -88,4 +88,25 @@ describe('discoverRuns listing count', () => {
     expect(small.some((path) => /-\d{6}-\d{6}/.test(path))).toBe(false)
     expect(foundSmall.some((path) => path.endsWith('nested-260901-090000'))).toBe(false)
   })
+
+  it('run_depth 1 lists exactly the Run entry directories', async () => {
+    const listed = serve(buildTree(20))
+    const found = await discoverRuns({ ...project, runDepth: 1 })
+    expect(listed).toHaveLength(ENTRIES.length)
+    expect(found).toHaveLength(ENTRIES.length * RUN_DIRS)
+  })
+
+  it('run_depth 2 lists entry directories plus one level of non-Run children', async () => {
+    const tree = buildTree(20)
+    // A Run one level below a non-Run directory is in reach at depth 2 only.
+    tree.get(join(ROOT, 'logs', 'group-0'))!.push('deep-260901-120000')
+    tree.set(join(ROOT, 'logs', 'group-0', 'deep-260901-120000'), [])
+    const listed = serve(tree)
+    const found = await discoverRuns({ ...project, runDepth: 2 })
+    expect(listed).toHaveLength(ENTRIES.length * (1 + NON_RUN_DIRS))
+    expect(found).toHaveLength(ENTRIES.length * RUN_DIRS + 1)
+    vi.restoreAllMocks()
+    serve(tree)
+    expect(await discoverRuns({ ...project, runDepth: 1 })).toHaveLength(ENTRIES.length * RUN_DIRS)
+  })
 })

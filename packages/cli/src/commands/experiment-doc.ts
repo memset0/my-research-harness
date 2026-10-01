@@ -32,6 +32,7 @@ import {
   unlinkExperimentRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
@@ -142,7 +143,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
 
   // Resolve `--from-run` ONCE, up front; no run other than this one is read.
   const importedRun = input.fromRun
-    ? await resolveRunTarget(projectRoot, input.fromRun, { projectName })
+    ? await resolveRunTarget(projectRoot, input.fromRun, { projectName, ...runWalkOptions() })
     : null
   if (input.fromRun && !importedRun) {
     emitErrorAndExit('NOT_FOUND', `run "${input.fromRun}" not found`)
@@ -198,7 +199,10 @@ async function resolveBindTargets(input: ExperimentLinkInput) {
   const expId = await resolveOrFail(projectRoot, input.experimentIdOrSlug)
   const exp = await readExperimentDoc(projectRoot, projectName, expId)
   if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-  const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
+  const run = await resolveRunTarget(projectRoot, input.runIdOrDir, {
+    projectName,
+    ...runWalkOptions(),
+  })
   if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
   return { projectRoot, expId, experiment: { id: expId, path: exp.path }, run }
 }
