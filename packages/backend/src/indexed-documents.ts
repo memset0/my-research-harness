@@ -174,7 +174,7 @@ async function listBundleAssets(bundleDir: string): Promise<BundleAssets> {
  * The real path of `lexical` when it exists inside the real Project root;
  * `null` when it is absent or escapes. Other failures propagate.
  */
-async function containedReal(
+export async function containedReal(
   project: ProjectConfig,
   policy: ReadPolicy,
   lexical: string,
@@ -233,10 +233,9 @@ export async function indexedCodeReviewInventory(
     await Promise.all(
       folders.map(async (folder) => {
         const folderPath = join(experiments, folder.name)
-        const reviewEntry = ((await index.listing(folderPath, age)) ?? []).find(
-          (entry) => entry.name === 'code-review',
-        )
-        if (!(await childDirectory(project, policy, folderPath, reviewEntry))) return
+        // One real-path probe per Experiment folder (cached in the window):
+        // listing the folder itself would cost a stat per scratch file.
+        if ((await containedReal(project, policy, join(folderPath, 'code-review'))) === null) return
         collect(
           await index.listing(join(folderPath, 'code-review'), age),
           `experiments/${folder.name}/code-review`,

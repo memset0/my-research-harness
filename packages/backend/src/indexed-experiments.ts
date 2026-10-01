@@ -10,11 +10,13 @@ import {
   BackendExperimentsResponseSchema,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
+  type Experiment,
   type ParsedExperiment,
   type ProjectConfig,
   parseExperimentReadme,
+  readExperimentDoc,
 } from '@memon/core'
-import { type ListedEntry, projectReadIndex } from './read-index.js'
+import { digest, type ListedEntry, projectReadIndex, statObservation } from './read-index.js'
 
 const SUMMARY = BackendExperimentSummarySchema
 
@@ -195,4 +197,46 @@ export function experimentListRow(
     effectiveCreatedAt: frontMatter.createdAt,
     effectiveUpdatedAt: frontMatter.updatedAt,
   })
+}
+
+/** Experiment ids from the listing alone (folders win over legacy files). */
+export function experimentIdentities(listing: {
+  folders: Map<string, ListedEntry>
+  legacy: Map<string, ListedEntry>
+}): string[] {
+  const ids = new Set<string>()
+  for (const [id, entry] of listing.folders) if (entry.type === 'dir') ids.add(id)
+  for (const [id, entry] of listing.legacy) if (entry.type === 'file') ids.add(id)
+  return [...ids].sort((left, right) => left.localeCompare(right))
+}
+
+const BUNDLE_FILES = ['README.md', 'implementation.yaml', 'investigation.yaml', 'results.yaml']
+
+/**
+ * A full Experiment bundle (README plus managed YAML) as `readExperimentDoc`
+ * returns it, re-read only when one of its files' fingerprints changed.
+ */
+export function indexedExperimentBundle(
+  project: ProjectConfig,
+  id: string,
+  maxAgeMs: number,
+): Promise<Experiment | null> {
+  if (!EXPERIMENT_DIR_REGEX.test(id)) return Promise.resolve(null)
+  const directory = join(project.root, ...EXPERIMENTS_SUBDIR)
+  const paths = [
+    ...BUNDLE_FILES.map((name) => join(directory, id, name)),
+    join(directory, `${id}.md`),
+  ]
+  return projectReadIndex(project.root).observe<Experiment | null>(
+    `experiment-bundle:${join(directory, id)}`,
+    maxAgeMs,
+    async () => {
+      const observations = await Promise.all(paths.map((path) => statObservation(path)))
+      const readme = observations[0]!.fingerprint
+      const legacy = observations[4]!.fingerprint
+      if (readme === null && legacy === null) return { fingerprint: null }
+      return { fingerprint: digest(observations.map((entry) => entry.fingerprint ?? '-')) }
+    },
+    () => readExperimentDoc(project.root, project.name, id),
+  ) as Promise<Experiment | null>
 }

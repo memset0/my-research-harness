@@ -28,7 +28,6 @@ import {
   deriveCompletion,
   deriveWikiReview,
   discoverRuns,
-  discoverWikiPages,
   type Experiment,
   effectiveWikiId,
   extractTitle,
@@ -50,6 +49,7 @@ import {
   verifiedThroughMark,
   WIKI_ID_REGEX,
   WIKI_LEGACY_ID_REGEX,
+  WIKI_REVIEW_RELPATH,
   type WikiCommit,
   type WikiProjectProjection,
   type WikiReview,
@@ -71,6 +71,7 @@ import {
   resolveProjectExecution,
 } from './execution-service.js'
 import {
+  containedReal,
   indexedCodeReviewInventory,
   indexedReportInventory,
   indexedWikiPages,
@@ -78,8 +79,14 @@ import {
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { FilesystemProjectService, type InventoryListOptions } from './project-service.js'
-import { type ReadPolicy, registerProjectRoots, STRICT_READ_POLICY } from './read-index.js'
-import { RunInventory, type RunInventoryWalk } from './run-inventory.js'
+import {
+  projectReadIndex,
+  type ReadPolicy,
+  registerProjectRoots,
+  STRICT_READ_POLICY,
+  statObservation,
+} from './read-index.js'
+import { RUN_INVENTORY_REFRESH_MS, RunInventory, type RunInventoryWalk } from './run-inventory.js'
 
 export class BackendDocumentServiceError extends Error {
   constructor(
@@ -189,6 +196,8 @@ export interface BackendWikiArtifactOptions {
    * would return it. Omitted, the provider walks the Run roots itself.
    */
   runPaths?: () => Promise<readonly string[]>
+  /** Summary-index windows of the requesting service. */
+  readPolicy?: ReadPolicy
 }
 
 export type BackendWikiArtifactProvider = (
@@ -220,11 +229,10 @@ export async function scanBackendWikiArtifacts(
   references: BackendWikiArtifactReferences,
   options: BackendWikiArtifactOptions = {},
 ): Promise<BackendWikiArtifacts> {
-  return new FilesystemProjectService([project]).readWikiArtifacts(
-    project.name,
-    references,
-    options,
-  )
+  return new FilesystemProjectService(
+    [project],
+    options.readPolicy ? { readPolicy: options.readPolicy } : {},
+  ).readWikiArtifacts(project.name, references, options)
 }
 
 export class FilesystemDocumentService implements BackendDocumentService {
@@ -235,7 +243,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
   private readonly resolveExecution: BackendExecutionResolver
 
   /** One Run-directory walk shared by every wiki projection of a Project. */
-  private readonly runInventory: RunInventory
+  private readonly runInventory: RunInventory | null
 
   private readonly policy: ReadPolicy
 
@@ -248,13 +256,13 @@ export class FilesystemDocumentService implements BackendDocumentService {
     this.policy = options.readPolicy ?? STRICT_READ_POLICY
     this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
     this.resolveExecution = options.execution ?? resolveProjectExecution
-    this.runInventory = new RunInventory(
-      options.runWalk ??
-        ((name) =>
-          withAutomaticProjectFileContext(() =>
-            discoverRuns(this.requireProject(name), { includeArchived: true }),
-          )),
-    )
+    // An injected walk keeps its own inventory; otherwise every projection
+    // shares the Project summary index's walk.
+    this.runInventory = options.runWalk
+      ? new RunInventory(options.runWalk, {
+          refreshMs: Math.max(this.policy.walkRefreshMs, RUN_INVENTORY_REFRESH_MS),
+        })
+      : null
   }
 
   async listReports(projectName: string, options: InventoryListOptions = {}) {
@@ -560,7 +568,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
    * entries, so listing a wiki never costs a Run or Report body.
    */
   private async wikiProjection(project: ProjectConfig): Promise<WikiProjectProjection> {
-    const pages = await discoverWikiPages(project.root)
+    const pages = await indexedWikiPages(project, this.policy, { assets: true })
     return this.projectWiki(project, pages, pages)
   }
 
@@ -576,7 +584,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     if (!WIKI_ID_REGEX.test(id)) {
       throw new BackendDocumentServiceError('INVALID_RESOURCE', 'Wiki id must match W<NNNN>')
     }
-    const pages = await discoverWikiPages(project.root)
+    const pages = await indexedWikiPages(project, this.policy, { assets: true })
     const cited = pages.filter(
       (page) => effectiveWikiId(page.id, parseWikiFrontmatter(page.content).frontmatter) === id,
     )
@@ -604,10 +612,11 @@ export class FilesystemDocumentService implements BackendDocumentService {
     )
     const [artifacts, reportIds, marks] = await Promise.all([
       this.wikiArtifacts(project, references, {
-        runPaths: () => this.runInventory.get(project.name),
+        runPaths: () => this.wikiRunPaths(project),
+        readPolicy: this.policy,
       }),
       this.listReportIds(project),
-      readWikiReviewMarks(project.root),
+      this.indexedReviewMarks(project),
     ])
     // A single-page projection keeps only the cited summary, so only its
     // review is derived: git blame per page is the other per-page cost.
@@ -626,6 +635,29 @@ export class FilesystemDocumentService implements BackendDocumentService {
       reportIds,
       reviews,
     })
+  }
+
+  /** Every Run directory for `@` resolution; at least the wiki's 15 s reuse. */
+  private wikiRunPaths(project: ProjectConfig): Promise<readonly string[]> {
+    if (this.runInventory) return this.runInventory.get(project.name)
+    return withAutomaticProjectFileContext(() =>
+      projectReadIndex(project.root).walk(
+        project,
+        Math.max(this.policy.walkRefreshMs, RUN_INVENTORY_REFRESH_MS),
+        (target) => discoverRuns(target, { includeArchived: true }),
+      ),
+    )
+  }
+
+  /** Review marks, re-read only when the marks file's fingerprint changed. */
+  private async indexedReviewMarks(project: ProjectConfig): Promise<WikiReviewMark[]> {
+    const marks = await projectReadIndex(project.root).observe(
+      `wiki-review-marks:${project.root}`,
+      this.policy.listMaxAgeMs,
+      () => statObservation(join(project.root, WIKI_REVIEW_RELPATH)),
+      () => readWikiReviewMarks(project.root),
+    )
+    return marks ?? []
   }
 
   private async readWikiPage(project: ProjectConfig, summary: WikiSummary) {
@@ -741,84 +773,86 @@ export class FilesystemDocumentService implements BackendDocumentService {
     return (await indexedReportInventory(project, this.policy)).map((item) => item.id)
   }
 
+  /**
+   * Reports from the indexed inventory: each document's title is parsed once
+   * per fingerprint and its path must stay inside the Project.
+   */
   private async discoverReports(project: ProjectConfig): Promise<DocumentEntry[]> {
-    const directory = join(project.root, 'docs', 'reports')
-    const entries = (await missingOrThrow(fs.readdir(directory, { withFileTypes: true }))) ?? []
-    const out: DocumentEntry[] = []
-    for (const entry of entries) {
-      const file = entry.isFile() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/.exec(entry.name) : null
-      const bundle = entry.isDirectory() ? /^R(\d{4})-([a-z0-9][a-z0-9-]*)$/.exec(entry.name) : null
-      if (!file && !bundle) continue
-      const absolutePath = bundle
-        ? join(directory, entry.name, 'README.md')
-        : join(directory, entry.name)
-      if (!(await existsWithin(project.root, absolutePath))) continue
-      const content = await missingOrThrow(fs.readFile(absolutePath, 'utf8'))
-      const stat = await missingOrThrow(fs.stat(absolutePath))
-      if (content === null || !stat?.isFile()) continue
-      out.push({
-        id: `R${(file ?? bundle)![1]}`,
-        absolutePath,
-        resource: relative(project.root, absolutePath).split(sep).join('/'),
-        title: extractTitle(content),
-        mtime: stat.mtimeMs,
-        kind: 'report',
-        format: bundle ? 'bundle' : 'markdown',
-        slug: (file ?? bundle)![2],
-      })
-    }
-    return out.sort((a, b) => b.id.localeCompare(a.id))
+    const age = this.policy.listMaxAgeMs
+    const items = await indexedReportInventory(project, this.policy)
+    const entries = await Promise.all(
+      items.map(async (item): Promise<DocumentEntry | null> => {
+        const absolutePath = join(project.root, ...item.resource.split('/'))
+        if ((await containedReal(project, this.policy, absolutePath)) === null) return null
+        const summary = await projectReadIndex(project.root).file(
+          absolutePath,
+          'report-title',
+          age,
+          (content, stat) =>
+            stat.isFile() ? { title: extractTitle(content), mtime: stat.mtimeMs } : null,
+        )
+        if (!summary) return null
+        return {
+          id: item.id,
+          absolutePath,
+          resource: item.resource,
+          title: summary.title,
+          mtime: summary.mtime,
+          kind: 'report',
+          format: item.resource.endsWith('/README.md') ? 'bundle' : 'markdown',
+          slug: item.slug,
+        }
+      }),
+    )
+    return entries
+      .filter((entry): entry is DocumentEntry => entry !== null)
+      .sort((a, b) => b.id.localeCompare(a.id))
   }
 
+  /**
+   * Code reviews from the indexed inventory, each parsed once per fingerprint.
+   * An unparseable review is skipped, as before.
+   */
   private async discoverCodeReviews(project: ProjectConfig): Promise<DocumentEntry[]> {
-    const docs = join(project.root, 'docs')
-    const paths: string[] = []
-    const flat = (await missingOrThrow(fs.readdir(join(docs, 'code-review')))) ?? []
-    for (const name of flat) {
-      if (/^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(name)) {
-        paths.push(`code-review/${name}`)
-      }
-    }
-    const experiments = (await missingOrThrow(fs.readdir(join(docs, 'experiments')))) ?? []
-    for (const experiment of experiments) {
-      if (!/^E\d{4}-[a-z0-9-]+$/.test(experiment)) continue
-      const names =
-        (await missingOrThrow(fs.readdir(join(docs, 'experiments', experiment, 'code-review')))) ??
-        []
-      for (const name of names) {
-        if (/^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(name)) {
-          paths.push(`experiments/${experiment}/code-review/${name}`)
-        }
-      }
-    }
-    const out: DocumentEntry[] = []
-    for (const relativePath of paths) {
-      const absolutePath = join(docs, relativePath)
-      if (!(await existsWithin(project.root, absolutePath))) continue
-      const content = await missingOrThrow(fs.readFile(absolutePath, 'utf8'))
-      const stat = await missingOrThrow(fs.stat(absolutePath))
-      if (content === null || !stat?.isFile()) continue
-      let title: string | null = null
-      try {
-        const parsed = parseCodeReview(content)
-        title = parsed.frontmatter.title || null
-        const metadata = codeReviewMetadata(
-          relativePath.replace(/\.md$/, ''),
-          parsed.frontmatter,
-          parsed.body,
-        )
-        out.push({
-          id: relativePath.replace(/\.md$/, ''),
+    const age = this.policy.listMaxAgeMs
+    const items = await indexedCodeReviewInventory(project, this.policy)
+    const entries = await Promise.all(
+      items.map(async (item): Promise<DocumentEntry | null> => {
+        const absolutePath = join(project.root, ...item.resource.split('/'))
+        if ((await containedReal(project, this.policy, absolutePath)) === null) return null
+        const parsed = await projectReadIndex(project.root).file(
           absolutePath,
-          resource: `docs/${relativePath}`,
-          title,
-          mtime: stat.mtimeMs,
+          'code-review',
+          age,
+          (content, stat) => {
+            if (!stat.isFile()) return null
+            try {
+              const review = parseCodeReview(content)
+              return {
+                title: review.frontmatter.title || null,
+                mtime: stat.mtimeMs,
+                metadata: codeReviewMetadata(item.id, review.frontmatter, review.body),
+              }
+            } catch {
+              return null
+            }
+          },
+        )
+        if (!parsed) return null
+        return {
+          id: item.id,
+          absolutePath,
+          resource: item.resource,
+          title: parsed.title,
+          mtime: parsed.mtime,
           kind: 'code-review',
-          codeReview: metadata,
-        })
-      } catch {}
-    }
-    return out.sort((a, b) => b.id.localeCompare(a.id))
+          codeReview: parsed.metadata,
+        }
+      }),
+    )
+    return entries
+      .filter((entry): entry is DocumentEntry => entry !== null)
+      .sort((a, b) => b.id.localeCompare(a.id))
   }
 }
 
@@ -959,7 +993,7 @@ async function assertWithin(projectRoot: string, target: string): Promise<void> 
  * and resolution is simply skipped. An unreadable path is not skipped: only
  * absence yields `false`, everything else propagates.
  */
-async function existsWithin(projectRoot: string, target: string): Promise<boolean> {
+async function _existsWithin(projectRoot: string, target: string): Promise<boolean> {
   try {
     return (await resolveContained(projectRoot, target, { allowMissing: true })) !== null
   } catch (error) {

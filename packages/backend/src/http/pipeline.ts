@@ -15,6 +15,7 @@ import {
   BackendActorContextError,
   decodeBackendActorContext,
 } from '../actor-context.js'
+import { invalidateProjectReadIndex } from '../read-index.js'
 import { withRequestScope } from '../request-scope.js'
 import { authenticates } from './auth.js'
 import { type HttpError, httpError, toHttpError } from './errors.js'
@@ -222,6 +223,8 @@ export function createRouteHandler(
       }
     }
 
+    const writes = project !== null && method !== 'GET' && method !== 'HEAD'
+    if (writes) invalidateProjectReadIndex(project)
     try {
       // One request scope per handler: the Project root's real path is
       // resolved once and shared by every containment check below it.
@@ -237,6 +240,10 @@ export function createRouteHandler(
           options,
         }),
       )
+      // A write through central makes the next read of this Project
+      // re-validate every summary-index entry instead of trusting a window.
+      // (before and after, so no read during or after the write trusts a window).
+      if (writes) invalidateProjectReadIndex(project)
     } catch (error) {
       if (response.headersSent) {
         if (!response.destroyed && !response.writableEnded) response.end()

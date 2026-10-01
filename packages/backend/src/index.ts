@@ -79,6 +79,13 @@ export {
   BackendProjectServiceError,
   FilesystemProjectService,
 } from './project-service.js'
+export {
+  CENTRAL_READ_POLICY,
+  dropProjectReadIndexes,
+  invalidateProjectReadIndex,
+  type ReadPolicy,
+  STRICT_READ_POLICY,
+} from './read-index.js'
 export { withRequestScope } from './request-scope.js'
 export {
   BACKEND_ANOMALIES_ROUTE,

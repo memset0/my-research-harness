@@ -21,11 +21,11 @@
 
 ## 4. Summary index consumers and validation windows (D4)
 
-- [ ] 4.1 Add Run summary entries (README fingerprint, archived/stale/eligibility flags) and the Run walk entry with stale-while-revalidate; verify unit tests including eligibility strictness errors
-- [ ] 4.2 Use the index for Experiment detail member eligibility (declared paths and legacy base names) and the Run detail parent lookup, always validating; verify eligibility/parent tests and an fs-count test (one stat per member when warm)
-- [ ] 4.3 Compose the Run list and anomalies from the walk, Run summaries and Experiment READMEs; verify membership/anomaly tests are unchanged
-- [ ] 4.4 Route the wiki projection (pages, bundles, cited Experiments, cited/member Runs, hypotheses, review marks, Report ids) through the index; verify wiki service/route tests and staleness after a source edit
-- [ ] 4.5 Add `ReadPolicy` (central windows 60 s / 300 s / walk 60 s, default 0) wired from the direct runtime, and invalidate the Project index after successful mutating requests; verify a window test with a fake clock and a mutation-invalidation test
+- [x] 4.1 Add Run summary entries (README fingerprint, archived/stale/eligibility flags) and the Run walk entry with stale-while-revalidate; verify unit tests including eligibility strictness errors
+- [x] 4.2 Use the index for Experiment detail member eligibility (declared paths and legacy base names) and the Run detail parent lookup, always validating; verify eligibility/parent tests and an fs-count test (one stat per member when warm)
+- [x] 4.3 Compose the Run list and anomalies from the walk, Run summaries and Experiment READMEs; verify membership/anomaly tests are unchanged
+- [x] 4.4 Route the wiki projection (pages, bundles, cited Experiments, cited/member Runs, hypotheses, review marks, Report ids) through the index; verify wiki service/route tests and staleness after a source edit
+- [x] 4.5 Add `ReadPolicy` (central windows 60 s / 300 s / walk 60 s, default 0) wired from the direct runtime, and invalidate the Project index after successful mutating requests; verify a window test with a fake clock and a mutation-invalidation test
 
 ## 5. Conditional list heartbeats (D5)
 

@@ -79,14 +79,20 @@ after the stat, so a write racing the stat leaves a stale fingerprint that the
 next validation corrects (never the reverse).
 
 A Run summary entry is keyed by the Run directory and fingerprinted by its
-README (the directory itself when there is no README). It stores the
-`readRunDir` record without body and sections, the archived flag from
-`runArchivedFromRun`, the stale flag, and an `eligibilityInvalid` flag that
+README (the directory itself when there is no README). It stores the parsed
+README record without its body (same defaults and backfills as `readRunDir`,
+one read per load), the deprecation flag, and an `eligibilityError` that
 reproduces `listDeprecatedRunIds`' strictness (unterminated frontmatter, a
-non-boolean `deprecated`, or frontmatter that is not a mapping). Containment
-of a Run path is verified with real paths when the entry is loaded; a later
-fingerprint match proves the same inode is still reached, so a swapped symlink
-shows up as a fingerprint change and a full re-resolution.
+frontmatter that is not a mapping, a non-boolean `deprecated`). Archival is
+the declared `archived` key; only when the README does not declare it is the
+legacy `.archived` sidecar probed (itself an index observation, adding the
+same migration warning). A README that declares `archived` is no longer
+probed for a coexisting stale sidecar — this removes one `access` per Run.
+Walked directories are never followed links, so only declared Run paths
+(Experiment `runs`, wiki citations) are verified with real paths, once per
+loaded entry; a later fingerprint match proves the same inode is still
+reached, so a swapped symlink shows up as a fingerprint change and a full
+re-resolution.
 
 Validation policy (`ReadPolicy`), passed by the service per call:
 

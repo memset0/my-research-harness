@@ -15,9 +15,8 @@ import {
   type BackendRunSummary,
   BackendRunsResponseSchema,
   buildExperimentDocumentView,
-  computeMembershipFromDisk,
-  declaredRunOwner,
-  discoverExperiments,
+  buildExperimentRecord,
+  computeMembership,
   discoverRuns,
   type Experiment,
   projectFs as fs,
@@ -28,7 +27,6 @@ import {
   invalidateProjectFile,
   isRunDeprecated,
   isStaleRunning,
-  listExperimentIds,
   type MembershipResult,
   matchesRunDeprecationFilter,
   type ParsedHypotheses,
@@ -47,7 +45,6 @@ import {
   readProjectJournal,
   readRunDir,
   runArchivedFromRun,
-  scanProjectRoot,
 } from '@memon/core'
 import type {
   BackendWikiArtifactOptions,
@@ -56,10 +53,21 @@ import type {
 } from './document-service.js'
 import {
   BackendExperimentListResponseSchema,
+  experimentIdentities,
   experimentListing,
   experimentListRow,
+  type IndexedExperimentDocument,
+  indexedExperimentBundle,
   indexedExperimentDocuments,
 } from './indexed-experiments.js'
+import {
+  archivedRun,
+  indexedDeclaredRun,
+  indexedRun,
+  type RunSummary,
+  requestRun,
+  runListWindow,
+} from './indexed-runs.js'
 import { missingOrThrow } from './missing-path.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import {
@@ -68,8 +76,7 @@ import {
   registerProjectRoots,
   STRICT_READ_POLICY,
 } from './read-index.js'
-import { strictDeprecatedFlag } from './run-eligibility.js'
-import { resolveRunPath, resolveRunReferencePath } from './run-path.js'
+import { resolveRunReferencePath } from './run-path.js'
 
 export class BackendProjectServiceError extends Error {
   constructor(
@@ -242,13 +249,23 @@ export class FilesystemProjectService implements BackendProjectReadService {
     options: BackendWikiArtifactOptions = {},
   ): Promise<BackendWikiArtifacts> {
     const project = this.requireProject(projectName)
+    const age = this.policy.listMaxAgeMs
+    const runWindow = runListWindow(this.policy)
     return withAutomaticProjectFileContext(async () => {
-      const hypothesesPath = join(project.root, 'docs', 'hypotheses.md')
-      const [experimentIds, content, hypothesesStat] = await Promise.all([
-        listExperimentIds(project.root),
-        missingOrThrow(fs.readFile(hypothesesPath, 'utf8')),
-        missingOrThrow(fs.stat(hypothesesPath)),
+      const index = projectReadIndex(project.root)
+      const [listing, hypotheses] = await Promise.all([
+        experimentListing(project, age),
+        index.file(
+          join(project.root, 'docs', 'hypotheses.md'),
+          'wiki-hypotheses',
+          age,
+          (content, stat) => ({
+            ids: parseHypotheses(content).entries.map((entry) => entry.id),
+            mtime: stat.mtimeMs,
+          }),
+        ),
       ])
+      const experimentIds = experimentIdentities(listing)
 
       // A citation may name an Experiment by its numeric id alone; resolution
       // then picks the first document with that prefix, as the projection does.
@@ -258,38 +275,33 @@ export class FilesystemProjectService implements BackendProjectReadService {
         if (id !== undefined) cited.push(id)
       }
       const experiments = (
-        await Promise.all(cited.map((id) => readExperimentDoc(project.root, project.name, id)))
+        await Promise.all(cited.map((id) => indexedExperimentBundle(project, id, age)))
       ).filter((experiment): experiment is Experiment => experiment !== null)
 
       // A cited Experiment's effective updated time joins its members', so those
-      // Runs — and only those — are read alongside the directly cited ones.
+      // Runs — and only those — are summarized alongside the directly cited ones.
       const wantedRuns = new Set(references.runs)
       for (const experiment of experiments) {
         for (const runId of experiment.frontMatter.runs) wantedRuns.add(runId)
       }
-      // One directory walk serves everything below. Resolving each bare
-      // reference through `resolveRunReference` would walk the Run roots once
-      // per citation in parallel, which overflowed the project I/O channel on
-      // a project with a thousand Runs. A caller may supply a shared inventory
-      // of that walk instead of paying for a fresh one.
-      const walkedPaths = options.runPaths
-        ? await options.runPaths()
-        : await discoverRuns(project, { includeArchived: true })
+      // One directory walk serves every bare reference; a caller may supply a
+      // shared inventory of that walk instead of paying for a fresh one.
+      const walkedPaths = options.runPaths ? await options.runPaths() : await this.walk(project)
       const byBasename = new Map<string, string[]>()
       for (const path of walkedPaths) {
         const name = basename(path)
         byBasename.set(name, [...(byBasename.get(name) ?? []), path])
       }
-      // Cited Runs are resolved and read a few at a time: a list citing busy
-      // Experiments reads a thousand READMEs, and launching them all at once
-      // queues every other request's file operations behind them.
-      const wantedPaths = await mapWithConcurrency(
+      // Cited Runs come from the summary index a few at a time: a list citing
+      // busy Experiments covers a thousand Runs, and a warm entry costs at most
+      // one stat.
+      const summaries = await mapWithConcurrency(
         [...wantedRuns],
         WIKI_RUN_READ_CONCURRENCY,
         async (reference) => {
           if (reference.includes('/')) {
             try {
-              return await resolveRunPath(project.root, reference)
+              return await indexedDeclaredRun(project, reference, runWindow)
             } catch {
               return null
             }
@@ -297,17 +309,16 @@ export class FilesystemProjectService implements BackendProjectReadService {
           // An ambiguous or unknown base name is an unresolved citation, not a
           // failed listing.
           const candidates = byBasename.get(reference) ?? []
-          return candidates.length === 1 ? candidates[0]! : null
+          return candidates.length === 1 ? indexedRun(project, candidates[0]!, runWindow) : null
         },
       )
-      const runs = await mapWithConcurrency(
-        wantedPaths.filter((path): path is string => path !== null),
-        WIKI_RUN_READ_CONCURRENCY,
-        async (path) => {
-          const run = await readRunDir(path, project.name)
-          return { ...run, id: projectRunPath(project.root, path) }
-        },
-      )
+      const seen = new Set<string>()
+      const runs: Run[] = []
+      for (const summary of summaries) {
+        if (!summary || seen.has(summary.run.path)) continue
+        seen.add(summary.run.path)
+        runs.push({ ...requestRun(summary), id: projectRunPath(project.root, summary.run.path) })
+      }
       // `@` mentions resolve against every walked directory — by canonical
       // project path and by base name — without opening a single README.
       const runIds: string[] = []
@@ -320,9 +331,8 @@ export class FilesystemProjectService implements BackendProjectReadService {
         runs,
         experimentIds,
         runIds,
-        hypothesesMtime: hypothesesStat?.mtimeMs ?? null,
-        hypothesisIds:
-          content === null ? [] : parseHypotheses(content).entries.map((entry) => entry.id),
+        hypothesesMtime: hypotheses?.mtime ?? null,
+        hypothesisIds: hypotheses?.ids ?? [],
       }
     })
   }
@@ -441,7 +451,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
   async getExperiment(projectName: string, id: string) {
     const project = this.requireProject(projectName)
     const experiment = await this.readExperimentDocument(project, id)
-    const eligibility = await experimentRunEligibility(project, experiment)
+    const eligibility = await experimentRunEligibility(project, experiment, () =>
+      this.walk(project),
+    )
     const documentView = buildExperimentDocumentView(experiment, {
       deprecatedRuns: eligibility.deprecatedRuns,
     })
@@ -473,7 +485,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
         updatedAt: fileStat.mtime.toISOString(),
       })
     }
-    const eligibility = await experimentRunEligibility(project, experiment)
+    const eligibility = await experimentRunEligibility(project, experiment, () =>
+      this.walk(project),
+    )
     return BackendExperimentResultsResponseSchema.parse({
       project: projectName,
       resource: portableProjectResource(project, results.path),
@@ -487,7 +501,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
   async getRunFiles(projectName: string, id: string, depth: number) {
     const project = this.requireProject(projectName)
     const runPath = await withAutomaticProjectFileContext(() =>
-      resolveRunReferencePath(project, id, () => discoverRuns(project, { includeArchived: true })),
+      resolveRunReferencePath(project, id, () => this.walk(project)),
     )
     if (!runPath) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const runRoot = await fs.realpath(runPath)
@@ -668,12 +682,12 @@ export class FilesystemProjectService implements BackendProjectReadService {
    */
   private async readRun(project: ProjectConfig, id: string): Promise<IndexedRun> {
     const path = await withAutomaticProjectFileContext(() =>
-      resolveRunReferencePath(project, id, () => discoverRuns(project, { includeArchived: true })),
+      resolveRunReferencePath(project, id, () => this.walk(project)),
     )
     if (!path) throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Run not found')
     const run = await readRunDir(path, project.name)
     run.frontMatter.experiment = await withAutomaticProjectFileContext(() =>
-      declaredRunOwner(project.root, path, project.name),
+      this.declaredOwner(project, path),
     )
     return {
       ...run,
@@ -728,50 +742,130 @@ export class FilesystemProjectService implements BackendProjectReadService {
    */
   private async buildProject(projectName: string): Promise<ProjectData> {
     const project = this.requireProject(projectName)
-    const [snapshot, experimentResult] = await Promise.all([
-      scanProjectRoot(project.root, {
-        // The composition is the full Run set on purpose: membership must see
-        // a deprecated Run to avoid reporting it as a phantom reference, and
-        // `listRuns` applies the research default on top of this.
-        includeArchived: true,
-        includeDeprecated: true,
-        projectName: project.name,
-        include: project.include,
-        exclude: project.exclude,
-        ...(project.runDepth === undefined ? {} : { runDepth: project.runDepth }),
-      }),
-      discoverExperiments(project.root, project.name),
+    // An unreadable or missing Project root is an error, never an empty one.
+    const rootStat = await fs.stat(project.root)
+    if (!rootStat.isDirectory()) throw new Error('Project root is not a directory')
+    const runWindow = runListWindow(this.policy)
+    const [summaries, documents] = await Promise.all([
+      // The composition is the full Run set on purpose: membership must see
+      // a deprecated Run to avoid reporting it as a phantom reference, and
+      // `listRuns` applies the research default on top of this.
+      withAutomaticProjectFileContext(async () =>
+        mapWithConcurrency(await this.walk(project), RUN_SUMMARY_CONCURRENCY, (dir) =>
+          indexedRun(project, dir, runWindow),
+        ),
+      ),
+      indexedExperimentDocuments(project, this.policy.listMaxAgeMs),
     ])
+    const runs = (
+      await mapWithConcurrency(
+        summaries.filter((summary): summary is RunSummary => summary !== null),
+        RUN_SUMMARY_CONCURRENCY,
+        (summary) => archivedRun(project, summary, this.policy.listMaxAgeMs),
+      )
+    ).sort((a, b) => String(b.frontMatter.createdAt).localeCompare(String(a.frontMatter.createdAt)))
+    const experiments = documents.map((document) => experimentRecord(project, document))
+    const runsByPath = new Map(runs.map((run) => [projectRunPath(project.root, run.path), run]))
     const legacyCounts = new Map<string, number>()
-    for (const run of snapshot.experiments)
-      legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
-    for (const run of snapshot.experiments) {
+    for (const run of runs) legacyCounts.set(run.id, (legacyCounts.get(run.id) ?? 0) + 1)
+    for (const run of runs) {
       const path = projectRunPath(project.root, run.path)
-      const owners = experimentResult.experiments.filter(
+      const owners = experiments.filter(
         (experiment) =>
           experiment.frontMatter.runs.includes(path) ||
           (legacyCounts.get(run.id) === 1 && experiment.frontMatter.runs.includes(run.id)),
       )
       run.frontMatter.experiment = owners.length === 1 ? owners[0]!.id : null
     }
+    // Path declarations are classified from the declared path itself, so an
+    // excluded or depth-pruned Run directory is a member, not a phantom.
+    const declared = new Set<string>()
+    for (const experiment of experiments)
+      for (const reference of experiment.frontMatter.runs)
+        if (reference.includes('/')) declared.add(reference)
+    const declaredRuns = new Map<string, Run | null>()
+    await withAutomaticProjectFileContext(() =>
+      mapWithConcurrency([...declared], RUN_SUMMARY_CONCURRENCY, async (reference) => {
+        const known = runsByPath.get(reference)
+        if (known) {
+          declaredRuns.set(reference, known)
+          return
+        }
+        try {
+          const summary = await indexedDeclaredRun(project, reference, runWindow)
+          declaredRuns.set(reference, summary ? requestRun(summary) : null)
+        } catch {
+          declaredRuns.set(reference, null)
+        }
+      }),
+    )
     return {
       project,
-      runs: snapshot.experiments,
-      runsById: new Map(
-        snapshot.experiments.map((run) => [projectRunPath(project.root, run.path), run]),
-      ),
-      experiments: experimentResult.experiments,
-      // Path declarations are classified from the declared path on disk, so
-      // an excluded or depth-pruned Run directory is a member, not a phantom.
-      membership: await computeMembershipFromDisk({
-        experiments: experimentResult.experiments,
-        runs: snapshot.experiments,
+      runs,
+      runsById: runsByPath,
+      experiments,
+      membership: computeMembership({
+        experiments,
+        runs,
         project: project.name,
         projectRoot: project.root,
+        declaredRuns,
       }),
     }
   }
+
+  /** Every Run directory, through the index's shared walk. */
+  private walk(project: ProjectConfig): Promise<readonly string[]> {
+    return projectReadIndex(project.root).walk(project, this.policy.walkRefreshMs, (target) =>
+      discoverRuns(target, { includeArchived: true }),
+    )
+  }
+
+  /**
+   * The single Experiment that declares `dir` (by project path, or by a base
+   * name that resolves uniquely to it), validated against every Experiment
+   * README's fingerprint on each call.
+   */
+  private async declaredOwner(project: ProjectConfig, dir: string): Promise<string | null> {
+    const path = projectRunPath(project.root, dir)
+    const name = basename(dir)
+    const owners: string[] = []
+    let legacyTarget: Promise<string | null> | undefined
+    for (const document of await indexedExperimentDocuments(project, 0)) {
+      const runs = document.parsed.frontMatter.runs
+      let declared = runs.includes(path)
+      if (!declared && runs.includes(name)) {
+        legacyTarget ??= this.walk(project).then((paths) => {
+          const matches = paths.filter((candidate) => basename(candidate) === name)
+          return matches.length === 1 ? matches[0]! : null
+        })
+        declared = (await legacyTarget) === dir
+      }
+      if (declared) owners.push(document.id)
+    }
+    if (owners.length > 1) throw new Error(`Run path has multiple Experiment owners: ${path}`)
+    return owners[0] ?? null
+  }
 }
+
+/** A full Experiment record (README only) for membership composition. */
+function experimentRecord(project: ProjectConfig, document: IndexedExperimentDocument): Experiment {
+  return buildExperimentRecord(
+    {
+      ...document.parsed,
+      parseWarnings: [...document.parsed.parseWarnings, ...document.discoveryWarnings],
+    },
+    {
+      id: document.id,
+      project: project.name,
+      path: document.path,
+      mtime: document.readmeMtime,
+      readmeMtime: document.readmeMtime,
+    },
+  )
+}
+
+const RUN_SUMMARY_CONCURRENCY = 16
 
 function safeRunSummary(run: IndexedRun, project: ProjectConfig): BackendRunSummary {
   const frontMatter = run.frontMatter
@@ -876,15 +970,20 @@ function normalizePortableResultResource(value: string): string {
 async function experimentRunEligibility(
   project: ProjectConfig,
   experiment: Experiment,
+  walk: () => Promise<readonly string[]>,
 ): Promise<{ deprecatedRuns: string[]; variantEligibility: ResultsVariantEligibility[] }> {
   const results = experiment.documents?.results.data ?? null
   let deprecatedRuns: string[]
   try {
     deprecatedRuns = await withAutomaticProjectFileContext(() =>
-      deprecatedRunIds(project, [
-        ...experiment.frontMatter.runs,
-        ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
-      ]),
+      deprecatedRunIds(
+        project,
+        [
+          ...experiment.frontMatter.runs,
+          ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
+        ],
+        walk,
+      ),
     )
   } catch {
     throw new BackendProjectServiceError(
@@ -899,31 +998,37 @@ async function experimentRunEligibility(
 }
 
 /**
- * Deprecated ids among `ids` (declared paths or legacy base names). A missing
- * Run or README is not deprecated; unreadable or malformed eligibility
- * metadata throws. The Run walk runs only when a base name needs it.
+ * Deprecated ids among `ids` (declared paths or legacy base names), from Run
+ * summaries validated on every call (one stat per Run when unchanged). A
+ * missing Run or README is not deprecated; unreadable or malformed
+ * eligibility metadata throws. The Run walk runs only when a base name needs it.
  */
-async function deprecatedRunIds(project: ProjectConfig, ids: readonly string[]): Promise<string[]> {
+async function deprecatedRunIds(
+  project: ProjectConfig,
+  ids: readonly string[],
+  walk: () => Promise<readonly string[]>,
+): Promise<string[]> {
   if (ids.length === 0) return []
   const wanted = new Set(ids)
-  let walk: Promise<readonly string[]> | undefined
-  const walkOnce = () => {
-    walk ??= discoverRuns(project, { includeArchived: true })
-    return walk
-  }
-  const dirs = (
-    await mapWithConcurrency([...wanted], ELIGIBILITY_CONCURRENCY, (reference) =>
-      resolveRunReferencePath(project, reference, walkOnce),
-    )
-  ).filter((dir): dir is string => dir !== null)
+  const summaries = await mapWithConcurrency(
+    [...wanted],
+    ELIGIBILITY_CONCURRENCY,
+    async (reference) => {
+      if (reference.includes('/')) return indexedDeclaredRun(project, reference, 0)
+      const matches = (await walk()).filter((path) => basename(path) === reference)
+      if (matches.length > 1) throw new Error(`Ambiguous Run ID: ${reference}`)
+      return matches[0] === undefined ? null : indexedRun(project, matches[0], 0)
+    },
+  )
   const deprecated: string[] = []
-  await mapWithConcurrency(dirs, ELIGIBILITY_CONCURRENCY, async (dir) => {
-    const content = await missingOrThrow(fs.readFile(join(dir, 'README.md'), 'utf8'))
-    if (content === null || !strictDeprecatedFlag(content)) return
-    const path = projectRunPath(project.root, dir)
+  for (const summary of summaries) {
+    if (!summary) continue
+    if (summary.eligibilityError !== null) throw new Error(summary.eligibilityError)
+    if (!summary.run.hasReadme || !summary.run.frontMatter.deprecated) continue
+    const path = projectRunPath(project.root, summary.run.path)
     if (wanted.has(path)) deprecated.push(path)
-    if (wanted.has(basename(dir))) deprecated.push(basename(dir))
-  })
+    if (wanted.has(basename(summary.run.path))) deprecated.push(basename(summary.run.path))
+  }
   return [...new Set(deprecated)].sort()
 }
 

@@ -21,6 +21,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
   type BackendDocumentService,
   type BackendHandler,
+  CENTRAL_READ_POLICY,
   createBackendHandler,
   createBackendSlurmService,
   FilesystemDocumentService,
@@ -132,7 +133,9 @@ function createHostRuntime(
   // mount even if capability gating were bypassed.
   const executable = projects.filter((project) => project.execution !== undefined)
   const slurmExecution = executable[0]
-  const documents = new FilesystemDocumentService(projects)
+  // Central lists may reuse summary-index observations inside the agreed
+  // windows (external edits reach every list within five minutes).
+  const documents = new FilesystemDocumentService(projects, { readPolicy: CENTRAL_READ_POLICY })
   const handler: BackendHandler = createBackendHandler({
     hostId: host,
     serviceTokens: { current: serviceToken },
@@ -141,7 +144,7 @@ function createHostRuntime(
     instanceEpoch,
     readiness: true,
     projectDiscovery: () => projects.map((project) => ({ name: project.name })),
-    projectService: new FilesystemProjectService(projects),
+    projectService: new FilesystemProjectService(projects, { readPolicy: CENTRAL_READ_POLICY }),
     documentService: documents,
     mutationService: new FilesystemMutationService(projects),
     streamService: new FilesystemStreamService(projects),
