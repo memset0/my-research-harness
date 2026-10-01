@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithQuery } from '../test/utils'
@@ -84,19 +84,41 @@ describe('WikiReviewPanel', () => {
     await waitFor(() => expect(markWikiReview).toHaveBeenCalledWith('project-a', C2))
   })
 
-  it('names cascading newer marks before unverifying', async () => {
+  it('names cascading newer marks in an AlertDialog before unverifying', async () => {
     vi.mocked(fetchWikiReview).mockResolvedValue(reviewResponse([C1, C2]))
     vi.mocked(unmarkWikiReview).mockResolvedValue(reviewResponse([]))
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirm = vi.spyOn(window, 'confirm')
+    try {
+      renderWithQuery(<WikiReviewPanel project="project-a" open onOpenChange={() => {}} />)
+
+      const buttons = await screen.findAllByRole('button', { name: 'Unverify' })
+      await userEvent.click(buttons[0]!)
+
+      const dialog = await screen.findByRole('alertdialog')
+      expect(dialog.getAttribute('data-slot')).toBe('alert-dialog-content')
+      expect(dialog.textContent).toContain(
+        `Unverifying ${C1.slice(0, 8)} also removes 1 newer mark(s). Continue?`,
+      )
+      expect(unmarkWikiReview).not.toHaveBeenCalled()
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Unverify' }))
+      await waitFor(() => expect(unmarkWikiReview).toHaveBeenCalledWith('project-a', C1))
+      expect(confirm).not.toHaveBeenCalled()
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('cancelling the unverify AlertDialog keeps the mark', async () => {
+    vi.mocked(fetchWikiReview).mockResolvedValue(reviewResponse([C1, C2]))
 
     renderWithQuery(<WikiReviewPanel project="project-a" open onOpenChange={() => {}} />)
 
     const buttons = await screen.findAllByRole('button', { name: 'Unverify' })
-    await userEvent.click(buttons[0]!)
-
-    expect(confirm).toHaveBeenCalledWith(
-      `Unverifying ${C1.slice(0, 8)} also removes 1 newer mark(s). Continue?`,
-    )
-    await waitFor(() => expect(unmarkWikiReview).toHaveBeenCalledWith('project-a', C1))
+    await userEvent.click(buttons[1]!)
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog.textContent).toContain(`Remove the verification mark on ${C2.slice(0, 8)}?`)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(unmarkWikiReview).not.toHaveBeenCalled()
   })
 })

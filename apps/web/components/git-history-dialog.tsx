@@ -31,6 +31,16 @@ import { CommitMarkBadge } from './commit-mark-badge'
 import { CommitMarkEditor } from './commit-mark-editor'
 import { FileRow } from './file-row'
 import { SubmoduleBumpRow } from './submodule-bump-row'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
@@ -141,13 +151,15 @@ function HistoryBody({ project }: { project: string }) {
   // Track whether the currently-mounted CommitMarkEditor has a dirty
   // note draft. When the user clicks a DIFFERENT commit row, gate the
   // selection change behind a confirm prompt so unsaved drafts aren't
-  // silently discarded.
+  // silently discarded. `pendingSha` holds the requested commit while the
+  // AlertDialog asks for confirmation.
   const [editorDirty, setEditorDirty] = useState(false)
+  const [pendingSha, setPendingSha] = useState<string | null>(null)
 
   function trySelect(nextSha: string) {
-    if (editorDirty && selectedSha && selectedSha !== nextSha && typeof window !== 'undefined') {
-      const ok = window.confirm('You have unsaved note changes. Discard them and switch commits?')
-      if (!ok) return
+    if (editorDirty && selectedSha && selectedSha !== nextSha) {
+      setPendingSha(nextSha)
+      return
     }
     setSelectedSha(nextSha)
   }
@@ -188,6 +200,33 @@ function HistoryBody({ project }: { project: string }) {
           onDirtyChange={setEditorDirty}
         />
       </div>
+      <AlertDialog
+        open={pendingSha !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSha(null)
+        }}
+      >
+        <AlertDialogContent data-git-history-discard-confirm="">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved note changes. Discard them and switch commits?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingSha) setSelectedSha(pendingSha)
+                setPendingSha(null)
+              }}
+            >
+              Discard and switch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

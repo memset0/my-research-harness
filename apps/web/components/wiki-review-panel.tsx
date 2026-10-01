@@ -31,6 +31,16 @@ import { formatRelativeTime } from '../lib/format-relative-time'
 import { cn } from '../lib/utils'
 import { FileRow } from './file-row'
 import { ListSkeleton } from './skeletons'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 
@@ -76,6 +86,12 @@ function WikiReviewBody({ project }: { project: ProjectTarget }) {
     retry: false,
   })
   const [previewSha, setPreviewSha] = useState<string | null>(null)
+  // Commit awaiting unverify confirmation, with the number of newer marks the
+  // cascade will also remove.
+  const [pendingUnverify, setPendingUnverify] = useState<{
+    sha: string
+    newerMarks: number
+  } | null>(null)
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: reviewKey })
@@ -208,14 +224,7 @@ function WikiReviewBody({ project }: { project: ProjectTarget }) {
                     className="h-6 shrink-0 px-2 text-[11px]"
                     data-slot="wiki-review-unverify"
                     disabled={inFlight}
-                    onClick={() => {
-                      const message =
-                        newerMarks > 0
-                          ? `Unverifying ${commit.sha.slice(0, 8)} also removes ${newerMarks} newer mark(s). Continue?`
-                          : `Remove the verification mark on ${commit.sha.slice(0, 8)}?`
-                      if (typeof window !== 'undefined' && !window.confirm(message)) return
-                      unverify.mutate(commit.sha)
-                    }}
+                    onClick={() => setPendingUnverify({ sha: commit.sha, newerMarks })}
                   >
                     Unverify
                   </Button>
@@ -225,6 +234,38 @@ function WikiReviewBody({ project }: { project: ProjectTarget }) {
           })
         )}
       </ul>
+
+      <AlertDialog
+        open={pendingUnverify !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingUnverify(null)
+        }}
+      >
+        <AlertDialogContent data-wiki-review-unverify-confirm="">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unverify commit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingUnverify
+                ? pendingUnverify.newerMarks > 0
+                  ? `Unverifying ${pendingUnverify.sha.slice(0, 8)} also removes ${pendingUnverify.newerMarks} newer mark(s). Continue?`
+                  : `Remove the verification mark on ${pendingUnverify.sha.slice(0, 8)}?`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingUnverify) unverify.mutate(pendingUnverify.sha)
+                setPendingUnverify(null)
+              }}
+            >
+              Unverify
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

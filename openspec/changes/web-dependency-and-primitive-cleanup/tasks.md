@@ -12,9 +12,9 @@
 
 ## 3. AlertDialog confirmations
 
-- [ ] 3.1 Install `alert-dialog` with `pnpm dlx shadcn@latest add alert-dialog --yes` and verify the file is CLI output importing `radix-ui`
-- [ ] 3.2 Replace `window.confirm` in `git-history-dialog.tsx` with a controlled AlertDialog; add render tests for confirm and cancel paths and verify they pass
-- [ ] 3.3 Replace `window.confirm` in `wiki-review-panel.tsx` with a controlled AlertDialog; add render tests for confirm and cancel paths and verify they pass; verify `grep -rn "window.confirm" apps/web --include=*.tsx` returns nothing outside tests
+- [x] 3.1 Install `alert-dialog` with `pnpm dlx shadcn@latest add alert-dialog --yes` and verify the file is CLI output importing `radix-ui`
+- [x] 3.2 Replace `window.confirm` in `git-history-dialog.tsx` with a controlled AlertDialog; add render tests for confirm and cancel paths and verify they pass
+- [x] 3.3 Replace `window.confirm` in `wiki-review-panel.tsx` with a controlled AlertDialog; add render tests for confirm and cancel paths and verify they pass; verify `grep -rn "window.confirm" apps/web --include=*.tsx` returns nothing outside tests
 
 ## 4. Render verification (F1)
 

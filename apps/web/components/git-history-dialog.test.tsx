@@ -217,52 +217,58 @@ describe('GitHistoryDialog', () => {
     })
   })
 
-  it('switching to a different commit with a dirty note prompts confirm', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  async function dirtyFirstCommitNote() {
+    renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
+    // Select the first commit so an editor is mounted.
+    await userEvent.click(screen.getByText('fix the bug'))
+    const note = await waitFor(() => {
+      const el = document.body.querySelector(
+        '[data-slot="commit-mark-note"]',
+      ) as HTMLTextAreaElement | null
+      expect(el).not.toBeNull()
+      return el!
+    })
+    // Dirty the note (no save).
+    await userEvent.type(note, 'unsaved draft')
+  }
+
+  it('switching to a different commit with a dirty note opens an AlertDialog, not window.confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm')
     try {
-      renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
-      await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
-      // Select the first commit so an editor is mounted.
-      await userEvent.click(screen.getByText('fix the bug'))
-      const note = await waitFor(() => {
-        const el = document.body.querySelector(
-          '[data-slot="commit-mark-note"]',
-        ) as HTMLTextAreaElement | null
-        expect(el).not.toBeNull()
-        return el!
-      })
-      // Dirty the note (no save).
-      await userEvent.type(note, 'unsaved draft')
-      // Now click the OTHER commit row.
+      await dirtyFirstCommitNote()
       await userEvent.click(screen.getByText('add feature'))
-      expect(confirmSpy).toHaveBeenCalledTimes(1)
-      expect(confirmSpy.mock.calls[0]![0]).toMatch(/unsaved/i)
+      const dialog = await screen.findByRole('alertdialog')
+      expect(dialog.getAttribute('data-slot')).toBe('alert-dialog-content')
+      expect(dialog.textContent).toMatch(/unsaved/i)
+      expect(confirmSpy).not.toHaveBeenCalled()
     } finally {
       confirmSpy.mockRestore()
     }
   })
 
-  it('cancelling the confirm keeps the current selection', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    try {
-      renderWithQuery(<GitHistoryDialog project="project-a" open onOpenChange={() => {}} />)
-      await waitFor(() => expect(screen.getByText('fix the bug')).toBeInTheDocument())
-      await userEvent.click(screen.getByText('fix the bug'))
-      const note = await waitFor(() => {
-        const el = document.body.querySelector(
-          '[data-slot="commit-mark-note"]',
-        ) as HTMLTextAreaElement | null
-        expect(el).not.toBeNull()
-        return el!
-      })
-      await userEvent.type(note, 'unsaved')
-      const fetchCallsBefore = vi.mocked(fetchGitCommit).mock.calls.length
-      await userEvent.click(screen.getByText('add feature'))
-      // No NEW git-commit fetch fired (user cancelled).
-      expect(vi.mocked(fetchGitCommit).mock.calls.length).toBe(fetchCallsBefore)
-    } finally {
-      confirmSpy.mockRestore()
-    }
+  it('confirming the AlertDialog switches to the requested commit', async () => {
+    await dirtyFirstCommitNote()
+    await userEvent.click(screen.getByText('add feature'))
+    await screen.findByRole('alertdialog')
+    await userEvent.click(screen.getByRole('button', { name: 'Discard and switch' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    await waitFor(() =>
+      expect(fetchGitCommit).toHaveBeenCalledWith('project-a', 'b'.repeat(40), undefined),
+    )
+  })
+
+  it('cancelling the AlertDialog keeps the current selection', async () => {
+    await dirtyFirstCommitNote()
+    const fetchCallsBefore = vi.mocked(fetchGitCommit).mock.calls.length
+    await userEvent.click(screen.getByText('add feature'))
+    await screen.findByRole('alertdialog')
+    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    // No NEW git-commit fetch fired (user cancelled) and the editor stays.
+    expect(vi.mocked(fetchGitCommit).mock.calls.length).toBe(fetchCallsBefore)
+    const editor = document.body.querySelector('[data-slot="commit-mark-editor"]')
+    expect(editor?.getAttribute('data-sha')).toBe('a'.repeat(40))
   })
 
   it('renders <SubmoduleBumpRow /> for submoduleBump entries matching a known submodule path', async () => {
