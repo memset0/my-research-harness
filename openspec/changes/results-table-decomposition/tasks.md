@@ -6,9 +6,9 @@
 
 ## 2. Merged validation (D2)
 
-- [ ] 2.1 Create `lib/experiment-results/views.ts` (types, scope helpers, shared predicates, strict guard, normalizer with invalid count); turn `lib/experiment-results-views.ts` into a re-export
-- [ ] 2.2 Unit-test every row of the design difference table, including "normalize output satisfies the strict guard"
-- [ ] 2.3 Use the normalizer in the table and render the invalid-settings note; table test for the note
+- [x] 2.1 Create `lib/experiment-results/views.ts` (types, scope helpers, shared predicates, strict guard, normalizer with invalid count); turn `lib/experiment-results-views.ts` into a re-export
+- [x] 2.2 Unit-test every row of the design difference table, including "normalize output satisfies the strict guard"
+- [x] 2.3 Use the normalizer in the table and render the invalid-settings note; table test for the note
 
 ## 3. Container and subcomponents (D3)
 

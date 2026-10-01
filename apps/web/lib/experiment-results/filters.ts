@@ -1,13 +1,13 @@
 // Row filtering: AND-composed filters with per-Variant overrides.
 
 import type { ResultScalar, ResultVariant } from '@memon/core'
+import { naturalCollator } from './format'
+import type { ResultTableColumn, ResultValue } from './types'
 import type {
   ResultsViewRowFilter,
   ResultsViewRowFilterOperator,
   ResultsViewRowOverride,
-} from '../experiment-results-views'
-import { naturalCollator } from './format'
-import type { ResultTableColumn, ResultValue } from './types'
+} from './views'
 
 /**
  * Overrides win (`include` always shown, `exclude` always hidden); other rows

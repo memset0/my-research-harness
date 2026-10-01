@@ -1,11 +1,8 @@
 // Value-to-text helpers and display labels for the Results table.
 
 import type { ResultVariant } from '@memon/core'
-import type {
-  ResultsViewRowFilterOperator,
-  ResultsViewSortDirection,
-} from '../experiment-results-views'
 import type { ResultTableColumn, ResultValue, SotaRank } from './types'
+import type { ResultsViewRowFilterOperator, ResultsViewSortDirection } from './views'
 
 const BR_PATTERN = /<br\s*\/?>/gi
 const LINE_BREAK_PATTERN = /(?:<br\s*\/?>|\r?\n)/gi

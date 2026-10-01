@@ -971,6 +971,28 @@ describe('ExperimentResultsTable', () => {
     expect(metric('V0002')).not.toHaveClass('font-bold')
   })
 
+  it('surfaces malformed saved View settings instead of dropping them silently', async () => {
+    const experimentId = 'E0001-invalid-settings'
+    window.localStorage.setItem(
+      `memon:results-table:research:${experimentId}:preferences`,
+      JSON.stringify({
+        hiddenColumnIds: ['schema:gone'],
+        rowFilters: [
+          { id: 'bad', columnId: 'status', operator: 'like', value: 'RUNNING' },
+          { columnId: 'status', operator: 'neq', value: 'PLANNED' },
+        ],
+      }),
+    )
+    const { container } = renderResults(experimentId)
+
+    const note = await screen.findByRole('note')
+    expect(note).toHaveAttribute('data-slot', 'results-view-invalid')
+    expect(note).toHaveTextContent('1 saved View setting is invalid and ignored.')
+    // The malformed filter is ignored; the id-less valid filter still applies.
+    expect(variantOrder()).toEqual(['V0001', 'V0002'])
+    expect(container.querySelectorAll('[data-row-filter]')).toHaveLength(1)
+  })
+
   it('does not highlight non-numeric metric values', async () => {
     cleanup()
     const user = userEvent.setup()

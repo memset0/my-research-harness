@@ -1,9 +1,9 @@
 // Column derivation and arrangement for the Results table.
 
 import type { ResultsDocument, ResultsVariantEligibility, ResultVariant } from '@memon/core'
-import type { ResultsViewPinSide } from '../experiment-results-views'
 import { displayText, isEmptyValue, naturalCollator } from './format'
 import type { ResultTableColumn } from './types'
+import type { ResultsViewPinSide } from './views'
 
 /** Run ids excluded from evidence columns (explicit list + per-Variant eligibility). */
 export function excludedRunIds(

@@ -81,6 +81,11 @@ import type {
   ResultTableColumn,
   SotaRank,
 } from '../lib/experiment-results/types'
+import {
+  DEFAULT_RESULTS_VIEW_DEFINITION,
+  normalizeMaxLines,
+  normalizeResultsViewDefinition,
+} from '../lib/experiment-results/views'
 import type {
   ExperimentResultsViewDefinition,
   ResultsViewPinSide,
@@ -89,7 +94,6 @@ import type {
   ResultsViewRowOverride,
   ResultsViewSortDirection,
   ResultsViewSortRule,
-  ResultsViewSotaMode,
 } from '../lib/experiment-results-views'
 import { useExperimentResultsViews } from '../lib/use-experiment-results-views'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
@@ -135,23 +139,9 @@ type PinSide = ResultsViewPinSide
 type RowFilterOperator = ResultsViewRowFilterOperator
 type RowOverride = ResultsViewRowOverride
 
-type SotaMode = ResultsViewSotaMode
-
 type ResultsTablePreferences = ExperimentResultsViewDefinition
 type RowFilter = ResultsViewRowFilter
 type SortRule = ResultsViewSortRule
-
-const DEFAULT_PREFERENCES: ResultsTablePreferences = {
-  hiddenColumnIds: [],
-  columnOrderIds: [],
-  maxLines: 1,
-  defaultSortRules: [],
-  pinnedColumnIds: { left: [], right: [] },
-  rowFilters: [],
-  rowOverrides: {},
-  sotaModes: {},
-  decimalPlaces: {},
-}
 
 const STATUS_CLASS: Record<VariantStatus, string> = {
   PLANNED:
@@ -202,7 +192,11 @@ export function ExperimentResultsTable({
   )
   const projectKey = typeof project === 'string' ? project : `${project.host}:${project.project}`
   const starsKey = `memon:results-table:${projectKey}:starred-column-labels`
-  const resultsViews = useExperimentResultsViews(project, experimentId, DEFAULT_PREFERENCES)
+  const resultsViews = useExperimentResultsViews(
+    project,
+    experimentId,
+    DEFAULT_RESULTS_VIEW_DEFINITION,
+  )
   const storedPreferences = resultsViews.definition
   const setStoredPreferences = resultsViews.updateDefinition
   const [storedStarredLabels, setStoredStarredLabels] = useUserPreferenceState<string[]>(
@@ -224,11 +218,8 @@ export function ExperimentResultsTable({
   const sortRuleSequence = useRef(0)
   const resetCancelRef = useRef<HTMLButtonElement>(null)
 
-  const preferences = normalizeResultsTablePreferences(
-    storedPreferences,
-    columns,
-    document.variants,
-  )
+  const { definition: preferences, invalidCount: invalidSettingCount } =
+    normalizeResultsTablePreferences(storedPreferences, columns, document.variants)
   const columnsById = new Map(columns.map((column) => [column.id, column] as const))
   const columnOrderIds = preferences.columnOrderIds
   const orderedColumns = columnOrderIds
@@ -316,7 +307,11 @@ export function ExperimentResultsTable({
       | ((current: ResultsTablePreferences) => ResultsTablePreferences),
   ) => {
     setStoredPreferences((stored) => {
-      const current = normalizeResultsTablePreferences(stored, columns, document.variants)
+      const current = normalizeResultsTablePreferences(
+        stored,
+        columns,
+        document.variants,
+      ).definition
       return typeof update === 'function' ? update(current) : { ...current, ...update }
     })
   }
@@ -551,7 +546,7 @@ export function ExperimentResultsTable({
   }
 
   const resetView = () => {
-    setStoredPreferences(DEFAULT_PREFERENCES)
+    setStoredPreferences(DEFAULT_RESULTS_VIEW_DEFINITION)
     setShowAllColumns(false)
     setShowAllRows(false)
     setTemporarySort(null)
@@ -658,6 +653,16 @@ export function ExperimentResultsTable({
           {affectedEligibility.map((row) => `${row.variantId}: ${row.metricsValidity}`).join(', ')}
           ). Original values are preserved, not recomputed; affected rows are excluded from
           best-value highlighting.
+        </p>
+      )}
+      {invalidSettingCount > 0 && (
+        <p
+          role="note"
+          className="text-xs text-amber-700 dark:text-amber-300"
+          data-slot="results-view-invalid"
+        >
+          {invalidSettingCount} saved View{' '}
+          {invalidSettingCount === 1 ? 'setting is' : 'settings are'} invalid and ignored.
         </p>
       )}
       <div className="space-y-3 rounded-md border bg-muted/20 p-3" data-slot="results-controls">
@@ -2182,169 +2187,14 @@ function dropEdge(event: DragEvent<HTMLElement>): DropEdge {
   return dropEdgeAt(event.clientX, event.currentTarget.getBoundingClientRect())
 }
 
-function normalizeColumnOrderIds(value: unknown, defaultIds: string[]): string[] {
-  const validIds = new Set(defaultIds)
-  const seen = new Set<string>()
-  const restored = Array.isArray(value)
-    ? value.filter((id): id is string => {
-        if (typeof id !== 'string' || !validIds.has(id) || seen.has(id)) return false
-        seen.add(id)
-        return true
-      })
-    : []
-  return [...restored, ...defaultIds.filter((id) => !seen.has(id))]
-}
-
 function normalizeResultsTablePreferences(
   value: unknown,
   columns: ResultTableColumn[],
   variants: ResultVariant[],
-): ResultsTablePreferences {
-  const candidate =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Partial<ResultsTablePreferences>)
-      : {}
-  const defaultColumnIds = columns.map((column) => column.id)
-  const validColumnIds = new Set(defaultColumnIds)
-  const validVariantIds = new Set(variants.map((variant) => variant.id))
-  return {
-    hiddenColumnIds: Array.isArray(candidate.hiddenColumnIds)
-      ? candidate.hiddenColumnIds.filter(
-          (id): id is string => typeof id === 'string' && validColumnIds.has(id),
-        )
-      : [],
-    columnOrderIds: normalizeColumnOrderIds(candidate.columnOrderIds, defaultColumnIds),
-    maxLines: normalizeMaxLines(candidate.maxLines),
-    defaultSortRules: normalizeSortRules(candidate.defaultSortRules, validColumnIds),
-    pinnedColumnIds: normalizePinnedColumnIds(candidate.pinnedColumnIds, validColumnIds),
-    rowFilters: normalizeRowFilters(candidate.rowFilters, validColumnIds),
-    rowOverrides: normalizeRowOverrides(candidate.rowOverrides, validVariantIds),
-    sotaModes: normalizeSotaModes(candidate.sotaModes, validColumnIds),
-    decimalPlaces: normalizeDecimalPlaces(candidate.decimalPlaces, validColumnIds),
-  }
-}
-
-function normalizeMaxLines(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1
-}
-
-function normalizeSortRules(value: unknown, validColumnIds: ReadonlySet<string>): SortRule[] {
-  if (!Array.isArray(value)) return []
-  const seenColumnIds = new Set<string>()
-  return value.flatMap((item, index) => {
-    if (!item || typeof item !== 'object') return []
-    const candidate = item as { id?: unknown; columnId?: unknown; direction?: unknown }
-    if (
-      typeof candidate.columnId !== 'string' ||
-      !validColumnIds.has(candidate.columnId) ||
-      seenColumnIds.has(candidate.columnId) ||
-      (candidate.direction !== 'asc' && candidate.direction !== 'desc')
-    ) {
-      return []
-    }
-    seenColumnIds.add(candidate.columnId)
-    return [
-      {
-        id: typeof candidate.id === 'string' ? candidate.id : `restored-sort-${index}`,
-        columnId: candidate.columnId,
-        direction: candidate.direction,
-      },
-    ]
-  })
-}
-
-function normalizePinnedColumnIds(
-  value: unknown,
-  validColumnIds: ReadonlySet<string>,
-): ResultsTablePreferences['pinnedColumnIds'] {
-  if (!value || typeof value !== 'object') return { left: [], right: [] }
-  const candidate = value as { left?: unknown; right?: unknown }
-  const seen = new Set<string>()
-  const normalizeSide = (ids: unknown) => {
-    if (!Array.isArray(ids)) return []
-    return ids.filter((id): id is string => {
-      if (typeof id !== 'string' || !validColumnIds.has(id) || seen.has(id)) return false
-      seen.add(id)
-      return true
-    })
-  }
-  return { left: normalizeSide(candidate.left), right: normalizeSide(candidate.right) }
-}
-
-function normalizeRowFilters(value: unknown, validColumnIds: ReadonlySet<string>): RowFilter[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item, index) => {
-    if (!item || typeof item !== 'object') return []
-    const candidate = item as {
-      id?: unknown
-      columnId?: unknown
-      operator?: unknown
-      value?: unknown
-    }
-    if (
-      typeof candidate.columnId !== 'string' ||
-      !validColumnIds.has(candidate.columnId) ||
-      !isRowFilterOperator(candidate.operator) ||
-      typeof candidate.value !== 'string'
-    ) {
-      return []
-    }
-    return [
-      {
-        id: typeof candidate.id === 'string' ? candidate.id : `restored-filter-${index}`,
-        columnId: candidate.columnId,
-        operator: candidate.operator,
-        value: candidate.value,
-      },
-    ]
-  })
-}
-
-function normalizeRowOverrides(
-  value: unknown,
-  validVariantIds: ReadonlySet<string>,
-): Record<string, RowOverride> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return Object.fromEntries(
-    Object.entries(value).filter(
-      (entry): entry is [string, RowOverride] =>
-        validVariantIds.has(entry[0]) && (entry[1] === 'include' || entry[1] === 'exclude'),
-    ),
+) {
+  return normalizeResultsViewDefinition(
+    value,
+    columns.map((column) => column.id),
+    variants.map((variant) => variant.id),
   )
-}
-
-function isRowFilterOperator(value: unknown): value is RowFilterOperator {
-  return value === 'eq' || value === 'neq' || value === 'gt' || value === 'lt'
-}
-
-function normalizeSotaModes(
-  value: unknown,
-  validColumnIds: ReadonlySet<string>,
-): Record<string, SotaMode> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const result: Record<string, SotaMode> = {}
-  for (const [key, raw] of Object.entries(value)) {
-    if (!validColumnIds.has(key)) continue
-    if (raw === 'higher-is-better' || raw === 'lower-is-better') {
-      result[key] = raw
-    }
-    // 'off' and any unknown values are dropped (default to off).
-  }
-  return result
-}
-
-function normalizeDecimalPlaces(
-  value: unknown,
-  validColumnIds: ReadonlySet<string>,
-): Record<string, number> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const result: Record<string, number> = {}
-  for (const [key, raw] of Object.entries(value)) {
-    if (!validColumnIds.has(key)) continue
-    const places = typeof raw === 'number' ? Math.floor(raw) : NaN
-    if (Number.isFinite(places) && places >= 0 && places <= 10) {
-      result[key] = places
-    }
-  }
-  return result
 }

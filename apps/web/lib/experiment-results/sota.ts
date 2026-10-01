@@ -1,8 +1,8 @@
 // SOTA (best-value) highlighting for metric columns.
 
 import type { ResultsVariantEligibility, ResultVariant } from '@memon/core'
-import type { ResultsViewSotaMode } from '../experiment-results-views'
 import type { ResultTableColumn, SotaRank, SotaRanking } from './types'
+import type { ResultsViewSotaMode } from './views'
 
 /**
  * For every metric column whose mode is not `off`, rank the top three finite

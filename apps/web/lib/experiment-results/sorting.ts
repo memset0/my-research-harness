@@ -2,9 +2,9 @@
 // natural Variant-ID order and finally source order.
 
 import type { ResultVariant } from '@memon/core'
-import type { ResultsViewSortDirection, ResultsViewSortRule } from '../experiment-results-views'
 import { isEmptyValue, naturalCollator, valueText } from './format'
 import type { ResultTableColumn, ResultValue } from './types'
+import type { ResultsViewSortDirection, ResultsViewSortRule } from './views'
 
 export type SortKey = Omit<ResultsViewSortRule, 'id'>
 

@@ -1,8 +1,8 @@
 // Drag reordering and pinned-column layout helpers.
 
 import type { CSSProperties } from 'react'
-import type { ResultsViewPinSide } from '../experiment-results-views'
 import type { DropEdge, PinLayout } from './types'
+import type { ResultsViewPinSide } from './views'
 
 export const EMPTY_PIN_LAYOUT: PinLayout = { sticky: false, leftOffsets: {}, rightOffsets: {} }
 
