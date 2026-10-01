@@ -3,40 +3,38 @@
 // These operate on `<projectRoot>/docs/experiments/E<NNNN>-<slug>/README.md`
 // (v5 folder layout). Run-level operations (status set / readme write /
 // archive / unarchive) live in experiment.ts (legacy file name from a
-// pre-v3 rename pass); run rename lives in run-rename.ts. There is no
-// experiment-rename command yet.
+// pre-v3 rename pass); run rename lives in run-rename.ts and experiment
+// rename in experiment-rename.ts. Every write goes through the shared core
+// mutation primitives; this module only resolves targets, appends the legacy
+// journal events (absorbed by the invocation ledger) and shapes CLI output.
 
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import {
   appendJournalEvent,
+  createExperiment,
+  deleteExperiment,
   discoverExperiments,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_STATUS_VALUES,
   type ExperimentStatus,
-  emptyImplementationDocument,
-  emptyInvestigationDocument,
-  emptyResultsDocument,
+  type ExperimentTarget,
   formatIsoLocal,
-  nextExperimentId,
-  projectRunPath,
-  type Run,
+  linkExperimentRun,
+  nodeMutationFs,
   readExperimentDoc,
   resolveExperimentId,
   resolveRunTarget,
   SLUG_STRICT_REGEX,
-  serializeExperimentReadme,
-  serializeImplementationYaml,
-  serializeInvestigationYaml,
-  serializeResultsYaml,
-  writeFileAtomic,
+  setExperimentArchived,
+  setExperimentStatus,
+  unlinkExperimentRun,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
-
-const EXPERIMENTS_SUBDIR = 'docs/experiments'
 
 // ---------- experiment ls ----------
 
@@ -134,39 +132,15 @@ export interface ExperimentCreateInput {
   fromRun?: string | undefined
 }
 
-/** New Experiment slugs use the strict creation rule. */
-const SLUG_RE = SLUG_STRICT_REGEX
-
 export async function runExperimentCreate(input: ExperimentCreateInput): Promise<void> {
-  if (!SLUG_RE.test(input.slug)) {
-    emitErrorAndExit('BAD_REQUEST', `slug "${input.slug}" must match ${SLUG_RE}`)
+  if (!SLUG_STRICT_REGEX.test(input.slug)) {
+    emitErrorAndExit('BAD_REQUEST', `slug "${input.slug}" must match ${SLUG_STRICT_REGEX}`)
   }
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
 
-  // Slug-uniqueness + prefix-collision checks against existing experiments.
-  const { experiments } = await discoverExperiments(projectRoot, projectName)
-  for (const e of experiments) {
-    if (e.frontMatter.slug === input.slug) {
-      emitErrorAndExit(
-        'BAD_REQUEST',
-        `DUPLICATE_EXPERIMENT_SLUG: experiment ${e.id} already uses slug "${input.slug}"`,
-      )
-    }
-    if (
-      e.frontMatter.slug.startsWith(`${input.slug}-`) ||
-      input.slug.startsWith(`${e.frontMatter.slug}-`)
-    ) {
-      emitErrorAndExit(
-        'BAD_REQUEST',
-        `EXPERIMENT_SLUG_PREFIX_COLLISION: "${input.slug}" collides with existing slug "${e.frontMatter.slug}" (one is a prefix of the other)`,
-      )
-    }
-  }
-
-  // Resolve `--from-run` ONCE, up front: the id-allocation retry loop below
-  // must not re-resolve it, and no run other than this one is ever read.
+  // Resolve `--from-run` ONCE, up front; no run other than this one is read.
   const importedRun = input.fromRun
     ? await resolveRunTarget(projectRoot, input.fromRun, { projectName })
     : null
@@ -174,158 +148,38 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
     emitErrorAndExit('NOT_FOUND', `run "${input.fromRun}" not found`)
   }
 
-  // Allocate next id with a retry loop on EEXIST (lock-free allocator).
-  let id: string | null = null
-  let lastErr: Error | null = null
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = await nextExperimentId(projectRoot)
-    const fullId = `${candidate}-${input.slug}`
-    // v5 layout: docs/experiments/E<NNNN>-<slug>/README.md inside a per-exp folder.
-    const expDir = join(projectRoot, EXPERIMENTS_SUBDIR, fullId)
-    await fs.mkdir(expDir, { recursive: true })
-    const filepath = join(expDir, 'README.md')
-    const now = formatIsoLocal(new Date())
-    const initialRuns: string[] = []
-    if (importedRun) {
-      // The run must be unbound, or already claim this exp (in the normal
-      // flow the run hasn't been written yet).
-      if (importedRun.frontMatter.experiment && importedRun.frontMatter.experiment !== fullId) {
-        emitErrorAndExit(
-          'BAD_STATE',
-          `run "${input.fromRun}" already claims experiment ${importedRun.frontMatter.experiment}; unlink first`,
-        )
-      }
-      initialRuns.push(projectRunPath(projectRoot, importedRun.path))
-    }
-    const content = serializeExperimentReadme({
-      frontMatter: {
-        id: fullId,
-        slug: input.slug,
-        title: input.title ?? input.slug,
-        // v4: new experiments default to OPEN + not-archived (human-only writes).
-        status: 'OPEN',
-        archived: false,
-        runs: initialRuns,
-        hypotheses: input.hypotheses ?? [],
-        tags: [],
-        createdAt: now,
-        updatedAt: now,
-      },
-      sections: {
-        motivation: null,
-        design: null,
-        implementation: null,
-        investigation: null,
-        results: null,
-        findings: null,
-        limitations: null,
-        conclusion: null,
-        method: null,
-        plan: null,
-        caveats: null,
-      },
-      warningsRaw: null,
-    })
-    try {
-      // 'wx' flag fails if file exists — atomicity for concurrent allocators.
-      await fs.writeFile(filepath, content, { encoding: 'utf8', flag: 'wx' })
-    } catch (err) {
-      const e = err as NodeJS.ErrnoException
-      if (e.code === 'EEXIST') {
-        lastErr = e
-        continue
-      }
-      throw err
-    }
-    const initialResults = emptyResultsDocument()
-    if (importedRun) {
-      const unsuccessful =
-        importedRun.frontMatter.status === 'FAILED' ||
-        importedRun.frontMatter.status === 'INTERRUPTED' ||
-        importedRun.frontMatter.status === 'UNKNOWN'
-      initialResults.variants.push({
-        id: 'V0001',
-        name: `Imported ${importedRun.frontMatter.name || importedRun.id}`,
-        status: importedVariantStatus(importedRun),
-        description:
-          'Imported from an existing Run by `memon experiment create --from-run`; refine the Variant definition before launching another comparison.',
-        parameters: {},
-        metrics: {},
-        runs: unsuccessful ? [] : [projectRunPath(projectRoot, importedRun.path)],
-        attempts: unsuccessful ? [projectRunPath(projectRoot, importedRun.path)] : [],
-        ...(importedRun.frontMatter.entry
-          ? { provenance: { entry: importedRun.frontMatter.entry } }
-          : {}),
-      })
-    }
-    try {
-      await Promise.all([
-        fs.writeFile(
-          join(expDir, 'implementation.yaml'),
-          serializeImplementationYaml(emptyImplementationDocument()),
-          { encoding: 'utf8', flag: 'wx' },
-        ),
-        fs.writeFile(
-          join(expDir, 'investigation.yaml'),
-          serializeInvestigationYaml(emptyInvestigationDocument()),
-          { encoding: 'utf8', flag: 'wx' },
-        ),
-        fs.writeFile(join(expDir, 'results.yaml'), serializeResultsYaml(initialResults), {
-          encoding: 'utf8',
-          flag: 'wx',
-        }),
-      ])
-    } catch (err) {
-      // README `wx` allocated this directory. Never leave a half-created v6
-      // bundle discoverable if one sidecar write fails.
-      await fs.rm(expDir, { recursive: true, force: true })
-      throw err
-    }
-    id = fullId
-    // [EXPERIMENT] op=create journal event
+  const created = await cliMutation(() =>
+    createExperiment({
+      fs: nodeMutationFs,
+      projectRoot,
+      projectName,
+      slug: input.slug,
+      ...(input.title === undefined ? {} : { title: input.title }),
+      hypotheses: input.hypotheses ?? [],
+      importedRun,
+      ...(input.fromRun ? { importedRunLabel: input.fromRun } : {}),
+    }),
+  )
+  // [EXPERIMENT] op=create journal event
+  await appendJournalEvent({
+    path: journalPath(projectRoot),
+    event: {
+      timestamp: created.timestamp,
+      tag: 'EXPERIMENT',
+      body: `\`${created.id}\` op=create slug=${input.slug}${input.fromRun ? ` from-run=${input.fromRun}` : ''}`,
+    },
+  })
+  if (input.fromRun) {
     await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
+      path: journalPath(projectRoot),
       event: {
-        timestamp: now,
-        tag: 'EXPERIMENT',
-        body: `\`${fullId}\` op=create slug=${input.slug}${input.fromRun ? ` from-run=${input.fromRun}` : ''}`,
+        timestamp: created.timestamp,
+        tag: 'BIND',
+        body: `\`${created.id}\` op=link run=${created.runs[0]}`,
       },
     })
-    if (input.fromRun) {
-      await appendJournalEvent({
-        path: join(projectRoot, 'docs', 'journal.md'),
-        event: {
-          timestamp: now,
-          tag: 'BIND',
-          body: `\`${fullId}\` op=link run=${initialRuns[0]}`,
-        },
-      })
-    }
-    break
   }
-  if (id === null) {
-    emitErrorAndExit(
-      'BAD_STATE',
-      `failed to allocate experiment id after 5 attempts: ${lastErr?.message}`,
-    )
-  }
-  emitJson({ ok: true, id })
-}
-
-function importedVariantStatus(run: Run) {
-  switch (run.frontMatter.status) {
-    case 'FINISHED':
-      return 'COMPLETED' as const
-    case 'RUNNING':
-      return 'RUNNING' as const
-    case 'FAILED':
-    case 'INTERRUPTED':
-      return 'FAILED' as const
-    case 'UNKNOWN':
-      return 'INCONCLUSIVE' as const
-    default:
-      return 'PLANNED' as const
-  }
+  emitJson({ ok: true, id: created.id })
 }
 
 // ---------- experiment link / unlink ----------
@@ -337,105 +191,54 @@ export interface ExperimentLinkInput {
   runIdOrDir: string
 }
 
-export async function runExperimentLink(input: ExperimentLinkInput): Promise<void> {
+async function resolveBindTargets(input: ExperimentLinkInput) {
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
   const expId = await resolveOrFail(projectRoot, input.experimentIdOrSlug)
   const exp = await readExperimentDoc(projectRoot, projectName, expId)
   if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-
   const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
   if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
+  return { projectRoot, expId, experiment: { id: expId, path: exp.path }, run }
+}
 
-  if (run.frontMatter.experiment && run.frontMatter.experiment !== expId) {
-    emitErrorAndExit(
-      'BAD_STATE',
-      `run "${run.id}" already claims experiment ${run.frontMatter.experiment}; unlink first`,
-    )
-  }
-
-  // Soft prefix warning to stderr.
-  if (!run.id.startsWith(`${exp.frontMatter.slug}-`)) {
-    process.stderr.write(
-      `${JSON.stringify({
-        warning: {
-          code: 'RUN_SLUG_PREFIX_VIOLATION',
-          message: `run slug does not start with experiment slug "${exp.frontMatter.slug}"`,
-        },
-      })}\n`,
-    )
-  }
-
-  exp.frontMatter.runs = exp.frontMatter.runs.filter((reference) => reference !== run.id)
-  if (!exp.frontMatter.runs.includes(projectRunPath(projectRoot, run.path))) {
-    exp.frontMatter.runs.push(projectRunPath(projectRoot, run.path))
-  }
-  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
-  await writeFileAtomic(
-    exp.path,
-    serializeExperimentReadme({
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warningsRaw: exp.warningsRaw,
-      rawSections: exp.rawSections,
-      rawBody: exp.body,
-    }),
+export async function runExperimentLink(input: ExperimentLinkInput): Promise<void> {
+  const { projectRoot, expId, experiment, run } = await resolveBindTargets(input)
+  const linked = await cliMutation(() =>
+    linkExperimentRun({ fs: nodeMutationFs, projectRoot, experiment, run }),
   )
-
+  // Soft prefix warning to stderr.
+  for (const warning of linked.warnings) {
+    process.stderr.write(`${JSON.stringify({ warning })}\n`)
+  }
   await appendJournalEvent({
-    path: join(projectRoot, 'docs', 'journal.md'),
+    path: journalPath(projectRoot),
     event: {
       timestamp: formatIsoLocal(new Date()),
       tag: 'BIND',
       body: `\`${expId}\` op=link run=${run.id}`,
     },
   })
-  emitJson({ ok: true, experimentId: expId, runId: projectRunPath(projectRoot, run.path) })
+  emitJson({ ok: true, experimentId: expId, runId: linked.runPath })
 }
 
-export interface ExperimentUnlinkInput {
-  projectRoot?: string
-  cwd: string
-  experimentIdOrSlug: string
-  runIdOrDir: string
-}
+export type ExperimentUnlinkInput = ExperimentLinkInput
 
 export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise<void> {
-  const r = await resolveContext(input)
-  const projectRoot = singleProjectRoot(r)
-  const projectName = r.config.projects[0]!.name
-  const expId = await resolveOrFail(projectRoot, input.experimentIdOrSlug)
-  const exp = await readExperimentDoc(projectRoot, projectName, expId)
-  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-
-  const run = await resolveRunTarget(projectRoot, input.runIdOrDir, { projectName })
-  if (!run) emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found`)
-
-  exp.frontMatter.runs = exp.frontMatter.runs.filter(
-    (reference) => reference !== projectRunPath(projectRoot, run.path) && reference !== run.id,
+  const { projectRoot, expId, experiment, run } = await resolveBindTargets(input)
+  const unlinked = await cliMutation(() =>
+    unlinkExperimentRun({ fs: nodeMutationFs, projectRoot, experiment, run }),
   )
-  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
-  await writeFileAtomic(
-    exp.path,
-    serializeExperimentReadme({
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warningsRaw: exp.warningsRaw,
-      rawSections: exp.rawSections,
-      rawBody: exp.body,
-    }),
-  )
-
   await appendJournalEvent({
-    path: join(projectRoot, 'docs', 'journal.md'),
+    path: journalPath(projectRoot),
     event: {
       timestamp: formatIsoLocal(new Date()),
       tag: 'BIND',
       body: `\`${expId}\` op=unlink run=${run.id}`,
     },
   })
-  emitJson({ ok: true, experimentId: expId, runId: projectRunPath(projectRoot, run.path) })
+  emitJson({ ok: true, experimentId: expId, runId: unlinked.runPath })
 }
 
 // ---------- experiment status set (v4) ----------
@@ -452,73 +255,55 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
   if (!(EXPERIMENT_STATUS_VALUES as readonly string[]).includes(input.to)) {
     emitErrorAndExit('BAD_REQUEST', `--to must be one of: ${EXPERIMENT_STATUS_VALUES.join(', ')}`)
   }
-  const r = await resolveContext(input)
-  const projectRoot = singleProjectRoot(r)
-  const projectName = r.config.projects[0]!.name
-  const expId = await resolveOrFail(projectRoot, input.experimentId)
-  const exp = await readExperimentDoc(projectRoot, projectName, expId)
-  if (!exp) {
-    emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-  }
-
-  let stat: Awaited<ReturnType<typeof fs.stat>>
-  try {
-    stat = await fs.stat(exp.path)
-  } catch {
-    emitErrorAndExit('NOT_FOUND', `${exp.path} does not exist`)
-  }
-  if (stat.mtimeMs !== input.expectedMtime) {
-    const current = await fs.readFile(exp.path, 'utf8')
-    process.stdout.write(current)
-    emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
-      currentMtime: stat.mtimeMs,
-      expectedMtime: input.expectedMtime,
-    })
-  }
-
-  const prevStatus = exp.frontMatter.status
-  const prevArchived = exp.frontMatter.archived
-  const nextStatus = input.to as ExperimentStatus
-  exp.frontMatter.status = nextStatus
-  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
-  await writeFileAtomic(
-    exp.path,
-    serializeExperimentReadme({
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warningsRaw: exp.warningsRaw,
-      rawSections: exp.rawSections,
-      rawBody: exp.body,
-    }),
+  const { projectRoot, expId, experiment } = await resolveExperimentTarget(
+    input,
+    input.experimentId,
   )
-  const newStat = await fs.stat(exp.path)
+  const result = await cliMutation(
+    () =>
+      setExperimentStatus({
+        fs: nodeMutationFs,
+        experiment,
+        status: input.to as ExperimentStatus,
+        lock: { expectedMtime: input.expectedMtime },
+      }),
+    (error) =>
+      error.code === 'CONFLICT'
+        ? {
+            details: {
+              currentMtime: error.current?.mtime,
+              expectedMtime: input.expectedMtime,
+            },
+          }
+        : undefined,
+  )
 
   let journalAppended = false
-  if (prevStatus !== nextStatus) {
+  if (result.changed) {
     await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
+      path: journalPath(projectRoot),
       event: {
         timestamp: formatIsoLocal(new Date()),
         tag: 'EXP_STATUS',
-        body: `\`${expId}\` ${prevStatus} → ${nextStatus}`,
+        body: `\`${expId}\` ${result.prevStatus} → ${result.nextStatus}`,
       },
     })
     journalAppended = true
   }
 
-  const result: Record<string, unknown> = {
+  const output: Record<string, unknown> = {
     ok: true,
-    mtime: newStat.mtimeMs,
-    readmeMtime: newStat.mtimeMs,
-    prevStatus,
-    nextStatus,
+    mtime: result.mtime,
+    readmeMtime: result.mtime,
+    prevStatus: result.prevStatus,
+    nextStatus: result.nextStatus,
     journalAppended,
   }
-  if (prevArchived) {
+  if (result.archived) {
     process.stderr.write(`warning: ${expId} is archived; modifying anyway\n`)
-    result.warning = 'archived'
+    output.warning = 'archived'
   }
-  emitJson(result)
+  emitJson(output)
 }
 
 // ---------- experiment archive (v4 — exp-doc form) ----------
@@ -530,44 +315,30 @@ export interface ExperimentArchiveInput {
 }
 
 export async function runExperimentArchiveDoc(input: ExperimentArchiveInput): Promise<void> {
-  await setExperimentArchived(input, true)
+  await setExperimentArchivedCli(input, true)
 }
 
 export async function runExperimentUnarchiveDoc(input: ExperimentArchiveInput): Promise<void> {
-  await setExperimentArchived(input, false)
+  await setExperimentArchivedCli(input, false)
 }
 
-async function setExperimentArchived(
+async function setExperimentArchivedCli(
   input: ExperimentArchiveInput,
   target: boolean,
 ): Promise<void> {
-  const r = await resolveContext(input)
-  const projectRoot = singleProjectRoot(r)
-  const projectName = r.config.projects[0]!.name
-  const expId = await resolveOrFail(projectRoot, input.experimentId)
-  const exp = await readExperimentDoc(projectRoot, projectName, expId)
-  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-
-  const prevArchived = exp.frontMatter.archived
-  if (prevArchived === target) {
+  const { projectRoot, expId, experiment } = await resolveExperimentTarget(
+    input,
+    input.experimentId,
+  )
+  const result = await cliMutation(() =>
+    setExperimentArchived({ fs: nodeMutationFs, experiment, archived: target }),
+  )
+  if (!result.changed) {
     emitJson({ ok: true, archived: target, noop: true })
     return
   }
-
-  exp.frontMatter.archived = target
-  exp.frontMatter.updatedAt = formatIsoLocal(new Date())
-  await writeFileAtomic(
-    exp.path,
-    serializeExperimentReadme({
-      frontMatter: exp.frontMatter,
-      sections: exp.sections,
-      warningsRaw: exp.warningsRaw,
-      rawSections: exp.rawSections,
-      rawBody: exp.body,
-    }),
-  )
   await appendJournalEvent({
-    path: join(projectRoot, 'docs', 'journal.md'),
+    path: journalPath(projectRoot),
     event: {
       timestamp: formatIsoLocal(new Date()),
       tag: 'ARCHIVE',
@@ -587,72 +358,44 @@ export interface ExperimentDeleteInput {
 }
 
 export async function runExperimentDelete(input: ExperimentDeleteInput): Promise<void> {
-  const r = await resolveContext(input)
-  const projectRoot = singleProjectRoot(r)
-  const projectName = r.config.projects[0]!.name
-  const expId = await resolveOrFail(projectRoot, input.experimentIdOrSlug)
-  const exp = await readExperimentDoc(projectRoot, projectName, expId)
-  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
-
-  const memberRuns = exp.frontMatter.runs.slice()
-
-  if (!input.force && memberRuns.length > 0) {
-    // In JSON mode (default) we can't prompt — refuse and require --force.
-    // Human callers using --format human get a confirmation prompt via
-    // stdin. Skill code paths should always pass --force.
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `experiment ${expId} has ${memberRuns.length} member runs; pass --force to cascade-unlink`,
-    )
-  }
-
-  // v5: Delete the exp folder (and everything inside — README.md plus any
-  // user-owned scratch files). For legacy v4 records still on disk (the
-  // mid-migration window), `exp.path` is a file path; just unlink it.
-  if (exp.path.endsWith(`${expId}.md`)) {
-    // Legacy v4 file form — just unlink the single file.
-    await fs.unlink(exp.path)
-  } else {
-    // v5 folder form — remove the whole experiment folder.
-    const expFolder = dirname(exp.path)
-    if (!input.force) {
-      // Without --force, refuse if the folder contains anything other than
-      // README.md (treats sibling files as user scratch the user might
-      // care about).
-      let siblings: string[] = []
-      try {
-        const canonicalFiles = new Set([
-          'README.md',
-          'implementation.yaml',
-          'investigation.yaml',
-          'results.yaml',
-        ])
-        siblings = (await fs.readdir(expFolder)).filter((n) => !canonicalFiles.has(n))
-      } catch {
-        /* folder vanished mid-op — fall through to rm */
-      }
-      if (siblings.length > 0) {
-        emitErrorAndExit(
-          'BAD_REQUEST',
-          `experiment folder ${expFolder} contains ${siblings.length} non-README file(s) ${JSON.stringify(siblings)}; pass --force to remove the whole folder + scratch`,
-        )
-      }
-    }
-    await fs.rm(expFolder, { recursive: true, force: true })
-  }
-
+  const { projectRoot, expId, experiment } = await resolveExperimentTarget(
+    input,
+    input.experimentIdOrSlug,
+  )
+  // JSON mode cannot prompt: without --force the core refuses members and
+  // scratch content; skill code paths always pass --force.
+  const deleted = await cliMutation(() =>
+    deleteExperiment({ fs: nodeMutationFs, experiment, force: input.force }),
+  )
   await appendJournalEvent({
-    path: join(projectRoot, 'docs', 'journal.md'),
+    path: journalPath(projectRoot),
     event: {
       timestamp: formatIsoLocal(new Date()),
       tag: 'EXPERIMENT',
-      body: `\`${expId}\` op=delete cascaded-runs=${JSON.stringify(memberRuns)}`,
+      body: `\`${expId}\` op=delete cascaded-runs=${JSON.stringify(deleted.cascadedRuns)}`,
     },
   })
-  emitJson({ ok: true, deletedId: expId, cascadedRuns: memberRuns })
+  emitJson({ ok: true, deletedId: expId, cascadedRuns: deleted.cascadedRuns })
 }
 
 // ---------- helpers ----------
+
+function journalPath(projectRoot: string): string {
+  return join(projectRoot, 'docs', 'journal.md')
+}
+
+async function resolveExperimentTarget(
+  ctx: { projectRoot?: string; cwd: string },
+  idOrSlug: string,
+): Promise<{ projectRoot: string; expId: string; experiment: ExperimentTarget }> {
+  const r = await resolveContext(ctx)
+  const projectRoot = singleProjectRoot(r)
+  const projectName = r.config.projects[0]!.name
+  const expId = await resolveOrFail(projectRoot, idOrSlug)
+  const exp = await readExperimentDoc(projectRoot, projectName, expId)
+  if (!exp) emitErrorAndExit('NOT_FOUND', `experiment "${expId}" not found`)
+  return { projectRoot, expId, experiment: { id: expId, path: exp.path } }
+}
 
 async function resolveOrFail(projectRoot: string, idOrSlug: string): Promise<string> {
   // Fast path: if the input already looks like a canonical v5 id (`E<NNNN>-<slug>`),

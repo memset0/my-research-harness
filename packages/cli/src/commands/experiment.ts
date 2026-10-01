@@ -1,55 +1,56 @@
-// memon experiment {status set, readme write, archive, unarchive}
+// memon run {status set, readme write, archive, unarchive} (also reachable
+// through the deprecated `memon experiment …` run-id aliases).
+//
+// Every write goes through the shared core Run mutation primitives; this
+// module resolves the Run directory, appends the legacy journal events
+// (absorbed by the invocation ledger) and shapes the CLI output.
 
-import { createHash } from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import {
-  ArchiveRunningForbiddenError,
   appendJournalEvent,
-  archiveRun,
   formatIsoLocal,
-  parseReadme,
+  nodeMutationFs,
   RunTargetIndex,
-  reserializeReadme,
+  STATUS_VALUES,
   type Status,
-  unarchiveRun,
-  writeFileAtomic,
+  setRunArchiveState,
+  setRunStatus,
+  writeRunReadme,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
-const STATUS_VALUES: readonly Status[] = [
-  'PENDING',
-  'RUNNING',
-  'FINISHED',
-  'INTERRUPTED',
-  'FAILED',
-  'UNKNOWN',
-] as const
-
-interface ResolveExpResult {
+interface ResolvedRun {
   runDir: string
   readmePath: string
   projectRoot: string
 }
 
-async function resolveExperiment(
+async function resolveRun(
   ctx: { projectRoot?: string; cwd: string },
   runId: string,
-): Promise<ResolveExpResult> {
+): Promise<ResolvedRun> {
   const r = await resolveContext(ctx)
   const projectRoot = singleProjectRoot(r)
-  // Locate the run DIRECTORY only: every caller below reads (and locks) the
-  // README itself, so resolving the target must not read it a second time,
-  // nor touch any other run. Archived runs resolve too — the user may want
-  // to operate on them through `unarchive`, etc.
+  // Locate the run DIRECTORY only: the primitive reads (and locks) the README
+  // itself, and no other run is touched. Archived runs resolve too.
   const index = await RunTargetIndex.open(projectRoot)
   const runDir = await index.dir(runId)
   if (!runDir) {
     emitErrorAndExit('NOT_FOUND', `experiment "${runId}" not found in ${projectRoot}`)
   }
   return { runDir, readmePath: join(runDir, 'README.md'), projectRoot }
+}
+
+function journalPath(projectRoot: string): string {
+  return join(projectRoot, 'docs', 'journal.md')
+}
+
+function warnArchived(runId: string, output: Record<string, unknown>): void {
+  process.stderr.write(`warning: ${runId} is archived; modifying anyway\n`)
+  output.warning = 'archived'
 }
 
 // ---------- status set ----------
@@ -66,84 +67,58 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
   if (!(STATUS_VALUES as readonly string[]).includes(input.to)) {
     emitErrorAndExit('BAD_REQUEST', `--to must be one of: ${STATUS_VALUES.join(', ')}`)
   }
-  const { runDir, readmePath, projectRoot } = await resolveExperiment(input, input.runId)
+  const { readmePath, projectRoot } = await resolveRun(input, input.runId)
+  const result = await cliMutation(
+    () =>
+      setRunStatus({
+        fs: nodeMutationFs,
+        readmePath,
+        status: input.to as Status,
+        lock: { expectedMtime: input.expectedMtime },
+      }),
+    (error) =>
+      error.code === 'NOT_FOUND'
+        ? { message: `${readmePath} does not exist (no README)` }
+        : error.code === 'CONFLICT'
+          ? { details: { currentMtime: error.current?.mtime, expectedMtime: input.expectedMtime } }
+          : error.code === 'FORBIDDEN'
+            ? { details: { id: input.runId } }
+            : undefined,
+  )
 
-  let stat: Awaited<ReturnType<typeof fs.stat>>
-  try {
-    stat = await fs.stat(readmePath)
-  } catch {
-    emitErrorAndExit('NOT_FOUND', `${readmePath} does not exist (no README)`)
-  }
-
-  const content = await fs.readFile(readmePath, 'utf8')
-  const parsed = parseReadme(content)
-  const prevStatus = parsed.frontMatter.status
-  const prevArchived = parsed.frontMatter.archived
-  const nextStatus = input.to as Status
-
-  // Idempotent: on-disk already at the requested status. Return noop
-  // success even when expectedMtime is stale (mirrors the
-  // PATCH /api/runs/:id/status route — see fix-run-readme-mtime-lock-vs-dir-mtime).
-  if (prevStatus === nextStatus) {
-    const result: Record<string, unknown> = {
+  // Idempotent: on-disk already at the requested status (even with a stale
+  // lock) is a noop success.
+  if (!result.changed) {
+    const output: Record<string, unknown> = {
       ok: true,
-      mtime: stat.mtimeMs,
-      prevStatus,
-      nextStatus,
+      mtime: result.mtime,
+      prevStatus: result.prevStatus,
+      nextStatus: result.nextStatus,
       journalAppended: false,
       noop: true,
     }
-    if (prevArchived) {
-      process.stderr.write(`warning: ${input.runId} is archived; modifying anyway\n`)
-      result.warning = 'archived'
-    }
-    emitJson(result)
+    if (result.archived) warnArchived(input.runId, output)
+    emitJson(output)
     return
   }
 
-  // Strict lock when actually flipping the value.
-  if (stat.mtimeMs !== input.expectedMtime) {
-    process.stdout.write(content)
-    emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
-      currentMtime: stat.mtimeMs,
-      expectedMtime: input.expectedMtime,
-    })
-  }
-
-  parsed.frontMatter.status = nextStatus
-  const newContent = reserializeReadme(parsed)
-
-  await writeFileAtomic(readmePath, newContent)
-  const newStat = await fs.stat(readmePath)
-
-  let journalAppended = false
-  if (prevStatus !== nextStatus) {
-    await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
-      event: {
-        timestamp: formatIsoLocal(new Date()),
-        tag: 'STATUS',
-        body: `\`${input.runId}\` ${prevStatus} → ${nextStatus}`,
-      },
-    })
-    journalAppended = true
-  }
-
-  // v4: soft warning when modifying an archived run.
-  const result: Record<string, unknown> = {
+  await appendJournalEvent({
+    path: journalPath(projectRoot),
+    event: {
+      timestamp: formatIsoLocal(new Date()),
+      tag: 'STATUS',
+      body: `\`${input.runId}\` ${result.prevStatus} → ${result.nextStatus}`,
+    },
+  })
+  const output: Record<string, unknown> = {
     ok: true,
-    mtime: newStat.mtimeMs,
-    prevStatus,
-    nextStatus,
-    journalAppended,
+    mtime: result.mtime,
+    prevStatus: result.prevStatus,
+    nextStatus: result.nextStatus,
+    journalAppended: true,
   }
-  if (prevArchived) {
-    process.stderr.write(`warning: ${input.runId} is archived; modifying anyway\n`)
-    result.warning = 'archived'
-  }
-
-  void runDir
-  emitJson(result)
+  if (result.archived) warnArchived(input.runId, output)
+  emitJson(output)
 }
 
 // ---------- readme write ----------
@@ -159,110 +134,77 @@ export interface ReadmeWriteInput {
 }
 
 export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
-  const { readmePath, projectRoot } = await resolveExperiment(input, input.runId)
+  const { readmePath, projectRoot } = await resolveRun(input, input.runId)
+  // The CLI writes the caller's bytes verbatim: `updated_at` is the caller's.
+  const result = await cliMutation(
+    () =>
+      writeRunReadme({
+        fs: nodeMutationFs,
+        readmePath,
+        content: input.stdinContent,
+        updatedAt: 'preserve',
+        allowCreate: true,
+        lock: {
+          expectedMtime: input.expectedMtime,
+          ...(input.expectedHash === undefined ? {} : { expectedHash: input.expectedHash }),
+        },
+      }),
+    (error) => {
+      if (error.code === 'CONFLICT') {
+        return {
+          details: {
+            currentMtime: error.current?.mtime,
+            ...(error.details.stale === 'hash' ? { actualHash: error.current?.hash } : {}),
+          },
+        }
+      }
+      if (error.code === 'FORBIDDEN') {
+        return {
+          message:
+            'cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first',
+          details: { id: input.runId },
+        }
+      }
+      return undefined
+    },
+  )
 
-  let stat: Awaited<ReturnType<typeof fs.stat>>
-  try {
-    stat = await fs.stat(readmePath)
-  } catch {
-    // README absent — first write. mtime=0 sentinel acceptable; otherwise conflict.
-    if (input.expectedMtime !== 0) {
-      emitErrorAndExit('NOT_FOUND', `${readmePath} does not exist`)
-    }
-    await writeFileAtomic(readmePath, input.stdinContent)
-    const newStat = await fs.stat(readmePath)
-    emitJson({ ok: true, mtime: newStat.mtimeMs, journalAppended: false, created: true })
+  if (result.created) {
+    emitJson({ ok: true, mtime: result.mtime, journalAppended: false, created: true })
+    return
+  }
+  if (!result.changed) {
+    // Canonically identical to the disk (modulo `updated_at`): noop success.
+    emitJson({ ok: true, mtime: result.mtime, journalAppended: false, noop: true })
     return
   }
 
-  const currentContent = await fs.readFile(readmePath, 'utf8')
-
-  const mtimeStale = stat.mtimeMs !== input.expectedMtime
-  const hashStale =
-    input.expectedHash !== undefined &&
-    createHash('sha1').update(currentContent).digest('hex') !== input.expectedHash
-
-  if (mtimeStale || hashStale) {
-    // Idempotent escape hatch: if the request would re-write content that
-    // is canonically identical to what's on disk (modulo `updated_at`),
-    // succeed as a noop. Mirrors writeRunReadme in the web layer.
-    const reqCanonical = canonicalSansUpdatedAt(input.stdinContent)
-    const diskCanonical = canonicalSansUpdatedAt(currentContent)
-    if (reqCanonical === diskCanonical) {
-      emitJson({
-        ok: true,
-        mtime: stat.mtimeMs,
-        journalAppended: false,
-        noop: true,
-      })
-      return
-    }
-
-    process.stdout.write(currentContent)
-    emitErrorAndExit(
-      'CONFLICT',
-      mtimeStale
-        ? 'on-disk mtime differs from expectedMtime'
-        : 'on-disk content hash differs from expectedHash',
-      {
-        currentMtime: stat.mtimeMs,
-        ...(hashStale && {
-          actualHash: createHash('sha1').update(currentContent).digest('hex'),
-        }),
-      },
-    )
-  }
-
-  // Detect status transition for JOURNAL [STATUS] event
-  const prevParsed = parseReadme(currentContent)
-  const nextParsed = parseReadme(input.stdinContent)
-  const prevStatus = prevParsed.frontMatter.status
-  const nextStatus = nextParsed.frontMatter.status
-  const prevArchived = prevParsed.frontMatter.archived
-  const nextArchived = nextParsed.frontMatter.archived
-
-  // v4: hard rule — refuse to write archived: true while status would be RUNNING.
-  if (nextArchived === true && nextStatus === 'RUNNING') {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      'cannot archive a RUNNING run; set status to INTERRUPTED, FINISHED, or FAILED first',
-      { id: input.runId },
-    )
-  }
-
-  await writeFileAtomic(readmePath, input.stdinContent)
-  const newStat = await fs.stat(readmePath)
-
   let journalAppended = false
-  if (prevStatus !== nextStatus) {
+  if (result.prevStatus !== result.nextStatus) {
     await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
+      path: journalPath(projectRoot),
       event: {
         timestamp: formatIsoLocal(new Date()),
         tag: 'STATUS',
-        body: `\`${input.runId}\` ${prevStatus} → ${nextStatus}`,
+        body: `\`${input.runId}\` ${result.prevStatus} → ${result.nextStatus}`,
       },
     })
     journalAppended = true
   }
-  if (prevArchived !== nextArchived) {
+  if (result.prevArchived !== result.nextArchived) {
     await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
+      path: journalPath(projectRoot),
       event: {
         timestamp: formatIsoLocal(new Date()),
         tag: 'ARCHIVE',
-        body: `\`${input.runId}\` op=${nextArchived ? 'archive' : 'unarchive'}`,
+        body: `\`${input.runId}\` op=${result.nextArchived ? 'archive' : 'unarchive'}`,
       },
     })
   }
 
-  // v4: soft warning when modifying an archived run.
-  const result: Record<string, unknown> = { ok: true, mtime: newStat.mtimeMs, journalAppended }
-  if (prevArchived) {
-    process.stderr.write(`warning: ${input.runId} is archived; modifying anyway\n`)
-    result.warning = 'archived'
-  }
-  emitJson(result)
+  const output: Record<string, unknown> = { ok: true, mtime: result.mtime, journalAppended }
+  if (result.prevArchived) warnArchived(input.runId, output)
+  emitJson(output)
 }
 
 // ---------- archive / unarchive ----------
@@ -273,64 +215,33 @@ export interface ArchiveInput {
   runId: string
 }
 
-export async function runArchive(input: ArchiveInput): Promise<void> {
-  const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
-  const now = formatIsoLocal(new Date())
-  let result: Awaited<ReturnType<typeof archiveRun>>
-  try {
-    result = await archiveRun(runDir, { now, id: input.runId })
-  } catch (err) {
-    if (err instanceof ArchiveRunningForbiddenError) {
-      emitErrorAndExit('BAD_REQUEST', err.message, { id: input.runId })
-    }
-    throw err
-  }
-  // Soft warning: re-archiving an already-archived target. (Archive ON an
-  // already-archived run is a noop, but if we ever expose a "force" path
-  // the warning would land here.)
-  if (!result.noop) {
+async function setArchived(input: ArchiveInput, archived: boolean): Promise<void> {
+  const { readmePath, projectRoot } = await resolveRun(input, input.runId)
+  const now = new Date()
+  // Unarchive is always allowed (it IS the resolution to the archived state).
+  const result = await cliMutation(
+    () => setRunArchiveState({ fs: nodeMutationFs, now: () => now, readmePath, archived }),
+    (error) => (error.code === 'FORBIDDEN' ? { details: { id: input.runId } } : undefined),
+  )
+  if (result.changed) {
     await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
+      path: journalPath(projectRoot),
       event: {
-        timestamp: now,
+        timestamp: formatIsoLocal(now),
         tag: 'ARCHIVE',
-        body: `\`${input.runId}\` op=archive`,
+        body: `\`${input.runId}\` op=${archived ? 'archive' : 'unarchive'}`,
       },
     })
   }
-  emitJson({ ok: true, archived: true, noop: result.noop })
+  emitJson({ ok: true, archived, noop: !result.changed })
+}
+
+export async function runArchive(input: ArchiveInput): Promise<void> {
+  await setArchived(input, true)
 }
 
 export async function runUnarchive(input: ArchiveInput): Promise<void> {
-  const { runDir, projectRoot } = await resolveExperiment(input, input.runId)
-  const now = formatIsoLocal(new Date())
-  // Unarchive is always allowed (no hard rule, no soft warning per
-  // archive-frontmatter — the unarchive IS the resolution to the archived
-  // state, not a "modifying anyway" action).
-  const result = await unarchiveRun(runDir, { now, id: input.runId })
-  if (!result.noop) {
-    await appendJournalEvent({
-      path: join(projectRoot, 'docs', 'journal.md'),
-      event: {
-        timestamp: now,
-        tag: 'ARCHIVE',
-        body: `\`${input.runId}\` op=unarchive`,
-      },
-    })
-  }
-  emitJson({ ok: true, archived: false, noop: result.noop })
-}
-
-// ---------- helpers ----------
-
-// Re-serialize a run README with `updated_at` cleared, so two contents
-// that differ only in their `updated_at` timestamp collapse to the same
-// string. Used by the readme-write noop escape hatch (paired with the
-// web layer's canonicalSansUpdatedAt in apps/web/lib/experiments.ts).
-function canonicalSansUpdatedAt(content: string): string {
-  const parsed = parseReadme(content)
-  parsed.frontMatter.updatedAt = ''
-  return reserializeReadme(parsed)
+  await setArchived(input, false)
 }
 
 /** Read all of stdin as a string. Suitable for command bodies up to a few MB. */
@@ -342,5 +253,3 @@ export async function readStdin(): Promise<string> {
   }
   return Buffer.concat(chunks).toString('utf8')
 }
-
-void resolve // silence unused import

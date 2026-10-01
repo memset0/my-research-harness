@@ -7,9 +7,9 @@
 
 ## 2. CLI adapter
 
-- [ ] 2.1 Drive `experiment create/link/unlink/delete/status set/archive/unarchive` through core, keeping JSON keys, stderr warnings, journal events and exit codes; verify with `pnpm --filter @memon/cli test`
-- [ ] 2.2 Drive `run status set/readme write/archive/unarchive/rename` and `experiment warning add/resolve/reopen/delete` through core; verify with CLI tests including new status-set timestamp/archived-RUNNING cases
-- [ ] 2.3 Add the CLI half of the byte-identical test against the shared golden fixture and verify it passes
+- [x] 2.1 Drive `experiment create/link/unlink/delete/status set/archive/unarchive` through core, keeping JSON keys, stderr warnings, journal events and exit codes; verify with `pnpm --filter @memon/cli test`
+- [x] 2.2 Drive `run status set/readme write/archive/unarchive/rename` and `experiment warning add/resolve/reopen/delete` through core; verify with CLI tests including new status-set timestamp/archived-RUNNING cases
+- [x] 2.3 Add the CLI half of the byte-identical test against the shared golden fixture and verify it passes
 
 ## 3. Backend adapter
 

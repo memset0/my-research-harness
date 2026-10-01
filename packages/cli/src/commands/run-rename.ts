@@ -1,38 +1,24 @@
 // `memon run rename <id-or-dir> <new-slug>` — rename a run dir's slug while
-// preserving its `<YYMMDD>-<HHMMSS>` timestamp suffix and atomically updating
-// the parent experiment's `runs[]` back-reference if the run is bound.
-//
-// Per design D8 / spec run-edit:
-// - new slug must match `[a-z0-9][a-z0-9-]*`
-// - new dir name must be unique across the project's runs
-// - if the run claims an experiment but that experiment doesn't list the run
-//   (a MISMATCH_EXPERIMENT_REF), the rename is refused (BAD_STATE)
-// - soft prefix violation (new slug isn't prefixed by the experiment slug)
-//   prints a warning to stderr but does NOT block
+// preserving its `<YYMMDD>-<HHMMSS>` timestamp suffix and updating the
+// declaring experiment's `runs[]` path (spec run-edit). The rename itself is
+// the shared core `renameRun` primitive; this adapter resolves the target,
+// prints soft warnings and records the legacy journal event.
 
-import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import {
   appendJournalEvent,
-  declaredRunOwner,
   formatIsoLocal,
-  parseReadme,
-  parseSlugFromRunDir,
-  projectRunPath,
+  nodeMutationFs,
   RUN_TIMESTAMP_TAIL_REGEX,
   RunTargetIndex,
-  readExperimentDoc,
-  reserializeReadme,
+  renameRun,
   SLUG_REGEX,
-  serializeExperimentReadme,
-  writeFileAtomic,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
-
-const SLUG_RE = SLUG_REGEX
 
 export interface RunRenameInput {
   projectRoot?: string
@@ -42,8 +28,10 @@ export interface RunRenameInput {
 }
 
 export async function runRunRename(input: RunRenameInput): Promise<void> {
-  if (!SLUG_RE.test(input.newSlug)) {
-    emitErrorAndExit('BAD_REQUEST', `new slug "${input.newSlug}" must match ${SLUG_RE}`)
+  // Validate the slug before touching the project (cheap, and the same
+  // rule the primitive enforces).
+  if (!SLUG_REGEX.test(input.newSlug)) {
+    emitErrorAndExit('BAD_REQUEST', `new slug "${input.newSlug}" must match ${SLUG_REGEX}`)
   }
   if (RUN_TIMESTAMP_TAIL_REGEX.test(input.newSlug)) {
     emitErrorAndExit(
@@ -56,135 +44,40 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
 
-  // One bounded discovery pass: the rename needs the target's README (for
-  // its `experiment:` claim) plus a dir-name collision check, and the index
-  // answers the latter without reading any other run.
+  // One bounded discovery pass: the index answers the dir-name collision
+  // check without reading any other run.
   const index = await RunTargetIndex.open(projectRoot, { projectName })
   const target = await index.read(input.runIdOrDir)
   if (!target) {
     emitErrorAndExit('NOT_FOUND', `run "${input.runIdOrDir}" not found in ${projectRoot}`)
   }
 
-  // Compute new dir name: <newSlug>-<YYMMDD>-<HHMMSS>
-  const oldId = target.id
-  const oldName = parseSlugFromRunDir(oldId)
-  if (oldName === null) {
-    emitErrorAndExit('BAD_STATE', `run dir "${oldId}" does not match the run-dir regex`)
-  }
-  const tail = oldId.slice(oldName.length) // "-YYMMDD-HHMMSS"
-  const newId = `${input.newSlug}${tail}`
-
-  if (newId === oldId) {
-    emitJson({ ok: true, oldId, newId, noop: true })
+  const result = await cliMutation(() =>
+    renameRun({
+      fs: nodeMutationFs,
+      projectRoot,
+      projectName,
+      runDir: target.path,
+      runId: target.id,
+      newSlug: input.newSlug,
+      isTaken: (newId) => index.has(newId),
+    }),
+  )
+  if (result.noop) {
+    emitJson({ ok: true, oldId: result.oldId, newId: result.newId, noop: true })
     return
   }
-
-  // Run-dir-name collision check. The same slug at different timestamps
-  // is FINE (run slugs MAY repeat across attempts) — what we reject is
-  // a full dir-name clash, which can only happen if another run already
-  // happens to have both this slug AND this exact timestamp suffix.
-  if (index.has(newId)) {
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `DUPLICATE_RUN_DIR: another run already has dir name "${newId}"`,
-    )
+  // Soft prefix violation warnings (non-blocking).
+  for (const warning of result.warnings) {
+    process.stderr.write(`${JSON.stringify({ warning })}\n`)
   }
-
-  // If the run claims an experiment, ensure the binding is consistent before
-  // touching disk; otherwise refuse with BAD_STATE.
-  const claimedExpId = await declaredRunOwner(projectRoot, target.path, projectName)
-  const oldPath = projectRunPath(projectRoot, target.path)
-  const newReference = projectRunPath(projectRoot, join(dirname(target.path), newId))
-  if (claimedExpId) {
-    const exp = await readExperimentDoc(projectRoot, projectName, claimedExpId)
-    if (!exp) {
-      emitErrorAndExit(
-        'BAD_STATE',
-        `run claims experiment ${claimedExpId} but no such exp doc found; reconcile first via 'memon experiment unlink'`,
-      )
-    }
-    if (!exp.frontMatter.runs.includes(oldPath)) {
-      emitErrorAndExit(
-        'BAD_STATE',
-        `MISMATCH_EXPERIMENT_REF: run "${oldId}" claims ${claimedExpId} but ${claimedExpId}.runs[] does not list it; reconcile first`,
-      )
-    }
-    // Soft prefix violation warning (non-blocking)
-    if (!input.newSlug.startsWith(exp.frontMatter.slug)) {
-      process.stderr.write(
-        `${JSON.stringify({
-          warning: {
-            code: 'RUN_SLUG_PREFIX_VIOLATION',
-            message: `new slug "${input.newSlug}" does not start with experiment slug "${exp.frontMatter.slug}"`,
-          },
-        })}\n`,
-      )
-    }
-  }
-
-  // Step 1: rename the directory.
-  const newPath = join(dirname(target.path), newId)
-  await fs.rename(target.path, newPath)
-
-  // Preserve the pre-existing post-rename existence check: a concurrently
-  // removed README is skipped rather than synthesized or overwritten.
-  const readmePath = join(newPath, 'README.md')
-  let hasReadme = true
-  try {
-    await fs.stat(readmePath)
-  } catch {
-    hasReadme = false
-  }
-  if (hasReadme) {
-    const content = await fs.readFile(readmePath, 'utf8')
-    const parsed = parseReadme(content)
-    parsed.frontMatter.id = newId
-    parsed.frontMatter.name = input.newSlug
-    parsed.frontMatter.updatedAt = formatIsoLocal(new Date())
-    await writeFileAtomic(readmePath, reserializeReadme(parsed))
-  }
-
-  // Step 3: update the parent experiment's runs[] entry atomically. Re-read
-  // after the directory mutation so concurrent exp-doc edits are not replaced
-  // with the older pre-flight snapshot.
-  if (claimedExpId) {
-    const exp = await readExperimentDoc(projectRoot, projectName, claimedExpId)
-    if (exp) {
-      exp.frontMatter.runs = exp.frontMatter.runs.map((r) => (r === oldPath ? newReference : r))
-      exp.frontMatter.updatedAt = formatIsoLocal(new Date())
-      await writeFileAtomic(
-        exp.path,
-        serializeExperimentReadme({
-          frontMatter: exp.frontMatter,
-          sections: exp.sections,
-          warningsRaw: exp.warningsRaw,
-          rawSections: exp.rawSections,
-          rawBody: exp.body,
-        }),
-      )
-      const results = exp.documents?.results
-      if (
-        results?.raw &&
-        results.data?.variants.some(
-          (variant) => variant.runs.includes(oldPath) || variant.attempts.includes(oldPath),
-        )
-      ) {
-        const escaped = oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const token = new RegExp(`(?<![A-Za-z0-9._-])${escaped}(?![A-Za-z0-9._-])`, 'g')
-        const rewritten = results.raw.replace(token, newReference)
-        if (rewritten !== results.raw) await writeFileAtomic(results.path, rewritten)
-      }
-    }
-  }
-
   await appendJournalEvent({
     path: join(projectRoot, 'docs', 'journal.md'),
     event: {
       timestamp: formatIsoLocal(new Date()),
       tag: 'RENAME',
-      body: `op=run-rename old=${oldId} new=${newId}`,
+      body: `op=run-rename old=${result.oldId} new=${result.newId}`,
     },
   })
-
-  emitJson({ ok: true, oldId, newId })
+  emitJson({ ok: true, oldId: result.oldId, newId: result.newId })
 }

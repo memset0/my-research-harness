@@ -9,30 +9,29 @@
 // `add` to attribute the warning row to a specific member run; absence means
 // experiment-scoped (Run cell rendered as `—`).
 //
-// All paths use optimistic mtime+hash locking and append a single [WARNING]
+// Writes go through the shared core Warnings primitive with optional
+// mtime+hash locking; each appends a single [WARNING]
 // JOURNAL event per write whose body always includes a `run=<…|null>` token.
 
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import {
-  type ApplyWarningOpResult,
   appendJournalEvent,
-  applyWarningOp,
   discoverExperiments,
   EXPERIMENT_DIR_REGEX,
   formatIsoLocal,
-  generateRowId,
+  mutateDocumentWarning,
+  nodeMutationFs,
   parseReadme,
   RunTargetIndex,
   WARNING_CATEGORIES,
   type Warning,
   type WarningCategory,
-  WarningOpError,
-  writeFileAtomic,
 } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
 const EXP_ID_RE = EXPERIMENT_DIR_REGEX
@@ -65,7 +64,7 @@ async function resolveTarget(
     return { readmePath: exp.path, projectRoot, targetId: idOrSlug, isExpDoc: true }
   }
   // Legacy v2 form: id is a run dir base name. Resolve the DIRECTORY only —
-  // `readWithLock` below reads and locks the README itself, and no other run
+  // the shared write primitive reads and locks the README itself, and no other run
   // is touched.
   const index = await RunTargetIndex.open(projectRoot)
   const runDir = await index.dir(idOrSlug)
@@ -84,57 +83,52 @@ async function resolveTarget(
   }
 }
 
-interface LockState {
-  content: string
-  mtime: number
-  hash: string
+interface WarningWriteInput {
+  target: ResolvedTarget
+  op: 'add' | 'resolve' | 'reopen' | 'delete'
+  rowId?: string
+  category?: string
+  message?: string
+  note?: string
+  run?: string | null
+  expectedMtime?: number
+  expectedHash?: string
 }
 
-async function readWithLock(
-  readmePath: string,
-  expectedMtime?: number,
-  expectedHash?: string,
-): Promise<LockState> {
-  let stat: Awaited<ReturnType<typeof fs.stat>>
-  try {
-    stat = await fs.stat(readmePath)
-  } catch {
-    emitErrorAndExit('NOT_FOUND', `${readmePath} does not exist`)
-  }
-  const content = await fs.readFile(readmePath, 'utf8')
-  const hash = createHash('sha1').update(content).digest('hex')
-  const mtime = stat.mtimeMs
-  if (expectedMtime !== undefined && mtime !== expectedMtime) {
-    process.stdout.write(content)
-    emitErrorAndExit('CONFLICT', 'on-disk mtime differs from expectedMtime', {
-      currentMtime: mtime,
-      currentHash: hash,
-    })
-  }
-  if (expectedHash !== undefined && hash !== expectedHash) {
-    process.stdout.write(content)
-    emitErrorAndExit('CONFLICT', 'on-disk content hash differs from expectedHash', {
-      currentMtime: mtime,
-      currentHash: hash,
-    })
-  }
-  return { content, mtime, hash }
-}
-
-function mapWarningOpError(err: WarningOpError): never {
-  switch (err.code) {
-    case 'NOT_FOUND':
-      return emitErrorAndExit('NOT_FOUND', err.message)
-    case 'NOT_TABLE':
-      return emitErrorAndExit(
-        'BAD_REQUEST',
-        `Warnings section is non-conforming: ${err.message}. Format the section as a table or rename it.`,
-      )
-    case 'BAD_REQUEST':
-      return emitErrorAndExit('BAD_REQUEST', err.message)
-    default:
-      return emitErrorAndExit('GENERIC', err.message)
-  }
+/** One section-bound Warnings write through the shared core primitive. */
+function writeWarning(input: WarningWriteInput) {
+  return cliMutation(
+    () =>
+      mutateDocumentWarning({
+        fs: nodeMutationFs,
+        path: input.target.readmePath,
+        op: input.op,
+        ...(input.rowId === undefined ? {} : { rowId: input.rowId }),
+        ...(input.category === undefined ? {} : { category: input.category }),
+        ...(input.message === undefined ? {} : { message: input.message }),
+        ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.run === undefined ? {} : { run: input.run }),
+        lock: {
+          ...(input.expectedMtime === undefined ? {} : { expectedMtime: input.expectedMtime }),
+          ...(input.expectedHash === undefined ? {} : { expectedHash: input.expectedHash }),
+        },
+      }),
+    (error) => {
+      switch (error.code) {
+        case 'CONFLICT':
+          return {
+            details: { currentMtime: error.current?.mtime, currentHash: error.current?.hash },
+          }
+        case 'WARNINGS_SECTION_NOT_TABLE':
+          return {
+            code: 'BAD_REQUEST',
+            message: `Warnings section is non-conforming: ${error.message}. Format the section as a table or rename it.`,
+          }
+        default:
+          return undefined
+      }
+    },
+  )
 }
 
 // ---------- add ----------
@@ -170,35 +164,25 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
     )
   }
   const runAttribution = target.isExpDoc ? (input.run ?? null) : null
-  const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  const created = formatIsoLocal(new Date())
-  const rowId = generateRowId(created)
-  let result: ApplyWarningOpResult
-  try {
-    result = applyWarningOp(lock.content, {
-      op: 'add',
-      category: input.category as WarningCategory,
-      message: input.message,
-      created,
-      rowId,
-      run: runAttribution,
-    })
-  } catch (err) {
-    if (err instanceof WarningOpError) mapWarningOpError(err)
-    throw err
-  }
-  await writeFileAtomic(target.readmePath, result.content)
-  const newStat = await fs.stat(target.readmePath)
-  const newHash = createHash('sha1').update(result.content).digest('hex')
+  const result = await writeWarning({
+    target,
+    op: 'add',
+    category: input.category as WarningCategory,
+    message: input.message,
+    run: runAttribution,
+    expectedMtime: input.expectedMtime,
+    expectedHash: input.expectedHash,
+  })
+  const rowId = result.rowId!
   await appendJournalEvent({
     path: join(target.projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: created,
+      timestamp: result.timestamp,
       tag: 'WARNING',
       body: `\`${target.targetId}\` op=add rowId=${rowId} run=${runAttribution ?? 'null'} category=${input.category} message=${quoteForJournal(input.message)}`,
     },
   })
-  emitJson({ ok: true, rowId, mtime: newStat.mtimeMs, hash: newHash })
+  emitJson({ ok: true, rowId, mtime: result.mtime, hash: result.hash })
 }
 
 // ---------- list ----------
@@ -257,33 +241,24 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
     emitErrorAndExit('BAD_REQUEST', '--note is required for resolve and must be non-empty')
   }
   const target = await resolveTarget(input, input.runId)
-  const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  const resolved = formatIsoLocal(new Date())
-  let result: ApplyWarningOpResult
-  try {
-    result = applyWarningOp(lock.content, {
-      op: 'resolve',
-      rowId: input.rowId,
-      resolved,
-      note: input.note,
-    })
-  } catch (err) {
-    if (err instanceof WarningOpError) mapWarningOpError(err)
-    throw err
-  }
-  await writeFileAtomic(target.readmePath, result.content)
-  const newStat = await fs.stat(target.readmePath)
-  const newHash = createHash('sha1').update(result.content).digest('hex')
+  const result = await writeWarning({
+    target,
+    op: 'resolve',
+    rowId: input.rowId,
+    note: input.note,
+    expectedMtime: input.expectedMtime,
+    expectedHash: input.expectedHash,
+  })
   const after = result.after!
   await appendJournalEvent({
     path: join(target.projectRoot, 'docs', 'journal.md'),
     event: {
-      timestamp: resolved,
+      timestamp: result.timestamp,
       tag: 'WARNING',
       body: `\`${target.targetId}\` op=resolve rowId=${input.rowId} run=${after.run ?? 'null'} note=${quoteForJournal(input.note)}`,
     },
   })
-  emitJson({ ok: true, mtime: newStat.mtimeMs, hash: newHash })
+  emitJson({ ok: true, mtime: result.mtime, hash: result.hash })
 }
 
 // ---------- reopen ----------
@@ -299,17 +274,13 @@ export interface WarningReopenInput {
 
 export async function runWarningReopen(input: WarningReopenInput): Promise<void> {
   const target = await resolveTarget(input, input.runId)
-  const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  let result: ApplyWarningOpResult
-  try {
-    result = applyWarningOp(lock.content, { op: 'reopen', rowId: input.rowId })
-  } catch (err) {
-    if (err instanceof WarningOpError) mapWarningOpError(err)
-    throw err
-  }
-  await writeFileAtomic(target.readmePath, result.content)
-  const newStat = await fs.stat(target.readmePath)
-  const newHash = createHash('sha1').update(result.content).digest('hex')
+  const result = await writeWarning({
+    target,
+    op: 'reopen',
+    rowId: input.rowId,
+    expectedMtime: input.expectedMtime,
+    expectedHash: input.expectedHash,
+  })
   const after = result.after!
   await appendJournalEvent({
     path: join(target.projectRoot, 'docs', 'journal.md'),
@@ -319,7 +290,7 @@ export async function runWarningReopen(input: WarningReopenInput): Promise<void>
       body: `\`${target.targetId}\` op=reopen rowId=${input.rowId} run=${after.run ?? 'null'}`,
     },
   })
-  emitJson({ ok: true, mtime: newStat.mtimeMs, hash: newHash })
+  emitJson({ ok: true, mtime: result.mtime, hash: result.hash })
 }
 
 // ---------- delete ----------
@@ -335,17 +306,13 @@ export interface WarningDeleteInput {
 
 export async function runWarningDelete(input: WarningDeleteInput): Promise<void> {
   const target = await resolveTarget(input, input.runId)
-  const lock = await readWithLock(target.readmePath, input.expectedMtime, input.expectedHash)
-  let result: ApplyWarningOpResult
-  try {
-    result = applyWarningOp(lock.content, { op: 'delete', rowId: input.rowId })
-  } catch (err) {
-    if (err instanceof WarningOpError) mapWarningOpError(err)
-    throw err
-  }
-  await writeFileAtomic(target.readmePath, result.content)
-  const newStat = await fs.stat(target.readmePath)
-  const newHash = createHash('sha1').update(result.content).digest('hex')
+  const result = await writeWarning({
+    target,
+    op: 'delete',
+    rowId: input.rowId,
+    expectedMtime: input.expectedMtime,
+    expectedHash: input.expectedHash,
+  })
   const deleted = result.deleted!
   await appendJournalEvent({
     path: join(target.projectRoot, 'docs', 'journal.md'),
@@ -355,7 +322,7 @@ export async function runWarningDelete(input: WarningDeleteInput): Promise<void>
       body: `\`${target.targetId}\` op=delete rowId=${input.rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },
   })
-  emitJson({ ok: true, mtime: newStat.mtimeMs, hash: newHash })
+  emitJson({ ok: true, mtime: result.mtime, hash: result.hash })
 }
 
 function quoteForJournal(s: string): string {
