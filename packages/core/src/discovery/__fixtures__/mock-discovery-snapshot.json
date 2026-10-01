@@ -1,0 +1,20 @@
+{
+  "project-a": [
+    "logs/bf16-flow-matching-260503-093000",
+    "logs/edm2-precond-260503-080000",
+    "logs/edm2-precond-rerun-260503-100000",
+    "logs/foo-260501-100000",
+    "logs/snr-sweep-260430-160000",
+    "logs/sub-recipe-260504-110000",
+    "logs/sub/bar-260502-150000",
+    "logs/zero-snr-eval-260502-110000"
+  ],
+  "project-b": [
+    "logs/cfg-diversity-decay-260502-090000",
+    "logs/cfg-rescale-260503-130000",
+    "logs/sampler-equivalence-baseline-260501-090000",
+    "logs/sampler-equivalence-dpmpp-260502-130000",
+    "logs/sub1/sub2/exp4-260503-110000",
+    "logs/vae-decoder-profile-260503-100000"
+  ]
+}

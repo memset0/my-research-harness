@@ -1,6 +1,6 @@
 ## 1. Baseline
 
-- [ ] 1.1 Snapshot the default-config discovery result (sorted project-relative Run paths) of `mock/project-a` and `mock/project-b` into a test fixture before changing the walk, and verify a compatibility test asserting equality passes on the unchanged walk
+- [x] 1.1 Snapshot the default-config discovery result (sorted project-relative Run paths) of `mock/project-a` and `mock/project-b` into a test fixture before changing the walk, and verify a compatibility test asserting equality passes on the unchanged walk
 
 ## 2. Non-nesting rule
 
