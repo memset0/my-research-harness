@@ -19,3 +19,7 @@
 ## 4. Close-out
 
 - [x] 4.1 Align proposal/design/specs with what was implemented and verify `openspec validate web-lib-layering --type change --strict` passes
+
+## Follow-up (2026-10-01)
+
+- [x] Updated the moved-file paths in `AGENTS.md` (path-safety, translation cache, direct-runtime), its query-key and layering conventions, and the `dev-route-prewarm` Purpose after the `lib/server` move.

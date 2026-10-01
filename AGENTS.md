@@ -21,7 +21,7 @@ repository-specific requirements at the end of this file supplement it.
   Experiment `OPEN`/`RESOLVED`/`ABANDONED` (human-only write); Hypothesis
   `CONFIRMED`/`REFUTED`/`PARTIAL`/`OPEN`/`DEFERRED`.
 - **Path containment.** Web routes that accept a path parameter MUST pass it
-  through `assertWithinProjectRoots()` (`apps/web/lib/path-safety.ts`) before
+  through `assertWithinProjectRoots()` (`apps/web/lib/server/path-safety.ts`) before
   touching the filesystem. `@memon/backend` services do not use that helper;
   each resolves against the project root and applies its own realpath
   containment check (e.g. `isWithin` in `document-service.ts` /
@@ -33,7 +33,7 @@ repository-specific requirements at the end of this file supplement it.
 - **Storage.** No external database service. Embedded SQLite files are allowed
   as central-side local state: `apps/web/lib/server/ui-preferences-store.ts`,
   `apps/web/lib/server/experiment-results-views-store.ts`,
-  `apps/web/lib/translation/cache.ts`. Research data stays in project files.
+  `apps/web/lib/server/translation/cache.ts`. Research data stays in project files.
 - **Operator data stays out of Git** (see §1.1).
 - **Skills** (`packages/skills/memon-*/SKILL.md`) are written in **English**;
   conversation with the user is in **Chinese**. Bundled skills live only in
@@ -75,7 +75,7 @@ lefthook pre-commit hooks (`lefthook.yml`: Biome check on staged files +
 | Path | Role / source of truth |
 |---|---|
 | `packages/core` | Shared domain library: types and enums (`src/types.ts`), README/experiment/wiki parsers and serializers, discovery and indexing, polling, project file store, time helpers, release policy (`src/version.ts`: `FS_CONVENTION_VERSION`, `MEMON_RELEASE`), Web/backend wire protocol (`src/backend-protocol.ts`). |
-| `packages/backend` | Framework-agnostic domain service layer (project, document, mutation, stream, git, slurm, wiki services behind `createBackendHandler`). Its only runtime consumer is the central Web process, which calls it in-process (`apps/web/lib/central/direct-runtime.ts`). No daemon or remote listener. |
+| `packages/backend` | Framework-agnostic domain service layer (project, document, mutation, stream, git, slurm, wiki services behind `createBackendHandler`). Its only runtime consumer is the central Web process, which calls it in-process (`apps/web/lib/server/central/direct-runtime.ts`). No daemon or remote listener. |
 | `packages/cli` | The `memon` CLI. Command surface: `memon --help` / `memon <cmd> --help` and `packages/cli/src/index.ts`. |
 | `packages/skills` | Bundled `memon-*` agent skills distributed to research projects. |
 | `apps/web` | Next.js 15 App Router + Tailwind v4 + shadcn/ui central dashboard, custom `server.ts`, auth. HTTP endpoints: `apps/web/app/api/**/route.ts`. |
@@ -220,9 +220,12 @@ done   # every token must print an oklch(...) value
 - Data freshness: browser pages do not subscribe to SSE (the only browser
   `EventSource` is the log stream in `components/log-viewer.tsx`). TanStack
   Query refreshes by the default `staleTime` (`lib/get-query-client.ts`) and
-  explicit `invalidateQueries` after writes. Keys are ad hoc, mostly
-  `[<resource>, ...projectQueryKey(project), id?]` (`lib/api.ts`); grep the
-  existing keys before invalidating.
+  explicit `invalidateQueries` after writes. Every query key comes from the
+  constructors in `lib/query-keys.ts` (snapshot-tested shapes); never write a
+  key literal in a component, and invalidate through the same constructors.
+- Layering: server-only modules live under `lib/server/` and start with
+  `import 'server-only'` (`lib/server/layering.test.ts` enforces it); response
+  types shared by `app/api/**/route.ts` and `lib/api.ts` live in `lib/dto/`.
 - Before non-trivial frontend work (new component, theming, semantic classes,
   composition patterns) re-read <https://ui.shadcn.com/llms.txt>; on demand:
   <https://ui.shadcn.com/docs/skills>, <https://ui.shadcn.com/docs/theming>,
