@@ -1,6 +1,6 @@
 ## 0. Adopt the bounded-run-discovery core helpers
 
-- [x] 0.1 Classify `PHANTOM_RUN_REF` from the declared path on disk in the backend composition (`computeMembershipFromDisk`) and the standalone runtime (async `recomputeAnomalies`), and pass `runDepth` to `scanProjectRoot`; verify a backend test (excluded and depth-pruned declarations are members, only the missing path is a phantom) and a runtime integration test
+- [x] 0.1 Classify `PHANTOM_RUN_REF` from the declared path on disk in the backend composition (`computeMembershipFromDisk`) and the standalone runtime (async `recomputeAnomalies`), and honour the Project's `run_dirs` in every walk (all central walks go through `discoverRuns(project)`, which reads it from the Project config); verify backend tests (excluded and `run_dirs`-pruned declarations are members, only the missing path is a phantom, the Run list follows `run_dirs`) and a runtime integration test
 
 ## 1. Request-scoped root realpath (D1)
 

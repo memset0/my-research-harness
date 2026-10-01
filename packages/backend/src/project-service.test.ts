@@ -565,6 +565,40 @@ conclusion
     }
   })
 
+  it('honours run_dirs in every walk while declared paths outside it stay members', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-run-dirs-'))
+    const outside = 'outputs/batch/rd-out-260101-000000'
+    const missing = 'logs/rd-missing-260101-000001'
+    try {
+      const bundle = join(root, 'docs', 'experiments', 'E0001-rd')
+      await fs.mkdir(bundle, { recursive: true })
+      await fs.writeFile(
+        join(bundle, 'README.md'),
+        `---\nid: E0001-rd\nslug: rd\ntitle: Dirs\nstatus: OPEN\nruns: ${JSON.stringify([outside, missing])}\n---\n`,
+      )
+      for (const run of [
+        outside,
+        'logs/rd-in-260101-000002',
+        'logs/nested/rd-deep-260101-000003',
+      ]) {
+        await fs.mkdir(join(root, run), { recursive: true })
+      }
+      const service = new FilesystemProjectService([
+        { name: 'dirs', root, include: [], exclude: [], runDirs: ['logs/*'] },
+      ])
+      const runs = BackendRunsPageResponseSchema.parse(await service.listRuns('dirs')).runs
+      expect(runs.map((run) => run.id)).toEqual(['logs/rd-in-260101-000002'])
+      const anomalies = BackendAnomaliesResponseSchema.parse(await service.getAnomalies('dirs'))
+      expect(
+        anomalies.anomalies
+          .filter((anomaly) => anomaly.code === 'PHANTOM_RUN_REF')
+          .map((anomaly) => anomaly.runId),
+      ).toEqual([missing])
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('pages the Run list with an opaque cursor in created-time order', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'memon-run-pages-'))
     try {

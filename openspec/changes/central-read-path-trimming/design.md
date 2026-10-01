@@ -202,15 +202,20 @@ cache entry; either path ends with zero body recomputation on the server.
 
 The core change `bounded-run-discovery` (already on main) classifies
 `PHANTOM_RUN_REF` for path declarations by the declared path on disk and adds
-a per-Project `run_depth`. Central adopts both: the Backend composition calls
-`computeMembershipFromDisk` and passes `runDepth` to `scanProjectRoot`; the
-standalone runtime's `recomputeAnomalies` becomes async for the disk check
+a per-Project `run_dirs` (glob patterns for Run locations; it replaced an
+interim `run_depth`). Central adopts both: membership is classified from the
+declared path, and every central walk — the summary index's shared walk, the
+wiki inventory walk, Run reference resolution and the standalone runtime's
+discovery — calls `discoverRuns(project)` with the configured Project, which
+applies `run_dirs` itself; no central path calls `scanProjectRoot` any more.
+The standalone runtime's `recomputeAnomalies` becomes async for the disk check
 (only the newest recompute per Project publishes). When the composition later
 moves onto the summary index (D4) the declared-path map is built from indexed
 Run entries — an existing contained directory yields its Run record, anything
 else null — and passed to `computeMembership` as `declaredRuns`, which is the
 same classification at one fingerprint per declared path. Direct `discoverRuns`
-callers pick up `runDepth` from the Project config automatically.
+callers pick up `run_dirs` from the Project config automatically. The core
+`onPatternNonRun` lint callback is not surfaced by central yet (Future).
 
 ## Risks / Trade-offs
 
@@ -243,3 +248,4 @@ Filled in after implementation (same harness, same page set).
   writer, with the same fingerprint validation (FS v8 option B).
 - `storage: network` with TTLs for mounted Projects once measured.
 - Git-status polling (10 s per Project) is now the largest periodic cost left.
+- Surface core's `RUN_DIR_PATTERN_NON_RUN` (`onPatternNonRun`) next to anomalies.
