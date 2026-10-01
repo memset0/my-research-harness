@@ -1,7 +1,7 @@
 // Guards the layering that breaks the Project file store ↔ git command cycle:
 // the store and the git cache meet only in the leaf `project-file-context.ts`.
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -63,5 +63,72 @@ describe('core import layering', () => {
     expect(localImports('git/command.ts')).toContain('project-file-context.ts')
     expect(localImports('project-file-store.ts')).toContain('project-file-store/index.ts')
     expect(reachable('project-file-store.ts')).toContain('project-file-context.ts')
+  })
+})
+
+describe('project-file-store module graph', () => {
+  const STORE_DIR = 'project-file-store'
+  const modules = readdirSync(join(SRC, STORE_DIR))
+    .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+    .map((name) => `${STORE_DIR}/${name}`)
+    .sort()
+
+  /** A cycle among the store's own modules, or null when they form a DAG. */
+  function internalCycle(): string[] | null {
+    const state = new Map<string, 'visiting' | 'done'>()
+    const path: string[] = []
+    const visit = (file: string): string[] | null => {
+      if (state.get(file) === 'done') return null
+      if (state.get(file) === 'visiting') return [...path.slice(path.indexOf(file)), file]
+      state.set(file, 'visiting')
+      path.push(file)
+      for (const next of localImports(file)) {
+        if (!next.startsWith(`${STORE_DIR}/`)) continue
+        const cycle = visit(next)
+        if (cycle !== null) return cycle
+      }
+      path.pop()
+      state.set(file, 'done')
+      return null
+    }
+    for (const file of modules) {
+      const cycle = visit(file)
+      if (cycle !== null) return cycle
+    }
+    return null
+  }
+
+  it('discovers the split modules', () => {
+    expect(modules).toEqual(
+      expect.arrayContaining([
+        `${STORE_DIR}/index.ts`,
+        `${STORE_DIR}/store.ts`,
+        `${STORE_DIR}/scheduler.ts`,
+        `${STORE_DIR}/fs-facade.ts`,
+      ]),
+    )
+  })
+
+  it('forms a DAG internally', () => {
+    expect(internalCycle()).toBeNull()
+  })
+
+  it('has no cycle that leaves the directory and comes back', () => {
+    for (const file of modules) expect(reachable(file).has(file), file).toBe(false)
+  })
+
+  it('never reaches the git layer', () => {
+    for (const file of modules) {
+      expect(
+        [...reachable(file)].filter((path) => path.startsWith('git/')),
+        file,
+      ).toEqual([])
+    }
+  })
+
+  it('is not reachable from git/command.ts (the cycle removed in v7.1.0)', () => {
+    const fromGit = reachable('git/command.ts')
+    expect(modules.filter((file) => fromGit.has(file))).toEqual([])
+    expect(fromGit.has('project-file-store.ts')).toBe(false)
   })
 })
