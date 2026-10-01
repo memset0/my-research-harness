@@ -4,6 +4,7 @@ import { basename, dirname } from 'node:path'
 import { BackendMutationError } from '@memon/backend'
 import { BackendReadmeResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { PathReadmeResponse, PutReadmeResponse } from '@/lib/dto/documents'
 import { PathSafetyError } from '../../../lib/server/path-safety'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneResource } from '../../../lib/server/standalone-resource'
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
       content: readme.content,
       mtime: readme.mtime,
       hash: readme.hash,
-    })
+    } satisfies PathReadmeResponse)
   } catch (error) {
     return readmeError(error)
   }
@@ -78,7 +79,7 @@ export async function PUT(request: NextRequest) {
       mtime: result.mtime,
       hash: result.hash,
       finalContent: result.finalContent,
-    })
+    } satisfies PutReadmeResponse)
   } catch (error) {
     if (error instanceof BackendMutationError && error.code === 'CONFLICT') {
       return NextResponse.json(

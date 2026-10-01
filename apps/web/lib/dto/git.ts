@@ -3,10 +3,22 @@
 // Shared by the route handlers that build these bodies and the client
 // fetchers in `lib/api.ts`. Types and pure helpers only — no server imports.
 
+/**
+ * Why a Git endpoint answered `enabled: false`. Every Git route shares the
+ * backend's disabled-reason enum, so any endpoint may report any of these.
+ */
+export type GitDisabledReason =
+  | 'not-a-repo'
+  | 'git-not-found'
+  | 'timeout'
+  | 'not-found'
+  | 'no-gitmodules'
+  | 'error'
+
 export type GitStatus =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | {
@@ -50,7 +62,7 @@ export interface GitFileEntry {
 export type GitStatusFiles =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | {
@@ -89,7 +101,7 @@ export type GitDiffResponse =
 export type GitRangeResponse =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | {
@@ -110,7 +122,7 @@ export interface GitBranchEntry {
 export type GitBranches =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | {
@@ -134,7 +146,7 @@ export interface GitCommitSummary {
 export type GitLog =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | { enabled: true; commits: GitCommitSummary[] }
@@ -142,7 +154,7 @@ export type GitLog =
 export type GitCommitDetail =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'not-found' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | {
@@ -166,7 +178,7 @@ export interface GitSubmoduleEntry {
 export type GitSubmodules =
   | {
       enabled: false
-      reason: 'not-a-repo' | 'no-gitmodules' | 'git-not-found' | 'timeout' | 'error'
+      reason: GitDisabledReason
       message?: string
     }
   | { enabled: true; submodules: GitSubmoduleEntry[] }

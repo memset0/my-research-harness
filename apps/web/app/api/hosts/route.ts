@@ -1,13 +1,11 @@
 import type { HostAvailability } from '@memon/core'
+import type { HostsResponse } from '@/lib/dto/projects'
+
 import { servesProjectsDirectly } from '../../../lib/server/central/direct-projects'
 import { directCentralRuntime } from '../../../lib/server/central/direct-runtime'
 import type { DisplayHostAvailability } from '../../../lib/server/central/fleet-controller'
 import { getCentralFleet } from '../../../lib/server/central/fleet-runtime'
 import { getRuntime } from '../../../lib/server/runtime'
-
-export interface HostsResponse {
-  hosts: DisplayHostAvailability[]
-}
 
 export function buildHostsResponse(
   hosts: readonly (HostAvailability & { label?: string })[],
@@ -33,7 +31,7 @@ export async function GET(): Promise<Response> {
         { status: 404, headers: { 'cache-control': 'no-store' } },
       )
     }
-    return Response.json(buildHostsResponse(hosts), {
+    return Response.json(buildHostsResponse(hosts) satisfies HostsResponse, {
       headers: { 'cache-control': 'no-store' },
     })
   } catch {

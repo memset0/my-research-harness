@@ -2,6 +2,7 @@
 
 import { BackendGitDiffResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitDiffResponse } from '@/lib/dto/git'
 import {
   gitError,
   gitServiceError,
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest, context: RouteParams): Promise<N
           ...(search.get('to') ? { to: search.get('to')! } : {}),
           ...(search.get('submodule') ? { submodule: search.get('submodule')! } : {}),
         }),
-      ),
+      ) satisfies GitDiffResponse,
     )
   } catch (error) {
     return gitServiceError(error)

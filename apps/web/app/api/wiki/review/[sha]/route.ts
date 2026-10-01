@@ -16,6 +16,7 @@ import {
   writeWikiReviewMark,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WikiReviewResponse } from '@/lib/dto/wiki'
 import { getRuntime, type Runtime } from '../../../../../lib/server/runtime'
 import {
   wikiError,
@@ -112,7 +113,7 @@ async function respondWithLog(runtime: Runtime, project: string): Promise<NextRe
   await runtime.wikiCache.refreshProjectReview(project)
   const log = runtime.wikiCache.getReviewLog(project)
   if (!log) return wikiError(404, 'NOT_FOUND', `project "${project}" is not a git worktree`)
-  return NextResponse.json(log)
+  return NextResponse.json(log satisfies WikiReviewResponse)
 }
 
 function reviewFailure(caught: unknown): NextResponse {

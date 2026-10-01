@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import type { ExperimentBindResponse } from '@/lib/dto/experiments'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import {
   bindStandaloneExperiment,
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({
       ok: true,
       ...(await bindStandaloneExperiment(runtime, 'unlink', id, body.run)),
-    })
+    } satisfies ExperimentBindResponse)
   } catch (error) {
     return (
       standaloneExperimentMutationError(error) ??

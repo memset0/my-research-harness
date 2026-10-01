@@ -7,6 +7,7 @@
 // A project outside a git worktree has no review log at all: 404.
 
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WikiReviewResponse } from '@/lib/dto/wiki'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { wikiError, wikiProjectTarget } from '../../../../lib/server/wiki-route'
 
@@ -20,5 +21,5 @@ export async function GET(request: NextRequest) {
   if (!log) {
     return wikiError(404, 'NOT_FOUND', `project "${target.project}" is not a git worktree`)
   }
-  return NextResponse.json(log)
+  return NextResponse.json(log satisfies WikiReviewResponse)
 }

@@ -14,6 +14,7 @@
 
 import { BackendShareCreateResponseSchema, HostIdSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { CreatedShareResponse, SharesResponse } from '@/lib/dto/shares'
 import { publicOrigin } from '@/lib/server/auth/public-url'
 import { proxyCentralApiRequest } from '@/lib/server/central/backend-proxy'
 import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<Response>
 
   const reveal = req.nextUrl.searchParams.get('reveal') === 'true'
   const records = await standaloneServices(runtime.config).shares.list(project, reveal)
-  return NextResponse.json({ shares: records }, { status: 200 })
+  return NextResponse.json({ shares: records } satisfies SharesResponse, { status: 200 })
 }
 
 export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response> {
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response
       )
       const shareUrl = constructCentralShareUrl(req, host, project, payload.share.token)
       return NextResponse.json(
-        { share: { ...payload.share, share_url: shareUrl } },
+        { share: { ...payload.share, share_url: shareUrl } } satisfies CreatedShareResponse,
         { status: 201, headers: { 'cache-control': 'no-store' } },
       )
     } catch {
@@ -133,7 +134,10 @@ export async function POST(req: NextRequest, ctx: RouteParams): Promise<Response
   try {
     const record = await standaloneServices(runtime.config).shares.add(project, { label, expires })
     const shareUrl = constructShareUrl(req, project, record.token)
-    return NextResponse.json({ share: { ...record, share_url: shareUrl } }, { status: 201 })
+    return NextResponse.json(
+      { share: { ...record, share_url: shareUrl } } satisfies CreatedShareResponse,
+      { status: 201 },
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'failed to create share'
     return NextResponse.json({ error: message }, { status: 400 })

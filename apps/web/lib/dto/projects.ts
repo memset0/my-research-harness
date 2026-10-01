@@ -27,3 +27,7 @@ export type ProjectSummary = StandaloneProjectSummary | CentralProjectSummary
 export interface HostsResponse {
   hosts: Array<HostAvailability & { label?: string }>
 }
+
+export interface ProjectsResponse {
+  projects: ProjectSummary[]
+}

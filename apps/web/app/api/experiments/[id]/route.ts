@@ -2,6 +2,8 @@ import { stat } from 'node:fs/promises'
 import { BackendProjectServiceError } from '@memon/backend'
 import { BackendExperimentResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { ExperimentDeleteResponse, ExperimentDocDetail } from '@/lib/dto/experiments'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneExperiment } from '../../../../lib/server/standalone-dto'
 import {
@@ -37,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({
       ...legacy,
       resultsUpdatedAt: await managedResultsUpdatedAt(cached.documents?.results),
-    })
+    } satisfies Wire<ExperimentDocDetail>)
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {
       return NextResponse.json(
@@ -54,7 +56,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
   const force = new URL(req.url).searchParams.get('force') === 'true'
   try {
-    return NextResponse.json(await deleteStandaloneExperiment(runtime, id, force))
+    return NextResponse.json(
+      (await deleteStandaloneExperiment(runtime, id, force)) satisfies ExperimentDeleteResponse,
+    )
   } catch (error) {
     return (
       standaloneExperimentMutationError(error) ??

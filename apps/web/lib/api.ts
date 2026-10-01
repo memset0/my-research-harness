@@ -5,10 +5,8 @@
 import type {
   BackendResourceInventoryResponse,
   BackendWikiInventoryResponse,
-  CodeReviewCompletion,
   Hypothesis,
   JournalEvent,
-  ParsedJournal,
   Run,
   WarningRecord,
 } from '@memon/core'
@@ -18,10 +16,11 @@ export type {
   CentralProjectSummary,
   HostsResponse,
   ProjectSummary,
+  ProjectsResponse,
   StandaloneProjectSummary,
 } from './dto/projects'
 
-import type { HostsResponse, ProjectSummary } from './dto/projects'
+import type { HostsResponse, ProjectsResponse } from './dto/projects'
 
 export type {
   FullExperiment,
@@ -30,29 +29,40 @@ export type {
   PatchArchiveResponse,
   PatchStatusForbidden,
   PatchStatusResponse,
+  RunFilesResponse,
   RunFileTreeNode,
+  RunsResponse,
 } from './dto/runs'
 
 import type {
   FullExperiment,
-  IndexedRun,
   PatchArchiveForbidden,
   PatchArchiveResponse,
   PatchStatusForbidden,
   PatchStatusResponse,
-  RunFileTreeNode,
+  RunFilesResponse,
+  RunsResponse,
 } from './dto/runs'
 
 export type {
   FetchedReadme,
+  PathReadmeResponse,
   PutReadmeConflict,
   PutReadmeResponse,
 } from './dto/documents'
 
-import type { FetchedReadme, PutReadmeConflict, PutReadmeResponse } from './dto/documents'
+import type {
+  FetchedReadme,
+  PathReadmeResponse,
+  PutReadmeConflict,
+  PutReadmeResponse,
+} from './dto/documents'
 
 export type {
   ExperimentBindInput,
+  ExperimentBindResponse,
+  ExperimentCreateResponse,
+  ExperimentDeleteResponse,
   ExperimentDisplaySection,
   ExperimentDocDetail,
   ExperimentDocSummary,
@@ -66,6 +76,9 @@ export type {
 
 import type {
   ExperimentBindInput,
+  ExperimentBindResponse,
+  ExperimentCreateResponse,
+  ExperimentDeleteResponse,
   ExperimentDocDetail,
   ExperimentDocsResponse,
   ExperimentResultsSnapshot,
@@ -85,21 +98,24 @@ export type {
   JournalCountResponse,
   JournalHistoryResponse,
   JournalInvocationRecordView,
+  JournalResponse,
 } from './dto/journal'
 
 import type {
   HypothesesResponse,
   JournalCountResponse,
   JournalHistoryResponse,
+  JournalResponse,
 } from './dto/journal'
 
 export type {
   FullReport,
   ReportListItem,
+  ReportPutResponse,
   ReportsResponse,
 } from './dto/reports'
 
-import type { FullReport, ReportsResponse } from './dto/reports'
+import type { FullReport, ReportPutResponse, ReportsResponse } from './dto/reports'
 
 export type {
   WikiBacklinksResponse,
@@ -123,6 +139,7 @@ export type {
   CodePreview,
   CodePreviewLine,
   CodeReviewListItem,
+  CodeReviewPatchResponse,
   CodeReviewProgressPatch,
   CodeReviewsResponse,
   FullCodeReview,
@@ -130,14 +147,19 @@ export type {
 
 import type {
   CodePreview,
+  CodeReviewPatchResponse,
   CodeReviewProgressPatch,
   CodeReviewsResponse,
   FullCodeReview,
 } from './dto/code-reviews'
 
-export type { LogFileEntry } from './dto/logs'
+export type {
+  LogFileEntry,
+  LogFilesResponse,
+  LogLinesResponse,
+} from './dto/logs'
 
-import type { LogFileEntry } from './dto/logs'
+import type { LogFilesResponse, LogLinesResponse } from './dto/logs'
 
 export type {
   SlurmJobJson,
@@ -156,6 +178,7 @@ export type {
   GitCommitSummary,
   GitDiffResponse,
   GitDiffSide,
+  GitDisabledReason,
   GitFileEntry,
   GitFileStatus,
   GitLog,
@@ -181,9 +204,20 @@ import type {
   GitSubmodules,
 } from './dto/git'
 
-export type { ComponentRunResult } from './dto/components'
+export type {
+  ComponentRunResponse,
+  ComponentRunResult,
+} from './dto/components'
 
-import type { ComponentRunResult } from './dto/components'
+import type { ComponentRunResponse } from './dto/components'
+
+export type {
+  CreatedShare,
+  CreatedShareResponse,
+  ShareRow,
+  SharesResponse,
+} from './dto/shares'
+
 import {
   beginResourceRequest,
   recordResourceResponse,
@@ -262,7 +296,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchProjects(): Promise<{ projects: ProjectSummary[] }> {
+export async function fetchProjects(): Promise<ProjectsResponse> {
   return jsonFetch('/api/projects')
 }
 
@@ -276,9 +310,7 @@ export async function fetchRunsInventory(
   return jsonFetch(projectQueryUrl('/api/runs', project, new URLSearchParams({ inventory: '1' })))
 }
 
-export async function fetchExperiments(
-  project?: ProjectTarget,
-): Promise<{ experiments: IndexedRun[] }> {
+export async function fetchExperiments(project?: ProjectTarget): Promise<RunsResponse> {
   const url = project ? projectQueryUrl('/api/runs', project) : '/api/runs'
   return jsonFetch(url)
 }
@@ -295,7 +327,7 @@ export async function fetchHypotheses(project: ProjectTarget): Promise<Hypothese
 export async function fetchJournal(
   project: ProjectTarget,
   options: { limit?: number; before?: string } = {},
-): Promise<{ path?: string } & Omit<ParsedJournal, 'lastDigestAt'>> {
+): Promise<JournalResponse> {
   const params = new URLSearchParams()
   if (options.limit !== undefined) params.set('limit', String(options.limit))
   if (options.before) params.set('before', options.before)
@@ -344,7 +376,7 @@ export async function putReport(
   project: ProjectTarget,
   id: string,
   payload: { content: string; expectedMtime: number; expectedHash: string },
-): Promise<{ ok: true; mtime: number; hash: string }> {
+): Promise<ReportPutResponse> {
   return jsonFetch(projectQueryUrl(`/api/reports/${encodeURIComponent(id)}`, project), {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
@@ -438,7 +470,7 @@ export async function patchCodeReviewProgress(
   project: ProjectTarget,
   id: string,
   patch: CodeReviewProgressPatch,
-): Promise<{ ok: true; mtime: number; hash: string; completion: CodeReviewCompletion }> {
+): Promise<CodeReviewPatchResponse> {
   return jsonFetch(projectQueryUrl(`/api/code-reviews/${encodeCodeReviewId(id)}`, project), {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
@@ -459,7 +491,7 @@ export async function fetchLog(
   resource: string,
   legacyPath: string | undefined,
   options: { endLine?: number; count?: number } = {},
-): Promise<{ totalLines: number; lines: { lineNumber: number; text: string }[] }> {
+): Promise<LogLinesResponse> {
   const params = new URLSearchParams()
   const host = projectHost(project)
   if (host) {
@@ -478,7 +510,7 @@ export async function fetchLogFiles(
   project: ProjectTarget,
   runResource: string,
   legacyExpPath?: string,
-): Promise<{ files: LogFileEntry[] }> {
+): Promise<LogFilesResponse> {
   const host = projectHost(project)
   if (host)
     return jsonFetch(
@@ -500,9 +532,7 @@ export function logStreamUrl(
 }
 
 export async function fetchReadme(path: string): Promise<FetchedReadme> {
-  const readme = await jsonFetch<Omit<FetchedReadme, 'resource'> & { path: string }>(
-    `/api/readme?path=${encodeURIComponent(path)}`,
-  )
+  const readme = await jsonFetch<PathReadmeResponse>(`/api/readme?path=${encodeURIComponent(path)}`)
   return { resource: readme.path, content: readme.content, mtime: readme.mtime, hash: readme.hash }
 }
 
@@ -802,7 +832,7 @@ export async function createExperimentDoc(
     fromRunExpectedMtime?: number
     fromRunExpectedHash?: string
   },
-): Promise<{ ok: true; id: string; resource: string; mtime: number; hash: string }> {
+): Promise<ExperimentCreateResponse> {
   return jsonFetch(projectQueryUrl('/api/experiments', project), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -815,15 +845,7 @@ export async function bindExperimentRun(
   project: ProjectTarget,
   id: string,
   input: ExperimentBindInput,
-): Promise<{
-  ok: true
-  experimentId: string
-  runId: string
-  experimentMtime: number
-  experimentHash: string
-  runMtime: number
-  runHash: string
-}> {
+): Promise<ExperimentBindResponse> {
   return jsonFetch(
     projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/${operation}`, project),
     {
@@ -843,7 +865,7 @@ export async function deleteExperimentDoc(
     expectedHash: string
     runLocks: Array<{ run: string; expectedMtime: number; expectedHash: string }>
   },
-): Promise<{ ok: true; deletedId: string; cascadedRuns: string[] }> {
+): Promise<ExperimentDeleteResponse> {
   const query = new URLSearchParams({ force: String(input.force) })
   return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}`, project, query), {
     method: 'DELETE',
@@ -869,15 +891,7 @@ export async function fetchRunFiles(
   project: ProjectTarget,
   id: string,
   depth = 3,
-): Promise<{
-  project: string
-  runId: string
-  resource: string
-  depth: number
-  truncated: boolean
-  entries: number
-  tree: RunFileTreeNode
-}> {
+): Promise<RunFilesResponse> {
   return jsonFetch(
     projectQueryUrl(
       `/api/runs/${encodeURIComponent(id)}/files`,
@@ -1098,7 +1112,7 @@ export type { Hypothesis, JournalEvent, Run, WarningRecord }
 export async function runComponents(
   project: ProjectTarget | { project: string; host?: string },
   input: { document: string; ids?: readonly string[] },
-): Promise<{ results: ComponentRunResult[] }> {
+): Promise<ComponentRunResponse> {
   const name = typeof project === 'string' ? project : project.project
   const host = typeof project === 'string' ? undefined : project.host
   return jsonFetch('/api/components/run', {

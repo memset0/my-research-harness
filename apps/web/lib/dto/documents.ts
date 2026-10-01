@@ -26,3 +26,11 @@ export interface FetchedReadme {
   mtime: number
   hash: string
 }
+
+/** `GET /api/readme?path=…` (legacy path-addressed read) wire body. */
+export interface PathReadmeResponse {
+  path: string
+  content: string
+  mtime: number
+  hash: string
+}

@@ -48,3 +48,10 @@ export interface CodePreview {
   // (e.g. the file is too large or binary). `lines` is empty in that case.
   reason?: 'too-large' | 'binary'
 }
+
+export interface CodeReviewPatchResponse {
+  ok: true
+  mtime: number
+  hash: string
+  completion: CodeReviewCompletion
+}

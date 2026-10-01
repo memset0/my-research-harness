@@ -10,6 +10,7 @@
 
 import { BackendGitStatusResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitStatus } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -38,12 +39,12 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   const now = Date.now()
   const cached = cache.get(context.project)
   if (cached && now - cached.readAt < context.gitStatusIntervalMs) {
-    return NextResponse.json(cached.result)
+    return NextResponse.json(cached.result satisfies GitStatus)
   }
   try {
     const result = BackendGitStatusResponseSchema.parse(await context.git.status(context.project))
     cache.set(context.project, { readAt: now, result })
-    return NextResponse.json(result)
+    return NextResponse.json(result satisfies GitStatus)
   } catch (error) {
     return gitServiceError(error)
   }

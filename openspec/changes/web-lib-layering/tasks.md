@@ -13,8 +13,8 @@
 
 ## 3. Shared response DTOs (D3)
 
-- [ ] 3.1 Move the response types from `lib/api.ts` (and component-local response types such as share rows) into `apps/web/lib/dto/<domain>.ts`, re-export them from `lib/api.ts`, and verify DTO files import no server module
-- [ ] 3.2 Annotate the JSON bodies built in the matching `app/api/**/route.ts` handlers with `satisfies <Dto>`; correct each DTO that disagrees with its route's actual output (never the route) and record every disagreement; verify typecheck, biome, the web suite and the checkout build pass
+- [x] 3.1 Move the response types from `lib/api.ts` (and component-local response types such as share rows) into `apps/web/lib/dto/<domain>.ts`, re-export them from `lib/api.ts`, and verify DTO files import no server module
+- [x] 3.2 Annotate the JSON bodies built in the matching `app/api/**/route.ts` handlers with `satisfies <Dto>`; correct each DTO that disagrees with its route's actual output (never the route) and record every disagreement; verify typecheck, biome, the web suite and the checkout build pass
 
 ## 4. Close-out
 

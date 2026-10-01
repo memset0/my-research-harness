@@ -12,8 +12,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { type ProjectTarget, projectHost, projectName, projectQueryKey } from '../lib/api'
-import type { CreatedShare, ShareRow } from '../lib/dto/shares'
+import { type ProjectTarget, projectHost, projectName } from '../lib/api'
+import type {
+  CreatedShare,
+  CreatedShareResponse,
+  ShareRow,
+  SharesResponse,
+} from '../lib/dto/shares'
 import { queryKeys } from '../lib/query-keys'
 import { useSession } from './session-provider'
 import { Button } from './ui/button'
@@ -45,7 +50,7 @@ function sharesUrl(project: ProjectTarget, suffix = '', reveal = false): string 
 async function fetchShares(project: ProjectTarget): Promise<ShareRow[]> {
   const res = await fetch(sharesUrl(project, '', true), { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to list shares (${res.status})`)
-  const json = (await res.json()) as { shares: ShareRow[] }
+  const json = (await res.json()) as SharesResponse
   return json.shares
 }
 
@@ -71,7 +76,7 @@ async function createShare(
           : `failed to create share (HTTP ${res.status})`
     throw new Error(message)
   }
-  const json = (await res.json()) as { share: CreatedShare }
+  const json = (await res.json()) as CreatedShareResponse
   return json.share
 }
 

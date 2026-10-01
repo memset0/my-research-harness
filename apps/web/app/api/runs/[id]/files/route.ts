@@ -5,6 +5,7 @@ import {
   ProjectNameSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { RunFilesResponse } from '@/lib/dto/runs'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ...portable,
       runPath: current.path,
       tree: legacyFileTree(portable.tree),
-    })
+    } satisfies RunFilesResponse)
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {
       return NextResponse.json(

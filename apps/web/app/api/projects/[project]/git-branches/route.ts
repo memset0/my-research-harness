@@ -6,6 +6,7 @@
 
 import { BackendGitBranchesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitBranches } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     return NextResponse.json(
       BackendGitBranchesResponseSchema.parse(
         await context.git.branches(context.project, { submodule }),
-      ),
+      ) satisfies GitBranches,
     )
   } catch (error) {
     return gitServiceError(error)

@@ -14,6 +14,7 @@
 import { ComponentRunError, runDocumentComponents } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import type { ComponentRunResponse } from '@/lib/dto/components'
 import { readIdentityFromRequest } from '../../../../lib/server/auth/request-context'
 import { findConfiguredProject } from '../../../../lib/server/project-lookup'
 import { getRuntime } from '../../../../lib/server/runtime'
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : { timeoutMs: execution.component_timeout_ms }),
       ...(body.ids === undefined ? {} : { ids: body.ids }),
     })
-    return NextResponse.json({ results }, { headers: HEADERS })
+    return NextResponse.json({ results } satisfies ComponentRunResponse, { headers: HEADERS })
   } catch (caught) {
     if (caught instanceof ComponentRunError) {
       return error(400, caught.code, caught.message)

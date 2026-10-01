@@ -15,3 +15,11 @@ export interface CreatedShare extends ShareRow {
   token: string
   share_url: string
 }
+
+export interface SharesResponse {
+  shares: ShareRow[]
+}
+
+export interface CreatedShareResponse {
+  share: CreatedShare
+}

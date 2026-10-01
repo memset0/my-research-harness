@@ -4,6 +4,8 @@ import {
   BackendResourceInventoryResponseSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { ExperimentCreateResponse, ExperimentDocsResponse } from '@/lib/dto/experiments'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneExperiment } from '../../../lib/server/standalone-dto'
 import {
@@ -44,7 +46,7 @@ export async function GET(req: NextRequest) {
       experiments: experiments.map((experiment) =>
         standaloneExperiment(runtime.config, experiment),
       ),
-    })
+    } satisfies Wire<ExperimentDocsResponse>)
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {
       return NextResponse.json(
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
         tags: body.tags,
         fromRun: body.fromRun ?? null,
       })),
-    })
+    } satisfies ExperimentCreateResponse)
   } catch (error) {
     return (
       standaloneExperimentMutationError(error) ??

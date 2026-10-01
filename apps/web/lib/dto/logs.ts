@@ -9,3 +9,12 @@ export interface LogFileEntry {
   size: number
   mtime: number
 }
+
+export interface LogFilesResponse {
+  files: LogFileEntry[]
+}
+
+export interface LogLinesResponse {
+  totalLines: number
+  lines: { lineNumber: number; text: string }[]
+}

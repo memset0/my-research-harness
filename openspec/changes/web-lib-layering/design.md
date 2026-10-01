@@ -123,18 +123,64 @@ rejected because it changes runtime shapes and breaks SSR dehydration matches.
 ### D3. Shared DTO types
 
 `lib/dto/<domain>.ts` with domains `projects`, `runs`, `experiments`,
-`documents` (README read/write, status/archive patches), `warnings`, `journal`
-(hypotheses + journal), `reports`, `wiki`, `code-reviews` (incl. code preview),
-`logs`, `slurm`, `git` (incl. commit marks), `shares`, `components`.
-DTO files contain only types and pure functions and import only types (from
-`@memon/core` or sibling DTOs). `lib/api.ts` keeps its fetchers and re-exports
-the DTO types so existing component imports keep compiling; new code imports
-from `lib/dto/*`. Route handlers annotate the JSON they emit with
-`satisfies <Dto>` at the `NextResponse.json(...)` site. When typecheck reveals
-a disagreement, the DTO is corrected to the route's actual output (never the
-route), and the disagreement is recorded in the implementation report.
-Routes that only proxy an opaque backend body (no literal object in the
-handler) are not annotated.
+`documents` (README read/write), `warnings`, `journal` (hypotheses + journal),
+`reports`, `wiki`, `code-reviews` (incl. code preview), `logs`, `slurm`, `git`
+(incl. commit marks), `shares`, `components`, plus `wire.ts`. DTO files contain
+only types and import only types (from `@memon/core` or sibling DTOs); a purity
+test enforces this. `lib/api.ts` keeps its fetchers and re-exports every DTO so
+existing component imports keep compiling; new code imports from `lib/dto/*`.
+Response shapes that fetchers spelled inline (`{ projects }`, `{ experiments }`,
+`{ files }`, run files, journal, log lines, create/bind/delete, Report and
+code-review writes, component runs, share rows) get names so both sides can
+reference them.
+
+Route handlers annotate the JSON they emit with `satisfies <Dto>` at the
+`NextResponse.json(...)` site. When typecheck reveals a disagreement, the DTO is
+corrected to the route's actual output (never the route). Because the central
+Backend answers the same URL for Host-qualified Projects, a field only one side
+emits becomes optional rather than removed.
+
+`Wire<T>` (in `lib/dto/wire.ts`) widens every string-literal union in a DTO to
+`string`. It is used only where a route's body comes from a backend zod wire
+schema that types enum-like fields (Run/Experiment/Hypothesis status, journal
+status transitions, managed-document `kind`) as `string` while the client DTO
+keeps the narrow domain union the UI switches on. `satisfies Wire<Dto>` still
+rejects missing, extra and differently shaped fields; a type-level test proves
+it. Alternative considered: loosening the client DTOs to `string` — rejected
+because it would push unchecked casts into every component that switches on a
+status.
+
+Routes not annotated: bodies that are opaque core types with no client DTO
+(resource inventories, translation, file-access, UI preferences, Results views,
+anomalies, auth, runtime health, wiki kinds), error bodies, and streaming or
+byte routes.
+
+### Route/DTO disagreements found while annotating
+
+Corrected in the DTO to match the route's actual output:
+
+- Git endpoints (`git-status`, `git-status/files`, `git-diff`, `git-range`,
+  `git-branches`, `git-log`, `git-commit`, `submodules`): the routes can answer
+  `enabled: false` with any backend disabled reason, including `not-found` and
+  `no-gitmodules`, which most client unions omitted. Now one shared
+  `GitDisabledReason`.
+- `PATCH /api/{runs,experiments}/:id/archive`: `archived` is optional in the
+  emitted body; the client declared it required.
+- `GET /api/runs/:id/files`: the standalone route also emits `runPath`.
+- `GET /api/readme`: emits `path` (not `resource`); the fetcher already mapped
+  it, now through a named `PathReadmeResponse`.
+- `POST /api/experiments`: the standalone route emits `{ ok, id, path, mtime }`
+  without the `resource`/`hash` the client declared (only the central Backend
+  sends those).
+- `POST /api/experiments/:id/{link,unlink}`: the standalone route emits only
+  `{ ok, experimentId, runId }`; the four lock tokens come from the central
+  Backend only.
+- `GET /api/hosts`: the route declared its own identical `HostsResponse`; it now
+  uses the shared DTO.
+
+Precision gaps (checked with `Wire<T>`, DTO unchanged): Run and Experiment
+`frontMatter.status`, Hypothesis `status`, journal `statusFrom`/`statusTo`, and
+managed-document `kind` are `string` in the backend wire schemas.
 
 ## Risks / Trade-offs
 

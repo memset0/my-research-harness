@@ -10,6 +10,7 @@
 
 import { BackendGitStatusFilesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitStatusFiles } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
     return NextResponse.json(
       BackendGitStatusFilesResponseSchema.parse(
         await context.git.statusFiles(context.project, { submodule }),
-      ),
+      ) satisfies GitStatusFiles,
     )
   } catch (error) {
     return gitServiceError(error)

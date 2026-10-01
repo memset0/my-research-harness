@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WarningsConflict, WarningsOpResponse } from '@/lib/dto/warnings'
 import { getRuntime } from '../../../../../../lib/server/runtime'
 import {
   mutateStandaloneWarning,
@@ -33,13 +34,13 @@ export async function PATCH(
       )
     }
     return NextResponse.json(
-      await mutateStandaloneWarning(runtime, 'run', id, {
+      (await mutateStandaloneWarning(runtime, 'run', id, {
         op: body.op,
         rowId,
         note: body.note,
         expectedMtime: body.expectedMtime,
         expectedHash: body.expectedHash,
-      }),
+      })) satisfies WarningsOpResponse | WarningsConflict,
     )
   } catch (error) {
     return (
@@ -61,12 +62,12 @@ export async function DELETE(
       expectedHash?: string
     }
     return NextResponse.json(
-      await mutateStandaloneWarning(runtime, 'run', id, {
+      (await mutateStandaloneWarning(runtime, 'run', id, {
         op: 'delete',
         rowId,
         expectedMtime: body.expectedMtime,
         expectedHash: body.expectedHash,
-      }),
+      })) satisfies WarningsOpResponse | WarningsConflict,
     )
   } catch (error) {
     return (

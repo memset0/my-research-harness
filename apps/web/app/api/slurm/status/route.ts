@@ -5,6 +5,7 @@
 // specs/slurm-status/spec.md for the payload contract.
 
 import { NextResponse } from 'next/server'
+import type { SlurmStatus } from '@/lib/dto/slurm'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
@@ -14,13 +15,13 @@ export async function GET() {
   const rt = await getRuntime()
 
   if (!rt.slurm.enabled) {
-    return NextResponse.json({ enabled: false })
+    return NextResponse.json({ enabled: false } satisfies SlurmStatus)
   }
 
   const service = standaloneServices(rt.config).slurm
-  if (!service) return NextResponse.json({ enabled: false })
+  if (!service) return NextResponse.json({ enabled: false } satisfies SlurmStatus)
   try {
-    return NextResponse.json(await service.status())
+    return NextResponse.json((await service.status()) satisfies SlurmStatus)
   } catch (err) {
     return NextResponse.json(
       {
@@ -29,7 +30,7 @@ export async function GET() {
           code: 'SLURM_UNAVAILABLE',
           message: (err as Error).message,
         },
-      },
+      } satisfies SlurmStatus,
       { status: 500 },
     )
   }

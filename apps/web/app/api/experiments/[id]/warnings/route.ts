@@ -1,5 +1,6 @@
 import { WARNING_CATEGORIES } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WarningsConflict, WarningsListResponse, WarningsOpResponse } from '@/lib/dto/warnings'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import {
   listStandaloneWarnings,
@@ -16,7 +17,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({
       ok: true,
       ...(await listStandaloneWarnings(runtime, 'experiment', id)),
-    })
+    } satisfies WarningsListResponse)
   } catch (error) {
     return (
       standaloneWarningError(error) ??
@@ -60,14 +61,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       )
     }
     return NextResponse.json(
-      await mutateStandaloneWarning(runtime, 'experiment', id, {
+      (await mutateStandaloneWarning(runtime, 'experiment', id, {
         op: 'add',
         category: body.category,
         message: body.message,
         run: body.run as string | null | undefined,
         expectedMtime: body.expectedMtime,
         expectedHash: body.expectedHash,
-      }),
+      })) satisfies WarningsOpResponse | WarningsConflict,
     )
   } catch (error) {
     return (

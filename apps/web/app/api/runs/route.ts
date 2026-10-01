@@ -4,6 +4,8 @@ import {
   isStaleRunning,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { RunsResponse } from '@/lib/dto/runs'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneRun } from '../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../lib/server/standalone-services'
@@ -27,7 +29,7 @@ export async function GET(request: NextRequest) {
       const experiments = runtime.index.list({ ...deprecationFilter, project })
       return NextResponse.json({
         experiments: experiments.map((run) => ({ ...run, stale: isStaleRunning(run) })),
-      })
+      } satisfies Wire<RunsResponse>)
     }
     const selected = search.get('project')
     const projects = selected
@@ -53,7 +55,7 @@ export async function GET(request: NextRequest) {
         standaloneRun(runtime.config, run),
       ),
     )
-    return NextResponse.json({ experiments: runs })
+    return NextResponse.json({ experiments: runs } satisfies Wire<RunsResponse>)
   } catch {
     return NextResponse.json({ error: { message: 'Run discovery failed' } }, { status: 500 })
   }

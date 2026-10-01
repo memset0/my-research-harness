@@ -69,11 +69,28 @@ export interface PatchStatusForbidden {
 
 export interface PatchArchiveResponse {
   ok: true
-  archived: boolean
+  archived?: boolean
   mtime: number
   noop?: boolean
 }
 
 export interface PatchArchiveForbidden {
   error: { code: 'ARCHIVE_RUNNING_FORBIDDEN'; message: string; id?: string }
+}
+
+export interface RunsResponse {
+  /** Wire name kept from the pre-v3 API, where Runs were called experiments. */
+  experiments: IndexedRun[]
+}
+
+export interface RunFilesResponse {
+  project: string
+  runId: string
+  resource: string
+  depth: number
+  truncated: boolean
+  entries: number
+  tree: RunFileTreeNode
+  /** Standalone only: the Run directory's absolute path. */
+  runPath?: string
 }

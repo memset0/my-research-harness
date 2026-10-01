@@ -9,3 +9,7 @@ export interface ComponentRunResult {
   durationMs: number
   error?: string
 }
+
+export interface ComponentRunResponse {
+  results: ComponentRunResult[]
+}

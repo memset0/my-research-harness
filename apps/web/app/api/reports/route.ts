@@ -7,6 +7,7 @@
 
 import { BackendReportsResponseSchema, BackendResourceInventoryResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { ReportsResponse } from '@/lib/dto/reports'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneReport } from '../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../lib/server/standalone-services'
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
     const reports = BackendReportsResponseSchema.parse(result).reports.map((report) =>
       standaloneReport(rt.config, report),
     )
-    return NextResponse.json({ reports })
+    return NextResponse.json({ reports } satisfies ReportsResponse)
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }

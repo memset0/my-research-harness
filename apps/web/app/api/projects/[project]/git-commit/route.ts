@@ -5,6 +5,7 @@
 
 import { BackendGitCommitResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitCommitDetail } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
         await context.git.commit(context.project, sha, {
           submodule: url.searchParams.get('submodule') ?? undefined,
         }),
-      ),
+      ) satisfies GitCommitDetail,
     )
   } catch (error) {
     return gitServiceError(error)

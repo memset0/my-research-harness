@@ -1,5 +1,7 @@
 import { BackendJournalHistoryResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { JournalHistoryResponse } from '@/lib/dto/journal'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
           project,
           rawLimit === null ? undefined : Number(rawLimit),
         ),
-      ),
+      ) satisfies Wire<JournalHistoryResponse>,
     )
   } catch {
     return NextResponse.json({ error: { message: 'journal history read failed' } }, { status: 500 })

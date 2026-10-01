@@ -5,6 +5,7 @@
 
 import { BackendCommitMarksResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { CommitMarksResponse } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -22,7 +23,9 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   if (context instanceof NextResponse) return context
   try {
     return NextResponse.json(
-      BackendCommitMarksResponseSchema.parse(await context.git.commitMarks(context.project)),
+      BackendCommitMarksResponseSchema.parse(
+        await context.git.commitMarks(context.project),
+      ) satisfies CommitMarksResponse,
     )
   } catch (error) {
     return gitServiceError(error)

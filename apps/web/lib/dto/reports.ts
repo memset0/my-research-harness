@@ -26,3 +26,9 @@ export interface ReportListItem extends Omit<ReportSummary, 'path'> {
 export interface ReportsResponse {
   reports: ReportListItem[]
 }
+
+export interface ReportPutResponse {
+  ok: true
+  mtime: number
+  hash: string
+}

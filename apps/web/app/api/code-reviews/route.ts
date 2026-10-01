@@ -8,6 +8,7 @@ import {
   BackendResourceInventoryResponseSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { CodeReviewsResponse } from '@/lib/dto/code-reviews'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneCodeReview } from '../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../lib/server/standalone-services'
@@ -42,12 +43,14 @@ export async function GET(req: NextRequest) {
       )
     }
     if (rt.config.projects.some((project) => !Array.isArray(project.include))) {
-      return NextResponse.json({ codeReviews: rt.getCodeReviewsList(projectName) })
+      return NextResponse.json({
+        codeReviews: rt.getCodeReviewsList(projectName),
+      } satisfies CodeReviewsResponse)
     }
     const codeReviews = BackendCodeReviewsResponseSchema.parse(
       await standaloneServices(rt.config).documents.listCodeReviews(projectName),
     ).codeReviews.map((review) => standaloneCodeReview(rt.config, review))
-    return NextResponse.json({ codeReviews })
+    return NextResponse.json({ codeReviews } satisfies CodeReviewsResponse)
   } catch (err) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }

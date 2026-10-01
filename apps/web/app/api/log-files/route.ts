@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { BackendStreamServiceError } from '@memon/backend'
 import { BackendLogFilesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { LogFilesResponse } from '@/lib/dto/logs'
 import { PathSafetyError } from '../../../lib/server/path-safety'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneResource } from '../../../lib/server/standalone-resource'
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
         ...file,
         path: join(target.project.root, resource),
       })),
-    })
+    } satisfies LogFilesResponse)
   } catch (error) {
     if (error instanceof PathSafetyError) {
       return NextResponse.json(

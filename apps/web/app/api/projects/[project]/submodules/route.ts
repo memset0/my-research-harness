@@ -5,6 +5,7 @@
 
 import { BackendGitSubmodulesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitSubmodules } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -22,7 +23,9 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
   if (context instanceof NextResponse) return context
   try {
     return NextResponse.json(
-      BackendGitSubmodulesResponseSchema.parse(await context.git.submodules(context.project)),
+      BackendGitSubmodulesResponseSchema.parse(
+        await context.git.submodules(context.project),
+      ) satisfies GitSubmodules,
     )
   } catch (error) {
     return gitServiceError(error)

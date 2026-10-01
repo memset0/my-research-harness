@@ -7,6 +7,7 @@
 
 import { BackendGitRangeResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitRangeResponse } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
           to,
           submodule: url.searchParams.get('submodule') ?? undefined,
         }),
-      ),
+      ) satisfies GitRangeResponse,
     )
   } catch (error) {
     return gitServiceError(error)

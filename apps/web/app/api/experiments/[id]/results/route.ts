@@ -1,6 +1,7 @@
 import { BackendProjectServiceError } from '@memon/backend'
 import { BackendExperimentResultsResponseSchema, ProjectNameSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { ExperimentResultsSnapshot } from '@/lib/dto/experiments'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json(
       BackendExperimentResultsResponseSchema.parse(
         await standaloneServices(runtime.config).projects.getExperimentResults(project.data, id),
-      ),
+      ) satisfies ExperimentResultsSnapshot,
     )
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {

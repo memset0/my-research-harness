@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { BackendHypothesesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { HypothesesResponse } from '@/lib/dto/journal'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneServices } from '../../../lib/server/standalone-services'
 
@@ -27,7 +29,7 @@ export async function GET(request: NextRequest) {
       parseErrors: [],
       parseWarnings: [],
       ...(value ?? {}),
-    })
+    } satisfies Wire<HypothesesResponse>)
   }
   const entry = runtime.config.projects.find((candidate) => candidate.name === project)
   if (!project || !entry)
@@ -36,7 +38,10 @@ export async function GET(request: NextRequest) {
     const result = BackendHypothesesResponseSchema.parse(
       await standaloneServices(runtime.config).projects.getHypotheses(project),
     )
-    return NextResponse.json({ path: join(entry.root, 'docs', 'hypotheses.md'), ...result })
+    return NextResponse.json({
+      path: join(entry.root, 'docs', 'hypotheses.md'),
+      ...result,
+    } satisfies Wire<HypothesesResponse>)
   } catch {
     return NextResponse.json({ error: { message: 'hypotheses read failed' } }, { status: 500 })
   }

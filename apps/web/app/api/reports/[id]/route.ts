@@ -5,6 +5,7 @@ import {
   BackendReportResponseSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { FullReport, ReportPutResponse } from '@/lib/dto/reports'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneReport } from '../../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const report = BackendReportResponseSchema.parse(
       await resolved.service.getReport(resolved.project, resolved.id),
     )
-    return NextResponse.json(standaloneReport(resolved.runtime.config, report))
+    return NextResponse.json(standaloneReport(resolved.runtime.config, report) satisfies FullReport)
   } catch {
     return NextResponse.json({ error: { message: 'report not found' } }, { status: 404 })
   }
@@ -61,7 +62,9 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
         { status: 409 },
       )
     }
-    return NextResponse.json(BackendDocumentWriteResponseSchema.parse(result))
+    return NextResponse.json(
+      BackendDocumentWriteResponseSchema.parse(result) satisfies ReportPutResponse,
+    )
   } catch {
     return NextResponse.json({ error: { message: 'report write failed' } }, { status: 500 })
   }

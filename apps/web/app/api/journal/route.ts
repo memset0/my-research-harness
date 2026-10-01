@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { BackendJournalResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { JournalCountResponse, JournalResponse } from '@/lib/dto/journal'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneServices } from '../../../lib/server/standalone-services'
 
@@ -24,7 +26,7 @@ export async function GET(request: NextRequest) {
       await standaloneServices(runtime.config).projects.getJournal(project),
     )
     if (search.get('countOnly') === '1') {
-      return NextResponse.json({ totalEvents: result.events.length })
+      return NextResponse.json({ totalEvents: result.events.length } satisfies JournalCountResponse)
     }
     const before = search.get('before')
     const limit = Number(search.get('limit') ?? Number.POSITIVE_INFINITY)
@@ -35,7 +37,7 @@ export async function GET(request: NextRequest) {
       path: join(entry.root, 'docs', 'journal.md'),
       ...result,
       events,
-    })
+    } satisfies Wire<JournalResponse>)
   } catch {
     return NextResponse.json({ error: { message: 'journal read failed' } }, { status: 500 })
   }

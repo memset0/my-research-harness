@@ -3,6 +3,7 @@
 import { join } from 'node:path'
 import { BackendCodePreviewResponseSchema, parseGithubPermalink } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { CodePreview } from '@/lib/dto/code-reviews'
 import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/server/path-safety'
 import {
   gitError,
@@ -37,7 +38,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
   try {
     return NextResponse.json(
-      BackendCodePreviewResponseSchema.parse(await context.git.codePreview(context.project, url)),
+      BackendCodePreviewResponseSchema.parse(
+        await context.git.codePreview(context.project, url),
+      ) satisfies CodePreview,
     )
   } catch (error) {
     return gitServiceError(error)

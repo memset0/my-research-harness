@@ -148,3 +148,34 @@ export interface ExperimentBindInput {
   expectedRunMtime: number
   expectedRunHash: string
 }
+
+/**
+ * The central Backend answers with `resource` + `hash`; the standalone route
+ * answers with the absolute `path` and neither of those.
+ */
+export interface ExperimentCreateResponse {
+  ok: true
+  id: string
+  mtime: number
+  resource?: string
+  hash?: string
+  /** Standalone only. */
+  path?: string
+}
+
+/** Lock tokens are reported by the central Backend only, not the standalone route. */
+export interface ExperimentBindResponse {
+  ok: true
+  experimentId: string
+  runId: string
+  experimentMtime?: number
+  experimentHash?: string
+  runMtime?: number
+  runHash?: string
+}
+
+export interface ExperimentDeleteResponse {
+  ok: true
+  deletedId: string
+  cascadedRuns: string[]
+}

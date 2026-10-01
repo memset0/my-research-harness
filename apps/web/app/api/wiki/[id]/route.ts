@@ -8,6 +8,7 @@
 
 import { markJournalInvocationOutcome, WIKI_ID_REGEX } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WikiPageDetail, WikiPutResponse } from '@/lib/dto/wiki'
 import { getRuntime } from '../../../../lib/server/runtime'
 import {
   parseWikiWriteBody,
@@ -32,7 +33,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
   const page = await runtime.wikiCache.getWikiPage(target.project, id)
   if (!page) return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
-  return NextResponse.json(wikiPageDto(target.project, page.summary, page.content, page.hash))
+  return NextResponse.json(
+    wikiPageDto(target.project, page.summary, page.content, page.hash) satisfies WikiPageDetail,
+  )
 }
 
 export async function PUT(request: NextRequest, context: RouteContext) {
@@ -93,6 +96,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       hash: result.hash,
       page: wikiPageDto(target.project, written, write.content, result.hash),
       finalContent: write.content,
-    })
+    } satisfies WikiPutResponse)
   })
 }

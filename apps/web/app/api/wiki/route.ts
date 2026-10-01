@@ -6,6 +6,7 @@
 
 import { BackendWikiInventoryResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WikiPagesResponse } from '@/lib/dto/wiki'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneServices } from '../../../lib/server/standalone-services'
 import { wikiProjectTarget, wikiSummaryDto } from '../../../lib/server/wiki-route'
@@ -28,5 +29,5 @@ export async function GET(request: NextRequest) {
   const pages = runtime.wikiCache
     .getWikiList(target.project)
     .map((summary) => wikiSummaryDto(target.project, summary))
-  return NextResponse.json({ pages })
+  return NextResponse.json({ pages } satisfies WikiPagesResponse)
 }

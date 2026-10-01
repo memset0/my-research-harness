@@ -2,6 +2,7 @@ import { BackendMutationError } from '@memon/backend'
 import { EXPERIMENT_STATUS_VALUES, type ExperimentStatus } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import type { PatchExperimentStatusResponse } from '@/lib/dto/experiments'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import {
   refreshStandaloneExperiment,
@@ -59,7 +60,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         refreshStandaloneJournal(runtime, project.name),
       ])
     }
-    return NextResponse.json(result)
+    return NextResponse.json(result satisfies PatchExperimentStatusResponse)
   } catch (error) {
     if (error instanceof BackendMutationError) {
       if (error.code === 'CONFLICT') {

@@ -6,6 +6,7 @@
 
 import { BackendGitLogResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { GitLog } from '@/lib/dto/git'
 import {
   gitServiceError,
   standaloneGitContext,
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest, ctx: RouteParams): Promise<NextRespo
           limit,
           submodule: url.searchParams.get('submodule') ?? undefined,
         }),
-      ),
+      ) satisfies GitLog,
     )
   } catch (error) {
     return gitServiceError(error)

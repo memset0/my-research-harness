@@ -5,6 +5,7 @@ import {
   BackendDocumentConflictResponseSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { CodeReviewPatchResponse, FullCodeReview } from '@/lib/dto/code-reviews'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     return NextResponse.json(
       BackendCodeReviewResponseSchema.parse(
         await resolved.service.getCodeReview(resolved.project, resolved.id),
-      ),
+      ) satisfies FullCodeReview,
     )
   } catch {
     return NextResponse.json({ error: { message: 'code-review not found' } }, { status: 404 })
@@ -52,7 +53,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const conflict = BackendDocumentConflictResponseSchema.safeParse(result)
     return conflict.success
       ? NextResponse.json(conflict.data, { status: 409 })
-      : NextResponse.json(BackendCodeReviewPatchResponseSchema.parse(result))
+      : NextResponse.json(
+          BackendCodeReviewPatchResponseSchema.parse(result) satisfies CodeReviewPatchResponse,
+        )
   } catch {
     return NextResponse.json({ error: { message: 'code-review patch failed' } }, { status: 400 })
   }

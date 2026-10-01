@@ -35,3 +35,5 @@ export interface JournalHistoryResponse {
   invocations: JournalInvocationRecordView[]
   unreadableReceipts: Array<{ file: string; reason: string }>
 }
+
+export type JournalResponse = { path?: string } & Omit<ParsedJournal, 'lastDigestAt'>

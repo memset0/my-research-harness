@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import type { ProjectsResponse } from '@/lib/dto/projects'
 import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import { aggregateCentralProjects } from '../../../lib/server/central/central-projects'
 import { servesProjectsDirectly } from '../../../lib/server/central/direct-projects'
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
             ...project,
             name: project.project,
           })),
-        },
+        } satisfies ProjectsResponse,
         { headers: { 'cache-control': 'no-store' } },
       )
     }
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
         root: p.root,
         exclude: p.exclude,
       })),
-    })
+    } satisfies ProjectsResponse)
   } catch (err) {
     return NextResponse.json(
       {

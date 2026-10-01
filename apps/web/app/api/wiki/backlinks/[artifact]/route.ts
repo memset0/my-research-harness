@@ -6,6 +6,7 @@
 // of Experiment details, so source resolution cannot delay their response.
 
 import { type NextRequest, NextResponse } from 'next/server'
+import type { WikiBacklinksResponse } from '@/lib/dto/wiki'
 import { servesProjectsDirectly } from '../../../../../lib/server/central/direct-projects'
 import { directCentralRuntime } from '../../../../../lib/server/central/direct-runtime'
 import { getRuntime } from '../../../../../lib/server/runtime'
@@ -46,5 +47,5 @@ export async function GET(
   return NextResponse.json({
     artifact,
     pages: runtime.wikiCache.getWikiBacklinks(target.project, artifact),
-  })
+  } satisfies WikiBacklinksResponse)
 }

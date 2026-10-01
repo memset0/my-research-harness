@@ -1,6 +1,8 @@
 import { BackendProjectServiceError } from '@memon/backend'
 import { BackendRunResponseSchema } from '@memon/core'
 import { NextResponse } from 'next/server'
+import type { FullExperiment } from '@/lib/dto/runs'
+import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneRun } from '../../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
@@ -21,7 +23,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     try {
       const run = BackendRunResponseSchema.parse(await services.projects.getRun(project.name, id))
       runtime.pokeById(id)
-      return NextResponse.json(standaloneRun(runtime.config, run))
+      return NextResponse.json(standaloneRun(runtime.config, run) satisfies Wire<FullExperiment>)
     } catch (error) {
       if (error instanceof BackendProjectServiceError && error.code === 'RESOURCE_NOT_FOUND')
         continue
