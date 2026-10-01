@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { type ExitCalled, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runResolveExp } from './run-resolve-exp.js'
 
@@ -60,29 +61,6 @@ let stdoutChunks: string[]
 let stderrChunks: string[]
 let realStdoutWrite: typeof process.stdout.write
 let realStderrWrite: typeof process.stderr.write
-
-class ExitCalled extends Error {
-  constructor(public exitCode: number) {
-    super(`process.exit(${exitCode})`)
-  }
-}
-
-function spyExit() {
-  const real = process.exit
-  let exitCode: number | null = null
-  process.exit = ((code?: number) => {
-    exitCode = code ?? 0
-    throw new ExitCalled(exitCode)
-  }) as typeof process.exit
-  return {
-    restore: () => {
-      process.exit = real
-    },
-    get code() {
-      return exitCode
-    },
-  }
-}
 
 beforeEach(async () => {
   root = await fs.mkdtemp(join(tmpdir(), 'memon-resolve-exp-'))

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 
+import { type ExitCalled, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { runExperimentDocumentRender } from './experiment-document.js'
@@ -55,24 +56,6 @@ variants:
     runs: []
     attempts: [run-c, run-d]
 `
-
-class ExitCalled extends Error {
-  constructor(public exitCode: number) {
-    super(`process.exit(${exitCode})`)
-  }
-}
-
-function spyExit() {
-  const real = process.exit
-  process.exit = ((code?: number) => {
-    throw new ExitCalled(code ?? 0)
-  }) as typeof process.exit
-  return {
-    restore: () => {
-      process.exit = real
-    },
-  }
-}
 
 describe('experiment results CLI', () => {
   let root: string

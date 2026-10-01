@@ -11,7 +11,7 @@
 - [x] 2.1 Create `packages/test-utils` (private, source-only, composite typecheck project) with the fixtures and helpers listed in design.md, update `pnpm-lock.yaml`, reference it from the typecheck configs, and verify typecheck plus a self-test of the package
 - [x] 2.2 Verify `pnpm install --frozen-lockfile --filter @memon/cli...` in an export does not link `@memon/test-utils`
 - [x] 2.3 Replace identical backend helpers (`request`, `actorHeader`, `startBackend`, `git`) and verify the backend suite passes
-- [ ] 2.4 Replace identical CLI helpers (`spyExit`/`ExitCalled`) and verify the CLI suite passes
+- [x] 2.4 Replace identical CLI helpers (`spyExit`/`ExitCalled`) and verify the CLI suite passes
 - [ ] 2.5 Replace identical Web helpers (`paramsFor`) and verify the affected Web tests pass
 
 ## 3. Vitest preset (D4, D5)

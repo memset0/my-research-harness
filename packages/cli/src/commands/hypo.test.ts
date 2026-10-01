@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ExitCalled, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runHypoShow } from './hypo.js'
 
@@ -9,29 +10,6 @@ let exitSpy: ReturnType<typeof spyExit>
 let stdoutLines: string[]
 let stderrLines: string[]
 let realStderrWrite: typeof process.stderr.write
-
-function spyExit() {
-  const real = process.exit
-  let exitCode: number | null = null
-  process.exit = ((code?: number) => {
-    exitCode = code ?? 0
-    throw new ExitCalled(exitCode)
-  }) as typeof process.exit
-  return {
-    restore: () => {
-      process.exit = real
-    },
-    get code() {
-      return exitCode
-    },
-  }
-}
-
-class ExitCalled extends Error {
-  constructor(public exitCode: number) {
-    super(`process.exit(${exitCode})`)
-  }
-}
 
 const HYPOTHESES_MD = `# H
 
