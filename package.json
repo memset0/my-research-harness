@@ -15,7 +15,7 @@
     "components:docs:check": "node scripts/component-docs.mjs --check",
     "dev": "pnpm --filter @memon/web dev",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm --filter @memon/core build && pnpm --filter @memon/backend build && pnpm -r test",
     "lint": "biome lint .",
     "check": "biome check .",
     "format": "biome format --write .",

@@ -252,6 +252,9 @@ the applicable active change artifacts; keep artifacts aligned with the code.
   cases covering affected behavior and plausible regressions); report the list
   and actual results. Never run the full suite routinely during development,
   release or deployment.
+- Full and archive gates run the root `pnpm test`, which rebuilds the
+  `@memon/core` and `@memon/backend` dist first; never report a gate from a bare
+  `pnpm -r test`, whose suites may import a stale build.
 - Before archiving (after the user confirms readiness), run the full unit-test
   suite locally; on failure, stop the archive, report and fix. If the user
   explicitly asks to archive directly, the full suite may be skipped — say so;

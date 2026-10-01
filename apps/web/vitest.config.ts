@@ -5,6 +5,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './'),
+      // Route tests exercise the backend services directly; resolve them from
+      // source so a stale `packages/backend/dist` can never hide a regression.
+      // Test-only: the Next build and `tsc` still use the built package.
+      '@memon/backend': path.resolve(__dirname, '../../packages/backend/src/index.ts'),
       // Modules under lib/server import Next's `server-only` guard, which is
       // resolved by the Next bundler only; tests load it as an empty module.
       'server-only': path.resolve(__dirname, './test/server-only-stub.ts'),
