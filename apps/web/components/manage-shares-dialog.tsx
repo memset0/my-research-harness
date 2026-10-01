@@ -13,6 +13,7 @@ import { Copy, Plus, Share2, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { type ProjectTarget, projectHost, projectName, projectQueryKey } from '../lib/api'
+import type { CreatedShare, ShareRow } from '../lib/dto/shares'
 import { queryKeys } from '../lib/query-keys'
 import { useSession } from './session-provider'
 import { Button } from './ui/button'
@@ -27,20 +28,6 @@ import {
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-
-interface ShareRow {
-  id: string
-  label?: string
-  created_at: string
-  expires_at: string | null
-  /** Present when the GET was made with `?reveal=true` (owner-only). */
-  token?: string
-}
-
-interface CreatedShare extends ShareRow {
-  token: string
-  share_url: string
-}
 
 interface Props {
   project: ProjectTarget

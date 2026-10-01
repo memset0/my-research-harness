@@ -6,28 +6,184 @@ import type {
   BackendResourceInventoryResponse,
   BackendWikiInventoryResponse,
   CodeReviewCompletion,
-  CodeReviewFrontMatter,
-  CodeReviewSummary,
-  ExperimentDocumentDiagnostic,
-  ExperimentRawSection,
-  HostAvailability,
   Hypothesis,
-  ImplementationDocument,
-  InvestigationDocument,
   JournalEvent,
-  ParsedHypotheses,
   ParsedJournal,
-  ParseIssue,
-  ProjectRef,
-  ReportSummary,
-  ResultsDocument,
   Run,
   WarningRecord,
-  WikiBacklink,
-  WikiPage,
-  WikiSummary,
 } from '@memon/core'
 import { type ProjectTarget, projectHost, projectName } from './project-target'
+
+export type {
+  CentralProjectSummary,
+  HostsResponse,
+  ProjectSummary,
+  StandaloneProjectSummary,
+} from './dto/projects'
+
+import type { HostsResponse, ProjectSummary } from './dto/projects'
+
+export type {
+  FullExperiment,
+  IndexedRun,
+  PatchArchiveForbidden,
+  PatchArchiveResponse,
+  PatchStatusForbidden,
+  PatchStatusResponse,
+  RunFileTreeNode,
+} from './dto/runs'
+
+import type {
+  FullExperiment,
+  IndexedRun,
+  PatchArchiveForbidden,
+  PatchArchiveResponse,
+  PatchStatusForbidden,
+  PatchStatusResponse,
+  RunFileTreeNode,
+} from './dto/runs'
+
+export type {
+  FetchedReadme,
+  PutReadmeConflict,
+  PutReadmeResponse,
+} from './dto/documents'
+
+import type { FetchedReadme, PutReadmeConflict, PutReadmeResponse } from './dto/documents'
+
+export type {
+  ExperimentBindInput,
+  ExperimentDisplaySection,
+  ExperimentDocDetail,
+  ExperimentDocSummary,
+  ExperimentDocsResponse,
+  ExperimentManagedDocumentPayload,
+  ExperimentManagedDocumentsPayload,
+  ExperimentResultsSnapshot,
+  PatchExperimentStatusResponse,
+  ResultsVariantEligibilityPayload,
+} from './dto/experiments'
+
+import type {
+  ExperimentBindInput,
+  ExperimentDocDetail,
+  ExperimentDocsResponse,
+  ExperimentResultsSnapshot,
+  PatchExperimentStatusResponse,
+} from './dto/experiments'
+
+export type {
+  WarningsConflict,
+  WarningsListResponse,
+  WarningsOpResponse,
+} from './dto/warnings'
+
+import type { WarningsConflict, WarningsListResponse, WarningsOpResponse } from './dto/warnings'
+
+export type {
+  HypothesesResponse,
+  JournalCountResponse,
+  JournalHistoryResponse,
+  JournalInvocationRecordView,
+} from './dto/journal'
+
+import type {
+  HypothesesResponse,
+  JournalCountResponse,
+  JournalHistoryResponse,
+} from './dto/journal'
+
+export type {
+  FullReport,
+  ReportListItem,
+  ReportsResponse,
+} from './dto/reports'
+
+import type { FullReport, ReportsResponse } from './dto/reports'
+
+export type {
+  WikiBacklinksResponse,
+  WikiListItem,
+  WikiPageDetail,
+  WikiPagesResponse,
+  WikiPutResponse,
+  WikiReviewCommit,
+  WikiReviewResponse,
+} from './dto/wiki'
+
+import type {
+  WikiBacklinksResponse,
+  WikiPageDetail,
+  WikiPagesResponse,
+  WikiPutResponse,
+  WikiReviewResponse,
+} from './dto/wiki'
+
+export type {
+  CodePreview,
+  CodePreviewLine,
+  CodeReviewListItem,
+  CodeReviewProgressPatch,
+  CodeReviewsResponse,
+  FullCodeReview,
+} from './dto/code-reviews'
+
+import type {
+  CodePreview,
+  CodeReviewProgressPatch,
+  CodeReviewsResponse,
+  FullCodeReview,
+} from './dto/code-reviews'
+
+export type { LogFileEntry } from './dto/logs'
+
+import type { LogFileEntry } from './dto/logs'
+
+export type {
+  SlurmJobJson,
+  SlurmStatus,
+} from './dto/slurm'
+
+import type { SlurmStatus } from './dto/slurm'
+
+export type {
+  CommitMark,
+  CommitMarkStatus,
+  CommitMarksResponse,
+  GitBranchEntry,
+  GitBranches,
+  GitCommitDetail,
+  GitCommitSummary,
+  GitDiffResponse,
+  GitDiffSide,
+  GitFileEntry,
+  GitFileStatus,
+  GitLog,
+  GitRangeResponse,
+  GitStatus,
+  GitStatusFiles,
+  GitSubmoduleEntry,
+  GitSubmodules,
+} from './dto/git'
+
+import type {
+  CommitMark,
+  CommitMarkStatus,
+  CommitMarksResponse,
+  GitBranches,
+  GitCommitDetail,
+  GitDiffResponse,
+  GitDiffSide,
+  GitLog,
+  GitRangeResponse,
+  GitStatus,
+  GitStatusFiles,
+  GitSubmodules,
+} from './dto/git'
+
+export type { ComponentRunResult } from './dto/components'
+
+import type { ComponentRunResult } from './dto/components'
 import {
   beginResourceRequest,
   recordResourceResponse,
@@ -63,67 +219,6 @@ function projectPathUrl(path: string, target: ProjectTarget, extras?: URLSearchP
 
 function projectResourceUrl(path: string, target?: ProjectTarget): string {
   return target ? projectQueryUrl(path, target) : path
-}
-
-export interface StandaloneProjectSummary {
-  mode: 'standalone'
-  host: null
-  project: string
-  name: string
-  root: string
-  exclude: string[]
-}
-
-export type CentralProjectSummary = ProjectRef & {
-  mode: 'central'
-  name: string
-  label?: string
-  description?: string
-  root?: never
-  exclude?: never
-}
-
-export type ProjectSummary = StandaloneProjectSummary | CentralProjectSummary
-
-export interface IndexedRun
-  extends Pick<
-    Run,
-    | 'id'
-    | 'project'
-    | 'mtime'
-    | 'readmeMtime'
-    | 'hasReadme'
-    | 'frontMatter'
-    | 'parseErrors'
-    | 'parseWarnings'
-  > {
-  /** Standalone-only absolute directory; central uses portable resource. */
-  path?: string
-  resource?: string
-  stale: boolean
-}
-
-export interface FullExperiment
-  extends Pick<
-    Run,
-    | 'id'
-    | 'project'
-    | 'mtime'
-    | 'readmeMtime'
-    | 'hasReadme'
-    | 'frontMatter'
-    | 'sections'
-    | 'body'
-    | 'parseErrors'
-    | 'parseWarnings'
-  > {
-  /** Standalone-only absolute directory; central uses portable resource. */
-  path?: string
-  resource?: string
-  stale: boolean
-  resources: null
-  warnings: WarningRecord[]
-  warningsRaw: string | null
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit, conditional = true): Promise<T> {
@@ -171,10 +266,6 @@ export async function fetchProjects(): Promise<{ projects: ProjectSummary[] }> {
   return jsonFetch('/api/projects')
 }
 
-export interface HostsResponse {
-  hosts: Array<HostAvailability & { label?: string }>
-}
-
 export async function fetchHosts(): Promise<HostsResponse> {
   return jsonFetch('/api/hosts')
 }
@@ -194,38 +285,6 @@ export async function fetchExperiments(
 
 export async function fetchExperiment(project: ProjectTarget, id: string): Promise<FullExperiment> {
   return jsonFetch(projectQueryUrl(`/api/runs/${encodeURIComponent(id)}`, project))
-}
-
-/** Named response contracts for content-bearing project collections. */
-export type HypothesesResponse = { path?: string } & ParsedHypotheses
-
-export interface JournalCountResponse {
-  totalEvents: number
-}
-
-export interface JournalInvocationRecordView {
-  version: number
-  id: string
-  startedAt: string
-  finishedAt: string | null
-  command: string
-  origin: 'cli' | 'web'
-  parameters: Record<string, unknown>
-  outcome: 'running' | 'success' | 'failure' | 'conflict' | 'noop' | 'partial'
-  errorCode?: string
-  details?: Array<Record<string, unknown>>
-}
-
-export interface JournalHistoryResponse {
-  project: string
-  legacy: {
-    present: boolean
-    events: JournalEvent[]
-    parseErrors: ParsedJournal['parseErrors']
-    parseWarnings: ParsedJournal['parseWarnings']
-  }
-  invocations: JournalInvocationRecordView[]
-  unreadableReceipts: Array<{ file: string; reason: string }>
 }
 
 export async function fetchHypotheses(project: ProjectTarget): Promise<HypothesesResponse> {
@@ -265,29 +324,6 @@ export async function fetchJournalCount(project: ProjectTarget): Promise<Journal
 
 // ---------- Reports ----------
 
-export interface FullReport {
-  id: string
-  slug: string
-  /** Standalone-only absolute path; central Backend responses deliberately omit it. */
-  path?: string
-  resource?: string
-  mtime: number
-  hash: string
-  content: string
-  format: 'markdown' | 'bundle'
-}
-
-export interface ReportListItem extends Omit<ReportSummary, 'path'> {
-  /** Standalone-only absolute path; never crosses the Backend boundary. */
-  path?: string
-  resource?: string
-  format: 'markdown' | 'bundle'
-}
-
-export interface ReportsResponse {
-  reports: ReportListItem[]
-}
-
 export async function fetchReportsInventory(
   project: ProjectTarget,
 ): Promise<BackendResourceInventoryResponse> {
@@ -317,60 +353,6 @@ export async function putReport(
 }
 
 // ---------- Wiki ----------
-
-/**
- * Standalone serves the core projection (with its project-relative `path`)
- * plus the `project` / `resource` pair; a Host-scoped Backend response omits
- * `path` and carries `resource` only. Read the location as
- * `page.resource ?? page.path`.
- */
-export type WikiListItem = Omit<WikiSummary, 'path'> & {
-  project: string
-  path?: string
-  resource?: string
-}
-
-export type WikiPageDetail = Omit<WikiPage, 'path'> & {
-  project: string
-  path?: string
-  resource?: string
-}
-
-export interface WikiPagesResponse {
-  pages: WikiListItem[]
-}
-
-export interface WikiPutResponse {
-  ok: true
-  mtime: number
-  hash: string
-  page: WikiPageDetail
-  /** Content as written — the editor re-baselines its buffer from this. */
-  finalContent: string
-}
-
-export interface WikiReviewCommit {
-  sha: string
-  authoredAt: string
-  subject: string
-  /** Page ids the commit touched. */
-  pages: string[]
-  verified: boolean
-  verifiedAt: string | null
-  note: string | null
-}
-
-export interface WikiReviewResponse {
-  /** Newest sequentially verified wiki commit, or null when none is marked. */
-  verifiedThrough: string | null
-  /** Wiki commits, oldest first. */
-  commits: WikiReviewCommit[]
-}
-
-export interface WikiBacklinksResponse {
-  artifact: string
-  pages: WikiBacklink[]
-}
 
 export async function fetchWiki(project: ProjectTarget): Promise<WikiPagesResponse> {
   return jsonFetch(projectQueryUrl('/api/wiki', project))
@@ -432,28 +414,9 @@ export async function fetchWikiBacklinks(
 
 // ---------- Code reviews ----------
 
-export interface FullCodeReview {
-  id: string
-  scope: 'project' | 'experiment'
-  experiment: string | null
-  frontmatter: CodeReviewFrontMatter
-  body: string
-  mtime: number
-  hash: string
-  completion: CodeReviewCompletion
-}
-
-export type CodeReviewProgressPatch =
-  | { op: 'commit'; sha: string; reviewed: boolean; expectedMtime: number; expectedHash: string }
-  | { op: 'todo'; index: number; done: boolean; expectedMtime: number; expectedHash: string }
-
 // The id is the docs-relative path (it contains slashes); encode each segment
 // but keep the slashes so the catch-all route still matches.
 const encodeCodeReviewId = (id: string) => id.split('/').map(encodeURIComponent).join('/')
-
-export interface CodeReviewsResponse {
-  codeReviews: CodeReviewListItem[]
-}
 
 export async function fetchCodeReviewsInventory(
   project: ProjectTarget,
@@ -465,11 +428,6 @@ export async function fetchCodeReviewsInventory(
 
 export async function fetchCodeReviews(project: ProjectTarget): Promise<CodeReviewsResponse> {
   return jsonFetch(projectQueryUrl('/api/code-reviews', project))
-}
-
-export type CodeReviewListItem = Omit<CodeReviewSummary, 'path'> & {
-  path?: string
-  resource?: string
 }
 
 export async function fetchCodeReview(project: ProjectTarget, id: string): Promise<FullCodeReview> {
@@ -489,26 +447,6 @@ export async function patchCodeReviewProgress(
 }
 
 // ---------- Code preview ----------
-
-export interface CodePreviewLine {
-  n: number
-  text: string
-  target: boolean
-}
-
-export interface CodePreview {
-  owner: string
-  repo: string
-  sha: string
-  path: string
-  startLine: number
-  endLine: number
-  lines: CodePreviewLine[]
-  truncated: boolean
-  // Set when the link resolved but the bytes couldn't be previewed
-  // (e.g. the file is too large or binary). `lines` is empty in that case.
-  reason?: 'too-large' | 'binary'
-}
 
 export async function fetchCodePreview(project: ProjectTarget, url: string): Promise<CodePreview> {
   return jsonFetch(
@@ -536,14 +474,6 @@ export async function fetchLog(
   return jsonFetch(`/api/log?${params.toString()}`)
 }
 
-export interface LogFileEntry {
-  name: string
-  path?: string
-  resource?: string
-  size: number
-  mtime: number
-}
-
 export async function fetchLogFiles(
   project: ProjectTarget,
   runResource: string,
@@ -567,29 +497,6 @@ export function logStreamUrl(
     return projectQueryUrl('/api/log/stream', project, new URLSearchParams({ resource }))
   }
   return `/api/log/stream?path=${encodeURIComponent(legacyPath ?? resource)}`
-}
-
-export interface PutReadmeResponse {
-  mtime: number
-  hash?: string
-  /**
-   * The canonical on-disk content after the server bumped `updated_at`
-   * and re-serialized via the pretty-printer. Editors should rebaseline
-   * their buffer to this exact string so dirty-state clears.
-   */
-  finalContent?: string
-}
-export interface PutReadmeConflict {
-  error: { code: 'CONFLICT'; message: string }
-  mtime: number
-  content: string
-}
-
-export interface FetchedReadme {
-  resource: string
-  content: string
-  mtime: number
-  hash: string
 }
 
 export async function fetchReadme(path: string): Promise<FetchedReadme> {
@@ -684,19 +591,6 @@ export async function putReadme(input: {
   return body as PutReadmeResponse
 }
 
-export interface PatchStatusResponse {
-  mtime: number
-  prevStatus?: string
-  nextStatus?: string
-  unchanged?: boolean
-  /** v4: present when the on-disk pre-write archived was true. */
-  warning?: 'archived'
-}
-
-export interface PatchStatusForbidden {
-  error: { code: 'ARCHIVE_RUNNING_FORBIDDEN'; message: string; id?: string }
-}
-
 export async function patchExperimentStatus(input: {
   project?: ProjectTarget
   id: string
@@ -727,17 +621,6 @@ export async function patchExperimentStatus(input: {
 
 // ---------- v4 archive toggle ----------
 
-export interface PatchArchiveResponse {
-  ok: true
-  archived: boolean
-  mtime: number
-  noop?: boolean
-}
-
-export interface PatchArchiveForbidden {
-  error: { code: 'ARCHIVE_RUNNING_FORBIDDEN'; message: string; id?: string }
-}
-
 export async function patchRunArchived(input: {
   project?: ProjectTarget
   id: string
@@ -759,14 +642,6 @@ export async function patchRunArchived(input: {
   }
   if (!res.ok) throw new ApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`)
   return body as PatchArchiveResponse
-}
-
-export interface PatchExperimentStatusResponse {
-  mtime: number
-  prevStatus?: string
-  nextStatus?: string
-  unchanged?: boolean
-  warning?: 'archived'
 }
 
 export async function patchExperimentStatusV4(input: {
@@ -809,7 +684,7 @@ export async function patchExperimentArchived(input: {
   return body as PatchArchiveResponse
 }
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
+async function _jsonOrThrow<T>(res: Response): Promise<T> {
   const body = await res.json()
   if (!res.ok) {
     const msg = (body as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`
@@ -819,28 +694,6 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 // ---------- Warnings ----------
-
-export interface WarningsListResponse {
-  ok: true
-  warnings: WarningRecord[]
-  mtime: number
-  hash: string
-}
-
-export interface WarningsOpResponse {
-  ok: true
-  rowId?: string
-  warnings: WarningRecord[]
-  mtime: number
-  hash: string
-}
-
-export interface WarningsConflict {
-  error: { code: 'CONFLICT' | 'WARNINGS_SECTION_NOT_TABLE'; message: string }
-  mtime?: number
-  hash?: string
-  content?: string
-}
 
 export async function fetchWarnings(
   project: ProjectTarget,
@@ -916,127 +769,6 @@ export async function deleteWarningApi(
 
 // ---------- v3 experiment-doc ----------
 
-export interface ExperimentDocSummary {
-  id: string
-  project: string
-  /** Standalone-only absolute path; central Backend responses deliberately omit it. */
-  path?: string
-  resource?: string
-  /** Bundle activity mtime (README + managed YAML); display/sorting only. */
-  mtime: number
-  /** README.md's own mtime; optimistic-lock key for README mutations. */
-  readmeMtime: number
-  frontMatter: {
-    id: string
-    slug: string
-    title: string
-    /** v4: ExperimentStatus enum from frontmatter. */
-    status: 'OPEN' | 'RESOLVED' | 'ABANDONED'
-    /** v4: archived flag from frontmatter. */
-    archived: boolean
-    runs: string[]
-    hypotheses: string[]
-    tags: string[]
-    createdAt: string
-    updatedAt: string
-  }
-  sections: {
-    motivation: string | null
-    design?: string | null
-    implementation?: string | null
-    investigation?: string | null
-    results?: string | null
-    findings?: string | null
-    limitations?: string | null
-    method: string | null
-    plan: string | null
-    conclusion: string | null
-    caveats: string | null
-  }
-  warningsRaw: string | null
-  parseErrors: { message: string }[]
-  parseWarnings: { message: string }[]
-  effectiveCreatedAt: string
-  effectiveUpdatedAt: string
-}
-
-export interface ExperimentDisplaySection extends ExperimentRawSection {
-  /** Human-readable Markdown; a valid managed section is rendered from YAML. */
-  body: string
-  /** Literal README body retained when `body` is a YAML projection. */
-  rawBody: string
-  source: 'readme' | 'yaml' | 'diagnostic'
-  diagnostics: ExperimentDocumentDiagnostic[]
-}
-
-export interface ExperimentManagedDocumentPayload<T> {
-  kind: 'implementation' | 'investigation' | 'results'
-  fileName: string
-  resource: string
-  exists: boolean
-  data: T | null
-  parseErrors: ParseIssue[]
-  parseWarnings: ParseIssue[]
-}
-
-export interface ResultsVariantEligibilityPayload {
-  variantId: string
-  runs: string[]
-  deprecatedRuns: string[]
-  eligibleRuns: string[]
-  hasMetrics: boolean
-  metricsValidity: 'valid' | 'partial' | 'unavailable'
-}
-
-export interface ExperimentManagedDocumentsPayload {
-  implementation: ExperimentManagedDocumentPayload<ImplementationDocument> & {
-    kind: 'implementation'
-  }
-  investigation: ExperimentManagedDocumentPayload<InvestigationDocument> & {
-    kind: 'investigation'
-  }
-  results: ExperimentManagedDocumentPayload<ResultsDocument> & {
-    kind: 'results'
-    /**
-     * Read-time evidence state per Variant, projected from Run deprecation.
-     * `partial` / `unavailable` metrics are the recorded numbers, unchanged
-     * and unreplaced, but they are NOT current evidence: a view must not
-     * present them as comparable or as a best result.
-     */
-    variantEligibility: ResultsVariantEligibilityPayload[]
-  }
-}
-
-/**
- * Detail (`/api/experiments/:id`). The Experiment document and its managed
- * documents only — the member roster is `frontMatter.runs`, and each Run's
- * own content is read from the Run endpoints when its panel is opened.
- */
-export interface ExperimentDocDetail extends ExperimentDocSummary {
-  /** Read-time visibility metadata; the declared frontmatter roster stays intact. */
-  deprecatedRuns: string[]
-  rawSections: ExperimentRawSection[]
-  documents: ExperimentManagedDocumentsPayload | null
-  documentSections: ExperimentDisplaySection[]
-  documentDiagnostics: ExperimentDocumentDiagnostic[]
-  documentReadOnly: boolean
-  resultsUpdatedAt: string | null
-}
-
-export interface ExperimentResultsSnapshot {
-  project: string
-  resource: string
-  document: ResultsDocument
-  deprecatedRuns: string[]
-  variantEligibility: ResultsVariantEligibilityPayload[]
-  updatedAt: string
-  warnings: ParseIssue[]
-}
-
-export interface ExperimentDocsResponse {
-  experiments: ExperimentDocSummary[]
-}
-
 export async function fetchExperimentsInventory(
   project: ProjectTarget,
 ): Promise<BackendResourceInventoryResponse> {
@@ -1076,14 +808,6 @@ export async function createExperimentDoc(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ project: projectName(project), ...input }),
   })
-}
-
-export interface ExperimentBindInput {
-  run: string
-  expectedMtime: number
-  expectedHash: string
-  expectedRunMtime: number
-  expectedRunHash: string
 }
 
 export async function bindExperimentRun(
@@ -1141,14 +865,6 @@ export async function fetchExperimentResults(
   })
 }
 
-export interface RunFileTreeNode {
-  type: 'file' | 'dir'
-  resource: string
-  size?: number
-  mtime?: number
-  children?: RunFileTreeNode[]
-}
-
 export async function fetchRunFiles(
   project: ProjectTarget,
   id: string,
@@ -1172,29 +888,6 @@ export async function fetchRunFiles(
 }
 
 // Slurm widget — one fetch every 30s while the sidebar footer is mounted.
-
-export interface SlurmJobJson {
-  jobId: string
-  partition: string
-  name: string
-  state: string
-  time: string
-  numNodes: number
-  nodeList: string
-}
-
-export type SlurmStatus =
-  | { enabled: false }
-  | {
-      enabled: true
-      totalNodes: number
-      usedNodes: number
-      jobs: SlurmJobJson[]
-    }
-  | {
-      enabled: true
-      error: { code: 'SLURM_UNAVAILABLE'; message: string }
-    }
 
 export async function fetchSlurmStatus(): Promise<SlurmStatus> {
   const res = await fetch('/api/slurm/status')
@@ -1221,26 +914,6 @@ export async function fetchSlurmStatus(): Promise<SlurmStatus> {
 
 // Git status — per-project working-tree state. Polled by sidebar + project footer.
 
-export type GitStatus =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
-      message?: string
-    }
-  | {
-      enabled: true
-      branch: string | null
-      detached: boolean
-      sha: string
-      upstream: string | null
-      ahead: number
-      behind: number
-      staged: number
-      unstaged: number
-      untracked: number
-      dirty: boolean
-    }
-
 export async function fetchGitStatus(project: ProjectTarget): Promise<GitStatus> {
   return jsonFetch(
     projectPathUrl(`/api/projects/${encodeURIComponent(projectName(project))}/git-status`, project),
@@ -1248,49 +921,6 @@ export async function fetchGitStatus(project: ProjectTarget): Promise<GitStatus>
 }
 
 // Git status — detailed file lists. Fetched lazily once per dialog open.
-
-export type GitFileStatus =
-  | 'added'
-  | 'modified'
-  | 'deleted'
-  | 'renamed'
-  | 'copied'
-  | 'untracked'
-  | 'conflict'
-  | 'typechange'
-
-export interface GitFileEntry {
-  path: string
-  status: GitFileStatus
-  origPath?: string
-  /**
-   * Set when this file is a submodule-pointer bump (a gitlink entry in
-   * `git diff-tree --raw` with old mode `160000` and new mode `160000`).
-   * Carries the two SHAs the submodule pointer is being changed between,
-   * so the UI can expand this row into a `git-range` view of the
-   * submodule's actual commits between `fromSha..toSha`.
-   */
-  submoduleBump?: { fromSha: string; toSha: string }
-}
-
-export type GitStatusFiles =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
-      message?: string
-    }
-  | {
-      enabled: true
-      branch: string | null
-      detached: boolean
-      sha: string
-      upstream: string | null
-      ahead: number
-      behind: number
-      staged: GitFileEntry[]
-      unstaged: GitFileEntry[]
-      untracked: GitFileEntry[]
-    }
 
 export async function fetchGitStatusFiles(
   project: ProjectTarget,
@@ -1310,26 +940,6 @@ export async function fetchGitStatusFiles(
 // Per-file diff payload. Side encodes which pair of refs the dialog is
 // asking about: staged = HEAD vs index, unstaged = index vs working,
 // untracked = empty vs working.
-
-export type GitDiffSide = 'staged' | 'unstaged' | 'untracked' | 'commit' | 'range'
-
-export type GitDiffResponse =
-  | {
-      ok: true
-      filename: string
-      status: GitFileStatus
-      oldContent: string | null
-      newContent: string | null
-    }
-  | {
-      ok: false
-      skipReason: 'too-large'
-      sizeBytes: number
-      maxBytes: number
-      side: 'old' | 'new'
-    }
-  | { ok: false; skipReason: 'binary' }
-  | { ok: false; error: { message: string } }
 
 export interface FetchGitDiffOpts {
   sha?: string
@@ -1365,21 +975,6 @@ export async function fetchGitDiff(
 // only opens a range view for the submodule), but the endpoint accepts
 // either.
 
-export type GitRangeResponse =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
-      message?: string
-    }
-  | {
-      enabled: true
-      from: string
-      to: string
-      commits: GitCommitSummary[]
-      files: GitFileEntry[]
-      submodule: string
-    }
-
 export async function fetchGitRange(
   project: ProjectTarget,
   from: string,
@@ -1399,63 +994,6 @@ export async function fetchGitRange(
 
 // Git history — branches, commit list, single-commit detail. Lazy
 // (fetched on dialog open / branch change / commit click).
-
-export interface GitBranchEntry {
-  name: string
-  sha: string
-  isCurrent: boolean
-}
-
-export type GitBranches =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
-      message?: string
-    }
-  | {
-      enabled: true
-      current: string | null
-      detached: boolean
-      sha: string
-      branches: GitBranchEntry[]
-    }
-
-export interface GitCommitSummary {
-  sha: string
-  shortSha: string
-  subject: string
-  authorName: string
-  authorEmail: string
-  authorDate: string
-  parents: string[]
-}
-
-export type GitLog =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'error'
-      message?: string
-    }
-  | { enabled: true; commits: GitCommitSummary[] }
-
-export type GitCommitDetail =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'git-not-found' | 'timeout' | 'not-found' | 'error'
-      message?: string
-    }
-  | {
-      enabled: true
-      sha: string
-      shortSha: string
-      subject: string
-      body: string
-      authorName: string
-      authorEmail: string
-      authorDate: string
-      parents: string[]
-      files: GitFileEntry[]
-    }
 
 export async function fetchGitBranches(
   project: ProjectTarget,
@@ -1508,19 +1046,6 @@ export async function fetchGitCommit(
 
 // --- Submodules ---
 
-export interface GitSubmoduleEntry {
-  name: string
-  path: string
-}
-
-export type GitSubmodules =
-  | {
-      enabled: false
-      reason: 'not-a-repo' | 'no-gitmodules' | 'git-not-found' | 'timeout' | 'error'
-      message?: string
-    }
-  | { enabled: true; submodules: GitSubmoduleEntry[] }
-
 export async function fetchSubmodules(project: ProjectTarget): Promise<GitSubmodules> {
   return jsonFetch(
     projectPathUrl(`/api/projects/${encodeURIComponent(projectName(project))}/submodules`, project),
@@ -1528,22 +1053,6 @@ export async function fetchSubmodules(project: ProjectTarget): Promise<GitSubmod
 }
 
 // Commit verification marks — per-project CSV stored under `.memon/`.
-
-export type CommitMarkStatus = 'verified' | 'suspicious' | 'issue'
-
-export interface CommitMark {
-  sha: string
-  status: CommitMarkStatus
-  note: string
-  updatedAt: string
-  /** Empty string = main repo; otherwise the submodule name from `.gitmodules`. */
-  submodule: string
-}
-
-export interface CommitMarksResponse {
-  marks: CommitMark[]
-  parseWarnings: string[]
-}
 
 export async function fetchCommitMarks(project: ProjectTarget): Promise<CommitMarksResponse> {
   return jsonFetch(
@@ -1584,14 +1093,6 @@ export async function deleteCommitMark(
 
 // Re-exports for convenience
 export type { Hypothesis, JournalEvent, Run, WarningRecord }
-
-export interface ComponentRunResult {
-  id: string
-  status: 'updated' | 'unchanged' | 'failed'
-  path: string
-  durationMs: number
-  error?: string
-}
 
 /** Explicitly recompute one or more executable component blocks. */
 export async function runComponents(
