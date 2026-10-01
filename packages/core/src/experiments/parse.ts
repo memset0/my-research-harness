@@ -14,7 +14,8 @@
 import matter from 'gray-matter'
 import type { ZodError } from 'zod'
 
-import { isId, RUN_DIR_REGEX } from '../ids.js'
+import { RUN_DIR_REGEX } from '../ids.js'
+import { stringArray, stringOr, validatedHypothesisRefs } from '../readme/fields.js'
 import { splitH2Sections } from '../readme/sections.js'
 import { ExperimentFrontMatterRawSchema } from '../schemas.js'
 import { normalizeExperimentStatus } from '../status.js'
@@ -362,15 +363,6 @@ function emptyResult(
   }
 }
 
-function stringOr(v: unknown, fallback: string): string {
-  return typeof v === 'string' ? v : fallback
-}
-
-function stringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return []
-  return v.filter((x): x is string => typeof x === 'string')
-}
-
 function validatedRunRefs(v: unknown, warnings: ParseIssue[]): string[] {
   if (!Array.isArray(v)) return []
   const out: string[] = []
@@ -386,24 +378,6 @@ function validatedRunRefs(v: unknown, warnings: ParseIssue[]): string[] {
       warnings.push({
         field: 'runs',
         message: `INVALID_RUN_REF: "${elem}" does not match run-dir regex`,
-        severity: 'warning',
-      })
-    }
-  }
-  return out
-}
-
-function validatedHypothesisRefs(v: unknown, warnings: ParseIssue[]): string[] {
-  if (!Array.isArray(v)) return []
-  const out: string[] = []
-  for (const elem of v) {
-    if (typeof elem !== 'string') continue
-    if (isId(elem, 'H')) {
-      out.push(elem)
-    } else {
-      warnings.push({
-        field: 'hypotheses',
-        message: `INVALID_HYPOTHESIS_REF: "${elem}" is not canonical H<NNNN>`,
         severity: 'warning',
       })
     }

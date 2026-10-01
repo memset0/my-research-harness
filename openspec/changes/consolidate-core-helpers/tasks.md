@@ -33,7 +33,7 @@
 
 ## 7. Parser field helpers (D7)
 
-- [ ] 7.1 Share `stringOr` / `stringArray` / `validatedHypothesisRefs` between the Run and Experiment parsers; add Experiment-side tests
+- [x] 7.1 Share `stringOr` / `stringArray` / `validatedHypothesisRefs` between the Run and Experiment parsers; add Experiment-side tests
 
 ## 8. Project-scan rename (D8)
 
