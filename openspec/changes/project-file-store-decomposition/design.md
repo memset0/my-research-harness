@@ -131,7 +131,8 @@ direction top to bottom; no module imports one listed above it):
 index.ts        re-exports the public surface (no logic)
 fs-facade.ts    projectFs Proxy and facade functions          -> runtime, errors, containment, observation
 runtime.ts      process-global singleton + public functions   -> store
-store.ts        ProjectFileStore orchestration                -> scheduler, persistence, mount-guard, metrics, ...
+store.ts        ProjectFileStore orchestration                -> reporting, scheduler, persistence, mount-guard, ...
+reporting.ts    freshness status and metrics snapshot (pure reads of store state)
 persistence.ts  persistent-cache bridge (scope, load, put, forget)
 mount-guard.ts  real-root memo, mount identity guard, mount-table TTL
 scheduler.ts    groups, queue bound, promotion, aging, dispatch, write slots, backoff math
@@ -144,9 +145,22 @@ contract.ts     reasons, defaults, public status/metric types
 clock.ts        monotonic()
 ```
 
-`packages/core/src/project-file-store.ts` stays as a thin module that
-re-exports `./project-file-store/index.js` and the context/cache names it has
-always re-exported, so every existing import path keeps working. The scheduler
+`packages/core/src/project-file-store.ts` keeps the module overview comment
+and is otherwise `export * from './project-file-store/index.js'`; `index.ts`
+re-exports the full former surface (including the context/cache/type names
+the module always re-exported), so every existing import path keeps working.
+The existing `import-graph.test.ts` guards that inspected the store's direct
+imports now inspect everything it reaches (same intent, stronger check).
+
+Resulting sizes (lines): `store` 695, `fs-facade` 390, `metrics` 298,
+`scheduler` 274, `reporting` 175, `observation` 212, `persistence` 205,
+`contract` 146, `mount-guard` 101, `state` 99, `runtime` 70, `errors` 61,
+`containment` 42, `index` 35, `clock` 5; `project-file-store.ts` 54.
+Public-surface check: the runtime export list of `project-file-store.ts` and
+`index.ts` is identical before and after, and a type-identity probe over the
+emitted declarations (`Eq<typeof Old.X, typeof New.X>` for every value, and
+`Eq<Old.T, New.T>` for every exported type, with a failing negative control)
+compiles. The scheduler
 is a class owned by the store; it reaches back into store state only through a
 small hook interface (cached value at dispatch, success, failure, post-execute
 memory bounds), keeping the call order of the original methods.

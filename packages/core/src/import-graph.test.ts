@@ -43,9 +43,11 @@ describe('core import layering', () => {
   })
 
   it('the Project file store does not import the git layer', () => {
-    expect(localImports('project-file-store.ts').filter((path) => path.startsWith('git/'))).toEqual(
-      [],
-    )
+    // The store is a re-export of `project-file-store/*`, so the guard covers
+    // everything it reaches.
+    expect(
+      [...reachable('project-file-store.ts')].filter((path) => path.startsWith('git/')),
+    ).toEqual([])
   })
 
   it('types.ts does not import the Project file store', () => {
@@ -59,6 +61,7 @@ describe('core import layering', () => {
 
   it('the parser sees the edges it guards', () => {
     expect(localImports('git/command.ts')).toContain('project-file-context.ts')
-    expect(localImports('project-file-store.ts')).toContain('project-file-context.ts')
+    expect(localImports('project-file-store.ts')).toContain('project-file-store/index.ts')
+    expect(reachable('project-file-store.ts')).toContain('project-file-context.ts')
   })
 })

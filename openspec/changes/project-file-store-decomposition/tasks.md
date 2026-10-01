@@ -14,7 +14,7 @@
 
 ## 4. Extract the facade and keep a re-export
 
-- [ ] 4.1 Move the persistence bridge, mount guard, store class, runtime singleton and `projectFs` facade into `project-file-store/{persistence,mount-guard,store,runtime,fs-facade,index}.ts`, leave `project-file-store.ts` as a thin re-export; verify every module is <= 700 lines, the runtime export list of `index.ts` is unchanged, and the core suite plus `pnpm -r typecheck` pass
+- [x] 4.1 Move the persistence bridge, mount guard, store class, runtime singleton and `projectFs` facade into `project-file-store/{persistence,mount-guard,store,runtime,fs-facade,index}.ts`, leave `project-file-store.ts` as a thin re-export; verify every module is <= 700 lines, the runtime export list of `index.ts` is unchanged, and the core suite plus `pnpm -r typecheck` pass
 
 ## 5. DAG guard and final verification
 
