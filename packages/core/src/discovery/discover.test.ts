@@ -66,6 +66,14 @@ describe('discoverRuns', () => {
     }
   })
 
+  it('treats a README-less Run-shaped directory as a Run and never looks inside it', async () => {
+    await mkdir('outputs/sweep/a-260901-090000/b-260901-100000')
+    await fs.writeFile(join(root, 'outputs/sweep/a-260901-090000/b-260901-100000/README.md'), '')
+
+    const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
+    expect(dirs).toEqual([join(root, 'outputs/sweep/a-260901-090000')])
+  })
+
   it('does not match invalid name patterns', async () => {
     await mkdir('logs/foo-260501') // missing 2nd date segment
     await mkdir('logs/foo-2026-05-01-100000') // 4-digit year

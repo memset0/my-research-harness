@@ -4,8 +4,8 @@
 
 ## 2. Non-nesting rule
 
-- [ ] 2.1 Add a counting fake for directory listings and a listing-count test (200 non-Run dirs × 50 children + 100 Run dirs × 20 children) proving listings do not grow with Run contents and Run-shaped directories without README stop the walk; verify with the core discovery tests
-- [ ] 2.2 Document the non-nesting rule at the walk and verify core tests still pass
+- [x] 2.1 Add a counting fake for directory listings and a listing-count test (200 non-Run dirs × 50 children + 100 Run dirs × 20 children) proving listings do not grow with Run contents and Run-shaped directories without README stop the walk; verify with the core discovery tests
+- [x] 2.2 Document the non-nesting rule at the walk and verify core tests still pass
 
 ## 3. Configurable depth
 

@@ -4,6 +4,11 @@
 // Within those entries, Run directories may occur at any depth and are
 // recognized by RUN_DIR_REGEX; traversal stops at each recognized Run.
 //
+// Run directories never nest: a Run-shaped name is a candidate Run whether
+// or not it holds a README, and its contents are never listed, so the
+// listing count of a walk does not depend on what Runs contain (pinned by
+// discover.count.test.ts).
+//
 // v4: this layer now returns ALL matching paths regardless of archive
 // state. Archive filtering happens post-parse in `scanProjectRoot` (and
 // other higher-level callers) because the v4 source of truth is the
