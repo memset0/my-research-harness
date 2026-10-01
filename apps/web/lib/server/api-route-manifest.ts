@@ -212,11 +212,6 @@ export const DIRECT_RUNTIME_SURFACES = {
     scope: 'resource',
     purpose: 'project-data',
   },
-  'app/p/[project]/experiments/[id]/page.tsx': {
-    owner: 'composed',
-    scope: 'resource',
-    purpose: 'project-data',
-  },
   'app/p/[project]/layout.tsx': {
     owner: 'composed',
     scope: 'project-path',

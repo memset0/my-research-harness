@@ -7,6 +7,7 @@
 ## 2. Project-scoped Run detail hydration
 
 - [x] 2.1 Make `getExperimentData(project, id)` return `null` for a Run outside `project`; scope the page and `generateMetadata` through it and prefetch under `['run', ...projectQueryKey(project), id]`; verify with a page test that a cross-project id yields `notFound()` and the matching id dehydrates under the client key
+  - Follow-up: the page no longer calls `getRuntime()` (it reads only through `lib/server/data.ts`), so its stale `DIRECT_RUNTIME_SURFACES` entry was removed and `api-route-manifest.test.ts` passes again. Full suite on Node 22.19.0 (`pnpm -r --workspace-concurrency=1 test`): core 70 files / 873 tests, backend 27 / 234, skills 2 / 8, web 177 / 1305, cli 22 / 292, 0 failed.
 
 ## 3. Standalone core typecheck and lint errors
 
