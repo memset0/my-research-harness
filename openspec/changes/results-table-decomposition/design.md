@@ -102,7 +102,11 @@ domain hover), `filter-bar.tsx` (rows summary, filter and sort badge lists),
 `cells.tsx` (`ResultCell` dispatch to `VariantCell`, `StatusCell`,
 `RunListCell`, `ProvenanceCell`, `ScalarCell`; `CellClamp`),
 `annotation-tooltip.tsx`, `results-grid.tsx` (table + pin layout),
-`use-pin-layout.ts`, `drag.ts` (typed drag handler bundle).
+`use-pin-layout.ts`, `use-drag-reorder.ts` (typed `DragHandlers` bundle passed
+to every draggable surface instead of the raw drag state) and
+`locked-group.ts` (dimmed/`aria-disabled` props for viewer-locked groups).
+Table-wide cell inputs travel as one typed `ResultCellContext`; header actions
+as one typed `ColumnHeaderActions` object.
 
 State: of the 20 `useState` hooks, the coupled mounted-only state —
 `showAllColumns`, `showAllRows`, `temporarySort`, `draggedItem`, `dropTarget`

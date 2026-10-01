@@ -12,11 +12,11 @@
 
 ## 3. Container and subcomponents (D3)
 
-- [ ] 3.1 Add `definition-edits.ts` and `transient-state.ts` with unit tests
-- [ ] 3.2 Extract cells, annotation tooltip, badge editors, column header, row, grid and pin-layout hook into `components/results-table/`
-- [ ] 3.3 Extract view switcher, column toolbar, column options and filter bar; container uses `useReducer` and stays ≤ 500 lines, every subcomponent ≤ 400 lines
-- [ ] 3.4 SOTA submenu sets the chosen mode directly; delete dead helpers
-- [ ] 3.5 Add subcomponent render tests asserting `data-slot` and key text
+- [x] 3.1 Add `definition-edits.ts` and `transient-state.ts` with unit tests
+- [x] 3.2 Extract cells, annotation tooltip, badge editors, column header, row, grid and pin-layout hook into `components/results-table/`
+- [x] 3.3 Extract view switcher, column toolbar, column options and filter bar; container uses `useReducer` and stays ≤ 500 lines, every subcomponent ≤ 400 lines
+- [x] 3.4 SOTA submenu sets the chosen mode directly; delete dead helpers
+- [x] 3.5 Add subcomponent render tests asserting `data-slot` and key text
 
 ## 4. Query keys (D5)
 

@@ -915,6 +915,40 @@ describe('ExperimentResultsTable', () => {
     })
   })
 
+  it('selects a SOTA mode directly instead of cycling through modes', async () => {
+    cleanup()
+    const experimentId = 'E0001-sota-direct'
+    const { container, unmount } = renderResults(experimentId)
+    const lossHeader = container.querySelector<HTMLElement>(
+      '[data-column-id="schema:loss"] button',
+    )!
+    fireEvent.contextMenu(lossHeader)
+    const sotaTrigger = Array.from(
+      window.document.body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
+    ).find((el) => el.textContent?.includes('SOTA highlight'))!
+    await act(async () => {
+      fireEvent.click(sotaTrigger)
+    })
+    // From Off, choosing Lower is better must not land on Higher is better.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /Lower is better/i }))
+    })
+    const table = container.querySelector('table')!
+    await waitFor(() =>
+      expect(
+        table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span'),
+      ).toHaveClass('font-bold', 'underline'),
+    )
+    unmount()
+    await waitFor(() => {
+      const preferences = JSON.parse(
+        window.localStorage.getItem(`memon:results-table:research:${experimentId}:preferences`) ??
+          '{}',
+      )
+      expect(preferences.sotaModes).toEqual({ 'schema:loss': 'lower-is-better' })
+    })
+  })
+
   it('keeps excluded metrics visible without ranking them and restores ranking after eligibility changes', async () => {
     const experimentId = 'E0001-eligibility'
     window.localStorage.setItem(
