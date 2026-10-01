@@ -197,7 +197,7 @@ export class FilesystemGitService implements BackendGitService {
     const path = ResourceIdSchema.safeParse(input.path)
     if (!path.success) invalid()
     if (input.side === 'unstaged' || input.side === 'untracked') {
-      await assertExistingTargetWithin(repo.cwd, resolve(repo.cwd, path.data))
+      await assertWorkingTargetWithin(repo.cwd, resolve(repo.cwd, path.data))
     }
 
     let oldRef: string | null
@@ -427,13 +427,16 @@ async function configuredPathWithin(projectRoot: string, target: string): Promis
 }
 
 /**
- * Containment check for a path that may not exist: a missing file has nothing
- * to contain. `ENOTDIR` counts as missing too — a component of the path is a
- * file, so the target cannot exist either.
+ * Containment check for a working-tree path that may be absent (deleted, only
+ * in the index or a commit) — as may its parents or, on this host, the
+ * repository root itself. Absence is judged through the nearest existing
+ * ancestor's real path, so a link that leaves the repository is still caught
+ * when the file below it does not exist; absence alone is never an error and
+ * the Git readers decide the payload.
  */
-async function assertExistingTargetWithin(root: string, target: string): Promise<void> {
+async function assertWorkingTargetWithin(root: string, target: string): Promise<void> {
   try {
-    await resolveContained(root, target, { allowMissing: true, realPathOnly: true })
+    await resolveContained(root, target, { mustExist: false })
   } catch (error) {
     if (error instanceof PathContainmentError) invalid()
     throw error

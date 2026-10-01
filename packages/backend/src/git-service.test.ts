@@ -142,6 +142,59 @@ describe('FilesystemGitService', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESOURCE' } satisfies Partial<BackendGitServiceError>)
   })
 
+  it('diffs working-tree paths that are absent and still rejects escapes through absent leaves', async () => {
+    await fs.rm(join(root, 'tracked.txt'))
+    expect(
+      BackendGitDiffResponseSchema.parse(
+        await service.diff('research', { path: 'tracked.txt', side: 'unstaged' }),
+      ),
+    ).toEqual({
+      ok: true,
+      filename: 'tracked.txt',
+      status: 'deleted',
+      oldContent: 'line one\nline two updated\n',
+      newContent: '',
+    })
+    // Absent file under absent directories: containment passes, readers decide.
+    await expect(
+      service.diff('research', { path: 'nested/missing/new.txt', side: 'untracked' }),
+    ).resolves.toMatchObject({ filename: 'nested/missing/new.txt' })
+
+    const outside = await fs.mkdtemp(join(tmpdir(), 'memon-backend-git-outside-'))
+    try {
+      await fs.symlink(outside, join(root, 'out'))
+      for (const side of ['untracked', 'unstaged'] as const) {
+        await expect(service.diff('research', { path: 'out/new.txt', side })).rejects.toMatchObject(
+          { code: 'INVALID_RESOURCE' } satisfies Partial<BackendGitServiceError>,
+        )
+      }
+      await expect(
+        service.diff('research', { path: '../outside.txt', side: 'untracked' }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_RESOURCE',
+      } satisfies Partial<BackendGitServiceError>)
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('does not fail the working-tree containment check when the Project root is absent', async () => {
+    const absent = join(root, 'not-created-yet')
+    const absentService = new FilesystemGitService([
+      {
+        name: 'absent',
+        root: absent,
+        include: [],
+        exclude: [],
+        execution: { kind: 'local' },
+      } satisfies ProjectConfig,
+    ])
+    // The containment check passes; the Git readers report the missing worktree.
+    await expect(
+      absentService.diff('absent', { path: 'app.ts', side: 'unstaged' }),
+    ).resolves.toBeDefined()
+  })
+
   it('resolves GitHub permalinks through configured local mappings only', async () => {
     const preview = BackendCodePreviewResponseSchema.parse(
       await service.codePreview(

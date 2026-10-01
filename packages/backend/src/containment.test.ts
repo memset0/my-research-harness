@@ -76,6 +76,67 @@ describe('resolveContained', () => {
   })
 })
 
+describe('resolveContained with mustExist: false', () => {
+  const lenient = { mustExist: false } as const
+
+  it('resolves absent leaves, directories and roots through the nearest existing ancestor', async () => {
+    await expect(resolveContained(root, 'docs/a.txt', lenient)).resolves.toBe(
+      join(root, 'docs', 'a.txt'),
+    )
+    await expect(resolveContained(root, 'docs/missing.txt', lenient)).resolves.toBe(
+      join(root, 'docs', 'missing.txt'),
+    )
+    await expect(resolveContained(root, 'new/dir/file.txt', lenient)).resolves.toBe(
+      join(root, 'new', 'dir', 'file.txt'),
+    )
+    await expect(resolveContained(root, 'docs/a.txt/below', lenient)).resolves.toBe(
+      join(root, 'docs', 'a.txt', 'below'),
+    )
+    await expect(resolveContained(join(base, 'no-root'), 'x/y.txt', lenient)).resolves.toBe(
+      join(base, 'no-root', 'x', 'y.txt'),
+    )
+  })
+
+  it('maps an absent path below a contained link to the real directory', async () => {
+    const linked = join(root, 'linked-docs')
+    await symlink(join(root, 'docs'), linked)
+    await expect(resolveContained(root, 'linked-docs/new.txt', lenient)).resolves.toBe(
+      join(root, 'docs', 'new.txt'),
+    )
+  })
+
+  it('still rejects lexical, absolute and symlink escapes, also with an absent leaf', async () => {
+    for (const path of [
+      '../outside/secret.txt',
+      '../outside/absent.txt',
+      join(outside, 'absent.txt'),
+      'docs/escape.txt',
+    ]) {
+      await expect(resolveContained(root, path, lenient)).rejects.toBeInstanceOf(
+        PathContainmentError,
+      )
+    }
+    const out = join(root, 'out')
+    await symlink(outside, out)
+    await expect(resolveContained(root, 'out/absent.txt', lenient)).rejects.toBeInstanceOf(
+      PathContainmentError,
+    )
+    await expect(resolveContained(root, 'out/deeper/absent.txt', lenient)).rejects.toBeInstanceOf(
+      PathContainmentError,
+    )
+  })
+
+  it('propagates failures other than absence', async () => {
+    const error = Object.assign(new Error('denied'), { code: 'EACCES' })
+    const spy = vi.spyOn(projectFs, 'realpath').mockRejectedValueOnce(error)
+    try {
+      await expect(resolveContained(root, 'docs/a.txt', lenient)).rejects.toBe(error)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
 describe('openProjectByteStream', () => {
   async function collect(stream: NodeJS.ReadableStream): Promise<string> {
     const chunks: Buffer[] = []
