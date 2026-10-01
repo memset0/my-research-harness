@@ -44,7 +44,6 @@ describe('queryKeys', () => {
         "report",
         "reports",
         "reportsInventory",
-        "reportsRawTarget",
         "run",
         "runFiles",
         "runs",
@@ -279,24 +278,6 @@ describe('queryKeys', () => {
         "reports",
         "host-a",
         "project-a",
-      ]
-    `)
-  })
-
-  it('reportsRawTarget', () => {
-    expect(queryKeys.reportsRawTarget(STANDALONE)).toMatchInlineSnapshot(`
-      [
-        "reports",
-        "project-a",
-      ]
-    `)
-    expect(queryKeys.reportsRawTarget(HOSTED)).toMatchInlineSnapshot(`
-      [
-        "reports",
-        {
-          "host": "host-a",
-          "project": "project-a",
-        },
       ]
     `)
   })

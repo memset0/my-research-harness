@@ -714,7 +714,7 @@ function InboxEditor({
       setKnownHash(res.hash)
       // Invalidate the detail query so the rendered pane reflects the save.
       queryClient.invalidateQueries({ queryKey: detailKey })
-      queryClient.invalidateQueries({ queryKey: queryKeys.reportsRawTarget(project) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports(project) })
       toast.success('saved')
       onClose()
     } catch (err) {

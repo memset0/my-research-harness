@@ -20,8 +20,8 @@
 
 ## 4. Query keys (D5)
 
-- [ ] 4.1 Invalidate the Inbox Report list with `queryKeys.reports(project)`; remove `reportsRawTarget` and its snapshot
-- [ ] 4.2 Test that saving a Report of a Host-qualified Project refetches the list
+- [x] 4.1 Invalidate the Inbox Report list with `queryKeys.reports(project)`; remove `reportsRawTarget` and its snapshot
+- [x] 4.2 Test that saving a Report of a Host-qualified Project refetches the list
 
 ## 5. Verification
 

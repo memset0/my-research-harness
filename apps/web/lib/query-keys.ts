@@ -56,13 +56,6 @@ export const queryKeys = {
 
   // Reports
   reports: (project: ProjectTarget) => ['reports', ...projectQueryKey(project)] as const,
-  /**
-   * Legacy spelling kept byte-identical: it embeds the raw target instead of
-   * spreading it, so for a Host-qualified Project it does not prefix-match
-   * `reports(project)`. Preserved by the web-lib-layering refactor; fixing it
-   * is a separate behavior change.
-   */
-  reportsRawTarget: (project: ProjectTarget) => ['reports', project] as const,
   /** `id` is null while no Report is selected (the query is disabled). */
   report: (project: ProjectTarget, id: string | null) =>
     ['report', ...projectQueryKey(project), id] as const,
