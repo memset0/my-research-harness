@@ -1,9 +1,9 @@
 ## 1. Core mutation primitives
 
-- [ ] 1.1 Add the filesystem port, lock reader, atomic replace and `MutationError` (`packages/core/src/experiments/mutations.ts` shared section) and verify with core unit tests for conflict/mode/temp cleanup
-- [ ] 1.2 Implement Experiment primitives (create with atomic `mkdir` allocation and canonical bundle builder, link, unlink, status, archive, delete with quarantine, README write, warning ops) and verify with core unit tests
-- [ ] 1.3 Implement Run primitives in `packages/core/src/runs/mutations.ts` (status with timestamp/guard rules, archive state, README write with `preserve`/`stamp` policy, rename) and verify with core unit tests
-- [ ] 1.4 Add the golden fixture `packages/core/test-fixtures/mutation-parity/` and a core test that runs the parity sequence through the primitives with `nodeMutationFs` and `projectFs`, comparing byte-for-byte; `pnpm --filter @memon/core test` passes and core builds
+- [x] 1.1 Add the filesystem port, lock reader, atomic replace and `MutationError` (`packages/core/src/experiments/mutations.ts` shared section) and verify with core unit tests for conflict/mode/temp cleanup
+- [x] 1.2 Implement Experiment primitives (create with atomic `mkdir` allocation and canonical bundle builder, link, unlink, status, archive, delete with quarantine, README write, warning ops) and verify with core unit tests
+- [x] 1.3 Implement Run primitives in `packages/core/src/runs/mutations.ts` (status with timestamp/guard rules, archive state, README write with `preserve`/`stamp` policy, rename) and verify with core unit tests
+- [x] 1.4 Add the golden fixture `packages/core/test-fixtures/mutation-parity/` and a core test that runs the parity sequence through the primitives with `nodeMutationFs` and `projectFs`, comparing byte-for-byte; `pnpm --filter @memon/core test` passes and core builds
 
 ## 2. CLI adapter
 

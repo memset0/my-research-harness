@@ -122,6 +122,57 @@ export {
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
 export type { MembershipInput, MembershipResult } from './experiments/membership.js'
 export { computeMembership } from './experiments/membership.js'
+export type {
+  CreateExperimentInput,
+  CreateExperimentResult,
+  DeleteExperimentInput,
+  DeleteExperimentResult,
+  DocumentLock,
+  DocumentState,
+  ExperimentArchiveInput,
+  ExperimentBundle,
+  ExperimentBundleInput,
+  ExperimentReadmeInput,
+  ExperimentRunBindInput,
+  ExperimentRunBindResult,
+  ExperimentStatusInput,
+  ExperimentStatusResult,
+  ExperimentTarget,
+  FileChange,
+  MutationBase,
+  MutationErrorCode,
+  MutationErrorReason,
+  MutationFs,
+  MutationRun,
+  ReadmeWriteResult,
+  ToggleResult,
+  WarningMutationInput,
+  WarningMutationResult,
+} from './experiments/mutations.js'
+// Experiment write primitives shared by CLI, Backend and standalone Web
+export {
+  addExperimentWarning,
+  assertDocumentLock,
+  buildExperimentBundle,
+  CANONICAL_EXPERIMENT_BUNDLE_FILES,
+  createExperiment,
+  deleteExperiment,
+  IMPORTED_VARIANT_DESCRIPTION,
+  importedVariantStatus,
+  linkExperimentRun,
+  MutationError,
+  mutateDocumentWarning,
+  nodeMutationFs,
+  readDocumentLock,
+  readDocumentState,
+  replaceDocumentAtomic,
+  setExperimentArchived,
+  setExperimentStatus,
+  sha1,
+  staleLockField,
+  unlinkExperimentRun,
+  writeExperimentReadme,
+} from './experiments/mutations.js'
 export type { ParsedExperiment } from './experiments/parse.js'
 // v3 experiment-doc parser / serializer / discovery / membership
 export { buildExperimentRecord, parseExperimentReadme } from './experiments/parse.js'
@@ -355,6 +406,26 @@ export {
 } from './readme/warnings.js'
 export * from './release-compatibility.js'
 export * from './release-policy.js'
+export type {
+  RenameRunInput,
+  RenameRunResult,
+  RunArchiveInput,
+  RunArchiveResult,
+  RunReadmeInput,
+  RunReadmeResult,
+  RunStatusInput,
+  RunStatusResult,
+} from './runs/mutations.js'
+// Run write primitives shared by CLI, Backend and standalone Web
+export {
+  ARCHIVED_RUNNING_MESSAGE,
+  canonicalRunSansUpdatedAt,
+  RUNNING_ARCHIVE_MESSAGE,
+  renameRun,
+  setRunArchiveState,
+  setRunStatus,
+  writeRunReadme,
+} from './runs/mutations.js'
 export type {
   CodeReviewFrontMatterRaw,
   ExperimentFrontMatterRaw,
