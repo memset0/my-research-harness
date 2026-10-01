@@ -16,20 +16,17 @@ import {
 import {
   type BackendRoute,
   type GateContext,
-  type HttpError,
   httpError,
   type RouteContext,
   type RouteOperation,
 } from '../http/pipeline.js'
 import { writeJson } from '../http/respond.js'
 import {
-  BackendStreamDeadlineError,
   streamByteResource,
   streamLogEvents,
   withStreamControlDeadline,
   writeEventStream,
 } from '../http/streaming.js'
-import { BackendStreamServiceError } from '../stream-service.js'
 import {
   emptyOr,
   integerIn,
@@ -45,18 +42,6 @@ import {
   schemaCheck,
 } from './shared.js'
 
-function streamErrors(error: unknown): HttpError | null {
-  if (error instanceof BackendStreamDeadlineError) {
-    return httpError(504, 'UNAVAILABLE', 'Backend stream control deadline exceeded', true)
-  }
-  if (!(error instanceof BackendStreamServiceError)) return null
-  return error.code === 'INVALID_RESOURCE'
-    ? httpError(400, 'BAD_REQUEST', 'Backend stream resource is invalid')
-    : error.code === 'AMBIGUOUS_RESOURCE'
-      ? httpError(409, 'CONFLICT', 'Backend stream resource is ambiguous')
-      : httpError(404, 'NOT_FOUND', 'Backend stream resource not found')
-}
-
 type StreamCapability = 'projects' | 'logStreaming' | 'reportAssets' | 'wikiAssets'
 
 const streamOperation = (
@@ -70,7 +55,6 @@ const streamOperation = (
       target && options.streamService && options.capabilities[capability]
         ? null
         : httpError(404, 'NOT_FOUND', 'Backend stream route not found'),
-    errors: streamErrors,
     failure: httpError(500, 'INTERNAL', 'Backend stream operation failed'),
     handle,
   })

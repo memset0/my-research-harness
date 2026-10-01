@@ -26,7 +26,6 @@ import {
   BackendWarningMutationRequestSchema,
   BackendWarningMutationResponseSchema,
   BackendWarningsResponseSchema,
-  JournalRecordingError,
 } from '@memon/core'
 import {
   BACKEND_ANOMALIES_ROUTE,
@@ -53,23 +52,18 @@ import {
 } from '../http/paths.js'
 import {
   type BackendRoute,
-  type HttpError,
   httpError,
   type RouteContext,
   type RouteOperation,
 } from '../http/pipeline.js'
 import { readBoundedJsonRequest, writeError, writeJson } from '../http/respond.js'
 import type { QuerySpec } from '../http/route.js'
-import { BackendMutationError } from '../mutation-service.js'
-import { BackendProjectServiceError } from '../project-service.js'
 import {
   emptyOr,
   inventoryField,
   MUTATION_UNAVAILABLE,
   matches,
   mutating,
-  mutationConflict,
-  mutationErrorStatus,
   oneOf,
   op,
   optional,
@@ -86,18 +80,10 @@ const id = { id: resourceParam }
 
 // --- Project data reads ------------------------------------------------------
 
-function projectReadErrors(error: unknown): HttpError | null {
-  if (!(error instanceof BackendProjectServiceError)) return null
-  return error.code === 'INVALID_RESOURCE'
-    ? httpError(422, 'BAD_REQUEST', 'Backend Project resource is invalid')
-    : httpError(404, 'NOT_FOUND', 'Backend Project resource not found')
-}
-
 const projectRead = (handle: (ctx: RouteContext) => Promise<unknown>): RouteOperation =>
   op(read, {
     project: 'query',
     available: requireProject(({ options }) => options.projectService !== undefined),
-    errors: projectReadErrors,
     failure: httpError(500, 'INTERNAL', 'Backend Project read failed'),
     async handle(ctx) {
       writeJson(ctx.response, 200, await handle(ctx))
@@ -120,38 +106,6 @@ const projectDataRoute = (
 
 // --- Experiment create / delete / link / unlink --------------------------------
 
-function experimentMutationErrors(error: unknown): HttpError | null {
-  if (error instanceof JournalRecordingError) {
-    return httpError(
-      500,
-      error.code,
-      'Journal recording failed; inspect current documents before retrying.',
-    )
-  }
-  if (!(error instanceof BackendMutationError)) return null
-  if (error.code === 'CONFLICT') return mutationConflict(error)
-  const status = mutationErrorStatus(error)
-  return httpError(
-    status,
-    status === 409
-      ? 'CONFLICT'
-      : status === 400
-        ? 'BAD_REQUEST'
-        : status === 403
-          ? 'FORBIDDEN'
-          : status === 404
-            ? 'NOT_FOUND'
-            : error.code === 'PARTIAL'
-              ? 'PARTIAL'
-              : 'INTERNAL',
-    error.code === 'PARTIAL'
-      ? 'Mutation partially applied; inspect current documents before retrying.'
-      : status >= 500
-        ? 'Backend Experiment mutation failed'
-        : error.message,
-  )
-}
-
 const mutationAvailable = ({ options }: Parameters<NonNullable<RouteOperation['available']>>[0]) =>
   !options.mutationService || !options.capabilities.mutations ? MUTATION_UNAVAILABLE : null
 
@@ -159,7 +113,6 @@ const experimentMutation = (handle: RouteOperation['handle']): RouteOperation =>
   op(mutating, {
     project: 'query',
     available: mutationAvailable,
-    errors: experimentMutationErrors,
     failure: httpError(400, 'BAD_REQUEST', 'Experiment mutation request is invalid'),
     handle,
   })
@@ -250,19 +203,10 @@ const bindExperiment =
 
 // --- status / archive --------------------------------------------------------------
 
-function statusArchiveErrors(error: unknown): HttpError | null {
-  if (!(error instanceof BackendMutationError)) return null
-  if (error.code === 'CONFLICT') return mutationConflict(error)
-  return error.code === 'FORBIDDEN'
-    ? httpError(403, 'FORBIDDEN', error.message)
-    : httpError(404, 'NOT_FOUND', error.message)
-}
-
 const stateMutation = (kind: 'run' | 'experiment', field: 'status' | 'archive'): RouteOperation =>
   op(mutating, {
     project: 'query',
     available: mutationAvailable,
-    errors: statusArchiveErrors,
     failure: httpError(400, 'BAD_REQUEST', 'Mutation request is invalid'),
     async handle({ request, response, options, project, params }) {
       const raw = await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES)
@@ -302,17 +246,6 @@ const stateMutation = (kind: 'run' | 'experiment', field: 'status' | 'archive'):
 
 // --- warnings --------------------------------------------------------------------
 
-function warningErrors(error: unknown): HttpError | null {
-  if (!(error instanceof BackendMutationError)) return null
-  if (error.code === 'CONFLICT') return mutationConflict(error)
-  if (error.code === 'WARNINGS_SECTION_NOT_TABLE') return httpError(409, 'CONFLICT', error.message)
-  return error.code === 'FORBIDDEN'
-    ? httpError(403, 'FORBIDDEN', error.message)
-    : error.code === 'BAD_REQUEST'
-      ? httpError(400, 'BAD_REQUEST', error.message)
-      : httpError(404, 'NOT_FOUND', error.message)
-}
-
 const warningOperation = (
   kind: 'run' | 'experiment',
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -323,7 +256,6 @@ const warningOperation = (
       !options.mutationService || (requestMethod !== 'GET' && !options.capabilities.mutations)
         ? httpError(404, 'UNSUPPORTED_CAPABILITY', 'Warning service is unavailable')
         : null,
-    errors: warningErrors,
     failure: httpError(400, 'BAD_REQUEST', 'Warning request is invalid'),
     async handle({ request, response, options, project, params }) {
       const service = options.mutationService!
@@ -490,10 +422,6 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
       GET: op(shell, {
         project: 'query',
         available: requireProject(({ options }) => options.projectService !== undefined),
-        errors: (error) =>
-          error instanceof BackendProjectServiceError
-            ? httpError(404, 'NOT_FOUND', 'Backend Project resource not found')
-            : null,
         failure: httpError(500, 'INTERNAL', 'Backend Journal history read failed'),
         async handle({ response, options, project, search }) {
           const limit = search.get('limit')

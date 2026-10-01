@@ -1,0 +1,153 @@
+// The one error → HTTP mapping. Every error class a handler, body reader or
+// the pipeline can throw has exactly one mapper here, so the same domain error
+// answers with the same status and code on every route. Anything unmapped
+// falls back to the operation's declared `failure`.
+//
+// The mappers live in the HTTP layer rather than on the error classes: the
+// services (also called directly by Web) and the core-owned classes stay free
+// of HTTP concerns.
+
+import {
+  AmbiguousShareError,
+  BackendDocumentConflictResponseSchema,
+  type BackendErrorCode,
+  BackendWikiReviewOrderResponseSchema,
+  JournalRecordingError,
+  ShareNotFoundError,
+  WikiReviewError,
+  WikiReviewOrderError,
+} from '@memon/core'
+import { BackendActorContextError } from '../actor-context.js'
+import { BackendDocumentServiceError } from '../document-service.js'
+import { BackendGitServiceError } from '../git-service.js'
+import { BackendMutationError } from '../mutation-service.js'
+import { BackendProjectServiceError } from '../project-service.js'
+import { BackendStreamServiceError } from '../stream-service.js'
+import { BackendControlBodyError } from './respond.js'
+import { BackendStreamDeadlineError } from './streaming.js'
+
+/** A status plus either the standard error envelope or a route-specific body. */
+export interface HttpError {
+  status: number
+  code: BackendErrorCode
+  message: string
+  retryable?: boolean
+  /** Replaces the standard `{ error }` envelope (conflict state, review order). */
+  body?: unknown
+}
+
+export const httpError = (
+  status: number,
+  code: BackendErrorCode,
+  message: string,
+  retryable?: boolean,
+): HttpError => ({ status, code, message, ...(retryable ? { retryable } : {}) })
+
+/**
+ * Shared by every service resource error: a malformed or uncontainable
+ * identifier is the caller's bad request (400), a well-formed one that does
+ * not resolve is 404, and one that resolves to several resources is 409.
+ */
+function resourceError(code: string, noun: string): HttpError {
+  switch (code) {
+    case 'INVALID_RESOURCE':
+      return httpError(400, 'BAD_REQUEST', `Backend ${noun} resource is invalid`)
+    case 'AMBIGUOUS_RESOURCE':
+      return httpError(409, 'CONFLICT', `Backend ${noun} resource is ambiguous`)
+    default:
+      return httpError(404, 'NOT_FOUND', `Backend ${noun} resource not found`)
+  }
+}
+
+function mutationError(error: BackendMutationError): HttpError {
+  switch (error.code) {
+    case 'CONFLICT':
+      // Optimistic-lock conflict: the body carries the current document state.
+      return {
+        status: 409,
+        code: 'CONFLICT',
+        message: error.message,
+        body: BackendDocumentConflictResponseSchema.parse({
+          error: { code: 'CONFLICT', message: error.message },
+          currentMtime: error.current?.mtime,
+          currentHash: error.current?.hash,
+        }),
+      }
+    case 'BAD_STATE':
+    case 'WARNINGS_SECTION_NOT_TABLE':
+      return httpError(409, 'CONFLICT', error.message)
+    case 'BAD_REQUEST':
+      return httpError(400, 'BAD_REQUEST', error.message)
+    case 'FORBIDDEN':
+      return httpError(403, 'FORBIDDEN', error.message)
+    case 'PROJECT_NOT_FOUND':
+    case 'RESOURCE_NOT_FOUND':
+      return httpError(404, 'NOT_FOUND', error.message)
+    // PARTIAL: the change landed but its receipt or rollback did not. It is a
+    // server-side incomplete operation, never a success and never a conflict.
+    case 'PARTIAL':
+      return httpError(
+        500,
+        'PARTIAL',
+        'Mutation partially applied; inspect current documents before retrying.',
+      )
+    default:
+      return httpError(500, 'INTERNAL', 'Backend mutation failed')
+  }
+}
+
+type Mapper<E> = readonly [new (...args: never[]) => E, (error: E) => HttpError]
+
+const mapper = <E>(type: new (...args: never[]) => E, map: (error: E) => HttpError): Mapper<E> => [
+  type,
+  map,
+]
+
+/** Ordered: a subclass precedes its base class. */
+const MAPPERS: readonly Mapper<never>[] = [
+  mapper(BackendControlBodyError, (error) => httpError(error.status, error.code, error.message)),
+  mapper(BackendActorContextError, (error) =>
+    httpError(error.status, error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST', error.message),
+  ),
+  mapper(JournalRecordingError, (error) =>
+    httpError(
+      500,
+      error.code,
+      'Journal recording failed; inspect current documents before retrying.',
+    ),
+  ),
+  mapper(BackendMutationError, mutationError),
+  mapper(BackendProjectServiceError, (error) => resourceError(error.code, 'Project')),
+  mapper(BackendDocumentServiceError, (error) => resourceError(error.code, 'document')),
+  mapper(BackendGitServiceError, (error) =>
+    error.code === 'EXECUTION_UNAVAILABLE'
+      ? httpError(501, 'EXECUTION_UNAVAILABLE', 'No execution provider is configured')
+      : resourceError(error.code, 'Git'),
+  ),
+  mapper(BackendStreamServiceError, (error) => resourceError(error.code, 'stream')),
+  mapper(BackendStreamDeadlineError, () =>
+    httpError(504, 'UNAVAILABLE', 'Backend stream control deadline exceeded', true),
+  ),
+  mapper(WikiReviewOrderError, (error) => ({
+    status: 409,
+    code: 'CONFLICT',
+    message: error.message,
+    body: BackendWikiReviewOrderResponseSchema.parse({
+      error: { code: 'REVIEW_ORDER', message: error.message },
+      nextSha: error.nextSha,
+    }),
+  })),
+  mapper(WikiReviewError, () => httpError(404, 'NOT_FOUND', 'Backend wiki review is unavailable')),
+  mapper(ShareNotFoundError, () => httpError(404, 'NOT_FOUND', 'Share record not found')),
+  mapper(AmbiguousShareError, () =>
+    httpError(409, 'CONFLICT', 'Share record selection is ambiguous'),
+  ),
+] as unknown as readonly Mapper<never>[]
+
+/** The HTTP error for a known error class, or `null` for anything else. */
+export function toHttpError(error: unknown): HttpError | null {
+  for (const [type, map] of MAPPERS) {
+    if (error instanceof type) return (map as (error: unknown) => HttpError)(error)
+  }
+  return null
+}

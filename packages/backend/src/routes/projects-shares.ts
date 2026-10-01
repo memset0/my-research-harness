@@ -2,7 +2,6 @@
 // validation and Slurm status.
 
 import {
-  AmbiguousShareError,
   BACKEND_API_MAJOR,
   BackendMetadataSchema,
   BackendProjectDiscoverySchema,
@@ -14,7 +13,6 @@ import {
   BackendShareValidationRequestSchema,
   BackendShareValidationResponseSchema,
   BackendSlurmStatusSchema,
-  ShareNotFoundError,
 } from '@memon/core'
 import { authorizeBackendActor } from '../actor-context.js'
 import {
@@ -26,7 +24,7 @@ import {
   BACKEND_SLURM_STATUS_ROUTE,
   MAX_BACKEND_SHARE_VALIDATION_BODY_BYTES,
 } from '../http/paths.js'
-import { type BackendRoute, type HttpError, httpError } from '../http/pipeline.js'
+import { type BackendRoute, httpError } from '../http/pipeline.js'
 import {
   BackendControlBodyError,
   readBoundedJsonRequest,
@@ -48,31 +46,12 @@ import {
 
 const REQUEST_FAILED = httpError(500, 'INTERNAL', 'Backend request failed')
 
-function bodyErrors(error: unknown): HttpError | null {
-  return error instanceof BackendControlBodyError
-    ? httpError(error.status, error.code, error.message)
-    : null
-}
-
-function shareErrors(error: unknown): HttpError | null {
-  if (error instanceof BackendControlBodyError) {
-    return httpError(error.status, error.code, error.message)
-  }
-  if (error instanceof ShareNotFoundError)
-    return httpError(404, 'NOT_FOUND', 'Share record not found')
-  if (error instanceof AmbiguousShareError) {
-    return httpError(409, 'CONFLICT', 'Share record selection is ambiguous')
-  }
-  return null
-}
-
 const shareOperation = {
   project: 'path' as const,
   available: ({ options }: { options: { capabilities: { shares: boolean } } }) =>
     options.capabilities.shares
       ? null
       : httpError(404, 'UNSUPPORTED_CAPABILITY', 'Share service is unavailable'),
-  errors: shareErrors,
   failure: httpError(503, 'UNAVAILABLE', 'Backend share operation failed', true),
 }
 
@@ -165,7 +144,6 @@ export const PROJECT_SHARE_ROUTES: readonly BackendRoute[] = [
     operations: {
       POST: op(controlMutating, {
         project: 'path',
-        errors: bodyErrors,
         failure: REQUEST_FAILED,
         async handle({ request, response, options, project }) {
           const parsedBody = BackendShareValidationRequestSchema.safeParse(

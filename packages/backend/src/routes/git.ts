@@ -15,7 +15,6 @@ import {
   BackendGitSubmodulesResponseSchema,
   ResourceIdSchema,
 } from '@memon/core'
-import { BackendGitServiceError } from '../git-service.js'
 import {
   BACKEND_CODE_PREVIEW_ROUTE,
   BACKEND_GIT_BRANCHES_ROUTE,
@@ -31,12 +30,11 @@ import {
 } from '../http/paths.js'
 import {
   type BackendRoute,
-  type HttpError,
   httpError,
   type RouteContext,
   type RouteOperation,
 } from '../http/pipeline.js'
-import { BackendControlBodyError, readCommitMarkWriteRequest, writeJson } from '../http/respond.js'
+import { readCommitMarkWriteRequest, writeJson } from '../http/respond.js'
 import type { QuerySpec } from '../http/route.js'
 import {
   emptyOr,
@@ -56,19 +54,6 @@ import {
   submoduleField,
 } from './shared.js'
 
-function gitErrors(error: unknown): HttpError | null {
-  if (error instanceof BackendControlBodyError) {
-    return httpError(error.status, error.code, error.message)
-  }
-  if (!(error instanceof BackendGitServiceError)) return null
-  if (error.code === 'EXECUTION_UNAVAILABLE') {
-    return httpError(501, 'EXECUTION_UNAVAILABLE', 'No execution provider is configured')
-  }
-  return error.code === 'INVALID_RESOURCE'
-    ? httpError(400, 'BAD_REQUEST', 'Backend Git resource is invalid')
-    : httpError(404, 'NOT_FOUND', 'Backend Git resource not found')
-}
-
 const gitOperation = (
   method: 'GET' | 'PUT' | 'DELETE',
   project: 'path' | 'query',
@@ -82,7 +67,6 @@ const gitOperation = (
         options.capabilities.git &&
         (requestMethod === 'GET' || options.capabilities.mutations),
     ),
-    errors: gitErrors,
     failure: httpError(500, 'INTERNAL', 'Backend Git operation failed'),
     handle: (ctx) => handle(ctx, ctx.search.get('submodule') ?? undefined),
   })

@@ -20,8 +20,8 @@
 
 ## 5. Unified error mapping
 
-- [ ] 5.1 Add `http/errors.ts` with one `toHttpError` mapper per error class and route every operation's errors through it, removing the per-family mappers; verify with the Backend suite.
-- [ ] 5.2 Add/adjust Backend tests for each status change in design.md D5 (INVALID_RESOURCE 400 on Project reads, README and Journal history; 401 actor code `UNAUTHORIZED`; 413 oversized mutation body; status/archive and warning `BAD_STATE`/`BAD_REQUEST` statuses); verify they pass and that `grep -rn "422" packages/backend/src` finds no Backend status use.
+- [x] 5.1 Add `http/errors.ts` with one `toHttpError` mapper per error class and route every operation's errors through it, removing the per-family mappers; verify with the Backend suite.
+- [x] 5.2 Add/adjust Backend tests for each status change in design.md D5 (INVALID_RESOURCE 400 on Project reads, README and Journal history; 401 actor code `UNAUTHORIZED`; 413 oversized mutation body; status/archive and warning `BAD_STATE`/`BAD_REQUEST` statuses); verify they pass and that `grep -rn "422" packages/backend/src` finds no Backend status use.
 
 ## 6. Containment and byte streams
 

@@ -8,7 +8,7 @@
 // Project, and either write their response or throw a domain error.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { type ActorContext, type BackendErrorCode, ProjectNameSchema } from '@memon/core'
+import { type ActorContext, ProjectNameSchema } from '@memon/core'
 import {
   authorizeBackendActor,
   BACKEND_ACTOR_CONTEXT_HEADER,
@@ -16,6 +16,7 @@ import {
   decodeBackendActorContext,
 } from '../actor-context.js'
 import { authenticates } from './auth.js'
+import { type HttpError, httpError, toHttpError } from './errors.js'
 import type { BackendHandler, ResolvedBackendOptions } from './options.js'
 import { BACKEND_API_PREFIX } from './paths.js'
 import { writeError, writeJson } from './respond.js'
@@ -30,22 +31,7 @@ import {
 
 export type ProjectName = ReturnType<typeof ProjectNameSchema.parse>
 
-/** A status plus either the standard error envelope or a route-specific body. */
-export interface HttpError {
-  status: number
-  code: BackendErrorCode
-  message: string
-  retryable?: boolean
-  /** Replaces the standard `{ error }` envelope (conflict state, review order). */
-  body?: unknown
-}
-
-export const httpError = (
-  status: number,
-  code: BackendErrorCode,
-  message: string,
-  retryable?: boolean,
-): HttpError => ({ status, code, message, ...(retryable ? { retryable } : {}) })
+export { type HttpError, httpError } from './errors.js'
 
 export interface RouteContext {
   request: IncomingMessage
@@ -71,9 +57,7 @@ export interface RouteOperation extends RouteOperationPolicy {
   project?: 'query' | 'path' | 'path-or-query'
   /** Capability / service gate, evaluated before the actor is decoded. */
   available?: (gate: GateContext) => HttpError | null
-  /** Maps errors the handler throws; `null` falls through to `failure`. */
-  errors?: (error: unknown) => HttpError | null
-  /** Response for an error nothing classified. */
+  /** Response for an error `toHttpError` does not classify. */
   failure: HttpError
   handle: (ctx: RouteContext) => Promise<void>
 }
@@ -221,12 +205,7 @@ export function createRouteHandler(
         })
       } catch (error) {
         if (!(error instanceof BackendActorContextError)) throw error
-        writeError(
-          response,
-          error.status,
-          error.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST',
-          error.message,
-        )
+        writeHttpError(response, toHttpError(error)!)
         return
       }
     }
@@ -258,7 +237,7 @@ export function createRouteHandler(
         if (!response.destroyed && !response.writableEnded) response.end()
         return
       }
-      writeHttpError(response, operation.errors?.(error) ?? operation.failure)
+      writeHttpError(response, toHttpError(error) ?? operation.failure)
     }
   }
 }

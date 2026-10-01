@@ -162,7 +162,10 @@ Status changes (all others unchanged):
 | any route | literal template path (e.g. `/projects/[project]/shares`) | resolved the route with no parameters (that path answered instance metadata) | bracket text is a validated parameter: 404 when invalid, otherwise an ordinary lookup |
 
 5xx messages are normalized ("Backend mutation failed"); 4xx messages for the same class are the
-class's single message. Web was checked read-only: no client branch depends on 422 or 404 from
+class's single message (for example Wiki-review document errors and README lookups now use the
+generic document / Project resource messages instead of branch-specific text). Covered by
+`error-mapping.test.ts` (one case per error class plus wire tests for every row above except the
+unreachable 401 actor case, which is unit-tested). Web was checked read-only: no client branch depends on 422 or 404 from
 these Backend routes (Web's 422 checks are for `ARCHIVE_RUNNING_FORBIDDEN` and for the standalone
 results route, which maps the service error itself).
 

@@ -17,13 +17,9 @@ import {
   BackendWikiInventoryResponseSchema,
   BackendWikiPagesResponseSchema,
   BackendWikiReviewMarkRequestSchema,
-  BackendWikiReviewOrderResponseSchema,
   BackendWikiReviewResponseSchema,
   BackendWikiWriteResponseSchema,
-  JournalRecordingError,
   ResourceIdSchema,
-  WikiReviewError,
-  WikiReviewOrderError,
 } from '@memon/core'
 import { BackendDocumentServiceError } from '../document-service.js'
 import {
@@ -44,27 +40,21 @@ import {
 } from '../http/paths.js'
 import {
   type BackendRoute,
-  type HttpError,
   httpError,
   type RouteContext,
   type RouteOperation,
 } from '../http/pipeline.js'
 import {
-  BackendControlBodyError,
   readBoundedJsonRequest,
   readCodeReviewPatchRequest,
   readDocumentWriteRequest,
   writeJson,
 } from '../http/respond.js'
-import { BackendMutationError } from '../mutation-service.js'
-import { BackendProjectServiceError } from '../project-service.js'
 import {
   codeReviewIdParam,
   controlShell,
   inventoryField,
   mutating,
-  mutationConflict,
-  mutationErrorStatus,
   op,
   projectQuery,
   publishJournalChange,
@@ -83,51 +73,6 @@ import {
   writeDocumentResult,
 } from './shared.js'
 
-function documentErrors(error: unknown): HttpError | null {
-  if (error instanceof JournalRecordingError) {
-    return httpError(
-      500,
-      error.code,
-      'Journal recording failed; inspect current documents before retrying.',
-    )
-  }
-  if (error instanceof BackendControlBodyError) {
-    return httpError(error.status, error.code, error.message)
-  }
-  if (error instanceof BackendDocumentServiceError) {
-    return error.code === 'INVALID_RESOURCE'
-      ? httpError(400, 'BAD_REQUEST', 'Backend document resource is invalid')
-      : error.code === 'AMBIGUOUS_RESOURCE'
-        ? httpError(409, 'CONFLICT', 'Backend document resource is ambiguous')
-        : httpError(404, 'NOT_FOUND', 'Backend document resource not found')
-  }
-  if (error instanceof BackendMutationError) {
-    if (error.code === 'CONFLICT') return mutationConflict(error)
-    const status = mutationErrorStatus(error)
-    return httpError(
-      status,
-      status === 400
-        ? 'BAD_REQUEST'
-        : status === 403
-          ? 'FORBIDDEN'
-          : status === 404
-            ? 'NOT_FOUND'
-            : error.code === 'PARTIAL'
-              ? 'PARTIAL'
-              : 'INTERNAL',
-      error.code === 'PARTIAL'
-        ? 'Mutation partially applied; inspect current documents before retrying.'
-        : status >= 500
-          ? 'Backend README mutation failed'
-          : error.message,
-    )
-  }
-  if (error instanceof BackendProjectServiceError) {
-    return httpError(404, 'NOT_FOUND', 'Backend README resource not found')
-  }
-  return null
-}
-
 const documentOperation = (
   method: 'GET' | 'PUT' | 'PATCH',
   handle: RouteOperation['handle'],
@@ -141,7 +86,6 @@ const documentOperation = (
         (!needs.project || options.projectService !== undefined) &&
         (!needs.mutation || options.mutationService !== undefined),
     ),
-    errors: documentErrors,
     failure: httpError(500, 'INTERNAL', 'Backend document operation failed'),
     handle,
   })
@@ -202,32 +146,6 @@ const resourceReadme = (kind: 'run' | 'experiment', method: 'GET' | 'PUT') =>
 
 // --- Wiki review -------------------------------------------------------------------
 
-function wikiReviewErrors(error: unknown): HttpError | null {
-  if (error instanceof WikiReviewOrderError) {
-    return {
-      status: 409,
-      code: 'CONFLICT',
-      message: error.message,
-      body: BackendWikiReviewOrderResponseSchema.parse({
-        error: { code: 'REVIEW_ORDER', message: error.message },
-        nextSha: error.nextSha,
-      }),
-    }
-  }
-  if (error instanceof WikiReviewError) {
-    return httpError(404, 'NOT_FOUND', 'Backend wiki review is unavailable')
-  }
-  if (error instanceof BackendDocumentServiceError) {
-    return error.code === 'INVALID_RESOURCE'
-      ? httpError(400, 'BAD_REQUEST', error.message)
-      : httpError(404, 'NOT_FOUND', error.message)
-  }
-  if (error instanceof BackendControlBodyError) {
-    return httpError(error.status, error.code, error.message)
-  }
-  return null
-}
-
 // Shell class: verification is an owner judgement, never a viewer's. Review
 // marks record human trust in `.memon/`, not Project content.
 const wikiReviewOperation = (
@@ -237,7 +155,6 @@ const wikiReviewOperation = (
   op(policy, {
     project: 'query',
     available: requireProject(({ options }) => options.documentService !== undefined),
-    errors: wikiReviewErrors,
     failure: httpError(400, 'BAD_REQUEST', 'Backend wiki review request is invalid'),
     handle,
   })

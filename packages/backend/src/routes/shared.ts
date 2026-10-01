@@ -29,7 +29,6 @@ import {
   type RouteOperationPolicy,
   schemaCheck,
 } from '../http/route.js'
-import type { BackendMutationError } from '../mutation-service.js'
 
 export { emptyOr, integerIn, matches, oneOf, schemaCheck }
 
@@ -165,37 +164,6 @@ export function publishJournalChange(eventStream: BackendEventStream, project: s
 }
 
 /** 409 body carrying the current document state for an optimistic-lock conflict. */
-export function mutationConflict(error: BackendMutationError): HttpError {
-  return {
-    status: 409,
-    code: 'CONFLICT',
-    message: error.message,
-    body: BackendDocumentConflictResponseSchema.parse({
-      error: { code: 'CONFLICT', message: error.message },
-      currentMtime: error.current?.mtime,
-      currentHash: error.current?.hash,
-    }),
-  }
-}
-
-export function mutationErrorStatus(error: BackendMutationError): 400 | 403 | 404 | 409 | 500 {
-  switch (error.code) {
-    case 'BAD_STATE':
-      return 409
-    case 'BAD_REQUEST':
-      return 400
-    case 'FORBIDDEN':
-      return 403
-    case 'PROJECT_NOT_FOUND':
-    case 'RESOURCE_NOT_FOUND':
-      return 404
-    // PARTIAL: the change landed but its receipt or rollback did not. It is a
-    // server-side incomplete operation, never a success and never a conflict.
-    default:
-      return 500
-  }
-}
-
 export const MUTATION_UNAVAILABLE = httpError(
   404,
   'UNSUPPORTED_CAPABILITY',
