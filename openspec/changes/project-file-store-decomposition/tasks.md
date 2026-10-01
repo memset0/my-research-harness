@@ -10,7 +10,7 @@
 
 ## 3. Extract the scheduler
 
-- [ ] 3.1 Move the shared state shapes to `project-file-store/state.ts` and the queue, promotion, aging, dispatch, write-slot and backoff logic to `project-file-store/scheduler.ts`; verify the core suite and typecheck pass
+- [x] 3.1 Move the shared state shapes to `project-file-store/state.ts` and the queue, promotion, aging, dispatch, write-slot and backoff logic to `project-file-store/scheduler.ts`; verify the core suite and typecheck pass
 
 ## 4. Extract the facade and keep a re-export
 

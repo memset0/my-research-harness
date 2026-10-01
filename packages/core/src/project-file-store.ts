@@ -60,7 +60,6 @@ import {
   getProjectFileCache,
   isPersistedOperation,
   type PersistedOperation,
-  type ProjectFileCache,
   projectFileTtlMs,
 } from './project-file-cache.js'
 import {
@@ -75,7 +74,6 @@ import {
   DEFAULT_FILE_ACCESS_OPTIONS,
   type FileOperationGroupState,
   type FileOperationMetrics,
-  type FileOperationName,
   type FileOperationOrigin,
   isHumanFileOperationReason,
   type ObservedOperation,
@@ -85,7 +83,6 @@ import {
 import {
   containmentError,
   mountUnavailableError,
-  queueFullError,
   readOnlyError,
 } from './project-file-store/errors.js'
 import {
@@ -109,6 +106,17 @@ import {
   statObservation,
   toNegativeOrThrow,
 } from './project-file-store/observation.js'
+import {
+  FileOperationScheduler,
+  failureBackoffMs,
+  successIntervalMs,
+} from './project-file-store/scheduler.js'
+import type {
+  AttentionLease,
+  PersistScope,
+  ScheduledTask,
+  StoreEntry,
+} from './project-file-store/state.js'
 import { executeProjectIo, getProjectIo, type MutationMethod, ProjectStats } from './project-io.js'
 import { formatIsoLocal } from './time.js'
 import type { FileAccessOptions } from './types.js'
@@ -136,107 +144,10 @@ export {
 } from './project-file-store/contract.js'
 export type { FileAccessOptions } from './types.js'
 
-// ---------------------------------------------------------------------------
-// Internal state shapes
-// ---------------------------------------------------------------------------
-
-interface StoreEntry {
-  key: string
-  root: string
-  group: StorageGroup
-  operation: ObservedOperation
-  path: string
-  /** Fingerprint of the last successful observation; survives content eviction. */
-  fingerprint: string | null
-  /** Bumps only when the observed fingerprint changes. */
-  observationVersion: number
-  completedAtWall: number | null
-  completedAtMono: number | null
-  intervalMs: number
-  dueAtMono: number
-  failures: number
-  /**
-   * Current error CODE (never a message or path), or null when the last
-   * attempt succeeded. `getProjectFileStatus` is serialized into a browser
-   * response header, so it must never carry roots, paths or messages.
-   */
-  error: string | null
-  /** Hard error to replay while no successful observation exists. */
-  cachedError: NodeJS.ErrnoException | null
-  attentionGeneration: number
-  mutationGeneration: number
-  lastAttentionAtWall: number
-  /**
-   * An explicit refresh (or a write) asked for re-verification and no
-   * physical observation has answered it yet. A row restored from the
-   * persistent cache is not that answer, so it must not cancel the request.
-   */
-  refreshRequested: boolean
-  /**
-   * Persistent-cache scope for this key, or null when this project is not
-   * persisted. Resolved once, when the entry is first demanded.
-   */
-  persist: PersistScope | null
-  /**
-   * True once the snapshot-backed memory cache has been consulted (or has
-   * deliberately been made irrelevant by an invalidation). Eviction may
-   * permit another lookup; invalidation must not resurrect an old answer.
-   */
-  persistLoaded: boolean
-  persistLoad: Promise<void> | null
-}
-
-interface ScheduledTask {
-  key: string
-  entry: StoreEntry
-  group: StorageGroup
-  operation: FileOperationName
-  human: boolean
-  origin: FileOperationOrigin
-  enqueuedAtMono: number
-  startedAtMono: number | null
-  attentionGeneration: number
-  mutationGeneration: number
-  state: 'queued' | 'running'
-  runner: () => Promise<Observation>
-  promise: Promise<Observation>
-  resolve: (observation: Observation) => void
-  reject: (error: unknown) => void
-}
-
-interface StorageGroup {
-  name: string
-  active: number
-  queue: ScheduledTask[]
-  tasks: Map<string, ScheduledTask>
-  /** Mutations waiting for a slot; granted before queued reads. */
-  writeWaiters: (() => void)[]
-}
-
-interface AttentionLease {
-  root: string
-  expiresAtWall: number
-  keys: Set<string>
-}
-
-/**
- * Everything needed to reach a project's snapshot-backed observations: the
- * memory cache and stable namespace for configured root plus mount identity.
- * A root remapped to different storage resolves a different namespace, so
- * observations of the previous storage can never be reused.
- */
-interface PersistScope {
-  cache: ProjectFileCache
-  namespaceId: string
-  mount: MountIdentity
-}
-
 const MAX_CACHED_CONTENT_BYTES = 128 * 1024 * 1024
 const MAX_CACHE_ENTRIES = 50_000
 const MAX_ATTENTION_KEYS = 4_096
 const ATTENTION_SWEEP_INTERVAL_MS = 1_000
-/** Pending (not yet dispatched) operations retained per storage group. */
-const MAX_QUEUED_PER_GROUP = 2_048
 /** Mount-table snapshot lifetime; the read is OS-local, never remote. */
 const MOUNT_TABLE_TTL_MS = 1_000
 
@@ -263,9 +174,17 @@ class ProjectFileStore {
     },
   })
   private readonly entries = new Map<string, StoreEntry>()
-  private readonly groups = new Map<string, StorageGroup>()
   private readonly attentions = new Map<string, AttentionLease>()
   private readonly metrics = new MetricsRegistry()
+  private readonly scheduler = new FileOperationScheduler({
+    options: () => this.options,
+    metrics: this.metrics,
+    cached: (key) => this.observations.get(key),
+    succeeded: (entry, task, observation, completedMono) =>
+      this.applySuccess(entry, task, observation, completedMono),
+    failed: (entry, error) => this.applyFailure(entry, error),
+    executed: () => this.enforceMemoryBounds(),
+  })
   private cachedContentBytes = 0
   private lastAttentionSweepWall = 0
   /** Resolved real path of each project root, observed once per process. */
@@ -320,15 +239,6 @@ class ProjectFileStore {
 
   // -- context / entries ---------------------------------------------------
 
-  private groupFor(name: string): StorageGroup {
-    let group = this.groups.get(name)
-    if (group === undefined) {
-      group = { name, active: 0, queue: [], tasks: new Map(), writeWaiters: [] }
-      this.groups.set(name, group)
-    }
-    return group
-  }
-
   private entryFor(
     context: ProjectFileContext,
     operation: ObservedOperation,
@@ -338,7 +248,7 @@ class ProjectFileStore {
     const key = `${root}\u0000${operation}\u0000${absolutePath}`
     let entry = this.entries.get(key)
     if (entry === undefined) {
-      const group = this.groupFor(context.storageGroup ?? 'default')
+      const group = this.scheduler.groupFor(context.storageGroup ?? 'default')
       const now = monotonic()
       entry = {
         key,
@@ -490,7 +400,7 @@ class ProjectFileStore {
       if (now < entry.dueAtMono) return observation
       // Due but usable: answer from cache immediately and verify in the
       // background. This is what keeps warm requests off the disk entirely.
-      void this.schedule(entry, operation, origin, human, runner).catch(() => undefined)
+      void this.scheduler.schedule(entry, operation, origin, human, runner).catch(() => undefined)
       return observation
     }
 
@@ -499,7 +409,7 @@ class ProjectFileStore {
       throw entry.cachedError
     }
 
-    return await this.schedule(entry, operation, origin, human, runner)
+    return await this.scheduler.schedule(entry, operation, origin, human, runner)
   }
 
   // -- persistence ---------------------------------------------------------
@@ -657,173 +567,6 @@ class ProjectFileStore {
     })
   }
 
-  private schedule(
-    entry: StoreEntry,
-    operation: FileOperationName,
-    origin: FileOperationOrigin,
-    human: boolean,
-    runner: () => Promise<Observation>,
-  ): Promise<Observation> {
-    const group = entry.group
-    const existing = group.tasks.get(entry.key)
-    if (existing !== undefined && existing.mutationGeneration === entry.mutationGeneration) {
-      if (human && !existing.human) {
-        // Promote the pending automatic task instead of adding a second one.
-        existing.human = true
-        existing.origin = 'human'
-        existing.attentionGeneration = entry.attentionGeneration
-      }
-      this.metrics.recordCoalesced(group.name, operation, origin)
-      return existing.promise
-    }
-
-    // Bounded pending work: in-flight operations are capped by the group
-    // concurrency, but a blocked mount would otherwise let the queue grow
-    // without limit. Human demand may displace the oldest automatic task;
-    // automatic demand is refused outright (an honest error, never a
-    // fabricated missing result).
-    if (group.queue.length >= MAX_QUEUED_PER_GROUP) {
-      const displaced = human ? this.takeOldestAutomatic(group) : undefined
-      if (displaced === undefined) {
-        return Promise.reject(queueFullError(entry.path))
-      }
-      this.settle(displaced, null, queueFullError(displaced.entry.path))
-    }
-
-    let resolveFn!: (observation: Observation) => void
-    let rejectFn!: (error: unknown) => void
-    const promise = new Promise<Observation>((res, rej) => {
-      resolveFn = res
-      rejectFn = rej
-    })
-    const task: ScheduledTask = {
-      key: entry.key,
-      entry,
-      group,
-      operation,
-      human,
-      origin,
-      enqueuedAtMono: monotonic(),
-      startedAtMono: null,
-      attentionGeneration: entry.attentionGeneration,
-      mutationGeneration: entry.mutationGeneration,
-      state: 'queued',
-      runner,
-      promise,
-      resolve: resolveFn,
-      reject: rejectFn,
-    }
-    group.tasks.set(entry.key, task)
-    group.queue.push(task)
-    this.dispatch(group)
-    return promise
-  }
-
-  /** Automatic work older than this is treated as human-priority (anti-starvation). */
-  private agingMs(): number {
-    return Math.max(1_000, this.options.heartbeatMs * 5)
-  }
-
-  /** Remove the oldest queued automatic task so a human caller can enqueue. */
-  private takeOldestAutomatic(group: StorageGroup): ScheduledTask | undefined {
-    let index = -1
-    let oldest = Number.POSITIVE_INFINITY
-    for (let i = 0; i < group.queue.length; i += 1) {
-      const task = group.queue[i]!
-      if (task.human) continue
-      if (task.enqueuedAtMono < oldest) {
-        oldest = task.enqueuedAtMono
-        index = i
-      }
-    }
-    if (index < 0) return undefined
-    return group.queue.splice(index, 1)[0]
-  }
-
-  private takeNext(group: StorageGroup): ScheduledTask | undefined {
-    const now = monotonic()
-    const aging = this.agingMs()
-    let bestIndex = -1
-    let bestPriority = -1
-    let bestEnqueued = Number.POSITIVE_INFINITY
-    for (let i = 0; i < group.queue.length; i += 1) {
-      const task = group.queue[i]!
-      const priority = task.human || now - task.enqueuedAtMono >= aging ? 1 : 0
-      if (
-        priority > bestPriority ||
-        (priority === bestPriority && task.enqueuedAtMono < bestEnqueued)
-      ) {
-        bestIndex = i
-        bestPriority = priority
-        bestEnqueued = task.enqueuedAtMono
-      }
-    }
-    if (bestIndex < 0) return undefined
-    return group.queue.splice(bestIndex, 1)[0]
-  }
-
-  private dispatch(group: StorageGroup): void {
-    while (group.queue.length > 0 && group.active < this.options.concurrency) {
-      const task = this.takeNext(group)
-      if (task === undefined) return
-      const entry = task.entry
-      const now = monotonic()
-      const observation = this.observations.get(entry.key)
-      if (
-        observation !== undefined &&
-        now < entry.dueAtMono &&
-        entry.mutationGeneration === task.mutationGeneration
-      ) {
-        // Another completion already satisfied this key while it waited.
-        task.startedAtMono = now
-        this.metrics.recordCacheHit(group.name, task.operation, task.origin)
-        this.settle(task, observation, null)
-        continue
-      }
-      group.active += 1
-      void this.execute(task)
-    }
-  }
-
-  private async execute(task: ScheduledTask): Promise<void> {
-    const entry = task.entry
-    const group = task.group
-    task.state = 'running'
-    task.startedAtMono = monotonic()
-    const waitMs = task.startedAtMono - task.enqueuedAtMono
-    try {
-      const observation = await task.runner()
-      const completedMono = monotonic()
-      this.applySuccess(entry, task, observation, completedMono)
-      this.metrics.recordOperation(group.name, task.operation, task.origin, {
-        waitMs,
-        execMs: completedMono - task.startedAtMono,
-        bytes: observation.bytes,
-        error: false,
-      })
-      this.release(group)
-      this.settle(task, observation, null)
-    } catch (error) {
-      const completedMono = monotonic()
-      this.applyFailure(entry, error as NodeJS.ErrnoException)
-      this.metrics.recordOperation(group.name, task.operation, task.origin, {
-        waitMs,
-        execMs: completedMono - task.startedAtMono,
-        bytes: 0,
-        error: true,
-      })
-      this.release(group)
-      this.settle(task, null, error)
-    }
-    this.enforceMemoryBounds()
-  }
-
-  private settle(task: ScheduledTask, observation: Observation | null, error: unknown): void {
-    if (task.group.tasks.get(task.key) === task) task.group.tasks.delete(task.key)
-    if (observation !== null) task.resolve(observation)
-    else task.reject(error)
-  }
-
   private applySuccess(
     entry: StoreEntry,
     task: ScheduledTask,
@@ -854,18 +597,13 @@ class ProjectFileStore {
     entry.completedAtWall = Date.now()
     entry.completedAtMono = completedMono
 
-    const [base, cap] = this.intervalRange(entry)
-    if (first || changed) {
-      entry.intervalMs = base
-    } else if (task.attentionGeneration === entry.attentionGeneration) {
-      entry.intervalMs = Math.min(
-        Math.max(entry.intervalMs, base) * this.options.backoffFactor,
-        cap,
-      )
-    } else {
-      // A newer human reset happened while this automatic check ran.
-      entry.intervalMs = base
-    }
+    entry.intervalMs = successIntervalMs(
+      entry.intervalMs,
+      this.intervalRange(entry),
+      this.options.backoffFactor,
+      first || changed,
+      task.attentionGeneration === entry.attentionGeneration,
+    )
     entry.dueAtMono = completedMono + entry.intervalMs
 
     // Only now, with the observation accepted as the current state, does it
@@ -877,10 +615,7 @@ class ProjectFileStore {
     entry.failures += 1
     entry.error = typeof error.code === 'string' && error.code.length > 0 ? error.code : 'EUNKNOWN'
     if (!this.observations.has(entry.key)) entry.cachedError = error
-    const backoff = Math.min(
-      this.options.failureMinMs * this.options.backoffFactor ** (entry.failures - 1),
-      this.options.failureMaxMs,
-    )
+    const backoff = failureBackoffMs(this.options, entry.failures)
     // Successful observation time is untouched: a failure never advances it.
     entry.dueAtMono = monotonic() + backoff
   }
@@ -1052,7 +787,7 @@ class ProjectFileStore {
     let queued = 0
     let checking = 0
     const scopedKeys = scoped === null ? null : new Set(scoped.map((entry) => entry.key))
-    for (const group of this.groups.values()) {
+    for (const group of this.scheduler.groups.values()) {
       for (const task of group.tasks.values()) {
         if (task.entry.root !== normalizedRoot) continue
         if (scopedKeys !== null && !scopedKeys.has(task.key)) continue
@@ -1085,7 +820,7 @@ class ProjectFileStore {
     let queued = 0
     let oldestWaitingAgeMs: number | null = null
     const groups: FileOperationGroupState[] = []
-    for (const group of this.groups.values()) {
+    for (const group of this.scheduler.groups.values()) {
       let groupQueued = group.writeWaiters.length
       let groupOldest: number | null = null
       for (const task of group.queue) {
@@ -1369,9 +1104,9 @@ class ProjectFileStore {
     }
     for (const path of paths) this.invalidate(context.root, path)
 
-    const group = this.groupFor(this.groupName(context))
+    const group = this.scheduler.groupFor(this.groupName(context))
     const enqueuedAtMono = monotonic()
-    await this.acquire(group)
+    await this.scheduler.acquire(group)
     const startedAtMono = monotonic()
     try {
       // Symlink containment for the real targets, inside the slot: a linked
@@ -1395,38 +1130,12 @@ class ProjectFileStore {
       throw error
     } finally {
       for (const path of paths) this.invalidate(context.root, path)
-      this.release(group)
+      this.scheduler.release(group)
     }
   }
 
   adoptWrite(context: ProjectFileContext, absolutePath: string, bytes: Buffer): void {
     this.adoptWrittenContent(context.root, absolutePath, bytes)
-  }
-
-  /**
-   * Take a slot in the group budget for a physical mutation. Mutations are
-   * never coalesced, so they queue on their own waiter list and are granted
-   * ahead of pending reads when a slot frees.
-   */
-  private acquire(group: StorageGroup): Promise<void> {
-    if (group.active < this.options.concurrency) {
-      group.active += 1
-      return Promise.resolve()
-    }
-    return new Promise<void>((grant) => {
-      group.writeWaiters.push(grant)
-    })
-  }
-
-  /** Release one slot, handing it to a waiting mutation before queued reads. */
-  private release(group: StorageGroup): void {
-    const waiter = group.writeWaiters.shift()
-    if (waiter !== undefined) {
-      waiter()
-      return
-    }
-    group.active -= 1
-    this.dispatch(group)
   }
 }
 
