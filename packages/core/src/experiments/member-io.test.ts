@@ -16,12 +16,11 @@ vi.mock('../discovery/discover.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../discovery/discover.js')>()
   return { ...original, discoverRuns: vi.fn(original.discoverRuns) }
 })
-vi.mock('../cli/scan.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../cli/scan.js')>()
+vi.mock('../project-scan/scan.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../project-scan/scan.js')>()
   return { ...original, scanProjectRoot: vi.fn(original.scanProjectRoot) }
 })
 
-import { scanProjectRoot } from '../cli/scan.js'
 import { listDeprecatedRunIds } from '../discovery/deprecation.js'
 import { discoverRuns } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
@@ -30,6 +29,7 @@ import {
   projectFs,
   withProjectFileContext,
 } from '../project-file-store.js'
+import { scanProjectRoot } from '../project-scan/scan.js'
 import { readExperimentDoc } from './discover.js'
 import { resolveDeclaredRunPath } from './run-path.js'
 

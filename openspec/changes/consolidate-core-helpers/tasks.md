@@ -37,8 +37,8 @@
 
 ## 8. Project-scan rename (D8)
 
-- [ ] 8.1 Move `packages/core/src/cli/` to `project-scan/` and update imports
-- [ ] 8.2 Widen `package-boundary.test.ts` to scan every source file
+- [x] 8.1 Move `packages/core/src/cli/` to `project-scan/` and update imports
+- [x] 8.2 Widen `package-boundary.test.ts` to scan every source file
 
 ## 9. Verification
 

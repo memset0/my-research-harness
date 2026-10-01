@@ -5,8 +5,29 @@ import { describe, expect, it } from 'vitest'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
+/** Web, React and human-auth modules neither Backend nor Core may import. */
+const FORBIDDEN_IMPORT =
+  /^(?:next(?:\/|$)|react(?:-dom)?(?:\/|$)|@memon\/web(?:\/|$))|apps\/web|human-auth|basic-auth/
+
+/** Every non-test TypeScript source file under `root`. */
+async function sourceFiles(root: string): Promise<string[]> {
+  const out: string[] = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isDirectory()) out.push(...(await sourceFiles(path)))
+    else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(path)
+  }
+  return out
+}
+
+/** Module specifiers of static imports, re-exports and dynamic imports. */
+function importSpecifiers(source: string): string[] {
+  const pattern = /(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)['"]([^'"]+)['"]/gm
+  return [...source.matchAll(pattern)].map((match) => match[1]!)
+}
+
 describe('Backend package boundary', () => {
-  it('publishes one independent dist entry with no Web or human-auth dependency', async () => {
+  it('publishes one independent dist entry with no Web or human-auth dependency in any Backend or Core source file', async () => {
     const packageJson = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as {
       main?: string
       files?: string[]
@@ -21,12 +42,17 @@ describe('Backend package boundary', () => {
       expect.arrayContaining(['next', 'react', '@memon/web']),
     )
 
-    const source = await Promise.all(
-      ['index.ts', 'server.ts', 'project-service.ts'].map((name) =>
-        readFile(join(packageRoot, 'src', name), 'utf8'),
-      ),
-    )
-    expect(source.join('\n')).not.toMatch(/(?:from\s+['"]next|apps\/web|human-auth|basic-auth)/)
+    for (const root of [join(packageRoot, 'src'), join(packageRoot, '..', 'core', 'src')]) {
+      const files = await sourceFiles(root)
+      expect(files.length).toBeGreaterThan(10)
+      const offenders: string[] = []
+      for (const file of files) {
+        for (const specifier of importSpecifiers(await readFile(file, 'utf8'))) {
+          if (FORBIDDEN_IMPORT.test(specifier)) offenders.push(`${file}: ${specifier}`)
+        }
+      }
+      expect(offenders).toEqual([])
+    }
   })
 
   it('ships no retired daemon, distribution, update or start-guard lifecycle', async () => {

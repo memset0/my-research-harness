@@ -7,14 +7,6 @@ export type { AtomicWriteFs, WriteFileAtomicOptions } from './atomic-write.js'
 export { writeFileAtomic } from './atomic-write.js'
 export * from './backend-negotiation.js'
 export * from './backend-protocol.js'
-export type { LoadCliContextInput, LoadCliContextResult } from './cli/context.js'
-// CLI helpers (callable from the @memon/cli package and from skills written
-// in TypeScript that link directly against @memon/core).
-export { CliContextError, loadCliContext } from './cli/context.js'
-export type { RunTargetOptions } from './cli/resolve-run.js'
-export { RunTargetIndex, resolveRunTarget } from './cli/resolve-run.js'
-export type { IndexedRun, ProjectSnapshot, ScanOptions } from './cli/scan.js'
-export { ScanError, scanProjectRoot } from './cli/scan.js'
 export type { ParsedCodeReview, SplitCodeReview } from './code-review/parse.js'
 export {
   deriveCompletion,
@@ -312,6 +304,13 @@ export {
 } from './migrations/v6-to-v7.js'
 export * from './project-file-store.js'
 export * from './project-resource.js'
+// Project scanning and Run target resolution (CLI, Backend and Web).
+export type { LoadCliContextInput, LoadCliContextResult } from './project-scan/context.js'
+export { CliContextError, loadCliContext } from './project-scan/context.js'
+export type { RunTargetOptions } from './project-scan/resolve-run.js'
+export { RunTargetIndex, resolveRunTarget } from './project-scan/resolve-run.js'
+export type { IndexedRun, ProjectSnapshot, ScanOptions } from './project-scan/scan.js'
+export { ScanError, scanProjectRoot } from './project-scan/scan.js'
 export { parseArtifacts } from './readme/artifacts.js'
 export type {
   PatchableRunFrontMatterKey,
