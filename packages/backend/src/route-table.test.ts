@@ -268,5 +268,6 @@ describe('declarative Backend route table', () => {
  * still existed and the decisions were proven identical to theirs (commit
  * "introduce the declarative route table and prove parity with the legacy
  * tables"). A table change that alters any decision changes this digest.
+ * Re-pinned when `/runs` gained its `limit` / `cursor` page parameters.
  */
-const ROUTE_DECISION_DIGEST = '91fcb9ffa723f01e3fd99aea9f01e58ef7f5b5189f85010cfdf51a6b77aa8c91'
+const ROUTE_DECISION_DIGEST = '8544990c6b97b90a2e78779b0cd807fe9d76ac4ce4051c7377ae4ee7c882462f'

@@ -13,6 +13,7 @@ import {
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
   type BackendRunSummary,
+  BackendRunSummarySchema,
   BackendRunsResponseSchema,
   buildExperimentDocumentView,
   buildExperimentRecord,
@@ -111,11 +112,27 @@ export interface InventoryListOptions {
   inventoryOnly?: boolean
 }
 
+export interface RunPageOptions extends InventoryListOptions {
+  /** Page size (1–1000); defaults to `DEFAULT_RUN_PAGE_SIZE`. */
+  limit?: number
+  /** Opaque cursor from a previous page's `nextCursor`. */
+  cursor?: string
+}
+
+export const DEFAULT_RUN_PAGE_SIZE = 200
+export const MAX_RUN_PAGE_SIZE = 1000
+
+/** A Run page: the existing summary rows plus the cursor of the next page. */
+export const BackendRunsPageResponseSchema = BackendRunsResponseSchema.extend({
+  // A nullable string, shaped like the summary's own `finishedAt`.
+  nextCursor: BackendRunSummarySchema.shape.frontMatter.shape.finishedAt,
+}).strict()
+
 export interface BackendProjectReadService {
   listRuns(
     project: string,
     filter?: RunCollectionFilter,
-    options?: InventoryListOptions,
+    options?: RunPageOptions,
   ): Promise<unknown>
   getRun(project: string, id: string): Promise<unknown>
   listExperiments(project: string, options?: InventoryListOptions): Promise<unknown>
@@ -346,7 +363,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
   async listRuns(
     projectName: string,
     filter: RunCollectionFilter = {},
-    options: InventoryListOptions = {},
+    options: RunPageOptions = {},
   ) {
     if (options.inventoryOnly) {
       const project = this.requireProject(projectName)
@@ -364,11 +381,23 @@ export class FilesystemProjectService implements BackendProjectReadService {
         }),
       })
     }
+    const limit = options.limit ?? DEFAULT_RUN_PAGE_SIZE
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_RUN_PAGE_SIZE) {
+      throw new BackendProjectServiceError('INVALID_RESOURCE', 'Run page size is invalid')
+    }
+    const after = options.cursor === undefined ? null : decodeRunCursor(options.cursor)
     const data = await this.readProject(projectName)
-    return BackendRunsResponseSchema.parse({
-      runs: data.runs
-        .filter((run) => matchesRunDeprecationFilter(run.deprecated, filter))
-        .map((run) => safeRunSummary(run, data.project)),
+    const rows = data.runs.filter((run) => matchesRunDeprecationFilter(run.deprecated, filter))
+    const start =
+      after === null
+        ? 0
+        : rows.findIndex((run) => compareRunOrder(run, after, data.project.root) > 0)
+    const page = start < 0 ? [] : rows.slice(start, start + limit)
+    const last = page.at(-1)
+    const more = start >= 0 && start + limit < rows.length
+    return BackendRunsPageResponseSchema.parse({
+      runs: page.map((run) => safeRunSummary(run, data.project)),
+      nextCursor: more && last ? encodeRunCursor(last, data.project.root) : null,
     })
   }
 
@@ -866,6 +895,37 @@ function experimentRecord(project: ProjectConfig, document: IndexedExperimentDoc
 }
 
 const RUN_SUMMARY_CONCURRENCY = 16
+
+/** Run list order: created time descending, then project Run path ascending. */
+type RunOrderKey = readonly [createdAt: string, id: string]
+
+function runOrderKey(run: IndexedRun, root: string): RunOrderKey {
+  return [String(run.frontMatter.createdAt), projectRunPath(root, run.path)]
+}
+
+function compareRunOrder(run: IndexedRun, key: RunOrderKey, root: string): number {
+  const [createdAt, path] = runOrderKey(run, root)
+  return createdAt !== key[0] ? key[0].localeCompare(createdAt) : path.localeCompare(key[1])
+}
+
+function encodeRunCursor(run: IndexedRun, root: string): string {
+  return Buffer.from(JSON.stringify(runOrderKey(run, root))).toString('base64url')
+}
+
+function decodeRunCursor(cursor: string): RunOrderKey {
+  try {
+    const value: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
+    if (
+      Array.isArray(value) &&
+      value.length === 2 &&
+      typeof value[0] === 'string' &&
+      typeof value[1] === 'string'
+    ) {
+      return [value[0], value[1]]
+    }
+  } catch {}
+  throw new BackendProjectServiceError('INVALID_RESOURCE', 'Run page cursor is invalid')
+}
 
 function safeRunSummary(run: IndexedRun, project: ProjectConfig): BackendRunSummary {
   const frontMatter = run.frontMatter

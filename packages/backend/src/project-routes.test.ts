@@ -12,13 +12,12 @@ import {
   BackendJournalResponseSchema,
   BackendResourceInventoryResponseSchema,
   BackendRunResponseSchema,
-  BackendRunsResponseSchema,
 } from '@memon/core'
 import { createBackendRequest } from '@memon/test-utils'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
 import { BackendExperimentListResponseSchema } from './indexed-experiments.js'
-import { FilesystemProjectService } from './project-service.js'
+import { BackendRunsPageResponseSchema, FilesystemProjectService } from './project-service.js'
 import { createBackendServer } from './server.js'
 
 const SERVICE_TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -76,7 +75,7 @@ describe('Backend initial Project data routes', () => {
 
   it('serves every fixed read family with strict shared DTOs', async () => {
     const runsResponse = await request('/api/backend/v1/runs?project=project-a', { actor: owner })
-    const runs = BackendRunsResponseSchema.parse(await runsResponse.json())
+    const runs = BackendRunsPageResponseSchema.parse(await runsResponse.json())
     expect(runs.runs.length).toBeGreaterThan(0)
     const runDetail = BackendRunResponseSchema.parse(
       await (
@@ -209,8 +208,8 @@ describe('Backend initial Project data routes', () => {
       request('/api/backend/v1/runs?project=project-a', { actor: owner }),
       request('/api/backend/v1/runs?project=project-copy', { actor: owner }),
     ])
-    const runsA = BackendRunsResponseSchema.parse(await a.json()).runs
-    const runsCopy = BackendRunsResponseSchema.parse(await copy.json()).runs
+    const runsA = BackendRunsPageResponseSchema.parse(await a.json()).runs
+    const runsCopy = BackendRunsPageResponseSchema.parse(await copy.json()).runs
     expect(runsCopy.some((run) => run.id === runsA[0]!.id)).toBe(true)
     expect(
       (

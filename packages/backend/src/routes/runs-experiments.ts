@@ -59,6 +59,7 @@ import {
 import { readBoundedJsonRequest, writeError, writeJson } from '../http/respond.js'
 import type { QuerySpec } from '../http/route.js'
 import { BackendExperimentListResponseSchema } from '../indexed-experiments.js'
+import { BackendRunsPageResponseSchema } from '../project-service.js'
 import {
   emptyOr,
   inventoryField,
@@ -308,8 +309,18 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
   projectDataRoute(
     BACKEND_RUNS_ROUTE,
     projectQuery(
-      { deprecated: optional(oneOf('include', 'only')), inventory: inventoryField },
-      (values) => !(values.inventory !== undefined && values.deprecated !== undefined),
+      {
+        deprecated: optional(oneOf('include', 'only')),
+        inventory: inventoryField,
+        // Pages keep every response under the size limit.
+        limit: optional(matches(/^[1-9]\d{0,3}$/)),
+        cursor: optional((value) => value.length > 0 && value.length <= 1024),
+      },
+      (values) =>
+        values.inventory === undefined ||
+        (values.deprecated === undefined &&
+          values.limit === undefined &&
+          values.cursor === undefined),
     ),
     {
       // `deprecated` is the explicit-inspection selector for the Run
@@ -323,11 +334,15 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
             includeDeprecated: search.get('deprecated') === 'include',
             deprecatedOnly: search.get('deprecated') === 'only',
           },
-          { inventoryOnly },
+          {
+            inventoryOnly,
+            ...(search.get('limit') === null ? {} : { limit: Number(search.get('limit')) }),
+            ...(search.get('cursor') === null ? {} : { cursor: search.get('cursor')! }),
+          },
         )
         return inventoryOnly
           ? BackendResourceInventoryResponseSchema.parse(result)
-          : BackendRunsResponseSchema.parse(result)
+          : BackendRunsPageResponseSchema.parse(result)
       }),
     },
   ),

@@ -7,9 +7,9 @@ vi.mock('../../../lib/server/standalone-services', () => ({ standaloneServices: 
 vi.mock('../../../lib/server/standalone-dto', () => ({
   standaloneRun: vi.fn((_config, run) => ({ ...run, path: `/root/${run.id}` })),
 }))
-vi.mock('@memon/core', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@memon/core')>()),
-  BackendRunsResponseSchema: { parse: (value: unknown) => value },
+vi.mock('@memon/backend', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@memon/backend')>()),
+  BackendRunsPageResponseSchema: { parse: (value: unknown) => value },
 }))
 
 import { getRuntime } from '../../../lib/server/runtime'
@@ -45,6 +45,7 @@ beforeEach(() => {
                 stale: false,
               },
             ],
+            nextCursor: null,
           },
   )
 })
@@ -66,6 +67,36 @@ describe('GET /api/runs shared standalone adapter', () => {
       { inventoryOnly: false },
     )
     expect(listRuns).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards one page of a selected Project with its cursor', async () => {
+    listRuns.mockResolvedValueOnce({ runs: [], nextCursor: 'next-page' })
+    const response = await GET(
+      new NextRequest('http://localhost/api/runs?project=project-a&limit=2&cursor=abc'),
+    )
+    expect(listRuns).toHaveBeenCalledWith(
+      'project-a',
+      { includeDeprecated: false, deprecatedOnly: false },
+      { inventoryOnly: false, limit: 2, cursor: 'abc' },
+    )
+    expect(await response.json()).toEqual({ experiments: [], nextCursor: 'next-page' })
+  })
+
+  it('follows every page when no Project is selected', async () => {
+    listRuns
+      .mockResolvedValueOnce({ runs: [{ id: 'a1', project: 'project-a' }], nextCursor: 'c' })
+      .mockResolvedValueOnce({ runs: [{ id: 'a2', project: 'project-a' }], nextCursor: null })
+      .mockResolvedValueOnce({ runs: [{ id: 'b1', project: 'project-b' }], nextCursor: null })
+    const body = await (await GET(new NextRequest('http://localhost/api/runs'))).json()
+    expect(body.experiments.map((run: { id: string }) => run.id)).toEqual(['a1', 'a2', 'b1'])
+    expect(body.nextCursor).toBeNull()
+  })
+
+  it('rejects an invalid page size', async () => {
+    const response = await GET(
+      new NextRequest('http://localhost/api/runs?project=project-a&limit=0'),
+    )
+    expect(response.status).toBe(400)
   })
 
   it('forwards inventory mode without projecting rich Run records', async () => {

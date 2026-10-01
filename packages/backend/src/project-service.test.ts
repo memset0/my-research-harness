@@ -11,7 +11,6 @@ import {
   BackendResourceInventoryResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
-  BackendRunsResponseSchema,
   type FileOperationMetrics,
   MANAGED_SECTION_POINTERS,
   type ProjectConfig,
@@ -21,7 +20,7 @@ import {
 } from '@memon/core'
 import { describe, expect, it, vi } from 'vitest'
 import { BackendExperimentListResponseSchema } from './indexed-experiments.js'
-import { FilesystemProjectService } from './project-service.js'
+import { BackendRunsPageResponseSchema, FilesystemProjectService } from './project-service.js'
 
 const fixtureRoot = resolve(process.cwd(), '../../mock/project-a')
 
@@ -57,15 +56,15 @@ describe('FilesystemProjectService safe reads', () => {
         service.listRuns('compose'),
         service.getAnomalies('compose'),
       ])
-      expect(BackendRunsResponseSchema.parse(cold[0]).runs).toHaveLength(1)
+      expect(BackendRunsPageResponseSchema.parse(cold[0]).runs).toHaveLength(1)
       expect(service.inspectProject('compose')).toMatchObject({ ready: true, runs: 1 })
 
       // No second domain cache: a new Run appears on the next request without
       // any invalidation call.
       await fs.mkdir(join(root, 'logs', 'second-260826-010204'))
-      expect(BackendRunsResponseSchema.parse(await service.listRuns('compose')).runs).toHaveLength(
-        2,
-      )
+      expect(
+        BackendRunsPageResponseSchema.parse(await service.listRuns('compose')).runs,
+      ).toHaveLength(2)
       expect(service.inspectProject('compose')).toMatchObject({ runs: 2 })
     } finally {
       await fs.rm(root, { recursive: true, force: true })
@@ -80,7 +79,7 @@ describe('FilesystemProjectService safe reads', () => {
         { name: 'unavailable', root, include: ['logs/*'], exclude: [] },
       ])
       expect(
-        BackendRunsResponseSchema.parse(await service.listRuns('unavailable')).runs,
+        BackendRunsPageResponseSchema.parse(await service.listRuns('unavailable')).runs,
       ).toHaveLength(1)
       await fs.rename(root, `${root}-gone`)
 
@@ -107,7 +106,7 @@ describe('FilesystemProjectService safe reads', () => {
         { name: 'scoped', root, include: ['logs/*'], exclude: [] },
       ])
 
-      const runs = BackendRunsResponseSchema.parse(await service.listRuns('scoped')).runs
+      const runs = BackendRunsPageResponseSchema.parse(await service.listRuns('scoped')).runs
       expect(runs.map((run) => run.id)).toEqual(['logs/included-260826-010203'])
     } finally {
       await fs.rm(root, { recursive: true, force: true })
@@ -116,7 +115,7 @@ describe('FilesystemProjectService safe reads', () => {
 
   it('lists and reads Runs without absolute filesystem fields', async () => {
     const service = new FilesystemProjectService([project('project-a')])
-    const list = BackendRunsResponseSchema.parse(await service.listRuns('project-a'))
+    const list = BackendRunsPageResponseSchema.parse(await service.listRuns('project-a'))
     expect(list.runs.length).toBeGreaterThan(0)
     const detail = BackendRunResponseSchema.parse(
       await service.getRun('project-a', list.runs[0]!.id),
@@ -532,7 +531,7 @@ conclusion
     }
   })
 
-  it('classifies declared Run paths from disk and honours the Project run depth', async () => {
+  it('classifies declared Run paths from disk, so excluded declarations are members', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'memon-phantom-from-disk-'))
     const id = 'E0001-grp'
     const excluded = 'outputs/batch/grp-a-260101-000000'
@@ -551,7 +550,7 @@ conclusion
       }
       await fs.mkdir(join(root, 'logs', 'grp-top-260101-000003'), { recursive: true })
       const service = new FilesystemProjectService([
-        { name: 'disk', root, include: [], exclude: ['outputs'], runDepth: 1 },
+        { name: 'disk', root, include: [], exclude: ['outputs'] },
       ])
 
       const anomalies = BackendAnomaliesResponseSchema.parse(await service.getAnomalies('disk'))
@@ -559,8 +558,38 @@ conclusion
         .filter((anomaly) => anomaly.code === 'PHANTOM_RUN_REF')
         .map((anomaly) => anomaly.runId)
       expect(phantoms).toEqual([missing])
-      const runs = BackendRunsResponseSchema.parse(await service.listRuns('disk')).runs
-      expect(runs.map((run) => run.id)).toEqual(['logs/grp-top-260101-000003'])
+      const runs = BackendRunsPageResponseSchema.parse(await service.listRuns('disk')).runs
+      expect(runs.map((run) => run.id)).toEqual(['logs/grp-top-260101-000003', deep])
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('pages the Run list with an opaque cursor in created-time order', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-run-pages-'))
+    try {
+      const names = [1, 2, 3, 4, 5].map((index) => `logs/page-${index}-26010${index}-000000`)
+      for (const name of names) await fs.mkdir(join(root, name), { recursive: true })
+      const service = new FilesystemProjectService([project('paged', root)])
+      const seen: string[] = []
+      let cursor: string | undefined
+      for (let page = 0; page < 4; page++) {
+        const result = BackendRunsPageResponseSchema.parse(
+          await service.listRuns('paged', {}, { limit: 2, ...(cursor ? { cursor } : {}) }),
+        )
+        seen.push(...result.runs.map((run) => run.id))
+        if (result.nextCursor === null) break
+        expect(result.runs).toHaveLength(2)
+        cursor = result.nextCursor
+      }
+      expect(seen).toEqual([...names].reverse())
+      expect(JSON.stringify(cursor)).not.toContain(root)
+      await expect(service.listRuns('paged', {}, { cursor: 'not-a-cursor' })).rejects.toMatchObject(
+        { code: 'INVALID_RESOURCE' },
+      )
+      await expect(service.listRuns('paged', {}, { limit: 0 })).rejects.toMatchObject({
+        code: 'INVALID_RESOURCE',
+      })
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
@@ -585,8 +614,8 @@ conclusion
       service.listRuns('project-a'),
       service.listRuns('project-copy'),
     ])
-    const runsA = BackendRunsResponseSchema.parse(a).runs
-    const runsCopy = BackendRunsResponseSchema.parse(copy).runs
+    const runsA = BackendRunsPageResponseSchema.parse(a).runs
+    const runsCopy = BackendRunsPageResponseSchema.parse(copy).runs
     const duplicateId = runsA[0]!.id
     expect(runsCopy.some((run) => run.id === duplicateId)).toBe(true)
     const [detailA, detailCopy] = await Promise.all([

@@ -311,9 +311,18 @@ export async function fetchRunsInventory(
   return jsonFetch(projectQueryUrl('/api/runs', project, new URLSearchParams({ inventory: '1' })))
 }
 
+/** Every Run of the Project, following the list's pages. */
 export async function fetchExperiments(project?: ProjectTarget): Promise<RunsResponse> {
-  const url = project ? projectQueryUrl('/api/runs', project) : '/api/runs'
-  return jsonFetch(url)
+  if (!project) return jsonFetch('/api/runs')
+  const experiments: RunsResponse['experiments'] = []
+  let cursor: string | null = null
+  do {
+    const extras: URLSearchParams = new URLSearchParams(cursor === null ? {} : { cursor })
+    const page: RunsResponse = await jsonFetch(projectQueryUrl('/api/runs', project, extras))
+    experiments.push(...page.experiments)
+    cursor = page.nextCursor ?? null
+  } while (cursor !== null)
+  return { experiments, nextCursor: null }
 }
 
 export async function fetchExperiment(project: ProjectTarget, id: string): Promise<FullExperiment> {

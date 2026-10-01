@@ -81,6 +81,8 @@ export interface PatchArchiveForbidden {
 export interface RunsResponse {
   /** Wire name kept from the pre-v3 API, where Runs were called experiments. */
   experiments: IndexedRun[]
+  /** Cursor of the next page (`?cursor=`) when one Project was selected; else null. */
+  nextCursor?: string | null
 }
 
 export interface RunFilesResponse {

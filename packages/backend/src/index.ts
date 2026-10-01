@@ -77,6 +77,8 @@ export * from './mutation-service.js'
 export {
   type BackendProjectReadService,
   BackendProjectServiceError,
+  BackendRunsPageResponseSchema,
+  DEFAULT_RUN_PAGE_SIZE,
   FilesystemProjectService,
 } from './project-service.js'
 export {
