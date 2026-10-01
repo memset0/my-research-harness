@@ -92,28 +92,51 @@ describe('project storage mode', () => {
   })
 })
 
-describe('project run_depth', () => {
+describe('project run_dirs', () => {
   it('leaves the Run walk unbounded when the key is absent', async () => {
     await fs.writeFile(join(dir, 'config.yml'), VALID)
     const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.projects.map((project) => project.runDepth)).toEqual([undefined, undefined])
+    expect(cfg!.projects.map((project) => project.runDirs)).toEqual([undefined, undefined])
   })
 
-  it('accepts 1 and 2', async () => {
+  it('accepts segment globs below a Run root', async () => {
     await fs.writeFile(
       join(dir, 'config.yml'),
-      'projects:\n  - { name: alpha, root: ./alpha, run_depth: 1 }\n  - { name: beta, root: ./beta, run_depth: 2 }\n',
+      'projects:\n  - name: alpha\n    root: ./alpha\n    run_dirs: ["logs/*", "outputs/*/*", "experiments/*/runs/*", "outputs/sweep-?/run-*"]\n',
     )
     const cfg = await loadConfig({ cwd: dir })
-    expect(cfg!.projects.map((project) => project.runDepth)).toEqual([1, 2])
+    expect(cfg!.projects[0]!.runDirs).toEqual([
+      'logs/*',
+      'outputs/*/*',
+      'experiments/*/runs/*',
+      'outputs/sweep-?/run-*',
+    ])
   })
 
-  it.each([0, 3, '1'])('rejects run_depth %j naming the key', async (value) => {
+  it.each([
+    ['**', 'logs/**'],
+    ['**', 'outputs/a**'],
+    ['..', 'logs/../x'],
+    ['.', 'logs/./x'],
+    ['relative', '/abs/logs/*'],
+    ['empty segments', 'logs//*'],
+    ['below a Run root', 'logs'],
+    ['must start with', 'other/*'],
+    ['must start with', '*/x'],
+  ])('rejects %s in %j naming run_dirs', async (_reason, pattern) => {
     await fs.writeFile(
       join(dir, 'config.yml'),
-      `projects: [{ name: alpha, root: ./alpha, run_depth: ${JSON.stringify(value)} }]\n`,
+      `projects: [{ name: alpha, root: ./alpha, run_dirs: [${JSON.stringify(pattern)}] }]\n`,
     )
-    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/run_depth/)
+    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/run_dirs/)
+  })
+
+  it('rejects an empty list', async () => {
+    await fs.writeFile(
+      join(dir, 'config.yml'),
+      'projects: [{ name: alpha, root: ./alpha, run_dirs: [] }]\n',
+    )
+    await expect(loadConfig({ cwd: dir })).rejects.toThrow(/run_dirs/)
   })
 })
 

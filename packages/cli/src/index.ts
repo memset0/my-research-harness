@@ -81,7 +81,7 @@ import {
   runWikiUndeprecate,
 } from './commands/wiki.js'
 import { emitWarningDeprecationBanner } from './lib/deprecations.js'
-import { parseRunDepth, setRunDepth } from './lib/discovery-options.js'
+import { parseRunDirs, setRunDirs } from './lib/discovery-options.js'
 import { emitErrorAndExit, emitGenericAndExit } from './lib/emit-error.js'
 import { commanderExitCode, EXIT } from './lib/exit-codes.js'
 import {
@@ -98,8 +98,9 @@ program
   .option('--project-root <path>', 'use <path> as the only project (default: cwd)')
   .option('--format <fmt>', 'output format: json | human', 'json')
   .option(
-    '--run-depth <n>',
-    'bound Run discovery to Runs at most <n> (1 or 2) levels below logs/, outputs/, experiments/ (default: unbounded)',
+    '--run-dir <pattern>',
+    'declare where Run directories live, e.g. logs/* or outputs/*/* (repeatable; default: unbounded walk of logs/, outputs/, experiments/)',
+    (value: string, previous: string[] = []) => [...previous, value],
   )
 
 let parsingCommand = program
@@ -111,9 +112,9 @@ let actionStarted = false
 // guards, because `emitErrorAndExit` never returns to this hook.
 program.hook('preAction', async (_thisCommand, actionCommand) => {
   // Validated before anything reads the project, including the ledger.
-  const runDepth = parseRunDepth(program.opts<{ runDepth?: string }>().runDepth)
-  if (runDepth === null) emitErrorAndExit('BAD_REQUEST', '--run-depth must be 1 or 2')
-  setRunDepth(runDepth)
+  const runDirs = parseRunDirs(program.opts<{ runDir?: string[] }>().runDir)
+  if (runDirs.error !== undefined) emitErrorAndExit('BAD_REQUEST', runDirs.error)
+  setRunDirs(runDirs.runDirs)
   actionStarted = true
   await beginCliInvocation({
     command: actionCommand,

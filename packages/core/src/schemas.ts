@@ -4,6 +4,7 @@
 // shapes. Conversion to camelCase happens after validation in the parsers.
 
 import { z } from 'zod'
+import { runDirPatternError } from './discovery/run-dirs.js'
 
 // ---------- Run README front matter (snake_case) ----------
 //
@@ -183,10 +184,17 @@ export const ProjectConfigRawSchema = z
     root: z.string().min(1),
     include: z.array(z.string()).optional(),
     exclude: z.array(z.string()).optional(),
-    // Deepest level below a Run entry directory at which the Run walk looks
-    // for Run directories (1 = `logs/<run>`, 2 = `logs/<group>/<run>`).
-    // Absent keeps the unbounded walk.
-    run_depth: z.union([z.literal(1), z.literal(2)]).optional(),
+    // Declared Run directory locations (`logs/*`, `outputs/*/*`, …). Absent
+    // keeps the unbounded walk; see discovery/run-dirs.ts for the grammar.
+    run_dirs: z
+      .array(
+        z.string().superRefine((pattern, ctx) => {
+          const error = runDirPatternError(pattern)
+          if (error !== null) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error })
+        }),
+      )
+      .min(1, 'must list at least one pattern')
+      .optional(),
     // Per-project GitHub owner/repo -> local path mappings, for code-preview.
     // `path` is relative to the project root ('.' = main repo, else a submodule).
     github: z

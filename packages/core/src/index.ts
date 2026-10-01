@@ -63,6 +63,7 @@ export { matchesRunDeprecationFilter, RunIndex } from './discovery/index.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
 export { Poller } from './discovery/poller.js'
 export { readRunDir } from './discovery/read.js'
+export { RUN_DIR_PATTERN_NON_RUN, runDirPatternError } from './discovery/run-dirs.js'
 export type { StaleCheckOptions } from './discovery/stale.js'
 export {
   DEFAULT_STALE_THRESHOLD_MS,

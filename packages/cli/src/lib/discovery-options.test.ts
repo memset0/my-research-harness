@@ -1,4 +1,4 @@
-// `--run-depth` plumbing: the parsed global flag bounds every CLI Run walk,
+// `--run-dir` plumbing: the parsed global flag bounds every CLI Run walk,
 // while project-relative Run paths keep resolving directly.
 
 import { promises as fs } from 'node:fs'
@@ -8,7 +8,7 @@ import { spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runResolveExp } from '../commands/run-resolve-exp.js'
 import { runScan } from '../commands/scan.js'
-import { parseRunDepth, runWalkOptions, setRunDepth } from './discovery-options.js'
+import { parseRunDirs, runWalkOptions, setRunDirs } from './discovery-options.js'
 
 const readme = (id: string) =>
   `---\nid: ${id}\nname: x\nstatus: FINISHED\ncreated_at: '2026-09-01T09:00:00+08:00'\nupdated_at: '2026-09-01T09:00:00+08:00'\n---\n`
@@ -18,7 +18,7 @@ let stdout: string[]
 let realWrite: typeof process.stdout.write
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(join(tmpdir(), 'memon-run-depth-cli-'))
+  root = await fs.mkdtemp(join(tmpdir(), 'memon-run-dirs-cli-'))
   for (const dir of ['logs/top-260901-090000', 'outputs/group/deep-260901-100000']) {
     await fs.mkdir(join(root, dir), { recursive: true })
     await fs.writeFile(join(root, dir, 'README.md'), readme(dir.split('/').pop()!))
@@ -38,16 +38,16 @@ beforeEach(async () => {
 
 afterEach(async () => {
   process.stdout.write = realWrite
-  setRunDepth(undefined)
+  setRunDirs(undefined)
   await fs.rm(root, { recursive: true, force: true })
 })
 
-describe('--run-depth', () => {
-  it('accepts only 1 and 2', () => {
-    expect(parseRunDepth(undefined)).toBeUndefined()
-    expect(parseRunDepth('1')).toBe(1)
-    expect(parseRunDepth('2')).toBe(2)
-    for (const raw of ['0', '3', 'two', '1.0', '']) expect(parseRunDepth(raw)).toBeNull()
+describe('--run-dir', () => {
+  it('validates every pattern', () => {
+    expect(parseRunDirs(undefined)).toEqual({})
+    expect(parseRunDirs(['logs/*', 'outputs/*/*'])).toEqual({ runDirs: ['logs/*', 'outputs/*/*'] })
+    for (const bad of ['logs/**', '../logs/*', '/abs/*', 'other/*', 'logs'])
+      expect(parseRunDirs(['logs/*', bad]).error).toMatch(/^--run-dir /)
   })
 
   it('leaves walks unbounded when unset', async () => {
@@ -58,14 +58,14 @@ describe('--run-depth', () => {
   })
 
   it('bounds memon scan', async () => {
-    setRunDepth(1)
+    setRunDirs(['logs/*'])
     await runScan({ projectRoot: root, format: 'json' })
     const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
     expect(ids).toEqual(['top-260901-090000'])
   })
 
   it('resolves a path target beyond the bound but not its bare base name', async () => {
-    setRunDepth(1)
+    setRunDirs(['logs/*'])
     await runResolveExp({
       projectRoot: root,
       cwd: root,

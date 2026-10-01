@@ -17,11 +17,12 @@
 // migration window only.
 
 import type { Dirent } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { basename, join, relative, sep } from 'node:path'
 import { projectFs } from '../project-file-store.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
 import { isArchivedSidecar } from './archive.js'
+import { isGlobSegment, segmentMatcher } from './run-dirs.js'
 
 // Re-export for back-compat with code that imported the constant from
 // discover.ts (the canonical home is now archive.ts).
@@ -48,12 +49,25 @@ export interface DiscoverOptions {
    * filter the parsed records themselves.
    */
   includeArchived?: boolean
+  /**
+   * Called with the absolute path of every directory a `run_dirs` pattern
+   * matched whose name is not Run-shaped (`RUN_DIR_PATTERN_NON_RUN`, lint
+   * level). Such directories are ignored; the walk is not blocked.
+   */
+  onPatternNonRun?: (absolutePath: string) => void
 }
 
 /**
  * Returns absolute Run paths under `project.root/{logs,outputs,experiments}`,
- * applying default + user excludes and the optional `project.runDepth` bound.
- * The project root itself is never listed.
+ * applying default + user excludes. The project root itself is never listed.
+ *
+ * When `project.runDirs` is set, discovery only expands those patterns (see
+ * `run-dirs.ts`) segment by segment and never recurses: a literal segment is
+ * checked with `lstat`, a glob segment lists its parent once (listings are
+ * shared between patterns), and only directories matched by a pattern's last
+ * segment are candidate Runs. Run-shaped directories are never used as
+ * intermediate prefixes (Runs do not nest). Absent keeps the unbounded walk
+ * below.
  *
  * This is the ONE sanctioned recursive project traversal, and it composes
  * shared cached direct listings (`projectFs.readdir`) rather than a recursive
@@ -109,12 +123,87 @@ export async function discoverRuns(
     else next()
   }
 
-  // `run_depth` bound: an entry directory is level 0, its children level 1.
-  // A child at level `runDepth` may still be recorded as a Run but is never
-  // listed. Absent = unbounded (the historical walk).
-  const runDepth = project.runDepth ?? Number.POSITIVE_INFINITY
+  const excluded = (absolute: string, name: string): boolean =>
+    excludedNames[name] === true ||
+    matchesExclude(relative(project.root, absolute).split(sep).join('/'))
 
-  const walk = async (directory: string, level: number): Promise<void> => {
+  if (project.runDirs !== undefined) {
+    const listings = new Map<string, Promise<Dirent[]>>()
+    const list = (directory: string): Promise<Dirent[]> => {
+      let pending = listings.get(directory)
+      if (!pending) {
+        pending = (async () => {
+          await acquire()
+          try {
+            return await projectFs.readdir(directory, { withFileTypes: true })
+          } catch {
+            return []
+          } finally {
+            release()
+          }
+        })()
+        listings.set(directory, pending)
+      }
+      return pending
+    }
+    const isPlainDirectory = async (absolute: string): Promise<boolean> => {
+      try {
+        const entry = await projectFs.lstat(absolute)
+        return entry.isDirectory() && !entry.isSymbolicLink()
+      } catch (error) {
+        if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
+          return false
+        throw error
+      }
+    }
+    const matched = new Set<string>()
+    await Promise.all(
+      project.runDirs.map(async (pattern) => {
+        const segments = pattern.split('/')
+        let prefixes = [project.root]
+        for (const [index, segment] of segments.entries()) {
+          const last = index === segments.length - 1
+          const next: string[] = []
+          if (isGlobSegment(segment)) {
+            const matcher = segmentMatcher(segment)
+            const lists = await Promise.all(
+              prefixes.map(async (prefix) => [prefix, await list(prefix)] as const),
+            )
+            for (const [prefix, entries] of lists)
+              for (const entry of entries) {
+                const name = entry.name
+                if (!entry.isDirectory() || name.startsWith('.') || !matcher.test(name)) continue
+                const absolute = join(prefix, name)
+                if (excluded(absolute, name)) continue
+                if (!last && regex.test(name)) continue
+                next.push(absolute)
+              }
+          } else {
+            const checked = await Promise.all(
+              prefixes.map(async (prefix) => {
+                const absolute = join(prefix, segment)
+                if (excluded(absolute, segment)) return null
+                if (!last && regex.test(segment)) return null
+                return (await isPlainDirectory(absolute)) ? absolute : null
+              }),
+            )
+            for (const absolute of checked) if (absolute !== null) next.push(absolute)
+          }
+          prefixes = next
+          if (prefixes.length === 0) return
+        }
+        for (const absolute of prefixes) matched.add(absolute)
+      }),
+    )
+    for (const absolute of matched) {
+      const relativePath = relative(project.root, absolute).split(sep).join('/')
+      if (!regex.test(basename(absolute))) options.onPatternNonRun?.(absolute)
+      else if (matchesInclude(relativePath)) found.push(absolute)
+    }
+    return found.sort()
+  }
+
+  const walk = async (directory: string): Promise<void> => {
     let entries: Dirent[]
     await acquire()
     try {
@@ -140,9 +229,9 @@ export async function discoverRuns(
         if (matchesInclude(relativePath)) found.push(absolute)
         continue
       }
-      if (level + 1 < runDepth) descend.push(absolute)
+      descend.push(absolute)
     }
-    await Promise.all(descend.map((child) => walk(child, level + 1)))
+    await Promise.all(descend.map(walk))
   }
 
   await Promise.all(
@@ -156,7 +245,7 @@ export async function discoverRuns(
         if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return
         throw error
       }
-      await walk(directory, 0)
+      await walk(directory)
     }),
   )
 

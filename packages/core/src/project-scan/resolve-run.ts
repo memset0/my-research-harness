@@ -24,7 +24,7 @@ import {
   resolveDeclaredRunPath,
   resolveRunReference,
 } from '../experiments/run-path.js'
-import type { Run, RunDepth } from '../types.js'
+import type { Run } from '../types.js'
 import { ScanError } from './scan.js'
 
 export interface RunTargetOptions {
@@ -35,10 +35,10 @@ export interface RunTargetOptions {
   /** Optional discovery exclusions inherited from a configured Project. */
   exclude?: string[]
   /**
-   * Optional Run walk depth bound (`run_depth`). Only base-name lookups walk;
-   * project-relative paths resolve directly and ignore it.
+   * Optional declared Run locations (`run_dirs`). Only base-name lookups walk;
+   * project-relative paths resolve directly and ignore them.
    */
-  runDepth?: RunDepth
+  runDirs?: string[]
   /** Maximum concurrent Run directory reads in `runs()`. */
   readConcurrency?: number
 }
@@ -96,7 +96,7 @@ export class RunTargetIndex {
       root: abs,
       include: options.include ?? [],
       exclude: options.exclude ?? [],
-      ...(options.runDepth === undefined ? {} : { runDepth: options.runDepth }),
+      ...(options.runDirs === undefined ? {} : { runDirs: options.runDirs }),
     })
     const dirsById = new Map<string, string[]>()
     for (const path of paths) {
@@ -184,7 +184,7 @@ export class RunTargetIndex {
 
   /**
    * A project-relative Run path the walk did not reach (excluded or beyond
-   * `runDepth`) still resolves directly: path targets never depend on the
+   * `runDirs`) still resolves directly: path targets never depend on the
    * walk. Base names and missing / unsafe paths resolve to null.
    */
   private async undiscoveredPath(id: string): Promise<string | null> {
@@ -213,7 +213,7 @@ export async function resolveRunTarget(
       name: options.projectName ?? '(project-root)',
       include: options.include ?? [],
       exclude: options.exclude ?? [],
-      ...(options.runDepth === undefined ? {} : { runDepth: options.runDepth }),
+      ...(options.runDirs === undefined ? {} : { runDirs: options.runDirs }),
     },
     id,
   )

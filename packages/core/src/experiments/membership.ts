@@ -28,7 +28,7 @@ export interface MembershipInput {
    * `resolveDeclaredRuns`): the Run record at that path, or null when no
    * contained directory exists there. When supplied, path references are
    * classified from this map alone — never from `runs` — so excludes and
-   * `run_depth` pruning cannot turn an existing declaration into a
+   * `run_dirs` pruning cannot turn an existing declaration into a
    * `PHANTOM_RUN_REF`. Base-name references still resolve through `runs`.
    * Absent keeps the walk-based classification.
    */

@@ -15,7 +15,7 @@ import { isStaleRunning } from '../discovery/stale.js'
 import { parseHypotheses } from '../hypotheses/parse.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { formatIsoLocal } from '../time.js'
-import type { ParsedHypotheses, Run, RunDepth } from '../types.js'
+import type { ParsedHypotheses, Run } from '../types.js'
 
 export interface IndexedRun extends Run {
   /**
@@ -56,8 +56,8 @@ export interface ScanOptions {
   include?: string[]
   /** Optional discovery exclusions inherited from a configured Project. */
   exclude?: string[]
-  /** Optional Run walk depth bound inherited from a configured Project (`run_depth`). */
-  runDepth?: RunDepth
+  /** Optional declared Run locations inherited from a configured Project (`run_dirs`). */
+  runDirs?: string[]
   /** Maximum concurrent Run directory reads during a cold scan. */
   readConcurrency?: number
 }
@@ -95,7 +95,7 @@ export async function scanProjectRoot(
     root: abs,
     include: options.include ?? [],
     exclude: options.exclude ?? [],
-    ...(options.runDepth === undefined ? {} : { runDepth: options.runDepth }),
+    ...(options.runDirs === undefined ? {} : { runDirs: options.runDirs }),
   }
 
   // v4: discoverRuns returns ALL paths; archive filtering happens

@@ -89,24 +89,36 @@ describe('discoverRuns listing count', () => {
     expect(foundSmall.some((path) => path.endsWith('nested-260901-090000'))).toBe(false)
   })
 
-  it('run_depth 1 lists exactly the Run entry directories', async () => {
+  it('run_dirs ["logs/*", "outputs/*"] lists only the two Run roots', async () => {
     const listed = serve(buildTree(20))
-    const found = await discoverRuns({ ...project, runDepth: 1 })
-    expect(listed).toHaveLength(ENTRIES.length)
+    const found = await discoverRuns({ ...project, runDirs: ['logs/*', 'outputs/*'] })
+    expect(listed).toHaveLength(2)
     expect(found).toHaveLength(ENTRIES.length * RUN_DIRS)
   })
 
-  it('run_depth 2 lists entry directories plus one level of non-Run children', async () => {
+  it('run_dirs ["outputs/*/*"] lists outputs plus one level of non-Run children', async () => {
     const tree = buildTree(20)
-    // A Run one level below a non-Run directory is in reach at depth 2 only.
-    tree.get(join(ROOT, 'logs', 'group-0'))!.push('deep-260901-120000')
-    tree.set(join(ROOT, 'logs', 'group-0', 'deep-260901-120000'), [])
+    tree.get(join(ROOT, 'outputs', 'group-0'))!.push('deep-260901-120000')
+    tree.set(join(ROOT, 'outputs', 'group-0', 'deep-260901-120000'), [])
     const listed = serve(tree)
-    const found = await discoverRuns({ ...project, runDepth: 2 })
-    expect(listed).toHaveLength(ENTRIES.length * (1 + NON_RUN_DIRS))
-    expect(found).toHaveLength(ENTRIES.length * RUN_DIRS + 1)
-    vi.restoreAllMocks()
-    serve(tree)
-    expect(await discoverRuns({ ...project, runDepth: 1 })).toHaveLength(ENTRIES.length * RUN_DIRS)
+    const nonRun: string[] = []
+    const found = await discoverRuns(
+      { ...project, runDirs: ['outputs/*/*'] },
+      { onPatternNonRun: (path) => nonRun.push(path) },
+    )
+    // Run-shaped children of outputs/ are never used as prefixes.
+    expect(listed).toHaveLength(1 + NON_RUN_DIRS)
+    expect(found).toEqual([join(ROOT, 'outputs', 'group-0', 'deep-260901-120000')])
+    expect(nonRun).toHaveLength(NON_RUN_DIRS * NON_RUN_CHILDREN)
+  })
+
+  it('shares listings between overlapping patterns and keeps partial globs', async () => {
+    const listed = serve(buildTree(20))
+    const found = await discoverRuns({
+      ...project,
+      runDirs: ['outputs/*', 'outputs/run1?-*', 'logs/run9*'],
+    })
+    expect(listed.sort()).toEqual([join(ROOT, 'logs'), join(ROOT, 'outputs')])
+    expect(found).toHaveLength(RUN_DIRS + 11)
   })
 })

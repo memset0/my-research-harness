@@ -195,7 +195,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       root,
       include: p.include ?? [],
       exclude: p.exclude ?? [],
-      ...(p.run_depth === undefined ? {} : { runDepth: p.run_depth }),
+      ...(p.run_dirs === undefined ? {} : { runDirs: p.run_dirs }),
       ...(p.host ? { host: p.host } : {}),
       // Always explicit on a resolved Project: the default is a policy, and
       // every consumer routes file access on it.

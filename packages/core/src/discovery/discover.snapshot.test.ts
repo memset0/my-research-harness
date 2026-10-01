@@ -1,5 +1,5 @@
 // Behaviour-compatibility guard for the Run walk: under the default Project
-// configuration (no `run_depth`), the discovered Run set of the bundled mock
+// configuration (no `run_dirs`), the discovered Run set of the bundled mock
 // projects must stay exactly what the unbounded walk produced before
 // `bounded-run-discovery` touched it. The fixture was captured from the walk
 // as it was before that change.
@@ -23,20 +23,19 @@ describe('discoverRuns default-config compatibility', () => {
     })
   }
 
-  it('bounds the mock walks with run_depth', async () => {
-    const at = async (project: string, runDepth: 1 | 2) => {
+  it('expands run_dirs patterns over the mocks', async () => {
+    const at = async (project: string, runDirs: string[]) => {
       const root = resolve(MOCK_ROOT, project)
-      const found = await discoverRuns({ name: project, root, include: [], exclude: [], runDepth })
+      const found = await discoverRuns({ name: project, root, include: [], exclude: [], runDirs })
       return found.map((path) => relative(root, path))
     }
-    const shallow = (paths: string[], depth: number) =>
-      paths.filter((path) => path.split('/').length - 1 <= depth)
+    const depth = (path: string) => path.split('/').length - 1
     for (const project of Object.keys(SNAPSHOT)) {
-      expect(await at(project, 1)).toEqual(shallow(SNAPSHOT[project]!, 1))
-      expect(await at(project, 2)).toEqual(shallow(SNAPSHOT[project]!, 2))
+      expect(await at(project, ['logs/*'])).toEqual(
+        SNAPSHOT[project]!.filter((path) => depth(path) === 1),
+      )
+      expect(await at(project, ['logs/*', 'logs/*/*', 'logs/*/*/*'])).toEqual(SNAPSHOT[project])
     }
-    // The bundled mocks exercise both bounds.
-    expect(shallow(SNAPSHOT['project-a']!, 1)).not.toEqual(SNAPSHOT['project-a'])
-    expect(shallow(SNAPSHOT['project-b']!, 2)).not.toEqual(SNAPSHOT['project-b'])
+    expect(await at('project-a', ['logs/sub/*'])).toEqual(['logs/sub/bar-260502-150000'])
   })
 })
