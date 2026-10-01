@@ -18,7 +18,24 @@
 
 ## 4. Render verification (F1)
 
-- [ ] 4.1 Build the Web app in the checkout (after confirming the live host does not serve from it) and start an isolated host on a spare port with a scratch config pointing at scratch copies of the mock projects; verify `/login` returns 200
-- [ ] 4.2 Fetch authenticated pages that use the regenerated primitives and grep the served HTML for their `data-slot` markers (or assert them in render tests where they only appear after interaction)
-- [ ] 4.3 Fetch the page's linked stylesheet and verify `--background:`, `--foreground:`, `--card:`, `--popover:`, `--muted:` each carry an `oklch(` value
-- [ ] 4.4 Run the full Web test suite (`pnpm --filter @memon/web test`) and verify it passes; stop the isolated host and delete the scratch projects and config
+- [x] 4.1 Build the Web app in the checkout (after confirming the live host does not serve from it) and start an isolated host on a spare port with a scratch config pointing at scratch copies of the mock projects; verify `/login` returns 200
+- [x] 4.2 Fetch authenticated pages that use the regenerated primitives and grep the served HTML for their `data-slot` markers (or assert them in render tests where they only appear after interaction)
+- [x] 4.3 Fetch the page's linked stylesheet and verify `--background:`, `--foreground:`, `--card:`, `--popover:`, `--muted:` each carry an `oklch(` value
+- [x] 4.4 Run the full Web test suite (`pnpm --filter @memon/web test`) and verify it passes; stop the isolated host and delete the scratch projects and config
+
+## Verification record
+
+- Isolated production host on a spare port with a scratch config and scratch
+  copies of `mock/project-a` / `mock/project-b`: `/login` returned 200.
+- Served wiki page HTML (datatable component) contains `data-slot="table"`,
+  `table-container`, `table-header`, `table-head` (with the regenerated
+  `h-10 … text-foreground` classes), `table-body`, `table-row`, `table-cell`.
+  Popover, context-menu, hover-card and alert-dialog content only mount after
+  interaction; render tests assert `popover-content` (report pane),
+  `hover-card-content` and `context-menu-sub-trigger` (results table), and
+  `alert-dialog-content` (Git history dialog, wiki review panel).
+- Linked stylesheets define `--background`, `--foreground`, `--card`,
+  `--popover`, `--muted` with `oklch(` values for light and dark, and carry
+  rules for `h-10`, `align-top`, `gap-0`, `data-disabled:opacity-50`,
+  `origin-(--radix-popover-content-transform-origin)`.
+- `pnpm --filter @memon/web test`: 177 files, 1307 tests passed.
