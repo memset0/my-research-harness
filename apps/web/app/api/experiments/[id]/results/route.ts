@@ -39,7 +39,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             diagnostics: details.diagnostics ?? [],
             updatedAt: details.updatedAt ?? null,
           },
-          { status: 422 },
+          // The same status central returns for an invalid results.yaml; the
+          // route-level code and diagnostics body are unchanged.
+          { status: 400 },
         )
       }
       return NextResponse.json(

@@ -6,13 +6,14 @@ import {
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { RunFilesResponse } from '@/lib/dto/runs'
+import { withValidRunId } from '../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 const DEFAULT_DEPTH = 3
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function handleGET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await params
   const url = new URL(req.url)
@@ -72,3 +73,5 @@ function legacyFileTree(node: BackendRunFileTreeNode): BackendRunFileTreeNode & 
     ...(node.children ? { children: node.children.map(legacyFileTree) } : {}),
   }
 }
+
+export const GET = withValidRunId(handleGET)

@@ -1,6 +1,7 @@
 import { WARNING_CATEGORIES } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { WarningsConflict, WarningsListResponse, WarningsOpResponse } from '@/lib/dto/warnings'
+import { withValidRunId } from '../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import {
   listStandaloneWarnings,
@@ -10,7 +11,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const runtime = await getRuntime()
     const { id } = await ctx.params
@@ -26,7 +27,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   }
 }
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePOST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const runtime = await getRuntime()
     const { id } = await ctx.params
@@ -69,3 +70,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     )
   }
 }
+
+export const GET = withValidRunId(handleGET)
+export const POST = withValidRunId(handlePOST)

@@ -288,6 +288,7 @@ export {
   ID_REGEX,
   ID_WIDTH,
   isId,
+  isRunDirName,
   padId,
   parseId,
   RUN_MENTION_SOURCE,

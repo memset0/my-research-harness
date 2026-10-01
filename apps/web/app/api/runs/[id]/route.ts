@@ -3,13 +3,14 @@ import { BackendRunResponseSchema } from '@memon/core'
 import { NextResponse } from 'next/server'
 import type { FullExperiment } from '@/lib/dto/runs'
 import type { Wire } from '@/lib/dto/wire'
+import { withValidRunId } from '../../../../lib/server/run-id'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneRun } from '../../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+async function handleGET(request: Request, context: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const id = (await context.params).id
   const requestedProject = new URL(request.url).searchParams.get('project')
@@ -35,3 +36,5 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     { status: 404 },
   )
 }
+
+export const GET = withValidRunId(handleGET)

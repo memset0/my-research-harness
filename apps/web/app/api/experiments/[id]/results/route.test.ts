@@ -125,7 +125,7 @@ describe('GET /api/experiments/:id/results', () => {
     await writeFile(resultsPath, invalid)
 
     const response = await request()
-    expect(response.status).toBe(422)
+    expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({
       error: { code: 'INVALID_RESULTS' },
       diagnostics: [{ severity: 'error' }],

@@ -22,8 +22,8 @@
 
 ## 5. Route fixes
 
-- [ ] 5.1 Validate Run ids at every `app/api/runs/[id]/**` entry (400 `INVALID_RESOURCE`) and add route tests for `..%2Fetc` and a path-qualified id
-- [ ] 5.2 Change the standalone Results invalid-YAML status from 422 to 400 (code `INVALID_RESULTS` kept) and update its route test
+- [x] 5.1 Validate Run ids at every `app/api/runs/[id]/**` entry (400 `INVALID_RESOURCE`) and add route tests for `..%2Fetc` and a path-qualified id
+- [x] 5.2 Change the standalone Results invalid-YAML status from 422 to 400 (code `INVALID_RESULTS` kept) and update its route test
 
 ## 6. Cleanup and verification
 

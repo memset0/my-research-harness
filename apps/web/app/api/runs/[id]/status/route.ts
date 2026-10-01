@@ -3,6 +3,7 @@ import { STATUS_VALUES, type Status } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import type { PatchStatusResponse } from '@/lib/dto/runs'
+import { withValidRunId } from '../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import {
   refreshStandaloneJournal,
@@ -20,7 +21,7 @@ const PatchBody = z
   })
   .strict()
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await ctx.params
   const current = runtime.index.get(id)
@@ -98,3 +99,5 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
   }
 }
+
+export const PATCH = withValidRunId(handlePATCH)
