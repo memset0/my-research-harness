@@ -7,12 +7,12 @@
 
 ## 2. Contradiction deltas
 
-- [ ] 2.1 Verify the `wiki-cli` delta against the registered `memon wiki --help` subcommands
-- [ ] 2.2 Verify the `experiment-readme` and `web-layout` deltas against `apps/web/components/status-pill.tsx` and the `run-readme` status requirement
-- [ ] 2.3 Verify the `run-edit` delta against `packages/cli/src/commands/run-warning.ts` and the warning deprecation notice
-- [ ] 2.4 Verify the `experiment-edit` delta against `CANONICAL_EXPERIMENT_SECTION_HEADINGS` and `runExperimentStatusSet`
-- [ ] 2.5 Run `openspec validate tidy-canonical-specs --type change --strict` and confirm it passes
+- [x] 2.1 Verify the `wiki-cli` delta against the registered `memon wiki --help` subcommands
+- [x] 2.2 Verify the `experiment-readme` and `web-layout` deltas against `apps/web/components/status-pill.tsx` and the `run-readme` status requirement
+- [x] 2.3 Verify the `run-edit` delta against `packages/cli/src/commands/run-warning.ts` and the warning deprecation notice
+- [x] 2.4 Verify the `experiment-edit` delta against `CANONICAL_EXPERIMENT_SECTION_HEADINGS` and `runExperimentStatusSet`
+- [x] 2.5 Run `openspec validate tidy-canonical-specs --type change --strict` and confirm it passes
 
 ## 3. Verification
 
-- [ ] 3.1 Run `openspec validate --specs --strict` and confirm 71/71 canonical specs pass
+- [x] 3.1 Run `openspec validate --specs --strict` and confirm 71/71 canonical specs pass
