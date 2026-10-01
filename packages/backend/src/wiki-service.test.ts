@@ -572,13 +572,18 @@ describe('FilesystemDocumentService wiki review', () => {
     expect(pages.pages.map((page) => page.id)).toEqual(['W0001', 'W0003', 'W0002'])
     expect(pages.pages.every((page) => page.review === null)).toBe(true)
 
-    for (const operation of [
+    // Settle all three together: awaiting them one by one would leave a later
+    // promise without a handler while it rejects, an unhandled rejection.
+    const results = await Promise.allSettled([
       unconfigured.wikiReviewLog('research'),
       unconfigured.markWikiReview('research', commits[0]!),
       unconfigured.unmarkWikiReview('research', commits[0]!),
-    ]) {
-      const error = await operation.catch((thrown: unknown) => thrown)
-      expect((error as BackendDocumentServiceError).code).toBe('EXECUTION_UNAVAILABLE')
+    ])
+    expect(results).toHaveLength(3)
+    for (const result of results) {
+      expect(result.status).toBe('rejected')
+      const reason = (result as PromiseRejectedResult).reason as BackendDocumentServiceError
+      expect(reason.code).toBe('EXECUTION_UNAVAILABLE')
     }
     expect(await fs.readdir(join(repoRoot, '.memon')).catch(() => [])).not.toContain(
       'wiki-review.csv',
