@@ -27,6 +27,9 @@
 
 ## 6. Cleanup and verification
 
-- [ ] 6.1 Remove superseded helpers (CLI local lock/canonical/journal-free copies, Backend inline `mutate`/`readLockedDocument`/`atomicReplace`/`restorePostimage`/`importedVariantStatus`, core `discovery/archive.ts` write path delegating to the new primitive) and verify no references remain with `rg`
-- [ ] 6.2 Run `pnpm -r typecheck`, `pnpm exec biome check .` (0 errors) and the per-package test subsets; record the numbers in this file
-- [ ] 6.3 Run `openspec validate experiment-writes-in-core --strict` and confirm the artifacts describe what was implemented
+- [x] 6.1 Remove superseded helpers (CLI local lock/canonical/journal-free copies, Backend inline `mutate`/`readLockedDocument`/`atomicReplace`/`restorePostimage`/`importedVariantStatus`, the core `discovery/archive.ts` write path, which lost its only caller) and verify no references remain with `rg`
+- [x] 6.2 Run `pnpm -r typecheck`, `pnpm exec biome check .` (0 errors) and the per-package test subsets; record the numbers in this file
+  - Result: typecheck clean; biome 0 errors; core 975/975, cli 298/298, backend 279/279;
+    web `app/api` + `lib/server` 644/654 — the 10 failures are all in
+    `app/api/projects/[project]/git-diff/route.test.ts`, pre-existing (see design Risks).
+- [x] 6.3 Run `openspec validate experiment-writes-in-core --strict` and confirm the artifacts describe what was implemented

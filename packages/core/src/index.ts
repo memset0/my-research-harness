@@ -37,13 +37,6 @@ export {
   assertOwnerOnlyServiceConfig,
   SERVICE_CONFIG_FILE_MODE,
 } from './config/permissions.js'
-export type { ArchiveResult } from './discovery/archive.js'
-export {
-  ArchiveRunningForbiddenError,
-  archiveRun,
-  setRunArchived,
-  unarchiveRun,
-} from './discovery/archive.js'
 export type {
   DeprecationResult,
   ListDeprecatedRunIdsOptions,

@@ -24,6 +24,8 @@ The command SHALL:
    that fails when the directory already exists). Only after the directory
    has been created by this invocation SHALL it write `README.md`,
    `implementation.yaml`, `investigation.yaml` and `results.yaml` inside it.
+   When another entry holds the same `E<NNNN>` number under a lexically
+   smaller name, this invocation SHALL release its directory and retry.
    The README frontmatter SHALL be populated (`id`, `slug`, `title`,
    `hypotheses`, `tags` (`[]` unless the Web caller supplies tags), `runs`
    initially `[]` or seeded from `--from-run`, `created_at=now`,
@@ -84,12 +86,13 @@ exit with `BAD_STATE`.
   `docs/experiments/E0003-third/README.md`
 
 #### Scenario: Concurrent allocation retries on an existing directory
-- **GIVEN** another writer created `docs/experiments/E0004-other/` after
-  this invocation computed `E0004` as the next id
-- **WHEN** this invocation's directory creation for `E0004-<slug>` fails
-  because the id is taken
-- **THEN** it recomputes the next id and retries, never writing a file into
-  a directory it did not create
+- **GIVEN** another writer created `docs/experiments/E0004-aaa/` after
+  this invocation computed `E0004` as the next id for slug `zzz`
+- **WHEN** this invocation creates `E0004-zzz/` and then sees that the
+  number `E0004` is also held by the lexically smaller `E0004-aaa`
+- **THEN** it removes its empty `E0004-zzz/`, recomputes the next id and
+  retries (as it also does when the directory creation itself fails with
+  `EEXIST`), never writing a file into a directory it did not keep
 
 #### Scenario: --from-run binds existing run
 - **WHEN** the user runs `memon experiment create foo --from-run

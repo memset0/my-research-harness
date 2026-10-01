@@ -113,7 +113,11 @@ errors into a direct local tool.
 ### D2. Convergence (written into the delta specs)
 
 - **Id allocation**: atomic non-recursive `mkdir` of `E<NNNN>-<slug>/`; on
-  `EEXIST` recompute and retry (5 attempts). Files are then written with
+  `EEXIST` recompute and retry (5 attempts). Because two writers with
+  different slugs can both create `E<NNNN>-…` directories, the creator then
+  lists the folder: when another entry holds the same number under a
+  lexically smaller name it removes its own directory and retries (neither
+  previous implementation guarded this). Files are then written with
   `wx` into the directory this call created; any failure removes it.
 - **README sections**: one builder renders the canonical heading list from
   `documents.ts` (`CANONICAL_EXPERIMENT_SECTION_HEADINGS`) via the v6
@@ -170,6 +174,16 @@ noop, archived-RUNNING refusal) is shared.
 - Standalone Results keeps code `INVALID_RESULTS` (a route-level code, not a
   core error) and only changes 422 → 400.
 
+### Superseded code removed
+
+CLI local lock/canonical/journal-free copies (`experiment.ts`, `warning.ts`,
+`run-rename.ts`, `experiment-doc.ts` create/link/unlink/status/archive/delete
+bodies), the Backend inline `mutate`, `readLockedDocument`, `atomicReplace`,
+`restorePostimage`, `importedVariantStatus` and create/bind/delete bodies, and
+the core `discovery/archive.ts` write path (`setRunArchived`, `archiveRun`,
+`unarchiveRun`, `ArchiveRunningForbiddenError`, `ArchiveResult`), whose only
+caller was the CLI. The Backend helpers went with the Backend adapter commit.
+
 ### Observable differences (complete list)
 
 1. Web create-from-run Variant description now uses the CLI text.
@@ -193,6 +207,11 @@ noop, archived-RUNNING refusal) is shared.
   listed in the release notes via the design.
 - [Golden fixture churn when the serializer legitimately changes] → one
   fixture directory to regenerate; the failure message names it.
+- [Backend `dist` rebuilt during this change exposes 10 pre-existing
+  failures in `app/api/projects/[project]/git-diff/route.test.ts`, caused by
+  the earlier containment-resolver commit (the test mocks a non-existent
+  project root) and previously masked by a stale `dist`] → out of scope here;
+  reported for follow-up.
 - [`projectFs` and native fs differ in `stat` shape] → the port only reads
   `mtimeMs` and `mode`, which both provide.
 - [Commits land while another agent edits Web components] → this change
