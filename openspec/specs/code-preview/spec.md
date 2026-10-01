@@ -1,7 +1,8 @@
 # code-preview Specification
 
 ## Purpose
-TBD - created by archiving change add-permalink-hover-preview. Update Purpose after archive.
+Resolves a GitHub blob permalink to the matching file range in a local checkout so the dashboard can show referenced code without calling GitHub. It covers the per-project `github` owner/repo-to-path mapping in config and the logged-in-only, path-safe `GET /api/code-preview` endpoint. Permalink parsing lives in `@memon/core` (`git/github-permalink`); the hover presentation belongs to `markdown-link-preview`.
+
 ## Requirements
 ### Requirement: Per-project GitHub-to-local repo mapping in config
 

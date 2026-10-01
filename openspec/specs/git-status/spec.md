@@ -1,7 +1,8 @@
 # git-status Specification
 
 ## Purpose
-TBD - created by archiving change add-git-status-display. Update Purpose after archive.
+Shows each project's working-tree state in the dashboard through a shared git pill in the sidebar and a fixed project footer, refreshed by client-side polling rather than SSE. It covers the core status, changed-file and file-content readers, the `git_status:` config block and the `/api/projects/:project/git-status` endpoints, and guarantees that no user-controlled path reaches `execFile`. Readers live in `@memon/core` (`git/`); the UI lives in `apps/web`.
+
 ## Requirements
 ### Requirement: Core git status reader
 

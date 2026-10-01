@@ -1,7 +1,8 @@
 # git-submodule-bump-diff Specification
 
 ## Purpose
-TBD - created by archiving change add-submodule-bump-diff. Update Purpose after archive.
+Describes how a commit that moves a submodule pointer is presented: the commit reader marks the entry as a submodule bump, and the history dialog renders a `<SubmoduleBumpRow />` that expands into the submodule's own commit range. It is backed by `GET /api/projects/:project/git-range`. Readers live in `@memon/core` (`git/`); the surrounding dialog is specified by `git-history-dialog`.
+
 ## Requirements
 ### Requirement: `GET /api/projects/:project/git-range` endpoint
 

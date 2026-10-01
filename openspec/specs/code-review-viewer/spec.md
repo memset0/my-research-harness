@@ -1,7 +1,8 @@
 # code-review-viewer Specification
 
 ## Purpose
-TBD - created by archiving change add-code-review-docs. Update Purpose after archive.
+Describes the dashboard pages that list code reviews grouped by scope and render one review with interactive checklists. It lets the owner tick review items in the browser, written back with optimistic locking through `code-review-store`, and surfaces an Experiment's associated reviews on its detail page. The UI lives in `apps/web`; storage and parsing rules belong to `code-review-store`.
+
 ## Requirements
 ### Requirement: Code-review list page grouped by scope
 

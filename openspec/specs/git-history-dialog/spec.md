@@ -1,7 +1,8 @@
 # git-history-dialog Specification
 
 ## Purpose
-TBD - created by archiving change add-git-history-dialog. Update Purpose after archive.
+Describes the read-only dashboard dialog for browsing a project's git history: branch and submodule selection, a commit list, and a selected-commit detail pane with file diffs and submodule bump rows. It is backed by the `readGitBranches`, `readGitLog` and `readGitCommit` readers in `@memon/core` (`git/`) and their `/api/projects/:project/git-*` endpoints, with the UI in `apps/web`. The commit-mark badge and editor shown in the dialog follow the deprecated `commit-verification` capability; Wiki review is specified separately.
+
 ## Requirements
 ### Requirement: Two trigger surfaces open the history dialog
 

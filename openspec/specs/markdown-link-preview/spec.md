@@ -1,7 +1,7 @@
 # markdown-link-preview Specification
 
 ## Purpose
-TBD - created by archiving change add-permalink-hover-preview. Update Purpose after archive.
+Makes GitHub line-permalinks in rendered Markdown show the referenced code on hover, scrollable and with the target lines marked, while every other link renders as a plain link. It composes with the existing local-artifact link enhancements of the shared `<Markdown>` component. The UI lives in `apps/web`; resolving the code is the job of `code-preview`.
 
 ## Requirements
 

@@ -1,7 +1,8 @@
 # git-diff-dialog Specification
 
 ## Purpose
-TBD - created by archiving change add-git-diff-dialog. Update Purpose after archive.
+Describes the read-only dashboard dialog, opened from the project footer's git pill, that lists working-tree changes per repository and submodule and expands each file into a diff. It covers the reusable `<FileDiff />` and `<FileRow />` components, the persisted diff view mode, size and binary limits, and the `GET /api/projects/:project/git-diff` endpoint. Git data comes from the readers in `@memon/core` (`git/`); the UI lives in `apps/web`.
+
 ## Requirements
 ### Requirement: Footer git-pill is clickable; opens the git-diff dialog
 

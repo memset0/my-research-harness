@@ -1,7 +1,8 @@
 # git-submodules Specification
 
 ## Purpose
-TBD - created by archiving change add-git-submodule-support. Update Purpose after archive.
+Defines how memon discovers a project's git submodules and scopes git reads to one of them through a `?submodule=<name>` parameter, tolerating submodules that are declared but not checked out. It provides the `readGitSubmodules` reader and `GET /api/projects/:project/submodules` used by the git status, diff and history dialogs. Implemented in `@memon/core` (`git/submodules`) with Web routes under `apps/web/app/api/projects/[project]/`.
+
 ## Requirements
 ### Requirement: `readGitSubmodules` core reader
 

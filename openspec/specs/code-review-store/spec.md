@@ -1,7 +1,8 @@
 # code-review-store Specification
 
 ## Purpose
-TBD - created by archiving change add-code-review-docs. Update Purpose after archive.
+Defines where code-review documents live (`docs/code-review/` project-wide and `code-review/` inside an Experiment bundle), which frontmatter memon parses from them, and how completion is derived from their checkboxes. It serves the dashboard's code-review pages through list, detail and optimistic-locked progress-toggle APIs backed by polling discovery. The Markdown files are the source of truth and parsing lives in `@memon/core` (`code-review/`); authoring belongs to the `memon-write-code-review` skill, not to this capability.
+
 ## Requirements
 ### Requirement: Code-review docs live at two scoped locations
 
