@@ -21,4 +21,4 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run the full `@memon/core` and `@memon/cli` test packages, root `pnpm typecheck` and `biome check .` with zero errors, and `openspec validate bounded-run-discovery --strict`
+- [x] 5.1 Run the full `@memon/core` and `@memon/cli` test packages, root `pnpm typecheck` and `biome check .` with zero errors, and `openspec validate bounded-run-discovery --strict`
