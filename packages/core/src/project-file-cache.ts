@@ -20,17 +20,9 @@ import {
   readMountTable,
 } from './mount-table.js'
 import type { DirEntryData, StatsFields } from './project-io.js'
+import type { FileCacheOptions } from './types.js'
 
-export interface FileCacheOptions {
-  /** Absolute path of the owner-only local snapshot file. */
-  dumpPath: string
-  /** Interval between dirty snapshot attempts. */
-  dumpIntervalMs: number
-  /** Freshness lifetime for `docs/wiki` paths. */
-  wikiTtlMs: number
-  /** Freshness lifetime for every other cached document or listing path. */
-  defaultTtlMs: number
-}
+export type { FileCacheOptions }
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 export const DEFAULT_DUMP_INTERVAL_MS = 30_000

@@ -21,8 +21,8 @@
 
 ## 5. Import cycle (D5)
 
-- [ ] 5.1 Add `project-file-context.ts`; remove the `git/command.ts` → store and store → `git/command.ts` imports; move option types into `types.ts`
-- [ ] 5.2 Add an import-graph test asserting the removed edges stay removed
+- [x] 5.1 Add `project-file-context.ts`; remove the `git/command.ts` → store and store → `git/command.ts` imports; move option types into `types.ts`
+- [x] 5.2 Add an import-graph test asserting the removed edges stay removed
 
 ## 6. Root exports (D6)
 

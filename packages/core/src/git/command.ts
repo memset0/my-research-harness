@@ -19,15 +19,16 @@
 //                   a full object name; concurrent equal reads coalesce.
 //   - invalidation: any command that is not a recognised read (every
 //                   mutation) clears the cache before and after it runs, as
-//                   does `invalidateGitOperations(cwd)` — which the Project
-//                   file store calls whenever project files change.
+//                   does `invalidateGitOperations(cwd)` — registered below as
+//                   a project-file change listener, so the Project file
+//                   store never imports this module.
 //   - failure:      never saved. A failed read is shared only with callers
 //                   already joined to it, and the next caller retries.
 //   - lifetime:     bounded to 256 entries / 32 MiB, oldest evicted first.
 
 import { execFile } from 'node:child_process'
 import { resolve, sep } from 'node:path'
-import { getProjectFileContext } from '../project-file-store.js'
+import { getProjectFileContext, onProjectFilesChanged } from '../project-file-context.js'
 
 export interface GitCommandOptions {
   cwd: string
@@ -296,6 +297,18 @@ export function invalidateGitOperations(cwd?: string): void {
     ) {
       discardGitEntry(state, key, entry)
     }
+  }
+}
+
+// Project file changes invalidate related working-copy observations. One
+// registration per process: a duplicated bundle shares the cache and the
+// listener set through `globalThis`.
+const GIT_INVALIDATION_LISTENER = Symbol.for('memon.git-operation-cache.listener.v1')
+{
+  const carrier = globalThis as typeof globalThis & { [GIT_INVALIDATION_LISTENER]?: true }
+  if (carrier[GIT_INVALIDATION_LISTENER] !== true) {
+    carrier[GIT_INVALIDATION_LISTENER] = true
+    onProjectFilesChanged((root) => invalidateGitOperations(root))
   }
 }
 

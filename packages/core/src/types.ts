@@ -4,8 +4,6 @@
 // YAML on disk uses snake_case; we convert to camelCase at the parse boundary
 // so internal code is idiomatic TypeScript.
 
-import type { FileAccessOptions, FileCacheOptions } from './project-file-store.js'
-
 export type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
 
 export const STATUS_VALUES: readonly Status[] = [
@@ -976,3 +974,33 @@ export const DEFAULT_GIT_STATUS: GitStatusConfig = {
 }
 
 export const MIN_GIT_STATUS_INTERVAL_MS = 1_000
+
+// ---------- Project file access options ----------
+
+/** Scheduling limits of the Project file store (`file_access:` config). */
+export interface FileAccessOptions {
+  concurrency: number
+  heartbeatMs: number
+  leaseMs: number
+  fileMinMs: number
+  fileMaxMs: number
+  directoryMinMs: number
+  directoryMaxMs: number
+  maintenanceMinMs: number
+  maintenanceMaxMs: number
+  failureMinMs: number
+  failureMaxMs: number
+  backoffFactor: number
+}
+
+/** Persistent observation cache settings (`file_cache:` config). */
+export interface FileCacheOptions {
+  /** Absolute path of the owner-only local snapshot file. */
+  dumpPath: string
+  /** Interval between dirty snapshot attempts. */
+  dumpIntervalMs: number
+  /** Freshness lifetime for `docs/wiki` paths. */
+  wikiTtlMs: number
+  /** Freshness lifetime for every other cached document or listing path. */
+  defaultTtlMs: number
+}

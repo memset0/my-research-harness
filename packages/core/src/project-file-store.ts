@@ -43,14 +43,12 @@
 // driven lazily by demand), no operation timeouts that would release a slot
 // while the physical call is still running, and no preloading of a project.
 
-import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomBytes } from 'node:crypto'
 import { type Dirent, promises as nodeFs, type PathLike, type Stats } from 'node:fs'
 import type * as FsPromisesModule from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LRUCache } from 'lru-cache'
-import { invalidateGitOperations } from './git/command.js'
 import {
   containingMount,
   isWithinPath,
@@ -68,6 +66,14 @@ import {
   projectFileTtlMs,
 } from './project-file-cache.js'
 import {
+  getProjectFileContext as currentProjectFileContext,
+  FILE_OPERATION_REASONS,
+  type FileOperationReason,
+  notifyProjectFilesChanged,
+  type ProjectFileContext,
+  projectFileContextStorage,
+} from './project-file-context.js'
+import {
   type DirEntryData,
   type DirEntryKind,
   executeProjectIo,
@@ -77,23 +83,21 @@ import {
   type StatsFields,
 } from './project-io.js'
 import { formatIsoLocal } from './time.js'
+import type { FileAccessOptions } from './types.js'
 
 export { configureProjectFileCache, type FileCacheOptions } from './project-file-cache.js'
+export {
+  FILE_OPERATION_REASONS,
+  type FileOperationReason,
+  onProjectFilesChanged,
+  type ProjectFileContext,
+  type ProjectFilesChangedListener,
+} from './project-file-context.js'
+export type { FileAccessOptions } from './types.js'
 
 // ---------------------------------------------------------------------------
 // Public contract
 // ---------------------------------------------------------------------------
-
-export const FILE_OPERATION_REASONS = [
-  'open',
-  'focus',
-  'manual',
-  'heartbeat',
-  'automatic',
-  'write',
-] as const
-
-export type FileOperationReason = (typeof FILE_OPERATION_REASONS)[number]
 
 /** Reasons that represent a person waiting on the answer right now. */
 const HUMAN_REASON: Record<FileOperationReason, boolean> = {
@@ -137,50 +141,6 @@ export function parseFileOperationReason(
 
 export function isHumanFileOperationReason(reason: FileOperationReason | undefined): boolean {
   return reason !== undefined && HUMAN_REASON[reason]
-}
-
-export interface ProjectFileContext {
-  /** Absolute project root. Identity of every cache key created in the context. */
-  root: string
-  /**
-   * Physical storage class of the Project. `'local'` performs every operation
-   * directly on the native filesystem inside this context: contained and
-   * read-only-enforced, but never queued, coalesced, cached, leased, backed
-   * off, counted or run in an I/O worker. `undefined` means `'sshfs'` — the
-   * scheduled path — so a caller that predates the switch keeps its
-   * behaviour. (The *config* default is the opposite: an unconfigured
-   * Project is local.)
-   */
-  storage?: 'local' | 'sshfs'
-  /** Physical storage bucket sharing one concurrency limit. Defaults to `'default'`. */
-  storageGroup?: string
-  /** Why the read happens; human reasons reset backoff and take priority. */
-  reason?: FileOperationReason
-  /** Opaque tab/page id used for attention leases and freshness scoping. */
-  attentionId?: string
-  /** When true, every mutating facade method fails with EROFS. */
-  readOnly?: boolean
-  /**
-   * Opt in to persisting this project's observations across restarts. Honoured
-   * only when the root also resolves to a real SSHFS mount: a local project is
-   * never written to the cache database.
-   */
-  persistentCache?: boolean
-}
-
-export interface FileAccessOptions {
-  concurrency: number
-  heartbeatMs: number
-  leaseMs: number
-  fileMinMs: number
-  fileMaxMs: number
-  directoryMinMs: number
-  directoryMaxMs: number
-  maintenanceMinMs: number
-  maintenanceMaxMs: number
-  failureMinMs: number
-  failureMaxMs: number
-  backoffFactor: number
 }
 
 export const DEFAULT_FILE_ACCESS_OPTIONS: FileAccessOptions = {
@@ -955,7 +915,7 @@ function observationFromPersisted(payload: PersistedPayload, path: string): Obse
 
 class ProjectFileStore {
   readonly epoch = randomBytes(8).toString('hex')
-  readonly contextStorage = new AsyncLocalStorage<ProjectFileContext>()
+  readonly contextStorage = projectFileContextStorage()
 
   private options: FileAccessOptions = { ...DEFAULT_FILE_ACCESS_OPTIONS }
   // Scheduler metadata and tasks never enter this completed-value LRU.
@@ -1645,7 +1605,7 @@ class ProjectFileStore {
    */
   invalidate(root: string, path?: string): void {
     const normalizedRoot = resolve(root)
-    invalidateGitOperations(normalizedRoot)
+    notifyProjectFilesChanged(normalizedRoot)
     if (path === undefined) {
       for (const entry of this.entries.values()) {
         if (entry.root === normalizedRoot) this.invalidateEntry(entry)
@@ -2195,7 +2155,7 @@ export function withProjectFileContext<T>(
 
 /** The active context, or undefined when running outside one (CLI, scripts). */
 export function getProjectFileContext(): ProjectFileContext | undefined {
-  return getStore().contextStorage.getStore()
+  return currentProjectFileContext()
 }
 
 export function configureProjectFileStore(options: Partial<FileAccessOptions>): void {
