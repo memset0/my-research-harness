@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { paramsFor } from '@memon/test-utils'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -31,10 +32,6 @@ const CLEAN_STATUS = {
   unstaged: 0,
   untracked: 0,
   dirty: false,
-}
-
-function paramsFor(name: string) {
-  return { params: Promise.resolve({ project: name }) }
 }
 
 function req(name: string, headers: Record<string, string> = {}): NextRequest {

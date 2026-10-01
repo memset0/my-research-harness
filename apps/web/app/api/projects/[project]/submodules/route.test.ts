@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { paramsFor } from '@memon/test-utils'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -22,10 +23,6 @@ import { GET } from './route'
 const PAYLOAD = {
   enabled: true as const,
   submodules: [{ name: 'vendor/foo', path: 'vendor/foo' }],
-}
-
-function paramsFor(name: string) {
-  return { params: Promise.resolve({ project: name }) }
 }
 
 function req(name: string, headers: Record<string, string> = {}): NextRequest {

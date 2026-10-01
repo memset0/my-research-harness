@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { paramsFor } from '@memon/test-utils'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,10 +19,6 @@ vi.mock('@memon/core', async (importOriginal) => {
 import { readGitFileContents } from '@memon/core'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import { GET } from './route'
-
-function paramsFor(name: string) {
-  return { params: Promise.resolve({ project: name }) }
-}
 
 function req(name: string, query: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(`http://localhost/api/projects/${name}/git-diff?${query}`, {
