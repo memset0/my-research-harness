@@ -1,9 +1,17 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
+    "composite": true,
+    "emitDeclarationOnly": true,
     "rootDir": "./src",
-    "types": ["node"]
+    "outDir": "./node_modules/.cache/tsbuild",
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuild/tsconfig.tsbuildinfo",
+    "types": ["node"],
+    "paths": {
+      "@memon/core": ["../core/src/index.ts"],
+      "@memon/skills": ["../skills/src/index.ts"]
+    }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "references": [{ "path": "../core" }, { "path": "../skills" }]
 }

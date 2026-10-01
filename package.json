@@ -20,7 +20,7 @@
     "check": "biome check .",
     "format": "biome format --write .",
     "validate:release": "pnpm --filter @memon/core build && node scripts/validate-release.mjs",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc -b",
     "memon": "pnpm --filter @memon/cli memon",
     "prepare": "node scripts/install-git-hooks.mjs"
   },

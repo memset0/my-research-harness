@@ -102,6 +102,14 @@ uses the standalone `tsconfig.build.json`. Verified with the existing
 `update.test.ts` plus a `git archive` export where
 `pnpm install --frozen-lockfile --filter @memon/cli...` and both builds run.
 
+Observed while verifying (pre-existing, unchanged by this change, out of
+scope): in a fresh export that has never built `@memon/skills`, the CLI build
+fails with TS2307 on `import('@memon/skills')` because `memon update` builds
+only core and cli and `packages/skills/dist` is absent. The same export with
+the old configs fails identically; with a skills `dist/` present (any
+previously built node) the CLI builds and `memon --version` runs. Recorded as
+Future.
+
 ### D3. `@memon/test-utils`, consumed by alias rather than dependency
 
 `packages/test-utils` is private, has no build, and is never declared as a
@@ -179,5 +187,7 @@ Config-only. Rollback is reverting the commits; no on-disk or wire state.
 
 - vitest 2 → 5 and jsdom 25 → 30 together, then TypeScript 7.
 - Move Web tests to the D5 convention.
+- Make `memon update` build `@memon/skills` declarations (or type the dynamic
+  import) so a never-built CLI-only export can build the CLI.
 - Adopt `@memon/test-utils` in core tests and in the remaining ad-hoc
   `mkdtemp` sites.

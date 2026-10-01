@@ -70,7 +70,10 @@ or comments. Tracked examples use the neutral placeholders already in the repo
 
 pnpm monorepo (Node ≥ 20.19, pnpm 10). `pnpm install` also installs the
 lefthook pre-commit hooks (`lefthook.yml`: Biome check on staged files +
-`pnpm -r typecheck`).
+root `pnpm typecheck`). `pnpm typecheck` is one incremental `tsc -b` over the
+TypeScript project references in the root `tsconfig.json`; it reads workspace
+packages' source, never their `dist/`, so no build is needed first.
+`pnpm build` (each package's `tsconfig.build.json`) alone writes `dist/`.
 
 | Path | Role / source of truth |
 |---|---|

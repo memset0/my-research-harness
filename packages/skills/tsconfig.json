@@ -1,11 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
+    "composite": true,
+    "emitDeclarationOnly": true,
     "rootDir": "./src",
-    "lib": ["ES2022"],
-    "types": ["node"]
+    "outDir": "./node_modules/.cache/tsbuild",
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuild/tsconfig.tsbuildinfo",
+    "types": ["node"],
+    "paths": { "@memon/core": ["../core/src/index.ts"] }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "references": [{ "path": "../core" }]
 }

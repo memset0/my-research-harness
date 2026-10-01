@@ -20,8 +20,8 @@
   "scripts": {
     "build": "node ../../scripts/wiki-kinds.mjs --check && node ../../scripts/component-docs.mjs --check && node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
     "prepack": "node ../../scripts/wiki-kinds.mjs --check && node ../../scripts/component-docs.mjs --check",
-    "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest"
   },

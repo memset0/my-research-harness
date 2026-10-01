@@ -1,9 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
+    "composite": true,
+    "emitDeclarationOnly": true,
     "rootDir": "./src",
+    "outDir": "./node_modules/.cache/tsbuild",
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuild/tsconfig.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "src/**/*.json"]
 }

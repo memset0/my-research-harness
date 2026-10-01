@@ -1,10 +1,10 @@
 ## 1. Project references (D1, D2, D6)
 
-- [ ] 1.1 Convert core, skills, backend, cli `tsconfig.json` to composite typecheck projects (declaration cache, `paths`, `references`) and make each `tsconfig.build.json` standalone; verify `dist/` built with old and new configs is identical
-- [ ] 1.2 Add root solution `tsconfig.json` and `apps/web/tsconfig.typecheck.json`; switch root/package `typecheck` scripts to `tsc -b` and package `dev` scripts to `tsconfig.build.json`; verify `pnpm typecheck` and `pnpm -r typecheck` are green
-- [ ] 1.3 Verify acceptance: with `dist/` absent, typecheck is green and creates no `dist/`; after changing a core export signature without building, typecheck reports backend and cli errors; record cold/warm timings against the 12-14 s baseline
-- [ ] 1.4 Point the lefthook pre-commit typecheck at `pnpm typecheck` and update the AGENTS.md typecheck/test command wording; verify by timing a real commit hook
-- [ ] 1.5 Verify `memon update`'s path: run `update.test.ts`, and in a `git archive` export run `pnpm install --frozen-lockfile --filter @memon/cli...`, build core and cli, and run the built `memon --version`
+- [x] 1.1 Convert core, skills, backend, cli `tsconfig.json` to composite typecheck projects (declaration cache, `paths`, `references`) and make each `tsconfig.build.json` standalone; verify `dist/` built with old and new configs is identical
+- [x] 1.2 Add root solution `tsconfig.json` and `apps/web/tsconfig.typecheck.json`; switch root/package `typecheck` scripts to `tsc -b` and package `dev` scripts to `tsconfig.build.json`; verify `pnpm typecheck` and `pnpm -r typecheck` are green
+- [x] 1.3 Verify acceptance: with `dist/` absent, typecheck is green and creates no `dist/`; after changing a core export signature without building, typecheck reports backend and cli errors; record cold/warm timings against the 12-14 s baseline
+- [x] 1.4 Point the lefthook pre-commit typecheck at `pnpm typecheck` and update the AGENTS.md typecheck/test command wording; verify by timing a real commit hook
+- [x] 1.5 Verify `memon update`'s path: run `update.test.ts`, and in a `git archive` export run `pnpm install --frozen-lockfile --filter @memon/cli...`, build core and cli, and run the built `memon --version`
 
 ## 2. Shared test utilities (D3)
 

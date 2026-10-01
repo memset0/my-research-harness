@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuild/typecheck.tsbuildinfo",
+    "paths": {
+      "@/*": ["./*"],
+      "@memon/core": ["../../packages/core/src/index.ts"],
+      "@memon/core/wiki-kinds.json": ["../../packages/core/src/wiki/kinds.json"],
+      "@memon/backend": ["../../packages/backend/src/index.ts"]
+    }
+  },
+  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/backend" }]
+}
