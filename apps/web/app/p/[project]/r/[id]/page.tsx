@@ -6,7 +6,7 @@
 
 import { join } from 'node:path'
 import { permanentRedirect } from 'next/navigation'
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 
 export default async function LegacyRunRedirect({
   params,

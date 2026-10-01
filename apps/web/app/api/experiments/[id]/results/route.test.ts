@@ -6,9 +6,9 @@ import { dirname, join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import { GET } from './route'
 
 const EXPERIMENT_ID = 'E0001-refresh-results'

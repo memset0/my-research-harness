@@ -1,20 +1,22 @@
+import 'server-only'
+
 import { BackendDocumentServiceError, BackendProjectServiceError } from '@memon/backend'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { type TranslationDocument, translationSources } from '../../translation/sources'
+import { TRANSLATION_TARGETS, type TranslationTarget } from '../../translation/target'
 import { publicOrigin } from '../auth/public-url'
 import { readIdentityFromRequest } from '../auth/request-context'
 import { proxyCentralApiRequest } from '../central/backend-proxy'
 import { directCentralRuntime } from '../central/direct-runtime'
 import { getCentralFleet } from '../central/fleet-runtime'
 import { getRuntime } from '../runtime'
-import { standaloneServices } from '../server/standalone-services'
+import { standaloneServices } from '../standalone-services'
 import { getTranslationCache } from './cache'
 import { runCodexTranslation, TRANSLATION_MODEL, TranslationError } from './codex'
 import { createTranslationManifest } from './manifest'
 import { BodyTranslationService } from './service'
-import { type TranslationDocument, translationSources } from './sources'
-import { TRANSLATION_TARGETS, type TranslationTarget } from './target'
 
 const selector = z
   .string()

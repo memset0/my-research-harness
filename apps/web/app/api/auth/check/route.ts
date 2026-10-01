@@ -11,9 +11,9 @@ import {
   TOO_MANY_HEADERS,
   UNAUTHORIZED_HEADERS,
   verifyBasic,
-} from '../../../../lib/auth/basic-auth'
-import { clientIpFromHeaders, consume, refund } from '../../../../lib/auth/rate-limit'
-import { getRuntime } from '../../../../lib/runtime'
+} from '../../../../lib/server/auth/basic-auth'
+import { clientIpFromHeaders, consume, refund } from '../../../../lib/server/auth/rate-limit'
+import { getRuntime } from '../../../../lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

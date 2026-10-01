@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { TranslationError } from '../../../../lib/translation/codex'
+import { TranslationError } from '../../../../lib/server/translation/codex'
 import {
   assertTranslationOwner,
   boundedTranslationJson,
@@ -12,7 +12,7 @@ import {
   translationOptions,
   translationResponse,
   translationService,
-} from '../../../../lib/translation/http'
+} from '../../../../lib/server/translation/http'
 
 export const dynamic = 'force-dynamic'
 

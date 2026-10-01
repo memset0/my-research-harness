@@ -1,3 +1,5 @@
+import 'server-only'
+
 export {
   buildExperimentDocumentView,
   type ExperimentDisplaySection as WebExperimentSection,

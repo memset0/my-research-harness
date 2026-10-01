@@ -3,16 +3,16 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('@/lib/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
-vi.mock('@/lib/central/central-shares', () => ({ validateCentralShare: vi.fn() }))
+vi.mock('@/lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('@/lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
+vi.mock('@/lib/server/central/central-shares', () => ({ validateCentralShare: vi.fn() }))
 vi.mock('@/lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
 
-import { validateCentralShare } from '@/lib/central/central-shares'
-import { getCentralFleet } from '@/lib/central/fleet-runtime'
-import { getRuntime } from '@/lib/runtime'
+import { validateCentralShare } from '@/lib/server/central/central-shares'
+import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
+import { getRuntime } from '@/lib/server/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
-import { GET } from '../../app/share/[host]/[project]/route'
+import { GET } from '../../../app/share/[host]/[project]/route'
 import { verifySharesCookie } from './cookies'
 
 const SECRET = 'central-session-secret'

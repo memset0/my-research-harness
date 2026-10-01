@@ -1,3 +1,5 @@
+import 'server-only'
+
 import {
   type BackendSlurmService,
   createBackendSlurmService,
@@ -16,7 +18,7 @@ import {
   validateShare,
   withJournalInvocation,
 } from '@memon/core'
-import { runSqueueMe } from '../slurm/squeue'
+import { runSqueueMe } from './slurm/squeue'
 
 export const STANDALONE_SERVICE_MIGRATION = {
   projectReads: 'shared',

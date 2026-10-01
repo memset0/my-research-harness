@@ -1,8 +1,10 @@
+import 'server-only'
+
 import { BackendGitServiceError, type FilesystemGitService } from '@memon/backend'
 import type { Config } from '@memon/core'
 import { NextResponse } from 'next/server'
-import { readIdentityFromRequest } from '../auth/request-context'
-import { getRuntime } from '../runtime'
+import { readIdentityFromRequest } from './auth/request-context'
+import { getRuntime } from './runtime'
 import { standaloneServices } from './standalone-services'
 
 export interface StandaloneGitContext {

@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, mkdtemp, rm, stat } from 'node:fs/promises'
@@ -5,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { promisify } from 'node:util'
-import { TRANSLATION_TARGET_NAMES, type TranslationTarget } from './target'
+import { TRANSLATION_TARGET_NAMES, type TranslationTarget } from '../../translation/target'
 
 export const TRANSLATION_MODEL = 'gpt-5.3-codex-spark'
 export const TESTED_CODEX_VERSION = '0.153.4'

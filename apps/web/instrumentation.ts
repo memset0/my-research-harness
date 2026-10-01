@@ -3,7 +3,7 @@
 //
 // The actual warmup runs in `apps/web/server.ts` (the tsx entry point) so the
 // runtime cache is populated BEFORE Next finishes preparing. That path uses a
-// direct `import { getRuntime } from './lib/runtime'`, which tsx resolves at
+// direct `import { getRuntime } from './lib/server/runtime'`, which tsx resolves at
 // process load time — Next's bundler never sees it.
 //
 // This hook can't replicate that import directly, because the server-bundled
@@ -13,7 +13,7 @@
 // against webpack's static analysis but isn't resilient against future
 // bundler changes.
 //
-// So instead of trying to import lib/runtime here, we just check the
+// So instead of trying to import lib/server/runtime here, we just check the
 // globalThis flag set by server.ts. If present, the cache is already warm
 // and we no-op. If absent, we warn — the runtime will then be initialized
 // lazily on the first request (slower, but correct).

@@ -6,17 +6,17 @@ vi.mock('next/navigation', () => ({
     throw new Error(`REDIRECT:${path}`)
   }),
 }))
-vi.mock('../lib/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('../lib/auth/request-context', () => ({ readIdentityFromHeaders: vi.fn() }))
-vi.mock('../lib/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
-vi.mock('../lib/central/central-projects', () => ({ aggregateCentralProjects: vi.fn() }))
-vi.mock('../lib/central/direct-runtime', () => ({ directCentralRuntime: vi.fn() }))
+vi.mock('../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../lib/server/auth/request-context', () => ({ readIdentityFromHeaders: vi.fn() }))
+vi.mock('../lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
+vi.mock('../lib/server/central/central-projects', () => ({ aggregateCentralProjects: vi.fn() }))
+vi.mock('../lib/server/central/direct-runtime', () => ({ directCentralRuntime: vi.fn() }))
 
-import { readIdentityFromHeaders } from '../lib/auth/request-context'
-import { aggregateCentralProjects } from '../lib/central/central-projects'
-import { directCentralRuntime } from '../lib/central/direct-runtime'
-import { getCentralFleet } from '../lib/central/fleet-runtime'
-import { getRuntime } from '../lib/runtime'
+import { readIdentityFromHeaders } from '../lib/server/auth/request-context'
+import { aggregateCentralProjects } from '../lib/server/central/central-projects'
+import { directCentralRuntime } from '../lib/server/central/direct-runtime'
+import { getCentralFleet } from '../lib/server/central/fleet-runtime'
+import { getRuntime } from '../lib/server/runtime'
 import Home from './page'
 
 describe('home route role-aware project redirect', () => {

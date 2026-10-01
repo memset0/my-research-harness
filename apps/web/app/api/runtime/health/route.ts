@@ -5,7 +5,7 @@
 // and as a quick way to verify add-runtime-cache is working in prod.
 
 import { NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

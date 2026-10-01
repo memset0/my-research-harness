@@ -8,7 +8,7 @@
 
 import { markJournalInvocationOutcome, WIKI_ID_REGEX } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import {
   parseWikiWriteBody,
   wikiError,

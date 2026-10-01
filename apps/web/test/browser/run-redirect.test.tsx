@@ -20,15 +20,15 @@ vi.mock('next/navigation', () => ({
   }),
 }))
 
-vi.mock('../../app/p/[project]/r/[id]/../../../../../lib/runtime', async (importActual) => {
-  const actual = await importActual<typeof import('../../lib/runtime')>()
+vi.mock('../../lib/server/runtime', async (importActual) => {
+  const actual = await importActual<typeof import('../../lib/server/runtime')>()
   return { declaredParentExperimentId: actual.declaredParentExperimentId, getRuntime: vi.fn() }
 })
 
 import type { Experiment, Run } from '@memon/core'
 import { permanentRedirect } from 'next/navigation'
 import LegacyRunRedirect from '../../app/p/[project]/r/[id]/page'
-import { declaredParentExperimentId, getRuntime } from '../../lib/runtime'
+import { declaredParentExperimentId, getRuntime } from '../../lib/server/runtime'
 
 const ROOT = '/srv/project-a'
 const RUN_ID = 'train-260501-100000'

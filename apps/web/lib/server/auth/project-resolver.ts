@@ -1,6 +1,8 @@
 // Build a ProjectResolverContext from a live Runtime. Centralized so
 // middleware + route-classes can do id-to-project lookups via one helper.
 
+import 'server-only'
+
 import type { Runtime } from '../runtime'
 import type { ProjectResolverContext } from './route-classes'
 

@@ -6,8 +6,8 @@
 // scopes) after logout.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { buildClearCookieHeader, SESSION_COOKIE_NAME } from '@/lib/auth/cookies'
-import { isHttps, publicOrigin } from '@/lib/auth/public-url'
+import { buildClearCookieHeader, SESSION_COOKIE_NAME } from '@/lib/server/auth/cookies'
+import { isHttps, publicOrigin } from '@/lib/server/auth/public-url'
 
 function wantsJson(req: NextRequest): boolean {
   const accept = req.headers.get('accept') ?? ''

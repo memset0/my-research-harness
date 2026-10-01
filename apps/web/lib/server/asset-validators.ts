@@ -6,6 +6,8 @@
 // `If-None-Match` and `If-Modified-Since` identically, so one asset client
 // serves bundles and document assets alike.
 
+import 'server-only'
+
 export interface ByteRange {
   start: number
   end: number

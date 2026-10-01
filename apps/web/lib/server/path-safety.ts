@@ -4,6 +4,8 @@
 // read arbitrary files. Every endpoint that accepts a `path` query parameter
 // MUST go through `assertWithinProjectRoots()` before touching the filesystem.
 
+import 'server-only'
+
 import { resolve } from 'node:path'
 import type { Config } from '@memon/core'
 

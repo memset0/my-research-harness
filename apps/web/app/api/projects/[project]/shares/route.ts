@@ -14,10 +14,10 @@
 
 import { BackendShareCreateResponseSchema, HostIdSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { publicOrigin } from '@/lib/auth/public-url'
-import { proxyCentralApiRequest } from '@/lib/central/backend-proxy'
-import { getCentralFleet } from '@/lib/central/fleet-runtime'
-import { getRuntime } from '@/lib/runtime'
+import { publicOrigin } from '@/lib/server/auth/public-url'
+import { proxyCentralApiRequest } from '@/lib/server/central/backend-proxy'
+import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
+import { getRuntime } from '@/lib/server/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
 
 interface RouteParams {

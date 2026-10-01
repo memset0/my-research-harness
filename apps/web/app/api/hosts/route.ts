@@ -1,9 +1,9 @@
 import type { HostAvailability } from '@memon/core'
-import { servesProjectsDirectly } from '../../../lib/central/direct-projects'
-import { directCentralRuntime } from '../../../lib/central/direct-runtime'
-import type { DisplayHostAvailability } from '../../../lib/central/fleet-controller'
-import { getCentralFleet } from '../../../lib/central/fleet-runtime'
-import { getRuntime } from '../../../lib/runtime'
+import { servesProjectsDirectly } from '../../../lib/server/central/direct-projects'
+import { directCentralRuntime } from '../../../lib/server/central/direct-runtime'
+import type { DisplayHostAvailability } from '../../../lib/server/central/fleet-controller'
+import { getCentralFleet } from '../../../lib/server/central/fleet-runtime'
+import { getRuntime } from '../../../lib/server/runtime'
 
 export interface HostsResponse {
   hosts: DisplayHostAvailability[]

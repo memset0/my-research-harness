@@ -3,16 +3,16 @@
 import type { AuthConfig } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { __limits, __resetForTests } from '../../../../lib/auth/rate-limit'
+import { __limits, __resetForTests } from '../../../../lib/server/auth/rate-limit'
 
 // Mock the runtime singleton — the real one walks the filesystem.
-vi.mock('../../../../lib/runtime', () => {
+vi.mock('../../../../lib/server/runtime', () => {
   return {
     getRuntime: vi.fn(),
   }
 })
 
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { GET } from './route'
 
 function basic(user: string, pass: string): string {

@@ -12,8 +12,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { SESSION_COOKIE_NAME, verifySessionCookie } from '@/lib/auth/cookies'
-import { getRuntime } from '@/lib/runtime'
+import { SESSION_COOKIE_NAME, verifySessionCookie } from '@/lib/server/auth/cookies'
+import { getRuntime } from '@/lib/server/runtime'
 
 interface PageProps {
   searchParams: Promise<{ next?: string; error?: string }>

@@ -238,7 +238,7 @@ export const DIRECT_RUNTIME_SURFACES = {
     scope: 'global',
     purpose: 'bootstrap',
   },
-  'lib/central/fleet-runtime.ts': {
+  'lib/server/central/fleet-runtime.ts': {
     owner: 'central',
     scope: 'global',
     purpose: 'server-entry',
@@ -258,7 +258,7 @@ export const DIRECT_RUNTIME_SURFACES = {
     scope: 'resource',
     purpose: 'project-data',
   },
-  'lib/translation/http.ts': {
+  'lib/server/translation/http.ts': {
     owner: 'composed',
     scope: 'resource',
     purpose: 'project-data',

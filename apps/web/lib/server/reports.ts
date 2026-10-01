@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { createHash } from 'node:crypto'
 import type { Dirent } from 'node:fs'
 import { extname, join, relative, resolve, sep } from 'node:path'

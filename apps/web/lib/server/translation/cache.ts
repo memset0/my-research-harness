@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { createHash } from 'node:crypto'
 import { chmod, open } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

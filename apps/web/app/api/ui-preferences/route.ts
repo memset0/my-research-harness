@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
-import { getRuntime } from '@/lib/runtime'
+import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
+import { getRuntime } from '@/lib/server/runtime'
 import { getUiPreferencesStore } from '@/lib/server/ui-preferences-store'
 
 export const dynamic = 'force-dynamic'

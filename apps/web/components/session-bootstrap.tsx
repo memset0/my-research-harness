@@ -6,7 +6,7 @@
 // uses that as the initial context value.
 
 import type { ProjectRef } from '@memon/core'
-import { readIdentityFromHeaders } from '@/lib/auth/request-context'
+import { readIdentityFromHeaders } from '@/lib/server/auth/request-context'
 
 export interface SerializedSession {
   role: 'owner' | 'viewer' | 'anon'

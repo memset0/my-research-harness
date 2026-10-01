@@ -1,3 +1,5 @@
+import 'server-only'
+
 import type { BackendProjectSummary } from '@memon/core'
 
 export type LegacyProjectResolution =

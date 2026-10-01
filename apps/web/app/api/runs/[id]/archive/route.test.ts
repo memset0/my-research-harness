@@ -16,11 +16,11 @@ import { type Run, RunIndex, readJournalInvocations, readRunDir } from '@memon/c
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../../lib/runtime', () => ({
+vi.mock('../../../../../lib/server/runtime', () => ({
   getRuntime: vi.fn(),
 }))
 
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import { PATCH } from './route'
 
 const README_BASE = `---

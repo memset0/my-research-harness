@@ -26,7 +26,7 @@
 // /_next/image, /favicon.ico — these never hit middleware.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { TOO_MANY_HEADERS, UNAUTHORIZED_HEADERS } from './lib/auth/basic-auth'
+import { TOO_MANY_HEADERS, UNAUTHORIZED_HEADERS } from './lib/server/auth/basic-auth'
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
@@ -34,16 +34,20 @@ import {
   SESSION_COOKIE_NAME,
   SHARES_COOKIE_NAME,
   SHARES_COOKIE_TTL_SECONDS,
-} from './lib/auth/cookies'
-import { resolveIdentity, type ShareValidator } from './lib/auth/identity'
-import { makeProjectResolver } from './lib/auth/project-resolver'
-import { isHttps, publicOrigin } from './lib/auth/public-url'
-import { clientIpFromHeaders, consume, refund } from './lib/auth/rate-limit'
-import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from './lib/auth/request-context'
-import { classifyAndExtract, isAuthBypass, type ResolvedProject } from './lib/auth/route-classes'
-import { validateCentralShare } from './lib/central/central-shares'
-import { getCentralFleet } from './lib/central/fleet-runtime'
-import { getRuntime } from './lib/runtime'
+} from './lib/server/auth/cookies'
+import { resolveIdentity, type ShareValidator } from './lib/server/auth/identity'
+import { makeProjectResolver } from './lib/server/auth/project-resolver'
+import { isHttps, publicOrigin } from './lib/server/auth/public-url'
+import { clientIpFromHeaders, consume, refund } from './lib/server/auth/rate-limit'
+import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from './lib/server/auth/request-context'
+import {
+  classifyAndExtract,
+  isAuthBypass,
+  type ResolvedProject,
+} from './lib/server/auth/route-classes'
+import { validateCentralShare } from './lib/server/central/central-shares'
+import { getCentralFleet } from './lib/server/central/fleet-runtime'
+import { getRuntime } from './lib/server/runtime'
 import { standaloneServices } from './lib/server/standalone-services'
 
 export const config = {

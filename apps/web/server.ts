@@ -1,16 +1,16 @@
 // Custom Next.js entry. The proxy / auth / upgrade-routing logic lives in
-// `lib/server-core.ts` so it can be unit-tested without booting Next; this
+// `lib/server/server-core.ts` so it can be unit-tested without booting Next; this
 // file is just the thin wiring that supplies Next's request handler and
 // (in dev) HMR upgrade handler to that core.
 
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import next from 'next'
-import { servesProjectsDirectly } from './lib/central/direct-projects'
-import type { CentralGatewayHandler } from './lib/central/node-http'
-import { prewarmRoutes } from './lib/route-prewarm'
-import { getRuntime } from './lib/runtime'
-import { createMemonServer } from './lib/server-core'
+import { servesProjectsDirectly } from './lib/server/central/direct-projects'
+import type { CentralGatewayHandler } from './lib/server/central/node-http'
+import { prewarmRoutes } from './lib/server/route-prewarm'
+import { getRuntime } from './lib/server/runtime'
+import { createMemonServer } from './lib/server/server-core'
 
 const dev = process.env.NODE_ENV !== 'production'
 
@@ -58,8 +58,8 @@ if (runtime.config.central) {
   // process: no peer service, no service token, no availability probe.
   if (servesProjectsDirectly(runtime.config)) {
     const [{ directCentralRuntime }, { createDirectCentralGateway }] = await Promise.all([
-      import('./lib/central/direct-runtime'),
-      import('./lib/central/direct-gateway'),
+      import('./lib/server/central/direct-runtime'),
+      import('./lib/server/central/direct-gateway'),
     ])
     gateways.push(
       createDirectCentralGateway({
@@ -73,8 +73,8 @@ if (runtime.config.central) {
   // registered Host starts no fleet.
   if (runtime.config.central.hosts.length > 0) {
     const [{ getCentralFleet, stopCentralFleet }, { createCentralHttpBridge }] = await Promise.all([
-      import('./lib/central/fleet-runtime'),
-      import('./lib/central/http-bridge'),
+      import('./lib/server/central/fleet-runtime'),
+      import('./lib/server/central/http-bridge'),
     ])
     const fleet = await getCentralFleet()
     gateways.push(createCentralHttpBridge({ registry: fleet.registry, runtimeAuth: runtime.auth }))

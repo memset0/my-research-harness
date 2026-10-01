@@ -2,7 +2,7 @@ import { BackendMutationError } from '@memon/backend'
 import { EXPERIMENT_STATUS_VALUES, type ExperimentStatus } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import {
   refreshStandaloneExperiment,
   refreshStandaloneJournal,

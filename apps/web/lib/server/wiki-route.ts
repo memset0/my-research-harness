@@ -18,7 +18,7 @@ import {
 } from '@memon/core'
 import { NextResponse } from 'next/server'
 import { lintComponents, listComponentBlocks } from '../components/registry'
-import type { Runtime } from '../runtime'
+import type { Runtime } from './runtime'
 
 /** Summary as the HTTP layer serves it. */
 export type WikiSummaryDto = WikiSummary & { project: string; resource: string }

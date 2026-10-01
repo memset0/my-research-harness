@@ -2,7 +2,7 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('../../../../lib/server/standalone-services', () => ({ standaloneServices: vi.fn() }))
 vi.mock('@memon/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@memon/core')>()),
@@ -10,7 +10,7 @@ vi.mock('@memon/core', async (importOriginal) => ({
   BackendCodeReviewPatchResponseSchema: { parse: (value: unknown) => value },
 }))
 
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 import { GET, PATCH } from './route'
 

@@ -5,8 +5,8 @@
 // The payload shape lives in `lib/runtime-config.ts` next to its reader.
 
 import { DEFAULT_FILE_ACCESS_OPTIONS } from '@memon/core'
-import { getRuntime } from '../lib/runtime'
 import type { RuntimeConfigPayload } from '../lib/runtime-config'
+import { getRuntime } from '../lib/server/runtime'
 
 export type { RuntimeConfigPayload }
 

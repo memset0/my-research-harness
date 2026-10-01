@@ -6,9 +6,9 @@
 // of Experiment details, so source resolution cannot delay their response.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { servesProjectsDirectly } from '../../../../../lib/central/direct-projects'
-import { directCentralRuntime } from '../../../../../lib/central/direct-runtime'
-import { getRuntime } from '../../../../../lib/runtime'
+import { servesProjectsDirectly } from '../../../../../lib/server/central/direct-projects'
+import { directCentralRuntime } from '../../../../../lib/server/central/direct-runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import { wikiError, wikiProjectTarget } from '../../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'

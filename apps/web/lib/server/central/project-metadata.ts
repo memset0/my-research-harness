@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { ProjectRefSchema } from '@memon/core'
 
 export function centralProjectTitle(input: unknown): {

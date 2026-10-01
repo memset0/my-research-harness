@@ -7,6 +7,8 @@
  * extraction. No shell is involved; the path is a single argv element.
  */
 
+import 'server-only'
+
 import { spawn } from 'node:child_process'
 
 const MAX_CONCURRENT = 2

@@ -1,10 +1,10 @@
 ## 1. Server/client layering (D1)
 
-- [ ] 1.1 `git mv` the server-only modules (`auth/`, `central/`, `runtime/`, `slurm/`, server half of `translation/`, `runtime.ts`, `runtime-config-path.ts`, `server-core.ts`, `route-prewarm.ts`, `path-safety.ts`) under `apps/web/lib/server/`, rewrite every import / `vi.mock` / dynamic-import specifier, and verify no reference to an old path remains (`grep`) and `pnpm --filter @memon/web typecheck` passes
-- [ ] 1.2 Delete `apps/web/lib/warnings.ts` after confirming it has no non-test importer (and `lib/experiments.ts` is absent)
-- [ ] 1.3 Add `import 'server-only'` to every non-test `lib/server` module not reachable from `server.ts`, alias `server-only` to an empty stub in `vitest.config.ts`, and add a layering test that derives the entry graph and enforces both directions; verify the test passes and fails on a deliberately unmarked module
-- [ ] 1.4 Update `DIRECT_RUNTIME_SURFACES` and the manifest test's Runtime-module exemption for the new paths and verify `api-route-manifest.test.ts` passes
-- [ ] 1.5 Run `pnpm -r typecheck`, `pnpm exec biome check .`, `pnpm --filter @memon/web test` and a checkout `pnpm --filter @memon/web build` (after confirming the live host does not serve this checkout's `.next`), and verify all pass
+- [x] 1.1 `git mv` the server-only modules (`auth/`, `central/`, `runtime/`, `slurm/`, server half of `translation/`, `runtime.ts`, `runtime-config-path.ts`, `server-core.ts`, `route-prewarm.ts`, `path-safety.ts`) under `apps/web/lib/server/`, rewrite every import / `vi.mock` / dynamic-import specifier, and verify no reference to an old path remains (`grep`) and `pnpm --filter @memon/web typecheck` passes
+- [x] 1.2 Delete `apps/web/lib/warnings.ts` after confirming it has no non-test importer (and `lib/experiments.ts` is absent)
+- [x] 1.3 Add `import 'server-only'` to every non-test `lib/server` module not reachable from `server.ts`, alias `server-only` to an empty stub in `vitest.config.ts`, and add a layering test that derives the entry graph and enforces both directions; verify the test passes and fails on a deliberately unmarked module
+- [x] 1.4 Update `DIRECT_RUNTIME_SURFACES` and the manifest test's Runtime-module exemption for the new paths and verify `api-route-manifest.test.ts` passes
+- [x] 1.5 Run `pnpm -r typecheck`, `pnpm exec biome check .`, `pnpm --filter @memon/web test` and a checkout `pnpm --filter @memon/web build` (after confirming the live host does not serve this checkout's `.next`), and verify all pass
 
 ## 2. Query key factory (D2)
 

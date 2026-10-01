@@ -41,7 +41,7 @@ import {
   validateShare,
   withProjectFileContext,
 } from '@memon/core'
-import { isCollectionResourcePath } from '../resource-policy'
+import { isCollectionResourcePath } from '../../resource-policy'
 import { buildBackendRequestHeaders, buildBrowserResponseHeaders } from './backend-headers'
 import {
   assertRouteCapabilities,

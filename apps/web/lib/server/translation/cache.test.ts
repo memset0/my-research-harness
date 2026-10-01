@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sqlite3 from 'sqlite3'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { literalSegment } from '../../translation/segments'
 import { SqliteTranslationCache } from './cache'
-import { literalSegment } from './segments'
 import { BodyTranslationService } from './service'
 
 let directory: string

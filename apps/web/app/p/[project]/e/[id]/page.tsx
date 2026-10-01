@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { ExperimentPage } from '../../../../../components/experiment-page'
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 
 export async function generateMetadata({
   params,

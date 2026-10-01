@@ -1,7 +1,7 @@
 import { BackendProjectServiceError } from '@memon/backend'
 import { BackendRunResponseSchema } from '@memon/core'
 import { NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneRun } from '../../../../lib/server/standalone-dto'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 

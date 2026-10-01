@@ -10,6 +10,8 @@
 // Routes shape an error response from `{ ok: false, status, message }`
 // uniformly via `NextResponse.json({ error: { message } }, { status })`.
 
+import 'server-only'
+
 import { resolve } from 'node:path'
 import { readGitSubmodules } from '@memon/core'
 

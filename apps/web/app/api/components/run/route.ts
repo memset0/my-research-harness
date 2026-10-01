@@ -14,9 +14,9 @@
 import { ComponentRunError, runDocumentComponents } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { readIdentityFromRequest } from '../../../../lib/auth/request-context'
-import { getRuntime } from '../../../../lib/runtime'
+import { readIdentityFromRequest } from '../../../../lib/server/auth/request-context'
 import { findConfiguredProject } from '../../../../lib/server/project-lookup'
+import { getRuntime } from '../../../../lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

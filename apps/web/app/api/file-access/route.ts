@@ -18,8 +18,7 @@
 import { getFileOperationMetrics } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
-import { getRuntime } from '@/lib/runtime'
+import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import {
   FileAccessSettingsError,
   type FileAccessSettingsErrorCode,
@@ -31,6 +30,7 @@ import {
   saveFileAccessSettings,
   validateFileAccessSettings,
 } from '@/lib/server/file-access-settings'
+import { getRuntime } from '@/lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

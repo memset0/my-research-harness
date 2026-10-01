@@ -1,8 +1,10 @@
+import 'server-only'
+
 import { join } from 'node:path'
 import { BackendMutationError } from '@memon/backend'
 import { JournalRecordingError } from '@memon/core'
 import { NextResponse } from 'next/server'
-import type { Runtime } from '../runtime'
+import type { Runtime } from './runtime'
 import {
   projectDocumentPath,
   refreshStandaloneLifecycle,

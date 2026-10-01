@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { dirname, join } from 'node:path'
 import sqlite3 from 'sqlite3'
 

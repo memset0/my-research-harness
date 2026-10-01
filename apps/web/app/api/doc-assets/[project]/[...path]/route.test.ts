@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import { GET, HEAD } from './route'
 
 let root: string

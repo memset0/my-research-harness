@@ -1,6 +1,6 @@
 import { BackendJournalHistoryResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
  * Owner-only diagnostic history: preserved legacy Journal events plus the typed
  * invocation receipts under `.memon/activity`. Receipt paths and error codes can
  * disclose project internals a share-scoped viewer never sees, so this route is
- * classified owner-only (`shell`) in `lib/auth/route-classes.ts` — the legacy
+ * classified owner-only (`shell`) in `lib/server/auth/route-classes.ts` — the legacy
  * `/api/journal` read keeps its own viewer scope.
  */
 export async function GET(request: NextRequest) {

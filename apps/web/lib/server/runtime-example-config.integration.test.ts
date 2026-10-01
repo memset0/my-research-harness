@@ -7,8 +7,8 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
-const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const runtimeModuleUrl = pathToFileURL(join(webRoot, 'lib', 'runtime.ts')).href
+const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const runtimeModuleUrl = pathToFileURL(join(webRoot, 'lib', 'server', 'runtime.ts')).href
 const tsxBinary = join(webRoot, 'node_modules', '.bin', 'tsx')
 
 let workspace: string

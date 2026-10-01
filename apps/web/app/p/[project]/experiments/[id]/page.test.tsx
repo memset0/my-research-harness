@@ -7,12 +7,12 @@ vi.mock('next/navigation', () => ({
     throw new Error('NEXT_NOT_FOUND')
   }),
 }))
-vi.mock('../../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('../../../../../components/experiment-detail', () => ({
   ExperimentDetail: () => null,
 }))
 
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import ExperimentPage, { generateMetadata } from './page'
 
 const RUN_ID = 'secret-sweep-260101-120000'

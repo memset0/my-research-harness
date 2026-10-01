@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { BackendMutationError } from '@memon/backend'
 import {
   BackendExperimentResponseSchema,
@@ -6,7 +8,7 @@ import {
   ProjectNameSchema,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../runtime'
+import { getRuntime } from './runtime'
 import {
   refreshStandaloneExperiment,
   refreshStandaloneJournal,

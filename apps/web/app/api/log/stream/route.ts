@@ -2,8 +2,8 @@
 
 import { BackendStreamServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
-import { PathSafetyError } from '../../../../lib/path-safety'
-import { getRuntime } from '../../../../lib/runtime'
+import { PathSafetyError } from '../../../../lib/server/path-safety'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneResource } from '../../../../lib/server/standalone-resource'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 

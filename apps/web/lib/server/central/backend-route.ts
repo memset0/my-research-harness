@@ -1,5 +1,5 @@
-import type { ApiMethod, ApiRouteOwnership } from '../server/api-route-manifest'
-import { API_ROUTE_MANIFEST } from '../server/api-route-manifest'
+import type { ApiMethod, ApiRouteOwnership } from '../api-route-manifest'
+import { API_ROUTE_MANIFEST } from '../api-route-manifest'
 
 export type BackendRouteErrorCode =
   | 'INVALID_PATH'

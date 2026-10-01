@@ -3,7 +3,7 @@
 import { join } from 'node:path'
 import { BackendCodePreviewResponseSchema, parseGithubPermalink } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/path-safety'
+import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/server/path-safety'
 import {
   gitError,
   gitServiceError,

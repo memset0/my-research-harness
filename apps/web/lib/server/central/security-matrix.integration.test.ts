@@ -14,7 +14,7 @@ import {
   resolveProjectResource,
 } from '@memon/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createBackendServer } from '../../../../packages/backend/src/server.js'
+import { createBackendServer } from '../../../../../packages/backend/src/server.js'
 import { createMemonServer } from '../server-core'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './backend-headers'
 import { fetchBackendWithoutRedirect, normalizeBackendBaseUrl } from './backend-url'

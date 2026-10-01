@@ -3,15 +3,15 @@
 import type { AuthConfig } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { signSharesCookie } from './lib/auth/cookies'
-import { __limits, __resetForTests } from './lib/auth/rate-limit'
+import { signSharesCookie } from './lib/server/auth/cookies'
+import { __limits, __resetForTests } from './lib/server/auth/rate-limit'
 
-vi.mock('./lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('./lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('./lib/server/standalone-services', () => ({
   standaloneServices: () => ({ shares: { validate: vi.fn().mockResolvedValue(true) } }),
 }))
 
-import { getRuntime } from './lib/runtime'
+import { getRuntime } from './lib/server/runtime'
 import { middleware } from './middleware'
 
 function basic(user: string, pass: string): string {

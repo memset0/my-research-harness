@@ -12,9 +12,9 @@
 // produced, so the browser learns the outcome before the process goes away.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
-import { getRuntime, type Runtime } from '@/lib/runtime'
+import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import { resolveRestartAdapter, scheduleFileAccessRestart } from '@/lib/server/file-access-settings'
+import { getRuntime, type Runtime } from '@/lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

@@ -22,9 +22,9 @@ import type { EventEmitter } from 'node:events'
 import type { ProjectRef } from '@memon/core'
 import { CentralEventSchema, type Run } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { readIdentityFromRequest } from '@/lib/auth/request-context'
-import { servesProjectsDirectly } from '../../../lib/central/direct-projects'
-import { getRuntime } from '../../../lib/runtime'
+import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
+import { servesProjectsDirectly } from '../../../lib/server/central/direct-projects'
+import { getRuntime } from '../../../lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

@@ -3,7 +3,7 @@ import { BackendMutationError } from '@memon/backend'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('./runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('./standalone-services', () => ({ standaloneServices: vi.fn() }))
 vi.mock('./standalone-mutation-refresh', () => ({
   refreshStandaloneRun: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('@memon/core', async (importOriginal) => ({
   BackendReadmeResponseSchema: { parse: (value: unknown) => value },
 }))
 
-import { getRuntime } from '../runtime'
+import { getRuntime } from './runtime'
 import { refreshStandaloneExperiment, refreshStandaloneRun } from './standalone-mutation-refresh'
 import { readStandaloneReadme, writeStandaloneReadme } from './standalone-readme-route'
 import { standaloneServices } from './standalone-services'

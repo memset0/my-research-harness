@@ -16,7 +16,7 @@ import {
   writeWikiReviewMark,
 } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime, type Runtime } from '../../../../../lib/runtime'
+import { getRuntime, type Runtime } from '../../../../../lib/server/runtime'
 import {
   wikiError,
   wikiProjectTarget,

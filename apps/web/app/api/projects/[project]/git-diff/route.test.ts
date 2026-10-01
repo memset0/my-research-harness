@@ -3,7 +3,7 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../../lib/runtime', () => ({
+vi.mock('../../../../../lib/server/runtime', () => ({
   getRuntime: vi.fn(),
 }))
 
@@ -16,7 +16,7 @@ vi.mock('@memon/core', async (importOriginal) => {
 })
 
 import { readGitFileContents } from '@memon/core'
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import { GET } from './route'
 
 function paramsFor(name: string) {

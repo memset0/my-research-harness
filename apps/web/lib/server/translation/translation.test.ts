@@ -5,16 +5,16 @@ import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isolatedTranslationConfig, TranslationError, translationEnvironment } from './codex'
-import { createTranslationManifest } from './manifest'
 import {
   literalSegment,
   packSegments,
   reconstructTranslation,
   segmentMarkdownTree,
-} from './segments'
+} from '../../translation/segments'
+import { sourceRevision, translationSources } from '../../translation/sources'
+import { isolatedTranslationConfig, TranslationError, translationEnvironment } from './codex'
+import { createTranslationManifest } from './manifest'
 import { BodyTranslationService, validateTranslations } from './service'
-import { sourceRevision, translationSources } from './sources'
 
 afterEach(() => {
   vi.useRealTimers()

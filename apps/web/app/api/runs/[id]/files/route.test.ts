@@ -7,9 +7,9 @@ import { BackendRunFilesResponseSchema } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 
-import { getRuntime } from '../../../../../lib/runtime'
+import { getRuntime } from '../../../../../lib/server/runtime'
 import { GET } from './route'
 
 let root = ''

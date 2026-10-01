@@ -3,15 +3,17 @@
 import { ProjectRefSchema } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from '../../../lib/auth/request-context'
+import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from '../../../lib/server/auth/request-context'
 
-vi.mock('../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('../../../lib/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
-vi.mock('../../../lib/central/central-projects', () => ({ aggregateCentralProjects: vi.fn() }))
+vi.mock('../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
+vi.mock('../../../lib/server/central/central-projects', () => ({
+  aggregateCentralProjects: vi.fn(),
+}))
 
-import { aggregateCentralProjects } from '../../../lib/central/central-projects'
-import { getCentralFleet } from '../../../lib/central/fleet-runtime'
-import { getRuntime } from '../../../lib/runtime'
+import { aggregateCentralProjects } from '../../../lib/server/central/central-projects'
+import { getCentralFleet } from '../../../lib/server/central/fleet-runtime'
+import { getRuntime } from '../../../lib/server/runtime'
 import { GET } from './route'
 
 function request(

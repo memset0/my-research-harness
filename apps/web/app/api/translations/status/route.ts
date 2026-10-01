@@ -1,12 +1,12 @@
 import type { NextRequest } from 'next/server'
-import { runCodexTranslation, TRANSLATION_MODEL } from '../../../../lib/translation/codex'
+import { runCodexTranslation, TRANSLATION_MODEL } from '../../../../lib/server/translation/codex'
 import {
   assertTranslationOwner,
   translationFailure,
   translationOptions,
   translationResponse,
   translationService,
-} from '../../../../lib/translation/http'
+} from '../../../../lib/server/translation/http'
 
 export const dynamic = 'force-dynamic'
 

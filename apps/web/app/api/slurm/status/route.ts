@@ -5,7 +5,7 @@
 // specs/slurm-status/spec.md for the payload contract.
 
 import { NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'

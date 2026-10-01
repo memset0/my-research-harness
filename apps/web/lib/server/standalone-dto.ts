@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { dirname, join } from 'node:path'
 import type { Config } from '@memon/core'
 

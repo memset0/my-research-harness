@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('@/lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 
-import { getRuntime } from '@/lib/runtime'
+import { getRuntime } from '@/lib/server/runtime'
 import {
   closeUiPreferencesStores,
   UI_PREFERENCES_DB_FILENAME,

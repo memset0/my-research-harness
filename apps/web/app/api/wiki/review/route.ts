@@ -7,7 +7,7 @@
 // A project outside a git worktree has no review log at all: 404.
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { wikiError, wikiProjectTarget } from '../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'

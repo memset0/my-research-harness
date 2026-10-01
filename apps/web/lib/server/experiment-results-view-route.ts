@@ -1,6 +1,7 @@
+import 'server-only'
+
 import { HostIdSchema, ProjectNameSchema } from '@memon/core'
 import type { NextRequest } from 'next/server'
-import type { RequestIdentity } from '../auth/request-context'
 import {
   type ExperimentResultsViewDefinition,
   type ExperimentResultsViewScope,
@@ -8,6 +9,7 @@ import {
   RESULTS_VIEW_DEFINITION_MAX_BYTES,
   RESULTS_VIEW_NAME_MAX_LENGTH,
 } from '../experiment-results-views'
+import type { RequestIdentity } from './auth/request-context'
 
 const EXPERIMENT_PATTERN = /^E\d{4,}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const VIEW_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/

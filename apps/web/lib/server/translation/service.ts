@@ -1,7 +1,13 @@
+import 'server-only'
+
+import {
+  packSegments,
+  reconstructTranslation,
+  type TranslationSegment,
+} from '../../translation/segments'
+import { TRANSLATION_TARGET_NAMES, type TranslationTarget } from '../../translation/target'
 import type { TranslationCache } from './cache'
 import { TRANSLATION_CONCURRENCY, TranslationError } from './codex'
-import { packSegments, reconstructTranslation, type TranslationSegment } from './segments'
-import { TRANSLATION_TARGET_NAMES, type TranslationTarget } from './target'
 
 export interface SegmentResult {
   id: string

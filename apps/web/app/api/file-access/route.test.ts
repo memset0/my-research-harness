@@ -7,14 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const METRICS_SNAPSHOT = { epoch: 'epoch-1', windowMs: 300_000, overall: { samples: 3 } }
 
-vi.mock('@/lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('@/lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 vi.mock('@memon/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@memon/core')>()),
   getFileOperationMetrics: vi.fn(() => METRICS_SNAPSHOT),
 }))
 
-import { getRuntime, type Runtime } from '@/lib/runtime'
 import { resetRestartScheduleForTests } from '@/lib/server/file-access-settings'
+import { getRuntime, type Runtime } from '@/lib/server/runtime'
 import { POST } from './restart/route'
 import { GET, PUT } from './route'
 

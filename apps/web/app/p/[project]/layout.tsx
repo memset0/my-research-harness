@@ -8,13 +8,13 @@ import { ProjectFooter } from '../../../components/project-footer'
 import { ResizableSidebarProvider } from '../../../components/resizable-sidebar-provider'
 import { SidebarInset } from '../../../components/ui/sidebar'
 import { WorkspaceSplitOutlet } from '../../../components/workspace-pane-provider'
-import { readIdentityFromHeaders } from '../../../lib/auth/request-context'
-import { aggregateCentralProjects } from '../../../lib/central/central-projects'
-import { getCentralFleet } from '../../../lib/central/fleet-runtime'
-import { resolveLegacyProject } from '../../../lib/central/legacy-project'
 import { getQueryClient } from '../../../lib/get-query-client'
-import { getRuntime } from '../../../lib/runtime'
+import { readIdentityFromHeaders } from '../../../lib/server/auth/request-context'
+import { aggregateCentralProjects } from '../../../lib/server/central/central-projects'
+import { getCentralFleet } from '../../../lib/server/central/fleet-runtime'
+import { resolveLegacyProject } from '../../../lib/server/central/legacy-project'
 import { getProjectsData } from '../../../lib/server/data'
+import { getRuntime } from '../../../lib/server/runtime'
 
 export async function generateMetadata({
   params,

@@ -23,8 +23,8 @@ import type {
   WikiListItem,
   WikiPageDetail,
 } from '../api'
-import { getRuntime } from '../runtime'
 import { discoverReports, findReport, readReport, type WebReportSummary } from './reports'
+import { getRuntime } from './runtime'
 import { wikiPageDto, wikiSummaryDto } from './wiki-route'
 
 export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }> {

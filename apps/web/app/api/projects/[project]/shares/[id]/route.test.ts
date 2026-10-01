@@ -7,13 +7,13 @@ import { addShare } from '@memon/core'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('@/lib/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
-vi.mock('@/lib/central/backend-proxy', () => ({ proxyCentralApiRequest: vi.fn() }))
+vi.mock('@/lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('@/lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
+vi.mock('@/lib/server/central/backend-proxy', () => ({ proxyCentralApiRequest: vi.fn() }))
 
-import { proxyCentralApiRequest } from '@/lib/central/backend-proxy'
-import { getCentralFleet } from '@/lib/central/fleet-runtime'
-import { getRuntime } from '@/lib/runtime'
+import { proxyCentralApiRequest } from '@/lib/server/central/backend-proxy'
+import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
+import { getRuntime } from '@/lib/server/runtime'
 import { DELETE } from './route'
 
 let root: string

@@ -7,6 +7,8 @@
 // resolves to nothing as well: its files live on another machine, and no
 // central route may read or execute them through a local path.
 
+import 'server-only'
+
 import type { Config, ProjectConfig } from '@memon/core'
 
 export function findConfiguredProject(

@@ -4,7 +4,7 @@ import type * as MemonCore from '@memon/core'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 // Real ComponentRunError so the handler's `instanceof` mapping is exercised.
 vi.mock('@memon/core', async (importOriginal) => {
   const actual = await importOriginal<typeof MemonCore>()
@@ -12,7 +12,7 @@ vi.mock('@memon/core', async (importOriginal) => {
 })
 
 import { ComponentRunError, runDocumentComponents } from '@memon/core'
-import { getRuntime } from '../../../../lib/runtime'
+import { getRuntime } from '../../../../lib/server/runtime'
 import { POST } from './route'
 
 const OWNER = { 'content-type': 'application/json', 'x-memon-role': 'owner' }

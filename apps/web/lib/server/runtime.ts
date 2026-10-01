@@ -46,9 +46,9 @@ import {
   readExperimentDoc,
   readRunDir,
 } from '@memon/core'
+import { listComponents } from '../components/registry'
 import { ensureAuthInitialised } from './auth/first-run'
 import { servesProjectsDirectly } from './central/direct-projects'
-import { listComponents } from './components/registry'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { WikiCache } from './runtime/wiki-cache'

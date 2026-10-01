@@ -22,6 +22,8 @@
 // or malformed the caller is told a manual restart is required rather than
 // being given a fake success.
 
+import 'server-only'
+
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'

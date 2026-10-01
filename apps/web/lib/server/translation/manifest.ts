@@ -1,16 +1,18 @@
+import 'server-only'
+
 import { createHash } from 'node:crypto'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
-import { resolveComponentBlock } from '../components/registry'
+import { resolveComponentBlock } from '../../components/registry'
 import {
   literalSegment,
   type ProseNode,
   segmentMarkdownTree,
   type TranslationSegment,
-} from './segments'
-import type { TranslationSource } from './sources'
+} from '../../translation/segments'
+import type { TranslationSource } from '../../translation/sources'
 
 export function createTranslationManifest(sources: TranslationSource[]) {
   const segments = new Map<string, TranslationSegment>()

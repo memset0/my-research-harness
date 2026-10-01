@@ -6,6 +6,8 @@
 // column-aligned with variable widths and re-implementing slurm's pad logic
 // would be brittle across versions.
 
+import 'server-only'
+
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 

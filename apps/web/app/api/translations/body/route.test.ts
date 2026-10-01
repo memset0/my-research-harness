@@ -2,20 +2,20 @@
 
 import { NextRequest } from 'next/server'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { createTranslationManifest } from '../../../../lib/translation/manifest'
+import { createTranslationManifest } from '../../../../lib/server/translation/manifest'
 
 const mocks = vi.hoisted(() => ({
   document: vi.fn(),
   invoke: vi.fn(),
   cache: new Map<string, unknown>(),
 }))
-vi.mock('../../../../lib/runtime', () => ({
+vi.mock('../../../../lib/server/runtime', () => ({
   getRuntime: async () => ({
     configPath: './mock/config.yml',
     config: { projects: [{ name: 'project-a' }] },
   }),
 }))
-vi.mock('../../../../lib/translation/cache', () => ({
+vi.mock('../../../../lib/server/translation/cache', () => ({
   getTranslationCache: () => ({
     get: async (key: string) => mocks.cache.get(key) ?? null,
     set: async (key: string, value: unknown) => {
@@ -26,15 +26,15 @@ vi.mock('../../../../lib/translation/cache', () => ({
 vi.mock('../../../../lib/server/standalone-services', () => ({
   standaloneServices: () => ({ documents: { getWiki: mocks.document } }),
 }))
-vi.mock('../../../../lib/central/direct-runtime', () => ({ directCentralRuntime: vi.fn() }))
-vi.mock('../../../../lib/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
-vi.mock('../../../../lib/central/backend-proxy', () => ({ proxyCentralApiRequest: vi.fn() }))
-vi.mock('../../../../lib/translation/codex', async (original) => ({
+vi.mock('../../../../lib/server/central/direct-runtime', () => ({ directCentralRuntime: vi.fn() }))
+vi.mock('../../../../lib/server/central/fleet-runtime', () => ({ getCentralFleet: vi.fn() }))
+vi.mock('../../../../lib/server/central/backend-proxy', () => ({ proxyCentralApiRequest: vi.fn() }))
+vi.mock('../../../../lib/server/translation/codex', async (original) => ({
   ...(await original<object>()),
   runCodexTranslation: mocks.invoke,
 }))
 
-import { translationCacheKey } from '../../../../lib/translation/http'
+import { translationCacheKey } from '../../../../lib/server/translation/http'
 import { GET as status } from '../status/route'
 import { GET, POST } from './route'
 

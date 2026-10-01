@@ -2,9 +2,9 @@
 
 import { AmbiguousShareError, HostIdSchema, ShareNotFoundError } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import { proxyCentralApiRequest } from '@/lib/central/backend-proxy'
-import { getCentralFleet } from '@/lib/central/fleet-runtime'
-import { getRuntime } from '@/lib/runtime'
+import { proxyCentralApiRequest } from '@/lib/server/central/backend-proxy'
+import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
+import { getRuntime } from '@/lib/server/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
 
 interface RouteParams {

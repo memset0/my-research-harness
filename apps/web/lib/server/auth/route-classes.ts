@@ -21,6 +21,8 @@
 // Defaults are fail-closed: unknown route + GET → `mutating` + `null`. This
 // forces every new route to be added here explicitly to grant viewer access.
 
+import 'server-only'
+
 export type RouteClass = 'anon' | 'read' | 'mutating' | 'shell'
 export type ResolvedProject = string | 'multi' | 'global' | null
 

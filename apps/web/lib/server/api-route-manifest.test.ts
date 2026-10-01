@@ -41,7 +41,7 @@ function directRuntimeUsers(): string[] {
   return walkSourceFiles(WEB_ROOT)
     .filter((path) => !path.includes(`${join('app', 'api')}/`))
     .filter((path) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
-    .filter((path) => relative(WEB_ROOT, path) !== 'lib/runtime.ts')
+    .filter((path) => relative(WEB_ROOT, path) !== 'lib/server/runtime.ts')
     .filter((path) => /\bgetRuntime\s*\(/.test(readFileSync(path, 'utf8')))
     .map((path) => relative(WEB_ROOT, path).replaceAll('\\', '/'))
     .sort()

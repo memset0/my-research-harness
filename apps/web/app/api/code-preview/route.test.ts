@@ -3,8 +3,8 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../lib/runtime', () => ({ getRuntime: vi.fn() }))
-vi.mock('../../../lib/path-safety', () => ({
+vi.mock('../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('../../../lib/server/path-safety', () => ({
   assertWithinProjectRoots: vi.fn(),
   PathSafetyError: class PathSafetyError extends Error {},
 }))
@@ -15,8 +15,8 @@ vi.mock('@memon/core', async (importOriginal) => {
 })
 
 import { readGitFileContents } from '@memon/core'
-import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/path-safety'
-import { getRuntime } from '../../../lib/runtime'
+import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/server/path-safety'
+import { getRuntime } from '../../../lib/server/runtime'
 import { GET } from './route'
 
 const FILE = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n')

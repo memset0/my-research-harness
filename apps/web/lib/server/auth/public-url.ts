@@ -21,6 +21,8 @@
 //      which is the public URL Caddy sees. This sidesteps the origin
 //      question entirely for in-app redirects.
 
+import 'server-only'
+
 import type { NextRequest } from 'next/server'
 
 export function publicOrigin(req: NextRequest): string {

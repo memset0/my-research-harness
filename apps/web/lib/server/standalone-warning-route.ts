@@ -1,6 +1,8 @@
+import 'server-only'
+
 import { BackendMutationError } from '@memon/backend'
 import { NextResponse } from 'next/server'
-import type { Runtime } from '../runtime'
+import type { Runtime } from './runtime'
 import {
   refreshStandaloneExperiment,
   refreshStandaloneJournal,

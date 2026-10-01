@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

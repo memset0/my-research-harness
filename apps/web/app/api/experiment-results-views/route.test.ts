@@ -5,12 +5,12 @@ import { join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/runtime', () => ({ getRuntime: vi.fn() }))
+vi.mock('@/lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 
-import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from '@/lib/auth/request-context'
 import type { ExperimentResultsViewDefinition } from '@/lib/experiment-results-views'
-import { getRuntime } from '@/lib/runtime'
+import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from '@/lib/server/auth/request-context'
 import { closeExperimentResultsViewsStores } from '@/lib/server/experiment-results-views-store'
+import { getRuntime } from '@/lib/server/runtime'
 import { DELETE, PATCH } from './[id]/route'
 import { GET, POST } from './route'
 

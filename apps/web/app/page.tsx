@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
-import { readIdentityFromHeaders } from '../lib/auth/request-context'
-import { aggregateCentralProjects } from '../lib/central/central-projects'
-import { servesProjectsDirectly } from '../lib/central/direct-projects'
-import { directCentralRuntime } from '../lib/central/direct-runtime'
-import { getCentralFleet } from '../lib/central/fleet-runtime'
-import { getRuntime } from '../lib/runtime'
+import { readIdentityFromHeaders } from '../lib/server/auth/request-context'
+import { aggregateCentralProjects } from '../lib/server/central/central-projects'
+import { servesProjectsDirectly } from '../lib/server/central/direct-projects'
+import { directCentralRuntime } from '../lib/server/central/direct-runtime'
+import { getCentralFleet } from '../lib/server/central/fleet-runtime'
+import { getRuntime } from '../lib/server/runtime'
 
 export const dynamic = 'force-dynamic'
 

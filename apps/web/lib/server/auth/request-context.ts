@@ -4,6 +4,8 @@
 // either from the incoming request (`req.headers`) or from `next/headers`
 // for server components.
 
+import 'server-only'
+
 import { type ProjectRef, ProjectRefSchema } from '@memon/core'
 import { headers } from 'next/headers'
 import type { NextRequest } from 'next/server'

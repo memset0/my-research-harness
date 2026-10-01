@@ -17,12 +17,12 @@ import {
   signHostQualifiedSharesCookie,
   signSharesCookie,
   verifySharesCookie,
-} from '@/lib/auth/cookies'
-import { isHttps, publicOrigin } from '@/lib/auth/public-url'
-import { clientIpFromHeaders, consume, refund } from '@/lib/auth/rate-limit'
-import { validateCentralShare } from '@/lib/central/central-shares'
-import { getCentralFleet } from '@/lib/central/fleet-runtime'
-import { getRuntime } from '@/lib/runtime'
+} from '@/lib/server/auth/cookies'
+import { isHttps, publicOrigin } from '@/lib/server/auth/public-url'
+import { clientIpFromHeaders, consume, refund } from '@/lib/server/auth/rate-limit'
+import { validateCentralShare } from '@/lib/server/central/central-shares'
+import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
+import { getRuntime } from '@/lib/server/runtime'
 import { standaloneServices } from '@/lib/server/standalone-services'
 
 interface RouteParams {

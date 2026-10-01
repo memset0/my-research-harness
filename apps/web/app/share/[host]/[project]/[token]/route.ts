@@ -11,14 +11,14 @@ import {
   SHARES_COOKIE_TTL_SECONDS,
   signHostQualifiedSharesCookie,
   verifySharesCookie,
-} from '@/lib/auth/cookies'
-import { isHttps, publicOrigin } from '@/lib/auth/public-url'
-import { clientIpFromHeaders, consume, refund } from '@/lib/auth/rate-limit'
-import { validateCentralShare } from '@/lib/central/central-shares'
-import { servesProjectsDirectly } from '@/lib/central/direct-projects'
-import { directCentralRuntime } from '@/lib/central/direct-runtime'
-import { getCentralFleet } from '@/lib/central/fleet-runtime'
-import { getRuntime } from '@/lib/runtime'
+} from '@/lib/server/auth/cookies'
+import { isHttps, publicOrigin } from '@/lib/server/auth/public-url'
+import { clientIpFromHeaders, consume, refund } from '@/lib/server/auth/rate-limit'
+import { validateCentralShare } from '@/lib/server/central/central-shares'
+import { servesProjectsDirectly } from '@/lib/server/central/direct-projects'
+import { directCentralRuntime } from '@/lib/server/central/direct-runtime'
+import { getCentralFleet } from '@/lib/server/central/fleet-runtime'
+import { getRuntime } from '@/lib/server/runtime'
 
 interface RouteParams {
   params: Promise<{ host: string; project: string; token: string }>
