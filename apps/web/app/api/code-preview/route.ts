@@ -21,9 +21,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!url) return gitError(400, 'url query parameter is required')
   const link = parseGithubPermalink(url)
   if (!link) return gitError(400, 'url is not a GitHub blob line-permalink')
-  const mapping = (
-    context.config.projects.find((project) => project.name === context.project)?.github ?? []
-  ).find(
+  // Effective mappings: deprecated central `github`, else `.memon/project.yml`.
+  let mappings: Awaited<ReturnType<typeof context.git.githubMappings>>['mappings']
+  try {
+    mappings = (await context.git.githubMappings(context.project)).mappings
+  } catch (error) {
+    return gitServiceError(error)
+  }
+  const mapping = mappings.find(
     (entry) =>
       entry.owner.toLowerCase() === link.owner.toLowerCase() &&
       entry.repo.toLowerCase() === link.repo.toLowerCase(),

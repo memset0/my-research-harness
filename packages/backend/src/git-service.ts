@@ -16,7 +16,10 @@ import {
   deleteCommitMark,
   type GitCommandRunner,
   type GitFileStatus,
+  type GithubRepoMapping,
+  type LayoutSourceName,
   type ProjectConfig,
+  ProjectDeclarationError,
   parseGithubPermalink,
   ResourceIdSchema,
   readCommitMarks,
@@ -28,6 +31,7 @@ import {
   readGitStatus,
   readGitStatusFiles,
   readGitSubmodules,
+  resolveProjectLayout,
   setCommitMark,
   sliceContext,
 } from '@memon/core'
@@ -274,12 +278,32 @@ export class FilesystemGitService implements BackendGitService {
     )
   }
 
+  /**
+   * Effective GitHub mappings of a Project: the deprecated central `github`
+   * when set, else `.memon/project.yml` `github` (paths absolute).
+   */
+  async githubMappings(
+    projectName: string,
+  ): Promise<{ mappings: GithubRepoMapping[]; source: LayoutSourceName }> {
+    const project = this.requireProject(projectName)
+    try {
+      const layout = await resolveProjectLayout(project, { keys: ['github'] })
+      return { mappings: layout.github, source: layout.sources.github }
+    } catch (error) {
+      if (error instanceof ProjectDeclarationError) {
+        throw new BackendGitServiceError('INVALID_RESOURCE', error.message)
+      }
+      throw error
+    }
+  }
+
   async codePreview(projectName: string, url: string) {
     const project = this.requireProject(projectName)
     if (url.length > 4096) invalid()
     const link = parseGithubPermalink(url)
     if (!link) invalid()
-    const mapping = (project.github ?? []).find(
+    const { mappings, source } = await this.githubMappings(projectName)
+    const mapping = mappings.find(
       (entry) =>
         entry.owner.toLowerCase() === link.owner.toLowerCase() &&
         entry.repo.toLowerCase() === link.repo.toLowerCase(),
@@ -287,9 +311,12 @@ export class FilesystemGitService implements BackendGitService {
     if (!mapping) throw new BackendGitServiceError('RESOURCE_NOT_FOUND', 'Mapping not found')
     const path = ResourceIdSchema.safeParse(link.path)
     if (!path.success) invalid()
-    const repoRoot = this.trustedConfiguredPaths
-      ? mapping.path
-      : await configuredPathWithin(project.root, mapping.path)
+    // Only operator-written (central) paths may skip containment; a mapping
+    // declared by the repository itself is always checked.
+    const repoRoot =
+      this.trustedConfiguredPaths && source === 'central'
+        ? mapping.path
+        : await configuredPathWithin(project.root, mapping.path)
     const base = {
       owner: link.owner,
       repo: link.repo,

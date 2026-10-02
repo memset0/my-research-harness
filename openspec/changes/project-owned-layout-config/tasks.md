@@ -9,7 +9,7 @@
 
 ## 2. Consumers
 
-- [ ] 2.1 Resolve `github` mappings through `resolveProjectLayout` in the backend Git service and the standalone code-preview route; verify with the existing code-preview tests plus a declaration-sourced mapping test.
+- [x] 2.1 Resolve `github` mappings through `resolveProjectLayout` in the backend Git service and the standalone code-preview route; verify with the existing code-preview tests plus a declaration-sourced mapping test.
 
 ## 3. CLI
 

@@ -1,5 +1,8 @@
 // @vitest-environment node
 
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -135,5 +138,28 @@ describe('GET /api/code-preview', () => {
       req(`project=p&url=${enc('https://github.com/acme/demo/blob/s/x.ts#L1')}`),
     )
     expect(res.status).toBe(403)
+  })
+
+  it('uses the github mapping declared in .memon/project.yml', async () => {
+    const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'memon-code-preview-')))
+    try {
+      await fs.mkdir(join(root, '.memon'))
+      await fs.writeFile(
+        join(root, '.memon/project.yml'),
+        'schema_version: 1\ngithub: [{ owner: acme, repo: demo, path: . }]\n',
+      )
+      const runtime = rt()
+      runtime.config.projects[0] = { ...runtime.config.projects[0]!, root, github: [] }
+      vi.mocked(getRuntime).mockResolvedValue(runtime as never)
+      vi.mocked(readGitFileContents).mockResolvedValue({ ok: true, content: FILE } as never)
+      const url = 'https://github.com/acme/demo/blob/abc123/src/foo.ts#L10'
+      const res = await GET(req(`project=p&url=${enc(url)}`))
+      expect(res.status).toBe(200)
+      expect(vi.mocked(readGitFileContents)).toHaveBeenCalledWith(root, 'abc123', 'src/foo.ts', {
+        exec: undefined,
+      })
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
   })
 })
