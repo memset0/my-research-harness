@@ -13,8 +13,9 @@
 import { promises as fs } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import yaml from 'js-yaml'
+import { CENTRAL_LAYOUT_DEPRECATED } from '../project-declaration/layout.js'
 import { DEFAULT_FILE_ACCESS_OPTIONS, type FileAccessOptions } from '../project-file-store.js'
-import { ConfigRawSchema } from '../schemas.js'
+import { ConfigRawSchema, PROJECT_LAYOUT_KEYS, type ProjectLayoutKey } from '../schemas.js'
 import {
   type AuthConfig,
   type BackendConfig,
@@ -38,6 +39,36 @@ const LEGACY_TELEGRAM_CONFIG_WARNING =
   'memon: warning: config key `telegram` is no longer supported; remove the `telegram:` block and delete its stored credentials.\n'
 const LEGACY_INTERACTIVE_CONFIG_WARNING =
   'memon: warning: config keys `terminal`, `tmux`, and `herdr` are no longer supported and are ignored.\n'
+
+const warnedCentralLayout = new Set<string>()
+
+/**
+ * Layout keys (`run_dirs`, `include`, `exclude`, `github`) belong in the
+ * project's tracked `.memon/project.yml`. A central entry that still sets one
+ * keeps working (central wins) but is reported once per process, Project and
+ * key. Reads no project file.
+ */
+function warnCentralLayout(
+  raw: { name: string; host?: string | undefined } & Partial<Record<ProjectLayoutKey, unknown>>,
+  candidate: string,
+): void {
+  for (const key of PROJECT_LAYOUT_KEYS) {
+    const value = raw[key]
+    if (!Array.isArray(value) || value.length === 0) continue
+    const identity = `${raw.host ?? ''}/${raw.name}`
+    const id = `${resolve(candidate)}\0${identity}\0${key}`
+    if (warnedCentralLayout.has(id)) continue
+    warnedCentralLayout.add(id)
+    process.stderr.write(
+      `memon: warning: ${CENTRAL_LAYOUT_DEPRECATED}: projects ${JSON.stringify(raw.name)}${raw.host ? ` (host ${JSON.stringify(raw.host)})` : ''}: \`${key}\` is project layout and belongs in the project's .memon/project.yml; move it with \`memon project init --project-root <root> --from-central ${candidate} --project ${raw.name}\` and delete it here (the central value stays in effect until then)\n`,
+    )
+  }
+}
+
+/** Test hook: forget which deprecated central layout keys were reported. */
+export function resetCentralLayoutDeprecationWarnings(): void {
+  warnedCentralLayout.clear()
+}
 
 const DEFAULT_CENTRAL_BIND_ADDR = '127.0.0.1'
 const DEFAULT_CENTRAL_BIND_PORT = 3737
@@ -167,6 +198,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   // A Project that names a Host namespace makes the instance host-qualified.
   // Execution defaults are role-dependent and resolved after role selection.
   const projects: ProjectConfig[] = cfg.projects.map((p) => {
+    warnCentralLayout(p, candidate)
     const root = isAbsolute(p.root) ? p.root : resolve(baseDir, p.root)
     const storage = p.storage ?? 'local'
     const storageGroup = p.storage_group ?? p.storageGroup

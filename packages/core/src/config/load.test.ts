@@ -1107,7 +1107,8 @@ telegram: definitely-not-an-object
   })
 
   it('does not warn when the legacy key is absent', async () => {
-    await fs.writeFile(join(dir, 'config.yml'), VALID)
+    // Deployment-only entries: a central layout key would add its own warning.
+    await fs.writeFile(join(dir, 'config.yml'), VALID.replace('    exclude: [dist]\n', ''))
     const { value: cfg, stderr } = await captureStderr(() => loadConfig({ cwd: dir }))
     expect(cfg).not.toBeNull()
     expect(stderr).toBe('')

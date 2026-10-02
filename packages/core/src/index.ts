@@ -27,8 +27,17 @@ export {
   isLoopbackOrPrivateIpLiteral,
   normalizeBackendBaseUrl,
 } from './config/backend-url.js'
+export {
+  type CentralProjectLayout,
+  readCentralProjectLayout,
+} from './config/central-layout.js'
 export type { LoadConfigOptions } from './config/load.js'
-export { ConfigError, implicitCwdProject, loadConfig } from './config/load.js'
+export {
+  ConfigError,
+  implicitCwdProject,
+  loadConfig,
+  resetCentralLayoutDeprecationWarnings,
+} from './config/load.js'
 export {
   CONFIG_EXAMPLE_BASENAME,
   isProtectedExampleConfigPath,

@@ -173,6 +173,45 @@ const StorageGroupRawSchema = z
   .max(63)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'must be a safe storage-group name')
 
+/**
+ * Project layout keys (`run_dirs`, `include`, `exclude`, `github`). They
+ * describe the project repository, not its deployment, and belong in the
+ * tracked `.memon/project.yml`; the central Project entry still accepts them
+ * during the deprecation window (`CENTRAL_LAYOUT_DEPRECATED`). One schema for
+ * both sources so their validation cannot drift.
+ */
+export const ProjectLayoutRawSchema = z.object({
+  include: z.array(z.string()).optional(),
+  exclude: z.array(z.string()).optional(),
+  // Declared Run directory locations (`logs/*`, `outputs/*/*`, …). Absent
+  // falls back to `.memon/project.yml`, then to the FS v8 default
+  // (`logs/*`, `outputs/*`, `experiments/*`); see discovery/run-dirs.ts.
+  run_dirs: z
+    .array(
+      z.string().superRefine((pattern, ctx) => {
+        const error = runDirPatternError(pattern)
+        if (error !== null) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error })
+      }),
+    )
+    .min(1, 'must list at least one pattern')
+    .optional(),
+  // Per-project GitHub owner/repo -> local path mappings, for code-preview.
+  // `path` is relative to the project root ('.' = main repo, else a submodule).
+  github: z
+    .array(
+      z.object({
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        path: z.string().min(1),
+      }),
+    )
+    .optional(),
+})
+
+/** The layout keys of a Project, in declaration order. */
+export const PROJECT_LAYOUT_KEYS = ['run_dirs', 'include', 'exclude', 'github'] as const
+export type ProjectLayoutKey = (typeof PROJECT_LAYOUT_KEYS)[number]
+
 export const ProjectConfigRawSchema = z
   .object({
     // Project names appear in URL paths and Host-qualified identifiers.
@@ -182,31 +221,7 @@ export const ProjectConfigRawSchema = z
       .min(1)
       .regex(/^[A-Za-z0-9-]+$/, 'must match [A-Za-z0-9-]+'),
     root: z.string().min(1),
-    include: z.array(z.string()).optional(),
-    exclude: z.array(z.string()).optional(),
-    // Declared Run directory locations (`logs/*`, `outputs/*/*`, …). Absent
-    // falls back to `.memon/project.yml`, then to the FS v8 default
-    // (`logs/*`, `outputs/*`, `experiments/*`); see discovery/run-dirs.ts.
-    run_dirs: z
-      .array(
-        z.string().superRefine((pattern, ctx) => {
-          const error = runDirPatternError(pattern)
-          if (error !== null) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error })
-        }),
-      )
-      .min(1, 'must list at least one pattern')
-      .optional(),
-    // Per-project GitHub owner/repo -> local path mappings, for code-preview.
-    // `path` is relative to the project root ('.' = main repo, else a submodule).
-    github: z
-      .array(
-        z.object({
-          owner: z.string().min(1),
-          repo: z.string().min(1),
-          path: z.string().min(1),
-        }),
-      )
-      .optional(),
+    ...ProjectLayoutRawSchema.shape,
     /**
      * Host namespace for host-qualified `{host, project}` identity. Validated
      * with the same rule as `central.hosts[].id` so one instance can serve a

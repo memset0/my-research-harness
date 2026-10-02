@@ -91,6 +91,13 @@ describe('project declaration lint', () => {
       present: false,
       declaration: null,
       effective: { patterns: ['logs/*', 'outputs/*', 'experiments/*'], source: 'default' },
+      layout: {
+        runDirs: ['logs/*', 'outputs/*', 'experiments/*'],
+        include: [],
+        exclude: [],
+        github: [],
+        sources: { run_dirs: 'default', include: 'default', exclude: 'default', github: 'default' },
+      },
       diagnostics: [],
     })
     await fs.mkdir(join(root, '.memon'))

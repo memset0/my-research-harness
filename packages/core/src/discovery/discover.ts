@@ -19,12 +19,12 @@
 
 import type { Dirent } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
-import { loadProjectDeclaration } from '../project-declaration/load.js'
+import { resolveProjectLayout } from '../project-declaration/layout.js'
 import { projectFs } from '../project-file-store.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
 import { isArchivedSidecar } from './archive.js'
-import { DEFAULT_RUN_DIRS, isGlobSegment, segmentMatcher } from './run-dirs.js'
+import { isGlobSegment, segmentMatcher } from './run-dirs.js'
 
 // Re-export for back-compat with code that imported the constant from
 // discover.ts (the canonical home is now archive.ts).
@@ -67,24 +67,27 @@ export interface DiscoverOptions {
 }
 
 /**
- * The patterns a walk of `project` expands: the caller's explicit `runDirs`
- * (CLI `--run-dir` or central `run_dirs`), else `.memon/project.yml`
- * `run_dirs`, else the FS v8 default `["logs/*", "outputs/*",
- * "experiments/*"]`. An invalid declaration throws `ProjectDeclarationError`
- * (fail closed, never a silent default).
+ * The layout a walk of `project` uses (`resolveProjectLayout`): per key, the
+ * caller's explicit value (CLI `--run-dir` or the deprecated central
+ * `run_dirs`/`include`/`exclude`), else `.memon/project.yml`, else the default
+ * (FS v8 `["logs/*", "outputs/*", "experiments/*"]`, include everything, no
+ * user exclude). An invalid declaration throws `ProjectDeclarationError`
+ * (fail closed, never a silent default) when a used key falls through to it.
  */
-async function effectiveRunDirs(project: ProjectConfig): Promise<readonly string[]> {
-  if (project.runDirs !== undefined) return project.runDirs
-  return (await loadProjectDeclaration(project.root))?.run_dirs ?? DEFAULT_RUN_DIRS
+function walkLayout(project: ProjectConfig, unbounded: boolean) {
+  const keys = unbounded
+    ? (['include', 'exclude'] as const)
+    : (['run_dirs', 'include', 'exclude'] as const)
+  return resolveProjectLayout(project, { keys, warnKeys: ['include', 'exclude'] })
 }
 
 /**
  * Returns absolute Run paths under `project.root/{logs,outputs,experiments}`,
  * applying default + user excludes. The project root itself is never listed.
  *
- * Discovery expands the effective `run_dirs` — `project.runDirs` when set,
- * else `.memon/project.yml` `run_dirs`, else the FS v8 default
- * `["logs/*", "outputs/*", "experiments/*"]` — (see
+ * Discovery expands the effective `run_dirs` and applies the effective
+ * `include`/`exclude` (`walkLayout`: explicit value, else `.memon/project.yml`,
+ * else the default) (see
  * `run-dirs.ts`) segment by segment and never recurses: a literal segment is
  * checked with `lstat`, a glob segment lists its parent once (listings are
  * shared between patterns), and only directories matched by a pattern's last
@@ -113,8 +116,9 @@ export async function discoverRuns(
   options: DiscoverOptions = {},
 ): Promise<string[]> {
   const regex = options.regex ?? RUN_DIR_REGEX
-  const matchesInclude = compileMatcher(project.include.length > 0 ? project.include : ['**/*'])
-  const excludes = mergeExcludes(project.exclude)
+  const layout = await walkLayout(project, options.unbounded === true)
+  const matchesInclude = compileMatcher(layout.include.length > 0 ? layout.include : ['**/*'])
+  const excludes = mergeExcludes(layout.exclude)
   // Plain names prune a directory (and its subtree) at any depth; patterns keep
   // the previous `**/<pattern>` + `**/<pattern>/**` ignore semantics.
   const excludedNames: Record<string, true> = {}
@@ -150,7 +154,7 @@ export async function discoverRuns(
     excludedNames[name] === true ||
     matchesExclude(relative(project.root, absolute).split(sep).join('/'))
 
-  const runDirs = options.unbounded ? undefined : await effectiveRunDirs(project)
+  const runDirs = options.unbounded ? undefined : layout.runDirs
   if (runDirs !== undefined) {
     const listings = new Map<string, Promise<Dirent[]>>()
     const list = (directory: string): Promise<Dirent[]> => {
