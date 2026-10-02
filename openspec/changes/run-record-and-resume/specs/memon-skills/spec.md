@@ -13,9 +13,9 @@ Bundled execution skills SHALL create a Run with `memon run create` (or record a
 - **WHEN** a skill-authored launcher runs with `MEMON_LAUNCH_SEQ=2` and `MEMON_RESUME=1`
 - **THEN** it reuses `MEMON_RUN_DIR`, passes its resume flag to the training entry and does not tee `run.log`
 
-### Requirement: Agents never assume preemptibility or resumability
+### Requirement: Agents never assume scheduling attributes
 
-Skills SHALL NOT pass `--preemptible` unless the user explicitly asked for that batch of Runs to be preemptible, and SHALL then pass the user's request as `--preemptible-reason`; the skill text SHALL say so in those words. Skills SHALL pass `--resumable` only after verifying, by reading the entry code or recipe, that the entry restores from its latest checkpoint when `MEMON_RESUME=1`, together with the checkpoint directory or `--progress-checkpoints`; they SHALL NOT infer resumability from a Run's name, history or a declaration elsewhere. A skill SHALL NOT change either attribute of an existing Run without an explicit user request.
+Skills SHALL NOT pass `--preemptible` unless the user explicitly asked for that batch of Runs to be preemptible, and SHALL then pass the user's request as `--preemptible-reason`; the skill text SHALL say so in those words. Skills SHALL pass `--resumable` only after verifying, by reading the entry code or recipe, that the entry restores from its latest checkpoint when `MEMON_RESUME=1`, together with the checkpoint directory or `--progress-checkpoints`; they SHALL NOT infer resumability from a Run's name, history or a declaration elsewhere. Skills SHALL pass `--priority` only with the exact integer the user gave (default `0` otherwise; negative values are for background work the user marks as such) and SHALL NEVER raise, lower or rebalance priorities on their own. A skill SHALL NOT change any of these attributes of an existing Run without an explicit user request.
 
 #### Scenario: Batch launch without instruction
 - **WHEN** a user asks a skill to launch eight seeds without mentioning preemption

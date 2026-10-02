@@ -169,6 +169,7 @@ Record writes use the existing optimistic lock (`expectedMtime` + hash) with up 
 ### 7. Truthful attributes
 
 - `resumable`: the skill verifies the entry (e.g. it passes `resume_from_checkpoint latest` when `MEMON_RESUME=1`) and declares where checkpoints are found (`--checkpoint-dir` or `--progress-checkpoints`); without either the CLI refuses. The wrapper never flips the flag; it records `RESUME_DID_NOT_RESTORE` when a resume reports a start below the recorded checkpoint, which is evidence for a human to correct the flag.
+- `priority`: any integer, default 0, larger first, ties by submission order (FIFO), negatives for background work; deliberately not normalized or ranged — it only orders. Set by the user; agents pass only a value the user stated and never adjust it.
 - `preemptible`: default false; `--preemptible` requires `--preemptible-reason`; memon stores `{at, via, reason}`. "Who" is approximated by the surface (`cli`, `web`, `sched`) and the stated reason (memon does not record user names in project files). Skills must quote the user's instruction as the reason.
 
 ### 8. Reconcile and liveness
@@ -203,6 +204,4 @@ Stale = heartbeat counter unchanged for 3 intervals as observed by the reader. L
 
 No filesystem migration: every new field is optional and absent means unknown/default. Release 9.1.0, deploy central, `memon update` CLI nodes, reinstall skills in research projects. Rollback: install 9.0.x; READMEs written by 9.1 remain valid for 9.0 readers (unknown keys preserved).
 
-## Open Questions
-
-- Default heartbeat interval (30 s) and grace period (300 s) — tunable per Run; defaults can change without spec changes.
+Defaults confirmed with the user: heartbeat interval 30 s, stale after three unchanged intervals, stop grace 300 s (per-Run override), lost-launch requeue cap 3 (used by `run-scheduler`).

@@ -34,9 +34,11 @@ Optional front matter fields:
   the status is `INTERRUPTED`
 - `target_steps` (integer) and `resources` (mapping; for example the number
   of GPUs and nodes one launch needs) — the Run's intent
-- `schedule` (mapping) — `priority` (integer, larger first, default `0`),
-  `preemptible` (boolean, default `false`) and, when `preemptible` is true,
-  the audit record of when and through which surface it was set and why
+- `schedule` (mapping) — `priority` (any integer, default `0`; a larger value
+  runs first, equal values run in submission order, negative values suit
+  background work), `preemptible` (boolean, default `false`) and, when
+  `preemptible` is true, the audit record of when and through which surface
+  it was set and why
 - `resumable` (boolean, default `false`)
 - `wandb_run_id` (string) — the tracking-service run id reused by every launch
 - `checkpoint` (mapping) — declared Run-relative `dir`, and the `latest`
@@ -135,9 +137,9 @@ The `launches` list SHALL hold one entry per launch in increasing `seq` order (1
 - **WHEN** it is resumed
 - **THEN** entry 3 is appended and entries 1 and 2 are byte-identical in the frontmatter
 
-### Requirement: Resumability and preemptibility are recorded truthfully
+### Requirement: Scheduling attributes are recorded truthfully
 
-`resumable: true` SHALL be recorded only from evidence that the Run can continue from a checkpoint: its entry restores from its latest checkpoint when `MEMON_RESUME=1`, and the Run declares where its checkpoints are found — a checkpoint directory, or that its progress file reports them. A request for `resumable` without either SHALL be refused with `BAD_REQUEST`. Losing the progress made after the last checkpoint SHALL NOT make a Run non-resumable; a resumable Run that has not produced its first checkpoint SHALL stay `resumable: true` and resume from step 0. A Run that can only restart from zero SHALL be `resumable: false`. `schedule.preemptible` SHALL default to `false` and SHALL become `true` only through an explicit request (`--preemptible` with a stated reason, or an owner action that records one); memon SHALL record when, through which surface and why it was set, and no memon component SHALL set it implicitly.
+`resumable: true` SHALL be recorded only from evidence that the Run can continue from a checkpoint: its entry restores from its latest checkpoint when `MEMON_RESUME=1`, and the Run declares where its checkpoints are found — a checkpoint directory, or that its progress file reports them. A request for `resumable` without either SHALL be refused with `BAD_REQUEST`. Losing the progress made after the last checkpoint SHALL NOT make a Run non-resumable; a resumable Run that has not produced its first checkpoint SHALL stay `resumable: true` and resume from step 0. A Run that can only restart from zero SHALL be `resumable: false`. `schedule.preemptible` SHALL default to `false` and SHALL become `true` only through an explicit request (`--preemptible` with a stated reason, or an owner action that records one); memon SHALL record when, through which surface and why it was set, and no memon component SHALL set it implicitly. `schedule.priority` SHALL default to `0` and SHALL take only a value a user specified; it only orders Runs and carries no other meaning, and no memon component SHALL adjust it on its own.
 
 #### Scenario: Checkpoints reported through the progress file
 - **WHEN** `memon run create … --resumable --progress-checkpoints` runs for an entry that reports checkpoints through its progress file
@@ -150,3 +152,7 @@ The `launches` list SHALL hold one entry per launch in increasing `seq` order (1
 #### Scenario: Preemptible needs an explicit request
 - **WHEN** a Run is created without `--preemptible`
 - **THEN** its record has `schedule.preemptible: false` and no audit record
+
+#### Scenario: Background priority
+- **WHEN** a user creates a Run with `--priority -5`
+- **THEN** its record has `schedule.priority: -5`, and a Run created without `--priority` has `0`
