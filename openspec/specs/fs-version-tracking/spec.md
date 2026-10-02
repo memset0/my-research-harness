@@ -116,26 +116,26 @@ Both functions SHALL call `assertWithinProjectRoots()` (the existing path-safety
 - **WHEN** `readFsVersion(<root>)` or `writeFsVersion(<root>, record)` is called
 - **THEN** it throws the same `PATH_OUTSIDE_PROJECT_ROOTS` error that other path-accepting APIs throw
 
-### Requirement: Value after this change is 7 with Experiment-owned Run paths
+### Requirement: Value after this change is 8 with the derived index convention
 
-`FS_CONVENTION_VERSION` SHALL equal `7`, and `MEMON_RELEASE` SHALL start the matching `7.0.0` release. FS v7 keeps every v6 per-file YAML schema version; its breaking changes are that Experiment `runs` declare project-relative Run paths as the sole membership authority, Run READMEs no longer carry `experiment`, and legacy `docs/digests/` files become `digest`-kind Wiki pages. A marker SHALL claim v7 only after the reviewed v6-to-v7 migration has verified those invariants.
+`FS_CONVENTION_VERSION` SHALL equal `8`, and `MEMON_RELEASE` SHALL start the matching `8.0.0` release. FS v8 keeps every v7 document format and per-file YAML schema version; its breaking changes are that an absent Project `run_dirs` means the default Run locations `["logs/*", "outputs/*", "experiments/*"]` instead of an unbounded walk, that Run directories do not nest, and that memon writers maintain the derived index under `.memon/index/`. FS v8 also introduces the optional tracked declaration `.memon/project.yml` (`schema_version: 1`); its absence is valid and no marker transition creates it. A marker SHALL claim v8 only after the reviewed v7-to-v8 migration has built and verified the index.
 
 #### Scenario: Constant has the new value
-- **WHEN** the v7 release commit lands
-- **THEN** `FS_CONVENTION_VERSION === 7` and `MEMON_RELEASE === '7.0.0'` in `packages/core/src/version.ts`
-- **AND** `packages/core/migrations/v6-to-v7.md` exists and follows the guide-authoring spec
+- **WHEN** the v8 release commit lands
+- **THEN** `FS_CONVENTION_VERSION === 8` and `MEMON_RELEASE === '8.0.0'` in `packages/core/src/version.ts`
+- **AND** `packages/core/migrations/v7-to-v8.md` exists and follows the guide-authoring spec
 
 #### Scenario: Fresh install
 - **GIVEN** a project root with no prior `.memon/` directory
-- **WHEN** v7 skills are installed
-- **THEN** the new marker records `fs_convention_version: 7` and each created structured YAML file uses the unchanged v6 per-kind schema version
+- **WHEN** v8 skills are installed
+- **THEN** the new marker records `fs_convention_version: 8` and no document format differs from v7
 
-#### Scenario: v6 marker under v7 tooling
-- **GIVEN** a project whose marker records `fs_convention_version: 6`
-- **WHEN** `memon fs-version check` runs with v7 tooling
-- **THEN** it reports `behind` and recommends the reviewed v6-to-v7 migration; it does not rewrite the marker
+#### Scenario: v7 marker under v8 tooling
+- **GIVEN** a project whose marker records `fs_convention_version: 7`
+- **WHEN** `memon fs-version check` runs with v8 tooling
+- **THEN** it reports `behind` and recommends the reviewed v7-to-v8 migration; it does not rewrite the marker
 
-#### Scenario: Partial YAML migration still blocks completion
-- **GIVEN** the marker says v7 but one `results.yaml` remains at an unsupported schema version
-- **WHEN** structured lint runs
-- **THEN** it reports an FS/YAML version mismatch and exits non-zero
+#### Scenario: v8 marker under v7 tooling
+- **GIVEN** a project whose marker records `fs_convention_version: 8`
+- **WHEN** a v7 skill preflight runs
+- **THEN** `memon fs-version check` exits 11 with `MEMON_TOO_OLD` and the skill stops

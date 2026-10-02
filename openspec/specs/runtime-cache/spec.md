@@ -30,7 +30,7 @@ Wiki lists and details SHALL derive from the central file Store's cached `listDi
 - **THEN** each resource is updated from its own file dependencies without cross-kind directory enumeration or duplicate primitive caches
 
 ### Requirement: Runtime uses lazy primitive cache for every document surface
-Central API and SSR document consumers SHALL share the primitive file Store, including hypotheses, journal, Reports, code reviews and Wiki (which includes migrated `digest` pages). Completed observations for opted-in actual SSHFS roots MAY enter the bounded memory LRU and its periodic local dump; local projects and all queues, in-flight work, Promises, waiters, leases, failures/retry scheduling and metrics remain memory-only and SHALL NOT enter LRU values or the dump. Startup MAY load only validated dumped observations with their original observed timestamps and SHALL NOT scan or parse all projects. Warm requests SHALL avoid repeated physical I/O, and domain content SHALL be derived from file observations. The only retained parsed data SHALL be the central summary index defined by `project-read-performance`: memory-only, populated on demand, keyed by stat fingerprints, rebuildable and never a source of truth. Inventories (identity listings used for navigation, tab counts and link resolution) SHALL NOT read document bodies on a warm request. Health SHALL expose startup/initial-scan state without forcing a warmup.
+Central API and SSR document consumers SHALL share the primitive file Store, including hypotheses, journal, Reports, code reviews and Wiki (which includes migrated `digest` pages). Completed observations for opted-in actual SSHFS roots MAY enter the bounded memory LRU and its periodic local dump; local projects and all queues, in-flight work, Promises, waiters, leases, failures/retry scheduling and metrics remain memory-only and SHALL NOT enter LRU values or the dump. Startup MAY load only validated dumped observations with their original observed timestamps and SHALL NOT scan or parse all projects. Warm requests SHALL avoid repeated physical I/O, and domain content SHALL be derived from file observations. The only retained parsed data SHALL be the central summary index defined by `project-read-performance`: populated on demand or seeded from the project's derived index on first use, keyed by stat fingerprints, rebuildable and never a source of truth; its only persisted form SHALL be the project-side derived index, never a central-side store. Inventories (identity listings used for navigation, tab counts and link resolution) SHALL NOT read document bodies on a warm request. Health SHALL expose startup/initial-scan state without forcing a warmup.
 
 #### Scenario: Cached document list
 - **WHEN** a steady-state list is requested repeatedly
@@ -43,6 +43,11 @@ Central API and SSR document consumers SHALL share the primitive file Store, inc
 #### Scenario: Warm inventory
 - **WHEN** the wiki, Report, code-review and Experiment inventories and the Journal count are requested again with unchanged files
 - **THEN** no wiki page, Report, code review or Journal body is read
+
+#### Scenario: Seeded after restart
+- **GIVEN** an FS v8 Project with a derived index
+- **WHEN** central restarts and the Experiment list is requested
+- **THEN** Run, Experiment and wiki summaries come from the seeded index and no Run walk or README read is needed before the response
 
 ### Requirement: Experiment content does not await Wiki source resolution
 Experiment detail SHALL read only its own canonical documents, not Run content or a Run discovery walk. Its roster SHALL come from declared `frontMatter.runs` IDs; the response SHALL NOT contain an eagerly composed `memberRuns` projection. Effective timestamps SHALL describe the Experiment document. Wiki citations SHALL load through their own backlink resource only after the reader opens the citation panel, and follow the shared heartbeat only while open. The Experiment detail envelope SHALL NOT contain the source-resolved `citedBy` projection. Citation trust signals remain available on that explicit evidence request.
