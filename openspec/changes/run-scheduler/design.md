@@ -120,11 +120,11 @@ tick(now):
      if R.reservation: if slotsFree(R.reservation): dispatch(R, R.reservation); continue
      if place := bestFit(R, freeSlots(excluding reservations)): dispatch(R, place); continue
      if plan := preemptionPlan(R): for v in plan.victims: stop(v, 'preempted'); reserve(R, plan); continue
-     R.reason = 'insufficient resources'                 # later Runs may still use unreserved free slots (backfill)
+     R.reason = 'insufficient resources'                 # greedy: R holds nothing; later Runs may use any free slot
   publish(state.json, nodes.json) if changed
 ```
 
-Backfill (a later Run may take free capacity a waiting Run cannot use) is deliberate: strict head-of-line blocking would idle GPUs whenever the head needs a whole node. The risk — a large Run starving behind small non-preemptible ones — is listed in Risks.
+Dispatch is greedy — "place whatever fits now" (user decision). Every eligible Run, in queue order, is dispatched when it fits the free capacity at this tick; a Run that does not fit keeps waiting with its reason, holds no capacity, and does not stop a later Run of any priority from using free GPUs. Strict head-of-line blocking would idle GPUs whenever the head needs a whole node, and reserving capacity for a waiting Run would idle them as well. The only held slots are those of an executed preemption plan (§8): they were freed for R by stopping preemptible lower-priority Runs and would otherwise go to the next Run in line, wasting the preemption; the hold lasts at most twice the grace period. A large Run that keeps losing freed capacity to smaller Runs is the user's call: raising its priority (`memon sched priority` or the panel) makes it the first candidate at every tick and lets it preempt preemptible lower-priority Runs, and holding a node until it empties collects a whole node by hand. Reservations for waiting Runs and backfill limits are Future work, not part of this change. The risk is listed in Risks.
 
 ### 7. Placement and idle gate
 
@@ -150,7 +150,7 @@ preemptionPlan(R):                      # R = first queued Run that cannot be pl
   return best
 ```
 
-Victims receive `stop` with reason `preempted` and their grace (Run record override, else pool default 300 s) through `stop.json` (works across hosts) plus a backend signal; the wrapper forwards `SIGTERM`, the training script saves a checkpoint, the wrapper records `INTERRUPTED(preempted)`. The freed slots are reserved for R (no backfill onto them). After the grace the backend kills; if slots are still not free after 2 × grace the reservation is dropped and the victim is reconciled lost. A higher-priority arrival can take over a reservation; nothing else can. preemptible + resumable → resumed later (`MEMON_RESUME=1`); preemptible + not resumable → rerun from scratch in the same Run directory (`--restart`); not preemptible → never chosen; equal or higher priority → never chosen. There is no "may preempt others" flag.
+Victims receive `stop` with reason `preempted` and their grace (Run record override, else pool default 300 s) through `stop.json` (works across hosts) plus a backend signal; the wrapper forwards `SIGTERM`, the training script saves a checkpoint, the wrapper records `INTERRUPTED(preempted)`. The freed slots, together with the free slots the plan counted, are reserved for R — the only reservation the scheduler makes (§6). After the grace the backend kills; if slots are still not free after 2 × grace the reservation is dropped and the victim is reconciled lost. A higher-priority arrival can take over a reservation; nothing else can. preemptible + resumable → resumed later (`MEMON_RESUME=1`); preemptible + not resumable → rerun from scratch in the same Run directory (`--restart`); not preemptible → never chosen; equal or higher priority → never chosen. There is no "may preempt others" flag.
 
 ### 9. Liveness and requeue
 
@@ -198,22 +198,23 @@ One receipt per event in `.memon/activity/`, record `version: 2` (adds origin `s
                  "reason": "for logs/b-261002-091500 (priority 5)", "at": "2026-10-02T12:00:00+08:00" } ] }
 ```
 
-Events: `enqueued`, `dispatched`, `started`, `heartbeat_lost`, `preempted`, `resumed`, `restarted`, `requeued`, `finished`, `failed`, `interrupted`, `paused`, `cancelled`, `priority_changed`, `node_held`, `node_released`, `dispatch_failed`. Filters (CLI, history API, Journal page, panel): origin, event, Run, node, since/until; the time-ordered receipt names let readers skip files outside the window without opening them. Central publishes `journal-change` when its observation of `.memon/activity/` sees new receipts.
+Events: `enqueued`, `dispatched`, `started`, `heartbeat_lost`, `preempted`, `resumed`, `restarted`, `requeued`, `finished`, `failed`, `interrupted`, `paused`, `cancelled`, `priority_changed`, `node_held`, `node_released`, `dispatch_failed`. Filters (CLI, history API, Journal page, panel): origin, event, Run, node, since/until; the time-ordered receipt names let readers skip files outside the window without opening them. Central publishes `journal-change` when its observation of `.memon/activity/` sees new receipts. Scheduling receipts are owner-only diagnostics like every activity receipt, and every Journal view a share viewer can read (today the legacy Journal under its read scope) excludes origin `sched` by default (user decision), so scheduling history stays hidden from viewers even if viewer access to other receipts is added later.
 
 ### 13. Scheduler panel
 
-- Routes: `GET /api/scheduler/state`, `GET /api/scheduler/nodes` (owner + exact-scope viewer, `read` class, fingerprint window 5 s, `ETag`), `GET /api/journal/history?origin=sched&…` (owner-only, existing class), `POST /api/scheduler/commands` (owner-only `mutate`). All through the route table and path containment.
+- Access (user decision): the whole panel is owner-only. The page `/p/<project>/scheduler` and every route it uses admit owners only. The GET routes would otherwise be `read`-class project routes, so they are classified owner-only explicitly — in `route-classes.ts` as `mutating` for viewer purposes (the precedent of `GET /api/projects/<project>/shares`) and as owner-only in the Backend route table — so the share cookie is never decoded for them and a viewer of this or any other project gets what every non-owner gets: `401` for an API request and a `302` to `/login` for the page. The AppBar renders the `Scheduler` tab only in owner sessions, and viewer sessions never request scheduler data. The rule hides the scheduler, not the Run record: a viewer of a Run still sees that Run's own fields defined by `run-record-and-resume` (priority, `preemptible`, launch history).
+- Routes (all owner-only, through the route table and path containment): `GET /api/scheduler/state`, `GET /api/scheduler/nodes` (fingerprint window 5 s, `ETag`), `GET /api/journal/history?origin=sched&…` (the existing owner-only route), `POST /api/scheduler/commands` (owner-only `mutate`).
 - Refresh: state and nodes every 10 s, history every 30 s, only while visible and focused (common resource lifecycle, `If-None-Match`). Worst-case display lag ≈ tick 15 s + window 5 s + poll 10 s ≈ 30 s. Stale scheduler banner when `lease.renewed_at` is older than three ticks.
 - Layout: header (scheduler status, pools summary with `simulated` telemetry badge), Nodes & GPUs (one card per node, slot grid with utilization bar, memory, occupying Run link, `idle n/3`, reserved/foreign markers), Queue (waiting table in scheduler order; running table with node, GPUs, launch, heartbeat, progress bar, stopping countdown), History (filters: event `Select`, Run and node `Input`, time range; newest first), owner actions (row `DropdownMenu`: Pause / Resume / Cancel (confirm `Dialog`) / Change priority (integer `Input`), pending → applied/rejected badge).
-- Viewers: same page without actions; history replaced by an owner-only note. Built from shadcn primitives; no fork of `components/ui/`; 390 px without page-level horizontal scroll; F1 verification on a 3742 preview.
+- Built from shadcn primitives; no fork of `components/ui/`; 390 px without page-level horizontal scroll; F1 verification on a 3742 preview, including a viewer session that sees no tab and is denied the page and the APIs.
 
 ### 14. Safety boundaries
 
-No allocation is ever acquired, extended or released; backends cancel only jobs they submitted. Every Run path from a command is resolved with containment and must be a discovered Run. Receipts and snapshots hold project-relative paths, node names and GPU indices only (no environment, no absolute paths, no command lines). Read-only projects reject panel actions. Skills never edit `.memon/sched/` or the pool file and never run allocation commands.
+No allocation is ever acquired, extended or released; backends cancel only jobs they submitted. Every Run path from a command is resolved with containment and must be a discovered Run. Receipts and snapshots hold project-relative paths, node names and GPU indices only (no environment, no absolute paths, no command lines). Read-only projects reject panel actions. Share viewers see nothing of the scheduler: no tab, no page, no scheduler API and no scheduling event (§12, §13). Skills never edit `.memon/sched/` or the pool file and never run allocation commands.
 
 ### 15. Change lifecycle (decided with the user)
 
-The change stays active after the shell ships: tasks section 8 ("Deferred: requires real nodes") stays unchecked until real nodes exist, and the change is not archived before it is done. Releases can ship in between (9.2.0 for the shell; a later MINOR for each real backend). Whether to instead archive the shell and move section 8 into a separate change (e.g. `run-scheduler-backends`) is left for the user to decide later; nothing in the specs depends on that choice.
+The change stays active after the shell ships: tasks section 10 ("Deferred: requires real nodes") stays unchecked until real nodes exist, and the change is not archived before it is done. Releases can ship in between (9.2.0 for the shell; a later MINOR for each real backend). Whether to instead archive the shell and move section 10 into a separate change (e.g. `run-scheduler-backends`) is left for the user to decide later; nothing in the specs depends on that choice.
 
 ### 16. CLI nodes, skills and release
 
@@ -224,7 +225,7 @@ Release 9.2.0 (`central,cli,skills`): `memon update` on the node that will run t
 | Risk | Mitigation |
 |---|---|
 | Two schedulers on one project (lease race over NFS) | `wx` lease + observation-based takeover; a holder seeing a foreign lease stops dispatching and exits |
-| Backfill starves a large Run behind small non-preemptible ones | Users mark long small jobs preemptible or lower priority; a reservation-after-wait policy is a later refinement |
+| Greedy dispatch lets smaller Runs keep taking freed GPUs while a large Run waits | Accepted for now (user decision): the queue view and `memon sched status` show the waiting reason and time; the user raises the large Run's priority (first candidate at every tick, may preempt preemptible lower-priority Runs) or holds a node until it empties; reservations and backfill limits are Future |
 | Preemption thrash (repeated stop/resume) | Victims keep their `submitted_at`; preemption only for strictly lower priority; minimal victim sets |
 | Training ignores SIGTERM and loses work | Grace then kill; skills require checkpoint-on-SIGTERM; `RESUME_DID_NOT_RESTORE` diagnostics |
 | Activity directory grows with scheduler receipts | Time-ordered names bound reads; a retention policy can be added without format change |
@@ -239,3 +240,7 @@ No filesystem migration (`.memon/sched/` is new and self-ignored; new README `sc
 ## Open Questions
 
 None blocking. The archive-or-split decision for the deferred backends is the user's to make later (§15).
+
+## Future
+
+- Reservations for waiting Runs and backfill limits, deliberately not built now (user decision: greedy dispatch, and the user raises a waiting Run's priority by hand). Candidates when needed: after a Run has waited beyond a threshold, hold capacity that frees up until it fits; let lower-priority Runs use held capacity only when they would end before the reservation, which needs runtime estimates; cap the capacity lower-priority Runs may occupy while higher-priority Runs wait.

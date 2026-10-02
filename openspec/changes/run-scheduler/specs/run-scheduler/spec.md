@@ -61,12 +61,17 @@ Every backend SHALL implement one interface: describe a pool's nodes and GPU slo
 
 ### Requirement: Queue order is priority, then submission order
 
-At every tick the scheduler SHALL consider queued Runs in order of priority (higher first), then `submitted_at` (earlier first), then Run path. A Run whose dependencies (`after`) are not all `FINISHED`, whose pool constraint cannot be met, or that is paused SHALL be skipped without blocking later Runs. A Run that cannot be placed SHALL NOT prevent a later Run from using free capacity that is not reserved. A Run returned to the queue after preemption or a lost launch SHALL keep its original `submitted_at`.
+At every tick the scheduler SHALL consider queued Runs in order of priority (higher first), then `submitted_at` (earlier first), then Run path. A Run whose dependencies (`after`) are not all `FINISHED`, whose pool constraint cannot be met, or that is paused SHALL be skipped without blocking later Runs. Dispatch SHALL be greedy: each eligible Run, in that order, SHALL be dispatched as soon as it fits the free capacity, and a Run that cannot be placed SHALL hold no capacity and SHALL NOT prevent a later Run of any priority from using free capacity. The scheduler SHALL reserve slots only for a Run whose preemption plan it is executing; it SHALL NOT reserve capacity for a Run because it waits, and SHALL NOT limit the free capacity lower-priority Runs may use. A Run returned to the queue after preemption or a lost launch SHALL keep its original `submitted_at`.
 
 #### Scenario: Equal priority is FIFO
 - **GIVEN** two queued single-GPU Runs of priority 5 submitted at 09:00 and 09:05 and one free GPU
 - **WHEN** the tick runs
 - **THEN** the 09:00 Run is dispatched and the 09:05 Run keeps waiting
+
+#### Scenario: A waiting large Run holds no capacity
+- **GIVEN** a queued priority-5 Run needing 4 GPUs, no running preemptible Run, a node with 2 free GPUs, and a queued priority-0 Run needing 1 GPU
+- **WHEN** the tick runs
+- **THEN** the priority-0 Run is dispatched on a free GPU, the priority-5 Run keeps waiting with the reason insufficient resources, and no slot is reserved
 
 #### Scenario: Preempted Run keeps its place
 - **GIVEN** a preempted Run submitted at 08:00 and a Run of the same priority submitted at 09:00, both waiting
@@ -84,7 +89,7 @@ A GPU slot SHALL be free for dispatch only when no scheduler placement or reserv
 
 ### Requirement: Preemption stops only strictly lower-priority preemptible Runs
 
-When the first queued Run that cannot be placed has priority `P`, the scheduler SHALL look for a set of running Runs, all with priority strictly lower than `P` and `preemptible: true`, on one node of an allowed pool, whose slots together with that node's free slots fit the request; candidates SHALL be preferred in this order: resumable before non-resumable, then least work lost (steps or time since the latest checkpoint for resumable Runs, since launch start otherwise), then lower priority, then most recently started; the chosen set SHALL be minimal. It SHALL then send each chosen Run a stop request with reason `preempted` and the Run's grace period, reserve the slots for the waiting Run, and dispatch it as soon as the slots are free. Runs that are not `preemptible`, or whose priority is equal or higher, SHALL never be stopped by the scheduler. A preempted Run SHALL return to the queue: it is resumed later when `resumable` and rerun from scratch otherwise. If a victim has not exited when its grace period ends, the backend SHALL kill it; if its slots are still not free after twice the grace period, the reservation SHALL be released and the victim reconciled as lost.
+When the first queued Run that cannot be placed has priority `P`, the scheduler SHALL look for a set of running Runs, all with priority strictly lower than `P` and `preemptible: true`, on one node of an allowed pool, whose slots together with that node's free slots fit the request; candidates SHALL be preferred in this order: resumable before non-resumable, then least work lost (steps or time since the latest checkpoint for resumable Runs, since launch start otherwise), then lower priority, then most recently started; the chosen set SHALL be minimal. It SHALL then send each chosen Run a stop request with reason `preempted` and the Run's grace period, reserve the slots for the waiting Run — the only reservation the scheduler makes — and dispatch it as soon as the slots are free. Runs that are not `preemptible`, or whose priority is equal or higher, SHALL never be stopped by the scheduler. A preempted Run SHALL return to the queue: it is resumed later when `resumable` and rerun from scratch otherwise. If a victim has not exited when its grace period ends, the backend SHALL kill it; if its slots are still not free after twice the grace period, the reservation SHALL be released and the victim reconciled as lost.
 
 #### Scenario: Pause and resume a resumable Run
 - **GIVEN** a node with 4 GPUs fully used by a priority-1 preemptible resumable Run, and a priority-5 Run needing 4 GPUs is submitted

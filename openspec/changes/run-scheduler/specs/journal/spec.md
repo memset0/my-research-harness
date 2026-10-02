@@ -2,7 +2,12 @@
 
 ### Requirement: Scheduling events are typed Journal records
 
-Scheduling events written by `memon sched` SHALL be Journal activity receipts in the existing `.memon/activity/` store, distinguished by origin `sched` and a typed scheduling detail (event, Run path, pool, node, GPUs, priority, `preemptible`, `resumable`, reason, launch number, time), never by free-text tags, never by a separate log and never by appending to the legacy `docs/journal.md`. They SHALL be read through the same diagnostic Journal queries as other receipts, under the same owner-only access, and a reader that does not support their record version SHALL report them as unreadable rather than fail. When central observes new receipts in a project's activity store (including scheduler receipts it did not write), it SHALL publish the project's `journal-change` event as it does for receipts it records itself.
+Scheduling events written by `memon sched` SHALL be Journal activity receipts in the existing `.memon/activity/` store, distinguished by origin `sched` and a typed scheduling detail (event, Run path, pool, node, GPUs, priority, `preemptible`, `resumable`, reason, launch number, time), never by free-text tags, never by a separate log and never by appending to the legacy `docs/journal.md`. They SHALL be read through the same diagnostic Journal queries as other receipts, under the same owner-only access; every Journal view that a share viewer can read SHALL exclude them by default; and a reader that does not support their record version SHALL report them as unreadable rather than fail. When central observes new receipts in a project's activity store (including scheduler receipts it did not write), it SHALL publish the project's `journal-change` event as it does for receipts it records itself.
+
+#### Scenario: Viewer Journal excludes scheduling events
+- **GIVEN** a shared project with legacy Journal entries and scheduler receipts
+- **WHEN** an exact-scope share viewer opens the project's Journal
+- **THEN** no scheduling event is shown or returned, and a direct request for the scheduling history is denied
 
 #### Scenario: History survives the scheduler
 - **GIVEN** a scheduler that recorded `dispatched` and `preempted` receipts and was then stopped and its `.memon/sched/` directory deleted

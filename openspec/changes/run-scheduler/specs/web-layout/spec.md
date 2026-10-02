@@ -4,7 +4,7 @@
 
 The dashboard SHALL render a sticky **AppBar** above the main content area containing:
 - The memon brand on the left
-- A `Tabs`-style switcher for `Experiments` / `Hypotheses` / `Journal` / `Reports` / `Code Review` / `Wiki`, scoped to the current project, in that left-to-right order, followed by `Scheduler` when the project has scheduler state (`.memon/sched/`)
+- A `Tabs`-style switcher for `Experiments` / `Hypotheses` / `Journal` / `Reports` / `Code Review` / `Wiki`, scoped to the current project, in that left-to-right order, followed by `Scheduler` for owners when the project has scheduler state (`.memon/sched/`); share viewers never see a `Scheduler` tab
 - A `+ New experiment` action on the right
 
 #### Scenario: Tab navigation
@@ -22,10 +22,10 @@ The dashboard SHALL render a sticky **AppBar** above the main content area conta
 #### Scenario: Wiki tab navigates to the wiki surface
 - **WHEN** the user clicks the `Wiki` tab from any per-project view
 - **THEN** the URL updates to `/p/<project>/wiki`; the AppBar's `Wiki` tab is active and the wiki surface renders
-- **AND** the `Wiki` tab sits immediately to the right of the `Code Review` tab, last in the switcher for projects without scheduler state
+- **AND** the `Wiki` tab sits immediately to the right of the `Code Review` tab, last in the switcher for projects without scheduler state and for share viewers
 
 #### Scenario: Scheduler tab for owners
 - **GIVEN** an owner viewing `project-a`, which has `.memon/sched/` state
 - **WHEN** the AppBar renders
 - **THEN** a `Scheduler` tab follows `Wiki` and navigates to `/p/project-a/scheduler`
-- **AND** an exact-scope share viewer of the same project sees the same tab, while a project without scheduler state shows no `Scheduler` tab
+- **AND** an exact-scope share viewer of the same project sees no `Scheduler` tab, and a project without scheduler state shows none to anyone

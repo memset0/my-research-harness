@@ -1,18 +1,18 @@
 ## Purpose
 
-Defines the dashboard panel that shows a project's scheduler — its nodes and GPUs, its queue and running Runs, and its recent scheduling history as a filtered Journal view — readable by owners and scoped viewers, with owner-only history and controls, refreshed by polling without filesystem watchers.
+Defines the owner-only dashboard panel that shows a project's scheduler — its nodes and GPUs, its queue and running Runs, and its recent scheduling history as a filtered Journal view — with owner controls, hidden from and denied to share viewers, refreshed by polling without filesystem watchers.
 
 ## ADDED Requirements
 
-### Requirement: The Scheduler panel is a project page readable by owners and scoped viewers
+### Requirement: The Scheduler panel is an owner-only project page
 
-The dashboard SHALL serve `/p/<project>/scheduler` (and its Host-qualified form) with the page title `Scheduler`. Owners and exact-scope share viewers of the project SHALL be able to read its scheduler state and node views; the scheduling history section SHALL be shown only to owners, because Journal receipts are owner-only diagnostics, and viewers SHALL see a note in its place; control actions SHALL be owner-only. Anonymous requests and viewers of other projects SHALL receive the usual denial. When the project has no `.memon/sched/` state, the page SHALL render an empty state naming `memon sched run` and SHALL issue no further requests until the user reloads. The page SHALL read only `.memon/sched/state.json`, `.memon/sched/nodes.json`, `.memon/sched/lease.json`, command outcomes and Journal receipts, through the shared file Store with path containment.
+The dashboard SHALL serve `/p/<project>/scheduler` (and its Host-qualified form) with the page title `Scheduler` to owners only. The page and every route it uses — scheduler state, nodes, the filtered scheduling history and control commands — SHALL be owner-only: a share viewer, whether scoped to this project or to another, SHALL be denied as for any owner-only route (the page with the redirect to the login page, API requests with `401`), the share cookie SHALL NOT be evaluated for these routes, and routes that would otherwise be `read`-class project routes SHALL be classified owner-only explicitly in the Web route classes and in the Backend route table. Anonymous requests SHALL receive the same denial. The panel SHALL have no viewer mode. When the project has no `.memon/sched/` state, the page SHALL render an empty state naming `memon sched run` and SHALL issue no further requests until the user reloads. The page SHALL read only `.memon/sched/state.json`, `.memon/sched/nodes.json`, `.memon/sched/lease.json`, command outcomes and Journal receipts, through the shared file Store with path containment.
 
-#### Scenario: Viewer reads the queue but not the history
+#### Scenario: Viewer is denied the panel
 - **GIVEN** an exact-scope share viewer of `project-a`, which has scheduler state
-- **WHEN** the viewer opens the Scheduler page
-- **THEN** the nodes and queue views render without any control, and the history section shows an owner-only note
-- **AND** a direct request for the scheduling history returns the owner-only denial
+- **WHEN** the viewer navigates to `/p/project-a/scheduler`
+- **THEN** the response redirects to the login page and carries no scheduler data
+- **AND** the viewer's direct requests for the scheduler state, nodes and scheduling history answer `401`
 
 #### Scenario: Project without a scheduler
 - **WHEN** an owner opens the Scheduler page of a project that never ran `memon sched`
@@ -20,7 +20,7 @@ The dashboard SHALL serve `/p/<project>/scheduler` (and its Host-qualified form)
 
 ### Requirement: Nodes and GPUs view
 
-The panel SHALL list every node of every pool from `nodes.json` with its pool, backend, implementation state and node state (up, held, draining, down), and for each GPU slot its utilization, memory used and total, the occupying Run (linked to its Run panel) or none, and its idle judgment with the consecutive idle-sample count (for example `idle 2/3`). It SHALL show the telemetry source (for example `simulated`) and the sample time, and SHALL mark slots that are reserved for a waiting Run or used by a foreign process.
+The panel SHALL list every node of every pool from `nodes.json` with its pool, backend, implementation state and node state (up, held, draining, down), and for each GPU slot its utilization, memory used and total, the occupying Run (linked to its Run panel) or none, and its idle judgment with the consecutive idle-sample count (for example `idle 2/3`). It SHALL show the telemetry source (for example `simulated`) and the sample time, and SHALL mark slots that are reserved for a Run whose preemption is in progress or used by a foreign process.
 
 #### Scenario: Simulated nodes drive the view
 - **GIVEN** a `local` pool with virtual nodes `sim-a` and `sim-b` of two slots each, one Run on `sim-a` slot 0
@@ -69,7 +69,7 @@ The panel SHALL be composed from existing shadcn primitives (`Card`, `Table`, `B
 
 ### Requirement: Owners control Runs from the panel through command files
 
-The panel SHALL offer owners `Pause`, `Resume`, `Cancel` and `Change priority` actions on queued and running Runs. Each action SHALL be sent to an owner-only mutating route that validates the project, the Run path (with path containment) and the arguments (an integer priority; no `preemptible` change), refuses read-only projects, records the request as an ordinary central invocation receipt, and writes exactly one command file into `.memon/sched/commands/` as `run-scheduler` specifies; it SHALL NOT edit the Run record or scheduler state itself. The panel SHALL show the command as pending until the scheduler's outcome for it appears, then show it as applied or rejected with the code and message, and SHALL warn when no live scheduler holds the lease. `Cancel` SHALL ask for confirmation. Viewers SHALL see no action controls, and their direct requests SHALL be denied.
+The panel SHALL offer owners `Pause`, `Resume`, `Cancel` and `Change priority` actions on queued and running Runs. Each action SHALL be sent to an owner-only mutating route that validates the project, the Run path (with path containment) and the arguments (an integer priority; no `preemptible` change), refuses read-only projects, records the request as an ordinary central invocation receipt, and writes exactly one command file into `.memon/sched/commands/` as `run-scheduler` specifies; it SHALL NOT edit the Run record or scheduler state itself. The panel SHALL show the command as pending until the scheduler's outcome for it appears, then show it as applied or rejected with the code and message, and SHALL warn when no live scheduler holds the lease. `Cancel` SHALL ask for confirmation. Share viewers never reach the panel; their direct command requests SHALL be denied with `401` and SHALL write no command file.
 
 #### Scenario: Owner pauses a running Run
 - **GIVEN** an owner viewing a Run running under a live scheduler
@@ -82,5 +82,5 @@ The panel SHALL offer owners `Pause`, `Resume`, `Cancel` and `Change priority` a
 
 #### Scenario: Viewer request denied
 - **WHEN** a share viewer posts a pause request for a Run of the shared project
-- **THEN** the request is denied and no command file is written
+- **THEN** the request is denied with `401` and no command file is written
 
