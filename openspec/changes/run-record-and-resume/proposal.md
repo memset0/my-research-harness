@@ -1,0 +1,40 @@
+## Why
+
+A Run record can only say where one process ran: `host`, `pid`, `command` and `wandb` are single values, there is no notion of progress, checkpoint, launch history or why a Run stopped, and memon never executes anything, so a Run that does not report progress cannot be monitored or scheduled. `INTERRUPTED` is treated as terminal, may only be written by hand, and is mapped to `FAILED` when a Run is imported into a Variant. Operators therefore resume training with project-specific scripts that create `resume-<step>/` sub-folders, juggle W&B ids through environment variables, write private execution-state files, and leave memon with a stale `RUNNING` README when a node is reclaimed (58 `INTERRUPTED` and 15 stale `RUNNING` Runs in the measured project; 17 Runs carry hand-made resume segments; agents invented `resume_step`/`slurm_jobs` fields). This change defines one Run record contract and a memon launch wrapper so that every Run launched through memon is logged, heartbeated, classified when it stops and resumable in place.
+
+## What Changes
+
+- **Run record contract** (all additions optional, preserved by every writer): intent (`target_steps`, per-launch `resources`), scheduling attributes (`schedule.priority`, `schedule.preemptible`, default `false`, with an audit record of when and through which surface it was set), `resumable`, the stable `wandb_run_id`, `checkpoint` (declared directory, latest checkpoint and its step), the last persisted progress snapshot, an append-only `launches` history (sequence, host, pid, GPUs, backend handle, start/end time, start/end step, exit code or signal, stop reason, outcome) and `stop_reason`. The top-level `host`, `pid` and `gpus` mirror the latest launch for existing readers; the result itself stays in the Run's `result.csv` (`run-results-v9`).
+- **`INTERRUPTED` becomes non-terminal** and carries `stop_reason` ∈ `preempted`, `node_reclaimed`, `stage_target_reached`, `user_paused`, `unknown`. Besides humans, memon's launch wrapper (and later its scheduler) writes it when it has direct evidence of the stop; discovery still never infers it, and no projection or import maps it to `FAILED`.
+- **Resume in place, never split into attempts.** A resumed or restarted launch stays in the same Run directory: `run.log` is appended after a separator line (time, host, start step); a file that cannot be appended is written per launch (`launch-<n>.json`); no file is overwritten or lost; a recorded W&B run id is reused in resume mode.
+- **Launch wrapper** `memon run launch` (with `memon run create`, `resume`, `stop`, `reconcile`, `progress`): always captures the log, writes a heartbeat file, records the exit code or signal, forwards stop signals with a grace period for checkpointing, classifies the outcome and updates the Run record; `--detach` starts it in its own session so a terminal or scheduler restart cannot kill training. It passes the Run directory, launch number, resume flag, progress/checkpoint locations and W&B id/resume mode through environment variables, and creates `result.csv` with the Experiment's schema-version row for member Runs.
+- **Optional progress file.** A Run may write `<runDir>/.memon/progress.json` (current step, target step, latest checkpoint, optional stop reason); memon shows it live and folds the final snapshot into the launch entry. `<runDir>/.memon/` is machine state that ignores itself in Git.
+- **Truthful attributes.** `resumable` is recorded only from evidence — the entry restores from its latest checkpoint and a checkpoint location is declared or reported; a resumable Run without a first checkpoint resumes from step 0 and stays resumable. Only resumable Runs can be resumed; a non-resumable one can only be restarted from scratch on explicit request. `preemptible` is `false` unless the user explicitly asks for a batch to be preemptible; agents and skills never set it on their own.
+- **Web.** The Run panel shows the launch history, stop reason and live progress/heartbeat.
+- **Derived index `index_version: 3`.** Run rows gain stop reason, resumability, scheduling attributes and a launch summary.
+- No FS convention change (additive optional fields and files); distributed CLI/skills change → release `9.1.0` (MINOR).
+
+## Capabilities
+
+### New Capabilities
+- `run-launch`: the memon launch wrapper and its contract — Run creation before launch, launch/resume/restart/stop/reconcile, environment, log continuation and per-launch files, heartbeat, stop requests and grace, outcome classification, progress file protocol, result-file creation and receipts.
+
+### Modified Capabilities
+- `run-readme`: the Run frontmatter gains the Run record contract fields; `INTERRUPTED` is non-terminal with a stop reason and may be written by memon's launcher with evidence; launch history and attribute truthfulness rules.
+- `run-edit`: status writes carry and clear `stop_reason`; manual status changes never fabricate launches.
+- `memon-cli`: the `memon run` family gains `create`, `launch`, `resume`, `stop`, `reconcile`, `progress` and the record options for intent and scheduling attributes.
+- `memon-skills`: launch through the wrapper, resume in place, checkpoint on signal, never assume `preemptible` or `resumable`.
+- `derived-index`: `index_version: 3` Run rows with launch and scheduling summaries.
+- `project-read-performance`: `INTERRUPTED` leaves the terminal-status validation window.
+- `live-updates`: live Run progress refreshes with the foreground heartbeat.
+- `web-dashboard`: the Run panel shows launches, stop reason and progress.
+
+## Impact
+
+- **Core:** Run frontmatter schema/parser/serializer (new optional fields, key-preserving), status rules, launch engine (process supervision, signals, heartbeat, log tee, classification), progress reader, index v3.
+- **CLI:** new `run create|launch|resume|stop|reconcile|progress`; extended `run record` and `run status set`.
+- **Backend / Web:** Run detail/list fields, progress resource, Run panel UI.
+- **Skills:** `memon-write-script`, `memon-run-experiment`, shared reference; launcher template reads `MEMON_*` variables.
+- **Release:** `9.1.0`, `MEMON_CHANGED_SURFACES=central,cli,skills`; nodes pick it up through `memon update`.
+- **Dependencies:** requires `run-results-v9` (FS v9, `result.csv` creation and the Variant status derivation that keeps `INTERRUPTED` in progress). `run-scheduler` depends on this change.
+- **Compatibility:** old READMEs stay valid (fields absent = unknown); old launchers keep working through `memon run record`; a Run launched by an older script can be adopted by recording it and resuming it through the wrapper when it is resumable.
