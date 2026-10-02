@@ -223,6 +223,23 @@ The cold targets (D7) are only meaningful against the measured project's real in
 
 Rollback: any failure in steps 4–5 before the marker moves → restore `.memon/` from the backup (removes `.memon/index/`, marker stays 7), no commit. Failure after the marker commit → `git revert` the migration commit and restore `.memon/` from the backup. Missing a target is not a rollback trigger by itself (the index is only a cache); it is reported and blocks the release claim. No real project name or path is written into tracked files.
 
+## Measurements
+
+Task 7.3, release 8.1.0 code, measured on 2026-10-02 against a scratch copy of the measured project (only what discovery reads: `.memon/project.yml` and the FS-version marker, the Markdown/YAML files under `docs/`, and each Run directory's `README.md` / `.archived`; 1,306 Run directories under `logs/*`, 1,297 listed Runs, 30 Experiments, 36 wiki pages; snapshot 1.82 MB). The copy lives on local tmpfs, so absolute times are lower bounds for the project's own filesystem; the call counts are filesystem-independent. Calls are Node filesystem calls under the Project root counted by the harness's preload (writes counted too), the mirror driven with `timers: false` so each cycle is measured on its own.
+
+| Operation | Calls | Of which | Time |
+|---|---|---|---|
+| Seed on first use (snapshot read, declaration read, `events/` listing) | 3 | 2 reads, 1 listing | 133 ms |
+| First validator cycle after seeding | 725 | 676 stats, 11 listings, 37 reads | 109 ms |
+| Steady validator cycle, nothing changed (6 consecutive cycles) | 657–716 | 644–703 stats, 11 listings, 1 read, 0 writes | 71–81 ms |
+| Cycle that found one externally changed Run (event + compaction included) | 745 | 710 stats, 15 listings, 9 reads, 8 writes | 260 ms |
+| One compaction of one event (`compactIndex`, central role) | 19 | 6 reads, 4 listings, 2 stats, 5 writes | 184–196 ms (3 runs) |
+| `memon index compact`, three pending events, whole CLI process | — | `compacted`, 3 merged | 0.60 s wall |
+
+A steady cycle checked 351–410 Runs (every non-terminal Run plus the rotating fifth of terminal Runs). Each Run is two stats (README and directory fingerprint), so the cycle costs about 680 stats and 11 listings, roughly twice the ≈ 350 stats estimated in §5, still under 0.1 s per minute while the Project is active and nothing while idle. Compaction cost is dominated by reading and rewriting the snapshot.
+
+External-edit visibility (central runtime with the background validator on and the real 60 s timer, index rebuilt immediately before so every entry was inside its window; the Run list paged every 5 s): one non-terminal Run rewritten from `RUNNING` to `FINISHED` and one terminal Run from `FINISHED` to `FAILED` with a plain file write outside memon, 10 s after the first request. Both new values appeared in the Run list 50 s after the edit, at the first validator cycle after it (bounds: 60 s non-terminal; 300 s terminal, which this terminal Run met earlier because it fell into that cycle's rotation bucket). No list request performed request-path I/O for the seeded entries.
+
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
