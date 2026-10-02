@@ -34,6 +34,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
@@ -152,6 +153,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
   const created = await cliMutation(() =>
     createExperiment({
       fs: nodeMutationFs,
+      index: cliIndexSink(projectRoot),
       projectRoot,
       projectName,
       slug: input.slug,
@@ -180,7 +182,7 @@ export async function runExperimentCreate(input: ExperimentCreateInput): Promise
       },
     })
   }
-  emitJson({ ok: true, id: created.id })
+  emitJson({ ok: true, id: created.id, ...indexWarningFields(created) })
 }
 
 // ---------- experiment link / unlink ----------
@@ -210,7 +212,13 @@ async function resolveBindTargets(input: ExperimentLinkInput) {
 export async function runExperimentLink(input: ExperimentLinkInput): Promise<void> {
   const { projectRoot, expId, experiment, run } = await resolveBindTargets(input)
   const linked = await cliMutation(() =>
-    linkExperimentRun({ fs: nodeMutationFs, projectRoot, experiment, run }),
+    linkExperimentRun({
+      fs: nodeMutationFs,
+      index: cliIndexSink(projectRoot),
+      projectRoot,
+      experiment,
+      run,
+    }),
   )
   // Soft prefix warning to stderr.
   for (const warning of linked.warnings) {
@@ -224,7 +232,12 @@ export async function runExperimentLink(input: ExperimentLinkInput): Promise<voi
       body: `\`${expId}\` op=link run=${run.id}`,
     },
   })
-  emitJson({ ok: true, experimentId: expId, runId: linked.runPath })
+  emitJson({
+    ok: true,
+    experimentId: expId,
+    runId: linked.runPath,
+    ...indexWarningFields(linked),
+  })
 }
 
 export type ExperimentUnlinkInput = ExperimentLinkInput
@@ -232,7 +245,13 @@ export type ExperimentUnlinkInput = ExperimentLinkInput
 export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise<void> {
   const { projectRoot, expId, experiment, run } = await resolveBindTargets(input)
   const unlinked = await cliMutation(() =>
-    unlinkExperimentRun({ fs: nodeMutationFs, projectRoot, experiment, run }),
+    unlinkExperimentRun({
+      fs: nodeMutationFs,
+      index: cliIndexSink(projectRoot),
+      projectRoot,
+      experiment,
+      run,
+    }),
   )
   await appendJournalEvent({
     path: journalPath(projectRoot),
@@ -242,7 +261,12 @@ export async function runExperimentUnlink(input: ExperimentUnlinkInput): Promise
       body: `\`${expId}\` op=unlink run=${run.id}`,
     },
   })
-  emitJson({ ok: true, experimentId: expId, runId: unlinked.runPath })
+  emitJson({
+    ok: true,
+    experimentId: expId,
+    runId: unlinked.runPath,
+    ...indexWarningFields(unlinked),
+  })
 }
 
 // ---------- experiment status set (v4) ----------
@@ -267,6 +291,7 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
     () =>
       setExperimentStatus({
         fs: nodeMutationFs,
+        index: cliIndexSink(projectRoot),
         experiment,
         status: input.to as ExperimentStatus,
         lock: { expectedMtime: input.expectedMtime },
@@ -302,6 +327,7 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
     prevStatus: result.prevStatus,
     nextStatus: result.nextStatus,
     journalAppended,
+    ...indexWarningFields(result),
   }
   if (result.archived) {
     process.stderr.write(`warning: ${expId} is archived; modifying anyway\n`)
@@ -335,7 +361,12 @@ async function setExperimentArchivedCli(
     input.experimentId,
   )
   const result = await cliMutation(() =>
-    setExperimentArchived({ fs: nodeMutationFs, experiment, archived: target }),
+    setExperimentArchived({
+      fs: nodeMutationFs,
+      index: cliIndexSink(projectRoot),
+      experiment,
+      archived: target,
+    }),
   )
   if (!result.changed) {
     emitJson({ ok: true, archived: target, noop: true })
@@ -349,7 +380,7 @@ async function setExperimentArchivedCli(
       body: `\`${expId}\` op=${target ? 'archive' : 'unarchive'}`,
     },
   })
-  emitJson({ ok: true, archived: target, noop: false })
+  emitJson({ ok: true, archived: target, noop: false, ...indexWarningFields(result) })
 }
 
 // ---------- experiment delete ----------
@@ -369,7 +400,12 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
   // JSON mode cannot prompt: without --force the core refuses members and
   // scratch content; skill code paths always pass --force.
   const deleted = await cliMutation(() =>
-    deleteExperiment({ fs: nodeMutationFs, experiment, force: input.force }),
+    deleteExperiment({
+      fs: nodeMutationFs,
+      index: cliIndexSink(projectRoot),
+      experiment,
+      force: input.force,
+    }),
   )
   await appendJournalEvent({
     path: journalPath(projectRoot),
@@ -379,7 +415,12 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
       body: `\`${expId}\` op=delete cascaded-runs=${JSON.stringify(deleted.cascadedRuns)}`,
     },
   })
-  emitJson({ ok: true, deletedId: expId, cascadedRuns: deleted.cascadedRuns })
+  emitJson({
+    ok: true,
+    deletedId: expId,
+    cascadedRuns: deleted.cascadedRuns,
+    ...indexWarningFields(deleted),
+  })
 }
 
 // ---------- helpers ----------

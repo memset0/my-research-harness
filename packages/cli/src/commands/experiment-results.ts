@@ -1,5 +1,7 @@
 import {
   type Experiment,
+  type IndexEventWarning,
+  publishMutationEvent,
   type ResultColumn,
   type ResultColumnAnnotations,
   type ResultScalar,
@@ -15,6 +17,7 @@ import {
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import {
   emitCsv,
   emitHuman,
@@ -283,14 +286,22 @@ export interface ExperimentResultsAnnotationSetInput extends ResultsBaseInput {
 export async function runExperimentResultsAnnotationSet(
   input: ExperimentResultsAnnotationSetInput,
 ): Promise<void> {
-  const { experiment, raw, path } = await loadResults(input)
+  const { experiment, raw, path, projectRoot } = await loadResults(input)
   let result: ReturnType<typeof upsertResultColumnAnnotationYaml>
   try {
     result = upsertResultColumnAnnotationYaml(raw, input.column, input.description, input.value)
   } catch (error) {
     emitErrorAndExit('BAD_REQUEST', (error as Error).message)
   }
-  if (result.changed) await writeFileAtomic(path, result.content)
+  let indexWarnings: IndexEventWarning[] = []
+  if (result.changed) {
+    await writeFileAtomic(path, result.content)
+    indexWarnings = await publishMutationEvent(
+      cliIndexSink(projectRoot),
+      'experiment.results-annotation',
+      [{ path, after: result.content }],
+    )
+  }
   emitJson({
     ok: true,
     experimentId: experiment.id,
@@ -300,6 +311,7 @@ export async function runExperimentResultsAnnotationSet(
     description: input.description,
     replaced: result.replaced,
     changed: result.changed,
+    ...indexWarningFields({ indexWarnings }),
   })
 }
 

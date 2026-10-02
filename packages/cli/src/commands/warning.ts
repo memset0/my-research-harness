@@ -32,6 +32,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
@@ -102,6 +103,7 @@ function writeWarning(input: WarningWriteInput) {
     () =>
       mutateDocumentWarning({
         fs: nodeMutationFs,
+        index: cliIndexSink(input.target.projectRoot),
         path: input.target.readmePath,
         op: input.op,
         ...(input.rowId === undefined ? {} : { rowId: input.rowId }),
@@ -183,7 +185,13 @@ export async function runWarningAdd(input: WarningAddInput): Promise<void> {
       body: `\`${target.targetId}\` op=add rowId=${rowId} run=${runAttribution ?? 'null'} category=${input.category} message=${quoteForJournal(input.message)}`,
     },
   })
-  emitJson({ ok: true, rowId, mtime: result.mtime, hash: result.hash })
+  emitJson({
+    ok: true,
+    rowId,
+    mtime: result.mtime,
+    hash: result.hash,
+    ...indexWarningFields(result),
+  })
 }
 
 // ---------- list ----------
@@ -259,7 +267,7 @@ export async function runWarningResolve(input: WarningResolveInput): Promise<voi
       body: `\`${target.targetId}\` op=resolve rowId=${input.rowId} run=${after.run ?? 'null'} note=${quoteForJournal(input.note)}`,
     },
   })
-  emitJson({ ok: true, mtime: result.mtime, hash: result.hash })
+  emitJson({ ok: true, mtime: result.mtime, hash: result.hash, ...indexWarningFields(result) })
 }
 
 // ---------- reopen ----------
@@ -291,7 +299,7 @@ export async function runWarningReopen(input: WarningReopenInput): Promise<void>
       body: `\`${target.targetId}\` op=reopen rowId=${input.rowId} run=${after.run ?? 'null'}`,
     },
   })
-  emitJson({ ok: true, mtime: result.mtime, hash: result.hash })
+  emitJson({ ok: true, mtime: result.mtime, hash: result.hash, ...indexWarningFields(result) })
 }
 
 // ---------- delete ----------
@@ -323,7 +331,7 @@ export async function runWarningDelete(input: WarningDeleteInput): Promise<void>
       body: `\`${target.targetId}\` op=delete rowId=${input.rowId} run=${deleted.run ?? 'null'} status=${deleted.status} category=${deleted.category} created=${deleted.created} message=${quoteForJournal(deleted.message)}${deleted.note ? ` note=${quoteForJournal(deleted.note)}` : ''}`,
     },
   })
-  emitJson({ ok: true, mtime: result.mtime, hash: result.hash })
+  emitJson({ ok: true, mtime: result.mtime, hash: result.hash, ...indexWarningFields(result) })
 }
 
 function quoteForJournal(s: string): string {

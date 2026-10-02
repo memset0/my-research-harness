@@ -9,6 +9,7 @@ import { RenameExperimentError, type RenameExperimentWarning, renameExperiment }
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { EXIT } from '../lib/exit-codes.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { emitJson } from '../lib/output.js'
 
 export interface ExperimentRenameInput {
@@ -25,7 +26,9 @@ export async function runExperimentRename(input: ExperimentRenameInput): Promise
 
   let result: Awaited<ReturnType<typeof renameExperiment>>
   try {
-    result = await renameExperiment(projectRoot, projectName, input.idOrSlug, input.newSlug)
+    result = await renameExperiment(projectRoot, projectName, input.idOrSlug, input.newSlug, {
+      index: cliIndexSink(projectRoot),
+    })
   } catch (err) {
     if (err instanceof RenameExperimentError) {
       // EXPERIMENT_SLUG_PREFIX_COLLISION is a user-input issue (slug
@@ -48,6 +51,7 @@ export async function runExperimentRename(input: ExperimentRenameInput): Promise
   }
   if (result.noop) payload.noop = true
   if (result.warnings.length > 0) payload.warnings = result.warnings
+  Object.assign(payload, indexWarningFields(result))
   emitJson(payload)
 }
 

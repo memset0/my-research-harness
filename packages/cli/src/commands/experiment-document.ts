@@ -8,6 +8,7 @@ import {
 } from '@memon/core'
 
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
+import { effectiveRunDirs } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, emitLintDiagnostics, type OutputFormat } from '../lib/output.js'
 import { loadResultsEligibility, type ResultsEligibility } from '../lib/results-eligibility.js'
@@ -79,11 +80,14 @@ export async function runExperimentDocumentRender(
  * research state never reaches lint output.
  */
 export async function runExperimentDocumentLint(input: ExperimentDocumentBaseInput): Promise<void> {
-  const { experiment } = await resolveInput(input)
+  const { experiment, projectRoot } = await resolveInput(input)
+  // Declared Run paths outside the effective run_dirs (`--run-dir`, else
+  // `.memon/project.yml`, else the v8 default) are `RUN_OUTSIDE_RUN_DIRS`.
+  const runDirs = await effectiveRunDirs(projectRoot)
   emitLintDiagnostics(
     input.format,
     { experimentId: experiment.id },
-    lintExperimentDocument(experiment),
+    lintExperimentDocument(experiment, { runDirs: runDirs.patterns }),
   )
 }
 

@@ -4,9 +4,10 @@
 // there is no missing-Result rule, no stale-RUNNING rule, no
 // archive-to-fix-it nudge, and a Run marked `deprecated: true` lints exactly
 // like a live one. A minimal v6 Run record (id + status + created_at with a
-// free-form body) is clean input, not a finding.
+// free-form body) is clean input, not a finding. The one layout rule checked
+// here is that Run directories do not nest (`RUN_NESTED`).
 
-import { lintRun, RunTargetIndex, readRunDir } from '@memon/core'
+import { lintRun, lintRunNesting, RunTargetIndex, readRunDir } from '@memon/core'
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
@@ -32,5 +33,10 @@ export async function runRunLint(input: RunLintInput): Promise<void> {
     emitErrorAndExit('NOT_FOUND', `run "${input.runId}" not found in ${projectRoot}`)
   }
   const run = await readRunDir(runDir, projectName)
-  emitLintDiagnostics(input.format, { runId: run.id }, lintRun(run))
+  // Structure of the record plus the layout rule that Runs do not nest
+  // (`RUN_NESTED` for each Run-shaped direct child directory).
+  emitLintDiagnostics(input.format, { runId: run.id }, [
+    ...lintRun(run),
+    ...(await lintRunNesting(runDir)),
+  ])
 }

@@ -65,6 +65,14 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'hypo list': 'readonly',
   'hypo show': 'readonly',
   'fs-version check': 'readonly',
+  // Derived-index cache maintenance and the project declaration: they write
+  // only `.memon/index/` or create `.memon/project.yml` for the user to
+  // review, and are deliberately never journaled.
+  'index status': 'readonly',
+  'index compact': 'readonly',
+  'index rebuild': 'readonly',
+  'project init': 'readonly',
+  'project lint': 'readonly',
 
   // ---------- host / installation management ----------
   serve: 'host',

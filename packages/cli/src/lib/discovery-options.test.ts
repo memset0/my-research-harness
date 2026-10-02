@@ -1,14 +1,16 @@
-// `--run-dir` plumbing: the parsed global flag bounds every CLI Run walk,
-// while project-relative Run paths keep resolving directly.
+// `--run-dir` plumbing: the effective run_dirs (flag > .memon/project.yml >
+// FS v8 default) bound every CLI Run walk, while project-relative Run paths
+// keep resolving directly.
 
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ProjectDeclarationError } from '@memon/core'
 import { spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runResolveExp } from '../commands/run-resolve-exp.js'
 import { runScan } from '../commands/scan.js'
-import { parseRunDirs, runWalkOptions, setRunDirs } from './discovery-options.js'
+import { effectiveRunDirs, parseRunDirs, runWalkOptions, setRunDirs } from './discovery-options.js'
 
 const readme = (id: string) =>
   `---\nid: ${id}\nname: x\nstatus: FINISHED\ncreated_at: '2026-09-01T09:00:00+08:00'\nupdated_at: '2026-09-01T09:00:00+08:00'\n---\n`
@@ -50,11 +52,56 @@ describe('--run-dir', () => {
       expect(parseRunDirs(['logs/*', bad]).error).toMatch(/^--run-dir /)
   })
 
-  it('leaves walks unbounded when unset', async () => {
+  it('uses the FS v8 default run_dirs when unset and undeclared', async () => {
     expect(runWalkOptions()).toEqual({})
+    expect(await effectiveRunDirs(root)).toEqual({
+      patterns: ['logs/*', 'outputs/*', 'experiments/*'],
+      source: 'default',
+    })
+    await runScan({ projectRoot: root, format: 'json' })
+    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    // `outputs/group/<run>` is deeper than `outputs/*`, so the default misses it.
+    expect(ids).toEqual(['top-260901-090000'])
+  })
+
+  it('walks the locations declared in .memon/project.yml', async () => {
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(root, '.memon/project.yml'),
+      "schema_version: 1\nrun_dirs: ['logs/*', 'outputs/*/*']\n",
+    )
+    expect(await effectiveRunDirs(root)).toEqual({
+      patterns: ['logs/*', 'outputs/*/*'],
+      source: 'project',
+    })
     await runScan({ projectRoot: root, format: 'json' })
     const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
     expect(ids.sort()).toEqual(['deep-260901-100000', 'top-260901-090000'])
+  })
+
+  it('lets --run-dir override the declaration as a whole', async () => {
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(root, '.memon/project.yml'),
+      "schema_version: 1\nrun_dirs: ['outputs/*/*']\n",
+    )
+    setRunDirs(['logs/*'])
+    expect(await effectiveRunDirs(root)).toEqual({ patterns: ['logs/*'], source: 'cli' })
+    await runScan({ projectRoot: root, format: 'json' })
+    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    expect(ids).toEqual(['top-260901-090000'])
+  })
+
+  it('fails closed on an invalid declaration unless --run-dir is given', async () => {
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(join(root, '.memon/project.yml'), 'schema_version: 1\nwalk_depth: 3\n')
+    await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toBeInstanceOf(
+      ProjectDeclarationError,
+    )
+    setRunDirs(['logs/*'])
+    await runScan({ projectRoot: root, format: 'json' })
+    const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
+    expect(ids).toEqual(['top-260901-090000'])
   })
 
   it('bounds memon scan', async () => {

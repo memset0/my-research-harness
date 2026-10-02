@@ -2,9 +2,16 @@
 
 // @memon/cli — `memon` command-line tool entry point.
 
-import { ConfigError, EXPERIMENT_DIR_REGEX, MEMON_RELEASE, RUN_DIR_REGEX } from '@memon/core'
+import {
+  ConfigError,
+  EXPERIMENT_DIR_REGEX,
+  MEMON_RELEASE,
+  ProjectDeclarationError,
+  RUN_DIR_REGEX,
+} from '@memon/core'
 import { Command, CommanderError } from 'commander'
 import { runComponentsRun } from './commands/components.js'
+import { runIndexCompact, runIndexRebuild, runIndexStatus } from './commands/derived-index.js'
 import {
   readStdin,
   runArchive,
@@ -43,6 +50,7 @@ import { runJournalRead } from './commands/journal.js'
 import { runJournalSubmit } from './commands/journal-submit.js'
 import { runList } from './commands/list.js'
 import { runMockSeed } from './commands/mock.js'
+import { runProjectInit, runProjectLint } from './commands/project.js'
 import { runRunDeprecate, runRunUndeprecate } from './commands/run-deprecate.js'
 import { runRunLint } from './commands/run-lint.js'
 import { runRunRecord } from './commands/run-record.js'
@@ -99,7 +107,7 @@ program
   .option('--format <fmt>', 'output format: json | human', 'json')
   .option(
     '--run-dir <pattern>',
-    'declare where Run directories live, e.g. logs/* or outputs/*/* (repeatable; default: unbounded walk of logs/, outputs/, experiments/)',
+    'declare where Run directories live, e.g. logs/* or outputs/*/* (repeatable; overrides .memon/project.yml; default: logs/*, outputs/*, experiments/*)',
     (value: string, previous: string[] = []) => [...previous, value],
   )
 
@@ -1119,6 +1127,64 @@ fsVersion
     await runFsVersionCheck({ projectRoot: g.projectRoot, cwd: g.cwd, format: g.format })
   })
 
+// ---------- memon index (FS v8 derived index) ----------
+
+const indexCommand = program
+  .command('index')
+  .description(
+    'maintain and inspect the derived index .memon/index/ (a rebuildable cache, never edited by hand; writes keep it current automatically)',
+  )
+indexCommand
+  .command('status')
+  .description(
+    'report the index: snapshot, recorded vs effective run_dirs, entry counts, unmerged events, lease',
+  )
+  .option('--verify', 're-take every fingerprint and re-walk; list INDEX_DRIFT records', false)
+  .option('--strict', 'with --verify: exit 1 when any drift is found', false)
+  .action(async (opts: { verify?: boolean; strict?: boolean }) => {
+    const g = readGlobals()
+    await runIndexStatus({ ...g, verify: !!opts.verify, strict: !!opts.strict })
+  })
+indexCommand
+  .command('compact')
+  .description('merge unmerged events into the snapshot (no document reads; exit 9 while leased)')
+  .action(async () => {
+    await runIndexCompact(readGlobals())
+  })
+indexCommand
+  .command('rebuild')
+  .description('rebuild the index from the project files alone (exit 9 while leased)')
+  .option(
+    '--audit-run-dirs',
+    'also list Run directories under logs/, outputs/, experiments/ that the effective run_dirs miss',
+    false,
+  )
+  .option('--dry-run', 'compute and report without writing any file', false)
+  .action(async (opts: { auditRunDirs?: boolean; dryRun?: boolean }) => {
+    const g = readGlobals()
+    await runIndexRebuild({ ...g, auditRunDirs: !!opts.auditRunDirs, dryRun: !!opts.dryRun })
+  })
+
+// ---------- memon project (tracked .memon/project.yml) ----------
+
+const projectCommand = program
+  .command('project')
+  .description('the tracked project declaration .memon/project.yml (where Run directories live)')
+projectCommand
+  .command('init')
+  .description(
+    'create .memon/project.yml with the default run_dirs (or the global --run-dir patterns); never overwrites, never commits',
+  )
+  .action(async () => {
+    await runProjectInit(readGlobals())
+  })
+projectCommand
+  .command('lint')
+  .description('validate .memon/project.yml and print the effective run_dirs with their source')
+  .action(async () => {
+    await runProjectLint(readGlobals())
+  })
+
 // ---------- memon components ----------
 
 const components = program
@@ -1449,6 +1515,14 @@ async function main() {
         recordCliInvocationFailureSync('BAD_REQUEST')
       }
       process.exit(commanderExitCode(err.exitCode))
+    }
+    if (err instanceof ProjectDeclarationError) {
+      // An invalid declaration fails closed: never silently use the default.
+      emitErrorAndExit('BAD_REQUEST', err.message, {
+        code: err.code,
+        file: err.file,
+        ...(err.key === undefined ? {} : { field: err.key }),
+      })
     }
     if (err instanceof ConfigError) {
       process.stderr.write(`${JSON.stringify({ error: { message: err.message } })}\n`)

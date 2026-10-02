@@ -20,6 +20,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
@@ -73,6 +74,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
     () =>
       setRunStatus({
         fs: nodeMutationFs,
+        index: cliIndexSink(projectRoot),
         readmePath,
         status: input.to as Status,
         lock: { expectedMtime: input.expectedMtime },
@@ -117,6 +119,7 @@ export async function runStatusSet(input: StatusSetInput): Promise<void> {
     prevStatus: result.prevStatus,
     nextStatus: result.nextStatus,
     journalAppended: true,
+    ...indexWarningFields(result),
   }
   if (result.archived) warnArchived(input.runId, output)
   emitJson(output)
@@ -141,6 +144,7 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
     () =>
       writeRunReadme({
         fs: nodeMutationFs,
+        index: cliIndexSink(projectRoot),
         readmePath,
         content: input.stdinContent,
         updatedAt: 'preserve',
@@ -171,7 +175,13 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
   )
 
   if (result.created) {
-    emitJson({ ok: true, mtime: result.mtime, journalAppended: false, created: true })
+    emitJson({
+      ok: true,
+      mtime: result.mtime,
+      journalAppended: false,
+      created: true,
+      ...indexWarningFields(result),
+    })
     return
   }
   if (!result.changed) {
@@ -203,7 +213,12 @@ export async function runReadmeWrite(input: ReadmeWriteInput): Promise<void> {
     })
   }
 
-  const output: Record<string, unknown> = { ok: true, mtime: result.mtime, journalAppended }
+  const output: Record<string, unknown> = {
+    ok: true,
+    mtime: result.mtime,
+    journalAppended,
+    ...indexWarningFields(result),
+  }
   if (result.prevArchived) warnArchived(input.runId, output)
   emitJson(output)
 }
@@ -221,7 +236,14 @@ async function setArchived(input: ArchiveInput, archived: boolean): Promise<void
   const now = new Date()
   // Unarchive is always allowed (it IS the resolution to the archived state).
   const result = await cliMutation(
-    () => setRunArchiveState({ fs: nodeMutationFs, now: () => now, readmePath, archived }),
+    () =>
+      setRunArchiveState({
+        fs: nodeMutationFs,
+        index: cliIndexSink(projectRoot),
+        now: () => now,
+        readmePath,
+        archived,
+      }),
     (error) => (error.code === 'FORBIDDEN' ? { details: { id: input.runId } } : undefined),
   )
   if (result.changed) {
@@ -234,7 +256,7 @@ async function setArchived(input: ArchiveInput, archived: boolean): Promise<void
       },
     })
   }
-  emitJson({ ok: true, archived, noop: !result.changed })
+  emitJson({ ok: true, archived, noop: !result.changed, ...indexWarningFields(result) })
 }
 
 export async function runArchive(input: ArchiveInput): Promise<void> {

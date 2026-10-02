@@ -30,6 +30,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
 export interface RunDeprecationInput {
@@ -61,6 +62,7 @@ async function apply(input: RunDeprecationInput, target: boolean): Promise<void>
   const options = {
     now: formatIsoLocal(new Date()),
     id: input.runId,
+    index: cliIndexSink(projectRoot),
     ...(input.expectedMtime === undefined ? {} : { expectedMtime: input.expectedMtime }),
   }
   let result: DeprecationResult
@@ -85,5 +87,6 @@ async function apply(input: RunDeprecationInput, target: boolean): Promise<void>
     deprecated: result.next,
     noop: result.noop,
     mtime: result.mtime,
+    ...indexWarningFields(result),
   })
 }

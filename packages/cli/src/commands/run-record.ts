@@ -26,7 +26,9 @@ import { promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   formatIsoLocal,
+  nestedRunAncestor,
   parseTimestampFromRunDir,
+  publishMutationEvent,
   RUN_DIR_REGEX,
   type RunFrontMatter,
   RunTargetIndex,
@@ -36,6 +38,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
 /** Discovery entry directories a Run record must live under to be visible. */
@@ -88,6 +91,15 @@ export async function runRunRecord(input: RunRecordInput): Promise<void> {
     emitErrorAndExit(
       'BAD_REQUEST',
       `run directory must live under ${RUN_ENTRY_DIRS.join('/, ')}/ to be discoverable; got ${relativeDir || runDir}`,
+    )
+  }
+  // Run directories do not nest: a Run inside a Run is never discovered.
+  const nestedIn = nestedRunAncestor(relativeDir.split(sep).join('/'))
+  if (nestedIn !== null) {
+    emitErrorAndExit(
+      'BAD_REQUEST',
+      `RUN_NESTED: run directory ${relativeDir} is inside the Run-shaped directory ${nestedIn}; Run directories do not nest — record it at a location of the project's run_dirs instead`,
+      { id, code: 'RUN_NESTED', ancestor: nestedIn },
     )
   }
 
@@ -155,7 +167,19 @@ export async function runRunRecord(input: RunRecordInput): Promise<void> {
     throw err
   }
   const stat = await fs.stat(readmePath)
-  emitJson({ ok: true, id, path: readmePath, mtime: stat.mtimeMs, created: true })
+  // The derived index learns about the new Run through the shared sink,
+  // exactly like every other CLI write (best-effort; never fails the record).
+  const indexWarnings = await publishMutationEvent(cliIndexSink(projectRoot), 'run.record', [
+    { path: readmePath, after: content },
+  ])
+  emitJson({
+    ok: true,
+    id,
+    path: readmePath,
+    mtime: stat.mtimeMs,
+    created: true,
+    ...indexWarningFields({ indexWarnings }),
+  })
 }
 
 /**

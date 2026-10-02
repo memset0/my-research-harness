@@ -18,6 +18,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
+import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
 import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson } from '../lib/output.js'
 
@@ -56,6 +57,7 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
   const result = await cliMutation(() =>
     renameRun({
       fs: nodeMutationFs,
+      index: cliIndexSink(projectRoot),
       projectRoot,
       projectName,
       runDir: target.path,
@@ -80,5 +82,5 @@ export async function runRunRename(input: RunRenameInput): Promise<void> {
       body: `op=run-rename old=${result.oldId} new=${result.newId}`,
     },
   })
-  emitJson({ ok: true, oldId: result.oldId, newId: result.newId })
+  emitJson({ ok: true, oldId: result.oldId, newId: result.newId, ...indexWarningFields(result) })
 }
