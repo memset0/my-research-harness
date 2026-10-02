@@ -24,7 +24,8 @@ memon run reconcile          <id-or-dir> [--assume-lost]
 memon run progress           <id-or-dir>
 memon run result             get|set|lint ...
 memon run rename             <id-or-dir> <new-slug> [--project-root <p>]
-memon run status set         <id> --to <STATUS> [--stop-reason <reason>] [--expected-mtime <ms>]
+memon run status set         <id> --to <STATUS> [--stop-reason <reason>] [--evidence <text>]
+                             [--expected-mtime <ms>]
 memon run readme write       <id> [--expected-mtime <ms>] [--expected-hash <sha1>]
 memon run journal read       [--project-root <p>] [--since <ISO>] [--tag <T>]
                               [--run-id <id>] [--limit <N>]

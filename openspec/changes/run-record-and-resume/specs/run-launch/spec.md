@@ -6,15 +6,21 @@ Defines memon's launch wrapper: creating a Run record before execution, launchin
 
 ### Requirement: Runs are created before they are launched
 
-`memon run create <slug> [--at <run-location>] --command <text> [--entry <path>] [--target-steps <n>] [--gpus <n>] [--checkpoint-dir <run-relative-path>] [--progress-checkpoints] [--resumable] [--wandb-id <id>|auto] [--priority <n>] [--preemptible --preemptible-reason <text>]` SHALL allocate a new Run directory `<slug>-<YYMMDD>-<HHMMSS>` at an effective Run location (by exclusive directory creation, never inside another Run), write its README with `status: PENDING` and the given intent and attributes, and launch nothing. `memon run record` SHALL accept the same intent and attribute options for an existing directory. Both SHALL print the project-relative Run path. Binding the Run to an Experiment remains `memon experiment link`.
+`memon run create <slug> [--at <run-location>] --command <text> [--entry <path>] [--target-steps <n>] [--gpus <n>] [--checkpoint-dir <run-relative-path>] [--progress-checkpoints] [--resumable] [--wandb-id <id>|auto] [--priority <n>] [--preemptible --preemptible-reason <text>]` SHALL allocate a new Run directory `<slug>-<YYMMDD>-<HHMMSS>` at an effective Run location (by exclusive directory creation, never inside another Run), write its README with `status: PENDING` and the given intent and attributes, and launch nothing. `memon run record` SHALL accept the same intent and attribute options for an existing directory. Both SHALL print the project-relative Run path. Binding the Run to an Experiment remains `memon experiment link`. Inside a Git work tree both SHALL check whether the Run's `result.csv` would be excluded by the project's ignore rules and, when it would, SHALL report the `RESULT_FILE_IGNORED` warning of `run-results` with its fix command, SHALL otherwise behave unchanged and SHALL NOT edit any ignore file.
 
 #### Scenario: Create then launch
 - **WHEN** `memon run create train-a --command "bash scripts/train.sh" --target-steps 20000 --gpus 4` runs at `2026-10-02T09:00:00+08:00`
 - **THEN** `logs/train-a-261002-090000/README.md` exists with `status: PENDING`, the command, `target_steps: 20000` and a resources request of 4 GPUs, and no process was started
 
+#### Scenario: Run location whose result files are ignored
+- **GIVEN** a git project whose `.gitignore` ignores every file in the Run directories under `logs/` except `README.md`
+- **WHEN** `memon run create train-b --command "bash scripts/train.sh"` runs
+- **THEN** the Run is created `PENDING` and the output carries `RESULT_FILE_IGNORED` with a command that appends `!/logs/*/result.csv` to `.gitignore`
+- **AND** `.gitignore` is byte-unchanged
+
 ### Requirement: A launch runs the recorded command under supervision
 
-`memon run launch <run> [--detach] [--restart]` SHALL execute the Run's recorded `command` from the project root as a supervised child process. Before starting it SHALL refuse with `BAD_STATE` when the Run is archived, when another launch of the Run is live (an exclusive launch lock under `<runDir>/.memon/` held by a live process), or when the status is not `PENDING` — an `INTERRUPTED` or `FAILED` Run SHALL be relaunched from scratch only with `--restart`, and a `FINISHED` Run never. It SHALL then append a launch entry with the next sequence number, set `status: RUNNING`, update the mirrored `host`, `pid` and `gpus`, write the per-launch snapshot `launch-<n>.json`, and only then start the child. With `--detach` the wrapper SHALL run in its own session, return once the launch is recorded, and keep supervising the child when the invoking process, terminal or scheduler exits. The wrapper's exit code SHALL be the child's exit code (or 128 plus the signal number).
+`memon run launch <run> [--detach] [--restart]` SHALL execute the Run's recorded `command` from the project root as a supervised child process. Before starting it SHALL refuse with `BAD_STATE` when the Run is archived, when another launch of the Run is live (an exclusive launch lock under `<runDir>/.memon/` held by a live process), or when the status is not `PENDING` — an `INTERRUPTED` or `FAILED` Run SHALL be relaunched from scratch only with `--restart`, and a `FINISHED` Run never; the refusal for a `FAILED` Run SHALL also name a new Run of the same Variant as the default retry and `memon run status set --to INTERRUPTED --evidence` for a stop that was in fact an interruption. It SHALL then append a launch entry with the next sequence number, set `status: RUNNING`, update the mirrored `host`, `pid` and `gpus`, write the per-launch snapshot `launch-<n>.json`, and only then start the child. With `--detach` the wrapper SHALL run in its own session, return once the launch is recorded, and keep supervising the child when the invoking process, terminal or scheduler exits. The wrapper's exit code SHALL be the child's exit code (or 128 plus the signal number).
 
 #### Scenario: Launch survives the caller
 - **GIVEN** a PENDING Run
@@ -83,7 +89,7 @@ When the child exits, the wrapper SHALL finalize the launch entry (end time, end
 
 ### Requirement: Only resumable Runs resume
 
-`memon run resume <run> [--detach] [--allow-failed]` SHALL start a new launch of an `INTERRUPTED` Run whose record has `resumable: true`, with `MEMON_RESUME=1` and the start step taken from the latest recorded or reported checkpoint (or `0` when none exists yet). A `FAILED` resumable Run SHALL be resumed only with `--allow-failed`, and the launch entry SHALL record that flag. A Run with `resumable: false` SHALL be refused with `BAD_STATE` naming `memon run launch --restart`. When a resumed launch reports progress starting below the recorded checkpoint step, the wrapper SHALL record the warning `RESUME_DID_NOT_RESTORE` in the launch entry.
+`memon run resume <run> [--detach] [--allow-failed]` SHALL start a new launch of an `INTERRUPTED` Run whose record has `resumable: true`, with `MEMON_RESUME=1` and the start step taken from the latest recorded or reported checkpoint (or `0` when none exists yet). A `FAILED` resumable Run SHALL be resumed only with `--allow-failed`, and the launch entry SHALL record that flag; without it the command SHALL refuse with `BAD_STATE`, start nothing and name the routes: a new Run of the same Variant (the default retry), `--allow-failed` to continue the failed Run in place, and `memon run status set --to INTERRUPTED --evidence` when the stop was in fact an interruption. A Run with `resumable: false` SHALL be refused with `BAD_STATE` naming `memon run launch --restart`. When a resumed launch reports progress starting below the recorded checkpoint step, the wrapper SHALL record the warning `RESUME_DID_NOT_RESTORE` in the launch entry.
 
 #### Scenario: Resume before the first checkpoint
 - **GIVEN** an `INTERRUPTED` resumable Run that never produced a checkpoint
@@ -94,6 +100,11 @@ When the child exits, the wrapper SHALL finalize the launch entry (end time, end
 - **GIVEN** an `INTERRUPTED` Run with `resumable: false`
 - **WHEN** `memon run resume <run>` runs
 - **THEN** it exits 1 with `BAD_STATE` naming `memon run launch --restart` and starts nothing
+
+#### Scenario: Failed Run is not continued implicitly
+- **GIVEN** a `FAILED` Run with `resumable: true`
+- **WHEN** `memon run resume <run>` runs without `--allow-failed`
+- **THEN** it exits 1 with `BAD_STATE` naming a new Run as the default retry, `--allow-failed`, and `memon run status set --to INTERRUPTED --evidence` for a misrecorded interruption, and starts nothing
 
 ### Requirement: Optional progress file
 
@@ -115,7 +126,7 @@ A Run MAY maintain the progress file at `MEMON_PROGRESS_FILE` (`<runDir>/.memon/
 
 ### Requirement: Launches create the result file for member Runs
 
-When a launch starts for a Run declared by exactly one Experiment and the Run has no `result.csv`, the wrapper SHALL create it with only the reserved `$experiment_schema_version` row of that Experiment's current version. For a Run declared by no Experiment it SHALL create nothing and report the warning `RESULT_FILE_NOT_CREATED`. The wrapper SHALL NOT write measured values; the Run records them through `memon run result set`.
+When a launch starts for a Run declared by exactly one Experiment and the Run has no `result.csv`, the wrapper SHALL create it with only the reserved `$experiment_schema_version` row of that Experiment's current version. For a Run declared by no Experiment it SHALL create nothing and report the warning `RESULT_FILE_NOT_CREATED`. When the file it creates is excluded by the project's ignore rules inside a Git work tree, the wrapper SHALL still create it and SHALL report the `RESULT_FILE_IGNORED` warning of `run-results` in the launching command's output (before detaching), without editing any ignore file. The wrapper SHALL NOT write measured values; the Run records them through `memon run result set`.
 
 #### Scenario: First launch of a member Run
 - **GIVEN** a PENDING Run declared by `E0001-foo` at experiment schema version 2

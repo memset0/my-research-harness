@@ -59,6 +59,7 @@ launches:
 |---|---|---|
 | `target_steps`, `resources`, `entry`, `command`, `checkpoint.dir`, `wandb_run_id`, `resumable`, `schedule.*` | `run create` / `run record` (human or skill), later explicit edits | intent and attributes; `preemptible` only with a reason |
 | `status`, `stop_reason`, `finished_at`, `launches[]`, mirrors `host/pid/gpus`, `progress`, `checkpoint.latest*` | launch wrapper (and scheduler via the wrapper) | evidence-based; humans may still set status/stop_reason |
+| `stop_evidence` | `run status set --evidence` (human or agent) | the stated basis of an `INTERRUPTED` classification made by a person or agent, e.g. a reclassified `FAILED` Run (§10); absent for wrapper classifications, whose launch entry is the evidence |
 | `schedule.queued_at` etc. | `run-scheduler` | added by that change |
 
 Flow-style launch entries keep the frontmatter readable; writers patch frontmatter keys and keep the body and unknown keys byte-for-byte (existing `reserializeReadme` path). `host/pid/gpus` stay top-level for old readers and the operator's scripts. The result stays in `result.csv`; checkpoint and W&B source facts live here, not in `result.csv`.
@@ -125,7 +126,10 @@ Progress file (`progress_version: 1`):
 | INTERRUPTED | `run resume` (resumable) | RUNNING (seq+1) | wrapper |
 | INTERRUPTED / FAILED | `run launch --restart` | RUNNING (seq+1, from step 0) | wrapper |
 | FAILED | `run resume --allow-failed` (resumable) | RUNNING (seq+1) | wrapper |
+| FAILED | `run status set --to INTERRUPTED --stop-reason r --evidence e` (evidence of an interruption) | INTERRUPTED(r), `stop_evidence`, `finished_at` cleared (no launch entry change) | human, or agent per §10 |
 | any | `run status set` | requested status (no launch entry change) | human |
+
+A `FAILED` Run is retried as a new Run by default; the two in-place `FAILED` rows that relaunch it need an explicit flag and the user's request (§10).
 
 ### 5. Wrapper process model
 
@@ -136,7 +140,7 @@ launch(run, opts):
   seq = len(rec.launches)+1; startStep = opts.resume ? rec.checkpoint.latest_step ?? 0 : 0
   writeRecord(append launch seq {started_at, host, pid=self, gpus, backend, resume, start_step}, status=RUNNING,
               mirrors, stop_reason=null)                          # locked read-modify-write, retry on CONFLICT
-  write launch-<seq>.json; ensure result.csv version row (member Runs)
+  write launch-<seq>.json; ensure result.csv version row (member Runs; RESULT_FILE_IGNORED warning if ignored, §11)
   if opts.detach: double-fork + setsid; parent returns after the record shows RUNNING
   append separator to run.log; spawn `bash -c <command>` (cwd project root, env §6, own process group)
   pipe stdout+stderr → run.log (append, line-buffered)
@@ -180,12 +184,34 @@ Stale = heartbeat counter unchanged for 3 intervals as observed by the reader. L
 
 - `index_version: 3` adds `stop_reason`, `resumable`, `priority`, `preemptible`, `launch_count`, `last_launch {started_at, host, outcome}` to Run rows; v2 events are accepted and re-validated; central's terminal window covers FINISHED/FAILED only.
 - New read resource `GET /api/runs/:id/live` (owner and exact-scope viewer like other Run reads; path-contained) returning progress + heartbeat state for `RUNNING` Runs, fingerprint-validated with a 5 s window and `ETag`; the Run panel polls it with the common heartbeat while visible.
-- Run panel: launch table, stop-reason badge (wrapper around shadcn `Badge`, no fork), `Progress` bar, heartbeat age tooltip.
+- Run panel: launch table, stop-reason badge (wrapper around shadcn `Badge`, no fork; its tooltip shows `stop_evidence` when recorded), `Progress` bar, heartbeat age tooltip.
 
-### 10. CLI nodes, skills and release
+### 10. FAILED Runs and misrecorded interruptions (user decision)
+
+- **Default: a new Run.** A same-condition retry of a `FAILED` Run is a new Run of the same Variant (`run create`, `experiment link`, the Variant's `runs`). The failed record stays `FAILED` as evidence (the summary lists it among the Variant's other Runs) and the retry starts with a clean record, log and launch history.
+- **In place only with an explicit flag.** `run resume --allow-failed` continues a resumable `FAILED` Run from its latest checkpoint (the flag is recorded in the launch entry); `run launch --restart` reruns it from step 0. Skills use either only when the user explicitly asks to continue the failed Run in place. A refusal without the flag names the routes: a new Run (the default), the flag, and the evidence-backed reclassification when the stop was in fact an interruption.
+- **Why an interruption can be recorded `FAILED`.** The wrapper sees only how its child ended: a child killed by a signal nobody requested (a node reclaim that kills the process tree before the wrapper is signalled, an out-of-memory killer, a shell reporting exit 137 or 143 for a killed process) is classified `FAILED`, and Runs launched by older scripts or edited by hand may say `FAILED` for a preemption. memon never re-derives a status from logs; reclassification is a recorded judgment by a person or an agent.
+- **Evidence an agent weighs** (skill text, `memon-skills`):
+
+| Evidence | Suggests an interruption | Suggests a failure |
+|---|---|---|
+| Last launch exit code / signal | `SIGTERM`, `SIGHUP` or `SIGKILL` (also exit 143 or 137 reported by a shell) with no error before it | a non-zero exit after an exception; `SIGSEGV`, `SIGABRT` |
+| Node reclamation | other Runs on the same node or allocation stopped within the same minute; the host or allocation is gone; the heartbeat stopped without an end line | the node is healthy and its other Runs kept running |
+| Stop reason recorded by a scheduler | memon scheduling events (`preempted`, `heartbeat_lost`), or the cluster scheduler's accounting state such as preempted, node failure or time limit (read only) | a normal job end, or nothing recorded |
+| `run.log` tail | an abrupt end mid-step; a kill, cancellation or preemption notice | a traceback, out-of-memory error, NaN or assertion, missing file or configuration error |
+
+  An interruption needs agreeing evidence and no sign of a program error; a program error in the log means a failure; missing, mixed or contradictory evidence means asking the user, never guessing.
+- **Reclassify first, then follow the resumable rules.** `memon run status set <run> --to INTERRUPTED --stop-reason <preempted|node_reclaimed|unknown> --evidence "<basis>"`: the CLI requires `--evidence` when the current status is `FAILED`; the record gets `status: INTERRUPTED`, the `stop_reason`, `stop_evidence` and `finished_at: null` (`INTERRUPTED` is not terminal); the launch history keeps what the wrapper observed (outcome `FAILED` with its signal), because launch entries record observations and are never rewritten. Then `resumable: true` → `run resume` in place; otherwise a new Run, or `run launch --restart` only on the user's explicit request.
+- **Where the basis lives.** `stop_evidence` sits next to `stop_reason` in the README, where the dashboard, agents and the scheduler read the Run; the `run status set` receipt carries it too, but receipts are owner-only diagnostics. The CLI is the surface agents use, so the evidence requirement is enforced there; the Web status picker, a direct owner action, may set `INTERRUPTED` without evidence.
+
+### 11. Ignored result files
+
+`run create` and `run record` check `<runDir>/result.csv`, and a launch checks the result file it creates for a member Run, with `git check-ignore` inside a Git work tree. When the project's ignore rules exclude it, the command proceeds unchanged and adds the warning `RESULT_FILE_IGNORED` with the deciding rule and the fix command computed by the shared function of `run-results-v9` (for example appending `!/logs/*/result.csv` to `.gitignore`); a detached launch reports it before detaching. memon never edits ignore files here (user decision: only the reviewed FS migration does), and skills relay the warning and apply the fix only with the user's consent.
+
+### 12. CLI nodes, skills and release
 
 - Release 9.1.0 (`central,cli,skills`). CLI nodes get the wrapper through `memon update`; a node on 9.0.x keeps working (it ignores the new fields, preserves them on write because unknown keys are preserved, and writes v2 index events that 9.1 accepts).
-- Skills: `memon-write-script` template becomes wrapper-aware (no `mkdir`/`tee` when `MEMON_LAUNCH_SEQ` is set; pass `MEMON_RESUME` to the entry; SIGTERM → checkpoint → exit); `memon-run-experiment` launches with `run create` + `run launch --detach`, monitors with `run progress`, resumes INTERRUPTED Runs in place, keeps "FAILED retry = new Run" unless the user asks otherwise, and carries the exact `preemptible`/`resumable` wording of the spec; the shared reference documents the progress file with a ten-line Python helper.
+- Skills: `memon-write-script` template becomes wrapper-aware (no `mkdir`/`tee` when `MEMON_LAUNCH_SEQ` is set; pass `MEMON_RESUME` to the entry; SIGTERM → checkpoint → exit); `memon-run-experiment` launches with `run create` + `run launch --detach`, monitors with `run progress`, resumes INTERRUPTED Runs in place, keeps "FAILED retry = new Run" unless the user asks to continue in place, judges a `FAILED` Run that may have been interrupted with the evidence procedure of §10 (reclassify with `--evidence`, then the resumable rules; ask the user when unsure), relays `RESULT_FILE_IGNORED`, and carries the exact `preemptible`/`resumable` wording of the spec; the shared reference documents the progress file with a ten-line Python helper.
 - In-flight Runs started by old launchers keep their records; to adopt one, record it and resume it through the wrapper when it is resumable. Existing `resume-<step>/` folders are user content and stay.
 
 ## Risks / Trade-offs
@@ -199,6 +225,8 @@ Stale = heartbeat counter unchanged for 3 intervals as observed by the reader. L
 | SIGTERM semantics differ across schedulers (time limits, preemption) | External signals become `INTERRUPTED(unknown)`/`node_reclaimed`, which a human or scheduler can resume; true crashes stay `FAILED` |
 | Clock skew between hosts | Staleness by observation, never by cross-host timestamps |
 | `resumable` claimed wrongly | Requires checkpoint location; `RESUME_DID_NOT_RESTORE` diagnostic; skills must verify the entry |
+| An agent reclassifies a real failure as an interruption and resumes a broken Run | `--evidence` is required from `FAILED` and kept in the record; the launch history still shows the wrapper's observation; inconclusive evidence means asking the user; a resumed broken Run fails again and stays visible |
+| Agents keep retrying failures in place and lose the failure record | A new Run is the default; in-place relaunch of a `FAILED` Run needs `--allow-failed` or `--restart` and the user's explicit request |
 
 ## Migration Plan
 
