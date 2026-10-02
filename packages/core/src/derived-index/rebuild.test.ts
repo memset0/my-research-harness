@@ -179,7 +179,8 @@ describe('Results summaries', () => {
     await fs.writeFile(join(results, 'E0003-old.json'), '{}')
     await fs.writeFile(join(results, '.tmp-E0003-old-aaaaaaaa'), '{')
     const result = await rebuildIndex(root)
-    expect(result.deletedSummaries).toEqual(['E0003-old.json'])
-    expect((await fs.readdir(results)).sort()).toEqual(['.tmp-E0003-old-aaaaaaaa', 'E0001-a.json'])
+    // E0001-a.json is not a valid summary of the current inputs either.
+    expect(result.deletedSummaries).toEqual(['E0001-a.json', 'E0003-old.json'])
+    expect((await fs.readdir(results)).sort()).toEqual(['.tmp-E0003-old-aaaaaaaa'])
   })
 })

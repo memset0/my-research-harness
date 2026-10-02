@@ -15,8 +15,8 @@
 
 ## 3. Core: Results summary
 
-- [ ] 3.1 Implement the summary generator (status derivation incl. `INTERRUPTED` → `RUNNING`, evidence/other Runs, aggregation with `n`/`mean`/`min`/`max`/`sum`/percentiles and, for n ≥ 2, `std`/`var`/`sem`/Student-t `ci95_lo`/`ci95_hi`, default display `mean ± std (n)`, planned/frozen fill, mixed/per-run/differs-from-plan markers, undeclared columns, `VARIANT_STATUS_STALE`, `VARIANT_PARAM_MISMATCH`, mismatch and duplicate gates with offending files and upgrade command); verify with golden tests on `mock/project-a` and table tests for every `experiment-results-summary` scenario.
-- [ ] 3.2 Implement the cache (`.memon/index/results/<experiment-id>.json`, input fingerprints, digest, atomic replace, best-effort write with `RESULTS_CACHE_FAILED`, reuse only on exact input set + fingerprints); verify with tests: deleted cache → equal output, hand-edited cache → regenerated, changed `result.csv` → regenerated, read-only directory → warning and exit 0.
+- [x] 3.1 Implement the summary generator (status derivation incl. `INTERRUPTED` → `RUNNING`, evidence/other Runs, aggregation with `n`/`mean`/`min`/`max`/`sum`/percentiles and, for n ≥ 2, `std`/`var`/`sem`/Student-t `ci95_lo`/`ci95_hi`, default display `mean ± std (n)`, planned/frozen fill, mixed/per-run/differs-from-plan markers, undeclared columns, `VARIANT_STATUS_STALE`, `VARIANT_PARAM_MISMATCH`, mismatch and duplicate gates with offending files and upgrade command); verify with golden tests on `mock/project-a` and table tests for every `experiment-results-summary` scenario.
+- [x] 3.2 Implement the cache (`.memon/index/results/<experiment-id>.json`, input fingerprints, digest, atomic replace, best-effort write with `RESULTS_CACHE_FAILED`, reuse only on exact input set + fingerprints); verify with tests: deleted cache → equal output, hand-edited cache → regenerated, changed `result.csv` → regenerated, read-only directory → warning and exit 0.
 - [ ] 3.3 Implement the deterministic Markdown projection of the summary and of a failed summary; verify CLI/Web projection parity tests.
 
 ## 4. Core: schema upgrades

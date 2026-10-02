@@ -14,6 +14,7 @@ import { discoverRuns } from '../discovery/discover.js'
 import { nestedRunAncestor } from '../discovery/run-dirs.js'
 import { listExperimentPaths } from '../experiments/discover.js'
 import { type EffectiveRunDirs, resolveEffectiveRunDirs } from '../project-declaration/load.js'
+import { pruneStaleResultsSummaries } from '../results/summary-cache.js'
 import { formatIsoLocal } from '../time.js'
 import { MEMON_RELEASE } from '../version.js'
 import { discoverWikiPages } from '../wiki/discover.js'
@@ -61,7 +62,10 @@ export interface RebuildIndexResult {
   audit?: RunDirsAudit
   /** Discovered Run directories nested below a Run-shaped ancestor (`RUN_NESTED`). */
   nested: string[]
-  /** Results summaries (`results/<id>.json`) deleted because their Experiment is gone. */
+  /**
+   * Results summaries (`results/<id>.json`) deleted because their Experiment
+   * is gone or their inputs changed (a later read regenerates them).
+   */
   deletedSummaries: string[]
 }
 
@@ -256,7 +260,9 @@ export async function rebuildIndex(
     for (const name of startEvents) await fs.rm(`${events}/${name}`, { force: true })
     const result = await finish(snapshot, 'rebuilt')
     result.deletedEvents = startEvents
-    result.deletedSummaries = await pruneOrphanSummaries(root, snapshot, fs)
+    const orphans = await pruneOrphanSummaries(root, snapshot, fs)
+    const stale = await pruneStaleResultsSummaries(root, { fs })
+    result.deletedSummaries = [...orphans, ...stale.map((id) => `${id}.json`)].sort()
     return result
   } finally {
     await lease.release()
