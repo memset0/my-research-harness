@@ -558,8 +558,10 @@ conclusion
         .filter((anomaly) => anomaly.code === 'PHANTOM_RUN_REF')
         .map((anomaly) => anomaly.runId)
       expect(phantoms).toEqual([missing])
+      // The FS v8 default `run_dirs` (`logs/*`, `outputs/*`, `experiments/*`)
+      // never walks the deep declaration, yet it stays a member, not a phantom.
       const runs = BackendRunsPageResponseSchema.parse(await service.listRuns('disk')).runs
-      expect(runs.map((run) => run.id)).toEqual(['logs/grp-top-260101-000003', deep])
+      expect(runs.map((run) => run.id)).toEqual(['logs/grp-top-260101-000003'])
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
@@ -594,6 +596,31 @@ conclusion
           .filter((anomaly) => anomaly.code === 'PHANTOM_RUN_REF')
           .map((anomaly) => anomaly.runId),
       ).toEqual([missing])
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('walks the declared .memon/project.yml locations unless central configures run_dirs', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-run-dirs-declared-'))
+    try {
+      for (const run of ['logs/top-260101-000000', 'outputs/group/deep-260101-000001']) {
+        await fs.mkdir(join(root, run), { recursive: true })
+      }
+      await fs.mkdir(join(root, '.memon'), { recursive: true })
+      const declaration = join(root, '.memon', 'project.yml')
+      await fs.writeFile(declaration, 'schema_version: 1\nrun_dirs:\n  - outputs/*/*\n')
+      const ids = async (runDirs?: string[]) => {
+        const service = new FilesystemProjectService([
+          { name: 'decl', root, include: [], exclude: [], ...(runDirs ? { runDirs } : {}) },
+        ])
+        const page = BackendRunsPageResponseSchema.parse(await service.listRuns('decl'))
+        return page.runs.map((run) => run.id)
+      }
+      expect(await ids()).toEqual(['outputs/group/deep-260101-000001'])
+      expect(await ids(['logs/*'])).toEqual(['logs/top-260101-000000'])
+      await fs.writeFile(declaration, 'schema_version: 1\nrun_dirs: []\nextra: 1\n')
+      await expect(ids()).rejects.toThrow(/project\.yml|PROJECT_DECLARATION_INVALID/)
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }

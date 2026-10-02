@@ -8,18 +8,18 @@
 // as a fingerprint change and a full re-resolution.
 
 import type { Stats } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import {
   projectFs as fs,
   type IndexedRun,
   isRunPath,
   isStaleRunning,
   type ProjectConfig,
-  parseReadme,
-  parseTimestampFromRunDir,
   projectRunPath,
   type Run,
   readRunDir,
+  runEligibilityError,
+  runFromReadme,
 } from '@memon/core'
 import {
   type Observation,
@@ -27,7 +27,6 @@ import {
   type ReadPolicy,
   statObservation,
 } from './read-index.js'
-import { strictDeprecatedFlag } from './run-eligibility.js'
 import { resolveRunPath } from './run-path.js'
 
 export interface RunSummary {
@@ -112,11 +111,7 @@ async function loadRunSummary(
       fs.stat(dir),
     ])
     run = runFromReadme(dir, project.name, content, dirStat.mtimeMs, readme.mtimeMs)
-    try {
-      strictDeprecatedFlag(content)
-    } catch (error) {
-      eligibilityError = (error as Error).message
-    }
+    eligibilityError = runEligibilityError(content)
   }
   const sidecarFallback = !run.frontMatterKeys.includes('archived')
   return {
@@ -129,42 +124,6 @@ async function loadRunSummary(
     eligibilityError,
     sidecarFallback,
     contained: false,
-  }
-}
-
-/** `readRunDir` for a README already read (same defaults and backfills). */
-function runFromReadme(
-  dir: string,
-  projectName: string,
-  content: string,
-  dirMtime: number,
-  readmeMtime: number,
-): Run {
-  const id = basename(dir)
-  const parsed = parseReadme(content)
-  if (parsed.frontMatter.id === '') parsed.frontMatter.id = id
-  if (parsed.frontMatter.createdAt === '') {
-    const derived = parseTimestampFromRunDir(id)
-    if (derived) {
-      parsed.frontMatter.createdAt = derived
-      if (parsed.frontMatter.updatedAt === '') parsed.frontMatter.updatedAt = derived
-    }
-  }
-  return {
-    id: parsed.frontMatter.id || id,
-    project: projectName,
-    path: dir,
-    mtime: Math.max(dirMtime, readmeMtime),
-    readmeMtime,
-    hasReadme: true,
-    frontMatter: parsed.frontMatter,
-    sections: parsed.sections,
-    warnings: parsed.warnings,
-    warningsRaw: parsed.warningsRaw,
-    body: parsed.body,
-    parseErrors: parsed.parseErrors,
-    parseWarnings: parsed.parseWarnings,
-    frontMatterKeys: parsed.frontMatterKeys,
   }
 }
 
