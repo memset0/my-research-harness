@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "memon Experiment description (experiment.json)",
+  "description": "The human-authored description of an Experiment's results (FS v9). The Variant table is generated from it and from the member Runs' result.csv files; never repeat README frontmatter here.",
+  "type": "object",
+  "required": ["experiment_schema_version"],
+  "properties": {
+    "experiment_schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version of this Experiment's result schema; every member result.csv records the same value."
+    },
+    "groups": {
+      "type": "object",
+      "description": "Display metadata keyed by group path (a partition or a deeper prefix).",
+      "propertyNames": {
+        "pattern": "^(?:params|metrics|env)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/group"
+      }
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/column"
+      }
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/variant"
+      }
+    }
+  },
+  "not": {
+    "anyOf": [
+      {
+        "required": ["id"]
+      },
+      {
+        "required": ["slug"]
+      },
+      {
+        "required": ["title"]
+      },
+      {
+        "required": ["status"]
+      },
+      {
+        "required": ["archived"]
+      },
+      {
+        "required": ["runs"]
+      },
+      {
+        "required": ["hypotheses"]
+      },
+      {
+        "required": ["tags"]
+      },
+      {
+        "required": ["created_at"]
+      },
+      {
+        "required": ["updated_at"]
+      }
+    ]
+  },
+  "$defs": {
+    "valuePath": {
+      "type": "string",
+      "pattern": "^(?:params|metrics|env)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)+$"
+    },
+    "statKey": {
+      "type": "string",
+      "pattern": "^(?:mean|std|var|sem|min|max|sum|n|p1|p5|p10|p25|p50|p75|p90|p95|p99|p999|ci95_lo|ci95_hi)(?:\\.(?:mean|std|var|sem|min|max|sum|n|p1|p5|p10|p25|p50|p75|p90|p95|p99|p999|ci95_lo|ci95_hi))?$",
+      "description": "A vocabulary statistic; two levels are written <inner>.<outer> (for example max.p99)."
+    },
+    "oneLevelStat": {
+      "type": "string",
+      "enum": [
+        "mean",
+        "std",
+        "var",
+        "sem",
+        "min",
+        "max",
+        "sum",
+        "n",
+        "p1",
+        "p5",
+        "p10",
+        "p25",
+        "p50",
+        "p75",
+        "p90",
+        "p95",
+        "p99",
+        "p999",
+        "ci95_lo",
+        "ci95_hi"
+      ]
+    },
+    "display": {
+      "type": "string",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/statKey"
+        },
+        {
+          "enum": [
+            "mean±std",
+            "mean±sem",
+            "mean (min–max)",
+            "mean [ci95]",
+            "p50 (p25–p75)",
+            "p50/p99"
+          ]
+        }
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PLANNED", "BLOCKED", "RUNNING", "COMPLETED", "FAILED", "INCONCLUSIVE", "DROPPED"]
+    },
+    "declarableStatus": {
+      "type": "string",
+      "enum": ["PLANNED", "BLOCKED", "DROPPED", "INCONCLUSIVE"]
+    },
+    "value": {
+      "type": ["string", "number", "boolean", "null", "array"]
+    },
+    "group": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      }
+    },
+    "column": {
+      "type": "object",
+      "required": ["path", "label", "type"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/valuePath"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": ["string", "number", "boolean", "enum", "list", "stats"]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": ["higher", "lower", null]
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "format": {
+          "enum": ["auto", "fixed", "scientific", "percent"]
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": ["string", "number", "boolean"]
+          }
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value_descriptions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "across": {
+          "type": "string",
+          "minLength": 1
+        },
+        "over": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statKey"
+          }
+        },
+        "display": {
+          "$ref": "#/$defs/display"
+        },
+        "sort_by": {
+          "$ref": "#/$defs/statKey"
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            }
+          },
+          "then": {
+            "required": ["options"]
+          },
+          "else": {
+            "not": {
+              "required": ["options"]
+            }
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "properties": {
+                "type": {
+                  "const": "stats"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["across"]
+                },
+                {
+                  "required": ["over"]
+                },
+                {
+                  "required": ["stats"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "properties": {
+                "type": {
+                  "enum": ["stats", "number"]
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["display"]
+                },
+                {
+                  "required": ["sort_by"]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "frozenValue": {
+      "type": "object",
+      "required": ["path", "value"],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/valuePath"
+        },
+        "stat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/statKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/value"
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^V[0-9]{4}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/declarableStatus"
+        },
+        "values": {
+          "type": "object",
+          "description": "Planned params.* and env.* values keyed by path; env values are strings.",
+          "propertyNames": {
+            "pattern": "^(?:params|env)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/value"
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "entry": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recipe": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Project-relative Run paths; a subset of the README runs."
+        },
+        "frozen": {
+          "type": "object",
+          "description": "Written only by the v8-to-v9 migration and schema upgrades.",
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/status"
+            },
+            "runs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source": {
+              "type": "string"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/frozenValue"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

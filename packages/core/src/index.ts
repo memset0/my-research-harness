@@ -428,6 +428,7 @@ export {
 } from './readme/warnings.js'
 export * from './release-compatibility.js'
 export * from './release-policy.js'
+export * from './results/index.js'
 export type {
   RenameRunInput,
   RenameRunResult,
