@@ -12,7 +12,7 @@ See proposal.md (Why). State this design builds on (release 8.1.0 plus the activ
 
 **Goals:** one tracked result file per Run that writers can update without touching shared files; one tracked human-authored description per Experiment; a Variant table that is always regenerable and cannot silently show half-migrated data; first-class statistics that sort, rank and export; a mechanical migration that loses nothing and needs only a few human decisions.
 
-**Non-Goals:** step-indexed or time-series results (Future); changing `implementation.yaml`, `investigation.yaml`, Run README frontmatter or membership; launching, resuming or scheduling Runs (`run-record-and-resume`, `run-scheduler`); deleting the legacy sidecars; a cross-Experiment results store; editing Variants through new CLI CRUD commands.
+**Non-Goals:** step-indexed or time-series results (Future); a project-wide shared column dictionary (each Experiment describes its own paths); changing `implementation.yaml`, `investigation.yaml`, Run README frontmatter or membership; launching, resuming or scheduling Runs (`run-record-and-resume`, `run-scheduler`); deleting the legacy sidecars; a cross-Experiment results store; editing Variants through new CLI CRUD commands.
 
 ## Decisions
 
@@ -36,7 +36,7 @@ logs/a-260901-090000/
 - The cache lives inside the derived index rather than in the bundle so it inherits the self-ignoring `.gitignore`, "rebuildable cache" semantics, the no-absolute-paths rule and `memon index` tooling, and no project ignore rule is needed. Alternative rejected: `results.yaml` kept in the bundle as a generated file — it would need a per-bundle ignore rule, invites hand edits, and keeps the old name meaning something different.
 - `result.csv` (user decision) instead of YAML/JSON per Run: one row per value keeps diffs local, appending a value never reformats other values, and CSV is trivially written by training scripts in any language.
 
-### 2. `result.csv` format — **provisional** (pending user confirmation; confirmed details will be folded in through `opsx:update`)
+### 2. `result.csv` format (confirmed with the user)
 
 ```csv
 path,stat,value
@@ -56,10 +56,10 @@ metrics.notes,,
 - RFC 4180, UTF-8, LF, header `path,stat,value` on the first line; reserved rows next; value rows in insertion order (an upsert of an existing pair rewrites that line in place, a new pair is appended). Sorting by path was considered for stable diffs but rejected: it would reorder unrelated lines on the first write by a new writer.
 - Partitions (first segment): `params`, `metrics`, `env`. Segment grammar `[A-Za-z_][A-Za-z0-9_-]*` (keeps every existing v8 key; dots only separate segments). `$` prefix reserved; `$experiment_schema_version` is the only reserved path in this change. A Variant association row was considered and dropped: Variant `runs` in `experiment.json` is the single association authority.
 - Encodings: `number` = JSON number syntax without exponent restrictions; `boolean` = `true`/`false`; `enum` = the option's string form; `list` = one-line JSON array; `string` = raw text (CSV-quoted as needed); empty value = explicit missing.
-- `stats`: `stat` ∈ {`mean`,`std`,`min`,`max`,`n`,`p50`,`p90`,`p95`,`p99`} for one level; two levels are spelled `<inner>.<outer>` (`max.p99` = the outer `p99` over the `over` dimension of each unit's inner `max` across the `across` dimension), following the user's original "values: {inner: {outer: v}}" layout. The order of the two parts is still under discussion.
+- `stats`: one-level `stat` ∈ the fixed vocabulary `mean`, `std`, `var`, `sem`, `min`, `max`, `sum`, `n`, `p1`, `p5`, `p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `p99`, `p999`, `ci95_lo`, `ci95_hi` (one constant in core; adding a word is a memon release, never an `experiment_schema_version` change); two levels are spelled `<inner>.<outer>` (`max.p99` = the outer `p99` over the `over` dimension of each unit's inner `max` across the `across` dimension).
 - `(path, stat)` unique; duplicates fail the summary (§4). Writers upsert (spec `run-results`); old values survive only in Git history.
 
-### 3. `experiment.json` — **provisional** shape
+### 3. `experiment.json` shape (confirmed with the user)
 
 ```json
 {
@@ -92,7 +92,7 @@ metrics.notes,,
 ```
 
 - Annotations sit on the column (`description`, `value_descriptions`); the spec keys them by path, which this satisfies.
-- `display` vocabulary: one stat path, or `mean±std`, `mean(min–max)`, `p50/p99` (more patterns may be added without a version bump). `hidden` on a column or group is the default visibility; `env` is hidden by default.
+- `display`: one vocabulary statistic (or two-level stat) or one of the templates `mean±std`, `mean±sem`, `mean (min–max)`, `mean [ci95]`, `p50 (p25–p75)`, `p50/p99`; a cell aggregated across Runs defaults to `mean ± std (n)`. `hidden` on a column or group is the default visibility; `env` is hidden by default. Writing first and describing later: a Run may record any path; a column entry only adds label/type/unit/direction/options/display for a recorded path; undeclared paths are shown with inferred types after the declared columns of their group, and lint reports only conflicts (type violations, scalar-vs-stats disagreement between Runs, unknown statistics).
 - Variant `status` (declared) ∈ {PLANNED, BLOCKED, DROPPED, INCONCLUSIVE}; `values` holds declared parameter/env values; `frozen` is written only by the migration and transformed by schema upgrades. Unknown keys are preserved (writers patch JSON by key path, never re-serialize unknown members away). Serialization: two-space indentation, stable key order for known keys, trailing newline.
 
 ### 4. Results summary (cache) and its generator
@@ -140,7 +140,7 @@ generate(E):
   write atomically (tmp + rename), digest over canonical JSON without the digest field
 ```
 
-Aggregation (**provisional** details): one evidence Run → its value verbatim. Several → numbers become one-level stats over `run` with `n`, `mean`, `std` (sample, n−1; omitted when n = 1), `min`, `max`, `p50` (and `p90`/`p95`/`p99`, linear interpolation, only when n ≥ 10); each statistic `s` of a one-level stats value becomes `s.<outer>` statistics over `run` (two levels); two-level values are not aggregated (cell kind `per_run`). Non-numeric values: equal → shown once; otherwise `mixed` with per-Run values. Declared `values` fill cells only for Variants without an evidence value and are compared with evidence values (`VARIANT_PARAM_MISMATCH`). When a column display names a one-level statistic and the cell was aggregated over Runs, the display shows that statistic's across-Run mean and the tooltip shows the rest; `mean±std` shows `mean.mean ± mean.std`.
+Aggregation: one evidence Run → its value verbatim. Several → numbers become one-level stats over `run` with `n`, `mean`, `min`, `max`, `sum`, every vocabulary percentile (linear interpolation) and, for n ≥ 2, `std`/`var` (sample, n−1), `sem` and Student-t `ci95_lo`/`ci95_hi`; default display `mean ± std (n)`; each statistic `s` of a one-level stats value becomes `s.<outer>` statistics over `run` (two levels); two-level values are not aggregated (cell kind `per_run`). Non-numeric values: equal → shown once; otherwise `mixed` with per-Run values. Planned `values` fill cells only for Variants without an evidence value and are compared with evidence values; a difference raises `VARIANT_PARAM_MISMATCH` and marks the cell (tooltip shows the planned value). When a column display names a one-level statistic and the cell was aggregated over Runs, the display shows that statistic's across-Run mean and the tooltip shows the rest; `mean±std` shows `mean.mean ± mean.std`.
 
 Freshness: CLI readers stat every input each request (≈ 2 stats per member: README and `result.csv`); central decides member freshness from its seeded index entries within the member windows (no per-request member stat), reads `experiment.json` every request, and regenerates in the background validator for active Projects. A cold 448-member detail therefore costs one description read plus, only when stale, one regeneration (≈ 900 reads) — regeneration is the price of correctness after a change, not of every request.
 
@@ -153,7 +153,7 @@ Freshness: CLI readers stat every input each request (≈ 2 stats per member: RE
 ### 6. Experiment schema version and upgrades
 
 - `experiment_schema_version` lives in `experiment.json`, in every member `result.csv` (reserved row) and in the summary. It is not the FS convention version and no other format version is written into these files.
-- Transform files (**provisional** vocabulary), `schema-upgrades/1-to-2.json`:
+- Transform files, `schema-upgrades/1-to-2.json`:
 
 ```json
 { "from": 1, "to": 2, "operations": [
@@ -164,7 +164,7 @@ Freshness: CLI readers stat every input each request (≈ 2 stats per member: RE
   { "op": "default", "path": "params.precision", "value": "bf16" } ] }
 ```
 
-  `move` renames a group prefix; `scale` applies to numbers and to every statistic of a stats value except `n`; `default` adds a row only where the pair is absent. An executable alternative `schema-upgrades/1-to-2.<ext>` is invoked as `<file> <input.csv> <output.csv>` with `MEMON_SCHEMA_FROM`/`MEMON_SCHEMA_TO` set and must not touch other files; executable transforms do not rewrite the description file's columns (the author edits them and raises the version by hand), declarative ones do.
+  `move` renames a group prefix; `scale` applies to numbers and to every statistic of a stats value except `n`; `default` adds a row only where the pair is absent. A complex upgrade is one Python script `schema-upgrades/1-to-2.py`, run as `python3 <script> <input.csv> <output.csv>` (environment `MEMON_SCHEMA_FROM`/`MEMON_SCHEMA_TO`) once per member result file and once for the description file's frozen and planned values presented as a result table; it must not touch other files, and the author edits the column definitions and raises the description file's version by hand. Declarative transforms also rewrite the description file's column paths.
 - `memon experiment schema upgrade E --to N [--apply]`:
 
 ```
@@ -192,7 +192,7 @@ apply: refuse BAD_STATE if any member status == RUNNING
 | Command | Notes |
 |---|---|
 | `memon run result get <run> [--path p]` | parsed rows + diagnostics; read-only |
-| `memon run result set <run> path[:stat]=value… [--from file.csv\|-] [--unset path[:stat]…] [--expected-hash h]` | **provisional** syntax; validates types against the owner's columns; atomic upsert; receipt + index event |
+| `memon run result set <run> path[:stat]=value… [--from file.csv\|-] [--unset path[:stat]…] [--expected-hash h]` | validates types against the owner's columns; atomic upsert; receipt + index event |
 | `memon run result lint <run>` | `run-results` diagnostics |
 | `memon experiment results table\|summary` | from the summary; error envelope with `details.files` and `details.upgradeCommand` |
 | `memon experiment results rebuild [<id>\|--all]` | writes only `.memon/index/results/` |
@@ -209,7 +209,7 @@ Planner (read-only, per Experiment with `results.yaml`, lenient YAML read):
 |---|---|
 | `columns[].key/label/type/options`, `group` | `columns[]` with path `params.<key>` / `metrics.<key>`; type widened to `stats` when any cell converts to stats, to a group when JSON scalar mappings expand |
 | `column_annotations` | column `description` / `value_descriptions` |
-| undeclared keys (lint errors in v8) | appended columns with inferred type, warning `MIGRATED_UNDECLARED_KEY` |
+| undeclared keys (lint errors in v8) | left undeclared: written as recorded values, shown with inferred types (report counts them) |
 | Variant `id/name/description` | same |
 | Variant `status` PLANNED/BLOCKED/DROPPED/INCONCLUSIVE | declared `status` |
 | Variant `status` RUNNING/COMPLETED/FAILED | dropped (derived); plan reports `VARIANT_STATUS_CHANGED` when the derived value differs |
@@ -232,12 +232,13 @@ Apply → verify → commit: backup (git: clean tree required; non-git: `.memon/
 ### 10. Web
 
 - Results card reads the summary (detail response embeds it with `newest_input_mtime`; Refresh hits the snapshot route which re-takes fingerprints). Error card for mismatch/duplicates (code, files, copyable upgrade command).
-- Column panel: a vertical, collapsible tree replacing the horizontal checkbox strip; tri-state checkboxes; distinct-value counts on leaves; metric styling by partition. Ordering by vertical drag in the tree (dnd constrained to the node's parent; group = block); header drag optional and follows the same rule. Displayed unpinned columns of a group are contiguous by construction (the table order is a depth-first walk of the tree).
+- Column panel: a vertical, collapsible tree replacing the horizontal checkbox strip (partitions `params`, `metrics`, `env`; undeclared columns included); tri-state checkboxes; distinct-value counts on leaves; metric styling by partition. Ordering by vertical drag in the tree (dnd constrained to the node's parent; group = block); header drag optional and follows the same rule. Displayed unpinned columns of a group are contiguous by construction (the table order is a depth-first walk of the tree).
 - Pinning per column; pinned columns render after the always-first Variant name column with a breadcrumb header (`Optimizer › LR`) and are listed in a "Pinned" section at the top of the tree where vertical drag orders them; unpinning restores the previous in-group position.
-- Stats: one column per stats path, header dropdown (stat paths the column carries + patterns), sort/filter/SOTA on the selected statistic with the column direction; frozen/mixed/per-run markers.
+- Header: two stacked rows — the first-level group label spanning its contiguous columns, then the column label with deeper group labels merged (`adam › beta1`); groups collapse to a one-column placeholder (label + visible count), independent of hiding; collapsed state lives in the View.
+- Stats: always one column per stats path, header dropdown (vocabulary statistics the column carries + templates), sort/filter/SOTA on the selected statistic with the column direction; frozen / mixed / per-run / differs-from-plan markers.
 - shadcn only (Tree built from existing primitives — `Checkbox`, `Collapsible`, `DropdownMenu`, `Badge`, `Tooltip`; no forked primitive); F1 verification on a 3742 preview.
-- **Provisional View defaults (proposed, pending user confirmation):** checked state stored per node and inherited downward, so a newly declared column follows its group; a new column is appended at the end of its group; personal checks and order live in saved Views, while `experiment.json` supplies only the declaration order and default visibility (`env` hidden); only a left pinned zone exists (the existing right zone is retired) — until confirmed, the current left/right placement stays.
-- Views: new fields `nodeVisibility`, `statsDisplay{columnId: selection}`, `statsSort{columnId: stat}`; validation accepts only vocabulary-built selections; legacy `schema:<key>` ids resolve at render to the unique `params.<key>`/`metrics.<key>` and are persisted on the owner's next save.
+- View defaults (confirmed): checked state stored on the changed node and inherited downward, so a later column follows its group; a new column is appended at the end of its group; personal checks, order, collapse and pins live in saved Views, while `experiment.json` supplies only the declaration order and default visibility (`env` hidden); one left pinned zone after the Variant name column (a stored right pin renders at the end of the left zone).
+- Views: new fields `nodeVisibility`, `treeOrder`, `collapsedGroups`, `pinned` (ordered), `statsDisplay{columnId: selection}`, `statsSort{columnId: stat}`; validation accepts only vocabulary-built selections; legacy `schema:<key>` ids resolve at render to the unique `params.<key>`/`metrics.<key>` and are persisted on the owner's next save.
 
 ### 11. Skills
 
@@ -255,7 +256,7 @@ Release 9.0.0 (`MEMON_CHANGED_SURFACES=central,cli,skills,filesystem`). Order: d
 | Strict version gate blocks a whole table for one stale file | That is the requested behavior; the error lists every file and the exact command; other Experiments and sections are unaffected |
 | Operators' `.gitignore` excludes Run directories, so `result.csv` would be silently untracked | Migration blocker `RESULT_FILE_IGNORED` with the exact allow rule; skills mention it |
 | Dropping `attempts` changes what counts as evidence | Derived rule is explicit; finished attempts are migration blockers (deprecate or adopt) |
-| Group/stat spelling still under discussion | Specs fix behavior only; spellings are isolated in core parsers and marked provisional; `opsx:update` folds in decisions before apply |
+| Undeclared paths with typos create stray columns | Lint lists inferred columns with their recording Runs; declaring or renaming them is one upgrade transform |
 | Views reference flat keys | Read-time alias, persisted on next owner save; no SQLite rewrite during the FS migration |
 | Concurrent upserts to one `result.csv` (rare: a Run is one writer) | Atomic replace + optional expected-hash lock; conflicts exit 9 |
 | JSON is less forgiving to hand-edit than YAML | Lint pinpoints syntax errors; writers preserve unknown keys and formatting; agents validate after edits |
@@ -267,11 +268,6 @@ Release 9.0.0 (`MEMON_CHANGED_SURFACES=central,cli,skills,filesystem`). Order: d
 2. Deploy central; `memon update` on every CLI node (skills refreshed).
 3. Per operator project: `plan` (read-only) → review blockers/warnings → write resolutions → if needed commit the `.gitignore` allow rule → `apply` (clean tree) → `verify` → migration commit; record project-specific facts (sidecar name, backup path) only in `LOCAL.md`.
 4. Rollback: `git revert` of the migration commit (marker 8, `results.yaml` back), or the non-git tarball; deleting `.memon/index/` is always safe. Central 9.0.0 keeps serving an unmigrated project read-only for Results (NOT_FOUND state) until the revert is deployed with 8.x tooling.
-
-## Open Questions
-
-- Provisional syntax awaiting the user: CSV header and reserved-row placement; partition names (`params`/`metrics`/`env`); two-level stat spelling (`<inner>.<outer>`); `experiment.json` field names (`values`, `display`, `hidden`, `frozen`); aggregation thresholds; display pattern list; `run result set` argument syntax.
-- Column-tree defaults awaiting the user: node-inherited visibility, append-at-group-end for new columns, left-only pinned zone.
 
 ## Future
 

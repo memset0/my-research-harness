@@ -4,7 +4,7 @@
 
 Every durable Results table arrangement SHALL be represented as a named View bound to one exact Experiment identity. In central mode that identity SHALL include Host, Project, and Experiment; it SHALL NOT include username. All authenticated owners and exact-scope viewers reading that Experiment SHALL receive the same ordered View collection and definitions.
 
-A View definition SHALL include persistent Experiment-local Results filters, checked/hidden columns, column order, maximum lines, default sort rules, pinning, row overrides, SOTA modes, decimal formatting, and, for `stats` columns, the selected display (one statistic path from the fixed vocabulary or a supported display pattern) and the statistic path used for sorting, filtering and SOTA. Columns SHALL be identified by their result path. Temporary show-all, temporary header sorting, active View selection, and Project-wide starred column labels SHALL NOT be part of the shared View definition.
+A View definition SHALL include persistent Experiment-local Results filters, the checked state of column-tree nodes, the tree order, collapsed groups, pinned columns and their order, maximum lines, default sort rules, row overrides, SOTA modes, decimal formatting, and, for `stats` columns, the selected display (one vocabulary statistic or one display template) and the statistic used for sorting, filtering and SOTA. Columns SHALL be identified by their result path. Temporary show-all, temporary header sorting, active View selection, and Project-wide starred column labels SHALL NOT be part of the shared View definition.
 
 #### Scenario: Two users see one Experiment collection
 
@@ -37,9 +37,8 @@ are integers from 0 through 10; row filters and default sort rules that each
 carry a unique string ID; at most one default sort rule per column; no
 duplicate column ID within the column order or the hidden-column list; no
 column pinned more than once, on either side; and every stats display or sort
-selection naming a statistic path built from the fixed vocabulary (`mean`,
-`std`, `min`, `max`, `n`, `p50`, `p90`, `p95`, `p99`) or a supported display
-pattern. Column, Variant and filter values are not checked against the current
+selection naming a statistic built from the fixed statistic vocabulary defined
+by `run-results` or one of the display templates. Column, Variant and filter values are not checked against the current
 Results definition at this boundary.
 
 When a stored View is rendered against the current Results summary, entries

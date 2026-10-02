@@ -6,7 +6,7 @@ Defines the per-Run result file `result.csv`: the tracked, long-format record of
 
 ### Requirement: Each Run records its results in one tracked result file
 
-A Run directory MAY contain one result file `<runDir>/result.csv`. It SHALL be a UTF-8 CSV table whose columns are, in order, `path`, `stat` and `value`. It SHALL describe the whole Run: every value in it applies to the Run as a whole, and step-indexed histories, checkpoints, tracking-service identities and other source facts SHALL NOT be stored in it (they belong to the Run record). The file is research data: memon SHALL NOT add it to any ignore rule, SHALL NOT delete it, and SHALL NOT require it — a Run without results has no result file. The header line and quoting conventions are provisional and defined by the design.
+A Run directory MAY contain one result file `<runDir>/result.csv`. It SHALL be a UTF-8 CSV table whose columns are, in order, `path`, `stat` and `value`. It SHALL describe the whole Run: every value in it applies to the Run as a whole, and step-indexed histories, checkpoints, tracking-service identities and other source facts SHALL NOT be stored in it (they belong to the Run record). Its first line SHALL be the header `path,stat,value`, and cells SHALL follow RFC 4180 quoting. The file is research data: memon SHALL NOT add it to any ignore rule, SHALL NOT delete it, and SHALL NOT require it — a Run without results has no result file.
 
 #### Scenario: Minimal result file
 - **GIVEN** a FINISHED Run declared by Experiment `E0001-foo`, whose description file has `experiment_schema_version: 1`
@@ -34,7 +34,7 @@ Paths beginning with `$` SHALL be reserved for memon. Every result file SHALL co
 
 ### Requirement: Paths express groups under three partitions
 
-A value path SHALL be a non-empty sequence of segments separated by `.`; a group is any proper prefix of a path. The leading segment SHALL be one of the three partitions — parameters, metrics and environment values — whose names are defined by the design. A path SHALL NOT be both a value and a group prefix of another path in the same file. Path segment grammar is provisional and defined by the design; it SHALL reject empty segments and the reserved `$` prefix.
+A value path SHALL be a non-empty sequence of segments separated by `.`; a group is any proper prefix of a path. The leading segment SHALL be one of the three partitions `params` (parameters), `metrics` and `env` (environment values), and every segment SHALL match `[A-Za-z_][A-Za-z0-9_-]*`. A path SHALL NOT be both a value and a group prefix of another path in the same file.
 
 #### Scenario: Grouped parameters
 - **WHEN** a result file holds `params.optim.lr` and `params.optim.batch_size`
@@ -45,9 +45,11 @@ A value path SHALL be a non-empty sequence of segments separated by `.`; a group
 - **WHEN** the file is linted
 - **THEN** lint reports `RESULT_PATH_CONFLICT` for `metrics.eval`
 
-### Requirement: Values are typed by the Experiment description file
+### Requirement: Results are written first and described later
 
-The type of a value SHALL be the type its path declares in the Experiment's description file: `string`, `number` (a finite decimal), `boolean` (`true` / `false`), `enum` (one of the declared options), `list` (a JSON array written as one line of text in the `value` cell), or `stats`. An empty `value` cell SHALL mean an explicitly missing value. Only `stats` values SHALL span several rows: one row per statistic, all with the same path and distinct `stat` cells. A `stat` SHALL be built from the fixed vocabulary `mean`, `std`, `min`, `max`, `n`, `p50`, `p90`, `p95`, `p99`; for a column that declares both an inner (`across`) and an outer (`over`) dimension it SHALL name an inner and an outer statistic (for example the outer `p99` of each unit's inner `max`). The spelling of a two-level stat is provisional and defined by the design. Every non-`stats` row SHALL have an empty `stat` cell. A row that violates its declared type SHALL be a lint error and SHALL be kept verbatim; a row whose path no column declares SHALL be reported as the lint error `UNDECLARED_RESULT_PATH`, kept, and shown as undeclared.
+A Run MAY record any path; the description file only adds metadata. The type of a value SHALL be the type its path declares in the Experiment's description file, or — for a path the description file does not declare — the type inferred from the values recorded for that path (`stats` when it has statistic rows, otherwise `number`, `boolean` or `list` when every value parses as such, otherwise `string`). An undeclared path SHALL be accepted, summarized and displayed like a declared one (labelled by its last segment, placed after the declared columns of its group) and SHALL NOT be a lint error. Lint SHALL report conflicts: a value that violates its declared type, a path recorded as `stats` in one result file and as a scalar in another, a scalar row with a non-empty `stat`, or a statistic outside the vocabulary; a conflicting row SHALL be kept verbatim.
+
+The declarable types SHALL be `string`, `number` (a finite decimal), `boolean` (`true` / `false`), `enum` (one of the declared options), `list` (a JSON array written as one line of text in the `value` cell) and `stats`. An empty `value` cell SHALL mean an explicitly missing value. Only `stats` values SHALL span several rows: one row per statistic, all with the same path and distinct `stat` cells. The statistic vocabulary SHALL be fixed and defined in one place in core: `mean`, `std`, `var`, `sem`, `min`, `max`, `sum`, `n`, `p1`, `p5`, `p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `p99`, `p999`, `ci95_lo` and `ci95_hi`; extending it requires a memon release and SHALL NOT require a change of `experiment_schema_version`. For a column that declares both an inner dimension (`across`) and an outer dimension (`over`), a `stat` SHALL be written `<inner>.<outer>` (for example `max.p99`, the outer `p99` over units of each unit's inner `max`). Every non-`stats` row SHALL have an empty `stat` cell.
 
 #### Scenario: Mean and standard deviation of a metric
 - **GIVEN** a column `metrics.eval.clip` declared `stats` with `across: sample`
@@ -62,6 +64,16 @@ The type of a value SHALL be the type its path declares in the Experiment's desc
 - **GIVEN** a column `params.data.splits` declared `list`
 - **WHEN** a result file holds the value `["train","val"]` on one line
 - **THEN** readers expose the list `train`, `val`
+
+#### Scenario: Undeclared path is shown
+- **GIVEN** Runs that record `metrics.eval.lpips` while the description file declares no such column
+- **WHEN** the Experiment is linted and its Results are summarized
+- **THEN** lint reports no error for that path and the Results table shows an `lpips` column of inferred type `number` after the declared columns of `metrics.eval`
+
+#### Scenario: Conflicting recordings
+- **GIVEN** one Run records `metrics.eval.fid` as a scalar and another records it with `stat` rows
+- **WHEN** the Experiment is linted
+- **THEN** lint reports `RESULT_TYPE_CONFLICT` naming both files
 
 ### Requirement: Path and statistic pairs are unique
 

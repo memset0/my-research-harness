@@ -62,12 +62,17 @@ A Variant's evidence Runs SHALL be the member Runs in its `runs` whose status is
 
 ### Requirement: Values are aggregated across a Variant's evidence Runs
 
-For each declared column, a Variant cell SHALL hold the value of its single evidence Run, or — when several evidence Runs report the path — statistics across those Runs computed automatically from the fixed vocabulary for numeric values (and for each statistic of a one-level `stats` value), with the number of contributing Runs. Non-numeric values that all evidence Runs agree on SHALL be shown once; disagreeing ones SHALL be marked as mixed with the per-Run values available. Values the summary cannot aggregate further SHALL be shown per Run and marked as not aggregated. A frozen historical value declared in the description file SHALL fill a cell only when no evidence Run reports that `(path, stat)`, and SHALL be marked as frozen. A declared parameter or env value SHALL be shown for a Variant without evidence, and an evidence Run whose recorded value differs from the declared one SHALL produce the warning `VARIANT_PARAM_MISMATCH`. The exact aggregation rules are provisional and defined by the design.
+For each declared column and each undeclared path recorded by an evidence Run, a Variant cell SHALL hold the value of its single evidence Run, or — when several evidence Runs report the path — statistics across those Runs computed automatically for numeric values (and for each statistic of a one-level `stats` value, as an outer level over Runs): `n`, `mean`, `min`, `max`, `sum` and every percentile of the vocabulary (linear interpolation), and, when at least two Runs contribute, `std` and `var` (sample, n−1), `sem` and the Student-t `ci95_lo`/`ci95_hi`. Such a cell SHALL be displayed by default as `mean ± std (n)`. Non-numeric values that all evidence Runs agree on SHALL be shown once; disagreeing ones SHALL be marked as mixed with the per-Run values available. Values the summary cannot aggregate further SHALL be shown per Run and marked as not aggregated. A frozen historical value declared in the description file SHALL fill a cell only when no evidence Run reports that `(path, stat)`, and SHALL be marked as frozen. A Variant MAY declare planned parameter and env values: a planned value SHALL be shown for a Variant without evidence, and an evidence Run whose recorded value differs from the planned one SHALL produce the warning `VARIANT_PARAM_MISMATCH` and the cell SHALL be marked as differing from the plan.
 
 #### Scenario: Three seeds
 - **GIVEN** a Variant with three evidence Runs reporting `metrics.eval.fid` as 10, 11 and 12
 - **WHEN** the summary is generated
-- **THEN** the Variant's `metrics.eval.fid` cell is a stats value with `mean` 11, `min` 10, `max` 12 and `n` 3
+- **THEN** the Variant's `metrics.eval.fid` cell is a stats value with `mean` 11, `std` 1, `min` 10, `max` 12 and `n` 3, displayed by default as `11 ± 1 (3)`
+
+#### Scenario: Actual parameter differs from the plan
+- **GIVEN** `V0004` plans `params.optim.lr` 0.0001 and its evidence Run records 0.0002
+- **WHEN** the summary is generated
+- **THEN** the cell shows 0.0002 marked as differing from the planned 0.0001 and a `VARIANT_PARAM_MISMATCH` warning names `V0004`
 
 #### Scenario: Frozen value without Run directory
 - **GIVEN** a Variant whose description carries a frozen `metrics.eval.fid` value and which lists no member Run
