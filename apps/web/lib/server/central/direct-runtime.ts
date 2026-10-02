@@ -24,6 +24,7 @@ import {
   CENTRAL_READ_POLICY,
   createBackendHandler,
   createBackendSlurmService,
+  dropDerivedIndexMirrors,
   enableDerivedIndex,
   FilesystemDocumentService,
   FilesystemGitService,
@@ -534,4 +535,5 @@ export function directCentralRuntime(config: Config): DirectCentralRuntime {
 
 export function __resetDirectCentralRuntimeForTests(): void {
   processState().runtime = null
+  dropDerivedIndexMirrors()
 }

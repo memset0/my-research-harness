@@ -151,6 +151,28 @@ describe('direct central conditional lists', () => {
   })
 })
 
+describe('direct central Run list shape', () => {
+  it('answers /api/runs with the paged object whether or not a limit is given', async () => {
+    const runtime = directCentralRuntime(config)
+    const shape = async (query: string) => {
+      const response = await runtime.dispatch({
+        request: new Request(`http://central.test/api/runs?host=local&project=research${query}`),
+        actor: { role: 'owner' },
+      })
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as unknown
+      expect(Array.isArray(body)).toBe(false)
+      return body as { runs: Array<{ id: string }>; nextCursor: string | null }
+    }
+    for (const query of ['', '&limit=1', '&limit=1000', '&deprecated=include&limit=5']) {
+      const body = await shape(query)
+      expect(Object.keys(body).sort()).toEqual(['nextCursor', 'runs'])
+      expect(body.runs.map((run) => run.id)).toEqual([`logs/${RUN_ID}`])
+      expect(body.nextCursor).toBeNull()
+    }
+  })
+})
+
 describe('direct central storage mode', () => {
   /** The storage mode the request context carried, or `'no-context'`. */
   async function contextStorage(projects: readonly ProjectConfig[]): Promise<unknown> {
