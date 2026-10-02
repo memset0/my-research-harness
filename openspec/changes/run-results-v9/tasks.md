@@ -1,0 +1,68 @@
+## 0. Preconditions
+
+- [ ] 0.1 Confirm `results-accept-blocked-variants` is archived (its `BLOCKED` status, env-string and Status-column requirements exist in `openspec/specs/structured-experiment-sections`, `memon-cli`, `web-dashboard`) and the provisional syntax decisions listed in design.md "Open Questions" have been folded into this change; verify `openspec validate run-results-v9 --type change --strict` and `openspec validate --all --strict` pass and every MODIFIED block still carries all canonical scenarios.
+
+## 1. Core: per-Run result file
+
+- [ ] 1.1 Add `packages/core/src/results/result-file.ts` (parser, serializer, reserved-row handling, path grammar, partition check, leaf/group conflict, stat vocabulary incl. two-level spelling, type checks against a column map, duplicate detection with line numbers); verify with unit tests covering every `run-results` scenario, RFC 4180 quoting of list values, CRLF/BOM input, and byte-identical round-trip of an untouched file.
+- [ ] 1.2 Implement the atomic upsert/unset writer (temp + rename, in-place line replacement, append for new pairs, version row on create, expected-hash lock, owner resolution through Experiment declarations, version-mismatch refusal) routed through the derived-index event sink; verify with tests: unrelated rows byte-identical, orphan → `BAD_STATE`, stale version → `RESULT_SCHEMA_MISMATCH`, stale hash → `CONFLICT`, one index event per write.
+
+## 2. Core: Experiment description file
+
+- [ ] 2.1 Add the `experiment.json` schema, normalizer and key-preserving serializer behind one `EXPERIMENT_DESCRIPTION_FILE` constant (`experiment_schema_version`, `groups`, typed `columns`, `variants` with declared status, values, provenance, `runs`, `frozen`; env coercion warning); verify with unit tests for valid/invalid documents, unknown-key preservation, env coercion and stable formatting.
+- [ ] 2.2 Extend `lintExperimentDocument` for v9 (`LEGACY_RESULTS_YAML`, `DESCRIPTION_DUPLICATES_README`, `DERIVED_STATUS_DECLARED`, Variant `runs` ⊆ README `runs`, single Variant per Run, unassigned members, enum options, undeclared paths and type errors in member result files, new Results pointer → `MANAGED_SECTION_NOT_STUB` for the v8 pointer); verify with lint tests on fixtures for each diagnostic.
+
+## 3. Core: Results summary
+
+- [ ] 3.1 Implement the summary generator (status derivation incl. `INTERRUPTED` → `RUNNING`, evidence/other Runs, aggregation, declared/frozen fill, mixed/per-run markers, `VARIANT_STATUS_STALE`, `VARIANT_PARAM_MISMATCH`, mismatch and duplicate gates with offending files and upgrade command); verify with golden tests on `mock/project-a` and table tests for every `experiment-results-summary` scenario.
+- [ ] 3.2 Implement the cache (`.memon/index/results/<experiment-id>.json`, input fingerprints, digest, atomic replace, best-effort write with `RESULTS_CACHE_FAILED`, reuse only on exact input set + fingerprints); verify with tests: deleted cache → equal output, hand-edited cache → regenerated, changed `result.csv` → regenerated, read-only directory → warning and exit 0.
+- [ ] 3.3 Implement the deterministic Markdown projection of the summary and of a failed summary; verify CLI/Web projection parity tests.
+
+## 4. Core: schema upgrades
+
+- [ ] 4.1 Implement the declarative transform engine (`rename`, `move`, `scale`, `delete`, `default`) over result tables and the description file, plus the executable-transform runner; verify with unit tests per operation, chained steps, missing-step `BAD_REQUEST`, and the executable contract (input/output files, env, no other file touched).
+- [ ] 4.2 Implement plan/apply (dry-run diff, `RUNNING` refusal, backup under `.memon/backups/schema-upgrade/…`, per-file fingerprint re-check, atomic replace, verification, full rollback); verify with tests for each `experiment-schema-upgrade` scenario including a mid-apply fingerprint change and a verification failure restoring every file byte-for-byte.
+
+## 5. Core: derived index v2
+
+- [ ] 5.1 Move snapshot/event schemas to `index_version: 2` (Run `result_fp` and `result_schema_version`, Experiment description fingerprint, `results/` directory), ignore v1 files, allow deleting v1 events older than one hour, and delete summaries of unknown Experiments on rebuild; verify with schema, merge, rebuild and verify tests, including a v1 snapshot replaced by a v2 rebuild.
+
+## 6. Core: Experiment and Run writers
+
+- [ ] 6.1 Update `experiments/mutations.ts`: `create` scaffolds `experiment.json` and the v9 pointer, `--from-run` seeds `V0001` with `runs` and no status (no Run file written), `delete` removes the v9 bundle files, `schema-upgrades/` and the summary; update `run rename` to rewrite Variant `runs`; retire every `results.yaml` writer and the v8 status mapping; verify with mutation and parity tests (CLI and Web byte-identical bundles, interrupted `--from-run` → summary `RUNNING`).
+- [ ] 6.2 Move the annotation helper to `experiment.json` (key-preserving JSON patch); verify the replaced-description scenario and unknown-key retention.
+
+## 7. CLI
+
+- [ ] 7.1 Add `memon run result get|set|lint` with the provisional `set` syntax, type validation before any write and the exit codes of the `memon-cli` delta; verify with CLI tests for every scenario (two statistics, invalid value, orphan, mismatch, conflict) and that `get`/`lint` write no receipt.
+- [ ] 7.2 Switch `memon experiment results table|summary` to the summary (filters by path/partition, stats flattening in CSV, error envelopes with `details.files`/`details.upgradeCommand`), add `memon experiment results rebuild` and `memon experiment schema upgrade`, update `doc show|render|validate|lint` and help text; verify with CLI tests for every changed scenario and the help listing.
+
+## 8. Backend and central
+
+- [ ] 8.1 Serve `GET /api/experiments/:id/results` and the Experiment detail Results from the summary (400 `INVALID_RESULTS`, 404 `RESULTS_NOT_FOUND`, 422 `RESULT_SCHEMA_MISMATCH`/`RESULT_DUPLICATE_ROW`, identical in standalone and central, route-table declarations), member freshness from index windows, explicit refresh re-taking fingerprints, background regeneration for active Projects; verify with backend tests (project-service, project-routes, derived-index-mirror) and that the experiment list still opens no description or result file.
+
+## 9. Web
+
+- [ ] 9.1 Render the Results card from the summary with the blocking error card (code, files, copyable upgrade command) and the Refresh/`Last updated` rules; verify with component tests for ok, mismatch, duplicate, invalid-on-refresh (last good kept) and first-load states.
+- [ ] 9.2 Replace the horizontal checkbox strip with the vertical column tree (partitions, groups, leaves; tri-state checks; collapsible groups; distinct-value counts; metric styling) built from existing shadcn primitives without forking `components/ui/*`; verify with component tests for cascade/indeterminate behavior and a grep that `components/ui/` is unchanged.
+- [ ] 9.3 Implement constrained vertical tree drag (within parent only, groups as blocks, refused cross-group drops), optional header drag with the same rule, per-column pinning with breadcrumb headers and the pinned tree section, Variant name always first; verify with interaction tests for every ordering/pinning scenario and that unpinned group columns stay contiguous.
+- [ ] 9.4 Render stats columns as one column with the header display dropdown (vocabulary stats + patterns), unit/decimal formatting, tooltips, frozen/mixed/per-run markers, sort/filter/SOTA on the selected statistic and direction; verify with unit tests for formatting and SOTA and component tests for the dropdown.
+- [ ] 9.5 Extend the View contract (`nodeVisibility`, tree order, `statsDisplay`, `statsSort`, path ids, vocabulary validation) and the legacy `schema:<key>` read-time alias persisted on the next owner save; verify with View API validation tests and a render test of a pre-migration View on a migrated fixture.
+- [ ] 9.6 F1 verification on a release-build preview: start a loopback preview on port 3742 with a temporary standalone config and scratch copies of `mock/project-a` migrated to v9 (never the live host or its `.next`, AGENTS.md F5), then run AGENTS.md §4.3 steps 1–5: typecheck, `/` 200 with credentials, grep the Experiment page markup for the column-tree and Results error-card markers, grep the referenced stylesheets for `--background/--foreground/--card/--muted/--primary` oklch values, and capture desktop and 390 px screenshots with headless Chromium showing the tree, a stats dropdown and a mismatch card; stop the preview by process group and delete the scratch copy.
+
+## 10. Skills
+
+- [ ] 10.1 Update `memon-write-experiment-doc` and its bundle reference, `memon-run-experiment`, `memon-write-script`, `memon-read-results`, `memon-propose`, `memon-drive` and `memon-migrate-fs` per the `memon-skills` delta (English bodies, Chinese dialogue in block quotes); verify the skills build (`component-docs.mjs --check`), the skills tests, and a grep that no bundled skill tells agents to edit `results.yaml` or `.memon/index/results/`.
+
+## 11. Migration v8 → v9
+
+- [ ] 11.1 Implement the planner (lenient YAML, column/Variant/value mapping, JSON/`±` conversions, sidecar shapes by operator-supplied name, frozen blocks, blockers and warnings, resolutions file) in `packages/core/src/migrations/v8-to-v9.ts`; verify with fixture tests covering every row of the design §9 table, each blocker and an idempotent re-plan.
+- [ ] 11.2 Implement apply/verify/rollback (backup, writes, `results.yaml` removal, pointer rewrite, resolution edits, index v2 + summaries rebuild, lint/equivalence/ignore verification, marker 9, scoped commit with `chore(memon): migrate FS convention v8 -> v9`) and the operator entry `scripts/migrate-v8-to-v9.{mjs,md}`; verify on scratch copies of `mock/project-a` and `mock/project-b` in git and non-git mode: plan → apply → verify → rollback restores marker 8 and every `results.yaml`, and a second apply is a no-op.
+- [ ] 11.3 Write `packages/core/migrations/v8-to-v9.md` per `fs-migration-guide-authoring` (seven sections, literal Detection, before/after Diff blocks, fail-closed Verification with `git check-ignore`, Rollback Notes with the literal commit message, the four canonical edge cases plus sidecars, ignored result files, flat-key Views, Experiments without `results.yaml`, v8 CLI nodes); verify with a guide test modelled on `v7-to-v8-guide.test.ts`.
+- [ ] 11.4 Run the read-only `plan` against a scratch copy of the measured operator project made outside that project (facts and paths recorded only in `LOCAL.md`); verify the plan reports the expected counts (≈616 `±` conversions, ≈214 JSON strings classified, undeclared keys declared, blockers listed) and that the scratch apply + verify succeed with no lost cell.
+
+## 12. Version gate and documentation
+
+- [ ] 12.1 Set `FS_CONVENTION_VERSION = 9` and `MEMON_RELEASE = '9.0.0'` with release-policy and `validate-release.mjs` expectations for the v8→v9 guide; verify `version.test.ts`, `release-policy.test.ts`, `release-compatibility.test.ts`, the fs-version tests and `MEMON_CHANGED_SURFACES=central,cli,skills,filesystem MEMON_PREVIOUS_FS_CONVENTION=8 node scripts/validate-release.mjs`.
+- [ ] 12.2 Update `AGENTS.md` §2.1 (bundle files, `result.csv`, summary cache, `schema-upgrades/`) and the README Results documentation; verify the text contains no operator-specific names (grep against `LOCAL.md` names).
+- [ ] 12.3 Run the change-relevant test list (core results/description/summary/upgrade/derived-index/migration/mutations/lint; backend project-service/project-routes/derived-index-mirror; CLI results/run-result/experiment/index; web results table, Views, cells; skills) and `pnpm typecheck`; verify all pass and report the list and results.
