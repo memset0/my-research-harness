@@ -73,12 +73,27 @@ afterEach(() => {
 })
 
 describe('discoverRuns listing count', () => {
-  it('never lists a Run-shaped directory, so listings do not grow with Run contents', async () => {
+  it('without run_dirs lists each existing Run root exactly once (FS v8 default)', async () => {
     const small = serve(buildTree(20))
     const foundSmall = await discoverRuns(project)
     vi.restoreAllMocks()
     const large = serve(buildTree(40))
     const foundLarge = await discoverRuns(project)
+
+    // logs/* and outputs/* list their entry once; experiments/ is absent.
+    expect(small).toHaveLength(ENTRIES.length)
+    expect(large).toHaveLength(ENTRIES.length)
+    expect(foundSmall).toHaveLength(ENTRIES.length * RUN_DIRS)
+    expect(foundLarge).toEqual(foundSmall)
+    expect(foundSmall.some((path) => path.endsWith('nested-260901-090000'))).toBe(false)
+  })
+
+  it('the audit walk never lists a Run-shaped directory, so listings do not grow with Run contents', async () => {
+    const small = serve(buildTree(20))
+    const foundSmall = await discoverRuns(project, { unbounded: true })
+    vi.restoreAllMocks()
+    const large = serve(buildTree(40))
+    const foundLarge = await discoverRuns(project, { unbounded: true })
 
     const expected = ENTRIES.length * (1 + NON_RUN_DIRS + NON_RUN_DIRS * NON_RUN_CHILDREN)
     expect(small).toHaveLength(expected)

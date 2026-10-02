@@ -1,8 +1,9 @@
 // discoverRuns — locate Run directories under the project's logs/, outputs/,
 // and experiments/ entry directories only. Missing entries are skipped.
 //
-// Within those entries, Run directories may occur at any depth and are
-// recognized by RUN_DIR_REGEX; traversal stops at each recognized Run.
+// Within those entries, Runs are found by expanding the effective `run_dirs`
+// patterns (FS v8 default: one level below each entry) and recognized by
+// RUN_DIR_REGEX; an explicit audit may walk to any depth, stopping at Runs.
 //
 // Run directories never nest: a Run-shaped name is a candidate Run whether
 // or not it holds a README, and its contents are never listed, so the
@@ -23,7 +24,7 @@ import { projectFs } from '../project-file-store.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
 import { isArchivedSidecar } from './archive.js'
-import { isGlobSegment, segmentMatcher } from './run-dirs.js'
+import { DEFAULT_RUN_DIRS, isGlobSegment, segmentMatcher } from './run-dirs.js'
 
 // Re-export for back-compat with code that imported the constant from
 // discover.ts (the canonical home is now archive.ts).
@@ -68,26 +69,28 @@ export interface DiscoverOptions {
 /**
  * The patterns a walk of `project` expands: the caller's explicit `runDirs`
  * (CLI `--run-dir` or central `run_dirs`), else `.memon/project.yml`
- * `run_dirs`. `undefined` means no source declares any. An invalid
- * declaration throws `ProjectDeclarationError` (fail closed).
+ * `run_dirs`, else the FS v8 default `["logs/*", "outputs/*",
+ * "experiments/*"]`. An invalid declaration throws `ProjectDeclarationError`
+ * (fail closed, never a silent default).
  */
-async function declaredRunDirs(project: ProjectConfig): Promise<string[] | undefined> {
+async function effectiveRunDirs(project: ProjectConfig): Promise<readonly string[]> {
   if (project.runDirs !== undefined) return project.runDirs
-  return (await loadProjectDeclaration(project.root))?.run_dirs
+  return (await loadProjectDeclaration(project.root))?.run_dirs ?? DEFAULT_RUN_DIRS
 }
 
 /**
  * Returns absolute Run paths under `project.root/{logs,outputs,experiments}`,
  * applying default + user excludes. The project root itself is never listed.
  *
- * When `project.runDirs` is set — or, without it, `.memon/project.yml`
- * declares `run_dirs` — discovery only expands those patterns (see
+ * Discovery expands the effective `run_dirs` — `project.runDirs` when set,
+ * else `.memon/project.yml` `run_dirs`, else the FS v8 default
+ * `["logs/*", "outputs/*", "experiments/*"]` — (see
  * `run-dirs.ts`) segment by segment and never recurses: a literal segment is
  * checked with `lstat`, a glob segment lists its parent once (listings are
  * shared between patterns), and only directories matched by a pattern's last
  * segment are candidate Runs. Run-shaped directories are never used as
- * intermediate prefixes (Runs do not nest). Absent keeps the unbounded walk
- * below.
+ * intermediate prefixes (Runs do not nest). The unbounded walk below runs
+ * only for an explicit audit (`unbounded: true`) and never feeds lists.
  *
  * This is the ONE sanctioned recursive project traversal, and it composes
  * shared cached direct listings (`projectFs.readdir`) rather than a recursive
@@ -147,7 +150,7 @@ export async function discoverRuns(
     excludedNames[name] === true ||
     matchesExclude(relative(project.root, absolute).split(sep).join('/'))
 
-  const runDirs = options.unbounded ? undefined : await declaredRunDirs(project)
+  const runDirs = options.unbounded ? undefined : await effectiveRunDirs(project)
   if (runDirs !== undefined) {
     const listings = new Map<string, Promise<Dirent[]>>()
     const list = (directory: string): Promise<Dirent[]> => {

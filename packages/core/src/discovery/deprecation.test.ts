@@ -159,20 +159,18 @@ describe('research collections exclude deprecated runs by default', () => {
 
   it('treats same-basename Runs under different paths as distinct eligibility subjects', async () => {
     const id = 'dup-260901-100900'
-    for (const path of [`logs/a/${id}`, `outputs/b/${id}`]) {
+    for (const path of [`logs/${id}`, `outputs/${id}`]) {
       await mkdir(join(root, path), { recursive: true })
       await writeFile(join(root, path, 'README.md'), runDoc(id, 'FINISHED'))
     }
-    await deprecateRun(join(root, `outputs/b/${id}`), { now: NOW })
+    await deprecateRun(join(root, `outputs/${id}`), { now: NOW })
 
-    expect(await listDeprecatedRunIds(root, { ids: [`outputs/b/${id}`] })).toEqual([
-      `outputs/b/${id}`,
-    ])
-    expect(await listDeprecatedRunIds(root, { ids: [`logs/a/${id}`] })).toEqual([])
+    expect(await listDeprecatedRunIds(root, { ids: [`outputs/${id}`] })).toEqual([`outputs/${id}`])
+    expect(await listDeprecatedRunIds(root, { ids: [`logs/${id}`] })).toEqual([])
     // An ambiguous bare id is rejected with its candidate paths, never
     // resolved to whichever directory happens to be walked first.
     await expect(listDeprecatedRunIds(root, { ids: [id] })).rejects.toThrow(
-      /Ambiguous Run ID.*logs\/a\/dup-260901-100900.*outputs\/b\/dup-260901-100900|Ambiguous Run ID.*outputs\/b\/dup-260901-100900.*logs\/a\/dup-260901-100900/,
+      /Ambiguous Run ID.*logs\/dup-260901-100900.*outputs\/dup-260901-100900|Ambiguous Run ID.*outputs\/dup-260901-100900.*logs\/dup-260901-100900/,
     )
   })
 

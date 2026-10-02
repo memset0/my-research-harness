@@ -757,8 +757,9 @@ export interface ProjectConfig {
   /**
    * Declared Run directory locations (config key `run_dirs`): project-relative
    * patterns such as `logs/<glob>` or `outputs/<glob>/<glob>`, with `*` and
-   * `?` allowed within a segment and `**` forbidden. When set, discovery only expands these patterns and never recurses;
-   * absent keeps the unbounded walk under `logs/`, `outputs/`, `experiments/`.
+   * `?` allowed within a segment and `**` forbidden. Discovery only expands patterns and never recurses;
+   * absent falls back to `.memon/project.yml` `run_dirs`, then to the FS v8
+   * default `["logs/*", "outputs/*", "experiments/*"]`.
    */
   runDirs?: string[]
   /**

@@ -20,12 +20,12 @@ afterEach(async () => {
 })
 
 describe('runDirs on bare-root callers', () => {
-  it('scanProjectRoot expands the patterns and stays unbounded by default', async () => {
+  it('scanProjectRoot expands the patterns and the FS v8 default otherwise', async () => {
     const ids = async (runDirs?: string[]) =>
       (await scanProjectRoot(root, runDirs === undefined ? {} : { runDirs })).experiments
         .map((run) => run.id)
         .sort()
-    expect(await ids()).toEqual(['deep-260901-100000', 'top-260901-090000'])
+    expect(await ids()).toEqual(['top-260901-090000'])
     expect(await ids(['logs/*', 'outputs/*/*'])).toEqual([
       'deep-260901-100000',
       'top-260901-090000',
@@ -44,7 +44,15 @@ describe('runDirs on bare-root callers', () => {
     expect(await index.dir('outputs/group/missing-260901-100000')).toBeNull()
 
     expect(await resolveRunTarget(root, 'deep-260901-100000', { runDirs: ['logs/*'] })).toBeNull()
-    expect((await resolveRunTarget(root, 'deep-260901-100000'))?.id).toBe('deep-260901-100000')
+    // Under the default patterns the deep Run is outside every walk ...
+    expect(await resolveRunTarget(root, 'deep-260901-100000')).toBeNull()
+    expect(
+      (await resolveRunTarget(root, 'deep-260901-100000', { runDirs: ['outputs/*/*'] }))?.id,
+    ).toBe('deep-260901-100000')
+    // ... yet its project-relative path still resolves directly.
+    expect((await resolveRunTarget(root, 'outputs/group/deep-260901-100000'))?.id).toBe(
+      'deep-260901-100000',
+    )
     expect(
       (await resolveRunTarget(root, 'outputs/group/deep-260901-100000', { runDirs: ['logs/*'] }))
         ?.id,

@@ -21,17 +21,48 @@ async function mkdir(rel: string) {
 }
 
 describe('discoverRuns', () => {
-  it('finds experiment dirs at variable depths', async () => {
+  it('defaults to one level below each Run root (FS v8)', async () => {
+    await mkdir('logs/foo-260501-100000')
+    await mkdir('outputs/top-260501-110000')
+    await mkdir('outputs/group/bar-260502-150000')
+    await mkdir('experiments/group/nested/baz-260503-080000')
+    const listed: string[] = []
+    const native = projectFs.readdir.bind(projectFs)
+    const spy = vi.spyOn(projectFs, 'readdir').mockImplementation((async (
+      target: string,
+      options: unknown,
+    ) => {
+      listed.push(target)
+      return native(target as never, options as never)
+    }) as never)
+    try {
+      const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
+      expect(dirs.map((d) => d.replace(`${root}/`, ''))).toEqual([
+        'logs/foo-260501-100000',
+        'outputs/top-260501-110000',
+      ])
+      expect(listed.sort()).toEqual(
+        ['experiments', 'logs', 'outputs'].map((name) => join(root, name)),
+      )
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('finds experiment dirs at variable depths with an explicit audit walk', async () => {
     await mkdir('logs/foo-260501-100000')
     await mkdir('outputs/group/bar-260502-150000')
     await mkdir('experiments/group/nested/baz-260503-080000')
 
-    const dirs = await discoverRuns({
-      name: 'p',
-      root,
-      include: [],
-      exclude: [],
-    })
+    const dirs = await discoverRuns(
+      {
+        name: 'p',
+        root,
+        include: [],
+        exclude: [],
+      },
+      { unbounded: true },
+    )
     const ids = dirs.map((d) => d.replace(`${root}/`, ''))
     expect(ids.sort()).toEqual(
       [
@@ -70,8 +101,13 @@ describe('discoverRuns', () => {
     await mkdir('outputs/sweep/a-260901-090000/b-260901-100000')
     await fs.writeFile(join(root, 'outputs/sweep/a-260901-090000/b-260901-100000/README.md'), '')
 
-    const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
-    expect(dirs).toEqual([join(root, 'outputs/sweep/a-260901-090000')])
+    const project = { name: 'p', root, include: [], exclude: [] }
+    expect(await discoverRuns({ ...project, runDirs: ['outputs/*/*'] })).toEqual([
+      join(root, 'outputs/sweep/a-260901-090000'),
+    ])
+    expect(await discoverRuns(project, { unbounded: true })).toEqual([
+      join(root, 'outputs/sweep/a-260901-090000'),
+    ])
   })
 
   it('does not match invalid name patterns', async () => {
@@ -153,7 +189,10 @@ describe('discoverRuns', () => {
     }) as never)
 
     try {
-      const dirs = await discoverRuns({ name: 'p', root, include: [], exclude: [] })
+      const dirs = await discoverRuns(
+        { name: 'p', root, include: [], exclude: [] },
+        { unbounded: true },
+      )
       expect(dirs).toEqual(
         Array.from({ length: 40 }, (_, index) => index)
           .filter((index) => index % 2 === 1)

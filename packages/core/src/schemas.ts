@@ -185,7 +185,8 @@ export const ProjectConfigRawSchema = z
     include: z.array(z.string()).optional(),
     exclude: z.array(z.string()).optional(),
     // Declared Run directory locations (`logs/*`, `outputs/*/*`, …). Absent
-    // keeps the unbounded walk; see discovery/run-dirs.ts for the grammar.
+    // falls back to `.memon/project.yml`, then to the FS v8 default
+    // (`logs/*`, `outputs/*`, `experiments/*`); see discovery/run-dirs.ts.
     run_dirs: z
       .array(
         z.string().superRefine((pattern, ctx) => {
