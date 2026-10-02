@@ -21,8 +21,8 @@
 
 ## 4. Core: schema upgrades
 
-- [ ] 4.1 Implement the declarative transform engine (`rename`, `move`, `scale`, `delete`, `default`) over result tables and the description file, plus the Python-transform runner (`python3 <script> <in.csv> <out.csv>`, applied per member file and to the description file's frozen/planned values); verify with unit tests per operation, chained steps, missing-step `BAD_REQUEST`, and the Python contract (input/output files, env, no other file touched).
-- [ ] 4.2 Implement plan/apply (dry-run diff, `RUNNING` refusal, backup under `.memon/backups/schema-upgrade/…`, per-file fingerprint re-check, atomic replace, verification, full rollback); verify with tests for each `experiment-schema-upgrade` scenario including a mid-apply fingerprint change and a verification failure restoring every file byte-for-byte.
+- [x] 4.1 Implement the declarative transform engine (`rename`, `move`, `scale`, `delete`, `default`) over result tables and the description file, plus the Python-transform runner (`python3 <script> <in.csv> <out.csv>`, applied per member file and to the description file's frozen/planned values); verify with unit tests per operation, chained steps, missing-step `BAD_REQUEST`, and the Python contract (input/output files, env, no other file touched).
+- [x] 4.2 Implement plan/apply (dry-run diff, `RUNNING` refusal, backup under `.memon/backups/schema-upgrade/…`, per-file fingerprint re-check, atomic replace, verification, full rollback); verify with tests for each `experiment-schema-upgrade` scenario including a mid-apply fingerprint change and a verification failure restoring every file byte-for-byte.
 
 ## 5. Core: derived index v2
 

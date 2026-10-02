@@ -132,6 +132,12 @@ export type MutationErrorReason =
   | 'RESULT_DUPLICATE_ROW'
   | 'RESULT_FILE_INVALID'
   | 'INVALID_RESULTS'
+  // FS v9 Experiment schema upgrades
+  | 'SCHEMA_UPGRADE_INVALID'
+  | 'SCHEMA_UPGRADE_STEP_MISSING'
+  | 'SCHEMA_UPGRADE_RUNNING'
+  | 'SCHEMA_UPGRADE_CONFLICT'
+  | 'SCHEMA_UPGRADE_VERIFY_FAILED'
 
 export class MutationError extends Error {
   readonly reason: MutationErrorReason | undefined
