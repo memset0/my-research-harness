@@ -120,6 +120,14 @@ export type MutationErrorReason =
   | 'DUPLICATE_RUN_DIR'
   | 'OWNER_MISSING'
   | 'OWNER_MISMATCH'
+  // FS v9 Run result writes
+  | 'RESULT_OWNER_MISSING'
+  | 'RESULT_OWNER_AMBIGUOUS'
+  | 'RESULT_VALUE_INVALID'
+  | 'RESULT_SCHEMA_MISMATCH'
+  | 'RESULT_DUPLICATE_ROW'
+  | 'RESULT_FILE_INVALID'
+  | 'INVALID_RESULTS'
 
 export class MutationError extends Error {
   readonly reason: MutationErrorReason | undefined
