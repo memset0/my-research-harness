@@ -104,16 +104,25 @@ Other sources of truth — consult these instead of copying lists here:
   `readme/lint.ts`); a Run README records execution facts only. Never write an
   `experiment:` field into a Run README — the parser still reads and lints a
   legacy value, but binding is done with `memon experiment link`. Run
-  directories live at the effective `run_dirs` (`--run-dir` > central
-  `run_dirs` > `.memon/project.yml` > default `logs/*`, `outputs/*`,
+  directories live at the effective `run_dirs` (`--run-dir` > deprecated
+  central `run_dirs` > `.memon/project.yml` > default `logs/*`, `outputs/*`,
   `experiments/*`) and never nest inside another Run.
 - **Derived index** `.memon/index/` (FS v8): a self-ignored (`.gitignore` `*`),
   rebuildable cache of Run/Experiment/wiki summaries maintained by writers'
   event files; never edited by hand, always safe to delete
   (`memon index rebuild|compact|status`).
 - **Project declaration** `.memon/project.yml`: optional, git-tracked,
-  `schema_version: 1` plus optional `run_dirs`; created only by
-  `memon project init` or by hand, checked by `memon project lint`.
+  `schema_version: 1` plus the optional project layout keys `run_dirs`,
+  `include`, `exclude`, `github`; created only by `memon project init`
+  (`--from-central <config> --project <name>` copies a central entry's
+  layout) or by hand, checked by `memon project lint`.
+- **Configuration split**: central `config.yml` Project entries hold only
+  the project path and deployment facts (`name`, `root`, `host`, `storage`,
+  `storage_group`, `persistent_cache`, `read_only`, `execution`). Layout
+  belongs in the project's `.memon/project.yml`; a layout key still in a
+  central entry keeps working and wins over the project file, but logs
+  `CENTRAL_LAYOUT_DEPRECATED` (`memon project lint --from-central` lists them
+  and flags conflicts).
 - **Wiki**: `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>.md` or
   `…/W<NNNN>-<slug>/README.md` (bundle).
 - Hypotheses: `docs/hypotheses.md`.

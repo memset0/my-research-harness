@@ -47,9 +47,9 @@ memon distinguishes two units on disk:
   `foo-260503-082800`). Records execution identity, state and execution-specific facts.
   It lives at the project's effective Run locations: by default directly under
   `logs/`, `outputs/` or `experiments/` (`logs/*`, `outputs/*`,
-  `experiments/*`); other locations are declared in `.memon/project.yml`, the
-  central Project `run_dirs` or the CLI `--run-dir`. Run directories do not
-  nest.
+  `experiments/*`); other locations are declared in the project's
+  `.memon/project.yml` (or, one-off, with the CLI `--run-dir`). Run directories
+  do not nest.
 
 The two are bidirectionally bound: each run's frontmatter has
 `experiment: E<NNNN>-<slug>` (or `null` when unbound), and each experiment
@@ -379,7 +379,8 @@ memon index status [--verify [--strict]]   # snapshot, run_dirs, events, lease; 
 memon index compact                    # merge pending index events (exit 9 while leased)
 memon index rebuild [--audit-run-dirs] [--dry-run]  # rebuild from the project files
 memon project init                     # create .memon/project.yml (never overwrites, never commits)
-memon project lint                     # validate it; print the effective run_dirs and source
+memon project init --from-central config.yml --project project-a   # copy a central entry's layout keys
+memon project lint [--from-central config.yml --project project-a]  # validate; effective layout + sources
 memon --run-dir 'outputs/*/*' scan     # one-off override of the declared Run locations
 
 # Installation maintenance
@@ -771,20 +772,33 @@ write adds one event file under `events/`, and central or
 deleting it is always safe, and `memon index rebuild` recreates it from the
 project files.
 
-`.memon/project.yml` is an optional, git-tracked declaration of where Run
-directories live:
+`.memon/project.yml` is an optional, git-tracked declaration of the project
+layout — where Run directories live and what discovery skips — shared by
+central and every CLI node:
 
 ```yaml
 schema_version: 1
-run_dirs:
+run_dirs:            # where Run directories live
   - logs/*
   - outputs/*/*
+exclude: [scratch]   # added to the built-in excludes (.git, node_modules, …)
+include: []          # optional globs a discovered Run path must match
+github:              # GitHub permalink previews: owner/repo -> path in this repo
+  - { owner: acme, repo: project-a, path: . }
 ```
 
-Effective Run locations follow `--run-dir` > central `run_dirs` >
-`.memon/project.yml` > the default `logs/*`, `outputs/*`, `experiments/*`. Create
-it with `memon project init`, edit and commit it yourself; an invalid file fails
-closed (exit 2) instead of falling back to the default.
+Central `config.yml` keeps only the project path and deployment facts
+(`name`, `root`, `host`, `storage`, `storage_group`, `persistent_cache`,
+`read_only`, `execution`). Each layout key resolves on its own: `--run-dir`
+(CLI, `run_dirs` only) > a layout key still in the central entry (deprecated:
+it keeps winning and logs `CENTRAL_LAYOUT_DEPRECATED`) > `.memon/project.yml` >
+the default (`logs/*`, `outputs/*`, `experiments/*`; no extra excludes). Move
+an existing central layout with
+`memon project init --project-root <root> --from-central config.yml --project <name>`,
+commit the file in the project, then delete the keys from `config.yml`;
+`memon project lint --from-central config.yml --project <name>` shows what is
+still central and flags conflicts. Edit and commit the file yourself; an
+invalid file fails closed (exit 2) instead of falling back to the default.
 
 ## Architecture
 

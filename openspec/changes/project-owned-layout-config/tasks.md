@@ -18,5 +18,5 @@
 
 ## 4. Docs and validation
 
-- [ ] 4.1 Update `AGENTS.md`, `README.md` and `config.example.yml` to "central = project path + deployment; layout in `.memon/project.yml`"; verify no example still shows layout keys under a central Project except as deprecated.
+- [x] 4.1 Update `AGENTS.md`, `README.md` and `config.example.yml` to "central = project path + deployment; layout in `.memon/project.yml`"; verify no example still shows layout keys under a central Project except as deprecated.
 - [ ] 4.2 Run the selected core/CLI/backend/web tests and `openspec validate --all --strict`; verify they pass.
