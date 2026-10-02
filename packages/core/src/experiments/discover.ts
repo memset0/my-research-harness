@@ -294,8 +294,9 @@ export async function readExperimentDoc(
 async function readDocumentsWithMtime(experimentDirectory: string) {
   const documents = await readExperimentManagedDocuments(experimentDirectory)
   let mtime = 0
-  for (const parsed of [documents.implementation, documents.investigation, documents.results]) {
-    if (!parsed.exists) continue
+  // FS v9 bundle activity: README plus the managed sources (results.yaml is not one).
+  for (const parsed of [documents.implementation, documents.investigation, documents.description]) {
+    if (!parsed?.exists) continue
     try {
       const stat = await fs.stat(parsed.path)
       mtime = Math.max(mtime, stat.mtimeMs)

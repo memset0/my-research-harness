@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readRunDir } from '../discovery/read.js'
 import { projectFs } from '../project-file-store.js'
+import { loadResultsSummary } from '../results/summary-cache.js'
 import { setRunStatus } from '../runs/mutations.js'
 import { formatIsoLocal } from '../time.js'
 import {
@@ -185,8 +186,43 @@ describe('createExperiment', () => {
       '## Conclusion',
       '## Warnings',
     ])
-    expect(bundle['results.yaml']).toContain(IMPORTED_VARIANT_DESCRIPTION.slice(0, 40))
-    expect(bundle['results.yaml']).toContain('attempts:')
+    // FS v9: the imported Run is listed by V0001 with no declared status.
+    expect(JSON.parse(bundle['experiment.json'])).toEqual({
+      experiment_schema_version: 1,
+      groups: {},
+      columns: [],
+      variants: [
+        {
+          id: 'V0001',
+          name: 'Imported r-260901-120000',
+          description: IMPORTED_VARIANT_DESCRIPTION,
+          runs: ['logs/r-260901-120000'],
+        },
+      ],
+    })
+    expect(bundle['README.md']).toContain('[experiment.json](./experiment.json)')
+  })
+
+  it('derives the --from-run Variant status from the Run record (INTERRUPTED reads RUNNING)', async () => {
+    const probe = await run('logs/probe-260901-120000')
+    const created = await createExperiment({
+      ...base(),
+      slug: 'imported',
+      importedRun: { ...probe, frontMatter: { ...probe.frontMatter, status: 'INTERRUPTED' } },
+    })
+    await fs.writeFile(
+      join(root, 'logs/probe-260901-120000/README.md'),
+      '---\nid: probe-260901-120000\nstatus: INTERRUPTED\n---\n',
+    )
+    const loaded = await loadResultsSummary(root, created.id)
+    expect(loaded?.summary.variants[0]).toMatchObject({
+      id: 'V0001',
+      status: 'RUNNING',
+      declared_status: null,
+      others: [{ run: 'logs/probe-260901-120000', status: 'INTERRUPTED' }],
+    })
+    // No file in the Run directory was written by create.
+    expect(await fs.readdir(join(root, 'logs/probe-260901-120000'))).toEqual(['README.md'])
   })
 
   it('retries when the directory already exists and rejects bad slugs', async () => {
@@ -239,7 +275,7 @@ describe('createExperiment', () => {
     const failing: MutationFs = {
       ...nodeMutationFs,
       writeFile: async (path, data, options) => {
-        if (path.endsWith('results.yaml')) throw new Error('disk full')
+        if (path.endsWith('experiment.json')) throw new Error('disk full')
         return nodeMutationFs.writeFile(path, data, options)
       },
     }
@@ -409,6 +445,18 @@ describe('Experiment document mutations', () => {
     expect(deleted.cascadedRuns).toEqual(['logs/other-260901-130000'])
     expect(renamed[0]).toMatch(/\.memon-delete-E0001-plain-/)
     expect(await fs.readdir(join(root, 'docs/experiments'))).toEqual([])
+  })
+
+  it('delete keeps schema-upgrades/ canonical and removes the generated summary', async () => {
+    const folder = dirname(plain.path)
+    await fs.mkdir(join(folder, 'schema-upgrades'))
+    await fs.writeFile(join(folder, 'schema-upgrades', '1-to-2.json'), '{}\n')
+    const summary = join(root, '.memon/index/results/E0001-plain.json')
+    await fs.mkdir(dirname(summary), { recursive: true })
+    await fs.writeFile(summary, '{}\n')
+    await deleteExperiment({ fs: nodeMutationFs, experiment: plain, force: false })
+    expect(await fs.readdir(join(root, 'docs/experiments'))).toEqual([])
+    await expect(fs.access(summary)).rejects.toThrow()
   })
 
   it('stale locks carry the current document', async () => {

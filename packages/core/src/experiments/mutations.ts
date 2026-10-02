@@ -14,7 +14,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { atomicTempPath } from '../atomic-write.js'
 import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
 import { publishMutationEvent } from '../derived-index/mutation-events.js'
@@ -26,6 +26,12 @@ import {
   type WarningOp,
   WarningOpError,
 } from '../readme/warnings.js'
+import {
+  EXPERIMENT_DESCRIPTION_FILE,
+  emptyExperimentDescription,
+  SCHEMA_UPGRADES_DIRECTORY,
+  serializeExperimentDescription,
+} from '../results/description.js'
 import { formatIsoLocal } from '../time.js'
 import type { ExperimentStatus, Run } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
@@ -33,10 +39,8 @@ import { discoverExperiments } from './discover.js'
 import {
   emptyImplementationDocument,
   emptyInvestigationDocument,
-  emptyResultsDocument,
   serializeImplementationYaml,
   serializeInvestigationYaml,
-  serializeResultsYaml,
 } from './documents.js'
 import { nextExperimentId } from './id.js'
 import { type ParsedExperiment, parseExperimentReadme } from './parse.js'
@@ -340,28 +344,16 @@ export type MutationRun = Pick<Run, 'id' | 'path'> & {
 export const IMPORTED_VARIANT_DESCRIPTION =
   'Imported from an existing Run by `memon experiment create --from-run`; refine the Variant definition before launching another comparison.'
 
+/** The canonical FS v9 bundle files (README plus the three managed sources). */
 export const CANONICAL_EXPERIMENT_BUNDLE_FILES: readonly string[] = [
   'README.md',
   'implementation.yaml',
   'investigation.yaml',
-  'results.yaml',
+  EXPERIMENT_DESCRIPTION_FILE,
 ]
 
-export function importedVariantStatus(status: string) {
-  switch (status) {
-    case 'FINISHED':
-      return 'COMPLETED' as const
-    case 'RUNNING':
-      return 'RUNNING' as const
-    case 'FAILED':
-    case 'INTERRUPTED':
-      return 'FAILED' as const
-    case 'UNKNOWN':
-      return 'INCONCLUSIVE' as const
-    default:
-      return 'PLANNED' as const
-  }
-}
+/** Bundle entries a non-forced delete removes besides the canonical files. */
+const DELETABLE_BUNDLE_DIRECTORIES: readonly string[] = [SCHEMA_UPGRADES_DIRECTORY]
 
 export interface ExperimentBundleInput {
   id: string
@@ -386,29 +378,27 @@ export interface ExperimentBundle {
   'README.md': string
   'implementation.yaml': string
   'investigation.yaml': string
-  'results.yaml': string
+  'experiment.json': string
 }
 
 /**
- * The four files of a new Experiment bundle. The README renders exactly the
- * canonical heading list (`CANONICAL_EXPERIMENT_SECTION_HEADINGS`) through the
- * v6 serializer; no caller supplies a section map.
+ * The four files of a new FS v9 Experiment bundle. The README renders exactly
+ * the canonical heading list (`CANONICAL_EXPERIMENT_SECTION_HEADINGS`) through
+ * the v6 serializer; no caller supplies a section map. `--from-run` seeds
+ * Variant `V0001` listing the Run with no declared status: its effective
+ * status derives from the Run record (an `INTERRUPTED` Run reads `RUNNING`).
  */
 export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentBundle {
   const imported = input.importedRun ?? null
-  const results = emptyResultsDocument()
+  const description = emptyExperimentDescription()
   if (imported) {
-    const unsuccessful = ['FAILED', 'INTERRUPTED', 'UNKNOWN'].includes(imported.status)
-    results.variants.push({
+    description.variants.push({
       id: 'V0001',
       name: `Imported ${imported.name || imported.id}`,
-      status: importedVariantStatus(imported.status),
       description: IMPORTED_VARIANT_DESCRIPTION,
-      parameters: {},
-      metrics: {},
-      runs: unsuccessful ? [] : [imported.path],
-      attempts: unsuccessful ? [imported.path] : [],
+      values: {},
       ...(imported.entry ? { provenance: { entry: imported.entry } } : {}),
+      runs: [imported.path],
     })
   }
   const readme = serializeExperimentReadme({
@@ -438,7 +428,7 @@ export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentB
     'README.md': readme,
     'implementation.yaml': serializeImplementationYaml(emptyImplementationDocument()),
     'investigation.yaml': serializeInvestigationYaml(emptyInvestigationDocument()),
-    'results.yaml': serializeResultsYaml(results),
+    'experiment.json': serializeExperimentDescription(description),
   }
 }
 
@@ -474,8 +464,8 @@ export interface CreateExperimentResult extends IndexWarnings {
 const EXPERIMENTS_SUBDIR = 'docs/experiments'
 
 /**
- * Create `docs/experiments/E<NNNN>-<slug>/` with its README and three YAML
- * documents. The id is allocated by atomically creating the directory; when
+ * Create `docs/experiments/E<NNNN>-<slug>/` with its README, the two YAML
+ * documents and `experiment.json`. The id is allocated by atomically creating the directory; when
  * another writer holds the same number the directory is released and the
  * allocation retried. A failed file write removes the directory again.
  */
@@ -860,6 +850,8 @@ export interface DeleteExperimentInput extends MutationBase {
   experiment: ExperimentTarget
   force: boolean
   lock?: DocumentLock
+  /** Project root (default: derived from the Experiment path). */
+  projectRoot?: string
 }
 
 export interface DeleteExperimentResult extends IndexWarnings {
@@ -870,10 +862,11 @@ export interface DeleteExperimentResult extends IndexWarnings {
 }
 
 /**
- * Delete an Experiment bundle. Without `force` it refuses while the
- * declaration has members or the folder holds anything beyond the four
- * canonical files. The bundle is first renamed to a hidden quarantine name so
- * it disappears in one step, then removed.
+ * Delete an Experiment bundle and its generated Results summary. Without
+ * `force` it refuses while the declaration has members or the folder holds
+ * anything beyond the four canonical files and `schema-upgrades/`. The bundle
+ * is first renamed to a hidden quarantine name so it disappears in one step,
+ * then removed.
  */
 export async function deleteExperiment(
   input: DeleteExperimentInput,
@@ -896,7 +889,9 @@ export async function deleteExperiment(
     let siblings: string[] = []
     try {
       siblings = (await fs.readdir(target)).filter(
-        (name) => !CANONICAL_EXPERIMENT_BUNDLE_FILES.includes(name),
+        (name) =>
+          !CANONICAL_EXPERIMENT_BUNDLE_FILES.includes(name) &&
+          !DELETABLE_BUNDLE_DIRECTORIES.includes(name),
       )
     } catch (error) {
       if (!isEnoent(error)) throw error
@@ -912,6 +907,11 @@ export async function deleteExperiment(
   const quarantine = join(dirname(target), `.memon-delete-${id}-${randomUUID()}`)
   await fs.rename(target, quarantine)
   await fs.rm(quarantine, { recursive: true, force: true }).catch(() => undefined)
+  // `<root>/docs/experiments/<bundle>` → the generated summary under `<root>/.memon/index/results/`.
+  const projectRoot = input.projectRoot ?? resolve(dirname(target), '..', '..')
+  await fs
+    .rm(join(projectRoot, '.memon', 'index', 'results', `${id}.json`), { force: true })
+    .catch(() => undefined)
   const changes = [{ path: experiment.path, before: state.content, after: null }]
   return {
     deletedId: id,

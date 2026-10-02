@@ -2,6 +2,7 @@
 // `experiment.json`, the statistic vocabulary and display templates, ignored
 // result files, the generated Results summary and schema upgrades.
 
+export * from './bundle-lint.js'
 export * from './description.js'
 export * from './diagnostics.js'
 export * from './ignore.js'

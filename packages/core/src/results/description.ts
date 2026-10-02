@@ -842,7 +842,6 @@ export function lintExperimentDescription(
 
   const variantIds = new Set<string>()
   const assignments = new Map<string, string>()
-  const readmeRuns = options.readmeRuns ? new Set(options.readmeRuns) : null
   for (const variant of description.variants) {
     if (variantIds.has(variant.id))
       diag('DUPLICATE_VARIANT_ID', `duplicate Variant id ${variant.id}`, variant.id)
@@ -862,12 +861,6 @@ export function lintExperimentDescription(
           `${variant.id}.runs`,
         )
       seen.add(run)
-      if (readmeRuns && !readmeRuns.has(run))
-        diag(
-          'VARIANT_RUN_NOT_EXPERIMENT_MEMBER',
-          `${variant.id}.runs references ${run}, which is absent from the README runs; link it (memon experiment link) or remove it from the Variant`,
-          `${variant.id}.runs`,
-        )
       const owner = assignments.get(run)
       if (owner !== undefined && owner !== variant.id)
         diag(
@@ -917,15 +910,50 @@ export function lintExperimentDescription(
         )
     }
   }
-  if (readmeRuns) {
-    for (const run of readmeRuns)
-      if (!assignments.has(run))
-        diag(
-          'UNASSIGNED_EXPERIMENT_RUN',
-          `Experiment member Run ${run} is not listed by any Variant's runs`,
-          'variants',
+  if (options.readmeRuns)
+    diagnostics.push(...lintVariantMembership(description, options.readmeRuns, file))
+  return diagnostics
+}
+
+/**
+ * Membership lint against the README `runs` (the membership authority):
+ * every Variant Run must be a declared member, and every declared member
+ * should be listed by a Variant.
+ */
+export function lintVariantMembership(
+  description: ExperimentDescription,
+  readmeRuns: readonly string[],
+  file: string = EXPERIMENT_DESCRIPTION_FILE,
+): ResultsDiagnostic[] {
+  const diagnostics: ResultsDiagnostic[] = []
+  const members = new Set(readmeRuns)
+  const listed = new Set<string>()
+  for (const variant of description.variants) {
+    for (const run of variant.runs) {
+      listed.add(run)
+      if (!members.has(run))
+        diagnostics.push(
+          resultsDiagnostic(
+            'VARIANT_RUN_NOT_EXPERIMENT_MEMBER',
+            'error',
+            file,
+            `${variant.id}.runs references ${run}, which is absent from the README runs; link it (memon experiment link) or remove it from the Variant`,
+            { field: `${variant.id}.runs` },
+          ),
         )
+    }
   }
+  for (const run of readmeRuns)
+    if (!listed.has(run))
+      diagnostics.push(
+        resultsDiagnostic(
+          'UNASSIGNED_EXPERIMENT_RUN',
+          'error',
+          file,
+          `Experiment member Run ${run} is not listed by any Variant's runs`,
+          { field: 'variants' },
+        ),
+      )
   return diagnostics
 }
 

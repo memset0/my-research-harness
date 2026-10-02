@@ -24,6 +24,7 @@ import { serializeExperimentReadme } from '../experiments/serialize.js'
 import { RUN_TIMESTAMP_TAIL_REGEX, SLUG_REGEX } from '../ids.js'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme } from '../readme/serialize.js'
+import { patchExperimentDescription, renameDescriptionRunPath } from '../results/description.js'
 import { formatIsoLocal, parseSlugFromRunDir } from '../time.js'
 import type { Status } from '../types.js'
 
@@ -303,7 +304,8 @@ export interface RenameRunResult extends IndexWarnings {
 
 /**
  * Rename a Run's slug, keeping its `-<YYMMDD>-<HHMMSS>` tail, and rewrite the
- * declaring Experiment's `runs[]` path plus matching `results.yaml` tokens.
+ * declaring Experiment's `runs[]` path plus the Variant `runs` entry of its
+ * `experiment.json`. The Run's `result.csv` moves with the directory.
  */
 export async function renameRun(input: RenameRunInput): Promise<RenameRunResult> {
   const { fs, projectRoot, projectName, newSlug } = input
@@ -414,18 +416,19 @@ export async function renameRun(input: RenameRunInput): Promise<RenameRunResult>
           )
         ).changes,
       )
-      const results = experiment.documents?.results
+      // FS v9: the Variant listing the Run in experiment.json follows the rename.
+      const description = experiment.documents?.description
       if (
-        results?.raw &&
-        results.data?.variants.some(
-          (variant) => variant.runs.includes(oldPath) || variant.attempts.includes(oldPath),
-        )
+        description?.raw &&
+        description.data?.variants.some((variant) => variant.runs.includes(oldPath))
       ) {
-        const escaped = oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const token = new RegExp(`(?<![A-Za-z0-9._-])${escaped}(?![A-Za-z0-9._-])`, 'g')
-        const rewritten = results.raw.replace(token, newReference)
-        if (rewritten !== results.raw) {
-          changes.push(...(await writeRun(input, results.path, results.raw, rewritten)).changes)
+        const patched = patchExperimentDescription(description.raw, (document) => {
+          renameDescriptionRunPath(document, oldPath, newReference)
+        })
+        if (patched.changed) {
+          changes.push(
+            ...(await writeRun(input, description.path, description.raw, patched.content)).changes,
+          )
         }
       }
     }

@@ -3,6 +3,22 @@ import yaml from 'js-yaml'
 import { type ZodError, z } from 'zod'
 import { matchesRunDirPatterns, nestedRunAncestor } from '../discovery/run-dirs.js'
 import { projectFs as fs } from '../project-file-store.js'
+import {
+  EXPERIMENT_DESCRIPTION_FILE,
+  lintExperimentDescription,
+  lintVariantMembership,
+  missingExperimentDescription,
+  type ParsedExperimentDescription,
+  parseExperimentDescription,
+} from '../results/description.js'
+import type { ResultsDiagnostic } from '../results/diagnostics.js'
+import {
+  checkResultFilesConsistency,
+  checkResultFileTypes,
+  type ParsedResultFile,
+} from '../results/result-file.js'
+import { type ResultsSummary, schemaUpgradeCommand } from '../results/summary.js'
+import { renderResultsSummaryMarkdown } from '../results/summary-render.js'
 
 import type {
   Experiment,
@@ -41,11 +57,29 @@ export const MANAGED_EXPERIMENT_SECTIONS = [
   'results',
 ] as const satisfies readonly ManagedExperimentSection[]
 
+/**
+ * @deprecated FS v8 sidecar names (`results.yaml` is retired in FS v9). Use
+ * `MANAGED_SOURCE_FILE_NAMES` for the source file of each managed section.
+ */
 export const MANAGED_DOCUMENT_FILE_NAMES: Readonly<Record<ManagedExperimentSection, string>> = {
   implementation: 'implementation.yaml',
   investigation: 'investigation.yaml',
   results: 'results.yaml',
 }
+
+/** The editable source file of each managed section (FS v9). */
+export const MANAGED_SOURCE_FILE_NAMES: Readonly<Record<ManagedExperimentSection, string>> = {
+  implementation: 'implementation.yaml',
+  investigation: 'investigation.yaml',
+  results: EXPERIMENT_DESCRIPTION_FILE,
+}
+
+/** The retired FS v8 sidecar of the Results section. */
+export const LEGACY_RESULTS_FILE = 'results.yaml'
+
+/** The FS v8 Results pointer; v9 lint reports it and the v8 -> v9 migration rewrites it. */
+export const LEGACY_RESULTS_POINTER =
+  '> Managed in [results.yaml](./results.yaml); read and update that file directly.'
 
 export const MANAGED_SECTION_HEADINGS: Readonly<Record<ManagedExperimentSection, string>> = {
   implementation: 'Implementation',
@@ -58,7 +92,8 @@ export const MANAGED_SECTION_POINTERS: Readonly<Record<ManagedExperimentSection,
     '> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.',
   investigation:
     '> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.',
-  results: '> Managed in [results.yaml](./results.yaml); read and update that file directly.',
+  results:
+    "> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.",
 }
 
 export const CANONICAL_EXPERIMENT_SECTION_HEADINGS = [
@@ -78,6 +113,8 @@ export interface ExperimentDocumentDiagnostic {
   severity: 'error' | 'warning' | 'info'
   file: string
   field?: string
+  /** 1-based line inside `file` (result files). */
+  line?: number
   message: string
 }
 
@@ -97,6 +134,12 @@ export interface ResultsRunLink {
 /** Optional presentation links keyed by canonical Run ID. */
 export interface ResultsRenderContext {
   runs?: Readonly<Record<string, ResultsRunLink>>
+  /**
+   * FS v9: the generated Results summary of this Experiment. The Results
+   * section renders from it (or from its failure); without it the section
+   * reports that the summary was not loaded.
+   */
+  summary?: ResultsSummary
   /**
    * Exclude these ids from displayed Run/Attempt collections. Preserve metric
    * values with partial/unavailable qualification and evidence notes; never
@@ -469,12 +512,62 @@ export function upsertResultColumnAnnotationYaml(
 export async function readExperimentManagedDocuments(
   experimentDirectory: string,
 ): Promise<ExperimentManagedDocuments> {
-  const [implementation, investigation, results] = await Promise.all([
+  const [implementation, investigation, results, description] = await Promise.all([
     readOne('implementation', experimentDirectory),
     readOne('investigation', experimentDirectory),
-    readOne('results', experimentDirectory),
+    readLegacyResults(experimentDirectory),
+    readExperimentDescription(experimentDirectory),
   ])
-  return { implementation, investigation, results }
+  return { implementation, investigation, results, description }
+}
+
+/** Parse `<experimentDirectory>/experiment.json` (absent → `exists: false`). */
+export async function readExperimentDescription(
+  experimentDirectory: string,
+): Promise<ParsedExperimentDescription> {
+  const path = join(experimentDirectory, EXPERIMENT_DESCRIPTION_FILE)
+  let raw: string
+  try {
+    raw = await fs.readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      return missingExperimentDescription(path)
+    throw error
+  }
+  return parseExperimentDescription(raw, path)
+}
+
+/**
+ * FS v9 never reads `results.yaml`: only its presence is reported so lint can
+ * flag the leftover file (`LEGACY_RESULTS_YAML`) without using its content.
+ */
+async function readLegacyResults(
+  experimentDirectory: string,
+): Promise<ParsedManagedDocument<ResultsDocument>> {
+  const path = join(experimentDirectory, LEGACY_RESULTS_FILE)
+  let exists = false
+  try {
+    exists = (await fs.stat(path)).isFile()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  return {
+    kind: 'results',
+    fileName: LEGACY_RESULTS_FILE,
+    path,
+    exists,
+    raw: null,
+    data: null,
+    parseErrors: exists ? [legacyResultsIssue()] : [],
+    parseWarnings: [],
+  }
+}
+
+function legacyResultsIssue(): ParseIssue {
+  return {
+    severity: 'error',
+    message: `LEGACY_RESULTS_YAML: ${LEGACY_RESULTS_FILE} is retired in FS v9 and is not read; migrate it with the reviewed FS v8 -> v9 migration (its content moves to ${EXPERIMENT_DESCRIPTION_FILE} and per-Run result.csv files)`,
+  }
 }
 
 export function renderImplementationMarkdown(document: ImplementationDocument): string {
@@ -649,6 +742,7 @@ export function renderExperimentManagedSection(
     }
   }
 
+  if (kind === 'results') return renderResultsSection(experiment, context, diagnostics)
   const parsed = experiment.documents?.[kind]
   if (!parsed?.exists || parsed.data === null || parsed.parseErrors.length > 0) {
     const parsedIssues = parsed?.parseErrors ?? []
@@ -677,7 +771,86 @@ export function renderExperimentManagedSection(
   }
 }
 
-/** Schema + cross-reference validation for the three YAML documents. */
+/**
+ * The FS v9 Results section: the projection of the generated summary (or of
+ * its failure). Without a summary in the context only the description file's
+ * state is reported; the table itself needs the member Runs' result files.
+ */
+function renderResultsSection(
+  experiment: Experiment,
+  context: ResultsRenderContext | undefined,
+  diagnostics: ExperimentDocumentDiagnostic[],
+): RenderManagedSectionResult {
+  const summary = context?.summary
+  if (summary) {
+    const markdown = renderResultsSummaryMarkdown(summary, {
+      ...(context?.runs ? { runs: context.runs } : {}),
+    })
+    if (summary.outcome !== 'ok' && summary.error) {
+      diagnostics.push(
+        diag(
+          summary.error.code,
+          'error',
+          summary.error.files[0]?.path ?? EXPERIMENT_DESCRIPTION_FILE,
+          summary.error.message,
+        ),
+      )
+      // An invalid description is a broken managed source; a mismatch or a
+      // duplicate row is a Results-data failure that leaves the README editable.
+      const broken =
+        summary.error.code === 'INVALID_RESULTS' || summary.error.code === 'RESULTS_NOT_FOUND'
+      return { markdown, source: broken ? 'diagnostic' : 'yaml', diagnostics }
+    }
+    return { markdown, source: 'yaml', diagnostics }
+  }
+  const description = experiment.documents?.description
+  if (!description?.exists || description.data === null) {
+    if (!description?.exists) {
+      diagnostics.push(
+        diag(
+          'MISSING_MANAGED_DOCUMENT',
+          'error',
+          EXPERIMENT_DESCRIPTION_FILE,
+          `${EXPERIMENT_DESCRIPTION_FILE} is missing`,
+        ),
+      )
+      if (experiment.documents?.results.exists)
+        diagnostics.push(parseIssueToDiagnostic('results', legacyResultsIssue()))
+    } else {
+      diagnostics.push(...description.parseErrors.map(descriptionIssueToDiagnostic))
+    }
+    return {
+      markdown: `${diagnostics.map(renderDiagnosticCallout).join('\n\n')}\n`,
+      source: 'diagnostic',
+      diagnostics,
+    }
+  }
+  const notice = diag(
+    'RESULTS_SUMMARY_NOT_LOADED',
+    'info',
+    EXPERIMENT_DESCRIPTION_FILE,
+    'the Results table is generated from the member Runs’ result files; read it with `memon experiment results table`',
+  )
+  return {
+    markdown:
+      '_The Results table is generated from the member Runs’ result.csv files and was not loaded here._\n',
+    source: 'yaml',
+    diagnostics: [...diagnostics, notice],
+  }
+}
+
+function descriptionIssueToDiagnostic(issue: ParseIssue): ExperimentDocumentDiagnostic {
+  const prefix = issue.message.match(/^([A-Z][A-Z0-9_]+):/)?.[1]
+  return {
+    code: prefix ?? 'MANAGED_DOCUMENT_PARSE_ISSUE',
+    severity: issue.severity === 'warning' ? 'warning' : issue.severity,
+    file: EXPERIMENT_DESCRIPTION_FILE,
+    ...(issue.field === undefined ? {} : { field: issue.field }),
+    message: issue.message,
+  }
+}
+
+/** Schema + cross-reference validation of the managed sources (FS v9). */
 export function validateExperimentManagedDocuments(
   documents: ExperimentManagedDocuments | null,
 ): ExperimentDocumentDiagnostic[] {
@@ -685,21 +858,37 @@ export function validateExperimentManagedDocuments(
     return MANAGED_EXPERIMENT_SECTIONS.map((kind) => ({
       code: 'MISSING_MANAGED_DOCUMENT',
       severity: 'error' as const,
-      file: MANAGED_DOCUMENT_FILE_NAMES[kind],
-      message: `${MANAGED_DOCUMENT_FILE_NAMES[kind]} is missing`,
+      file: MANAGED_SOURCE_FILE_NAMES[kind],
+      message: `${MANAGED_SOURCE_FILE_NAMES[kind]} is missing`,
     }))
   }
 
   const diagnostics: ExperimentDocumentDiagnostic[] = []
-  for (const kind of MANAGED_EXPERIMENT_SECTIONS) {
+  for (const kind of ['implementation', 'investigation'] as const) {
     const parsed = documents[kind]
     diagnostics.push(...parsed.parseErrors.map((issue) => parseIssueToDiagnostic(kind, issue)))
     diagnostics.push(...parsed.parseWarnings.map((issue) => parseIssueToDiagnostic(kind, issue)))
   }
+  const description = documents.description
+  if (!description?.exists) {
+    diagnostics.push(
+      diag(
+        'MISSING_MANAGED_DOCUMENT',
+        'error',
+        EXPERIMENT_DESCRIPTION_FILE,
+        `${EXPERIMENT_DESCRIPTION_FILE} is missing`,
+      ),
+    )
+  } else {
+    diagnostics.push(...description.parseErrors.map(descriptionIssueToDiagnostic))
+    diagnostics.push(...description.parseWarnings.map(descriptionIssueToDiagnostic))
+  }
+  if (documents.results.exists)
+    diagnostics.push(parseIssueToDiagnostic('results', legacyResultsIssue()))
   const implementation = documents.implementation.data
   const investigation = documents.investigation.data
-  const results = documents.results.data
-  if (!implementation || !investigation || !results) return diagnostics
+  const results = description?.data ?? null
+  if (!implementation || !investigation) return diagnostics
 
   const implItems = flattenImplementation(implementation.items)
   const invItems = flattenInvestigation(investigation.items)
@@ -718,16 +907,6 @@ export function validateExperimentManagedDocuments(
       )
     }
     allItemIds.add(item.id)
-  }
-
-  const variantIds = new Set<string>()
-  for (const variant of results.variants) {
-    if (variantIds.has(variant.id)) {
-      diagnostics.push(
-        diag('DUPLICATE_VARIANT_ID', 'error', 'results.yaml', `duplicate Variant id ${variant.id}`),
-      )
-    }
-    variantIds.add(variant.id)
   }
 
   const dependencies = new Map<string, string[]>()
@@ -760,6 +939,8 @@ export function validateExperimentManagedDocuments(
   }
   diagnostics.push(...detectDependencyCycles(dependencies))
 
+  if (!results) return diagnostics
+  const variantIds = new Set(results.variants.map((variant) => variant.id))
   for (const item of invItems) {
     for (const variantId of item.variantIds) {
       if (!variantIds.has(variantId)) {
@@ -775,36 +956,7 @@ export function validateExperimentManagedDocuments(
       }
     }
   }
-
-  const columns = new Map<string, ResultColumn>()
-  for (const column of results.columns) {
-    if (columns.has(column.key)) {
-      diagnostics.push(
-        diag(
-          'DUPLICATE_RESULT_COLUMN',
-          'error',
-          'results.yaml',
-          `duplicate Results column key ${column.key}`,
-          `columns.${column.key}`,
-        ),
-      )
-    }
-    columns.set(column.key, column)
-    if (column.options && new Set(column.options.map(optionKey)).size !== column.options.length) {
-      diagnostics.push(
-        diag(
-          'DUPLICATE_ENUM_OPTION',
-          'error',
-          'results.yaml',
-          `column ${column.key} contains duplicate enum options`,
-          `columns.${column.key}.options`,
-        ),
-      )
-    }
-  }
-  for (const variant of results.variants) {
-    validateVariant(variant, columns, diagnostics)
-  }
+  diagnostics.push(...lintExperimentDescription(results, { file: EXPERIMENT_DESCRIPTION_FILE }))
   return diagnostics
 }
 
@@ -814,9 +966,17 @@ export interface LintExperimentDocumentOptions {
    * match are reported as the lint-level notice `RUN_OUTSIDE_RUN_DIRS`.
    */
   runDirs?: readonly string[]
+  /**
+   * Parsed `result.csv` of declared members (absent files omitted), as read by
+   * `lintExperimentBundle`. When given they are checked for version
+   * agreement, duplicate pairs, declared types and cross-file conflicts.
+   */
+  resultFiles?: ReadonlyArray<{ run: string; parsed: ParsedResultFile }>
+  /** `RESULT_FILE_IGNORED` warnings of existing member result files. */
+  ignoredResultFiles?: readonly ResultsDiagnostic[]
 }
 
-/** Strict v6 lint. Parsing remains tolerant; lint diagnostics never hide data. */
+/** Strict v6 lint (FS v9 Results sources). Parsing remains tolerant; lint never hides data. */
 export function lintExperimentDocument(
   experiment: Experiment,
   options: LintExperimentDocumentOptions = {},
@@ -876,55 +1036,19 @@ export function lintExperimentDocument(
       )
     }
   }
-  const results = experiment.documents?.results.data
-  if (results) {
-    const experimentRuns = new Set(experiment.frontMatter.runs)
-    const assignments = new Map<string, { variantId: string; bucket: 'runs' | 'attempts' }>()
-    for (const variant of results.variants) {
-      for (const bucket of ['runs', 'attempts'] as const) {
-        for (const run of variant[bucket]) {
-          if (!experimentRuns.has(run)) {
-            diagnostics.push(
-              diag(
-                'VARIANT_RUN_NOT_EXPERIMENT_MEMBER',
-                'error',
-                'results.yaml',
-                `${variant.id}.${bucket} references ${run}, which is absent from Experiment frontmatter runs`,
-                `${variant.id}.${bucket}`,
-              ),
-            )
-          }
-          const previous = assignments.get(run)
-          if (previous) {
-            diagnostics.push(
-              diag(
-                'RUN_ASSIGNED_TO_MULTIPLE_VARIANTS',
-                'error',
-                'results.yaml',
-                `${run} is assigned to both ${previous.variantId}.${previous.bucket} and ${variant.id}.${bucket}`,
-                `${variant.id}.${bucket}`,
-              ),
-            )
-          } else {
-            assignments.set(run, { variantId: variant.id, bucket })
-          }
-        }
-      }
-    }
-    for (const run of experiment.frontMatter.runs) {
-      if (!assignments.has(run)) {
-        diagnostics.push(
-          diag(
-            'UNASSIGNED_EXPERIMENT_RUN',
-            'error',
-            'results.yaml',
-            `Experiment member Run ${run} is not assigned to any Variant runs/attempts list`,
-            'variants',
-          ),
-        )
-      }
-    }
+  const description = experiment.documents?.description?.data
+  if (description) {
+    diagnostics.push(
+      ...lintVariantMembership(
+        description,
+        experiment.frontMatter.runs,
+        EXPERIMENT_DESCRIPTION_FILE,
+      ),
+    )
+    if (options.resultFiles)
+      diagnostics.push(...lintMemberResultFiles(description, options.resultFiles, experiment.id))
   }
+  diagnostics.push(...(options.ignoredResultFiles ?? []))
   const counts = new Map<string, number>()
   for (const section of experiment.rawSections ?? []) {
     counts.set(section.heading, (counts.get(section.heading) ?? 0) + 1)
@@ -986,12 +1110,13 @@ export function lintExperimentDocument(
     const heading = MANAGED_SECTION_HEADINGS[kind]
     const entries = (experiment.rawSections ?? []).filter((section) => section.heading === heading)
     if (entries.length === 1 && !entries[0]!.pointerValid) {
+      const legacy = kind === 'results' && entries[0]!.body.trim() === LEGACY_RESULTS_POINTER
       diagnostics.push(
         diag(
           'MANAGED_SECTION_NOT_STUB',
           'error',
           'README.md',
-          `"## ${heading}" must contain exactly: ${MANAGED_SECTION_POINTERS[kind]}`,
+          `"## ${heading}" must contain exactly: ${MANAGED_SECTION_POINTERS[kind]}${legacy ? ' (found the FS v8 results.yaml pointer; the v8 -> v9 migration rewrites it)' : ''}`,
           `section.${heading}`,
         ),
       )
@@ -1011,80 +1136,36 @@ export function lintExperimentDocument(
   return diagnostics
 }
 
-function validateVariant(
-  variant: ResultVariant,
-  columns: Map<string, ResultColumn>,
-  diagnostics: ExperimentDocumentDiagnostic[],
-): void {
-  const seenRuns = new Set<string>()
-  for (const run of variant.runs) {
-    if (seenRuns.has(run))
+/** Lint the member result files of one Experiment against its description file. */
+function lintMemberResultFiles(
+  description: NonNullable<ParsedExperimentDescription['data']>,
+  files: ReadonlyArray<{ run: string; parsed: ParsedResultFile }>,
+  experimentId: string,
+): ExperimentDocumentDiagnostic[] {
+  const diagnostics: ExperimentDocumentDiagnostic[] = []
+  const columns = new Map(description.columns.map((column) => [column.path, column]))
+  const version = description.experimentSchemaVersion
+  for (const { parsed } of files) {
+    diagnostics.push(...parsed.diagnostics)
+    if (parsed.ok && parsed.schemaVersion !== null && parsed.schemaVersion !== version)
       diagnostics.push(
         diag(
-          'DUPLICATE_RUN_REF',
+          'RESULT_SCHEMA_MISMATCH',
           'error',
-          'results.yaml',
-          `${variant.id} lists run ${run} more than once`,
-          variant.id,
+          parsed.file,
+          `records experiment_schema_version ${parsed.schemaVersion}, the description file is at ${version}; run \`${schemaUpgradeCommand(experimentId, version)}\``,
         ),
       )
-    seenRuns.add(run)
+    if (parsed.ok) diagnostics.push(...checkResultFileTypes(parsed, columns))
   }
-  for (const run of variant.attempts) {
-    if (seenRuns.has(run))
-      diagnostics.push(
-        diag(
-          'RUN_ATTEMPT_OVERLAP',
-          'error',
-          'results.yaml',
-          `${variant.id} lists ${run} in both runs and attempts`,
-          variant.id,
-        ),
-      )
-    seenRuns.add(run)
-  }
-  for (const [group, values] of [
-    ['parameter', variant.parameters],
-    ['metric', variant.metrics],
-  ] as const) {
-    for (const [key, value] of Object.entries(values)) {
-      const column = columns.get(key)
-      if (!column) {
-        diagnostics.push(
-          diag(
-            'UNKNOWN_RESULT_COLUMN',
-            'error',
-            'results.yaml',
-            `${variant.id} uses undeclared ${group} column ${key}`,
-            `${variant.id}.${key}`,
-          ),
-        )
-        continue
-      }
-      if (column.group !== group) {
-        diagnostics.push(
-          diag(
-            'RESULT_COLUMN_GROUP_MISMATCH',
-            'error',
-            'results.yaml',
-            `${variant.id}.${key} is stored under ${group}s but column group is ${column.group}`,
-            `${variant.id}.${key}`,
-          ),
-        )
-      }
-      if (!matchesColumnType(value, column)) {
-        diagnostics.push(
-          diag(
-            'RESULT_VALUE_TYPE_MISMATCH',
-            'error',
-            'results.yaml',
-            `${variant.id}.${key} does not match column type ${column.type}`,
-            `${variant.id}.${key}`,
-          ),
-        )
-      }
-    }
-  }
+  diagnostics.push(
+    ...checkResultFilesConsistency(
+      files
+        .filter((file) => file.parsed.ok)
+        .map((file) => ({ file: file.parsed.file, parsed: file.parsed })),
+    ),
+  )
+  return diagnostics
 }
 
 function validateImplementationParentStates(
@@ -1131,12 +1212,6 @@ function validateInvestigationParentStates(
     }
     validateInvestigationParentStates(item.children, diagnostics)
   }
-}
-
-function matchesColumnType(value: ResultScalar, column: ResultColumn): boolean {
-  if (value === null) return true
-  if (column.type === 'enum') return (column.options ?? []).some((option) => option === value)
-  return typeof value === column.type
 }
 
 function detectDependencyCycles(graph: Map<string, string[]>): ExperimentDocumentDiagnostic[] {
@@ -1645,10 +1720,6 @@ function diag(
   field?: string,
 ): ExperimentDocumentDiagnostic {
   return { code, severity, file, message, ...(field === undefined ? {} : { field }) }
-}
-
-function optionKey(value: string | number | boolean): string {
-  return `${typeof value}:${String(value)}`
 }
 
 function omit(value: Record<string, unknown>, keys: string[]): Record<string, unknown> {

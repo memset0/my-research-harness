@@ -302,8 +302,9 @@ export function runLastChangedAtMs(run: Run): number | null {
   return mtime > 0 ? mtime : null
 }
 
+/** FS v9: a Variant source resolves only when the description file declares it. */
 function experimentHasVariant(experiment: Experiment, variantId: string): boolean {
-  const variants = experiment.documents?.results.data?.variants
+  const variants = experiment.documents?.description?.data?.variants
   if (!variants) return false
   return variants.some((variant) => variant.id === variantId)
 }

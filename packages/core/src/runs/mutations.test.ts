@@ -185,9 +185,10 @@ describe('renameRun', () => {
     expect(readme).toContain('id: renamed-260901-120000')
     const experiment = await fs.readFile(created.readmePath, 'utf8')
     expect(experiment).toContain('logs/renamed-260901-120000')
-    const results = await fs.readFile(join(created.directory, 'results.yaml'), 'utf8')
-    expect(results).toContain('logs/renamed-260901-120000')
-    expect(results).not.toContain('logs/probe-260901-120000')
+    const description = JSON.parse(
+      await fs.readFile(join(created.directory, 'experiment.json'), 'utf8'),
+    )
+    expect(description.variants[0].runs).toEqual(['logs/renamed-260901-120000'])
   })
 
   it('rejects timestamp tails and dir-name clashes, no-ops on the same slug', async () => {

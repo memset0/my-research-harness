@@ -1,0 +1,18 @@
+{
+  "experiment_schema_version": 1,
+  "groups": {},
+  "columns": [],
+  "variants": [
+    {
+      "id": "V0001",
+      "name": "Imported probe",
+      "description": "Imported from an existing Run by `memon experiment create --from-run`; refine the Variant definition before launching another comparison.",
+      "provenance": {
+        "entry": "scripts/probe.sh"
+      },
+      "runs": [
+        "logs/probe-260901-120000"
+      ]
+    }
+  ]
+}

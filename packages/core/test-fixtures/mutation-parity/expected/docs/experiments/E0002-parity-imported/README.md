@@ -22,7 +22,7 @@ updated_at: "{{NOW}}"
 > Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
 
 ## Results
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
+> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.
 
 ## Findings
 

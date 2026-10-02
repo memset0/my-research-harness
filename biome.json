@@ -16,7 +16,8 @@
       "!**/coverage",
       "!apps/web/components/ui",
       "!**/*.generated.ts",
-      "!**/*.generated.tsx"
+      "!**/*.generated.tsx",
+      "!packages/core/test-fixtures/mutation-parity/expected"
     ]
   },
   "formatter": {

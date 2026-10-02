@@ -178,7 +178,6 @@ export {
   createExperiment,
   deleteExperiment,
   IMPORTED_VARIANT_DESCRIPTION,
-  importedVariantStatus,
   linkExperimentRun,
   MutationError,
   mutateDocumentWarning,

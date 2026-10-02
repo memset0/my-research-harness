@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Experiment, ResultVariant, Run } from '../types.js'
+import type { Experiment, Run } from '../types.js'
 import {
   collectWikiSourceReferences,
   resolveWikiSources,
@@ -72,14 +72,11 @@ function makeExperiment(
   updatedAt: string,
   options: { runs?: string[]; variants?: string[] } = {},
 ): Experiment {
-  const variants: ResultVariant[] = (options.variants ?? []).map((variantId) => ({
+  const variants = (options.variants ?? []).map((variantId) => ({
     id: variantId,
     name: variantId,
-    status: 'COMPLETED',
-    parameters: {},
-    metrics: {},
+    values: {},
     runs: [],
-    attempts: [],
   }))
   return {
     id,
@@ -133,9 +130,18 @@ function makeExperiment(
         kind: 'results',
         fileName: 'results.yaml',
         path: '',
+        exists: false,
+        raw: null,
+        data: null,
+        parseErrors: [],
+        parseWarnings: [],
+      },
+      description: {
+        fileName: 'experiment.json',
+        path: '',
         exists: true,
         raw: null,
-        data: { schemaVersion: 1, columns: [], variants },
+        data: { experimentSchemaVersion: 1, groups: {}, columns: [], variants },
         parseErrors: [],
         parseWarnings: [],
       },

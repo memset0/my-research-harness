@@ -35,7 +35,7 @@ updated_at: '2026-08-10T00:00:00+00:00'
 > Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
 
 ## Results
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
+> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.
 
 ## Findings
 
@@ -59,8 +59,8 @@ describe('v6 Experiment bundle mtimes', () => {
       fs.writeFile(join(directory, 'implementation.yaml'), 'schema_version: 1\nitems: []\n'),
       fs.writeFile(join(directory, 'investigation.yaml'), 'schema_version: 1\nitems: []\n'),
       fs.writeFile(
-        join(directory, 'results.yaml'),
-        'schema_version: 1\ncolumns: []\nvariants: []\n',
+        join(directory, 'experiment.json'),
+        '{"experiment_schema_version": 1, "groups": {}, "columns": [], "variants": []}\n',
       ),
     ])
   })
@@ -69,11 +69,11 @@ describe('v6 Experiment bundle mtimes', () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  it('updates aggregate mtime for a YAML edit without changing readmeMtime', async () => {
+  it('updates aggregate mtime for a description edit without changing readmeMtime', async () => {
     const readmeTime = new Date('2026-08-10T00:00:00.000Z')
     const initialYamlTime = new Date('2026-08-10T00:01:00.000Z')
     await fs.utimes(join(directory, 'README.md'), readmeTime, readmeTime)
-    for (const file of ['implementation.yaml', 'investigation.yaml', 'results.yaml']) {
+    for (const file of ['implementation.yaml', 'investigation.yaml', 'experiment.json']) {
       await fs.utimes(join(directory, file), initialYamlTime, initialYamlTime)
     }
 
@@ -83,10 +83,14 @@ describe('v6 Experiment bundle mtimes', () => {
 
     const laterYamlTime = new Date('2026-08-10T00:02:00.000Z')
     await fs.writeFile(
-      join(directory, 'results.yaml'),
-      'schema_version: 1\ncolumns: []\nvariants: []\n# updated\n',
+      join(directory, 'experiment.json'),
+      '{"experiment_schema_version": 1, "groups": {}, "columns": [], "variants": [], "note": 1}\n',
     )
-    await fs.utimes(join(directory, 'results.yaml'), laterYamlTime, laterYamlTime)
+    await fs.utimes(join(directory, 'experiment.json'), laterYamlTime, laterYamlTime)
+    // A leftover results.yaml is not part of the FS v9 bundle activity.
+    await fs.writeFile(join(directory, 'results.yaml'), 'schema_version: 1\n')
+    const muchLater = new Date('2026-08-11T00:00:00.000Z')
+    await fs.utimes(join(directory, 'results.yaml'), muchLater, muchLater)
 
     const after = await readExperimentDoc(root, 'test', EXPERIMENT_ID)
     expect(after).not.toBeNull()

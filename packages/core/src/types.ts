@@ -4,6 +4,8 @@
 // YAML on disk uses snake_case; we convert to camelCase at the parse boundary
 // so internal code is idiomatic TypeScript.
 
+import type { ParsedExperimentDescription } from './results/description.js'
+
 export type Status = 'PENDING' | 'RUNNING' | 'FINISHED' | 'INTERRUPTED' | 'FAILED' | 'UNKNOWN'
 
 export const STATUS_VALUES: readonly Status[] = [
@@ -504,7 +506,13 @@ export interface ParsedManagedDocument<T extends ExperimentManagedDocument> {
 export interface ExperimentManagedDocuments {
   implementation: ParsedManagedDocument<ImplementationDocument>
   investigation: ParsedManagedDocument<InvestigationDocument>
+  /**
+   * @deprecated FS v8 `results.yaml`. FS v9 readers never parse it: only its
+   * presence is reported (`exists`, `LEGACY_RESULTS_YAML`); `data` stays null.
+   */
   results: ParsedManagedDocument<ResultsDocument>
+  /** FS v9 description file `experiment.json` (the Results source). */
+  description?: ParsedExperimentDescription
 }
 
 /** Warning row attributed to a specific run, or null for exp-scoped warnings. */

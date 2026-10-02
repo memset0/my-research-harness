@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { BackendResultsDocumentSchema } from '../backend-protocol.js'
+import { parseExperimentDescription } from '../results/description.js'
+import { parseResultFile } from '../results/result-file.js'
+import { generateResultsSummary } from '../results/summary.js'
+import type { ParsedManagedDocument, ResultsDocument } from '../types.js'
 import { VARIANT_STATUS_VALUES } from '../types.js'
 import {
+  LEGACY_RESULTS_POINTER,
   lintExperimentDocument,
   MANAGED_SECTION_POINTERS,
   parseImplementationYaml,
@@ -118,14 +123,88 @@ variants:
     attempts: [foo-260810-000000]
 `)
 
-function experiment(readme = canonicalReadme()) {
+/** FS v9: `results.yaml` is never read; only its presence is reported. */
+function legacyResults(exists = false): ParsedManagedDocument<ResultsDocument> {
+  return {
+    kind: 'results',
+    fileName: 'results.yaml',
+    path: '/tmp/E0001-foo/results.yaml',
+    exists,
+    raw: null,
+    data: null,
+    parseErrors: exists ? [{ severity: 'error', message: 'LEGACY_RESULTS_YAML: retired' }] : [],
+    parseWarnings: [],
+  }
+}
+
+const DESCRIPTION = {
+  experiment_schema_version: 1,
+  columns: [
+    {
+      path: 'params.precision',
+      label: 'Precision',
+      type: 'enum',
+      options: ['fp32', 'bf16', 'fp8'],
+      description: 'Controls **numeric precision** during training.',
+      value_descriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
+    },
+    { path: 'metrics.final_loss', label: 'Final loss', type: 'number' },
+  ],
+  variants: [
+    {
+      id: 'V0001',
+      name: 'BF16',
+      values: { 'params.precision': 'bf16' },
+      runs: ['logs/foo-260810-010000', 'logs/foo-260810-000000'],
+    },
+  ],
+}
+
+const description = (value: unknown = DESCRIPTION) =>
+  parseExperimentDescription(JSON.stringify(value), 'experiment.json')
+
+function experiment(readme = canonicalReadme(), value: unknown = DESCRIPTION) {
   const parsed = parseExperimentReadme(readme, 'E0001-foo')
   return buildExperimentRecord(parsed, {
     id: 'E0001-foo',
     project: 'p',
     path: '/tmp/E0001-foo/README.md',
     mtime: 1,
-    documents: { implementation, investigation, results },
+    documents: {
+      implementation,
+      investigation,
+      results: legacyResults(),
+      description: description(value),
+    },
+  })
+}
+
+const MEMBERS_README = canonicalReadme().replace(
+  'runs: []',
+  'runs: [logs/foo-260810-010000, logs/foo-260810-000000]',
+)
+
+function summaryOf(value: unknown = DESCRIPTION) {
+  return generateResultsSummary({
+    experimentId: 'E0001-foo',
+    experimentDir: 'docs/experiments/E0001-foo',
+    description: description(value),
+    members: [
+      {
+        path: 'logs/foo-260810-010000',
+        record: { status: 'FINISHED', deprecated: false, stop_reason: null },
+        result: 'path,stat,value\n$experiment_schema_version,,1\nmetrics.final_loss,,2.5\n',
+      },
+      {
+        path: 'logs/foo-260810-000000',
+        record: { status: 'FAILED', deprecated: false, stop_reason: null },
+        result: null,
+      },
+    ],
+    inputs: {},
+    newestInputMtime: null,
+    generatedAt: '2026-10-02T12:00:00+08:00',
+    generator: { release: '9.0.0', role: 'cli' },
   })
 }
 
@@ -141,9 +220,14 @@ describe('v6 managed Experiment YAML', () => {
 
   it('requires enum options but does not require every option to appear in rows', () => {
     expect(results.parseErrors).toEqual([])
-    expect(validateExperimentManagedDocuments({ implementation, investigation, results })).toEqual(
-      [],
-    )
+    expect(
+      validateExperimentManagedDocuments({
+        implementation,
+        investigation,
+        results: legacyResults(),
+        description: description(),
+      }),
+    ).toEqual([])
 
     const invalid = parseResultsYaml(`
 schema_version: 1
@@ -188,7 +272,19 @@ variants: []
       validateExperimentManagedDocuments({
         implementation: parseImplementationYaml('schema_version: 1\nitems: []\n'),
         investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
-        results: futureValue,
+        results: legacyResults(),
+        description: description({
+          experiment_schema_version: 1,
+          columns: [
+            {
+              path: 'params.precision',
+              label: 'Precision',
+              type: 'enum',
+              options: ['fp32', 'bf16'],
+              value_descriptions: { fp4: 'Planned **future** format.' },
+            },
+          ],
+        }),
       }),
     ).toEqual([])
   })
@@ -255,7 +351,8 @@ items:
     const diagnostics = validateExperimentManagedDocuments({
       implementation: conflicting,
       investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
-      results: parseResultsYaml('schema_version: 1\ncolumns: []\nvariants: []\n'),
+      results: legacyResults(),
+      description: description({ experiment_schema_version: 1 }),
     })
     expect(diagnostics).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'PARENT_STATUS_CONFLICT' })]),
@@ -276,10 +373,11 @@ items:
     expect(markdown).not.toContain('[`foo-260810-000000`](')
   })
 
-  it('optionally links accepted Runs and Attempts to memon documents and W&B', () => {
-    const rendered = renderExperimentManagedSection(experiment(), 'results', {
+  it('optionally links evidence and other Runs to memon documents and W&B', () => {
+    const rendered = renderExperimentManagedSection(experiment(MEMBERS_README), 'results', {
+      summary: summaryOf(),
       runs: {
-        'foo-260810-010000': {
+        'logs/foo-260810-010000': {
           documentUrl: '/p/demo/r/foo(accepted)',
           wandbUrl: 'https://wandb.ai/acme/project/runs/accepted run',
         },
@@ -289,12 +387,12 @@ items:
         },
       },
     })
-
+    expect(rendered.source).toBe('yaml')
     expect(rendered.markdown).toContain(
-      '[`foo-260810-010000`](/p/demo/r/foo%28accepted%29) · [W&B](https://wandb.ai/acme/project/runs/accepted%20run)',
+      '[`logs/foo-260810-010000`](/p/demo/r/foo(accepted)) · [W&B](https://wandb.ai/acme/project/runs/accepted run)',
     )
     expect(rendered.markdown).toContain(
-      '[`foo-260810-000000`](/p/demo/r/foo-attempt) · [W&B](https://wandb.ai/acme/project/runs/attempt)',
+      '[`logs/foo-260810-000000`](/p/demo/r/foo-attempt) · [W&B](https://wandb.ai/acme/project/runs/attempt) `FAILED`',
     )
   })
 
@@ -334,25 +432,6 @@ variants:
     expect(markdown).toContain('`src/fallback.py`')
     expect(markdown).not.toContain('[`src/fallback.py`](')
   })
-
-  it('rejects overlap between accepted Runs and Attempts', () => {
-    const overlap = parseResultsYaml(`
-schema_version: 1
-columns: []
-variants:
-  - id: V0001
-    name: baseline
-    status: FAILED
-    runs: [foo-260810-010000]
-    attempts: [foo-260810-010000]
-`)
-    const diagnostics = validateExperimentManagedDocuments({
-      implementation,
-      investigation,
-      results: overlap,
-    })
-    expect(diagnostics.some((diagnostic) => diagnostic.code === 'RUN_ATTEMPT_OVERLAP')).toBe(true)
-  })
 })
 
 describe('v6 README tolerant read and strict lint', () => {
@@ -380,10 +459,63 @@ describe('v6 README tolerant read and strict lint', () => {
     )
   })
 
-  it('uses YAML only when a managed section is the exact one-line pointer', () => {
-    const rendered = renderExperimentManagedSection(experiment(), 'results')
+  it('projects the Results summary only when the section is the exact one-line pointer', () => {
+    const rendered = renderExperimentManagedSection(experiment(MEMBERS_README), 'results', {
+      summary: summaryOf(),
+    })
     expect(rendered.source).toBe('yaml')
     expect(rendered.markdown).toContain('| Variant |')
+    expect(rendered.markdown).toContain('| **V0001** BF16 | `COMPLETED` | bf16 | 2.5 |')
+    const unloaded = renderExperimentManagedSection(experiment(MEMBERS_README), 'results')
+    expect(unloaded.source).toBe('yaml')
+    expect(unloaded.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      'RESULTS_SUMMARY_NOT_LOADED',
+    ])
+    const legacy = experiment(canonicalReadme({ results: LEGACY_RESULTS_POINTER }))
+    expect(renderExperimentManagedSection(legacy, 'results', { summary: summaryOf() }).source).toBe(
+      'readme',
+    )
+    expect(
+      lintExperimentDocument(legacy).find(
+        (diagnostic) => diagnostic.code === 'MANAGED_SECTION_NOT_STUB',
+      )?.message,
+    ).toContain('FS v8 results.yaml pointer')
+  })
+
+  it('renders a failed summary as its error instead of a table', () => {
+    const failed = generateResultsSummary({
+      experimentId: 'E0001-foo',
+      experimentDir: 'docs/experiments/E0001-foo',
+      description: description({ ...DESCRIPTION, experiment_schema_version: 2 }),
+      members: [
+        {
+          path: 'logs/foo-260810-010000',
+          record: { status: 'FINISHED', deprecated: false, stop_reason: null },
+          result: 'path,stat,value\n$experiment_schema_version,,1\n',
+        },
+      ],
+      inputs: {},
+      newestInputMtime: null,
+      generatedAt: '2026-10-02T12:00:00+08:00',
+      generator: { release: '9.0.0', role: 'cli' },
+    })
+    const rendered = renderExperimentManagedSection(experiment(MEMBERS_README), 'results', {
+      summary: failed,
+    })
+    // A Results-data failure keeps the section a projection: the README stays editable.
+    expect(rendered.source).toBe('yaml')
+    expect(rendered.diagnostics[0]).toMatchObject({ code: 'RESULT_SCHEMA_MISMATCH' })
+    expect(rendered.markdown).toContain('memon experiment schema upgrade E0001-foo --to 2')
+    expect(rendered.markdown).not.toContain('| Variant |')
+  })
+
+  it('CLI and Web views project the same Results Markdown', () => {
+    const exp = experiment(MEMBERS_README)
+    const context = { summary: summaryOf() }
+    const view = buildExperimentDocumentView(exp, context)
+    const section = view.sections.find((candidate) => candidate.heading === 'Results')!
+    expect(section.source).toBe('yaml')
+    expect(section.body).toBe(renderExperimentManagedSection(exp, 'results', context).markdown)
   })
 
   it('renders conflicting README content rather than hiding it behind YAML', () => {
@@ -425,45 +557,37 @@ describe('v6 README tolerant read and strict lint', () => {
   it('requires every Experiment Run to be assigned to exactly one Variant', () => {
     const readme = canonicalReadme().replace(
       'runs: []',
-      'runs: [foo-260810-010000, orphan-260810-020000]',
+      'runs: [logs/foo-260810-010000, logs/orphan-260810-020000]',
     )
-    const duplicateResults = parseResultsYaml(`
-schema_version: 1
-columns: []
-variants:
-  - id: V0001
-    name: one
-    status: COMPLETED
-    runs: [foo-260810-010000]
-    attempts: []
-  - id: V0002
-    name: two
-    status: FAILED
-    runs: []
-    attempts: [foo-260810-010000, foreign-260810-030000]
-`)
-    const exp = experiment(readme)
-    exp.documents = { implementation, investigation, results: duplicateResults }
+    const exp = experiment(readme, {
+      experiment_schema_version: 1,
+      variants: [
+        { id: 'V0001', name: 'one', runs: ['logs/foo-260810-010000'] },
+        {
+          id: 'V0002',
+          name: 'two',
+          runs: ['logs/foo-260810-010000', 'logs/foreign-260810-030000'],
+        },
+      ],
+    })
     const codes = lintExperimentDocument(exp).map((diagnostic) => diagnostic.code)
     expect(codes).toContain('RUN_ASSIGNED_TO_MULTIPLE_VARIANTS')
     expect(codes).toContain('VARIANT_RUN_NOT_EXPERIMENT_MEMBER')
     expect(codes).toContain('UNASSIGNED_EXPERIMENT_RUN')
   })
 
-  it('keeps same-basename Runs under different paths distinct in results', () => {
+  it('keeps same-basename Runs under different paths distinct in Variant runs', () => {
     const readme = canonicalReadme().replace('runs: []', 'runs: [logs/a/dup-260810-010000]')
-    const results = parseResultsYaml(`
-schema_version: 1
-columns: []
-variants:
-  - id: V0001
-    name: declared
-    status: COMPLETED
-    runs: [logs/a/dup-260810-010000]
-    attempts: [outputs/b/dup-260810-010000, dup-260810-010000]
-`)
-    const exp = experiment(readme)
-    exp.documents = { implementation, investigation, results }
+    const exp = experiment(readme, {
+      experiment_schema_version: 1,
+      variants: [
+        {
+          id: 'V0001',
+          name: 'declared',
+          runs: ['logs/a/dup-260810-010000', 'outputs/b/dup-260810-010000', 'dup-260810-010000'],
+        },
+      ],
+    })
     const members = lintExperimentDocument(exp).filter(
       (diagnostic) => diagnostic.code === 'VARIANT_RUN_NOT_EXPERIMENT_MEMBER',
     )
@@ -492,23 +616,58 @@ variants:
   })
 
   it('allows a planned Variant with zero Runs', () => {
-    const planned = parseResultsYaml(`
-schema_version: 1
-columns: []
-variants:
-  - id: V0001
-    name: planned
-    status: PLANNED
-    runs: []
-    attempts: []
-`)
-    const exp = experiment()
-    exp.documents = {
-      implementation,
-      investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
-      results: planned,
-    }
+    const exp = experiment(canonicalReadme(), {
+      experiment_schema_version: 1,
+      variants: [{ id: 'V0001', name: 'planned', status: 'PLANNED', runs: [] }],
+    })
+    exp.documents!.investigation = parseInvestigationYaml('schema_version: 1\nitems: []\n')
     expect(lintExperimentDocument(exp)).toEqual([])
+  })
+
+  it('reports a missing description file, a leftover results.yaml and README duplicates', () => {
+    const missing = experiment()
+    missing.documents!.description = undefined
+    missing.documents!.results = legacyResults(true)
+    const codes = lintExperimentDocument(missing).map((diagnostic) => diagnostic.code)
+    expect(codes).toContain('MISSING_MANAGED_DOCUMENT')
+    expect(codes).toContain('LEGACY_RESULTS_YAML')
+    const duplicated = experiment(canonicalReadme(), {
+      experiment_schema_version: 1,
+      status: 'OPEN',
+      variants: [{ id: 'V0001', name: 'x', status: 'COMPLETED', runs: [] }],
+    })
+    duplicated.documents!.investigation = parseInvestigationYaml('schema_version: 1\nitems: []\n')
+    expect(lintExperimentDocument(duplicated).map((diagnostic) => diagnostic.code)).toEqual([
+      'DESCRIPTION_DUPLICATES_README',
+      'DERIVED_STATUS_DECLARED',
+    ])
+  })
+
+  it('lints member result files against the description file', () => {
+    const exp = experiment(MEMBERS_README)
+    const file = (run: string, content: string) => ({
+      run,
+      parsed: parseResultFile(content, `${run}/result.csv`),
+    })
+    const diagnostics = lintExperimentDocument(exp, {
+      resultFiles: [
+        file(
+          'logs/foo-260810-010000',
+          'path,stat,value\n$experiment_schema_version,,1\nparams.precision,,fp4\nmetrics.final_loss,,2.5\n',
+        ),
+        file(
+          'logs/foo-260810-000000',
+          'path,stat,value\n$experiment_schema_version,,2\nmetrics.x,mean,1\n',
+        ),
+      ],
+    })
+    expect(
+      diagnostics.map((diagnostic) => [diagnostic.code, diagnostic.file, diagnostic.line]),
+    ).toEqual([
+      ['RESULT_VALUE_TYPE_MISMATCH', 'logs/foo-260810-010000/result.csv', 3],
+      ['RESULT_SCHEMA_MISMATCH', 'logs/foo-260810-000000/result.csv', undefined],
+    ])
+    expect(diagnostics[1]!.message).toContain('memon experiment schema upgrade E0001-foo --to 1')
   })
 })
 
@@ -544,15 +703,36 @@ describe('Variant status vocabulary', () => {
     expect(blocked.parseErrors).toEqual([])
     expect(blocked.parseWarnings).toEqual([])
     expect(blocked.data?.variants[0]?.status).toBe('BLOCKED')
-
-    const exp = experiment()
-    exp.documents = {
-      implementation,
-      investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
-      results: blocked,
-    }
-    expect(lintExperimentDocument(exp)).toEqual([])
     expect(renderResultsMarkdown(blocked.data!)).toContain('| **V0001** first | `BLOCKED` |')
+
+    const value = {
+      experiment_schema_version: 1,
+      variants: [
+        {
+          id: 'V0001',
+          name: 'first',
+          status: 'BLOCKED',
+          description: "Waits for the parent Variant's step-500 checkpoint.",
+          runs: [],
+        },
+      ],
+    }
+    const exp = experiment(canonicalReadme(), value)
+    exp.documents!.investigation = parseInvestigationYaml('schema_version: 1\nitems: []\n')
+    expect(lintExperimentDocument(exp)).toEqual([])
+    const summary = generateResultsSummary({
+      experimentId: 'E0001-foo',
+      experimentDir: 'docs/experiments/E0001-foo',
+      description: description(value),
+      members: [],
+      inputs: {},
+      newestInputMtime: null,
+      generatedAt: '2026-10-02T12:00:00+08:00',
+      generator: { release: '9.0.0', role: 'cli' },
+    })
+    expect(renderExperimentManagedSection(exp, 'results', { summary }).markdown).toContain(
+      '| **V0001** first | `BLOCKED` |',
+    )
   })
 
   it('keeps an attempt on a BLOCKED Variant valid', () => {
@@ -656,22 +836,23 @@ describe('Variant provenance env values', () => {
   })
 
   it('reports the coercion as a bundle warning that leaves the Experiment editable', () => {
-    const coerced = oneVariantResults(`    status: PLANNED
-    provenance:
-      env:
-        LR: 0.000008`)
+    const value = {
+      experiment_schema_version: 1,
+      variants: [{ id: 'V0001', name: 'first', status: 'PLANNED', values: { 'env.LR': 0.000008 } }],
+    }
     const documents = {
       implementation,
       investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
-      results: coerced,
+      results: legacyResults(),
+      description: description(value),
     }
     const diagnostics = validateExperimentManagedDocuments(documents)
     expect(diagnostics).toEqual([
       expect.objectContaining({
         code: 'RESULTS_ENV_VALUE_COERCED',
         severity: 'warning',
-        file: 'results.yaml',
-        field: 'variants.0.provenance.env.LR',
+        file: 'experiment.json',
+        field: 'variants.0.values.env.LR',
       }),
     ])
     const exp = experiment()

@@ -11,13 +11,13 @@
 ## 2. Core: Experiment description file
 
 - [x] 2.1 Add the `experiment.json` schema, normalizer and key-preserving serializer behind one `EXPERIMENT_DESCRIPTION_FILE` constant (`experiment_schema_version`, `groups`, typed `columns`, `variants` with declared status, values, provenance, `runs`, `frozen`; env coercion warning); verify with unit tests for valid/invalid documents, unknown-key preservation, env coercion and stable formatting.
-- [ ] 2.2 Extend `lintExperimentDocument` for v9 (`LEGACY_RESULTS_YAML`, `DESCRIPTION_DUPLICATES_README`, `DERIVED_STATUS_DECLARED`, Variant `runs` ⊆ README `runs`, single Variant per Run, unassigned members, enum options, undeclared paths and type errors in member result files, new Results pointer → `MANAGED_SECTION_NOT_STUB` for the v8 pointer); verify with lint tests on fixtures for each diagnostic.
+- [x] 2.2 Extend `lintExperimentDocument` for v9 (`LEGACY_RESULTS_YAML`, `DESCRIPTION_DUPLICATES_README`, `DERIVED_STATUS_DECLARED`, Variant `runs` ⊆ README `runs`, single Variant per Run, unassigned members, enum options, undeclared paths and type errors in member result files, new Results pointer → `MANAGED_SECTION_NOT_STUB` for the v8 pointer); verify with lint tests on fixtures for each diagnostic.
 
 ## 3. Core: Results summary
 
 - [x] 3.1 Implement the summary generator (status derivation incl. `INTERRUPTED` → `RUNNING`, evidence/other Runs, aggregation with `n`/`mean`/`min`/`max`/`sum`/percentiles and, for n ≥ 2, `std`/`var`/`sem`/Student-t `ci95_lo`/`ci95_hi`, default display `mean ± std (n)`, planned/frozen fill, mixed/per-run/differs-from-plan markers, undeclared columns, `VARIANT_STATUS_STALE`, `VARIANT_PARAM_MISMATCH`, mismatch and duplicate gates with offending files and upgrade command); verify with golden tests on `mock/project-a` and table tests for every `experiment-results-summary` scenario.
 - [x] 3.2 Implement the cache (`.memon/index/results/<experiment-id>.json`, input fingerprints, digest, atomic replace, best-effort write with `RESULTS_CACHE_FAILED`, reuse only on exact input set + fingerprints); verify with tests: deleted cache → equal output, hand-edited cache → regenerated, changed `result.csv` → regenerated, read-only directory → warning and exit 0.
-- [ ] 3.3 Implement the deterministic Markdown projection of the summary and of a failed summary; verify CLI/Web projection parity tests.
+- [x] 3.3 Implement the deterministic Markdown projection of the summary and of a failed summary; verify CLI/Web projection parity tests.
 
 ## 4. Core: schema upgrades
 
@@ -30,8 +30,8 @@
 
 ## 6. Core: Experiment and Run writers
 
-- [ ] 6.1 Update `experiments/mutations.ts`: `create` scaffolds `experiment.json` and the v9 pointer, `--from-run` seeds `V0001` with `runs` and no status (no Run file written), `delete` removes the v9 bundle files, `schema-upgrades/` and the summary; update `run rename` to rewrite Variant `runs`; retire every `results.yaml` writer and the v8 status mapping; verify with mutation and parity tests (CLI and Web byte-identical bundles, interrupted `--from-run` → summary `RUNNING`).
-- [ ] 6.2 Move the annotation helper to `experiment.json` (key-preserving JSON patch); verify the replaced-description scenario and unknown-key retention.
+- [x] 6.1 Update `experiments/mutations.ts`: `create` scaffolds `experiment.json` and the v9 pointer, `--from-run` seeds `V0001` with `runs` and no status (no Run file written), `delete` removes the v9 bundle files, `schema-upgrades/` and the summary; update `run rename` to rewrite Variant `runs`; retire every `results.yaml` writer and the v8 status mapping; verify with mutation and parity tests (CLI and Web byte-identical bundles, interrupted `--from-run` → summary `RUNNING`).
+- [x] 6.2 Move the annotation helper to `experiment.json` (key-preserving JSON patch); verify the replaced-description scenario and unknown-key retention.
 
 ## 7. CLI
 
