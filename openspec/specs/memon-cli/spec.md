@@ -909,7 +909,7 @@ The CLI SHALL NOT expose item-level create, update, delete, reorder, or status-m
 | Flag | Purpose |
 |------|---------|
 | `--variant <ids>` | Comma-separated Variant IDs to include (default: all) |
-| `--status <statuses>` | Comma-separated status values (`PLANNED`/`RUNNING`/`COMPLETED`/`FAILED`/`INCONCLUSIVE`/`DROPPED`) |
+| `--status <statuses>` | Comma-separated status values (`PLANNED`/`BLOCKED`/`RUNNING`/`COMPLETED`/`FAILED`/`INCONCLUSIVE`/`DROPPED`), matched case-insensitively |
 | `--column <keys>` | Comma-separated column keys to include (default: all) |
 | `--group <group>` | Column group filter: `parameter`, `metric`, or `all` (default: `all`) |
 
@@ -967,6 +967,12 @@ Empty filter results are not errors — the command returns zero rows with `meta
 - **WHEN** the user runs `memon experiment results table E0001-foo --variant V0001,V0003 --output json`
 - **THEN** only rows whose `variantId` is `V0001` or `V0003` appear in `rows`
 - **AND** `meta.filters.variants` is `["V0001", "V0003"]`
+
+#### Scenario: --status selects blocked Variants
+- **GIVEN** a `results.yaml` with one `BLOCKED` Variant and one `COMPLETED` Variant
+- **WHEN** the user runs `memon experiment results table E0001-foo --status blocked --output json`
+- **THEN** `rows` contains only the `BLOCKED` Variant with `status: "BLOCKED"`
+- **AND** `meta.filters.statuses` is `["blocked"]`
 
 #### Scenario: --group metric excludes parameter columns
 - **WHEN** the user runs `memon experiment results table E0001-foo --group metric --output json`
