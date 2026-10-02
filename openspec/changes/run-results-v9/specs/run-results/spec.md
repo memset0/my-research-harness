@@ -18,6 +18,20 @@ A Run directory MAY contain one result file `<runDir>/result.csv`. It SHALL be a
 - **WHEN** its Experiment is linted and summarized
 - **THEN** the missing `result.csv` produces no diagnostic and the Run is listed without values
 
+### Requirement: Ignored result files are reported with a fix
+
+Inside a Git work tree, a memon CLI command that creates a result file SHALL check with `git check-ignore` whether the project's ignore rules exclude it. When they do, the command SHALL still write the file and keep its exit code, SHALL NOT edit any ignore file, and SHALL report the warning `RESULT_FILE_IGNORED` naming the file, the deciding rule (ignore file, line and pattern) and the fix: the allow rules that the v8-to-v9 migration computes for that Run location and a copyable command that appends them to the named ignore file, for the user to review and commit. `memon run result lint` and `memon experiment doc lint` SHALL report the same warning for an existing result file of a declared Run that is ignored. Outside a Git work tree no check SHALL be made. Apart from the reviewed FS migration, no memon command SHALL edit a project's ignore files.
+
+#### Scenario: Creating an ignored result file
+- **GIVEN** a git project whose `.gitignore` holds `logs/*/*` on line 1 and `!logs/*/README.md` on line 2, and a member Run `logs/a-260901-090000` without `result.csv`
+- **WHEN** `memon run result set logs/a-260901-090000 metrics.eval.fid=12.3` runs
+- **THEN** the file is written and the command exits 0 with the warning `RESULT_FILE_IGNORED` naming `.gitignore` line 1 and a command that appends `!/logs/*/result.csv` to `.gitignore`
+- **AND** `.gitignore` is byte-unchanged
+
+#### Scenario: Project outside Git
+- **WHEN** the same command runs in a project that is not inside a Git work tree
+- **THEN** no ignore check is made and no `RESULT_FILE_IGNORED` warning is reported
+
 ### Requirement: Reserved rows carry the Experiment schema version
 
 Paths beginning with `$` SHALL be reserved for memon. Every result file SHALL contain exactly one `$experiment_schema_version` row, with an empty `stat` cell, whose value is a positive integer; it SHALL equal the `experiment_schema_version` of the Experiment that declares the Run for the file to be consistent. Reserved rows SHALL precede value rows. Any other `$` path, a repeated reserved row or a reserved row with a non-empty `stat` SHALL be a lint error. A result file SHALL NOT carry Variant association, Experiment identity or any other copy of facts owned by the Experiment description file or the README.

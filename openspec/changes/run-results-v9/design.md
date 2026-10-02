@@ -58,6 +58,7 @@ metrics.notes,,
 - Encodings: `number` = JSON number syntax without exponent restrictions; `boolean` = `true`/`false`; `enum` = the option's string form; `list` = one-line JSON array; `string` = raw text (CSV-quoted as needed); empty value = explicit missing.
 - `stats`: one-level `stat` ∈ the fixed vocabulary `mean`, `std`, `var`, `sem`, `min`, `max`, `sum`, `n`, `p1`, `p5`, `p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `p99`, `p999`, `ci95_lo`, `ci95_hi` (one constant in core; adding a word is a memon release, never an `experiment_schema_version` change); two levels are spelled `<inner>.<outer>` (`max.p99` = the outer `p99` over the `over` dimension of each unit's inner `max` across the `across` dimension).
 - `(path, stat)` unique; duplicates fail the summary (§4). Writers upsert (spec `run-results`); old values survive only in Git history.
+- Tracked even where a project ignores Run directories (user decision). Only the reviewed migration edits a project's ignore files (§9): it is reviewed, committed and reverted as one unit, whereas a write path that silently edited `.gitignore` would slip an unrelated tracked change into the user's next commit. Every other memon command that creates a `result.csv` (`memon run result set` here; `run create`, `run record` and `run launch` in `run-record-and-resume`) checks it with `git check-ignore` inside a Git work tree and, when it is ignored, still writes it, keeps its exit code and adds the warning `RESULT_FILE_IGNORED`: the file, the deciding rule (`<ignore file>:<line>:<pattern>`), the allow rules the migration would compute for that Run location (§9) and a copyable command such as `printf '%s\n' '# memon: track per-Run result files (FS v9)' '!/logs/*/result.csv' >> .gitignore` for the user to run and commit. `memon run result lint` and `memon experiment doc lint` report the same warning for an existing ignored result file of a declared Run; skills relay it and change ignore files only with the user's consent. One core function computes the rules for the migration and for the warning, so both always suggest the same lines.
 
 ### 3. `experiment.json` shape (confirmed with the user)
 
@@ -192,8 +193,8 @@ apply: refuse BAD_STATE if any member status == RUNNING
 | Command | Notes |
 |---|---|
 | `memon run result get <run> [--path p]` | parsed rows + diagnostics; read-only |
-| `memon run result set <run> path[:stat]=value… [--from file.csv\|-] [--unset path[:stat]…] [--expected-hash h]` | validates types against the owner's columns; atomic upsert; receipt + index event |
-| `memon run result lint <run>` | `run-results` diagnostics |
+| `memon run result set <run> path[:stat]=value… [--from file.csv\|-] [--unset path[:stat]…] [--expected-hash h]` | validates types against the owner's columns; atomic upsert; receipt + index event; `RESULT_FILE_IGNORED` warning when it creates an ignored file (§2) |
+| `memon run result lint <run>` | `run-results` diagnostics (incl. `RESULT_FILE_IGNORED`) |
 | `memon experiment results table\|summary` | from the summary; error envelope with `details.files` and `details.upgradeCommand` |
 | `memon experiment results rebuild [<id>\|--all]` | writes only `.memon/index/results/` |
 | `memon experiment results annotation get\|set` | edits `experiment.json` |
@@ -225,9 +226,37 @@ Value conversions: `^\s*([-+0-9.eE]+)\s*(±|\+/-)\s*([-+0-9.eE]+)\s*$` → `mean
 
 Sidecars: the operator passes the sidecar file name (`--sidecar-name <name>`, recorded in `LOCAL.md`); only listed Run directories are inspected (no walk). Shape A (role-tagged Variant snapshot: `variant_id`, `role`, `baseline{parameters,metrics,provenance}`) and shape B (definition-plus-statistics: `variant`, `definition{parameters}`, `metrics`, `statistics{m:{mean,sample_std,min,max,eligible_seeds,…}}`) become `result.csv` rows; parameters equal to the Variant's declared values are not duplicated; a sidecar naming another Variant than the one listing the Run is a blocker. Sidecars stay in place.
 
-Blockers (apply refuses until a `--resolutions <json>` entry exists): `FINISHED_ATTEMPT` (deprecate | adopt), `RUN_IN_TWO_VARIANTS` (choose), `VARIANT_RUN_NOT_MEMBER` (link | drop), `RESULT_FILE_EXISTS` (keep | replace), `RESULTS_YAML_UNREADABLE` (fix by hand), `RESULT_FILE_IGNORED` (git mode; operator adds an allow rule such as `!logs/**/result.csv` and commits it separately), `SIDECAR_VARIANT_CONFLICT` (choose). Apply writes resolutions (`deprecated: true` in chosen Run READMEs, Experiment README `runs` additions for `link`) inside the migration commit.
+Blockers (apply refuses until a `--resolutions <json>` entry exists): `FINISHED_ATTEMPT` (deprecate | adopt), `RUN_IN_TWO_VARIANTS` (choose), `VARIANT_RUN_NOT_MEMBER` (link | drop), `RESULT_FILE_EXISTS` (keep | replace), `RESULTS_YAML_UNREADABLE` (fix by hand), `SIDECAR_VARIANT_CONFLICT` (choose). An ignored `result.csv` is not a blocker (user decision): the plan adds allow rules for it (below). Apply writes resolutions (`deprecated: true` in chosen Run READMEs, Experiment README `runs` additions for `link`) inside the migration commit.
 
-Apply → verify → commit: backup (git: clean tree required; non-git: `.memon/backups/pre-v9-<ts>.tar.gz`); write `experiment.json`, `result.csv` files, pointer line, resolution edits; delete `results.yaml`; rebuild index v2 and all summaries; verify (1) every bundle lints with no error that v8 lint did not already report, (2) every v8 cell is found unchanged (modulo listed conversions) in a Run row, a declared value or a frozen block, (3) `git check-ignore` reports no `result.csv` and every summary ignored; then marker 9; commit exactly the touched paths with `chore(memon): migrate FS convention v8 -> v9`. Operator entry `scripts/migrate-v8-to-v9.{mjs,md}` (plan/apply/verify/rollback), modelled on the v7→v8 entry.
+Ignored result files (git mode). Operator projects often ignore everything in Run directories except `README.md`. Instead of stopping, the planner computes the smallest allow rules from the rules that actually ignore the files and shows them before anything is written:
+
+```
+probes = <runDir>/result.csv, <runDir>/ and each directory between it and its Run location root,
+         for every Run directory an Experiment declares (whether or not a file is planned for it)
+decide = git check-ignore --no-index --verbose --stdin over the probes  → <ignore file>:<line>:<pattern>
+for each (deciding ignore file F, effective Run location L) with an ignored result probe:
+  target = F when F is a .gitignore inside the project root, else <projectRoot>/.gitignore
+           (rules from .git/info/exclude, core.excludesFile or a .gitignore above the root lose to it)
+  no directory on the way excluded → append !/<L>/result.csv
+  directory D on the way excluded  → Git cannot re-include a file below an excluded directory, so append
+                                     the re-inclusion ladder from D down to the Run directories
+  paths are anchored and relative to target's directory; one comment line heads each appended block
+```
+
+Example: a `.gitignore` that excludes the directory `logs/` (Run location `logs/*`) gets
+
+```
+# memon: track per-Run result files (FS v9)
+!/logs/
+/logs/*
+!/logs/*/
+/logs/*/*
+!/logs/*/result.csv
+```
+
+which re-includes only `logs/`, its Run directories and their `result.csv`; everything else under `logs/` stays ignored. A project that ignores the files inside Run directories (no directory excluded) gets the single line `!/logs/*/result.csv`. Rules are written per Run location, not per file, so later Runs at the same location are covered. The plan lists, per target file, the lines to append, the deciding rules they override and the Run directories they cover. Apply only appends; existing lines are never edited or reordered. The edited ignore files are touched paths: backed up, verified, committed with the migration and restored by `rollback` (before the commit from the backup or `HEAD`, after it by `git revert`). Non-git projects need no rules.
+
+Apply → verify → commit: backup (git: clean tree required; non-git: `.memon/backups/pre-v9-<ts>.tar.gz`); write `experiment.json`, `result.csv` files, pointer line, resolution edits, allow rules; delete `results.yaml`; rebuild index v2 and all summaries; verify (1) every bundle lints with no error that v8 lint did not already report, (2) every v8 cell is found unchanged (modulo listed conversions) in a Run row, a declared value or a frozen block, (3) `git check-ignore` reports no `result.csv` of a declared Run as ignored and every summary as ignored, (4) `git ls-files --others --exclude-standard` lists no path that it did not list before apply other than planned files (the allow rules exposed nothing else); a failed check leaves marker 8, commits nothing and `rollback` restores every touched file, ignore files included; then marker 9; commit exactly the touched paths, edited ignore files included, with `chore(memon): migrate FS convention v8 -> v9`. Operator entry `scripts/migrate-v8-to-v9.{mjs,md}` (plan/apply/verify/rollback), modelled on the v7→v8 entry.
 
 ### 10. Web
 
@@ -242,7 +271,7 @@ Apply → verify → commit: backup (git: clean tree required; non-git: `.memon/
 
 ### 11. Skills
 
-`memon-write-experiment-doc` (+ `references/experiment-bundle.md`): `experiment.json` replaces `results.yaml` in the routing table; Variant `runs` editing rules; stats rows; schema upgrade procedure. `memon-run-experiment`: record results with `memon run result set`; no `attempts`; deprecate instead of moving to attempts. `memon-write-script`: launcher may print values but must not write `result.csv` itself unless through `memon run result set` later. `memon-read-results`, `memon-propose`, `memon-drive`: read via `memon experiment results table|summary`, handle `RESULT_SCHEMA_MISMATCH` by reporting. `memon-migrate-fs`: v8→v9 step. Preflight unchanged.
+`memon-write-experiment-doc` (+ `references/experiment-bundle.md`): `experiment.json` replaces `results.yaml` in the routing table; Variant `runs` editing rules; stats rows; schema upgrade procedure. `memon-run-experiment`: record results with `memon run result set`; no `attempts`; deprecate instead of moving to attempts. `memon-write-script`: launcher may print values but must not write `result.csv` itself unless through `memon run result set` later. `memon-read-results`, `memon-propose`, `memon-drive`: read via `memon experiment results table|summary`, handle `RESULT_SCHEMA_MISMATCH` by reporting. `memon-migrate-fs`: v8→v9 step, presenting the planned allow rules with the rest of the plan. A skill that receives `RESULT_FILE_IGNORED` shows the user the deciding rule and the fix command and changes ignore files only with the user's consent. Preflight unchanged.
 
 ### 12. CLI nodes, central and release
 
@@ -254,7 +283,8 @@ Release 9.0.0 (`MEMON_CHANGED_SURFACES=central,cli,skills,filesystem`). Order: d
 |---|---|
 | Hundreds of small `result.csv` files are slower to read cold on NFS than one YAML | Summary cache + fingerprints; central decides freshness from the index windows; regeneration only on change |
 | Strict version gate blocks a whole table for one stale file | That is the requested behavior; the error lists every file and the exact command; other Experiments and sections are unaffected |
-| Operators' `.gitignore` excludes Run directories, so `result.csv` would be silently untracked | Migration blocker `RESULT_FILE_IGNORED` with the exact allow rule; skills mention it |
+| Operators' ignore rules exclude Run directory files, so `result.csv` would be silently untracked | The migration appends minimal computed allow rules (shown in the plan, verified fail-closed with `git check-ignore`, committed with the migration, removed by rollback); afterwards writers warn `RESULT_FILE_IGNORED` with the fix command instead of editing ignore files |
+| Re-including directories below an excluded one makes Git read each Run directory | Only the directories leading to `result.csv` are re-included and everything else inside them stays ignored, so Git lists each Run directory once and descends no further |
 | Dropping `attempts` changes what counts as evidence | Derived rule is explicit; finished attempts are migration blockers (deprecate or adopt) |
 | Undeclared paths with typos create stray columns | Lint lists inferred columns with their recording Runs; declaring or renaming them is one upgrade transform |
 | Views reference flat keys | Read-time alias, persisted on next owner save; no SQLite rewrite during the FS migration |
@@ -266,8 +296,8 @@ Release 9.0.0 (`MEMON_CHANGED_SURFACES=central,cli,skills,filesystem`). Order: d
 
 1. Implement and release 9.0.0 (central + CLI + skills) with the guide and operator script.
 2. Deploy central; `memon update` on every CLI node (skills refreshed).
-3. Per operator project: `plan` (read-only) → review blockers/warnings → write resolutions → if needed commit the `.gitignore` allow rule → `apply` (clean tree) → `verify` → migration commit; record project-specific facts (sidecar name, backup path) only in `LOCAL.md`.
-4. Rollback: `git revert` of the migration commit (marker 8, `results.yaml` back), or the non-git tarball; deleting `.memon/index/` is always safe. Central 9.0.0 keeps serving an unmigrated project read-only for Results (NOT_FOUND state) until the revert is deployed with 8.x tooling.
+3. Per operator project: `plan` (read-only) → review blockers, warnings and the planned allow rules → write resolutions → `apply` (clean tree; appends the allow rules) → `verify` → migration commit (ignore-file edits included); record project-specific facts (sidecar name, backup path) only in `LOCAL.md`.
+4. Rollback: `git revert` of the migration commit (marker 8, `results.yaml` back, allow rules removed), or the non-git tarball; deleting `.memon/index/` is always safe. Central 9.0.0 keeps serving an unmigrated project read-only for Results (NOT_FOUND state) until the revert is deployed with 8.x tooling.
 
 ## Future
 
