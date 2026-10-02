@@ -45,7 +45,11 @@ memon distinguishes two units on disk:
   investigation; can have many member Runs and Variants.
 - **Run**: a directory matching base-name regex `^.+-\d{6}-\d{6}$` (e.g.
   `foo-260503-082800`). Records execution identity, state and execution-specific facts.
-  The parent directory name is irrelevant — `logs/`, `runs/`, anywhere works.
+  It lives at the project's effective Run locations: by default directly under
+  `logs/`, `outputs/` or `experiments/` (`logs/*`, `outputs/*`,
+  `experiments/*`); other locations are declared in `.memon/project.yml`, the
+  central Project `run_dirs` or the CLI `--run-dir`. Run directories do not
+  nest.
 
 The two are bidirectionally bound: each run's frontmatter has
 `experiment: E<NNNN>-<slug>` (or `null` when unbound), and each experiment
@@ -369,6 +373,14 @@ memon journal submit --files docs/experiments/E0001-example/README.md
 
 memon install-skills [--project-root <p>] [--target <path>] [--agent <list>] [--dry-run]
 memon fs-version check                 # report the project's .memon/version.json status
+
+# Derived index (.memon/index/, a rebuildable cache) and Run locations
+memon index status [--verify [--strict]]   # snapshot, run_dirs, events, lease; drift with --verify
+memon index compact                    # merge pending index events (exit 9 while leased)
+memon index rebuild [--audit-run-dirs] [--dry-run]  # rebuild from the project files
+memon project init                     # create .memon/project.yml (never overwrites, never commits)
+memon project lint                     # validate it; print the effective run_dirs and source
+memon --run-dir 'outputs/*/*' scan     # one-off override of the declared Run locations
 
 # Installation maintenance
 memon update [--source <checkout>] [--remote <name>] [--branch <name>]
@@ -749,6 +761,30 @@ modifying anything; this is also what every skill calls in its
 preflight to refuse running on a project the binary doesn't support.
 
 The marker is **machine-managed** — don't edit it by hand.
+
+### `.memon/index/` and `.memon/project.yml`
+
+`.memon/index/` (FS v8) is a derived, rebuildable cache of Run, Experiment and
+wiki summaries. It ignores itself (`.gitignore` containing `*`), every memon
+write adds one event file under `events/`, and central or
+`memon index compact` merges events into `snapshot.json`. Never edit it;
+deleting it is always safe, and `memon index rebuild` recreates it from the
+project files.
+
+`.memon/project.yml` is an optional, git-tracked declaration of where Run
+directories live:
+
+```yaml
+schema_version: 1
+run_dirs:
+  - logs/*
+  - outputs/*/*
+```
+
+Effective Run locations follow `--run-dir` > central `run_dirs` >
+`.memon/project.yml` > the default `logs/*`, `outputs/*`, `experiments/*`. Create
+it with `memon project init`, edit and commit it yourself; an invalid file fails
+closed (exit 2) instead of falling back to the default.
 
 ## Architecture
 

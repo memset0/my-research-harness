@@ -82,7 +82,7 @@ packages' source, never their `dist/`, so no build is needed first.
 | `packages/cli` | The `memon` CLI. Command surface: `memon --help` / `memon <cmd> --help` and `packages/cli/src/index.ts`. |
 | `packages/skills` | Bundled `memon-*` agent skills distributed to research projects. |
 | `apps/web` | Next.js 15 App Router + Tailwind v4 + shadcn/ui central dashboard, custom `server.ts`, auth. HTTP endpoints: `apps/web/app/api/**/route.ts`. |
-| `scripts/` | Repo tooling: `validate-release.mjs`, `wiki-kinds.mjs`, `component-docs.mjs` (`--write` regenerates the component registry barrels, core's name list and the `memon-components` skill table; `--check` runs in the skills build), `migrate-v6-to-v7.*`. |
+| `scripts/` | Repo tooling: `validate-release.mjs`, `wiki-kinds.mjs`, `component-docs.mjs` (`--write` regenerates the component registry barrels, core's name list and the `memon-components` skill table; `--check` runs in the skills build), `migrate-v6-to-v7.*`, `migrate-v7-to-v8.*`. |
 
 Other sources of truth — consult these instead of copying lists here:
 - SSE topics: `BACKEND_EVENT_TOPICS` in `packages/core/src/backend-protocol.ts`.
@@ -103,7 +103,17 @@ Other sources of truth — consult these instead of copying lists here:
   H2 section is required (`packages/core/src/readme/parse.ts`,
   `readme/lint.ts`); a Run README records execution facts only. Never write an
   `experiment:` field into a Run README — the parser still reads and lints a
-  legacy value, but binding is done with `memon experiment link`.
+  legacy value, but binding is done with `memon experiment link`. Run
+  directories live at the effective `run_dirs` (`--run-dir` > central
+  `run_dirs` > `.memon/project.yml` > default `logs/*`, `outputs/*`,
+  `experiments/*`) and never nest inside another Run.
+- **Derived index** `.memon/index/` (FS v8): a self-ignored (`.gitignore` `*`),
+  rebuildable cache of Run/Experiment/wiki summaries maintained by writers'
+  event files; never edited by hand, always safe to delete
+  (`memon index rebuild|compact|status`).
+- **Project declaration** `.memon/project.yml`: optional, git-tracked,
+  `schema_version: 1` plus optional `run_dirs`; created only by
+  `memon project init` or by hand, checked by `memon project lint`.
 - **Wiki**: `<projectRoot>/docs/wiki/<kind>/W<NNNN>-<slug>.md` or
   `…/W<NNNN>-<slug>/README.md` (bundle).
 - Hypotheses: `docs/hypotheses.md`.
