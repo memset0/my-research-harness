@@ -7,6 +7,8 @@ import { basename, dirname, join, relative, sep } from 'node:path'
 import { runEligibilityError } from '../discovery/eligibility.js'
 import { readRunDir, runFromReadme } from '../discovery/read.js'
 import { type ParsedExperiment, parseExperimentReadme } from '../experiments/parse.js'
+import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
+import { parseResultFile, RESULT_FILE_NAME } from '../results/result-file.js'
 import { formatIsoLocal } from '../time.js'
 import type { Run } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
@@ -66,6 +68,8 @@ export interface DeriveRunEntryInput {
   runDir: string
   /** README content already held by the caller; omitted → read; null → absent. */
   content?: string | null
+  /** `result.csv` content already held by the caller; omitted → read; null → absent. */
+  resultContent?: string | null
   /** The directory was verified inside the project with real paths. */
   contained?: boolean
   fs?: IndexFs
@@ -76,11 +80,19 @@ export interface DeriveRunEntryInput {
 export async function deriveRunEntry(input: DeriveRunEntryInput): Promise<RunIndexEntry | null> {
   const fs = input.fs ?? defaultIndexFs
   const readmePath = join(input.runDir, 'README.md')
-  const [dirStat, readmeStat] = await Promise.all([
+  const resultPath = join(input.runDir, RESULT_FILE_NAME)
+  const [dirStat, readmeStat, resultStat] = await Promise.all([
     statOrNull(fs, input.runDir),
     input.content === null ? Promise.resolve(null) : statOrNull(fs, readmePath),
+    input.resultContent === null ? Promise.resolve(null) : statOrNull(fs, resultPath),
   ])
   if (!dirStat?.isDirectory()) return null
+  const hasResult = resultStat?.isFile() === true
+  let resultSchemaVersion: number | null = null
+  if (hasResult) {
+    const content = input.resultContent ?? (await fs.readFile(resultPath, 'utf8').catch(() => null))
+    resultSchemaVersion = content === null ? null : parseResultFile(content).schemaVersion
+  }
   let run: Run
   let eligibilityError: string | null = null
   const hasReadme = readmeStat?.isFile() === true
@@ -102,6 +114,8 @@ export async function deriveRunEntry(input: DeriveRunEntryInput): Promise<RunInd
   return {
     readme_fp: hasReadme ? persistedFingerprint(readmeStat) : null,
     dir_fp: persistedFingerprint(dirStat),
+    result_fp: hasResult ? persistedFingerprint(resultStat) : null,
+    result_schema_version: resultSchemaVersion,
     verified_at: formatIsoLocal((input.now ?? (() => new Date()))()),
     has_readme: hasReadme,
     status: fm.status,
@@ -182,11 +196,11 @@ export async function deriveExperimentEntry(
   if (!location) return null
   const yaml = (name: string) =>
     location.folder ? statOrNull(fs, join(location.folder, name)) : Promise.resolve(null)
-  const [readmeStat, implementation, investigation, results] = await Promise.all([
+  const [readmeStat, implementation, investigation, description] = await Promise.all([
     statOrNull(fs, input.readmePath),
     yaml('implementation.yaml'),
     yaml('investigation.yaml'),
-    yaml('results.yaml'),
+    yaml(EXPERIMENT_DESCRIPTION_FILE),
   ])
   let parsed: ParsedExperiment
   if (readmeStat?.isFile()) {
@@ -217,7 +231,7 @@ export async function deriveExperimentEntry(
       bundle_fp: {
         implementation: fingerprint(implementation),
         investigation: fingerprint(investigation),
-        results: fingerprint(results),
+        description: fingerprint(description),
       },
       verified_at: formatIsoLocal((input.now ?? (() => new Date()))()),
       row: {

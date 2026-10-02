@@ -1,4 +1,4 @@
-// Layout of the FS v8 derived index under `<projectRoot>/.memon/index/`.
+// Layout of the derived index under `<projectRoot>/.memon/index/`.
 //
 //   .memon/index/
 //     .gitignore            "*" — written before anything else
@@ -7,6 +7,9 @@
 //     events/
 //       <ts>-<pid>-<rand>.json   one write's upserts/removals
 //       .tmp-<ts>-<pid>-<rand>   in-flight event (ignored by readers)
+//     results/
+//       <experiment-id>.json     generated Results summary (FS v9)
+//       .<name>                  in-flight summary (ignored by readers)
 //
 // `<ts>` is the writer's epoch milliseconds zero-padded to 13 digits — an
 // ordering key in a file name, never a timestamp field.
@@ -27,6 +30,8 @@ export interface IndexPaths {
   snapshot: string
   lock: string
   events: string
+  /** Generated Results summaries, one `<experiment-id>.json` per Experiment. */
+  results: string
 }
 
 /**
@@ -46,6 +51,7 @@ export function resolveIndexPaths(projectRoot: string): IndexPaths {
     snapshot: `${dir}/snapshot.json`,
     lock: `${dir}/compact.lock`,
     events: `${dir}/events`,
+    results: `${dir}/results`,
   }
 }
 

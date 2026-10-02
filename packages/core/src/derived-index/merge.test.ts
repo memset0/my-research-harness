@@ -11,6 +11,8 @@ function run(status: RunIndexEntry['status'], ctime: number, verifiedAt = T0): R
   return {
     readme_fp: fp,
     dir_fp: { ...fp, ctime_ms: 1 },
+    result_fp: null,
+    result_schema_version: null,
     verified_at: verifiedAt,
     has_readme: true,
     status,
@@ -50,7 +52,7 @@ function experiment(id: string, runs: string[]): ExperimentIndexEntry {
     archived: false,
     runs,
     readme_fp: { ino: 1, size: 1, mtime_ms: 1, ctime_ms: 1 },
-    bundle_fp: { implementation: null, investigation: null, results: null },
+    bundle_fp: { implementation: null, investigation: null, description: null },
     verified_at: T0,
     row: {
       readme_mtime: 1,
@@ -74,7 +76,7 @@ function event(
   return {
     name,
     event: {
-      index_version: 1,
+      index_version: 2,
       written_at: writtenAt,
       writer: { release: '8.0.0', role: 'cli', op: 'test' },
       upserts: body.upserts ?? {},

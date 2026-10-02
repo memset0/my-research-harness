@@ -13,8 +13,8 @@ const TS = '2026-10-01T10:00:00+08:00'
 
 function sampleSnapshot(): IndexSnapshot {
   return {
-    index_version: 1,
-    fs_convention_version: 8,
+    index_version: 2,
+    fs_convention_version: 9,
     generated_at: TS,
     generator: { release: '8.0.0', role: 'rebuild' },
     run_dirs: ['logs/*'],
@@ -25,6 +25,8 @@ function sampleSnapshot(): IndexSnapshot {
       'logs/a-260901-090000': {
         readme_fp: FP,
         dir_fp: FP,
+        result_fp: FP,
+        result_schema_version: 2,
         verified_at: TS,
         has_readme: true,
         status: 'RUNNING',
@@ -69,18 +71,58 @@ describe('derived index schema', () => {
   })
 
   it('classifies higher and lower index versions without parsing them', () => {
-    expect(parseSnapshot({ ...sampleSnapshot(), index_version: 2 })).toEqual({
+    expect(parseSnapshot({ ...sampleSnapshot(), index_version: 3 })).toEqual({
       ok: false,
       reason: 'unsupported',
-      version: 2,
+      version: 3,
     })
-    expect(parseSnapshot({ index_version: 0 })).toEqual({
+    // An FS v8 (index_version 1) snapshot is outdated under v9 tooling.
+    expect(parseSnapshot({ ...sampleSnapshot(), index_version: 1 })).toEqual({
       ok: false,
       reason: 'outdated',
-      version: 0,
+      version: 1,
     })
     expect(parseEvent({ index_version: 9, anything: true })).toMatchObject({
       reason: 'unsupported',
+    })
+  })
+
+  it('requires the v2 Run result fields and the description fingerprint', () => {
+    const missing = sampleSnapshot()
+    const { result_fp: _fp, ...entry } = missing.runs['logs/a-260901-090000']!
+    missing.runs = { 'logs/a-260901-090000': entry as never }
+    expect(parseSnapshot(missing)).toMatchObject({ ok: false, reason: 'invalid' })
+    const experiment = {
+      dir: 'docs/experiments/E0001-foo',
+      id: 'E0001-foo',
+      slug: 'foo',
+      status: 'OPEN',
+      archived: false,
+      runs: [],
+      readme_fp: FP,
+      bundle_fp: { implementation: FP, investigation: FP, results: FP },
+      verified_at: TS,
+      row: {
+        readme_mtime: 1,
+        title: 'Foo',
+        tags: [],
+        created_at: TS,
+        updated_at: TS,
+        hypothesis_count: 0,
+        open_warning_count: 0,
+        parse_errors: [],
+        parse_warnings: [],
+      },
+    }
+    expect(
+      parseSnapshot({ ...sampleSnapshot(), experiments: { [experiment.dir]: experiment } }),
+    ).toMatchObject({ ok: false, reason: 'invalid' })
+    const v2 = {
+      ...experiment,
+      bundle_fp: { implementation: FP, investigation: null, description: FP },
+    }
+    expect(parseSnapshot({ ...sampleSnapshot(), experiments: { [v2.dir]: v2 } })).toMatchObject({
+      ok: true,
     })
   })
 
@@ -100,7 +142,7 @@ describe('derived index schema', () => {
 
   it('validates events', () => {
     const event = {
-      index_version: 1,
+      index_version: 2,
       written_at: TS,
       writer: { release: '8.0.0', role: 'cli', op: 'run.status' },
       upserts: { runs: sampleSnapshot().runs },
@@ -123,6 +165,7 @@ describe('derived index paths', () => {
       snapshot: '/p/root/.memon/index/snapshot.json',
       lock: '/p/root/.memon/index/compact.lock',
       events: '/p/root/.memon/index/events',
+      results: '/p/root/.memon/index/results',
     })
   })
 

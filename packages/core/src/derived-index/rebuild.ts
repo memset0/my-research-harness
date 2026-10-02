@@ -1,9 +1,10 @@
 // Full rebuild: a fresh snapshot from the project files alone.
 //
 // Under the compaction lease: resolve the effective `run_dirs` (recording
-// patterns and source), run the bounded walk, read every Run README once,
-// every Experiment README with stats of its YAML documents and every wiki
-// page, write the snapshot and delete the events present at the start. The
+// patterns and source), run the bounded walk, read every Run README and
+// result file once, every Experiment README with stats of its bundle files
+// and every wiki page, write the snapshot, delete the events present at the
+// start and the Results summaries of Experiments that no longer exist. The
 // optional audit performs one unbounded walk under `logs/`, `outputs/` and
 // `experiments/` and lists Run directories the effective patterns miss
 // (read-only; it never feeds the snapshot).
@@ -60,6 +61,35 @@ export interface RebuildIndexResult {
   audit?: RunDirsAudit
   /** Discovered Run directories nested below a Run-shaped ancestor (`RUN_NESTED`). */
   nested: string[]
+  /** Results summaries (`results/<id>.json`) deleted because their Experiment is gone. */
+  deletedSummaries: string[]
+}
+
+/**
+ * Delete `results/<id>.json` for every Experiment id not in `snapshot`.
+ * Returns the deleted file names. Dot files (in-flight writes) are left alone.
+ */
+export async function pruneOrphanSummaries(
+  root: string,
+  snapshot: IndexSnapshot,
+  fs: IndexFs = defaultIndexFs,
+): Promise<string[]> {
+  const directory = resolveIndexPaths(root).results
+  let names: string[]
+  try {
+    names = (await fs.readdir(directory)) as string[]
+  } catch {
+    return []
+  }
+  const known = new Set(Object.values(snapshot.experiments).map((entry) => entry.id))
+  const deleted: string[] = []
+  for (const name of names.sort()) {
+    if (name.startsWith('.') || !name.endsWith('.json')) continue
+    if (known.has(name.slice(0, -'.json'.length))) continue
+    await fs.rm(`${directory}/${name}`, { force: true })
+    deleted.push(name)
+  }
+  return deleted
 }
 
 async function mapLimited<T, R>(items: readonly T[], map: (item: T) => Promise<R>): Promise<R[]> {
@@ -186,6 +216,7 @@ export async function rebuildIndex(
     counts: empty,
     deletedEvents: [],
     nested: [],
+    deletedSummaries: [],
   }
   const existing = await readDerivedIndex(root, {
     fs,
@@ -225,6 +256,7 @@ export async function rebuildIndex(
     for (const name of startEvents) await fs.rm(`${events}/${name}`, { force: true })
     const result = await finish(snapshot, 'rebuilt')
     result.deletedEvents = startEvents
+    result.deletedSummaries = await pruneOrphanSummaries(root, snapshot, fs)
     return result
   } finally {
     await lease.release()

@@ -1,5 +1,6 @@
-// FS v8 derived index: a rebuildable, fingerprint-validated cache of Run,
-// Experiment and wiki summaries under `.memon/index/`. Never a source of truth.
+// Derived index: a rebuildable, fingerprint-validated cache of Run, Experiment
+// and wiki summaries (and, from FS v9, generated Results summaries) under
+// `.memon/index/`. Never a source of truth.
 
 export {
   ABANDONED_TEMPORARY_MS,
@@ -71,6 +72,7 @@ export {
 export {
   auditRunDirs,
   buildIndexSnapshot,
+  pruneOrphanSummaries,
   type RebuildIndexOptions,
   type RebuildIndexResult,
   type RebuildIndexStatus,

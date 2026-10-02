@@ -133,7 +133,7 @@ describe('mutation primitives publish index events', () => {
     expect(event?.writer).toMatchObject({ role: 'cli', op: 'experiment.create' })
     expect(Object.keys(event!.upserts.experiments!)).toEqual(['docs/experiments/E0001-alpha'])
     expect(
-      event!.upserts.experiments!['docs/experiments/E0001-alpha']!.bundle_fp.results,
+      event!.upserts.experiments!['docs/experiments/E0001-alpha']!.bundle_fp.implementation,
     ).not.toBeNull()
 
     const alpha = { id: 'E0001-alpha', path: experimentPath('E0001-alpha') }

@@ -9,7 +9,9 @@
 //    exclusively and rename it over `snapshot.json`; `merged_events` lists
 //    exactly the merged names.
 // 3. Delete exactly those event files, remove `.tmp-*` / `.stale-*` older
-//    than one hour, release the lease.
+//    than one hour and event files of a lower (outdated) `index_version`
+//    older than one hour — their changes are reached through fingerprint
+//    validation — then release the lease.
 //
 // Events created after step 2 listed `events/` are never deleted. If two
 // compactors still overlap, the worst case is a snapshot missing a deleted
@@ -22,7 +24,7 @@ import { MEMON_RELEASE } from '../version.js'
 import { defaultIndexFs, errnoCode, type IndexFs } from './fs.js'
 import { ensureIndexDirectory } from './gitignore.js'
 import { emptySnapshot, mergeIndexEvents } from './merge.js'
-import { type IndexPaths, randomHex8, resolveIndexPaths } from './paths.js'
+import { eventFileTime, type IndexPaths, randomHex8, resolveIndexPaths } from './paths.js'
 import type { IndexRole, IndexSnapshot, RunDirsSource } from './schema.js'
 import { readDerivedIndex, type SkippedIndexEvent } from './snapshot.js'
 
@@ -176,7 +178,7 @@ async function removeAbandonedTemporaries(
   now: number,
 ): Promise<string[]> {
   const removed: string[] = []
-  for (const directory of [paths.dir, paths.events]) {
+  for (const directory of [paths.dir, paths.events, paths.results]) {
     let names: string[]
     try {
       names = (await fs.readdir(directory)) as string[]
@@ -232,7 +234,17 @@ export interface CompactIndexResult {
   merged: string[]
   skipped: SkippedIndexEvent[]
   removedTemporaries: string[]
+  /** Event files of a lower `index_version`, older than one hour, deleted by this compaction. */
+  removedOutdatedEvents: string[]
   snapshot: IndexSnapshot | null
+}
+
+/** Outdated (lower `index_version`) events older than one hour. */
+function expiredOutdatedEvents(skipped: readonly SkippedIndexEvent[], now: number): string[] {
+  return skipped
+    .filter((event) => event.reason === 'outdated')
+    .filter((event) => now - (eventFileTime(event.name) ?? now) >= ABANDONED_TEMPORARY_MS)
+    .map((event) => event.name)
 }
 
 /** Merge the events of `root` into its snapshot under the lease. */
@@ -248,11 +260,16 @@ export async function compactIndex(
     merged: [],
     skipped: [],
     removedTemporaries: [],
+    removedOutdatedEvents: [],
     snapshot: null,
   }
   const before = await readDerivedIndex(root, { fs, now: clock })
   if (before.snapshotState === 'unsupported') return { ...result, status: 'unsupported' }
-  if (before.snapshotState === 'missing' && before.events.length === 0) {
+  if (
+    before.snapshotState === 'missing' &&
+    before.events.length === 0 &&
+    expiredOutdatedEvents(before.skipped, clock().getTime()).length === 0
+  ) {
     result.skipped = before.skipped
     return result
   }
@@ -295,6 +312,10 @@ export async function compactIndex(
       result.status = 'compacted'
       result.merged = merged.merged_events
       result.snapshot = merged
+    }
+    for (const name of expiredOutdatedEvents(read.skipped, clock().getTime())) {
+      await fs.rm(`${paths.events}/${name}`, { force: true })
+      result.removedOutdatedEvents.push(name)
     }
     result.removedTemporaries = await removeAbandonedTemporaries(fs, paths, clock().getTime())
     return result

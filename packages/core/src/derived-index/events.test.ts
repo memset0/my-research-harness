@@ -129,11 +129,18 @@ describe('appendIndexEvent', () => {
 })
 
 describe('publishMutationEvent', () => {
-  it('classifies Experiment bundle files, legacy files and Run READMEs', () => {
+  it('classifies Experiment bundle files, legacy files, Run READMEs and result files', () => {
     const e = join(root, 'docs/experiments/E0001-foo')
-    expect(classifyIndexedPath(root, join(e, 'results.yaml'))).toEqual({
+    expect(classifyIndexedPath(root, join(e, 'experiment.json'))).toEqual({
       kind: 'experiment',
       readmePath: join(e, 'README.md'),
+    })
+    // A leftover v8 results.yaml is not an input of any index entry.
+    expect(classifyIndexedPath(root, join(e, 'results.yaml'))).toBeNull()
+    expect(classifyIndexedPath(root, join(root, 'logs/a-260901-090000/result.csv'))).toEqual({
+      kind: 'run',
+      dir: join(root, 'logs/a-260901-090000'),
+      file: 'result.csv',
     })
     expect(classifyIndexedPath(root, join(root, 'docs/experiments/E0002-bar.md'))).toEqual({
       kind: 'experiment',
@@ -142,6 +149,7 @@ describe('publishMutationEvent', () => {
     expect(classifyIndexedPath(root, join(root, 'outputs/g/a-260901-090000/README.md'))).toEqual({
       kind: 'run',
       dir: join(root, 'outputs/g/a-260901-090000'),
+      file: 'README.md',
     })
     expect(classifyIndexedPath(root, join(root, 'docs/hypotheses.md'))).toBeNull()
     expect(classifyIndexedPath(root, join(e, 'scratch/notes.md'))).toBeNull()
@@ -234,8 +242,50 @@ describe('entry derivation', () => {
     expect(derived?.entry.bundle_fp).toEqual({
       implementation: null,
       investigation: null,
-      results: null,
+      description: null,
     })
     expect(derived?.entry.readme_fp).not.toBeNull()
+  })
+})
+
+describe('result files (index_version 2)', () => {
+  const RESULT = 'path,stat,value\n$experiment_schema_version,,2\nmetrics.fid,,1\n'
+
+  it('indexes the result file fingerprint and its recorded schema version', async () => {
+    const dir = await writeRun('logs/a-260901-090000')
+    expect(await deriveRunEntry({ projectRoot: root, runDir: dir })).toMatchObject({
+      result_fp: null,
+      result_schema_version: null,
+    })
+    await fs.writeFile(join(dir, 'result.csv'), RESULT)
+    const entry = await deriveRunEntry({ projectRoot: root, runDir: dir })
+    expect(entry?.result_fp).toMatchObject({ size: RESULT.length })
+    expect(entry?.result_schema_version).toBe(2)
+    await fs.writeFile(join(dir, 'result.csv'), 'path,stat,value\nmetrics.fid,,1\n')
+    expect((await deriveRunEntry({ projectRoot: root, runDir: dir }))?.result_schema_version).toBe(
+      null,
+    )
+  })
+
+  it('publishes a result write as an upsert of the Run entry with the new result_fp', async () => {
+    const dir = await writeRun('logs/a-260901-090000')
+    await fs.writeFile(join(dir, 'result.csv'), RESULT)
+    const sink: IndexSink = { projectRoot: root, role: 'cli' }
+    const warnings = await publishMutationEvent(sink, 'run.result', [
+      { path: join(dir, 'result.csv'), after: RESULT },
+    ])
+    expect(warnings).toEqual([])
+    const [name] = await events()
+    const event = parseEvent(
+      JSON.parse(await fs.readFile(join(root, '.memon/index/events', name!), 'utf8')),
+    )
+    expect(event.ok).toBe(true)
+    if (!event.ok) return
+    expect(event.value.index_version).toBe(2)
+    const entry = event.value.upserts.runs!['logs/a-260901-090000']!
+    expect(entry.result_schema_version).toBe(2)
+    expect(entry.result_fp).not.toBeNull()
+    // The README was not part of the write: it is read for the entry.
+    expect(entry.status).toBe('RUNNING')
   })
 })

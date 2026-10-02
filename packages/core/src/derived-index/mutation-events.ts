@@ -3,12 +3,14 @@
 //
 // Every Experiment/Run write primitive already returns `FileChange[]` with
 // the post-write content. Each changed path is classified (Experiment bundle
-// file, legacy Experiment file, Run README) and the matching entry derived
+// file, legacy Experiment file, Run README or result file) and the matching entry derived
 // from the content the primitive holds plus one stat per file. Nothing here
 // reads the index or decides what a primitive writes.
 
 import { dirname, join } from 'node:path'
 import { RUN_DIR_REGEX, RUN_ROOT_DIRECTORIES } from '../ids.js'
+import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
+import { RESULT_FILE_NAME } from '../results/result-file.js'
 import { deriveExperimentEntry, deriveRunEntry, experimentLocation, indexKey } from './entries.js'
 import {
   type AppendIndexEventResult,
@@ -38,18 +40,24 @@ const EXPERIMENT_BUNDLE_FILES = new Set([
   'README.md',
   'implementation.yaml',
   'investigation.yaml',
-  'results.yaml',
+  EXPERIMENT_DESCRIPTION_FILE,
 ])
+
+/** Run files an index entry is derived from. */
+const RUN_ENTRY_FILES = new Set(['README.md', RESULT_FILE_NAME])
 
 type Classified =
   | { kind: 'experiment'; readmePath: string; content?: string }
-  | { kind: 'run'; dir: string; content?: string | null }
+  | { kind: 'run'; dir: string; content?: string | null; resultContent?: string | null }
 
 /** Which index entry a changed absolute path belongs to, if any. */
 export function classifyIndexedPath(
   projectRoot: string,
   path: string,
-): { kind: 'experiment'; readmePath: string } | { kind: 'run'; dir: string } | null {
+):
+  | { kind: 'experiment'; readmePath: string }
+  | { kind: 'run'; dir: string; file: 'README.md' | 'result.csv' }
+  | null {
   const key = indexKey(projectRoot, path)
   if (key.startsWith('..') || key.startsWith('/')) return null
   const segments = key.split('/')
@@ -65,11 +73,15 @@ export function classifyIndexedPath(
   }
   if (
     segments.length >= 3 &&
-    segments.at(-1) === 'README.md' &&
+    RUN_ENTRY_FILES.has(segments.at(-1)!) &&
     (RUN_ROOT_DIRECTORIES as readonly string[]).includes(segments[0]!) &&
     RUN_DIR_REGEX.test(segments.at(-2)!)
   ) {
-    return { kind: 'run', dir: dirname(path) }
+    return {
+      kind: 'run',
+      dir: dirname(path),
+      file: segments.at(-1) === 'README.md' ? 'README.md' : 'result.csv',
+    }
   }
   return null
 }
@@ -105,10 +117,17 @@ export async function publishMutationEvent(
           })
         }
       } else {
-        targets.set(`r:${classified.dir}`, {
-          ...classified,
-          ...(change.after === null ? {} : { content: change.after }),
-        })
+        const key = `r:${classified.dir}`
+        const current = targets.get(key) as Extract<Classified, { kind: 'run' }> | undefined
+        const next: Extract<Classified, { kind: 'run' }> = current ?? {
+          kind: 'run',
+          dir: classified.dir,
+        }
+        if (classified.file === 'README.md') {
+          if (change.after === null) delete next.content
+          else next.content = change.after
+        } else next.resultContent = change.after
+        targets.set(key, next)
       }
     }
     for (const dir of extras.upsertRuns ?? []) {
@@ -126,6 +145,7 @@ export async function publishMutationEvent(
             projectRoot: root,
             runDir: target.dir,
             ...(target.content === undefined ? {} : { content: target.content }),
+            ...(target.resultContent === undefined ? {} : { resultContent: target.resultContent }),
             ...(sink.fs ? { fs: sink.fs } : {}),
             ...(now ? { now } : {}),
           })

@@ -11,14 +11,15 @@ import { matchesRunDirPatterns } from '../discovery/run-dirs.js'
 import { formatIsoLocal } from '../time.js'
 import { FS_CONVENTION_VERSION, MEMON_RELEASE } from '../version.js'
 import { newestCtime } from './fingerprint.js'
-import type {
-  ExperimentIndexEntry,
-  IndexEvent,
-  IndexRole,
-  IndexSnapshot,
-  RunDirsSource,
-  RunIndexEntry,
-  WikiIndexEntry,
+import {
+  type ExperimentIndexEntry,
+  INDEX_VERSION,
+  type IndexEvent,
+  type IndexRole,
+  type IndexSnapshot,
+  type RunDirsSource,
+  type RunIndexEntry,
+  type WikiIndexEntry,
 } from './schema.js'
 
 export interface NamedIndexEvent {
@@ -31,14 +32,14 @@ type AnyEntry = RunIndexEntry | ExperimentIndexEntry | WikiIndexEntry
 /** The newest change time among the fingerprints an entry was built from. */
 export function entryCtime(entry: AnyEntry): number {
   if ('row' in entry && 'readme_fp' in entry && 'dir_fp' in entry) {
-    return newestCtime(entry.readme_fp, entry.dir_fp)
+    return newestCtime(entry.readme_fp, entry.dir_fp, entry.result_fp)
   }
   if ('bundle_fp' in entry) {
     return newestCtime(
       entry.readme_fp,
       entry.bundle_fp.implementation,
       entry.bundle_fp.investigation,
-      entry.bundle_fp.results,
+      entry.bundle_fp.description,
     )
   }
   return newestCtime(entry.fp)
@@ -59,7 +60,7 @@ export function emptySnapshot(options: {
 }): IndexSnapshot {
   const now = options.now ?? new Date()
   return {
-    index_version: 1,
+    index_version: INDEX_VERSION,
     fs_convention_version: FS_CONVENTION_VERSION,
     generated_at: formatIsoLocal(now),
     generator: { release: options.release ?? MEMON_RELEASE, role: options.role },

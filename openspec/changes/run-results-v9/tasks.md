@@ -26,7 +26,7 @@
 
 ## 5. Core: derived index v2
 
-- [ ] 5.1 Move snapshot/event schemas to `index_version: 2` (Run `result_fp` and `result_schema_version`, Experiment description fingerprint, `results/` directory), ignore v1 files, allow deleting v1 events older than one hour, and delete summaries of unknown Experiments on rebuild; verify with schema, merge, rebuild and verify tests, including a v1 snapshot replaced by a v2 rebuild.
+- [x] 5.1 Move snapshot/event schemas to `index_version: 2` (Run `result_fp` and `result_schema_version`, Experiment description fingerprint, `results/` directory), ignore v1 files, allow deleting v1 events older than one hour, and delete summaries of unknown Experiments on rebuild; verify with schema, merge, rebuild and verify tests, including a v1 snapshot replaced by a v2 rebuild.
 
 ## 6. Core: Experiment and Run writers
 

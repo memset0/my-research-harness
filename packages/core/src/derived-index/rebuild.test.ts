@@ -140,3 +140,46 @@ describe('rebuildIndex', () => {
     await expect(rebuildIndex(root)).rejects.toBeInstanceOf(ProjectDeclarationError)
   })
 })
+
+describe('index_version 2', () => {
+  it('replaces an FS v8 (index_version 1) snapshot with a v2 rebuild', async () => {
+    await run('logs/a-260901-090000')
+    await fs.writeFile(
+      join(root, 'logs/a-260901-090000/result.csv'),
+      'path,stat,value\n$experiment_schema_version,,1\n',
+    )
+    await experiment('E0001-a', ['logs/a-260901-090000'])
+    await fs.writeFile(join(root, 'docs/experiments/E0001-a/experiment.json'), '{}\n')
+    await fs.mkdir(join(root, '.memon/index'), { recursive: true })
+    await fs.writeFile(join(root, '.memon/index/.gitignore'), '*\n')
+    await fs.writeFile(
+      join(root, '.memon/index/snapshot.json'),
+      JSON.stringify({ index_version: 1, runs: {}, experiments: {}, wiki: {} }),
+    )
+    expect((await readDerivedIndex(root)).snapshotState).toBe('outdated')
+    const result = await rebuildIndex(root)
+    expect(result.status).toBe('rebuilt')
+    const read = await readDerivedIndex(root)
+    expect(read.snapshotState).toBe('ok')
+    expect(read.snapshot?.index_version).toBe(2)
+    expect(read.snapshot?.runs['logs/a-260901-090000']).toMatchObject({ result_schema_version: 1 })
+    expect(
+      read.snapshot?.experiments['docs/experiments/E0001-a']?.bundle_fp.description,
+    ).not.toBeNull()
+  })
+})
+
+describe('Results summaries', () => {
+  it('deletes the summary of an Experiment that no longer exists', async () => {
+    await run('logs/a-260901-090000')
+    await experiment('E0001-a', ['logs/a-260901-090000'])
+    const results = join(root, '.memon/index/results')
+    await fs.mkdir(results, { recursive: true })
+    await fs.writeFile(join(results, 'E0001-a.json'), '{}')
+    await fs.writeFile(join(results, 'E0003-old.json'), '{}')
+    await fs.writeFile(join(results, '.tmp-E0003-old-aaaaaaaa'), '{')
+    const result = await rebuildIndex(root)
+    expect(result.deletedSummaries).toEqual(['E0003-old.json'])
+    expect((await fs.readdir(results)).sort()).toEqual(['.tmp-E0003-old-aaaaaaaa', 'E0001-a.json'])
+  })
+})

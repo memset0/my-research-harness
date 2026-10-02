@@ -148,17 +148,30 @@ describe('compactIndex', () => {
 
   it('never overwrites a snapshot with a newer index_version', async () => {
     await removal('a')
-    await fs.writeFile(index('snapshot.json'), JSON.stringify({ index_version: 2, future: true }))
+    await fs.writeFile(index('snapshot.json'), JSON.stringify({ index_version: 3, future: true }))
     const result = await compactIndex(root, { role: 'cli' })
     expect(result.status).toBe('unsupported')
     expect(JSON.parse(await fs.readFile(index('snapshot.json'), 'utf8'))).toEqual({
-      index_version: 2,
+      index_version: 3,
       future: true,
     })
     expect(await eventNames()).toHaveLength(1)
     expect(
       mergedIndexView(await readDerivedIndex(root), { runDirs: [], runDirsSource: 'default' }),
     ).toBeNull()
+  })
+
+  it('deletes outdated (index_version 1) events older than one hour and keeps younger ones', async () => {
+    await ensureIndexDirectory(resolveIndexPaths(root), { events: true })
+    const outdated = (time: number, suffix: string) =>
+      `${String(time).padStart(13, '0')}-1-${suffix}.json`
+    const old = outdated(Date.now() - 2 * 60 * 60 * 1000, 'aaaaaaaa')
+    const young = outdated(Date.now() - 60 * 1000, 'bbbbbbbb')
+    for (const name of [old, young])
+      await fs.writeFile(index('events', name), JSON.stringify({ index_version: 1, upserts: {} }))
+    const result = await compactIndex(root, { role: 'cli' })
+    expect(result.removedOutdatedEvents).toEqual([old])
+    expect(await eventNames()).toEqual([young])
   })
 
   it('removes temporaries older than one hour and keeps younger ones', async () => {
@@ -180,11 +193,11 @@ describe('damaged index', () => {
   it('a truncated, invalid or missing snapshot reads as no index', async () => {
     expect((await readDerivedIndex(root)).snapshotState).toBe('missing')
     await ensureIndexDirectory(resolveIndexPaths(root))
-    await fs.writeFile(index('snapshot.json'), '{"index_version": 1, "runs": {')
+    await fs.writeFile(index('snapshot.json'), '{"index_version": 2, "runs": {')
     const truncated = await readDerivedIndex(root)
     expect(truncated.snapshotState).toBe('invalid')
     expect(mergedIndexView(truncated, { runDirs: [], runDirsSource: 'default' })).toBeNull()
-    await fs.writeFile(index('snapshot.json'), JSON.stringify({ index_version: 1, runs: [] }))
+    await fs.writeFile(index('snapshot.json'), JSON.stringify({ index_version: 2, runs: [] }))
     expect((await readDerivedIndex(root)).snapshotState).toBe('invalid')
   })
 

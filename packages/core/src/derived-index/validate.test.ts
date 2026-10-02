@@ -171,3 +171,40 @@ describe('verifyIndex', () => {
     expect(result.drift).toEqual([])
   })
 })
+
+describe('result files', () => {
+  it('marks a Run stale and reports drift when its result.csv changes', async () => {
+    const a = await run('logs/a-260901-090000', 'FINISHED')
+    await experiment('E0001-a', ['logs/a-260901-090000'])
+    const { snapshot } = await rebuildIndex(root)
+    await fs.writeFile(
+      join(a, 'result.csv'),
+      'path,stat,value\n$experiment_schema_version,,2\nmetrics.fid,,1\n',
+    )
+    const stale = await validateIndexEntries(root, snapshot!, { maxAgeMs: 0, kinds: ['runs'] })
+    expect(stale.stale).toEqual([{ kind: 'runs', key: 'logs/a-260901-090000', reason: 'changed' }])
+    const verified = await verifyIndex(root)
+    expect(verified.drift.map((record) => [record.key, record.field])).toEqual([
+      ['logs/a-260901-090000', 'fingerprint'],
+      ['logs/a-260901-090000', 'result_fp'],
+      ['logs/a-260901-090000', 'result_schema_version'],
+    ])
+    await rebuildIndex(root)
+    expect((await verifyIndex(root)).drift).toEqual([])
+  })
+
+  it('reports drift when experiment.json changes', async () => {
+    await run('logs/a-260901-090000', 'FINISHED')
+    await experiment('E0001-a', ['logs/a-260901-090000'])
+    await rebuildIndex(root)
+    await fs.writeFile(join(root, 'docs/experiments/E0001-a/experiment.json'), '{}\n')
+    const verified = await verifyIndex(root)
+    expect(verified.drift).toEqual([
+      expect.objectContaining({
+        kind: 'experiments',
+        key: 'docs/experiments/E0001-a',
+        field: 'fingerprint',
+      }),
+    ])
+  })
+})

@@ -1,4 +1,4 @@
-// Formats of the derived index (`index_version: 1`, FS v8).
+// Formats of the derived index (`index_version: 2`, FS v9; version 1 was FS v8).
 //
 // Snapshot (`snapshot.json`) and event files are JSON objects; every map is
 // keyed by a project-relative POSIX path and no absolute path, host or user
@@ -9,7 +9,14 @@
 import { z } from 'zod'
 import { isProjectRelativePath } from './paths.js'
 
-export const INDEX_VERSION = 1
+export const INDEX_VERSION = 2
+
+/**
+ * `index_version` of a file. The version is gated by `classify` before a
+ * file is validated, so the schema accepts any positive integer and an
+ * in-memory body built by an older caller still type-checks.
+ */
+const IndexVersionSchema = z.number().int().positive()
 
 const ISO8601_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
 
@@ -83,6 +90,10 @@ export const RunEntrySchema = z
   .object({
     readme_fp: PersistedFingerprintSchema,
     dir_fp: PersistedFingerprintSchema,
+    /** `<runDir>/result.csv` (null when absent). */
+    result_fp: PersistedFingerprintSchema,
+    /** The `experiment_schema_version` the result file records (null when absent or unreadable). */
+    result_schema_version: z.number().int().positive().nullable(),
     verified_at: IsoTimestampSchema,
     has_readme: z.boolean(),
     status: RunStatusSchema,
@@ -130,7 +141,8 @@ export const ExperimentEntrySchema = z
       .object({
         implementation: PersistedFingerprintSchema,
         investigation: PersistedFingerprintSchema,
-        results: PersistedFingerprintSchema,
+        /** The description file `experiment.json`. */
+        description: PersistedFingerprintSchema,
       })
       .strict(),
     verified_at: IsoTimestampSchema,
@@ -158,7 +170,7 @@ const pathMap = <T extends z.ZodTypeAny>(value: T) => z.record(RelativePathSchem
 
 export const SnapshotSchema = z
   .object({
-    index_version: z.literal(INDEX_VERSION),
+    index_version: IndexVersionSchema,
     fs_convention_version: z.number().int().positive(),
     generated_at: IsoTimestampSchema,
     generator: z.object({ release: z.string(), role: IndexRoleSchema }).strict(),
@@ -177,7 +189,7 @@ export type IndexSnapshot = z.infer<typeof SnapshotSchema>
 
 export const EventSchema = z
   .object({
-    index_version: z.literal(INDEX_VERSION),
+    index_version: IndexVersionSchema,
     written_at: IsoTimestampSchema,
     writer: z
       .object({ release: z.string(), role: IndexRoleSchema, op: z.string().min(1) })

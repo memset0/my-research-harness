@@ -18,6 +18,8 @@ import { discoverRuns } from '../discovery/discover.js'
 import { matchesRunDirPatterns, nestedRunAncestor } from '../discovery/run-dirs.js'
 import { listExperimentPaths } from '../experiments/discover.js'
 import { type EffectiveRunDirs, resolveEffectiveRunDirs } from '../project-declaration/load.js'
+import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
+import { RESULT_FILE_NAME } from '../results/result-file.js'
 import { discoverWikiPages } from '../wiki/discover.js'
 import { deriveExperimentEntry, deriveRunEntry, deriveWikiEntry, indexKey } from './entries.js'
 import { type PersistedFingerprint, sameFingerprint, takeFingerprint } from './fingerprint.js'
@@ -83,6 +85,7 @@ async function currentFingerprints(
     return [
       [run.readme_fp, await takeFingerprint(join(absolute, 'README.md'), fs)],
       [run.dir_fp, await takeFingerprint(absolute, fs)],
+      [run.result_fp, await takeFingerprint(join(absolute, RESULT_FILE_NAME), fs)],
     ]
   }
   if (kind === 'experiments') {
@@ -94,7 +97,7 @@ async function currentFingerprints(
           [experiment.readme_fp, 'README.md'],
           [experiment.bundle_fp.implementation, 'implementation.yaml'],
           [experiment.bundle_fp.investigation, 'investigation.yaml'],
-          [experiment.bundle_fp.results, 'results.yaml'],
+          [experiment.bundle_fp.description, EXPERIMENT_DESCRIPTION_FILE],
         ] as const
       ).map(
         async ([fingerprint, name]) =>
@@ -199,6 +202,7 @@ const RUN_FIELDS = [
   'archived',
   'deprecated',
   'eligibility_error',
+  'result_schema_version',
 ] as const
 const EXPERIMENT_FIELDS = ['id', 'slug', 'status', 'archived', 'runs'] as const
 const WIKI_FIELDS = ['id', 'kind', 'status', 'title', 'sources', 'deprecated'] as const
@@ -342,6 +346,8 @@ export async function verifyIndex(
       continue
     }
     record('runs', stale.key, 'fingerprint', indexed.readme_fp, disk.readme_fp)
+    if (!sameFingerprint(indexed.result_fp, disk.result_fp))
+      record('runs', stale.key, 'result_fp', indexed.result_fp, disk.result_fp)
     for (const field of RUN_FIELDS)
       if (differs(indexed[field], disk[field]))
         record('runs', stale.key, field, indexed[field], disk[field])
@@ -357,7 +363,7 @@ export async function verifyIndex(
       !sameFingerprint(indexed.readme_fp, disk.readme_fp) ||
       !sameFingerprint(indexed.bundle_fp.implementation, disk.bundle_fp.implementation) ||
       !sameFingerprint(indexed.bundle_fp.investigation, disk.bundle_fp.investigation) ||
-      !sameFingerprint(indexed.bundle_fp.results, disk.bundle_fp.results)
+      !sameFingerprint(indexed.bundle_fp.description, disk.bundle_fp.description)
     if (!fingerprintChanged) continue
     record('experiments', key, 'fingerprint', indexed.readme_fp, disk.readme_fp)
     for (const field of EXPERIMENT_FIELDS)
