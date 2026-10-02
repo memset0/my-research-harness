@@ -1,0 +1,39 @@
+## Why
+
+With results in Run files (`run-results-v9`) and resumable, observable launches (`run-record-and-resume`), the remaining gap is deciding *when and where* Runs execute. Operators run hand-written dispatchers (one has run for 8.5 days over a 2,526-entry queue with 16 home-made states) that re-read a node allocation file every minute, wait for three consecutive idle GPU samples, treat a launch as occupying its node until an exit code appears, start training with `setsid` because a dispatcher restart once killed two trainings, and never resume implicitly. memon only records Runs, so priorities, preemption and resumption live outside it and its dashboard cannot show what is queued, what holds which GPU, or why a Run was stopped. This change makes scheduling a memon capability — first as a complete, testable shell (core, daemon, control files, backend interface, a local/simulated backend and a dashboard panel); real node backends follow once real nodes are available.
+
+## What Changes
+
+- **`memon sched` — a CLI-side resident scheduler** for one project, run on a machine that can reach the compute resources. A lease under `.memon/sched/` guarantees one active scheduler per project; restarting it never kills a launched Run (launches are detached through the `run-record-and-resume` wrapper).
+- **Queue and decisions.** Runs are submitted with `priority` (any integer chosen by the user, default `0`, larger first, equal priority first-come first-served, negative for background work), `preemptible` and `resumable` taken from the Run record (`preemptible` defaults to `false` and is set only on the user's explicit request; `resumable` is recorded truthfully). When the head of the queue cannot be placed, the scheduler stops only Runs of **strictly lower** priority that are `preemptible`, preferring resumable Runs with the most recent checkpoint, until the request fits; there is no "may preempt others" flag. preemptible + resumable ⇒ paused and later resumed; preemptible + not resumable ⇒ stopped and later rerun from scratch; not preemptible ⇒ never stopped. Preemption = stop request → grace period for a checkpoint → `INTERRUPTED` with `stop_reason: preempted` → back in the queue → automatic resume when resources free up.
+- **Human-owned allocations.** The scheduler dispatches and preempts only inside node/allocation pools that a human declares in a machine-local scheduler configuration (`~/.config/memon/sched.yml` by default — deployment data, never tracked); it never acquires or releases allocations (no `salloc`, no `scancel` of an allocation).
+- **Control through files, polling only.** Submissions and control operations (`submit`, `cancel`, `pause`, `resume`, `priority`, node `hold`/`release`/`drain`) are command files in `.memon/sched/commands/` that the scheduler processes in order on its polling tick; the scheduler publishes `state.json` (queue, running Runs, reservations, pools) and `nodes.json` (per-node, per-GPU utilization, memory, occupying Run, idle judgment). No filesystem watcher anywhere.
+- **Backends behind one interface.** `local` (implemented now): real processes on the scheduler's host with declared virtual nodes and GPU slots and simulated GPU telemetry — enough to verify dispatch, heartbeat, preemption and resume end to end, plus a deterministic simulated backend and clock for tests. `nodes` (self-dispatch into held allocations, productizing the operator practice: three idle samples, exit-receipt occupancy, `setsid`), `slurm` (one `sbatch` per launch; partition/account/limits from configuration) and `ray` (on held nodes): configuration schema and interface only, refusing to start with `BACKEND_NOT_IMPLEMENTED`; their implementation and validation are deferred until real nodes are available.
+- **Scheduling history in the Journal.** Every scheduling event (enqueued, dispatched, started, heartbeat lost, preempted, resumed, restarted, requeued, finished, failed, interrupted, paused, cancelled, priority changed, node held/released, dispatch failed) is one typed activity receipt with Run, node, GPUs, priority, reason and time; `memon journal read`, the owner history API and the Journal page filter by origin, event type, Run, node and time.
+- **Scheduler panel.** A `Scheduler` project tab shows nodes and GPUs, the queue (priority, preemptible, resumable, progress) and recent scheduling history (a filtered Journal view), refreshed by the common polling heartbeat with `ETag`/`304` (10 s while visible). Owners can pause, resume, cancel and re-prioritize Runs from it; central only writes command files that `memon sched` executes. Share viewers of the project read the nodes and queue views read-only; the history (owner-only Journal receipts) and all controls stay owner-only.
+- **Skills.** Execution skills submit Runs through `memon sched submit` when a project uses the scheduler, never set `preemptible` without an explicit user request, never touch allocations or `.memon/sched/`.
+
+## Capabilities
+
+### New Capabilities
+- `run-scheduler`: the `memon sched` daemon — lease, machine-local pool configuration, queue and ordering, admission, placement and idle gating, preemption, dispatch through the launch wrapper, liveness and requeue, command files, published state and node snapshots, backend interface with the implemented `local` backend and declared-but-unimplemented `nodes`/`slurm`/`ray`, journal recording, restart safety.
+- `scheduler-panel`: the dashboard panel — nodes/GPU view, queue view, owner-only filtered scheduling history and owner-only controls through command files, viewer read-only access, refresh cadence and empty/stale states.
+
+### Modified Capabilities
+- `journal`: scheduling events are typed Journal records and every Journal reader filters them by origin, event type, Run, node and time.
+- `activity-capture`: the scheduler records one bounded receipt per scheduling event.
+- `memon-cli`: `memon sched` command family; `memon journal read` origin/event/node/until filters; the binary's subcommand list.
+- `memon-skills`: skills submit through the scheduler without widening their authority.
+- `web-layout`: the AppBar gains a `Scheduler` tab for projects with scheduler state.
+
+## Impact
+
+- **Core:** scheduler state machine (pure, clock-injected), placement/preemption planner, command protocol, snapshots, backend interface + `local` backend + simulated backend, receipt kind.
+- **CLI:** `memon sched run|status|submit|cancel|pause|resume|priority|hold|release|drain|check-config`; journal filters.
+- **Backend / Web (central):** routes for scheduler state, nodes, filtered history and owner control commands; `Scheduler` tab and panel; Journal page filters.
+- **Skills:** `memon-run-experiment`, shared reference.
+- **Release:** `9.2.0` (MINOR; `MEMON_CHANGED_SURFACES=central,cli,skills`); no FS change (new self-ignored `.memon/sched/`).
+- **Dependencies:** requires `run-results-v9` and `run-record-and-resume` (launch wrapper, stop requests, heartbeat, `INTERRUPTED` + `stop_reason`, truthful attributes).
+- **Rollout (not implementation tasks):**
+  - After the release, reinstall skills in research projects (`memon update` on CLI nodes, `memon install-skills` where needed).
+  - Deferred until the real `nodes`/`slurm`/`ray` backends are available: update the operator project's own `AGENTS.md` to replace the hand-written dispatcher's dispatch conventions and node-allocation rules with `memon sched`; until then the operator keeps the existing dispatcher, and `memon sched` is used with the `local` backend only.
