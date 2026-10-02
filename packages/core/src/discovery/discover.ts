@@ -18,6 +18,7 @@
 
 import type { Dirent } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
+import { loadProjectDeclaration } from '../project-declaration/load.js'
 import { projectFs } from '../project-file-store.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
@@ -58,10 +59,22 @@ export interface DiscoverOptions {
 }
 
 /**
+ * The patterns a walk of `project` expands: the caller's explicit `runDirs`
+ * (CLI `--run-dir` or central `run_dirs`), else `.memon/project.yml`
+ * `run_dirs`. `undefined` means no source declares any. An invalid
+ * declaration throws `ProjectDeclarationError` (fail closed).
+ */
+async function declaredRunDirs(project: ProjectConfig): Promise<string[] | undefined> {
+  if (project.runDirs !== undefined) return project.runDirs
+  return (await loadProjectDeclaration(project.root))?.run_dirs
+}
+
+/**
  * Returns absolute Run paths under `project.root/{logs,outputs,experiments}`,
  * applying default + user excludes. The project root itself is never listed.
  *
- * When `project.runDirs` is set, discovery only expands those patterns (see
+ * When `project.runDirs` is set — or, without it, `.memon/project.yml`
+ * declares `run_dirs` — discovery only expands those patterns (see
  * `run-dirs.ts`) segment by segment and never recurses: a literal segment is
  * checked with `lstat`, a glob segment lists its parent once (listings are
  * shared between patterns), and only directories matched by a pattern's last
@@ -127,7 +140,8 @@ export async function discoverRuns(
     excludedNames[name] === true ||
     matchesExclude(relative(project.root, absolute).split(sep).join('/'))
 
-  if (project.runDirs !== undefined) {
+  const runDirs = await declaredRunDirs(project)
+  if (runDirs !== undefined) {
     const listings = new Map<string, Promise<Dirent[]>>()
     const list = (directory: string): Promise<Dirent[]> => {
       let pending = listings.get(directory)
@@ -158,7 +172,7 @@ export async function discoverRuns(
     }
     const matched = new Set<string>()
     await Promise.all(
-      project.runDirs.map(async (pattern) => {
+      runDirs.map(async (pattern) => {
         const segments = pattern.split('/')
         let prefixes = [project.root]
         for (const [index, segment] of segments.entries()) {

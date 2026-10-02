@@ -65,7 +65,11 @@ export { matchesRunDeprecationFilter, RunIndex } from './discovery/index.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
 export { Poller } from './discovery/poller.js'
 export { readRunDir, runFromReadme } from './discovery/read.js'
-export { RUN_DIR_PATTERN_NON_RUN, runDirPatternError } from './discovery/run-dirs.js'
+export {
+  DEFAULT_RUN_DIRS,
+  RUN_DIR_PATTERN_NON_RUN,
+  runDirPatternError,
+} from './discovery/run-dirs.js'
 export type { StaleCheckOptions } from './discovery/stale.js'
 export {
   DEFAULT_STALE_THRESHOLD_MS,
@@ -358,6 +362,7 @@ export {
   planMembershipMigration,
   rollbackMembershipMigration,
 } from './migrations/v6-to-v7.js'
+export * from './project-declaration/index.js'
 export * from './project-file-store.js'
 export * from './project-resource.js'
 // Project scanning and Run target resolution (CLI, Backend and Web).

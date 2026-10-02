@@ -10,6 +10,17 @@
 
 import { RUN_ROOT_DIRECTORIES } from '../ids.js'
 
+/**
+ * FS v8 default Run locations, used when no source declares `run_dirs`
+ * (no CLI `--run-dir`, no central `run_dirs`, no `.memon/project.yml`
+ * `run_dirs`): one level below each Run root, never deeper.
+ */
+export const DEFAULT_RUN_DIRS: readonly string[] = Object.freeze([
+  'logs/*',
+  'outputs/*',
+  'experiments/*',
+])
+
 /** Lint-level code for a pattern match whose name is not Run-shaped. */
 export const RUN_DIR_PATTERN_NON_RUN = 'RUN_DIR_PATTERN_NON_RUN'
 
