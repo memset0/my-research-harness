@@ -8,6 +8,7 @@ import {
   BackendExperimentResponseSchema,
   BackendRunResponseSchema,
   projectFs,
+  withProjectFileContext,
 } from '@memon/core'
 import { createBackendRequest } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -77,15 +78,42 @@ describe('summary index consumers', () => {
     )
   })
 
-  it('sees a member README change on the next detail read', async () => {
+  it('serves member facts within the list window and re-validates them on a manual refresh', async () => {
     const service = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
     await service.getExperiment('p', 'E0001-m')
     await fs.writeFile(
       join(root, members[1]!, 'README.md'),
       '---\nstatus: FINISHED\ndeprecated: true\n---\n',
     )
+    const detail = async (reason: 'open' | 'manual') =>
+      BackendExperimentResponseSchema.parse(
+        await withProjectFileContext({ root, storage: 'local', reason }, () =>
+          service.getExperiment('p', 'E0001-m'),
+        ),
+      ).deprecatedRuns
+    // Q1: members are list-class data, so a plain re-open inside the window
+    // takes no member stat and may still show the previous facts.
+    const stat = vi.spyOn(projectFs, 'stat')
+    expect(await detail('open')).toEqual([members[0]])
+    expect(
+      stat.mock.calls.map(([path]) => String(path)).filter((path) => path.includes('/logs/')),
+    ).toEqual([])
+    // An explicit refresh re-takes every member fingerprint for that request.
+    expect(await detail('manual')).toEqual([members[0], members[1]])
+  })
+
+  it('shows a centrally written member status on the next detail read', async () => {
+    const service = new FilesystemProjectService([project('written')], {
+      readPolicy: CENTRAL_READ_POLICY,
+    })
+    await service.getExperiment('written', 'E0001-m')
+    await fs.writeFile(
+      join(root, members[1]!, 'README.md'),
+      '---\nstatus: FINISHED\ndeprecated: true\n---\n',
+    )
+    invalidateProjectReadIndex('written')
     const detail = BackendExperimentResponseSchema.parse(
-      await service.getExperiment('p', 'E0001-m'),
+      await service.getExperiment('written', 'E0001-m'),
     )
     expect(detail.deprecatedRuns).toEqual([members[0], members[1]])
   })

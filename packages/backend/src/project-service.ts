@@ -21,6 +21,7 @@ import {
   discoverRuns,
   type Experiment,
   projectFs as fs,
+  getProjectFileContext,
   getProjectFileStatus,
   type ImplementationItem,
   type IndexedRun,
@@ -47,6 +48,7 @@ import {
   readRunDir,
   runArchivedFromRun,
 } from '@memon/core'
+import { prepareProjectIndex } from './derived-index-mirror.js'
 import type {
   BackendWikiArtifactOptions,
   BackendWikiArtifactReferences,
@@ -265,7 +267,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
     references: BackendWikiArtifactReferences,
     options: BackendWikiArtifactOptions = {},
   ): Promise<BackendWikiArtifacts> {
-    const project = this.requireProject(projectName)
+    const project = await this.preparedProject(projectName)
     const age = this.policy.listMaxAgeMs
     const runWindow = runListWindow(this.policy)
     return withAutomaticProjectFileContext(async () => {
@@ -365,8 +367,9 @@ export class FilesystemProjectService implements BackendProjectReadService {
     filter: RunCollectionFilter = {},
     options: RunPageOptions = {},
   ) {
+    const prepared = await this.preparedProject(projectName)
     if (options.inventoryOnly) {
-      const project = this.requireProject(projectName)
+      const project = prepared
       const paths = await withAutomaticProjectFileContext(() =>
         discoverRuns(project, { includeArchived: true }),
       )
@@ -407,7 +410,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
    * open Run page's freshness and attention describe only what it displays.
    */
   async getRun(projectName: string, id: string) {
-    const project = this.requireProject(projectName)
+    const project = await this.preparedProject(projectName)
     const run = await this.readRun(project, id)
     return BackendRunResponseSchema.parse({
       ...safeRunSummary(run, project),
@@ -442,7 +445,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
    * the detail projection's job.
    */
   async listExperiments(projectName: string, options: InventoryListOptions = {}) {
-    const project = this.requireProject(projectName)
+    const project = await this.preparedProject(projectName)
     const maxAge = this.policy.listMaxAgeMs
     if (options.inventoryOnly) {
       const { folders, legacy } = await withAutomaticProjectFileContext(() =>
@@ -478,10 +481,14 @@ export class FilesystemProjectService implements BackendProjectReadService {
    * Run bodies and logs arrive only from explicit Run endpoints.
    */
   async getExperiment(projectName: string, id: string) {
-    const project = this.requireProject(projectName)
+    const memberWindow = this.memberWindow()
+    const project = await this.preparedProject(projectName)
     const experiment = await this.readExperimentDocument(project, id)
-    const eligibility = await experimentRunEligibility(project, experiment, () =>
-      this.walk(project),
+    const eligibility = await experimentRunEligibility(
+      project,
+      experiment,
+      () => this.walk(project),
+      memberWindow,
     )
     const documentView = buildExperimentDocumentView(experiment, {
       deprecatedRuns: eligibility.deprecatedRuns,
@@ -501,7 +508,8 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   async getExperimentResults(projectName: string, id: string) {
-    const project = this.requireProject(projectName)
+    const memberWindow = this.memberWindow()
+    const project = await this.preparedProject(projectName)
     const experiment = await this.readExperimentDocument(project, id)
     const results = experiment.documents?.results
     if (!results?.exists) {
@@ -514,8 +522,11 @@ export class FilesystemProjectService implements BackendProjectReadService {
         updatedAt: fileStat.mtime.toISOString(),
       })
     }
-    const eligibility = await experimentRunEligibility(project, experiment, () =>
-      this.walk(project),
+    const eligibility = await experimentRunEligibility(
+      project,
+      experiment,
+      () => this.walk(project),
+      memberWindow,
     )
     return BackendExperimentResultsResponseSchema.parse({
       project: projectName,
@@ -528,7 +539,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   async getRunFiles(projectName: string, id: string, depth: number) {
-    const project = this.requireProject(projectName)
+    const project = await this.preparedProject(projectName)
     const runPath = await withAutomaticProjectFileContext(() =>
       resolveRunReferencePath(project, id, () => this.walk(project)),
     )
@@ -684,12 +695,35 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   async getAnomalies(projectName: string) {
+    await this.preparedProject(projectName)
     const data = await this.readProject(projectName)
     return BackendAnomaliesResponseSchema.parse({
       anomalies: [...data.membership.anomalies].sort((a, b) =>
         b.detectedAt.localeCompare(a.detectedAt),
       ),
     })
+  }
+
+  /**
+   * The Project, with its summary index seeded from the derived index on
+   * first use (central only; a no-op elsewhere) and its activity noted for
+   * the background validator.
+   */
+  private async preparedProject(projectName: string): Promise<ProjectConfig> {
+    const project = this.requireProject(projectName)
+    await prepareProjectIndex(project)
+    return project
+  }
+
+  /**
+   * The reuse window for an Experiment detail's member facts. Members are
+   * list-class data (FS v8, Q1): reused within the list windows, except on an
+   * explicit user refresh, which re-takes every member's fingerprint. Must be
+   * read before entering an automatic-priority context.
+   */
+  private memberWindow(): number | ((summary: RunSummary | null) => number) {
+    if (getProjectFileContext()?.reason === 'manual') return 0
+    return runListWindow(this.policy)
   }
 
   private requireProject(projectName: string): ProjectConfig {
@@ -1031,6 +1065,7 @@ async function experimentRunEligibility(
   project: ProjectConfig,
   experiment: Experiment,
   walk: () => Promise<readonly string[]>,
+  memberWindow: number | ((summary: RunSummary | null) => number),
 ): Promise<{ deprecatedRuns: string[]; variantEligibility: ResultsVariantEligibility[] }> {
   const results = experiment.documents?.results.data ?? null
   let deprecatedRuns: string[]
@@ -1043,6 +1078,7 @@ async function experimentRunEligibility(
           ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
         ],
         walk,
+        memberWindow,
       ),
     )
   } catch {
@@ -1059,14 +1095,16 @@ async function experimentRunEligibility(
 
 /**
  * Deprecated ids among `ids` (declared paths or legacy base names), from Run
- * summaries validated on every call (one stat per Run when unchanged). A
- * missing Run or README is not deprecated; unreadable or malformed
- * eligibility metadata throws. The Run walk runs only when a base name needs it.
+ * summaries reused within `maxAgeMs` (strict readers pass 0: one stat per Run
+ * when unchanged). A missing Run or README is not deprecated; unreadable or
+ * malformed eligibility metadata throws. The Run walk runs only when a base
+ * name needs it.
  */
 async function deprecatedRunIds(
   project: ProjectConfig,
   ids: readonly string[],
   walk: () => Promise<readonly string[]>,
+  maxAgeMs: number | ((summary: RunSummary | null) => number),
 ): Promise<string[]> {
   if (ids.length === 0) return []
   const wanted = new Set(ids)
@@ -1074,10 +1112,10 @@ async function deprecatedRunIds(
     [...wanted],
     ELIGIBILITY_CONCURRENCY,
     async (reference) => {
-      if (reference.includes('/')) return indexedDeclaredRun(project, reference, 0)
+      if (reference.includes('/')) return indexedDeclaredRun(project, reference, maxAgeMs)
       const matches = (await walk()).filter((path) => basename(path) === reference)
       if (matches.length > 1) throw new Error(`Ambiguous Run ID: ${reference}`)
-      return matches[0] === undefined ? null : indexedRun(project, matches[0], 0)
+      return matches[0] === undefined ? null : indexedRun(project, matches[0], maxAgeMs)
     },
   )
   const deprecated: string[] = []

@@ -5,9 +5,11 @@
 // listing, a real path, the Run walk) and carries the fingerprint it was
 // built from. An entry validated within the caller's window is returned with
 // no I/O; otherwise its fingerprint is taken again and the entry is reloaded
-// only when the fingerprint changed. The index is populated on demand, never
-// persisted, and can be dropped at any time: it is a cache of file
-// observations, never a source of truth.
+// only when the fingerprint changed. The index is populated on demand or, for
+// FS v8 Projects on central, seeded once from the project's derived index
+// (`derived-index-mirror.ts`); it is never persisted by itself and can be
+// dropped at any time: it is a cache of file observations, never a source of
+// truth.
 
 import { createHash } from 'node:crypto'
 import type { Dirent, Stats } from 'node:fs'
@@ -68,6 +70,53 @@ interface Entry {
   value: unknown
   validatedAt: number
   pending: Promise<void> | null
+  /**
+   * Seeded from the derived index: the fingerprint was persisted without the
+   * device number (it differs between NFS client mounts), so it is compared
+   * with the device stripped until this process has taken it itself.
+   */
+  devless?: boolean
+  /**
+   * Seeded and not yet re-validated by this process: once its window has
+   * passed the entry is still served (stale-while-revalidate) while one
+   * background validation runs. Any invalidation clears it.
+   */
+  serveStale?: boolean
+}
+
+/** A seeded observation (see `ProjectReadIndex.seed`). */
+export interface SeededObservation {
+  /** Fingerprint in the device-less form of `devlessFingerprint`, or null (absent). */
+  fingerprint: string | null
+  value: unknown
+  /** Epoch ms of the derived-index verification. */
+  validatedAt: number
+}
+
+/** What `peek` reports about one entry. */
+export interface PeekedEntry {
+  fingerprint: string | null
+  value: unknown
+  validatedAt: number
+  devless: boolean
+}
+
+/**
+ * A `statFingerprint` (possibly prefixed, e.g. `readme:`) with its device
+ * number replaced by `*`: the form persisted fingerprints are compared in.
+ */
+export function devlessFingerprint(fingerprint: string): string {
+  return fingerprint.replace(/(^|:)([fdo]):[^:]*:/, '$1$2:*:')
+}
+
+function sameObservation(entry: Entry, next: string | null): boolean {
+  if (entry.fingerprint === next) return true
+  return (
+    entry.devless === true &&
+    next !== null &&
+    entry.fingerprint !== null &&
+    devlessFingerprint(next) === entry.fingerprint
+  )
 }
 
 type MaxAge<T> = number | ((value: T | null) => number)
@@ -92,8 +141,77 @@ export class ProjectReadIndex {
 
   /** Force the next read of every entry (and the walk) to re-validate. */
   invalidate(): void {
-    for (const entry of this.entries.values()) entry.validatedAt = Number.NEGATIVE_INFINITY
+    for (const entry of this.entries.values()) {
+      entry.validatedAt = Number.NEGATIVE_INFINITY
+      entry.serveStale = false
+    }
     this.walkState.builtAt = Number.NEGATIVE_INFINITY
+  }
+
+  /** Force the next read of `key` to re-validate (no stale serving). */
+  expire(key: string): void {
+    const entry = this.entries.get(key)
+    if (!entry) return
+    entry.validatedAt = Number.NEGATIVE_INFINITY
+    entry.serveStale = false
+  }
+
+  /**
+   * Seed `key` from the derived index unless this process already observed
+   * it. The entry keeps its recorded verification time, so the caller's
+   * windows apply unchanged; past its window it is served stale while one
+   * background validation re-takes the fingerprint.
+   */
+  seed(key: string, observation: SeededObservation): boolean {
+    if (this.entries.has(key)) return false
+    this.entries.set(key, {
+      fingerprint: observation.fingerprint,
+      value: observation.value,
+      validatedAt: observation.validatedAt,
+      pending: null,
+      devless: true,
+      serveStale: true,
+    })
+    return true
+  }
+
+  /** Seed the Run walk unless one was already taken by this process. */
+  seedWalk(paths: readonly string[], builtAt: number): boolean {
+    if (this.walkState.paths !== null || this.walkState.pending !== null) return false
+    this.walkState.paths = paths
+    this.walkState.builtAt = builtAt
+    return true
+  }
+
+  /** The current state of `key` without any I/O (validator and tests). */
+  peek(key: string): PeekedEntry | undefined {
+    const entry = this.entries.get(key)
+    if (!entry || entry.pending) return undefined
+    return {
+      fingerprint: entry.fingerprint,
+      value: entry.value,
+      validatedAt: entry.validatedAt,
+      devless: entry.devless === true,
+    }
+  }
+
+  /**
+   * Record that `key` was verified at `at` against a device-less fingerprint
+   * the caller checked on disk. Applied only when the entry still matches
+   * that fingerprint (so a newer in-process observation is never masked).
+   */
+  confirm(key: string, devless: string | null, at: number): boolean {
+    const entry = this.entries.get(key)
+    if (!entry || entry.pending) return false
+    const current =
+      entry.fingerprint === null
+        ? null
+        : entry.devless
+          ? entry.fingerprint
+          : devlessFingerprint(entry.fingerprint)
+    if (current !== devless) return false
+    if (at > entry.validatedAt) entry.validatedAt = at
+    return true
   }
 
   /**
@@ -113,6 +231,13 @@ export class ProjectReadIndex {
     const validate = async (): Promise<Entry> => {
       for (;;) {
         const entry = this.entries.get(key)
+        if (entry?.serveStale && window(entry.value as T | null) > 0) {
+          // Seeded and past its window: serve it, re-validate in the background.
+          if (!entry.pending && this.now() - entry.validatedAt > window(entry.value as T | null)) {
+            revalidate(entry).catch(() => undefined)
+          }
+          return entry
+        }
         if (entry?.pending) {
           // Share the validation already in flight for this key.
           const settled = await entry.pending.then(
@@ -125,36 +250,45 @@ export class ProjectReadIndex {
         const startedAt = this.now()
         const maxAge = entry ? window(entry.value as T | null) : 0
         if (entry && maxAge > 0 && startedAt - entry.validatedAt <= maxAge) return entry
-        const holder: Entry = entry ?? {
-          fingerprint: null,
-          value: null,
-          validatedAt: Number.NEGATIVE_INFINITY,
-          pending: null,
-        }
-        const pending = (async () => {
-          const next = await fingerprint()
-          if (entry && entry.fingerprint === next.fingerprint) {
-            entry.validatedAt = startedAt
-            return
-          }
-          const value = next.fingerprint === null ? null : await load(next.observed)
-          holder.fingerprint = next.fingerprint
-          holder.value = value
-          holder.validatedAt = startedAt
-        })()
-        holder.pending = pending
-        if (!entry) this.entries.set(key, holder)
-        try {
-          await pending
-        } catch (error) {
-          holder.pending = null
-          // A failed load caches nothing: the next read starts over.
-          if (this.entries.get(key) === holder) this.entries.delete(key)
-          throw error
-        }
-        holder.pending = null
-        return holder
+        return revalidate(entry)
       }
+    }
+    const revalidate = async (entry: Entry | undefined): Promise<Entry> => {
+      const startedAt = this.now()
+      const holder: Entry = entry ?? {
+        fingerprint: null,
+        value: null,
+        validatedAt: Number.NEGATIVE_INFINITY,
+        pending: null,
+      }
+      const pending = (async () => {
+        const next = await fingerprint()
+        if (entry && sameObservation(entry, next.fingerprint)) {
+          entry.fingerprint = next.fingerprint
+          entry.devless = false
+          entry.serveStale = false
+          entry.validatedAt = startedAt
+          return
+        }
+        const value = next.fingerprint === null ? null : await load(next.observed)
+        holder.fingerprint = next.fingerprint
+        holder.value = value
+        holder.validatedAt = startedAt
+        holder.devless = false
+        holder.serveStale = false
+      })()
+      holder.pending = pending
+      if (!entry) this.entries.set(key, holder)
+      try {
+        await pending
+      } catch (error) {
+        holder.pending = null
+        // A failed load caches nothing: the next read starts over.
+        if (this.entries.get(key) === holder) this.entries.delete(key)
+        throw error
+      }
+      holder.pending = null
+      return holder
     }
     const entry = await validate()
     const sink = currentSink()

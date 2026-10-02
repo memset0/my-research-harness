@@ -55,13 +55,38 @@ export interface IndexedExperimentDocument {
   path: string
   parsed: ParsedExperiment
   readmeMtime: number
+  counts: ExperimentRowCounts
   /** Discovery warnings added on top of the parsed document's own. */
   discoveryWarnings: ParsedExperiment['parseWarnings']
 }
 
-interface ParsedReadme {
+/**
+ * The list row's counts. A README seeded from the derived index carries only
+ * these (its `hypotheses` and Warnings table are not persisted), so list rows
+ * read them from here rather than from `parsed`.
+ */
+export interface ExperimentRowCounts {
+  hypotheses: number
+  openWarnings: number
+}
+
+/** One parsed Experiment README as the summary index holds it. */
+export interface ParsedReadme {
   parsed: ParsedExperiment
   mtime: number
+  counts: ExperimentRowCounts
+}
+
+/** The summary-index key of an Experiment README (or legacy file). */
+export function experimentReadmeKey(path: string, stem: string): string {
+  return `file:${path}#experiment-readme:${stem}`
+}
+
+function rowCounts(parsed: ParsedExperiment): ExperimentRowCounts {
+  return {
+    hypotheses: parsed.frontMatter.hypotheses.length,
+    openWarnings: parsed.warnings.filter((warning) => warning.status === 'OPEN').length,
+  }
 }
 
 /** The `docs/experiments/` listing split into folder and legacy-file ids. */
@@ -101,8 +126,11 @@ export function indexedExperimentReadme(
     path,
     `experiment-readme:${stem}`,
     maxAgeMs,
-    (content, stat) =>
-      stat.isFile() ? { parsed: parseExperimentReadme(content, stem), mtime: stat.mtimeMs } : null,
+    (content, stat) => {
+      if (!stat.isFile()) return null
+      const parsed = parseExperimentReadme(content, stem)
+      return { parsed, mtime: stat.mtimeMs, counts: rowCounts(parsed) }
+    },
   )
 }
 
@@ -128,7 +156,14 @@ export async function indexedExperimentDocuments(
         })
       }
       if (readme) {
-        return { id, path, parsed: readme.parsed, readmeMtime: readme.mtime, discoveryWarnings }
+        return {
+          id,
+          path,
+          parsed: readme.parsed,
+          readmeMtime: readme.mtime,
+          counts: readme.counts,
+          discoveryWarnings,
+        }
       }
       if (entry.type !== 'dir') return null
       const placeholder = parseExperimentReadme('', entry.name)
@@ -136,7 +171,14 @@ export async function indexedExperimentDocuments(
         message: `MISSING_README: experiment folder ${entry.name}/ has no README.md inside`,
         severity: 'error',
       })
-      return { id, path, parsed: placeholder, readmeMtime: 0, discoveryWarnings }
+      return {
+        id,
+        path,
+        parsed: placeholder,
+        readmeMtime: 0,
+        counts: rowCounts(placeholder),
+        discoveryWarnings,
+      }
     }),
   )
   const fromLegacy = await Promise.all(
@@ -152,6 +194,7 @@ export async function indexedExperimentDocuments(
           path,
           parsed: readme.parsed,
           readmeMtime: readme.mtime,
+          counts: readme.counts,
           discoveryWarnings: [
             {
               message: `LEGACY_LAYOUT: experiment doc is at the v4 file path ${entry.name}; run \`memon-migrate-fs\` to move it into ${stem}/README.md`,
@@ -189,9 +232,8 @@ export function experimentListRow(
       updatedAt: frontMatter.updatedAt,
     },
     runCount: frontMatter.runs.length,
-    hypothesisCount: frontMatter.hypotheses.length,
-    openWarningCount: document.parsed.warnings.filter((warning) => warning.status === 'OPEN')
-      .length,
+    hypothesisCount: document.counts.hypotheses,
+    openWarningCount: document.counts.openWarnings,
     parseErrors: document.parsed.parseErrors,
     parseWarnings: [...document.parsed.parseWarnings, ...document.discoveryWarnings],
     effectiveCreatedAt: frontMatter.createdAt,

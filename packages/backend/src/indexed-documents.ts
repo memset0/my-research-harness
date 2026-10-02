@@ -62,6 +62,11 @@ export async function indexedWikiPages(
   return perKind.flat().filter((page): page is DiscoveredWikiPage => page !== null)
 }
 
+/** The summary-index key of a wiki page file (see `ProjectReadIndex.file`). */
+export function wikiPageKey(absolutePath: string): string {
+  return `file:${absolutePath}#wiki-page`
+}
+
 async function indexedWikiPage(
   project: ProjectConfig,
   policy: ReadPolicy,

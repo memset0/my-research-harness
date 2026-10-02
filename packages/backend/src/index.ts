@@ -13,6 +13,14 @@ export {
   MAX_BACKEND_ACTOR_CONTEXT_HEADER_BYTES,
 } from './actor-context.js'
 export {
+  type DerivedIndexMirrorOptions,
+  derivedIndexMirror,
+  dropDerivedIndexMirrors,
+  enableDerivedIndex,
+  prepareProjectIndex,
+  type ValidatorCycleReport,
+} from './derived-index-mirror.js'
+export {
   type BackendDocumentService,
   BackendDocumentServiceError,
   type BackendDocumentWriteResult,

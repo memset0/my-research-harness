@@ -53,6 +53,11 @@ export function runListWindow(policy: ReadPolicy): (summary: RunSummary | null) 
       : policy.listMaxAgeMs
 }
 
+/** The summary-index key of the Run directory `dir`. */
+export function runSummaryKey(dir: string): string {
+  return `run:${dir}`
+}
+
 /**
  * The summary of the Run directory `dir` (absolute, lexical, inside the
  * Project). `null` when the directory does not exist. With `contained`, the
@@ -66,7 +71,7 @@ export async function indexedRun(
   options: { contained?: boolean } = {},
 ): Promise<RunSummary | null> {
   const summary = await projectReadIndex(project.root).observe<RunSummary, RunObservation>(
-    `run:${dir}`,
+    runSummaryKey(dir),
     maxAgeMs,
     async (): Promise<Observation<RunObservation>> => {
       const readme = await statObservation(join(dir, 'README.md'))

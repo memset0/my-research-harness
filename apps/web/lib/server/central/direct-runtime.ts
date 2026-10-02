@@ -24,6 +24,7 @@ import {
   CENTRAL_READ_POLICY,
   createBackendHandler,
   createBackendSlurmService,
+  enableDerivedIndex,
   FilesystemDocumentService,
   FilesystemGitService,
   FilesystemMutationService,
@@ -133,6 +134,11 @@ function createHostRuntime(
   // mount even if capability gating were bypassed.
   const executable = projects.filter((project) => project.execution !== undefined)
   const slurmExecution = executable[0]
+  // FS v8: the summary index is seeded from each Project's derived index on
+  // first use and kept fresh by a background validator while the Project is
+  // active (`MEMON_INDEX_VALIDATOR=off` disables the validator, e.g. for the
+  // read-only I/O harness).
+  enableDerivedIndex(projects, { validator: process.env.MEMON_INDEX_VALIDATOR !== 'off' })
   // Central lists may reuse summary-index observations inside the agreed
   // windows (external edits reach every list within five minutes).
   const documents = new FilesystemDocumentService(projects, {
