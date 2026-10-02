@@ -58,8 +58,9 @@ _None._
 - `@memon/core`: `experiments/documents.ts` (Results schema, normalization,
   parse warnings), `types.ts` (`VariantStatus`, `VARIANT_STATUS_VALUES`),
   `backend-protocol.ts` (Results document status enum).
-- `@memon/backend`: `http/paths.ts` (new limit), `routes/runs-experiments.ts`
-  (detail and Results snapshot reads use it).
+- `@memon/backend`: `http/paths.ts` (new limit, also exported from the package
+  index), `routes/runs-experiments.ts` (detail and Results snapshot reads use
+  it).
 - `@memon/web`: new `components/variant-status-badge.tsx`,
   `components/results-table/cells.tsx`, `lib/experiment-results/`
   (`columns.ts`, `sorting.ts`, `types.ts`, new `status.ts`).

@@ -49,6 +49,7 @@ import {
   BACKEND_RUN_WARNINGS_ROUTE,
   BACKEND_RUNS_ROUTE,
   MAX_BACKEND_CONTROL_JSON_BYTES,
+  MAX_BACKEND_EXPERIMENT_DOCUMENT_JSON_BYTES,
 } from '../http/paths.js'
 import {
   type BackendRoute,
@@ -86,6 +87,8 @@ const projectRead = (
   handle: (ctx: RouteContext) => Promise<unknown>,
   /** List reads answer `If-None-Match` from the summary index (`ETag`/304). */
   conditional: (ctx: RouteContext) => boolean = () => false,
+  /** Response bound; the control bound unless the read serves a whole document. */
+  maxBytes: number = MAX_BACKEND_CONTROL_JSON_BYTES,
 ): RouteOperation =>
   op(read, {
     project: 'query',
@@ -96,9 +99,11 @@ const projectRead = (
         await respondConditionally(ctx, () => handle(ctx))
         return
       }
-      writeJson(ctx.response, 200, await handle(ctx))
+      writeJson(ctx.response, 200, await handle(ctx), maxBytes)
     },
   })
+
+const never = () => false
 
 const always = () => true
 
@@ -370,10 +375,13 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     BACKEND_EXPERIMENT_ROUTE,
     experimentQuery,
     {
-      GET: projectRead(async ({ options, project, params }) =>
-        BackendExperimentResponseSchema.parse(
-          await options.projectService!.getExperiment(project, params.id!),
-        ),
+      GET: projectRead(
+        async ({ options, project, params }) =>
+          BackendExperimentResponseSchema.parse(
+            await options.projectService!.getExperiment(project, params.id!),
+          ),
+        never,
+        MAX_BACKEND_EXPERIMENT_DOCUMENT_JSON_BYTES,
       ),
       DELETE: experimentMutation(deleteExperiment),
     },
@@ -399,10 +407,13 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     BACKEND_EXPERIMENT_RESULTS_ROUTE,
     projectQuery(),
     {
-      GET: projectRead(async ({ options, project, params }) =>
-        BackendExperimentResultsResponseSchema.parse(
-          await options.projectService!.getExperimentResults(project, params.id!),
-        ),
+      GET: projectRead(
+        async ({ options, project, params }) =>
+          BackendExperimentResultsResponseSchema.parse(
+            await options.projectService!.getExperimentResults(project, params.id!),
+          ),
+        never,
+        MAX_BACKEND_EXPERIMENT_DOCUMENT_JSON_BYTES,
       ),
     },
     id,

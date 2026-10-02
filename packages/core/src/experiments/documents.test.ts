@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { BackendResultsDocumentSchema } from '../backend-protocol.js'
+import { VARIANT_STATUS_VALUES } from '../types.js'
 import {
   lintExperimentDocument,
   MANAGED_SECTION_POINTERS,
@@ -14,6 +16,7 @@ import {
 } from './documents.js'
 import { buildExperimentRecord, parseExperimentReadme } from './parse.js'
 import { serializeExperimentReadme } from './serialize.js'
+import { buildExperimentDocumentView } from './view.js'
 
 const FRONTMATTER = `---
 id: E0001-foo
@@ -506,5 +509,212 @@ variants:
       results: planned,
     }
     expect(lintExperimentDocument(exp)).toEqual([])
+  })
+})
+
+function oneVariantResults(variantYaml: string) {
+  return parseResultsYaml(`
+schema_version: 1
+columns: []
+variants:
+  - id: V0001
+    name: first
+${variantYaml}
+`)
+}
+
+describe('Variant status vocabulary', () => {
+  it('lists the statuses in canonical lifecycle order, BLOCKED after PLANNED', () => {
+    expect(VARIANT_STATUS_VALUES).toEqual([
+      'PLANNED',
+      'BLOCKED',
+      'RUNNING',
+      'COMPLETED',
+      'FAILED',
+      'INCONCLUSIVE',
+      'DROPPED',
+    ])
+  })
+
+  it('parses, lints and renders a BLOCKED Variant without diagnostics', () => {
+    const blocked = oneVariantResults(`    status: BLOCKED
+    description: Waits for the parent Variant's step-500 checkpoint.
+    runs: []
+    attempts: []`)
+    expect(blocked.parseErrors).toEqual([])
+    expect(blocked.parseWarnings).toEqual([])
+    expect(blocked.data?.variants[0]?.status).toBe('BLOCKED')
+
+    const exp = experiment()
+    exp.documents = {
+      implementation,
+      investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
+      results: blocked,
+    }
+    expect(lintExperimentDocument(exp)).toEqual([])
+    expect(renderResultsMarkdown(blocked.data!)).toContain('| **V0001** first | `BLOCKED` |')
+  })
+
+  it('keeps an attempt on a BLOCKED Variant valid', () => {
+    const blocked = oneVariantResults(`    status: BLOCKED
+    runs: []
+    attempts: [logs/foo-260810-000000]`)
+    expect(blocked.parseErrors).toEqual([])
+    expect(blocked.data?.variants[0]?.attempts).toEqual(['logs/foo-260810-000000'])
+  })
+
+  it('still rejects an unknown status and names the seven accepted statuses', () => {
+    const waiting = oneVariantResults('    status: WAITING')
+    expect(waiting.data).toBeNull()
+    expect(waiting.parseErrors).toHaveLength(1)
+    expect(waiting.parseErrors[0]).toMatchObject({
+      field: 'variants.0.status',
+      severity: 'error',
+    })
+    expect(waiting.parseErrors[0]!.message).toMatch(/^INVALID_RESULTS_SCHEMA: /)
+    for (const status of VARIANT_STATUS_VALUES) {
+      expect(waiting.parseErrors[0]!.message).toContain(`'${status}'`)
+    }
+  })
+
+  it('is accepted by the Backend protocol Results document', () => {
+    const blocked = oneVariantResults('    status: BLOCKED')
+    const { extra: _extra, ...variant } = blocked.data!.variants[0]!
+    expect(
+      BackendResultsDocumentSchema.parse({
+        schemaVersion: 1,
+        columns: [],
+        variants: [variant],
+      }).variants[0]?.status,
+    ).toBe('BLOCKED')
+    expect(() =>
+      BackendResultsDocumentSchema.parse({
+        schemaVersion: 1,
+        columns: [],
+        variants: [{ ...variant, status: 'WAITING' }],
+      }),
+    ).toThrow()
+  })
+})
+
+describe('Variant provenance env values', () => {
+  const numericEnv = `    status: COMPLETED
+    provenance:
+      entry: scripts/train.sh
+      env:
+        MODE: fast
+        LR: 0.000008
+        STEPS: 1000
+        DEBUG: true`
+
+  it('reads unquoted numbers and booleans as strings and warns once per value', () => {
+    const parsed = oneVariantResults(numericEnv)
+    expect(parsed.parseErrors).toEqual([])
+    expect(parsed.data?.variants[0]?.provenance?.env).toEqual({
+      MODE: 'fast',
+      LR: '0.000008',
+      STEPS: '1000',
+      DEBUG: 'true',
+    })
+    expect(parsed.parseWarnings.map((issue) => issue.field)).toEqual([
+      'variants.0.provenance.env.LR',
+      'variants.0.provenance.env.STEPS',
+      'variants.0.provenance.env.DEBUG',
+    ])
+    expect(parsed.parseWarnings.every((issue) => issue.severity === 'warning')).toBe(true)
+    expect(parsed.parseWarnings[0]!.message).toMatch(
+      /^RESULTS_ENV_VALUE_COERCED: V0001 provenance\.env\.LR is a number; read as the string "0\.000008"/,
+    )
+    expect(parsed.parseWarnings[2]!.message).toContain('is a boolean; read as the string "true"')
+  })
+
+  it('uses the shortest round-trip spelling for numbers', () => {
+    const parsed = oneVariantResults(`    status: PLANNED
+    provenance:
+      env:
+        TINY: 1e-7
+        SCI: 1.0e-5`)
+    expect(parsed.data?.variants[0]?.provenance?.env).toEqual({ TINY: '1e-7', SCI: '0.00001' })
+  })
+
+  it('keeps null, list and mapping env values as schema errors', () => {
+    for (const value of ['null', '[1, 2]', '{a: 1}']) {
+      const parsed = oneVariantResults(`    status: PLANNED
+    provenance:
+      env:
+        LR: ${value}`)
+      expect(parsed.data).toBeNull()
+      expect(parsed.parseErrors).toHaveLength(1)
+      expect(parsed.parseErrors[0]).toMatchObject({
+        field: 'variants.0.provenance.env.LR',
+        severity: 'error',
+      })
+      expect(parsed.parseErrors[0]!.message).toMatch(
+        /^INVALID_RESULTS_SCHEMA: Expected string, received (null|array|object)$/,
+      )
+    }
+  })
+
+  it('reports the coercion as a bundle warning that leaves the Experiment editable', () => {
+    const coerced = oneVariantResults(`    status: PLANNED
+    provenance:
+      env:
+        LR: 0.000008`)
+    const documents = {
+      implementation,
+      investigation: parseInvestigationYaml('schema_version: 1\nitems: []\n'),
+      results: coerced,
+    }
+    const diagnostics = validateExperimentManagedDocuments(documents)
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'RESULTS_ENV_VALUE_COERCED',
+        severity: 'warning',
+        file: 'results.yaml',
+        field: 'variants.0.provenance.env.LR',
+      }),
+    ])
+    const exp = experiment()
+    exp.documents = documents
+    expect(lintExperimentDocument(exp).filter((d) => d.severity === 'error')).toEqual([])
+    expect(buildExperimentDocumentView(exp).readOnly).toBe(false)
+  })
+
+  it('serializes normalized env values as quoted strings that read back without a warning', () => {
+    const parsed = oneVariantResults(numericEnv)
+    const yaml = serializeResultsYaml(parsed.data!)
+    expect(yaml).toContain("LR: '0.000008'")
+    expect(yaml).toContain("STEPS: '1000'")
+    expect(yaml).toContain("DEBUG: 'true'")
+    const reparsed = parseResultsYaml(yaml)
+    expect(reparsed.parseErrors).toEqual([])
+    expect(reparsed.parseWarnings).toEqual([])
+    expect(reparsed.data?.variants[0]?.provenance?.env).toEqual(
+      parsed.data?.variants[0]?.provenance?.env,
+    )
+  })
+
+  it('lets the annotation upsert run on a document with a coerced env value', () => {
+    const raw = `schema_version: 1
+columns:
+  - key: lr
+    label: LR
+    group: parameter
+    type: number
+variants:
+  - id: V0001
+    name: first
+    status: BLOCKED
+    parameters: {lr: 0.1}
+    provenance:
+      env:
+        LR: 0.000008
+`
+    const result = upsertResultColumnAnnotationYaml(raw, 'lr', 'Learning rate.')
+    expect(result.changed).toBe(true)
+    const reparsed = parseResultsYaml(result.content)
+    expect(reparsed.parseErrors).toEqual([])
+    expect(reparsed.data?.columnAnnotations?.lr?.description).toBe('Learning rate.')
+    expect(reparsed.data?.variants[0]?.status).toBe('BLOCKED')
   })
 })

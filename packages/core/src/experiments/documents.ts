@@ -20,6 +20,7 @@ import type {
   ResultsDocument,
   ResultVariant,
 } from '../types.js'
+import { VARIANT_STATUS_VALUES } from '../types.js'
 import type { ResultsVariantEligibility } from './results-eligibility.js'
 import { projectResultsRunEligibility } from './results-eligibility.js'
 
@@ -229,13 +230,25 @@ const ResultColumnRawSchema = z
     }
   })
 
+/**
+ * env values are strings on disk and in the model. A bare YAML number or
+ * boolean is accepted and read as its canonical string (with a
+ * `RESULTS_ENV_VALUE_COERCED` warning); anything else stays a schema error.
+ */
+const VariantEnvValueRawSchema = z.union([z.string(), z.number(), z.boolean()], {
+  errorMap: (issue, ctx) =>
+    issue.code === z.ZodIssueCode.invalid_union
+      ? { message: `Expected string, received ${z.getParsedType(ctx.data)}` }
+      : { message: ctx.defaultError },
+})
+
 const VariantProvenanceRawSchema = z
   .object({
     repo: z.string().min(1).optional(),
     commit: z.string().min(1).optional(),
     entry: z.string().min(1).optional(),
     recipe: z.string().min(1).optional(),
-    env: z.record(z.string()).optional(),
+    env: z.record(VariantEnvValueRawSchema).optional(),
   })
   .passthrough()
 
@@ -243,7 +256,7 @@ const ResultVariantRawSchema = z
   .object({
     id: z.string().regex(/^V\d{4}$/, 'must match V<NNNN>'),
     name: z.string().min(1),
-    status: z.enum(['PLANNED', 'RUNNING', 'COMPLETED', 'FAILED', 'INCONCLUSIVE', 'DROPPED']),
+    status: z.enum(VARIANT_STATUS_VALUES),
     description: z.string().optional(),
     parameters: z.record(ResultScalarSchema).default({}),
     metrics: z.record(ResultScalarSchema).default({}),
@@ -362,7 +375,7 @@ export function parseResultsYaml(
   content: string,
   path = MANAGED_DOCUMENT_FILE_NAMES.results,
 ): ParsedManagedDocument<ResultsDocument> {
-  return parseYamlDocument('results', path, content, ResultsDocumentRawSchema, (raw) => ({
+  return parseYamlDocument('results', path, content, ResultsDocumentRawSchema, (raw, warnings) => ({
     schemaVersion: raw.schema_version,
     ...(raw.column_annotations === undefined
       ? {}
@@ -382,7 +395,9 @@ export function parseResultsYaml(
           ),
         }),
     columns: (raw.columns ?? []).map((column) => ({ ...column })) as ResultColumn[],
-    variants: (raw.variants ?? []).map((variant) => normalizeResultVariant(variant)),
+    variants: (raw.variants ?? []).map((variant, index) =>
+      normalizeResultVariant(variant, index, warnings),
+    ),
   }))
 }
 
@@ -1203,7 +1218,8 @@ function parseYamlDocument<Raw extends object, Normalized extends ExperimentMana
   path: string,
   content: string,
   schema: z.ZodType<Raw>,
-  normalize: (raw: Raw) => Normalized,
+  /** Builds the model; may append non-blocking warnings (never errors). */
+  normalize: (raw: Raw, warnings: ParseIssue[]) => Normalized,
 ): ParsedManagedDocument<Normalized> {
   const parseErrors: ParseIssue[] = []
   let loaded: unknown
@@ -1256,7 +1272,9 @@ function parseYamlDocument<Raw extends object, Normalized extends ExperimentMana
     }
     return parsedDocument<Normalized>(kind, path, content, null, parseErrors)
   }
-  return parsedDocument(kind, path, content, normalize(validated.data), parseErrors)
+  const parseWarnings: ParseIssue[] = []
+  const data = normalize(validated.data, parseWarnings)
+  return parsedDocument(kind, path, content, data, parseErrors, parseWarnings)
 }
 
 function parsedDocument<T extends ExperimentManagedDocument>(
@@ -1265,6 +1283,7 @@ function parsedDocument<T extends ExperimentManagedDocument>(
   raw: string,
   data: T | null,
   parseErrors: ParseIssue[],
+  parseWarnings: ParseIssue[] = [],
 ): ParsedManagedDocument<T> {
   return {
     kind,
@@ -1274,7 +1293,7 @@ function parsedDocument<T extends ExperimentManagedDocument>(
     raw,
     data,
     parseErrors,
-    parseWarnings: [],
+    parseWarnings,
   }
 }
 
@@ -1340,7 +1359,11 @@ function normalizeInvestigationItem(raw: InvestigationItemRaw): InvestigationIte
   }
 }
 
-function normalizeResultVariant(raw: z.input<typeof ResultVariantRawSchema>): ResultVariant {
+function normalizeResultVariant(
+  raw: z.input<typeof ResultVariantRawSchema>,
+  index: number,
+  warnings: ParseIssue[],
+): ResultVariant {
   return {
     id: raw.id,
     name: raw.name,
@@ -1358,7 +1381,9 @@ function normalizeResultVariant(raw: z.input<typeof ResultVariantRawSchema>): Re
             ...(raw.provenance.commit === undefined ? {} : { commit: raw.provenance.commit }),
             ...(raw.provenance.entry === undefined ? {} : { entry: raw.provenance.entry }),
             ...(raw.provenance.recipe === undefined ? {} : { recipe: raw.provenance.recipe }),
-            ...(raw.provenance.env === undefined ? {} : { env: raw.provenance.env }),
+            ...(raw.provenance.env === undefined
+              ? {}
+              : { env: normalizeVariantEnv(raw.id, index, raw.provenance.env, warnings) }),
           },
         }),
     extra: omit(raw, [
@@ -1373,6 +1398,34 @@ function normalizeResultVariant(raw: z.input<typeof ResultVariantRawSchema>): Re
       'provenance',
     ]),
   }
+}
+
+/**
+ * env values are strings. A bare YAML number or boolean is read as its
+ * canonical string (`String(value)`: shortest round-trip spelling, `true`);
+ * the source spelling is not recoverable, so each coercion is reported.
+ */
+function normalizeVariantEnv(
+  variantId: string,
+  index: number,
+  env: Record<string, string | number | boolean>,
+  warnings: ParseIssue[],
+): Record<string, string> {
+  const normalized: Record<string, string> = {}
+  for (const [name, value] of Object.entries(env)) {
+    if (typeof value === 'string') {
+      normalized[name] = value
+      continue
+    }
+    const text = String(value)
+    normalized[name] = text
+    warnings.push({
+      field: `variants.${index}.provenance.env.${name}`,
+      severity: 'warning',
+      message: `RESULTS_ENV_VALUE_COERCED: ${variantId} provenance.env.${name} is a ${typeof value}; read as the string ${JSON.stringify(text)}. Quote env values in results.yaml to keep their exact spelling.`,
+    })
+  }
+  return normalized
 }
 
 function implementationItemToRaw(item: ImplementationItem): Record<string, unknown> {

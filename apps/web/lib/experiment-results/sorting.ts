@@ -1,5 +1,6 @@
 // Row sorting: default sort chain, optional temporary header sort, then
-// natural Variant-ID order and finally source order.
+// natural Variant-ID order and finally source order. A column may sort by a
+// key other than its displayed value (Status sorts by lifecycle order).
 
 import type { ResultVariant } from '@memon/core'
 import { isEmptyValue, naturalCollator, valueText } from './format'
@@ -33,9 +34,10 @@ export function sortVariants(
       for (const rule of rules) {
         const column = columnsById.get(rule.columnId)
         if (!column) continue
+        const sortValue = column.getSortValue ?? column.getValue
         const comparison = compareSortValues(
-          column.getValue(left.variant),
-          column.getValue(right.variant),
+          sortValue(left.variant),
+          sortValue(right.variant),
           rule.direction,
         )
         if (comparison !== 0) return comparison

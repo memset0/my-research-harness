@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { type ExitCalled, spyExit } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { runExperimentDocumentRender } from './experiment-document.js'
+import { runExperimentDocumentLint, runExperimentDocumentRender } from './experiment-document.js'
 
 import {
   runExperimentResults,
@@ -55,6 +55,27 @@ variants:
     metrics: {accuracy: null, loss: null}
     runs: []
     attempts: [run-c, run-d]
+`
+
+const BLOCKED_RESULTS_YAML = `schema_version: 1
+columns:
+  - key: accuracy
+    label: Accuracy
+    group: metric
+    type: number
+variants:
+  - id: V0001
+    name: Parent
+    status: COMPLETED
+    metrics: {accuracy: 0.9}
+    provenance:
+      entry: scripts/train.sh
+      env:
+        LR: 0.000008
+  - id: V0002
+    name: Child
+    status: BLOCKED
+    description: Waits for the V0001 checkpoint.
 `
 
 describe('experiment results CLI', () => {
@@ -322,6 +343,76 @@ foo
     const out = JSON.parse(stdout)
     expect(out.rows).toHaveLength(2)
     expect(out.rows.map((r: { status: string }) => r.status)).toEqual(['COMPLETED', 'FAILED'])
+  })
+
+  it('selects BLOCKED Variants with a case-insensitive --status and reads numeric env values', async () => {
+    const id = await create()
+    await fs.writeFile(join(root, 'docs', 'experiments', id, 'results.yaml'), BLOCKED_RESULTS_YAML)
+    stdout = ''
+    await runExperimentResults({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: id,
+      format: 'json',
+      statuses: 'blocked',
+      columnGroup: 'all',
+      output: 'json',
+    })
+    const out = JSON.parse(stdout)
+    expect(
+      out.rows.map((r: { variantId: string; status: string }) => [r.variantId, r.status]),
+    ).toEqual([['V0002', 'BLOCKED']])
+    expect(out.meta).toMatchObject({
+      totalVariants: 2,
+      filteredVariants: 1,
+      filters: { statuses: ['blocked'] },
+    })
+
+    stdout = ''
+    await runExperimentResults({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: id,
+      format: 'json',
+      columnGroup: 'all',
+      output: 'markdown',
+    })
+    expect(stdout).toContain('BLOCKED')
+
+    stdout = ''
+    await runExperimentResultsSummary({
+      projectRoot: root,
+      cwd: root,
+      idOrSlug: id,
+      format: 'json',
+      output: 'json',
+    })
+    expect(JSON.parse(stdout).rows.map((r: { status: string }) => r.status)).toEqual([
+      'COMPLETED',
+      'BLOCKED',
+    ])
+    expect(process.exitCode).toBeUndefined()
+  })
+
+  it('lints a coerced env value as a warning and exits 0', async () => {
+    const id = await create()
+    const dir = join(root, 'docs', 'experiments', id)
+    await fs.writeFile(join(dir, 'implementation.yaml'), 'schema_version: 1\nitems: []\n')
+    await fs.writeFile(join(dir, 'investigation.yaml'), 'schema_version: 1\nitems: []\n')
+    await fs.writeFile(join(dir, 'results.yaml'), BLOCKED_RESULTS_YAML)
+    stdout = ''
+    await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
+    const out = JSON.parse(stdout)
+    expect(out).toMatchObject({ ok: true, summary: { errors: 0, warnings: 1 } })
+    expect(out.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'RESULTS_ENV_VALUE_COERCED',
+        severity: 'warning',
+        field: 'variants.0.provenance.env.LR',
+      }),
+    ])
+    expect(process.exitCode).toBeUndefined()
+    expect(await fs.readFile(join(dir, 'results.yaml'), 'utf8')).toBe(BLOCKED_RESULTS_YAML)
   })
 
   it('filters by --column', async () => {

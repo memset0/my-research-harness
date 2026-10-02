@@ -28,6 +28,8 @@ export interface ResultTableColumn {
   schema?: ResultSchemaColumn
   annotation?: ResultColumnAnnotation
   getValue: (variant: ResultVariant) => ResultValue
+  /** Sort key when it differs from the displayed value (Status sorts by lifecycle). */
+  getSortValue?: (variant: ResultVariant) => ResultValue
 }
 
 export type DragKind = 'column' | 'row-filter' | 'sort-rule'

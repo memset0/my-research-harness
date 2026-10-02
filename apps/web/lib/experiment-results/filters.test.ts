@@ -95,6 +95,26 @@ describe('filterVariants', () => {
     expect(ids(result)).toEqual(['V3:0.3'])
   })
 
+  it('compares Status filters by text, not by lifecycle rank', () => {
+    const statusRows = [
+      variant('V1', { status: 'BLOCKED' }),
+      variant('V2', { status: 'PLANNED' }),
+      variant('V3', { status: 'COMPLETED' }),
+    ]
+    const statusColumns = buildColumns(resultsDocument(statusRows))
+    expect(
+      filterVariants(statusRows, statusColumns, [filter('status', 'eq', 'BLOCKED')], {}, false).map(
+        (row) => row.id,
+      ),
+    ).toEqual(['V1'])
+    // Alphabetically BLOCKED < COMPLETED < PLANNED; the sort-only lifecycle rank is not used.
+    expect(
+      filterVariants(statusRows, statusColumns, [filter('status', 'lt', 'C')], {}, false).map(
+        (row) => row.id,
+      ),
+    ).toEqual(['V1'])
+  })
+
   it('ignores filters on missing columns', () => {
     expect(filterVariants(rows, columns, [filter('schema:gone', 'eq', 'x')], {}, false)).toEqual(
       rows,

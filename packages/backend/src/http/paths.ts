@@ -61,6 +61,12 @@ export const BACKEND_WIKI_REVIEW_MARK_ROUTE = `${BACKEND_API_PREFIX}/wiki/review
 export const BACKEND_WIKI_ASSET_ROUTE = `${BACKEND_API_PREFIX}/wiki-assets/[project]/[id]/[...path]`
 
 export const MAX_BACKEND_CONTROL_JSON_BYTES = 1024 * 1024
+/**
+ * Response bound of the Experiment detail and Results snapshot reads. Their
+ * JSON carries the sanitized Results document (and, for detail, its rendered
+ * projection), which outgrows the control bound for large Results tables.
+ */
+export const MAX_BACKEND_EXPERIMENT_DOCUMENT_JSON_BYTES = 16 * 1024 * 1024
 export const MAX_BACKEND_DOCUMENT_BODY_BYTES = 5 * 1024 * 1024
 export const MAX_BACKEND_GIT_CONTROL_BODY_BYTES = 128 * 1024
 export const MAX_BACKEND_SHARE_VALIDATION_BODY_BYTES = 4 * 1024

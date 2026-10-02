@@ -73,9 +73,11 @@ admits. The spec states the meaning; enforcement stays social.
 
 ### D3. env numbers and booleans are coerced with a warning
 
-The Results schema accepts `string | number | boolean` per env value; the
-normalizer converts non-strings with `String(value)` (shortest round-trip
-spelling; `true` → `"true"`) and records a
+The Results schema accepts `string | number | boolean` per env value (a
+union whose error map keeps the familiar `Expected string, received <type>`
+message for `null`, lists and mappings); the normalizer converts non-strings
+with `String(value)` (shortest round-trip spelling; `true` → `"true"`) and
+records a
 `RESULTS_ENV_VALUE_COERCED: … read as "…"` parse warning with the Zod-style
 field path (`variants.<index>.provenance.env.<NAME>`). `parseYamlDocument`
 gains a warnings sink that normalizers append to, and `parsedDocument` returns

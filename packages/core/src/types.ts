@@ -364,13 +364,23 @@ export type InvestigationStatus =
   | 'ANSWERED'
   | 'INCONCLUSIVE'
   | 'DROPPED'
-export type VariantStatus =
-  | 'PLANNED'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'FAILED'
-  | 'INCONCLUSIVE'
-  | 'DROPPED'
+/**
+ * Results Variant statuses in canonical lifecycle order: not started
+ * (`PLANNED`, `BLOCKED` = planned but waiting on a named prerequisite), in
+ * flight, finished with an outcome, abandoned. The Results schema and the
+ * Backend protocol both validate against this list.
+ */
+export const VARIANT_STATUS_VALUES = [
+  'PLANNED',
+  'BLOCKED',
+  'RUNNING',
+  'COMPLETED',
+  'FAILED',
+  'INCONCLUSIVE',
+  'DROPPED',
+] as const
+
+export type VariantStatus = (typeof VARIANT_STATUS_VALUES)[number]
 
 export interface ImplementationCommit {
   repo: string

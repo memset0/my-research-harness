@@ -2,6 +2,7 @@
 
 import type { ResultsDocument, ResultsVariantEligibility, ResultVariant } from '@memon/core'
 import { displayText, isEmptyValue, naturalCollator } from './format'
+import { variantStatusRank } from './status'
 import type { ResultTableColumn } from './types'
 import type { ResultsViewPinSide } from './views'
 
@@ -34,7 +35,13 @@ export function buildColumns(
       kind: 'variant',
       getValue: (variant) => `${variant.id} ${variant.name}`,
     },
-    { id: 'status', label: 'Status', kind: 'status', getValue: (variant) => variant.status },
+    {
+      id: 'status',
+      label: 'Status',
+      kind: 'status',
+      getValue: (variant) => variant.status,
+      getSortValue: (variant) => variantStatusRank(variant.status),
+    },
     ...document.columns.map(
       (schema): ResultTableColumn => ({
         id: `schema:${schema.key}`,

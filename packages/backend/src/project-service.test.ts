@@ -789,4 +789,90 @@ variants:
       await fs.rm(root, { recursive: true, force: true })
     }
   })
+
+  it('serves BLOCKED Variants and coerced env values on Results and detail reads', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'memon-blocked-results-'))
+    try {
+      const directory = join(root, 'docs', 'experiments', 'E0001-blocked')
+      await fs.mkdir(directory, { recursive: true })
+      await fs.writeFile(
+        join(directory, 'README.md'),
+        `---
+id: E0001-blocked
+slug: blocked
+title: Blocked fixture
+status: OPEN
+archived: false
+runs: []
+hypotheses: []
+tags: []
+created_at: 2026-10-01T00:00:00Z
+updated_at: 2026-10-01T00:00:00Z
+---
+
+## Results
+
+${MANAGED_SECTION_POINTERS.results}
+`,
+      )
+      await fs.writeFile(
+        join(directory, 'results.yaml'),
+        `schema_version: 1
+columns: []
+variants:
+  - id: V0001
+    name: Waits for the parent checkpoint
+    status: BLOCKED
+    runs: []
+    attempts: []
+    provenance:
+      env:
+        LR: 0.000008
+        RESUME: false
+  - id: V0002
+    name: Parent
+    status: COMPLETED
+`,
+      )
+      const service = new FilesystemProjectService([project('blocked-project', root)])
+      const results = BackendExperimentResultsResponseSchema.parse(
+        await service.getExperimentResults('blocked-project', 'E0001-blocked'),
+      )
+      expect(results.document.variants.map((variant) => variant.status)).toEqual([
+        'BLOCKED',
+        'COMPLETED',
+      ])
+      expect(results.document.variants[0]?.provenance?.env).toEqual({
+        LR: '0.000008',
+        RESUME: 'false',
+      })
+      expect(results.warnings.map((warning) => warning.field)).toEqual([
+        'variants.0.provenance.env.LR',
+        'variants.0.provenance.env.RESUME',
+      ])
+      expect(results.warnings.every((warning) => warning.severity === 'warning')).toBe(true)
+
+      const detail = BackendExperimentResponseSchema.parse(
+        await service.getExperiment('blocked-project', 'E0001-blocked'),
+      )
+      expect(detail.documents?.results.data?.variants[0]?.status).toBe('BLOCKED')
+      expect(detail.documents?.results.parseErrors).toEqual([])
+      expect(detail.documents?.results.parseWarnings).toHaveLength(2)
+      expect(
+        detail.documentDiagnostics.filter(
+          (diagnostic) => diagnostic.code === 'RESULTS_ENV_VALUE_COERCED',
+        ),
+      ).toEqual([
+        expect.objectContaining({ severity: 'warning', field: 'variants.0.provenance.env.LR' }),
+        expect.objectContaining({ severity: 'warning', field: 'variants.0.provenance.env.RESUME' }),
+      ])
+      const resultsSection = detail.documentSections.find(
+        (section) => section.heading === 'Results',
+      )
+      expect(resultsSection?.source).toBe('yaml')
+      expect(resultsSection?.body).toContain('`BLOCKED`')
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
 })

@@ -109,6 +109,39 @@ describe('GET /api/experiments/:id/results', () => {
     expect(body.warnings).toEqual([])
   })
 
+  it('serves a BLOCKED Variant and reads an unquoted env number as a string', async () => {
+    const source = `schema_version: 1
+columns: []
+variants:
+  - id: V0001
+    name: Waits for the parent checkpoint
+    status: BLOCKED
+    provenance:
+      env:
+        LR: 0.000008
+`
+    await writeFile(resultsPath, source)
+
+    const response = await request()
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.document.variants).toEqual([
+      expect.objectContaining({
+        id: 'V0001',
+        status: 'BLOCKED',
+        provenance: { env: { LR: '0.000008' } },
+      }),
+    ])
+    expect(body.warnings).toEqual([
+      expect.objectContaining({
+        severity: 'warning',
+        field: 'variants.0.provenance.env.LR',
+        message: expect.stringMatching(/^RESULTS_ENV_VALUE_COERCED: /),
+      }),
+    ])
+    await expect(readFile(resultsPath, 'utf8')).resolves.toBe(source)
+  })
+
   it('returns 404 for an unknown Experiment or missing Results file', async () => {
     expect((await request('E9999-missing')).status).toBe(404)
 

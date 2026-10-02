@@ -5,6 +5,7 @@
 
 import { z } from 'zod'
 import { JournalInvocationRecordSchema } from './journal/invocation.js'
+import { VARIANT_STATUS_VALUES } from './types.js'
 
 export const BACKEND_API_MAJOR = 1 as const
 
@@ -553,14 +554,7 @@ export const BackendResultsDocumentSchema = z
           .object({
             id: z.string().min(1).max(256),
             name: z.string().min(1).max(512),
-            status: z.enum([
-              'PLANNED',
-              'RUNNING',
-              'COMPLETED',
-              'FAILED',
-              'INCONCLUSIVE',
-              'DROPPED',
-            ]),
+            status: z.enum(VARIANT_STATUS_VALUES),
             description: z
               .string()
               .max(64 * 1024)

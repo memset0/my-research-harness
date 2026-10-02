@@ -94,3 +94,52 @@ describe('sortVariants', () => {
     expect(rows).toEqual(copy)
   })
 })
+
+describe('Status column sorting', () => {
+  const rows = [
+    variant('V1', { status: 'DROPPED' }),
+    variant('V2', { status: 'RUNNING' }),
+    variant('V3', { status: 'BLOCKED' }),
+    variant('V4', { status: 'PLANNED' }),
+    variant('V5', { status: 'COMPLETED' }),
+  ]
+  const columns = buildColumns(resultsDocument(rows))
+  const statuses = (list: typeof rows) => list.map((row) => row.status)
+
+  it('sorts ascending by lifecycle order with BLOCKED right after PLANNED', () => {
+    expect(
+      statuses(sortVariants(rows, columns, [{ columnId: 'status', direction: 'asc' }])),
+    ).toEqual(['PLANNED', 'BLOCKED', 'RUNNING', 'COMPLETED', 'DROPPED'])
+  })
+
+  it('reverses the lifecycle order when descending, not the alphabet', () => {
+    expect(
+      statuses(sortVariants(rows, columns, [{ columnId: 'status', direction: 'desc' }])),
+    ).toEqual(['DROPPED', 'COMPLETED', 'RUNNING', 'BLOCKED', 'PLANNED'])
+  })
+
+  it('places FAILED and INCONCLUSIVE between COMPLETED and DROPPED and breaks ties by Variant id', () => {
+    const more = [
+      variant('V9', { status: 'INCONCLUSIVE' }),
+      variant('V8', { status: 'FAILED' }),
+      variant('V7', { status: 'BLOCKED' }),
+      variant('V6', { status: 'BLOCKED' }),
+      ...rows,
+    ]
+    expect(
+      sortVariants(more, buildColumns(resultsDocument(more)), [
+        { columnId: 'status', direction: 'asc' },
+      ]).map((row) => `${row.status}:${row.id}`),
+    ).toEqual([
+      'PLANNED:V4',
+      'BLOCKED:V3',
+      'BLOCKED:V6',
+      'BLOCKED:V7',
+      'RUNNING:V2',
+      'COMPLETED:V5',
+      'FAILED:V8',
+      'INCONCLUSIVE:V9',
+      'DROPPED:V1',
+    ])
+  })
+})

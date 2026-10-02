@@ -136,6 +136,23 @@ describe('cells', () => {
     expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('RUNNING')
     expect(screen.getByText('—')).toBeInTheDocument()
   })
+
+  it('renders a BLOCKED Variant through the status badge in the Status column', () => {
+    const blocked = { ...DOCUMENT.variants[0]!, id: 'V0003', status: 'BLOCKED' as const }
+    const { container } = render(
+      <ResultCell
+        column={column('status')}
+        variant={blocked}
+        project="project-a"
+        experimentId="E0001-demo"
+        declaredRunIds={new Set()}
+      />,
+    )
+    const badge = container.querySelector('[data-slot="badge"]')
+    expect(badge).toHaveTextContent('BLOCKED')
+    expect(badge).toHaveAttribute('data-status', 'BLOCKED')
+    expect(badge).toHaveClass('border-dashed', 'border-orange-400', 'bg-orange-50')
+  })
 })
 
 describe('ViewSwitcher', () => {

@@ -18,21 +18,7 @@ import { cn } from '../../lib/utils'
 import { TranslatedLiteral } from '../body-translation'
 import { Badge } from '../ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
-
-const STATUS_CLASS: Record<VariantStatus, string> = {
-  PLANNED:
-    'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700/50 dark:bg-slate-900/50 dark:text-slate-300',
-  RUNNING:
-    'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-700/50 dark:bg-sky-950/50 dark:text-sky-200',
-  COMPLETED:
-    'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/50 dark:bg-emerald-950/40 dark:text-emerald-200',
-  FAILED:
-    'border-red-300 bg-red-50 text-red-800 dark:border-red-700/50 dark:bg-red-950/40 dark:text-red-200',
-  INCONCLUSIVE:
-    'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-200',
-  DROPPED:
-    'border-stone-300 bg-stone-100 text-stone-700 dark:border-stone-700/50 dark:bg-stone-900/50 dark:text-stone-300',
-}
+import { VariantStatusBadge } from '../variant-status-badge'
 
 export interface ResultCellProps {
   column: ResultTableColumn
@@ -71,11 +57,7 @@ function VariantCell({ variant, eligibility }: ResultCellProps) {
 }
 
 export function StatusCell({ status }: { status: VariantStatus }) {
-  return (
-    <Badge variant="outline" className={cn('font-medium', STATUS_CLASS[status])}>
-      {status}
-    </Badge>
-  )
+  return <VariantStatusBadge status={status} />
 }
 
 function RunListCell({ column, variant, project, experimentId, declaredRunIds }: ResultCellProps) {
