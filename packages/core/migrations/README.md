@@ -66,3 +66,7 @@ The current value lives in `packages/core/src/version.ts`. Guides present:
 - `v6-to-v7.md` — mechanical, plan-reviewed migration to Experiment-owned
   project-relative Run paths and Digest-to-Wiki conversion, executed by
   `scripts/migrate-v6-to-v7.mjs` (`plan` / `apply` / `verify` / `rollback`).
+- `v7-to-v8.md` — mechanical migration that builds the derived index
+  `.memon/index/` (self-ignored, rebuildable) and advances the marker; it
+  changes no document and never creates `.memon/project.yml`. Executed by
+  `scripts/migrate-v7-to-v8.mjs` (`plan` / `apply` / `verify` / `rollback`).
