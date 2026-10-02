@@ -13,8 +13,8 @@
 
 ## 3. CLI
 
-- [ ] 3.1 Add `--from-central`, `--project`, `--host` to `memon project init`; verify init-from-central, unknown Project (exit 2, nothing created), flags without `--from-central` (exit 2).
-- [ ] 3.2 Extend `memon project lint` with the effective layout and `--from-central` deprecation/conflict diagnostics; verify the conflict scenario (exit 0) and an invalid `exclude` (exit 1).
+- [x] 3.1 Add `--from-central`, `--project`, `--host` to `memon project init`; verify init-from-central, unknown Project (exit 2, nothing created), flags without `--from-central` (exit 2).
+- [x] 3.2 Extend `memon project lint` with the effective layout and `--from-central` deprecation/conflict diagnostics; verify the conflict scenario (exit 0) and an invalid `exclude` (exit 1).
 
 ## 4. Docs and validation
 

@@ -125,3 +125,119 @@ describe('memon project lint', () => {
     expect(process.exitCode).toBe(1)
   })
 })
+
+describe('memon project --from-central', () => {
+  const CENTRAL = [
+    'projects:',
+    '  - name: project-a',
+    '    root: ./project-a',
+    '    host: node-a',
+    '    storage: local',
+    '    execution: { kind: local }',
+    '    run_dirs: ["outputs/*/*"]',
+    '    exclude: [scratch]',
+    "    github: [{ owner: acme, repo: project-a, path: '.' }]",
+    '  - name: project-b',
+    '    root: ./project-b',
+    '    host: node-a',
+    '    execution: { kind: local }',
+    '',
+  ].join('\n')
+  let central: string
+  const from = (centralProject?: string) => ({
+    ...base(),
+    fromCentral: central,
+    ...(centralProject ? { centralProject } : {}),
+  })
+
+  beforeEach(async () => {
+    central = join(root, 'central.yml')
+    await fs.writeFile(central, CENTRAL)
+  })
+
+  it('init copies the central layout keys into the declaration', async () => {
+    await runProjectInit(from('project-a'))
+    const result = JSON.parse(stdout.join(''))
+    expect(result).toMatchObject({
+      ok: true,
+      created: true,
+      committed: false,
+      fromCentral: { project: 'project-a', keys: ['run_dirs', 'exclude', 'github'] },
+    })
+    expect(await loadProjectDeclaration(root)).toEqual({
+      schema_version: 1,
+      run_dirs: ['outputs/*/*'],
+      exclude: ['scratch'],
+      github: [{ owner: 'acme', repo: 'project-a', path: '.' }],
+    })
+    expect((await tree(root)).filter((path) => path !== 'central.yml')).toEqual([
+      '.memon/project.yml',
+    ])
+  })
+
+  it('init from a deployment-only entry writes the default run_dirs', async () => {
+    await runProjectInit(from('project-b'))
+    expect(await loadProjectDeclaration(root)).toEqual({
+      schema_version: 1,
+      run_dirs: ['logs/*', 'outputs/*', 'experiments/*'],
+    })
+  })
+
+  it('init fails with BAD_REQUEST and writes nothing for an unknown project or bad flags', async () => {
+    for (const input of [
+      from('missing'),
+      from(),
+      { ...base(), centralProject: 'project-a' },
+      { ...base(), fromCentral: join(root, 'absent.yml'), centralProject: 'project-a' },
+    ]) {
+      const exit = spyExit()
+      try {
+        await expect(runProjectInit(input)).rejects.toBeInstanceOf(ExitCalled)
+        expect(exit.code).toBe(2)
+      } finally {
+        exit.restore()
+      }
+      expect(stderr.join('')).toContain('BAD_REQUEST')
+      expect(await tree(root)).toEqual(['central.yml'])
+    }
+  })
+
+  it('lint reports deprecated central keys and conflicts without failing', async () => {
+    await fs.mkdir(join(root, '.memon'))
+    await fs.writeFile(
+      join(root, declaration),
+      "schema_version: 1\nrun_dirs: ['outputs/*/*']\nexclude: [tmp]\n",
+    )
+    await runProjectLint(from('project-a'))
+    const result = JSON.parse(stdout.join(''))
+    expect(result.ok).toBe(true)
+    expect(process.exitCode ?? 0).toBe(0)
+    expect(result.layout).toMatchObject({
+      exclude: ['scratch'],
+      sources: { run_dirs: 'central', exclude: 'central', github: 'central', include: 'default' },
+    })
+    expect(
+      result.diagnostics.map((d: { code: string; field: string; conflict: boolean }) => [
+        d.code,
+        d.field,
+        d.conflict,
+      ]),
+    ).toEqual([
+      ['CENTRAL_LAYOUT_DEPRECATED', 'run_dirs', false],
+      ['CENTRAL_LAYOUT_DEPRECATED', 'exclude', true],
+      ['CENTRAL_LAYOUT_DEPRECATED', 'github', false],
+    ])
+  })
+
+  it('lint rejects an invalid layout key (exit 1)', async () => {
+    await fs.mkdir(join(root, '.memon'))
+    await fs.writeFile(join(root, declaration), 'schema_version: 1\nexclude: scratch\n')
+    await runProjectLint(base())
+    const result = JSON.parse(stdout.join(''))
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: 'PROJECT_DECLARATION_INVALID', field: 'exclude' }),
+    ])
+    expect(process.exitCode).toBe(1)
+  })
+})

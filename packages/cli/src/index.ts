@@ -1169,21 +1169,50 @@ indexCommand
 
 const projectCommand = program
   .command('project')
-  .description('the tracked project declaration .memon/project.yml (where Run directories live)')
-projectCommand
-  .command('init')
   .description(
-    'create .memon/project.yml with the default run_dirs (or the global --run-dir patterns); never overwrites, never commits',
+    'the tracked project declaration .memon/project.yml (project layout: run_dirs, include, exclude, github)',
   )
-  .action(async () => {
-    await runProjectInit(readGlobals())
+interface ProjectCentralOptions {
+  fromCentral?: string
+  project?: string
+  host?: string
+}
+const withCentralOptions = (command: Command): Command =>
+  command
+    .option(
+      '--from-central <config>',
+      'read the layout keys of a Project entry in this central config.yml (with --project)',
+    )
+    .option('--project <name>', 'Project name in the --from-central configuration')
+    .option('--host <id>', 'Host namespace, when the Project name is ambiguous')
+withCentralOptions(
+  projectCommand
+    .command('init')
+    .description(
+      'create .memon/project.yml with the default run_dirs (or the global --run-dir patterns, or the layout of a central Project with --from-central); never overwrites, never commits',
+    ),
+).action(async (opts: ProjectCentralOptions) => {
+  await runProjectInit({
+    ...readGlobals(),
+    fromCentral: opts.fromCentral,
+    centralProject: opts.project,
+    centralHost: opts.host,
   })
-projectCommand
-  .command('lint')
-  .description('validate .memon/project.yml and print the effective run_dirs with their source')
-  .action(async () => {
-    await runProjectLint(readGlobals())
+})
+withCentralOptions(
+  projectCommand
+    .command('lint')
+    .description(
+      'validate .memon/project.yml and print the effective layout with each source; with --from-central also report CENTRAL_LAYOUT_DEPRECATED keys',
+    ),
+).action(async (opts: ProjectCentralOptions) => {
+  await runProjectLint({
+    ...readGlobals(),
+    fromCentral: opts.fromCentral,
+    centralProject: opts.project,
+    centralHost: opts.host,
   })
+})
 
 // ---------- memon components ----------
 
