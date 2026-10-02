@@ -213,14 +213,18 @@ describe('Experiment detail member facts (3.2)', () => {
     expect((await detail()).deprecatedRuns).toEqual([members[0]])
     expect(memberCalls()).toBeLessThanOrEqual(3)
 
-    // After the terminal window the members are re-validated (in the background).
+    // Past the terminal window the seeded members are still served without a
+    // member stat on the request; they wait for the background validator.
     vi.setSystemTime(Date.now() + 301_000)
     files.reset()
-    await detail()
-    await vi.waitFor(() => expect(files.under('logs').stat.length).toBeGreaterThanOrEqual(448))
-    await vi.waitFor(async () =>
-      expect((await detail()).deprecatedRuns).toEqual([members[0], members[5]]),
-    )
+    expect((await detail()).deprecatedRuns).toEqual([members[0]])
+    expect(memberCalls()).toBeLessThanOrEqual(3)
+    const mirror = derivedIndexMirror(root)!
+    expect(mirror.pendingStale).toBeGreaterThanOrEqual(448)
+    const cycle = await mirror.runCycle()
+    expect(cycle.staleRevalidated + cycle.checkedRuns).toBeGreaterThanOrEqual(448)
+    expect(mirror.pendingStale).toBe(0)
+    expect((await detail()).deprecatedRuns).toEqual([members[0], members[5]])
 
     // An explicit refresh re-takes every member fingerprint for that request.
     await fs.writeFile(join(root, members[6]!, 'README.md'), run(0))
@@ -237,6 +241,114 @@ describe('Experiment detail member facts (3.2)', () => {
       members[6],
       members[7],
     ])
+  })
+})
+
+describe('cold reads after a restart (stale-while-revalidate)', () => {
+  /** A snapshot verified long before this process started. */
+  async function agedIndex(members: number, options: { running?: number[] } = {}) {
+    const paths = await fixture(members, options)
+    await rebuildIndex(root)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 3 * 60 * 60_000)
+    return paths
+  }
+
+  it('serves every list from the aged snapshot without stat-ing an expired entry', async () => {
+    await agedIndex(40, { running: [3] })
+    const { projects, documents } = centralServices()
+    const files = spyProjectFiles()
+
+    const runs = BackendRunsPageResponseSchema.parse(await projects.listRuns('p')).runs
+    expect(runs).toHaveLength(40)
+    BackendAnomaliesResponseSchema.parse(await projects.getAnomalies('p'))
+    BackendExperimentListResponseSchema.parse(await projects.listExperiments('p'))
+    BackendExperimentResponseSchema.parse(await projects.getExperiment('p', 'E0001-big'))
+    BackendWikiPagesResponseSchema.parse(await documents.listWiki('p'))
+    // Let any background work that a request might have started settle.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const logs = files.under('logs')
+    // Only the declared-but-missing member (no entry) is looked up.
+    expect(
+      [...logs.stat, ...logs.readFile, ...logs.access, ...logs.realpath].every((path) =>
+        path.includes('/logs/missing-'),
+      ),
+    ).toBe(true)
+    // The Experiment's own documents are the only synchronous detail reads.
+    expect(files.under('docs/experiments/E0001-big').readFile.length).toBeGreaterThan(0)
+    expect(derivedIndexMirror(root)!.pendingStale).toBeGreaterThanOrEqual(40)
+  })
+
+  it('corrects an external rewrite with the first background cycle', async () => {
+    const members = await agedIndex(6, { running: [2] })
+    // Rewritten outside memon after the snapshot was taken.
+    await fs.writeFile(join(root, members[2]!, 'README.md'), run(2, 'FAILED'))
+    await fs.writeFile(join(root, members[4]!, 'README.md'), run(4, 'INTERRUPTED'))
+    enableDerivedIndex([project()], { validator: true, timers: false })
+    const service = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
+    const status = async (id: string) =>
+      BackendRunsPageResponseSchema.parse(await service.listRuns('p')).runs.find(
+        (row) => row.id === id,
+      )?.frontMatter.status
+    // Served stale from the snapshot on the cold read...
+    expect(await status(members[2]!)).toBe('RUNNING')
+    expect(await status(members[4]!)).toBe('FINISHED')
+    // ...and corrected by the first cycle, whatever its terminal bucket.
+    const report = await derivedIndexMirror(root)!.runCycle()
+    expect(report.changedRuns).toBe(2)
+    expect(await status(members[2]!)).toBe('FAILED')
+    expect(await status(members[4]!)).toBe('INTERRUPTED')
+    expect((await readDerivedIndex(root)).snapshot?.runs[members[4]!]?.status).toBe('INTERRUPTED')
+  })
+
+  it('validates every Run within five cycles of the first request even when none is read', async () => {
+    await agedIndex(25)
+    enableDerivedIndex([project()], { validator: true, timers: false, now: () => Date.now() })
+    const mirror = derivedIndexMirror(root)!
+    mirror.noteActivity()
+    await mirror.ensureSeeded()
+    const files = spyProjectFiles()
+    const checked = new Set<string>()
+    for (let cycle = 0; cycle < 5; cycle++) {
+      files.reset()
+      await mirror.runCycle()
+      for (const path of files.under('logs').stat)
+        checked.add(path.split('/logs/')[1]!.split('/')[0]!)
+      vi.setSystemTime(Date.now() + 60_000)
+    }
+    // 25 members plus the orphan (the missing member has no directory).
+    expect(checked.size).toBe(26)
+  })
+
+  it('keeps the home page warm read at the 7.4.0 cost', async () => {
+    await agedIndex(30)
+    const { projects, documents } = centralServices()
+    const home = async () => {
+      await Promise.all([
+        projects.listExperiments('p', { inventoryOnly: true }),
+        projects.getHypotheses('p'),
+        projects.getJournalCount('p'),
+        documents.listReports('p', { inventoryOnly: true }),
+        documents.listCodeReviews('p', { inventoryOnly: true }),
+        documents.listWiki('p', { inventoryOnly: true }),
+        projects.listExperiments('p'),
+      ])
+    }
+    const files = spyProjectFiles()
+    await home()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // The cold read neither stats the expired Experiment rows itself nor
+    // leaves one stat per row running behind it (in 8.0.0 those landed in
+    // the next, warm read): they wait for the background validator.
+    expect(
+      files.under('docs/experiments').stat.filter((path) => path.endsWith('README.md')),
+    ).toEqual([])
+    files.reset()
+    await home()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const calls = Object.values(files.under('')).flat()
+    expect(calls.length).toBeLessThanOrEqual(5)
   })
 })
 

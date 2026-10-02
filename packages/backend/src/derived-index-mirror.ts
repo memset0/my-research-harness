@@ -7,12 +7,21 @@
 // List pages therefore render after a restart without a walk or a README
 // read, and the existing windows decide when an entry is re-validated.
 //
+// A seeded entry served past its window is not re-validated by the request
+// that served it: the request returns the snapshot value and hands the entry
+// to the background validator's queue (stale-while-revalidate without any
+// request-path I/O). Only the documents a detail page shows are read
+// synchronously.
+//
 // While a Project is active (a request within the last 10 minutes) a
-// background validator runs every 60 s: it re-takes the fingerprints of every
-// non-terminal Run, a rotating fifth of the terminal Runs (so each is checked
-// at least every 300 s), every Experiment README/bundle and wiki page, re-runs
-// the bounded walk, and writes what changed back through one index event and
-// a compaction. An idle Project costs nothing. A missing or unusable index
+// background validator runs every 60 s, the first cycle right after seeding:
+// it re-takes the fingerprints of every non-terminal Run, a rotating fifth of
+// the terminal Runs (so each is checked at least every 300 s, i.e. one full
+// pass within five minutes of the first request), every Experiment
+// README/bundle and wiki page, drains the queue of stale entries served since
+// the last cycle (in small batches that yield to requests), re-runs the
+// bounded walk, and writes what changed back through one index event and a
+// compaction. An idle Project costs nothing. A missing or unusable index
 // leaves the summary index empty (7.4.0 behaviour); on a writable FS v8
 // Project a rebuild is scheduled in the background.
 //
@@ -65,6 +74,8 @@ export const VALIDATOR_CYCLE_MS = 60_000
 export const VALIDATOR_ACTIVE_MS = 10 * 60_000
 /** Terminal Runs are re-checked in this many rotating buckets (5 × 60 s = 300 s). */
 export const TERMINAL_RUN_BUCKETS = 5
+/** Stale entries re-validated per batch before the validator yields to requests. */
+export const STALE_BATCH_SIZE = 64
 
 const TERMINAL: Record<string, true> = { FINISHED: true, FAILED: true, INTERRUPTED: true }
 
@@ -91,6 +102,8 @@ export interface ValidatorCycleReport {
   changedWiki: number
   /** Events published by other writers that this cycle applied. */
   appliedEvents: number
+  /** Seeded entries served stale since the last cycle and re-validated by it. */
+  staleRevalidated: number
   compaction: 'compacted' | 'unchanged' | 'conflict' | 'unsupported' | 'not-written' | null
 }
 
@@ -277,6 +290,8 @@ export class ProjectIndexMirror {
   private cycle = 0
   private cycling: Promise<ValidatorCycleReport> | null = null
   private rebuilding: Promise<void> | null = null
+  /** Seeded entries served past their window, waiting for the next cycle. */
+  private readonly staleQueue = new Map<string, () => Promise<boolean>>()
 
   constructor(
     readonly project: ProjectConfig,
@@ -289,6 +304,18 @@ export class ProjectIndexMirror {
 
   private get writable(): boolean {
     return this.project.readOnly !== true
+  }
+
+  /** Number of stale entries waiting for the next cycle (diagnostics, tests). */
+  get pendingStale(): number {
+    return this.staleQueue.size
+  }
+
+  /** Route stale seeded entries of this Project to the validator's queue. */
+  private adoptStaleEntries(): void {
+    projectReadIndex(this.project.root).setStaleHandler((key, revalidate) => {
+      if (!this.staleQueue.has(key)) this.staleQueue.set(key, revalidate)
+    })
   }
 
   /** The merged view this process last read or wrote (tests). */
@@ -345,6 +372,7 @@ export class ProjectIndexMirror {
     }
     this.view = view
     seedProjectReadIndex(this.project, view, this.effective)
+    this.adoptStaleEntries()
     // The first background cycle starts at once (stale-while-revalidate).
     if (this.options.validator !== false && this.options.timers !== false) {
       setImmediate(() => {
@@ -368,6 +396,7 @@ export class ProjectIndexMirror {
       if (result.snapshot) {
         this.view = result.snapshot
         seedProjectReadIndex(this.project, result.snapshot, result.runDirs)
+        this.adoptStaleEntries()
       }
     })
       .catch(() => undefined)
@@ -410,6 +439,7 @@ export class ProjectIndexMirror {
       changedExperiments: 0,
       changedWiki: 0,
       appliedEvents: 0,
+      staleRevalidated: 0,
       compaction: null,
     }
     if (this.now() - this.lastActivity > (this.options.activeMs ?? VALIDATOR_ACTIVE_MS)) {
@@ -498,6 +528,24 @@ export class ProjectIndexMirror {
       }
     })
     report.removedRuns = removedRuns.length
+
+    // 3b. Seeded entries served stale since the last cycle (Run summaries
+    //     outside this cycle's bucket, archive sidecars, Experiment rows):
+    //     re-validated in batches that yield to requests. Entries step 3
+    //     already re-validated are skipped without I/O.
+    //     A drained Run whose fingerprint moved is written back like one
+    //     step 3 found.
+    report.staleRevalidated = await this.drainStale()
+    const handled = new Set([...changedRuns, ...removedRuns])
+    for (const key of candidates) {
+      const persisted = view.runs[key]
+      const dir = abs(key)
+      if (!persisted || handled.has(dir)) continue
+      const current = inMemoryDevless(index, runSummaryKey(dir))
+      if (current === undefined || current === runEntryFingerprint(persisted)) continue
+      changedRuns.push(dir)
+      report.changedRuns += 1
+    }
 
     // 4. Experiments (README and YAML fingerprints) and new documents.
     const experiments = await validateIndexEntries(root, view, {
@@ -590,6 +638,21 @@ export class ProjectIndexMirror {
       this.view = hasChanges ? mergeIndexEvents(view, [{ name: `~${now}`, event: body }]) : view
     }
     return report
+  }
+
+  /** Re-validate every queued stale entry, `STALE_BATCH_SIZE` at a time. */
+  private async drainStale(): Promise<number> {
+    let done = 0
+    while (this.staleQueue.size > 0) {
+      const batch = [...this.staleQueue].slice(0, STALE_BATCH_SIZE)
+      for (const [key] of batch) this.staleQueue.delete(key)
+      await mapLimited(batch, 8, async ([, revalidate]) => {
+        if (await revalidate().catch(() => false)) done += 1
+      })
+      // Let requests run between batches.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    return done
   }
 
   private async changeEvent(

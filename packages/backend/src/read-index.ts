@@ -78,11 +78,21 @@ interface Entry {
   devless?: boolean
   /**
    * Seeded and not yet re-validated by this process: once its window has
-   * passed the entry is still served (stale-while-revalidate) while one
-   * background validation runs. Any invalidation clears it.
+   * passed the entry is still served (stale-while-revalidate) and handed to
+   * the background validator (see `setStaleHandler`). Any invalidation
+   * clears it.
    */
   serveStale?: boolean
 }
+
+/**
+ * Receives a seeded entry served past its window. `revalidate` re-takes the
+ * entry's fingerprint (and reloads it when it changed) and resolves `true`;
+ * it is a no-op resolving `false` once the entry was re-validated or
+ * invalidated meanwhile. The handler must not perform I/O itself: the request
+ * path stays free of filesystem calls.
+ */
+export type StaleHandler = (key: string, revalidate: () => Promise<boolean>) => void
 
 /** A seeded observation (see `ProjectReadIndex.seed`). */
 export interface SeededObservation {
@@ -123,6 +133,7 @@ type MaxAge<T> = number | ((value: T | null) => number)
 
 export class ProjectReadIndex {
   private readonly entries = new Map<string, Entry>()
+  private staleHandler: StaleHandler | null = null
   private walkState: {
     paths: readonly string[] | null
     builtAt: number
@@ -137,6 +148,16 @@ export class ProjectReadIndex {
   /** Number of entries (diagnostics and tests). */
   get size(): number {
     return this.entries.size
+  }
+
+  /**
+   * Hand seeded entries served past their window to `handler` (the derived
+   * index's background validator) instead of re-validating each one from
+   * the request that served it. Without a handler such an entry starts its
+   * own background validation.
+   */
+  setStaleHandler(handler: StaleHandler | null): void {
+    this.staleHandler = handler
   }
 
   /** Force the next read of every entry (and the walk) to re-validate. */
@@ -232,9 +253,19 @@ export class ProjectReadIndex {
       for (;;) {
         const entry = this.entries.get(key)
         if (entry?.serveStale && window(entry.value as T | null) > 0) {
-          // Seeded and past its window: serve it, re-validate in the background.
+          // Seeded and past its window: serve it and leave the re-validation
+          // to the background validator (no I/O on the request path).
           if (!entry.pending && this.now() - entry.validatedAt > window(entry.value as T | null)) {
-            revalidate(entry).catch(() => undefined)
+            const handler = this.staleHandler
+            const background = async (): Promise<boolean> => {
+              if (this.entries.get(key) !== entry || !entry.serveStale || entry.pending) {
+                return false
+              }
+              await revalidate(entry)
+              return true
+            }
+            if (handler) handler(key, background)
+            else background().catch(() => undefined)
           }
           return entry
         }

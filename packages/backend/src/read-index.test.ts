@@ -122,3 +122,57 @@ describe('ProjectReadIndex.listing and walk', () => {
     expect(await index.walk(project, 60_000, run)).toEqual(['walk-3'])
   })
 })
+
+describe('ProjectReadIndex seeded entries', () => {
+  it('hands an expired seeded entry to the stale handler without any I/O', async () => {
+    const path = join(root, 'seeded.md')
+    await fs.writeFile(path, 'disk')
+    const key = `file:${path}#raw`
+    index.seed(key, {
+      fingerprint: 'f:*:1:1:1:1',
+      value: 'snapshot',
+      validatedAt: clock - 3_600_000,
+    })
+    const queued: Array<[string, () => Promise<boolean>]> = []
+    index.setStaleHandler((staleKey, revalidate) => queued.push([staleKey, revalidate]))
+    const ops = counting()
+
+    // Served from the seed, past its window, with no filesystem call.
+    expect(await index.file(path, 'raw', 60_000, (content) => content)).toBe('snapshot')
+    expect(ops.stat).not.toHaveBeenCalled()
+    expect(queued.map(([staleKey]) => staleKey)).toEqual([key])
+
+    // The handler's revalidation re-takes the fingerprint and reloads.
+    expect(await queued[0]![1]()).toBe(true)
+    expect(ops.stat).toHaveBeenCalledTimes(1)
+    expect(await index.file(path, 'raw', 60_000, (content) => content)).toBe('disk')
+    // Already re-validated: a second run is a no-op.
+    expect(await queued[0]![1]()).toBe(false)
+    expect(ops.stat).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-validates synchronously for a zero window and after an invalidation', async () => {
+    const path = join(root, 'seeded.md')
+    await fs.writeFile(path, 'disk')
+    const handler = vi.fn()
+    index.setStaleHandler(handler)
+    index.seed(`file:${path}#raw`, {
+      fingerprint: 'f:*:1:1:1:1',
+      value: 'snapshot',
+      validatedAt: clock - 3_600_000,
+    })
+    // An explicit refresh (window 0) reads the disk for this request.
+    expect(await index.file(path, 'raw', 0, (content) => content)).toBe('disk')
+    const other = new ProjectReadIndex(root, () => clock)
+    other.setStaleHandler(handler)
+    other.seed(`file:${path}#raw`, {
+      fingerprint: 'f:*:1:1:1:1',
+      value: 'snapshot',
+      validatedAt: clock - 3_600_000,
+    })
+    // A central write invalidates: no stale serving afterwards.
+    other.invalidate()
+    expect(await other.file(path, 'raw', 60_000, (content) => content)).toBe('disk')
+    expect(handler).not.toHaveBeenCalled()
+  })
+})
