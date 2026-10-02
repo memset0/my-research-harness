@@ -19,7 +19,7 @@ export const FS_CONVENTION_VERSION = 8
  * versions. Its Major is locked to the on-disk FS convention, its Minor tracks
  * Backend/CLI changes, and its Patch tracks central-only changes.
  */
-export const MEMON_RELEASE = '8.1.0' as const
+export const MEMON_RELEASE = '8.2.0' as const
 
 const RELEASE_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
