@@ -43,6 +43,7 @@ export {
 } from './fingerprint.js'
 export { defaultIndexFs, type IndexFs } from './fs.js'
 export { ensureIndexDirectory } from './gitignore.js'
+export { type IndexLintDiagnostic, indexLintDiagnostics, lintDerivedIndex } from './lint.js'
 export {
   emptySnapshot,
   entryCtime,

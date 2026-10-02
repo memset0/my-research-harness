@@ -12,6 +12,8 @@
 // Diagnostics use the same shape as `ExperimentDocumentDiagnostic` so one
 // emitter can render both.
 
+import type { Dirent } from 'node:fs'
+import { projectFs } from '../project-file-store.js'
 import type { ParseIssue, Run } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '../types.js'
 
@@ -155,4 +157,31 @@ function fromParseIssue(
     ...(issue.field === undefined ? {} : { field: issue.field }),
     message: match ? match[2]! : issue.message,
   }
+}
+
+/**
+ * FS v8 nesting check for `memon run lint`: every Run-shaped direct child
+ * directory of the linted Run is reported as `RUN_NESTED` (Run directories
+ * do not nest; the walk never lists a Run's contents, so such a child is
+ * invisible to every list).
+ */
+export async function lintRunNesting(runDir: string): Promise<RunLintDiagnostic[]> {
+  let entries: Dirent[]
+  try {
+    entries = await projectFs.readdir(runDir, { withFileTypes: true })
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return []
+    throw error
+  }
+  return entries
+    .filter((entry) => entry.isDirectory() && RUN_DIR_REGEX.test(entry.name))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => ({
+      code: 'RUN_NESTED',
+      severity: 'error' as const,
+      file: name,
+      message: `directory ${name} inside this Run is Run-shaped; Run directories do not nest and nested Runs are never discovered`,
+    }))
 }

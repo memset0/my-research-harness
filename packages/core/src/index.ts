@@ -87,6 +87,7 @@ export {
 } from './experiments/discover.js'
 export type {
   ExperimentDocumentDiagnostic,
+  LintExperimentDocumentOptions,
   RenderManagedSectionResult,
   ResultsRenderContext,
   ResultsRunLink,
@@ -384,7 +385,7 @@ export {
   RunFrontMatterPatchError,
 } from './readme/frontmatter-patch.js'
 export type { RunLintDiagnostic } from './readme/lint.js'
-export { lintRun } from './readme/lint.js'
+export { lintRun, lintRunNesting } from './readme/lint.js'
 export { parseReadme } from './readme/parse.js'
 export type { H2SectionEntry, SectionSplit } from './readme/sections.js'
 export { splitH2Sections } from './readme/sections.js'

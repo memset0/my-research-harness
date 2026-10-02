@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import yaml from 'js-yaml'
 import { type ZodError, z } from 'zod'
+import { matchesRunDirPatterns, nestedRunAncestor } from '../discovery/run-dirs.js'
 import { projectFs as fs } from '../project-file-store.js'
 
 import type {
@@ -792,8 +793,19 @@ export function validateExperimentManagedDocuments(
   return diagnostics
 }
 
+export interface LintExperimentDocumentOptions {
+  /**
+   * Effective `run_dirs` patterns. When given, declared Run paths they do not
+   * match are reported as the lint-level notice `RUN_OUTSIDE_RUN_DIRS`.
+   */
+  runDirs?: readonly string[]
+}
+
 /** Strict v6 lint. Parsing remains tolerant; lint diagnostics never hide data. */
-export function lintExperimentDocument(experiment: Experiment): ExperimentDocumentDiagnostic[] {
+export function lintExperimentDocument(
+  experiment: Experiment,
+  options: LintExperimentDocumentOptions = {},
+): ExperimentDocumentDiagnostic[] {
   const diagnostics = experiment.parseErrors.map((issue) =>
     parseReadmeIssueToDiagnostic(issue, 'error'),
   )
@@ -812,7 +824,7 @@ export function lintExperimentDocument(experiment: Experiment): ExperimentDocume
   // FS v7 reads a legacy bare Run ID (resolved only when unique) but writes
   // project-relative paths; ask for the path so reads stay walk-free.
   for (const run of experiment.frontMatter.runs) {
-    if (!run.includes('/'))
+    if (!run.includes('/')) {
       diagnostics.push(
         diag(
           'LEGACY_RUN_ID_REF',
@@ -822,6 +834,32 @@ export function lintExperimentDocument(experiment: Experiment): ExperimentDocume
           'runs',
         ),
       )
+      continue
+    }
+    // FS v8: Run directories do not nest; the declaration is kept.
+    const ancestor = nestedRunAncestor(run)
+    if (ancestor !== null) {
+      diagnostics.push(
+        diag(
+          'RUN_NESTED',
+          'error',
+          'README.md',
+          `runs entry "${run}" is nested inside the Run-shaped directory "${ancestor}"; Run directories do not nest`,
+          'runs',
+        ),
+      )
+    }
+    if (options.runDirs !== undefined && !matchesRunDirPatterns(run, options.runDirs)) {
+      diagnostics.push(
+        diag(
+          'RUN_OUTSIDE_RUN_DIRS',
+          'warning',
+          'README.md',
+          `runs entry "${run}" is outside the effective run_dirs (${options.runDirs.join(', ')}); it stays a member by path but Run walks do not list it`,
+          'runs',
+        ),
+      )
+    }
   }
   const results = experiment.documents?.results.data
   if (results) {

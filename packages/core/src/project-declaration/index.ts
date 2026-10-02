@@ -1,4 +1,9 @@
 export {
+  lintProjectDeclaration,
+  type ProjectDeclarationDiagnostic,
+  type ProjectDeclarationLint,
+} from './lint.js'
+export {
   type EffectiveRunDirs,
   loadProjectDeclaration,
   type RunDirsSourceName,
