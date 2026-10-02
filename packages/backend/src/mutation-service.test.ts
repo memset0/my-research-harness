@@ -3,8 +3,9 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readJournalInvocations } from '@memon/core'
+import { BackendReadmeResponseSchema, readDerivedIndex, readJournalInvocations } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { FilesystemDocumentService } from './document-service.js'
 import { BackendMutationError, FilesystemMutationService } from './mutation-service.js'
 
 let dir: string
@@ -281,3 +282,44 @@ async function documentLock(path: string): Promise<{ mtime: number; hash: string
   const [content, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)])
   return { mtime: stat.mtimeMs, hash: createHash('sha1').update(content).digest('hex') }
 }
+
+describe('derived-index writer obligation', () => {
+  it('publishes one event per central write', async () => {
+    const config = [{ name: 'project-a', root: projectRoot, include: [], exclude: [] }]
+    const service = new FilesystemMutationService(config, () => new Date('2026-10-01T10:00:00Z'), {
+      indexRole: 'central',
+    })
+    const path = join(projectRoot, 'logs/foo-260501-100000/README.md')
+    const content = await fs.readFile(path, 'utf8')
+    const stat = await fs.stat(path)
+    await service.setRunStatus('project-a', 'foo-260501-100000', {
+      status: 'FAILED',
+      expectedMtime: stat.mtimeMs,
+      expectedHash: createHash('sha1').update(content).digest('hex'),
+    })
+    let read = await readDerivedIndex(projectRoot)
+    expect(read.events).toHaveLength(1)
+    const [first] = read.events
+    expect(first!.event.writer).toMatchObject({ role: 'central' })
+    expect(first!.event.upserts.runs?.['logs/foo-260501-100000']).toMatchObject({
+      status: 'FAILED',
+    })
+    // The index directory ignores itself.
+    expect(await fs.readFile(join(projectRoot, '.memon/index/.gitignore'), 'utf8')).toBe('*\n')
+
+    // A Run README written through the document service publishes too.
+    const documents = new FilesystemDocumentService(config, { indexRole: 'central' })
+    const readme = BackendReadmeResponseSchema.parse(
+      await documents.getReadme('project-a', 'logs/foo-260501-100000/README.md'),
+    )
+    await documents.putReadme('project-a', 'logs/foo-260501-100000/README.md', {
+      content: readme.content.replace('status: FAILED', 'status: FINISHED'),
+      expectedMtime: readme.mtime,
+      expectedHash: readme.hash,
+    })
+    read = await readDerivedIndex(projectRoot)
+    expect(read.events).toHaveLength(2)
+    expect(read.events[1]!.event.writer.op).toBe('readme.write')
+    expect(read.events[1]!.event.upserts.runs?.['logs/foo-260501-100000']?.status).toBe('FINISHED')
+  })
+})

@@ -135,7 +135,10 @@ function createHostRuntime(
   const slurmExecution = executable[0]
   // Central lists may reuse summary-index observations inside the agreed
   // windows (external edits reach every list within five minutes).
-  const documents = new FilesystemDocumentService(projects, { readPolicy: CENTRAL_READ_POLICY })
+  const documents = new FilesystemDocumentService(projects, {
+    readPolicy: CENTRAL_READ_POLICY,
+    indexRole: 'central',
+  })
   const handler: BackendHandler = createBackendHandler({
     hostId: host,
     serviceTokens: { current: serviceToken },
@@ -146,7 +149,8 @@ function createHostRuntime(
     projectDiscovery: () => projects.map((project) => ({ name: project.name })),
     projectService: new FilesystemProjectService(projects, { readPolicy: CENTRAL_READ_POLICY }),
     documentService: documents,
-    mutationService: new FilesystemMutationService(projects),
+    // Every write publishes its derived-index event as the central writer.
+    mutationService: new FilesystemMutationService(projects, undefined, { indexRole: 'central' }),
     streamService: new FilesystemStreamService(projects),
     ...(executable.length > 0
       ? {

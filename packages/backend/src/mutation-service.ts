@@ -16,6 +16,8 @@ import {
   deleteExperiment,
   type FileChange,
   projectFs as fs,
+  type IndexRole,
+  type IndexSink,
   type JournalInvocationContext,
   type JournalInvocationDetail,
   JournalRecordingError,
@@ -194,13 +196,32 @@ export interface ExperimentDeleteInput {
   runLocks: Array<{ run: string; expectedMtime: number; expectedHash: string }>
 }
 
+export interface FilesystemMutationServiceOptions {
+  /**
+   * Writer role recorded in the derived-index events every successful write
+   * publishes (`central` for the central instance, `standalone` otherwise).
+   */
+  indexRole?: IndexRole
+}
+
 export class FilesystemMutationService implements BackendMutationService {
   private projects = new Map<string, ProjectConfig>()
+  private readonly indexRole: IndexRole
   constructor(
     projects: readonly ProjectConfig[],
     private readonly now: () => Date = () => new Date(),
+    options: FilesystemMutationServiceOptions = {},
   ) {
     for (const p of projects) this.projects.set(p.name, p)
+    this.indexRole = options.indexRole ?? 'standalone'
+  }
+  /**
+   * The derived-index sink of a Project (FS v8 writer obligation): every
+   * successful primitive publishes one event; a failure to publish never
+   * fails the write and is only logged.
+   */
+  private index(project: ProjectConfig): IndexSink {
+    return { projectRoot: project.root, role: this.indexRole, now: this.now }
   }
   private project(name: string) {
     const p = this.projects.get(name)
@@ -299,6 +320,7 @@ export class FilesystemMutationService implements BackendMutationService {
         ctx.addDetail({ kind: 'target', type: 'run', id })
         const result = await setRunStatus({
           fs: port,
+          index: this.index(project),
           now: this.now,
           readmePath: join(run.path, 'README.md'),
           status: input.status as never,
@@ -327,6 +349,7 @@ export class FilesystemMutationService implements BackendMutationService {
         ctx.addDetail({ kind: 'target', type: 'run', id })
         const result = await setRunArchiveState({
           fs: port,
+          index: this.index(project),
           now: this.now,
           readmePath: join(run.path, 'README.md'),
           archived: input.archived,
@@ -353,6 +376,7 @@ export class FilesystemMutationService implements BackendMutationService {
         ctx.addDetail({ kind: 'target', type: 'experiment', id })
         const result = await setExperimentStatus({
           fs: port,
+          index: this.index(project),
           now: this.now,
           experiment,
           status: input.status as never,
@@ -380,6 +404,7 @@ export class FilesystemMutationService implements BackendMutationService {
         ctx.addDetail({ kind: 'target', type: 'experiment', id })
         const result = await setExperimentArchived({
           fs: port,
+          index: this.index(project),
           now: this.now,
           experiment,
           archived: input.archived,
@@ -404,6 +429,7 @@ export class FilesystemMutationService implements BackendMutationService {
       // the canonical `finalContent`.
       const result = await writeRunReadme({
         fs: port,
+        index: this.index(project),
         now: this.now,
         readmePath: join(run.path, 'README.md'),
         content: input.content,
@@ -443,6 +469,7 @@ export class FilesystemMutationService implements BackendMutationService {
       ctx.addDetail({ kind: 'target', type: 'experiment', id })
       const result = await writeExperimentReadme({
         fs: port,
+        index: this.index(project),
         now: this.now,
         experiment,
         content: input.content,
@@ -482,6 +509,7 @@ export class FilesystemMutationService implements BackendMutationService {
         }
         const created = await createExperiment({
           fs: port,
+          index: this.index(project),
           now: this.now,
           projectRoot: project.root,
           projectName,
@@ -526,6 +554,7 @@ export class FilesystemMutationService implements BackendMutationService {
         const bind = operation === 'link' ? linkExperimentRun : unlinkExperimentRun
         const result = await bind({
           fs: port,
+          index: this.index(project),
           now: this.now,
           projectRoot: project.root,
           experiment,
@@ -565,6 +594,7 @@ export class FilesystemMutationService implements BackendMutationService {
         }
         const result = await deleteExperiment({
           fs: port,
+          index: this.index(project),
           now: this.now,
           experiment,
           force: input.force,
@@ -608,6 +638,7 @@ export class FilesystemMutationService implements BackendMutationService {
         const path = await this.warningPath(kind, project, projectName, id)
         const result = await mutateDocumentWarning({
           fs: port,
+          index: this.index(project),
           now: this.now,
           path,
           op: input.op,

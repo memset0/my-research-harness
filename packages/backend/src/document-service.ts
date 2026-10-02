@@ -33,11 +33,13 @@ import {
   extractTitle,
   formatIsoLocal,
   projectFs as fs,
+  type IndexRole,
   listWikiCommits,
   markJournalInvocationOutcome,
   type ProjectConfig,
   parseCodeReview,
   parseWikiFrontmatter,
+  publishMutationEvent,
   ResourceIdSchema,
   type Run,
   readWikiReviewMarks,
@@ -221,6 +223,11 @@ export interface FilesystemDocumentServiceOptions {
   runWalk?: RunInventoryWalk
   /** Summary-index validation windows; strict (validate every read) by default. */
   readPolicy?: ReadPolicy
+  /**
+   * Writer role of the derived-index events a Run or Experiment README write
+   * publishes (`central` on the central instance, `standalone` otherwise).
+   */
+  indexRole?: IndexRole
 }
 
 /** Read the cited artifacts' metadata without unrelated archive-policy reads. */
@@ -247,6 +254,8 @@ export class FilesystemDocumentService implements BackendDocumentService {
 
   private readonly policy: ReadPolicy
 
+  private readonly indexRole: IndexRole
+
   constructor(projects: readonly ProjectConfig[], options: FilesystemDocumentServiceOptions = {}) {
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
@@ -254,6 +263,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
     registerProjectRoots(projects)
     this.policy = options.readPolicy ?? STRICT_READ_POLICY
+    this.indexRole = options.indexRole ?? 'standalone'
     this.wikiArtifacts = options.wikiArtifacts ?? scanBackendWikiArtifacts
     this.resolveExecution = options.execution ?? resolveProjectExecution
     // An injected walk keeps its own inventory; otherwise every projection
@@ -761,6 +771,14 @@ export class FilesystemDocumentService implements BackendDocumentService {
     const original = await fs.stat(entry.absolutePath)
     await writeFileAtomic(entry.absolutePath, input.content, { mode: original.mode })
     const stat = await fs.stat(entry.absolutePath)
+    // FS v8 writer obligation: a Run or Experiment README written here is
+    // published to the derived index (Reports and code reviews are not
+    // indexed and publish nothing). A publishing failure never fails the write.
+    await publishMutationEvent(
+      { projectRoot: project.root, role: this.indexRole },
+      'readme.write',
+      [{ path: entry.absolutePath, after: input.content }],
+    )
     addJournalInvocationDetail({
       kind: 'file-change',
       path: entry.resource,
