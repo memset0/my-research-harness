@@ -105,3 +105,19 @@ export {
   type SnapshotState,
   UNPARSABLE_EVENT_GRACE_MS,
 } from './snapshot.js'
+export {
+  INDEX_DRIFT,
+  type IndexDriftRecord,
+  type IndexLayoutNotice,
+  type IndexWindow,
+  layoutNotices,
+  RUN_NESTED,
+  RUN_OUTSIDE_RUN_DIRS,
+  type StaleIndexEntry,
+  type ValidateIndexEntriesOptions,
+  type ValidateIndexEntriesResult,
+  type VerifyIndexOptions,
+  type VerifyIndexResult,
+  validateIndexEntries,
+  verifyIndex,
+} from './validate.js'
