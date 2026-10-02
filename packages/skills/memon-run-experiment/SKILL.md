@@ -28,8 +28,11 @@ creates a fresh Run, not a resurrection of the deprecated record.
   capability returns to the coordinator.
 - Use a project-approved durable session/scheduler for long jobs. Capture the
   launcher's `[memon] PROJECT_ROOT=`, `RUN_NAME=` and `RUN_DIR=` output. The Run
-  id is that directory's basename, matching `^.+-[0-9]{6}-[0-9]{6}$` inside the
-  configured logs area. Set `$RUN_PATH` to the observed directory relative to
+  id is that directory's basename, matching `^.+-[0-9]{6}-[0-9]{6}$` at a
+  location the project's effective Run locations discover (by default directly
+  under `logs/`, `outputs/` or `experiments/`; `project lint` prints them), never
+  inside another Run directory — `run record` refuses a nested Run with exit 2
+  (`RUN_NESTED`). Set `$RUN_PATH` to the observed directory relative to
   the project root (POSIX form, for example `logs/trial-260908-120000`).
   Use that path for commands, membership and result references; retain the
   basename only as a display ID. Confirm actual execution/log activity. Never guess the
@@ -61,6 +64,8 @@ Optional notes explain actual deviations or non-obvious artifact locations; when
 one needs a component block, follow `memon-components`.
 Existing rich records remain intact. Later metadata edits use mtime/hash locks;
 use `run lint` after direct edits or for a structural concern, not every poll.
+memon commands keep the derived index current; a direct README edit needs no
+index step, and `.memon/index/` is never touched by hand (`../PREFLIGHT.md`).
 
 ## Monitor and finish
 

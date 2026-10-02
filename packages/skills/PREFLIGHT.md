@@ -20,6 +20,22 @@ Migration owns its staging/version exception. Remote roots use the detected
 execution channel; tolerant legacy rendering does not authorize migration.
 Always pass the intended `--project-root`, not an ambient config selection.
 
+## Derived index and Run locations
+
+memon commands maintain the derived index `.memon/index/` automatically; it is
+a rebuildable cache, never a source of truth and not part of this preflight.
+Never read, create, edit, delete or commit anything under it. A direct Run
+README edit (for example a launcher rewriting `status`) needs no index step;
+only when the user reports a list that disagrees with the files, suggest
+`memon --project-root . --format json index status --verify`.
+
+Run directories live where the project's effective `run_dirs` say: by default
+directly under `logs/`, `outputs/` or `experiments/`; `memon --project-root .
+--format json project lint` prints the effective patterns. Never create a Run
+directory inside another Run directory. Never create, edit, delete or commit
+`.memon/project.yml`: when the user wants other Run locations, recommend
+`memon project init`, a manual edit of `run_dirs` and a commit by the user.
+
 ## Lint, not doctor
 
 Use `experiment doc lint <id>` or `run lint <run>` for syntax, schema and

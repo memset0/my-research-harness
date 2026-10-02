@@ -31,6 +31,16 @@ to `memon-write-experiment-doc`; otherwise record it as Variant/Run provenance.
 
 Keep generated Run data out of the launcher directory.
 
+The Run directory itself goes where the project's effective Run locations
+discover it (`../PREFLIGHT.md`): read them with
+`memon --project-root . --format json project lint` (`.effective.patterns`).
+Without a declaration they are `logs/*`, `outputs/*` and `experiments/*`, so a
+fresh Run is `logs/<RUN_NAME>-<YYMMDD>-<HHMMSS>` (or directly under `outputs/` or
+`experiments/`). Never place a Run directory inside another Run directory. When
+the user wants a deeper layout such as `outputs/<group>/<run>`, recommend
+`memon project init`, a manual edit of `run_dirs` in `.memon/project.yml` and a
+commit by the user; never write that file yourself.
+
 ## Launcher contract
 
 Every launcher must:
@@ -38,8 +48,9 @@ Every launcher must:
 1. Start with a functional one-line description and strict shell mode.
 2. Derive `PROJECT_ROOT` portably; never hard-code a user's absolute path.
 3. Accept caller-overridable `RUN_NAME` and `RUN_DIR`.
-4. Create a fresh `<RUN_NAME>-<YYMMDD>-<HHMMSS>` directory unless an existing
-   `RUN_DIR` is explicitly supplied for a supported resume.
+4. Create a fresh `<RUN_NAME>-<YYMMDD>-<HHMMSS>` directory at an effective Run
+   location (default `logs/`), never inside another Run directory, unless an
+   existing `RUN_DIR` is explicitly supplied for a supported resume.
 5. Emit these lines immediately after directory creation:
 
    ```text
@@ -128,4 +139,7 @@ launches. `memon-run-experiment` enforces the pre-launch check.
   supported interfaces.
 - Do not use a timestamp-free directory for a fresh Run, and do not truncate an
   existing `run.log`.
+- Do not nest a Run directory inside another Run directory, and do not create,
+  edit or commit `.memon/project.yml` or anything under `.memon/index/`. A
+  launcher that rewrites its Run README `status` needs no index step.
 - Do not read, write, or repair a Journal file beyond the step 6 submission.

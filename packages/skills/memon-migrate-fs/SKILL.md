@@ -43,8 +43,8 @@ triggered some other skill is not migration consent.
 ## Git and local staging preflight
 
 For Git projects, require a clean tracked and untracked working tree. Never
-auto-stash or discard work: show dirty paths and stop. For FS v6→v7 only,
-an operator may explicitly authorize scoped dirty-tree migration. Record that
+auto-stash or discard work: show dirty paths and stop. For FS v6→v7 and
+v7→v8 only, an operator may explicitly authorize scoped dirty-tree migration. Record that
 approval, use the fingerprinted plan and external preimage backup, and preserve
 all unrelated edits. Never infer this authorization from a generic migration
 request. Explicitly obtain approval before dropping Run-only ownership claims;
@@ -112,6 +112,25 @@ guide's `bash` Verification block is the check. Blockers stop the step until the
 user resolves them and a fresh plan is made; warnings such as
 `MEMBER_README_MISSING` are reported but do not block. Commit with exactly
 `chore(memon): migrate FS convention v6 -> v7`.
+
+FS v7→v8 (`packages/core/migrations/v7-to-v8.md`) is mechanical: it builds the
+derived index `.memon/index/` and advances the marker, changing no document.
+Its executor is `scripts/migrate-v7-to-v8.mjs` from the reviewed memon checkout.
+Before planning, confirm every CLI node writing to the project runs an 8.x
+release (`memon update`). `plan` is the read-only dry run (plan file outside the
+project); show its `counts`, `runDirs`, every `outsideRunDirs` and `nested` path
+and every warning, and get the user's explicit acknowledgement before passing
+`--acknowledge-warnings` to `apply`. `apply` takes the plan plus a new external
+backup directory, rebuilds and verifies the index, writes the marker last and,
+in Git mode, itself commits exactly `.memon/version.json` with
+`chore(memon): migrate FS convention v7 -> v8` — do not make a second commit,
+and skip the `journal submit` step because no managed document changes. Then
+run the guide's `bash` Verification block. Never create, edit or commit
+`.memon/project.yml` or anything under `.memon/index/` during this step; for
+Runs outside the default locations, tell the user to run `memon project init`,
+edit `run_dirs`, commit that file separately and run `memon index rebuild`
+after the migration. `rollback` with the backup directory reverts the migration
+commit and restores the index.
 
 ## Review-required semantic step
 
@@ -214,7 +233,8 @@ removes it.
 - Never bump the marker before successful production verification.
 - Never use `git add .` or `git add -A`.
 - Never auto-stash, reset, discard, or delete user work.
-- Never commit `.memon/migrations/`.
+- Never commit `.memon/migrations/` or anything under `.memon/index/`.
+- Never create `.memon/project.yml` as part of a migration.
 - Never infer that parser success means a semantic migration is correct.
 - Never rewrite, relocate, or delete a legacy `docs/journal.md`; leave it
   byte-for-byte as history this migration does not own.
