@@ -51,6 +51,12 @@ Empty filter results are not errors — the command returns zero rows with `meta
 - **THEN** only rows whose `variantId` is `V0001` or `V0003` appear in `rows`
 - **AND** `meta.filters.variants` is `["V0001", "V0003"]`
 
+#### Scenario: --status selects blocked Variants
+- **GIVEN** an `experiment.json` with one Variant declared `BLOCKED` and one Variant whose finished evidence Run makes it `COMPLETED`
+- **WHEN** the user runs `memon experiment results table E0001-foo --status blocked --output json`
+- **THEN** `rows` contains only the `BLOCKED` Variant with `status: "BLOCKED"`
+- **AND** `meta.filters.statuses` is `["blocked"]`
+
 #### Scenario: --group metric excludes parameter columns
 - **WHEN** the user runs `memon experiment results table E0001-foo --group metric --output json`
 - **THEN** every column in `columns` is a metric path

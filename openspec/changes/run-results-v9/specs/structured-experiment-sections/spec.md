@@ -35,6 +35,13 @@ Variants SHALL be declared in the description file before any Run is launched fo
 - **GIVEN** a description file in which one Variant declares `BLOCKED`, lists no Run, and has a description naming the parent checkpoint it waits for
 - **WHEN** the description file is parsed and the Experiment bundle is linted
 - **THEN** parsing succeeds without errors and the Variant's effective status is `BLOCKED`
+- **AND** no diagnostic is reported for that status
+
+#### Scenario: An unknown status is still rejected
+- **GIVEN** a Variant declaring `status: WAITING`
+- **WHEN** the description file is parsed
+- **THEN** parsing fails with a schema error for that Variant's `status` that lists the four declarable statuses
+- **AND** the Experiment's Results summary fails as `INVALID_RESULTS`
 
 #### Scenario: A derived status cannot be declared
 - **GIVEN** a Variant declaring `status: COMPLETED`
@@ -78,19 +85,29 @@ Core SHALL expose one normalized model and deterministic display/Markdown projec
 
 ### Requirement: Variant provenance environment values are strings
 
-A Variant's environment values in the description file SHALL map environment variable names to string values, and the normalized model SHALL expose only string env values. A reader SHALL accept a JSON number or boolean env value, normalize it to its canonical string — the shortest spelling that round-trips the number, or `"true"` / `"false"` — and SHALL report a `RESULTS_ENV_VALUE_COERCED` warning that names the field and the normalized value. Such a description file SHALL remain readable, and the warning SHALL NOT make the Experiment read-only. A `null`, array or object env value SHALL be a schema error.
+A Variant's environment values in the description file SHALL map environment variable names to string values, and the normalized model SHALL expose only string env values. A reader SHALL accept a JSON number or boolean env value, normalize it to its canonical string — the shortest spelling that round-trips the number (`0.000008` → `"0.000008"`, `1e-7` → `"1e-7"`), or `"true"` / `"false"` — and SHALL report a `RESULTS_ENV_VALUE_COERCED` warning that names the field and the normalized value. Such a description file SHALL remain readable, and the warning SHALL NOT make the Experiment read-only. A `null`, array or object env value SHALL be a schema error.
 
-Reading SHALL NOT rewrite the description file. When memon serializes a normalized description it SHALL write every env value as a JSON string. The v8-to-v9 migration SHALL convert every non-string v8 env value to its canonical string and report the conversions.
+Reading SHALL NOT rewrite the description file. When memon serializes a normalized description it SHALL write every env value as a JSON string. Because a number's source spelling is not preserved (`1.0e-5` reads as `"0.00001"`), authors SHALL write env values whose exact spelling matters as JSON strings. The v8-to-v9 migration SHALL convert every non-string v8 env value to its canonical string and report the conversions.
 
 #### Scenario: Unquoted numeric env value
 - **GIVEN** a Variant whose env contains `"LR": 0.000008`
 - **WHEN** the description file is parsed
 - **THEN** parsing succeeds, the normalized env value is the string `"0.000008"` and one `RESULTS_ENV_VALUE_COERCED` warning names that field
 
+#### Scenario: Boolean env value
+- **GIVEN** a Variant whose env contains `"DEBUG": true`
+- **WHEN** the description file is parsed
+- **THEN** the normalized env value is the string `"true"`
+
 #### Scenario: Null env value stays invalid
 - **GIVEN** a Variant whose env contains `"LR": null`
 - **WHEN** the description file is parsed
 - **THEN** parsing fails with a schema error for that field
+
+#### Scenario: Serialization writes strings
+- **GIVEN** a normalized description read from a file with an unquoted numeric env value
+- **WHEN** memon serializes that description
+- **THEN** the env value is written as a JSON string that reads back as the same string without a warning
 
 ## ADDED Requirements
 

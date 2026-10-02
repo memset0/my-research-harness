@@ -1,6 +1,6 @@
 ## Context
 
-See proposal.md (Why). State this design builds on (release 8.1.0 plus the active change `results-accept-blocked-variants`, which must be archived first):
+See proposal.md (Why). State this design builds on (release 8.2.0, which shipped the now-archived change `results-accept-blocked-variants`):
 
 - `packages/core/src/experiments/documents.ts` owns the three schema-v1 YAML documents. Results v1 is `columns` (`key`, `label`, `group: parameter|metric`, `type: string|number|boolean|enum`), optional `column_annotations`, and `variants` (`id`, `name`, `status`, `parameters`/`metrics` as flat scalar maps, `runs`, `attempts`, `provenance{repo,commit,entry,recipe,env}` plus passthrough keys). Any zod failure makes the whole document `data: null`; membership, undeclared columns and type checks are lint (`lintExperimentDocument`, `validateVariant`). `results-eligibility.ts` projects deprecation at read time; `upsertResultColumnAnnotationYaml` is the only focused writer.
 - `experiments/mutations.ts` (`create --from-run`) seeds `results.yaml` Variant `V0001` and maps Run status to a Variant status (`INTERRUPTED` → `FAILED`, listed in `attempts`). `run rename` rewrites Variant `runs`/`attempts` paths.
