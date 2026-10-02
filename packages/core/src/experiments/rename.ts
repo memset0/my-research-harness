@@ -1,5 +1,7 @@
 import { dirname, join } from 'node:path'
 import { writeFileAtomic } from '../atomic-write.js'
+import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
+import { publishMutationEvent } from '../derived-index/mutation-events.js'
 import { padId, parseId, RUN_TIMESTAMP_TAIL_REGEX, SLUG_REGEX } from '../ids.js'
 import { appendJournalEvent } from '../journal/append.js'
 import { projectFs as fs } from '../project-file-store.js'
@@ -23,6 +25,8 @@ export interface RenameExperimentResult {
   newId: string
   noop?: boolean
   warnings: RenameExperimentWarning[]
+  /** Derived-index event failures (`INDEX_EVENT_FAILED`); present only on failure. */
+  indexWarnings?: IndexEventWarning[]
 }
 
 export class RenameExperimentError extends Error {
@@ -39,6 +43,8 @@ export class RenameExperimentError extends Error {
 export interface RenameExperimentOptions {
   /** Now-iso clock injection for deterministic tests. */
   now?: () => string
+  /** Derived-index sink (FS v8): publish one event after a successful rename. */
+  index?: IndexSink
 }
 
 export async function renameExperiment(
@@ -129,6 +135,7 @@ export async function renameExperiment(
   }
 
   // ── Step 2: exp README frontmatter rewrite ───────────────────────
+  let renamedReadme = ''
   {
     const content = await fs.readFile(newReadmePath, 'utf8')
     const filenameStem = isLegacyFile ? newId : newId
@@ -145,6 +152,7 @@ export async function renameExperiment(
       rawBody: parsed.body,
     })
     await writeFileAtomic(newReadmePath, serialized)
+    renamedReadme = serialized
   }
 
   const warnings: RenameExperimentWarning[] = []
@@ -176,7 +184,19 @@ export async function renameExperiment(
     },
   })
 
-  return { ok: true, oldId, newId, warnings }
+  const indexWarnings = await publishMutationEvent(
+    options.index,
+    'experiment.rename',
+    [{ path: newReadmePath, after: renamedReadme }],
+    { removeExperiments: [exp.path] },
+  )
+  return {
+    ok: true,
+    oldId,
+    newId,
+    warnings,
+    ...(indexWarnings.length > 0 ? { indexWarnings } : {}),
+  }
 }
 
 async function substituteHypothesesId(

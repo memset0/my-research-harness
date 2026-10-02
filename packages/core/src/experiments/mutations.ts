@@ -16,6 +16,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { atomicTempPath } from '../atomic-write.js'
+import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
+import { publishMutationEvent } from '../derived-index/mutation-events.js'
 import { SLUG_STRICT_REGEX } from '../ids.js'
 import {
   applyWarningOp,
@@ -145,6 +147,29 @@ export interface MutationBase {
   fs: MutationFs
   /** Clock; timestamps are written as `formatIsoLocal(now())`. */
   now?: () => Date
+  /**
+   * Derived-index sink (FS v8). When given, every successful write publishes
+   * one index event after the write; a publishing failure never fails the
+   * write and comes back as `indexWarnings` (`INDEX_EVENT_FAILED`).
+   */
+  index?: IndexSink
+}
+
+/** Index-event warnings of a write; present only when publishing failed. */
+export interface IndexWarnings {
+  indexWarnings?: IndexEventWarning[]
+}
+
+/** Publish the write's event and shape its warnings for the result. */
+export async function indexEventWarnings(
+  base: MutationBase,
+  op: string,
+  changes: readonly FileChange[],
+  extras?: Parameters<typeof publishMutationEvent>[3],
+): Promise<IndexWarnings> {
+  if (!base.index || changes.length + (extras?.upsertRuns?.length ?? 0) === 0) return {}
+  const warnings = await publishMutationEvent(base.index, op, changes, extras)
+  return warnings.length > 0 ? { indexWarnings: warnings } : {}
 }
 
 export function sha1(content: string): string {
@@ -425,7 +450,7 @@ export interface CreateExperimentInput extends MutationBase {
   attempts?: number
 }
 
-export interface CreateExperimentResult {
+export interface CreateExperimentResult extends IndexWarnings {
   id: string
   directory: string
   readmePath: string
@@ -562,6 +587,7 @@ export async function createExperiment(
     const readmePath = join(directory, 'README.md')
     const readme = bundle['README.md']
     const stat = await fs.stat(readmePath)
+    const changes = files.map(([path, body]) => ({ path, before: null, after: body }))
     return {
       id,
       directory,
@@ -571,7 +597,8 @@ export async function createExperiment(
       hash: sha1(readme),
       runs: runPath ? [runPath] : [],
       timestamp: stamp,
-      changes: files.map(([path, body]) => ({ path, before: null, after: body })),
+      changes,
+      ...(await indexEventWarnings(input, 'experiment.create', changes)),
     }
   }
   throw new MutationError(
@@ -592,7 +619,7 @@ export interface ExperimentRunBindInput extends MutationBase {
   runLock?: DocumentLock
 }
 
-export interface ExperimentRunBindResult extends WrittenDocument {
+export interface ExperimentRunBindResult extends WrittenDocument, IndexWarnings {
   experimentId: string
   /** Project-relative Run path. */
   runPath: string
@@ -652,6 +679,7 @@ async function bindRun(
     runPath,
     ...(runDocument ? { runDocument } : {}),
     warnings,
+    ...(await indexEventWarnings(input, `experiment.${operation}`, written.changes)),
   }
 }
 
@@ -673,7 +701,7 @@ export interface ExperimentStatusInput extends MutationBase {
   lock?: DocumentLock
 }
 
-export interface ToggleResult {
+export interface ToggleResult extends IndexWarnings {
   /** False for a no-op: nothing was written. */
   changed: boolean
   mtime: number
@@ -722,7 +750,14 @@ export async function setExperimentStatus(
     state.content,
     reserializeExperiment(parsed),
   )
-  return { changed: true, ...written, prevStatus, nextStatus: input.status, archived }
+  return {
+    changed: true,
+    ...written,
+    prevStatus,
+    nextStatus: input.status,
+    archived,
+    ...(await indexEventWarnings(input, 'experiment.status', written.changes)),
+  }
 }
 
 export interface ExperimentArchiveInput extends MutationBase {
@@ -757,7 +792,12 @@ export async function setExperimentArchived(
     state.content,
     reserializeExperiment(parsed),
   )
-  return { changed: true, ...written, archived: input.archived }
+  return {
+    changed: true,
+    ...written,
+    archived: input.archived,
+    ...(await indexEventWarnings(input, 'experiment.archive', written.changes)),
+  }
 }
 
 // ---------- README write ----------
@@ -768,7 +808,7 @@ export interface ExperimentReadmeInput extends MutationBase {
   lock?: DocumentLock
 }
 
-export interface ReadmeWriteResult {
+export interface ReadmeWriteResult extends IndexWarnings {
   mtime: number
   hash: string
   finalContent: string
@@ -802,6 +842,7 @@ export async function writeExperimentReadme(
     nextStatus: next.frontMatter.status,
     prevArchived: previous.frontMatter.archived,
     changes: written.changes,
+    ...(await indexEventWarnings(input, 'experiment.readme', written.changes)),
   }
 }
 
@@ -813,7 +854,7 @@ export interface DeleteExperimentInput extends MutationBase {
   lock?: DocumentLock
 }
 
-export interface DeleteExperimentResult {
+export interface DeleteExperimentResult extends IndexWarnings {
   deletedId: string
   /** The `runs[]` the deleted declaration released. */
   cascadedRuns: string[]
@@ -863,10 +904,12 @@ export async function deleteExperiment(
   const quarantine = join(dirname(target), `.memon-delete-${id}-${randomUUID()}`)
   await fs.rename(target, quarantine)
   await fs.rm(quarantine, { recursive: true, force: true }).catch(() => undefined)
+  const changes = [{ path: experiment.path, before: state.content, after: null }]
   return {
     deletedId: id,
     cascadedRuns: members,
-    changes: [{ path: experiment.path, before: state.content, after: null }],
+    changes,
+    ...(await indexEventWarnings(input, 'experiment.delete', changes)),
   }
 }
 
@@ -885,7 +928,7 @@ export interface WarningMutationInput extends MutationBase {
   lock?: DocumentLock
 }
 
-export interface WarningMutationResult extends WrittenDocument {
+export interface WarningMutationResult extends WrittenDocument, IndexWarnings {
   rowId?: string
   before?: Warning
   after?: Warning
@@ -942,6 +985,7 @@ export async function mutateDocumentWarning(
     ...(next.after ? { after: next.after } : {}),
     ...(next.deleted ? { deleted: next.deleted } : {}),
     timestamp: created,
+    ...(await indexEventWarnings(input, `warning.${input.op}`, written.changes)),
   }
 }
 

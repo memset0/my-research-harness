@@ -18,6 +18,8 @@
 
 import { basename, join, resolve } from 'node:path'
 import { writeFileAtomic } from '../atomic-write.js'
+import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
+import { publishMutationEvent } from '../derived-index/mutation-events.js'
 import { projectRunPath, resolveRunReference } from '../experiments/run-path.js'
 import { splitFrontmatter } from '../frontmatter.js'
 import { projectFs as fs } from '../project-file-store.js'
@@ -37,6 +39,8 @@ export interface DeprecationResult {
   noop: boolean
   /** README mtime after the call — the next optimistic-locking token. */
   mtime: number
+  /** Derived-index event failures (`INDEX_EVENT_FAILED`); present only on failure. */
+  indexWarnings?: IndexEventWarning[]
 }
 
 export interface SetRunDeprecatedOptions {
@@ -49,6 +53,8 @@ export interface SetRunDeprecatedOptions {
    * milliseconds must equal it, or `RunWriteConflictError` is thrown.
    */
   expectedMtime?: number
+  /** Derived-index sink (FS v8): publish one event after a successful write. */
+  index?: IndexSink
 }
 
 /** Lost-update guard for run README writes. */
@@ -107,7 +113,19 @@ export async function setRunDeprecated(
   })
   await writeFileAtomic(readmePath, next)
   const after = await fs.stat(readmePath)
-  return { runDir, prev, next: target, noop: false, mtime: after.mtimeMs }
+  const indexWarnings = await publishMutationEvent(
+    options.index,
+    target ? 'run.deprecate' : 'run.undeprecate',
+    [{ path: readmePath, after: next }],
+  )
+  return {
+    runDir,
+    prev,
+    next: target,
+    noop: false,
+    mtime: after.mtimeMs,
+    ...(indexWarnings.length > 0 ? { indexWarnings } : {}),
+  }
 }
 
 /** Exclude a run from research collections; keeps every artifact in place. */

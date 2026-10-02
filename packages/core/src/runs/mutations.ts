@@ -9,6 +9,8 @@ import {
   type DocumentLock,
   type DocumentState,
   type FileChange,
+  type IndexWarnings,
+  indexEventWarnings,
   type MutationBase,
   MutationError,
   readDocumentState,
@@ -108,7 +110,14 @@ export async function setRunStatus(input: RunStatusInput): Promise<RunStatusResu
     doc.frontMatter.finishedAt = null
   }
   const written = await writeRun(input, input.readmePath, state.content, reserializeReadme(doc))
-  return { changed: true, ...written, prevStatus, nextStatus: input.status, archived }
+  return {
+    changed: true,
+    ...written,
+    prevStatus,
+    nextStatus: input.status,
+    archived,
+    ...(await indexEventWarnings(input, 'run.status', written.changes)),
+  }
 }
 
 // ---------- archive ----------
@@ -153,7 +162,14 @@ export async function setRunArchiveState(input: RunArchiveInput): Promise<RunArc
   doc.frontMatter.archived = input.archived
   doc.frontMatter.updatedAt = timestamp(input)
   const written = await writeRun(input, input.readmePath, state.content, reserializeReadme(doc))
-  return { changed: true, ...written, archived: input.archived, prevArchived, prevStatus }
+  return {
+    changed: true,
+    ...written,
+    archived: input.archived,
+    prevArchived,
+    prevStatus,
+    ...(await indexEventWarnings(input, 'run.archive', written.changes)),
+  }
 }
 
 // ---------- README write ----------
@@ -172,7 +188,7 @@ export interface RunReadmeInput extends MutationBase {
   allowCreate?: boolean
 }
 
-export interface RunReadmeResult {
+export interface RunReadmeResult extends IndexWarnings {
   /** False when the request matched the disk modulo `updated_at` (no write). */
   changed: boolean
   created: boolean
@@ -217,6 +233,7 @@ export async function writeRunReadme(input: RunReadmeInput): Promise<RunReadmeRe
         hash: written.hash,
         finalContent: written.content,
         changes: written.changes,
+        ...(await indexEventWarnings(input, 'run.readme', written.changes)),
       }
     }
     throw error
@@ -257,6 +274,7 @@ export async function writeRunReadme(input: RunReadmeInput): Promise<RunReadmeRe
     prevArchived: previous.frontMatter.archived,
     nextArchived: next.frontMatter.archived,
     changes: written.changes,
+    ...(await indexEventWarnings(input, 'run.readme', written.changes)),
   }
 }
 
@@ -274,7 +292,7 @@ export interface RenameRunInput extends MutationBase {
   isTaken: (newId: string) => boolean
 }
 
-export interface RenameRunResult {
+export interface RenameRunResult extends IndexWarnings {
   oldId: string
   newId: string
   noop: boolean
@@ -412,5 +430,16 @@ export async function renameRun(input: RenameRunInput): Promise<RenameRunResult>
       }
     }
   }
-  return { oldId, newId, noop: false, newDir, warnings, changes }
+  return {
+    oldId,
+    newId,
+    noop: false,
+    newDir,
+    warnings,
+    changes,
+    ...(await indexEventWarnings(input, 'run.rename', changes, {
+      upsertRuns: [newDir],
+      removeRuns: [input.runDir],
+    })),
+  }
 }
