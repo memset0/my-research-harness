@@ -200,6 +200,25 @@ describe('generateResultsSummary', () => {
     })
   })
 
+  it('never turns shared or seed parameters into statistics', () => {
+    const summary = summarize(
+      { experiment_schema_version: 1, variants: [{ id: 'V0001', name: 'seeds', runs: [A, B, C] }] },
+      [A, B, C].map((run, seed) =>
+        member(run, 'FINISHED', csv(1, ['params.optim.lr,,0.0001', `params.seed,,${seed}`])),
+      ),
+    )
+    const cells = summary.variants[0]!.cells
+    expect(cells['params.optim.lr']).toMatchObject({ kind: 'value', value: 0.0001, source: 'runs' })
+    expect(cells['params.seed']).toMatchObject({
+      kind: 'mixed',
+      per_run: [
+        { run: A, value: 0 },
+        { run: B, value: 1 },
+        { run: C, value: 2 },
+      ],
+    })
+  })
+
   it('aggregates every recorded statistic as an outer level over Runs', () => {
     const summary = summarize(
       {
