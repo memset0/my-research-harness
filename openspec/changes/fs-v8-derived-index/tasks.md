@@ -25,6 +25,9 @@
 - [x] 3.4 Verify anomalies computed from seeded entries equal file-based anomalies on the mock projects (test), that `PHANTOM_RUN_REF` still follows the declared path, and that index drift never appears on the anomaly stream.
 - [x] 3.5 Run the cherry-picked backend/web tests touching read-index, summary-index, indexed-documents, conditional-read, project-service, wiki-service and the anomaly routes; verify they pass and ETag/304 heartbeats still answer `304` for unchanged lists. (Full backend and web suites run; the harness heartbeat pass answers 304 for every unchanged list.)
 
+- [ ] 3.6 Correction after the 8.0.0 acceptance run (design §5): serve expired seeded entries on first use after a process start from the snapshot and queue them for the background validator instead of re-validating each one from the request (`ProjectReadIndex.setStaleHandler`); the validator drains the queue in batches that yield to requests and writes drained changes back; bundle asset listings stop stat-ing each asset; verify with tests that a cold read of an aged snapshot stats no expired entry (lists, anomalies, Experiment detail members), that the first cycle corrects external rewrites, that every Run is validated within five cycles, and that the home page warm read costs ≤ 5 calls.
+- [ ] 3.7 Locate the home-page warm-read regression (7.4.0: 2 calls, 8.0.0: 32) with the harness's call-site attribution and bring it back to ≤ 5; verify with the harness and the home-page test of 3.6.
+
 ## 4. CLI commands
 
 - [x] 4.1 Add `memon index status [--verify] [--strict]`, `memon index compact`, `memon index rebuild [--audit-run-dirs] [--dry-run]` with `--project-root`, `--format`, global `--run-dir`, exit codes 0/1/2/9 and no journal receipt; verify with CLI tests for each scenario in the `memon-cli` delta (missing index, drift with `--strict`, held lease, idempotent rebuild, dry-run writes nothing).

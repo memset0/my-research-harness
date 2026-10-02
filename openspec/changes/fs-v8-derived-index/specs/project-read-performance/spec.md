@@ -36,9 +36,17 @@ write made by a CLI node reaches central through its index event and is
 applied at the next background validation cycle (at most 60 s while the
 Project is active), or earlier by the member's own window. While a Project is active (a request within
 the last 10 minutes) central SHALL re-validate entries in the background so
-that an external edit reaches every central list within 5 minutes; after an
-idle period or a restart, lists MAY be served from the seeded entries while
-the first background validation runs. Any successful mutating request handled
+that an external edit reaches every central list within 5 minutes. On first
+use after the central process starts, list and inventory reads, anomalies and
+the member facts of an Experiment detail SHALL be served from the seeded
+entries as of their recorded verification, and a seeded entry past its window
+SHALL be handed to the background validator instead of being stat'ed or read
+by the request; the validator SHALL start at once, SHALL re-validate every
+seeded entry within 5 minutes of the first request, and SHALL do so in
+batches that do not block requests. This first-use exception is the only
+case in which a list may show data older than 5 minutes; an entry this
+process has re-validated, or that a central write invalidated, SHALL NOT be
+served past its window again. Any successful mutating request handled
 by central for a Project SHALL invalidate that Project's in-memory index so
 the next read re-validates every entry. Readers outside central (standalone
 routes, the CLI) SHALL validate every entry on every request.
@@ -60,6 +68,16 @@ routes, the CLI) SHALL validate every entry on every request.
 #### Scenario: Central write invalidates
 - **WHEN** a member Run's status is set through central and the Experiment detail is requested next
 - **THEN** the detail shows the new status
+
+#### Scenario: Cold read of an aged snapshot
+- **GIVEN** an FS v8 Project whose derived index was last verified hours before central started
+- **WHEN** the Run list, anomalies and an Experiment detail are requested for the first time
+- **THEN** no seeded Run is stat'ed or read by those requests, the expired entries are queued for the background validator, and the Experiment's own documents are read
+
+#### Scenario: Background validation after a restart
+- **GIVEN** a Run README rewritten outside memon after the snapshot was verified
+- **WHEN** central restarts and the Run list is requested
+- **THEN** the list may show the snapshot value, and it shows the rewritten value after the validator's first cycle and in any case within 5 minutes of the first request
 
 #### Scenario: Warm Experiment detail
 - **GIVEN** an Experiment declaring 448 Runs whose summaries are indexed and were validated within the window
@@ -97,6 +115,11 @@ the stage-one bounded-acceptance requirement demands.
 - **GIVEN** a current derived index and a freshly started central process
 - **WHEN** the wiki list is requested
 - **THEN** no Run walk is performed and the harness counts at most 200 calls
+
+#### Scenario: Home page warm read
+- **GIVEN** a freshly started central process that served the home page once from a current derived index
+- **WHEN** the home page requests are repeated within the window
+- **THEN** the harness counts at most 5 calls, and none of the calls is left behind by the cold read
 
 #### Scenario: No index yet
 - **GIVEN** an FS v8 Project whose index is missing
