@@ -100,17 +100,21 @@ async function indexedWikiPage(
     bundleDir,
     content: page.content,
     mtime: page.mtime,
-    bundleMtime: Math.max(page.mtime, assets?.newestMtime ?? 0),
+    // The page's own README mtime: the projection needs asset names only
+    // (lint), so attachment mtimes are not collected (one stat per asset).
+    bundleMtime: page.mtime,
     assets: assets?.assets ?? [],
   }
 }
 
 interface BundleAssets {
   assets: string[]
-  newestMtime: number
 }
 
-/** Core's depth-limited bundle listing, re-walked only when its window passed. */
+/**
+ * Core's depth-limited bundle listing (asset names only), re-walked only when
+ * its window passed. The listings are its fingerprint: no per-asset stat.
+ */
 async function indexedBundleAssets(
   project: ProjectConfig,
   policy: ReadPolicy,
@@ -122,18 +126,17 @@ async function indexedBundleAssets(
     async () => {
       const listed = await listBundleAssets(bundleDir)
       return {
-        fingerprint: digest([String(listed.newestMtime), ...listed.assets]),
+        fingerprint: digest(listed.assets),
         observed: listed,
       }
     },
     async (listed) => listed!,
   )
-  return assets ?? { assets: [], newestMtime: 0 }
+  return assets ?? { assets: [] }
 }
 
 async function listBundleAssets(bundleDir: string): Promise<BundleAssets> {
   const assets: string[] = []
-  let newestMtime = 0
   const queue: { dir: string; prefix: string; depth: number }[] = [
     { dir: bundleDir, prefix: '', depth: 1 },
   ]
@@ -146,7 +149,7 @@ async function listBundleAssets(bundleDir: string): Promise<BundleAssets> {
       continue
     }
     const directories: { dir: string; prefix: string; depth: number }[] = []
-    const files: { absolute: string; relative: string }[] = []
+    const files: string[] = []
     for (const entry of entries) {
       const relativeName = prefix ? `${prefix}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
@@ -154,25 +157,15 @@ async function listBundleAssets(bundleDir: string): Promise<BundleAssets> {
           directories.push({ dir: join(dir, entry.name), prefix: relativeName, depth: depth + 1 })
         }
       } else if (entry.isFile() && assets.length + files.length < BUNDLE_ASSET_MAX_FILES) {
-        files.push({ absolute: join(dir, entry.name), relative: relativeName })
+        files.push(relativeName)
       }
     }
     queue.push(...directories)
-    const mtimes = await Promise.all(
-      files.map(async (file) => {
-        try {
-          return (await fs.stat(file.absolute)).mtimeMs
-        } catch {
-          return 0
-        }
-      }),
-    )
-    assets.push(...files.map((file) => file.relative))
-    newestMtime = Math.max(newestMtime, ...mtimes)
-    if (assets.length >= BUNDLE_ASSET_MAX_FILES) return { assets, newestMtime }
+    assets.push(...files)
+    if (assets.length >= BUNDLE_ASSET_MAX_FILES) return { assets }
   }
   assets.sort()
-  return { assets, newestMtime }
+  return { assets }
 }
 
 /**
