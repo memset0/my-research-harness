@@ -20,3 +20,4 @@
 
 - [x] 4.1 Update `AGENTS.md`, `README.md` and `config.example.yml` to "central = project path + deployment; layout in `.memon/project.yml`"; verify no example still shows layout keys under a central Project except as deprecated.
 - [x] 4.2 Run the selected core/CLI/backend/web tests and `openspec validate --all --strict`; verify they pass.
+- [x] 4.3 Correct the older `--run-dir` CLI test to the new precedence (an invalid declaration fails a walk even with `--run-dir`, which only supplies `run_dirs`; a valid declaration with `--run-dir` uses the flag for `run_dirs` and keeps the declaration's `exclude`) and MODIFY the CLI Run walk requirement accordingly; verify with the full CLI package and `openspec validate --all --strict`.

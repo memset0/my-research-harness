@@ -92,13 +92,34 @@ describe('--run-dir', () => {
     expect(ids).toEqual(['top-260901-090000'])
   })
 
-  it('fails closed on an invalid declaration unless --run-dir is given', async () => {
+  it('fails closed on an invalid declaration even with --run-dir', async () => {
     await fs.mkdir(join(root, '.memon'), { recursive: true })
     await fs.writeFile(join(root, '.memon/project.yml'), 'schema_version: 1\nwalk_depth: 3\n')
+    const invalid = { name: 'ProjectDeclarationError', code: 'PROJECT_DECLARATION_INVALID' }
+    await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toMatchObject(invalid)
+    // `--run-dir` covers only `run_dirs`; `include`/`exclude` still fall through to the
+    // invalid declaration, so the walk keeps failing instead of using the defaults.
+    setRunDirs(['logs/*'])
     await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toBeInstanceOf(
       ProjectDeclarationError,
     )
+    await expect(runScan({ projectRoot: root, format: 'json' })).rejects.toMatchObject(invalid)
+    expect(stdout.join('')).toBe('')
+  })
+
+  it('uses --run-dir over a valid declaration and keeps its other layout keys', async () => {
+    await fs.mkdir(join(root, 'logs/scratch-260901-110000'), { recursive: true })
+    await fs.writeFile(
+      join(root, 'logs/scratch-260901-110000/README.md'),
+      readme('scratch-260901-110000'),
+    )
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(root, '.memon/project.yml'),
+      "schema_version: 1\nrun_dirs: ['outputs/*/*']\nexclude: ['scratch-*']\n",
+    )
     setRunDirs(['logs/*'])
+    expect(await effectiveRunDirs(root)).toEqual({ patterns: ['logs/*'], source: 'cli' })
     await runScan({ projectRoot: root, format: 'json' })
     const ids = JSON.parse(stdout.join('')).experiments.map((run: { id: string }) => run.id)
     expect(ids).toEqual(['top-260901-090000'])
