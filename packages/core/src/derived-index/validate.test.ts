@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { rebuildIndex } from './rebuild.js'
+import { reusableWalk } from './snapshot.js'
 import { validateIndexEntries, verifyIndex } from './validate.js'
 
 let root: string
@@ -157,6 +158,10 @@ describe('verifyIndex', () => {
       },
     ])
     expect(result.effective).toEqual({ patterns: ['outputs/*/*'], source: 'project' })
+    const { snapshot } = await rebuildIndex(root, { dryRun: true, cliRunDirs: ['logs/*'] })
+    // A reader re-walks instead of reusing a walk recorded for other patterns.
+    expect(reusableWalk(snapshot!, result.effective)).toBeNull()
+    expect(reusableWalk(snapshot!, { patterns: ['logs/*'], source: 'cli' })).toBe(snapshot!.walk)
   })
 
   it('reports a missing index without drift records', async () => {

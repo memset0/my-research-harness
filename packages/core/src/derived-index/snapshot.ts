@@ -153,3 +153,19 @@ export function mergedIndexView(
     emptySnapshot({ runDirs: fallback.runDirs, runDirsSource: fallback.runDirsSource, role: 'cli' })
   return mergeIndexEvents(base, read.events)
 }
+
+/**
+ * The recorded walk of a merged view when a reader may reuse it: only when
+ * the recorded `run_dirs` and their source equal the reader's effective
+ * ones. Otherwise null — the reader re-walks (per-path entries stay usable
+ * under their fingerprints).
+ */
+export function reusableWalk(
+  view: IndexSnapshot,
+  effective: { patterns: readonly string[]; source: RunDirsSource },
+): IndexSnapshot['walk'] | null {
+  const samePatterns =
+    view.run_dirs.length === effective.patterns.length &&
+    view.run_dirs.every((pattern, index) => pattern === effective.patterns[index])
+  return samePatterns && view.run_dirs_source === effective.source ? view.walk : null
+}

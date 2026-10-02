@@ -102,6 +102,7 @@ export {
   mergedIndexView,
   type ReadIndexOptions,
   readDerivedIndex,
+  reusableWalk,
   type SkippedIndexEvent,
   type SnapshotState,
   UNPARSABLE_EVENT_GRACE_MS,
