@@ -62,7 +62,7 @@ Central stays above the declaration during the deprecation window so that no run
 Warnings, both code `CENTRAL_LAYOUT_DEPRECATED`:
 
 - **deprecated** — `loadConfig` logs once per process per (Project identity, key) to stderr naming the key and the migration command.
-- **conflict** — the layout resolver, when a central key is present and the declaration also declares that key with a different value, logs once per process per (root, key) that the central value is used.
+- **conflict** — the layout resolver, when a central key is present and the declaration also declares that key with a different value, logs once per process per (root, key) that the central value is used. Run walks log it for `include`/`exclude` and code preview for `github`; `run_dirs` is not logged at walk time because an explicit `runDirs` reaching `discoverRuns` may be a CLI `--run-dir` (a legitimate override), so `run_dirs` conflicts are reported by lint only.
 - `memon project lint --from-central <config> --project <name>` reports both as warning diagnostics (exit 0).
 
 ### 4. Resolver and reading points
@@ -71,13 +71,13 @@ Warnings, both code `CENTRAL_LAYOUT_DEPRECATED`:
 
 - `selectProjectLayout({ project, declaration, cliRunDirs? })` (pure) → `{ runDirs, include, exclude, github, sources }` with `sources[key] ∈ cli | central | project | default`; `github` paths are resolved absolute against the root.
 - `resolveProjectLayout(project, { cliRunDirs? })` loads the declaration through `projectFs` (central observes it via the Store). An invalid declaration throws only when some key falls through to it; when the central entry covers every key it is ignored (no conflict check), preserving today's behaviour for fully central-configured Projects.
-- `discoverRuns` uses it (explicit `project.runDirs` still counts as source 1/2). `scanProjectRoot`, `resolveRunTarget`, rebuild and verification pass through `discoverRuns`, so `exclude`/`include` from the declaration apply everywhere without touching their callers.
+- `discoverRuns` uses it with `keys` = `run_dirs`, `include`, `exclude` (only `include`, `exclude` for the unbounded audit) and `warnKeys` = `include`, `exclude`; explicit `project.runDirs` still counts as source 1/2. `scanProjectRoot`, `resolveRunTarget`, rebuild and verification pass through `discoverRuns`, so `exclude`/`include` from the declaration apply everywhere without touching their callers.
 - `resolveEffectiveRunDirs` keeps its signature and chain (the derived index records it).
 - The code-preview Git adapter (`packages/backend/src/git-service.ts`) and its standalone route (`apps/web/app/api/code-preview/route.ts`) resolve `github` with `resolveProjectLayout`; declaration mappings are always containment-checked.
 
 ### 5. Migration helper
 
-`readCentralProjectLayout(configPath, name, host?)` parses the central YAML without the instance-role checks of `loadConfig` (it only needs one entry), validates that entry with `ProjectConfigRawSchema`, and returns its raw layout keys (relative `github` paths kept as written). Ambiguous names across hosts require `--host`. `memon project init --from-central <config> --project <name> [--host <id>]` writes those keys (only the present ones; `run_dirs` falls back to `--run-dir` then the default) with exclusive create, never commits. It does not compare the central `root` with `--project-root` beyond reporting it.
+`readCentralProjectLayout(configPath, name, host?)` parses the central YAML without the instance-role checks of `loadConfig` (it only needs one entry), validates that entry with `ProjectConfigRawSchema`, and returns its raw layout keys (relative `github` paths kept as written). Ambiguous names across hosts require `--host`. `memon project init --from-central <config> --project <name> [--host <id>]` writes those keys (only the present ones; `run_dirs` falls back to `--run-dir` then the default) with exclusive create, never commits. It does not compare the central `root` with `--project-root` beyond reporting it, and the generated file names the source entry but never the configuration path (no machine path enters a tracked file). In the CLI handler the options are carried as `centralProject`/`centralHost` so they never collide with the global `--project` selector of `resolveContext`.
 
 ## Risks / Trade-offs
 
