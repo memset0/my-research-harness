@@ -2,7 +2,7 @@
 
 ### Requirement: Value after this change is 8 with the derived index convention
 
-`FS_CONVENTION_VERSION` SHALL equal `8`, and `MEMON_RELEASE` SHALL start the matching `8.0.0` release. FS v8 keeps every v7 document format and per-file YAML schema version; its breaking changes are that an absent Project `run_dirs` means the default Run locations `["logs/*", "outputs/*", "experiments/*"]` instead of an unbounded walk, that Run directories do not nest, and that memon writers maintain the derived index under `.memon/index/`. A marker SHALL claim v8 only after the reviewed v7-to-v8 migration has built and verified the index.
+`FS_CONVENTION_VERSION` SHALL equal `8`, and `MEMON_RELEASE` SHALL start the matching `8.0.0` release. FS v8 keeps every v7 document format and per-file YAML schema version; its breaking changes are that an absent Project `run_dirs` means the default Run locations `["logs/*", "outputs/*", "experiments/*"]` instead of an unbounded walk, that Run directories do not nest, and that memon writers maintain the derived index under `.memon/index/`. FS v8 also introduces the optional tracked declaration `.memon/project.yml` (`schema_version: 1`); its absence is valid and no marker transition creates it. A marker SHALL claim v8 only after the reviewed v7-to-v8 migration has built and verified the index.
 
 #### Scenario: Constant has the new value
 - **WHEN** the v8 release commit lands

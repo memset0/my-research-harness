@@ -1,10 +1,10 @@
 ## Context
 
-See proposal.md (Why). State this design builds on (7.4.0 plus the two completed, not yet archived changes it depends on):
+See proposal.md (Why). State this design builds on (7.4.0 plus the two changes it depends on, `bounded-run-discovery` and `central-read-path-trimming`, now archived into the canonical specs):
 
 - `packages/backend/src/read-index.ts` (`ProjectReadIndex`) keeps per-Project entries keyed by what they observe (`run:<dir>`, `file:<abs>#<parser>`, `dir:<abs>`, `real:<abs>`, the walk), each with a stat fingerprint (dev, ino, size, mtimeMs, ctimeMs) and `validatedAt`; `observe(key, maxAge, fingerprint, load)` reuses an entry inside its window, re-fingerprints after it and reloads only on change. `CENTRAL_READ_POLICY` = 60 s lists / 300 s terminal Runs / 60 s walk; `STRICT_READ_POLICY` = 0. Run summaries (`indexed-runs.ts`) store the parsed README record without body plus `eligibilityError`, `sidecarFallback`, `contained`. It is memory-only and empty after every restart.
 - All Experiment/Run writes go through `packages/core/src/experiments/mutations.ts` and `runs/mutations.ts` (a `MutationFs` port; results carry `FileChange[]`). A few core/CLI writers still write directly: `run record` (`writeFile … wx`), `discovery/deprecation.ts`, `experiments/rename.ts`.
-- `discoverRuns(project)` honours `project.runDirs`; absent = unbounded walk. The CLI has no project config, only `--run-dir`.
+- `discoverRuns(project)` honours `project.runDirs` (set from central `config.yml` by `config/load.ts`); absent = unbounded walk. `scanProjectRoot` / `resolveRunTarget` take an optional `runDirs`. The CLI has no project config: `project-scan/context.ts` builds an anonymous Project from `--project-root` / cwd without reading any file, so its only source is `--run-dir`. `.memon/version.json` is read/written by `fs-version/` (path resolved and checked inside the root, schema-validated, atomic temp + rename) — the model for the new `.memon/project.yml` reader.
 - `.memon/` is not ignored as a whole in research projects: `version.json` and `wiki-review.csv` are tracked; `.memon/activity/` and `.memon/migrations/` are runtime state ignored per project or through `.git/info/exclude`.
 - Projects live on NFSv3 mounts shared by central and CLI nodes: `O_EXCL` create and same-directory `rename` are atomic on the server; `O_APPEND` from several clients is not; attribute caching can delay stat changes by up to `acregmax`; `st_dev` differs per client mount.
 
@@ -42,7 +42,7 @@ Snapshot (draft JSON Schema, abbreviated):
 {
   "$id": "memon/derived-index/snapshot/v1",
   "type": "object",
-  "required": ["index_version", "fs_convention_version", "generated_at", "generator", "run_dirs", "walk", "merged_events", "runs", "experiments", "wiki"],
+  "required": ["index_version", "fs_convention_version", "generated_at", "generator", "run_dirs", "run_dirs_source", "walk", "merged_events", "runs", "experiments", "wiki"],
   "properties": {
     "index_version": { "const": 1 },
     "fs_convention_version": { "type": "integer", "minimum": 8 },
@@ -50,6 +50,7 @@ Snapshot (draft JSON Schema, abbreviated):
     "generator": { "type": "object", "required": ["release", "role"],
       "properties": { "release": { "type": "string" }, "role": { "enum": ["central", "cli", "rebuild", "migration"] } } },
     "run_dirs": { "type": "array", "items": { "type": "string" } },
+    "run_dirs_source": { "enum": ["cli", "central", "project", "default"] },
     "walk": { "type": "object", "required": ["verified_at", "paths"],
       "properties": { "verified_at": { "type": "string" }, "paths": { "type": "array", "items": { "type": "string" } } } },
     "merged_events": { "type": "array", "items": { "type": "string" } },
@@ -127,7 +128,22 @@ Triggers: central runs one validator cycle per active Project every 60 s (active
 - Every entry carries `verified_at`. When central seeds `ProjectReadIndex` from the merged snapshot, each entry's `validatedAt` is its `verified_at`, so the existing windows apply unchanged: lists reuse an entry verified within 60 s (300 s for terminal Runs) without I/O.
 - The central validator keeps entries fresh in the background, inside the 7.4.0 windows: each cycle stats every non-terminal Run, Experiment README/bundle and wiki page, and a rotating fifth of terminal Runs (so each is stat'ed at least every 300 s), and re-runs the bounded walk. A changed fingerprint reloads that entry (one README read) and is written back by the next compaction. Estimated budget on the measured project: ≈ 350 stats + ≈ 5 listings per minute while active, nothing while idle.
 - After an idle period or a restart, list pages render immediately from the snapshot (stale-while-revalidate) and the first cycle starts at once; the 5-minute bound therefore holds while the Project is active and is exceeded at most by one cycle after idleness. This is what lets list pages render without a walk after restart.
-- Detail pages keep reading the requested documents (Experiment README and YAML, the requested Run README, wiki page) on every request. **Changed:** an Experiment detail's member eligibility (status, deprecated, archived, eligibility errors of its declared Runs) is list-class data served within the list windows; 7.4.0 stat'ed every member on every detail request, which alone is 448 calls and makes the ≤ 100 target impossible. A Run's own detail still validates it.
+- Detail pages keep reading the requested documents (Experiment README and YAML, the requested Run README, wiki page) on every request. **Changed (Q1, accepted):** an Experiment detail's member facts (status, archived, deprecated, eligibility errors of its declared Runs) are list-class data served within the list windows; 7.4.0 stat'ed every member on every detail request, which alone is 448 calls and makes the ≤ 100 target impossible. A Run's own detail still validates it.
+- Freshness by page and datum (central, Project active):
+
+| Page | Datum | Freshness |
+|---|---|---|
+| Experiment list | Experiment rows | entry within 60 s; background cycle every 60 s |
+| Run list / anomalies | Run status, archived, deprecated, owner | 60 s non-terminal, 300 s terminal; new Run dirs ≤ 60 s (walk) |
+| Wiki list | page inventory, staleness | 60 s |
+| Experiment detail | README, `implementation.yaml`, `investigation.yaml`, `results.yaml` | read on every request |
+| Experiment detail | member status / archived / deprecated / eligibility | list window (60 s / 300 s), **not** per-request stat |
+| Experiment detail, explicit refresh | members | every member fingerprint re-taken for that request (≈ one stat per member, user-initiated only) |
+| any page after a central write to the Experiment or its Runs | affected entries | immediate (in-process invalidation) |
+| any page after a CLI-node write | affected entries | next validator cycle (≤ 60 s) via its event, or the entry's own window |
+| Run detail | the Run README | read on every request |
+
+  The explicit refresh is the existing manual refresh of `file-operation-scheduler`; ordinary navigation, focus and heartbeats do not count as one.
 - Containment: an entry records `contained` once its path was verified with real paths; the verdict is kept while the fingerprint matches (a swapped symlink changes the fingerprint and forces re-resolution) and nothing is read through an unverified path. The Project root real path is resolved once per process cycle as before.
 - CLI readers are unchanged (strict, bounded walk). `memon index status --verify` is the CLI's view of drift.
 
@@ -147,14 +163,58 @@ Same entry model, fingerprints and windows; the in-process index is the authorit
 
 ### 9. Default `run_dirs` (compatibility)
 
-- v8 default `["logs/*", "outputs/*", "experiments/*"]` = three listings plus nothing deeper. Projects that keep Runs deeper (`outputs/<group>/<run>`) lose those Runs from walks — Run list, base-name resolution, anomalies' walk side — unless they declare `run_dirs` (central project config; CLI `--run-dir`).
+- v8 default `["logs/*", "outputs/*", "experiments/*"]` = three listings plus nothing deeper. Projects that keep Runs deeper (`outputs/<group>/<run>`) lose those Runs from walks — Run list, base-name resolution, anomalies' walk side — unless they declare `run_dirs` (preferably `.memon/project.yml`, §11; or central project config / CLI `--run-dir`).
 - Not lost: declared Experiment members (resolved by path, never by the walk), path-qualified references, and Run detail by path.
 - Surfacing: the migration's `--audit-run-dirs` report lists them before the marker moves (Detection/Edge Cases of the guide); `RUN_OUTSIDE_RUN_DIRS` (lint level) is reported for declared Experiment paths that the effective patterns do not match, by `memon experiment doc lint` and in `memon index status --verify`.
 - Nesting: `RUN_NESTED` (lint error) for a declared path with a Run-shaped ancestor segment; `memon run lint` lists Run-shaped direct children of the Run; `run record` refuses to create a Run inside a Run. The walk already never descends into Runs.
 
 ### 10. Migration v7 → v8 (mechanical)
 
-Plan (read-only): check marker 7 and a clean tree; run `memon index rebuild --audit-run-dirs --dry-run` to report outside-pattern Runs. Apply: `memon index rebuild` (creates `.memon/index/` with its `.gitignore`), verify (`memon index status --verify --strict`, `git check-ignore .memon/index/snapshot.json`), then advance the marker to 8 and commit only `.memon/version.json` with `chore(memon): migrate FS convention v7 -> v8`. Rollback: `git revert` of that commit (marker back to 7) and optionally `rm -rf .memon/index`. `scripts/migrate-v7-to-v8.{mjs,md}` wrap plan/apply/verify/rollback with the v6→v7 shape (report counts, never print private content). No user document is read for rewriting, so no preimage backup is needed beyond the marker.
+Plan (read-only): check marker 7 and a clean tree; run `memon index rebuild --audit-run-dirs --dry-run` to report outside-pattern Runs. Apply: `memon index rebuild` (creates `.memon/index/` with its `.gitignore`), verify (`memon index status --verify --strict`, `git check-ignore .memon/index/snapshot.json`), then advance the marker to 8 and commit only `.memon/version.json` with `chore(memon): migrate FS convention v7 -> v8`. Rollback: `git revert` of that commit (marker back to 7) and optionally `rm -rf .memon/index`. `scripts/migrate-v7-to-v8.{mjs,md}` wrap plan/apply/verify/rollback with the v6→v7 shape (report counts, never print private content). No user document is read for rewriting, so no preimage backup is needed beyond the marker. The migration never creates `.memon/project.yml` (Q2): plan/apply use an existing declaration, and the plan's deep-Run warnings and the guide's Edge Cases recommend creating it by hand after the migration (`memon project init`, edit `run_dirs`, commit separately, `memon index rebuild`).
+
+### 11. Project declaration `.memon/project.yml` (Q2)
+
+Problem: central knows `run_dirs` from its own `config.yml`, a CLI node only from per-invocation `--run-dir`; a project with deep Runs would need every node and skill to repeat the flag, and central and CLI walks would silently disagree. A tracked file in the project gives both the same rule.
+
+Schema (`schema_version: 1`, YAML mapping, strict):
+
+```yaml
+schema_version: 1          # required, integer, only 1 is supported
+run_dirs:                  # optional, non-empty; same pattern rules as central run_dirs
+  - logs/*
+  - outputs/*/*
+```
+
+Any other key → `PROJECT_DECLARATION_INVALID` (forward extension happens by bumping `schema_version` or adding keys in a later change, never by tolerating unknown keys now).
+
+Precedence (first present source wins as a whole, never merged):
+
+| # | Source | Seen by |
+|---|---|---|
+| 1 | CLI `--run-dir` | CLI |
+| 2 | central Project `run_dirs` (`config.yml`) | central |
+| 3 | `.memon/project.yml` `run_dirs` | CLI, central, core callers |
+| 4 | v8 default `["logs/*", "outputs/*", "experiments/*"]` | all |
+
+Central config stays above the project file so an operator can override a project locally (for example to narrow a huge tree) without a commit; a CLI flag stays above everything because it is an explicit one-off.
+
+Reading points: `core/src/project-declaration/` (new) with `resolveProjectDeclarationPath` (inside-root check as in `fs-version/paths.ts`), `loadProjectDeclaration(root)` (null when absent, zod-validated otherwise) and `resolveEffectiveRunDirs({ cliRunDirs?, projectRunDirs?, root })` → `{ patterns, source }`. `scanProjectRoot`, `discoverRuns` and `resolveRunTarget` call it when no explicit `runDirs` is passed; the CLI passes `--run-dir` only when given; central passes `project.runDirs` only when configured. On central the file is an observed file in the Store (same 60 s window as the walk), so editing it changes walks within a minute. An invalid file fails closed (CLI exit 2, central marks the Project's walk-dependent reads as failed with that diagnostic) rather than silently using the default, because a wrong default would hide Runs.
+
+Writing: no automatic writer. `memon project init` (exclusive create; default content, or the global `--run-dir` patterns; `CONFLICT` if present; never commits) and hand edits. `memon project lint` validates and prints the effective patterns with their source; `memon index status` shows recorded vs effective `run_dirs`. The derived index records `run_dirs_source`; a reader re-walks when the recorded patterns differ from its effective ones, and verify reports that as `INDEX_DRIFT` (`walk` / `run_dirs`). Skills never write the file.
+
+Repository impact: the file is tracked, so creating it is a one-time, optional new file in the user's repository, committed by the user (not part of the migration commit).
+
+### 12. Acceptance on the operator project (Q3)
+
+The cold targets (D7) are only meaningful against the measured project's real index, so acceptance builds it there — as part of that project's v8 migration and at no other time:
+
+1. Preconditions: release 8.0.0 built locally; the project's working tree clean; operator approval for the migration step.
+2. Back up the whole `.memon/` directory (copy outside the project, recorded only in the machine-local notes) before any write.
+3. Run the guide's plan; acknowledge the deep-Run report.
+4. Apply: `memon index rebuild` (writes only `.memon/index/`), `memon index status --verify --strict`, `git check-ignore`, then marker 7 → 8 and the migration commit.
+5. Run the harness (cold/warm/heartbeat, background validator disabled) and one validator cycle/compaction measurement.
+
+Rollback: any failure in steps 4–5 before the marker moves → restore `.memon/` from the backup (removes `.memon/index/`, marker stays 7), no commit. Failure after the marker commit → `git revert` the migration commit and restore `.memon/` from the backup. Missing a target is not a rollback trigger by itself (the index is only a cache); it is reported and blocks the release claim. No real project name or path is written into tracked files.
 
 ## Risks / Trade-offs
 
@@ -169,13 +229,16 @@ Plan (read-only): check marker 7 and a clean tree; run `memon index rebuild --au
 | Snapshot corrupt, truncated or unknown version | Mirror starts empty (7.4.0 behaviour) and rebuild is scheduled; never a page error; unknown higher version is never overwritten. |
 | v7 tools keep writing without events | Their edits are external edits: caught by validation; v7 skills stop on `ahead`. |
 | Default `run_dirs` hides deep undeclared Runs | Audit before migration, lint, explicit `run_dirs`; declared members unaffected. |
-| Experiment detail member status up to 60 s / 300 s stale | Accepted list-class semantics; the Run's own detail is always fresh. |
+| Experiment detail member status up to 60 s / 300 s stale | Accepted (Q1); explicit refresh and central writes re-validate; the Run's own detail is always fresh. |
+| Central and CLI disagree on Run locations | `.memon/project.yml` gives both the same rule; the snapshot records the source and verify reports a mismatch. |
+| Invalid `.memon/project.yml` hides Runs | Fails closed with a named error, never a silent default; `memon project lint`. |
+| Acceptance writes on the operator project | Only during its migration step, `.memon/` backed up first, rollback defined (§12). |
 | Background validator cost on shared clusters | Only while a Project is active; bounded per cycle; measured in tasks. |
 | Snapshot read size (≈ 0.5 MB for 1,300 Runs) | One read per process per snapshot change; replaces thousands of calls. |
 
 ## Migration Plan
 
-Archive `bounded-run-discovery` and `central-read-path-trimming` first. Ship core/CLI/backend/web/skills together as release 8.0.0 (`MEMON_CHANGED_SURFACES=central,cli,skills,filesystem`). Every CLI node runs `memon update` before its projects are migrated; central is redeployed; each project is migrated with the guide. Rollback: previous 7.4.x release plus the guide's marker revert; the index directory may simply be deleted.
+Archive `bounded-run-discovery` and `central-read-path-trimming` first. Ship core/CLI/backend/web/skills together as release 8.0.0 (`MEMON_CHANGED_SURFACES=central,cli,skills,filesystem`). Every CLI node runs `memon update` before its projects are migrated; central is redeployed; each project is migrated with the guide; projects with deep Runs then add `.memon/project.yml` themselves. Rollback: previous 7.4.x release plus the guide's marker revert; the index directory may simply be deleted.
 
 ## Open Questions
 

@@ -32,7 +32,7 @@ The index directory SHALL contain at most: `.gitignore`, `snapshot.json`, an opt
 
 ### Requirement: Snapshot and event formats are versioned
 
-`snapshot.json` and every event file SHALL be JSON objects carrying `index_version` (integer, `1` for FS v8). The snapshot SHALL also carry `fs_convention_version`, `generated_at`, `generator` (`release`, `role`), the effective `run_dirs`, `walk` (`verified_at`, `paths`), `merged_events` (the names merged into it) and the maps `runs`, `experiments` and `wiki` keyed by project-relative path. Entries SHALL carry exactly these fields:
+`snapshot.json` and every event file SHALL be JSON objects carrying `index_version` (integer, `1` for FS v8). The snapshot SHALL also carry `fs_convention_version`, `generated_at`, `generator` (`release`, `role`), the effective `run_dirs` the walk used together with `run_dirs_source` (`cli`, `central`, `project` or `default`, as reported by the Run-location resolver), `walk` (`verified_at`, `paths`), `merged_events` (the names merged into it) and the maps `runs`, `experiments` and `wiki` keyed by project-relative path. Entries SHALL carry exactly these fields:
 
 - Run: README and directory fingerprints, `verified_at`, `has_readme`, `status`, `created_at`, `updated_at`, `archived` with its source (`frontmatter`, `sidecar` or `none`), `deprecated`, the eligibility error (or null), the containment verdict, the derived owning Experiment (or null when none or several declare it), parse diagnostics summary, and the Run list-row fields the dashboard renders.
 - Experiment: folder, `id`, `slug`, `status`, `archived`, declared `runs` verbatim, README fingerprint, the fingerprints of `implementation.yaml`, `investigation.yaml` and `results.yaml`, `verified_at`, and the slim Experiment list-row fields.
@@ -44,6 +44,11 @@ A persisted fingerprint SHALL consist of inode number, size, modification time a
 - **GIVEN** a snapshot with `index_version: 2`
 - **WHEN** v8.0 central or `memon index compact` runs
 - **THEN** it does not use the snapshot, does not overwrite it, and serves reads as if no index existed
+
+#### Scenario: Run-location source is recorded
+- **GIVEN** a project whose `.memon/project.yml` declares `run_dirs: ["logs/*", "outputs/*/*"]`
+- **WHEN** `memon index rebuild` runs without `--run-dir`
+- **THEN** the snapshot records those two patterns with `run_dirs_source: "project"`
 
 #### Scenario: Owner is derived, not written back
 - **GIVEN** Experiment `E0001-foo` declaring `logs/a-260901-090000`
@@ -104,7 +109,12 @@ If `snapshot.json` is missing, unreadable, not valid JSON, fails its schema or h
 
 ### Requirement: The index can always be rebuilt and checked against disk
 
-A full rebuild SHALL derive a fresh snapshot from the project files alone (the bounded Run walk with the effective `run_dirs`, every Run README, every Experiment README with its YAML fingerprints, every wiki page), replace the snapshot under the compaction lease and delete the events present when it started. A verification pass SHALL re-take every entry's fingerprint and re-walk, and report each difference as an `INDEX_DRIFT` record with `kind`, `key`, `field`, the indexed value and the disk value. Drift records are diagnostics of the cache, never research findings.
+A full rebuild SHALL derive a fresh snapshot from the project files alone (the bounded Run walk with the effective `run_dirs`, every Run README, every Experiment README with its YAML fingerprints, every wiki page), replace the snapshot under the compaction lease and delete the events present when it started. A verification pass SHALL re-take every entry's fingerprint and re-walk, and report each difference as an `INDEX_DRIFT` record with `kind`, `key`, `field`, the indexed value and the disk value; when the snapshot's `run_dirs` differ from the verifier's effective patterns it SHALL report one `INDEX_DRIFT` record with `kind: "walk"` and `field: "run_dirs"` carrying both pattern lists and both sources. A reader SHALL reuse the snapshot's walk only when its recorded `run_dirs` equal the reader's effective patterns; otherwise it SHALL re-walk (the per-path entries remain usable under their fingerprints). Drift records are diagnostics of the cache, never research findings.
+
+#### Scenario: Declaration edited after the rebuild
+- **GIVEN** a snapshot built with the default patterns (`run_dirs_source: "default"`)
+- **WHEN** the user adds `.memon/project.yml` with `run_dirs: ["outputs/*/*"]` and runs `memon index status --verify`
+- **THEN** it reports an `INDEX_DRIFT` record for `walk` / `run_dirs`, and central re-walks with the declared patterns instead of reusing the recorded walk
 
 #### Scenario: Rebuild after external edits
 - **GIVEN** an index whose entries disagree with 20 READMEs edited by a script

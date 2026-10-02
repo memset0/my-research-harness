@@ -22,11 +22,19 @@ fingerprint.
 Validation windows: the documents a detail page shows (the Experiment README
 and its YAML documents, the requested Run README, wiki page, Report or code
 review) SHALL always be read from disk for that request. Central list and
-inventory reads, and the member eligibility facts of an Experiment detail
-(status, deprecation, archival and eligibility errors of its declared Runs),
-MAY reuse an entry, listing or Run walk validated within the last 60 s, and a
-Run summary whose status is terminal (`FINISHED`, `FAILED`, `INTERRUPTED`)
-validated within the last 300 s. While a Project is active (a request within
+inventory reads, and the member facts of an Experiment detail (status,
+archival, deprecation and eligibility errors of its declared Runs), MAY reuse
+an entry, listing or Run walk validated within the last 60 s, and a Run
+summary whose status is terminal (`FINISHED`, `FAILED`, `INTERRUPTED`)
+validated within the last 300 s; an Experiment detail SHALL NOT stat or read
+each member on every request. Two exceptions SHALL re-validate the member
+entries of an Experiment detail before it is served: an explicit user refresh
+of that detail (the manual refresh of `file-operation-scheduler`, which re-takes
+each member's fingerprint for that request), and any successful central write
+to the Experiment or to one of its Runs (through the invalidation below). A
+write made by a CLI node reaches central through its index event and is
+applied at the next background validation cycle (at most 60 s while the
+Project is active), or earlier by the member's own window. While a Project is active (a request within
 the last 10 minutes) central SHALL re-validate entries in the background so
 that an external edit reaches every central list within 5 minutes; after an
 idle period or a restart, lists MAY be served from the seeded entries while
@@ -39,6 +47,19 @@ routes, the CLI) SHALL validate every entry on every request.
 - **GIVEN** an FS v8 Project with a current derived index and an Experiment declaring 448 Runs
 - **WHEN** a freshly started central process serves that Experiment's detail
 - **THEN** it reads the Experiment's own documents and the index, and reads no member Run README and stats no member
+
+#### Scenario: Member status within the window
+- **GIVEN** an Experiment detail served 20 s ago and a member Run whose README a script rewrote to `FINISHED` 10 s ago
+- **WHEN** the detail is requested again without a refresh
+- **THEN** the Experiment's own documents are read again and the member may still show its previous status until its window elapses or the next validation cycle
+
+#### Scenario: Explicit refresh re-validates members
+- **WHEN** the user explicitly refreshes the same Experiment detail
+- **THEN** every member's fingerprint is re-taken for that request and the member shows `FINISHED`
+
+#### Scenario: Central write invalidates
+- **WHEN** a member Run's status is set through central and the Experiment detail is requested next
+- **THEN** the detail shows the new status
 
 #### Scenario: Warm Experiment detail
 - **GIVEN** an Experiment declaring 448 Runs whose summaries are indexed and were validated within the window
