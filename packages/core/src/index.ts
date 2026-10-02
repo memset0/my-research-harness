@@ -373,6 +373,27 @@ export {
   planMembershipMigration,
   rollbackMembershipMigration,
 } from './migrations/v6-to-v7.js'
+export {
+  type ApplyResultsMigrationOptions,
+  type ApplyResultsMigrationResult,
+  applyResultsMigration,
+  type CellExpectation,
+  type ExpectedCell,
+  type PlanResultsMigrationOptions,
+  planResultsMigration,
+  type ResultsMigrationBlocker,
+  type ResultsMigrationBlockerCode,
+  type ResultsMigrationExperiment,
+  type ResultsMigrationFile,
+  type ResultsMigrationNotice,
+  type ResultsMigrationPlan,
+  type ResultsMigrationReceipt,
+  rewriteResultsPointer,
+  rollbackResultsMigration,
+  V8_TO_V9_COMMIT_MESSAGE,
+  type VerifyResultsMigrationResult,
+  verifyResultsMigration,
+} from './migrations/v8-to-v9.js'
 export * from './project-declaration/index.js'
 export * from './project-file-store.js'
 export * from './project-resource.js'
