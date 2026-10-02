@@ -37,6 +37,7 @@ export {
   assertOwnerOnlyServiceConfig,
   SERVICE_CONFIG_FILE_MODE,
 } from './config/permissions.js'
+export * from './derived-index/index.js'
 export type {
   DeprecationResult,
   ListDeprecatedRunIdsOptions,
@@ -58,11 +59,12 @@ export {
   mergeExcludes,
   runArchivedFromRun,
 } from './discovery/discover.js'
+export { runEligibilityError, strictDeprecatedFlag } from './discovery/eligibility.js'
 export type { ListFilter, SearchScope } from './discovery/index.js'
 export { matchesRunDeprecationFilter, RunIndex } from './discovery/index.js'
 export type { PollerCallback, PollerOptions } from './discovery/poller.js'
 export { Poller } from './discovery/poller.js'
-export { readRunDir } from './discovery/read.js'
+export { readRunDir, runFromReadme } from './discovery/read.js'
 export { RUN_DIR_PATTERN_NON_RUN, runDirPatternError } from './discovery/run-dirs.js'
 export type { StaleCheckOptions } from './discovery/stale.js'
 export {

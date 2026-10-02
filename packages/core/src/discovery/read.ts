@@ -82,6 +82,46 @@ export async function readRunDir(dirPath: string, projectName: string): Promise<
 }
 
 /**
+ * `readRunDir` for a README already read: the same id/created_at backfills
+ * and record shape, with the caller's stat results. Shared by every index
+ * that derives a Run summary from content it already holds.
+ */
+export function runFromReadme(
+  dirPath: string,
+  projectName: string,
+  content: string,
+  dirMtime: number,
+  readmeMtime: number,
+): Run {
+  const id = basename(dirPath)
+  const parsed = parseReadme(content)
+  if (parsed.frontMatter.id === '') parsed.frontMatter.id = id
+  if (parsed.frontMatter.createdAt === '') {
+    const derived = parseTimestampFromRunDir(id)
+    if (derived) {
+      parsed.frontMatter.createdAt = derived
+      if (parsed.frontMatter.updatedAt === '') parsed.frontMatter.updatedAt = derived
+    }
+  }
+  return {
+    id: parsed.frontMatter.id || id,
+    project: projectName,
+    path: dirPath,
+    mtime: Math.max(dirMtime, readmeMtime),
+    readmeMtime,
+    hasReadme: true,
+    frontMatter: parsed.frontMatter,
+    sections: parsed.sections,
+    warnings: parsed.warnings,
+    warningsRaw: parsed.warningsRaw,
+    body: parsed.body,
+    parseErrors: parsed.parseErrors,
+    parseWarnings: parsed.parseWarnings,
+    frontMatterKeys: parsed.frontMatterKeys,
+  }
+}
+
+/**
  * Build a minimal ParsedReadme out of the directory name when README.md is
  * absent. Caller still treats the resulting Run as `hasReadme: false`.
  */
