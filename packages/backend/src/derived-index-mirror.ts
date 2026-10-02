@@ -34,17 +34,22 @@ import {
   type IndexRole,
   type IndexSnapshot,
   indexKey,
+  listIndexEvents,
   mergedIndexView,
   mergeIndexEvents,
+  type NamedIndexEvent,
   type PersistedFingerprint,
   type ProjectConfig,
+  parseEvent,
   parseExperimentReadme,
   parseReadme,
+  projectFs,
   type RunIndexEntry,
   readDerivedIndex,
   readFsVersion,
   rebuildIndex,
   resolveEffectiveRunDirs,
+  resolveIndexPaths,
   reusableWalk,
   validateIndexEntries,
   withProjectFileContext,
@@ -427,8 +432,19 @@ export class ProjectIndexMirror {
 
     // 1. Other writers' events: apply them to the view and make the affected
     //    in-process entries re-validate on their next read.
-    const read = await readDerivedIndex(root)
-    const fresh = read.events.filter(({ name }) => !this.knownEvents.has(name))
+    // Only the event listing and the new events are read, never the snapshot.
+    const fresh: NamedIndexEvent[] = []
+    for (const name of await listIndexEvents(root).catch(() => [] as string[])) {
+      if (this.knownEvents.has(name)) continue
+      try {
+        const raw = await projectFs.readFile(join(resolveIndexPaths(root).events, name), 'utf8')
+        const verdict = parseEvent(JSON.parse(raw))
+        if (verdict.ok) fresh.push({ name, event: verdict.value })
+        else if (verdict.reason !== 'invalid') this.knownEvents.add(name)
+      } catch {
+        // Compacted meanwhile, or still being written: the next cycle sees it.
+      }
+    }
     for (const { name, event } of fresh) {
       this.knownEvents.add(name)
       for (const key of [...Object.keys(event.upserts.runs ?? {}), ...(event.removals.runs ?? [])])

@@ -138,11 +138,13 @@ describe('seeding from the derived index (3.1)', () => {
     // The deprecated member is excluded by default; the orphan is listed.
     expect(runs).toHaveLength(12)
     expect(runs.find((row) => row.id === memberPath(1))?.frontMatter.experiment).toBe('E0001-big')
-    // Neither list read an Experiment document (the wiki list below reads the
-    // cited Experiment's bundle for its staleness, as before).
-    expect(files.under('docs/experiments/E0001-big').readFile).toEqual([])
     const wiki = BackendWikiPagesResponseSchema.parse(await documents.listWiki('p')).pages
     expect(wiki.map((page) => page.id)).toEqual(['W0001'])
+    // No list read an Experiment document: the wiki staleness of a cited
+    // Experiment (no Variant cited) needs its README row only.
+    const experiment = files.under('docs/experiments/E0001-big')
+    expect(experiment.readFile).toEqual([])
+    expect(experiment.stat).toEqual([])
 
     const logs = files.under('logs')
     expect(logs.readFile).toEqual([])
@@ -309,6 +311,21 @@ describe('background validator (3.3)', () => {
     expect((await readDerivedIndex(root)).snapshot?.walk.paths).toContain(
       'logs/fresh-260103-000000',
     )
+
+    // A CLI node's write reaches central through its event at the next cycle.
+    const { publishMutationEvent } = await import('@memon/core')
+    const readme = join(root, memberPath(1), 'README.md')
+    const content = run(1, 'FAILED')
+    await fs.writeFile(readme, content)
+    await publishMutationEvent({ projectRoot: root, role: 'cli' }, 'run.status', [
+      { path: readme, after: content },
+    ])
+    clock.now += 60_000
+    expect((await mirror.runCycle()).appliedEvents).toBe(1)
+    const service = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
+    const listed = BackendRunsPageResponseSchema.parse(await service.listRuns('p')).runs
+    expect(listed.find((row) => row.id === memberPath(1))?.frontMatter.status).toBe('FAILED')
+    expect((await readDerivedIndex(root)).events).toEqual([])
 
     clock.now += 11 * 60_000
     const files = spyProjectFiles()

@@ -4,17 +4,21 @@
 // legacy single file): no managed YAML document and no Run is touched, and a
 // README is re-read only when its fingerprint changed.
 
+import type { Stats } from 'node:fs'
 import { join } from 'node:path'
 import {
   BackendExperimentSummarySchema,
   BackendExperimentsResponseSchema,
+  buildExperimentRecord,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
   type Experiment,
+  projectFs as fs,
   type ParsedExperiment,
   type ProjectConfig,
   parseExperimentReadme,
   readExperimentDoc,
+  readExperimentManagedDocuments,
 } from '@memon/core'
 import { digest, type ListedEntry, projectReadIndex, statObservation } from './read-index.js'
 
@@ -269,7 +273,7 @@ export function indexedExperimentBundle(
     ...BUNDLE_FILES.map((name) => join(directory, id, name)),
     join(directory, `${id}.md`),
   ]
-  return projectReadIndex(project.root).observe<Experiment | null>(
+  return projectReadIndex(project.root).observe<Experiment | null, BundleObservation>(
     `experiment-bundle:${join(directory, id)}`,
     maxAgeMs,
     async () => {
@@ -277,8 +281,60 @@ export function indexedExperimentBundle(
       const readme = observations[0]!.fingerprint
       const legacy = observations[4]!.fingerprint
       if (readme === null && legacy === null) return { fingerprint: null }
-      return { fingerprint: digest(observations.map((entry) => entry.fingerprint ?? '-')) }
+      return {
+        fingerprint: digest(observations.map((entry) => entry.fingerprint ?? '-')),
+        observed: observations.map((entry) => entry.observed ?? null),
+      }
     },
-    () => readExperimentDoc(project.root, project.name, id),
+    (observed) =>
+      observed?.[0]?.isFile()
+        ? readObservedBundle(project, id, join(directory, id), observed)
+        : readExperimentDoc(project.root, project.name, id),
   ) as Promise<Experiment | null>
+}
+
+/** Stats of README, implementation, investigation, results and the legacy file. */
+type BundleObservation = Array<Stats | null>
+
+/**
+ * `readExperimentDoc` for a folder whose files were just stat'ed: the same
+ * record (documents, effective mtime, migration-collision warning) without
+ * stat'ing every file a second time.
+ */
+async function readObservedBundle(
+  project: ProjectConfig,
+  id: string,
+  folder: string,
+  observed: BundleObservation,
+): Promise<Experiment> {
+  const readmePath = join(folder, 'README.md')
+  const [content, documents] = await Promise.all([
+    fs.readFile(readmePath, 'utf8'),
+    readExperimentManagedDocuments(folder),
+  ])
+  const parsed = parseExperimentReadme(content, id)
+  if (observed[4]?.isFile()) {
+    parsed.parseWarnings.push({
+      message: `MIGRATION_COLLISION: a v4 legacy file ${id}.md exists alongside the v5 folder; remove it manually`,
+      severity: 'warning',
+    })
+  }
+  const readmeMtime = observed[0]!.mtimeMs
+  let documentMtime = 0
+  for (const [index, document] of [
+    documents.implementation,
+    documents.investigation,
+    documents.results,
+  ].entries()) {
+    const stat = observed[index + 1]
+    if (document.exists && stat) documentMtime = Math.max(documentMtime, stat.mtimeMs)
+  }
+  return buildExperimentRecord(parsed, {
+    id,
+    project: project.name,
+    path: readmePath,
+    mtime: Math.max(readmeMtime, documentMtime),
+    readmeMtime,
+    documents,
+  })
 }

@@ -62,6 +62,7 @@ import {
   type IndexedExperimentDocument,
   indexedExperimentBundle,
   indexedExperimentDocuments,
+  indexedExperimentReadme,
 } from './indexed-experiments.js'
 import {
   archivedRun,
@@ -293,8 +294,35 @@ export class FilesystemProjectService implements BackendProjectReadService {
         const id = experimentIds.find((candidate) => candidate.slice(0, 5) === numericId)
         if (id !== undefined) cited.push(id)
       }
+      // Staleness needs a cited Experiment's README (its times and members);
+      // only a Variant citation needs the managed Results document, so only
+      // those read the whole bundle.
+      const needsBundle = new Set(references.variantExperiments ?? references.experiments)
+      const directory = join(project.root, 'docs', 'experiments')
       const experiments = (
-        await Promise.all(cited.map((id) => indexedExperimentBundle(project, id, age)))
+        await Promise.all(
+          cited.map(async (id) => {
+            if (needsBundle.has(id.slice(0, 5))) return indexedExperimentBundle(project, id, age)
+            const folder = listing.folders.get(id)
+            const legacy = listing.legacy.get(id)
+            const path = folder
+              ? join(directory, folder.name, 'README.md')
+              : legacy
+                ? join(directory, legacy.name)
+                : null
+            if (path === null) return null
+            const stem = folder ? folder.name : legacy!.name.replace(/\.md$/, '')
+            const readme = await indexedExperimentReadme(project, path, stem, age)
+            if (!readme) return indexedExperimentBundle(project, id, age)
+            return buildExperimentRecord(readme.parsed, {
+              id,
+              project: project.name,
+              path,
+              mtime: readme.mtime,
+              readmeMtime: readme.mtime,
+            })
+          }),
+        )
       ).filter((experiment): experiment is Experiment => experiment !== null)
 
       // A cited Experiment's effective updated time joins its members', so those

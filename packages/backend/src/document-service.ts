@@ -28,6 +28,7 @@ import {
   deriveCompletion,
   deriveWikiReview,
   discoverRuns,
+  EXPERIMENT_REF_REGEX,
   type Experiment,
   effectiveWikiId,
   extractTitle,
@@ -190,7 +191,24 @@ export interface BackendWikiArtifacts {
 }
 
 /** What the wiki's declared sources ask the artifact provider to load. */
-export type BackendWikiArtifactReferences = WikiSourceReferences
+export interface BackendWikiArtifactReferences extends WikiSourceReferences {
+  /**
+   * Numeric `E<NNNN>` prefixes cited with a Variant (`E0001/V0002`): only
+   * these need the managed Results document. Absent means every cited
+   * Experiment may need it (its full bundle is read).
+   */
+  variantExperiments?: string[]
+}
+
+/** The references of declared wiki sources, with the Variant-citing Experiments. */
+export function wikiArtifactReferences(sources: readonly string[]): BackendWikiArtifactReferences {
+  const variantExperiments = new Set<string>()
+  for (const source of sources) {
+    const match = EXPERIMENT_REF_REGEX.exec(source)
+    if (match?.[3] !== undefined) variantExperiments.add(match[1]!)
+  }
+  return { ...collectWikiSourceReferences(sources), variantExperiments: [...variantExperiments] }
+}
 
 export interface BackendWikiArtifactOptions {
   /**
@@ -616,7 +634,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     if (pages.length === 0) {
       return buildWikiProject([], { experiments: [], runs: [], hypothesesMtime: null })
     }
-    const references = collectWikiSourceReferences(
+    const references = wikiArtifactReferences(
       cited.flatMap((page) =>
         wikiStringList(parseWikiFrontmatter(page.content).frontmatter?.sources),
       ),

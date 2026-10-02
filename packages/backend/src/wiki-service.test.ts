@@ -260,6 +260,29 @@ describe('FilesystemDocumentService wiki reads', () => {
     expect(note.diagnostics.map((entry) => entry.code)).not.toContain('WIKI_SOURCE_UNRESOLVED')
   })
 
+  it('reads the Results document only for Experiments cited with a Variant', async () => {
+    await fs.writeFile(
+      join(root, 'docs', 'experiments', 'E0001-alpha', 'results.yaml'),
+      'schema_version: 1\ncolumns: []\nvariants:\n  - id: V0001\n    name: A\n    status: COMPLETED\n    parameters: {}\n    metrics: {}\n    runs: []\n    attempts: []\n',
+    )
+    const cite = async (source: string) => {
+      await fs.writeFile(
+        join(root, 'docs', 'wiki', 'note', 'W0002-beta.md'),
+        NOTE.replace(
+          'updated_at: 2026-09-04T10:00:00+08:00',
+          `updated_at: 2026-09-04T10:00:00+08:00\nsources: [${source}]`,
+        ),
+      )
+      const listed = BackendWikiPagesResponseSchema.parse(await service.listWiki('research'))
+      return listed.pages
+        .find((page) => page.id === 'W0002')!
+        .diagnostics.map((entry) => entry.code)
+    }
+    expect(await cite('E0001-alpha/V0001')).not.toContain('WIKI_SOURCE_UNRESOLVED')
+    expect(await cite('E0001-alpha/V0002')).toContain('WIKI_SOURCE_UNRESOLVED')
+    expect(await cite('E0001-alpha')).not.toContain('WIKI_SOURCE_UNRESOLVED')
+  })
+
   it('keeps W0002 composition automatic while refreshing its selected body manually', async () => {
     const storageGroup = `wiki-detail-${root}`
     const context = { root, storageGroup, persistentCache: true, attentionId: 'wiki-tab' }
