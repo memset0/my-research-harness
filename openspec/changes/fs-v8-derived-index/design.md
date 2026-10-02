@@ -86,6 +86,12 @@ Snapshot (draft JSON Schema, abbreviated):
 }
 ```
 
+Persisted row field sets (fixed by the task 1.1 consumer audit of `safeRunSummary`, `experimentListRow`, the anomaly, wiki-staleness and Experiment-detail eligibility consumers; no field without a consumer):
+
+- Run `row`: `mtime`, `readme_mtime`, `id`, `name`, `project`, `finished_at`, `host`, `pid`, `gpus`, `entry`, `command`, `wandb`, `hypotheses`, `tags`, `parse_errors`, `parse_warnings`. `status`, `created_at`, `updated_at`, `archived` (+ `archive_source`, which replaces `frontMatterKeys` for the sidecar fallback), `deprecated` and `owner` (the list's `experiment`) are entry fields and are not repeated in `row`.
+- Experiment `row`: `readme_mtime`, `title`, `tags`, `created_at`, `updated_at`, `hypothesis_count`, `open_warning_count`, `parse_errors`, `parse_warnings`; `runCount` is `runs.length`. Discovery warnings (`MIGRATION_COLLISION`, `LEGACY_LAYOUT`) depend on the listing and stay read-time. A legacy single-file Experiment is keyed by its `.md` path with null bundle fingerprints.
+- `fs_convention_version` records the writer's `FS_CONVENTION_VERSION` (validated as a positive integer; it becomes 8 with task 6.3).
+
 Keys are project-relative POSIX paths (`logs/foo-260901-090000`, `docs/experiments/E0001-foo`, `docs/wiki/note/W0001-x.md`). No absolute path, host or user name is stored. `owner` is derived at merge time from Experiment entries (the unique declaring Experiment, else `null`); it is never written into a Run README.
 
 Event:
@@ -115,9 +121,9 @@ Merge (used by readers, compaction and rebuild): start from the snapshot; apply 
 
 Compaction (central validator cycle, `memon index compact`, `memon index rebuild`):
 
-1. Take the lease: create `compact.lock` with `wx`, content `{ "pid", "role", "expires_at" }` (120 s). If it exists and is unexpired → skip (central) or exit 9 `CONFLICT` (CLI). If expired → rename it to `.stale-<rand>` (only one contender's rename succeeds) and retry once.
+1. Take the lease: create `compact.lock` with `wx`, content `{ "pid", "role", "expires_at", "token" }` (120 s; `token` identifies the holder for release). If it exists and is unexpired → skip (central) or exit 9 `CONFLICT` (CLI). If expired → take the short-lived exclusive takeover mutex `.takeover-compact.lock` (`wx`; cleared after 30 s if abandoned), re-read the lease under it, rename the expired lease to `.stale-<rand>` and create a new one, so exactly one contender wins; contenders that do not get the mutex skip/`CONFLICT`. A compactor re-checks that it still holds its lease right before replacing the snapshot.
 2. List `events/`, read them, merge, write `.tmp-snapshot-<rand>` (`wx`), rename over `snapshot.json`. `merged_events` lists exactly the names merged.
-3. Delete exactly those event files; remove `.tmp-*` older than one hour; release the lease.
+3. Delete exactly those event files; remove `.tmp-*` / `.stale-*` / `.takeover-*` older than one hour; release the lease.
 
 Events created during compaction are not deleted (they were not listed). Deletion is by name, so clock skew between nodes cannot lose an event. If two compactors still overlap (lease expired mid-run), the worst case is a snapshot missing a deleted event's hint; the affected entry is corrected by fingerprint validation within its window, so the race costs freshness, never correctness beyond the window.
 
