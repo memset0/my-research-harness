@@ -39,6 +39,8 @@ export interface IndexLeaseOptions {
 
 export interface IndexLease {
   token: string
+  /** True while `compact.lock` still carries this lease. */
+  held(): Promise<boolean>
   release(): Promise<void>
 }
 
@@ -76,9 +78,16 @@ async function readLease(
   }
 }
 
+/** Age after which an abandoned takeover mutex is cleared. */
+const TAKEOVER_MUTEX_STALE_MS = 30_000
+
 /**
  * Take the compaction lease of `root`, or return null when another
- * compactor holds an unexpired one (or wins the takeover of an expired one).
+ * compactor holds an unexpired one (or is taking over an expired one).
+ *
+ * Taking over an expired lease is serialised by a short-lived exclusive
+ * mutex (`.takeover-<lock>`): only its holder re-reads the lease, renames the
+ * expired one away and creates a new one, so exactly one contender wins.
  */
 export async function acquireIndexLease(
   root: string,
@@ -90,12 +99,20 @@ export async function acquireIndexLease(
   const paths = resolveIndexPaths(root)
   await ensureIndexDirectory(paths, { fs })
   const token = randomBytes(8).toString('hex')
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const now = clock()
+  const marker = `"token":"${token}"`
+  const lease: IndexLease = {
+    token,
+    held: async () =>
+      (await readLease(fs, paths.lock, ttlMs).catch(() => null))?.raw.includes(marker) === true,
+    release: async () => {
+      if (await lease.held()) await fs.unlink(paths.lock).catch(() => undefined)
+    },
+  }
+  const create = async (): Promise<boolean> => {
     const content: LeaseContent = {
       pid: process.pid,
       role: options.role,
-      expires_at: formatIsoLocal(new Date(now.getTime() + ttlMs)),
+      expires_at: formatIsoLocal(new Date(clock().getTime() + ttlMs)),
       token,
     }
     try {
@@ -103,42 +120,56 @@ export async function acquireIndexLease(
         encoding: 'utf8',
         flag: 'wx',
       })
-      return {
-        token,
-        release: async () => {
-          const held = await readLease(fs, paths.lock, ttlMs).catch(() => null)
-          if (held?.raw.includes(`"token":"${token}"`)) {
-            await fs.unlink(paths.lock).catch(() => undefined)
-          }
-        },
-      }
+      return true
     } catch (error) {
-      if (errnoCode(error) !== 'EEXIST') throw error
-    }
-    const current = await readLease(fs, paths.lock, ttlMs)
-    if (current === null) continue // released meanwhile: retry the create
-    if (current.expiresAt > now.getTime() || attempt > 0) return null
-    const stale = `${paths.dir}/.stale-${randomHex8()}`
-    try {
-      await fs.rename(paths.lock, stale)
-    } catch (error) {
-      if (errnoCode(error) === 'ENOENT') continue
+      if (errnoCode(error) === 'EEXIST') return false
       throw error
     }
-    // The rename moved whatever lease was there; if a fresh lease replaced
-    // the expired one in between, put it back and give up.
-    const moved = await fs.readFile(stale, 'utf8').catch(() => null)
-    if (moved !== current.raw) {
-      await fs.link(stale, paths.lock).catch(() => undefined)
-      await fs.rm(stale, { force: true }).catch(() => undefined)
-      return null
-    }
-    await fs.rm(stale, { force: true }).catch(() => undefined)
   }
-  return null
+  if (await create()) return lease
+  const current = await readLease(fs, paths.lock, ttlMs)
+  if (current === null) return (await create()) ? lease : null
+  if (current.expiresAt > clock().getTime()) return null
+
+  const mutex = `${paths.dir}/.takeover-compact.lock`
+  try {
+    await fs.writeFile(mutex, token, { encoding: 'utf8', flag: 'wx' })
+  } catch (error) {
+    if (errnoCode(error) !== 'EEXIST') throw error
+    try {
+      const stat = await fs.stat(mutex)
+      if (clock().getTime() - stat.mtimeMs > TAKEOVER_MUTEX_STALE_MS) {
+        await fs.rm(mutex, { force: true })
+      }
+    } catch {}
+    return null
+  }
+  try {
+    const again = await readLease(fs, paths.lock, ttlMs)
+    if (again !== null) {
+      if (again.expiresAt > clock().getTime()) return null
+      const stale = `${paths.dir}/.stale-${randomHex8()}`
+      try {
+        await fs.rename(paths.lock, stale)
+      } catch (error) {
+        if (errnoCode(error) !== 'ENOENT') throw error
+      }
+      const moved = await fs.readFile(stale, 'utf8').catch(() => null)
+      if (moved !== null && moved !== again.raw) {
+        // A lease created after the re-read was moved: put it back.
+        await fs.link(stale, paths.lock).catch(() => undefined)
+        await fs.rm(stale, { force: true }).catch(() => undefined)
+        return null
+      }
+      await fs.rm(stale, { force: true }).catch(() => undefined)
+    }
+    return (await create()) ? lease : null
+  } finally {
+    await fs.rm(mutex, { force: true }).catch(() => undefined)
+  }
 }
 
-/** Remove `.tmp-*` and `.stale-*` files older than one hour. */
+/** Remove `.tmp-*`, `.stale-*` and `.takeover-*` files older than one hour. */
 async function removeAbandonedTemporaries(
   fs: IndexFs,
   paths: IndexPaths,
@@ -153,7 +184,7 @@ async function removeAbandonedTemporaries(
       continue
     }
     for (const name of names) {
-      if (!name.startsWith('.tmp-') && !name.startsWith('.stale-')) continue
+      if (!['.tmp-', '.stale-', '.takeover-'].some((prefix) => name.startsWith(prefix))) continue
       const path = `${directory}/${name}`
       try {
         const stat = await fs.stat(path)
@@ -254,6 +285,9 @@ export async function compactIndex(
       const merged = mergeIndexEvents(base, read.events)
       merged.generated_at = formatIsoLocal(now)
       merged.generator = { release: options.release ?? MEMON_RELEASE, role: options.role }
+      // A lease lost meanwhile (expired and taken over) means another
+      // compactor owns the snapshot now.
+      if (!(await lease.held())) return { ...result, status: 'conflict' }
       await writeSnapshot(root, merged, fs)
       for (const { name } of read.events) {
         await fs.rm(`${paths.events}/${name}`, { force: true })
