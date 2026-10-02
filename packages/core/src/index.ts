@@ -67,6 +67,8 @@ export { Poller } from './discovery/poller.js'
 export { readRunDir, runFromReadme } from './discovery/read.js'
 export {
   DEFAULT_RUN_DIRS,
+  matchesRunDirPatterns,
+  nestedRunAncestor,
   RUN_DIR_PATTERN_NON_RUN,
   runDirPatternError,
 } from './discovery/run-dirs.js'

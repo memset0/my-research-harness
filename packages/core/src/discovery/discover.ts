@@ -56,6 +56,13 @@ export interface DiscoverOptions {
    * level). Such directories are ignored; the walk is not blocked.
    */
   onPatternNonRun?: (absolutePath: string) => void
+  /**
+   * Audit only: ignore every `run_dirs` source and walk `logs/`, `outputs/`
+   * and `experiments/` without a depth bound (still stopping at each Run).
+   * Its result never feeds lists; the derived-index rebuild audit and the
+   * v7-to-v8 migration plan use it to report Runs outside the patterns.
+   */
+  unbounded?: boolean
 }
 
 /**
@@ -140,7 +147,7 @@ export async function discoverRuns(
     excludedNames[name] === true ||
     matchesExclude(relative(project.root, absolute).split(sep).join('/'))
 
-  const runDirs = await declaredRunDirs(project)
+  const runDirs = options.unbounded ? undefined : await declaredRunDirs(project)
   if (runDirs !== undefined) {
     const listings = new Map<string, Promise<Dirent[]>>()
     const list = (directory: string): Promise<Dirent[]> => {

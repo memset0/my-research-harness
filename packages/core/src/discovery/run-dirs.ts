@@ -57,3 +57,37 @@ export function segmentMatcher(segment: string): RegExp {
   }
   return new RegExp(`${source}$`)
 }
+
+const RUN_SHAPED_SEGMENT = /^.+-\d{6}-\d{6}$/
+
+/**
+ * True when the project-relative Run path `path` is discovered by one of
+ * `patterns`: same number of segments, every segment matched, and no
+ * intermediate segment that discovery would never use as a prefix (a dot
+ * name or a Run-shaped name). Excludes are not considered.
+ */
+export function matchesRunDirPatterns(path: string, patterns: readonly string[]): boolean {
+  const segments = path.split('/')
+  return patterns.some((pattern) => {
+    const parts = pattern.split('/')
+    if (parts.length !== segments.length) return false
+    return parts.every((part, index) => {
+      const segment = segments[index]!
+      if (segment.startsWith('.')) return false
+      if (index < parts.length - 1 && RUN_SHAPED_SEGMENT.test(segment)) return false
+      return isGlobSegment(part) ? segmentMatcher(part).test(segment) : part === segment
+    })
+  })
+}
+
+/**
+ * The first Run-shaped ancestor segment of a project-relative Run path, or
+ * null when the path does not nest inside another Run (`RUN_NESTED`).
+ */
+export function nestedRunAncestor(path: string): string | null {
+  const segments = path.split('/')
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    if (RUN_SHAPED_SEGMENT.test(segments[index]!)) return segments.slice(0, index + 1).join('/')
+  }
+  return null
+}

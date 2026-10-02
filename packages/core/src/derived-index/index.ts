@@ -2,6 +2,18 @@
 // Experiment and wiki summaries under `.memon/index/`. Never a source of truth.
 
 export {
+  ABANDONED_TEMPORARY_MS,
+  acquireIndexLease,
+  COMPACTION_LEASE_MS,
+  type CompactIndexOptions,
+  type CompactIndexResult,
+  type CompactIndexStatus,
+  compactIndex,
+  type IndexLease,
+  type IndexLeaseOptions,
+  writeSnapshot,
+} from './compact.js'
+export {
   type DeriveExperimentEntryInput,
   type DeriveRunEntryInput,
   type DeriveWikiEntryInput,
@@ -32,6 +44,13 @@ export {
 export { defaultIndexFs, type IndexFs } from './fs.js'
 export { ensureIndexDirectory } from './gitignore.js'
 export {
+  emptySnapshot,
+  entryCtime,
+  mergeIndexEvents,
+  type NamedIndexEvent,
+  recomputeOwners,
+} from './merge.js'
+export {
   classifyIndexedPath,
   type IndexedFileChange,
   type MutationIndexExtras,
@@ -48,6 +67,15 @@ export {
   isProjectRelativePath,
   resolveIndexPaths,
 } from './paths.js'
+export {
+  auditRunDirs,
+  buildIndexSnapshot,
+  type RebuildIndexOptions,
+  type RebuildIndexResult,
+  type RebuildIndexStatus,
+  type RunDirsAudit,
+  rebuildIndex,
+} from './rebuild.js'
 export {
   EventSchema,
   type ExperimentIndexEntry,
@@ -67,3 +95,13 @@ export {
   SnapshotSchema,
   type WikiIndexEntry,
 } from './schema.js'
+export {
+  type DerivedIndexRead,
+  listIndexEvents,
+  mergedIndexView,
+  type ReadIndexOptions,
+  readDerivedIndex,
+  type SkippedIndexEvent,
+  type SnapshotState,
+  UNPARSABLE_EVENT_GRACE_MS,
+} from './snapshot.js'
