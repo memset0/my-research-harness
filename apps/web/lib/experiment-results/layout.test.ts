@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   computePinLayout,
   dropEdgeAt,
+  dropEdgeAtVertical,
   EMPTY_PIN_LAYOUT,
   pinnedColumnStyle,
   pinnedOpaqueBackground,
@@ -57,19 +58,29 @@ describe('dropEdgeAt', () => {
   })
 })
 
+describe('dropEdgeAtVertical', () => {
+  it.each([
+    [10, 'before'],
+    [50, 'before'],
+    [51, 'after'],
+  ] as const)('y=%d', (y, edge) => {
+    expect(dropEdgeAtVertical(y, { top: 0, height: 100 })).toBe(edge)
+  })
+})
+
 describe('pin layout', () => {
+  // The single left zone: the Variant column, then the pins in order.
   const headers = [
-    { columnId: 'a', side: 'left' as const, width: 50 },
-    { columnId: 'b', side: 'left' as const, width: 30 },
-    { columnId: 'y', side: 'right' as const, width: 20 },
-    { columnId: 'z', side: 'right' as const, width: 40 },
+    { columnId: 'variant', width: 50 },
+    { columnId: 'b', width: 30 },
+    { columnId: 'y', width: 20 },
+    { columnId: 'z', width: 40 },
   ]
 
-  it('stacks offsets from each edge when pins fit', () => {
+  it('stacks offsets from the left edge when pins fit', () => {
     expect(computePinLayout(headers, 500)).toEqual({
       sticky: true,
-      leftOffsets: { a: 0, b: 50 },
-      rightOffsets: { z: 0, y: 40 },
+      leftOffsets: { variant: 0, b: 50, y: 80, z: 100 },
     })
   })
 
@@ -88,15 +99,15 @@ describe('pin layout', () => {
     const layout = computePinLayout(headers, 500)
     expect(samePinLayout(layout, computePinLayout(headers, 500))).toBe(true)
     expect(samePinLayout(layout, computePinLayout(headers, 100))).toBe(false)
-    expect(samePinLayout(layout, { ...layout, leftOffsets: { a: 0 } })).toBe(false)
+    expect(samePinLayout(layout, { ...layout, leftOffsets: { variant: 0 } })).toBe(false)
   })
 
   it('styles only sticky pinned columns', () => {
     const layout = computePinLayout(headers, 500)
-    expect(pinnedColumnStyle('b', 'left', layout)).toEqual({ left: 50 })
-    expect(pinnedColumnStyle('y', 'right', layout)).toEqual({ right: 40 })
-    expect(pinnedColumnStyle('b', undefined, layout)).toBeUndefined()
-    expect(pinnedColumnStyle('b', 'left', EMPTY_PIN_LAYOUT)).toBeUndefined()
+    expect(pinnedColumnStyle('b', true, layout)).toEqual({ left: 50 })
+    expect(pinnedColumnStyle('z', true, layout)).toEqual({ left: 100 })
+    expect(pinnedColumnStyle('b', false, layout)).toBeUndefined()
+    expect(pinnedColumnStyle('b', true, EMPTY_PIN_LAYOUT)).toBeUndefined()
   })
 
   it.each([

@@ -22,6 +22,7 @@ import { BackendDocumentServiceError } from '../document-service.js'
 import { BackendGitServiceError } from '../git-service.js'
 import { BackendMutationError } from '../mutation-service.js'
 import { BackendProjectServiceError } from '../project-service.js'
+import { BackendResultsError } from '../results-summary.js'
 import { BackendStreamServiceError } from '../stream-service.js'
 import { BackendControlBodyError } from './respond.js'
 import { BackendStreamDeadlineError } from './streaming.js'
@@ -117,6 +118,20 @@ const MAPPERS: readonly Mapper<never>[] = [
     ),
   ),
   mapper(BackendMutationError, mutationError),
+  // A failed Results summary answers with its own status and body: 400
+  // INVALID_RESULTS, 404 RESULTS_NOT_FOUND, 422 RESULT_SCHEMA_MISMATCH /
+  // RESULT_DUPLICATE_ROW (the same body standalone routes return).
+  mapper(BackendResultsError, (error) => ({
+    status: error.status,
+    code:
+      error.status === 404
+        ? 'NOT_FOUND'
+        : error.status === 400
+          ? 'BAD_REQUEST'
+          : 'INVALID_RESOURCE',
+    message: error.message,
+    body: error.body,
+  })),
   mapper(BackendProjectServiceError, (error) => resourceError(error.code, 'Project')),
   mapper(BackendDocumentServiceError, (error) => resourceError(error.code, 'document')),
   mapper(BackendGitServiceError, (error) =>

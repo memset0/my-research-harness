@@ -1,12 +1,18 @@
-import { BackendProjectServiceError } from '@memon/backend'
+import { BackendProjectServiceError, BackendResultsError } from '@memon/backend'
 import { BackendExperimentResultsResponseSchema, ProjectNameSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import type { ExperimentResultsSnapshot } from '@/lib/dto/experiments'
+import type { ExperimentResultsSnapshot, ResultsErrorResponsePayload } from '@/lib/dto/experiments'
 import { getRuntime } from '../../../../../lib/server/runtime'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * The Results snapshot (standalone): the Experiment's generated Results
+ * summary with every input fingerprint re-taken. A failed summary answers
+ * with the status and body central returns: 400 `INVALID_RESULTS`, 404
+ * `RESULTS_NOT_FOUND`, 422 `RESULT_SCHEMA_MISMATCH` / `RESULT_DUPLICATE_ROW`.
+ */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await params
@@ -25,32 +31,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ) satisfies ExperimentResultsSnapshot,
     )
   } catch (error) {
+    if (error instanceof BackendResultsError) {
+      return NextResponse.json(error.body satisfies ResultsErrorResponsePayload, {
+        status: error.status,
+      })
+    }
     if (error instanceof BackendProjectServiceError) {
-      if (error.code === 'INVALID_RESOURCE') {
-        const details = error.details ?? {}
-        return NextResponse.json(
-          {
-            error: {
-              code: 'INVALID_RESULTS',
-              message:
-                (details.diagnostics as Array<{ message?: string }> | undefined)?.[0]?.message ??
-                'results.yaml is invalid',
-            },
-            diagnostics: details.diagnostics ?? [],
-            updatedAt: details.updatedAt ?? null,
-          },
-          // The same status central returns for an invalid results.yaml; the
-          // route-level code and diagnostics body are unchanged.
-          { status: 400 },
-        )
-      }
       return NextResponse.json(
-        { error: { code: 'RESULTS_NOT_FOUND', message: 'results.yaml does not exist' } },
+        {
+          error: { code: 'RESULTS_NOT_FOUND', message: 'Experiment not found' },
+          files: [],
+          diagnostics: [],
+          updatedAt: null,
+        } satisfies ResultsErrorResponsePayload,
         { status: 404 },
       )
     }
     return NextResponse.json(
-      { error: { code: 'RESULTS_READ_FAILED', message: 'results.yaml could not be read' } },
+      { error: { code: 'RESULTS_READ_FAILED', message: 'the Results summary could not be read' } },
       { status: 500 },
     )
   }

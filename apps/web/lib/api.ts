@@ -70,9 +70,17 @@ export type {
   ExperimentListRow,
   ExperimentManagedDocumentPayload,
   ExperimentManagedDocumentsPayload,
+  ExperimentResultsDocumentPayload,
   ExperimentResultsSnapshot,
   PatchExperimentStatusResponse,
-  ResultsVariantEligibilityPayload,
+  ResultsCellPayload,
+  ResultsColumnPayload,
+  ResultsErrorResponsePayload,
+  ResultsSummaryErrorPayload,
+  ResultsSummaryPayload,
+  ResultsValuePayload,
+  ResultsVariantPayload,
+  RunResultPayload,
 } from './dto/experiments'
 
 import type {
@@ -84,7 +92,9 @@ import type {
   ExperimentDocsResponse,
   ExperimentResultsSnapshot,
   PatchExperimentStatusResponse,
+  ResultsErrorResponsePayload,
 } from './dto/experiments'
+import type { ResultsSnapshotOutcome } from './experiment-results/results-card-state'
 
 export type {
   WarningsConflict,
@@ -223,6 +233,7 @@ import {
   beginResourceRequest,
   recordResourceResponse,
   resolveNotModified,
+  withResourceReason,
 } from './resource-protocol'
 
 export {
@@ -888,13 +899,70 @@ export async function deleteExperimentDoc(
   })
 }
 
+/**
+ * The Results snapshot behind the Results card's Refresh: the current
+ * summary with every input fingerprint re-taken (manual priority). A failed
+ * summary (400 / 404 / 422) or request comes back as a value, never thrown,
+ * so the card can keep its last good content.
+ */
 export async function fetchExperimentResults(
   project: ProjectTarget,
   id: string,
-): Promise<ExperimentResultsSnapshot> {
-  return jsonFetch(projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/results`, project), {
-    cache: 'no-store',
-  })
+): Promise<ResultsSnapshotOutcome> {
+  const url = projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/results`, project)
+  let response: Response
+  try {
+    response = await withResourceReason('manual', () => {
+      const resource = beginResourceRequest(url, { cache: 'no-store' }, false)
+      return fetch(url, { cache: 'no-store', headers: resource.headers })
+    })
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      body: null,
+      message: `Results could not be refreshed: ${(error as Error)?.message ?? String(error)}`,
+    }
+  }
+  const text = await response.text()
+  let body: unknown = null
+  try {
+    body = text ? JSON.parse(text) : null
+  } catch {
+    body = null
+  }
+  if (response.ok && isResultsSnapshot(body)) {
+    return { ok: true, summary: body.summary, updatedAt: body.updatedAt ?? null }
+  }
+  if (isResultsErrorBody(body)) {
+    return { ok: false, status: response.status, body, message: body.error.message }
+  }
+  const message = (body as { error?: { message?: string } } | null)?.error?.message
+  return {
+    ok: false,
+    status: response.status,
+    body: null,
+    message: `Results could not be refreshed (HTTP ${response.status})${message ? `: ${message}` : ''}`,
+  }
+}
+
+function isResultsSnapshot(value: unknown): value is ExperimentResultsSnapshot {
+  const summary = (value as { summary?: { outcome?: unknown } } | null)?.summary
+  return typeof summary === 'object' && summary !== null && summary.outcome === 'ok'
+}
+
+function isResultsErrorBody(value: unknown): value is ResultsErrorResponsePayload {
+  const body = value as { error?: { code?: unknown }; files?: unknown } | null
+  return (
+    typeof body?.error?.code === 'string' &&
+    [
+      'RESULTS_NOT_FOUND',
+      'INVALID_RESULTS',
+      'RESULT_SCHEMA_MISMATCH',
+      'RESULT_DUPLICATE_ROW',
+    ].includes(body.error.code) &&
+    Array.isArray(body.files)
+  )
 }
 
 export async function fetchRunFiles(

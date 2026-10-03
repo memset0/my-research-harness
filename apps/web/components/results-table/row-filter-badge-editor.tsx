@@ -158,9 +158,9 @@ export function RowFilterBadgeEditor({
                 id={`row-filter-value-${experimentId}-${editorId}`}
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
-                type={column?.schema?.type === 'number' ? 'number' : 'text'}
-                step={column?.schema?.type === 'number' ? 'any' : undefined}
-                inputMode={column?.schema?.type === 'number' ? 'decimal' : undefined}
+                type={numericColumn(column) ? 'number' : 'text'}
+                step={numericColumn(column) ? 'any' : undefined}
+                inputMode={numericColumn(column) ? 'decimal' : undefined}
                 list={`row-filter-values-${experimentId}-${editorId}`}
                 placeholder="Empty matches empty"
                 aria-label="Filter value"
@@ -198,4 +198,9 @@ export function RowFilterBadgeEditor({
       </PopoverContent>
     </Popover>
   )
+}
+
+/** Numbers and stats columns (a stats filter compares its selected statistic). */
+function numericColumn(column: ResultTableColumn | undefined): boolean {
+  return column?.result?.type === 'number' || (column?.statOptions.length ?? 0) > 0
 }

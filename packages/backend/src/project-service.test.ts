@@ -16,7 +16,6 @@ import {
   type ProjectConfig,
   serializeImplementationYaml,
   serializeInvestigationYaml,
-  serializeResultsYaml,
 } from '@memon/core'
 import { describe, expect, it, vi } from 'vitest'
 import { BackendExperimentListResponseSchema } from './indexed-experiments.js'
@@ -442,32 +441,31 @@ conclusion
         }),
       )
       await fs.writeFile(
-        join(bundle, 'results.yaml'),
-        serializeResultsYaml({
-          schemaVersion: 1,
-          columns: [{ key: 'score', label: 'Score', group: 'metric', type: 'number' }],
-          variants: [
-            {
-              id: 'V0001',
-              name: 'Variant one',
-              status: 'COMPLETED',
-              parameters: {},
-              metrics: { score: 1 },
-              runs: [],
-              attempts: [],
-            },
-          ],
-        }),
+        join(bundle, 'experiment.json'),
+        `${JSON.stringify(
+          {
+            experiment_schema_version: 1,
+            groups: {},
+            columns: [{ path: 'metrics.score', label: 'Score', type: 'number' }],
+            variants: [{ id: 'V0001', name: 'Variant one', runs: [] }],
+          },
+          null,
+          2,
+        )}\n`,
       )
       const service = new FilesystemProjectService([project('managed-project', root)])
       const touched = [vi.spyOn(core.projectFs, 'stat'), vi.spyOn(core.projectFs, 'readFile')]
       const list = BackendExperimentListResponseSchema.parse(
         await service.listExperiments('managed-project'),
       )
-      const yamlTouches = touched.flatMap((spy) =>
-        spy.mock.calls.map(([path]) => String(path)).filter((path) => path.endsWith('.yaml')),
+      // The slim list opens no managed YAML, description file, summary or
+      // result file (experiment-discovery).
+      const sourceTouches = touched.flatMap((spy) =>
+        spy.mock.calls
+          .map(([path]) => String(path))
+          .filter((path) => /\.(?:yaml|json)$|result\.csv$|\.memon\/index\/results/.test(path)),
       )
-      expect(yamlTouches).toEqual([])
+      expect(sourceTouches).toEqual([])
       for (const spy of touched) spy.mockRestore()
       expect(list.experiments[0]).not.toHaveProperty('documents')
       expect(list.experiments[0]).not.toHaveProperty('documentSections')
@@ -484,7 +482,13 @@ conclusion
       )
       expect(detail.documents?.implementation.data?.items).toHaveLength(1)
       expect(detail.documents?.investigation.data?.items).toHaveLength(1)
-      expect(detail.documents?.results.data?.variants).toHaveLength(1)
+      expect(detail.documents?.results.summary?.variants).toHaveLength(1)
+      expect(detail.documents?.results).toMatchObject({
+        fileName: 'experiment.json',
+        resource: 'docs/experiments/E0001-managed/experiment.json',
+        exists: true,
+        legacyResultsYaml: false,
+      })
       expect(detail.documentSections.map((section) => section.heading)).toEqual([
         'Motivation',
         'Design',
@@ -743,48 +747,61 @@ updated_at: 2026-08-26T00:00:00Z
 
 ## Results
 
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
+${MANAGED_SECTION_POINTERS.results}
 `,
       )
       await fs.writeFile(
-        join(directory, 'results.yaml'),
-        `schema_version: 1
-column_annotations:
-  score:
-    description: Final **evaluation score**.
-    value_descriptions:
-      '1': Baseline score.
-columns:
-  - key: score
-    label: Score
-    group: metric
-    type: number
-variants:
-  - id: V0001
-    name: Baseline
-    status: COMPLETED
-    parameters: {}
-    metrics: { score: 1 }
-    runs: []
-    attempts: []
-    provenance:
-      repo: .
-      entry: ./train.sh
-    private_absolute_path: /cluster/secret
-`,
+        join(directory, 'experiment.json'),
+        JSON.stringify({
+          experiment_schema_version: 1,
+          groups: {},
+          columns: [
+            {
+              path: 'metrics.score',
+              label: 'Score',
+              type: 'number',
+              description: 'Final **evaluation score**.',
+              value_descriptions: { '1': 'Baseline score.' },
+            },
+          ],
+          variants: [
+            {
+              id: 'V0001',
+              name: 'Baseline',
+              runs: [],
+              provenance: {
+                repo: '.',
+                entry: './train.sh',
+                private_absolute_path: '/cluster/secret',
+              },
+              frozen: {
+                status: 'COMPLETED',
+                runs: [],
+                values: [{ path: 'metrics.score', stat: null, value: 1 }],
+              },
+            },
+          ],
+        }),
       )
       const service = new FilesystemProjectService([project('results-project', root)])
       const results = BackendExperimentResultsResponseSchema.parse(
         await service.getExperimentResults('results-project', 'E0001-results'),
       )
-      expect(results.resource).toBe('docs/experiments/E0001-results/results.yaml')
-      expect(results.document.columnAnnotations?.score).toEqual({
+      expect(results.resource).toBe('docs/experiments/E0001-results/experiment.json')
+      expect(results.summary.columns[0]).toMatchObject({
+        key: 'metrics.score',
         description: 'Final **evaluation score**.',
         valueDescriptions: { '1': 'Baseline score.' },
       })
-      expect(results.document.variants[0]?.provenance?.entry).toBe('train.sh')
+      expect(results.summary.variants[0]?.provenance).toEqual({ repo: '.', entry: 'train.sh' })
+      expect(results.summary.variants[0]?.cells['metrics.score']).toMatchObject({
+        kind: 'value',
+        source: 'frozen',
+        value: 1,
+      })
       expect(JSON.stringify(results)).not.toContain('/cluster/secret')
       expect(JSON.stringify(results)).not.toContain(root)
+      expect(forbiddenKeys(results)).toEqual([])
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
@@ -815,47 +832,54 @@ updated_at: 2026-10-01T00:00:00Z
 ${MANAGED_SECTION_POINTERS.results}
 `,
       )
-      await fs.writeFile(
-        join(directory, 'results.yaml'),
-        `schema_version: 1
-columns: []
-variants:
-  - id: V0001
-    name: Waits for the parent checkpoint
-    status: BLOCKED
-    runs: []
-    attempts: []
-    provenance:
-      env:
-        LR: 0.000008
-        RESUME: false
-  - id: V0002
-    name: Parent
-    status: COMPLETED
-`,
-      )
+      const source = `${JSON.stringify(
+        {
+          experiment_schema_version: 1,
+          groups: {},
+          columns: [],
+          variants: [
+            {
+              id: 'V0001',
+              name: 'Waits for the parent checkpoint',
+              status: 'BLOCKED',
+              values: { 'env.LR': 0.000008, 'env.RESUME': false },
+              runs: [],
+            },
+            { id: 'V0002', name: 'Parent', runs: [] },
+          ],
+        },
+        null,
+        2,
+      )}\n`
+      await fs.writeFile(join(directory, 'experiment.json'), source)
       const service = new FilesystemProjectService([project('blocked-project', root)])
       const results = BackendExperimentResultsResponseSchema.parse(
         await service.getExperimentResults('blocked-project', 'E0001-blocked'),
       )
-      expect(results.document.variants.map((variant) => variant.status)).toEqual([
+      expect(results.summary.variants.map((variant) => variant.status)).toEqual([
         'BLOCKED',
-        'COMPLETED',
+        'PLANNED',
       ])
-      expect(results.document.variants[0]?.provenance?.env).toEqual({
-        LR: '0.000008',
-        RESUME: 'false',
+      expect(results.summary.variants[0]?.declaredStatus).toBe('BLOCKED')
+      expect(results.summary.variants[0]?.cells).toMatchObject({
+        'env.LR': { kind: 'value', source: 'planned', value: '0.000008' },
+        'env.RESUME': { kind: 'value', source: 'planned', value: 'false' },
       })
-      expect(results.warnings.map((warning) => warning.field)).toEqual([
-        'variants.0.provenance.env.LR',
-        'variants.0.provenance.env.RESUME',
+      const coerced = results.summary.diagnostics.filter(
+        (diagnostic) => diagnostic.code === 'RESULTS_ENV_VALUE_COERCED',
+      )
+      expect(coerced.map((diagnostic) => diagnostic.field)).toEqual([
+        'variants.0.values.env.LR',
+        'variants.0.values.env.RESUME',
       ])
-      expect(results.warnings.every((warning) => warning.severity === 'warning')).toBe(true)
+      expect(coerced.every((diagnostic) => diagnostic.severity === 'warning')).toBe(true)
+      // Reading never rewrites the description file.
+      await expect(fs.readFile(join(directory, 'experiment.json'), 'utf8')).resolves.toBe(source)
 
       const detail = BackendExperimentResponseSchema.parse(
         await service.getExperiment('blocked-project', 'E0001-blocked'),
       )
-      expect(detail.documents?.results.data?.variants[0]?.status).toBe('BLOCKED')
+      expect(detail.documents?.results.summary?.variants[0]?.status).toBe('BLOCKED')
       expect(detail.documents?.results.parseErrors).toEqual([])
       expect(detail.documents?.results.parseWarnings).toHaveLength(2)
       expect(
@@ -863,8 +887,8 @@ variants:
           (diagnostic) => diagnostic.code === 'RESULTS_ENV_VALUE_COERCED',
         ),
       ).toEqual([
-        expect.objectContaining({ severity: 'warning', field: 'variants.0.provenance.env.LR' }),
-        expect.objectContaining({ severity: 'warning', field: 'variants.0.provenance.env.RESUME' }),
+        expect.objectContaining({ severity: 'warning', field: 'variants.0.values.env.LR' }),
+        expect.objectContaining({ severity: 'warning', field: 'variants.0.values.env.RESUME' }),
       ])
       const resultsSection = detail.documentSections.find(
         (section) => section.heading === 'Results',

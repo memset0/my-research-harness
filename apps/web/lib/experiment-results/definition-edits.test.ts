@@ -1,52 +1,92 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
+import { buildColumns } from './columns'
 import * as edits from './definition-edits'
+import { column, resultsDocument } from './fixtures.test-helpers'
+import { buildColumnTree } from './tree'
 import { DEFAULT_RESULTS_VIEW_DEFINITION, type ExperimentResultsViewDefinition } from './views'
 
-const COLUMNS = ['variant', 'status', 'a', 'b']
 const base = (
   overrides: Partial<ExperimentResultsViewDefinition> = {},
 ): ExperimentResultsViewDefinition => ({
   ...DEFAULT_RESULTS_VIEW_DEFINITION,
-  columnOrderIds: [...COLUMNS],
   ...overrides,
 })
 
-describe('column edits', () => {
-  it('hides and shows without duplicates', () => {
-    const hidden = edits.setColumnVisible(edits.setColumnVisible(base(), 'a', false), 'a', false)
-    expect(hidden.hiddenColumnIds).toEqual(['a'])
-    expect(edits.setColumnVisible(hidden, 'a', true).hiddenColumnIds).toEqual([])
+const TREE = buildColumnTree(
+  buildColumns(
+    resultsDocument(
+      [],
+      [
+        column('params.optim.lr', 'LR'),
+        column('params.optim.batch_size', 'Batch size'),
+        column('params.model.depth', 'Depth'),
+        column('metrics.eval.fid', 'FID'),
+      ],
+    ),
+  ),
+  {},
+)
+
+describe('tree edits', () => {
+  it('stores a check on the changed node and clears descendant choices', () => {
+    let definition = edits.setNodeVisible(base(), TREE, 'params.optim.lr', false)
+    expect(definition.nodeVisibility).toEqual({ 'params.optim.lr': false })
+    definition = edits.setNodeVisible(definition, TREE, 'group:params.optim', true)
+    expect(definition.nodeVisibility).toEqual({ 'group:params.optim': true })
+    definition = edits.setNodeVisible(definition, TREE, 'group:params', false)
+    expect(definition.nodeVisibility).toEqual({ 'group:params': false })
+    expect(edits.setNodeVisible(definition, TREE, 'nope', true)).toBe(definition)
   })
 
-  it('pins, moves and unpins', () => {
-    let definition = edits.setColumnPin(base(), 'a', 'left')
-    definition = edits.setColumnPin(definition, 'b', 'left')
-    expect(definition.pinnedColumnIds).toEqual({ left: ['a', 'b'], right: [] })
-    definition = edits.setColumnPin(definition, 'a', 'right')
-    expect(definition.pinnedColumnIds).toEqual({ left: ['b'], right: ['a'] })
-    expect(edits.setColumnPin(definition, 'a', null).pinnedColumnIds).toEqual({
-      left: ['b'],
-      right: [],
+  it('reorders within the parent and refuses a drop into another group', () => {
+    const moved = edits.reorderTreeNode(
+      base(),
+      TREE,
+      'params.optim.batch_size',
+      'params.optim.lr',
+      'before',
+    )
+    expect(moved.treeOrder).toEqual({
+      'group:params.optim': ['params.optim.batch_size', 'params.optim.lr'],
     })
+    // Groups move as one block among their siblings.
+    expect(
+      edits.reorderTreeNode(base(), TREE, 'group:params.model', 'group:params.optim', 'before')
+        .treeOrder,
+    ).toEqual({ 'group:params': ['group:params.model', 'group:params.optim'] })
+    const refused = base()
+    expect(
+      edits.reorderTreeNode(refused, TREE, 'params.optim.lr', 'params.model.depth', 'after'),
+    ).toBe(refused)
   })
 
-  it('reorders columns and re-sorts pinned groups by the shared order', () => {
-    const definition = base({ pinnedColumnIds: { left: ['a', 'b'], right: [] } })
-    const next = edits.reorderColumns(definition, 'b', 'a', 'before')
-    expect(next.columnOrderIds).toEqual(['variant', 'status', 'b', 'a'])
-    expect(next.pinnedColumnIds.left).toEqual(['b', 'a'])
-    expect(edits.reorderColumns(definition, 'a', 'a', 'after')).toBe(definition)
-    expect(edits.reorderColumns(definition, 'missing', 'a', 'after')).toBe(definition)
+  it('pins at the end of the left zone, folds stored right pins in and unpins', () => {
+    let definition = base({ pinnedColumnIds: { left: ['a'], right: ['r'] } })
+    expect(edits.pinnedOrder(definition)).toEqual(['a', 'r'])
+    definition = edits.setColumnPinned(definition, 'b', true)
+    expect(definition.pinnedColumnIds).toEqual({ left: ['a', 'r', 'b'], right: [] })
+    expect(edits.setColumnPinned(definition, 'variant', true)).toBe(definition)
+    expect(edits.setColumnPinned(definition, 'b', true)).toBe(definition)
+    definition = edits.reorderPinned(definition, 'b', 'a', 'before')
+    expect(definition.pinnedColumnIds.left).toEqual(['b', 'a', 'r'])
+    expect(edits.setColumnPinned(definition, 'a', false).pinnedColumnIds.left).toEqual(['b', 'r'])
   })
 
-  it.each([
-    [3.7, 3],
-    [0, 1],
-    [Number.NaN, 1],
-  ])('sets max lines %d → %d', (value, expected) => {
-    expect(edits.setMaxLines(base(), value).maxLines).toBe(expected)
+  it('toggles collapsed groups and stats choices', () => {
+    const collapsed = edits.toggleGroupCollapsed(base(), 'group:metrics.eval')
+    expect(collapsed.collapsedGroups).toEqual(['group:metrics.eval'])
+    expect(edits.toggleGroupCollapsed(collapsed, 'group:metrics.eval').collapsedGroups).toEqual([])
+    let stats = edits.setStatsSort(base(), 'metrics.clip', 'std')
+    stats = edits.setStatsDisplay(stats, 'metrics.clip', 'p50/p99')
+    // Choosing a display also decides the sort statistic again.
+    expect(stats.statsDisplay).toEqual({ 'metrics.clip': 'p50/p99' })
+    expect(stats.statsSort).toEqual({})
+    expect(edits.setStatsDisplay(stats, 'metrics.clip', null).statsDisplay).toEqual({})
+    expect(edits.setStatsSort(stats, 'metrics.clip', 'p99').statsSort).toEqual({
+      'metrics.clip': 'p99',
+    })
   })
 })
 
@@ -135,14 +175,17 @@ describe('isPristineView', () => {
   const clean = { showAllColumns: false, showAllRows: false, hasTemporarySort: false }
   it.each<[string, ExperimentResultsViewDefinition, typeof clean, boolean]>([
     ['defaults', base(), clean, true],
-    ['custom order', base({ columnOrderIds: ['status', 'variant', 'a', 'b'] }), clean, false],
-    ['hidden column', base({ hiddenColumnIds: ['a'] }), clean, false],
+    ['tree order', base({ treeOrder: { $root: ['group:metrics'] } }), clean, false],
+    ['legacy order', base({ columnOrderIds: ['status', 'variant'] }), clean, false],
+    ['hidden node', base({ nodeVisibility: { 'params.lr': false } }), clean, false],
+    ['collapsed group', base({ collapsedGroups: ['group:metrics.eval'] }), clean, false],
+    ['stats display', base({ statsDisplay: { 'metrics.clip': 'p99' } }), clean, false],
     ['decimal places', base({ decimalPlaces: { a: 1 } }), clean, false],
     ['max lines', base({ maxLines: 2 }), clean, false],
     ['temporary sort', base(), { ...clean, hasTemporarySort: true }, false],
     ['show all rows', base(), { ...clean, showAllRows: true }, false],
   ])('%s', (_name, definition, transient, expected) => {
-    expect(edits.isPristineView(definition, COLUMNS, transient)).toBe(expected)
+    expect(edits.isPristineView(definition, transient)).toBe(expected)
   })
 })
 

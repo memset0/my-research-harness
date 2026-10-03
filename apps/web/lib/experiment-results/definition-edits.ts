@@ -5,62 +5,127 @@
 // preference requirements).
 
 import { reorderIds, reorderItems } from './layout'
+import { type ColumnTree, childIds, descendantIds } from './tree'
 import type { DropEdge } from './types'
 import {
   clampDecimalPlaces,
   type ExperimentResultsViewDefinition as Definition,
   normalizeMaxLines,
-  type ResultsViewPinSide,
   type ResultsViewRowFilter,
   type ResultsViewRowOverride,
   type ResultsViewSortRule,
   type ResultsViewSotaMode,
 } from './views'
 
-export function setColumnVisible(
+/**
+ * Check or clear a tree node: the choice is stored on that node and every
+ * descendant's own choice is removed, so the descendants (and columns that
+ * appear later) inherit it.
+ */
+export function setNodeVisible(
   definition: Definition,
-  columnId: string,
+  tree: ColumnTree,
+  nodeId: string,
   visible: boolean,
 ): Definition {
-  const hidden = new Set(definition.hiddenColumnIds)
-  if (visible) hidden.delete(columnId)
-  else hidden.add(columnId)
-  return { ...definition, hiddenColumnIds: Array.from(hidden) }
+  const node = tree.nodes.get(nodeId)
+  if (!node) return definition
+  const nodeVisibility = { ...definition.nodeVisibility }
+  for (const id of descendantIds(node)) delete nodeVisibility[id]
+  nodeVisibility[nodeId] = visible
+  return { ...definition, nodeVisibility }
 }
 
-/** Pin to a side (appended to that side's order) or unpin with `null`. */
-export function setColumnPin(
+/**
+ * Move a tree node before or after a sibling. A drop outside the node's own
+ * parent is refused (same instance returned): groups come from result paths.
+ */
+export function reorderTreeNode(
+  definition: Definition,
+  tree: ColumnTree,
+  sourceId: string,
+  targetId: string,
+  edge: DropEdge,
+): Definition {
+  const source = tree.nodes.get(sourceId)
+  const target = tree.nodes.get(targetId)
+  if (!source || !target || source.parentId !== target.parentId) return definition
+  const current = childIds(tree, source.parentId)
+  const next = reorderIds(current, sourceId, targetId, edge)
+  if (next === current) return definition
+  return { ...definition, treeOrder: { ...definition.treeOrder, [source.parentId]: next } }
+}
+
+/** The pinned zone order after the Variant column (stored right pins render last). */
+export function pinnedOrder(definition: Definition): string[] {
+  return [...definition.pinnedColumnIds.left, ...definition.pinnedColumnIds.right]
+}
+
+/** Pin a column at the end of the left zone, or unpin it (it returns to its group). */
+export function setColumnPinned(
   definition: Definition,
   columnId: string,
-  side: ResultsViewPinSide | null,
+  pinned: boolean,
 ): Definition {
-  const next = {
-    left: definition.pinnedColumnIds.left.filter((id) => id !== columnId),
-    right: definition.pinnedColumnIds.right.filter((id) => id !== columnId),
-  }
-  if (side) next[side].push(columnId)
-  return { ...definition, pinnedColumnIds: next }
+  if (columnId === 'variant') return definition
+  const current = pinnedOrder(definition)
+  if (pinned === current.includes(columnId)) return definition
+  const left = pinned ? [...current, columnId] : current.filter((id) => id !== columnId)
+  return { ...definition, pinnedColumnIds: { left, right: [] } }
 }
 
-/** Move a column; pinned groups follow the shared order. */
-export function reorderColumns(
+/** Reorder the pinned zone (the order of the tree's pinned section). */
+export function reorderPinned(
   definition: Definition,
   sourceId: string,
   targetId: string,
   edge: DropEdge,
 ): Definition {
-  const columnOrderIds = reorderIds(definition.columnOrderIds, sourceId, targetId, edge)
-  if (columnOrderIds === definition.columnOrderIds) return definition
-  const left = new Set(definition.pinnedColumnIds.left)
-  const right = new Set(definition.pinnedColumnIds.right)
+  const current = pinnedOrder(definition)
+  const left = reorderIds(current, sourceId, targetId, edge)
+  if (left === current) return definition
+  return { ...definition, pinnedColumnIds: { left, right: [] } }
+}
+
+/** Collapse a header group to one placeholder column, or expand it again. */
+export function toggleGroupCollapsed(definition: Definition, groupId: string): Definition {
+  const collapsed = definition.collapsedGroups.includes(groupId)
   return {
     ...definition,
-    columnOrderIds,
-    pinnedColumnIds: {
-      left: columnOrderIds.filter((id) => left.has(id)),
-      right: columnOrderIds.filter((id) => right.has(id)),
-    },
+    collapsedGroups: collapsed
+      ? definition.collapsedGroups.filter((id) => id !== groupId)
+      : [...definition.collapsedGroups, groupId],
   }
+}
+
+/**
+ * Choose a stats column's display (null: the column's default). Choosing a
+ * display also decides its sort statistic again, so a separate sort choice
+ * is cleared.
+ */
+export function setStatsDisplay(
+  definition: Definition,
+  columnId: string,
+  selection: string | null,
+): Definition {
+  const statsDisplay = { ...definition.statsDisplay }
+  if (selection === null) delete statsDisplay[columnId]
+  else statsDisplay[columnId] = selection
+  const statsSort = { ...definition.statsSort }
+  delete statsSort[columnId]
+  return { ...definition, statsDisplay, statsSort }
+}
+
+/** Sort, filter and rank a stats column by one statistic (null: follow the display). */
+export function setStatsSort(
+  definition: Definition,
+  columnId: string,
+  stat: string | null,
+): Definition {
+  const statsSort = { ...definition.statsSort }
+  if (stat === null) delete statsSort[columnId]
+  else statsSort[columnId] = stat
+  return { ...definition, statsSort }
 }
 
 export function reorderRowFilters(
@@ -185,12 +250,11 @@ export function setMaxLines(definition: Definition, maxLines: number): Definitio
  */
 export function isPristineView(
   definition: Definition,
-  defaultColumnIds: readonly string[],
   transient: { showAllColumns: boolean; showAllRows: boolean; hasTemporarySort: boolean },
 ): boolean {
   return (
     definition.hiddenColumnIds.length === 0 &&
-    definition.columnOrderIds.every((id, index) => id === defaultColumnIds[index]) &&
+    definition.columnOrderIds.length === 0 &&
     definition.maxLines === 1 &&
     definition.defaultSortRules.length === 0 &&
     definition.pinnedColumnIds.left.length === 0 &&
@@ -199,6 +263,11 @@ export function isPristineView(
     Object.keys(definition.rowOverrides).length === 0 &&
     Object.keys(definition.sotaModes).length === 0 &&
     Object.keys(definition.decimalPlaces).length === 0 &&
+    Object.keys(definition.nodeVisibility).length === 0 &&
+    Object.keys(definition.treeOrder).length === 0 &&
+    definition.collapsedGroups.length === 0 &&
+    Object.keys(definition.statsDisplay).length === 0 &&
+    Object.keys(definition.statsSort).length === 0 &&
     !transient.showAllColumns &&
     !transient.showAllRows &&
     !transient.hasTemporarySort

@@ -1,7 +1,6 @@
 // Value-to-text helpers and display labels for the Results table.
 
-import type { ResultVariant } from '@memon/core'
-import type { ResultTableColumn, ResultValue, SotaRank } from './types'
+import type { ResultTableColumn, ResultValue, ResultVariant, SotaRank } from './types'
 import type { ResultsViewRowFilterOperator, ResultsViewSortDirection } from './views'
 
 const BR_PATTERN = /<br\s*\/?>/gi
@@ -24,7 +23,7 @@ export function displayText(value: ResultValue): string {
 
 /** Plain-text cell value used for the native title tooltip. */
 export function plainCellValue(column: ResultTableColumn, variant: ResultVariant): string {
-  return displayText(column.getValue(variant))
+  return column.getText(variant).replace(BR_PATTERN, '\n') || '—'
 }
 
 export function isEmptyValue(value: ResultValue): boolean {

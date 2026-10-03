@@ -10,7 +10,7 @@
 // deliberately last because it is the verbose execution detail.
 
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, File, Folder, FolderOpen, RefreshCw } from 'lucide-react'
+import { AlertTriangle, File, Folder, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import {
@@ -36,13 +36,13 @@ import { DocumentArtifactLinkProvider } from './document-artifact-link-provider'
 import { EditMarkdownButton } from './edit-markdown-button'
 import { ExperimentCodeReviews } from './experiment-code-reviews'
 import { ExperimentManagedSection } from './experiment-managed-section'
-import { ExperimentResultsTable } from './experiment-results-table'
+import { ExperimentResultsCard } from './experiment-results-card'
 import { ExperimentStatusEdit } from './experiment-status-edit'
 import { ExperimentWikiCitations } from './experiment-wiki-citations'
 import { LogViewer } from './log-viewer'
 import { ManualRefreshButton } from './manual-refresh-button'
 import { Markdown } from './markdown'
-import { useResourceHeartbeat } from './resource-heartbeat-provider'
+import { RunResultTree } from './run-result-tree'
 import { StatusEdit } from './status-edit'
 import { TimestampLocal } from './timestamp'
 import { Badge } from './ui/badge'
@@ -184,19 +184,31 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           }}
           sources={translationSources('experiment', exp)}
         >
-          {resultsSections.map((section) => (
-            <SectionCard
-              key={`${section.index}:${section.heading}:${section.occurrence}`}
-              section={section}
-              project={project}
-              experimentId={exp.id}
-              documentPath={exp.path ?? exp.resource}
-              documents={exp.documents}
-              runIds={exp.frontMatter.runs}
-              deprecatedRuns={exp.deprecatedRuns}
-              resultsUpdatedAt={exp.resultsUpdatedAt}
-            />
-          ))}
+          {resultsSections.map((section) =>
+            section.managed &&
+            section.source !== 'readme' &&
+            section.occurrence === 1 &&
+            exp.documents?.results ? (
+              <ExperimentResultsCard
+                key={`${section.index}:${section.heading}:${section.occurrence}`}
+                section={section}
+                results={exp.documents.results}
+                updatedAt={exp.resultsUpdatedAt ?? null}
+                project={project}
+                experimentId={exp.id}
+                runIds={exp.frontMatter.runs}
+              />
+            ) : (
+              <SectionCard
+                key={`${section.index}:${section.heading}:${section.occurrence}`}
+                section={section}
+                project={project}
+                experimentId={exp.id}
+                documentPath={exp.path ?? exp.resource}
+                documents={exp.documents}
+              />
+            ),
+          )}
 
           <ExperimentParseWarningsBanner warnings={exp.parseWarnings ?? []} />
           <DocumentDiagnosticsBanner diagnostics={remainingDocumentDiagnostics} />
@@ -208,7 +220,6 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
               experimentId={exp.id}
               documentPath={exp.path ?? exp.resource}
               documents={exp.documents}
-              runIds={exp.frontMatter.runs}
             />
           ))}
         </BodyTranslation>
@@ -240,18 +251,12 @@ function SectionCard({
   experimentId,
   documentPath,
   documents,
-  runIds,
-  deprecatedRuns,
-  resultsUpdatedAt,
 }: {
   section: ExperimentDisplaySection
   project: ProjectTarget
   experimentId: string
   documentPath?: string
   documents?: ExperimentManagedDocumentsPayload | null
-  runIds: string[]
-  deprecatedRuns?: string[]
-  resultsUpdatedAt?: string | null
 }) {
   const { heading, body } = section
   const managedConflict = section.managed && section.source === 'readme'
@@ -266,11 +271,6 @@ function SectionCard({
   const componentDocument = documentPath
     ? { project: projectName(project), host: projectHost(project) ?? undefined, path: documentPath }
     : undefined
-  const resultsDocument = heading === 'Results' ? (documents?.results.data ?? null) : null
-  // Results has no fetch, snapshot state or timer of its own: the
-  // experiment-doc query owns the payload and the shared foreground heartbeat
-  // keeps it current. The button below asks that coordinator to verify now.
-  const { refresh, refreshing } = useResourceHeartbeat()
   return (
     <Card
       className={cn(
@@ -297,26 +297,6 @@ function SectionCard({
           {managedConflict && <Badge variant="destructive">Managed section conflict</Badge>}
           {section.occurrence > 1 && (
             <Badge variant="destructive">Duplicate #{section.occurrence}</Badge>
-          )}
-          {resultsDocument && (
-            <>
-              <ResultsSnapshotStatus
-                key={resultsUpdatedAt ?? 'unknown'}
-                updatedAt={resultsUpdatedAt ?? null}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={refreshing}
-                onClick={() => refresh('manual')}
-                aria-label="Refresh Results"
-                data-results-refresh
-              >
-                <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} aria-hidden />
-                {refreshing ? 'Refreshing…' : 'Refresh'}
-              </Button>
-            </>
           )}
         </div>
       </CardHeader>
@@ -349,16 +329,7 @@ function SectionCard({
             ))}
           </ul>
         )}
-        {section.source === 'yaml' && resultsDocument ? (
-          <ExperimentResultsTable
-            document={resultsDocument}
-            project={project}
-            experimentId={experimentId}
-            runIds={runIds}
-            variantEligibility={documents?.results.variantEligibility}
-            deprecatedRuns={deprecatedRuns}
-          />
-        ) : section.source === 'yaml' && managedKind && managedDocument ? (
+        {section.source === 'yaml' && managedKind && managedDocument ? (
           <ClampedBlock lines={SECTION_MANAGED_CLAMP_LINES} label={heading}>
             <ExperimentManagedSection
               kind={managedKind}
@@ -382,43 +353,6 @@ function SectionCard({
       </CardContent>
     </Card>
   )
-}
-
-function ResultsSnapshotStatus({ updatedAt }: { updatedAt: string | null }) {
-  // Age advances with the shared foreground heartbeat rather than a per-card
-  // second timer; it stops moving when the tab is not in front, which is
-  // exactly when nothing is being checked either.
-  const { tick } = useResourceHeartbeat()
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the heartbeat clock that refreshes now
-  const now = useMemo(() => Date.now(), [tick])
-
-  return (
-    <div
-      className="flex h-7 items-center gap-1.5 rounded-md border bg-muted/30 px-2 text-[10px] text-muted-foreground"
-      data-results-snapshot-status
-      title={updatedAt ? `Results last changed at ${updatedAt}` : 'Results change time unavailable'}
-    >
-      <span className="whitespace-nowrap">
-        Last updated <TimestampLocal value={updatedAt} />
-      </span>
-      <span aria-hidden>·</span>
-      <span className="whitespace-nowrap" data-results-stale-for>
-        Stale for {formatResultsAge(updatedAt, now)}
-      </span>
-    </div>
-  )
-}
-
-function formatResultsAge(updatedAt: string | null, now: number): string {
-  const updatedTime = updatedAt ? new Date(updatedAt).getTime() : Number.NaN
-  if (!Number.isFinite(updatedTime)) return 'unknown'
-  const elapsedSeconds = Math.max(0, Math.floor((now - updatedTime) / 1_000))
-  if (elapsedSeconds < 60) return `${elapsedSeconds}s`
-  const minutes = Math.floor(elapsedSeconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
 }
 
 function RunsCard({
@@ -708,6 +642,7 @@ function RunBody({
             {run.body}
           </Markdown>
         )}
+        {run.result && <RunResultTree result={run.result} />}
         {run.hasReadme && (run.resource || run.path) && (
           <LogViewer project={project} runResource={run.resource} expPath={run.path} />
         )}

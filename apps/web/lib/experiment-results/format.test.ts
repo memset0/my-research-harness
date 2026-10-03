@@ -42,7 +42,7 @@ describe('value text', () => {
 
   it('plainCellValue reads through the column', () => {
     const row = variant('V1', { metrics: { notes: 'x<BR>y' } })
-    const notes = buildColumns(resultsDocument([row])).find((c) => c.id === 'schema:notes')!
+    const notes = buildColumns(resultsDocument([row])).find((c) => c.id === 'metrics.notes')!
     expect(plainCellValue(notes, row)).toBe('x\ny')
   })
 })

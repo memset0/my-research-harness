@@ -98,6 +98,15 @@ export {
 } from './read-index.js'
 export { withRequestScope } from './request-scope.js'
 export {
+  BackendResultsError,
+  type ExperimentResultsSummary,
+  type ExperimentResultsSummaryOptions,
+  experimentResultsSummary,
+  type MemberWindow,
+  refreshStoredResultsSummary,
+  resultsInputSet,
+} from './results-summary.js'
+export {
   BACKEND_ANOMALIES_ROUTE,
   BACKEND_API_PREFIX,
   BACKEND_CODE_PREVIEW_ROUTE,

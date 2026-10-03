@@ -67,13 +67,22 @@ describe('body manifest', () => {
           },
         },
         results: {
-          data: {
-            variants: [
-              { name: 'Baseline method', description: 'Invisible', metrics: { score: 0.9 } },
+          summary: {
+            columns: [
+              {
+                key: 'metrics.score',
+                label: 'Score',
+                description: 'Score prose',
+                valueDescriptions: { high: 'High prose' },
+              },
             ],
-            columnAnnotations: {
-              score: { description: 'Score prose', valueDescriptions: { high: 'High prose' } },
-            },
+            variants: [
+              {
+                name: 'Baseline method',
+                description: 'Invisible',
+                cells: { 'metrics.score': { kind: 'value', source: 'run', value: 0.9 } },
+              },
+            ],
           },
         },
       },

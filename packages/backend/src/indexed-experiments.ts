@@ -10,6 +10,7 @@ import {
   BackendExperimentSummarySchema,
   BackendExperimentsResponseSchema,
   buildExperimentRecord,
+  EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
   type Experiment,
@@ -256,7 +257,19 @@ export function experimentIdentities(listing: {
   return [...ids].sort((left, right) => left.localeCompare(right))
 }
 
-const BUNDLE_FILES = ['README.md', 'implementation.yaml', 'investigation.yaml', 'results.yaml']
+/**
+ * The files whose fingerprints decide whether a cached bundle is re-read: the
+ * README, the two YAML sidecars, the FS v9 description file and a leftover
+ * `results.yaml` (its presence alone is reported, as `LEGACY_RESULTS_YAML`).
+ */
+const BUNDLE_FILES = [
+  'README.md',
+  'implementation.yaml',
+  'investigation.yaml',
+  EXPERIMENT_DESCRIPTION_FILE,
+  'results.yaml',
+]
+const LEGACY_FILE_OBSERVATION = BUNDLE_FILES.length
 
 /**
  * A full Experiment bundle (README plus managed YAML) as `readExperimentDoc`
@@ -279,7 +292,7 @@ export function indexedExperimentBundle(
     async () => {
       const observations = await Promise.all(paths.map((path) => statObservation(path)))
       const readme = observations[0]!.fingerprint
-      const legacy = observations[4]!.fingerprint
+      const legacy = observations[LEGACY_FILE_OBSERVATION]!.fingerprint
       if (readme === null && legacy === null) return { fingerprint: null }
       return {
         fingerprint: digest(observations.map((entry) => entry.fingerprint ?? '-')),
@@ -293,7 +306,7 @@ export function indexedExperimentBundle(
   ) as Promise<Experiment | null>
 }
 
-/** Stats of README, implementation, investigation, results and the legacy file. */
+/** Stats of the bundle files (`BUNDLE_FILES` order) and the legacy single file. */
 type BundleObservation = Array<Stats | null>
 
 /**
@@ -313,7 +326,7 @@ async function readObservedBundle(
     readExperimentManagedDocuments(folder),
   ])
   const parsed = parseExperimentReadme(content, id)
-  if (observed[4]?.isFile()) {
+  if (observed[LEGACY_FILE_OBSERVATION]?.isFile()) {
     parsed.parseWarnings.push({
       message: `MIGRATION_COLLISION: a v4 legacy file ${id}.md exists alongside the v5 folder; remove it manually`,
       severity: 'warning',
@@ -321,13 +334,15 @@ async function readObservedBundle(
   }
   const readmeMtime = observed[0]!.mtimeMs
   let documentMtime = 0
-  for (const [index, document] of [
-    documents.implementation,
-    documents.investigation,
-    documents.results,
+  // Bundle activity: the README plus the managed sources (a leftover
+  // results.yaml is not one).
+  for (const [index, exists] of [
+    documents.implementation.exists,
+    documents.investigation.exists,
+    documents.description?.exists === true,
   ].entries()) {
     const stat = observed[index + 1]
-    if (document.exists && stat) documentMtime = Math.max(documentMtime, stat.mtimeMs)
+    if (exists && stat) documentMtime = Math.max(documentMtime, stat.mtimeMs)
   }
   return buildExperimentRecord(parsed, {
     id,

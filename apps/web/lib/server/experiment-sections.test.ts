@@ -4,10 +4,13 @@ import {
   buildExperimentRecord,
   type Experiment,
   type ExperimentManagedDocuments,
+  generateResultsSummary,
+  parseExperimentDescription,
   parseExperimentReadme,
   parseImplementationYaml,
   parseInvestigationYaml,
-  parseResultsYaml,
+  type ResultsSummary,
+  renderResultsSummaryMarkdown,
 } from '@memon/core'
 import { describe, expect, it } from 'vitest'
 import { buildExperimentDocumentView } from './experiment-sections'
@@ -17,7 +20,8 @@ const POINTERS = {
     '> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.',
   Investigation:
     '> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.',
-  Results: '> Managed in [results.yaml](./results.yaml); read and update that file directly.',
+  Results:
+    "> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.",
 }
 
 function experiment(options: { implementationBody?: string; extra?: string } = {}): Experiment {
@@ -27,7 +31,7 @@ slug: example
 title: Example
 status: OPEN
 archived: false
-runs: [precision-260810-010000]
+runs: [logs/precision-260810-010000]
 hypotheses: []
 tags: []
 created_at: 2026-08-10T00:00:00+00:00
@@ -79,6 +83,27 @@ ${options.extra ?? ''}
   })
 }
 
+const DESCRIPTION = JSON.stringify({
+  experiment_schema_version: 1,
+  groups: {},
+  columns: [
+    {
+      path: 'params.precision',
+      label: 'Precision',
+      type: 'enum',
+      options: ['fp32', 'bf16'],
+    },
+  ],
+  variants: [
+    {
+      id: 'V0001',
+      name: 'BF16',
+      values: { 'params.precision': 'bf16' },
+      runs: ['logs/precision-260810-010000'],
+    },
+  ],
+})
+
 function documents(): ExperimentManagedDocuments {
   return {
     implementation: parseImplementationYaml(`schema_version: 1
@@ -93,35 +118,52 @@ items:
     title: Compare precision
     status: IN_PROGRESS
 `),
-    results: parseResultsYaml(`schema_version: 1
-columns:
-  - key: precision
-    label: Precision
-    group: parameter
-    type: enum
-    options: [fp32, bf16]
-variants:
-  - id: V0001
-    name: BF16
-    status: PLANNED
-    parameters: { precision: bf16 }
-    metrics: {}
-    runs: [precision-260810-010000]
-    attempts: []
-`),
+    results: {
+      kind: 'results',
+      fileName: 'results.yaml',
+      path: '/project/docs/experiments/E0001-example/results.yaml',
+      exists: false,
+      raw: null,
+      data: null,
+      parseErrors: [],
+      parseWarnings: [],
+    },
+    description: parseExperimentDescription(
+      DESCRIPTION,
+      '/project/docs/experiments/E0001-example/experiment.json',
+    ),
   }
+}
+
+/** The generated summary of the fixture: one finished member Run with a result file. */
+function summary(): ResultsSummary {
+  return generateResultsSummary({
+    experimentId: 'E0001-example',
+    experimentDir: 'docs/experiments/E0001-example',
+    description: documents().description!,
+    members: [
+      {
+        path: 'logs/precision-260810-010000',
+        record: { status: 'FINISHED', deprecated: false, stop_reason: null },
+        result: 'path,stat,value\n$experiment_schema_version,,1\nparams.precision,,bf16\n',
+      },
+    ],
+    inputs: {},
+    newestInputMtime: null,
+    generatedAt: '2026-08-10T00:00:00+00:00',
+    generator: { release: 'test', role: 'standalone' },
+  })
 }
 
 describe('Experiment compatibility display projection', () => {
   it('renders valid managed sections through the shared Core Markdown renderer', () => {
-    const view = buildExperimentDocumentView(experiment(), {
-      runs: {
-        'precision-260810-010000': {
-          documentUrl: '/p/research/e/E0001-example?run=precision-260810-010000',
-          wandbUrl: 'https://wandb.ai/research/precision/runs/abc',
-        },
+    const runs = {
+      'logs/precision-260810-010000': {
+        documentUrl: '/p/research/e/E0001-example?run=logs%2Fprecision-260810-010000',
+        wandbUrl: 'https://wandb.ai/research/precision/runs/abc',
       },
-    })
+    }
+    const view = buildExperimentDocumentView(experiment(), { runs, summary: summary() })
 
     const implementation = view.sections.find((section) => section.heading === 'Implementation')
     const results = view.sections.find((section) => section.heading === 'Results')
@@ -129,12 +171,39 @@ describe('Experiment compatibility display projection', () => {
     expect(implementation?.body).toContain('IMP0001')
     expect(implementation?.body).not.toContain('Managed in')
     expect(results?.source).toBe('yaml')
+    // The Web section is the CLI's projection of the same generated summary.
+    expect(results?.body).toBe(renderResultsSummaryMarkdown(summary(), { runs }))
     expect(results?.body).toContain('| Variant | Status | Precision |')
-    expect(results?.body).toContain('| Runs | Attempts |')
+    expect(results?.body).toContain('| Runs | Other Runs |')
     expect(results?.body).toContain(
-      '[`precision-260810-010000`](/p/research/e/E0001-example?run=precision-260810-010000)',
+      '[`logs/precision-260810-010000`](/p/research/e/E0001-example?run=logs%2Fprecision-260810-010000)',
     )
     expect(results?.body).toContain('[W&B](https://wandb.ai/research/precision/runs/abc)')
+  })
+
+  it('renders a failed summary as its error instead of a table', () => {
+    const failed = generateResultsSummary({
+      experimentId: 'E0001-example',
+      experimentDir: 'docs/experiments/E0001-example',
+      description: documents().description!,
+      members: [
+        {
+          path: 'logs/precision-260810-010000',
+          record: { status: 'FINISHED', deprecated: false, stop_reason: null },
+          result: 'path,stat,value\n$experiment_schema_version,,2\n',
+        },
+      ],
+      inputs: {},
+      newestInputMtime: null,
+      generatedAt: '2026-08-10T00:00:00+00:00',
+      generator: { release: 'test', role: 'standalone' },
+    })
+    const results = buildExperimentDocumentView(experiment(), { summary: failed }).sections.find(
+      (section) => section.heading === 'Results',
+    )
+    expect(results?.body).toContain('RESULT_SCHEMA_MISMATCH')
+    expect(results?.body).toContain('memon experiment schema upgrade E0001-example --to 1')
+    expect(results?.body).not.toContain('| Variant |')
   })
 
   it('shows literal README content when a managed pointer conflicts with the schema', () => {

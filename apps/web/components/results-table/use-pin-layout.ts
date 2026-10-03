@@ -9,9 +9,10 @@ import {
 import type { PinLayout } from '../../lib/experiment-results/types'
 
 /**
- * Measures pinned header widths (`thead [data-column-id][data-pinned]`) and
- * keeps sticky offsets current across resizes. `layoutKey` must change when
- * pin side, pin order or the visible column set changes.
+ * Measures pinned header widths (`thead [data-column-id][data-pinned]`, the
+ * single left zone) and keeps sticky offsets current across resizes.
+ * `layoutKey` must change when the pin order or the visible column set
+ * changes.
  */
 export function usePinLayout(
   tableRef: RefObject<HTMLTableElement | null>,
@@ -29,10 +30,9 @@ export function usePinLayout(
     const measure = () => {
       const next = computePinLayout(
         headers().flatMap((header) => {
-          const side = header.dataset.pinned
           const columnId = header.dataset.columnId
-          if ((side !== 'left' && side !== 'right') || !columnId) return []
-          return [{ columnId, side, width: header.getBoundingClientRect().width }] as const
+          if (header.dataset.pinned !== 'left' || !columnId) return []
+          return [{ columnId, width: header.getBoundingClientRect().width }]
         }),
         container.clientWidth,
       )

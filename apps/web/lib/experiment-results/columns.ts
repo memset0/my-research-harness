@@ -1,166 +1,262 @@
-// Column derivation and arrangement for the Results table.
+// Column derivation for the Results table: the always-first Variant column,
+// Status, one column per summary column (declared and undeclared result
+// paths, in the summary's order) and the provenance / evidence columns.
 
-import type { ResultsDocument, ResultsVariantEligibility, ResultVariant } from '@memon/core'
+import type {
+  ResultsCellPayload,
+  ResultsColumnPayload,
+  ResultsSummaryPayload,
+  ResultsValuePayload,
+} from '../dto/experiments'
 import { displayText, isEmptyValue, naturalCollator } from './format'
+import { columnStatOptions, formatResultNumber, formatStatsDisplay, statsSortValue } from './stats'
 import { variantStatusRank } from './status'
-import type { ResultTableColumn } from './types'
-import type { ResultsViewPinSide } from './views'
+import type { ResultTableColumn, ResultValue, ResultVariant } from './types'
 
-/** Run ids excluded from evidence columns (explicit list + per-Variant eligibility). */
-export function excludedRunIds(
-  deprecatedRuns: readonly string[] | undefined,
-  eligibility: readonly ResultsVariantEligibility[] | undefined,
-): Set<string> {
-  const ids = new Set(deprecatedRuns)
-  for (const row of eligibility ?? []) {
-    for (const id of row.deprecatedRuns) ids.add(id)
+/** Tree node id of a partition or group path (`group:params.optim`). */
+export const groupNodeId = (path: string) => `group:${path}`
+/** The built-in group of the provenance and evidence columns. */
+export const PROVENANCE_GROUP = 'group:$provenance'
+export const PROVENANCE_LABEL = 'Provenance'
+
+const PARTITION_LABELS: Readonly<Record<string, string>> = {
+  params: 'Parameters',
+  metrics: 'Metrics',
+  env: 'Environment',
+}
+
+/** Per-column display choices of the active View. */
+export interface ColumnDisplayOptions {
+  statsDisplay?: Readonly<Record<string, string>>
+  statsSort?: Readonly<Record<string, string>>
+  decimalPlaces?: Readonly<Record<string, number>>
+}
+
+/** The label of a group path: its `groups` label, else a partition name, else its last segment. */
+export function groupLabel(path: string, groups: ResultsSummaryPayload['groups']): string {
+  const label = groups[path]?.label
+  if (label) return label
+  if (!path.includes('.')) return PARTITION_LABELS[path] ?? path
+  return path.slice(path.lastIndexOf('.') + 1)
+}
+
+/** Group prefixes of a result path, partition first (`params`, `params.optim`). */
+export function resultPathGroups(path: string): string[] {
+  const segments = path.split('.')
+  return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join('.'))
+}
+
+/** Text of one typed value ('' for an explicitly missing value). */
+export function resultValueText(
+  value: ResultsValuePayload | undefined,
+  column: ResultsColumnPayload | undefined,
+  decimals?: number,
+): string {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'number')
+    return formatResultNumber(value, {
+      decimals: decimals ?? column?.decimals ?? null,
+      format: column?.format ?? null,
+    })
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (Array.isArray(value)) return JSON.stringify(value)
+  return value
+}
+
+/** The effective display selection of a stats-like column. */
+export function columnDisplay(
+  column: ResultsColumnPayload,
+  options: ColumnDisplayOptions,
+): string | null {
+  return options.statsDisplay?.[column.key] ?? column.display ?? null
+}
+
+/** The effective sort statistic of a stats-like column (null: follow the display). */
+export function columnSortStat(
+  column: ResultsColumnPayload,
+  options: ColumnDisplayOptions,
+): string | null {
+  return options.statsSort?.[column.key] ?? column.sortBy ?? null
+}
+
+function aggregatedOverRuns(cell: Extract<ResultsCellPayload, { kind: 'stats' }>): boolean {
+  return cell.over === 'run' && cell.source === 'runs'
+}
+
+/** Display text of a summary cell (markers are rendered separately). */
+export function cellText(
+  cell: ResultsCellPayload | undefined,
+  column: ResultsColumnPayload,
+  options: ColumnDisplayOptions = {},
+): string {
+  if (!cell) return ''
+  const decimals = options.decimalPlaces?.[column.key]
+  const numberOptions = {
+    decimals: decimals ?? column.decimals ?? null,
+    format: column.format ?? null,
   }
-  return ids
+  switch (cell.kind) {
+    case 'value':
+      return resultValueText(cell.value, column, decimals)
+    case 'stats':
+      return formatStatsDisplay(cell.values, columnDisplay(column, options), {
+        ...numberOptions,
+        aggregatedOverRuns: aggregatedOverRuns(cell),
+        ...(cell.runs ? { runs: cell.runs.length } : {}),
+      })
+    case 'mixed':
+      return cell.perRun
+        .map((item) => resultValueText(item.value, column, decimals) || '—')
+        .join(' / ')
+    case 'per_run':
+      return cell.perRun
+        .map((item) =>
+          item.value !== null && typeof item.value === 'object' && !Array.isArray(item.value)
+            ? formatStatsDisplay(
+                item.value as Record<string, number | null>,
+                columnDisplay(column, options),
+                numberOptions,
+              ) || '—'
+            : resultValueText(item.value as ResultsValuePayload, column, decimals) || '—',
+        )
+        .join(' / ')
+  }
+}
+
+/** The comparable value of a summary cell (a stats cell compares its sort statistic). */
+export function cellValue(
+  cell: ResultsCellPayload | undefined,
+  column: ResultsColumnPayload,
+  options: ColumnDisplayOptions = {},
+): ResultValue {
+  if (!cell) return undefined
+  switch (cell.kind) {
+    case 'value': {
+      const value = cell.value
+      if (Array.isArray(value)) return JSON.stringify(value)
+      return value
+    }
+    case 'stats':
+      return statsSortValue(cell.values, {
+        sortBy: columnSortStat(column, options),
+        display: columnDisplay(column, options),
+        aggregatedOverRuns: aggregatedOverRuns(cell),
+      })
+    case 'mixed':
+    case 'per_run':
+      return cellText(cell, column, options)
+        .split(' / ')
+        .filter((text) => text !== '—')
+  }
+}
+
+function resultColumn(
+  column: ResultsColumnPayload,
+  options: ColumnDisplayOptions,
+): ResultTableColumn {
+  const getCell = (variant: ResultVariant) => variant.cells[column.key]
+  return {
+    id: column.key,
+    label: column.label,
+    kind: 'result',
+    result: column,
+    metric: column.partition === 'metrics',
+    statOptions:
+      column.type === 'stats' || (column.stats?.length ?? 0) > 0
+        ? columnStatOptions(column.stats ?? [], column.over)
+        : [],
+    ancestors: resultPathGroups(column.key).map(groupNodeId),
+    getCell,
+    getValue: (variant) => cellValue(getCell(variant), column, options),
+    getText: (variant) => cellText(getCell(variant), column, options),
+  }
+}
+
+function builtin(
+  id: ResultTableColumn['id'],
+  label: string,
+  kind: ResultTableColumn['kind'],
+  getValue: (variant: ResultVariant) => ResultValue,
+  extra: Partial<ResultTableColumn> = {},
+): ResultTableColumn {
+  return {
+    id,
+    label,
+    kind,
+    metric: false,
+    statOptions: [],
+    ancestors: [],
+    getValue,
+    getText: (variant) => {
+      const value = getValue(variant)
+      return isEmptyValue(value) ? '' : displayText(value)
+    },
+    ...extra,
+  }
 }
 
 /**
- * Built-in Variant/Status, then the declared columns in YAML order, then the
- * provenance and evidence columns. Excluded Runs are hidden from Runs/Attempts.
+ * Variant, Status, the summary's columns in its order, then the provenance
+ * and evidence columns (grouped under the built-in Provenance group).
  */
 export function buildColumns(
-  document: ResultsDocument,
-  excludedRuns: ReadonlySet<string> = new Set(),
+  summary: Pick<ResultsSummaryPayload, 'columns'>,
+  options: ColumnDisplayOptions = {},
 ): ResultTableColumn[] {
-  const withoutExcluded = (ids: string[]) =>
-    excludedRuns.size === 0 ? ids : ids.filter((id) => !excludedRuns.has(id))
+  const provenance = [PROVENANCE_GROUP]
   return [
-    {
-      id: 'variant',
-      label: 'Variant',
-      kind: 'variant',
-      getValue: (variant) => `${variant.id} ${variant.name}`,
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      kind: 'status',
-      getValue: (variant) => variant.status,
+    builtin('variant', 'Variant', 'variant', (variant) => `${variant.id} ${variant.name}`),
+    builtin('status', 'Status', 'status', (variant) => variant.status, {
       getSortValue: (variant) => variantStatusRank(variant.status),
-    },
-    ...document.columns.map(
-      (schema): ResultTableColumn => ({
-        id: `schema:${schema.key}`,
-        label: schema.label,
-        kind: 'schema',
-        schema,
-        annotation: document.columnAnnotations?.[schema.key],
-        getValue: (variant) =>
-          schema.group === 'parameter'
-            ? variant.parameters[schema.key]
-            : variant.metrics[schema.key],
-      }),
+    }),
+    ...summary.columns.map((column) => resultColumn(column, options)),
+    builtin('entry', 'Entry', 'entry', (variant) => variant.provenance?.entry, {
+      ancestors: provenance,
+    }),
+    builtin('recipe', 'Recipe', 'recipe', (variant) => variant.provenance?.recipe, {
+      ancestors: provenance,
+    }),
+    builtin('commit', 'Commit', 'commit', (variant) => variant.provenance?.commit, {
+      ancestors: provenance,
+    }),
+    builtin('runs', 'Runs', 'runs', (variant) => [...variant.evidence], { ancestors: provenance }),
+    builtin(
+      'attempts',
+      'Other Runs',
+      'attempts',
+      (variant) => variant.others.map((other) => other.run),
+      {
+        ancestors: provenance,
+      },
     ),
-    {
-      id: 'entry',
-      label: 'Entry',
-      kind: 'entry',
-      getValue: (variant) => variant.provenance?.entry,
-    },
-    {
-      id: 'recipe',
-      label: 'Recipe',
-      kind: 'recipe',
-      getValue: (variant) => variant.provenance?.recipe,
-    },
-    {
-      id: 'commit',
-      label: 'Commit',
-      kind: 'commit',
-      getValue: (variant) => variant.provenance?.commit,
-    },
-    {
-      id: 'runs',
-      label: 'Runs',
-      kind: 'runs',
-      getValue: (variant) => withoutExcluded(variant.runs),
-    },
-    {
-      id: 'attempts',
-      label: 'Attempts',
-      kind: 'attempts',
-      getValue: (variant) => withoutExcluded(variant.attempts),
-    },
   ]
 }
 
-export interface ColumnArrangement {
-  columnsById: Map<string, ResultTableColumn>
-  /** Every column in the saved order (hidden ones included). */
-  orderedColumns: ResultTableColumn[]
-  /** Saved order minus hidden columns (unless show-all is on). */
-  visibleColumns: ResultTableColumn[]
-  /** Rendered header order: pinned-left, unpinned, pinned-right. */
-  orderedVisibleColumns: ResultTableColumn[]
-  pinnedColumnSide: Map<string, ResultsViewPinSide>
-  /** True when the saved order differs from the built-in/YAML order. */
-  hasCustomColumnOrder: boolean
-}
-
-export function arrangeColumns(
-  columns: ResultTableColumn[],
-  layout: {
-    columnOrderIds: string[]
-    hiddenColumnIds: string[]
-    pinnedColumnIds: Record<ResultsViewPinSide, string[]>
-  },
-  showAllColumns: boolean,
-): ColumnArrangement {
-  const columnsById = new Map(columns.map((column) => [column.id, column] as const))
-  const resolve = (ids: string[]) =>
-    ids
-      .map((id) => columnsById.get(id))
-      .filter((column): column is ResultTableColumn => column !== undefined)
-  const hidden = showAllColumns ? new Set<string>() : new Set(layout.hiddenColumnIds)
-  const pinnedColumnSide = new Map<string, ResultsViewPinSide>([
-    ...layout.pinnedColumnIds.left.map((id) => [id, 'left'] as const),
-    ...layout.pinnedColumnIds.right.map((id) => [id, 'right'] as const),
-  ])
-  const orderedColumns = resolve(layout.columnOrderIds)
-  const visibleColumns = orderedColumns.filter((column) => !hidden.has(column.id))
-  const orderedVisibleColumns = [
-    ...resolve(layout.pinnedColumnIds.left).filter((column) => !hidden.has(column.id)),
-    ...visibleColumns.filter((column) => !pinnedColumnSide.has(column.id)),
-    ...resolve(layout.pinnedColumnIds.right).filter((column) => !hidden.has(column.id)),
-  ]
-  return {
-    columnsById,
-    orderedColumns,
-    visibleColumns,
-    orderedVisibleColumns,
-    pinnedColumnSide,
-    hasCustomColumnOrder: layout.columnOrderIds.some(
-      (columnId, index) => columnId !== columns[index]?.id,
-    ),
-  }
-}
-
-/** Distinct non-empty display values of a column, natural-sorted. Arrays contribute members. */
+/** Distinct non-empty display values of a column, natural-sorted. Lists contribute members. */
 export function distinctValues(variants: ResultVariant[], column: ResultTableColumn): string[] {
   const values = new Set<string>()
   for (const variant of variants) {
-    const value = column.getValue(variant)
-    if (Array.isArray(value)) {
-      for (const item of value) values.add(displayText(item))
-    } else if (!isEmptyValue(value)) {
-      values.add(displayText(value))
+    if (column.kind === 'runs' || column.kind === 'attempts') {
+      const value = column.getValue(variant)
+      if (Array.isArray(value)) for (const item of value) values.add(displayText(item))
+      continue
     }
+    const text = column.getText(variant)
+    if (text !== '') values.add(text.replace(/<br\s*\/?>/gi, '\n'))
   }
   return Array.from(values).sort((left, right) => naturalCollator.compare(left, right))
 }
 
-/** The exact `value_descriptions` entry for a scalar cell, if any. */
+/** The exact `valueDescriptions` entry for a single-value cell, if any. */
 export function resultValueDescription(
   column: ResultTableColumn,
   variant: ResultVariant,
 ): string | undefined {
-  const descriptions = column.annotation?.valueDescriptions
+  const descriptions = column.result?.valueDescriptions
   if (!descriptions) return undefined
-  const value = column.getValue(variant)
-  if (value === null || value === undefined || Array.isArray(value)) return undefined
-  return descriptions[String(value)]
+  const cell = column.getCell?.(variant)
+  if (cell?.kind !== 'value' || cell.value === null) return undefined
+  // Keyed by the value's textual form as written, never by its formatting.
+  const text = Array.isArray(cell.value) ? JSON.stringify(cell.value) : String(cell.value)
+  return descriptions[text]
 }

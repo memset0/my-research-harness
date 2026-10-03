@@ -2,9 +2,8 @@
 // natural Variant-ID order and finally source order. A column may sort by a
 // key other than its displayed value (Status sorts by lifecycle order).
 
-import type { ResultVariant } from '@memon/core'
 import { isEmptyValue, naturalCollator, valueText } from './format'
-import type { ResultTableColumn, ResultValue } from './types'
+import type { ResultTableColumn, ResultValue, ResultVariant } from './types'
 import type { ResultsViewSortDirection, ResultsViewSortRule } from './views'
 
 export type SortKey = Omit<ResultsViewSortRule, 'id'>

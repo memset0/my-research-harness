@@ -5,6 +5,15 @@
 
 import { z } from 'zod'
 import { JournalInvocationRecordSchema } from './journal/invocation.js'
+import type { ResultsDiagnostic } from './results/diagnostics.js'
+import type { ResultValue } from './results/result-file.js'
+import type {
+  ResultsSummary,
+  ResultsSummaryError,
+  SummaryCell,
+  SummaryColumn,
+  SummaryVariant,
+} from './results/summary.js'
 import { VARIANT_STATUS_VALUES } from './types.js'
 
 export const BACKEND_API_MAJOR = 1 as const
@@ -264,6 +273,46 @@ const BackendRunSectionsSchema = z
   })
   .strict()
 
+/** One row of a Run's `result.csv` (reserved rows are reported separately). */
+export const BackendRunResultRowSchema = z
+  .object({
+    /** The result path (`metrics.eval.fid`) as written. */
+    key: z.string().min(1).max(4096),
+    /** The statistic of a `stats` row; null for a scalar row. */
+    stat: z.string().min(1).max(256).nullable(),
+    /** The cell text exactly as written (empty = explicit missing). */
+    value: z.string().max(256 * 1024),
+    /** 1-based line in the file. */
+    line: z.number().int().positive(),
+  })
+  .strict()
+export type BackendRunResultRow = z.infer<typeof BackendRunResultRowSchema>
+
+export const BackendRunResultSchema = z
+  .object({
+    /** Project-relative `result.csv`. */
+    resource: BackendOpaqueResourceIdSchema,
+    /** The `$experiment_schema_version` row, when readable. */
+    schemaVersion: z.number().int().positive().nullable(),
+    rows: z.array(BackendRunResultRowSchema).max(20_000),
+    /** More rows exist than the response carries. */
+    truncated: z.boolean(),
+    diagnostics: z
+      .array(
+        z
+          .object({
+            code: z.string().min(1).max(256),
+            severity: z.enum(['error', 'warning', 'info']),
+            line: z.number().int().positive().optional(),
+            message: z.string().max(64 * 1024),
+          })
+          .strict(),
+      )
+      .max(10_000),
+  })
+  .strict()
+export type BackendRunResult = z.infer<typeof BackendRunResultSchema>
+
 export const BackendRunDetailSchema = BackendRunSummarySchema.extend({
   sections: BackendRunSectionsSchema,
   body: z.string(),
@@ -285,6 +334,12 @@ export const BackendRunDetailSchema = BackendRunSummarySchema.extend({
     .max(10_000),
   warningsRaw: z.string().nullable(),
   resources: z.null(),
+  /**
+   * FS v9: the Run's `result.csv` as parsed rows (null when the Run has no
+   * result file). Rows keep their file order; a statistic row carries its
+   * `stat`. Optional so a pre-v9 Backend's Run detail still validates.
+   */
+  result: BackendRunResultSchema.nullable().optional(),
 }).strict()
 export type BackendRunDetail = z.infer<typeof BackendRunDetailSchema>
 
@@ -528,6 +583,11 @@ const BackendResultProvenanceSchema = z
       .optional(),
   })
   .strict()
+/**
+ * @deprecated The FS v8 `results.yaml` document. No FS v9 route serves it:
+ * Results cross the boundary as `BackendResultsSummarySchema`. Kept only for
+ * v8 tooling that still validates a parsed `results.yaml`.
+ */
 export const BackendResultsDocumentSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -571,28 +631,567 @@ export const BackendResultsDocumentSchema = z
   })
   .strict()
 
+// ---------- FS v9 Results summary (experiment-results-summary) ----------
+//
+// The generated Results summary of an Experiment crosses the boundary in this
+// camelCase, path-free projection: columns are addressed by their result path
+// (`key`), Runs by their project-relative path, and the cache bookkeeping
+// (input fingerprints, digest, generator, generation time) stays on the
+// server. A failed summary carries only its error: never a Variant row.
+
+const RESULT_TEXT_MAX = 256 * 1024
+/** A result path (`metrics.eval.fid`) or group prefix; never a filesystem path. */
+const BackendResultKeySchema = z.string().min(1).max(1024)
 /**
- * v6 read-time projection of Run deprecation onto a Variant's materialized
- * metrics. Never persisted alongside results.yaml — the served document
- * keeps its stored numbers, and this array tells the reader which of them
- * lost their evidence. Mirrors `ResultsVariantEligibility` in core.
+ * A project-relative Run path as the Experiment README declares it. Display
+ * and link data only (never handed to a filesystem resolver), so unbranded.
  */
-export const BackendResultsVariantEligibilitySchema = z
+const BackendResultRunSchema = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine(isPortableReference, 'Run reference must be portable and relative')
+const BackendResultListSchema = z.array(z.unknown()).max(10_000)
+/** A typed result value: scalar, explicit missing (`null`) or a JSON list. */
+export const BackendResultValueSchema = z.union([
+  z.string().max(RESULT_TEXT_MAX),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+  BackendResultListSchema,
+])
+export type BackendResultValue = z.infer<typeof BackendResultValueSchema>
+
+/** Statistic key (`mean`, `max.p99`) → value; null for an explicitly missing statistic. */
+export const BackendResultStatValuesSchema = z
+  .record(z.string().min(1).max(64), z.number().finite().nullable())
+  .refine((value) => Object.keys(value).length <= 1024, 'too many statistics')
+
+const BackendResultsDiagnosticSchema = z
   .object({
-    variantId: z.string().min(1).max(256),
-    runs: z.array(BackendOpaqueResourceIdSchema).max(10_000),
-    deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000),
-    eligibleRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000),
-    hasMetrics: z.boolean(),
-    metricsValidity: z.enum(['valid', 'partial', 'unavailable']),
+    code: z.string().min(1).max(256),
+    severity: z.enum(['error', 'warning', 'info']),
+    file: z.string().min(1).max(2048),
+    field: z.string().max(2048).optional(),
+    line: z.number().int().positive().optional(),
+    message: z.string().max(64 * 1024),
   })
   .strict()
-export type BackendResultsVariantEligibility = z.infer<
-  typeof BackendResultsVariantEligibilitySchema
->
+export type BackendResultsDiagnostic = z.infer<typeof BackendResultsDiagnosticSchema>
+
+export const BackendResultsColumnSchema = z
+  .object({
+    key: BackendResultKeySchema,
+    label: z.string().min(1).max(4096),
+    type: z.enum(['string', 'number', 'boolean', 'enum', 'list', 'stats']),
+    declared: z.boolean(),
+    partition: z.enum(['params', 'metrics', 'env']),
+    /** The group directly containing the column (a partition at least). */
+    group: BackendResultKeySchema,
+    /** Default visibility from the description file (`env` hidden by default). */
+    hidden: z.boolean(),
+    unit: z.string().min(1).max(256).optional(),
+    direction: z.enum(['higher', 'lower']).nullable().optional(),
+    decimals: z.number().int().min(0).max(10).optional(),
+    format: z.enum(['auto', 'fixed', 'scientific', 'percent']).optional(),
+    options: z
+      .array(z.union([z.string().max(RESULT_TEXT_MAX), z.number().finite(), z.boolean()]))
+      .max(10_000)
+      .optional(),
+    description: z.string().max(RESULT_TEXT_MAX).optional(),
+    valueDescriptions: z
+      .record(z.string().min(1).max(RESULT_TEXT_MAX), z.string().max(RESULT_TEXT_MAX))
+      .refine((value) => Object.keys(value).length <= 10_000, 'too many value descriptions')
+      .optional(),
+    across: z.string().min(1).max(256).optional(),
+    over: z.string().min(1).max(256).optional(),
+    /** Declared statistics, else the statistic keys the cells carry. */
+    stats: z.array(z.string().min(1).max(64)).max(1024).optional(),
+    /** Default display: a vocabulary statistic or a display template. */
+    display: z.string().min(1).max(64).optional(),
+    /** Default statistic for sorting, filtering and SOTA. */
+    sortBy: z.string().min(1).max(64).optional(),
+  })
+  .strict()
+export type BackendResultsColumn = z.infer<typeof BackendResultsColumnSchema>
+
+const BackendResultsCellBase = {
+  /** `run`: one evidence Run; `runs`: several; `planned` / `frozen`: declared values. */
+  source: z.enum(['run', 'runs', 'planned', 'frozen']),
+  /** Evidence (or frozen) Runs the cell was computed from. */
+  runs: z.array(BackendResultRunSchema).max(10_000).optional(),
+  /** The Variant's planned value when an evidence value differs from it. */
+  planned: BackendResultValueSchema.optional(),
+  differsFromPlan: z.literal(true).optional(),
+}
+
+export const BackendResultsCellSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('value'),
+      ...BackendResultsCellBase,
+      value: BackendResultValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('stats'),
+      ...BackendResultsCellBase,
+      across: z.string().max(256).nullable(),
+      /** `run` for statistics computed across evidence Runs. */
+      over: z.string().max(256).nullable(),
+      values: BackendResultStatValuesSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('mixed'),
+      ...BackendResultsCellBase,
+      perRun: z
+        .array(z.object({ run: BackendResultRunSchema, value: BackendResultValueSchema }).strict())
+        .max(10_000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('per_run'),
+      ...BackendResultsCellBase,
+      perRun: z
+        .array(
+          z
+            .object({
+              run: BackendResultRunSchema,
+              value: z.union([BackendResultValueSchema, BackendResultStatValuesSchema]),
+            })
+            .strict(),
+        )
+        .max(10_000),
+    })
+    .strict(),
+])
+export type BackendResultsCell = z.infer<typeof BackendResultsCellSchema>
+
+export const BackendResultsVariantSchema = z
+  .object({
+    id: z.string().min(1).max(256),
+    name: z.string().min(1).max(4096),
+    description: z.string().max(RESULT_TEXT_MAX).optional(),
+    /** Effective status (declared plan/judgment state or derived from Run records). */
+    status: z.enum(VARIANT_STATUS_VALUES),
+    declaredStatus: z.enum(VARIANT_STATUS_VALUES).nullable(),
+    /** Evidence Runs: FINISHED and not deprecated. */
+    evidence: z.array(BackendResultRunSchema).max(10_000),
+    /** Every other Run the Variant lists, with its status. */
+    others: z
+      .array(
+        z
+          .object({
+            run: BackendResultRunSchema,
+            status: z.string().min(1).max(64),
+            deprecated: z.boolean(),
+            stopReason: z.string().max(4096).nullable(),
+            missing: z.literal(true).optional(),
+          })
+          .strict(),
+      )
+      .max(10_000),
+    provenance: z
+      .object({
+        repo: z.string().min(1).max(2048).optional(),
+        commit: z.string().min(1).max(256).optional(),
+        entry: BackendPortableDisplayReferenceSchema.optional(),
+        recipe: BackendPortableDisplayReferenceSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    /** Run paths the frozen historical values were attributed to. */
+    frozenRuns: z.array(z.string().min(1).max(2048)).max(10_000).optional(),
+    cells: z
+      .record(BackendResultKeySchema, BackendResultsCellSchema)
+      .refine((value) => Object.keys(value).length <= 100_000, 'too many cells'),
+  })
+  .strict()
+export type BackendResultsVariant = z.infer<typeof BackendResultsVariantSchema>
+
+export const BACKEND_RESULTS_ERROR_CODES = [
+  'RESULTS_NOT_FOUND',
+  'INVALID_RESULTS',
+  'RESULT_SCHEMA_MISMATCH',
+  'RESULT_DUPLICATE_ROW',
+] as const
+export type BackendResultsErrorCode = (typeof BACKEND_RESULTS_ERROR_CODES)[number]
+
+/** One offending input of a failed summary. */
+export const BackendResultsErrorFileSchema = z
+  .object({
+    /** Project-relative file. */
+    file: z.string().min(1).max(2048),
+    /** Recorded `experiment_schema_version` (null when none can be read). */
+    version: z.number().int().nullable().optional(),
+    duplicates: z
+      .array(
+        z
+          .object({
+            key: BackendResultKeySchema,
+            stat: z.string().max(64).nullable(),
+            lines: z.array(z.number().int().positive()).max(10_000),
+          })
+          .strict(),
+      )
+      .max(10_000)
+      .optional(),
+    reason: z
+      .string()
+      .max(64 * 1024)
+      .optional(),
+  })
+  .strict()
+export type BackendResultsErrorFile = z.infer<typeof BackendResultsErrorFileSchema>
+
+/** Why a summary failed, for that Experiment only. */
+export const BackendResultsSummaryErrorSchema = z
+  .object({
+    code: z.enum(BACKEND_RESULTS_ERROR_CODES),
+    message: z
+      .string()
+      .min(1)
+      .max(64 * 1024),
+    files: z.array(BackendResultsErrorFileSchema).max(10_000),
+    /** `memon experiment schema upgrade <id> --to <N>` for a version mismatch. */
+    upgradeCommand: z.string().min(1).max(1024).optional(),
+    expectedVersion: z.number().int().positive().optional(),
+    /** A leftover `results.yaml` (an unmigrated FS v8 bundle). */
+    legacyResultsYaml: z.literal(true).optional(),
+    diagnostics: z.array(BackendResultsDiagnosticSchema).max(10_000).optional(),
+  })
+  .strict()
+export type BackendResultsSummaryError = z.infer<typeof BackendResultsSummaryErrorSchema>
+
+export const BackendResultsSummarySchema = z
+  .object({
+    experimentSchemaVersion: z.number().int().positive().nullable(),
+    outcome: z.enum(['ok', 'failed']),
+    error: BackendResultsSummaryErrorSchema.nullable(),
+    /** Display metadata of path groups (`params.optim` → label). */
+    groups: z
+      .record(
+        BackendResultKeySchema,
+        z
+          .object({
+            label: z.string().min(1).max(4096).optional(),
+            description: z.string().max(RESULT_TEXT_MAX).optional(),
+            hidden: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .refine((value) => Object.keys(value).length <= 10_000, 'too many groups'),
+    columns: z.array(BackendResultsColumnSchema).max(10_000),
+    variants: z.array(BackendResultsVariantSchema).max(10_000),
+    diagnostics: z.array(BackendResultsDiagnosticSchema).max(10_000),
+  })
+  .strict()
+  .superRefine((summary, ctx) => {
+    if (summary.outcome === 'failed' && (summary.error === null || summary.variants.length > 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'a failed Results summary carries its error and no Variant row',
+      })
+    }
+    if (summary.outcome === 'ok' && summary.error !== null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'an ok Results summary has no error' })
+    }
+  })
+export type BackendResultsSummary = z.infer<typeof BackendResultsSummarySchema>
+
+/**
+ * The body of a failed Results snapshot (`400 INVALID_RESULTS`, `404
+ * RESULTS_NOT_FOUND`, `422 RESULT_SCHEMA_MISMATCH` / `RESULT_DUPLICATE_ROW`),
+ * identical in standalone and central mode.
+ */
+export const BackendResultsErrorResponseSchema = z
+  .object({
+    error: z
+      .object({
+        code: z.enum(BACKEND_RESULTS_ERROR_CODES),
+        message: z
+          .string()
+          .min(1)
+          .max(64 * 1024),
+      })
+      .strict(),
+    files: z.array(BackendResultsErrorFileSchema).max(10_000),
+    upgradeCommand: z.string().min(1).max(1024).optional(),
+    expectedVersion: z.number().int().positive().optional(),
+    diagnostics: z.array(BackendResultsDiagnosticSchema).max(10_000),
+    /** Newest modification time among the summary's inputs (ISO8601), when known. */
+    updatedAt: z.string().max(128).nullable(),
+  })
+  .strict()
+export type BackendResultsErrorResponse = z.infer<typeof BackendResultsErrorResponseSchema>
+
+/** HTTP status of a failed Results snapshot. */
+export function resultsErrorStatus(code: BackendResultsErrorCode): 400 | 404 | 422 {
+  if (code === 'INVALID_RESULTS') return 400
+  if (code === 'RESULTS_NOT_FOUND') return 404
+  return 422
+}
+
+// ---------- core summary → wire ----------
+
+function isPortableReference(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 2048 &&
+    !value.startsWith('/') &&
+    !value.includes('\\') &&
+    !value.includes('\0') &&
+    !value.split('/').some((segment) => segment === '' || segment === '.' || segment === '..') &&
+    !/%(?:2f|5c)/i.test(value)
+  )
+}
+
+function boundedText(value: string): string {
+  return value.length <= RESULT_TEXT_MAX ? value : `${value.slice(0, RESULT_TEXT_MAX - 1)}…`
+}
+
+function wireValue(value: ResultValue | undefined): BackendResultValue {
+  if (value === undefined || value === null) return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') return boundedText(value)
+  if (Array.isArray(value)) return value.slice(0, 10_000)
+  return value
+}
+
+function wireStats(values: Readonly<Record<string, number | null>>): Record<string, number | null> {
+  const out: Record<string, number | null> = {}
+  for (const [key, value] of Object.entries(values))
+    out[key] = typeof value === 'number' && Number.isFinite(value) ? value : null
+  return out
+}
+
+function wireRuns(runs: readonly string[] | undefined): string[] | undefined {
+  return runs === undefined ? undefined : runs.filter(isPortableReference)
+}
+
+function wireCell(cell: SummaryCell): BackendResultsCell {
+  const runs = wireRuns(cell.runs)
+  const base = {
+    source: cell.source,
+    ...(runs === undefined ? {} : { runs }),
+    ...(cell.differs_from_plan
+      ? { planned: wireValue(cell.planned), differsFromPlan: true as const }
+      : {}),
+  }
+  switch (cell.kind) {
+    case 'value':
+      return { kind: 'value', ...base, value: wireValue(cell.value) }
+    case 'stats':
+      return {
+        kind: 'stats',
+        ...base,
+        across: cell.across,
+        over: cell.over,
+        values: wireStats(cell.values),
+      }
+    case 'mixed':
+      return {
+        kind: 'mixed',
+        ...base,
+        perRun: cell.per_run
+          .filter((item) => isPortableReference(item.run))
+          .map((item) => ({ run: item.run, value: wireValue(item.value) })),
+      }
+    case 'per_run':
+      return {
+        kind: 'per_run',
+        ...base,
+        perRun: cell.per_run
+          .filter((item) => isPortableReference(item.run))
+          .map((item) => ({
+            run: item.run,
+            value:
+              item.value !== null && typeof item.value === 'object' && !Array.isArray(item.value)
+                ? wireStats(item.value as Record<string, number | null>)
+                : wireValue(item.value as ResultValue),
+          })),
+      }
+  }
+}
+
+function wireColumn(column: SummaryColumn): BackendResultsColumn {
+  return {
+    key: column.path,
+    label: column.label,
+    type: column.type,
+    declared: column.declared,
+    partition: column.partition,
+    group: column.group,
+    hidden: column.hidden,
+    ...(column.unit === undefined ? {} : { unit: column.unit }),
+    ...(column.direction === undefined ? {} : { direction: column.direction }),
+    ...(column.decimals === undefined ? {} : { decimals: column.decimals }),
+    ...(column.format === undefined
+      ? {}
+      : { format: column.format as NonNullable<BackendResultsColumn['format']> }),
+    ...(column.options === undefined ? {} : { options: [...column.options] }),
+    ...(column.description === undefined ? {} : { description: column.description }),
+    ...(column.value_descriptions === undefined
+      ? {}
+      : { valueDescriptions: { ...column.value_descriptions } }),
+    ...(column.across === undefined ? {} : { across: column.across }),
+    ...(column.over === undefined ? {} : { over: column.over }),
+    ...(column.stats === undefined ? {} : { stats: [...column.stats] }),
+    ...(column.display === undefined ? {} : { display: column.display }),
+    ...(column.sort_by === undefined ? {} : { sortBy: column.sort_by }),
+  }
+}
+
+/**
+ * The display-safe provenance of a Variant: the four known fields only (extra
+ * keys stay in `experiment.json`), portable entry/recipe paths and a
+ * relative or http(s) repository. Anything else is left out rather than
+ * failing the response.
+ */
+function wireProvenance(
+  provenance: Readonly<Record<string, unknown>> | undefined,
+): BackendResultsVariant['provenance'] {
+  if (!provenance) return undefined
+  const text = (key: string) => {
+    const value = provenance[key]
+    return typeof value === 'string' && value.length > 0 ? value : undefined
+  }
+  const portable = (value: string | undefined) => {
+    const normalized = value?.startsWith('./') ? value.slice(2) : value
+    return normalized !== undefined && isPortableReference(normalized) ? normalized : undefined
+  }
+  const repo = text('repo')
+  const out: NonNullable<BackendResultsVariant['provenance']> = {}
+  if (repo && repo.length <= 2048 && (repo === '.' || isPortableReference(repo) || isWebUrl(repo)))
+    out.repo = repo
+  const commit = text('commit')
+  if (commit && commit.length <= 256) out.commit = commit
+  const entry = portable(text('entry'))
+  if (entry) out.entry = entry
+  const recipe = portable(text('recipe'))
+  if (recipe) out.recipe = recipe
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function isWebUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password
+  } catch {
+    return false
+  }
+}
+
+function wireVariant(variant: SummaryVariant): BackendResultsVariant {
+  const cells: Record<string, BackendResultsCell> = {}
+  for (const [key, cell] of Object.entries(variant.cells)) cells[key] = wireCell(cell)
+  const provenance = wireProvenance(variant.provenance)
+  return {
+    id: variant.id,
+    name: variant.name,
+    ...(variant.description === undefined ? {} : { description: boundedText(variant.description) }),
+    status: variant.status,
+    declaredStatus: variant.declared_status,
+    evidence: variant.evidence.filter(isPortableReference),
+    others: variant.others
+      .filter((other) => isPortableReference(other.run))
+      .map((other) => ({
+        run: other.run,
+        status: other.status,
+        deprecated: other.deprecated,
+        stopReason: other.stop_reason,
+        ...(other.missing ? { missing: true as const } : {}),
+      })),
+    ...(provenance ? { provenance } : {}),
+    ...(variant.frozen_runs ? { frozenRuns: [...variant.frozen_runs] } : {}),
+    cells,
+  }
+}
+
+function wireDiagnostic(diagnostic: ResultsDiagnostic): BackendResultsDiagnostic {
+  return {
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    file: diagnostic.file,
+    ...(diagnostic.field === undefined ? {} : { field: diagnostic.field }),
+    ...(diagnostic.line === undefined ? {} : { line: diagnostic.line }),
+    message: diagnostic.message,
+  }
+}
+
+function wireError(error: ResultsSummaryError): BackendResultsSummaryError {
+  return {
+    code: error.code,
+    message: error.message,
+    files: error.files.map((file) => ({
+      file: file.path,
+      ...(file.version === undefined ? {} : { version: file.version }),
+      ...(file.duplicates === undefined
+        ? {}
+        : {
+            duplicates: file.duplicates.map((item) => ({
+              key: item.path,
+              stat: item.stat,
+              lines: [...item.lines],
+            })),
+          }),
+      ...(file.reason === undefined ? {} : { reason: file.reason }),
+    })),
+    ...(error.upgrade_command === undefined ? {} : { upgradeCommand: error.upgrade_command }),
+    ...(error.expected_version === undefined ? {} : { expectedVersion: error.expected_version }),
+    ...(error.legacy_results_yaml ? { legacyResultsYaml: true as const } : {}),
+    ...(error.diagnostics === undefined
+      ? {}
+      : { diagnostics: error.diagnostics.map(wireDiagnostic) }),
+  }
+}
+
+/** The wire projection of a core Results summary (no fingerprints, digest or generator). */
+export function toBackendResultsSummary(summary: ResultsSummary): BackendResultsSummary {
+  const groups: BackendResultsSummary['groups'] = {}
+  for (const [key, group] of Object.entries(summary.groups ?? {})) {
+    groups[key] = {
+      ...(group.label === undefined ? {} : { label: group.label }),
+      ...(group.description === undefined ? {} : { description: group.description }),
+      ...(group.hidden === undefined ? {} : { hidden: group.hidden }),
+    }
+  }
+  const failed = summary.outcome !== 'ok'
+  return {
+    experimentSchemaVersion:
+      typeof summary.experiment_schema_version === 'number' && summary.experiment_schema_version > 0
+        ? summary.experiment_schema_version
+        : null,
+    outcome: failed ? 'failed' : 'ok',
+    error: failed && summary.error ? wireError(summary.error) : null,
+    groups,
+    columns: failed ? [] : summary.columns.map(wireColumn),
+    variants: failed ? [] : summary.variants.map(wireVariant),
+    diagnostics: summary.diagnostics.map(wireDiagnostic),
+  }
+}
+
+/** The error body of a failed Results snapshot. */
+export function toBackendResultsErrorResponse(
+  error: BackendResultsSummaryError,
+  updatedAt: string | null,
+): BackendResultsErrorResponse {
+  return {
+    error: { code: error.code, message: error.message },
+    files: error.files,
+    ...(error.upgradeCommand === undefined ? {} : { upgradeCommand: error.upgradeCommand }),
+    ...(error.expectedVersion === undefined ? {} : { expectedVersion: error.expectedVersion }),
+    diagnostics: error.diagnostics ?? [],
+    updatedAt,
+  }
+}
 
 const BackendParsedManagedDocumentSchema = <T extends z.ZodTypeAny>(
-  kind: 'implementation' | 'investigation' | 'results',
+  kind: 'implementation' | 'investigation',
   data: T,
 ) =>
   z
@@ -607,6 +1206,30 @@ const BackendParsedManagedDocumentSchema = <T extends z.ZodTypeAny>(
     })
     .strict()
 
+/**
+ * The Results source of an FS v9 bundle: the description file's parse state
+ * and the generated summary the Results card renders (ok or failed).
+ */
+export const BackendExperimentResultsDocumentSchema = z
+  .object({
+    kind: z.literal('results'),
+    /** `experiment.json`. */
+    fileName: z.string().min(1).max(256),
+    resource: BackendOpaqueResourceIdSchema,
+    /** The description file exists. */
+    exists: z.boolean(),
+    /** A retired `results.yaml` is still present (lint `LEGACY_RESULTS_YAML`). */
+    legacyResultsYaml: z.boolean(),
+    parseErrors: z.array(BackendParseIssueSchema).max(10_000),
+    parseWarnings: z.array(BackendParseIssueSchema).max(10_000),
+    /** The generated summary; null when it could not be produced at all. */
+    summary: BackendResultsSummarySchema.nullable(),
+  })
+  .strict()
+export type BackendExperimentResultsDocument = z.infer<
+  typeof BackendExperimentResultsDocumentSchema
+>
+
 export const BackendExperimentManagedDocumentsSchema = z
   .object({
     implementation: BackendParsedManagedDocumentSchema(
@@ -617,13 +1240,7 @@ export const BackendExperimentManagedDocumentsSchema = z
       'investigation',
       BackendInvestigationDocumentSchema,
     ),
-    results: BackendParsedManagedDocumentSchema('results', BackendResultsDocumentSchema).extend({
-      /**
-       * One row per Variant, in document order. Empty when the caller did
-       * not resolve deprecation state.
-       */
-      variantEligibility: z.array(BackendResultsVariantEligibilitySchema).max(10_000).default([]),
-    }),
+    results: BackendExperimentResultsDocumentSchema,
   })
   .strict()
 
@@ -719,17 +1336,30 @@ export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.exte
 export const BackendExperimentResponseSchema = BackendExperimentDetailSchema
 export type BackendExperimentDetail = z.infer<typeof BackendExperimentDetailSchema>
 
+/**
+ * `GET /experiments/:id/results`: the current generated Results summary of an
+ * Experiment (regenerated when stale; every input fingerprint re-taken for
+ * the request). Only an `ok` summary is a 200 body; a failed one answers with
+ * `BackendResultsErrorResponseSchema`.
+ */
 export const BackendExperimentResultsResponseSchema = z
   .object({
     project: ProjectNameSchema,
+    /** The description file `experiment.json`. */
     resource: BackendOpaqueResourceIdSchema,
-    document: BackendResultsDocumentSchema,
-    deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000).default([]),
-    variantEligibility: z.array(BackendResultsVariantEligibilitySchema).max(10_000).default([]),
-    updatedAt: z.string().max(128),
-    warnings: z.array(BackendParseIssueSchema).max(10_000),
+    summary: BackendResultsSummarySchema.refine(
+      (summary) => summary.outcome === 'ok',
+      'a Results snapshot carries an ok summary',
+    ),
+    /** Newest modification time among the summary's inputs (ISO8601), when known. */
+    updatedAt: z.string().max(128).nullable(),
+    /** Cache and generation warnings (for example `RESULTS_CACHE_FAILED`). */
+    warnings: z.array(BackendResultsDiagnosticSchema).max(10_000),
   })
   .strict()
+export type BackendExperimentResultsResponse = z.infer<
+  typeof BackendExperimentResultsResponseSchema
+>
 
 export interface BackendRunFileTreeNode {
   type: 'file' | 'dir'

@@ -1,13 +1,13 @@
 'use client'
 
-import type { ResultsVariantEligibility, ResultVariant } from '@memon/core'
 import { Ban, CircleCheck, X } from 'lucide-react'
 import type { ProjectTarget } from '../../lib/api'
 import { resultValueDescription } from '../../lib/experiment-results/columns'
 import { plainCellValue } from '../../lib/experiment-results/format'
 import { pinnedColumnStyle, pinnedOpaqueBackground } from '../../lib/experiment-results/layout'
-import type { PinLayout, ResultTableColumn, SotaRanking } from '../../lib/experiment-results/types'
-import type { ResultsViewPinSide, ResultsViewRowOverride } from '../../lib/experiment-results/views'
+import type { GridItem } from '../../lib/experiment-results/tree'
+import type { PinLayout, ResultVariant, SotaRanking } from '../../lib/experiment-results/types'
+import type { ResultsViewRowOverride } from '../../lib/experiment-results/views'
 import { cn } from '../../lib/utils'
 import {
   ContextMenu,
@@ -28,7 +28,6 @@ export interface ResultCellContext {
   declaredRunIds: ReadonlySet<string>
   maxLines: number
   starredLabels: ReadonlySet<string>
-  pinnedColumnSide: ReadonlyMap<string, ResultsViewPinSide>
   pinLayout: PinLayout
   sotaRanks: ReadonlyMap<string, SotaRanking>
   decimalPlaces: Readonly<Record<string, number>>
@@ -37,17 +36,15 @@ export interface ResultCellContext {
 /** One Variant row; its context menu sets or clears the row override. */
 export function ResultRow({
   variant,
-  columns,
+  items,
   context,
-  eligibility,
   rowOverride,
   canMutate,
   onSetRowOverride,
 }: {
   variant: ResultVariant
-  columns: ResultTableColumn[]
+  items: readonly GridItem[]
   context: ResultCellContext
-  eligibility: ResultsVariantEligibility | undefined
   rowOverride: ResultsViewRowOverride | undefined
   canMutate: boolean
   onSetRowOverride: (variantId: string, override: ResultsViewRowOverride | null) => void
@@ -63,15 +60,20 @@ export function ResultRow({
           data-variant-id={variant.id}
           data-row-override={rowOverride}
         >
-          {columns.map((column) => (
-            <ResultTableCell
-              key={column.id}
-              column={column}
-              variant={variant}
-              context={context}
-              eligibility={eligibility}
-            />
-          ))}
+          {items.map((item) =>
+            item.kind === 'column' ? (
+              <ResultTableCell key={item.id} item={item} variant={variant} context={context} />
+            ) : (
+              <TableCell
+                key={item.id}
+                className="border-r px-2 py-2 text-center align-top text-muted-foreground last:border-r-0"
+                data-collapsed-group={item.groupId}
+                aria-label={`${item.label} collapsed`}
+              >
+                ⋯
+              </TableCell>
+            ),
+          )}
         </TableRow>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56">
@@ -110,20 +112,18 @@ export function ResultRow({
 }
 
 function ResultTableCell({
-  column,
+  item,
   variant,
   context,
-  eligibility,
 }: {
-  column: ResultTableColumn
+  item: Extract<GridItem, { kind: 'column' }>
   variant: ResultVariant
   context: ResultCellContext
-  eligibility: ResultsVariantEligibility | undefined
 }) {
+  const column = item.column
   const starred = context.starredLabels.has(column.label)
-  const metric = column.schema?.group === 'metric'
-  const pinSide = context.pinnedColumnSide.get(column.id)
-  const pinSticky = Boolean(pinSide && context.pinLayout.sticky)
+  const metric = column.metric
+  const pinSticky = item.pinned && context.pinLayout.sticky
   const valueDescription = resultValueDescription(column, variant)
   return (
     <TableCell
@@ -135,10 +135,10 @@ function ResultTableCell({
         starred && 'bg-amber-50/50 dark:bg-amber-950/20',
         pinSticky && pinnedOpaqueBackground(metric, starred, 'cell'),
       )}
-      style={pinnedColumnStyle(column.id, pinSide, context.pinLayout)}
+      style={pinnedColumnStyle(column.id, item.pinned, context.pinLayout)}
       data-column-id={column.id}
-      data-column-group={column.schema?.group}
-      data-pinned={pinSide}
+      data-column-group={metric ? 'metric' : column.kind === 'result' ? 'parameter' : undefined}
+      data-pinned={item.pinned ? 'left' : undefined}
       data-pin-sticky={pinSticky || undefined}
     >
       <AnnotationTooltip description={valueDescription} label={`${column.label} value description`}>
@@ -153,9 +153,7 @@ function ResultTableCell({
             project={context.project}
             experimentId={context.experimentId}
             declaredRunIds={context.declaredRunIds}
-            eligibility={eligibility}
             sotaRank={metric ? context.sotaRanks.get(column.id)?.ranks.get(variant.id) : undefined}
-            decimalPlaces={metric ? context.decimalPlaces[column.id] : undefined}
           />
         </CellClamp>
       </AnnotationTooltip>

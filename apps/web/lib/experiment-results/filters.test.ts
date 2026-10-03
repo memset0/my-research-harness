@@ -8,7 +8,7 @@ import {
   matchesRowFilter,
   matchesScalarFilter,
 } from './filters'
-import { resultsDocument, variant } from './fixtures.test-helpers'
+import { cellScalar, resultsDocument, variant } from './fixtures.test-helpers'
 
 describe('compareFilterValues', () => {
   it.each([
@@ -63,6 +63,46 @@ describe('matchesScalarFilter / matchesRowFilter', () => {
 })
 
 describe('filterVariants', () => {
+  // A stats cell compares its selected statistic; a mixed cell any of its values.
+  it('filters stats columns by their sort statistic and mixed cells by any value', () => {
+    const statRows = [
+      variant('V1', { metrics: { clip: { mean: 0.3, std: 0.02, n: 3 } } }),
+      variant('V2', { metrics: { clip: { mean: 0.5, std: 0.01, n: 3 } } }),
+    ]
+    const document = resultsDocument(statRows, [
+      {
+        key: 'metrics.clip',
+        label: 'CLIP',
+        type: 'stats',
+        declared: true,
+        partition: 'metrics',
+        group: 'metrics',
+        hidden: false,
+        stats: ['mean', 'std', 'n'],
+      },
+    ])
+    const statColumns = buildColumns(document)
+    expect(
+      filterVariants(
+        statRows,
+        statColumns,
+        [{ id: 'f', columnId: 'metrics.clip', operator: 'gt', value: '0.4' }],
+        {},
+        false,
+      ).map((row) => row.id),
+    ).toEqual(['V2'])
+    const bySpread = buildColumns(document, { statsSort: { 'metrics.clip': 'std' } })
+    expect(
+      filterVariants(
+        statRows,
+        bySpread,
+        [{ id: 'f', columnId: 'metrics.clip', operator: 'gt', value: '0.015' }],
+        {},
+        false,
+      ).map((row) => row.id),
+    ).toEqual(['V1'])
+  })
+
   const rows = [
     variant('V1', { metrics: { loss: 0.1 }, status: 'COMPLETED' }),
     variant('V2', { metrics: { loss: 0.2 }, status: 'RUNNING' }),
@@ -70,8 +110,8 @@ describe('filterVariants', () => {
     variant('V3', { metrics: { loss: 0.3 }, status: 'COMPLETED' }),
   ]
   const columns = buildColumns(resultsDocument(rows))
-  const ids = (list: Array<{ id: string; metrics: Record<string, unknown> }>) =>
-    list.map((row) => `${row.id}:${row.metrics.loss}`)
+  const ids = (list: typeof rows) =>
+    list.map((row) => `${row.id}:${cellScalar(row, 'metrics.loss') ?? null}`)
   const filter = (columnId: string, operator: 'eq' | 'neq' | 'gt' | 'lt', value: string) => ({
     id: `${columnId}-${operator}-${value}`,
     columnId,
@@ -81,14 +121,14 @@ describe('filterVariants', () => {
 
   it('returns everything without filters, and for an empty table', () => {
     expect(filterVariants(rows, columns, [], {}, false)).toEqual(rows)
-    expect(filterVariants([], columns, [filter('schema:loss', 'gt', '0')], {}, false)).toEqual([])
+    expect(filterVariants([], columns, [filter('metrics.loss', 'gt', '0')], {}, false)).toEqual([])
   })
 
   it('ANDs filters and keeps duplicate-id rows independent', () => {
     const result = filterVariants(
       rows,
       columns,
-      [filter('schema:loss', 'gt', '0.15'), filter('status', 'eq', 'COMPLETED')],
+      [filter('metrics.loss', 'gt', '0.15'), filter('status', 'eq', 'COMPLETED')],
       {},
       false,
     )
@@ -116,13 +156,13 @@ describe('filterVariants', () => {
   })
 
   it('ignores filters on missing columns', () => {
-    expect(filterVariants(rows, columns, [filter('schema:gone', 'eq', 'x')], {}, false)).toEqual(
+    expect(filterVariants(rows, columns, [filter('metrics.gone', 'eq', 'x')], {}, false)).toEqual(
       rows,
     )
   })
 
   it('lets overrides win and show-all bypass everything', () => {
-    const filters = [filter('schema:loss', 'lt', '0.15')]
+    const filters = [filter('metrics.loss', 'lt', '0.15')]
     const overrides = { V2: 'include', V1: 'exclude' } as const
     expect(ids(filterVariants(rows, columns, filters, overrides, false))).toEqual(['V2:0.2'])
     expect(filterVariants(rows, columns, filters, overrides, true)).toBe(rows)

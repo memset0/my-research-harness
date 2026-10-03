@@ -111,5 +111,10 @@ function definition(hiddenColumnIds: string[]): ExperimentResultsViewDefinition 
     rowOverrides: {},
     sotaModes: {},
     decimalPlaces: {},
+    nodeVisibility: {},
+    treeOrder: {},
+    collapsedGroups: [],
+    statsDisplay: {},
+    statsSort: {},
   }
 }

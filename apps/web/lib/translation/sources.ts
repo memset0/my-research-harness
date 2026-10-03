@@ -51,13 +51,15 @@ export function translationSources(kind: TranslationKind, value: unknown): Trans
     if (managed.has(key) && Array.isArray(items)) items.forEach(visit)
   }
   if (managed.has('results')) {
-    const results = record(record(documents.results).data)
-    for (const annotation of Object.values(record(results.columnAnnotations))) {
-      add(record(annotation).description)
-      for (const text of Object.values(record(record(annotation).valueDescriptions))) add(text)
-    }
-    if (Array.isArray(results.variants))
-      for (const variant of results.variants) {
+    // FS v9: the generated Results summary (column annotations, Variant names).
+    const summary = record(record(documents.results).summary)
+    if (Array.isArray(summary.columns))
+      for (const column of summary.columns) {
+        add(record(column).description)
+        for (const text of Object.values(record(record(column).valueDescriptions))) add(text)
+      }
+    if (Array.isArray(summary.variants))
+      for (const variant of summary.variants) {
         add(record(variant).name, 'literal')
       }
   }

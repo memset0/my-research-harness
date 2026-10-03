@@ -39,13 +39,22 @@ export function nextTemporarySort(current: SortKey | null, columnId: string): So
   return null
 }
 
-/** A drop is allowed only onto a different item of the dragged kind. */
+/**
+ * A drop is allowed only onto a different item of the dragged kind in the
+ * same scope: tree nodes and headers stay inside their parent group, pins
+ * inside the pinned zone.
+ */
 export function canDropOn(dragged: DragItem | null, item: DragItem): boolean {
-  return dragged !== null && dragged.kind === item.kind && dragged.id !== item.id
+  return (
+    dragged !== null &&
+    dragged.kind === item.kind &&
+    dragged.id !== item.id &&
+    (dragged.scope ?? null) === (item.scope ?? null)
+  )
 }
 
 const sameItem = (left: DragItem | null, right: DragItem | null) =>
-  left?.kind === right?.kind && left?.id === right?.id
+  left?.kind === right?.kind && left?.id === right?.id && left?.scope === right?.scope
 
 export function transientReducer(state: TransientState, action: TransientAction): TransientState {
   switch (action.type) {

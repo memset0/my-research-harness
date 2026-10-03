@@ -26,6 +26,22 @@ describe('canDropOn', () => {
     [{ kind: 'column' as const, id: 'a' }, { kind: 'column' as const, id: 'a' }, false],
     [{ kind: 'column' as const, id: 'a' }, { kind: 'row-filter' as const, id: 'b' }, false],
     [{ kind: 'column' as const, id: 'a' }, { kind: 'column' as const, id: 'b' }, true],
+    [
+      { kind: 'tree-node' as const, id: 'params.lr', scope: 'group:params.optim' },
+      { kind: 'tree-node' as const, id: 'params.bs', scope: 'group:params.optim' },
+      true,
+    ],
+    // A column never leaves its group: a drop in another scope is refused.
+    [
+      { kind: 'tree-node' as const, id: 'params.optim.lr', scope: 'group:params.optim' },
+      { kind: 'tree-node' as const, id: 'params.model.depth', scope: 'group:params.model' },
+      false,
+    ],
+    [
+      { kind: 'pinned' as const, id: 'a', scope: 'pinned' },
+      { kind: 'column' as const, id: 'b', scope: 'pinned' },
+      false,
+    ],
   ])('%j onto %j', (dragged, item, expected) => {
     expect(canDropOn(dragged, item)).toBe(expected)
   })

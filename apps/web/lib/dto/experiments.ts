@@ -4,13 +4,34 @@
 // fetchers in `lib/api.ts`. Types and pure helpers only — no server imports.
 
 import type {
+  BackendResultsCell,
+  BackendResultsColumn,
+  BackendResultsDiagnostic,
+  BackendResultsErrorResponse,
+  BackendResultsSummary,
+  BackendResultsSummaryError,
+  BackendResultsVariant,
+  BackendResultValue,
+  BackendRunResult,
   ExperimentDocumentDiagnostic,
   ExperimentRawSection,
   ImplementationDocument,
   InvestigationDocument,
   ParseIssue,
-  ResultsDocument,
 } from '@memon/core'
+
+/** FS v9 generated Results summary as the Backend serves it (ok or failed). */
+export type ResultsSummaryPayload = BackendResultsSummary
+export type ResultsColumnPayload = BackendResultsColumn
+export type ResultsVariantPayload = BackendResultsVariant
+export type ResultsCellPayload = BackendResultsCell
+export type ResultsValuePayload = BackendResultValue
+export type ResultsDiagnosticPayload = BackendResultsDiagnostic
+export type ResultsSummaryErrorPayload = BackendResultsSummaryError
+/** Body of a failed Results snapshot (400 / 404 / 422). */
+export type ResultsErrorResponsePayload = BackendResultsErrorResponse
+/** A Run's parsed `result.csv` on the Run detail (resource as a plain string). */
+export type RunResultPayload = Omit<BackendRunResult, 'resource'> & { resource: string }
 
 export interface PatchExperimentStatusResponse {
   mtime: number
@@ -74,7 +95,7 @@ export interface ExperimentDisplaySection extends ExperimentRawSection {
 }
 
 export interface ExperimentManagedDocumentPayload<T> {
-  kind: 'implementation' | 'investigation' | 'results'
+  kind: 'implementation' | 'investigation'
   fileName: string
   resource: string
   exists: boolean
@@ -83,13 +104,21 @@ export interface ExperimentManagedDocumentPayload<T> {
   parseWarnings: ParseIssue[]
 }
 
-export interface ResultsVariantEligibilityPayload {
-  variantId: string
-  runs: string[]
-  deprecatedRuns: string[]
-  eligibleRuns: string[]
-  hasMetrics: boolean
-  metricsValidity: 'valid' | 'partial' | 'unavailable'
+/**
+ * The Results source of an FS v9 bundle: the description file's parse state
+ * and the generated summary (ok, or failed with its error and no Variant).
+ */
+export interface ExperimentResultsDocumentPayload {
+  kind: 'results'
+  /** `experiment.json`. */
+  fileName: string
+  resource: string
+  exists: boolean
+  /** A retired `results.yaml` is still present. */
+  legacyResultsYaml: boolean
+  parseErrors: ParseIssue[]
+  parseWarnings: ParseIssue[]
+  summary: ResultsSummaryPayload | null
 }
 
 export interface ExperimentManagedDocumentsPayload {
@@ -99,16 +128,7 @@ export interface ExperimentManagedDocumentsPayload {
   investigation: ExperimentManagedDocumentPayload<InvestigationDocument> & {
     kind: 'investigation'
   }
-  results: ExperimentManagedDocumentPayload<ResultsDocument> & {
-    kind: 'results'
-    /**
-     * Read-time evidence state per Variant, projected from Run deprecation.
-     * `partial` / `unavailable` metrics are the recorded numbers, unchanged
-     * and unreplaced, but they are NOT current evidence: a view must not
-     * present them as comparable or as a best result.
-     */
-    variantEligibility: ResultsVariantEligibilityPayload[]
-  }
+  results: ExperimentResultsDocumentPayload
 }
 
 /**
@@ -124,17 +144,19 @@ export interface ExperimentDocDetail extends ExperimentDocSummary {
   documentSections: ExperimentDisplaySection[]
   documentDiagnostics: ExperimentDocumentDiagnostic[]
   documentReadOnly: boolean
+  /** Newest modification time among the Results summary's inputs. */
   resultsUpdatedAt: string | null
 }
 
+/** `GET /api/experiments/:id/results` (200): an ok summary with every input re-checked. */
 export interface ExperimentResultsSnapshot {
   project: string
+  /** `docs/experiments/<id>/experiment.json`. */
   resource: string
-  document: ResultsDocument
-  deprecatedRuns: string[]
-  variantEligibility: ResultsVariantEligibilityPayload[]
-  updatedAt: string
-  warnings: ParseIssue[]
+  summary: ResultsSummaryPayload
+  /** Newest modification time among the summary's inputs. */
+  updatedAt: string | null
+  warnings: ResultsDiagnosticPayload[]
 }
 
 /**

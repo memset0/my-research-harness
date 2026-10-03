@@ -262,8 +262,13 @@ describe('FilesystemDocumentService wiki reads', () => {
 
   it('reads the Results document only for Experiments cited with a Variant', async () => {
     await fs.writeFile(
-      join(root, 'docs', 'experiments', 'E0001-alpha', 'results.yaml'),
-      'schema_version: 1\ncolumns: []\nvariants:\n  - id: V0001\n    name: A\n    status: COMPLETED\n    parameters: {}\n    metrics: {}\n    runs: []\n    attempts: []\n',
+      join(root, 'docs', 'experiments', 'E0001-alpha', 'experiment.json'),
+      `${JSON.stringify({
+        experiment_schema_version: 1,
+        groups: {},
+        columns: [],
+        variants: [{ id: 'V0001', name: 'A', runs: [] }],
+      })}\n`,
     )
     const cite = async (source: string) => {
       await fs.writeFile(

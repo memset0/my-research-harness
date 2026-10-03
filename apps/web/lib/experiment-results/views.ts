@@ -2,10 +2,12 @@
 // contract (experiment-results-views "View definitions share one validation
 // contract"). `isExperimentResultsViewDefinition` is the strict guard used at
 // the View API boundary; `normalizeResultsViewDefinition` is the
-// document-aware normalizer used when a stored View is rendered. Both are
-// built from the same element predicates below.
+// summary-aware normalizer used when a stored View is rendered (legacy
+// `schema:<key>` ids resolve there, stale ids drop silently, malformed
+// entries are counted). Both are built from the same element predicates.
 
 import type { ProjectTarget } from '../api'
+import { columnAcceptsDisplay, isDisplaySelection, parseStatKey } from './stats'
 
 export type ResultsViewSortDirection = 'asc' | 'desc'
 export type ResultsViewRowFilterOperator = 'eq' | 'neq' | 'gt' | 'lt'
@@ -27,15 +29,31 @@ export interface ResultsViewSortRule {
 }
 
 export interface ExperimentResultsViewDefinition {
+  /** Legacy flat hidden-column list; folded into `nodeVisibility` when rendered. */
   hiddenColumnIds: string[]
+  /** Legacy flat column order; orders tree parents that have no saved order. */
   columnOrderIds: string[]
   maxLines: number
   defaultSortRules: ResultsViewSortRule[]
+  /**
+   * Ordered pins of the single left zone after the Variant column; a stored
+   * right pin renders at the end of that zone.
+   */
   pinnedColumnIds: Record<ResultsViewPinSide, string[]>
   rowFilters: ResultsViewRowFilter[]
   rowOverrides: Record<string, ResultsViewRowOverride>
   sotaModes: Record<string, ResultsViewSotaMode>
   decimalPlaces: Record<string, number>
+  /** Checked state stored on the changed tree node; descendants inherit it. */
+  nodeVisibility: Record<string, boolean>
+  /** Saved child order per tree parent node id. */
+  treeOrder: Record<string, string[]>
+  /** Header groups collapsed to one placeholder column. */
+  collapsedGroups: string[]
+  /** Stats column id → display: a vocabulary statistic or a display template. */
+  statsDisplay: Record<string, string>
+  /** Stats column id → the statistic sorting, filters and SOTA compare. */
+  statsSort: Record<string, string>
 }
 
 export interface ExperimentResultsViewScope {
@@ -103,6 +121,11 @@ export const DEFAULT_RESULTS_VIEW_DEFINITION: ExperimentResultsViewDefinition = 
   rowOverrides: {},
   sotaModes: {},
   decimalPlaces: {},
+  nodeVisibility: {},
+  treeOrder: {},
+  collapsedGroups: [],
+  statsDisplay: {},
+  statsSort: {},
 }
 
 // ── Element predicates shared by both entry points ──────────────────────────
@@ -136,6 +159,16 @@ export function isDecimalPlaces(value: unknown): value is number {
     value >= 0 &&
     value <= RESULTS_VIEW_MAX_DECIMAL_PLACES
   )
+}
+
+/** A stats display: one vocabulary statistic (one or two levels) or a display template. */
+export function isStatsDisplaySelection(value: unknown): value is string {
+  return typeof value === 'string' && isDisplaySelection(value)
+}
+
+/** A stats sort selection: one vocabulary statistic (one or two levels). */
+export function isStatsSortSelection(value: unknown): value is string {
+  return typeof value === 'string' && parseStatKey(value) !== null
 }
 
 /** Clamp any number to a valid decimal-places value (non-finite → 0). */
@@ -177,10 +210,20 @@ export function isExperimentResultsViewDefinition(
   ) {
     return false
   }
+  if (!uniqueStrings(value.collapsedGroups)) return false
+  if (
+    !isRecord(value.treeOrder) ||
+    !Object.values(value.treeOrder).every((order) => uniqueStrings(order))
+  ) {
+    return false
+  }
   return (
     recordValues(value.rowOverrides, isRowOverride) &&
     recordValues(value.sotaModes, isSotaMode) &&
-    recordValues(value.decimalPlaces, isDecimalPlaces)
+    recordValues(value.decimalPlaces, isDecimalPlaces) &&
+    recordValues(value.nodeVisibility, (entry) => typeof entry === 'boolean') &&
+    recordValues(value.statsDisplay, isStatsDisplaySelection) &&
+    recordValues(value.statsSort, isStatsSortSelection)
   )
 }
 
@@ -203,34 +246,84 @@ function isStrictRowFilter(value: unknown): value is ResultsViewRowFilter {
   )
 }
 
-// ── Document-aware normalizer (rendering) ───────────────────────────────────
+// ── Legacy column identifiers ───────────────────────────────────────────────
+
+/** The prefix of a pre-v9 flat column id (`schema:<key>`). */
+export const LEGACY_COLUMN_PREFIX = 'schema:'
+
+/**
+ * One v8 key segment as the v8 → v9 migration sanitizes it (mirrors core's
+ * `sanitizeSegment`): invalid characters become `_`, a leading digit or
+ * hyphen gains a `_` prefix.
+ */
+function sanitizeSegment(raw: string): string {
+  let segment = raw.replace(/[^A-Za-z0-9_-]/g, '_')
+  if (!/^[A-Za-z_]/.test(segment)) segment = `_${segment}`
+  return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(segment) ? segment : '_'
+}
+
+/**
+ * Resolve a stored column id against the current columns: an existing id
+ * stays; a legacy `schema:<key>` refers to the unique `params.<key>` or
+ * `metrics.<key>` path the migration produced; anything else is stale (null).
+ */
+export function resolveViewColumnId(id: string, columnIds: ReadonlySet<string>): string | null {
+  if (columnIds.has(id)) return id
+  if (!id.startsWith(LEGACY_COLUMN_PREFIX)) return null
+  const key = id.slice(LEGACY_COLUMN_PREFIX.length)
+  if (key === '') return null
+  const segments = key.split('.').map(sanitizeSegment).join('.')
+  const candidates = [`params.${segments}`, `metrics.${segments}`].filter((path) =>
+    columnIds.has(path),
+  )
+  return candidates.length === 1 ? candidates[0]! : null
+}
+
+// ── Summary-aware normalizer (rendering) ────────────────────────────────────
+
+/** What the normalizer checks a stored View against. */
+export interface ResultsViewDocument {
+  /** Every column id: built-ins and result paths. */
+  columnIds: readonly string[]
+  /** Every tree node id (groups, partitions and leaves). */
+  nodeIds: ReadonlySet<string>
+  /** Tree parents whose child order may be saved (including the tree root). */
+  parentIds: ReadonlySet<string>
+  /** Header groups that may collapse. */
+  collapsibleGroupIds: ReadonlySet<string>
+  variantIds: Iterable<string>
+  /** Stats column id → the statistics its display dropdown offers. */
+  statOptions: ReadonlyMap<string, readonly string[]>
+}
 
 export interface NormalizedResultsViewDefinition {
   definition: ExperimentResultsViewDefinition
   /**
    * Saved entries ignored because they are malformed (wrong type, unknown
-   * operator/direction/mode, out-of-range number, duplicate pin or sort
-   * column). References to columns or Variants absent from the current
-   * document are stale, not invalid, and are not counted.
+   * operator/direction/mode/statistic, out-of-range number, duplicate pin or
+   * sort column). References to columns, nodes or Variants absent from the
+   * current summary are stale, not invalid, and are not counted.
    */
   invalidCount: number
 }
 
 /**
  * Fit a stored (possibly legacy or partial) definition to the current Results
- * document. Absent fields take defaults; stale IDs are dropped silently;
- * filters and sort rules with a missing or duplicate ID keep their condition
- * under a new ID; anything else malformed is dropped and counted. The output
- * always satisfies {@link isExperimentResultsViewDefinition}.
+ * summary. Absent fields take defaults; legacy `schema:<key>` ids resolve to
+ * their result paths; stale ids drop silently; the legacy hidden list folds
+ * into node visibility; filters and sort rules with a missing or duplicate ID
+ * keep their condition under a new ID; anything else malformed is dropped
+ * and counted. Without a document the definition is only completed (seed
+ * Views): every syntactically valid entry is kept. The output always
+ * satisfies {@link isExperimentResultsViewDefinition}.
  */
 export function normalizeResultsViewDefinition(
   value: unknown,
-  columnIds: readonly string[],
-  variantIds: Iterable<string>,
+  document?: ResultsViewDocument,
 ): NormalizedResultsViewDefinition {
   const candidate = isRecord(value) ? value : {}
-  const validColumnIds = new Set(columnIds)
-  const validVariantIds = new Set(variantIds)
+  const columnIds = document ? new Set(document.columnIds) : null
+  const variantIds = document ? new Set(document.variantIds) : null
   let invalidCount = 0
   const invalid = () => {
     invalidCount += 1
@@ -248,22 +341,24 @@ export function normalizeResultsViewDefinition(
     invalid()
     return {}
   }
+  /** The current column id of a stored reference, or null when stale. */
+  const column = (id: string): string | null =>
+    columnIds === null ? id : resolveViewColumnId(id, columnIds)
 
-  // Column ID lists: non-strings are invalid; stale and duplicate IDs are cleaned.
+  // Legacy flat lists: non-strings are invalid; stale and duplicate ids are cleaned.
   const columnIdList = (field: string) => {
     const seen = new Set<string>()
     for (const id of list(field)) {
       if (typeof id !== 'string') invalid()
-      else if (validColumnIds.has(id)) seen.add(id)
+      else {
+        const resolved = column(id)
+        if (resolved !== null) seen.add(resolved)
+      }
     }
     return [...seen]
   }
-  const hiddenColumnIds = columnIdList('hiddenColumnIds')
-  const restoredOrder = columnIdList('columnOrderIds')
-  const columnOrderIds = [
-    ...restoredOrder,
-    ...columnIds.filter((id) => !restoredOrder.includes(id)),
-  ]
+  const legacyHidden = columnIdList('hiddenColumnIds')
+  const columnOrderIds = columnIdList('columnOrderIds')
 
   let maxLines = 1
   if (candidate.maxLines !== undefined) {
@@ -280,17 +375,23 @@ export function normalizeResultsViewDefinition(
       invalid()
       return []
     }
-    return raw.filter((id): id is string => {
+    const out: string[] = []
+    for (const id of raw) {
       if (typeof id !== 'string' || pinnedSeen.has(id)) {
         invalid()
-        return false
+        continue
       }
-      if (!validColumnIds.has(id)) return false
       pinnedSeen.add(id)
-      return true
-    })
+      const resolved = column(id)
+      // The Variant column is always pinned first; it is never a stored pin.
+      if (resolved === null || resolved === 'variant' || out.includes(resolved)) continue
+      out.push(resolved)
+    }
+    return out
   }
-  const pinnedColumnIds = { left: pinSide(pinned.left), right: pinSide(pinned.right) }
+  const left = pinSide(pinned.left)
+  const right = pinSide(pinned.right).filter((id) => !left.includes(id))
+  const pinnedColumnIds = { left, right }
 
   const usedSortIds = new Set<string>()
   const sortColumns = new Set<string>()
@@ -299,14 +400,15 @@ export function normalizeResultsViewDefinition(
       invalid()
       return []
     }
-    if (!validColumnIds.has(item.columnId)) return []
-    if (sortColumns.has(item.columnId)) {
+    const columnId = column(item.columnId)
+    if (columnId === null) return []
+    if (sortColumns.has(columnId)) {
       invalid()
       return []
     }
-    sortColumns.add(item.columnId)
+    sortColumns.add(columnId)
     const id = entryId(item.id, `restored-sort-${index}`, usedSortIds)
-    return [{ id, columnId: item.columnId, direction: item.direction }]
+    return [{ id, columnId, direction: item.direction }]
   })
 
   const usedFilterIds = new Set<string>()
@@ -320,34 +422,103 @@ export function normalizeResultsViewDefinition(
       invalid()
       return []
     }
-    if (!validColumnIds.has(item.columnId)) return []
+    const columnId = column(item.columnId)
+    if (columnId === null) return []
     const id = entryId(item.id, `restored-filter-${index}`, usedFilterIds)
-    return [{ id, columnId: item.columnId, operator: item.operator, value: item.value }]
+    return [{ id, columnId, operator: item.operator, value: item.value }]
   })
 
   const rowOverrides: Record<string, ResultsViewRowOverride> = {}
   for (const [variantId, override] of Object.entries(record(candidate.rowOverrides))) {
     if (!isRowOverride(override)) invalid()
-    else if (validVariantIds.has(variantId)) rowOverrides[variantId] = override
+    else if (variantIds === null || variantIds.has(variantId)) rowOverrides[variantId] = override
   }
 
   const sotaModes: Record<string, ResultsViewSotaMode> = {}
   for (const [columnId, mode] of Object.entries(record(candidate.sotaModes))) {
     if (!isSotaMode(mode)) invalid()
-    // `off` is the default and is stored as absence.
-    else if (validColumnIds.has(columnId) && mode !== 'off') sotaModes[columnId] = mode
+    else {
+      const resolved = column(columnId)
+      // `off` is the default and is stored as absence.
+      if (resolved !== null && mode !== 'off') sotaModes[resolved] = mode
+    }
   }
 
   const decimalPlaces: Record<string, number> = {}
   for (const [columnId, raw] of Object.entries(record(candidate.decimalPlaces))) {
     const places = typeof raw === 'number' ? Math.floor(raw) : Number.NaN
     if (!isDecimalPlaces(places)) invalid()
-    else if (validColumnIds.has(columnId)) decimalPlaces[columnId] = places
+    else {
+      const resolved = column(columnId)
+      if (resolved !== null) decimalPlaces[resolved] = places
+    }
+  }
+
+  const nodeVisibility: Record<string, boolean> = {}
+  for (const [nodeId, visible] of Object.entries(record(candidate.nodeVisibility))) {
+    if (typeof visible !== 'boolean') invalid()
+    else if (!document || document.nodeIds.has(nodeId)) nodeVisibility[nodeId] = visible
+    else {
+      const resolved = column(nodeId)
+      if (resolved !== null && document.nodeIds.has(resolved)) nodeVisibility[resolved] = visible
+    }
+  }
+  // A legacy hidden column hides that leaf unless the tree records a choice for it.
+  if (document) {
+    for (const id of legacyHidden) {
+      if (document.nodeIds.has(id) && nodeVisibility[id] === undefined) nodeVisibility[id] = false
+    }
+  }
+
+  const treeOrder: Record<string, string[]> = {}
+  for (const [parentId, raw] of Object.entries(record(candidate.treeOrder))) {
+    if (!Array.isArray(raw) || !raw.every((id) => typeof id === 'string')) {
+      invalid()
+      continue
+    }
+    if (document && !document.parentIds.has(parentId)) continue
+    const seen = new Set<string>()
+    for (const id of raw as string[]) {
+      if (!document || document.nodeIds.has(id)) seen.add(id)
+    }
+    if (seen.size > 0) treeOrder[parentId] = [...seen]
+  }
+
+  const collapsedSeen = new Set<string>()
+  for (const id of list('collapsedGroups')) {
+    if (typeof id !== 'string') invalid()
+    else if (!document || document.collapsibleGroupIds.has(id)) collapsedSeen.add(id)
+  }
+
+  const statsDisplay: Record<string, string> = {}
+  for (const [columnId, selection] of Object.entries(record(candidate.statsDisplay))) {
+    if (!isStatsDisplaySelection(selection)) {
+      invalid()
+      continue
+    }
+    const resolved = column(columnId)
+    if (resolved === null) continue
+    const options = document?.statOptions.get(resolved)
+    if (document && (!options || !columnAcceptsDisplay(selection, options))) continue
+    statsDisplay[resolved] = selection
+  }
+
+  const statsSort: Record<string, string> = {}
+  for (const [columnId, stat] of Object.entries(record(candidate.statsSort))) {
+    if (!isStatsSortSelection(stat)) {
+      invalid()
+      continue
+    }
+    const resolved = column(columnId)
+    if (resolved === null) continue
+    const options = document?.statOptions.get(resolved)
+    if (document && !options?.includes(stat)) continue
+    statsSort[resolved] = stat
   }
 
   return {
     definition: {
-      hiddenColumnIds,
+      hiddenColumnIds: document ? [] : legacyHidden,
       columnOrderIds,
       maxLines,
       defaultSortRules,
@@ -356,9 +527,19 @@ export function normalizeResultsViewDefinition(
       rowOverrides,
       sotaModes,
       decimalPlaces,
+      nodeVisibility,
+      treeOrder,
+      collapsedGroups: [...collapsedSeen],
+      statsDisplay,
+      statsSort,
     },
     invalidCount,
   }
+}
+
+/** A complete definition from any stored or legacy value (no document checks). */
+export function completeResultsViewDefinition(value: unknown): ExperimentResultsViewDefinition {
+  return normalizeResultsViewDefinition(value).definition
 }
 
 /** Keep a unique string ID, otherwise derive a fresh one from `fallback`. */

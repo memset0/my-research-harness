@@ -10,6 +10,7 @@ import {
   BackendDocumentWriteRequestSchema,
   BackendErrorResponseSchema,
   BackendEventFrameSchema,
+  BackendExperimentResultsResponseSchema,
   BackendGitDiffResponseSchema,
   BackendGitRefSchema,
   BackendGitSubmodulesResponseSchema,
@@ -20,6 +21,9 @@ import {
   BackendReportResponseSchema,
   BackendResourceInventoryResponseSchema,
   BackendResultsDocumentSchema,
+  BackendResultsErrorResponseSchema,
+  BackendResultsSummarySchema,
+  BackendRunDetailSchema,
   BackendShareCreateRequestSchema,
   BackendShareCreateResponseSchema,
   BackendShareListResponseSchema,
@@ -38,11 +42,16 @@ import {
   isUsableHostAvailabilityState,
   ProjectRefSchema,
   ResourceIdSchema,
+  resultsErrorStatus,
+  toBackendResultsErrorResponse,
+  toBackendResultsSummary,
 } from './backend-protocol.js'
 import {
   BackendResourceInventoryResponseSchema as PublicBackendResourceInventoryResponseSchema,
   HostIdSchema as PublicHostIdSchema,
 } from './index.js'
+import { missingExperimentDescription, parseExperimentDescription } from './results/description.js'
+import { generateResultsSummary, type SummaryMemberInput } from './results/summary.js'
 
 const capabilities = {
   projects: true,
@@ -178,6 +187,215 @@ describe('Backend Results annotations', () => {
       variants: [],
     }
     expect(BackendResultsDocumentSchema.parse(document)).toEqual(document)
+  })
+})
+
+describe('Backend Results summary wire shape (FS v9)', () => {
+  const csv = (version: number, rows: string[]) =>
+    `path,stat,value\n$experiment_schema_version,,${version}\n${rows.map((row) => `${row}\n`).join('')}`
+  const member = (path: string, result: string | null): SummaryMemberInput => ({
+    path,
+    record: { status: 'FINISHED', deprecated: false, stop_reason: null },
+    result,
+  })
+  const summarize = (description: unknown, members: SummaryMemberInput[]) =>
+    generateResultsSummary({
+      experimentId: 'E0001-foo',
+      experimentDir: 'docs/experiments/E0001-foo',
+      description:
+        description === null
+          ? missingExperimentDescription('docs/experiments/E0001-foo/experiment.json')
+          : parseExperimentDescription(
+              typeof description === 'string' ? description : JSON.stringify(description),
+              'docs/experiments/E0001-foo/experiment.json',
+            ),
+      members,
+      inputs: {
+        'docs/experiments/E0001-foo/experiment.json': { ino: 1, size: 2, mtime_ms: 3, ctime_ms: 4 },
+      },
+      newestInputMtime: '2026-10-02T12:00:00+08:00',
+      generatedAt: '2026-10-02T12:00:00+08:00',
+      generator: { release: '9.0.0', role: 'central' },
+    })
+  const runs = ['logs/a-260901-090000', 'logs/b-260901-100000', 'logs/c-260901-110000']
+  const description = {
+    experiment_schema_version: 1,
+    groups: { 'params.optim': { label: 'Optimizer' } },
+    columns: [
+      { path: 'params.optim.lr', label: 'LR', type: 'number' },
+      {
+        path: 'metrics.eval.clip',
+        label: 'CLIP',
+        type: 'stats',
+        across: 'sample',
+        direction: 'higher',
+        display: 'mean±std',
+        sort_by: 'mean',
+      },
+    ],
+    variants: [
+      {
+        id: 'V0001',
+        name: 'seeds',
+        runs,
+        provenance: {
+          repo: 'https://github.com/example/project-a.git',
+          commit: 'abc1234',
+          entry: './scripts/train.sh',
+          recipe: '/absolute/recipe.yaml',
+          extra_absolute: '/srv/secret',
+        },
+      },
+      {
+        id: 'V0002',
+        name: 'waits',
+        status: 'BLOCKED',
+        values: { 'params.optim.lr': 0.2 },
+        runs: [],
+      },
+    ],
+  }
+
+  it('projects an ok summary camelCase, path-free and without cache bookkeeping', () => {
+    const summary = summarize(
+      description,
+      runs.map((run, index) =>
+        member(
+          run,
+          csv(1, [
+            'params.optim.lr,,0.1',
+            `metrics.eval.clip,mean,0.3${index}`,
+            'metrics.eval.clip,std,0.02',
+          ]),
+        ),
+      ),
+    )
+    const wire = BackendResultsSummarySchema.parse(toBackendResultsSummary(summary))
+    expect(wire.outcome).toBe('ok')
+    expect(wire.columns.map((column) => [column.key, column.type, column.partition])).toEqual([
+      ['params.optim.lr', 'number', 'params'],
+      ['metrics.eval.clip', 'stats', 'metrics'],
+    ])
+    expect(wire.columns[1]).toMatchObject({
+      display: 'mean±std',
+      sortBy: 'mean',
+      direction: 'higher',
+    })
+    const [seeds, waits] = wire.variants
+    expect(seeds).toMatchObject({ status: 'COMPLETED', declaredStatus: null, evidence: runs })
+    expect(seeds!.cells['metrics.eval.clip']).toMatchObject({
+      kind: 'stats',
+      source: 'runs',
+      over: 'run',
+      runs,
+    })
+    expect(seeds!.provenance).toEqual({
+      repo: 'https://github.com/example/project-a.git',
+      commit: 'abc1234',
+      entry: 'scripts/train.sh',
+    })
+    expect(waits).toMatchObject({ status: 'BLOCKED', declaredStatus: 'BLOCKED' })
+    expect(waits!.cells['params.optim.lr']).toEqual({
+      kind: 'value',
+      source: 'planned',
+      value: 0.2,
+    })
+    const text = JSON.stringify(wire)
+    expect(text).not.toMatch(/"(?:path|inputs|digest|generator|generated_at)"/)
+    expect(text).not.toContain('/srv/secret')
+    expect(text).not.toContain('/absolute/recipe.yaml')
+  })
+
+  it('carries a failed summary as its error only, never a Variant row', () => {
+    const mismatch = summarize(description, [
+      member(runs[0]!, csv(2, ['metrics.eval.clip,mean,1'])),
+    ])
+    const wire = BackendResultsSummarySchema.parse(toBackendResultsSummary(mismatch))
+    expect(wire).toMatchObject({
+      outcome: 'failed',
+      variants: [],
+      columns: [],
+      error: {
+        code: 'RESULT_SCHEMA_MISMATCH',
+        files: [{ file: `${runs[0]}/result.csv`, version: 2 }],
+        upgradeCommand: 'memon experiment schema upgrade E0001-foo --to 1',
+        expectedVersion: 1,
+      },
+    })
+    const body = BackendResultsErrorResponseSchema.parse(
+      toBackendResultsErrorResponse(wire.error!, '2026-10-02T12:00:00+08:00'),
+    )
+    expect(body).toMatchObject({
+      error: { code: 'RESULT_SCHEMA_MISMATCH' },
+      upgradeCommand: 'memon experiment schema upgrade E0001-foo --to 1',
+      updatedAt: '2026-10-02T12:00:00+08:00',
+    })
+    expect(resultsErrorStatus('RESULT_SCHEMA_MISMATCH')).toBe(422)
+    expect(resultsErrorStatus('RESULT_DUPLICATE_ROW')).toBe(422)
+    expect(resultsErrorStatus('INVALID_RESULTS')).toBe(400)
+    expect(resultsErrorStatus('RESULTS_NOT_FOUND')).toBe(404)
+
+    const missing = BackendResultsSummarySchema.parse(toBackendResultsSummary(summarize(null, [])))
+    expect(missing.error?.code).toBe('RESULTS_NOT_FOUND')
+    const invalid = BackendResultsSummarySchema.parse(toBackendResultsSummary(summarize('{', [])))
+    expect(invalid.error?.code).toBe('INVALID_RESULTS')
+    expect(invalid.error?.diagnostics?.length).toBeGreaterThan(0)
+  })
+
+  it('rejects inconsistent summaries, unknown statuses and failed snapshots', () => {
+    const ok = BackendResultsSummarySchema.parse(
+      toBackendResultsSummary(summarize(description, [])),
+    )
+    const failed = BackendResultsSummarySchema.parse(toBackendResultsSummary(summarize(null, [])))
+    expect(
+      BackendResultsSummarySchema.safeParse({ ...failed, variants: ok.variants }).success,
+    ).toBe(false)
+    expect(BackendResultsSummarySchema.safeParse({ ...ok, error: failed.error }).success).toBe(
+      false,
+    )
+    expect(
+      BackendResultsSummarySchema.safeParse({
+        ...ok,
+        variants: [{ ...ok.variants[0]!, status: 'WAITING' }],
+      }).success,
+    ).toBe(false)
+    const snapshot = {
+      project: 'project-a',
+      resource: 'docs/experiments/E0001-foo/experiment.json',
+      updatedAt: null,
+      warnings: [],
+    }
+    expect(
+      BackendExperimentResultsResponseSchema.safeParse({ ...snapshot, summary: ok }).success,
+    ).toBe(true)
+    expect(
+      BackendExperimentResultsResponseSchema.safeParse({ ...snapshot, summary: failed }).success,
+    ).toBe(false)
+    expect(
+      BackendExperimentResultsResponseSchema.safeParse({
+        ...snapshot,
+        resource: '/srv/project/docs/experiments/E0001-foo/experiment.json',
+        summary: ok,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('transports a Run result file as rows on the Run detail', () => {
+    const result = {
+      resource: 'logs/a-260901-090000/result.csv',
+      schemaVersion: 1,
+      truncated: false,
+      diagnostics: [],
+      rows: [{ key: 'metrics.eval.clip', stat: 'mean', value: '0.31', line: 3 }],
+    }
+    const detail = BackendRunDetailSchema.shape.result.parse(result)
+    expect(detail).toEqual(result)
+    expect(
+      BackendRunDetailSchema.shape.result.safeParse({
+        ...result,
+        rows: [{ path: 'metrics.eval.clip', stat: null, value: '1', line: 3 }],
+      }).success,
+    ).toBe(false)
   })
 })
 

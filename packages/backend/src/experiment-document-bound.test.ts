@@ -74,22 +74,20 @@ ${MANAGED_SECTION_POINTERS.results}
 `
 }
 
-function resultsYaml(variants: number): string {
-  const rows = Array.from({ length: variants }, (_, index) => {
-    const id = `V${String(index + 1).padStart(4, '0')}`
-    return `  - id: ${id}
-    name: Variant ${index + 1}
-    status: ${index === 0 ? 'BLOCKED' : 'COMPLETED'}
-    description: ${DESCRIPTION}
-    parameters: {}
-    metrics: {}
-    runs: []
-    attempts: []
-    provenance:
-      env:
-        LR: 0.000008`
-  })
-  return `schema_version: 1\ncolumns: []\nvariants:\n${rows.join('\n')}\n`
+function description(variants: number): string {
+  return `${JSON.stringify({
+    experiment_schema_version: 1,
+    groups: {},
+    columns: [],
+    variants: Array.from({ length: variants }, (_, index) => ({
+      id: `V${String(index + 1).padStart(4, '0')}`,
+      name: `Variant ${index + 1}`,
+      ...(index === 0 ? { status: 'BLOCKED' } : {}),
+      description: DESCRIPTION,
+      values: { 'env.LR': 0.000008 },
+      runs: [],
+    })),
+  })}\n`
 }
 
 async function writeExperiment(root: string, id: string, variants: number): Promise<void> {
@@ -98,7 +96,7 @@ async function writeExperiment(root: string, id: string, variants: number): Prom
   await fs.writeFile(join(bundle, 'README.md'), readme(id))
   await fs.writeFile(join(bundle, 'implementation.yaml'), 'schema_version: 1\nitems: []\n')
   await fs.writeFile(join(bundle, 'investigation.yaml'), 'schema_version: 1\nitems: []\n')
-  await fs.writeFile(join(bundle, 'results.yaml'), resultsYaml(variants))
+  await fs.writeFile(join(bundle, 'experiment.json'), description(variants))
 }
 
 let root = ''
@@ -157,12 +155,16 @@ describe('Experiment document reads use the document response bound', () => {
     expect(response.status).toBe(200)
     expect(Buffer.byteLength(text)).toBeGreaterThan(MAX_BACKEND_CONTROL_JSON_BYTES)
     const results = BackendExperimentResultsResponseSchema.parse(JSON.parse(text))
-    expect(results.document.variants).toHaveLength(30)
-    expect(results.document.variants[0]).toMatchObject({
+    expect(results.summary.variants).toHaveLength(30)
+    expect(results.summary.variants[0]).toMatchObject({
       status: 'BLOCKED',
-      provenance: { env: { LR: '0.000008' } },
+      cells: { 'env.LR': { kind: 'value', source: 'planned', value: '0.000008' } },
     })
-    expect(results.warnings).toHaveLength(30)
+    expect(
+      results.summary.diagnostics.filter(
+        (diagnostic) => diagnostic.code === 'RESULTS_ENV_VALUE_COERCED',
+      ),
+    ).toHaveLength(30)
   }, 60_000)
 
   it('serves an Experiment detail larger than 1 MiB', async () => {
@@ -171,7 +173,7 @@ describe('Experiment document reads use the document response bound', () => {
     expect(response.status).toBe(200)
     expect(Buffer.byteLength(text)).toBeGreaterThan(MAX_BACKEND_CONTROL_JSON_BYTES)
     const detail = BackendExperimentResponseSchema.parse(JSON.parse(text))
-    expect(detail.documents?.results.data?.variants).toHaveLength(30)
+    expect(detail.documents?.results.summary?.variants).toHaveLength(30)
   }, 60_000)
 
   it('still refuses a document over 16 MiB with a bounded PAYLOAD_TOO_LARGE', async () => {

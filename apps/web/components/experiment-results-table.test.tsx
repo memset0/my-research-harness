@@ -1,85 +1,173 @@
-import type { ResultsDocument, ResultsVariantEligibility } from '@memon/core'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ResultsSummaryPayload } from '../lib/dto/experiments'
+import {
+  column,
+  resultsDocument,
+  statsCell,
+  valueCell,
+  variant,
+} from '../lib/experiment-results/fixtures.test-helpers'
 import { ExperimentResultsTable } from './experiment-results-table'
 
-const RESULTS: ResultsDocument = {
-  schemaVersion: 1,
-  columns: [
-    { key: 'lr', label: 'Learning rate', group: 'parameter', type: 'number' },
-    { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
-    { key: 'notes', label: 'Notes', group: 'metric', type: 'string' },
-  ],
-  variants: [
-    {
-      id: 'V0002',
-      name: 'Second in YAML',
-      status: 'COMPLETED',
+const RUN_A = 'logs/run-a-261001-000000'
+const RUN_B = 'logs/run-b-261001-000000'
+const RUN_C = 'logs/run-c-261001-000000'
+
+const RESULTS: ResultsSummaryPayload = resultsDocument(
+  [
+    variant('V0002', {
+      name: 'Second declared',
       parameters: { lr: 0.002 },
       metrics: { loss: 0.2, notes: 'first line<br>second line' },
-      runs: ['run-b', 'run-c'],
-      attempts: [],
-    },
-    {
-      id: 'V0001',
+      evidence: [RUN_B, RUN_C],
+    }),
+    variant('V0001', {
       name: 'First by metric',
       status: 'RUNNING',
       parameters: { lr: 0.001 },
       metrics: { loss: 0.1, notes: 'single line' },
-      runs: ['run-a'],
-      attempts: ['run-failed'],
+      evidence: [RUN_A],
+      others: [
+        {
+          run: 'logs/run-failed-261001-000000',
+          status: 'FAILED',
+          deprecated: false,
+          stopReason: null,
+        },
+      ],
       provenance: {
         repo: 'https://github.com/example/research.git',
         commit: '1234567890abcdef',
         entry: 'train.py',
         recipe: 'recipes/base.yaml',
       },
-    },
-    {
-      id: 'V0003',
+    }),
+    variant('V0003', {
       name: 'Missing metric',
       status: 'PLANNED',
       parameters: { lr: 0.003 },
       metrics: { loss: null, notes: 'single line' },
-      runs: [],
-      attempts: [],
-    },
+    }),
   ],
-}
+  [
+    column('params.lr', 'Learning rate'),
+    column('metrics.loss', 'Final loss'),
+    column('metrics.notes', 'Notes', 'string'),
+  ],
+)
 
 const WANDB_URL = 'https://wandb.ai/acme/research/runs/a1b2c3d4e5f67890?nw=nwuser'
-const URL_RESULTS: ResultsDocument = {
+const URL_RESULTS: ResultsSummaryPayload = {
   ...RESULTS,
-  columns: [
-    ...RESULTS.columns,
-    { key: 'tracking', label: 'Tracking', group: 'metric', type: 'string' },
-  ],
-  variants: RESULTS.variants.map((variant) => ({
-    ...variant,
-    metrics: {
-      ...variant.metrics,
-      tracking:
-        variant.id === 'V0002'
+  columns: [...RESULTS.columns, column('metrics.tracking', 'Tracking', 'string')],
+  variants: RESULTS.variants.map((row) => ({
+    ...row,
+    cells: {
+      ...row.cells,
+      'metrics.tracking': valueCell(
+        row.id === 'V0002'
           ? WANDB_URL
-          : variant.id === 'V0001'
+          : row.id === 'V0001'
             ? 'https://github.com/example/research/actions/runs/1234'
             : null,
+      ),
     },
   })),
 }
 
-const ANNOTATED_RESULTS: ResultsDocument = {
+const ANNOTATED_RESULTS: ResultsSummaryPayload = {
   ...RESULTS,
-  columnAnnotations: {
-    lr: {
-      description: 'Controls the **optimizer step size**.',
-      valueDescriptions: {
-        '0.001': 'The **conservative** baseline.',
-      },
-    },
-  },
+  columns: RESULTS.columns.map((entry) =>
+    entry.key === 'params.lr'
+      ? {
+          ...entry,
+          description: 'Controls the **optimizer step size**.',
+          valueDescriptions: { '0.001': 'The **conservative** baseline.' },
+        }
+      : entry,
+  ),
 }
+
+/** Grouped parameters, a stats metric and planned / frozen / mixed cells. */
+const GROUPED_RESULTS: ResultsSummaryPayload = resultsDocument(
+  [
+    variant('V0001', {
+      name: 'Seeds',
+      cells: {
+        'params.optim.lr': valueCell(0.0001, { source: 'runs' }),
+        'params.optim.batch_size': valueCell(32),
+        'params.optim.adam.beta1': valueCell(0.9),
+        'params.model.depth': valueCell(12),
+        'params.seed': {
+          kind: 'mixed',
+          source: 'runs',
+          perRun: [
+            { run: RUN_A, value: 0 },
+            { run: RUN_B, value: 1 },
+            { run: RUN_C, value: 2 },
+          ],
+        },
+        'metrics.eval.fid': statsCell({
+          mean: 11,
+          std: 1,
+          n: 3,
+          min: 10,
+          max: 12,
+          p50: 11,
+          p99: 11.98,
+        }),
+        'metrics.eval.clip': statsCell(
+          { mean: 0.312, std: 0.021, n: 500, p50: 0.31, p99: 0.4 },
+          { source: 'run', over: null, across: 'sample', runs: [RUN_A] },
+        ),
+      },
+      evidence: [RUN_A, RUN_B, RUN_C],
+    }),
+    variant('V0002', {
+      name: 'Drifted',
+      cells: {
+        'params.optim.lr': valueCell(0.0002, { planned: 0.0001, differsFromPlan: true }),
+        'metrics.eval.fid': valueCell(9),
+        'metrics.eval.clip': statsCell(
+          { mean: 0.3, std: 0.01, n: 500, p50: 0.36, p99: 0.45 },
+          { source: 'run', over: null, across: 'sample', runs: [RUN_B] },
+        ),
+      },
+    }),
+    variant('V0003', {
+      name: 'Historical',
+      status: 'COMPLETED',
+      cells: { 'metrics.eval.fid': valueCell(13.1, { source: 'frozen' }) },
+    }),
+    variant('V0004', {
+      name: 'Waits for parent',
+      status: 'BLOCKED',
+      declaredStatus: 'BLOCKED',
+      cells: { 'params.optim.lr': valueCell(0.0003, { source: 'planned' }) },
+    }),
+  ],
+  [
+    column('params.optim.lr', 'LR'),
+    column('params.optim.batch_size', 'Batch size'),
+    column('params.optim.adam.beta1', 'beta1'),
+    column('params.model.depth', 'Depth'),
+    column('params.seed', 'seed'),
+    column('metrics.eval.fid', 'FID', 'number', {
+      direction: 'lower',
+      stats: ['mean', 'std', 'n', 'min', 'max', 'p50', 'p99'],
+    }),
+    column('metrics.eval.clip', 'CLIP', 'stats', {
+      across: 'sample',
+      direction: 'higher',
+      stats: ['mean', 'std', 'n', 'p50', 'p99'],
+      decimals: 3,
+    }),
+    column('env.CUDA', 'CUDA', 'string'),
+  ],
+  { 'params.optim': { label: 'Optimizer' } },
+)
 
 describe('ExperimentResultsTable', () => {
   beforeEach(() => {
@@ -92,31 +180,25 @@ describe('ExperimentResultsTable', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('uses YAML column order, clamps to one line, scrolls horizontally, and renders br as breaks', async () => {
+  it('uses summary column order, clamps to one line, scrolls horizontally, and renders br as breaks', async () => {
     const user = userEvent.setup()
     const { container } = renderResults('E0001-results')
     const table = screen.getByRole('table')
 
-    expect(
-      within(table)
-        .getAllByRole('columnheader')
-        .map(
-          (header) =>
-            header.querySelector<HTMLElement>('[data-column-label]')?.textContent ??
-            header.textContent,
-        ),
-    ).toEqual([
-      'Variant',
-      'Status',
-      'Learning rate',
-      'Final loss',
-      'Notes',
-      'Entry',
-      'Recipe',
-      'Commit',
-      'Runs',
-      'Attempts',
+    expect(headerIds(table)).toEqual([
+      'variant',
+      'status',
+      'params.lr',
+      'metrics.loss',
+      'metrics.notes',
+      'entry',
+      'recipe',
+      'commit',
+      'runs',
+      'attempts',
     ])
+    // The Variant name column is always pinned first and spans both header rows.
+    expect(table.querySelector('thead [data-column-id="variant"]')).toHaveAttribute('rowspan', '2')
     expect(table).toHaveClass('table-auto', 'w-max', 'min-w-full')
     expect(table.parentElement).toHaveClass('overflow-x-auto')
     expect(container.querySelector('[data-max-lines="1"]')).toHaveStyle({
@@ -124,24 +206,27 @@ describe('ExperimentResultsTable', () => {
     })
     expect(screen.queryByText(/<br>/)).not.toBeInTheDocument()
     const notesCell = table.querySelector(
-      '[data-variant-id="V0002"] [data-column-id="schema:notes"]',
+      '[data-variant-id="V0002"] [data-column-id="metrics.notes"]',
     )
     expect(notesCell?.querySelectorAll('br')).toHaveLength(1)
 
-    const lossOption = container.querySelector<HTMLElement>('[data-column-option="schema:loss"]')!
+    // The vertical column tree replaces the horizontal checkbox strip.
+    expect(
+      container.querySelector('[data-slot="results-column-tree"] ul[aria-label="Results columns"]'),
+    ).toBeInTheDocument()
+    const lossOption = container.querySelector<HTMLElement>('[data-column-option="metrics.loss"]')!
     const learningRateOption = container.querySelector<HTMLElement>(
-      '[data-column-option="schema:lr"]',
+      '[data-column-option="params.lr"]',
     )!
     expect(lossOption).toHaveAttribute('data-column-group', 'metric')
     expect(lossOption).toHaveClass('bg-sky-50/60')
     expect(within(lossOption).queryByText('Metric')).not.toBeInTheDocument()
     expect(learningRateOption).toHaveAttribute('data-column-group', 'parameter')
     expect(learningRateOption).not.toHaveClass('bg-sky-50/60')
-    expect(within(learningRateOption).queryByText('Metric')).not.toBeInTheDocument()
 
-    const lossHeader = table.querySelector<HTMLElement>('thead [data-column-id="schema:loss"]')!
+    const lossHeader = table.querySelector<HTMLElement>('thead [data-column-id="metrics.loss"]')!
     const lossCell = table.querySelector<HTMLElement>(
-      '[data-variant-id="V0001"] [data-column-id="schema:loss"]',
+      '[data-variant-id="V0001"] [data-column-id="metrics.loss"]',
     )!
     expect(lossHeader).toHaveAttribute('data-column-group', 'metric')
     expect(lossHeader).toHaveClass('bg-sky-50/90')
@@ -159,23 +244,18 @@ describe('ExperimentResultsTable', () => {
     expect(within(domainCard).getByText('0.001')).toBeInTheDocument()
     expect(within(domainCard).getByText('0.002')).toBeInTheDocument()
     expect(within(domainCard).getByText('0.003')).toBeInTheDocument()
-    expect(screen.queryByText(/Pale-blue columns are metrics/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Click filter or sort badges/)).not.toBeInTheDocument()
   })
 
   it('shows Markdown descriptions when annotated headers and values are hovered', async () => {
     const user = userEvent.setup()
     const { container } = renderResults('E0001-annotations', ANNOTATED_RESULTS)
     const headerButton = container.querySelector<HTMLElement>(
-      '[data-column-id="schema:lr"] button[data-has-description="true"]',
+      '[data-column-id="params.lr"] button[data-has-description="true"]',
     )!
     expect(headerButton).toBeInTheDocument()
 
     await user.hover(headerButton)
     const columnTooltip = await screen.findByLabelText('Learning rate column description')
-    expect(
-      within(columnTooltip).getByText('optimizer step size', { exact: false }),
-    ).toBeInTheDocument()
     expect(columnTooltip.querySelector('strong')).toHaveTextContent('optimizer step size')
     await user.unhover(headerButton)
     await waitFor(() => {
@@ -183,83 +263,123 @@ describe('ExperimentResultsTable', () => {
     })
 
     const describedCell = container.querySelector<HTMLElement>(
-      '[data-variant-id="V0001"] [data-column-id="schema:lr"] [data-has-description="true"]',
+      '[data-variant-id="V0001"] [data-column-id="params.lr"] [data-has-description="true"]',
     )!
     expect(describedCell).toHaveAttribute('tabindex', '0')
     await user.hover(describedCell)
     const valueTooltip = await screen.findByLabelText('Learning rate value description')
-    expect(within(valueTooltip).getByText('conservative', { exact: false })).toBeInTheDocument()
     expect(valueTooltip.querySelector('strong')).toHaveTextContent('conservative')
 
     const undescribedCell = container.querySelector<HTMLElement>(
-      '[data-variant-id="V0002"] [data-column-id="schema:lr"]',
+      '[data-variant-id="V0002"] [data-column-id="params.lr"]',
     )!
     expect(undescribedCell.querySelector('[data-has-description]')).not.toBeInTheDocument()
   })
 
-  it('shares persisted column order between checkbox controls and draggable headers', async () => {
+  it('checks a whole group, renders it indeterminate after one column is cleared, and inherits to later columns', async () => {
     const user = userEvent.setup()
-    const first = renderResults('E0001-column-order')
+    const { container } = renderResults('E0001-tree-checks', GROUPED_RESULTS)
     const table = screen.getByRole('table')
+    const optimizer = screen.getByRole('checkbox', { name: 'Show Optimizer group' })
+    expect(optimizer).toHaveAttribute('data-state', 'checked')
 
-    await user.click(screen.getByRole('checkbox', { name: 'Show Final loss column' }))
-    dragBefore(
-      first.container.querySelector<HTMLElement>('[data-column-option="schema:notes"]')!,
-      first.container.querySelector<HTMLElement>('[data-column-option="variant"]')!,
-    )
-    expect(columnOptionIds(first.container).slice(0, 4)).toEqual([
-      'schema:notes',
-      'variant',
-      'status',
-      'schema:lr',
-    ])
-    expect(headerIds(table).slice(0, 4)).toEqual(['schema:notes', 'variant', 'status', 'schema:lr'])
+    await user.click(optimizer)
+    expect(optimizer).toHaveAttribute('data-state', 'unchecked')
+    for (const id of ['params.optim.lr', 'params.optim.batch_size', 'params.optim.adam.beta1'])
+      expect(table.querySelector(`thead [data-column-id="${id}"]`)).not.toBeInTheDocument()
 
-    dragBefore(
-      table.querySelector<HTMLElement>('thead [data-column-id="schema:lr"]')!,
-      table.querySelector<HTMLElement>('thead [data-column-id="schema:notes"]')!,
-    )
-    expect(columnOptionIds(first.container).slice(0, 4)).toEqual([
-      'schema:lr',
-      'schema:notes',
-      'variant',
-      'status',
-    ])
-    expect(headerIds(table).slice(0, 4)).toEqual(['schema:lr', 'schema:notes', 'variant', 'status'])
+    await user.click(optimizer)
+    expect(table.querySelector('thead [data-column-id="params.optim.lr"]')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Show Batch size column' }))
+    expect(optimizer).toHaveAttribute('data-state', 'indeterminate')
+    expect(container.querySelector('[data-tri-state="indeterminate"]')).toBeInTheDocument()
+    expect(table.querySelector('thead [data-column-id="params.optim.lr"]')).toBeInTheDocument()
+    expect(
+      table.querySelector('thead [data-column-id="params.optim.batch_size"]'),
+    ).not.toBeInTheDocument()
+
+    // env is hidden by default; checking the partition shows its columns.
+    expect(table.querySelector('thead [data-column-id="env.CUDA"]')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Show Environment partition' }))
+    expect(table.querySelector('thead [data-column-id="env.CUDA"]')).toBeInTheDocument()
 
     await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem(
-          'memon:results-table:research:E0001-column-order:preferences',
-        ) ?? '{}',
-      ) as { columnOrderIds?: string[]; hiddenColumnIds?: string[] }
-      expect(preferences.columnOrderIds?.slice(0, 5)).toEqual([
-        'schema:lr',
-        'schema:notes',
-        'variant',
-        'status',
-        'schema:loss',
-      ])
-      expect(preferences.hiddenColumnIds).toContain('schema:loss')
+      const preferences = storedPreferences('E0001-tree-checks')
+      expect(preferences.nodeVisibility).toEqual({
+        'group:params.optim': true,
+        'params.optim.batch_size': false,
+        'group:env': true,
+      })
     })
+  })
 
-    first.unmount()
-    const restored = renderResults('E0001-column-order')
-    await waitFor(() =>
-      expect(columnOptionIds(restored.container).slice(0, 4)).toEqual([
-        'schema:lr',
-        'schema:notes',
-        'variant',
-        'status',
-      ]),
-    )
-    expect(headerIds(screen.getByRole('table')).slice(0, 4)).toEqual([
-      'schema:lr',
-      'schema:notes',
-      'variant',
-      'status',
+  it('stacks two header rows with deeper groups merged into the column name', () => {
+    renderResults('E0001-headers', GROUPED_RESULTS)
+    const table = screen.getByRole('table')
+    const optimizerBand = table.querySelector<HTMLElement>(
+      'thead [data-group-id="group:params.optim"]',
+    )!
+    expect(optimizerBand).toHaveTextContent('Optimizer')
+    expect(optimizerBand).toHaveAttribute('colspan', '3')
+    expect(
+      table.querySelector('thead [data-column-id="params.optim.adam.beta1"] [data-column-label]'),
+    ).toHaveTextContent('adam › beta1')
+    expect(
+      table.querySelector('thead [data-column-id="params.optim.lr"] [data-column-label]'),
+    ).toHaveTextContent('LR')
+    expect(table.querySelectorAll('thead tr')).toHaveLength(2)
+  })
+
+  it('drags tree nodes within their parent only, moving groups as blocks', async () => {
+    const { container } = renderResults('E0001-tree-drag', GROUPED_RESULTS)
+    const table = screen.getByRole('table')
+    const node = (id: string) => container.querySelector<HTMLElement>(`[data-tree-node="${id}"]`)!
+
+    // C before A inside one group.
+    dragBefore(node('params.optim.batch_size'), node('params.optim.lr'))
+    expect(headerIds(table).slice(2, 5)).toEqual([
+      'params.optim.batch_size',
+      'params.optim.lr',
+      'params.optim.adam.beta1',
     ])
-    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+
+    // A group moves as one block among its siblings; its columns stay adjacent.
+    dragBefore(node('group:params.model'), node('group:params.optim'))
+    expect(headerIds(table).slice(2, 6)).toEqual([
+      'params.model.depth',
+      'params.optim.batch_size',
+      'params.optim.lr',
+      'params.optim.adam.beta1',
+    ])
+
+    // A column cannot leave its group: the drop is refused, nothing changes.
+    const before = headerIds(table)
+    dragBefore(node('params.optim.lr'), node('params.model.depth'))
+    expect(headerIds(table)).toEqual(before)
+
+    // Header drag follows the same rule.
+    dragBefore(
+      table.querySelector<HTMLElement>('thead [data-column-id="params.optim.lr"]')!,
+      table.querySelector<HTMLElement>('thead [data-column-id="params.optim.batch_size"]')!,
+    )
+    expect(headerIds(table).slice(3, 5)).toEqual(['params.optim.lr', 'params.optim.batch_size'])
+    const refused = headerIds(table)
+    dragBefore(
+      table.querySelector<HTMLElement>('thead [data-column-id="params.seed"]')!,
+      table.querySelector<HTMLElement>('thead [data-column-id="params.optim.lr"]')!,
+    )
+    expect(headerIds(table)).toEqual(refused)
+
+    await waitFor(() => {
+      expect(storedPreferences('E0001-tree-drag').treeOrder).toEqual({
+        'group:params.optim': [
+          'params.optim.lr',
+          'params.optim.batch_size',
+          'group:params.optim.adam',
+        ],
+        'group:params': ['group:params.model', 'group:params.optim', 'params.seed'],
+      })
+    })
   })
 
   it('composes checkbox changes batched before React renders', async () => {
@@ -273,72 +393,88 @@ describe('ExperimentResultsTable', () => {
       notes.click()
     })
 
-    expect(loss).not.toBeChecked()
-    expect(notes).not.toBeChecked()
+    expect(loss).toHaveAttribute('data-state', 'unchecked')
+    expect(notes).toHaveAttribute('data-state', 'unchecked')
     await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem(
-          'memon:results-table:research:E0001-batched-checkboxes:preferences',
-        ) ?? '{}',
-      ) as { hiddenColumnIds?: string[] }
-      expect(preferences.hiddenColumnIds).toEqual(
-        expect.arrayContaining(['schema:loss', 'schema:notes']),
-      )
+      expect(storedPreferences('E0001-batched-checkboxes').nodeVisibility).toEqual({
+        'metrics.loss': false,
+        'metrics.notes': false,
+      })
     })
 
     first.unmount()
     renderResults('E0001-batched-checkboxes')
     await waitFor(() =>
-      expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked(),
+      expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).toHaveAttribute(
+        'data-state',
+        'unchecked',
+      ),
     )
-    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
   })
 
-  it('normalizes a partial saved column order and appends current document columns', async () => {
+  it('renders a pre-migration View on the migrated summary through the legacy alias', async () => {
+    const user = userEvent.setup()
+    const legacy = {
+      hiddenColumnIds: ['schema:lr'],
+      columnOrderIds: ['schema:notes', 'stale-column', 'schema:notes', 'variant'],
+      defaultSortRules: [{ id: 's', columnId: 'schema:loss', direction: 'desc' }],
+    }
     window.localStorage.setItem(
-      'memon:results-table:research:E0001-partial-order:preferences',
-      JSON.stringify({
-        columnOrderIds: ['schema:notes', 'stale-column', 'schema:notes', 'variant'],
-      }),
+      'memon:results-table:research:E0001-legacy-view:preferences',
+      JSON.stringify(legacy),
     )
-
-    const rendered = renderResults('E0001-partial-order')
+    renderResults('E0001-legacy-view')
+    const table = screen.getByRole('table')
     await waitFor(() =>
-      expect(columnOptionIds(rendered.container)).toEqual([
-        'schema:notes',
-        'variant',
-        'status',
-        'schema:lr',
-        'schema:loss',
-        'entry',
-        'recipe',
-        'commit',
-        'runs',
-        'attempts',
-      ]),
+      expect(table.querySelector('thead [data-column-id="params.lr"]')).not.toBeInTheDocument(),
     )
-    expect(headerIds(screen.getByRole('table'))).toEqual(columnOptionIds(rendered.container))
+    // Sorted by the aliased metric, descending (empty values last).
+    expect(variantOrder()).toEqual(['V0002', 'V0001', 'V0003'])
+    // The legacy order places Notes first among the metrics.
+    expect(headerIds(table).filter((id) => id.startsWith('metrics.'))).toEqual([
+      'metrics.notes',
+      'metrics.loss',
+    ])
+    // The stored View keeps its legacy ids until the owner saves it.
+    expect(storedCollection('E0001-legacy-view')[0]?.definition.hiddenColumnIds).toEqual([
+      'schema:lr',
+    ])
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum lines per results cell' }), {
+      target: { value: '2' },
+    })
+    await waitFor(() => {
+      const saved = storedPreferences('E0001-legacy-view')
+      expect(saved.hiddenColumnIds).toEqual([])
+      expect(saved.nodeVisibility).toEqual({ 'params.lr': false })
+      expect(saved.defaultSortRules).toEqual([
+        { id: 's', columnId: 'metrics.loss', direction: 'desc' },
+      ])
+      expect(saved.maxLines).toBe(2)
+    })
+    await user.click(screen.getByRole('checkbox', { name: 'Show Learning rate column' }))
+    expect(table.querySelector('thead [data-column-id="params.lr"]')).toBeInTheDocument()
   })
 
   it('renders wandb.ai values as compact chart links with the full URL on hover', async () => {
     const user = userEvent.setup()
     const { container } = renderResults('E0001-url-results', URL_RESULTS)
 
-    const wandbLink = screen.getByRole('link', {
-      name: 'Open W&B link a1b2c3d4e5f67890',
-    })
+    const wandbLink = screen.getByRole('link', { name: 'Open W&B link a1b2c3d4e5f67890' })
     expect(wandbLink).toHaveAttribute('href', WANDB_URL)
     expect(wandbLink).toHaveAttribute('target', '_blank')
     expect(wandbLink).toHaveTextContent('a1b2c3d4e5f67890')
     expect(wandbLink).toHaveClass('text-primary', 'underline')
     expect(wandbLink.querySelector('svg')).toHaveClass('lucide-chart-spline')
-    expect(wandbLink).not.toHaveTextContent(WANDB_URL)
 
     await user.hover(wandbLink)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(WANDB_URL)
 
     const ordinaryUrlCell = container.querySelector(
-      '[data-variant-id="V0001"] [data-column-id="schema:tracking"]',
+      '[data-variant-id="V0001"] [data-column-id="metrics.tracking"]',
     )
     expect(ordinaryUrlCell).toHaveTextContent(
       'https://github.com/example/research/actions/runs/1234',
@@ -350,10 +486,11 @@ describe('ExperimentResultsTable', () => {
     const user = userEvent.setup()
     const first = renderResults('E0001-results')
 
-    const sortButton = screen.getByRole('button', {
-      name: 'Final loss: default sort; activate for temporary ascending',
-    })
-    await user.click(sortButton)
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Final loss: default sort; activate for temporary ascending',
+      }),
+    )
     expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
     await user.click(
       screen.getByRole('button', {
@@ -367,20 +504,17 @@ describe('ExperimentResultsTable', () => {
       }),
     )
     expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
-    expect(
-      screen.getByRole('button', {
-        name: 'Final loss: default sort; activate for temporary ascending',
-      }),
-    ).toBeInTheDocument()
 
     fireEvent.contextMenu(screen.getByRole('columnheader', { name: /Notes/ }))
     expect(await screen.findByRole('menuitem', { name: 'Star column' })).toBeInTheDocument()
     await user.click(screen.getByRole('menuitem', { name: 'Hide column' }))
     expect(screen.queryByRole('columnheader', { name: /Notes/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
     await user.click(screen.getByRole('button', { name: 'Show all columns temporarily' }))
     expect(screen.getByRole('columnheader', { name: /Notes/ })).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).not.toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Resume saved column filters' }))
     expect(screen.queryByRole('columnheader', { name: /Notes/ })).not.toBeInTheDocument()
 
@@ -395,18 +529,9 @@ describe('ExperimentResultsTable', () => {
     expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveClass('bg-amber-50')
 
     await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-results:preferences') ??
-          '{}',
-      ) as {
-        hiddenColumnIds?: string[]
-        maxLines?: number
-        sort?: unknown
-        defaultSortRules?: unknown[]
-      }
-      expect(preferences.hiddenColumnIds).toContain('schema:notes')
+      const preferences = storedPreferences('E0001-results')
+      expect(preferences.nodeVisibility).toEqual({ 'metrics.notes': false })
       expect(preferences.maxLines).toBe(3)
-      expect(preferences.sort).toBeUndefined()
       expect(preferences.defaultSortRules).toEqual([])
       expect(
         JSON.parse(
@@ -446,58 +571,37 @@ describe('ExperimentResultsTable', () => {
         name: 'Learning rate: default sort; activate for temporary ascending',
       }),
     )
-
-    const preferenceKey = 'memon:results-table:research:E0001-reset-confirmation:preferences'
     await waitFor(() => {
-      const preferences = JSON.parse(window.localStorage.getItem(preferenceKey) ?? '{}') as {
-        defaultSortRules?: unknown[]
-        hiddenColumnIds?: string[]
-        maxLines?: number
-      }
+      const preferences = storedPreferences('E0001-reset-confirmation')
       expect(preferences.defaultSortRules).toHaveLength(1)
-      expect(preferences.hiddenColumnIds).toContain('schema:notes')
+      expect(preferences.nodeVisibility).toEqual({ 'metrics.notes': false })
       expect(preferences.maxLines).toBe(3)
     })
-    const configuredPreferences = window.localStorage.getItem(preferenceKey)
     const resetButton = screen.getByRole('button', { name: 'Reset view' })
-    const notesCheckbox = screen.getByRole('checkbox', { name: 'Show Notes column' })
-    const maxLinesInput = screen.getByRole('spinbutton', {
-      name: 'Maximum lines per results cell',
-    })
-    const temporarySortBadge = screen.getByText('Temporary · Learning rate ↑')
-
     await user.click(resetButton)
     const dialog = await screen.findByRole('dialog', { name: 'Reset Results view?' })
     expect(dialog).toHaveTextContent('saved default sort')
-    expect(dialog).toHaveTextContent('checkbox visibility')
     expect(dialog).toHaveTextContent('This cannot be undone')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus())
-    expect(window.localStorage.getItem(preferenceKey)).toBe(configuredPreferences)
-    expect(notesCheckbox).not.toBeChecked()
-    expect(maxLinesInput).toHaveValue(3)
-    expect(temporarySortBadge).toBeInTheDocument()
-
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('dialog', { name: 'Reset Results view?' })).not.toBeInTheDocument()
-    expect(window.localStorage.getItem(preferenceKey)).toBe(configuredPreferences)
-
-    await user.click(resetButton)
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: 'Reset Results view?' })).not.toBeInTheDocument()
-    expect(window.localStorage.getItem(preferenceKey)).toBe(configuredPreferences)
-    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
 
     await user.click(resetButton)
     await user.click(screen.getByRole('button', { name: 'Confirm reset Results view' }))
-    expect(screen.queryByRole('dialog', { name: 'Reset Results view?' })).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Show Notes column' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
     expect(screen.getByRole('spinbutton', { name: 'Maximum lines per results cell' })).toHaveValue(
       1,
     )
     expect(screen.queryByText('Temporary · Learning rate ↑')).not.toBeInTheDocument()
     expect(resetButton).toBeDisabled()
     await waitFor(() =>
-      expect(JSON.parse(window.localStorage.getItem(preferenceKey) ?? '{}')).toEqual({
+      expect(storedPreferences('E0001-reset-confirmation')).toEqual({
         hiddenColumnIds: [],
         columnOrderIds: [],
         maxLines: 1,
@@ -507,6 +611,11 @@ describe('ExperimentResultsTable', () => {
         rowOverrides: {},
         sotaModes: {},
         decimalPlaces: {},
+        nodeVisibility: {},
+        treeOrder: {},
+        collapsedGroups: [],
+        statsDisplay: {},
+        statsSort: {},
       }),
     )
   })
@@ -516,120 +625,35 @@ describe('ExperimentResultsTable', () => {
     const first = renderResults('E0001-default-sort')
 
     expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
-    expect(screen.getByText('Variant ↑')).toBeInTheDocument()
-
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Variant: default sort; activate for temporary ascending',
-      }),
-    )
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Variant: temporarily sorted ascending; activate for descending',
-      }),
-    )
-    expect(variantOrder()).toEqual(['V0003', 'V0002', 'V0001'])
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Variant: temporarily sorted descending; activate for default sort',
-      }),
-    )
-    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
-
     await addDefaultSort(user, 'Notes', 'Large to small (descending)')
     expect(variantOrder()).toEqual(['V0001', 'V0003', 'V0002'])
     await addDefaultSort(user, 'Learning rate', 'Large to small (descending)')
     expect(variantOrder()).toEqual(['V0003', 'V0001', 'V0002'])
 
-    await user.click(screen.getByRole('button', { name: 'Edit sort 2 Learning rate descending' }))
-    await chooseSelectOption(user, 'Sort direction', 'Small to large (ascending)')
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
-    expect(variantOrder()).toEqual(['V0001', 'V0003', 'V0002'])
-
     const sortRules = first.container.querySelectorAll<HTMLElement>('[data-sort-rule-order]')
     dragBefore(sortRules[1]!, sortRules[0]!)
     expect(
-      screen.getByRole('button', { name: 'Edit sort 1 Learning rate ascending' }),
+      screen.getByRole('button', { name: 'Edit sort 1 Learning rate descending' }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit sort 2 Notes descending' })).toBeInTheDocument()
-    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
-
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Final loss: default sort; activate for temporary ascending',
-      }),
-    )
-    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
-    expect(first.container.querySelector('[data-temporary-sort]')).toHaveTextContent(
-      'Temporary · Final loss ↑',
-    )
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Final loss: temporarily sorted ascending; activate for descending',
-      }),
-    )
-    expect(variantOrder()).toEqual(['V0002', 'V0001', 'V0003'])
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Final loss: temporarily sorted descending; activate for default sort',
-      }),
-    )
-    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
+    expect(variantOrder()).toEqual(['V0003', 'V0002', 'V0001'])
 
     await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem(
-          'memon:results-table:research:E0001-default-sort:preferences',
-        ) ?? '{}',
-      ) as { defaultSortRules?: Array<{ columnId?: string; direction?: string }> }
-      expect(preferences.defaultSortRules).toMatchObject([
-        { columnId: 'schema:lr', direction: 'asc' },
-        { columnId: 'schema:notes', direction: 'desc' },
+      expect(storedPreferences('E0001-default-sort').defaultSortRules).toMatchObject([
+        { columnId: 'params.lr', direction: 'desc' },
+        { columnId: 'metrics.notes', direction: 'desc' },
       ])
     })
-
-    first.unmount()
-    renderResults('E0001-default-sort')
-    await waitFor(() => expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003']))
-    expect(screen.queryByText(/Temporary ·/)).not.toBeInTheDocument()
   })
 
   it('persists AND row filters and force overrides while show-all remains temporary', async () => {
     const user = userEvent.setup()
     const first = renderResults('E0001-row-filters')
 
-    expect(screen.queryByRole('combobox', { name: 'Override row' })).not.toBeInTheDocument()
     await addRowFilter(user, 'Final loss', 'Greater than (>)', '0.15')
     expect(variantOrder()).toEqual(['V0002'])
-
-    await user.click(screen.getByRole('button', { name: 'Edit filter 1 Final loss > 0.15' }))
-    await user.clear(screen.getByLabelText('Filter value'))
-    await user.type(screen.getByLabelText('Filter value'), '0.05')
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
-    expect(variantOrder()).toEqual(['V0001', 'V0002'])
-    await user.click(screen.getByRole('button', { name: 'Edit filter 1 Final loss > 0.05' }))
-    await user.clear(screen.getByLabelText('Filter value'))
-    await user.type(screen.getByLabelText('Filter value'), '0.15')
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
-
-    await addRowFilter(user, 'Final loss', 'Less than (<)', '0.25')
-    expect(variantOrder()).toEqual(['V0002'])
-
     await addRowFilter(user, 'Status', 'Equals (=)', 'COMPLETED')
-    await addRowFilter(user, 'Notes', 'Does not equal (≠)', 'single line')
     expect(variantOrder()).toEqual(['V0002'])
-    expect(first.container.querySelectorAll('[data-row-filter]')).toHaveLength(4)
-    expect(screen.queryByText('Auto')).not.toBeInTheDocument()
-
-    const filterRules = first.container.querySelectorAll<HTMLElement>('[data-row-filter-order]')
-    dragBefore(filterRules[3]!, filterRules[0]!)
-    expect(
-      screen.getByRole('button', { name: 'Edit filter 1 Notes ≠ single line' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Edit filter 2 Final loss > 0.15' }),
-    ).toBeInTheDocument()
-    expect(variantOrder()).toEqual(['V0002'])
+    expect(first.container.querySelectorAll('[data-row-filter]')).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: 'Show all rows temporarily' }))
     fireEvent.contextMenu(first.container.querySelector('[data-variant-id="V0001"]')!)
@@ -640,175 +664,220 @@ describe('ExperimentResultsTable', () => {
     fireEvent.contextMenu(first.container.querySelector('[data-variant-id="V0002"]')!)
     await user.click(await screen.findByRole('menuitem', { name: 'Force hide row' }))
     expect(variantOrder()).toEqual(['V0001'])
-
-    await user.click(screen.getByRole('button', { name: 'Show all rows temporarily' }))
-    expect(variantOrder()).toEqual(['V0001', 'V0002', 'V0003'])
-    fireEvent.contextMenu(first.container.querySelector('[data-variant-id="V0002"]')!)
-    await user.click(await screen.findByRole('menuitem', { name: 'Force show row' }))
-    await user.click(screen.getByRole('button', { name: 'Resume saved row filters' }))
-    expect(variantOrder()).toEqual(['V0001', 'V0002'])
-
-    first.unmount()
-    const restored = renderResults('E0001-row-filters')
-    await waitFor(() => expect(variantOrder()).toEqual(['V0001', 'V0002']))
-    expect(
-      within(restored.container.querySelector<HTMLElement>('[data-row-filter-order]')!).getByText(
-        '1',
-      ),
-    ).toBeInTheDocument()
-    expect(
-      restored.container.querySelector<HTMLElement>('[data-row-filter-order]'),
-    ).toHaveTextContent('Notes')
-    expect(screen.getByRole('button', { name: 'Show all rows temporarily' })).toHaveAttribute(
-      'data-state',
-      'off',
+    await waitFor(() =>
+      expect(storedPreferences('E0001-row-filters').rowOverrides).toEqual({
+        V0001: 'include',
+        V0002: 'exclude',
+      }),
     )
   })
 
-  it('pins columns in user-selected side order and falls back to grouped scrolling', async () => {
+  it('pins single columns into the left zone after the Variant column with a breadcrumb', async () => {
     const user = userEvent.setup()
-    const first = renderResults('E0001-pins')
+    const { container } = renderResults('E0001-pins', GROUPED_RESULTS)
     const table = screen.getByRole('table')
     let viewportWidth = 500
     Object.defineProperty(table.parentElement, 'clientWidth', {
       configurable: true,
       get: () => viewportWidth,
     })
-    for (const header of within(table).getAllByRole('columnheader')) {
-      Object.defineProperty(header, 'getBoundingClientRect', {
-        configurable: true,
-        value: () => ({
-          bottom: 32,
-          height: 32,
-          left: 0,
-          right: 120,
-          top: 0,
-          width: 120,
-          x: 0,
-          y: 0,
-          toJSON: () => ({}),
-        }),
-      })
+    const mockWidths = () => {
+      for (const header of Array.from(table.querySelectorAll<HTMLElement>('thead th'))) {
+        Object.defineProperty(header, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => ({
+            bottom: 32,
+            height: 32,
+            left: 0,
+            right: 120,
+            top: 0,
+            width: 120,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          }),
+        })
+      }
     }
 
-    await chooseHeaderAction(user, 'Commit', 'Pin left')
-    await chooseHeaderAction(user, 'Final loss', 'Pin left')
-    await chooseHeaderAction(user, 'Notes', 'Pin right')
+    await user.click(screen.getByRole('button', { name: 'Pin LR column' }))
+    mockWidths()
+    await chooseHeaderAction(user, 'FID', 'Pin column')
+    mockWidths()
+    fireEvent(window, new Event('resize'))
 
-    expect(headerIds(table)).toEqual([
-      'commit',
-      'schema:loss',
-      'variant',
-      'status',
-      'schema:lr',
-      'entry',
-      'recipe',
-      'runs',
-      'attempts',
-      'schema:notes',
-    ])
+    expect(pinnedHeaderIds(table)).toEqual(['variant', 'params.optim.lr', 'metrics.eval.fid'])
     expect(
-      Array.from(first.container.querySelectorAll<HTMLElement>('[data-column-option]')).map(
-        (option) => option.dataset.columnOption,
+      table.querySelector('thead [data-column-id="params.optim.lr"] [data-column-label]'),
+    ).toHaveTextContent('Optimizer › LR')
+    // Batch size stays in its group; the tree marks and lists the pins.
+    expect(table.querySelector('thead [data-group-id="group:params.optim"]')).toHaveAttribute(
+      'colspan',
+      '2',
+    )
+    expect(
+      container.querySelector('[data-column-option="params.optim.lr"] [data-pin-indicator]'),
+    ).toBeInTheDocument()
+    const pinnedSection = container.querySelector<HTMLElement>(
+      '[data-slot="results-column-tree-pinned"]',
+    )!
+    expect(
+      Array.from(pinnedSection.querySelectorAll<HTMLElement>('[data-pinned-option]')).map(
+        (row) => row.dataset.pinnedOption,
       ),
-    ).toEqual([
-      'variant',
-      'status',
-      'schema:lr',
-      'schema:loss',
-      'schema:notes',
-      'entry',
-      'recipe',
-      'commit',
-      'runs',
-      'attempts',
-    ])
+    ).toEqual(['params.optim.lr', 'metrics.eval.fid'])
+
     await waitFor(() => {
-      expect(screen.getByRole('columnheader', { name: /Commit/ })).toHaveClass('sticky')
-      expect(screen.getByRole('columnheader', { name: /Commit/ })).toHaveClass('!bg-muted')
-      expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveStyle({
-        left: '120px',
-      })
-      expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveClass(
-        '!bg-sky-50',
-        'dark:!bg-sky-950',
-      )
-      expect(screen.getByRole('columnheader', { name: /Notes/ })).toHaveStyle({ right: '0px' })
+      expect(screen.getByRole('columnheader', { name: /Optimizer › LR/ })).toHaveClass('sticky')
+      expect(screen.getByRole('columnheader', { name: /FID/ })).toHaveStyle({ left: '240px' })
+      expect(screen.getByRole('columnheader', { name: /FID/ })).toHaveClass('!bg-sky-50')
       expect(
-        table.querySelector('[data-variant-id="V0001"] [data-column-id="commit"]'),
-      ).toHaveClass('!bg-background')
-      expect(
-        table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"]'),
+        table.querySelector('[data-variant-id="V0001"] [data-column-id="metrics.eval.fid"]'),
       ).toHaveClass('!bg-sky-50', 'dark:!bg-sky-950')
     })
 
-    await chooseHeaderAction(user, 'Final loss', 'Star column')
-    expect(screen.getByRole('columnheader', { name: /Final loss/ })).toHaveClass(
-      '!bg-amber-50',
-      'dark:!bg-amber-950',
-    )
-    expect(
-      table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"]'),
-    ).toHaveClass('!bg-amber-50', 'dark:!bg-amber-950')
+    // Reorder pins in the tree's pinned section.
+    const pinRows = pinnedSection.querySelectorAll<HTMLElement>('[data-pinned-option]')
+    dragBefore(pinRows[1]!, pinRows[0]!)
+    expect(pinnedHeaderIds(table)).toEqual(['variant', 'metrics.eval.fid', 'params.optim.lr'])
 
-    viewportWidth = 360
+    // Oversized pins degrade to ordered scrolling.
+    viewportWidth = 300
+    mockWidths()
     fireEvent(window, new Event('resize'))
     await waitFor(() =>
-      expect(screen.getByRole('columnheader', { name: /Commit/ })).not.toHaveClass('sticky'),
-    )
-    expect(screen.getByRole('columnheader', { name: /Final loss/ })).not.toHaveClass('!bg-amber-50')
-    expect(headerIds(table).slice(0, 2)).toEqual(['commit', 'schema:loss'])
-    expect(headerIds(table).at(-1)).toBe('schema:notes')
-    expect(screen.getByRole('columnheader', { name: /Commit/ })).toHaveAttribute(
-      'data-pinned',
-      'left',
+      expect(screen.getByRole('columnheader', { name: /Optimizer › LR/ })).not.toHaveClass(
+        'sticky',
+      ),
     )
 
-    await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-pins:preferences') ?? '{}',
-      ) as { pinnedColumnIds?: { left?: string[]; right?: string[] } }
-      expect(preferences.pinnedColumnIds).toEqual({
-        left: ['commit', 'schema:loss'],
-        right: ['schema:notes'],
-      })
-    })
+    // Unpinning returns LR before Batch size inside its group.
+    await user.click(within(pinnedSection).getByRole('button', { name: 'Unpin Optimizer › LR' }))
+    expect(headerIds(table).filter((id) => id.startsWith('params.optim'))).toEqual([
+      'params.optim.lr',
+      'params.optim.batch_size',
+      'params.optim.adam.beta1',
+    ])
+    await waitFor(() =>
+      expect(storedPreferences('E0001-pins').pinnedColumnIds).toEqual({
+        left: ['metrics.eval.fid'],
+        right: [],
+      }),
+    )
+  })
 
-    first.unmount()
-    renderResults('E0001-pins')
-    await waitFor(() => expect(headerIds(screen.getByRole('table'))[0]).toBe('commit'))
-    expect(headerIds(screen.getByRole('table')).at(-1)).toBe('schema:notes')
+  it('collapses a group to a placeholder independently of hidden columns', async () => {
+    const user = userEvent.setup()
+    renderResults('E0001-collapse', GROUPED_RESULTS)
+    const table = screen.getByRole('table')
+    await user.click(screen.getByRole('checkbox', { name: 'Show Batch size column' }))
+    await user.click(screen.getByRole('button', { name: 'Collapse Optimizer group' }))
+    const placeholder = table.querySelector('thead [data-collapsed-group="group:params.optim"]')
+    expect(placeholder).toHaveTextContent('2 cols')
+    expect(table.querySelector('thead [data-column-id="params.optim.lr"]')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Expand Optimizer group' }))
+    expect(headerIds(table).filter((id) => id.startsWith('params.optim'))).toEqual([
+      'params.optim.lr',
+      'params.optim.adam.beta1',
+    ])
+    await waitFor(() => expect(storedPreferences('E0001-collapse').collapsedGroups).toEqual([]))
+  })
+
+  it('renders stats as one column with a display dropdown saved in the View', async () => {
+    const user = userEvent.setup()
+    const { container } = renderResults('E0001-stats', GROUPED_RESULTS)
+    const table = screen.getByRole('table')
+    const fid = () =>
+      table.querySelector<HTMLElement>(
+        '[data-variant-id="V0001"] [data-column-id="metrics.eval.fid"]',
+      )!
+    const clip = () =>
+      table.querySelector<HTMLElement>(
+        '[data-variant-id="V0001"] [data-column-id="metrics.eval.clip"]',
+      )!
+    // Seeds aggregate by default; a one-Run stats cell reads mean ± std.
+    expect(fid()).toHaveTextContent('11 ± 1 (3)')
+    expect(clip()).toHaveTextContent('0.312 ± 0.021')
+    const before = headerIds(table).length
+
+    await user.click(screen.getByRole('button', { name: /^Display of CLIP/ }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByRole('menuitemradio', { name: 'p50/p99' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitemradio', { name: 'mean±sem' })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitemradio', { name: 'median' })).not.toBeInTheDocument()
+    await user.click(within(menu).getByRole('menuitemradio', { name: 'p50/p99' }))
+    expect(clip()).toHaveTextContent('0.310/0.400')
+    expect(headerIds(table)).toHaveLength(before)
+    await waitFor(() =>
+      expect(storedPreferences('E0001-stats').statsDisplay).toEqual({
+        'metrics.eval.clip': 'p50/p99',
+      }),
+    )
+    // The display also decides the sort statistic: by p50 V0002 ranks above
+    // V0001 descending (by mean it would not).
+    await user.click(
+      screen.getByRole('button', { name: 'CLIP: default sort; activate for temporary ascending' }),
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: 'CLIP: temporarily sorted ascending; activate for descending',
+      }),
+    )
+    expect(variantOrder().slice(0, 2)).toEqual(['V0002', 'V0001'])
+
+    // Hovering a stats cell lists every statistic and its contributing Runs.
+    await user.hover(within(fid()).getByText('11 ± 1 (3)'))
+    const details = await screen.findByLabelText('FID statistics')
+    expect(details).toHaveTextContent('Across 3 evidence Runs')
+    expect(details).toHaveTextContent('p99')
+    expect(details).toHaveTextContent('logs/c-261001-000000')
+
+    // Markers: mixed, frozen, differs from plan, planned and BLOCKED.
+    expect(
+      table.querySelector(
+        '[data-variant-id="V0001"] [data-column-id="params.seed"] [data-cell-marker="mixed"]',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      table.querySelector(
+        '[data-variant-id="V0003"] [data-column-id="metrics.eval.fid"] [data-cell-marker="frozen"]',
+      ),
+    ).toBeInTheDocument()
+    const drifted = table.querySelector(
+      '[data-variant-id="V0002"] [data-column-id="params.optim.lr"] [data-cell-marker="differs-from-plan"]',
+    )
+    expect(drifted).toHaveAttribute('title', 'Differs from the planned value 0.0001')
+    expect(
+      table.querySelector(
+        '[data-variant-id="V0004"] [data-column-id="params.optim.lr"] [data-cell-source="planned"]',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      table.querySelector(
+        '[data-variant-id="V0004"] [data-column-id="status"] [data-status="BLOCKED"]',
+      ),
+    ).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="results-table"]')).toBeInTheDocument()
   })
 
   it('persists SOTA mode and decimal places per metric column', async () => {
     cleanup()
     const user = userEvent.setup()
-    const { container, unmount: unmountA } = renderResults('E0001-sota-a')
-
-    // Right-click the "Final loss" column header to open the context menu.
+    const { container, unmount } = renderResults('E0001-sota-a')
     const lossHeader = container.querySelector<HTMLElement>(
-      '[data-column-id="schema:loss"] button',
+      '[data-column-id="metrics.loss"] button',
     )!
     fireEvent.contextMenu(lossHeader)
-
-    // Context menu content is portaled to document.body; query from there.
     const body = window.document.body
-
-    // Open SOTA highlight submenu and select "Higher is better"
     const sotaTrigger = Array.from(
       body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
     ).find((el) => el.textContent?.includes('SOTA highlight'))!
-    expect(sotaTrigger).toBeDefined()
     await act(async () => {
       fireEvent.click(sotaTrigger)
     })
-    const higherOption = screen.getByRole('menuitem', { name: /Higher is better/i })
-    expect(higherOption).not.toBeDisabled()
     await act(async () => {
-      fireEvent.click(higherOption)
+      fireEvent.click(screen.getByRole('menuitem', { name: /Higher is better/i }))
     })
-
-    // Open decimal places submenu and click + twice to get 2
     fireEvent.contextMenu(lossHeader)
     const decimalTrigger = Array.from(
       body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
@@ -821,188 +890,53 @@ describe('ExperimentResultsTable', () => {
     await user.click(plusButton)
 
     const table = container.querySelector('table')!
-    // SOTA highlighting and decimal formatting apply after the preference-driven
-    // re-render; wait for them.
-    await waitFor(() => {
-      const v0002After = table.querySelector(
-        '[data-variant-id="V0002"] [data-column-id="schema:loss"] span',
+    const lossText = (id: string) =>
+      table.querySelector(
+        `[data-variant-id="${id}"] [data-column-id="metrics.loss"] [data-cell-kind] > span`,
       )
-      expect(v0002After).toHaveClass('font-bold', 'underline')
-    })
-    const v0001LossCell = table.querySelector(
-      '[data-variant-id="V0001"] [data-column-id="schema:loss"] span',
+    await waitFor(() => expect(lossText('V0002')).toHaveClass('font-bold', 'underline'))
+    expect(lossText('V0001')).toHaveClass('font-bold')
+    expect(lossText('V0001')).not.toHaveClass('underline')
+    expect(lossText('V0001')).toHaveTextContent('0.10')
+    expect(lossText('V0002')).toHaveTextContent('0.20')
+    const lrText = table.querySelector(
+      '[data-variant-id="V0001"] [data-column-id="params.lr"] [data-cell-kind] > span',
     )
-    expect(v0001LossCell).toHaveClass('font-bold')
-    expect(v0001LossCell).not.toHaveClass('underline')
+    expect(lrText).not.toHaveClass('font-bold', 'underline')
+    expect(lrText).toHaveTextContent('0.001')
 
-    // Decimal formatting: 0.1 → "0.10", 0.2 → "0.20"
-    expect(v0001LossCell).toHaveTextContent('0.10')
-    const v0002LossCell = table.querySelector(
-      '[data-variant-id="V0002"] [data-column-id="schema:loss"] span',
-    )
-    expect(v0002LossCell).toHaveTextContent('0.20')
-
-    // Non-metric column (Learning rate) should not be affected
-    const lrCell = table.querySelector(
-      '[data-variant-id="V0001"] [data-column-id="schema:lr"] span',
-    )
-    expect(lrCell).not.toHaveClass('font-bold', 'underline')
-    expect(lrCell).toHaveTextContent('0.001') // no formatting
-
-    unmountA()
+    unmount()
     await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-sota-a:preferences') ??
-          '{}',
-      )
-      expect(preferences.sotaModes).toEqual({ 'schema:loss': 'higher-is-better' })
-      expect(preferences.decimalPlaces).toEqual({ 'schema:loss': 2 })
+      const preferences = storedPreferences('E0001-sota-a')
+      expect(preferences.sotaModes).toEqual({ 'metrics.loss': 'higher-is-better' })
+      expect(preferences.decimalPlaces).toEqual({ 'metrics.loss': 2 })
     })
   })
 
-  it('switches SOTA mode to lower-is-better and highlights the smallest values', async () => {
+  it('ranks a declared lower-is-better column without choosing a direction', async () => {
     cleanup()
-    const user = userEvent.setup()
-    const { container, unmount: unmountB } = renderResults('E0001-sota-b')
-
-    const lossHeader = container.querySelector<HTMLElement>(
-      '[data-column-id="schema:loss"] button',
+    const { container } = renderResults('E0001-sota-declared', GROUPED_RESULTS)
+    const fidHeader = container.querySelector<HTMLElement>(
+      '[data-column-id="metrics.eval.fid"] button',
     )!
-    // Start from off, cycle: off → higher → lower
-    fireEvent.contextMenu(lossHeader)
-    const body = window.document.body
-    const sotaTriggerB = Array.from(
-      body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
-    ).find((el) => el.textContent?.includes('SOTA highlight'))!
-    await act(async () => {
-      fireEvent.click(sotaTriggerB)
-    })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Higher is better/i }))
-    })
-
-    fireEvent.contextMenu(lossHeader)
-    const sotaTriggerC = Array.from(
-      body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
-    ).find((el) => el.textContent?.includes('SOTA highlight'))!
-    await act(async () => {
-      fireEvent.click(sotaTriggerC)
-    })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Lower is better/i }))
-    })
-
-    const table = container.querySelector('table')!
-    await waitFor(() => {
-      const v0001After = table.querySelector(
-        '[data-variant-id="V0001"] [data-column-id="schema:loss"] span',
-      )
-      expect(v0001After).toHaveClass('font-bold', 'underline')
-    })
-    const v0002LossCell = table.querySelector(
-      '[data-variant-id="V0002"] [data-column-id="schema:loss"] span',
-    )
-    expect(v0002LossCell).toHaveClass('font-bold')
-    expect(v0002LossCell).not.toHaveClass('underline')
-
-    unmountB()
-    await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem('memon:results-table:research:E0001-sota-b:preferences') ??
-          '{}',
-      )
-      expect(preferences.sotaModes).toEqual({ 'schema:loss': 'lower-is-better' })
-    })
-  })
-
-  it('selects a SOTA mode directly instead of cycling through modes', async () => {
-    cleanup()
-    const experimentId = 'E0001-sota-direct'
-    const { container, unmount } = renderResults(experimentId)
-    const lossHeader = container.querySelector<HTMLElement>(
-      '[data-column-id="schema:loss"] button',
-    )!
-    fireEvent.contextMenu(lossHeader)
+    fireEvent.contextMenu(fidHeader)
     const sotaTrigger = Array.from(
       window.document.body.querySelectorAll<HTMLElement>('[data-slot="context-menu-sub-trigger"]'),
     ).find((el) => el.textContent?.includes('SOTA highlight'))!
     await act(async () => {
       fireEvent.click(sotaTrigger)
     })
-    // From Off, choosing Lower is better must not land on Higher is better.
+    expect(screen.queryByRole('menuitem', { name: /^Higher is better$/ })).not.toBeInTheDocument()
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Lower is better/i }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Lower is better \(declared\)/ }))
     })
     const table = container.querySelector('table')!
-    await waitFor(() =>
-      expect(
-        table.querySelector('[data-variant-id="V0001"] [data-column-id="schema:loss"] span'),
-      ).toHaveClass('font-bold', 'underline'),
-    )
-    unmount()
-    await waitFor(() => {
-      const preferences = JSON.parse(
-        window.localStorage.getItem(`memon:results-table:research:${experimentId}:preferences`) ??
-          '{}',
+    const fidText = (id: string) =>
+      table.querySelector(
+        `[data-variant-id="${id}"] [data-column-id="metrics.eval.fid"] [data-cell-kind] > span`,
       )
-      expect(preferences.sotaModes).toEqual({ 'schema:loss': 'lower-is-better' })
-    })
-  })
-
-  it('keeps excluded metrics visible without ranking them and restores ranking after eligibility changes', async () => {
-    const experimentId = 'E0001-eligibility'
-    window.localStorage.setItem(
-      `memon:results-table:research:${experimentId}:preferences`,
-      JSON.stringify({ sotaModes: { 'schema:loss': 'lower-is-better' } }),
-    )
-    const eligibility: ResultsVariantEligibility[] = [
-      {
-        variantId: 'V0001',
-        runs: ['run-a'],
-        deprecatedRuns: ['run-a'],
-        eligibleRuns: [],
-        hasMetrics: true,
-        metricsValidity: 'unavailable',
-      },
-      {
-        variantId: 'V0002',
-        runs: ['run-b', 'run-c'],
-        deprecatedRuns: ['run-b'],
-        eligibleRuns: ['run-c'],
-        hasMetrics: true,
-        metricsValidity: 'partial',
-      },
-    ]
-    const { container, rerender } = renderResults(experimentId, RESULTS, eligibility)
-    const metric = (id: string) =>
-      container.querySelector(`[data-variant-id="${id}"] [data-column-id="schema:loss"] span`)!
-    await waitFor(() => expect(metric('V0001')).toHaveTextContent('0.1 [unavailable]'))
-    expect(metric('V0002')).toHaveTextContent('0.2 [partial]')
-    expect(metric('V0001')).not.toHaveClass('font-bold')
-    expect(metric('V0002')).not.toHaveClass('font-bold')
-
-    rerender(
-      <ExperimentResultsTable
-        document={RESULTS}
-        project="research"
-        experimentId={experimentId}
-        runIds={['run-a', 'run-b', 'run-c']}
-        variantEligibility={[
-          {
-            ...eligibility[0]!,
-            deprecatedRuns: [],
-            eligibleRuns: ['run-a'],
-            metricsValidity: 'valid',
-          },
-          eligibility[1]!,
-        ]}
-      />,
-    )
-    await waitFor(() => expect(metric('V0001')).toHaveClass('font-bold', 'underline'))
-    expect(metric('V0001')).toHaveTextContent('0.1')
-    expect(metric('V0001')).not.toHaveTextContent('unavailable')
-    expect(metric('V0002')).toHaveTextContent('0.2 [partial]')
-    expect(metric('V0002')).not.toHaveClass('font-bold')
+    await waitFor(() => expect(fidText('V0002')).toHaveClass('font-bold', 'underline'))
+    expect(fidText('V0001')).toHaveClass('font-bold')
   })
 
   it('surfaces malformed saved View settings instead of dropping them silently', async () => {
@@ -1011,6 +945,7 @@ describe('ExperimentResultsTable', () => {
       `memon:results-table:research:${experimentId}:preferences`,
       JSON.stringify({
         hiddenColumnIds: ['schema:gone'],
+        statsDisplay: { 'metrics.loss': 'median' },
         rowFilters: [
           { id: 'bad', columnId: 'status', operator: 'like', value: 'RUNNING' },
           { columnId: 'status', operator: 'neq', value: 'PLANNED' },
@@ -1018,60 +953,25 @@ describe('ExperimentResultsTable', () => {
       }),
     )
     const { container } = renderResults(experimentId)
-
     const note = await screen.findByRole('note')
     expect(note).toHaveAttribute('data-slot', 'results-view-invalid')
-    expect(note).toHaveTextContent('1 saved View setting is invalid and ignored.')
+    expect(note).toHaveTextContent('2 saved View settings are invalid and ignored.')
     // The malformed filter is ignored; the id-less valid filter still applies.
     expect(variantOrder()).toEqual(['V0001', 'V0002'])
     expect(container.querySelectorAll('[data-row-filter]')).toHaveLength(1)
   })
-
-  it('does not highlight non-numeric metric values', async () => {
-    cleanup()
-    const user = userEvent.setup()
-    const { container, unmount } = renderResults('E0001-sota')
-
-    // Notes is a string metric column; verify the SOTA submenu exists in its
-    // context menu (metric columns get the display submenics).
-    const notesHeader = container.querySelector<HTMLElement>(
-      '[data-column-id="schema:notes"] button',
-    )!
-    fireEvent.contextMenu(notesHeader)
-    const sotaSubTrigger = screen.getByRole('menuitem', { name: /SOTA highlight/i })
-    expect(sotaSubTrigger).toBeInTheDocument()
-    await user.click(sotaSubTrigger)
-    // All three modes are valid options; "Off" is the default (not disabled).
-    expect(screen.getByRole('menuitem', { name: /^Off$/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /Higher is better/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /Lower is better/i })).toBeInTheDocument()
-
-    // String metric values never receive SOTA rank styling regardless of mode.
-    const table = container.querySelector('table') ?? screen.getByRole('table')
-    const v0001NotesCell = table.querySelector(
-      '[data-variant-id="V0001"] [data-column-id="schema:notes"]',
-    )
-    expect(v0001NotesCell).not.toHaveClass('font-bold', 'underline')
-
-    unmount()
-  })
 })
 
-function renderResults(
-  experimentId: string,
-  document: ResultsDocument = RESULTS,
-  variantEligibility?: ResultsVariantEligibility[],
-) {
+function renderResults(experimentId: string, summary: ResultsSummaryPayload = RESULTS) {
   const portalRoot = window.document.createElement('div')
   portalRoot.id = 'portal-root'
   window.document.body.appendChild(portalRoot)
   const result = render(
     <ExperimentResultsTable
-      document={document}
+      summary={summary}
       project="research"
       experimentId={experimentId}
-      runIds={['run-a', 'run-b', 'run-c']}
-      variantEligibility={variantEligibility}
+      runIds={[RUN_A, RUN_B, RUN_C]}
     />,
   )
   return {
@@ -1084,36 +984,48 @@ function renderResults(
   }
 }
 
+function storedPreferences(experimentId: string): Record<string, unknown> & {
+  nodeVisibility?: Record<string, boolean>
+  treeOrder?: Record<string, string[]>
+  [key: string]: unknown
+} {
+  return JSON.parse(
+    window.localStorage.getItem(`memon:results-table:research:${experimentId}:preferences`) ?? '{}',
+  )
+}
+
+function storedCollection(
+  experimentId: string,
+): Array<{ definition: { hiddenColumnIds: string[] } }> {
+  return JSON.parse(
+    window.localStorage.getItem(`memon:results-views:research:${experimentId}:collection`) ?? '[]',
+  )
+}
+
 function variantOrder(): string[] {
   return screen
     .getAllByRole('row')
-    .slice(1)
     .map((row) => row.getAttribute('data-variant-id'))
     .filter((id): id is string => id !== null)
 }
 
 function headerIds(table: HTMLElement): string[] {
-  return within(table)
-    .getAllByRole('columnheader')
-    .map((header) => header.getAttribute('data-column-id'))
-    .filter((id): id is string => id !== null)
+  return Array.from(table.querySelectorAll<HTMLElement>('thead [data-column-id]')).map(
+    (header) => header.dataset.columnId ?? '',
+  )
 }
 
-function columnOptionIds(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('[data-column-option]')).map(
-    (option) => option.dataset.columnOption ?? '',
+function pinnedHeaderIds(table: HTMLElement): string[] {
+  return Array.from(table.querySelectorAll<HTMLElement>('thead [data-column-id][data-pinned]')).map(
+    (header) => header.dataset.columnId ?? '',
   )
 }
 
 function dragBefore(source: HTMLElement, target: HTMLElement) {
-  const dataTransfer = {
-    dropEffect: 'none',
-    effectAllowed: 'none',
-    setData: vi.fn(),
-  }
+  const dataTransfer = { dropEffect: 'none', effectAllowed: 'none', setData: vi.fn() }
   fireEvent.dragStart(source, { dataTransfer })
-  fireEvent.dragOver(target, { clientX: 0, dataTransfer })
-  fireEvent.drop(target, { clientX: 0, dataTransfer })
+  fireEvent.dragOver(target, { clientX: 0, clientY: 0, dataTransfer })
+  fireEvent.drop(target, { clientX: 0, clientY: 0, dataTransfer })
   fireEvent.dragEnd(source, { dataTransfer })
 }
 

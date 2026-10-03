@@ -2,22 +2,30 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  arrangeColumns,
   buildColumns,
+  cellText,
+  cellValue,
   distinctValues,
-  excludedRunIds,
+  groupLabel,
   resultValueDescription,
 } from './columns'
-import { resultsDocument, variant } from './fixtures.test-helpers'
+import {
+  DEFAULT_COLUMNS,
+  column as fixtureColumn,
+  resultsDocument,
+  statsCell,
+  valueCell,
+  variant,
+} from './fixtures.test-helpers'
 
 const DEFAULT_IDS = [
   'variant',
   'status',
-  'schema:lr',
-  'schema:opt',
-  'schema:flag',
-  'schema:loss',
-  'schema:notes',
+  'params.lr',
+  'params.opt',
+  'params.flag',
+  'metrics.loss',
+  'metrics.notes',
   'entry',
   'recipe',
   'commit',
@@ -26,13 +34,12 @@ const DEFAULT_IDS = [
 ]
 
 describe('buildColumns', () => {
-  it('places built-ins around the declared columns in YAML order', () => {
+  it('places built-ins around the summary columns in summary order', () => {
     expect(buildColumns(resultsDocument([])).map((column) => column.id)).toEqual(DEFAULT_IDS)
   })
 
-  it('handles a document with no declared columns', () => {
-    const columns = buildColumns({ schemaVersion: 1, columns: [], variants: [] })
-    expect(columns.map((column) => column.id)).toEqual([
+  it('handles a summary with no columns', () => {
+    expect(buildColumns(resultsDocument([], [])).map((column) => column.id)).toEqual([
       'variant',
       'status',
       'entry',
@@ -46,160 +53,157 @@ describe('buildColumns', () => {
   it.each([
     ['variant', 'V1 Variant V1'],
     ['status', 'COMPLETED'],
-    ['schema:lr', 0.1],
-    ['schema:loss', null],
-    ['schema:notes', undefined],
+    ['params.lr', 0.1],
+    ['metrics.loss', null],
+    ['metrics.notes', undefined],
     ['entry', 'train.py'],
     ['commit', undefined],
-    ['runs', ['run-b']],
-    ['attempts', []],
+    ['runs', ['logs/b-261001-000000']],
+    ['attempts', ['logs/a-261001-000000']],
   ])('reads %s', (columnId, expected) => {
     const row = variant('V1', {
       parameters: { lr: 0.1 },
       metrics: { loss: null },
-      runs: ['run-a', 'run-b'],
-      attempts: ['run-a'],
+      evidence: ['logs/b-261001-000000'],
+      others: [
+        { run: 'logs/a-261001-000000', status: 'FAILED', deprecated: false, stopReason: null },
+      ],
       provenance: { entry: 'train.py' },
     })
-    const column = buildColumns(resultsDocument([row]), new Set(['run-a'])).find(
+    const column = buildColumns(resultsDocument([row])).find(
       (candidate) => candidate.id === columnId,
     )
     expect(column?.getValue(row)).toEqual(expected)
   })
 
-  it('attaches annotations by column key', () => {
-    const document = {
-      ...resultsDocument([]),
-      columnAnnotations: { lr: { description: 'Step size' } },
+  it('records ancestors, metric partition and stats options', () => {
+    const columns = buildColumns(
+      resultsDocument(
+        [],
+        [
+          fixtureColumn('params.optim.adam.beta1', 'beta1'),
+          fixtureColumn('metrics.eval.clip', 'CLIP', 'stats', {
+            stats: ['mean', 'std', 'n', 'mean.mean'],
+          }),
+          fixtureColumn('metrics.serve.latency', 'Latency', 'stats', {
+            over: 'gpu',
+            stats: ['max.p99', 'mean.p50'],
+          }),
+        ],
+      ),
+    )
+    const byId = new Map(columns.map((column) => [column.id, column]))
+    expect(byId.get('params.optim.adam.beta1')).toMatchObject({
+      metric: false,
+      ancestors: ['group:params', 'group:params.optim', 'group:params.optim.adam'],
+      statOptions: [],
+    })
+    expect(byId.get('metrics.eval.clip')).toMatchObject({
+      metric: true,
+      statOptions: ['mean', 'std', 'n'],
+    })
+    expect(byId.get('metrics.serve.latency')?.statOptions).toEqual(['mean.p50', 'max.p99'])
+    expect(byId.get('entry')?.ancestors).toEqual(['group:$provenance'])
+  })
+
+  it('labels groups from the summary groups, partitions and last segments', () => {
+    const groups = { 'params.optim': { label: 'Optimizer' } }
+    expect(groupLabel('params.optim', groups)).toBe('Optimizer')
+    expect(groupLabel('params', groups)).toBe('Parameters')
+    expect(groupLabel('metrics.eval', groups)).toBe('eval')
+  })
+})
+
+describe('cell text and comparable value', () => {
+  const clip = fixtureColumn('metrics.eval.clip', 'CLIP', 'stats', {
+    stats: ['mean', 'std', 'n'],
+    decimals: 3,
+  })
+
+  it('reads an aggregated stats cell as mean ± std (n) by default', () => {
+    const cell = statsCell({ mean: 11, std: 1, n: 3, min: 10, max: 12 })
+    const plain = fixtureColumn('metrics.fid', 'FID', 'number')
+    expect(cellText(cell, plain)).toBe('11 ± 1 (3)')
+    expect(cellValue(cell, plain)).toBe(11)
+  })
+
+  it('switches the display and sort statistic of one column', () => {
+    const cell = statsCell(
+      { mean: 0.312, std: 0.021, n: 500, p50: 0.3, p99: 0.4 },
+      { source: 'run', over: null, across: 'sample', runs: ['logs/a-261001-000000'] },
+    )
+    expect(cellText(cell, clip, { statsDisplay: { 'metrics.eval.clip': 'mean±std' } })).toBe(
+      '0.312 ± 0.021',
+    )
+    expect(cellText(cell, clip, { statsDisplay: { 'metrics.eval.clip': 'p50/p99' } })).toBe(
+      '0.300/0.400',
+    )
+    expect(cellValue(cell, clip, { statsDisplay: { 'metrics.eval.clip': 'p50/p99' } })).toBe(0.3)
+    expect(cellValue(cell, clip, { statsSort: { 'metrics.eval.clip': 'p99' } })).toBe(0.4)
+    // A statistic the cell lacks renders as an empty value.
+    expect(cellText(cell, clip, { statsDisplay: { 'metrics.eval.clip': 'sem' } })).toBe('')
+  })
+
+  it('formats numbers with the View decimals and lists mixed values', () => {
+    const lr = fixtureColumn('params.lr', 'LR', 'number')
+    expect(cellText(valueCell(0.123456), lr, { decimalPlaces: { 'params.lr': 2 } })).toBe('0.12')
+    const mixed = {
+      kind: 'mixed' as const,
+      source: 'runs' as const,
+      perRun: [
+        { run: 'logs/a-261001-000000', value: 0 },
+        { run: 'logs/b-261001-000000', value: 1 },
+      ],
     }
-    const lr = buildColumns(document).find((column) => column.id === 'schema:lr')
-    expect(lr?.annotation?.description).toBe('Step size')
-  })
-})
-
-describe('excludedRunIds', () => {
-  it.each([
-    [undefined, undefined, []],
-    [['run-a'], undefined, ['run-a']],
-    [
-      ['run-a'],
-      [
-        {
-          variantId: 'V1',
-          runs: ['run-b'],
-          deprecatedRuns: ['run-b', 'run-a'],
-          eligibleRuns: [],
-          hasMetrics: true,
-          metricsValidity: 'unavailable' as const,
-        },
-      ],
-      ['run-a', 'run-b'],
-    ],
-  ])('merges %j with eligibility', (deprecated, eligibility, expected) => {
-    expect([...excludedRunIds(deprecated, eligibility)].sort()).toEqual(expected)
-  })
-})
-
-describe('arrangeColumns', () => {
-  const columns = buildColumns(resultsDocument([]))
-  const layout = (overrides: Partial<Parameters<typeof arrangeColumns>[1]> = {}) => ({
-    columnOrderIds: DEFAULT_IDS,
-    hiddenColumnIds: [],
-    pinnedColumnIds: { left: [], right: [] },
-    ...overrides,
-  })
-  const ids = (list: Array<{ id: string }>) => list.map((column) => column.id)
-
-  it.each([
-    ['default layout', layout(), false, DEFAULT_IDS, false],
-    [
-      'hidden column',
-      layout({ hiddenColumnIds: ['status'] }),
-      false,
-      DEFAULT_IDS.filter((id) => id !== 'status'),
-      false,
-    ],
-    [
-      'hidden column with show-all',
-      layout({ hiddenColumnIds: ['status'] }),
-      true,
-      DEFAULT_IDS,
-      false,
-    ],
-    [
-      'pins in pin order around the middle',
-      layout({ pinnedColumnIds: { left: ['runs', 'status'], right: ['variant'] } }),
-      false,
-      [
-        'runs',
-        'status',
-        ...DEFAULT_IDS.filter((id) => !['runs', 'status', 'variant'].includes(id)),
-        'variant',
-      ],
-      false,
-    ],
-    [
-      'unknown ids in the layout are ignored',
-      layout({
-        columnOrderIds: ['missing', ...DEFAULT_IDS],
-        pinnedColumnIds: { left: ['gone'], right: [] },
-      }),
-      false,
-      DEFAULT_IDS,
-      true,
-    ],
-  ])('%s', (_name, input, showAll, expectedOrder, custom) => {
-    const arranged = arrangeColumns(columns, input, showAll)
-    expect(ids(arranged.orderedVisibleColumns)).toEqual(expectedOrder)
-    expect(arranged.hasCustomColumnOrder).toBe(custom)
-  })
-
-  it('keeps hidden columns in the ordered list', () => {
-    const arranged = arrangeColumns(columns, layout({ hiddenColumnIds: ['status'] }), false)
-    expect(ids(arranged.orderedColumns)).toEqual(DEFAULT_IDS)
-    expect(arranged.visibleColumns).toHaveLength(DEFAULT_IDS.length - 1)
-  })
-
-  it('handles an empty column list', () => {
-    const arranged = arrangeColumns([], layout({ columnOrderIds: [] }), false)
-    expect(arranged.orderedVisibleColumns).toEqual([])
-    expect(arranged.hasCustomColumnOrder).toBe(false)
+    expect(cellText(mixed, lr)).toBe('0 / 1')
+    expect(cellValue(mixed, lr)).toEqual(['0', '1'])
   })
 })
 
 describe('distinctValues', () => {
   const rows = [
-    variant('V1', { parameters: { lr: 0.1, opt: 'adam', flag: true }, runs: ['r1', 'r2'] }),
-    variant('V1', { parameters: { lr: 0.1, opt: 'Adam', flag: false }, runs: ['r2'] }),
-    variant('V2', { parameters: { lr: Number.NaN, opt: 'a<br>b', flag: null }, runs: [] }),
+    variant('V1', {
+      parameters: { lr: 0.1, opt: 'adam', flag: true },
+      evidence: ['logs/r1-261001-000000', 'logs/r2-261001-000000'],
+    }),
+    variant('V1', {
+      parameters: { lr: 0.1, opt: 'Adam', flag: false },
+      evidence: ['logs/r2-261001-000000'],
+    }),
+    variant('V2', { parameters: { lr: Number.NaN, opt: 'a<br>b', flag: null } }),
     variant('V3', { parameters: { opt: '' } }),
   ]
   const columns = buildColumns(resultsDocument(rows))
   const column = (id: string) => columns.find((candidate) => candidate.id === id)!
 
   it.each([
-    ['schema:lr', ['0.1', 'NaN']],
-    ['schema:opt', ['a\nb', 'adam', 'Adam']],
-    ['schema:flag', ['false', 'true']],
-    ['runs', ['r1', 'r2']],
-    ['schema:loss', []],
+    ['params.lr', ['0.1', 'NaN']],
+    ['params.opt', ['a\nb', 'adam', 'Adam']],
+    ['params.flag', ['false', 'true']],
+    ['runs', ['logs/r1-261001-000000', 'logs/r2-261001-000000']],
+    ['metrics.loss', []],
   ])('%s (duplicate rows collapse, empties skipped)', (id, expected) => {
     expect(distinctValues(rows, column(id))).toEqual(expected)
   })
 
   it('returns nothing for an empty table', () => {
-    expect(distinctValues([], column('schema:lr'))).toEqual([])
+    expect(distinctValues([], column('params.lr'))).toEqual([])
   })
 })
 
 describe('resultValueDescription', () => {
-  const document = {
-    ...resultsDocument([]),
-    columnAnnotations: { opt: { valueDescriptions: { adam: 'Adaptive', '0.1': 'n/a' } } },
-  }
-  const columns = buildColumns(document)
-  const opt = columns.find((column) => column.id === 'schema:opt')!
-  const lr = columns.find((column) => column.id === 'schema:lr')!
+  const columns = buildColumns(
+    resultsDocument(
+      [],
+      DEFAULT_COLUMNS.map((entry) =>
+        entry.key === 'params.opt'
+          ? { ...entry, valueDescriptions: { adam: 'Adaptive', '0.1': 'n/a' } }
+          : entry,
+      ),
+    ),
+  )
+  const opt = columns.find((column) => column.id === 'params.opt')!
+  const lr = columns.find((column) => column.id === 'params.lr')!
 
   it.each([
     [opt, variant('V1', { parameters: { opt: 'adam' } }), 'Adaptive'],

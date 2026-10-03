@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { buildColumns } from './columns'
-import { resultsDocument, variant } from './fixtures.test-helpers'
+import { cellScalar, resultsDocument, variant } from './fixtures.test-helpers'
 import { compareSortValues, effectiveSortRules, sortVariants } from './sorting'
 
 describe('effectiveSortRules', () => {
@@ -56,7 +56,8 @@ describe('sortVariants', () => {
     variant('V1', { parameters: { lr: 0.3 }, metrics: { loss: Number.NaN } }),
   ]
   const columns = buildColumns(resultsDocument(rows))
-  const order = (list: typeof rows) => list.map((row) => `${row.id}/${row.parameters.lr}`)
+  const order = (list: typeof rows) =>
+    list.map((row) => `${row.id}/${cellScalar(row, 'params.lr')}`)
 
   it('defaults to natural Variant id then source order for duplicates', () => {
     expect(order(sortVariants(rows, columns, []))).toEqual([
@@ -71,13 +72,13 @@ describe('sortVariants', () => {
     expect(
       order(
         sortVariants(rows, columns, [
-          { columnId: 'schema:lr', direction: 'asc' },
-          { columnId: 'schema:loss', direction: 'desc' },
+          { columnId: 'params.lr', direction: 'asc' },
+          { columnId: 'metrics.loss', direction: 'desc' },
         ]),
       ),
     ).toEqual(['V10/0.1', 'V1/0.1', 'V2/0.2', 'V1/0.3'])
     expect(
-      order(sortVariants(rows, columns, [{ columnId: 'schema:loss', direction: 'desc' }])),
+      order(sortVariants(rows, columns, [{ columnId: 'metrics.loss', direction: 'desc' }])),
     ).toEqual(['V10/0.1', 'V1/0.1', 'V1/0.3', 'V2/0.2'])
   })
 
@@ -85,12 +86,12 @@ describe('sortVariants', () => {
     expect(order(sortVariants(rows, columns, [{ columnId: 'nope', direction: 'desc' }]))).toEqual(
       order(sortVariants(rows, columns, [])),
     )
-    expect(sortVariants([], columns, [{ columnId: 'schema:lr', direction: 'asc' }])).toEqual([])
+    expect(sortVariants([], columns, [{ columnId: 'params.lr', direction: 'asc' }])).toEqual([])
   })
 
   it('does not mutate its input', () => {
     const copy = [...rows]
-    sortVariants(rows, columns, [{ columnId: 'schema:lr', direction: 'desc' }])
+    sortVariants(rows, columns, [{ columnId: 'params.lr', direction: 'desc' }])
     expect(rows).toEqual(copy)
   })
 })

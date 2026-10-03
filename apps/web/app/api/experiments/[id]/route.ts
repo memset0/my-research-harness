@@ -1,4 +1,3 @@
-import { stat } from 'node:fs/promises'
 import { BackendProjectServiceError } from '@memon/backend'
 import { BackendExperimentResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -35,11 +34,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const portable = BackendExperimentResponseSchema.parse(
       await standaloneServices(runtime.config).projects.getExperiment(project.name, id),
     )
-    const legacy = standaloneExperiment(runtime.config, portable)
-    return NextResponse.json({
-      ...legacy,
-      resultsUpdatedAt: await managedResultsUpdatedAt(cached.documents?.results),
-    } satisfies Wire<ExperimentDocDetail>)
+    // The detail carries the Results summary and its newest input time.
+    return NextResponse.json(
+      standaloneExperiment(runtime.config, portable) satisfies Wire<ExperimentDocDetail>,
+    )
   } catch (error) {
     if (error instanceof BackendProjectServiceError) {
       return NextResponse.json(
@@ -64,17 +62,5 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       standaloneExperimentMutationError(error) ??
       NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
     )
-  }
-}
-
-async function managedResultsUpdatedAt(
-  results: { exists: boolean; path: string } | undefined,
-): Promise<string | null> {
-  if (!results?.exists) return null
-  try {
-    return (await stat(results.path)).mtime.toISOString()
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
   }
 }

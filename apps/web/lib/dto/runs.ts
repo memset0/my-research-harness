@@ -4,6 +4,7 @@
 // fetchers in `lib/api.ts`. Types and pure helpers only — no server imports.
 
 import type { Run, WarningRecord } from '@memon/core'
+import type { RunResultPayload } from './experiments'
 
 export interface IndexedRun
   extends Pick<
@@ -44,6 +45,8 @@ export interface FullExperiment
   resources: null
   warnings: WarningRecord[]
   warningsRaw: string | null
+  /** FS v9: the Run's `result.csv` as parsed rows (null without one; absent from pre-v9 hosts). */
+  result?: RunResultPayload | null
 }
 
 export interface RunFileTreeNode {

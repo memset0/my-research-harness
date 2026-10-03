@@ -26,11 +26,13 @@ import {
   deriveCompletion,
   discoverExperiments,
   discoverRuns,
+  EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
   type Experiment,
   type ExperimentMembershipAnomaly,
   extractTitle,
+  LEGACY_RESULTS_FILE,
   loadConfig,
   MANAGED_DOCUMENT_FILE_NAMES,
   type ParsedHypotheses,
@@ -748,7 +750,19 @@ async function fileMtimeOrZero(path: string): Promise<number> {
   }
 }
 
-const MANAGED_EXPERIMENT_FILE_NAMES = Object.values(MANAGED_DOCUMENT_FILE_NAMES)
+/**
+ * Bundle files watched beside README.md: the two YAML sidecars, the FS v9
+ * description file `experiment.json` (the Results source) and a leftover
+ * `results.yaml`, whose presence alone lint reports (`LEGACY_RESULTS_YAML`).
+ * Member Runs' `result.csv` files are not watched here: the Results summary
+ * notices them through its input fingerprints.
+ */
+const MANAGED_EXPERIMENT_FILE_NAMES = [
+  MANAGED_DOCUMENT_FILE_NAMES.implementation,
+  MANAGED_DOCUMENT_FILE_NAMES.investigation,
+  EXPERIMENT_DESCRIPTION_FILE,
+  LEGACY_RESULTS_FILE,
+]
 
 export function experimentIdForWatchedPath(
   projectRoot: string,

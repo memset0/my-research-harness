@@ -27,8 +27,11 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'memon-exp-detail-results-'))
   const experimentDirectory = join(directory, 'docs', 'experiments', EXPERIMENT_ID)
   await mkdir(experimentDirectory, { recursive: true })
-  resultsPath = join(experimentDirectory, 'results.yaml')
-  await writeFile(resultsPath, 'schema_version: 1\ncolumns: []\nvariants: []\n')
+  resultsPath = join(experimentDirectory, 'experiment.json')
+  await writeFile(
+    resultsPath,
+    '{"experiment_schema_version": 1, "groups": {}, "columns": [], "variants": []}\n',
+  )
   const readmePath = join(experimentDirectory, 'README.md')
   await writeFile(
     readmePath,
@@ -47,7 +50,7 @@ updated_at: 2026-08-23T00:00:00Z
 
 ## Results
 
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
+> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.
 `,
   )
   vi.mocked(getRuntime).mockResolvedValue({
@@ -87,7 +90,7 @@ afterEach(async () => {
 })
 
 describe('GET /api/experiments/:id Results timestamp', () => {
-  it('includes the Results source mtime without a snapshot-read timestamp', async () => {
+  it('includes the newest Results input mtime without a snapshot-read timestamp', async () => {
     const modifiedAt = new Date('2026-08-23T04:20:00.000Z')
     await utimes(resultsPath, modifiedAt, modifiedAt)
 
@@ -97,21 +100,26 @@ describe('GET /api/experiments/:id Results timestamp', () => {
     )
     expect(response.status).toBe(200)
     const body = await response.json()
-    expect(body.resultsUpdatedAt).toBe(modifiedAt.toISOString())
+    // ISO8601 with the server's offset, the same instant as the file mtime.
+    expect(body.resultsUpdatedAt).toMatch(/(?:Z|[+-]\d{2}:\d{2})$/)
+    expect(new Date(body.resultsUpdatedAt).getTime()).toBe(modifiedAt.getTime())
+    expect(body.documents.results).toMatchObject({
+      fileName: 'experiment.json',
+      exists: true,
+      summary: { outcome: 'ok', variants: [] },
+    })
     expect(body).not.toHaveProperty('resultsSnapshotAt')
   })
 
-  it('uses a null source timestamp when managed Results are absent', async () => {
-    const runtime = await getRuntime()
-    const experiment = runtime.experiments.get(EXPERIMENT_ID) as {
-      documents: { results: { exists: boolean; path: string } }
-    }
-    experiment.documents.results.exists = false
-
+  it('uses a null input timestamp when the description file is absent', async () => {
+    await rm(resultsPath)
     const response = await GET(
       new NextRequest(`http://localhost/api/experiments/${EXPERIMENT_ID}`),
       { params: Promise.resolve({ id: EXPERIMENT_ID }) },
     )
-    await expect(response.json()).resolves.toMatchObject({ resultsUpdatedAt: null })
+    await expect(response.json()).resolves.toMatchObject({
+      resultsUpdatedAt: null,
+      documents: { results: { exists: false, summary: { error: { code: 'RESULTS_NOT_FOUND' } } } },
+    })
   })
 })

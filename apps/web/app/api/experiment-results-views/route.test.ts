@@ -80,6 +80,59 @@ describe('/api/experiment-results-views', () => {
     await expect(collection.json()).resolves.toMatchObject({ views: [{ name: 'Review' }] })
   })
 
+  it('persists the tree, collapse and stats choices of a View', async () => {
+    const created = await POST(
+      request('POST', 'owner', 'host-a', { name: 'Latency review', definition: definition() }),
+    )
+    expect(created.status).toBe(201)
+    const listed = (await (await GET(request('GET', 'viewer', 'host-a'))).json()) as {
+      views: Array<{ definition: ExperimentResultsViewDefinition }>
+    }
+    expect(listed.views[0]?.definition).toMatchObject({
+      statsDisplay: { 'metrics.serve.latency_ms': 'max.p99' },
+      statsSort: { 'metrics.serve.latency_ms': 'max.p99' },
+      collapsedGroups: ['group:params.optim'],
+    })
+  })
+
+  it.each<[string, Partial<ExperimentResultsViewDefinition> | Record<string, unknown>]>([
+    ['an unknown statistic', { statsDisplay: { 'metrics.eval.clip': 'median' } }],
+    ['a template as the sort statistic', { statsSort: { 'metrics.eval.clip': 'mean±std' } }],
+    ['decimal places 12', { decimalPlaces: { 'metrics.eval.fid': 12 } }],
+    [
+      'two sort rules on one column',
+      {
+        defaultSortRules: [
+          { id: 's1', columnId: 'metrics.eval.fid', direction: 'asc' },
+          { id: 's2', columnId: 'metrics.eval.fid', direction: 'desc' },
+        ],
+      },
+    ],
+    ['a missing tree field', { treeOrder: undefined }],
+    ['a non-boolean node check', { nodeVisibility: { 'group:env': 'yes' } }],
+  ])('rejects %s as a bad request without changing the View', async (_name, change) => {
+    const createdResponse = await POST(
+      request('POST', 'owner', 'host-a', { name: 'Stable', definition: definition() }),
+    )
+    const created = (await createdResponse.json()) as { view: { id: string } }
+    const invalid = { ...definition(), ...change }
+    expect(
+      (await POST(request('POST', 'owner', 'host-a', { name: 'Bad', definition: invalid }))).status,
+    ).toBe(400)
+    expect(
+      (
+        await PATCH(request('PATCH', 'owner', 'host-a', { definition: invalid }), {
+          params: Promise.resolve({ id: created.view.id }),
+        })
+      ).status,
+    ).toBe(400)
+    const collection = (await (await GET(request('GET', 'owner', 'host-a'))).json()) as {
+      views: Array<{ name: string; definition: ExperimentResultsViewDefinition }>
+    }
+    expect(collection.views.map((view) => view.name)).toEqual(['Stable'])
+    expect(collection.views[0]?.definition).toEqual(definition())
+  })
+
   it('isolates identical Project and Experiment names by Host', async () => {
     await POST(request('POST', 'owner', 'host-a', { name: 'Host A', definition: definition() }))
     await POST(request('POST', 'owner', 'host-b', { name: 'Host B', definition: definition() }))
@@ -128,5 +181,10 @@ function definition(): ExperimentResultsViewDefinition {
     rowOverrides: {},
     sotaModes: {},
     decimalPlaces: {},
+    nodeVisibility: { 'group:env': true, 'params.optim.lr': false },
+    treeOrder: { $root: ['group:metrics', 'group:params'] },
+    collapsedGroups: ['group:params.optim'],
+    statsDisplay: { 'metrics.serve.latency_ms': 'max.p99', 'metrics.eval.clip': 'mean±std' },
+    statsSort: { 'metrics.serve.latency_ms': 'max.p99' },
   }
 }

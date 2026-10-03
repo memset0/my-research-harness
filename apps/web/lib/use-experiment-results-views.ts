@@ -4,6 +4,7 @@ import { type SetStateAction, useCallback, useEffect, useMemo, useRef, useState 
 import { useSession } from '../components/session-provider'
 import type { ProjectTarget } from './api'
 import {
+  completeResultsViewDefinition,
   type ExperimentResultsView,
   type ExperimentResultsViewDefinition,
   type ExperimentResultsViewsResponse,
@@ -97,7 +98,9 @@ export function useExperimentResultsViews(
               credentials: 'same-origin',
               keepalive: true,
               headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-              body: JSON.stringify({ definition: nextDefinition }),
+              // Every persisted field is sent: a pre-tree local copy is
+              // completed with the current contract's defaults.
+              body: JSON.stringify({ definition: completeResultsViewDefinition(nextDefinition) }),
             },
           )
           if (!response.ok) throw new Error(await responseError(response, 'Failed to save View'))
@@ -189,7 +192,10 @@ export function useExperimentResultsViews(
             cache: 'no-store',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ name: 'Default', definition: seed }),
+            body: JSON.stringify({
+              name: 'Default',
+              definition: completeResultsViewDefinition(seed),
+            }),
           })
           if (!response.ok) {
             throw new Error(await responseError(response, 'Failed to create the default View'))
@@ -282,7 +288,10 @@ export function useExperimentResultsViews(
         cache: 'no-store',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ name, definition: active?.definition ?? initial }),
+        body: JSON.stringify({
+          name,
+          definition: completeResultsViewDefinition(active?.definition ?? initial),
+        }),
       })
       if (!response.ok) throw new Error(await responseError(response, 'Failed to create View'))
       const { view } = (await response.json()) as { view: ExperimentResultsView }

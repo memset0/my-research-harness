@@ -1,19 +1,16 @@
 'use client'
 
-// Results table container: reads the Results document and the active shared
-// View, derives columns/rows, and wires edits to the subcomponents in
-// `./results-table/`. Pure logic lives in `lib/experiment-results/`.
+// Results table container: renders the generated Results summary with the
+// active shared View — the vertical column tree, the two-row header, pinned
+// zone, stats displays, filters and sorts — and wires edits to the
+// subcomponents in `./results-table/`. Pure logic lives in
+// `lib/experiment-results/`.
 
-import type { ResultsDocument, ResultsVariantEligibility } from '@memon/core'
 import { Eye } from 'lucide-react'
 import { useMemo, useReducer, useRef } from 'react'
 import type { ProjectTarget } from '../lib/api'
-import {
-  arrangeColumns,
-  buildColumns,
-  distinctValues,
-  excludedRunIds,
-} from '../lib/experiment-results/columns'
+import type { ResultsSummaryPayload } from '../lib/dto/experiments'
+import { buildColumns, distinctValues } from '../lib/experiment-results/columns'
 import * as edits from '../lib/experiment-results/definition-edits'
 import { filterVariants } from '../lib/experiment-results/filters'
 import { effectiveSortRules, sortVariants } from '../lib/experiment-results/sorting'
@@ -22,18 +19,29 @@ import {
   INITIAL_TRANSIENT_STATE,
   transientReducer,
 } from '../lib/experiment-results/transient-state'
-import type { DragKind, DropEdge } from '../lib/experiment-results/types'
+import {
+  buildColumnTree,
+  type ColumnTree,
+  columnBreadcrumb,
+  isBandGroup,
+  isLeafVisible,
+  layoutGrid,
+  nodeCheckState,
+  TREE_ROOT,
+} from '../lib/experiment-results/tree'
+import type { DragItem, DropEdge, ResultTableColumn } from '../lib/experiment-results/types'
 import {
   DEFAULT_RESULTS_VIEW_DEFINITION,
   type ExperimentResultsViewDefinition,
   normalizeResultsViewDefinition,
+  type ResultsViewDocument,
   type ResultsViewRowFilter,
   type ResultsViewSortRule,
 } from '../lib/experiment-results/views'
 import { useExperimentResultsViews } from '../lib/use-experiment-results-views'
 import { useUserPreferenceState } from '../lib/use-user-preference-state'
-import { ColumnOptions } from './results-table/column-options'
 import { ColumnToolbar } from './results-table/column-toolbar'
+import { ColumnTreeControls } from './results-table/column-tree'
 import { FilterBar } from './results-table/filter-bar'
 import { ResultsGrid } from './results-table/results-grid'
 import { useDragReorder } from './results-table/use-drag-reorder'
@@ -43,45 +51,58 @@ import { Separator } from './ui/separator'
 
 type Definition = ExperimentResultsViewDefinition
 
+/** What a stored View is normalized against, from the summary's columns and tree. */
+function viewDocument(
+  columns: readonly ResultTableColumn[],
+  tree: ColumnTree,
+  variantIds: readonly string[],
+): ResultsViewDocument {
+  const parentIds = new Set<string>([TREE_ROOT])
+  const collapsibleGroupIds = new Set<string>()
+  for (const node of tree.nodes.values()) {
+    if (node.kind === 'column') continue
+    parentIds.add(node.id)
+    if (isBandGroup(tree, node)) collapsibleGroupIds.add(node.id)
+  }
+  return {
+    columnIds: columns.map((column) => column.id),
+    nodeIds: new Set(tree.nodes.keys()),
+    parentIds,
+    collapsibleGroupIds,
+    variantIds,
+    statOptions: new Map(
+      columns
+        .filter((column) => column.statOptions.length > 0)
+        .map((column) => [column.id, column.statOptions] as const),
+    ),
+  }
+}
+
 export function ExperimentResultsTable({
-  document,
+  summary,
   project,
   experimentId,
   runIds,
-  variantEligibility,
-  deprecatedRuns,
 }: {
-  document: ResultsDocument
+  /** An ok Results summary. */
+  summary: ResultsSummaryPayload
   project: ProjectTarget
   experimentId: string
-  /** Run ids declared by the Experiment's `runs` frontmatter. */
+  /** Run paths declared by the Experiment's `runs` frontmatter. */
   runIds: string[]
-  variantEligibility?: readonly ResultsVariantEligibility[]
-  deprecatedRuns?: readonly string[]
 }) {
-  // ── Document-derived data ────────────────────────────────────────────────
-  const columns = useMemo(
-    () => buildColumns(document, excludedRunIds(deprecatedRuns, variantEligibility)),
-    [document, deprecatedRuns, variantEligibility],
+  // ── Summary-derived structure (independent of the View) ──────────────────
+  const baseColumns = useMemo(() => buildColumns(summary), [summary])
+  const baseTree = useMemo(
+    () => buildColumnTree(baseColumns, summary.groups),
+    [baseColumns, summary.groups],
   )
-  const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
-  const variantIds = useMemo(() => document.variants.map((row) => row.id), [document.variants])
-  const eligibilityByVariant = useMemo(
-    () => new Map(variantEligibility?.map((row) => [row.variantId, row])),
-    [variantEligibility],
-  )
-  const affectedEligibility = useMemo(
-    () => variantEligibility?.filter((row) => row.metricsValidity !== 'valid') ?? [],
-    [variantEligibility],
+  const variantIds = useMemo(() => summary.variants.map((row) => row.id), [summary.variants])
+  const document = useMemo(
+    () => viewDocument(baseColumns, baseTree, variantIds),
+    [baseColumns, baseTree, variantIds],
   )
   const declaredRunIds = useMemo(() => new Set(runIds), [runIds])
-  const domains = useMemo(
-    () =>
-      new Map(
-        columns.map((column) => [column.id, distinctValues(document.variants, column)] as const),
-      ),
-    [columns, document.variants],
-  )
 
   // ── Persistent View definition and Project-wide stars ────────────────────
   const resultsViews = useExperimentResultsViews(
@@ -91,8 +112,7 @@ export function ExperimentResultsTable({
   )
   const { definition, invalidCount } = normalizeResultsViewDefinition(
     resultsViews.definition,
-    columnIds,
-    variantIds,
+    document,
   )
   const projectKey = typeof project === 'string' ? project : `${project.host}:${project.project}`
   const [storedStarredLabels, setStoredStarredLabels] = useUserPreferenceState<string[]>(
@@ -100,6 +120,38 @@ export function ExperimentResultsTable({
     [],
   )
   const starredLabels = new Set(stringList(storedStarredLabels))
+
+  // ── View-dependent columns and tree ──────────────────────────────────────
+  const columns = useMemo(
+    () =>
+      buildColumns(summary, {
+        statsDisplay: definition.statsDisplay,
+        statsSort: definition.statsSort,
+        decimalPlaces: definition.decimalPlaces,
+      }),
+    [summary, definition.statsDisplay, definition.statsSort, definition.decimalPlaces],
+  )
+  const treeFor = (d: Definition) =>
+    buildColumnTree(columns, summary.groups, {
+      treeOrder: d.treeOrder,
+      legacyOrder: d.columnOrderIds,
+    })
+  const tree = useMemo(
+    () =>
+      buildColumnTree(columns, summary.groups, {
+        treeOrder: definition.treeOrder,
+        legacyOrder: definition.columnOrderIds,
+      }),
+    [columns, summary.groups, definition.treeOrder, definition.columnOrderIds],
+  )
+  const variantColumn = columns[0]!
+  const domains = useMemo(
+    () =>
+      new Map(
+        columns.map((column) => [column.id, distinctValues(summary.variants, column)] as const),
+      ),
+    [columns, summary.variants],
+  )
 
   // ── Mounted-only state ───────────────────────────────────────────────────
   const [transient, dispatch] = useReducer(transientReducer, INITIAL_TRANSIENT_STATE)
@@ -109,7 +161,7 @@ export function ExperimentResultsTable({
   /** Apply an edit to the latest stored definition (race-safe accumulation). */
   const edit = (change: (current: Definition) => Definition) => {
     resultsViews.updateDefinition((stored) =>
-      change(normalizeResultsViewDefinition(stored, columnIds, variantIds).definition),
+      change(normalizeResultsViewDefinition(stored, document).definition),
     )
   }
   /** Sort-chain edits also end any temporary header sort. */
@@ -119,16 +171,21 @@ export function ExperimentResultsTable({
   }
   const nextId = (prefix: 'filter' | 'sort') => edits.newEntryId(prefix, entrySequence.current++)
 
-  const reorder = (kind: DragKind, sourceId: string, targetId: string, edge: DropEdge) => {
-    if (kind === 'column') edit((d) => edits.reorderColumns(d, sourceId, targetId, edge))
-    else if (kind === 'row-filter') {
-      edit((d) => edits.reorderRowFilters(d, sourceId, targetId, edge))
-    } else editSorts((d) => edits.reorderSortRules(d, sourceId, targetId, edge))
+  const reorder = (dragged: DragItem, target: DragItem, edge: DropEdge) => {
+    if (dragged.kind === 'tree-node' || dragged.kind === 'column') {
+      edit((d) => edits.reorderTreeNode(d, treeFor(d), dragged.id, target.id, edge))
+    } else if (dragged.kind === 'pinned') {
+      edit((d) => edits.reorderPinned(d, dragged.id, target.id, edge))
+    } else if (dragged.kind === 'row-filter') {
+      edit((d) => edits.reorderRowFilters(d, dragged.id, target.id, edge))
+    } else editSorts((d) => edits.reorderSortRules(d, dragged.id, target.id, edge))
   }
   const drag = useDragReorder(transient, dispatch, reorder)
 
-  const setColumnVisible = (columnId: string, visible: boolean) =>
-    edit((d) => edits.setColumnVisible(d, columnId, visible))
+  const setNodeVisible = (nodeId: string, visible: boolean) =>
+    edit((d) => edits.setNodeVisible(d, treeFor(d), nodeId, visible))
+  const setPinned = (columnId: string, pinned: boolean) =>
+    edit((d) => edits.setColumnPinned(d, columnId, pinned))
   const toggleStar = (label: string) =>
     setStoredStarredLabels((current) => {
       const next = new Set(stringList(current))
@@ -146,21 +203,33 @@ export function ExperimentResultsTable({
   }
 
   // ── Rows and columns to render ───────────────────────────────────────────
-  const arrangement = arrangeColumns(columns, definition, showAllColumns)
+  const visible = (leafId: string) =>
+    showAllColumns || isLeafVisible(tree, leafId, definition.nodeVisibility)
+  const storedVisible = (leafId: string) => isLeafVisible(tree, leafId, definition.nodeVisibility)
+  const pinnedIds = edits.pinnedOrder(definition)
+  const layout = layoutGrid(tree, variantColumn, {
+    visible,
+    pinned: pinnedIds,
+    collapsed: new Set(definition.collapsedGroups),
+  })
+  const orderedColumns = [variantColumn, ...tree.leafOrder.map((id) => tree.nodes.get(id)!.column!)]
+  const visibleLeafCount = tree.leafOrder.filter(visible).length
+  const hiddenLeafCount = tree.leafOrder.filter((id) => !storedVisible(id)).length
+
   const sotaRanks = useMemo(
-    () => computeSotaRanks(document.variants, columns, definition.sotaModes, eligibilityByVariant),
-    [document.variants, columns, definition.sotaModes, eligibilityByVariant],
+    () => computeSotaRanks(summary.variants, columns, definition.sotaModes),
+    [summary.variants, columns, definition.sotaModes],
   )
   const filteredVariants = useMemo(
     () =>
       filterVariants(
-        document.variants,
+        summary.variants,
         columns,
         definition.rowFilters,
         definition.rowOverrides,
         showAllRows,
       ),
-    [columns, document.variants, definition.rowFilters, definition.rowOverrides, showAllRows],
+    [columns, summary.variants, definition.rowFilters, definition.rowOverrides, showAllRows],
   )
   const sortedVariants = useMemo(
     () =>
@@ -172,22 +241,18 @@ export function ExperimentResultsTable({
     [columns, definition.defaultSortRules, filteredVariants, temporarySort],
   )
   const locked = !resultsViews.canMutate || !resultsViews.activeView
-  const resetDisabled = edits.isPristineView(definition, columnIds, {
+  const resetDisabled = edits.isPristineView(definition, {
     showAllColumns,
     showAllRows,
     hasTemporarySort: temporarySort !== null,
   })
+  const pinnedEntries = pinnedIds.flatMap((id) => {
+    const column = tree.nodes.get(id)?.column
+    return column ? [{ id, label: columnBreadcrumb(tree, column) }] : []
+  })
 
   return (
     <div className="min-w-0 space-y-3" data-slot="results-table">
-      {affectedEligibility.length > 0 && (
-        <p role="note" className="text-xs text-muted-foreground">
-          Deprecated Runs affect stored metrics (
-          {affectedEligibility.map((row) => `${row.variantId}: ${row.metricsValidity}`).join(', ')}
-          ). Original values are preserved, not recomputed; affected rows are excluded from
-          best-value highlighting.
-        </p>
-      )}
       {invalidCount > 0 && (
         <p
           role="note"
@@ -207,9 +272,9 @@ export function ExperimentResultsTable({
         <ColumnToolbar
           experimentId={experimentId}
           locked={locked}
-          visibleCount={arrangement.visibleColumns.length}
-          totalCount={columns.length}
-          hiddenCount={definition.hiddenColumnIds.length}
+          visibleCount={visibleLeafCount + 1}
+          totalCount={tree.leafOrder.length + 1}
+          hiddenCount={hiddenLeafCount}
           showAllColumns={showAllColumns}
           onShowAllColumnsChange={(value) => dispatch({ type: 'show-all-columns', value })}
           maxLines={definition.maxLines}
@@ -217,16 +282,17 @@ export function ExperimentResultsTable({
           resetDisabled={resetDisabled}
           onReset={resetView}
         />
-        <ColumnOptions
+        <ColumnTreeControls
           experimentId={experimentId}
           locked={locked}
-          columns={arrangement.orderedColumns}
-          hiddenColumnIds={new Set(definition.hiddenColumnIds)}
+          tree={tree}
+          checkState={(node) => nodeCheckState(node, storedVisible)}
           domains={domains}
           starredLabels={starredLabels}
-          pinnedColumnSide={arrangement.pinnedColumnSide}
+          pinned={pinnedEntries}
           drag={drag}
-          onVisibleChange={setColumnVisible}
+          onSetVisible={setNodeVisible}
+          onSetPinned={setPinned}
           onToggleStar={toggleStar}
         />
         <Separator />
@@ -234,8 +300,8 @@ export function ExperimentResultsTable({
           experimentId={experimentId}
           locked={locked}
           shownRowCount={filteredVariants.length}
-          totalRowCount={document.variants.length}
-          columns={arrangement.orderedColumns}
+          totalRowCount={summary.variants.length}
+          columns={orderedColumns}
           domains={domains}
           rowFilters={definition.rowFilters}
           rowOverrideCount={Object.keys(definition.rowOverrides).length}
@@ -244,7 +310,9 @@ export function ExperimentResultsTable({
           defaultSortRules={definition.defaultSortRules}
           temporarySort={temporarySort}
           temporarySortLabel={
-            temporarySort ? arrangement.columnsById.get(temporarySort.columnId)?.label : undefined
+            temporarySort
+              ? orderedColumns.find((column) => column.id === temporarySort.columnId)?.label
+              : undefined
           }
           drag={drag}
           onSaveFilter={saveRowFilter}
@@ -256,13 +324,9 @@ export function ExperimentResultsTable({
         />
       </div>
 
-      {document.variants.length === 0 ? (
+      {summary.variants.length === 0 ? (
         <div className="rounded-md border border-dashed px-3 py-8 text-center text-xs italic text-muted-foreground">
           No variants yet.
-        </div>
-      ) : arrangement.visibleColumns.length === 0 ? (
-        <div className="rounded-md border border-dashed px-3 py-8 text-center text-xs text-muted-foreground">
-          Select at least one column to show the results table.
         </div>
       ) : filteredVariants.length === 0 ? (
         <div className="space-y-2 rounded-md border border-dashed px-3 py-8 text-center text-xs text-muted-foreground">
@@ -279,7 +343,7 @@ export function ExperimentResultsTable({
         </div>
       ) : (
         <ResultsGrid
-          columns={arrangement.orderedVisibleColumns}
+          layout={layout}
           variants={sortedVariants}
           context={{
             project,
@@ -287,25 +351,30 @@ export function ExperimentResultsTable({
             declaredRunIds,
             maxLines: definition.maxLines,
             starredLabels,
-            pinnedColumnSide: arrangement.pinnedColumnSide,
             sotaRanks,
             decimalPlaces: definition.decimalPlaces,
           }}
-          eligibilityByVariant={eligibilityByVariant}
           rowOverrides={definition.rowOverrides}
           temporarySort={temporarySort}
           sotaModes={definition.sotaModes}
+          statsDisplay={definition.statsDisplay}
+          statsSort={definition.statsSort}
           canMutate={resultsViews.canMutate}
           drag={drag}
           headerActions={{
             onCycleSort: (columnId) => dispatch({ type: 'cycle-sort', columnId }),
-            onHide: (columnId) => setColumnVisible(columnId, false),
-            onPin: (columnId, side) => edit((d) => edits.setColumnPin(d, columnId, side)),
+            onHide: (columnId) => setNodeVisible(columnId, false),
+            onSetPinned: setPinned,
             onToggleStar: toggleStar,
             onSetSotaMode: (columnId, mode) => edit((d) => edits.setSotaMode(d, columnId, mode)),
             onSetDecimalPlaces: (columnId, places) =>
               edit((d) => edits.setDecimalPlaces(d, columnId, places)),
+            onSetStatsDisplay: (columnId, selection) =>
+              editSorts((d) => edits.setStatsDisplay(d, columnId, selection)),
+            onSetStatsSort: (columnId, stat) =>
+              editSorts((d) => edits.setStatsSort(d, columnId, stat)),
           }}
+          onToggleCollapsed={(groupId) => edit((d) => edits.toggleGroupCollapsed(d, groupId))}
           onSetRowOverride={(variantId, override) =>
             edit((d) => edits.setRowOverride(d, variantId, override))
           }

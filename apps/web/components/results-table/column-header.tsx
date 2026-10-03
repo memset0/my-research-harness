@@ -2,14 +2,13 @@
 
 import {
   ArrowDown,
-  ArrowLeftToLine,
-  ArrowRightToLine,
   ArrowUp,
   ArrowUpDown,
   ChartSpline,
   Columns3,
   EyeOff,
   Minus,
+  Pin,
   PinOff,
   Plus,
   Star,
@@ -17,9 +16,10 @@ import {
 import type { CSSProperties } from 'react'
 import { sortActionLabel } from '../../lib/experiment-results/format'
 import { pinnedOpaqueBackground } from '../../lib/experiment-results/layout'
+import { effectiveSotaMode } from '../../lib/experiment-results/sota'
+import type { GridItem } from '../../lib/experiment-results/tree'
 import type { ResultTableColumn } from '../../lib/experiment-results/types'
 import type {
-  ResultsViewPinSide,
   ResultsViewSortDirection,
   ResultsViewSotaMode,
 } from '../../lib/experiment-results/views'
@@ -38,16 +38,19 @@ import {
 } from '../ui/context-menu'
 import { TableHead } from '../ui/table'
 import { AnnotationTooltip } from './annotation-tooltip'
+import { StatsDisplayMenu } from './stats-display-menu'
 import type { DragHandlers } from './use-drag-reorder'
 
 /** Per-column actions offered by the header and its context menu. */
 export interface ColumnHeaderActions {
   onCycleSort: (columnId: string) => void
   onHide: (columnId: string) => void
-  onPin: (columnId: string, side: ResultsViewPinSide | null) => void
+  onSetPinned: (columnId: string, pinned: boolean) => void
   onToggleStar: (label: string) => void
   onSetSotaMode: (columnId: string, mode: ResultsViewSotaMode) => void
   onSetDecimalPlaces: (columnId: string, places: number) => void
+  onSetStatsDisplay: (columnId: string, selection: string | null) => void
+  onSetStatsSort: (columnId: string, stat: string | null) => void
 }
 
 const SOTA_OPTIONS = [
@@ -57,48 +60,62 @@ const SOTA_OPTIONS = [
 ] as const
 
 /**
- * A sortable, draggable table header. Clicking cycles the temporary sort;
- * right-clicking opens hide / pin / star and, for metrics, SOTA and decimal
- * formatting.
+ * A sortable column header of the table's second header row (pinned headers
+ * span both rows and show their group breadcrumb). Clicking cycles the
+ * temporary sort; dragging reorders within the column's group (or the pinned
+ * zone); right-clicking opens hide / pin / star and, for metrics, SOTA and
+ * decimals. A stats column carries its display dropdown.
  */
 export function ColumnHeader({
-  column,
+  item,
   starred,
-  pinSide,
   pinSticky,
   pinStyle,
   direction,
   canMutate,
-  sotaMode,
+  sotaModes,
   decimalPlaces,
+  statsDisplay,
+  statsSort,
   drag,
   actions,
 }: {
-  column: ResultTableColumn
+  item: Extract<GridItem, { kind: 'column' }>
   starred: boolean
-  pinSide: ResultsViewPinSide | undefined
   pinSticky: boolean
   pinStyle: CSSProperties | undefined
   /** Active temporary sort direction on this column, if any. */
   direction: ResultsViewSortDirection | null
   canMutate: boolean
-  /** Saved SOTA mode; absent means off. */
-  sotaMode: ResultsViewSotaMode | undefined
+  sotaModes: Readonly<Record<string, ResultsViewSotaMode>>
   decimalPlaces: number
+  statsDisplay: string | null
+  statsSort: string | null
   drag: DragHandlers
   actions: ColumnHeaderActions
 }) {
-  const metric = column.schema?.group === 'metric'
-  const dragItem = { kind: 'column', id: column.id } as const
+  const column: ResultTableColumn = item.column
+  const metric = column.metric
+  const isVariant = column.kind === 'variant'
+  const dragItem = item.pinned
+    ? ({ kind: 'pinned', id: column.id, scope: item.scope } as const)
+    : ({ kind: 'column', id: column.id, scope: item.scope } as const)
+  const label = item.headerLabel
+  const unit = column.result?.unit
+  const description = column.result?.description
+  const sotaMode = effectiveSotaMode(column, sotaModes)
+  const declaredDirection = column.result?.direction ?? null
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <TableHead
+          rowSpan={item.pinned ? 2 : undefined}
           aria-sort={
             direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'
           }
           className={cn(
-            'cursor-grab border-r px-1 active:cursor-grabbing last:border-r-0',
+            'border-r px-1 last:border-r-0',
+            !isVariant && 'cursor-grab active:cursor-grabbing',
             pinSticky && 'sticky z-20',
             metric && 'bg-sky-50/90 text-sky-950 dark:bg-sky-950/40 dark:text-sky-100',
             starred && 'bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100',
@@ -107,77 +124,96 @@ export function ColumnHeader({
             drag.isDropTarget(dragItem) && 'outline-2 -outline-offset-2 outline-primary/60',
           )}
           style={pinStyle}
-          {...drag.bind(dragItem)}
+          {...(isVariant ? {} : drag.bind(dragItem))}
           title={
-            column.annotation?.description === undefined
-              ? `Drag ${column.label} to reorder columns`
+            description === undefined && !isVariant
+              ? `Drag ${column.label} to reorder within its group`
               : undefined
           }
           data-column-id={column.id}
-          data-column-group={column.schema?.group}
-          data-pinned={pinSide}
+          data-column-group={metric ? 'metric' : column.kind === 'result' ? 'parameter' : undefined}
+          data-pinned={item.pinned ? 'left' : undefined}
           data-pin-sticky={pinSticky || undefined}
         >
-          <AnnotationTooltip
-            description={column.annotation?.description}
-            label={`${column.label} column description`}
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => actions.onCycleSort(column.id)}
-              className="min-w-0 justify-start px-1.5"
-              aria-label={`${column.label}: ${sortActionLabel(direction)}`}
-              data-has-description={column.annotation?.description !== undefined || undefined}
+          <span className="flex min-w-0 items-center">
+            <AnnotationTooltip
+              description={description}
+              label={`${column.label} column description`}
             >
-              {metric && (
-                <ChartSpline
-                  className="size-3 shrink-0 text-sky-600 dark:text-sky-300"
-                  aria-hidden
-                />
-              )}
-              <span className="truncate" data-column-label>
-                {column.label}
-              </span>
-              {metric && <span className="sr-only">Metric column</span>}
-              <SortIcon direction={direction} />
-            </Button>
-          </AnnotationTooltip>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => actions.onCycleSort(column.id)}
+                className="min-w-0 justify-start px-1.5"
+                aria-label={`${label}: ${sortActionLabel(direction)}`}
+                data-has-description={description !== undefined || undefined}
+              >
+                {metric && (
+                  <ChartSpline
+                    className="size-3 shrink-0 text-sky-600 dark:text-sky-300"
+                    aria-hidden
+                  />
+                )}
+                {item.pinned && !isVariant && (
+                  <Pin className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                )}
+                <span className="truncate" data-column-label>
+                  {label}
+                </span>
+                {unit && (
+                  <span className="shrink-0 font-normal text-muted-foreground" data-column-unit>
+                    ({unit})
+                  </span>
+                )}
+                {metric && <span className="sr-only">Metric column</span>}
+                <SortIcon direction={direction} />
+              </Button>
+            </AnnotationTooltip>
+            {column.statOptions.length > 0 && (
+              <StatsDisplayMenu
+                label={column.label}
+                statOptions={column.statOptions}
+                display={statsDisplay}
+                defaultDisplay={column.result?.display ?? null}
+                sortStat={statsSort}
+                disabled={!canMutate}
+                onSelectDisplay={(selection) => actions.onSetStatsDisplay(column.id, selection)}
+                onSelectSort={(stat) => actions.onSetStatsSort(column.id, stat)}
+              />
+            )}
+          </span>
         </TableHead>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-52">
-        <ContextMenuLabel className="truncate">{column.label}</ContextMenuLabel>
-        <ContextMenuItem disabled={!canMutate} onSelect={() => actions.onHide(column.id)}>
-          <EyeOff />
-          Hide column
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          disabled={!canMutate || pinSide === 'left'}
-          onSelect={() => actions.onPin(column.id, 'left')}
-        >
-          <ArrowLeftToLine />
-          {pinSide === 'left' ? 'Pinned left' : pinSide === 'right' ? 'Move pin left' : 'Pin left'}
-        </ContextMenuItem>
-        <ContextMenuItem
-          disabled={!canMutate || pinSide === 'right'}
-          onSelect={() => actions.onPin(column.id, 'right')}
-        >
-          <ArrowRightToLine />
-          {pinSide === 'right'
-            ? 'Pinned right'
-            : pinSide === 'left'
-              ? 'Move pin right'
-              : 'Pin right'}
-        </ContextMenuItem>
-        {pinSide && (
-          <ContextMenuItem disabled={!canMutate} onSelect={() => actions.onPin(column.id, null)}>
-            <PinOff />
-            Unpin column
-          </ContextMenuItem>
+        <ContextMenuLabel className="truncate">{label}</ContextMenuLabel>
+        {!isVariant && (
+          <>
+            <ContextMenuItem disabled={!canMutate} onSelect={() => actions.onHide(column.id)}>
+              <EyeOff />
+              Hide column
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            {item.pinned ? (
+              <ContextMenuItem
+                disabled={!canMutate}
+                onSelect={() => actions.onSetPinned(column.id, false)}
+              >
+                <PinOff />
+                Unpin column
+              </ContextMenuItem>
+            ) : (
+              <ContextMenuItem
+                disabled={!canMutate}
+                onSelect={() => actions.onSetPinned(column.id, true)}
+              >
+                <Pin />
+                Pin column
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+          </>
         )}
-        <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => actions.onToggleStar(column.label)}>
           <Star className={cn(starred && 'fill-current text-amber-500')} />
           {starred ? 'Unstar column' : 'Star column'}
@@ -194,17 +230,46 @@ export function ColumnHeader({
                 <ArrowUp className="mr-2 size-4" />
                 SOTA highlight
               </ContextMenuSubTrigger>
-              <ContextMenuSubContent className="w-44">
-                {SOTA_OPTIONS.map(({ mode, label, Icon }) => (
-                  <ContextMenuItem
-                    key={mode}
-                    onSelect={() => actions.onSetSotaMode(column.id, mode)}
-                    disabled={!canMutate || sotaMode === mode}
-                  >
-                    <Icon className="mr-2 size-4" />
-                    {label}
-                  </ContextMenuItem>
-                ))}
+              <ContextMenuSubContent className="w-48">
+                {declaredDirection
+                  ? [
+                      <ContextMenuItem
+                        key="off"
+                        onSelect={() => actions.onSetSotaMode(column.id, 'off')}
+                        disabled={!canMutate || sotaMode === 'off'}
+                      >
+                        <Minus className="mr-2 size-4" />
+                        Off
+                      </ContextMenuItem>,
+                      <ContextMenuItem
+                        key="on"
+                        onSelect={() =>
+                          actions.onSetSotaMode(
+                            column.id,
+                            declaredDirection === 'higher' ? 'higher-is-better' : 'lower-is-better',
+                          )
+                        }
+                        disabled={!canMutate || sotaMode !== 'off'}
+                      >
+                        {declaredDirection === 'higher' ? (
+                          <ArrowUp className="mr-2 size-4" />
+                        ) : (
+                          <ArrowDown className="mr-2 size-4" />
+                        )}
+                        {declaredDirection === 'higher' ? 'Higher is better' : 'Lower is better'}{' '}
+                        (declared)
+                      </ContextMenuItem>,
+                    ]
+                  : SOTA_OPTIONS.map(({ mode, label: optionLabel, Icon }) => (
+                      <ContextMenuItem
+                        key={mode}
+                        onSelect={() => actions.onSetSotaMode(column.id, mode)}
+                        disabled={!canMutate || sotaMode === mode}
+                      >
+                        <Icon className="mr-2 size-4" />
+                        {optionLabel}
+                      </ContextMenuItem>
+                    ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
             <ContextMenuSub>

@@ -53,7 +53,7 @@ Keep README unchanged.
 
 ## Results
 
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
+> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.
 
 ## Findings
 
@@ -66,23 +66,32 @@ Keep README unchanged.
   )
   await writeFile(join(directory, 'implementation.yaml'), 'schema_version: 1\nitems: []\n')
   await writeFile(join(directory, 'investigation.yaml'), 'schema_version: 1\nitems: []\n')
-  await writeFile(join(directory, 'results.yaml'), 'schema_version: 1\ncolumns: []\nvariants: []\n')
+  await writeFile(
+    join(directory, 'experiment.json'),
+    '{"experiment_schema_version": 1, "groups": {}, "columns": [], "variants": []}\n',
+  )
   return { root, directory }
 }
 
 describe('Experiment bundle polling', () => {
-  it('maps managed sidecars and the bundle directory back to their Experiment', async () => {
+  it('maps managed sources, a leftover results.yaml and the bundle directory to their Experiment', async () => {
     const { root, directory } = await fixture()
+    expect(experimentIdForWatchedPath(root, join(directory, 'experiment.json'))).toBe('E0001-demo')
     expect(experimentIdForWatchedPath(root, join(directory, 'results.yaml'))).toBe('E0001-demo')
+    expect(experimentIdForWatchedPath(root, join(directory, 'implementation.yaml'))).toBe(
+      'E0001-demo',
+    )
     expect(experimentIdForWatchedPath(root, directory)).toBe('E0001-demo')
     expect(experimentIdForWatchedPath(root, join(directory, 'notes.txt'))).toBeNull()
   })
 
-  it('reloads the bundle when only results.yaml changes', async () => {
-    const { root, directory } = await fixture()
+  async function watchUntil(
+    root: string,
+    trigger: () => Promise<void>,
+    changed: (path: string) => boolean,
+  ) {
     const initial = await readExperimentDoc(root, 'research', 'E0001-demo')
     expect(initial).not.toBeNull()
-
     let resolveReload!: (value: NonNullable<typeof initial>) => void
     const reloaded = new Promise<NonNullable<typeof initial>>((resolve) => {
       resolveReload = resolve
@@ -90,39 +99,56 @@ describe('Experiment bundle polling', () => {
     const poller = new Poller(
       { minIntervalMs: 5, maxIntervalMs: 10, backoffFactor: 1 },
       async (changedPath) => {
-        if (!changedPath.endsWith('results.yaml')) return
+        if (!changed(changedPath)) return
         const updated = await readExperimentDoc(root, 'research', 'E0001-demo')
         if (updated) resolveReload(updated)
       },
     )
     await watchExperimentBundle(poller, initial!)
-
     await new Promise((resolve) => setTimeout(resolve, 20))
-    await writeFile(
-      join(directory, 'results.yaml'),
-      `schema_version: 1
-columns: []
-variants:
-  - id: V0001
-    name: Watched variant
-    status: PLANNED
-    parameters: {}
-    metrics: {}
-    runs: []
-    attempts: []
-`,
-    )
-
+    await trigger()
     let timeout: ReturnType<typeof setTimeout> | undefined
-    const updated = await Promise.race([
+    return Promise.race([
       reloaded,
       new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error('results.yaml watch timed out')), 2_000)
+        timeout = setTimeout(() => reject(new Error('bundle watch timed out')), 2_000)
       }),
     ]).finally(() => {
       if (timeout) clearTimeout(timeout)
       poller.stop()
     })
-    expect(updated.documents?.results.data?.variants[0]?.name).toBe('Watched variant')
+  }
+
+  it('reloads the bundle when only experiment.json changes', async () => {
+    const { root, directory } = await fixture()
+    const updated = await watchUntil(
+      root,
+      () =>
+        writeFile(
+          join(directory, 'experiment.json'),
+          `${JSON.stringify({
+            experiment_schema_version: 1,
+            groups: {},
+            columns: [],
+            variants: [{ id: 'V0001', name: 'Watched variant', runs: [] }],
+          })}\n`,
+        ),
+      (path) => path.endsWith('experiment.json'),
+    )
+    expect(updated.documents?.description?.data?.variants[0]?.name).toBe('Watched variant')
+    // The README keeps its own lock token.
+    expect(updated.readmeMtime).toBeLessThanOrEqual(updated.mtime)
+  })
+
+  it('notices a leftover results.yaml without reading it', async () => {
+    const { root, directory } = await fixture()
+    const updated = await watchUntil(
+      root,
+      () => writeFile(join(directory, 'results.yaml'), 'schema_version: 1\nvariants: []\n'),
+      (path) => path.endsWith('results.yaml'),
+    )
+    expect(updated.documents?.results.exists).toBe(true)
+    expect(updated.documents?.results.data).toBeNull()
+    expect(updated.documents?.results.parseErrors[0]?.message).toMatch(/^LEGACY_RESULTS_YAML: /)
   })
 })

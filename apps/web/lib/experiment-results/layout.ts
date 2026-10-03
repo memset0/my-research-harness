@@ -2,13 +2,20 @@
 
 import type { CSSProperties } from 'react'
 import type { DropEdge, PinLayout } from './types'
-import type { ResultsViewPinSide } from './views'
 
-export const EMPTY_PIN_LAYOUT: PinLayout = { sticky: false, leftOffsets: {}, rightOffsets: {} }
+export const EMPTY_PIN_LAYOUT: PinLayout = { sticky: false, leftOffsets: {} }
 
 /** Drop on the right half of the target means "after". */
 export function dropEdgeAt(clientX: number, bounds: { left: number; width: number }): DropEdge {
   return clientX > bounds.left + bounds.width / 2 ? 'after' : 'before'
+}
+
+/** Drop on the lower half of a vertical list item means "after". */
+export function dropEdgeAtVertical(
+  clientY: number,
+  bounds: { top: number; height: number },
+): DropEdge {
+  return clientY > bounds.top + bounds.height / 2 ? 'after' : 'before'
 }
 
 /**
@@ -48,52 +55,40 @@ export function reorderItems<T extends { id: string }>(
 }
 
 /**
- * Sticky offsets from measured pinned header widths (in render order). Sticky
- * positioning is enabled only when the pinned total is narrower than the viewport.
+ * Sticky offsets from measured pinned header widths (in render order: the
+ * Variant column, then the pins). Sticky positioning is enabled only when the
+ * pinned total is narrower than the viewport.
  */
 export function computePinLayout(
-  headers: ReadonlyArray<{ columnId: string; side: ResultsViewPinSide; width: number }>,
+  headers: ReadonlyArray<{ columnId: string; width: number }>,
   viewportWidth: number,
 ): PinLayout {
-  const left = headers.filter((header) => header.side === 'left')
-  const right = headers.filter((header) => header.side === 'right')
-  const pinnedWidth = [...left, ...right].reduce((total, header) => total + header.width, 0)
+  const pinnedWidth = headers.reduce((total, header) => total + header.width, 0)
   const leftOffsets: Record<string, number> = {}
-  const rightOffsets: Record<string, number> = {}
   let offset = 0
-  for (const header of left) {
+  for (const header of headers) {
     leftOffsets[header.columnId] = offset
     offset += header.width
   }
-  offset = 0
-  for (const header of [...right].reverse()) {
-    rightOffsets[header.columnId] = offset
-    offset += header.width
-  }
-  return { sticky: pinnedWidth > 0 && pinnedWidth < viewportWidth, leftOffsets, rightOffsets }
+  return { sticky: pinnedWidth > 0 && pinnedWidth < viewportWidth, leftOffsets }
 }
 
 export function samePinLayout(left: PinLayout, right: PinLayout): boolean {
   if (left.sticky !== right.sticky) return false
-  const sameOffsets = (a: Record<string, number>, b: Record<string, number>) => {
-    const keys = Object.keys(a)
-    return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
-  }
+  const keys = Object.keys(left.leftOffsets)
   return (
-    sameOffsets(left.leftOffsets, right.leftOffsets) &&
-    sameOffsets(left.rightOffsets, right.rightOffsets)
+    keys.length === Object.keys(right.leftOffsets).length &&
+    keys.every((key) => left.leftOffsets[key] === right.leftOffsets[key])
   )
 }
 
 export function pinnedColumnStyle(
   columnId: string,
-  side: ResultsViewPinSide | undefined,
+  pinned: boolean,
   layout: PinLayout,
 ): CSSProperties | undefined {
-  if (!side || !layout.sticky) return undefined
-  return side === 'left'
-    ? { left: layout.leftOffsets[columnId] ?? 0 }
-    : { right: layout.rightOffsets[columnId] ?? 0 }
+  if (!pinned || !layout.sticky) return undefined
+  return { left: layout.leftOffsets[columnId] ?? 0 }
 }
 
 /** Opaque surface for sticky cells; starred beats metric beats the default. */

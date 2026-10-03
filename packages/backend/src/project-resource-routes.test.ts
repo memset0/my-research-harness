@@ -50,11 +50,8 @@ beforeAll(async () => {
     { recursive: true },
   )
   await fs.writeFile(
-    join(projectRoot, 'docs/experiments/E0001-vpred-convergence/results.yaml'),
-    `schema_version: 1
-columns: []
-variants: []
-`,
+    join(projectRoot, 'docs/experiments/E0001-vpred-convergence/experiment.json'),
+    `${JSON.stringify({ experiment_schema_version: 1, groups: {}, columns: [], variants: [] })}\n`,
   )
   const project = { name: 'project-a', root: projectRoot, include: [], exclude: [] }
   server = createBackendServer({
@@ -122,7 +119,7 @@ describe('Backend Run files and Experiment results routes', () => {
       ).json(),
     )
     expect(files.resource).toBe('logs/foo-260501-100000')
-    expect(results.resource).toBe('docs/experiments/E0001-vpred-convergence/results.yaml')
+    expect(results.resource).toBe('docs/experiments/E0001-vpred-convergence/experiment.json')
     for (const payload of [files, results]) {
       const serialized = JSON.stringify(payload)
       expect(serialized).not.toContain(projectRoot)

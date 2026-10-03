@@ -496,3 +496,99 @@ describe('anomalies from seeded entries (3.4)', () => {
     expect(fromIndex.some((anomaly) => String(anomaly.code).includes('INDEX'))).toBe(false)
   })
 })
+
+describe('FS v9 Results summaries on central', () => {
+  const resultCsv = (fid: string) =>
+    `path,stat,value\n$experiment_schema_version,,1\nmetrics.fid,,${fid}\n`
+
+  /** Two finished members with result files, one Variant over both. */
+  async function v9Fixture(): Promise<string[]> {
+    const members = [memberPath(1), memberPath(2)]
+    for (const [index, member] of members.entries()) {
+      await fs.mkdir(join(root, member), { recursive: true })
+      await fs.writeFile(join(root, member, 'README.md'), run(index + 1))
+      await fs.writeFile(join(root, member, 'result.csv'), resultCsv(String(10 + index * 2)))
+    }
+    await writeExperiment('E0002-v9', members)
+    await fs.writeFile(
+      join(root, 'docs', 'experiments', 'E0002-v9', 'experiment.json'),
+      `${JSON.stringify({
+        experiment_schema_version: 1,
+        groups: {},
+        columns: [{ path: 'metrics.fid', label: 'FID', type: 'number' }],
+        variants: [{ id: 'V0001', name: 'seeds', runs: members }],
+      })}\n`,
+    )
+    return members
+  }
+
+  const fid = (detail: { documents: unknown }) =>
+    (
+      detail.documents as {
+        results: { summary: { variants: Array<{ cells: Record<string, { values?: unknown }> }> } }
+      }
+    ).results.summary.variants[0]?.cells['metrics.fid']?.values
+
+  it('seeds member result fingerprints, regenerates stale summaries and follows a rewritten result file', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const members = await v9Fixture()
+    await rebuildIndex(root)
+    expect((await readDerivedIndex(root)).snapshot?.runs[members[0]!]?.result_fp).not.toBeNull()
+    enableDerivedIndex([project()], { validator: true, timers: false, now: () => Date.now() })
+    const service = new FilesystemProjectService([project()], {
+      readPolicy: CENTRAL_READ_POLICY,
+      indexRole: 'central',
+    })
+    const mirror = derivedIndexMirror(root)!
+    mirror.noteActivity()
+    await mirror.ensureSeeded()
+
+    // The background cycle regenerates the missing summary from the view.
+    const first = await mirror.runCycle()
+    expect(first.regeneratedSummaries).toBe(1)
+    const stored = join(resolveIndexPaths(root).results, 'E0002-v9.json')
+    expect(JSON.parse(await fs.readFile(stored, 'utf8')).generator.role).toBe('central')
+
+    // A detail inside the windows: a cache hit, no member file touched.
+    const files = spyProjectFiles()
+    const detail = async () =>
+      BackendExperimentResponseSchema.parse(
+        await withProjectFileContext({ root, storage: 'local', reason: 'open' }, () =>
+          service.getExperiment('p', 'E0002-v9'),
+        ),
+      )
+    expect(fid(await detail())).toMatchObject({ mean: 11, n: 2 })
+    const logs = files.under('logs')
+    expect([...logs.stat, ...logs.readFile, ...logs.lstat]).toEqual([])
+
+    // A script rewrites one member's result.csv outside memon; the validator
+    // notices it within its rotation and regenerates the summary.
+    await fs.writeFile(join(root, members[0]!, 'result.csv'), resultCsv('20'))
+    let regenerated = 0
+    for (let cycle = 0; cycle < 5 && regenerated === 0; cycle++) {
+      vi.setSystemTime(Date.now() + 60_000)
+      mirror.noteActivity()
+      const report = await mirror.runCycle()
+      regenerated += report.regeneratedSummaries
+    }
+    expect(regenerated).toBe(1)
+    expect((await readDerivedIndex(root)).snapshot?.runs[members[0]!]?.result_fp?.size).toBe(
+      (await fs.stat(join(root, members[0]!, 'result.csv'))).size,
+    )
+    expect(fid(await detail())).toMatchObject({ mean: 16, n: 2 })
+  })
+
+  it('leaves the summaries of a read-only Project to the requests', async () => {
+    await v9Fixture()
+    await rebuildIndex(root)
+    const config = [{ ...project(), readOnly: true }]
+    enableDerivedIndex(config, { validator: true, timers: false })
+    const mirror = derivedIndexMirror(root)!
+    mirror.noteActivity()
+    await mirror.ensureSeeded()
+    expect((await mirror.runCycle()).regeneratedSummaries).toBe(0)
+    await expect(fs.stat(resolveIndexPaths(root).results)).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+})

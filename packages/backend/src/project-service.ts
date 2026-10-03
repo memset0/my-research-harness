@@ -1,4 +1,4 @@
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import {
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
@@ -19,12 +19,14 @@ import {
   buildExperimentRecord,
   computeMembership,
   discoverRuns,
+  EXPERIMENT_DESCRIPTION_FILE,
   type Experiment,
   projectFs as fs,
   getProjectFileContext,
   getProjectFileStatus,
   type ImplementationItem,
   type IndexedRun,
+  type IndexRole,
   type InvestigationItem,
   invalidateProjectFile,
   isRunDeprecated,
@@ -35,18 +37,19 @@ import {
   type ProjectConfig,
   parseHypotheses,
   parseJournal,
-  projectResultsRunEligibility,
+  parseResultFile,
   projectRunPath,
+  RESULT_FILE_NAME,
   ResourceIdSchema,
-  type ResultsDocument,
-  type ResultsVariantEligibility,
   RUN_TIMESTAMP_TAIL_REGEX,
   type Run,
   readExperimentDoc,
   readJournalActivity,
   readProjectJournal,
   readRunDir,
+  resultsErrorStatus,
   runArchivedFromRun,
+  toBackendResultsSummary,
 } from '@memon/core'
 import { prepareProjectIndex } from './derived-index-mirror.js'
 import type {
@@ -80,6 +83,15 @@ import {
   registerProjectRoots,
   STRICT_READ_POLICY,
 } from './read-index.js'
+import {
+  backendResultsError,
+  type DeclaredRunLookup,
+  declaredRunLookup,
+  type ExperimentResultsSummary,
+  experimentResultsSummary,
+  type MemberWindow,
+  summaryUpdatedAt,
+} from './results-summary.js'
 import { resolveRunReferencePath } from './run-path.js'
 
 export class BackendProjectServiceError extends Error {
@@ -197,9 +209,16 @@ export class FilesystemProjectService implements BackendProjectReadService {
 
   private readonly policy: ReadPolicy
 
-  constructor(projects: readonly ProjectConfig[], options: { readPolicy?: ReadPolicy } = {}) {
+  /** Generator role recorded in Results summaries this service regenerates. */
+  private readonly role: IndexRole
+
+  constructor(
+    projects: readonly ProjectConfig[],
+    options: { readPolicy?: ReadPolicy; indexRole?: IndexRole } = {},
+  ) {
     registerProjectRoots(projects)
     this.policy = options.readPolicy ?? STRICT_READ_POLICY
+    this.role = options.indexRole ?? 'standalone'
     for (const project of projects) {
       if (this.projects.has(project.name)) throw new Error(`duplicate Project ${project.name}`)
       this.projects.set(project.name, project)
@@ -460,6 +479,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
       warnings: run.warnings,
       warningsRaw: run.warningsRaw,
       resources: null,
+      result: await runResult(project, run.path),
     })
   }
 
@@ -505,64 +525,81 @@ export class FilesystemProjectService implements BackendProjectReadService {
   }
 
   /**
-   * The Experiment bundle plus read-time deprecation metadata for its roster.
-   * Run bodies and logs arrive only from explicit Run endpoints.
+   * The Experiment bundle, read-time deprecation metadata for its roster and
+   * the generated Results summary (FS v9). Run bodies and logs arrive only
+   * from explicit Run endpoints; member facts reuse the detail's windows.
    */
   async getExperiment(projectName: string, id: string) {
     const memberWindow = this.memberWindow()
     const project = await this.preparedProject(projectName)
     const experiment = await this.readExperimentDocument(project, id)
-    const eligibility = await experimentRunEligibility(
+    const lookup = declaredRunLookup(project, memberWindow)
+    const deprecatedRuns = await experimentDeprecatedRuns(
       project,
       experiment,
       () => this.walk(project),
       memberWindow,
+      lookup,
     )
+    const results = experiment.documents
+      ? await experimentResultsSummary(project, experiment, {
+          memberWindow,
+          role: this.role,
+          lookup,
+        })
+      : null
     const documentView = buildExperimentDocumentView(experiment, {
-      deprecatedRuns: eligibility.deprecatedRuns,
+      deprecatedRuns,
+      ...(results ? { summary: results.summary } : {}),
     })
     return BackendExperimentResponseSchema.parse({
       ...safeExperimentSummary(experiment, project),
       body: experiment.body,
-      deprecatedRuns: eligibility.deprecatedRuns,
+      deprecatedRuns,
       warningsRaw: experiment.warningsRaw,
       rawSections: experiment.rawSections ?? [],
-      documents: safeManagedDocuments(experiment, project, eligibility.variantEligibility),
-      resultsUpdatedAt: await managedResultsUpdatedAt(experiment.documents?.results),
+      documents: safeManagedDocuments(experiment, project, results),
+      resultsUpdatedAt: results ? summaryUpdatedAt(results.summary) : null,
       documentSections: documentView.sections,
       documentDiagnostics: documentView.diagnostics,
       documentReadOnly: documentView.readOnly,
     })
   }
 
+  /**
+   * The Results snapshot: the Experiment's current summary with every input
+   * fingerprint re-taken for this request (an explicit refresh). A failed
+   * summary answers with its own status and body (`BackendResultsError`):
+   * 400 `INVALID_RESULTS`, 404 `RESULTS_NOT_FOUND`, 422
+   * `RESULT_SCHEMA_MISMATCH` / `RESULT_DUPLICATE_ROW`; a leftover
+   * `results.yaml` is never read.
+   */
   async getExperimentResults(projectName: string, id: string) {
-    const memberWindow = this.memberWindow()
     const project = await this.preparedProject(projectName)
     const experiment = await this.readExperimentDocument(project, id)
-    const results = experiment.documents?.results
-    if (!results?.exists) {
-      throw new BackendProjectServiceError('RESOURCE_NOT_FOUND', 'Experiment results not found')
+    const { summary, warnings } = await experimentResultsSummary(project, experiment, {
+      memberWindow: 0,
+      role: this.role,
+    })
+    const updatedAt = summaryUpdatedAt(summary)
+    const wire = toBackendResultsSummary(summary)
+    if (wire.outcome !== 'ok' || wire.error) {
+      const error = wire.error ?? {
+        code: 'INVALID_RESULTS' as const,
+        message: 'the Results summary could not be generated',
+        files: [],
+      }
+      throw backendResultsError(resultsErrorStatus(error.code), error, updatedAt)
     }
-    const fileStat = await fs.stat(results.path)
-    if (!results.data) {
-      throw new BackendProjectServiceError('INVALID_RESOURCE', 'Experiment results are invalid', {
-        diagnostics: results.parseErrors,
-        updatedAt: fileStat.mtime.toISOString(),
-      })
-    }
-    const eligibility = await experimentRunEligibility(
-      project,
-      experiment,
-      () => this.walk(project),
-      memberWindow,
-    )
     return BackendExperimentResultsResponseSchema.parse({
       project: projectName,
-      resource: portableProjectResource(project, results.path),
-      document: safeResultsDocument(results.data),
-      ...eligibility,
-      updatedAt: fileStat.mtime.toISOString(),
-      warnings: results.parseWarnings,
+      resource: portableProjectResource(
+        project,
+        join(dirname(experiment.path), EXPERIMENT_DESCRIPTION_FILE),
+      ),
+      summary: wire,
+      updatedAt,
+      warnings,
     })
   }
 
@@ -1088,36 +1125,27 @@ function normalizePortableResultResource(value: string): string {
   return value.startsWith('./') ? value.slice(2) : value
 }
 
-/** Resolve only declared/cited eligibility flags, never hydrated Run records. */
-async function experimentRunEligibility(
+/**
+ * Deprecated Runs among the README roster (read-time visibility metadata for
+ * the Runs card), from declared-Run summaries reused within the member window.
+ * Never hydrates a Run record.
+ */
+async function experimentDeprecatedRuns(
   project: ProjectConfig,
   experiment: Experiment,
   walk: () => Promise<readonly string[]>,
-  memberWindow: number | ((summary: RunSummary | null) => number),
-): Promise<{ deprecatedRuns: string[]; variantEligibility: ResultsVariantEligibility[] }> {
-  const results = experiment.documents?.results.data ?? null
-  let deprecatedRuns: string[]
+  memberWindow: MemberWindow,
+  lookup: DeclaredRunLookup,
+): Promise<string[]> {
   try {
-    deprecatedRuns = await withAutomaticProjectFileContext(() =>
-      deprecatedRunIds(
-        project,
-        [
-          ...experiment.frontMatter.runs,
-          ...(results?.variants.flatMap((variant) => [...variant.runs, ...variant.attempts]) ?? []),
-        ],
-        walk,
-        memberWindow,
-      ),
+    return await withAutomaticProjectFileContext(() =>
+      deprecatedRunIds(project, experiment.frontMatter.runs, walk, memberWindow, lookup),
     )
   } catch {
     throw new BackendProjectServiceError(
       'INVALID_RESOURCE',
       'Run eligibility metadata could not be read',
     )
-  }
-  return {
-    deprecatedRuns,
-    variantEligibility: projectResultsRunEligibility(results, deprecatedRuns),
   }
 }
 
@@ -1133,6 +1161,7 @@ async function deprecatedRunIds(
   ids: readonly string[],
   walk: () => Promise<readonly string[]>,
   maxAgeMs: number | ((summary: RunSummary | null) => number),
+  lookup?: DeclaredRunLookup,
 ): Promise<string[]> {
   if (ids.length === 0) return []
   const wanted = new Set(ids)
@@ -1140,7 +1169,8 @@ async function deprecatedRunIds(
     [...wanted],
     ELIGIBILITY_CONCURRENCY,
     async (reference) => {
-      if (reference.includes('/')) return indexedDeclaredRun(project, reference, maxAgeMs)
+      if (reference.includes('/'))
+        return lookup ? lookup(reference) : indexedDeclaredRun(project, reference, maxAgeMs)
       const matches = (await walk()).filter((path) => basename(path) === reference)
       if (matches.length > 1) throw new Error(`Ambiguous Run ID: ${reference}`)
       return matches[0] === undefined ? null : indexedRun(project, matches[0], maxAgeMs)
@@ -1163,10 +1193,13 @@ const ELIGIBILITY_CONCURRENCY = 16
 function safeManagedDocuments(
   experiment: Experiment,
   project: ProjectConfig,
-  variantEligibility: ResultsVariantEligibility[],
+  results: ExperimentResultsSummary | null,
 ) {
   const documents = experiment.documents
   if (!documents) return null
+  const description = documents.description
+  const descriptionPath =
+    description?.path ?? join(dirname(experiment.path), EXPERIMENT_DESCRIPTION_FILE)
   return {
     implementation: {
       kind: 'implementation' as const,
@@ -1198,13 +1231,13 @@ function safeManagedDocuments(
     },
     results: {
       kind: 'results' as const,
-      fileName: documents.results.fileName,
-      resource: portableProjectResource(project, documents.results.path),
-      exists: documents.results.exists,
-      data: documents.results.data ? safeResultsDocument(documents.results.data) : null,
-      parseErrors: documents.results.parseErrors,
-      parseWarnings: documents.results.parseWarnings,
-      variantEligibility,
+      fileName: EXPERIMENT_DESCRIPTION_FILE,
+      resource: portableProjectResource(project, descriptionPath),
+      exists: description?.exists === true,
+      legacyResultsYaml: documents.results.exists,
+      parseErrors: description?.parseErrors ?? [],
+      parseWarnings: description?.parseWarnings ?? [],
+      summary: results ? toBackendResultsSummary(results.summary) : null,
     },
   }
 }
@@ -1245,38 +1278,39 @@ function safeInvestigationItem(item: InvestigationItem): Record<string, unknown>
   }
 }
 
-function safeResultsDocument(document: ResultsDocument) {
+/** Rows of a Run detail's result file beyond which the response is truncated. */
+const RUN_RESULT_ROW_LIMIT = 5_000
+
+/**
+ * The Run's `result.csv` as parsed rows for the Run detail (FS v9), or null
+ * when the Run has none. A symbolic link or non-file is not followed.
+ */
+async function runResult(project: ProjectConfig, runPath: string) {
+  const path = join(runPath, RESULT_FILE_NAME)
+  const stat = await missingOrThrow(fs.lstat(path))
+  if (!stat?.isFile()) return null
+  const content = await missingOrThrow(fs.readFile(path, 'utf8'))
+  if (content === null) return null
+  const resource = portableProjectResource(project, path)
+  const parsed = parseResultFile(content, resource)
+  const rows = parsed.rows.filter((row) => row.path.length > 0)
   return {
-    schemaVersion: document.schemaVersion,
-    ...(document.columnAnnotations === undefined
-      ? {}
-      : { columnAnnotations: document.columnAnnotations }),
-    columns: document.columns,
-    variants: document.variants.map(({ extra: _extra, provenance, ...variant }) => ({
-      ...variant,
-      ...(provenance
-        ? {
-            provenance: {
-              ...provenance,
-              ...(provenance.entry
-                ? { entry: normalizePortableResultResource(provenance.entry) }
-                : {}),
-              ...(provenance.recipe
-                ? { recipe: normalizePortableResultResource(provenance.recipe) }
-                : {}),
-            },
-          }
-        : {}),
+    resource,
+    schemaVersion: parsed.schemaVersion,
+    rows: rows.slice(0, RUN_RESULT_ROW_LIMIT).map((row) => ({
+      key: row.path,
+      stat: row.stat === '' ? null : row.stat,
+      value: row.value,
+      line: row.line,
+    })),
+    truncated: rows.length > RUN_RESULT_ROW_LIMIT,
+    diagnostics: parsed.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      severity: diagnostic.severity,
+      ...(diagnostic.line === undefined ? {} : { line: diagnostic.line }),
+      message: diagnostic.message,
     })),
   }
-}
-
-async function managedResultsUpdatedAt(
-  results: NonNullable<Experiment['documents']>['results'] | undefined,
-): Promise<string | null> {
-  if (!results?.exists) return null
-  const stat = await missingOrThrow(fs.stat(results.path))
-  return stat?.mtime.toISOString() ?? null
 }
 
 /** In-flight bound for the wiki projection's cited-Run resolution and reads. */

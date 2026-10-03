@@ -10,13 +10,87 @@ vi.mock('../../lib/api', async (importOriginal) => {
   return {
     ...actual,
     fetchExperimentDoc: vi.fn(),
+    fetchExperimentResults: vi.fn(),
     fetchExperiment: vi.fn(),
     fetchRunFiles: vi.fn(),
     patchExperimentStatusV4: vi.fn(),
   }
 })
 
-import { fetchExperimentDoc, patchExperimentStatusV4 } from '../../lib/api'
+import { fetchExperimentDoc, fetchExperimentResults, patchExperimentStatusV4 } from '../../lib/api'
+import type { ResultsSummaryPayload } from '../../lib/dto/experiments'
+
+const SUMMARY: ResultsSummaryPayload = {
+  experimentSchemaVersion: 1,
+  outcome: 'ok',
+  error: null,
+  groups: {},
+  columns: [
+    {
+      key: 'params.precision',
+      label: 'Precision',
+      type: 'string',
+      declared: true,
+      partition: 'params',
+      group: 'params',
+      hidden: false,
+    },
+    {
+      key: 'metrics.loss',
+      label: 'Final loss',
+      type: 'number',
+      declared: true,
+      partition: 'metrics',
+      group: 'metrics',
+      hidden: false,
+    },
+  ],
+  variants: [
+    {
+      id: 'V0001',
+      name: 'BF16',
+      status: 'PLANNED',
+      declaredStatus: null,
+      evidence: [],
+      others: [],
+      cells: {
+        'params.precision': { kind: 'value', source: 'planned', value: 'bf16' },
+      },
+    },
+  ],
+  diagnostics: [],
+}
+
+const REFRESHED: ResultsSummaryPayload = {
+  ...SUMMARY,
+  columns: [
+    ...SUMMARY.columns,
+    {
+      key: 'metrics.throughput',
+      label: 'Throughput',
+      type: 'number',
+      declared: true,
+      partition: 'metrics',
+      group: 'metrics',
+      hidden: false,
+    },
+  ],
+  variants: [
+    {
+      id: 'V0002',
+      name: 'FP32 refreshed',
+      status: 'COMPLETED',
+      declaredStatus: null,
+      evidence: ['logs/fp32-261001-000000'],
+      others: [],
+      cells: {
+        'params.precision': { kind: 'value', source: 'run', value: 'fp32' },
+        'metrics.loss': { kind: 'value', source: 'run', value: 0.125 },
+        'metrics.throughput': { kind: 'value', source: 'run', value: 42 },
+      },
+    },
+  ],
+}
 
 const EXP_ID = 'E0001-structured'
 const CENTRAL_PROJECT = ProjectRefSchema.parse({ host: 'host-a', project: 'research' })
@@ -108,30 +182,13 @@ describe('ExperimentPage v6 document sections', () => {
         },
         results: {
           kind: 'results',
-          fileName: 'results.yaml',
-          resource: `docs/experiments/${EXP_ID}/results.yaml`,
+          fileName: 'experiment.json',
+          resource: `docs/experiments/${EXP_ID}/experiment.json`,
           exists: true,
-          data: {
-            schemaVersion: 1,
-            columns: [
-              { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
-              { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
-            ],
-            variants: [
-              {
-                id: 'V0001',
-                name: 'BF16',
-                status: 'PLANNED',
-                parameters: { precision: 'bf16' },
-                metrics: { loss: null },
-                runs: [],
-                attempts: [],
-              },
-            ],
-          },
+          legacyResultsYaml: false,
           parseErrors: [],
           parseWarnings: [],
-          variantEligibility: [],
+          summary: SUMMARY,
         },
       },
       documentReadOnly: true,
@@ -154,7 +211,7 @@ describe('ExperimentPage v6 document sections', () => {
           heading: 'Results',
           body: '| Variant | Status |\n| --- | --- |\n| **V0001** BF16 | `PLANNED` |',
           rawBody:
-            '> Managed in [results.yaml](./results.yaml); read and update that file directly.',
+            "> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.",
           index: 0,
           occurrence: 1,
           supported: true,
@@ -231,71 +288,58 @@ describe('ExperimentPage v6 document sections', () => {
     expect(screen.getByRole('combobox', { name: /change experiment status/i })).toBeInTheDocument()
     expect(screen.getByText(/Last updated/)).toBeInTheDocument()
     expect(screen.getByText(/Stale for/)).toBeInTheDocument()
+    expect(fetchExperimentResults).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('checkbox', { name: 'Show Final loss column' }))
-    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
     expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
 
-    // Results has no fetch of its own any more: refreshing re-reads the
-    // experiment document through the shared page lifecycle.
-    const firstPayload = await vi.mocked(fetchExperimentDoc).mock.results[0]?.value
+    // Refresh asks the Results snapshot endpoint and replaces only this card.
+    const documentCalls = vi.mocked(fetchExperimentDoc).mock.calls.length
     const refreshedUpdatedAt = new Date(Date.now() - 60 * 60 * 1_000).toISOString()
-    vi.mocked(fetchExperimentDoc).mockResolvedValue({
-      ...firstPayload,
-      resultsUpdatedAt: refreshedUpdatedAt,
-      documents: {
-        ...firstPayload.documents,
-        results: {
-          ...firstPayload.documents.results,
-          data: {
-            schemaVersion: 1,
-            columns: [
-              { key: 'precision', label: 'Precision', group: 'parameter', type: 'string' },
-              { key: 'loss', label: 'Final loss', group: 'metric', type: 'number' },
-              { key: 'throughput', label: 'Throughput', group: 'metric', type: 'number' },
-            ],
-            variants: [
-              {
-                id: 'V0002',
-                name: 'FP32 refreshed',
-                status: 'COMPLETED',
-                parameters: { precision: 'fp32' },
-                metrics: { loss: 0.125, throughput: 42 },
-                runs: [],
-                attempts: [],
-              },
-            ],
-          },
-        },
-      },
+    vi.mocked(fetchExperimentResults).mockResolvedValueOnce({
+      ok: true,
+      summary: REFRESHED,
+      updatedAt: refreshedUpdatedAt,
     })
-
     await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
     await waitFor(() => expect(screen.getByText('V0002')).toBeInTheDocument())
+    expect(fetchExperimentResults).toHaveBeenCalledWith(CENTRAL_PROJECT, EXP_ID)
+    expect(vi.mocked(fetchExperimentDoc).mock.calls.length).toBe(documentCalls)
     expect(screen.queryByText('V0001')).not.toBeInTheDocument()
     expect(screen.getByText('Evidence that must stay visible.')).toBeInTheDocument()
     // Table interaction state survives the update.
-    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Show Final loss column' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
     expect(screen.queryByRole('columnheader', { name: /Final loss/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Show Throughput column' })).toBeChecked()
     expect(screen.getByRole('columnheader', { name: /Throughput/ })).toBeInTheDocument()
     expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
       'title',
-      `Results last changed at ${refreshedUpdatedAt}`,
+      `Results inputs last changed at ${refreshedUpdatedAt}`,
     )
     expect(container.querySelector('[data-results-stale-for]')).toHaveTextContent('Stale for 1h')
 
-    // A failed refresh keeps the content that is already on screen.
-    const callsBeforeFailure = vi.mocked(fetchExperimentDoc).mock.calls.length
-    vi.mocked(fetchExperimentDoc).mockRejectedValueOnce(new Error('network unavailable'))
+    // A failed request keeps the content that is already on screen.
+    vi.mocked(fetchExperimentResults).mockResolvedValueOnce({
+      ok: false,
+      status: 0,
+      body: null,
+      message: 'Results could not be refreshed: network unavailable',
+    })
     await userEvent.click(screen.getByRole('button', { name: 'Refresh Results' }))
-    await waitFor(() =>
-      expect(vi.mocked(fetchExperimentDoc).mock.calls.length).toBeGreaterThan(callsBeforeFailure),
-    )
+    expect(
+      await screen.findByText(/Results could not be refreshed: network unavailable/),
+    ).toBeInTheDocument()
     expect(screen.getByText('V0002')).toBeInTheDocument()
     expect(container.querySelector('[data-results-snapshot-status]')).toHaveAttribute(
       'title',
-      `Results last changed at ${refreshedUpdatedAt}`,
+      `Results inputs last changed at ${refreshedUpdatedAt}`,
     )
+    expect(screen.getByRole('button', { name: 'Refresh Results' })).toBeEnabled()
     await userEvent.click(screen.getByRole('combobox', { name: /change experiment status/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'RESOLVED' }))
     await waitFor(() =>
