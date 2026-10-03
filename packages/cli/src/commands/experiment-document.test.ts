@@ -1,6 +1,8 @@
+import { execFileSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MANAGED_SECTION_POINTERS } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -41,7 +43,7 @@ finished
 ## Artifacts
 `
 
-describe('v6 Experiment document CLI', () => {
+describe('Experiment document CLI (FS v9 bundle)', () => {
   let root: string
   let stdout = ''
   let realWrite: typeof process.stdout.write
@@ -95,7 +97,7 @@ describe('v6 Experiment document CLI', () => {
     expect(stderr).toContain('BAD_REQUEST')
   })
 
-  it('create writes a canonical README and all three schema-versioned YAML files', async () => {
+  it('create writes a canonical README, the two YAML files and experiment.json', async () => {
     const id = await create()
     const directory = join(root, 'docs', 'experiments', id)
     const readme = await fs.readFile(join(directory, 'README.md'), 'utf8')
@@ -103,11 +105,21 @@ describe('v6 Experiment document CLI', () => {
     expect(readme).toContain(
       '> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.',
     )
-    for (const file of ['implementation.yaml', 'investigation.yaml', 'results.yaml']) {
+    expect(readme).toContain(MANAGED_SECTION_POINTERS.results)
+    for (const file of ['implementation.yaml', 'investigation.yaml']) {
       await expect(fs.readFile(join(directory, file), 'utf8')).resolves.toContain(
         'schema_version: 1',
       )
     }
+    expect(JSON.parse(await fs.readFile(join(directory, 'experiment.json'), 'utf8'))).toEqual({
+      experiment_schema_version: 1,
+      groups: {},
+      columns: [],
+      variants: [],
+    })
+    await expect(fs.stat(join(directory, 'results.yaml'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
 
     stdout = ''
     await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
@@ -119,7 +131,7 @@ describe('v6 Experiment document CLI', () => {
     const directory = join(root, 'docs', 'experiments', id)
     const readmeMtime = (await fs.stat(join(directory, 'README.md'))).mtimeMs
     const future = new Date(Date.now() + 60_000)
-    await fs.utimes(join(directory, 'results.yaml'), future, future)
+    await fs.utimes(join(directory, 'experiment.json'), future, future)
 
     stdout = ''
     await runExperimentShow({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
@@ -136,7 +148,7 @@ describe('v6 Experiment document CLI', () => {
     })
 
     // A caller can use show.readmeMtime as the README optimistic lock even
-    // while aggregate bundle activity is newer because a YAML file changed.
+    // while aggregate bundle activity is newer because a managed source changed.
     stdout = ''
     await runExperimentStatusSet({
       projectRoot: root,
@@ -148,27 +160,29 @@ describe('v6 Experiment document CLI', () => {
     expect(JSON.parse(stdout)).toMatchObject({ ok: true, nextStatus: 'ABANDONED' })
   })
 
-  it('renders Results from YAML and lints enum values/read references read-only', async () => {
-    const id = await create()
-    const resultsPath = join(root, 'docs', 'experiments', id, 'results.yaml')
+  it('renders Results from the summary and lints member result files read-only', async () => {
+    const runDirectory = join(root, 'logs', IMPORTED_RUN_ID)
+    await fs.mkdir(runDirectory, { recursive: true })
+    await fs.writeFile(join(runDirectory, 'README.md'), IMPORTED_RUN_README)
+    stdout = ''
+    await runExperimentCreate({
+      projectRoot: root,
+      cwd: root,
+      slug: 'imported',
+      fromRun: IMPORTED_RUN_ID,
+    })
+    const id = JSON.parse(stdout).id as string
+    const descriptionPath = join(root, 'docs', 'experiments', id, 'experiment.json')
+    const description = JSON.parse(await fs.readFile(descriptionPath, 'utf8'))
+    description.columns = [
+      { path: 'params.precision', label: 'Precision', type: 'enum', options: ['fp32', 'bf16'] },
+      { path: 'metrics.fid', label: 'FID', type: 'number' },
+    ]
+    await fs.writeFile(descriptionPath, `${JSON.stringify(description, null, 2)}\n`)
+    const resultPath = join(runDirectory, 'result.csv')
     await fs.writeFile(
-      resultsPath,
-      `schema_version: 1
-columns:
-  - key: precision
-    label: Precision
-    group: parameter
-    type: enum
-    options: [fp32, bf16]
-variants:
-  - id: V0001
-    name: BF16
-    status: PLANNED
-    parameters: {precision: bf16}
-    metrics: {}
-    runs: []
-    attempts: []
-`,
+      resultPath,
+      'path,stat,value\n$experiment_schema_version,,1\nparams.precision,,bf16\nmetrics.fid,,12.5\n',
     )
 
     stdout = ''
@@ -180,18 +194,70 @@ variants:
       format: 'human',
     })
     expect(stdout).toContain(
-      '| Variant | Status | Precision | Entry | Recipe | Commit | Runs | Attempts |',
+      '| Variant | Status | Precision | FID | Entry | Recipe | Commit | Runs | Other Runs |',
     )
-    expect(stdout).toContain('**V0001** BF16')
+    expect(stdout).toContain(`**V0001** Imported baseline | \`COMPLETED\``)
+    expect(stdout).toContain('| bf16 | 12.5 |')
 
     stdout = ''
-    await runExperimentDocumentLint({
+    await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
+    expect(JSON.parse(stdout)).toMatchObject({ ok: true, summary: { errors: 0 } })
+
+    // A value of the wrong type in a member result file is a lint error.
+    const before = 'path,stat,value\n$experiment_schema_version,,1\nparams.precision,,fp8\n'
+    await fs.writeFile(resultPath, before)
+    stdout = ''
+    process.exitCode = undefined
+    await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
+    const lint = JSON.parse(stdout)
+    expect(process.exitCode).toBe(1)
+    process.exitCode = undefined
+    expect(lint.ok).toBe(false)
+    expect(lint.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'RESULT_VALUE_TYPE_MISMATCH',
+          file: `logs/${IMPORTED_RUN_ID}/result.csv`,
+          field: 'params.precision',
+          message: expect.stringContaining('enum'),
+        }),
+      ]),
+    )
+    expect(await fs.readFile(resultPath, 'utf8')).toBe(before)
+  })
+
+  it('reports RESULT_FILE_IGNORED for an ignored member result file inside Git', async () => {
+    const runDirectory = join(root, 'logs', IMPORTED_RUN_ID)
+    await fs.mkdir(runDirectory, { recursive: true })
+    await fs.writeFile(join(runDirectory, 'README.md'), IMPORTED_RUN_README)
+    stdout = ''
+    await runExperimentCreate({
       projectRoot: root,
       cwd: root,
-      idOrSlug: id,
-      format: 'json',
+      slug: 'ignored',
+      fromRun: IMPORTED_RUN_ID,
     })
-    expect(JSON.parse(stdout)).toMatchObject({ ok: true, summary: { errors: 0 } })
+    const id = JSON.parse(stdout).id as string
+    await fs.writeFile(
+      join(runDirectory, 'result.csv'),
+      'path,stat,value\n$experiment_schema_version,,1\nmetrics.fid,,1\n',
+    )
+    const gitignore = 'logs/*/*\n!logs/*/README.md\n'
+    await fs.writeFile(join(root, '.gitignore'), gitignore)
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root })
+    stdout = ''
+    await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
+    const lint = JSON.parse(stdout)
+    expect(lint.ok).toBe(true)
+    expect(lint.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'RESULT_FILE_IGNORED',
+        severity: 'warning',
+        file: `logs/${IMPORTED_RUN_ID}/result.csv`,
+        message: expect.stringContaining('!/logs/*/result.csv'),
+      }),
+    ])
+    expect(await fs.readFile(join(root, '.gitignore'), 'utf8')).toBe(gitignore)
   })
 
   it('imports --from-run into a valid V0001 Results assignment', async () => {
@@ -207,9 +273,13 @@ variants:
       fromRun: IMPORTED_RUN_ID,
     })
     const id = JSON.parse(stdout).id as string
-    const results = await fs.readFile(join(root, 'docs', 'experiments', id, 'results.yaml'), 'utf8')
-    expect(results).toContain('id: V0001')
-    expect(results).toContain(`- logs/${IMPORTED_RUN_ID}`)
+    const description = JSON.parse(
+      await fs.readFile(join(root, 'docs', 'experiments', id, 'experiment.json'), 'utf8'),
+    )
+    expect(description.variants).toEqual([
+      expect.objectContaining({ id: 'V0001', runs: [`logs/${IMPORTED_RUN_ID}`] }),
+    ])
+    expect(description.variants[0]).not.toHaveProperty('status')
 
     stdout = ''
     await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })

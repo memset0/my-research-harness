@@ -96,8 +96,12 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'experiment results show': 'readonly',
   'experiment results table': 'readonly',
   'experiment results summary': 'readonly',
+  // Writes only `.memon/index/results/` (a rebuildable cache): never journaled.
+  'experiment results rebuild': 'readonly',
   'experiment results annotation get': 'readonly',
   'experiment results annotation set': 'project',
+  // A dry run without `--apply` (see `classifyCliCommand`).
+  'experiment schema upgrade': 'project',
   'experiment section show': 'readonly',
   'experiment link': 'project',
   'experiment unlink': 'project',
@@ -114,6 +118,9 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
 
   // ---------- runs ----------
   'run rename': 'project',
+  'run result get': 'readonly',
+  'run result set': 'project',
+  'run result lint': 'readonly',
   'run resolve-exp': 'readonly',
   'run lint': 'readonly',
   'run record': 'project',
@@ -180,6 +187,8 @@ export function classifyCliCommand(
   if (declared === undefined) return 'unclassified'
   // `install-skills --target <dir>` writes outside project-root semantics.
   if (path === 'install-skills' && typeof options.target === 'string') return 'host'
+  // `experiment schema upgrade` writes only with `--apply`; otherwise it is a dry run.
+  if (path === 'experiment schema upgrade' && options.apply !== true) return 'readonly'
   return declared
 }
 

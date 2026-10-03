@@ -36,12 +36,6 @@ import {
   runExperimentDocumentShow,
 } from './commands/experiment-document.js'
 import { runExperimentRename } from './commands/experiment-rename.js'
-import {
-  runExperimentResults,
-  runExperimentResultsAnnotationGet,
-  runExperimentResultsAnnotationSet,
-  runExperimentResultsSummary,
-} from './commands/experiment-results.js'
 import { runFsVersionCheck } from './commands/fs-version-check.js'
 import { runHypoList, runHypoShow } from './commands/hypo.js'
 import { runHypothesesRead } from './commands/hypotheses.js'
@@ -51,6 +45,10 @@ import { runJournalSubmit } from './commands/journal-submit.js'
 import { runList } from './commands/list.js'
 import { runMockSeed } from './commands/mock.js'
 import { runProjectInit, runProjectLint } from './commands/project.js'
+import {
+  registerExperimentResultsCommands,
+  registerRunResultCommands,
+} from './commands/results-commands.js'
 import { runRunDeprecate, runRunUndeprecate } from './commands/run-deprecate.js'
 import { runRunLint } from './commands/run-lint.js'
 import { runRunRecord } from './commands/run-record.js'
@@ -449,7 +447,9 @@ experiment
 
 experiment
   .command('create <slug>')
-  .description('allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>/README.md')
+  .description(
+    'allocate next E<NNNN> and write docs/experiments/E<NNNN>-<slug>/ (README.md, implementation.yaml, investigation.yaml, experiment.json)',
+  )
   .option('--title <text>', 'human-readable title')
   .option('--hypotheses <list>', 'comma-separated H<NNNN> ids')
   .option(
@@ -485,7 +485,9 @@ experiment
 
 const experimentDoc = experiment
   .command('doc')
-  .description('read, render, validate, and lint the v6 Experiment document package')
+  .description(
+    'read, render and lint the Experiment document package (README, implementation.yaml, investigation.yaml, experiment.json, member result.csv files)',
+  )
 experimentDoc
   .command('show <id-or-slug> <section>')
   .description('show normalized implementation, investigation, or results data')
@@ -501,7 +503,7 @@ experimentDoc
 experimentDoc
   .command('lint <id-or-slug>')
   .description(
-    'lint the Experiment document package for format and structure: README sections, managed pointers, YAML schemas, and cross-references. Includes the schema validation that `doc validate` used to perform. Never judges research state.',
+    'lint the Experiment document package for format and structure: README sections, managed pointers, YAML schemas, experiment.json, cross-references and every member result.csv (version, duplicates, declared types, RESULT_FILE_IGNORED). Includes the schema validation that `doc validate` used to perform. Never judges research state.',
   )
   .action(async (idOrSlug: string) => {
     await runExperimentDocumentLint({ ...readGlobals(), idOrSlug })
@@ -518,88 +520,7 @@ for (const section of ['implementation', 'investigation'] as const) {
       await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section })
     })
 }
-const resultsCommand = experiment
-  .command('results')
-  .description('results.yaml table, summary, and optional annotation commands')
-resultsCommand
-  .command('show <id-or-slug>')
-  .description('render results.yaml as human-readable Markdown or normalized JSON')
-  .action(async (idOrSlug: string) => {
-    await runExperimentDocumentShow({ ...readGlobals(), idOrSlug, section: 'results' })
-  })
-resultsCommand
-  .command('table <id-or-slug>')
-  .description('read results as a selectable table with row/column filtering')
-  .option('--variant <ids>', 'comma-separated variant IDs to include (default: all)')
-  .option('--status <statuses>', 'comma-separated variant statuses to include (default: all)')
-  .option('--column <keys>', 'comma-separated column keys to include (default: all)')
-  .option('--group <group>', 'column group filter: parameter | metric | all (default: all)', 'all')
-  .option(
-    '--output <fmt>',
-    'output format: json | human | csv | markdown | yaml (default: json)',
-    'json',
-  )
-  .action(
-    async (
-      idOrSlug: string,
-      opts: { variant?: string; status?: string; column?: string; group?: string; output?: string },
-    ) => {
-      await runExperimentResults({
-        ...readGlobals(),
-        idOrSlug,
-        variants: opts.variant,
-        statuses: opts.status,
-        columns: opts.column,
-        columnGroup: opts.group ?? 'all',
-        output: opts.output ?? 'json',
-      })
-    },
-  )
-
-resultsCommand
-  .command('summary <id-or-slug>')
-  .description('show Results columns and Variant rows without cell values')
-  .option('--output <fmt>', 'output format: json | human | markdown (default: json)', 'json')
-  .action(async (idOrSlug: string, opts: { output?: string }) => {
-    await runExperimentResultsSummary({
-      ...readGlobals(),
-      idOrSlug,
-      output: opts.output ?? 'json',
-    })
-  })
-
-const resultsAnnotationCommand = resultsCommand
-  .command('annotation')
-  .description('read or optionally update sparse Results column annotations')
-resultsAnnotationCommand
-  .command('get <id-or-slug>')
-  .description('read all annotations or select one column/value description')
-  .option('--column <key>', 'select one Results column')
-  .option('--value <value>', 'select one described value (requires --column)')
-  .action(async (idOrSlug: string, opts: { column?: string; value?: string }) => {
-    await runExperimentResultsAnnotationGet({
-      ...readGlobals(),
-      idOrSlug,
-      column: opts.column,
-      value: opts.value,
-    })
-  })
-resultsAnnotationCommand
-  .command('set <id-or-slug> <column>')
-  .description('add or replace a Markdown column/value description in results.yaml')
-  .option('--value <value>', 'describe this value instead of the whole column')
-  .requiredOption('--description <markdown>', 'Markdown description to write')
-  .action(
-    async (idOrSlug: string, column: string, opts: { value?: string; description: string }) => {
-      await runExperimentResultsAnnotationSet({
-        ...readGlobals(),
-        idOrSlug,
-        column,
-        value: opts.value,
-        description: opts.description,
-      })
-    },
-  )
+registerExperimentResultsCommands(experiment, readGlobals)
 
 const experimentSection = experiment
   .command('section')
@@ -872,6 +793,8 @@ function emitV2DeprecationBanner(legacy: string, replacement: string): void {
 const run = program
   .command('run')
   .description('run-dir commands (v3 logs/<slug>-<YYMMDD>-<HHMMSS>/)')
+
+registerRunResultCommands(run, readGlobals)
 
 run
   .command('rename <id-or-dir> <new-slug>')

@@ -1,5 +1,8 @@
 import {
-  lintExperimentDocument,
+  type Experiment,
+  type LoadedResultsSummary,
+  lintExperimentBundle,
+  loadResultsSummary,
   MANAGED_EXPERIMENT_SECTIONS,
   type ManagedExperimentSection,
   readExperimentDoc,
@@ -11,7 +14,6 @@ import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { effectiveRunDirs } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { emitJson, emitLintDiagnostics, type OutputFormat } from '../lib/output.js'
-import { loadResultsEligibility, type ResultsEligibility } from '../lib/results-eligibility.js'
 
 interface ExperimentDocumentBaseInput {
   projectRoot?: string
@@ -24,16 +26,39 @@ export interface ExperimentDocumentSectionInput extends ExperimentDocumentBaseIn
   section: string
 }
 
+/**
+ * FS v9: the Results section is the projection of the generated Results
+ * summary (regenerated when stale, stored best effort), or of its failure.
+ * Only an exact Results pointer delegates to the summary, so it is loaded only
+ * then; a conflicting README section renders the README itself.
+ */
+async function resultsSummaryFor(
+  projectRoot: string,
+  experiment: Experiment,
+  section: ManagedExperimentSection,
+): Promise<LoadedResultsSummary | null> {
+  if (section !== 'results') return null
+  const raw = (experiment.rawSections ?? []).filter((item) => item.heading === 'Results')
+  if (raw.length !== 1 || !raw[0]!.pointerValid) return null
+  return loadResultsSummary(projectRoot, experiment.id, { role: 'cli' })
+}
+
+function reportWarnings(loaded: LoadedResultsSummary | null): void {
+  for (const warning of loaded?.warnings ?? [])
+    process.stderr.write(`${JSON.stringify({ warning })}\n`)
+}
+
 export async function runExperimentDocumentShow(
   input: ExperimentDocumentSectionInput,
 ): Promise<void> {
   const { experiment, section, projectRoot } = await resolveInput(input)
-  const parsed = experiment.documents?.[section] ?? null
-  const eligibility =
-    section === 'results'
-      ? await loadResultsEligibility(projectRoot, experiment.documents?.results.data ?? null)
-      : null
-  const rendered = renderExperimentManagedSection(experiment, section, eligibility ?? undefined)
+  const loaded = await resultsSummaryFor(projectRoot, experiment, section)
+  reportWarnings(loaded)
+  const rendered = renderExperimentManagedSection(
+    experiment,
+    section,
+    loaded ? { summary: loaded.summary } : undefined,
+  )
   if (input.format === 'human') {
     process.stdout.write(rendered.markdown)
     return
@@ -41,10 +66,14 @@ export async function runExperimentDocumentShow(
   emitJson({
     experimentId: experiment.id,
     section,
-    document: parsed,
+    document:
+      section === 'results'
+        ? (experiment.documents?.description ?? null)
+        : (experiment.documents?.[section] ?? null),
+    ...(section === 'results' ? { summary: loaded?.summary ?? null } : {}),
     renderedSource: rendered.source,
     diagnostics: rendered.diagnostics,
-    ...eligibilityFields(eligibility),
+    ...(loaded && loaded.warnings.length > 0 ? { warnings: loaded.warnings } : {}),
   })
 }
 
@@ -52,32 +81,33 @@ export async function runExperimentDocumentRender(
   input: ExperimentDocumentSectionInput,
 ): Promise<void> {
   const { experiment, section, projectRoot } = await resolveInput(input)
-  const eligibility =
-    section === 'results'
-      ? await loadResultsEligibility(projectRoot, experiment.documents?.results.data ?? null)
-      : null
-  const rendered = renderExperimentManagedSection(experiment, section, eligibility ?? undefined)
-  const markdown = rendered.markdown
+  const loaded = await resultsSummaryFor(projectRoot, experiment, section)
+  reportWarnings(loaded)
+  const rendered = renderExperimentManagedSection(
+    experiment,
+    section,
+    loaded ? { summary: loaded.summary } : undefined,
+  )
   if (input.format === 'human') {
-    process.stdout.write(markdown)
+    process.stdout.write(rendered.markdown)
     return
   }
   emitJson({
     experimentId: experiment.id,
     section,
-    markdown,
+    markdown: rendered.markdown,
     source: rendered.source,
     diagnostics: rendered.diagnostics,
-    ...eligibilityFields(eligibility),
+    ...(loaded && loaded.warnings.length > 0 ? { warnings: loaded.warnings } : {}),
   })
 }
 
 /**
- * One lint workflow: README structure, managed pointers, YAML schemas and
- * cross-references, including the schema validation the removed
- * `experiment doc validate` used to perform on its own. Format and structure
- * only — a well-formed document that cites a deprecated Run is valid, so
- * research state never reaches lint output.
+ * One lint workflow: README structure, managed pointers, the YAML schemas,
+ * `experiment.json`, cross-references and every declared member's
+ * `result.csv` (version agreement, duplicate pairs, declared types, cross-file
+ * conflicts and, inside a Git work tree, `RESULT_FILE_IGNORED`). Format and
+ * structure only — research state never reaches lint output.
  */
 export async function runExperimentDocumentLint(input: ExperimentDocumentBaseInput): Promise<void> {
   const { experiment, projectRoot } = await resolveInput(input)
@@ -87,19 +117,8 @@ export async function runExperimentDocumentLint(input: ExperimentDocumentBaseInp
   emitLintDiagnostics(
     input.format,
     { experimentId: experiment.id },
-    lintExperimentDocument(experiment, { runDirs: runDirs.patterns }),
+    await lintExperimentBundle(projectRoot, experiment, { runDirs: runDirs.patterns }),
   )
-}
-
-function eligibilityFields(eligibility: ResultsEligibility | null): {
-  variantEligibility?: ResultsEligibility['variants']
-  deprecatedRuns?: string[]
-} {
-  if (eligibility === null) return {}
-  return {
-    variantEligibility: eligibility.variants,
-    deprecatedRuns: eligibility.deprecatedRuns,
-  }
 }
 
 async function resolveInput(input: ExperimentDocumentBaseInput & { section?: string }) {

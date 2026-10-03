@@ -1,746 +1,534 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-
-import { type ExitCalled, spyExit } from '@memon/test-utils'
+import { Command } from 'commander'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { runExperimentDocumentLint, runExperimentDocumentRender } from './experiment-document.js'
-
+import {
+  captureCli,
+  makeResultsProject,
+  type ResultsProject,
+  resultCsv,
+  writeExperiment,
+} from '../test-support/results-project.js'
 import {
   runExperimentResults,
   runExperimentResultsAnnotationGet,
   runExperimentResultsAnnotationSet,
+  runExperimentResultsRebuild,
   runExperimentResultsSummary,
 } from './experiment-results.js'
+import { registerExperimentResultsCommands } from './results-commands.js'
 
-const RESULTS_YAML = `schema_version: 1
-column_annotations:
-  precision:
-    description: Controls **training precision**.
-    value_descriptions:
-      bf16: Uses **bfloat16** arithmetic.
-columns:
-  - key: precision
-    label: Precision
-    group: parameter
-    type: enum
-    options: [fp32, bf16]
-  - key: accuracy
-    label: Accuracy
-    group: metric
-    type: number
-  - key: loss
-    label: Loss
-    group: metric
-    type: number
-variants:
-  - id: V0001
-    name: BF16
-    status: COMPLETED
-    parameters: {precision: bf16}
-    metrics: {accuracy: 0.95, loss: 0.125}
-    runs: [run-a]
-    attempts: []
-  - id: V0002
-    name: FP32
-    status: RUNNING
-    parameters: {precision: fp32}
-    metrics: {accuracy: 0.88}
-    runs: []
-    attempts: [run-b]
-  - id: V0003
-    name: BF16-AMP
-    status: FAILED
-    parameters: {precision: bf16}
-    metrics: {accuracy: null, loss: null}
-    runs: []
-    attempts: [run-c, run-d]
-`
+const A = 'logs/a-260901-090000'
+const B = 'logs/b-260901-100000'
+const C = 'logs/c-260901-110000'
+const D = 'logs/d-260901-120000'
+const E = 'logs/e-260901-130000'
+const EXP = 'E0001-foo'
 
-const BLOCKED_RESULTS_YAML = `schema_version: 1
-columns:
-  - key: accuracy
-    label: Accuracy
-    group: metric
-    type: number
-variants:
-  - id: V0001
-    name: Parent
-    status: COMPLETED
-    metrics: {accuracy: 0.9}
-    provenance:
-      entry: scripts/train.sh
-      env:
-        LR: 0.000008
-  - id: V0002
-    name: Child
-    status: BLOCKED
-    description: Waits for the V0001 checkpoint.
-`
+function description(version = 1) {
+  return {
+    experiment_schema_version: version,
+    groups: { 'metrics.eval': { label: 'Evaluation' } },
+    columns: [
+      {
+        path: 'params.precision',
+        label: 'Precision',
+        type: 'enum',
+        options: ['fp32', 'bf16'],
+        description: 'Controls **training precision**.',
+        value_descriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
+      },
+      { path: 'metrics.eval.accuracy', label: 'Accuracy', type: 'number', direction: 'higher' },
+      { path: 'metrics.eval.loss', label: 'Loss', type: 'number', direction: 'lower' },
+      {
+        path: 'metrics.eval.clip',
+        label: 'CLIP',
+        type: 'stats',
+        across: 'sample',
+        direction: 'higher',
+      },
+    ],
+    variants: [
+      { id: 'V0001', name: 'BF16', values: { 'params.precision': 'bf16' }, runs: [A] },
+      { id: 'V0002', name: 'FP32 seeds', values: { 'params.precision': 'fp32' }, runs: [B, C, D] },
+      { id: 'V0003', name: 'Broken', runs: [E] },
+      {
+        id: 'V0004',
+        name: 'Child',
+        status: 'BLOCKED',
+        description: 'Waits for the V0001 checkpoint.',
+        runs: [],
+      },
+      {
+        id: 'V0005',
+        name: 'Planned',
+        status: 'PLANNED',
+        values: { 'params.precision': 'bf16' },
+        runs: [],
+      },
+    ],
+  }
+}
 
-describe('experiment results CLI', () => {
-  let root: string
-  let stdout = ''
-  let realWrite: typeof process.stdout.write
-  let priorExitCode: typeof process.exitCode
-  let exitSpy: ReturnType<typeof spyExit>
+async function seed(project: ResultsProject, version = 1, id = EXP) {
+  await writeExperiment(project, id, {
+    runs: { [A]: 'FINISHED', [B]: 'FINISHED', [C]: 'FINISHED', [D]: 'FINISHED', [E]: 'FAILED' },
+    description: description(version),
+  })
+  await project.write(
+    `${A}/result.csv`,
+    resultCsv(version, [
+      ['params.precision', '', 'bf16'],
+      ['metrics.eval.accuracy', '', '0.95'],
+      ['metrics.eval.loss', '', '0.125'],
+      ['metrics.eval.clip', 'mean', '0.312'],
+      ['metrics.eval.clip', 'std', '0.021'],
+      ['metrics.eval.clip', 'n', '500'],
+    ]),
+  )
+  for (const [index, run] of [B, C, D].entries())
+    await project.write(
+      `${run}/result.csv`,
+      resultCsv(version, [
+        ['params.precision', '', 'fp32'],
+        ['params.seed', '', String(index)],
+        ['metrics.eval.accuracy', '', String(10 + index)],
+      ]),
+    )
+}
+
+describe('memon experiment results (FS v9)', () => {
+  let project: ResultsProject
+  const base = () => ({ projectRoot: project.root, cwd: project.root, format: 'json' as const })
+  const table = (extra: Partial<Parameters<typeof runExperimentResults>[0]> = {}) =>
+    captureCli(() =>
+      runExperimentResults({
+        ...base(),
+        idOrSlug: EXP,
+        columnGroup: 'all',
+        output: 'json',
+        ...extra,
+      }),
+    )
 
   beforeEach(async () => {
-    root = await fs.mkdtemp(join(process.cwd(), 'memon-results-test-'))
-    realWrite = process.stdout.write
-    priorExitCode = process.exitCode
-    process.exitCode = undefined
-    exitSpy = spyExit()
-    process.stdout.write = ((chunk: unknown) => {
-      stdout += String(chunk)
-      return true
-    }) as typeof process.stdout.write
+    project = await makeResultsProject()
   })
-
   afterEach(async () => {
-    process.stdout.write = realWrite
-    process.exitCode = priorExitCode
-    exitSpy.restore()
-    await fs.rm(root, { recursive: true, force: true })
+    await project.cleanup()
   })
 
-  async function create(): Promise<string> {
-    const expDir = join(root, 'docs', 'experiments', 'E0001-foo')
-    await fs.mkdir(expDir, { recursive: true })
-    await fs.writeFile(
-      join(expDir, 'README.md'),
-      `---
-id: E0001-foo
-slug: foo
-title: Foo
-status: OPEN
-archived: false
-runs: []
-hypotheses: []
-tags: []
-created_at: '2026-08-10T12:00:00+00:00'
-updated_at: '2026-08-10T12:00:00+00:00'
----
-
-## Motivation
-
-foo
-
-## Design
-
-foo
-
-## Implementation
-
-> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.
-
-## Investigation
-
-> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
-
-## Results
-
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
-
-## Findings
-
-foo
-
-## Limitations
-
-foo
-
-## Conclusion
-
-foo
-
-## Warnings
-
-foo
-`,
-    )
-    await fs.writeFile(join(expDir, 'results.yaml'), RESULTS_YAML)
-    return 'E0001-foo'
-  }
-
-  it('returns JSON with all variants and columns by default', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.experimentId).toBe('E0001-foo')
-    expect(out.resultsSchemaVersion).toBe(1)
-    expect(out.columns).toHaveLength(3)
-    expect(out.columnAnnotations.precision.description).toContain('**training precision**')
-    expect(out.rows).toHaveLength(3)
-    expect(out.meta.totalVariants).toBe(3)
-    expect(out.meta.filteredVariants).toBe(3)
-    expect(out.rows[0]!.values.precision).toBe('bf16')
-    expect(out.rows[0]!.values.accuracy).toBe(0.95)
-  })
-
-  it('excludes deprecated Run and Attempt references without rewriting source evidence', async () => {
-    const id = await create()
-    const path = join(root, 'docs', 'experiments', id, 'results.yaml')
-    const selected = 'selected-260901-100000'
-    const attempt = 'attempt-260901-100001'
-    const source = RESULTS_YAML.replace('run-a', selected).replace('run-b', attempt)
-    await fs.writeFile(path, source)
-    for (const run of [selected, attempt]) {
-      const dir = join(root, 'logs', run)
-      await fs.mkdir(dir, { recursive: true })
-      await fs.writeFile(join(dir, 'README.md'), '---\ndeprecated: true\n---\n')
-    }
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: id,
-      format: 'json',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.rows[0]).toMatchObject({
-      runs: [],
-      values: { accuracy: 0.95 },
-      metricsValidity: 'unavailable',
-    })
-    expect(out.rows[1]).toMatchObject({ attempts: [], metricsValidity: 'valid' })
-    expect(out.variantEligibility[0].runs).toEqual([selected])
-    stdout = ''
-    await runExperimentDocumentRender({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: id,
-      format: 'json',
-      section: 'results',
-    })
-    const rendered = JSON.parse(stdout).markdown as string
-    const rows = rendered.split('\n').filter((line) => line.startsWith('| **V'))
-    expect(rows[0]).toContain('0.95')
-    expect(rows[0]).toContain('unavailable')
-    expect(rows.join('\n')).not.toContain(selected)
-    expect(rows.join('\n')).not.toContain(attempt)
-    expect(await fs.readFile(path, 'utf8')).toBe(source)
-  })
-
-  it('summarizes columns, annotations, and row identities without exposing cell values', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResultsSummary({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.meta).toEqual({ columnCount: 3, rowCount: 3 })
-    expect(out.columns[0]).toMatchObject({
-      key: 'precision',
+  it('returns every declared Variant with derived statuses, evidence and values', async () => {
+    await seed(project)
+    const out = await table()
+    expect(out.exitCode).toBe(0)
+    expect(out.json.experimentId).toBe(EXP)
+    expect(out.json.experimentSchemaVersion).toBe(1)
+    expect(out.json.rows).toHaveLength(5)
+    for (const row of out.json.rows)
+      for (const key of [
+        'variantId',
+        'variantName',
+        'status',
+        'declaredStatus',
+        'runs',
+        'attempts',
+        'values',
+        'frozen',
+      ])
+        expect(row).toHaveProperty(key)
+    expect(out.json.columns.map((column: { path: string }) => column.path)).toEqual([
+      'params.precision',
+      'params.seed',
+      'metrics.eval.accuracy',
+      'metrics.eval.loss',
+      'metrics.eval.clip',
+    ])
+    expect(out.json.columns[0]).toMatchObject({
       description: 'Controls **training precision**.',
       valueDescriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
     })
-    expect(out.rows[0]).toEqual({
+    expect(out.json.columns[1]).toMatchObject({ path: 'params.seed', declared: false })
+    const [v1, v2, v3, v4, v5] = out.json.rows
+    expect(v1).toMatchObject({
+      variantId: 'V0001',
+      status: 'COMPLETED',
+      runs: [A],
+      attempts: [],
+      values: {
+        'params.precision': 'bf16',
+        'metrics.eval.accuracy': 0.95,
+        'metrics.eval.clip': { across: 'sample', stats: { mean: 0.312, std: 0.021, n: 500 } },
+      },
+    })
+    expect(v2.status).toBe('COMPLETED')
+    expect(v2.values['params.precision']).toBe('fp32')
+    expect(v2.values['params.seed']).toMatchObject({ mixed: expect.any(Array) })
+    expect(v2.values['metrics.eval.accuracy']).toMatchObject({
+      over: 'run',
+      stats: { mean: 11, std: 1, min: 10, max: 12, n: 3 },
+    })
+    expect(v3).toMatchObject({
+      status: 'FAILED',
+      runs: [],
+      attempts: [{ run: E, status: 'FAILED', deprecated: false }],
+    })
+    expect(v4).toMatchObject({ status: 'BLOCKED', declaredStatus: 'BLOCKED' })
+    expect(v5).toMatchObject({
+      status: 'PLANNED',
+      values: { 'params.precision': 'bf16' },
+    })
+    expect(out.json.meta).toMatchObject({ totalVariants: 5, filteredVariants: 5 })
+    expect(await project.exists(`.memon/index/results/${EXP}.json`)).toBe(true)
+  })
+
+  it('filters by --variant, --status (case-insensitive), --group and --column prefix', async () => {
+    await seed(project)
+    const variants = await table({ variants: 'V0001,V0003' })
+    expect(variants.json.rows.map((row: { variantId: string }) => row.variantId)).toEqual([
+      'V0001',
+      'V0003',
+    ])
+    expect(variants.json.meta.filters.variants).toEqual(['V0001', 'V0003'])
+
+    const blocked = await table({ statuses: 'blocked' })
+    expect(blocked.json.rows.map((row: { variantId: string }) => row.variantId)).toEqual(['V0004'])
+    expect(blocked.json.rows[0].status).toBe('BLOCKED')
+    expect(blocked.json.meta.filters.statuses).toEqual(['blocked'])
+
+    const metric = await table({ columnGroup: 'metric' })
+    expect(
+      metric.json.columns.every((column: { path: string }) => column.path.startsWith('metrics.')),
+    ).toBe(true)
+    expect(metric.json.meta.filters.columnGroup).toBe('metric')
+
+    const prefix = await table({ columns: 'metrics.eval' })
+    expect(prefix.json.columns).toHaveLength(3)
+
+    const empty = await table({ variants: 'V9999' })
+    expect(empty.exitCode).toBe(0)
+    expect(empty.json.rows).toEqual([])
+    expect(empty.json.meta.filteredVariants).toBe(0)
+  })
+
+  it('emits RFC 4180 CSV and flattens statistics into path:stat columns', async () => {
+    await seed(project)
+    const plain = await table({
+      variants: 'V0001',
+      columns: 'params.precision,metrics.eval.accuracy,metrics.eval.loss',
+      output: 'csv',
+    })
+    expect(plain.stdout.trim().split('\n')).toEqual([
+      'variant_id,variant_name,status,params.precision,metrics.eval.accuracy,metrics.eval.loss,runs_count,attempts_count',
+      'V0001,BF16,COMPLETED,bf16,0.95,0.125,1,0',
+    ])
+
+    const stats = await table({ variants: 'V0001', columns: 'metrics.eval.clip', output: 'csv' })
+    expect(stats.stdout.trim().split('\n')).toEqual([
+      'variant_id,variant_name,status,metrics.eval.clip:mean,metrics.eval.clip:std,metrics.eval.clip:n,runs_count,attempts_count',
+      'V0001,BF16,COMPLETED,0.312,0.021,500,1,0',
+    ])
+
+    const seeds = await table({
+      variants: 'V0002',
+      columns: 'metrics.eval.accuracy',
+      output: 'csv',
+    })
+    const [header, row] = seeds.stdout.trim().split('\n')
+    const cells = Object.fromEntries(
+      header!.split(',').map((name, index) => [name, row!.split(',')[index]]),
+    )
+    expect(cells).toMatchObject({
+      'metrics.eval.accuracy': '',
+      'metrics.eval.accuracy:mean': '11',
+      'metrics.eval.accuracy:std': '1',
+      'metrics.eval.accuracy:n': '3',
+      runs_count: '3',
+    })
+  })
+
+  it('renders human, markdown and yaml projections of the same table', async () => {
+    await seed(project)
+    const human = await table({ output: 'human' })
+    expect(human.stdout).toContain(`experiment: ${EXP}`)
+    expect(human.stdout).toContain('V0001 BF16')
+    expect(human.stdout).toContain('COMPLETED')
+    expect(human.stdout).toContain('0.95')
+    expect(human.stdout).toContain('11 ± 1 (3)')
+    expect(human.stdout).toContain('Column annotations:')
+
+    const markdown = await table({ output: 'markdown', variants: 'V0001' })
+    const lines = markdown.stdout.split('\n')
+    const head = lines.findIndex((line) => line.startsWith('| Variant ID |'))
+    expect(head).toBeGreaterThanOrEqual(0)
+    expect(lines[head + 1]).toMatch(/^\| --- \|/)
+    expect(lines[head + 2]).toContain('**V0001**')
+
+    const yaml = await table({ output: 'yaml', variants: 'V0004' })
+    expect(yaml.json.rows).toHaveLength(1)
+    expect(yaml.json.rows[0].variantId).toBe('V0004')
+  })
+
+  it('regenerates a deleted summary with the same answer', async () => {
+    await seed(project)
+    const first = await table()
+    await fs.rm(join(project.root, '.memon/index/results', `${EXP}.json`))
+    const second = await table()
+    expect(second.json).toEqual(first.json)
+    expect(await project.exists(`.memon/index/results/${EXP}.json`)).toBe(true)
+  })
+
+  it('fails with NOT_FOUND naming experiment.json and the migration for an FS v8 bundle', async () => {
+    await seed(project)
+    await fs.rm(join(project.root, 'docs/experiments', EXP, 'experiment.json'))
+    await project.write(`docs/experiments/${EXP}/results.yaml`, 'not: valid: yaml: [')
+    const out = await table()
+    expect(out.exitCode).toBe(4)
+    expect(out.stdout).toBe('')
+    expect(out.error?.code).toBe('NOT_FOUND')
+    expect(out.error?.message).toContain('experiment.json')
+    expect(out.error?.message).toContain('v8-to-v9')
+    expect(out.error?.details).toMatchObject({ legacyResultsYaml: true })
+    expect(out.error?.details.diagnostics[0].code).toBe('LEGACY_RESULTS_YAML')
+  })
+
+  it('fails with RESULT_SCHEMA_MISMATCH listing files and the upgrade command, no rows', async () => {
+    await seed(project, 2)
+    await project.write(`${B}/result.csv`, resultCsv(1, [['metrics.eval.accuracy', '', '10']]))
+    const out = await table()
+    expect(out.exitCode).toBe(1)
+    expect(out.stdout).toBe('')
+    expect(out.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
+    expect(out.error?.details.files).toEqual([{ path: `${B}/result.csv`, version: 1 }])
+    expect(out.error?.details.upgradeCommand).toBe(`memon experiment schema upgrade ${EXP} --to 2`)
+  })
+
+  it('fails with RESULT_DUPLICATE_ROW naming the file and both lines', async () => {
+    await seed(project)
+    await project.write(
+      `${A}/result.csv`,
+      resultCsv(1, [
+        ['metrics.eval.accuracy', '', '0.9'],
+        ['metrics.eval.accuracy', '', '0.95'],
+      ]),
+    )
+    const out = await table()
+    expect(out.exitCode).toBe(1)
+    expect(out.error?.code).toBe('RESULT_DUPLICATE_ROW')
+    expect(out.error?.details.files[0]).toMatchObject({
+      path: `${A}/result.csv`,
+      duplicates: [{ path: 'metrics.eval.accuracy', stat: null, lines: [3, 4] }],
+    })
+  })
+
+  it('fails with INVALID_RESULTS for a malformed experiment.json and NOT_FOUND for an unknown id', async () => {
+    await seed(project)
+    await project.write(`docs/experiments/${EXP}/experiment.json`, '{ "columns": [')
+    const invalid = await table()
+    expect(invalid.exitCode).toBe(1)
+    expect(invalid.error?.code).toBe('INVALID_RESULTS')
+    const missing = await captureCli(() =>
+      runExperimentResults({
+        ...base(),
+        idOrSlug: 'E9999-none',
+        columnGroup: 'all',
+        output: 'json',
+      }),
+    )
+    expect(missing.exitCode).toBe(4)
+  })
+
+  it.skipIf(process.getuid?.() === 0)(
+    'prints the table and exits 0 with RESULTS_CACHE_FAILED when the cache is read-only',
+    async () => {
+      await seed(project)
+      await project.write('.memon/index/.gitignore', '*\n')
+      await fs.mkdir(join(project.root, '.memon/index/results'), { recursive: true })
+      await fs.chmod(join(project.root, '.memon/index/results'), 0o500)
+      try {
+        const out = await table()
+        expect(out.exitCode).toBe(0)
+        expect(out.json.rows).toHaveLength(5)
+        expect(out.json.warnings.map((warning: { code: string }) => warning.code)).toEqual([
+          'RESULTS_CACHE_FAILED',
+        ])
+      } finally {
+        await fs.chmod(join(project.root, '.memon/index/results'), 0o700)
+      }
+    },
+  )
+
+  it('summarizes columns, annotations and Variant identities without cell values', async () => {
+    await seed(project)
+    const out = await captureCli(() =>
+      runExperimentResultsSummary({ ...base(), idOrSlug: EXP, output: 'json' }),
+    )
+    expect(out.exitCode).toBe(0)
+    expect(out.json.meta).toEqual({ columnCount: 5, rowCount: 5 })
+    expect(out.json.experimentSchemaVersion).toBe(1)
+    expect(out.json.columns[0]).toMatchObject({
+      path: 'params.precision',
+      type: 'enum',
+      options: ['fp32', 'bf16'],
+      description: 'Controls **training precision**.',
+      valueDescriptions: { bf16: 'Uses **bfloat16** arithmetic.' },
+    })
+    expect(out.json.columns[4]).toMatchObject({ path: 'metrics.eval.clip', across: 'sample' })
+    expect(out.json.rows[0]).toEqual({
       id: 'V0001',
       name: 'BF16',
       status: 'COMPLETED',
-      metricsValidity: 'valid',
-      deprecatedRuns: [],
+      declaredStatus: null,
     })
-    expect(stdout).not.toContain('0.95')
-    expect(stdout).not.toContain('run-a')
-    expect(stdout).not.toContain('"parameters"')
-    expect(stdout).not.toContain('"metrics"')
+    for (const forbidden of ['0.95', A, '"values"', '"runs"', '"attempts"', '"provenance"'])
+      expect(out.stdout).not.toContain(forbidden)
   })
 
-  it('adds and replaces column/value annotations and reads them without requiring YAML edits', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResultsAnnotationSet({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      column: 'precision',
-      description: 'Expanded **column** explanation.',
-    })
-    expect(JSON.parse(stdout)).toMatchObject({ ok: true, replaced: true, changed: true })
-
-    stdout = ''
-    await runExperimentResultsAnnotationSet({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      column: 'precision',
-      value: 'fp4',
-      description: 'A future value not yet present in `options`.',
-    })
-    expect(JSON.parse(stdout)).toMatchObject({ ok: true, replaced: false, value: 'fp4' })
-
-    const written = await fs.readFile(
-      join(root, 'docs', 'experiments', 'E0001-foo', 'results.yaml'),
-      'utf8',
+  it('still describes the declared shape when the summary fails, and exits 1', async () => {
+    await seed(project, 2)
+    await project.write(`${C}/result.csv`, resultCsv(1, [['metrics.eval.accuracy', '', '11']]))
+    const out = await captureCli(() =>
+      runExperimentResultsSummary({ ...base(), idOrSlug: EXP, output: 'json' }),
     )
-    expect(written.indexOf('column_annotations:')).toBeLessThan(written.indexOf('columns:'))
-    expect(written).toContain('future value not yet present')
-
-    stdout = ''
-    await runExperimentResultsAnnotationGet({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      column: 'precision',
-      value: 'fp4',
-    })
-    expect(JSON.parse(stdout)).toEqual({
-      experimentId: 'E0001-foo',
-      column: 'precision',
-      value: 'fp4',
-      description: 'A future value not yet present in `options`.',
-    })
-  })
-
-  it('filters by --variant', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0001,V0003',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.rows).toHaveLength(2)
-    expect(out.rows.map((r: { variantId: string }) => r.variantId)).toEqual(['V0001', 'V0003'])
-  })
-
-  it('filters by --status', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      statuses: 'COMPLETED,FAILED',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.rows).toHaveLength(2)
-    expect(out.rows.map((r: { status: string }) => r.status)).toEqual(['COMPLETED', 'FAILED'])
-  })
-
-  it('selects BLOCKED Variants with a case-insensitive --status and reads numeric env values', async () => {
-    const id = await create()
-    await fs.writeFile(join(root, 'docs', 'experiments', id, 'results.yaml'), BLOCKED_RESULTS_YAML)
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: id,
-      format: 'json',
-      statuses: 'blocked',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
+    expect(out.exitCode).toBe(1)
+    expect(out.json.columns).toHaveLength(4)
     expect(
-      out.rows.map((r: { variantId: string; status: string }) => [r.variantId, r.status]),
-    ).toEqual([['V0002', 'BLOCKED']])
-    expect(out.meta).toMatchObject({
-      totalVariants: 2,
-      filteredVariants: 1,
-      filters: { statuses: ['blocked'] },
+      out.json.rows.map((row: { declaredStatus: string | null }) => row.declaredStatus),
+    ).toEqual([null, null, null, 'BLOCKED', 'PLANNED'])
+    expect(out.json.rows.every((row: { status: unknown }) => row.status === null)).toBe(true)
+    expect(out.json.error).toMatchObject({
+      code: 'RESULT_SCHEMA_MISMATCH',
+      upgradeCommand: `memon experiment schema upgrade ${EXP} --to 2`,
     })
-
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: id,
-      format: 'json',
-      columnGroup: 'all',
-      output: 'markdown',
-    })
-    expect(stdout).toContain('BLOCKED')
-
-    stdout = ''
-    await runExperimentResultsSummary({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: id,
-      format: 'json',
-      output: 'json',
-    })
-    expect(JSON.parse(stdout).rows.map((r: { status: string }) => r.status)).toEqual([
-      'COMPLETED',
-      'BLOCKED',
-    ])
-    expect(process.exitCode).toBeUndefined()
+    expect(out.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
   })
 
-  it('lints a coerced env value as a warning and exits 0', async () => {
-    const id = await create()
-    const dir = join(root, 'docs', 'experiments', id)
-    await fs.writeFile(join(dir, 'implementation.yaml'), 'schema_version: 1\nitems: []\n')
-    await fs.writeFile(join(dir, 'investigation.yaml'), 'schema_version: 1\nitems: []\n')
-    await fs.writeFile(join(dir, 'results.yaml'), BLOCKED_RESULTS_YAML)
-    stdout = ''
-    await runExperimentDocumentLint({ projectRoot: root, cwd: root, idOrSlug: id, format: 'json' })
-    const out = JSON.parse(stdout)
-    expect(out).toMatchObject({ ok: true, summary: { errors: 0, warnings: 1 } })
-    expect(out.diagnostics).toEqual([
-      expect.objectContaining({
-        code: 'RESULTS_ENV_VALUE_COERCED',
-        severity: 'warning',
-        field: 'variants.0.provenance.env.LR',
+  it('adds and replaces annotations in experiment.json, keeping every other key', async () => {
+    await seed(project)
+    const path = `docs/experiments/${EXP}/experiment.json`
+    const document = JSON.parse(await project.read(path))
+    document.custom_top = { keep: true }
+    document.columns[0].custom_column_key = 'keep'
+    await project.write(path, `${JSON.stringify(document, null, 2)}\n`)
+
+    const replaced = await captureCli(() =>
+      runExperimentResultsAnnotationSet({
+        ...base(),
+        idOrSlug: EXP,
+        column: 'params.precision',
+        value: 'bf16',
+        description: 'Replaced **bf16** text.',
       }),
+    )
+    expect(replaced.json).toMatchObject({ ok: true, replaced: true, changed: true })
+    const future = await captureCli(() =>
+      runExperimentResultsAnnotationSet({
+        ...base(),
+        idOrSlug: EXP,
+        column: 'params.precision',
+        value: 'fp4',
+        description: 'A future value not yet in `options`.',
+      }),
+    )
+    expect(future.json).toMatchObject({ ok: true, replaced: false, value: 'fp4' })
+    const written = JSON.parse(await project.read(path))
+    expect(written.custom_top).toEqual({ keep: true })
+    expect(written.columns[0]).toMatchObject({
+      custom_column_key: 'keep',
+      value_descriptions: {
+        bf16: 'Replaced **bf16** text.',
+        fp4: 'A future value not yet in `options`.',
+      },
+    })
+
+    const undeclared = await captureCli(() =>
+      runExperimentResultsAnnotationSet({
+        ...base(),
+        idOrSlug: EXP,
+        column: 'params.unknown',
+        description: 'x',
+      }),
+    )
+    expect(undeclared.exitCode).toBe(2)
+
+    const got = await captureCli(() =>
+      runExperimentResultsAnnotationGet({
+        ...base(),
+        idOrSlug: EXP,
+        column: 'params.precision',
+        value: 'fp4',
+      }),
+    )
+    expect(got.json).toEqual({
+      experimentId: EXP,
+      column: 'params.precision',
+      value: 'fp4',
+      description: 'A future value not yet in `options`.',
+    })
+    const all = await captureCli(() =>
+      runExperimentResultsAnnotationGet({ ...base(), idOrSlug: EXP }),
+    )
+    expect(Object.keys(all.json.columnAnnotations)).toEqual(['params.precision'])
+  })
+
+  it('rebuilds every summary and reports each failure separately', async () => {
+    await seed(project, 1, 'E0001-foo')
+    await writeExperiment(project, 'E0002-bar', {
+      runs: {},
+      description: { experiment_schema_version: 1, groups: {}, columns: [], variants: [] },
+    })
+    await writeExperiment(project, 'E0003-baz', {
+      runs: { 'logs/z-260901-090000': 'FINISHED' },
+      description: {
+        experiment_schema_version: 2,
+        groups: {},
+        columns: [],
+        variants: [{ id: 'V0001', name: 'z', runs: ['logs/z-260901-090000'] }],
+      },
+    })
+    await project.write('logs/z-260901-090000/result.csv', resultCsv(1, [['metrics.x', '', '1']]))
+    const out = await captureCli(() => runExperimentResultsRebuild({ ...base(), all: true }))
+    expect(out.exitCode).toBe(1)
+    expect(out.json.counts).toEqual({ regenerated: 2, unchanged: 0, failed: 1 })
+    const failed = out.json.experiments.find((item: { id: string }) => item.id === 'E0003-baz')
+    expect(failed).toMatchObject({
+      status: 'failed',
+      error: {
+        code: 'RESULT_SCHEMA_MISMATCH',
+        files: [{ path: 'logs/z-260901-090000/result.csv', version: 1 }],
+        upgradeCommand: 'memon experiment schema upgrade E0003-baz --to 2',
+      },
+    })
+    expect(await project.exists('.memon/index/results/E0001-foo.json')).toBe(true)
+    expect(await project.exists('.memon/index/results/E0002-bar.json')).toBe(true)
+
+    const again = await captureCli(() =>
+      runExperimentResultsRebuild({ ...base(), idOrSlug: 'foo', all: false }),
+    )
+    expect(again.exitCode).toBe(0)
+    expect(again.json.experiments).toEqual([{ id: 'E0001-foo', status: 'unchanged' }])
+
+    const neither = await captureCli(() => runExperimentResultsRebuild({ ...base(), all: false }))
+    expect(neither.exitCode).toBe(2)
+  })
+
+  it('lists the results group and schema upgrade in `memon experiment --help`', () => {
+    const program = new Command('memon')
+    const experiment = program.command('experiment')
+    registerExperimentResultsCommands(experiment, () => ({ format: 'json', cwd: process.cwd() }))
+    const help = experiment.helpInformation()
+    expect(help).toMatch(/results\s+Results commands: table, summary, rebuild, annotation/)
+    expect(help).toMatch(/schema\s+Experiment result-schema commands: upgrade/)
+    const results = experiment.commands.find((command) => command.name() === 'results')!
+    expect(results.commands.map((command) => command.name())).toEqual([
+      'show',
+      'table',
+      'summary',
+      'rebuild',
+      'annotation',
     ])
-    expect(process.exitCode).toBeUndefined()
-    expect(await fs.readFile(join(dir, 'results.yaml'), 'utf8')).toBe(BLOCKED_RESULTS_YAML)
-  })
-
-  it('filters by --column', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      columnGroup: 'all',
-      columns: 'precision,loss',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.columns).toHaveLength(2)
-    expect(out.columns.map((c: { key: string }) => c.key)).toEqual(['precision', 'loss'])
-  })
-
-  it('filters by --group parameter', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      columnGroup: 'parameter',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.columns).toHaveLength(1)
-    expect(out.columns[0]!.key).toBe('precision')
-    expect(out.columns[0]!.group).toBe('parameter')
-  })
-
-  it('filters by --group metric', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      columnGroup: 'metric',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.columns).toHaveLength(2)
-    expect(out.columns.every((c: { group: string }) => c.group === 'metric')).toBe(true)
-  })
-
-  it('returns empty rows when no variants match filters', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V9999',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.rows).toHaveLength(0)
-    expect(out.meta.filteredVariants).toBe(0)
-    expect(out.meta.totalVariants).toBe(3)
-  })
-
-  it('emits CSV format', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0001',
-      columnGroup: 'all',
-      output: 'csv',
-    })
-    const lines = stdout.trim().split('\n')
-    expect(lines[0]).toBe(
-      'variant_id,variant_name,status,precision,accuracy,loss,runs_count,attempts_count,metrics_validity,deprecated_runs',
-    )
-    expect(lines[1]).toBe('V0001,BF16,COMPLETED,bf16,0.95,0.125,1,0,valid,')
-  })
-
-  it('emits markdown format', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0001',
-      columnGroup: 'all',
-      output: 'markdown',
-    })
-    const lines = stdout.trim().split('\n')
-    expect(stdout).toContain('Column annotations:')
-    const headerIndex = lines.findIndex((line) => line.includes('Variant ID'))
-    expect(headerIndex).toBeGreaterThanOrEqual(0)
-    expect(lines[headerIndex]).toContain('Variant Name')
-    expect(lines[headerIndex]).toContain('Precision')
-    expect(lines[headerIndex + 1]).toContain('─')
-    expect(lines[headerIndex + 2]).toContain('**V0001**')
-    expect(lines[headerIndex + 2]).toContain('COMPLETED')
-  })
-
-  it('emits human format', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0001',
-      columnGroup: 'all',
-      output: 'human',
-    })
-    expect(stdout).toContain('experiment: E0001-foo')
-    expect(stdout).toContain('**V0001**')
-    expect(stdout).toContain('BF16')
-    expect(stdout).toContain('COMPLETED')
-    expect(stdout).toContain('bf16')
-    expect(stdout).toContain('0.95')
-  })
-
-  it('emits YAML format', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0001',
-      columnGroup: 'all',
-      output: 'yaml',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.experimentId).toBe('E0001-foo')
-    expect(out.rows).toHaveLength(1)
-    expect(out.rows[0]!.variantId).toBe('V0001')
-  })
-
-  it('handles combined filters', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0001,V0002',
-      statuses: 'COMPLETED',
-      columnGroup: 'metric',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.rows).toHaveLength(1)
-    expect(out.rows[0]!.variantId).toBe('V0001')
-    expect(out.columns).toHaveLength(2)
-    expect(out.columns.every((c: { group: string }) => c.group === 'metric')).toBe(true)
-  })
-
-  it('handles null values', async () => {
-    await create()
-    stdout = ''
-    await runExperimentResults({
-      projectRoot: root,
-      cwd: root,
-      idOrSlug: 'E0001-foo',
-      format: 'json',
-      variants: 'V0003',
-      columnGroup: 'all',
-      output: 'json',
-    })
-    const out = JSON.parse(stdout)
-    expect(out.rows[0]!.values.accuracy).toBeNull()
-    expect(out.rows[0]!.values.loss).toBeNull()
-  })
-
-  it('reports NOT_FOUND for missing experiment', async () => {
-    await create()
-    stdout = ''
-    let caught: ExitCalled | undefined
-    try {
-      await runExperimentResults({
-        projectRoot: root,
-        cwd: root,
-        idOrSlug: 'E9999-nonexistent',
-        format: 'json',
-        columnGroup: 'all',
-        output: 'json',
-      })
-    } catch (err) {
-      caught = err as ExitCalled
-    }
-    expect(caught).toBeDefined()
-    expect(caught!.exitCode).toBe(4)
-  })
-
-  it('reports RESULTS_NOT_FOUND when results.yaml is missing', async () => {
-    const expDir = join(root, 'docs', 'experiments', 'E0002-empty')
-    await fs.mkdir(expDir, { recursive: true })
-    await fs.writeFile(
-      join(expDir, 'README.md'),
-      `---
-id: E0002-empty
-slug: empty
-title: Empty
-status: OPEN
-archived: false
-runs: []
-hypotheses: []
-tags: []
-created_at: '2026-08-10T12:00:00+00:00'
-updated_at: '2026-08-10T12:00:00+00:00'
----
-
-## Motivation
-
-## Design
-
-## Implementation
-
-> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.
-
-## Investigation
-
-> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
-
-## Results
-
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
-
-## Findings
-
-## Limitations
-
-## Conclusion
-
-## Warnings
-`,
-    )
-    stdout = ''
-    let caught: ExitCalled | undefined
-    try {
-      await runExperimentResults({
-        projectRoot: root,
-        cwd: root,
-        idOrSlug: 'E0002-empty',
-        format: 'json',
-        columnGroup: 'all',
-        output: 'json',
-      })
-    } catch (err) {
-      caught = err as ExitCalled
-    }
-    expect(caught).toBeDefined()
-    expect(caught!.exitCode).toBe(4)
-  })
-
-  it('reports INVALID_RESULTS for malformed YAML', async () => {
-    const expDir = join(root, 'docs', 'experiments', 'E0003-bad')
-    await fs.mkdir(expDir, { recursive: true })
-    await fs.writeFile(
-      join(expDir, 'README.md'),
-      `---
-id: E0003-bad
-slug: bad
-title: Bad
-status: OPEN
-archived: false
-runs: []
-hypotheses: []
-tags: []
-created_at: '2026-08-10T12:00:00+00:00'
-updated_at: '2026-08-10T12:00:00+00:00'
----
-
-## Motivation
-
-## Design
-
-## Implementation
-
-> Managed in [implementation.yaml](./implementation.yaml); read and update that file directly.
-
-## Investigation
-
-> Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
-
-## Results
-
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
-
-## Findings
-
-## Limitations
-
-## Conclusion
-
-## Warnings
-`,
-    )
-    await fs.writeFile(join(expDir, 'results.yaml'), 'not: valid: yaml: [')
-
-    stdout = ''
-    let caught: ExitCalled | undefined
-    try {
-      await runExperimentResults({
-        projectRoot: root,
-        cwd: root,
-        idOrSlug: 'E0003-bad',
-        format: 'json',
-        columnGroup: 'all',
-        output: 'json',
-      })
-    } catch (err) {
-      caught = err as ExitCalled
-    }
-    expect(caught).toBeDefined()
-    expect(caught!.exitCode).toBe(1) // INVALID_RESULTS → GENERIC fallback
+    const schema = experiment.commands.find((command) => command.name() === 'schema')!
+    expect(schema.commands.map((command) => command.name())).toEqual(['upgrade'])
   })
 })

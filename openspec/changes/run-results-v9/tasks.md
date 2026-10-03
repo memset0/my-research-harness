@@ -35,8 +35,8 @@
 
 ## 7. CLI
 
-- [ ] 7.1 Add `memon run result get|set|lint` with the `set` syntax of the `memon-cli` delta (`path[:stat]=value`, `--from`, `--unset`), type validation before any write, the `RESULT_FILE_IGNORED` warning (on `set` creating an ignored file and in `lint`) and the exit codes of the `memon-cli` delta; verify with CLI tests for every scenario (two statistics, invalid value, orphan, mismatch, conflict, ignored new file with exit 0 and an unchanged `.gitignore`, no check outside Git) and that `get`/`lint` write no receipt.
-- [ ] 7.2 Switch `memon experiment results table|summary` to the summary (filters by path/partition, stats flattening in CSV, error envelopes with `details.files`/`details.upgradeCommand`), add `memon experiment results rebuild` and `memon experiment schema upgrade`, update `doc show|render|validate|lint` (including the `RESULT_FILE_IGNORED` warning for ignored member result files) and help text; verify with CLI tests for every changed scenario and the help listing.
+- [x] 7.1 Add `memon run result get|set|lint` with the `set` syntax of the `memon-cli` delta (`path[:stat]=value`, `--from`, `--unset`), type validation before any write, the `RESULT_FILE_IGNORED` warning (on `set` creating an ignored file and in `lint`) and the exit codes of the `memon-cli` delta; verify with CLI tests for every scenario (two statistics, invalid value, orphan, mismatch, conflict, ignored new file with exit 0 and an unchanged `.gitignore`, no check outside Git) and that `get`/`lint` write no receipt.
+- [x] 7.2 Switch `memon experiment results table|summary` to the summary (filters by path/partition, stats flattening in CSV, error envelopes with `details.files`/`details.upgradeCommand`), add `memon experiment results rebuild` and `memon experiment schema upgrade`, update `doc show|render|validate|lint` (including the `RESULT_FILE_IGNORED` warning for ignored member result files) and help text; verify with CLI tests for every changed scenario and the help listing.
 
 ## 8. Backend and central
 
