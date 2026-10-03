@@ -831,6 +831,13 @@ describe('ExperimentResultsTable', () => {
     expect(details).toHaveTextContent('Across 3 evidence Runs')
     expect(details).toHaveTextContent('p99')
     expect(details).toHaveTextContent('logs/c-261001-000000')
+    // Statistics use the column's decimals; a count stays a plain number.
+    await user.hover(within(clip()).getByText('0.310/0.400'))
+    const clipDetails = await screen.findByLabelText('CLIP statistics')
+    const statValue = (stat: string) =>
+      within(clipDetails).getByRole('rowheader', { name: stat }).nextElementSibling
+    expect(statValue('mean')).toHaveTextContent(/^0\.312$/)
+    expect(statValue('n')).toHaveTextContent(/^500$/)
 
     // Markers: mixed, frozen, differs from plan, planned and BLOCKED.
     expect(

@@ -34,7 +34,18 @@ const PARTITION_LABELS: Record<string, string> = {
   env: 'Environment',
 }
 
-/** Group a result file's rows by their path segments, keeping file order. */
+const PARTITION_ORDER = ['params', 'metrics', 'env']
+
+function partitionRank(path: string): number {
+  const rank = PARTITION_ORDER.indexOf(path)
+  return rank === -1 ? PARTITION_ORDER.length : rank
+}
+
+/**
+ * Group a result file's rows by their path segments: the partitions in
+ * `params`, `metrics`, `env` order (any other top-level group after them),
+ * everything else in file order.
+ */
 export function buildRunResultTree(rows: RunResultPayload['rows']): ResultGroup {
   const root: ResultGroup = { path: '', name: '', groups: [], leaves: [] }
   const groups = new Map<string, ResultGroup>([['', root]])
@@ -62,6 +73,7 @@ export function buildRunResultTree(rows: RunResultPayload['rows']): ResultGroup 
     else leaf.stats.push({ stat: row.stat, value: row.value, line: row.line })
   }
   for (const leaf of leaves.values()) leaf.stats.sort((a, b) => compareStatKeys(a.stat, b.stat))
+  root.groups.sort((a, b) => partitionRank(a.path) - partitionRank(b.path))
   return root
 }
 

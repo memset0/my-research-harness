@@ -207,6 +207,18 @@ function CellMarkers({ cell, column }: { cell: ResultsCellPayload; column: Resul
 }
 
 /** Every statistic of a stats cell, its dimensions and contributing Runs. */
+/**
+ * One statistic of the hover detail in the column's number format; a count
+ * (`n`, or the number of Runs `<stat>.n`) always reads as a plain number.
+ */
+function statValueText(key: string, value: number, result: ResultTableColumn['result']): string {
+  if (key === 'n' || key.endsWith('.n')) return formatResultNumber(value)
+  return formatResultNumber(value, {
+    decimals: result?.decimals ?? null,
+    format: result?.format ?? null,
+  })
+}
+
 function StatsDetails({
   cell,
   column,
@@ -242,9 +254,7 @@ function StatsDetails({
                   {key}
                 </th>
                 <td className="text-right font-mono tabular-nums">
-                  {typeof value === 'number'
-                    ? formatResultNumber(value, { decimals: result?.decimals ?? null })
-                    : '—'}
+                  {typeof value === 'number' ? statValueText(key, value, result) : '—'}
                 </td>
               </tr>
             )

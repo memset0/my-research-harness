@@ -321,15 +321,22 @@ describe('RunResultTree', () => {
           truncated: false,
           diagnostics: [],
           rows: [
-            { key: 'params.optim.lr', stat: null, value: '0.0001', line: 3 },
+            { key: 'env.CUDA', stat: null, value: '12.4', line: 3 },
             { key: 'metrics.eval.clip', stat: 'std', value: '0.02', line: 4 },
             { key: 'metrics.eval.clip', stat: 'mean', value: '0.31', line: 5 },
             { key: 'metrics.notes', stat: null, value: '', line: 6 },
+            { key: 'params.optim.lr', stat: null, value: '0.0001', line: 7 },
           ],
         }}
       />,
     )
     expect(container.querySelector('[data-result-schema-version]')).toHaveTextContent('schema v2')
+    // Partitions read params, metrics, env whatever order the file wrote them in.
+    expect(
+      Array.from(container.querySelectorAll<HTMLElement>('[data-result-group]'))
+        .map((group) => group.dataset.resultGroup)
+        .filter((path) => !path?.includes('.')),
+    ).toEqual(['params', 'metrics', 'env'])
     expect(container.querySelector('[data-result-group="params.optim"]')).toBeInTheDocument()
     const clip = container.querySelector<HTMLElement>('[data-result-path="metrics.eval.clip"]')!
     expect(
