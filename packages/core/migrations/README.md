@@ -70,3 +70,9 @@ The current value lives in `packages/core/src/version.ts`. Guides present:
   `.memon/index/` (self-ignored, rebuildable) and advances the marker; it
   changes no document and never creates `.memon/project.yml`. Executed by
   `scripts/migrate-v7-to-v8.mjs` (`plan` / `apply` / `verify` / `rollback`).
+- `v8-to-v9.md` — mechanical, plan-reviewed migration of the Results model:
+  every `results.yaml` splits into the description file `experiment.json` and
+  per-Run `result.csv` files, allow rules for ignored result files are appended
+  in Git mode, and the derived index moves to `index_version: 2` with generated
+  Results summaries. Executed by `scripts/migrate-v8-to-v9.mjs` (`plan` /
+  `apply` / `verify` / `rollback`).
