@@ -18,3 +18,19 @@
 - **GIVEN** an Experiment whose description file records version 2 and one member `result.csv` records version 1
 - **WHEN** central serves its Results snapshot
 - **THEN** the response is `422` with code `RESULT_SCHEMA_MISMATCH`, that file and the command `memon experiment schema upgrade <experiment-id> --to 2`, and no Variant rows
+
+## ADDED Requirements
+
+### Requirement: Run detail carries the Run's result rows
+
+The Run detail response SHALL carry a nullable `result` describing the Run's `result.csv`: the project-relative file, the recorded `experiment_schema_version` (null when unreadable), the value rows in file order as `{key, stat, value, line}` with `stat` null for a scalar row and `value` the cell text exactly as written, a `truncated` flag when the file holds more rows than the response bound, and the file's parse diagnostics. Reserved rows SHALL NOT appear as value rows. A Run without a result file SHALL answer `result: null`. The field SHALL be identical in standalone and central mode and SHALL NOT carry an absolute path.
+
+#### Scenario: Run detail with a result file
+- **GIVEN** a Run whose `result.csv` records the version row and `metrics.eval.fid` `11.08` on line 3
+- **WHEN** a client requests that Run's detail
+- **THEN** `result.rows` contains `{key: "metrics.eval.fid", stat: null, value: "11.08", line: 3}`, `result.schemaVersion` is the recorded version and no row carries the reserved path
+
+#### Scenario: Run detail without a result file
+- **GIVEN** a Run directory without `result.csv`
+- **WHEN** a client requests that Run's detail
+- **THEN** the response carries `result: null`

@@ -373,3 +373,13 @@ The Results table header SHALL stack at most two rows: the first row SHALL show,
 - **GIVEN** group `metrics.eval` with three columns of which one is hidden
 - **WHEN** the user collapses the group and expands it again
 - **THEN** the collapsed placeholder reports two visible columns and the expanded group shows the same two columns with the hidden one still hidden
+
+### Requirement: Run panels show the Run's result file
+
+An expanded Run panel on the Experiment page SHALL show the Run's `result.csv`, when the Run has one, as a read-only collapsible tree built from the rows the Run detail response carries: the partitions in `params`, `metrics`, `env` order (any other top-level group after them), one node per group (path prefix), and one leaf per path showing its scalar value or one row per statistic in vocabulary order. The section SHALL show the recorded `experiment_schema_version`, the number of rows (marked when truncated) and the file's parse diagnostics. A Run without a result file SHALL show no result section, and the tree SHALL NOT offer editing.
+
+#### Scenario: Grouped result rows
+- **GIVEN** a Run whose `result.csv` records `env.CUDA`, `metrics.eval.clip` `std` and `mean`, `metrics.notes` and `params.optim.lr` in that order
+- **WHEN** the user expands that Run on the Experiment page
+- **THEN** the panel lists Parameters, Metrics and Environment in that order, `clip` under `eval` with `mean` before `std`
+- **AND** folding Metrics hides its rows while Parameters stays visible
