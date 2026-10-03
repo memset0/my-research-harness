@@ -6,7 +6,8 @@
 // Results snapshot endpoint (every input fingerprint re-taken) and replaces
 // only this card's content. The detail response supplies the first summary
 // and time, so first render needs no extra request; later detail updates
-// (the shared heartbeat) apply like a refresh. An invalid or missing
+// (the shared heartbeat) apply like a refresh. A summary too large for the
+// detail (`summaryDeferred`) is loaded from the Results endpoint instead. An invalid or missing
 // description file keeps the last good table with a local error; a schema
 // mismatch or duplicate row replaces the table.
 
@@ -64,6 +65,22 @@ export function ExperimentResultsCard({
       outcome: await fetchExperimentResults(project, experimentId),
     })
   }
+  // A summary too large to embed in the detail is deferred: the card loads it
+  // from the Results endpoint on mount and again when the detail reports a
+  // newer input time (the heartbeat analogue of an embedded summary).
+  const deferred = results.summary === null && Boolean(results.summaryDeferred)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload only when the deferred state or the input time changes
+  useEffect(() => {
+    if (!deferred) return
+    let cancelled = false
+    dispatch({ type: 'refresh-start' })
+    void fetchExperimentResults(project, experimentId).then((outcome) => {
+      if (!cancelled) dispatch({ type: 'refresh-done', outcome })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [deferred, updatedAt, experimentId])
   const errors = section.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
   const shownAt = displayedUpdatedAt(state)
   return (
@@ -134,6 +151,13 @@ export function ExperimentResultsCard({
             experimentId={experimentId}
             runIds={runIds}
           />
+        ) : deferred && state.pending ? (
+          <div
+            className="rounded-md border border-dashed px-3 py-8 text-center text-xs italic text-muted-foreground"
+            data-results-deferred-loading
+          >
+            Loading the Results table…
+          </div>
         ) : (
           <div className="rounded-md border border-dashed px-3 py-8 text-center text-xs italic text-muted-foreground">
             The Results summary is not available.

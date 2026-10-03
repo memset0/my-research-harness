@@ -210,8 +210,64 @@ describe('Results snapshot and Experiment detail', () => {
     expect(detail.resultsUpdatedAt).toBe(snapshot.updatedAt)
     const section = detail.documentSections.find((entry) => entry.heading === 'Results')
     expect(section?.source).toBe('yaml')
-    expect(section?.body).toContain('| Variant | Status | LR | seed | FID |')
-    expect(section?.body).toContain('11 ± 1 (3)')
+    // The section carries the bounded digest; the table is the snapshot's.
+    expect(section?.body).toContain('- Variants: 3')
+    expect(section?.body).toContain('- Columns: 3 (2 declared)')
+    expect(section?.body).toContain('memon experiment results table E0001-agg')
+    expect(section?.body).not.toContain('| Variant |')
+    expect(detail.documents?.results.summaryDeferred).toBeNull()
+  })
+
+  it('serves a detail for an experiment.json larger than the section bound', async () => {
+    const columns = Array.from({ length: 12 }, (_, index) => ({
+      path: `params.p${index}`,
+      label: `Parameter ${index}`,
+      type: 'string',
+    }))
+    const variants = Array.from({ length: 2500 }, (_, index) => ({
+      id: `V${String(index + 1).padStart(4, '0')}`,
+      name: `variant ${index + 1} with a reasonably long descriptive name`,
+      values: Object.fromEntries(
+        columns.map((column) => [column.path, `value-${index}-${column.path}-padding-padding`]),
+      ),
+      runs: [],
+    }))
+    const bundle = await writeExperiment('E0006-big', [], {
+      experiment_schema_version: 1,
+      groups: {},
+      columns,
+      variants,
+    })
+    expect((await fs.stat(join(bundle, 'experiment.json'))).size).toBeGreaterThan(512 * 1024)
+    // A README section and body beyond their bounds are truncated, not fatal.
+    const readme = await fs.readFile(join(bundle, 'README.md'), 'utf8')
+    await fs.writeFile(
+      join(bundle, 'README.md'),
+      readme.replace('## Motivation\n', `## Motivation\n\n${'motivation text '.repeat(40_000)}\n`),
+    )
+    const service = new FilesystemProjectService([project()])
+    const detail = BackendExperimentResponseSchema.parse(
+      await service.getExperiment('p', 'E0006-big'),
+    )
+    const results = detail.documents!.results
+    expect(results.summary).toBeNull()
+    expect(results.summaryDeferred?.bytes).toBeGreaterThan(results.summaryDeferred!.limit)
+    const section = detail.documentSections.find((entry) => entry.heading === 'Results')!
+    expect(section.source).toBe('yaml')
+    expect(section.body).toContain('- Variants: 2500')
+    expect(section.body.length).toBeLessThan(4096)
+    const motivation = detail.documentSections.find((entry) => entry.heading === 'Motivation')!
+    expect(motivation.rawBody.length).toBeLessThanOrEqual(256 * 1024)
+    expect(motivation.rawBody).toContain('Truncated:')
+    expect(motivation.diagnostics.map((entry) => entry.code)).toContain('SECTION_TRUNCATED')
+    expect(detail.body.length).toBeLessThanOrEqual(512 * 1024)
+    expect(detail.documentDiagnostics.map((entry) => entry.code)).toContain('BODY_TRUNCATED')
+
+    const snapshot = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0006-big'),
+    )
+    expect(snapshot.summary.variants).toHaveLength(2500)
+    expect(snapshot.updatedAt).toBe(detail.resultsUpdatedAt)
   })
 
   it('answers RESULT_SCHEMA_MISMATCH with 422, the offending file and the upgrade command', async () => {

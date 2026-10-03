@@ -94,6 +94,36 @@ describe('ExperimentResultsCard', () => {
     expect(fetchExperimentResults).not.toHaveBeenCalled()
   })
 
+  it('loads a summary deferred for size from the Results endpoint', async () => {
+    const big = resultsDocument(
+      Array.from({ length: 300 }, (_, index) =>
+        variant(`V${String(index + 1).padStart(4, '0')}`, { name: `variant ${index + 1}` }),
+      ),
+    )
+    vi.mocked(fetchExperimentResults).mockResolvedValue({
+      ok: true,
+      summary: big,
+      updatedAt: '2026-10-01T08:00:00+08:00',
+    })
+    const { container } = renderWithHeartbeat(
+      <ExperimentResultsCard
+        section={SECTION}
+        results={{ ...results(null), summaryDeferred: { bytes: 2_000_000, limit: 262_144 } }}
+        updatedAt="2026-10-01T08:00:00+08:00"
+        project="research"
+        experimentId={EXPERIMENT}
+        runIds={[]}
+      />,
+    )
+    expect(container.querySelector('[data-results-deferred-loading]')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(container.querySelector('[data-variant-id="V0001"]')).toBeInTheDocument(),
+    )
+    expect(fetchExperimentResults).toHaveBeenCalledTimes(1)
+    expect(fetchExperimentResults).toHaveBeenCalledWith('research', EXPERIMENT)
+    expect(container.querySelector('[data-results-deferred-loading]')).toBeNull()
+  })
+
   it.each([
     ['RESULT_SCHEMA_MISMATCH', 'records version 1'],
     ['RESULT_DUPLICATE_ROW', 'logs/b-260901-100000/result.csv'],

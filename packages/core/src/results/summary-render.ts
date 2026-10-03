@@ -206,6 +206,52 @@ export function renderResultsSummaryMarkdown(
   return `${annotations}${table}${notesText}`
 }
 
+/**
+ * The bounded Markdown digest of a summary for the Experiment detail's
+ * Results section: counts, schema version, outcome and non-info diagnostic
+ * codes, plus a pointer to the full table (the Results snapshot endpoint /
+ * `memon experiment results table`). Its size does not grow with the number
+ * of Variants, cells or Runs, so a large Experiment never pushes the section
+ * past the protocol bound.
+ */
+export function renderResultsSummaryDigestMarkdown(summary: ResultsSummary): string {
+  const lines: string[] = []
+  if (summary.outcome !== 'ok' && summary.error) {
+    lines.push(`> [!CAUTION]`, `> **${summary.error.code}** — ${summary.error.message}`, '')
+  }
+  const declared = summary.columns.filter((column) => column.declared).length
+  const frozen = summary.variants.reduce(
+    (count, variant) =>
+      count + Object.values(variant.cells).filter((cell) => cell?.source === 'frozen').length,
+    0,
+  )
+  lines.push(
+    `- Experiment schema version: ${summary.experiment_schema_version ?? '—'}`,
+    `- Variants: ${summary.variants.length}`,
+    `- Columns: ${summary.columns.length} (${declared} declared)`,
+    `- Groups: ${Object.keys(summary.groups).length}`,
+  )
+  if (frozen > 0) lines.push(`- Frozen values: ${frozen}`)
+  const counts = new Map<string, number>()
+  for (const diagnostic of summary.diagnostics) {
+    if (diagnostic.severity === 'info') continue
+    counts.set(diagnostic.code, (counts.get(diagnostic.code) ?? 0) + 1)
+  }
+  if (counts.size > 0) {
+    lines.push(
+      `- Diagnostics: ${[...counts]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([code, count]) => `\`${code}\` × ${count}`)
+        .join(', ')}`,
+    )
+  }
+  lines.push(
+    '',
+    `_The full Results table is served by the Results endpoint; read it with \`memon experiment results table ${escapeCode(summary.experiment)}\`._`,
+  )
+  return `${lines.join('\n')}\n`
+}
+
 // ---------- flat table (CLI) ----------
 
 export type ResultsTableColumnGroup = 'parameter' | 'metric' | 'all'

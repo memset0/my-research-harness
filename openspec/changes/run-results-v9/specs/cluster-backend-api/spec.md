@@ -21,6 +21,21 @@
 
 ## ADDED Requirements
 
+### Requirement: Experiment detail stays within its bounds for large Experiments
+
+The Experiment detail response SHALL NOT fail because an Experiment's sources are large. Its Results display section SHALL carry a bounded digest of the generated Results summary (experiment schema version, Variant, column and group counts, frozen-value count, non-info diagnostic codes, the failure callout of a failed summary, and a pointer to the Results snapshot endpoint and `memon experiment results table`), never the full Results table. The detail SHALL embed the Results summary only when its serialized size is at most 256 KiB; a larger summary SHALL be answered as `summary: null` with `summaryDeferred: {bytes, limit}`, and clients SHALL read it from the Results snapshot endpoint. A README body, display section body or raw section body longer than its protocol bound SHALL be truncated to that bound with a visible notice naming the source file and a `BODY_TRUNCATED` or `SECTION_TRUNCATED` warning diagnostic, instead of failing the response. Truncation SHALL affect only the response; source files SHALL NOT be modified. The behavior SHALL be identical in standalone and central mode.
+
+#### Scenario: Large description file
+- **GIVEN** an Experiment whose `experiment.json` is larger than 512 KiB
+- **WHEN** a client requests the Experiment detail
+- **THEN** the response is `200`, the Results section body is the digest, `documents.results.summary` is null and `summaryDeferred` reports the summary size
+- **AND** the Results snapshot of the same Experiment is `200` with every Variant
+
+#### Scenario: Oversized README section
+- **GIVEN** an Experiment whose README Motivation section is longer than the raw section bound
+- **WHEN** a client requests the Experiment detail
+- **THEN** the response is `200`, the section text ends with the truncation notice, carries `SECTION_TRUNCATED`, and `README.md` is unchanged on disk
+
 ### Requirement: Run detail carries the Run's result rows
 
 The Run detail response SHALL carry a nullable `result` describing the Run's `result.csv`: the project-relative file, the recorded `experiment_schema_version` (null when unreadable), the value rows in file order as `{key, stat, value, line}` with `stat` null for a scalar row and `value` the cell text exactly as written, a `truncated` flag when the file holds more rows than the response bound, and the file's parse diagnostics. Reserved rows SHALL NOT appear as value rows. A Run without a result file SHALL answer `result: null`. The field SHALL be identical in standalone and central mode and SHALL NOT carry an absolute path.

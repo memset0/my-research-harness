@@ -119,6 +119,12 @@ export interface ExperimentResultsDocumentPayload {
   parseErrors: ParseIssue[]
   parseWarnings: ParseIssue[]
   summary: ResultsSummaryPayload | null
+  /**
+   * Set when the summary was left out of the detail for size (larger than
+   * the inline budget); the Results card loads it from the Results endpoint.
+   * Absent from hosts that predate the field.
+   */
+  summaryDeferred?: { bytes: number; limit: number } | null
 }
 
 export interface ExperimentManagedDocumentsPayload {

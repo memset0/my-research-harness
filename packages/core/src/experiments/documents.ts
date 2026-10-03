@@ -18,7 +18,10 @@ import {
   type ParsedResultFile,
 } from '../results/result-file.js'
 import { type ResultsSummary, schemaUpgradeCommand } from '../results/summary.js'
-import { renderResultsSummaryMarkdown } from '../results/summary-render.js'
+import {
+  renderResultsSummaryDigestMarkdown,
+  renderResultsSummaryMarkdown,
+} from '../results/summary-render.js'
 
 import type {
   Experiment,
@@ -140,6 +143,14 @@ export interface ResultsRenderContext {
    * reports that the summary was not loaded.
    */
   summary?: ResultsSummary
+  /**
+   * How the Results section projects the summary: `table` (default) renders
+   * the full Variant table (CLI `experiment doc show|render`); `digest`
+   * renders the bounded digest of `renderResultsSummaryDigestMarkdown` — the
+   * Experiment detail response, whose section body is size-bounded and whose
+   * full table is served by the Results endpoint.
+   */
+  resultsBody?: 'table' | 'digest'
   /**
    * Exclude these ids from displayed Run/Attempt collections. Preserve metric
    * values with partial/unavailable qualification and evidence notes; never
@@ -783,9 +794,12 @@ function renderResultsSection(
 ): RenderManagedSectionResult {
   const summary = context?.summary
   if (summary) {
-    const markdown = renderResultsSummaryMarkdown(summary, {
-      ...(context?.runs ? { runs: context.runs } : {}),
-    })
+    const markdown =
+      context?.resultsBody === 'digest'
+        ? renderResultsSummaryDigestMarkdown(summary)
+        : renderResultsSummaryMarkdown(summary, {
+            ...(context?.runs ? { runs: context.runs } : {}),
+          })
     if (summary.outcome !== 'ok' && summary.error) {
       diagnostics.push(
         diag(

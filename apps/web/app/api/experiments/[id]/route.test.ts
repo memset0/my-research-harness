@@ -16,6 +16,7 @@ vi.mock('../../../../lib/server/experiment-sections', () => ({
 }))
 
 import { getRuntime } from '../../../../lib/server/runtime'
+import { GET as GET_RESULTS } from './results/route'
 import { GET } from './route'
 
 const EXPERIMENT_ID = 'E0001-detail-results-time'
@@ -109,6 +110,43 @@ describe('GET /api/experiments/:id Results timestamp', () => {
       summary: { outcome: 'ok', variants: [] },
     })
     expect(body).not.toHaveProperty('resultsSnapshotAt')
+  })
+
+  it('answers 200 for an experiment.json larger than the section bound', async () => {
+    const columns = Array.from({ length: 12 }, (_, index) => ({
+      path: `params.p${index}`,
+      label: `Parameter ${index}`,
+      type: 'string',
+    }))
+    const variants = Array.from({ length: 2500 }, (_, index) => ({
+      id: `V${String(index + 1).padStart(4, '0')}`,
+      name: `variant ${index + 1} with a reasonably long descriptive name`,
+      values: Object.fromEntries(
+        columns.map((column) => [column.path, `value-${index}-${column.path}-padding-padding`]),
+      ),
+      runs: [],
+    }))
+    const text = `${JSON.stringify({ experiment_schema_version: 1, groups: {}, columns, variants }, null, 2)}\n`
+    expect(text.length).toBeGreaterThan(512 * 1024)
+    await writeFile(resultsPath, text)
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/experiments/${EXPERIMENT_ID}`),
+      { params: Promise.resolve({ id: EXPERIMENT_ID }) },
+    )
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.documents.results.summary).toBeNull()
+    expect(body.documents.results.summaryDeferred.bytes).toBeGreaterThan(
+      body.documents.results.summaryDeferred.limit,
+    )
+
+    const snapshot = await GET_RESULTS(
+      new NextRequest(`http://localhost/api/experiments/${EXPERIMENT_ID}/results?project=research`),
+      { params: Promise.resolve({ id: EXPERIMENT_ID }) },
+    )
+    expect(snapshot.status).toBe(200)
+    expect((await snapshot.json()).summary.variants).toHaveLength(2500)
   })
 
   it('uses a null input timestamp when the description file is absent', async () => {

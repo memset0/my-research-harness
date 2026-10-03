@@ -1,5 +1,9 @@
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import {
+  BACKEND_EXPERIMENT_BODY_MAX,
+  BACKEND_EXPERIMENT_SECTION_BODY_MAX,
+  BACKEND_EXPERIMENT_SECTION_RAW_BODY_MAX,
+  BACKEND_RESULTS_SUMMARY_INLINE_MAX_BYTES,
   BackendAnomaliesResponseSchema,
   BackendExperimentResponseSchema,
   BackendExperimentResultsResponseSchema,
@@ -21,6 +25,7 @@ import {
   discoverRuns,
   EXPERIMENT_DESCRIPTION_FILE,
   type Experiment,
+  type ExperimentDocumentView,
   projectFs as fs,
   getProjectFileContext,
   getProjectFileStatus,
@@ -548,20 +553,43 @@ export class FilesystemProjectService implements BackendProjectReadService {
           lookup,
         })
       : null
-    const documentView = buildExperimentDocumentView(experiment, {
-      deprecatedRuns,
-      ...(results ? { summary: results.summary } : {}),
-    })
+    // The Results section carries the bounded digest; the full table is the
+    // Results endpoint's (a large summary would exceed the section bound).
+    const documentView = boundedDocumentView(
+      buildExperimentDocumentView(experiment, {
+        deprecatedRuns,
+        resultsBody: 'digest',
+        ...(results ? { summary: results.summary } : {}),
+      }),
+    )
+    const body = truncateDisplayText(experiment.body, BACKEND_EXPERIMENT_BODY_MAX, 'README.md')
     return BackendExperimentResponseSchema.parse({
       ...safeExperimentSummary(experiment, project),
-      body: experiment.body,
+      body: body.text,
       deprecatedRuns,
       warningsRaw: experiment.warningsRaw,
-      rawSections: experiment.rawSections ?? [],
+      rawSections: (experiment.rawSections ?? []).map((section) => ({
+        ...section,
+        body: truncateDisplayText(
+          section.body,
+          BACKEND_EXPERIMENT_SECTION_RAW_BODY_MAX,
+          'README.md',
+        ).text,
+      })),
       documents: safeManagedDocuments(experiment, project, results),
       resultsUpdatedAt: results ? summaryUpdatedAt(results.summary) : null,
       documentSections: documentView.sections,
-      documentDiagnostics: documentView.diagnostics,
+      documentDiagnostics: body.truncated
+        ? [
+            ...documentView.diagnostics,
+            {
+              code: 'BODY_TRUNCATED',
+              severity: 'warning' as const,
+              file: 'README.md',
+              message: `the README body (${experiment.body.length} characters) exceeds the detail bound of ${BACKEND_EXPERIMENT_BODY_MAX}; open README.md for the complete text`,
+            },
+          ]
+        : documentView.diagnostics,
       documentReadOnly: documentView.readOnly,
     })
   }
@@ -1237,8 +1265,84 @@ function safeManagedDocuments(
       legacyResultsYaml: documents.results.exists,
       parseErrors: description?.parseErrors ?? [],
       parseWarnings: description?.parseWarnings ?? [],
-      summary: results ? toBackendResultsSummary(results.summary) : null,
+      ...inlineResultsSummary(results),
     },
+  }
+}
+
+/**
+ * The detail embeds the Results summary only up to
+ * `BACKEND_RESULTS_SUMMARY_INLINE_MAX_BYTES`; a larger one is deferred to the
+ * Results endpoint so a large Experiment never inflates (or fails) the detail.
+ */
+function inlineResultsSummary(results: ExperimentResultsSummary | null) {
+  if (!results) return { summary: null, summaryDeferred: null }
+  const wire = toBackendResultsSummary(results.summary)
+  const bytes = Buffer.byteLength(JSON.stringify(wire))
+  return bytes <= BACKEND_RESULTS_SUMMARY_INLINE_MAX_BYTES
+    ? { summary: wire, summaryDeferred: null }
+    : {
+        summary: null,
+        summaryDeferred: { bytes, limit: BACKEND_RESULTS_SUMMARY_INLINE_MAX_BYTES },
+      }
+}
+
+/** Truncate display text to a protocol bound with a visible notice. */
+function truncateDisplayText(
+  text: string,
+  max: number,
+  file: string,
+): { text: string; truncated: boolean } {
+  if (text.length <= max) return { text, truncated: false }
+  const notice = `\n\n> [!WARNING]\n> Truncated: ${max} of ${text.length} characters shown. Open \`${file}\` for the complete text.\n`
+  let cut = max - notice.length
+  // Never split a surrogate pair.
+  const code = text.charCodeAt(cut - 1)
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1
+  return { text: `${text.slice(0, cut)}${notice}`, truncated: true }
+}
+
+/**
+ * Bound every display section to the protocol limits (`body`, `rawBody`):
+ * an oversized section is truncated with a notice and a `SECTION_TRUNCATED`
+ * warning rather than failing the whole Experiment detail. Display text only;
+ * writes go through the document routes with the complete source file.
+ */
+function boundedDocumentView(view: ExperimentDocumentView): ExperimentDocumentView {
+  return {
+    ...view,
+    sections: view.sections.map((section) => {
+      const file =
+        section.source === 'yaml'
+          ? section.heading === 'Implementation'
+            ? 'implementation.yaml'
+            : section.heading === 'Investigation'
+              ? 'investigation.yaml'
+              : EXPERIMENT_DESCRIPTION_FILE
+          : 'README.md'
+      const body = truncateDisplayText(section.body, BACKEND_EXPERIMENT_SECTION_BODY_MAX, file)
+      const rawBody = truncateDisplayText(
+        section.rawBody,
+        BACKEND_EXPERIMENT_SECTION_RAW_BODY_MAX,
+        'README.md',
+      )
+      if (!body.truncated && !rawBody.truncated) return section
+      return {
+        ...section,
+        body: body.text,
+        rawBody: rawBody.text,
+        diagnostics: [
+          ...section.diagnostics,
+          {
+            code: 'SECTION_TRUNCATED',
+            severity: 'warning' as const,
+            file: body.truncated ? file : 'README.md',
+            field: `section.${section.heading}`,
+            message: `section "## ${section.heading}" exceeds the Experiment detail bound and is shown truncated; open the source file for the complete text`,
+          },
+        ],
+      }
+    }),
   }
 }
 

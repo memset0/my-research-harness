@@ -357,4 +357,121 @@ describe('ExperimentPage v6 document sections', () => {
     // Long by design: one render exercises section projection, a manual
     // refresh, a failed refresh and a status mutation.
   }, 20_000)
+
+  it('renders a large Experiment whose Results summary is deferred to the Results endpoint', async () => {
+    vi.mocked(fetchExperimentResults).mockResolvedValue({
+      ok: true,
+      summary: SUMMARY,
+      updatedAt: '2026-08-23T03:00:00.000Z',
+    })
+    vi.mocked(fetchExperimentDoc).mockResolvedValue({
+      id: EXP_ID,
+      project: 'research',
+      path: `/project/docs/experiments/${EXP_ID}/README.md`,
+      mtime: 9,
+      readmeMtime: 1,
+      deprecatedRuns: [],
+      frontMatter: {
+        id: EXP_ID,
+        slug: 'structured',
+        title: 'Large experiment',
+        status: 'OPEN',
+        archived: false,
+        runs: [],
+        hypotheses: [],
+        tags: [],
+        createdAt: '2026-08-10T00:00:00+00:00',
+        updatedAt: '2026-08-10T00:00:00+00:00',
+      },
+      sections: { motivation: null, method: null, plan: null, conclusion: null, caveats: null },
+      rawSections: [],
+      warningsRaw: null,
+      parseErrors: [],
+      parseWarnings: [],
+      effectiveCreatedAt: '2026-08-10T00:00:00+00:00',
+      effectiveUpdatedAt: '2026-08-10T00:00:00+00:00',
+      resultsUpdatedAt: '2026-08-23T03:00:00.000Z',
+      documents: {
+        implementation: {
+          kind: 'implementation',
+          fileName: 'implementation.yaml',
+          resource: `docs/experiments/${EXP_ID}/implementation.yaml`,
+          exists: true,
+          data: { schemaVersion: 1, items: [] },
+          parseErrors: [],
+          parseWarnings: [],
+        },
+        investigation: {
+          kind: 'investigation',
+          fileName: 'investigation.yaml',
+          resource: `docs/experiments/${EXP_ID}/investigation.yaml`,
+          exists: true,
+          data: { schemaVersion: 1, items: [] },
+          parseErrors: [],
+          parseWarnings: [],
+        },
+        results: {
+          kind: 'results',
+          fileName: 'experiment.json',
+          resource: `docs/experiments/${EXP_ID}/experiment.json`,
+          exists: true,
+          legacyResultsYaml: false,
+          parseErrors: [],
+          parseWarnings: [],
+          summary: null,
+          summaryDeferred: { bytes: 1_700_000, limit: 262_144 },
+        },
+      },
+      documentReadOnly: false,
+      documentDiagnostics: [],
+      documentSections: [
+        {
+          heading: 'Results',
+          body: '- Variants: 2500\n- Columns: 40 (40 declared)\n',
+          rawBody:
+            "> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.",
+          index: 0,
+          occurrence: 1,
+          supported: true,
+          managed: true,
+          pointerValid: true,
+          source: 'yaml',
+          diagnostics: [],
+        },
+        {
+          heading: 'Motivation',
+          body: 'Long motivation text.\n\n> [!WARNING]\n> Truncated: 524288 of 640000 characters shown. Open `README.md` for the complete text.\n',
+          rawBody: 'Long motivation text.',
+          index: 1,
+          occurrence: 1,
+          supported: true,
+          managed: false,
+          pointerValid: null,
+          source: 'readme',
+          diagnostics: [
+            {
+              code: 'SECTION_TRUNCATED',
+              severity: 'warning',
+              file: 'README.md',
+              field: 'section.Motivation',
+              message: 'section "## Motivation" exceeds the Experiment detail bound',
+            },
+          ],
+        },
+      ],
+    })
+
+    const { container } = renderWithHeartbeat(
+      <ExperimentPage project={CENTRAL_PROJECT} experimentId={EXP_ID} initialOpenRun={null} />,
+    )
+    await waitFor(() => expect(screen.getByText('Large experiment')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('V0001')).toBeInTheDocument())
+    expect(fetchExperimentResults).toHaveBeenCalledTimes(1)
+    expect(fetchExperimentResults).toHaveBeenCalledWith(CENTRAL_PROJECT, EXP_ID)
+    expect(container.querySelector('[data-slot="results-table"]')).toBeInTheDocument()
+    expect(screen.getByText(/Long motivation text/)).toBeInTheDocument()
+    expect(container.querySelector('[data-section-heading="Motivation"]')).toHaveTextContent(
+      /Truncated/,
+    )
+  }, 20_000)
 })

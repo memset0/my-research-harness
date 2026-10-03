@@ -894,7 +894,9 @@ ${MANAGED_SECTION_POINTERS.results}
         (section) => section.heading === 'Results',
       )
       expect(resultsSection?.source).toBe('yaml')
-      expect(resultsSection?.body).toContain('`BLOCKED`')
+      // The section carries the bounded digest; Variant rows are the summary's.
+      expect(resultsSection?.body).toContain('- Variants: 2')
+      expect(resultsSection?.body).toContain('`RESULTS_ENV_VALUE_COERCED` × 2')
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }

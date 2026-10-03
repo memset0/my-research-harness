@@ -167,26 +167,28 @@ describe('Experiment document reads use the document response bound', () => {
     ).toHaveLength(30)
   }, 60_000)
 
-  it('serves an Experiment detail larger than 1 MiB', async () => {
-    const response = await get('/experiments/E0001-large?project=bound')
-    const text = await response.text()
-    expect(response.status).toBe(200)
-    expect(Buffer.byteLength(text)).toBeGreaterThan(MAX_BACKEND_CONTROL_JSON_BYTES)
-    const detail = BackendExperimentResponseSchema.parse(JSON.parse(text))
-    expect(detail.documents?.results.summary?.variants).toHaveLength(30)
+  it('defers a Results summary larger than the inline budget from the Experiment detail', async () => {
+    for (const id of ['E0001-large', 'E0002-huge']) {
+      const response = await get(`/experiments/${id}?project=bound`)
+      const text = await response.text()
+      expect(response.status, id).toBe(200)
+      // The detail no longer grows with the summary.
+      expect(Buffer.byteLength(text), id).toBeLessThan(MAX_BACKEND_CONTROL_JSON_BYTES)
+      const detail = BackendExperimentResponseSchema.parse(JSON.parse(text))
+      expect(detail.documents?.results.summary, id).toBeNull()
+      expect(detail.documents?.results.summaryDeferred?.bytes, id).toBeGreaterThan(
+        MAX_BACKEND_CONTROL_JSON_BYTES,
+      )
+    }
   }, 60_000)
 
-  it('still refuses a document over 16 MiB with a bounded PAYLOAD_TOO_LARGE', async () => {
-    for (const path of [
-      '/experiments/E0002-huge?project=bound',
-      '/experiments/E0002-huge/results?project=bound',
-    ]) {
-      const response = await get(path)
-      const text = await response.text()
-      expect(response.status, path).toBe(500)
-      expect(Buffer.byteLength(text), path).toBeLessThan(1024)
-      expect(JSON.parse(text), path).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE' } })
-    }
+  it('still refuses a Results snapshot over 16 MiB with a bounded PAYLOAD_TOO_LARGE', async () => {
+    const path = '/experiments/E0002-huge/results?project=bound'
+    const response = await get(path)
+    const text = await response.text()
+    expect(response.status, path).toBe(500)
+    expect(Buffer.byteLength(text), path).toBeLessThan(1024)
+    expect(JSON.parse(text), path).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE' } })
   }, 120_000)
 
   it('keeps the 1 MiB control bound on the Run list', async () => {

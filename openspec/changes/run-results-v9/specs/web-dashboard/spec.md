@@ -166,7 +166,7 @@ Saved default-sort badges SHALL be draggable into a persistent priority order. T
 
 Every Results card SHALL expose a Refresh action. Activating it SHALL obtain the current Results summary through an authenticated, read-only Results snapshot endpoint (which re-takes every input fingerprint for that request) and SHALL replace only the Results content rendered inside that card. The action SHALL NOT reload or refetch the complete Experiment page, remount unrelated document sections or Run panels, or reset Results table visibility, ordering, filters, pinning, sorting, stars, temporary controls, or other client preferences.
 
-The Results card SHALL show `Last updated` using the newest server-observed modification time among the summary's inputs and `Stale for` using elapsed time since that same time. The stale duration SHALL advance while the page remains open. A successful manual Refresh SHALL update both displays only from the time returned by the backend: reading unchanged inputs SHALL NOT reset Stale for, while reading changed inputs SHALL recompute it. The initial Experiment detail response SHALL provide that time so rendering status does not require an immediate duplicate Results request.
+The Results card SHALL show `Last updated` using the newest server-observed modification time among the summary's inputs and `Stale for` using elapsed time since that same time. The stale duration SHALL advance while the page remains open. A successful manual Refresh SHALL update both displays only from the time returned by the backend: reading unchanged inputs SHALL NOT reset Stale for, while reading changed inputs SHALL recompute it. The initial Experiment detail response SHALL provide that time so rendering status does not require an immediate duplicate Results request. When the detail defers a summary too large to embed (`summaryDeferred`), the card SHALL show a loading state and obtain the summary from the Results snapshot endpoint once on first render and again when the detail reports a newer input time; the rest of the page SHALL render without waiting for it.
 
 While refresh is pending, the action SHALL be disabled and visibly indicate progress. A successful response SHALL atomically replace the Results content and time. A response reporting `RESULT_SCHEMA_MISMATCH` or `RESULT_DUPLICATE_ROW` SHALL replace the table with the blocking error state. An invalid or missing description file, authorization failure, network failure, or other non-success response SHALL retain the complete last good Results content and its time, clear the pending state, and show a local understandable error with Refresh still available for retry. The refresh path SHALL NOT modify any source file, and the stale-status timer SHALL NOT trigger any automatic backend request.
 
@@ -203,6 +203,12 @@ While refresh is pending, the action SHALL be disabled and visibly indicate prog
 - **WHEN** the Results card first renders
 - **THEN** it displays the input modification time and its current age from that response
 - **AND** it does not call the dedicated Results snapshot endpoint until the user activates Refresh
+
+#### Scenario: A deferred summary loads from the Results endpoint
+- **GIVEN** the Experiment detail response defers the Results summary for size
+- **WHEN** the Experiment page renders
+- **THEN** the other sections render from the detail and the Results card shows a loading state
+- **AND** the card requests the Results snapshot endpoint once and renders the table from its answer
 
 ### Requirement: Experiment Results Views are centrally shared
 

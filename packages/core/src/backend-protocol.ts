@@ -407,10 +407,27 @@ export const BackendExperimentsResponseSchema = z
   .object({ experiments: z.array(BackendExperimentSummarySchema).max(10_000) })
   .strict()
 
+/**
+ * Bounds of the Experiment detail's display text, in string length (UTF-16
+ * code units, as zod measures). The backend truncates a longer README body or
+ * section projection to the bound with a visible notice and a
+ * `SECTION_TRUNCATED` / `BODY_TRUNCATED` diagnostic instead of failing the
+ * response; the complete source stays readable through the document routes.
+ */
+export const BACKEND_EXPERIMENT_BODY_MAX = 512 * 1024
+export const BACKEND_EXPERIMENT_SECTION_BODY_MAX = 512 * 1024
+export const BACKEND_EXPERIMENT_SECTION_RAW_BODY_MAX = 256 * 1024
+/**
+ * The largest serialized Results summary the Experiment detail embeds. A
+ * larger summary is deferred (`summary: null`, `summaryDeferred`) and the
+ * Results card loads it from the Results endpoint.
+ */
+export const BACKEND_RESULTS_SUMMARY_INLINE_MAX_BYTES = 256 * 1024
+
 const BackendExperimentRawSectionSchema = z
   .object({
     heading: z.string().min(1).max(256),
-    body: z.string().max(256 * 1024),
+    body: z.string().max(BACKEND_EXPERIMENT_SECTION_RAW_BODY_MAX),
     index: z.number().int().nonnegative(),
     occurrence: z.number().int().positive(),
     supported: z.boolean(),
@@ -1222,8 +1239,24 @@ export const BackendExperimentResultsDocumentSchema = z
     legacyResultsYaml: z.boolean(),
     parseErrors: z.array(BackendParseIssueSchema).max(10_000),
     parseWarnings: z.array(BackendParseIssueSchema).max(10_000),
-    /** The generated summary; null when it could not be produced at all. */
+    /**
+     * The generated summary; null when it could not be produced at all or
+     * when it is deferred for size (`summaryDeferred`).
+     */
     summary: BackendResultsSummarySchema.nullable(),
+    /**
+     * Set when the summary exists but its serialized size exceeds
+     * `BACKEND_RESULTS_SUMMARY_INLINE_MAX_BYTES`: the detail leaves it out
+     * and clients read it from `GET /experiments/:id/results`.
+     */
+    summaryDeferred: z
+      .object({
+        bytes: z.number().int().nonnegative(),
+        limit: z.number().int().positive(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
   })
   .strict()
 export type BackendExperimentResultsDocument = z.infer<
@@ -1247,8 +1280,8 @@ export const BackendExperimentManagedDocumentsSchema = z
 export const BackendExperimentDisplaySectionSchema = z
   .object({
     heading: z.string().min(1).max(256),
-    body: z.string().max(512 * 1024),
-    rawBody: z.string().max(256 * 1024),
+    body: z.string().max(BACKEND_EXPERIMENT_SECTION_BODY_MAX),
+    rawBody: z.string().max(BACKEND_EXPERIMENT_SECTION_RAW_BODY_MAX),
     index: z.number().int().nonnegative(),
     occurrence: z.number().int().positive(),
     supported: z.boolean(),
@@ -1323,7 +1356,7 @@ export type BackendWikiBacklinksResponse = z.infer<typeof BackendWikiBacklinksRe
  * when that Run is opened.
  */
 export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.extend({
-  body: z.string().max(512 * 1024),
+  body: z.string().max(BACKEND_EXPERIMENT_BODY_MAX),
   deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000).default([]),
   warningsRaw: z.string().nullable(),
   rawSections: z.array(BackendExperimentRawSectionSchema).max(1024),

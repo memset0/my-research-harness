@@ -10,6 +10,7 @@ import {
 import {
   formatSummaryCell,
   projectResultsTable,
+  renderResultsSummaryDigestMarkdown,
   renderResultsSummaryMarkdown,
 } from './summary-render.js'
 
@@ -540,5 +541,17 @@ describe('projections', () => {
     expect(callout).toContain(`\`${A}/result.csv\` records version 1`)
     expect(callout).toContain('`memon experiment schema upgrade E0001-foo --to 2`')
     expect(() => projectResultsTable(failed)).toThrow(/failed/)
+  })
+
+  it('renders a bounded digest instead of the table', () => {
+    const digest = renderResultsSummaryDigestMarkdown(summary)
+    expect(digest).toContain(`- Variants: ${summary.variants.length}`)
+    expect(digest).toContain(`- Columns: ${summary.columns.length}`)
+    expect(digest).toContain('memon experiment results table E0001-foo')
+    expect(digest).not.toContain('| Variant |')
+    const failed = summarize({ experiment_schema_version: 2, variants: [] }, [
+      member(A, 'FINISHED', csv(1)),
+    ])
+    expect(renderResultsSummaryDigestMarkdown(failed)).toContain('**RESULT_SCHEMA_MISMATCH**')
   })
 })
