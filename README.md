@@ -41,15 +41,17 @@ memon distinguishes two units on disk:
 
 - **Experiment** (canonical):
   `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` — a long-lived README plus
-  structured Implementation, Investigation, and Results YAML. One per
-  investigation; can have many member Runs and Variants.
+  structured Implementation and Investigation YAML and the Results description
+  `experiment.json`. One per investigation; can have many member Runs and
+  Variants.
 - **Run**: a directory matching base-name regex `^.+-\d{6}-\d{6}$` (e.g.
   `foo-260503-082800`). Records execution identity, state and execution-specific facts.
   It lives at the project's effective Run locations: by default directly under
   `logs/`, `outputs/` or `experiments/` (`logs/*`, `outputs/*`,
   `experiments/*`); other locations are declared in the project's
   `.memon/project.yml` (or, one-off, with the CLI `--run-dir`). Run directories
-  do not nest.
+  do not nest. A Run may hold one tracked `result.csv` with its measured
+  parameters, metrics and environment values.
 
 The two are bidirectionally bound: each run's frontmatter has
 `experiment: E<NNNN>-<slug>` (or `null` when unbound), and each experiment
@@ -75,7 +77,8 @@ E0001-fsdp-collective/
 ├── README.md
 ├── implementation.yaml
 ├── investigation.yaml
-└── results.yaml
+├── experiment.json        # Results description: columns, groups, Variants
+└── schema-upgrades/       # optional result-schema transforms (1-to-2.json, …)
 ```
 
 `README.md` keeps the narrative and the three exact managed-section pointers:
@@ -101,7 +104,7 @@ updated_at: 2026-05-04T14:12:00+08:00
 ## Investigation
 > Managed in [investigation.yaml](./investigation.yaml); read and update that file directly.
 ## Results
-> Managed in [results.yaml](./results.yaml); read and update that file directly.
+> Columns and Variants are managed in [experiment.json](./experiment.json); the Results table is generated from each member Run's result.csv.
 ## Findings
 ## Limitations
 ## Conclusion
@@ -109,11 +112,60 @@ updated_at: 2026-05-04T14:12:00+08:00
 ```
 
 `implementation.yaml` is the hierarchical engineering plan;
-`investigation.yaml` tracks empirical questions and criteria; `results.yaml`
-defines Variants before launch and keeps selected `runs` separate from failed,
-interrupted, invalid, or superseded `attempts`. Agents edit these YAML files
+`investigation.yaml` tracks empirical questions and criteria; `experiment.json`
+describes the Experiment's results (see below). Agents edit these files
 directly. `memon experiment doc render` provides their shared human-readable
 Markdown projection for the CLI and Web.
+
+### Results: `experiment.json`, per-Run `result.csv` and the generated table
+
+FS v9 splits Results by owner. `experiment.json` is the human-authored
+description: `experiment_schema_version`, display metadata for path `groups`,
+typed `columns` addressed by result path (`params.optim.lr`,
+`metrics.eval.fid`, `env.CUDA_VERSION`; types `string`, `number`, `boolean`,
+`enum`, `list`, `stats`, with unit, direction, display and annotations) and
+`variants` declared before launch (declared plan state `PLANNED`, `BLOCKED`,
+`DROPPED` or `INCONCLUSIVE`, planned parameter/env values, provenance and the
+Variant's `runs`, a subset of the README `runs`). It never repeats README
+frontmatter.
+
+Each Run records the values of the whole Run in its own tracked `result.csv`:
+
+```csv
+path,stat,value
+$experiment_schema_version,,1
+params.optim.lr,,0.0001
+metrics.eval.fid,,12.3
+metrics.eval.clip,mean,0.312
+metrics.eval.clip,std,0.021
+metrics.eval.clip,n,500
+```
+
+Statistics are one row per statistic from a fixed vocabulary (`mean`, `std`,
+`var`, `sem`, `min`, `max`, `sum`, `n`, percentiles `p1`…`p999`, `ci95_lo`,
+`ci95_hi`; two levels as `<inner>.<outer>`, e.g. `max.p99`). Results are
+written first and described later: an undeclared path is shown with an
+inferred type. Write values with `memon run result set <run>
+metrics.eval.fid=12.3 metrics.eval.clip:mean=0.312 …` (atomic upsert, types
+checked against `experiment.json`); a file the project's ignore rules would
+exclude is still written with a `RESULT_FILE_IGNORED` warning and a fix
+command — memon never edits ignore files outside the reviewed migration.
+
+The Variant table is generated, never authored: `RUNNING`, `COMPLETED` and
+`FAILED` derive from the Run records (an `INTERRUPTED` Run keeps its Variant
+`RUNNING`), evidence is every listed Run that is `FINISHED` and not
+deprecated, and several evidence Runs aggregate into statistics shown as
+`mean ± std (n)`. The table is cached in `.memon/index/results/<id>.json`
+(never tracked, never edited, regenerated when any input fingerprint changes)
+and read with `memon experiment results table|summary` or the Web Results card.
+`experiment_schema_version` versions one Experiment's recorded values: a member
+`result.csv` recording another version fails that Experiment's table with
+`RESULT_SCHEMA_MISMATCH` (the error lists the files and the
+`memon experiment schema upgrade <id> --to <N>` command, which applies the
+transforms in `schema-upgrades/` with a dry run, backup, atomic rewrite,
+verification and rollback). Projects on FS v8 migrate their `results.yaml`
+files with the reviewed guide `packages/core/migrations/v8-to-v9.md`
+(`scripts/migrate-v8-to-v9.mjs`).
 
 ### Per-run `README.md`
 
@@ -437,11 +489,12 @@ history, including scripts, commands, environment and recovery logs useful for
 a rerun. Correct the known problem before reusing that setup; the old Run's
 metrics remain excluded from current analysis. Archive flags remain separate.
 
-Results projections expose per-Variant `metricsValidity` (`valid`, `partial`,
-`unavailable`) and the affected Run references. A stored aggregate that depended
-on deprecated Runs is not silently reused as valid evidence or recomputed from
-insufficient data. Original values remain in `results.yaml`; human-readable
-views mark their validity. Lint does not report research eligibility as a defect.
+The generated Results table counts only a Variant's listed Runs that are
+`FINISHED` and not deprecated as evidence; a deprecated Run stays listed among
+the Variant's other Runs and its values stop contributing. Its `result.csv` is
+never rewritten, and values recorded before FS v9 without a Run directory stay
+in the Variant's frozen block, marked as such. Lint does not report research
+eligibility as a defect.
 
 For a user-requested redo of an Experiment's Variants, retain the Variant
 definitions and historical associations, deprecate the old Runs in the agreed
@@ -450,13 +503,10 @@ execution setup. Changing the comparison conditions still requires declaring
 them before launch. Write back verified new metrics and their actual source
 Runs in a coherent batch, without erasing the old evidence.
 
-The intended distinction is historical membership versus the evidence used for
-current metrics: valid replacement results must not be permanently penalized
-by a deprecated historical Run. **Current limitation:** the projection checks
-all `Variant.runs`, without separate current-measurement lineage, so it can
-still report `partial` after a rerun. This documentation clarification does not
-implement that separation or automatic result writeback. Do not delete history
-or undeprecate rejected evidence to work around the limitation.
+Historical membership and current evidence are distinct: replacement Runs of
+the same Variant become evidence on their own while the deprecated Runs stay
+listed. Do not delete history or undeprecate rejected evidence to change a
+table.
 
 Archive and deprecation mutations are recorded by the invocation ledger, not
 by authored Journal prose. `memon doctor` and `experiment doc validate` are

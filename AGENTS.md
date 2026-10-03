@@ -94,11 +94,18 @@ Other sources of truth — consult these instead of copying lists here:
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
 - **Experiment bundle**: `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` with
-  `README.md` plus schema-v1 `implementation.yaml`, `investigation.yaml`,
-  `results.yaml`; other folder content is opaque experiment-local scratch.
-  Canonical README H2 order: `CANONICAL_EXPERIMENT_SECTION_HEADINGS` in
+  `README.md` plus schema-v1 `implementation.yaml`, `investigation.yaml` and
+  the Results description file `experiment.json` (FS v9:
+  `experiment_schema_version`, `groups`, typed `columns` by result path,
+  `variants` with declared plan state, planned values and `runs`); optional
+  `schema-upgrades/<N>-to-<N+1>.{json,py}` transforms for
+  `memon experiment schema upgrade`; other folder content is opaque
+  experiment-local scratch. `results.yaml` is retired (FS v8 → v9 guide
+  `packages/core/migrations/v8-to-v9.md`). Canonical README H2 order:
+  `CANONICAL_EXPERIMENT_SECTION_HEADINGS` in
   `packages/core/src/experiments/documents.ts`. The Experiment README `runs`
-  list is the sole Run-membership authority.
+  list is the sole Run-membership authority; Variant `runs` in
+  `experiment.json` (a subset) are the Run-to-Variant association.
 - **Run**: a directory `<slug>-<YYMMDD>-<HHMMSS>/` containing `README.md`. No
   H2 section is required (`packages/core/src/readme/parse.ts`,
   `readme/lint.ts`); a Run README records execution facts only. Never write an
@@ -106,11 +113,18 @@ Other sources of truth — consult these instead of copying lists here:
   legacy value, but binding is done with `memon experiment link`. Run
   directories live at the effective `run_dirs` (`--run-dir` > deprecated
   central `run_dirs` > `.memon/project.yml` > default `logs/*`, `outputs/*`,
-  `experiments/*`) and never nest inside another Run.
-- **Derived index** `.memon/index/` (FS v8): a self-ignored (`.gitignore` `*`),
-  rebuildable cache of Run/Experiment/wiki summaries maintained by writers'
-  event files; never edited by hand, always safe to delete
-  (`memon index rebuild|compact|status`).
+  `experiments/*`) and never nest inside another Run. A Run may hold one
+  tracked `result.csv` (`path,stat,value`; `$experiment_schema_version` row
+  first; `params.*`/`metrics.*`/`env.*` paths; statistics one row per
+  vocabulary statistic), written through `memon run result set`
+  (`packages/core/src/results/`).
+- **Derived index** `.memon/index/` (`index_version: 2` in FS v9): a
+  self-ignored (`.gitignore` `*`), rebuildable cache of Run/Experiment/wiki
+  summaries maintained by writers' event files, plus the generated Results
+  summary of every Experiment in `results/<experiment-id>.json` (the Variant
+  table, regenerated when its input fingerprints change); never edited by
+  hand, always safe to delete (`memon index rebuild|compact|status`,
+  `memon experiment results rebuild`).
 - **Project declaration** `.memon/project.yml`: optional, git-tracked,
   `schema_version: 1` plus the optional project layout keys `run_dirs`,
   `include`, `exclude`, `github`; created only by `memon project init`

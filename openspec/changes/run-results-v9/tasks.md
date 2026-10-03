@@ -66,5 +66,5 @@
 ## 12. Version gate and documentation
 
 - [ ] 12.1 Set `FS_CONVENTION_VERSION = 9` and `MEMON_RELEASE = '9.0.0'` with release-policy and `validate-release.mjs` expectations for the v8→v9 guide; verify `version.test.ts`, `release-policy.test.ts`, `release-compatibility.test.ts`, the fs-version tests and `MEMON_CHANGED_SURFACES=central,cli,skills,filesystem MEMON_PREVIOUS_FS_CONVENTION=8 node scripts/validate-release.mjs`.
-- [ ] 12.2 Update `AGENTS.md` §2.1 (bundle files, `result.csv`, summary cache, `schema-upgrades/`) and the README Results documentation; verify the text contains no operator-specific names (grep against `LOCAL.md` names).
+- [x] 12.2 Update `AGENTS.md` §2.1 (bundle files, `result.csv`, summary cache, `schema-upgrades/`) and the README Results documentation; verify the text contains no operator-specific names (grep against `LOCAL.md` names).
 - [ ] 12.3 Run the change-relevant test list (core results/description/summary/upgrade/derived-index/migration/mutations/lint; backend project-service/project-routes/derived-index-mirror; CLI results/run-result/experiment/index; web results table, Views, cells; skills) and `pnpm typecheck`; verify all pass and report the list and results.
