@@ -240,6 +240,44 @@ describe('writeRunResult', () => {
     expect(await read(`${RUN}/result.csv`)).toContain('metrics.eval.fid,,12.3')
   })
 
+  it('writes a symlinked Run at its real path and warns about the real file', async () => {
+    await project()
+    await fs.rename(join(root, RUN), join(root, 'logs/a-20260901-090000'))
+    await fs.symlink('a-20260901-090000', join(root, RUN))
+    await write('.gitignore', 'logs/*/*\n!logs/*/README.md\n')
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root })
+    const result = await writeRunResult({
+      projectRoot: root,
+      runDir: runDir(),
+      set: [{ path: 'metrics.eval.fid', value: '12.3' }],
+    })
+    expect(result.warnings).toMatchObject([
+      {
+        code: 'RESULT_FILE_IGNORED',
+        details: { file: 'logs/a-20260901-090000/result.csv', target: '.gitignore' },
+      },
+    ])
+    expect(await read('logs/a-20260901-090000/result.csv')).toContain('metrics.eval.fid,,12.3')
+  })
+
+  it('refuses a symlinked Run whose target leaves the project', async () => {
+    await project()
+    const outside = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'memon-result-outside-')))
+    try {
+      await fs.rename(join(root, RUN), join(outside, 'run'))
+      await fs.symlink(join(outside, 'run'), join(root, RUN))
+      const error = (await writeRunResult({
+        projectRoot: root,
+        runDir: runDir(),
+        set: [{ path: 'metrics.fid', value: 1 }],
+      }).catch((caught) => caught)) as MutationError
+      expect(error).toMatchObject({ code: 'BAD_STATE', reason: 'RUN_PATH_OUTSIDE_PROJECT' })
+      await expect(fs.access(join(outside, 'run', 'result.csv'))).rejects.toThrow()
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
   it('makes no ignore check outside Git', async () => {
     await project()
     await write('.gitignore', 'logs/\n')

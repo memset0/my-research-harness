@@ -132,6 +132,7 @@ export type MutationErrorReason =
   | 'RESULT_DUPLICATE_ROW'
   | 'RESULT_FILE_INVALID'
   | 'INVALID_RESULTS'
+  | 'RUN_PATH_OUTSIDE_PROJECT'
   // FS v9 Experiment schema upgrades
   | 'SCHEMA_UPGRADE_INVALID'
   | 'SCHEMA_UPGRADE_STEP_MISSING'

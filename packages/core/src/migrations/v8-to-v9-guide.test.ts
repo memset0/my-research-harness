@@ -109,7 +109,10 @@ describe('v8-to-v9 migration guide', () => {
   it('verifies fail-closed with git check-ignore, the summaries and the v2 index', () => {
     const verification = section('Verification')
     expect(verification).toContain('git -C "$PROJECT_ROOT" check-ignore --no-index --stdin')
-    expect(verification).toContain('test "$STATUS" = "0 0 1"')
+    expect(verification).toContain('test "$STATUS" = "0 0 0 1"')
+    // Symlinked Run paths are probed at their real path (check-ignore rejects a symlink).
+    expect(verification).toContain('realpath -e -- "$PROJECT_ROOT/$RUN"')
+    expect(verification).toContain('OUTSIDE_PROJECT')
     expect(verification).toContain('experiment results rebuild --all')
     expect(verification).toContain('.snapshot.indexVersion == 2')
     expect(verification).toContain('memon index status --verify --strict')

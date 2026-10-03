@@ -10,6 +10,7 @@
 // exclude is still written with a `RESULT_FILE_IGNORED` warning — no ignore
 // file is ever edited here.
 
+import { promises as nodeFs } from 'node:fs'
 import { join } from 'node:path'
 import {
   type FileChange,
@@ -23,7 +24,7 @@ import {
 import { declaredRunOwner, projectRunPath } from '../experiments/run-path.js'
 import { EXPERIMENT_DESCRIPTION_FILE, parseExperimentDescription } from './description.js'
 import type { ResultsDiagnostic } from './diagnostics.js'
-import { type CheckIgnore, resultFileIgnoredWarning } from './ignore.js'
+import { type CheckIgnore, resolveRunRealPath, resultFileIgnoredWarning } from './ignore.js'
 import { isReservedResultPath, resultPathError } from './paths.js'
 import {
   editResultFileContent,
@@ -183,6 +184,16 @@ export async function writeRunResult(input: WriteRunResultInput): Promise<WriteR
       details: { path: runPath },
     })
   }
+  // A Run reached through a symbolic link is written at its real location,
+  // which must stay inside the project.
+  const realRoot = await nodeFs.realpath(input.projectRoot).catch(() => null)
+  const realRun = realRoot === null ? null : await resolveRunRealPath(realRoot, runPath)
+  if (realRun?.kind === 'outside')
+    throw new MutationError(
+      'BAD_STATE',
+      `${runPath} resolves through a symbolic link to ${realRun.target}, outside the project root; result files are only written inside the project`,
+      { reason: 'RUN_PATH_OUTSIDE_PROJECT', details: { run: runPath } },
+    )
   let owner: string | null
   try {
     owner = await declaredRunOwner(input.projectRoot, input.runDir)

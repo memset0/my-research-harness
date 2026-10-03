@@ -29,6 +29,17 @@ The v8-to-v9 migration SHALL convert every Experiment's `results.yaml` into the 
 - **WHEN** the migration is planned and applied
 - **THEN** the appended rules re-include `logs/`, its Run directories and their `result.csv` files only, and verification finds no other path under `logs/` newly visible
 
+#### Scenario: Symlinked Run directory
+- **GIVEN** a git project whose Experiment declares `logs/a-260901-090000`, a symbolic link to the Run directory `logs/a-20260901-090000` inside the project, and whose ignore rules exclude files in Run directories
+- **WHEN** the migration is planned and applied
+- **THEN** the planned `result.csv`, its ignore probe, its allow rule and the committed path all use `logs/a-20260901-090000`, and the plan does not fail
+- **AND** a declared Run whose symbolic link leaves the project root is a `RUN_PATH_OUTSIDE_PROJECT` blocker instead of a probe
+
+#### Scenario: Deprecation of an ignored Run README
+- **GIVEN** a `deprecate` resolution for a Run whose `README.md` Git ignores
+- **WHEN** the migration is planned
+- **THEN** the plan reports a `RUN_README_IGNORED` blocker for that Run and apply refuses until the resolution is changed or the README is tracked
+
 #### Scenario: Verification fails
 - **WHEN** a regenerated summary cell differs from its v8 value beyond the reported conversions
 - **THEN** the marker stays at 8, nothing is committed and the difference is reported

@@ -18,6 +18,12 @@
 // Git cannot re-include a file below an excluded directory, so the second
 // form re-includes only the directories leading to `result.csv` and keeps
 // everything else beneath them ignored.
+//
+// Run paths are probed by their real path: `git check-ignore` aborts on a
+// path that goes through a symbolic link, so a declared Run that is (or lies
+// below) a symlink is resolved first. A target inside the project is probed
+// and covered at its real location; a target outside the project root is
+// reported in `outside` and never probed.
 
 import { spawn } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
@@ -144,9 +150,37 @@ export function runLocationOf(run: string, runDirs: readonly string[] = []): str
   return parent ? `${parent}/*` : '*'
 }
 
+/** Where a declared, project-relative Run path really points. */
+export type RunRealPath =
+  /** `real` is the project-relative real path (equal to `run` without symlinks). */
+  | { kind: 'inside'; run: string; real: string }
+  /** The real path leaves the project root (or cannot be resolved). */
+  | { kind: 'outside'; run: string; target: string }
+  | { kind: 'missing'; run: string }
+
+/**
+ * Resolve a project-relative Run path through every symbolic link on its way.
+ * `projectRoot` must already be a real path.
+ */
+export async function resolveRunRealPath(projectRoot: string, run: string): Promise<RunRealPath> {
+  let real: string
+  try {
+    real = await nodeFs.realpath(join(projectRoot, ...run.split('/')))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing', run }
+    return { kind: 'outside', run, target: `(unresolvable: ${(error as Error).message})` }
+  }
+  const inside = relative(projectRoot, real)
+  if (inside === '' || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside))
+    return { kind: 'outside', run, target: real }
+  return { kind: 'inside', run, real: inside.split(sep).join('/') }
+}
+
 export interface IgnoredResultFile {
-  /** Project-relative Run directory. */
+  /** Project-relative Run directory (its real path). */
   run: string
+  /** Declared Run paths that resolve to `run` through a symbolic link. */
+  declaredAs?: string[]
   /** Project-relative result file. */
   file: string
   /** Deciding rule `<ignore file>:<line>:<pattern>`. */
@@ -180,6 +214,8 @@ export interface ResultAllowRulePlan {
   workTree: string
   ignored: IgnoredResultFile[]
   targets: AllowRuleTarget[]
+  /** Declared Runs whose real path leaves the project root (never probed). */
+  outside: { run: string; target: string }[]
 }
 
 export interface PlanResultAllowRulesInput {
@@ -253,8 +289,23 @@ export async function planResultAllowRules(
   if (workTree === null) return null
   const checkIgnore = input.checkIgnore ?? gitCheckIgnore
   const runs: string[] = []
-  for (const run of [...new Set(input.runs)].sort())
-    if (await isDirectory(join(projectRoot, ...run.split('/')))) runs.push(run)
+  const aliases = new Map<string, string[]>()
+  const outside: { run: string; target: string }[] = []
+  for (const run of [...new Set(input.runs)].sort()) {
+    const resolved = await resolveRunRealPath(projectRoot, run)
+    if (resolved.kind === 'missing') continue
+    if (resolved.kind === 'outside') {
+      outside.push({ run, target: resolved.target })
+      continue
+    }
+    if (!(await isDirectory(join(projectRoot, ...resolved.real.split('/'))))) continue
+    if (!aliases.has(resolved.real)) {
+      aliases.set(resolved.real, [])
+      runs.push(resolved.real)
+    }
+    if (resolved.real !== run) aliases.get(resolved.real)!.push(run)
+  }
+  runs.sort()
   const probes = new Set<string>()
   for (const run of runs) {
     const segments = run.split('/')
@@ -308,8 +359,10 @@ export async function planResultAllowRules(
         : null,
     )
     const rule = formatIgnoreRule(projectRoot, decision)
+    const declaredAs = aliases.get(run) ?? []
     ignored.push({
       run,
+      ...(declaredAs.length > 0 ? { declaredAs } : {}),
       file,
       rule,
       excludedDirectory: excluded === null ? null : segments.slice(0, excluded).join('/'),
@@ -341,7 +394,7 @@ export async function planResultAllowRules(
         command: allowRulesCommand(file, lines),
       }
     })
-  return { projectRoot, workTree, ignored, targets }
+  return { projectRoot, workTree, ignored, targets, outside }
 }
 
 /**

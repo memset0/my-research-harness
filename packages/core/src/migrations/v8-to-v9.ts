@@ -60,7 +60,12 @@ import {
   parseExperimentDescription,
   serializeExperimentDescription,
 } from '../results/description.js'
-import { type AllowRuleTarget, gitCheckIgnore, planResultAllowRules } from '../results/ignore.js'
+import {
+  type AllowRuleTarget,
+  gitCheckIgnore,
+  planResultAllowRules,
+  resolveRunRealPath,
+} from '../results/ignore.js'
 import {
   encodeResultValue,
   parseResultFile,
@@ -121,6 +126,12 @@ export type ResultsMigrationBlockerCode =
   | 'RESULTS_YAML_UNREADABLE'
   | 'SIDECAR_VARIANT_CONFLICT'
   | 'DESCRIPTION_FILE_EXISTS'
+  /** A declared Run resolves through a symbolic link to a path outside the project root. */
+  | 'RUN_PATH_OUTSIDE_PROJECT'
+  /** Two declared Run paths with planned writes resolve to the same real directory. */
+  | 'RUN_PATH_ALIASED'
+  /** A `deprecate` resolution would edit a Run README that Git ignores. */
+  | 'RUN_README_IGNORED'
   /** Marker, worktree or project declaration not ready (fix by hand, plan again). */
   | 'PROJECT_NOT_READY'
 
@@ -716,6 +727,53 @@ export async function planResultsMigration(
       runReadmeAfter.set(run, patchRunFrontMatter(before, { deprecated: true }))
     }
 
+  // Real Run paths: a declared Run may be (or lie below) a symbolic link.
+  // Writes, `git add` and `git check-ignore` use the real project-relative
+  // path; a target outside the project root is a blocker.
+  const realRuns = new Map<string, string>()
+  const realRun = async (experiment: string, run: string): Promise<string | null> => {
+    if (!isRunPath(run)) return run
+    const resolved = await resolveRunRealPath(root, run)
+    if (resolved.kind === 'missing') return run
+    if (resolved.kind === 'inside') {
+      if (resolved.real !== run) realRuns.set(run, resolved.real)
+      return resolved.real
+    }
+    const id = blockerId('RUN_PATH_OUTSIDE_PROJECT', experiment, run)
+    if (!plan.blockers.some((blocker) => blocker.id === id))
+      plan.blockers.push({
+        id,
+        code: 'RUN_PATH_OUTSIDE_PROJECT',
+        experiment,
+        run,
+        message: `${run} resolves through a symbolic link to ${resolved.target}, outside the project root; move the Run into the project or unlink it, then plan again`,
+        choices: [],
+      })
+    return null
+  }
+  for (const work of works)
+    for (const run of new Set([...work.readmeRuns, ...work.resultRows.keys(), ...work.deprecate]))
+      await realRun(work.id, run)
+  if (realRuns.size > 0) count('symlinkedRuns', realRuns.size)
+  const plannedTargets = new Map<string, string>()
+  const claim = (experiment: string, run: string, path: string): boolean => {
+    const holder = plannedTargets.get(path)
+    if (holder === undefined) {
+      plannedTargets.set(path, run)
+      return true
+    }
+    if (holder === run) return false
+    plan.blockers.push({
+      id: blockerId('RUN_PATH_ALIASED', experiment, run),
+      code: 'RUN_PATH_ALIASED',
+      experiment,
+      run,
+      message: `${run} and ${holder} resolve to the same directory (${path.split('/').slice(0, -1).join('/')}); declare the Run by one path only and plan again`,
+      choices: [],
+    })
+    return false
+  }
+
   // Planned files.
   for (const work of works) {
     const folder = `${work.dir}`
@@ -735,7 +793,10 @@ export async function planResultsMigration(
       beforeHash: null,
     })
     for (const [run, rows] of work.resultRows) {
-      const path = `${run}/${RESULT_FILE_NAME}`
+      const real = await realRun(work.id, run)
+      if (real === null) continue
+      const path = `${real}/${RESULT_FILE_NAME}`
+      if (!claim(work.id, run, path)) continue
       const before = await readText(join(root, ...path.split('/')))
       plan.files.push({
         path,
@@ -773,15 +834,49 @@ export async function planResultsMigration(
       pointerRewritten: work.summary.pointerRewritten,
     })
   }
+  const readmeOwners = new Map<string, string>()
+  for (const work of works) for (const run of work.deprecate) readmeOwners.set(run, work.id)
+  const plannedReadmes: { experiment: string; run: string; path: string }[] = []
   for (const [run, after] of runReadmeAfter) {
     const before = readmes.get(run)!
+    const experiment = readmeOwners.get(run) ?? '(project)'
+    const real = await realRun(experiment, run)
+    if (real === null) continue
+    const path = `${real}/README.md`
+    if (!claim(experiment, run, path)) continue
+    plannedReadmes.push({ experiment, run, path })
     plan.files.push({
-      path: `${run}/README.md`,
+      path,
       action: 'replace',
       before,
       after,
       beforeHash: sha256(before),
     })
+  }
+
+  // A deprecation edits a Run README the migration commit must include.
+  if (plan.git && plannedReadmes.length > 0) {
+    const ignoredReadmes = new Set(
+      (
+        await gitCheckIgnore(
+          root,
+          plannedReadmes.map((entry) => entry.path),
+        )
+      )
+        .filter((decision) => decision.ignored)
+        .map((decision) => decision.path),
+    )
+    for (const entry of plannedReadmes) {
+      if (!ignoredReadmes.has(entry.path)) continue
+      plan.blockers.push({
+        id: blockerId('RUN_README_IGNORED', entry.experiment, entry.run),
+        code: 'RUN_README_IGNORED',
+        experiment: entry.experiment,
+        run: entry.run,
+        message: `${entry.path} is ignored by Git, so the \`deprecate\` resolution cannot be committed; resolve the attempt with \`adopt\`, or have the user track the README, then plan again`,
+        choices: [],
+      })
+    }
   }
 
   // Allow rules for ignored result files (git mode): every declared Run.
@@ -812,7 +907,10 @@ export async function planResultsMigration(
   // Expected post-migration state, computed from the planned contents.
   const planned = new Map(plan.files.map((file) => [file.path, file]))
   const contentAfter = async (path: string): Promise<string | null> => {
-    const file = planned.get(path)
+    const slash = path.lastIndexOf('/')
+    const run = path.slice(0, slash)
+    const real = realRuns.get(run)
+    const file = planned.get(real === undefined ? path : `${real}${path.slice(slash)}`)
     if (file) return file.after
     return readText(join(root, ...path.split('/')))
   }
@@ -1701,17 +1799,14 @@ async function verifyApplied(
         problems.push(difference.message)
   }
   if (plan.git) {
-    const resultFiles: string[] = []
+    const runs: string[] = []
     for (const id of Object.keys(plan.expected.lint)) {
       const readme = await readText(join(root, EXPERIMENTS, id, 'README.md'))
       if (readme === null) continue
       for (const run of parseExperimentReadme(readme, id).frontMatter.runs)
-        if (
-          isRunPath(run) &&
-          (await readText(join(root, ...run.split('/'), RESULT_FILE_NAME))) !== null
-        )
-          resultFiles.push(`${run}/${RESULT_FILE_NAME}`)
+        if (isRunPath(run)) runs.push(run)
     }
+    const resultFiles = await realResultFiles(root, runs, problems)
     for (const decision of await gitCheckIgnore(root, resultFiles))
       if (decision.ignored) problems.push(`${decision.path} is still ignored by Git`)
     const summaries = Object.keys(plan.expected.lint).map((id) => `${INDEX}/results/${id}.json`)
@@ -1724,6 +1819,30 @@ async function verifyApplied(
         problems.push(`${path} became visible to Git without being planned`)
   }
   return problems
+}
+
+/**
+ * Project-relative real paths of the declared Runs' result files that exist
+ * (`git check-ignore` rejects a path beyond a symbolic link); a Run outside
+ * the project root is reported as a problem instead.
+ */
+async function realResultFiles(
+  root: string,
+  runs: readonly string[],
+  problems: string[],
+): Promise<string[]> {
+  const files = new Set<string>()
+  for (const run of runs) {
+    const resolved = await resolveRunRealPath(root, run)
+    if (resolved.kind === 'missing') continue
+    if (resolved.kind === 'outside') {
+      problems.push(`${run} resolves outside the project root (${resolved.target})`)
+      continue
+    }
+    if ((await readText(join(root, ...resolved.real.split('/'), RESULT_FILE_NAME))) !== null)
+      files.add(`${resolved.real}/${RESULT_FILE_NAME}`)
+  }
+  return [...files].sort()
 }
 
 // ---------- verify / rollback ----------
@@ -1751,7 +1870,7 @@ export async function verifyResultsMigration(
       .filter((name) => EXPERIMENT_DIR_REGEX.test(name))
       .sort()
   } catch {}
-  const resultFiles: string[] = []
+  const runs: string[] = []
   for (const id of ids) {
     const folder = join(root, EXPERIMENTS, id)
     if (!(await isDirectory(folder))) continue
@@ -1765,11 +1884,7 @@ export async function verifyResultsMigration(
     if (loaded && loaded.summary.outcome !== 'ok')
       problems.push(`${id}: the Results summary fails with ${loaded.summary.error?.code}`)
     for (const run of parseExperimentReadme(readme, id).frontMatter.runs)
-      if (
-        isRunPath(run) &&
-        (await readText(join(root, ...run.split('/'), RESULT_FILE_NAME))) !== null
-      )
-        resultFiles.push(`${run}/${RESULT_FILE_NAME}`)
+      if (isRunPath(run)) runs.push(run)
   }
   try {
     const verified = await verifyIndex(
@@ -1785,6 +1900,7 @@ export async function verifyResultsMigration(
     problems.push(error.message)
   }
   if (await gitMode(git, root)) {
+    const resultFiles = await realResultFiles(root, runs, problems)
     for (const decision of await gitCheckIgnore(root, resultFiles))
       if (decision.ignored) problems.push(`${decision.path} is ignored by Git`)
   }

@@ -8,6 +8,7 @@ import {
   gitCheckIgnore,
   planResultAllowRules,
   RESULT_ALLOW_RULES_COMMENT,
+  resolveRunRealPath,
   resultFileIgnoredWarning,
   runLocationOf,
 } from './ignore.js'
@@ -214,6 +215,65 @@ describe('planResultAllowRules', () => {
     expect(
       (await planResultAllowRules({ projectRoot: open.root, runs: open.runs }))!.targets,
     ).toEqual([])
+  })
+})
+
+describe('symlinked Run paths', () => {
+  it('probes and covers a symlinked Run at its real path inside the project', async () => {
+    const { root } = await project({
+      gitignore: 'logs/*/*\n!logs/*/README.md\n',
+      runs: ['logs/real-20260901-090000'],
+    })
+    await fs.symlink('real-20260901-090000', join(root, 'logs/a-260901-090000'))
+    // git check-ignore itself rejects the declared path.
+    await expect(gitCheckIgnore(root, ['logs/a-260901-090000/result.csv'])).rejects.toThrow(
+      /beyond a symbolic link/,
+    )
+    expect(await resolveRunRealPath(root, 'logs/a-260901-090000')).toEqual({
+      kind: 'inside',
+      run: 'logs/a-260901-090000',
+      real: 'logs/real-20260901-090000',
+    })
+    const plan = await planResultAllowRules({
+      projectRoot: root,
+      runs: ['logs/a-260901-090000', 'logs/real-20260901-090000'],
+      runDirs: ['logs/*'],
+    })
+    expect(plan!.outside).toEqual([])
+    expect(plan!.ignored).toEqual([
+      expect.objectContaining({
+        run: 'logs/real-20260901-090000',
+        declaredAs: ['logs/a-260901-090000'],
+        file: 'logs/real-20260901-090000/result.csv',
+      }),
+    ])
+    expect(plan!.targets[0]!.lines).toEqual([RESULT_ALLOW_RULES_COMMENT, '!/logs/*/result.csv'])
+    const warning = await resultFileIgnoredWarning({
+      projectRoot: root,
+      run: 'logs/a-260901-090000',
+    })
+    expect(warning?.details.file).toBe('logs/real-20260901-090000/result.csv')
+  })
+
+  it('reports a symlinked Run whose target leaves the project and never probes it', async () => {
+    const { root } = await project({ files: { '.gitignore': 'logs/*/*\n' }, runs: [] })
+    const elsewhere = join(root, '..', 'elsewhere-260901-090000')
+    await fs.mkdir(elsewhere, { recursive: true })
+    await fs.mkdir(join(root, 'logs'), { recursive: true })
+    await fs.symlink(elsewhere, join(root, 'logs/a-260901-090000'))
+    expect((await resolveRunRealPath(root, 'logs/a-260901-090000')).kind).toBe('outside')
+    const probed: string[] = []
+    const plan = await planResultAllowRules({
+      projectRoot: root,
+      runs: ['logs/a-260901-090000'],
+      checkIgnore: async (projectRoot, paths) => {
+        probed.push(...paths)
+        return gitCheckIgnore(projectRoot, paths)
+      },
+    })
+    expect(plan!.outside).toEqual([{ run: 'logs/a-260901-090000', target: elsewhere }])
+    expect(plan!.targets).toEqual([])
+    expect(probed).toEqual([])
   })
 })
 

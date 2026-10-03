@@ -36,6 +36,7 @@ async function tree(root: string): Promise<Record<string, string>> {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name
       if (rel === '.git' || rel === '.memon/index') continue
       if (entry.isDirectory()) await walk(join(dir, entry.name), rel)
+      else if (entry.isSymbolicLink()) out[rel] = `-> ${await fs.readlink(join(dir, entry.name))}`
       else out[rel] = await fs.readFile(join(dir, entry.name), 'utf8')
     }
   }
@@ -156,6 +157,8 @@ async function fixture(
     gitignore?: string
     results?: string
     extraRuns?: Record<string, string>
+    /** Declared Run → symlink target (relative to `logs/`, or absolute); the Run's files move there. */
+    symlinks?: Record<string, string>
   } = {},
 ) {
   const base = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'memon-v8-v9-')))
@@ -186,6 +189,12 @@ async function fixture(
   )
   await write(root, `${EXP}/results.yaml`, options.results ?? RESULTS_YAML)
   await write(root, '.memon/version.json', MARKER_V8)
+  for (const [run, target] of Object.entries(options.symlinks ?? {})) {
+    const real = resolve(root, 'logs', target)
+    await fs.mkdir(join(real, '..'), { recursive: true })
+    await fs.rename(join(root, run), real)
+    await fs.symlink(target, join(root, run))
+  }
   if (options.gitignore !== undefined) await write(root, '.gitignore', options.gitignore)
   if (options.git) {
     git(root, 'init', '-q', '-b', 'main')
@@ -455,6 +464,64 @@ variants:
       '/logs/*/*',
       '!/logs/*/result.csv',
     ])
+  })
+
+  it('resolves a symlinked Run to its real path inside the project', async () => {
+    const real = 'logs/a-20260901-090000'
+    const { root, backup } = await fixture({
+      git: true,
+      gitignore: 'logs/*/*\n!logs/*/README.md\n',
+      symlinks: { [A]: 'a-20260901-090000' },
+    })
+    const before = await tree(root)
+    const plan = await planResultsMigration(root)
+    expect(plan.blockers).toEqual([])
+    expect(plan.counts.symlinkedRuns).toBe(1)
+    expect(file(plan, `${real}/result.csv`)).toMatchObject({ action: 'create' })
+    expect(file(plan, `${A}/result.csv`)).toBeUndefined()
+    expect(plan.allowRules[0]!.lines).toEqual([RESULT_ALLOW_RULES_COMMENT, '!/logs/*/result.csv'])
+    const result = await applyResultsMigration(plan, backup)
+    expect(result.status).toBe('migrated')
+    expect(git(root, 'ls-files', `${real}/result.csv`)).toBe(`${real}/result.csv`)
+    expect(git(root, 'status', '--porcelain')).toBe('')
+    expect(await verifyResultsMigration(root)).toMatchObject({ ok: true, marker: 9 })
+    const summary = (await loadResultsSummary(root, 'E0001-demo'))!.summary
+    expect(summary.variants[0]!.cells['metrics.fid']).toMatchObject({ value: 12.3 })
+    expect((await rollbackResultsMigration(backup)).marker).toBe('reverted')
+    expect(await tree(root)).toEqual(before)
+  })
+
+  it('blocks a symlinked Run whose target leaves the project', async () => {
+    const { root } = await fixture({
+      git: true,
+      symlinks: { [A]: '../../elsewhere-260901-090000' },
+    })
+    const plan = await planResultsMigration(root)
+    expect(plan.blockers.map((blocker) => [blocker.code, blocker.run, blocker.choices])).toEqual([
+      ['RUN_PATH_OUTSIDE_PROJECT', A, []],
+    ])
+    expect(plan.unresolved).toEqual([`RUN_PATH_OUTSIDE_PROJECT:E0001-demo:${A}`])
+    expect(plan.files.some((entry) => entry.path.startsWith('..'))).toBe(false)
+  })
+
+  it('blocks a deprecation that would edit a git-ignored Run README', async () => {
+    const results = `schema_version: 1
+columns: [{key: fid, label: FID, group: metric, type: number}]
+variants:
+  - {id: V0001, name: a, status: COMPLETED, metrics: {fid: 1}, runs: [${A}], attempts: [${E}]}
+`
+    const { root } = await fixture({ git: true, results, gitignore: `/${E}/README.md\n` })
+    const choice = { [`FINISHED_ATTEMPT:E0001-demo:${E}`]: 'deprecate' }
+    const plan = await planResultsMigration(root, { resolutions: choice })
+    expect(plan.unresolved).toEqual([`RUN_README_IGNORED:E0001-demo:${E}`])
+    expect(plan.blockers.find((blocker) => blocker.code === 'RUN_README_IGNORED')).toMatchObject({
+      run: E,
+      choices: [],
+    })
+    const adopted = await planResultsMigration(root, {
+      resolutions: { [`FINISHED_ATTEMPT:E0001-demo:${E}`]: 'adopt' },
+    })
+    expect(adopted.unresolved).toEqual([])
   })
 
   it('re-plans identically', async () => {

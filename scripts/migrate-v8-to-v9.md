@@ -87,6 +87,8 @@ blocker id, review it with the user, and plan again with
 | `RESULT_FILE_EXISTS` | `keep`, `replace` | keep or replace an existing `result.csv` memon did not plan |
 | `SIDECAR_VARIANT_CONFLICT` | the listing Variant id or the Variant the sidecar names | the chosen Variant keeps the Run |
 | `RESULTS_YAML_UNREADABLE`, `DESCRIPTION_FILE_EXISTS`, `PROJECT_NOT_READY` | none | fix by hand and plan again |
+| `RUN_PATH_OUTSIDE_PROJECT`, `RUN_PATH_ALIASED` | none | a declared Run symlinks outside the project root, or two declared paths with planned writes reach the same directory; fix the Run declaration by hand and plan again (a symlink to a directory inside the project is fine: its `result.csv` is planned, probed and committed at the real path) |
+| `RUN_README_IGNORED` | none | a `deprecate` resolution would edit a Run README Git ignores; resolve the attempt with `adopt`, or have the user track the README, and plan again |
 
 ## Apply and verify
 
