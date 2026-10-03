@@ -115,6 +115,11 @@ export interface DescriptionFrozen {
   runs: string[]
   source?: string
   values: DescriptionFrozenValue[]
+  /**
+   * FINISHED v8 attempts kept as the Variant's history by the migration:
+   * recorded verbatim, never Variant members and never evidence.
+   */
+  attempts?: string[]
   extra?: Record<string, unknown>
 }
 
@@ -285,6 +290,7 @@ const FrozenSchema = z
     runs: z.array(z.string()).optional(),
     source: z.string().optional(),
     values: z.array(FrozenValueSchema).optional(),
+    attempts: z.array(z.string()).optional(),
   })
   .passthrough()
 
@@ -382,7 +388,7 @@ const COLUMN_KEYS = [
   'hidden',
 ] as const
 const PROVENANCE_KEYS = ['repo', 'commit', 'entry', 'recipe'] as const
-const FROZEN_KEYS = ['status', 'runs', 'source', 'values'] as const
+const FROZEN_KEYS = ['status', 'runs', 'source', 'values', 'attempts'] as const
 const FROZEN_VALUE_KEYS = ['path', 'stat', 'value'] as const
 const VARIANT_KEYS = [
   'id',
@@ -467,6 +473,7 @@ function normalizeVariant(
     }
     if (raw.frozen.status !== undefined) frozen.status = raw.frozen.status as VariantStatus
     if (raw.frozen.source !== undefined) frozen.source = raw.frozen.source
+    if (raw.frozen.attempts !== undefined) frozen.attempts = [...raw.frozen.attempts]
     variant.frozen = withExtra(frozen, omitKeys(raw.frozen, FROZEN_KEYS))
   }
   return withExtra(variant, omitKeys(raw, VARIANT_KEYS))
@@ -662,6 +669,10 @@ export function experimentDescriptionToJson(
                       FROZEN_VALUE_KEYS,
                     ),
                   ),
+                  attempts:
+                    variant.frozen.attempts === undefined
+                      ? undefined
+                      : [...variant.frozen.attempts],
                 },
                 FROZEN_KEYS,
                 variant.frozen.extra,
@@ -929,6 +940,8 @@ export function lintVariantMembership(
   const members = new Set(readmeRuns)
   const listed = new Set<string>()
   for (const variant of description.variants) {
+    // FINISHED v8 attempts kept as history are assigned, though never members.
+    for (const run of variant.frozen?.attempts ?? []) listed.add(run)
     for (const run of variant.runs) {
       listed.add(run)
       if (!members.has(run))

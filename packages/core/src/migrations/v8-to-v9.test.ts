@@ -215,19 +215,47 @@ const file = (plan: ResultsMigrationPlan, path: string) =>
   plan.files.find((entry) => entry.path === path)
 
 describe('value conversions', () => {
-  it('converts a whole column only when every cell converts', () => {
-    const stats = ['0.31 ± 0.02', '0.30 +/- 0.01', 0.29].map(classifyV8Cell)
-    expect(columnConversion(stats)).toBe('stats')
-    expect(convertedRows('metrics.clip', stats[2]!, 'stats')).toEqual({
+  it('converts a pure ± column to stats', () => {
+    const cells = ['0.31 ± 0.02', '0.30 +/- 0.01', null, ''].map(classifyV8Cell)
+    expect(columnConversion(cells)).toBe('stats')
+    expect(convertedRows('metrics.clip', cells[0]!, 'stats')).toEqual({
+      rows: [
+        { path: 'metrics.clip', stat: 'mean', value: 0.31 },
+        { path: 'metrics.clip', stat: 'std', value: 0.02 },
+      ],
+      conversions: ['PLUS_MINUS_TO_STATS'],
+    })
+    // Empty cells stay missing.
+    expect(convertedRows('metrics.clip', cells[2]!, 'stats')).toEqual({ rows: [], conversions: [] })
+    expect(convertedRows('metrics.clip', cells[3]!, 'stats')).toEqual({ rows: [], conversions: [] })
+  })
+
+  it('converts a column mixing ± strings and plain numbers to stats cell by cell', () => {
+    // Plain numbers outnumber the ± strings; they still join the stats column as `mean`.
+    const cells = [0.29, 0.28, 0.27, '0.31 ± 0.02'].map(classifyV8Cell)
+    expect(columnConversion(cells)).toBe('stats')
+    expect(convertedRows('metrics.clip', cells[0]!, 'stats')).toEqual({
       rows: [{ path: 'metrics.clip', stat: 'mean', value: 0.29 }],
       conversions: ['MIGRATED_NUMBER_AS_MEAN'],
     })
-    const mixed = ['0.31 ± 0.02', 'n/a'].map(classifyV8Cell)
-    expect(columnConversion(mixed)).toBe('verbatim')
-    expect(convertedRows('metrics.clip', mixed[0]!, 'verbatim')).toEqual({
-      rows: [{ path: 'metrics.clip', stat: null, value: '0.31 ± 0.02' }],
-      conversions: ['RESULT_STATS_NOT_CONVERTED'],
+    // Numbers alone never become stats.
+    expect(columnConversion([1, 2, 'n/a'].map(classifyV8Cell))).toBe('verbatim')
+  })
+
+  it('keeps only the unparseable cell of a stats column verbatim', () => {
+    const cells = ['0.31 ± 0.02', '0.648 ± —', 0.3, 'n/a', null].map(classifyV8Cell)
+    expect(columnConversion(cells)).toBe('stats')
+    expect(convertedRows('metrics.clip', cells[1]!, 'stats')).toEqual({
+      rows: [{ path: 'metrics.clip', stat: null, value: '0.648 ± —' }],
+      conversions: ['RESULT_CELL_NOT_CONVERTED'],
     })
+    expect(convertedRows('metrics.clip', cells[3]!, 'stats').conversions).toEqual([
+      'RESULT_CELL_NOT_CONVERTED',
+    ])
+    // The majority convertible shape wins; a group needs every cell.
+    expect(columnConversion(['[1]', '[2]', '1 ± 2'].map(classifyV8Cell))).toBe('list')
+    expect(columnConversion(['{"a": 1}', 'x'].map(classifyV8Cell))).toBe('verbatim')
+    expect(columnConversion(['{"a": 1}', '{"a": 2}'].map(classifyV8Cell))).toBe('group')
     const json = classifyV8Cell('{"median": 3, "count": 4, "note": "x"}')
     expect(convertedRows('metrics.lat', json, 'stats')).toEqual({
       rows: [
@@ -406,7 +434,6 @@ variants:
     ).toEqual([
       ['RUN_IN_TWO_VARIANTS', A, ['V0001', 'V0002']],
       ['VARIANT_RUN_NOT_MEMBER', 'logs/x-260901-140000', ['link', 'drop']],
-      ['FINISHED_ATTEMPT', E, ['deprecate', 'adopt']],
       ['SIDECAR_VARIANT_CONFLICT', B, ['V0002', 'V0003']],
       ['RESULT_FILE_EXISTS', B, ['keep', 'replace']],
       ['RESULTS_YAML_UNREADABLE', 'E0002-broken', []],
@@ -524,6 +551,50 @@ variants:
     expect(adopted.unresolved).toEqual([])
   })
 
+  it('keeps a FINISHED attempt as Variant history by default (no blocker)', async () => {
+    const results = `schema_version: 1
+columns: [{key: fid, label: FID, group: metric, type: number}]
+variants:
+  - {id: V0001, name: a, status: COMPLETED, metrics: {fid: 1}, runs: [${A}], attempts: [${E}, ${D}]}
+  - {id: V0002, name: b, status: COMPLETED, metrics: {fid: 2}, runs: [], attempts: [${C}]}
+`
+    const { root } = await fixture({ results })
+    const plan = await planResultsMigration(root)
+    expect(plan.blockers).toEqual([])
+    expect(plan.counts.finishedAttemptsKept).toBe(2)
+    expect(
+      plan.notices
+        .filter((notice) => notice.code === 'FINISHED_ATTEMPT_KEPT_AS_HISTORY')
+        .map((notice) => [notice.variant, notice.run]),
+    ).toEqual([
+      ['V0001', E],
+      ['V0002', C],
+    ])
+    const description = JSON.parse(file(plan, `${EXP}/experiment.json`)!.after!)
+    const [v1, v2] = description.variants
+    // The FAILED attempt stays a member (never evidence); the FINISHED one is history.
+    expect(v1.runs).toEqual([A, D])
+    expect(v1.frozen).toMatchObject({ runs: [A], values: [], attempts: [E] })
+    expect(file(plan, `${A}/result.csv`)!.after).toContain('metrics.fid,,1')
+    // A Variant left without members keeps its v8 values and status frozen.
+    expect(v2.runs).toEqual([])
+    expect(v2.frozen).toMatchObject({
+      status: 'COMPLETED',
+      runs: [],
+      values: [{ path: 'metrics.fid', stat: null, value: 2 }],
+      attempts: [C],
+    })
+    expect(file(plan, `${E}/README.md`)).toBeUndefined()
+    expect(plan.expected.summaryDifferences).toEqual([])
+    // A resolution may still adopt it.
+    const adopted = await planResultsMigration(root, {
+      resolutions: { [`FINISHED_ATTEMPT:E0001-demo:${E}`]: 'adopt' },
+    })
+    const adoptedDescription = JSON.parse(file(adopted, `${EXP}/experiment.json`)!.after!)
+    expect(adoptedDescription.variants[0].runs).toEqual([A, E, D])
+    expect(adopted.counts.finishedAttemptsKept).toBe(1)
+  })
+
   it('re-plans identically', async () => {
     const { root } = await fixture()
     const first = await planResultsMigration(root)
@@ -533,6 +604,83 @@ variants:
 })
 
 describe('applyResultsMigration', () => {
+  it('converts ± cell by cell, renames foreign result files and rolls back (git)', async () => {
+    const results = `schema_version: 1
+columns: [{key: fid, label: FID, group: metric, type: string}]
+variants:
+  - {id: V0001, name: a, status: COMPLETED, metrics: {fid: "1.5 ± 0.1"}, runs: [${A}], attempts: [${E}]}
+  - {id: V0002, name: b, status: COMPLETED, metrics: {fid: 2}, runs: [${B}, ${D}], attempts: []}
+  - {id: V0003, name: c, status: COMPLETED, metrics: {fid: "3 ± —"}, runs: [${C}], attempts: []}
+`
+    const gitignore = 'logs/*/*\n!logs/*/README.md\n'
+    const { root, backup } = await fixture({ git: true, gitignore, results })
+    // Foreign result tables (ignored, untracked) and an existing legacy name.
+    await write(root, `${A}/result.csv`, 'step,loss\n1,0.5\n')
+    await write(root, `${A}/result.legacy.csv`, 'older\n')
+    await write(root, `${B}/result.csv`, 'metric,value\nfid,2\n')
+    const before = await tree(root)
+    const plan = await planResultsMigration(root)
+    expect(plan.blockers).toEqual([])
+    expect(plan.unresolved).toEqual([])
+    expect(plan.legacyRenames).toEqual([
+      {
+        experiment: 'E0001-demo',
+        run: A,
+        from: `${A}/result.csv`,
+        to: `${A}/result.legacy.2.csv`,
+      },
+      { experiment: 'E0001-demo', run: B, from: `${B}/result.csv`, to: `${B}/result.legacy.csv` },
+    ])
+    expect(plan.counts).toMatchObject({
+      PLUS_MINUS_TO_STATS: 1,
+      MIGRATED_NUMBER_AS_MEAN: 1,
+      RESULT_CELL_NOT_CONVERTED: 1,
+      statsColumns: 1,
+      finishedAttemptsKept: 1,
+      legacyResultFilesRenamed: 2,
+    })
+    expect(
+      plan.notices.find((notice) => notice.code === 'RESULT_CELL_NOT_CONVERTED'),
+    ).toMatchObject({ variant: 'V0003', path: 'metrics.fid' })
+    const description = JSON.parse(file(plan, `${EXP}/experiment.json`)!.after!)
+    expect(description.columns).toEqual([{ path: 'metrics.fid', label: 'FID', type: 'stats' }])
+    expect(file(plan, `${A}/result.csv`)).toMatchObject({ action: 'replace' })
+    expect(file(plan, `${A}/result.csv`)!.after).toContain(
+      'metrics.fid,mean,1.5\nmetrics.fid,std,0.1\n',
+    )
+    expect(file(plan, `${A}/result.legacy.2.csv`)).toMatchObject({
+      action: 'create',
+      after: 'step,loss\n1,0.5\n',
+    })
+    // B has no attributable rows (two Runs): its foreign file is moved away.
+    expect(file(plan, `${B}/result.csv`)).toMatchObject({ action: 'delete' })
+    expect(file(plan, `${C}/result.csv`)!.after).toContain('metrics.fid,,3 ± —')
+    // Only the unconvertible cell is a (predicted) lint error.
+    expect(Object.values(plan.expected.lint).flat().join('\n')).toContain(`${C}/result.csv`)
+
+    const result = await applyResultsMigration(plan, backup)
+    expect(result.status).toBe('migrated')
+    expect(git(root, 'status', '--porcelain')).toBe('')
+    // The renamed files are committed although the ignore rules cover them.
+    expect(git(root, 'ls-files', `${A}`, `${B}`).split('\n').sort()).toEqual([
+      `${A}/README.md`,
+      `${A}/result.csv`,
+      `${A}/result.legacy.2.csv`,
+      `${B}/README.md`,
+      `${B}/result.legacy.csv`,
+    ])
+    expect(await read(root, `${B}/result.legacy.csv`)).toBe('metric,value\nfid,2\n')
+    await expect(fs.access(join(root, B, 'result.csv'))).rejects.toThrow()
+    expect(await verifyResultsMigration(root)).toMatchObject({ ok: true, marker: 9 })
+    const summary = (await loadResultsSummary(root, 'E0001-demo'))!.summary
+    expect(summary.variants[0]!.cells['metrics.fid']).toMatchObject({
+      kind: 'stats',
+      values: { mean: 1.5, std: 0.1 },
+    })
+    expect((await rollbackResultsMigration(backup)).marker).toBe('reverted')
+    expect(await tree(root)).toEqual(before)
+  })
+
   it('migrates, verifies and commits in git mode; rollback reverts byte for byte', async () => {
     const gitignore = 'logs/*/*\n!logs/*/README.md\n'
     const { root, backup } = await fixture({ git: true, gitignore })

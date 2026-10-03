@@ -330,6 +330,41 @@ describe('lintExperimentDescription', () => {
     ])
   })
 
+  it('keeps frozen attempts as assigned history, never members', () => {
+    const text = json({
+      experiment_schema_version: 1,
+      variants: [
+        {
+          id: 'V0001',
+          name: 'one',
+          runs: ['logs/a-260901-090000'],
+          frozen: {
+            runs: ['logs/a-260901-090000'],
+            values: [],
+            attempts: ['logs/b-260901-090000'],
+          },
+        },
+      ],
+    })
+    const parsed = parseExperimentDescription(text)
+    expect(parsed.data!.variants[0]!.frozen).toEqual({
+      runs: ['logs/a-260901-090000'],
+      values: [],
+      attempts: ['logs/b-260901-090000'],
+    })
+    expect(parsed.data!.variants[0]!.runs).toEqual(['logs/a-260901-090000'])
+    const serialized = JSON.parse(serializeExperimentDescription(parsed.data!))
+    expect(serialized.variants[0].frozen).toEqual({
+      runs: ['logs/a-260901-090000'],
+      values: [],
+      attempts: ['logs/b-260901-090000'],
+    })
+    const codes = lintExperimentDescription(parsed.data!, {
+      readmeRuns: ['logs/a-260901-090000', 'logs/b-260901-090000'],
+    }).map((diagnostic) => diagnostic.code)
+    expect(codes).not.toContain('UNASSIGNED_EXPERIMENT_RUN')
+  })
+
   it('keeps an unused enum option and sparse value descriptions valid', () => {
     const parsed = parseExperimentDescription(
       json({

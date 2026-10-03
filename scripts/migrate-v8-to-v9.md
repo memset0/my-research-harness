@@ -53,9 +53,22 @@ project-relative paths only:
   deciding rules they override, the Run locations and the Run directories they
   cover. Ignore rules never block the step.
 - `counts` — conversion counts such as `PLUS_MINUS_TO_STATS`, `JSON_TO_STATS`,
-  `JSON_TO_GROUP`, `JSON_TO_LIST`, `MIGRATED_NUMBER_AS_MEAN`,
-  `RESULT_JSON_STRING`, `RESULT_STATS_NOT_CONVERTED`, `undeclaredKeys`,
-  `envCoerced`, `frozenValues`, `sidecarsConverted`, `statusChanged`.
+  `JSON_TO_GROUP`, `JSON_TO_LIST`, `MIGRATED_NUMBER_AS_MEAN`, `statsColumns`,
+  `RESULT_CELL_NOT_CONVERTED`, `RESULT_JSON_STRING`, `undeclaredKeys`,
+  `envCoerced`, `frozenValues`, `sidecarsConverted`, `statusChanged`,
+  `finishedAttemptsKept`, `legacyResultFilesRenamed`.
+- `defaults` — the three situations the migration settles by default, counted
+  separately: `plusMinusToStats` (`±` cells converted; metric values convert
+  cell by cell and a column takes the majority convertible shape, plain numbers
+  in it become `numbersAsMean`, and only an unparseable cell stays a string,
+  `cellsNotConverted`), `finishedAttemptsKeptAsHistory` and
+  `legacyResultFilesRenamed`.
+- `legacyRenames` — every `<run>/result.csv -> <run>/result.legacy[.<N>].csv`
+  rename (never capped): an existing `result.csv` that is not a version-1
+  result table moves aside so the migrated table can be written (or
+  `result.csv` is deleted when that Run receives no migrated rows). The legacy
+  file is committed with the migration even where ignore rules cover it, and
+  rollback restores the original `result.csv`.
 - `notices` — every notice code with its count and locations (the messages,
   which may quote values, stay in the plan file).
 - `expectedLintErrors` — v8 problems the migrated bundles carry over (for
@@ -65,6 +78,16 @@ project-relative paths only:
 Read details from the plan file with `jq` when needed, for example
 `jq '.notices[] | select(.code == "VARIANT_STATUS_CHANGED")' "$PLAN_FILE"`.
 
+### Defaults that can be overridden
+
+Two situations no longer block; resolutions under their ids override the
+default only when the user asks for it:
+
+| Id | Default | Overrides |
+|---|---|---|
+| `FINISHED_ATTEMPT:<experiment>:<run>` (a `FINISHED`, non-deprecated Run in a v8 `attempts` list) | kept as the Variant's history in `frozen.attempts`, not a member Run, never evidence; the Variant's v8 values stay frozen unless its single listed Run carries them (`FINISHED_ATTEMPT_KEPT_AS_HISTORY`) | `deprecate` writes `deprecated: true` into that Run README; `adopt` makes it a member Run and evidence |
+| `RESULT_FILE_EXISTS:<experiment>:<run>` (an existing `result.csv` that is not a version-1 result table) | renamed to `result.legacy.csv` (first free `result.legacy.<N>.csv` when taken), listed in `legacyRenames` | `keep` leaves it (the summary fails until it is fixed); `replace` overwrites it |
+
 ### Resolutions
 
 Apply refuses while any blocker is unresolved. Write a JSON object keyed by
@@ -73,7 +96,6 @@ blocker id, review it with the user, and plan again with
 
 ```json
 {
-  "FINISHED_ATTEMPT:E0003-example:logs/retry-260901-090000": "deprecate",
   "RUN_IN_TWO_VARIANTS:E0003-example:logs/shared-260901-100000": "V0002",
   "VARIANT_RUN_NOT_MEMBER:E0003-example:logs/extra-260901-110000": "link"
 }
@@ -81,14 +103,13 @@ blocker id, review it with the user, and plan again with
 
 | Blocker | Choices | Effect |
 |---|---|---|
-| `FINISHED_ATTEMPT` | `deprecate`, `adopt` | `deprecate` writes `deprecated: true` into that Run README; `adopt` keeps it as evidence |
 | `RUN_IN_TWO_VARIANTS` | one of the listing Variant ids | the chosen Variant keeps the Run |
 | `VARIANT_RUN_NOT_MEMBER` | `link`, `drop` | `link` adds the Run to the README `runs`; `drop` removes it from the Variant |
-| `RESULT_FILE_EXISTS` | `keep`, `replace` | keep or replace an existing `result.csv` memon did not plan |
+| `RESULT_FILE_EXISTS` | `keep`, `replace` | keep or replace an existing version-1 `result.csv` memon did not plan |
 | `SIDECAR_VARIANT_CONFLICT` | the listing Variant id or the Variant the sidecar names | the chosen Variant keeps the Run |
 | `RESULTS_YAML_UNREADABLE`, `DESCRIPTION_FILE_EXISTS`, `PROJECT_NOT_READY` | none | fix by hand and plan again |
 | `RUN_PATH_OUTSIDE_PROJECT`, `RUN_PATH_ALIASED` | none | a declared Run symlinks outside the project root, or two declared paths with planned writes reach the same directory; fix the Run declaration by hand and plan again (a symlink to a directory inside the project is fine: its `result.csv` is planned, probed and committed at the real path) |
-| `RUN_README_IGNORED` | none | a `deprecate` resolution would edit a Run README Git ignores; resolve the attempt with `adopt`, or have the user track the README, and plan again |
+| `RUN_README_IGNORED` | none | a `deprecate` resolution would edit a Run README Git ignores; resolve the attempt with `adopt`, drop the resolution (history), or have the user track the README, and plan again |
 
 ## Apply and verify
 
@@ -129,7 +150,10 @@ Rollback restores marker 8 — by `git revert` of the recorded migration commit 
 Git mode (it must be reachable from `HEAD`), otherwise by writing back the
 backed-up bytes of every touched file and the marker — and restores
 `.memon/index/` to its pre-migration state. The revert restores every
-`results.yaml` and removes the appended allow rules. It refuses a marker changed
+`results.yaml`, removes the appended allow rules and the committed legacy result
+files; rollback then writes back from the backup every touched file Git did not
+track before (such as an ignored `result.csv` that was renamed or replaced). It
+refuses a marker changed
 since the migration. Deleting `.memon/index/` is always safe on its own and
 needs no marker change.
 

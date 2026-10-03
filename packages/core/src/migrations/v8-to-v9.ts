@@ -103,6 +103,7 @@ export const V8_TO_V9_COMMIT_MESSAGE = 'chore(memon): migrate FS convention v8 -
 const MARKER = '.memon/version.json'
 const INDEX = '.memon/index'
 const EXPERIMENTS = 'docs/experiments'
+const LEGACY_RESULT_FILE_NAME = 'result.legacy.csv'
 const DECLARABLE = new Set(['PLANNED', 'BLOCKED', 'DROPPED', 'INCONCLUSIVE'])
 const GIT_TIMEOUT_MS = 60_000
 const GIT_MAX_BUFFER = 64 * 1024 * 1024
@@ -178,6 +179,14 @@ export interface ExpectedCell {
   expect: CellExpectation
 }
 
+export interface ResultsMigrationLegacyRename {
+  experiment: string
+  run: string
+  /** Project-relative (real) paths. */
+  from: string
+  to: string
+}
+
 export interface ResultsMigrationExperiment {
   id: string
   resultsYaml: boolean
@@ -202,6 +211,8 @@ export interface ResultsMigrationPlan {
   experiments: ResultsMigrationExperiment[]
   files: ResultsMigrationFile[]
   allowRules: AllowRuleTarget[]
+  /** Existing non-v1 `result.csv` files renamed before the migrated table is written. */
+  legacyRenames: ResultsMigrationLegacyRename[]
   counts: Record<string, number>
   notices: ResultsMigrationNotice[]
   blockers: ResultsMigrationBlocker[]
@@ -490,6 +501,8 @@ interface ExperimentWork {
   /** Run → planned result rows (null: leave the existing file alone). */
   resultRows: Map<string, ConvertedRow[]>
   deprecate: Set<string>
+  /** Runs whose existing non-v1 `result.csv` is renamed to a legacy name. */
+  legacy: Set<string>
   deleteResultsYaml: boolean
   expectedCells: ExpectedCell[]
   /** Variant id → its v8 status (for VARIANT_STATUS_CHANGED). */
@@ -501,6 +514,19 @@ interface ExperimentSummaryState {
   resultsYaml: boolean
   pointerRewritten: boolean
   frozenVariants: number
+}
+
+/** `result.legacy.csv`, or `result.legacy.<N>.csv` (N ≥ 2) when that name is taken. */
+async function freeLegacyName(root: string, runDir: string): Promise<string> {
+  for (let n = 1; ; n += 1) {
+    const name = n === 1 ? LEGACY_RESULT_FILE_NAME : `result.legacy.${n}.csv`
+    const path = `${runDir}/${name}`
+    const taken = await fs.lstat(join(root, ...path.split('/'))).then(
+      () => true,
+      () => false,
+    )
+    if (!taken) return path
+  }
 }
 
 function blockerId(code: ResultsMigrationBlockerCode, experiment: string, subject: string): string {
@@ -534,6 +560,7 @@ export async function planResultsMigration(
     experiments: [],
     files: [],
     allowRules: [],
+    legacyRenames: [],
     counts: {},
     notices: [],
     blockers: [],
@@ -666,6 +693,7 @@ export async function planResultsMigration(
       descriptionBefore,
       resultRows: new Map(),
       deprecate: new Set(),
+      legacy: new Set(),
       deleteResultsYaml: yamlRaw !== null,
       expectedCells: [],
       v8Statuses: new Map(),
@@ -752,7 +780,12 @@ export async function planResultsMigration(
     return null
   }
   for (const work of works)
-    for (const run of new Set([...work.readmeRuns, ...work.resultRows.keys(), ...work.deprecate]))
+    for (const run of new Set([
+      ...work.readmeRuns,
+      ...work.resultRows.keys(),
+      ...work.deprecate,
+      ...work.legacy,
+    ]))
       await realRun(work.id, run)
   if (realRuns.size > 0) count('symlinkedRuns', realRuns.size)
   const plannedTargets = new Map<string, string>()
@@ -792,6 +825,28 @@ export async function planResultsMigration(
       after: serializeExperimentDescription(work.description),
       beforeHash: null,
     })
+    // Legacy renames: the existing file moves to the first free legacy name;
+    // the migrated table (if any) is written below, else result.csv is deleted.
+    for (const run of work.legacy) {
+      const real = await realRun(work.id, run)
+      if (real === null) continue
+      const path = `${real}/${RESULT_FILE_NAME}`
+      if (!work.resultRows.has(run) && !claim(work.id, run, path)) continue
+      const before = await readText(join(root, ...path.split('/')))
+      if (before === null) continue
+      const to = await freeLegacyName(root, real)
+      if (!claim(work.id, run, to)) continue
+      plan.legacyRenames.push({ experiment: work.id, run, from: path, to })
+      plan.files.push({ path: to, action: 'create', before: null, after: before, beforeHash: null })
+      if (!work.resultRows.has(run))
+        plan.files.push({
+          path,
+          action: 'delete',
+          before,
+          after: null,
+          beforeHash: sha256(before),
+        })
+    }
     for (const [run, rows] of work.resultRows) {
       const real = await realRun(work.id, run)
       if (real === null) continue
@@ -1031,20 +1086,28 @@ async function planExperiment(
     if (choice === 'link') linked.push(run)
     if (choice === 'drop') dropped.add(run)
   }
-  // Finished, non-deprecated attempts → deprecate or adopt.
+  // Finished, non-deprecated attempts: FS v9 counts every FINISHED,
+  // non-deprecated Variant member as evidence, so by default such an attempt
+  // stays the Variant's history (`frozen.attempts`, never a member); a
+  // resolution may still deprecate or adopt it.
+  const history = new Map<string, string[]>()
   for (const variant of v8.variants)
     for (const run of variant.attempts) {
       if (variant.runs.includes(run)) continue
       const recordValue = await context.runRecord(run)
       if (recordValue?.status !== 'FINISHED' || recordValue.deprecated) continue
-      const choice = resolve(
-        'FINISHED_ATTEMPT',
-        run,
-        `${run} is a FINISHED attempt of ${variant.id}; FS v9 counts every FINISHED, non-deprecated Run as evidence — deprecate it or adopt it`,
-        ['deprecate', 'adopt'],
-        run,
-      )
+      const choice = context.resolutions[blockerId('FINISHED_ATTEMPT', id, run)]
       if (choice === 'deprecate') work.deprecate.add(run)
+      if (choice === 'deprecate' || choice === 'adopt') continue
+      history.set(variant.id, [...(history.get(variant.id) ?? []), run])
+      context.count('finishedAttemptsKept')
+      context.notice({
+        code: 'FINISHED_ATTEMPT_KEPT_AS_HISTORY',
+        experiment: id,
+        variant: variant.id,
+        run,
+        message: `${run} is a FINISHED attempt of ${variant.id}; it is kept as the Variant's history (frozen.attempts) and is not a member Run (resolve ${blockerId('FINISHED_ATTEMPT', id, run)} with deprecate or adopt to change that)`,
+      })
     }
   if (linked.length > 0) {
     work.readmeRuns = [
@@ -1098,31 +1161,41 @@ async function planExperiment(
       sidecars.set(run, sidecar)
     }
   }
-  // Existing result files of listed Runs → keep or replace.
+  // Existing result files of listed Runs. A file that is not a version-1
+  // result table (written by the project's own tooling) is renamed to
+  // `result.legacy.csv` by default so the migrated rows can take its place;
+  // a resolution may keep or replace it instead. A valid version-1 table is
+  // a blocker (keep or replace).
   const keepExisting = new Set<string>()
   for (const run of listing.keys()) {
     if (!isRunPath(run) || dropped.has(run)) continue
     const existing = await readText(join(context.root, ...run.split('/'), RESULT_FILE_NAME))
     if (existing === null) continue
-    const choice = resolve(
-      'RESULT_FILE_EXISTS',
-      run,
-      `${run}/${RESULT_FILE_NAME} already exists and was not planned by memon; keep it or replace it with the migrated rows`,
-      ['keep', 'replace'],
-      run,
-    )
-    if (choice === 'keep') keepExisting.add(run)
-    if (choice === undefined) keepExisting.add(run)
-    if (choice === 'keep') {
-      const parsed = parseResultFile(existing)
-      if (!parsed.ok || parsed.schemaVersion !== 1)
+    const parsedExisting = parseResultFile(existing)
+    if (!parsedExisting.ok || parsedExisting.schemaVersion !== 1) {
+      const override = context.resolutions[blockerId('RESULT_FILE_EXISTS', id, run)]
+      if (override === 'keep') {
+        keepExisting.add(run)
         context.notice({
           code: 'RESULT_FILE_KEPT_INVALID',
           experiment: id,
           run,
           message: `${run}/${RESULT_FILE_NAME} is kept but is not a version-1 result table; the summary will fail until it is fixed`,
         })
+      } else if (override !== 'replace') {
+        work.legacy.add(run)
+        context.count('legacyResultFilesRenamed')
+      }
+      continue
     }
+    const choice = resolve(
+      'RESULT_FILE_EXISTS',
+      run,
+      `${run}/${RESULT_FILE_NAME} is already a version-1 result table that memon did not plan; keep it or replace it with the migrated rows`,
+      ['keep', 'replace'],
+      run,
+    )
+    if (choice === 'keep' || choice === undefined) keepExisting.add(run)
   }
 
   // Columns and their conversions.
@@ -1138,13 +1211,7 @@ async function planExperiment(
   for (const [key, cells] of metricCells) {
     const decided = columnConversion(cells)
     conversion.set(key, decided)
-    if (decided === 'verbatim' && cells.some((cell) => cell.kind === 'stats'))
-      context.notice({
-        code: 'RESULT_STATS_NOT_CONVERTED',
-        experiment: id,
-        path: `metrics.${key}`,
-        message: `metrics.${key} mixes statistics strings with other values; every value is kept verbatim`,
-      })
+    if (decided === 'stats') context.count('statsColumns')
   }
   const declared = new Set<string>()
   const pathOf = (partition: 'params' | 'metrics', key: string) => {
@@ -1221,8 +1288,10 @@ async function planExperiment(
 
   // Variants.
   for (const variant of v8.variants) {
+    const kept = history.get(variant.id) ?? []
     const runs = [...new Set([...variant.runs, ...variant.attempts])].filter(
-      (run) => !dropped.has(run) && (keeper.get(run) ?? variant.id) === variant.id,
+      (run) =>
+        !dropped.has(run) && !kept.includes(run) && (keeper.get(run) ?? variant.id) === variant.id,
     )
     const values: Record<string, ResultValue> = {}
     for (const [key, value] of Object.entries(variant.parameters))
@@ -1332,7 +1401,7 @@ async function planExperiment(
     }
     const listedMembers = runs.filter((run) => work.readmeRuns.includes(run))
     const derivedV8 = variant.status && !DECLARABLE.has(variant.status)
-    if (frozen.length > 0 || (listedMembers.length === 0 && derivedV8)) {
+    if (frozen.length > 0 || kept.length > 0 || (listedMembers.length === 0 && derivedV8)) {
       next.frozen = {
         ...(variant.status && (VARIANT_STATUS_VALUES as readonly string[]).includes(variant.status)
           ? { status: variant.status as VariantStatus }
@@ -1340,6 +1409,7 @@ async function planExperiment(
         runs: [...variant.runs],
         source: `${LEGACY_RESULTS_FILE}@${blobId}`,
         values: frozen,
+        ...(kept.length > 0 ? { attempts: [...kept] } : {}),
       }
       work.summary.frozenVariants += 1
       context.count('frozenValues', frozen.length)
@@ -1615,6 +1685,47 @@ async function restoreIndex(root: string, backup: string, existed: boolean): Pro
   if (existed) await fs.cp(join(backup, 'memon-index'), join(root, INDEX), { recursive: true })
 }
 
+/**
+ * The touched paths Git can name: present in the worktree or tracked (a
+ * deleted file that was never tracked, such as an ignored `result.csv` moved
+ * to its legacy name, is not part of the commit).
+ */
+async function committablePaths(
+  git: GitCommandRunner,
+  root: string,
+  paths: readonly string[],
+): Promise<string[]> {
+  const tracked = new Set(
+    (await gitOk(git, root, ['ls-files', '-z', '--', ...paths])).split('\0').filter(Boolean),
+  )
+  const out: string[] = []
+  for (const path of paths) {
+    const present = await fs.lstat(join(root, ...path.split('/'))).then(
+      () => true,
+      () => false,
+    )
+    if (present || tracked.has(path)) out.push(path)
+  }
+  return out
+}
+
+/**
+ * After `git revert`: put back the previous bytes of touched files Git did
+ * not track (an untracked `result.csv` renamed or replaced by the migration).
+ */
+async function restoreUntrackedFiles(
+  root: string,
+  backup: string,
+  receipt: ResultsMigrationReceipt,
+): Promise<void> {
+  for (const file of receipt.files) {
+    if (!file.existed) continue
+    const target = join(root, ...file.path.split('/'))
+    const previous = await fs.readFile(join(backup, 'files', ...file.path.split('/')), 'utf8')
+    if ((await readText(target)) !== previous) await writeAtomic(target, previous)
+  }
+}
+
 async function restoreFiles(
   root: string,
   backup: string,
@@ -1733,8 +1844,17 @@ export async function applyResultsMigration(
     await writeAtomic(join(root, MARKER), markerAfter)
     markerWritten = true
     if (plan.git && options.commit !== false) {
-      const paths = [...plan.files.map((file) => file.path), MARKER]
-      await gitOk(git, root, ['add', '--all', '--', ...paths])
+      const paths = await committablePaths(git, root, [
+        ...plan.files.map((file) => file.path),
+        MARKER,
+      ])
+      // Renamed legacy result files are committed even where the project's
+      // ignore rules cover them (they hold the Run's former result.csv).
+      const legacy = new Set((plan.legacyRenames ?? []).map((rename) => rename.to))
+      const regular = paths.filter((path) => !legacy.has(path))
+      const forced = paths.filter((path) => legacy.has(path))
+      if (regular.length > 0) await gitOk(git, root, ['add', '--all', '--', ...regular])
+      if (forced.length > 0) await gitOk(git, root, ['add', '--force', '--', ...forced])
       await gitOk(git, root, ['commit', '--only', '-m', V8_TO_V9_COMMIT_MESSAGE, '--', ...paths])
       receipt.commit = (await gitOk(git, root, ['rev-parse', 'HEAD'])).trim()
     }
@@ -1942,6 +2062,7 @@ export async function rollbackResultsMigration(
       throw new Error(`The migration commit ${receipt.commit} is not in HEAD; revert it by hand`)
     await gitOk(git, root, ['revert', '--no-edit', receipt.commit])
     revertCommit = (await gitOk(git, root, ['rev-parse', 'HEAD'])).trim()
+    await restoreUntrackedFiles(root, backup, receipt)
     if ((await readText(join(root, MARKER))) !== receipt.markerBefore)
       throw new Error(`git revert did not restore ${MARKER}`)
     state = 'reverted'

@@ -387,6 +387,13 @@
               "items": {
                 "$ref": "#/$defs/frozenValue"
               }
+            },
+            "attempts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "FINISHED v8 attempts kept as the Variant's history by the migration; never members, never evidence."
             }
           }
         }

@@ -1,19 +1,24 @@
 // Value conversions of the FS v8 -> v9 Results migration.
 //
 // v8 `results.yaml` cells are flat scalars, so statistics were often smuggled
-// as strings. A metric column is converted as a whole, and only when every
-// non-empty cell is convertible (so no column gains a new type conflict):
+// as strings. Each metric cell is classified on its own:
 //
 //   "0.31 ± 0.02", "0.31 +/- 0.02"        → stats { mean, std }
 //   '{"mean": 0.31, "sample_std": 0.02}'  → stats (aliases: sample_std/stdev → std,
 //                                            count/eligible_seeds → n, median → p50;
 //                                            other keys become sibling leaves <path>_<key>)
-//   plain numbers in such a column         → stats { mean } (MIGRATED_NUMBER_AS_MEAN)
+//   plain numbers in a stats column        → stats { mean } (MIGRATED_NUMBER_AS_MEAN)
 //   '{"a": 1, "b": "x"}'                   → group expansion <path>.a, <path>.b
-//   '[1, 2]' in a column of arrays         → list
+//   '[1, 2]'                               → list
 //
-// Anything else stays verbatim; JSON text that stays a string is reported as
-// RESULT_JSON_STRING. W&B URLs and type mismatches stay as they are.
+// A column takes the majority convertible shape of its cells (stats counts
+// its statistics cells plus the plain numbers that join them as `mean`; a
+// group expansion needs every non-empty cell to be a group, because a leaf
+// value cannot share a group's path). A cell that does not fit the chosen
+// shape stays verbatim on its own (RESULT_CELL_NOT_CONVERTED) and the rest of
+// the column still converts; migrated lint then lists that one cell. JSON
+// text that stays a string is reported as RESULT_JSON_STRING. W&B URLs and
+// type mismatches stay as they are.
 
 import { RESULT_PATH_SEGMENT_REGEX } from '../results/paths.js'
 import type { ResultValue } from '../results/result-file.js'
@@ -134,20 +139,24 @@ export function classifyV8Cell(value: unknown): ClassifiedCell {
 export type ColumnConversion = 'verbatim' | 'stats' | 'group' | 'list'
 
 /**
- * How a whole metric column converts: only when every non-empty cell is
- * convertible to the same shape (numbers may join statistics as `mean`).
+ * How a metric column converts: the majority convertible shape of its
+ * non-empty cells (ties prefer stats, then list). Numbers count toward stats
+ * only when the column has at least one statistics cell; a group expansion
+ * needs every non-empty cell to be a group. A column without any convertible
+ * shape stays verbatim.
  */
 export function columnConversion(cells: readonly ClassifiedCell[]): ColumnConversion {
   const present = cells.filter((cell) => cell.kind !== 'empty')
   if (present.length === 0) return 'verbatim'
-  if (
-    present.some((cell) => cell.kind === 'stats') &&
-    present.every((cell) => cell.kind === 'stats' || cell.kind === 'number')
-  )
-    return 'stats'
-  if (present.every((cell) => cell.kind === 'group')) return 'group'
-  if (present.every((cell) => cell.kind === 'list')) return 'list'
-  return 'verbatim'
+  const count = (kind: ClassifiedCell['kind']) =>
+    present.filter((cell) => cell.kind === kind).length
+  const statsCells = count('stats')
+  const stats = statsCells > 0 ? statsCells + count('number') : 0
+  const list = count('list')
+  const group = count('group')
+  if (group === present.length) return 'group'
+  if (stats === 0 && list === 0) return 'verbatim'
+  return stats >= list ? 'stats' : 'list'
 }
 
 /** A converted value written to a result table or a frozen block. */
@@ -169,7 +178,13 @@ export function convertedRows(
   cell: ClassifiedCell,
   conversion: ColumnConversion,
 ): ConvertedCellRows {
-  if (cell.kind === 'empty') return { rows: [{ path, stat: null, value: null }], conversions: [] }
+  // An empty value stays missing in a converted column (a null leaf row would
+  // be a type mismatch there); a verbatim column keeps the v8 null as it was.
+  if (cell.kind === 'empty')
+    return {
+      rows: conversion === 'verbatim' ? [{ path, stat: null, value: null }] : [],
+      conversions: [],
+    }
   if (conversion === 'stats' && cell.kind === 'number')
     return {
       rows: [{ path, stat: 'mean', value: cell.value }],
@@ -202,7 +217,13 @@ export function convertedRows(
     }
   if (conversion === 'list' && cell.kind === 'list')
     return { rows: [{ path, stat: null, value: cell.value }], conversions: ['JSON_TO_LIST'] }
-  // Verbatim: the v8 value as it was.
+  // Verbatim: the v8 value as it was. In a converted column only this cell
+  // stays (migrated lint lists it); the rest of the column still converts.
+  if (conversion !== 'verbatim')
+    return {
+      rows: [{ path, stat: null, value: cell.original }],
+      conversions: ['RESULT_CELL_NOT_CONVERTED'],
+    }
   const kept =
     cell.kind === 'stats' && cell.source === 'plus-minus'
       ? ['RESULT_STATS_NOT_CONVERTED']

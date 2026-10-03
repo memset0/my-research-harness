@@ -93,6 +93,17 @@ function planSummary(plan) {
       runs: capped(rule.runs),
     })),
     counts: plan.counts,
+    defaults: {
+      // Each of the three formerly blocking situations, counted separately.
+      plusMinusToStats: plan.counts.PLUS_MINUS_TO_STATS ?? 0,
+      numbersAsMean: plan.counts.MIGRATED_NUMBER_AS_MEAN ?? 0,
+      statsColumns: plan.counts.statsColumns ?? 0,
+      cellsNotConverted: plan.counts.RESULT_CELL_NOT_CONVERTED ?? 0,
+      finishedAttemptsKeptAsHistory: plan.counts.finishedAttemptsKept ?? 0,
+      legacyResultFilesRenamed: (plan.legacyRenames ?? []).length,
+    },
+    // Every rename is listed (never capped): the migration commit and rollback cover them.
+    legacyRenames: (plan.legacyRenames ?? []).map((rename) => `${rename.from} -> ${rename.to}`),
     notices: noticeSummary(plan.notices),
     expectedLintErrors: Object.fromEntries(
       Object.entries(plan.expected.lint).filter(([, errors]) => errors.length > 0),
