@@ -19,10 +19,10 @@ delegation: following another skill's rules inline is always allowed.
 | Goal | Skill | Write scope |
 |---|---|---|
 | Coordinate one Experiment end to end | `memon-drive` | Orchestrates other skills; Experiment writes go through the bundle writer |
-| Read and filter structured Experiment results | `memon-read-results` | Read-only projection of `results.yaml` |
-| Create/update Experiment-level documentation | `memon-write-experiment-doc` | README + `implementation.yaml` + `investigation.yaml` + `results.yaml` |
+| Read and filter structured Experiment results | `memon-read-results` | Read-only; the generated Results table (`experiment results table`/`summary`) |
+| Create/update Experiment-level documentation | `memon-write-experiment-doc` | README + `implementation.yaml` + `investigation.yaml` + `experiment.json`; Run `result.csv` through `memon run result set` |
 | Author a portable launcher | `memon-write-script` | Launcher files only; returns provenance |
-| Launch, resume, or inspect one execution | `memon-run-experiment` | Minimal Run record/artifacts; Results updates through the bundle writer |
+| Launch, resume, or inspect one execution | `memon-run-experiment` | Minimal Run record/artifacts and the Run's `result.csv` (`memon run result set`); Variant updates through the bundle writer |
 | Record durable project knowledge, roadmap, or a cross-project note | `memon-wiki` | Wiki pages under `docs/wiki/` via `memon wiki` plus direct Markdown edits |
 | Write a theme Report | `memon-write-report` | Markdown by default; explicit HTML/interactive/dashboard requests use a static bundle, optionally with a delegated visualization/frontend skill |
 | Author a component block | `memon-components` | Blocks inside the calling skill's document, plus the document's `*__assets/` cache files |
@@ -57,8 +57,8 @@ directory the harness never shipped is preserved as `kept-unmanaged`. Use
 Follow that workflow inline or delegate only when the work benefits.
 
 Reading has layers too. `memon-propose` reads the Experiment/Variant layer only
-— documents and eligibility-aware Results projections, never a Run record, log,
-or artifact, and never a call that hydrates Runs for it. A gap at that layer is
+— documents and the generated Variant-level Results table, never a Run record,
+Run `result.csv`, log, or artifact, and never a call that hydrates Runs for it. A gap at that layer is
 reported upward for recovery, not filled by descending. `memon-drive` and
 `memon-write-report` open a Run record only for a specific question, not as
 routine context; `memon-run-experiment` is the skill that works at execution
@@ -78,12 +78,18 @@ metadata edits use mtime/hash locks. Preserve rich legacy records without
 restructuring their content.
 
 `run deprecate` / `undeprecate` changes evidence eligibility, not Variant
-membership, execution status or archive. Keep deprecated Runs associated with
-their Variant; execution work may explicitly reuse their still-correct scripts
-and setup to rerun it. Current research collections exclude them by default.
-Results preserve old values and qualify withdrawn evidence. Historical
-membership must not permanently invalidate genuinely new results; the current
-projection's lineage limitation is documented in `PREFLIGHT.md`.
+membership, execution status or archive. Keep deprecated Runs listed in their
+Variant's `runs`; execution work may explicitly reuse their still-correct
+scripts and setup to rerun it. Current research collections exclude them by
+default. The generated Results table counts only finished, non-deprecated Runs
+as evidence, so verified replacement Runs qualify on their own while the old
+values stay in Git history and their Run directories.
+
+Each Run's measurements live in its tracked `result.csv`; the Experiment's
+columns and Variants in `experiment.json`. Skills write values through
+`memon run result set`, change recorded values only through
+`memon experiment schema upgrade`, and never touch the generated summaries
+under `.memon/index/results/` (`PREFLIGHT.md`, Results files).
 
 ## Journal recording
 

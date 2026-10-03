@@ -60,7 +60,12 @@ Every launcher must:
    ```
 
 6. Append stdout/stderr to `"$RUN_DIR/run.log"` with `tee -a`.
-7. Never call `memon`, write a Run record, or mutate the Experiment bundle.
+7. Never call `memon`, write a Run record, write `result.csv`, or mutate the
+   Experiment bundle. Final measurements may be printed or saved in a
+   machine-readable form (for example a `path,stat,value` CSV such as
+   `"$RUN_DIR/metrics.csv"`, never named `result.csv`); `memon-run-experiment`
+   records them later with `memon run result set` (`--from` reads such a CSV),
+   which validates them against `experiment.json` and writes the version row.
 8. Stay runnable with bash and the project's real dependencies even when memon
    is not installed on the execution host.
 
@@ -95,10 +100,13 @@ only with a clear repository precedent — never guess a conda/venv name.
 ## Variant alignment
 
 When the script is part of an imminent Run: confirm the Variant already exists
-in `results.yaml`; make entry, recipe, and injected env match its provenance;
-never silently broaden one invocation into undeclared Variants; expose
-comparison parameters as explicit env vars/flags so the actual command can be
-audited against Results.
+in the Experiment's `experiment.json`; make entry, recipe, injected env and
+parameters match its `provenance` and planned `values`; never silently broaden
+one invocation into undeclared Variants; expose comparison parameters as
+explicit env vars/flags so the actual command can be audited against Results.
+When the script emits measurements, use the result paths the Experiment
+declares (`params.*`, `metrics.*`, `env.*`) and report statistics as separate
+`mean`/`std`/`n` values rather than a packed `mean ± std` string.
 
 This skill may prepare a launcher before the Variant is final, but it never
 launches. `memon-run-experiment` enforces the pre-launch check.
@@ -140,6 +148,9 @@ launches. `memon-run-experiment` enforces the pre-launch check.
 - Do not use a timestamp-free directory for a fresh Run, and do not truncate an
   existing `run.log`.
 - Do not nest a Run directory inside another Run directory, and do not create,
-  edit or commit `.memon/project.yml` or anything under `.memon/index/`. A
-  launcher that rewrites its Run README `status` needs no index step.
+  edit or commit `.memon/project.yml` or anything under `.memon/index/`
+  (including the Results summaries). A launcher that rewrites its Run README
+  `status` needs no index step.
+- Do not write `result.csv` from a launcher; values reach it only through
+  `memon run result set`.
 - Do not read, write, or repair a Journal file beyond the step 6 submission.

@@ -20,8 +20,10 @@ writer workflow. For an existing one, start with:
 memon --project-root . --format human experiment show "$EXP_ID"
 ```
 
-Read only the relevant managed YAML/projection next; use filtered Results
-rather than rendering every document twice. Follow related Experiment,
+Read only the relevant managed document or projection next; use filtered
+Results (`memon experiment results table <id>` with `--variant`/`--column`)
+rather than rendering every document twice. The Results table is generated;
+never open `.memon/index/results/`. Follow related Experiment,
 hypothesis or wiki references when needed for the decision, not as a startup
 sweep. Do not routinely open Run records; descend only for a specific execution
 question. Never use Journal history as research context.
@@ -38,7 +40,9 @@ rather than inventing a roadmap file or misplacing it in another Experiment.
 |---|---|
 | Engineering capability, fix or refactor | `implementation.yaml` |
 | Empirical question and success criteria | `investigation.yaml` |
-| Comparison condition, parameters, provenance and selected outcomes | Variant in `results.yaml` |
+| Comparison condition, planned parameters, provenance, columns | Variant and columns in `experiment.json` |
+| Measured parameters, metrics and env values of one Run | that Run's `result.csv` via `memon run result set` |
+| Change to already recorded values (rename, re-scale, …) | `memon experiment schema upgrade` with a reviewed transform |
 | One-off analysis of existing artifacts | Experiment-local utility; no automatic item or Run |
 | Cross-Variant interpretation or evidence limits | README Findings / Limitations |
 
@@ -46,24 +50,29 @@ rather than inventing a roadmap file or misplacing it in another Experiment.
 commit or routine verification does not automatically need a new research item
 or code-review document.
 
-1. **Predeclare Variants.** Agree on the comparison axes and reusable baselines,
-   or proceed under explicit user-granted autonomy. Write Variants before
-   launch. A retry is another Run, not another condition; a changed condition
-   needs a new/revised Variant before execution.
-2. **Implement and execute.** Use the launcher/execution workflows. Preserve
-   attempts and code/artifact provenance. A launch contradicting its Variant
-   requires immediate reconciliation; never retrofit declarations to disguise
-   the mismatch.
+1. **Predeclare Variants.** Agree on the comparison axes, result paths and
+   reusable baselines, or proceed under explicit user-granted autonomy. Write
+   Variants (and the columns you expect) into `experiment.json` before launch.
+   A retry is another Run, not another condition; a changed condition needs a
+   new/revised Variant before execution.
+2. **Implement and execute.** Use the launcher/execution workflows. Every Run
+   stays in its Variant's `runs`; each Run's measurements go into its
+   `result.csv` through `memon run result set`, with statistics as `stats`
+   rows. A launch contradicting its Variant requires immediate reconciliation;
+   never retrofit declarations to disguise the mismatch.
 3. **Batch writeback.** Apply the writer workflow at meaningful batch launch,
-   outcome or interpretation boundaries. Combine Run references, Variant state,
-   metrics and provenance. Do not require a writer invocation per Run, poll or
-   lifecycle event. Preserve historical membership; deprecation alone does not
-   move a Run between `runs` and `attempts`, and it never belongs in both.
-4. **Interpret separately.** Compare eligible Variant results against the
-   Investigation's criteria. Cite `INV...`/`V...` in Findings and state confounds
-   in Limitations. Neither terminal status nor Run count implies `ANSWERED`.
-   Exclude `partial`/`unavailable` metrics from comparison; preserve original
-   measurements and request new evidence rather than inventing replacements.
+   outcome or interpretation boundaries. Combine Variant `runs`, declared plan
+   states and provenance. Do not require a writer invocation per Run, poll or
+   lifecycle event. `RUNNING`, `COMPLETED` and `FAILED` are derived from the Run
+   records and never written; deprecation keeps a Run listed and only removes
+   its values from the evidence.
+4. **Interpret separately.** Compare Variant results from the generated table
+   against the Investigation's criteria. Cite `INV...`/`V...` in Findings and
+   state confounds in Limitations. Neither terminal status nor Run count
+   implies `ANSWERED`. Report frozen, mixed and plan-differing cells as such;
+   preserve original measurements and request new evidence rather than
+   inventing replacements. On `RESULT_SCHEMA_MISMATCH`, report the listed files
+   and the upgrade command to the user before anything else.
 5. **Replan or resolve.** Preserve completed/failed history, record why work is
    dropped, and ask when research intent materially changes. Present the
    evidenced Conclusion and obtain explicit approval before resolution. Routine
@@ -78,13 +87,11 @@ scripts/configuration and diagnose the reason for rejection, then launch fresh
 Runs for the same conditions. Predeclare genuinely changed conditions instead
 of disguising them as a retry.
 
-Batch the new Run references, verified metrics and actual provenance back to
-the Variant while preserving old evidence. Analyze only the new eligible
-evidence, not historical deprecated measurements. New results should eventually
-qualify independently of retained history; current projections cannot yet
-separate their lineage, so disclose conservative `partial`/`unavailable` labels
-instead of deleting history, restoring rejected Runs or claiming automatic
-recovery.
+Batch the new Run references and actual provenance back to the Variant while
+preserving old Runs in its `runs`; the new Runs' values are recorded in their
+own `result.csv`. Deprecated Runs contribute no value, so the table already
+shows only the new evidence; never delete history or restore rejected Runs to
+change it.
 
 ## Propagate an approved decision
 
@@ -103,5 +110,7 @@ still inconsistent.
 
 Use lint for structural concerns and after source edits, not to decide research
 completion. Preserve unsupported sections and managed pointers; never copy
-rendered YAML projections back into README. The writer reference owns detailed
-schema/status rules; do not duplicate them here.
+rendered projections back into README. When a command reports
+`RESULT_FILE_IGNORED`, show the user the deciding rule and the fix command and
+change an ignore file only after the user agrees. The writer reference owns
+detailed schema/status rules; do not duplicate them here.

@@ -44,10 +44,11 @@ the ownership, delegation, runtime, responsive-design, and validation contract.
 ## Evidence and frontmatter
 
 Work from Experiment-level evidence: Experiment README prose, the bundle YAML
-files and their eligibility-aware Results projections, hypotheses, wiki pages
-when that surface exists, existing Reports, and code-review docs. Cite stable
-Experiment, Investigation, Variant, and Run IDs, and distinguish selected
-`runs` from `attempts`.
+files, `experiment.json` and the generated Results table
+(`memon experiment results table`), hypotheses, wiki pages when that surface
+exists, existing Reports, and code-review docs. Cite stable Experiment,
+Investigation, Variant, and Run IDs, and distinguish a Variant's evidence `runs`
+from its other Runs (`attempts` in the table output).
 
 Open a Run record, log, or artifact only when the theme is genuinely about that
 execution and the Experiment documents do not carry the fact. Routine scraping
@@ -55,8 +56,10 @@ of Run documents to assemble a narrative is not this skill's job — an
 Experiment-level gap is reported, not backfilled from logs.
 
 Never present withdrawn evidence as current: a deprecated Run is not a source,
-and a `partial`/`unavailable` metric is reported as unavailable, never as a
-number (`../PREFLIGHT.md`). Journal history is not evidence.
+its values never reach the Results table, and frozen, mixed or plan-differing
+cells are reported with their label (`../PREFLIGHT.md`). Read results through
+the table, never from a Run's `result.csv` or the generated summaries under
+`.memon/index/`. Journal history is not evidence.
 
 The `.md` file or bundle `README.md` carries:
 

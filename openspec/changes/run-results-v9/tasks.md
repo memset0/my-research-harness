@@ -53,7 +53,7 @@
 
 ## 10. Skills
 
-- [ ] 10.1 Update `memon-write-experiment-doc` and its bundle reference, `memon-run-experiment`, `memon-write-script`, `memon-read-results`, `memon-propose`, `memon-drive` and `memon-migrate-fs` per the `memon-skills` delta (English bodies, Chinese dialogue in block quotes; `RESULT_FILE_IGNORED` relayed with its fix command and ignore files changed only with the user's consent; the planned allow rules presented with the migration plan); verify the skills build (`component-docs.mjs --check`), the skills tests, and a grep that no bundled skill tells agents to edit `results.yaml` or `.memon/index/results/`.
+- [x] 10.1 Update `memon-write-experiment-doc` and its bundle reference, `memon-run-experiment`, `memon-write-script`, `memon-read-results`, `memon-propose`, `memon-drive` and `memon-migrate-fs` per the `memon-skills` delta (English bodies, Chinese dialogue in block quotes; `RESULT_FILE_IGNORED` relayed with its fix command and ignore files changed only with the user's consent; the planned allow rules presented with the migration plan); verify the skills build (`component-docs.mjs --check`), the skills tests, and a grep that no bundled skill tells agents to edit `results.yaml` or `.memon/index/results/`.
 
 ## 11. Migration v8 → v9
 

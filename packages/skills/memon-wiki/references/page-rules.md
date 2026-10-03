@@ -26,7 +26,7 @@ Unknown keys are preserved verbatim on every write; do not strip a key you do
 not recognise.
 
 **Source forms** accepted in `sources`: `E<NNNN>` or `E<NNNN>-slug`,
-`E<NNNN>/V<NNNN>` (a Variant row in that Experiment's `results.yaml`),
+`E<NNNN>/V<NNNN>` (a Variant declared in that Experiment's `experiment.json`),
 `H<NNNN>`, `W<NNNN>`, and a run directory base name
 (`zero-snr-eval-260502-110000`). The Variant form is the preferred citation
 for a `finding` — it addresses the exact Results row. CLI operations preserve

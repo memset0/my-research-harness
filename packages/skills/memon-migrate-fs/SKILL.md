@@ -43,8 +43,8 @@ triggered some other skill is not migration consent.
 ## Git and local staging preflight
 
 For Git projects, require a clean tracked and untracked working tree. Never
-auto-stash or discard work: show dirty paths and stop. For FS v6→v7 and
-v7→v8 only, an operator may explicitly authorize scoped dirty-tree migration. Record that
+auto-stash or discard work: show dirty paths and stop. For FS v6→v7, v7→v8
+and v8→v9 only, an operator may explicitly authorize scoped dirty-tree migration. Record that
 approval, use the fingerprinted plan and external preimage backup, and preserve
 all unrelated edits. Never infer this authorization from a generic migration
 request. Explicitly obtain approval before dropping Run-only ownership claims;
@@ -132,6 +132,43 @@ edit `run_dirs`, commit that file separately and run `memon index rebuild`
 after the migration. `rollback` with the backup directory reverts the migration
 commit and restores the index.
 
+FS v8→v9 (`packages/core/migrations/v8-to-v9.md`) is mechanical: it splits
+every `results.yaml` into the description file `experiment.json` and per-Run
+`result.csv` files, rewrites the Results pointer, rebuilds the index as
+`index_version: 2` with the Results summaries and advances the marker. Its
+executor is `scripts/migrate-v8-to-v9.mjs` from the reviewed memon checkout.
+Before planning, confirm central runs 9.x and every CLI node writing to the
+project runs a 9.x release (`memon update`). Take the per-Run sidecar file name
+only from the operator (recorded in `LOCAL.md`) and pass it as
+`--sidecar-name`; never guess or search for one. `plan` is the read-only dry
+run (plan file outside the project); show the user its `experiments`, file
+counts, conversion `counts`, every `notices` code with its locations, the
+`expectedLintErrors`, every blocker with its choices and — in Git mode — every
+`allowRules` entry: the target ignore file, the exact lines to append, the
+ignore rules they override and the Run directories they cover. Ignored result
+files never block the step; the appended allow rules are part of the reviewed
+plan, the only ignore-file edit memon makes. Record the user's choice for each
+blocker in a resolutions JSON file and plan again with `--resolutions`; apply
+only a plan with no `unresolved` blocker and the user's explicit approval of
+the whole plan, allow rules included:
+
+> 迁移计划会在 `.gitignore` 末尾追加两行：`# memon: track per-Run result files (FS v9)` 和
+> `!/logs/*/result.csv`，用来覆盖 `.gitignore:1:logs/*/*`，涵盖 `logs/*` 下的 Run 目录；
+> 它们会随迁移一起提交、回滚时一起撤销。还有 1 个阻塞项需要你选择（deprecate 或 adopt）。
+> 你确认整个计划后我再执行 apply。
+
+`apply` takes the plan plus a new external backup directory, writes, rebuilds,
+verifies, writes the marker last and, in Git mode, itself commits exactly the
+touched paths (ignore files included) with
+`chore(memon): migrate FS convention v8 -> v9` — do not make a second commit. Then run `verify` and the guide's `bash` Verification block.
+Submit the changed `docs/experiments/E<NNNN>-<slug>/experiment.json` and
+`README.md` paths once with `journal submit --files` after verification; Run
+READMEs, `result.csv` files, ignore files, the marker and the removed
+`results.yaml` are outside its scope. Converted sidecars stay in place; their
+deletion is a separate commit the user reviews. `rollback` with the backup
+directory reverts the migration commit, which restores every `results.yaml` and
+removes the appended allow rules, and restores the index.
+
 ## Review-required semantic step
 
 v5→v6 uses this workflow; any future guide may opt in.
@@ -216,6 +253,12 @@ global marker changes. Where semantic judgment is required the script builds the
 mechanical skeleton and the review workflow handles meaning. Never upgrade YAML
 silently while reading it.
 
+One Experiment's result schema (`experiment_schema_version` in
+`experiment.json` and every member `result.csv`) is not an FS convention step:
+it changes through a reviewed transform under that Experiment's
+`schema-upgrades/` and `memon experiment schema upgrade`, owned by
+`memon-write-experiment-doc`, never by this skill.
+
 ## Final report
 
 Report the version chain, approved/published Experiment count, verification
@@ -234,6 +277,8 @@ removes it.
 - Never use `git add .` or `git add -A`.
 - Never auto-stash, reset, discard, or delete user work.
 - Never commit `.memon/migrations/` or anything under `.memon/index/`.
+- Never edit an ignore file outside the reviewed plan's allow rules, and never
+  apply allow rules the user has not seen.
 - Never create `.memon/project.yml` as part of a migration.
 - Never infer that parser success means a semantic migration is correct.
 - Never rewrite, relocate, or delete a legacy `docs/journal.md`; leave it

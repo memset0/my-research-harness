@@ -24,9 +24,11 @@ Always pass the intended `--project-root`, not an ambient config selection.
 
 memon commands maintain the derived index `.memon/index/` automatically; it is
 a rebuildable cache, never a source of truth and not part of this preflight.
-Never read, create, edit, delete or commit anything under it. A direct Run
-README edit (for example a launcher rewriting `status`) needs no index step;
-only when the user reports a list that disagrees with the files, suggest
+Never read, create, edit, delete or commit anything under it — including the
+generated Results summaries in `.memon/index/results/`; read Variant tables only
+through `memon experiment results table` or `summary`. A direct Run README or
+`result.csv` edit needs no index step; only when the user reports a list that
+disagrees with the files, suggest
 `memon --project-root . --format json index status --verify`.
 
 Run directories live where the project's effective `run_dirs` say: by default
@@ -51,27 +53,44 @@ means false). It is independent of status/archive, stops no process and deletes
 nothing. Deprecation requires the user's decision, not a desire to clear a check.
 
 Deprecation withdraws result evidence, not Variant membership or execution
-reference value. Keep the Run associated with its original Variant and in its
-existing history/list; do not move it to `attempts` merely to exclude it.
-Execution/recovery work may explicitly inspect its scripts, commands,
-environment, logs and artifacts to prepare a replacement. Check and fix the
-reason for rejection rather than copying it blindly. This permission does not
-relax propose's higher-layer reading boundary.
+reference value. Keep the Run listed in its Variant's `runs` in
+`experiment.json`; never remove it or move it to another Variant merely to
+exclude it. Execution/recovery work may explicitly inspect its scripts,
+commands, environment, logs and artifacts to prepare a replacement. Check and
+fix the reason for rejection rather than copying it blindly. This permission
+does not relax propose's higher-layer reading boundary.
 
 Run collections exclude deprecated records by default. Explicit inspection uses
 `--include-deprecated`, `--deprecated-only`, or a Run id; archive flags remain
-separate. Results expose `metricsValidity` (`valid`, `partial`, `unavailable`)
-and affected references, derived at read time. Do not compare affected metrics
-as valid evidence, mirror eligibility into another ledger, rewrite old
-measurements automatically, or invent replacement numbers. Metadata read errors
-must remain explicit, never become a fabricated `valid` result.
+separate. The generated Results table derives each Variant's evidence from its
+listed Runs that are `FINISHED` and not deprecated; a deprecated Run's values
+never reach it, and the Run appears among the Variant's other Runs. Do not
+compare withdrawn values from memory or other documents, mirror deprecation into
+another ledger, rewrite old measurements, or invent replacement numbers. Verified
+replacement Runs of the same Variant become evidence on their own while the old
+Runs stay listed and deprecated.
 
-Historical membership is not the evidence set for every future measurement.
-New, verified results from non-deprecated replacement Runs should be able to
-become valid while old Runs remain associated and deprecated. The current
-projection conservatively checks all `Variant.runs` and cannot yet distinguish
-that new measurement lineage; report this limitation, never remove history or
-restore a bad Run merely to obtain `valid`.
+## Results files
+
+An Experiment's columns and Variants live in `experiment.json`; each Run's
+measurements live in its own tracked `result.csv`, written through
+`memon run result set` (`memon-write-experiment-doc` owns the rules). Two
+reported conditions need the user, never a silent fix:
+
+- `RESULT_FILE_IGNORED`: the result file was written, but the project's ignore
+  rules exclude it. Show the deciding rule and the printed command; edit the
+  ignore file only after the user agrees, and leave the commit to the user.
+
+  > `logs/a-260901-090000/result.csv` 已写入，但被 `.gitignore:1:logs/*/*` 忽略，Git 不会跟踪它。
+  > 修复方法是在 `.gitignore` 末尾追加 `!/logs/*/result.csv`（命令已列出）。要我现在追加吗？
+
+- `RESULT_SCHEMA_MISMATCH`: a member `result.csv` records another
+  `experiment_schema_version` than `experiment.json`. Report every listed file
+  with its version and the exact upgrade command; never edit result files one
+  by one.
+
+  > E0001-foo 的 Results 暂时读不出：`logs/b-260901-100000/result.csv` 记录的是版本 1，`experiment.json` 是版本 2。
+  > 需要先运行 `memon experiment schema upgrade E0001-foo --to 2`（我会先做 dry run 给你看改动）。要继续吗？
 
 ## Document trust
 
