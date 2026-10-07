@@ -9,6 +9,12 @@ import { parseDocument } from 'yaml'
 // core; stubbing them keeps the settings tests hermetic.
 vi.mock('@memon/core', () => ({
   DEFAULT_FILE_ACCESS_OPTIONS: {
+    operationsPerSecond: 50,
+    operationBurst: 10,
+    bytesPerSecond: 16777216,
+    byteBurst: 67108864,
+    maxReadBytes: 16777216,
+    backgroundShare: 0.5,
     concurrency: 10,
     heartbeatMs: 4000,
     leaseMs: 12000,
@@ -38,6 +44,12 @@ import {
 } from './file-access-settings'
 
 const VALID_SETTINGS = {
+  operationsPerSecond: 50,
+  operationBurst: 10,
+  bytesPerSecond: 16777216,
+  byteBurst: 67108864,
+  maxReadBytes: 16777216,
+  backgroundShare: 0.5,
   concurrency: 6,
   heartbeatMs: 4000,
   leaseMs: 12000,
@@ -175,7 +187,7 @@ describe('saveFileAccessSettings', () => {
     const text = await fs.readFile(configPath, 'utf8')
     expect(text).toContain('# top comment')
     expect(text).toContain('projects: []')
-    expect(text).toMatch(/fileAccess:\n {2}concurrency: 6/)
+    expect(text).toMatch(/fileAccess:\n[\s\S]* {2}concurrency: 6/)
     expect((await readPendingFileAccessSettings(configPath)).pending).toEqual(VALID_SETTINGS)
   })
 

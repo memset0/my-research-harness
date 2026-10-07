@@ -5,30 +5,31 @@ import type { ExperimentDeleteResponse, ExperimentDocDetail } from '@/lib/dto/ex
 import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../../lib/server/runtime'
 import { standaloneExperiment } from '../../../../lib/server/standalone-dto'
+import { standaloneError } from '../../../../lib/server/standalone-error'
 import {
   deleteStandaloneExperiment,
   standaloneExperimentMutationError,
 } from '../../../../lib/server/standalone-experiment-mutation-route'
+import { withStandaloneRequest } from '../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
+import { standaloneExperimentTarget } from '../../../../lib/server/standalone-target'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function scopedGET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await params
-  const cached = runtime.experiments.get(id)
-  if (!cached) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
-      { status: 404 },
-    )
-  }
-  const project = runtime.projectFor(cached.path)
-  if (!project) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'owning project not found' } },
-      { status: 404 },
-    )
+  let project: (typeof runtime.config.projects)[number]
+  try {
+    project = (
+      await standaloneExperimentTarget(
+        runtime.config,
+        id,
+        new URL(req.url).searchParams.get('project'),
+      )
+    ).project
+  } catch (error) {
+    return standaloneError(error)
   }
   try {
     const portable = BackendExperimentResponseSchema.parse(
@@ -49,7 +50,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function scopedDELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await params
   const force = new URL(req.url).searchParams.get('force') === 'true'
@@ -64,3 +65,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     )
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)
+export const DELETE = withStandaloneRequest(scopedDELETE)

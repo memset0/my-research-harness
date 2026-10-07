@@ -18,7 +18,6 @@
 // absent.
 
 import type { Stats } from 'node:fs'
-import { join } from 'node:path'
 import {
   type BackendResultsSummaryError,
   EXPERIMENT_DESCRIPTION_FILE,
@@ -46,6 +45,7 @@ import {
   toBackendResultsErrorResponse,
   writeResultsSummary,
 } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import { indexedDeclaredRun, type RunSummary, runSummaryKey } from './indexed-runs.js'
 import { withAutomaticProjectFileContext } from './project-file-context.js'
 import { projectReadIndex, statObservation } from './read-index.js'

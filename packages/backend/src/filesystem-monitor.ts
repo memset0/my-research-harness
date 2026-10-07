@@ -1,15 +1,17 @@
-import { promises as fs } from 'node:fs'
-import { basename, join } from 'node:path'
 import {
   BackendCodeReviewsResponseSchema,
   BackendReportsResponseSchema,
   discoverExperiments,
   discoverRuns,
   discoverWikiPages,
+  projectFs as fs,
   type ProjectConfig,
   ProjectNameSchema,
+  projectSourceGroup,
   ResourceIdSchema,
+  withProjectFileContext,
 } from '@memon/core'
+import { basename, join } from '@memon/file-protocol/paths'
 import { FilesystemDocumentService } from './document-service.js'
 import type { BackendEventStream } from './event-stream.js'
 
@@ -202,6 +204,21 @@ export class BackendFilesystemMonitor implements BackendFilesystemMonitorControl
 }
 
 export async function scanBackendProject(project: ProjectConfig): Promise<BackendMonitorSnapshot> {
+  return withProjectFileContext(
+    {
+      root: project.root,
+      storage: project.storage,
+      storageGroup: projectSourceGroup(project),
+      cachePolicy: project.access?.cache,
+      persistentCache: project.persistentCache,
+      reason: 'automatic',
+      observationPolicy: 'fresh',
+      readOnly: true,
+    },
+    () => scanProject(project),
+  )
+}
+async function scanProject(project: ProjectConfig): Promise<BackendMonitorSnapshot> {
   ProjectNameSchema.parse(project.name)
   const documents = new FilesystemDocumentService([project])
   const [runPaths, experimentResult, reports, codeReviews, wikiPages] = await Promise.all([

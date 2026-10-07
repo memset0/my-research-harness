@@ -1,4 +1,4 @@
-import { basename } from 'node:path'
+import { basename } from '@memon/file-protocol/paths'
 import { EXPERIMENT_REF_REGEX, isRunDirName, isRunPath } from '../ids.js'
 // Evidence resolution: `sources` -> project artifacts -> staleness + backlinks.
 //

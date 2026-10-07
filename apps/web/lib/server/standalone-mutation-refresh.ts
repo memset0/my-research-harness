@@ -1,88 +1,42 @@
 import 'server-only'
 
-import { join } from 'node:path'
-import {
-  type MutationFs,
-  projectFs,
-  readDocumentLock,
-  readExperimentDoc,
-  readRunDir,
-} from '@memon/core'
+import { invalidateProjectFile, type MutationFs, projectFs, readDocumentLock } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import type { Runtime } from './runtime'
+
+function invalidate(runtime: Runtime, projectName: string): void {
+  const project = runtime.config.projects.find((entry) => entry.name === projectName)
+  if (project) invalidateProjectFile(project.root)
+}
 
 export async function refreshStandaloneRun(
   runtime: Runtime,
   projectName: string,
-  id: string,
+  _id: string,
 ): Promise<void> {
-  const current = runtime.index.get(id)
-  if (!current) return
-  try {
-    const updated = await readRunDir(current.path, projectName)
-    const parentExperimentId = runtime.withDeclaredParent(updated)
-    runtime.index.set(updated)
-    runtime.events.emit('run-change', {
-      type: 'set',
-      id: updated.id,
-      experiment: updated,
-      parentExperimentId,
-    })
-  } catch {
-    // The shared service already committed. Runtime refresh is best-effort.
-  }
+  invalidate(runtime, projectName)
 }
-
 export async function refreshStandaloneExperiment(
   runtime: Runtime,
   projectName: string,
-  id: string,
+  _id: string,
 ): Promise<void> {
-  const project = runtime.config.projects.find((candidate) => candidate.name === projectName)
-  if (!project) return
-  try {
-    const updated = await readExperimentDoc(project.root, projectName, id)
-    if (!updated) return
-    runtime.experiments.set(id, updated)
-    await runtime.recomputeAnomalies(projectName)
-    runtime.events.emit('experiment-change', { type: 'set', id, experiment: updated })
-  } catch {
-    // The shared service already committed. Runtime refresh is best-effort.
-  }
+  invalidate(runtime, projectName)
 }
-
 export async function refreshStandaloneJournal(
   runtime: Runtime,
   projectName: string,
 ): Promise<void> {
-  const journalPath = runtime.journalPath as ((project: string) => string | null) | undefined
-  const project = runtime.config.projects.find((candidate) => candidate.name === projectName)
-  const path =
-    journalPath?.call(runtime, projectName) ??
-    (project ? join(project.root, 'docs', 'journal.md') : null)
-  if (!path) return
-  const journalCache = runtime.journalCache as typeof runtime.journalCache | undefined
-  const poller = runtime.poller as typeof runtime.poller | undefined
-  await journalCache?.refresh(path).catch(() => undefined)
-  if (journalCache && poller) journalCache.markStale(path, poller)
-  runtime.events.emit('journal-change', { project: projectName })
+  invalidate(runtime, projectName)
 }
-
 export async function refreshStandaloneLifecycle(
   runtime: Runtime,
   projectName: string,
-  experimentId: string,
-  runIds: readonly string[],
-  operation: 'set' | 'delete',
+  _experimentId: string,
+  _runIds: readonly string[],
+  _operation: 'set' | 'delete',
 ): Promise<void> {
-  if (operation === 'delete') {
-    runtime.experiments.delete(experimentId)
-    await runtime.recomputeAnomalies(projectName)
-    runtime.events.emit('experiment-change', { type: 'delete', id: experimentId })
-  } else {
-    await refreshStandaloneExperiment(runtime, projectName, experimentId)
-  }
-  await Promise.all(runIds.map((id) => refreshStandaloneRun(runtime, projectName, id)))
-  await refreshStandaloneJournal(runtime, projectName)
+  invalidate(runtime, projectName)
 }
 
 export function projectDocumentPath(

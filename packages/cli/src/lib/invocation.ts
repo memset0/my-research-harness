@@ -34,7 +34,9 @@
 // already made.
 
 import {
+  acquireFileWriterLock,
   beginJournalInvocation,
+  type FileWriterLock,
   type JournalInvocationHandle,
   type JournalInvocationTerminalOutcome,
   type JournalRecordingFailure,
@@ -193,6 +195,7 @@ export function classifyCliCommand(
 }
 
 let handle: JournalInvocationHandle | null = null
+let writerLock: FileWriterLock | null = null
 let signalHandlersInstalled = false
 
 export interface BeginCliInvocationInput {
@@ -227,11 +230,22 @@ export async function beginCliInvocation(input: BeginCliInvocationInput): Promis
     )
     return
   }
-  if (ledgerClass !== 'project') return
+  const cacheWriter = [
+    'index compact',
+    'index rebuild',
+    'project init',
+    'experiment results rebuild',
+    'experiment results table',
+    'experiment results summary',
+  ].includes(path)
+  if (ledgerClass !== 'project' && !cacheWriter) return
 
   const root = await resolveLedgerRoot(input, options)
   if (root === null) return
 
+  installProcessGuards()
+  writerLock = await acquireFileWriterLock(root)
+  if (ledgerClass !== 'project') return
   handle = await beginJournalInvocation(
     root,
     {
@@ -256,8 +270,13 @@ export async function beginCliInvocation(input: BeginCliInvocationInput): Promis
 export async function finishCliInvocation(): Promise<void> {
   // Keep the handle reachable for the process guards while the write is in
   // flight; the handle itself refuses a second terminal write.
-  await handle?.finish()
-  handle = null
+  try {
+    await handle?.finish()
+  } finally {
+    handle = null
+    writerLock?.release()
+    writerLock = null
+  }
 }
 
 /**
@@ -277,6 +296,8 @@ export function recordCliInvocationFailureSync(errorCode: string): void {
 /** Test seam: drop any ambient handle between cases. */
 export function resetCliInvocationForTest(): void {
   handle = null
+  writerLock?.release()
+  writerLock = null
 }
 
 // ---------- internals ----------
@@ -349,7 +370,12 @@ function installProcessGuards(): void {
   if (signalHandlersInstalled) return
   signalHandlersInstalled = true
   process.on('exit', () => {
-    handle?.finishSync('partial', 'INTERRUPTED')
+    try {
+      handle?.finishSync('partial', 'INTERRUPTED')
+    } finally {
+      writerLock?.release()
+      writerLock = null
+    }
   })
   for (const [signal, code] of [
     ['SIGINT', 130],

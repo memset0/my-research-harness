@@ -9,7 +9,6 @@
 // filesystem access goes through `projectFs`, so scheduling, containment and
 // cache invalidation are unchanged.
 
-import { join, relative, sep } from 'node:path'
 import {
   createExperiment,
   declaredRunOwner,
@@ -43,6 +42,8 @@ import {
   writeExperimentReadme,
   writeRunReadme,
 } from '@memon/core'
+import { isFileAccessError } from '@memon/file-protocol'
+import { join, relative, sep } from '@memon/file-protocol/paths'
 
 /** `projectFs` is an `fs/promises`-compatible facade; it satisfies the port. */
 const port = fs as unknown as MutationFs
@@ -695,6 +696,8 @@ function lockOf(expectedMtime?: number, expectedHash?: string) {
  * wire has always carried. Anything else passes through unchanged.
  */
 function toBackendError(error: unknown): unknown {
+  if (isFileAccessError(error) && error.code === 'CONFLICT')
+    return new BackendMutationError('CONFLICT', 'Document changed')
   if (!(error instanceof MutationError)) return error
   switch (error.code) {
     case 'CONFLICT':

@@ -7,7 +7,10 @@
 // file is removed when the write or rename fails.
 
 import type { promises as nodeFs } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { FileAccessError } from '@memon/file-protocol'
+import { basename, dirname, isFileURI, join } from '@memon/file-protocol/paths'
+import { withFileWriterLock } from './file-writer-lock.js'
+import { getProjectFileContext } from './project-file-context.js'
 import { projectFs } from './project-file-store.js'
 
 /** The fs/promises subset `writeFileAtomic` needs. */
@@ -38,6 +41,25 @@ export async function writeFileAtomic(
   path: string,
   data: string | Uint8Array,
   opts: WriteFileAtomicOptions = {},
+): Promise<void> {
+  const context = getProjectFileContext()
+  if (context && (opts.fs === undefined || opts.fs === projectFs)) {
+    if (isFileURI(path)) {
+      if (opts.fsync) throw new FileAccessError('CAPABILITY_UNAVAILABLE')
+      if (opts.mkdir) await projectFs.mkdir(dirname(path), { recursive: true })
+      await projectFs.writeFile(path, data, {
+        ...(opts.mode === undefined ? {} : { mode: opts.mode }),
+      })
+      return
+    }
+    return withFileWriterLock(context.root, () => replaceFile(path, data, opts))
+  }
+  return replaceFile(path, data, opts)
+}
+async function replaceFile(
+  path: string,
+  data: string | Uint8Array,
+  opts: WriteFileAtomicOptions,
 ): Promise<void> {
   const fs = opts.fs ?? (projectFs as unknown as AtomicWriteFs)
   if (opts.mkdir === true) await fs.mkdir(dirname(path), { recursive: true })

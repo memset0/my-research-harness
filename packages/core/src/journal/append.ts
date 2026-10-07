@@ -15,9 +15,9 @@
 // subsequent reads of the legacy file have a deterministic shape. The cursor is
 // retired: no supported code path writes a value into it.
 
-import { promises as fs } from 'node:fs'
 import { writeFileAtomic } from '../atomic-write.js'
 import { splitFrontmatter } from '../frontmatter.js'
+import { projectFs as fs } from '../project-file-store.js'
 import type { JournalEvent, JournalEventTag } from '../types.js'
 import { captureLegacyJournalEvent } from './invocation.js'
 import { formatJournalEvent } from './serialize.js'

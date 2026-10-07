@@ -156,6 +156,8 @@ function readSeries(metrics: FileOperationMetrics, origin: 'human' | 'automatic'
 
 beforeEach(() => {
   freshStore()
+  // Saturation tests isolate the queue/concurrency boundary; rate limits have their own test clock cases.
+  configureProjectFileStore({ operationBurst: 10000, operationsPerSecond: 1000000 })
   vi.useFakeTimers({ toFake: ['Date', 'performance'] })
   io = new FakeIo()
   io.install()
@@ -320,6 +322,23 @@ describe('human promotion and anti-starvation', () => {
 })
 
 describe('backoff', () => {
+  it('starts the reuse deadline when a slow source operation completes', async () => {
+    io.files.set(at('slow.md'), 'body')
+    const release = io.block(at('slow.md'))
+    const pending = read(automatic, 'slow.md')
+    await flush()
+    advance(300_000)
+    release()
+    expect(await pending).toBe('body')
+    advance(299_999)
+    await read(automatic, 'slow.md')
+    await flush()
+    expect(io.calls('readFile', at('slow.md'))).toBe(1)
+    advance(1)
+    await read(automatic, 'slow.md')
+    await flush()
+    expect(io.calls('readFile', at('slow.md'))).toBe(2)
+  })
   it('doubles unchanged automatic intervals to the cap and resets on manual refresh', async () => {
     io.files.set(at('doc.md'), 'body')
     const reads = () => io.calls('readFile', at('doc.md'))
@@ -492,10 +511,11 @@ describe('storage loss', () => {
     expect(first.size).toBe(3)
     const verifiedAt = getProjectFileStatus(ROOT, 'tab-present').oldestVerifiedAt
     io.failures.set(`stat:${at('present')}`, 'ETIMEDOUT')
-    // The manual refresh answers from cache; its verification times out.
-    const retained = await stat({ ...page, reason: 'manual' }, 'present')
+    // Explicit revalidation reports failure; ordinary reuse retains the successful observation.
+    await expect(stat({ ...page, reason: 'manual' }, 'present')).rejects.toMatchObject({
+      code: 'ETIMEDOUT',
+    })
     await flush()
-    expect(retained.size).toBe(3)
     expect(io.calls('stat', at('present'))).toBe(2)
     expect(getProjectFileStatus(ROOT, 'tab-present')).toMatchObject({
       error: 'ETIMEDOUT',
@@ -516,7 +536,8 @@ describe('storage loss', () => {
     // Unmounted: the mountpoint reverts to an ordinary local directory.
     mountTable.mockResolvedValue([rootfs])
     advance(1_000) // mount-table snapshot TTL
-    expect(await read(manual, 'doc.md')).toBe('body')
+    await expect(read(manual, 'doc.md')).rejects.toMatchObject({ code: 'ENXIO' })
+    expect(await read(automatic, 'doc.md')).toBe('body')
     await flush()
     const lost = getProjectFileStatus(ROOT)
     expect(lost.error).toBe('ENXIO')

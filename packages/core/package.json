@@ -33,12 +33,14 @@
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5",
     "yaml": "^2.9.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@memon/file-protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "@memon/test-utils": "workspace:*"
   }
 }

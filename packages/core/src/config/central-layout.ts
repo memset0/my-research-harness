@@ -8,7 +8,7 @@
 // project root), ready to be copied into `.memon/project.yml`.
 
 import { promises as fs } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, resolve } from '@memon/file-protocol/paths'
 import yaml from 'js-yaml'
 import type { CentralLayoutValues } from '../project-declaration/layout.js'
 import { PROJECT_LAYOUT_KEYS, ProjectConfigRawSchema } from '../schemas.js'
@@ -19,8 +19,8 @@ export interface CentralProjectLayout {
   configPath: string
   name: string
   host?: string
-  /** The entry's `root`, resolved against the configuration's directory. */
-  root: string
+  /** Native root when present; agent layout migration never invents a local root. */
+  root?: string
   /** Layout keys the entry sets (non-empty lists only). */
   layout: CentralLayoutValues
 }
@@ -90,7 +90,11 @@ export async function readCentralProjectLayout(options: {
     configPath,
     name: entry.name,
     ...(entry.host ? { host: entry.host } : {}),
-    root: isAbsolute(entry.root) ? entry.root : resolve(baseDir, entry.root),
+    ...(entry.access?.kind === 'agent'
+      ? {}
+      : {
+          root: isAbsolute(entry.root ?? '') ? entry.root! : resolve(baseDir, entry.root ?? ''),
+        }),
     layout,
   }
 }

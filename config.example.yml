@@ -35,7 +35,7 @@ projects:
 
 # ── host-qualified Projects (direct central role) ────────────────────
 # A Project MAY name the Host namespace it belongs to. Declaring `host:` on
-# every Project selects the central Web role and serves those Projects
+# any Project selects the central Web role and serves configured Projects
 # straight from this instance's filesystem — an ordinary directory or a mount
 # of another machine — with no peer memon service, service token, or
 # availability probe. Public routes, share scopes and `{host, project}`
@@ -61,10 +61,49 @@ projects:
 #         # identity_file: ./secrets/example_ed25519
 #         # known_hosts_file: ./secrets/known_hosts
 #
+# ── explicit file transport and cache policies ────────────────────────
+# New declarations use `access`, independently of command execution. Optional
+# access.source labels join projects sharing physical storage; storage_group is
+# the legacy spelling for the same budget group. Conflicting labels are refused.
+# Without a label, new authorities get separate opaque defaults. Do not
+# combine `access` with legacy `storage` or `persistent_cache` keys.
+# Each example below is an alternative project entry:
+#
+#   - { name: project-a, host: host-a, root: ./mock/project-a,
+#       access: { kind: filesystem, cache: none } }
+#   - { name: project-a, host: host-a, root: ./mock/project-a,
+#       access: { kind: filesystem, cache: memory }, storage_group: storage-a }
+#   - { name: project-a, host: host-a, root: ./mock/project-a,
+#       access: { kind: sshfs, cache: memory-disk }, storage_group: storage-a }
+#   - name: project-a
+#     host: host-a
+#     access:
+#       kind: agent
+#       connection: agent-a
+#       project: project-a
+#       source_identity: <exact identity from memon-file-agent --describe>
+#     storage_group: storage-a
+#     read_only: true
+#     # Agent entries have no local root. Business services stay central-side.
+#     # Git/Slurm require their own explicit `execution: { kind: ssh, ... }`.
+#
+# Agent connections are operator-only. Project/API DTOs contain no endpoint
+# or credentials. Certificate paths resolve beside the central config.
+# file_agents:
+#   agent-a:
+#     endpoint: https://localhost:3738
+#     ca_file: ./tls/source-ca.pem
+#     certificate_file: ./tls/central-client.pem
+#     key_file: ./tls/central-client-key.pem
+#
+# `sshfs` and `agent` default to memory-disk and require a local dump below.
+# Native/NFS memory caching uses `kind: filesystem, cache: memory` and never
+# writes observations to the disk tier. Legacy declarations remain supported.
+
 # Optional local dump for the bounded in-memory observation LRU. Relative paths
 # resolve beside the selected instance config. Keep the dump on LOCAL storage
-# and ignored by Git. Only explicitly opted-in SSHFS projects use it; ordinary
-# local projects remain memory-only.
+# and ignored by Git. SSHFS and agent projects with memory-disk use it;
+# native projects remain direct or use memory only.
 # file_cache:
 #   dump_path: ./.memon-cache/project-file-cache.dump
 #   dump_interval_seconds: 30
@@ -145,8 +184,8 @@ poll:
 # ── project file access (scheduled filesystem I/O) ───────────────────
 # Bounded, shared I/O for Project files: one logical task per operation, human
 # requests ahead of background checks, exponential backoff per path, and a
-# concurrency budget per `storage_group`. It applies to `storage: sshfs`
-# Projects only — a local Project reads its files directly. Every key is
+# concurrency budget per source/storage group. It applies to all
+# cached native/NFS, SSHFS and agent Projects. Uncached native reads remain direct. Every key is
 # optional and applies at startup only; the owner-only File access settings
 # page writes this block.
 # camelCase here is deliberate — the keys mirror the API payload exactly.
@@ -157,6 +196,12 @@ poll:
 # decides how often a file is actually re-checked.
 #
 # fileAccess:
+#   operationsPerSecond: 0     # 0 disables the optional rate limit
+#   operationBurst: 10
+#   bytesPerSecond: 0          # 0 disables the optional byte rate limit
+#   byteBurst: 67108864
+#   maxReadBytes: 16777216
+#   backgroundShare: 0.5
 #   concurrency: 10                 # actual operations per storage group
 #   heartbeatMs: 30000              # foreground attention heartbeat
 #   leaseMs: 90000                  # attention lease (>= 2 missed heartbeats)

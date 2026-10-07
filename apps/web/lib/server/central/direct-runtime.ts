@@ -37,11 +37,15 @@ import {
   type ActorContext,
   type BackendCapabilities,
   type Config,
+  configureFileAgentAdapters,
   type FileOperationReason,
   getProjectFileStatus,
   type ProjectConfig,
   parseFileOperationReason,
+  prepareProjectFileAccess,
+  projectSourceGroup,
   validateShare,
+  withFileWriterLock,
   withProjectFileContext,
 } from '@memon/core'
 import { isCollectionResourcePath } from '../../resource-policy'
@@ -295,6 +299,7 @@ const RESOURCE_ENVELOPES: Record<string, true> = {
   pages: true,
   report: true,
   reports: true,
+  codeReviews: true,
   document: true,
   documents: true,
   files: true,
@@ -349,7 +354,7 @@ function applyFreshnessHeaders(
 }
 
 /** Version the JSON payload and answer 304 when the caller already has it. */
-function jsonResourceResponse(
+export function jsonResourceResponse(
   request: Request,
   headers: Headers,
   body: string,
@@ -357,6 +362,20 @@ function jsonResourceResponse(
 ): Response {
   const version = semanticVersion(body)
   headers.set(RESOURCE_VERSION_HEADER, version)
+  try {
+    const document = JSON.parse(body) as Record<string, unknown>
+    if (
+      typeof document.content === 'string' &&
+      typeof document.mtime === 'number' &&
+      typeof document.hash === 'string' &&
+      /^[a-f0-9]{40}$/.test(document.hash)
+    ) {
+      headers.set('x-memon-document-mtime', String(document.mtime))
+      headers.set('x-memon-document-hash', document.hash)
+    }
+  } catch {
+    /* Non-document resources carry no edit-lock metadata. */
+  }
   if (request.headers.get(KNOWN_VERSION_HEADER) === version) {
     headers.delete('content-length')
     headers.delete('content-encoding')
@@ -366,11 +385,26 @@ function jsonResourceResponse(
   return new Response(body, { status, headers })
 }
 
+const RESOURCE_EPOCH = Symbol.for('memon.resource-instance-epoch.v1')
+export function resourceInstanceEpoch(): string {
+  const carrier = globalThis as unknown as { [RESOURCE_EPOCH]?: string }
+  carrier[RESOURCE_EPOCH] ??= randomUUID()
+  return carrier[RESOURCE_EPOCH]
+}
+
 function createRuntime(config: Config): DirectCentralRuntime {
+  configureFileAgentAdapters(config.fileAgents ?? {}, config.projects)
   const registry = new DirectProjectRegistry(config)
-  const instanceEpoch = randomUUID()
+  const instanceEpoch = resourceInstanceEpoch()
   const shareRoots = new Map<string, string>()
   const hosts = new Map<string, HostRuntime>()
+  const unqualifiedDocuments = new FilesystemDocumentService(
+    config.projects.filter((project) => project.host === undefined),
+    {
+      readPolicy: CENTRAL_READ_POLICY,
+      indexRole: 'central',
+    },
+  )
 
   const validateProjectShare = async (
     host: string,
@@ -379,7 +413,19 @@ function createRuntime(config: Config): DirectCentralRuntime {
   ): Promise<boolean> => {
     const root = shareRoots.get(`${host}/${project}`)
     if (root === undefined) return false
-    return (await validateShare(root, token).catch(() => null)) !== null
+    const configured = registry.resolve(host, project)
+    if (!configured) return false
+    return withProjectFileContext(
+      {
+        root,
+        storage: configured.storage,
+        cachePolicy: configured.access?.cache,
+        reason: 'write',
+        readOnly: true,
+        persistentCache: false,
+      },
+      async () => (await validateShare(root, token).catch(() => null)) !== null,
+    )
   }
 
   for (const { host, projects } of registry.listHosts()) {
@@ -406,21 +452,36 @@ function createRuntime(config: Config): DirectCentralRuntime {
     readJsonResource: async (selector, read) => {
       const resolved = registry.resolveByName(selector.project, selector.host ?? undefined)
       const hostRuntime = resolved ? hosts.get(resolved.host) : undefined
-      if (!resolved || !hostRuntime) return null
+      const unqualified =
+        selector.host == null
+          ? config.projects.filter(
+              (entry) => entry.host === undefined && entry.name === selector.project,
+            )
+          : []
+      const project = unqualified.length === 1 ? unqualified[0] : resolved?.project
+      if (!project) return null
+      const documents =
+        project === resolved?.project
+          ? (hostRuntime?.documents ?? unqualifiedDocuments)
+          : unqualifiedDocuments
       const attentionId = requestAttention(selector.request)
-      const project = resolved.project
       return withProjectFileContext(
         {
           root: project.root,
-          storageGroup: project.storageGroup ?? project.name,
+          storageGroup: projectSourceGroup(project),
           storage: project.storage,
+          ...(project.access ? { cachePolicy: project.access.cache } : {}),
+          ...(project.access?.kind === 'agent'
+            ? { sourceIdentity: project.access.sourceIdentity }
+            : {}),
           reason: requestReason(selector.request, new URL(selector.request.url).pathname),
           readOnly: project.readOnly === true,
           persistentCache: project.persistentCache === true,
           ...(attentionId ? { attentionId } : {}),
         },
         async () => {
-          const payload = await read(hostRuntime.documents)
+          await prepareProjectFileAccess()
+          const payload = await read(documents)
           const headers = new Headers({
             'cache-control': 'no-store',
             'content-type': 'application/json; charset=utf-8',
@@ -488,14 +549,23 @@ function createRuntime(config: Config): DirectCentralRuntime {
       return withProjectFileContext(
         {
           root: project.root,
-          storageGroup: project.storageGroup ?? project.name,
+          storageGroup: projectSourceGroup(project),
           storage: project.storage,
+          ...(project.access ? { cachePolicy: project.access.cache } : {}),
+          ...(project.access?.kind === 'agent'
+            ? { sourceIdentity: project.access.sourceIdentity }
+            : {}),
           reason: requestReason(request, url.pathname),
           readOnly: project.readOnly === true,
           persistentCache: project.persistentCache === true,
           ...(attentionId ? { attentionId } : {}),
         },
-        execute,
+        async () => {
+          await prepareProjectFileAccess()
+          return ['GET', 'HEAD', 'OPTIONS'].includes(method)
+            ? execute()
+            : withFileWriterLock(project.root, execute)
+        },
       )
     },
   }

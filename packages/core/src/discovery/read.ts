@@ -9,7 +9,7 @@
 //
 // hasReadme=false is the signal for "no README" — frontend renders a grayed-out card.
 
-import { basename, join } from 'node:path'
+import { basename, join } from '@memon/file-protocol/paths'
 import { projectFs as fs } from '../project-file-store.js'
 import { parseReadme } from '../readme/parse.js'
 import { parseTimestampFromRunDir } from '../time.js'

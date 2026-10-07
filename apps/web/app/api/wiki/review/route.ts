@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../../lib/server/standalone-request'
 // GET /api/wiki/review?project=NAME
 //
 // The wiki-commit log, oldest first, with each commit's verification mark and
@@ -6,20 +7,33 @@
 // `.memon/wiki-review.csv` / wiki content changes — never by this request.
 // A project outside a git worktree has no review log at all: 404.
 
+import { BackendWikiReviewResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { WikiReviewResponse } from '@/lib/dto/wiki'
 import { getRuntime } from '../../../../lib/server/runtime'
+import { standaloneServices } from '../../../../lib/server/standalone-services'
 import { wikiError, wikiProjectTarget } from '../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const runtime = await getRuntime()
   const target = wikiProjectTarget(runtime, new URL(request.url).searchParams)
   if ('error' in target) return target.error
-  const log = runtime.wikiCache.getReviewLog(target.project)
+  const log = BackendWikiReviewResponseSchema.parse(
+    await standaloneServices(runtime.config).documents.wikiReviewLog(target.project),
+  )
   if (!log) {
     return wikiError(404, 'NOT_FOUND', `project "${target.project}" is not a git worktree`)
   }
-  return NextResponse.json(log satisfies WikiReviewResponse)
+  return NextResponse.json({
+    ...log,
+    commits: log.commits.map((commit) => ({
+      ...commit,
+      verifiedAt: commit.verifiedAt ?? null,
+      note: commit.note ?? null,
+    })),
+  } satisfies WikiReviewResponse)
 }
+
+export const GET = withStandaloneRequest(scopedGET)

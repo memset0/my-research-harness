@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../../lib/server/standalone-request'
 // GET /api/log/stream — legacy absolute-path adapter over shared SSE polling.
 
 import { BackendStreamServiceError } from '@memon/backend'
@@ -9,7 +10,7 @@ import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const path = new URL(request.url).searchParams.get('path')
   if (!path) {
     return NextResponse.json(
@@ -72,3 +73,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'log stream failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

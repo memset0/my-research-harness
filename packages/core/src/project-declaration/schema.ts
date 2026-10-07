@@ -17,7 +17,7 @@
 // version or new optional keys in a later change, never by tolerating unknown
 // keys.
 
-import { isAbsolute, posix } from 'node:path'
+import { isAbsolute, posix } from '@memon/file-protocol/paths'
 import { PROJECT_LAYOUT_KEYS, ProjectLayoutRawSchema } from '../schemas.js'
 import { PROJECT_DECLARATION_RELPATH } from './paths.js'
 

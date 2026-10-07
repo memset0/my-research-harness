@@ -17,6 +17,7 @@ import {
   WikiReviewError,
   WikiReviewOrderError,
 } from '@memon/core'
+import { type FileAccessError, isFileAccessError } from '@memon/file-protocol'
 import { BackendActorContextError } from '../actor-context.js'
 import { BackendDocumentServiceError } from '../document-service.js'
 import { BackendGitServiceError } from '../git-service.js'
@@ -97,6 +98,68 @@ function mutationError(error: BackendMutationError): HttpError {
   }
 }
 
+function fileAccessError(error: FileAccessError): HttpError {
+  switch (error.code) {
+    case 'CONFLICT':
+      return httpError(409, 'CONFLICT', 'Document changed')
+    case 'REPLAY_CONFLICT':
+      return httpError(
+        409,
+        'FILE_REPLAY_CONFLICT',
+        'Mutation request identity was reused for different content or authority',
+      )
+    case 'MUTATION_UNCERTAIN':
+      return httpError(
+        503,
+        'FILE_MUTATION_UNCERTAIN',
+        'Source mutation outcome is uncertain; inspect current state before retrying',
+      )
+    case 'WRITER_UPGRADE_REQUIRED':
+      return httpError(
+        503,
+        'FILE_WRITER_UPGRADE_REQUIRED',
+        'Source memon writers must be upgraded and acknowledged before remote writes',
+      )
+    case 'CAPABILITY_UNAVAILABLE':
+      return httpError(
+        501,
+        'FILE_CAPABILITY_UNAVAILABLE',
+        'The file source does not support this operation',
+      )
+    case 'PROTOCOL_INCOMPATIBLE':
+      return httpError(
+        502,
+        'FILE_PROTOCOL_INCOMPATIBLE',
+        'The configured file source protocol is incompatible',
+      )
+    case 'UNAUTHORIZED':
+    case 'FORBIDDEN':
+      return httpError(
+        503,
+        'FILE_SOURCE_FORBIDDEN',
+        'The configured file source rejected service credentials or project grants',
+      )
+    case 'READ_ONLY':
+      return httpError(403, 'FORBIDDEN', 'The file source is read-only')
+    case 'BAD_REQUEST':
+    case 'OUTSIDE_PROJECT':
+      return httpError(
+        400,
+        'BAD_REQUEST',
+        'File request is invalid or outside its project authority',
+      )
+    case 'LIMIT_EXCEEDED':
+      return httpError(429, 'FILE_LIMIT_EXCEEDED', 'File source limits were exceeded', true)
+    default:
+      return httpError(
+        503,
+        'FILE_SOURCE_UNAVAILABLE',
+        'The configured file source is unavailable',
+        true,
+      )
+  }
+}
+
 type Mapper<E> = readonly [new (...args: never[]) => E, (error: E) => HttpError]
 
 const mapper = <E>(type: new (...args: never[]) => E, map: (error: E) => HttpError): Mapper<E> => [
@@ -161,6 +224,7 @@ const MAPPERS: readonly Mapper<never>[] = [
 
 /** The HTTP error for a known error class, or `null` for anything else. */
 export function toHttpError(error: unknown): HttpError | null {
+  if (isFileAccessError(error)) return fileAccessError(error)
   for (const [type, map] of MAPPERS) {
     if (error instanceof type) return (map as (error: unknown) => HttpError)(error)
   }

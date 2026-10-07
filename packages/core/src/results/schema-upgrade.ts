@@ -19,7 +19,7 @@
 import { spawn } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
 import { z } from 'zod'
 import { atomicTempPath } from '../atomic-write.js'
 import {

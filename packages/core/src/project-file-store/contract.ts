@@ -49,6 +49,12 @@ export function isHumanFileOperationReason(reason: FileOperationReason | undefin
 }
 
 export const DEFAULT_FILE_ACCESS_OPTIONS: FileAccessOptions = {
+  operationsPerSecond: 0,
+  operationBurst: 10,
+  bytesPerSecond: 0,
+  byteBurst: 64 * 1024 * 1024,
+  maxReadBytes: 16 * 1024 * 1024,
+  backgroundShare: 0.5,
   concurrency: 10,
   heartbeatMs: 30_000,
   leaseMs: 90_000,
@@ -100,6 +106,10 @@ export interface FileOperationLatency {
 }
 
 export interface FileOperationCounters {
+  operationBudgetDeferrals?: number
+  byteBudgetDeferrals?: number
+  validationChecks?: number
+  transportBodyBytes?: number
   /** Physical operations completed in the window (a shared op counts once). */
   samples: number
   errors: number

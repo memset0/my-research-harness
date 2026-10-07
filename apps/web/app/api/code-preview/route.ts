@@ -1,7 +1,8 @@
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 // GET /api/code-preview?project=<name>&url=<github-permalink> — shared standalone Git adapter.
 
-import { join } from 'node:path'
 import { BackendCodePreviewResponseSchema, parseGithubPermalink } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { CodePreview } from '@/lib/dto/code-reviews'
 import { assertWithinProjectRoots, PathSafetyError } from '../../../lib/server/path-safety'
@@ -13,7 +14,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+async function scopedGET(request: NextRequest): Promise<NextResponse> {
   const search = new URL(request.url).searchParams
   const context = await standaloneGitContext(request, search.get('project'))
   if (context instanceof NextResponse) return context
@@ -51,3 +52,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return gitServiceError(error)
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

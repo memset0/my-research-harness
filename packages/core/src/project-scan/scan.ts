@@ -7,7 +7,7 @@
 // neither read nor returned here. Callers that want legacy history call
 // `readProjectJournal` explicitly.
 
-import { join, resolve } from 'node:path'
+import { join, resolve } from '@memon/file-protocol/paths'
 import { discoverRuns, runArchivedFromRun } from '../discovery/discover.js'
 import { matchesRunDeprecationFilter } from '../discovery/index.js'
 import { readRunDir } from '../discovery/read.js'

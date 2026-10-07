@@ -15,7 +15,7 @@
 // ordering key in a file name, never a timestamp field.
 
 import { randomBytes } from 'node:crypto'
-import { resolve } from 'node:path'
+import { resolve } from '@memon/file-protocol/paths'
 
 export const INDEX_DIR_RELPATH = '.memon/index'
 export const INDEX_GITIGNORE_CONTENT = '*\n'

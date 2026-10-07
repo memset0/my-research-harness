@@ -2,11 +2,12 @@ import { BackendAnomaliesResponseSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { readIdentityFromRequest } from '@/lib/server/auth/request-context'
 import { getRuntime } from '../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const runtime = await getRuntime()
   const selected = new URL(request.url).searchParams.get('project')
   const identity = readIdentityFromRequest(request)
@@ -32,3 +33,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'anomaly read failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

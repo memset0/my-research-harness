@@ -155,5 +155,5 @@ export class DirectProjectRegistry {
 
 /** True when this configuration serves at least one Project from its own filesystem. */
 export function servesProjectsDirectly(config: Config): boolean {
-  return config.projects.some((project) => project.host !== undefined)
+  return config.projects.length > 0
 }

@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import type { JournalHistoryResponse } from '@/lib/dto/journal'
 import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * classified owner-only (`shell`) in `lib/server/auth/route-classes.ts` — the legacy
  * `/api/journal` read keeps its own viewer scope.
  */
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const runtime = await getRuntime()
   const search = new URL(request.url).searchParams
   const project = search.get('project')
@@ -41,3 +42,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'journal history read failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

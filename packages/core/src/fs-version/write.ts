@@ -1,4 +1,4 @@
-import { dirname } from 'node:path'
+import { dirname } from '@memon/file-protocol/paths'
 import { projectFs as fs } from '../project-file-store.js'
 import { resolveVersionFilePath } from './paths.js'
 import { validateFsVersionRecord } from './schema.js'

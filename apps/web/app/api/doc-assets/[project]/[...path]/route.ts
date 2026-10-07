@@ -15,15 +15,19 @@
 // recompute must be visible on the next read.
 
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { realpath, stat } from 'node:fs/promises'
-import { extname, resolve, sep } from 'node:path'
+import { projectFs, withProjectFileContext } from '@memon/core'
+
+const { realpath } = projectFs
+
 import { Readable } from 'node:stream'
+import { extname, resolve, sep } from '@memon/file-protocol/paths'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isNotModified, parseByteRange } from '../../../../../lib/server/asset-validators'
 import { assertWithinProjectRoots } from '../../../../../lib/server/path-safety'
 import { findConfiguredProject } from '../../../../../lib/server/project-lookup'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { withLocalSourceFile } from '../../../../../lib/server/source-materialization'
+import { standaloneError } from '../../../../../lib/server/standalone-error'
 import { extractVideoThumbnail } from '../../../../../lib/server/video-thumbnail'
 
 export const dynamic = 'force-dynamic'
@@ -103,78 +107,115 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
   )
   if (!project) return error(404, 'NOT_FOUND', 'Project not found')
 
-  // The addressed Project decides the scope a viewer share was checked
-  // against, so the file must live under *that* root — not merely under some
-  // configured root.
-  const root = resolve(project.root)
-  const target = resolve(root, relative)
-  if (!target.startsWith(`${root}${sep}`)) {
-    return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
-  }
   try {
-    assertWithinProjectRoots(target, runtime.config)
-  } catch {
-    return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
-  }
+    return await withProjectFileContext(
+      {
+        root: project.root,
+        storage: project.storage,
+        cachePolicy: project.access?.cache,
+        reason: 'open',
+        readOnly: true,
+        persistentCache: project.persistentCache,
+      },
+      async () => {
+        // The addressed Project decides the scope a viewer share was checked
+        // against, so the file must live under *that* root — not merely under some
+        // configured root.
+        const root = resolve(project.root)
+        const target = resolve(root, relative)
+        if (!target.startsWith(`${root}${sep}`)) {
+          return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
+        }
+        try {
+          assertWithinProjectRoots(target, runtime.config)
+        } catch {
+          return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
+        }
 
-  let absolutePath: string
-  try {
-    absolutePath = await realpath(target)
-  } catch {
-    return error(404, 'NOT_FOUND', 'document asset not found')
-  }
-  if (!absolutePath.startsWith(`${root}${sep}`)) {
-    return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
-  }
-  const stats = await stat(absolutePath).catch(() => null)
-  if (!stats?.isFile()) return error(404, 'NOT_FOUND', 'document asset not found')
+        let absolutePath: string
+        try {
+          absolutePath = await realpath(target)
+        } catch (cause) {
+          if (['EACCES', 'OUTSIDE_PROJECT'].includes((cause as { code?: string }).code ?? ''))
+            return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
+          if (['ENOENT', 'ENOTDIR'].includes((cause as { code?: string }).code ?? ''))
+            return error(404, 'NOT_FOUND', 'document asset not found')
+          throw cause
+        }
+        if (!absolutePath.startsWith(`${root}${sep}`)) {
+          return error(400, 'BAD_REQUEST', 'document asset escapes the project root')
+        }
+        const handle = await projectFs.open(absolutePath, 'r')
+        let transferred = false
+        try {
+          const stats = await handle.stat()
+          if (!stats.isFile()) return error(404, 'NOT_FOUND', 'document asset not found')
 
-  if (thumbnail)
-    return serveThumbnail(
-      request,
-      runtime.config.media?.ffmpeg ?? 'ffmpeg',
-      absolutePath,
-      stats,
-      includeBody,
+          if (thumbnail)
+            return await serveThumbnail(
+              request,
+              runtime.config.media?.ffmpeg ?? 'ffmpeg',
+              absolutePath,
+              stats,
+              includeBody,
+              handle,
+            )
+
+          const etag = `W/"${createHash('sha1')
+            .update(
+              `${absolutePath}:${stats.size}:${stats.mtimeMs}:${Reflect.get(handle, 'fileId') ?? stats.ino}`,
+            )
+            .digest('hex')}"`
+          const headers = new Headers({
+            'accept-ranges': 'bytes',
+            // A recomputed cache file must be visible on the next read; images are
+            // content-addressed by their validators like every other bundle asset.
+            'cache-control': extension === '.json' ? 'no-store' : 'private, no-cache',
+            'content-type': contentType,
+            etag,
+            'last-modified': new Date(stats.mtimeMs).toUTCString(),
+            'x-content-type-options': 'nosniff',
+          })
+          if (contentType === 'image/svg+xml') headers.set('content-security-policy', SVG_CSP)
+          if (isNotModified(request, etag, stats.mtimeMs)) {
+            return new NextResponse(null, { status: 304, headers })
+          }
+
+          const range = request.headers.get('range')
+          const selected = range ? parseByteRange(range, stats.size) : null
+          if (range && !selected) {
+            headers.set('content-range', `bytes */${stats.size}`)
+            headers.set('content-length', '0')
+            return new NextResponse(null, { status: 416, headers })
+          }
+          headers.set(
+            'content-length',
+            String(selected ? selected.end - selected.start + 1 : stats.size),
+          )
+          if (selected) {
+            headers.set('content-range', `bytes ${selected.start}-${selected.end}/${stats.size}`)
+          }
+          const body =
+            includeBody && request.method !== 'HEAD'
+              ? (Readable.toWeb(
+                  handle.createReadStream({
+                    ...(selected ? { start: selected.start, end: selected.end } : {}),
+                    highWaterMark: 64 * 1024,
+                  }),
+                ) as ReadableStream)
+              : null
+          transferred = body !== null
+          return new NextResponse(body, { status: selected ? 206 : 200, headers })
+        } finally {
+          if (!transferred) await handle.close()
+        }
+      },
     )
-
-  const etag = `W/"${createHash('sha1').update(`${absolutePath}:${stats.size}:${stats.mtimeMs}`).digest('hex')}"`
-  const headers = new Headers({
-    'accept-ranges': 'bytes',
-    // A recomputed cache file must be visible on the next read; images are
-    // content-addressed by their validators like every other bundle asset.
-    'cache-control': extension === '.json' ? 'no-store' : 'private, no-cache',
-    'content-type': contentType,
-    etag,
-    'last-modified': new Date(stats.mtimeMs).toUTCString(),
-    'x-content-type-options': 'nosniff',
-  })
-  if (contentType === 'image/svg+xml') headers.set('content-security-policy', SVG_CSP)
-  if (isNotModified(request, etag, stats.mtimeMs)) {
-    return new NextResponse(null, { status: 304, headers })
+  } catch (cause) {
+    if (['ENOENT', 'ENOTDIR'].includes((cause as { code?: string }).code ?? ''))
+      return error(404, 'NOT_FOUND', 'document asset not found')
+    return standaloneError(cause)
   }
-
-  const range = request.headers.get('range')
-  const selected = range ? parseByteRange(range, stats.size) : null
-  if (range && !selected) {
-    headers.set('content-range', `bytes */${stats.size}`)
-    headers.set('content-length', '0')
-    return new NextResponse(null, { status: 416, headers })
-  }
-  headers.set('content-length', String(selected ? selected.end - selected.start + 1 : stats.size))
-  if (selected) {
-    headers.set('content-range', `bytes ${selected.start}-${selected.end}/${stats.size}`)
-  }
-  const body =
-    includeBody && request.method !== 'HEAD'
-      ? (Readable.toWeb(
-          createReadStream(absolutePath, {
-            ...(selected ? { start: selected.start, end: selected.end } : {}),
-            highWaterMark: 64 * 1024,
-          }),
-        ) as ReadableStream)
-      : null
-  return new NextResponse(body, { status: selected ? 206 : 200, headers })
 }
 
 function error(status: number, code: string, message: string) {
@@ -189,10 +230,15 @@ async function serveThumbnail(
   request: NextRequest,
   ffmpeg: string,
   absolutePath: string,
-  stats: { size: number; mtimeMs: number },
+  stats: { size: number; mtimeMs: number; ino?: number },
   includeBody: boolean,
+  handle: Awaited<ReturnType<typeof projectFs.open>>,
 ) {
-  const etag = `W/"${createHash('sha1').update(`${absolutePath}:${stats.size}:${stats.mtimeMs}:thumb-v1`).digest('hex')}"`
+  const etag = `W/"${createHash('sha1')
+    .update(
+      `${absolutePath}:${stats.size}:${stats.mtimeMs}:${Reflect.get(handle, 'fileId') ?? stats.ino}:thumb-v1`,
+    )
+    .digest('hex')}"`
   const headers = new Headers({
     'cache-control': 'private, no-cache',
     'content-type': 'image/jpeg',
@@ -203,7 +249,11 @@ async function serveThumbnail(
   if (isNotModified(request, etag, stats.mtimeMs)) {
     return new NextResponse(null, { status: 304, headers })
   }
-  const jpeg = await extractVideoThumbnail(ffmpeg, absolutePath)
+  const jpeg = await withLocalSourceFile(
+    absolutePath,
+    (local) => extractVideoThumbnail(ffmpeg, local),
+    handle,
+  )
   if (!jpeg)
     return error(404, 'THUMBNAIL_UNAVAILABLE', 'no thumbnail could be extracted from this video')
   headers.set('content-length', String(jpeg.length))

@@ -1,8 +1,8 @@
 // project-file-store/containment — lexical target resolution and symlink-aware containment.
 
 import type { PathLike } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { basename, dirname, join, resolve } from '@memon/file-protocol/paths'
 import { isWithinPath } from '../mount-table.js'
 import { containmentError } from './errors.js'
 

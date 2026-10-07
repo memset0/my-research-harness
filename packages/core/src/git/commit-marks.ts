@@ -17,7 +17,7 @@
 // `submodule = ''`. The writer always emits the 5-column form, so the
 // first write after deployment upgrades the file in place.
 
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import { writeFileAtomic } from '../atomic-write.js'
 import { projectFs } from '../project-file-store.js'
 import { formatIsoLocal } from '../time.js'

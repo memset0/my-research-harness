@@ -1,7 +1,7 @@
 // Run write primitives shared by every surface. See
 // `experiments/mutations.ts` for the filesystem port, lock and error model.
 
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
 import { readExperimentDoc } from '../experiments/discover.js'
 import {
   assertDocumentLock,

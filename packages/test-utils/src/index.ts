@@ -1,5 +1,6 @@
 export { ExitCalled, spyExit } from './cli.js'
 export { useFixedClock } from './clock.js'
+export { startFileAgentFixture } from './file-agent.js'
 export {
   createTempProject,
   type FixtureEntry,
@@ -17,3 +18,4 @@ export {
   paramsFor,
   startBackend,
 } from './http.js'
+export { createTLSFixture, type TLSFixture } from './tls.js'

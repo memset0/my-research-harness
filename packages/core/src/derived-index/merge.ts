@@ -6,7 +6,7 @@
 // the event was written. Owners are recomputed after merging, from the
 // Experiment entries alone; they are never written into a Run README.
 
-import { basename } from 'node:path'
+import { basename } from '@memon/file-protocol/paths'
 import { matchesRunDirPatterns } from '../discovery/run-dirs.js'
 import { formatIsoLocal } from '../time.js'
 import { FS_CONVENTION_VERSION, MEMON_RELEASE } from '../version.js'

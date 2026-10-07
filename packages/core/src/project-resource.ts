@@ -1,4 +1,4 @@
-import { dirname, relative, resolve, sep } from 'node:path'
+import { dirname, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { type ResourceId, ResourceIdSchema } from './backend-protocol.js'
 import { projectFs as fs } from './project-file-store.js'
 

@@ -16,6 +16,7 @@ import {
   resolveIndexPaths,
   withProjectFileContext,
 } from '@memon/core'
+import { FileAccessError } from '@memon/file-protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   derivedIndexMirror,
@@ -361,6 +362,22 @@ describe('background validator (3.3)', () => {
     return mirror
   }
 
+  it('keeps the prior derived view when source event listing is unavailable', async () => {
+    const members = await fixture(2, { running: [1] })
+    await rebuildIndex(root)
+    const mirror = await mirrorFor({ now: Date.now() })
+    const failure = new FileAccessError('SOURCE_UNAVAILABLE')
+    const readdir = projectFs.readdir
+    const spy = vi.spyOn(projectFs, 'readdir').mockImplementation(async (...args) => {
+      if (String(args[0]) === resolveIndexPaths(root).events) throw failure
+      return Reflect.apply(readdir, projectFs, args)
+    })
+    await expect(mirror.runCycle()).rejects.toBe(failure)
+    spy.mockRestore()
+    const read = await readDerivedIndex(root)
+    expect(read.snapshot!.runs[members[1]!]!.status).toBe('RUNNING')
+    expect(read.events).toEqual([])
+  })
   it('brings an external status edit to the list within one cycle (non-terminal)', async () => {
     const members = await fixture(4, { running: [2] })
     await rebuildIndex(root)

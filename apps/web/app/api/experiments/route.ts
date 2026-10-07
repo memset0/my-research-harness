@@ -9,17 +9,15 @@ import {
   createStandaloneExperiment,
   standaloneExperimentMutationError,
 } from '../../../lib/server/standalone-experiment-mutation-route'
-import { standaloneServices } from '../../../lib/server/standalone-services'
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
+import { standaloneProjects, standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+async function scopedGET(req: NextRequest) {
   const runtime = await getRuntime()
   const search = new URL(req.url).searchParams
-  const projectFilter = search.get('project')
-  const projects = projectFilter
-    ? runtime.config.projects.filter((project) => project.name === projectFilter)
-    : runtime.config.projects
+  const projects = standaloneProjects(runtime.config, req)
   try {
     const inventoryOnly = search.get('inventory') === '1'
     const responses = await Promise.all(
@@ -64,7 +62,7 @@ interface PostBody {
   fromRun?: string | null
 }
 
-export async function POST(req: NextRequest) {
+async function scopedPOST(req: NextRequest) {
   const runtime = await getRuntime()
   const body = (await req.json().catch(() => null)) as PostBody | null
   if (!body || typeof body.slug !== 'string') {
@@ -104,3 +102,6 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)
+export const POST = withStandaloneRequest(scopedPOST)

@@ -46,10 +46,40 @@ type OptionKey = keyof FileAccessOptionsDto
 interface FieldSpec {
   label: string
   help: string
-  unit: 'ms' | 'ops' | 'x'
+  unit: 'ms' | 'ops' | 'x' | 'ops/s' | 'B/s' | 'B' | 'fraction'
 }
 
 const FIELDS: Record<OptionKey, FieldSpec> = {
+  operationsPerSecond: {
+    label: 'Source operations per second',
+    help: 'Shared rate for physical checks and writes across projects on one source; 0 disables this rate limit.',
+    unit: 'ops/s',
+  },
+  operationBurst: {
+    label: 'Operation burst',
+    help: 'Maximum accumulated operation credits per source.',
+    unit: 'ops',
+  },
+  bytesPerSecond: {
+    label: 'Source bytes per second',
+    help: 'Shared admission budget for file bodies, listings and bounded ranges; 0 disables this rate limit.',
+    unit: 'B/s',
+  },
+  byteBurst: {
+    label: 'Byte burst',
+    help: 'Maximum accumulated byte credits. Must cover the largest permitted read.',
+    unit: 'B',
+  },
+  maxReadBytes: {
+    label: 'Whole-file read limit',
+    help: 'Maximum bytes fetched by one whole-file read. Larger assets use bounded ranges.',
+    unit: 'B',
+  },
+  backgroundShare: {
+    label: 'Background share',
+    help: 'Fraction of operation credits available to automatic work, between zero and one.',
+    unit: 'fraction',
+  },
   concurrency: {
     label: 'Parallel operations',
     help: 'Filesystem operations allowed to run at once per storage group.',
@@ -112,20 +142,31 @@ const FIELDS: Record<OptionKey, FieldSpec> = {
   },
   wikiTtlMs: {
     label: 'Wiki cache period',
-    help: 'Opted-in SSHFS Wiki files and listings. Open/focus reuses valid cache; manual refresh bypasses this period.',
+    help: 'SSHFS and agent Wiki files and listings. Open/focus reuses valid cache; manual refresh bypasses this period.',
     unit: 'ms',
   },
   defaultTtlMs: {
     label: 'Other document cache period',
-    help: 'Opted-in SSHFS non-Wiki files and listings. Requires a local cache dump configured on this instance.',
+    help: 'SSHFS and agent non-Wiki files and listings. Requires a local cache dump configured on this instance.',
     unit: 'ms',
   },
 }
 
 const FIELD_GROUPS: ReadonlyArray<{ title: string; keys: readonly OptionKey[] }> = [
-  { title: 'Throughput', keys: ['concurrency'] },
+  {
+    title: 'Source budgets',
+    keys: [
+      'concurrency',
+      'operationsPerSecond',
+      'operationBurst',
+      'bytesPerSecond',
+      'byteBurst',
+      'maxReadBytes',
+      'backgroundShare',
+    ],
+  },
   { title: 'Foreground attention', keys: ['heartbeatMs', 'leaseMs'] },
-  { title: 'Persistent SSHFS cache', keys: ['wikiTtlMs', 'defaultTtlMs'] },
+  { title: 'Persistent remote cache', keys: ['wikiTtlMs', 'defaultTtlMs'] },
   {
     title: 'Memory-only watched paths',
     keys: ['fileMinMs', 'fileMaxMs', 'directoryMinMs', 'directoryMaxMs'],
@@ -248,8 +289,14 @@ export function FileAccessSettingsPanel() {
     const parsed = {} as FileAccessOptionsDto
     for (const key of FILE_ACCESS_OPTION_KEYS) {
       const value = Number(draft[key])
-      if (!Number.isFinite(value) || value <= 0) {
-        problems.push(`${FIELDS[key].label} must be a positive number.`)
+      if (
+        !Number.isFinite(value) ||
+        value < 0 ||
+        (value === 0 && !['operationsPerSecond', 'bytesPerSecond'].includes(key))
+      ) {
+        problems.push(
+          `${FIELDS[key].label} must be ${['operationsPerSecond', 'bytesPerSecond'].includes(key) ? 'a non-negative' : 'a positive'} number.`,
+        )
         continue
       }
       parsed[key] = value
@@ -376,9 +423,8 @@ export function FileAccessSettingsPanel() {
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <p className="text-[11px] text-muted-foreground">
-            These settings and the metrics below cover <code>storage: sshfs</code> projects only; a{' '}
-            <code>storage: local</code> project is read directly through the filesystem, so it is
-            never queued, cached or listed as a storage group here.
+            These settings cover native/NFS memory caching, SSHFS and file-agent access. Direct
+            native reads with caching disabled remain outside the scheduled file store.
           </p>
           {issues.length > 0 && (
             <ul
@@ -540,6 +586,13 @@ function MetricsView({ metrics }: { metrics: FileOperationMetrics }) {
           label="Oldest wait"
           value={metrics.oldestWaitingAgeMs === null ? '—' : formatMs(metrics.oldestWaitingAgeMs)}
         />
+        <Stat
+          label="Operation budget waits"
+          value={String(metrics.overall.operationBudgetDeferrals ?? 0)}
+        />
+        <Stat label="Byte budget waits" value={String(metrics.overall.byteBudgetDeferrals ?? 0)} />
+        <Stat label="Conditional checks" value={String(metrics.overall.validationChecks ?? 0)} />
+        <Stat label="Transport body" value={formatBytes(metrics.overall.transportBodyBytes ?? 0)} />
         <Stat label="Cache entries" value={String(metrics.cacheEntries)} />
         <Stat label="Cached content" value={formatBytes(metrics.cachedContentBytes)} />
       </dl>

@@ -9,7 +9,7 @@
 // `<projectRoot>/docs/experiments/E<NNNN>-<slug>.md` so allocation stays
 // monotonic when both shapes coexist briefly.
 
-import * as path from 'node:path'
+import * as path from '@memon/file-protocol/paths'
 import { padId, parseId } from '../ids.js'
 import { projectFs as fs } from '../project-file-store.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'

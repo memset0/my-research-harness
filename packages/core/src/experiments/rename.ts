@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
 import { writeFileAtomic } from '../atomic-write.js'
 import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
 import { publishMutationEvent } from '../derived-index/mutation-events.js'

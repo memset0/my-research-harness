@@ -1,9 +1,10 @@
-import { join } from 'node:path'
 import { BackendJournalResponseSchema } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { JournalCountResponse, JournalResponse } from '@/lib/dto/journal'
 import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * invocation receipt is exposed here. Merged owner diagnostics live at
  * `/api/journal/history`.
  */
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const runtime = await getRuntime()
   const search = new URL(request.url).searchParams
   const project = search.get('project')
@@ -42,3 +43,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'journal read failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

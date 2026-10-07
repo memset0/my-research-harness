@@ -16,7 +16,10 @@ export async function GET(req: NextRequest) {
     const { role, scopeProjects, scopeProjectRefs } = readIdentityFromRequest(req)
     centralMode = rt.config.central !== undefined
     if (centralMode) {
-      if (role === 'anon' || (role === 'viewer' && scopeProjectRefs.length === 0)) {
+      if (
+        role === 'anon' ||
+        (role === 'viewer' && scopeProjectRefs.length === 0 && scopeProjects.size === 0)
+      ) {
         return NextResponse.json(
           { error: { code: 'FORBIDDEN', message: 'Host-qualified viewer scope is required' } },
           { status: 403, headers: { 'cache-control': 'no-store' } },
@@ -33,7 +36,8 @@ export async function GET(req: NextRequest) {
         ? directCentralRuntime(rt.config).registry.listProjects().filter(inScope)
         : []
       const remote =
-        (rt.config.central?.hosts.length ?? 0) > 0
+        (rt.config.central?.hosts.length ?? 0) > 0 &&
+        (role !== 'viewer' || scopeProjectRefs.length > 0)
           ? (
               await aggregateCentralProjects({
                 registry: (await getCentralFleet()).registry,
@@ -46,11 +50,27 @@ export async function GET(req: NextRequest) {
           : []
       return NextResponse.json(
         {
-          projects: [...direct, ...remote].map((project) => ({
-            mode: 'central' as const,
-            ...project,
-            name: project.project,
-          })),
+          projects: [
+            ...[...direct, ...remote].map((project) => ({
+              mode: 'central' as const,
+              ...project,
+              name: project.project,
+            })),
+            ...rt.config.projects
+              .filter(
+                (project) =>
+                  project.host === undefined &&
+                  (role !== 'viewer' || scopeProjects.has(project.name)),
+              )
+              .map((project) => ({
+                mode: 'standalone' as const,
+                host: null,
+                project: project.name,
+                name: project.name,
+                root: project.root,
+                exclude: project.exclude,
+              })),
+          ],
         } satisfies ProjectsResponse,
         { headers: { 'cache-control': 'no-store' } },
       )

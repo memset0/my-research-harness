@@ -8,7 +8,7 @@
 // Skill design intent: pass --project-root and ignore everything else.
 
 import { existsSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve } from '@memon/file-protocol/paths'
 import { implicitCwdProject } from '../config/load.js'
 import { type Config, DEFAULT_GIT_STATUS, DEFAULT_POLL, DEFAULT_SLURM } from '../types.js'
 

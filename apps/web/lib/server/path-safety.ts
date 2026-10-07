@@ -6,8 +6,8 @@
 
 import 'server-only'
 
-import { resolve } from 'node:path'
 import type { Config } from '@memon/core'
+import { resolve } from '@memon/file-protocol/paths'
 
 export class PathSafetyError extends Error {
   constructor(message: string) {

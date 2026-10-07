@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 // GET /api/reports?project=NAME
 //
 // Returns the list of reports for a project — id, slug, path, mtime, title.
@@ -14,7 +15,7 @@ import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+async function scopedGET(req: NextRequest) {
   try {
     const rt = await getRuntime()
     const url = new URL(req.url)
@@ -49,3 +50,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

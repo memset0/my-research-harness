@@ -1,4 +1,3 @@
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import {
   BACKEND_EXPERIMENT_BODY_MAX,
   BACKEND_EXPERIMENT_SECTION_BODY_MAX,
@@ -56,6 +55,7 @@ import {
   runArchivedFromRun,
   toBackendResultsSummary,
 } from '@memon/core'
+import { basename, dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { prepareProjectIndex } from './derived-index-mirror.js'
 import type {
   BackendWikiArtifactOptions,

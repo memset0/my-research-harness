@@ -14,7 +14,7 @@
 //   * One child process per storage group. A hung mount therefore blocks only
 //     the group that owns it; other groups and the hosting process keep their
 //     own thread pools free.
-//   * The child is a dumb executor: no cache, no policy, no retained state. It
+//   * The child is a dumb executor: no cache, no policy, only bounded read descriptors. It
 //     runs exactly the absolute paths the parent sends and answers with plain
 //     data. Containment, read-only policy, root identity and every other
 //     security decision stay in the parent (`project-file-store`), which only
@@ -28,6 +28,7 @@
 // project reads back onto the Web process's filesystem thread pool.
 
 import { type ChildProcess, fork } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, promises as nodeFs } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, join } from 'node:path'
@@ -87,8 +88,12 @@ type MutationRunner = (...args: unknown[]) => Promise<unknown>
 
 /** One operation to perform, without the correlation id. */
 export type ProjectIoCall =
-  | { op: 'readFile'; path: string; flag?: string }
-  | { op: 'readdir'; path: string }
+  | { op: 'readFile'; path: string; flag?: string; maxBytes?: number }
+  | { op: 'openRead'; path: string }
+  | { op: 'readAt'; readToken: string; offset: number; length: number }
+  | { op: 'closeRead'; readToken: string }
+  | { op: 'readRange'; path: string; offset: number; length: number }
+  | { op: 'readdir'; path: string; maxBytes?: number }
   | { op: 'stat'; path: string; follow: boolean; bigint: boolean }
   | { op: 'realpath'; path: string }
   | { op: 'realpathNearest'; path: string }
@@ -251,14 +256,156 @@ export async function realpathNearest(target: string): Promise<string> {
  * Execute requests whose mutation payload cannot cross a process boundary.
  * Ordinary project reads always use the isolated worker.
  */
+
+const readLeases = new Map<
+  string,
+  {
+    file: Awaited<ReturnType<typeof nodeFs.open>>
+    fields: StatsFields
+    deadline: number
+    active: number
+    closing: boolean
+  }
+>()
+const READ_LEASE_MS = 5 * 60 * 1000
+async function closeLease(token: string) {
+  const lease = readLeases.get(token)
+  if (!lease || (lease.closing && lease.active !== 0)) return
+  lease.closing = true
+  if (lease.active !== 0) return
+  lease.active = -1
+  try {
+    await lease.file.close()
+  } finally {
+    readLeases.delete(token)
+  }
+}
+const leaseSweep = setInterval(() => {
+  for (const [token, lease] of readLeases)
+    if (!lease.closing && lease.deadline <= Date.now())
+      void closeLease(token).catch(() => undefined)
+}, 1000)
+leaseSweep.unref()
+
 export async function executeProjectIo(request: ProjectIoRequest): Promise<unknown> {
   switch (request.op) {
-    case 'readFile':
+    case 'openRead': {
+      if (readLeases.size >= 256)
+        throw Object.assign(new Error('read handle limit'), { code: 'LIMIT_EXCEEDED' })
+      const token = randomUUID()
+      // Reserve before opening: blocked opens count against the bound.
+      const lease = {
+        file: null as unknown as Awaited<ReturnType<typeof nodeFs.open>>,
+        fields: {} as StatsFields,
+        deadline: Infinity,
+        active: 1,
+        closing: false,
+      }
+      readLeases.set(token, lease)
+      try {
+        lease.file = await nodeFs.open(request.path, 'r')
+        const stats = await lease.file.stat({ bigint: true })
+        if (!stats.isFile())
+          throw Object.assign(new Error('not a regular file'), { code: 'EINVAL' })
+        lease.fields = Object.fromEntries(
+          Object.entries(stats).map(([key, value]) => [
+            key,
+            typeof value === 'bigint' ? Number(value) : value,
+          ]),
+        ) as StatsFields
+        lease.deadline = Date.now() + READ_LEASE_MS
+        lease.active = 0
+        return { readToken: token, fields: lease.fields, fileId: `${stats.dev}:${stats.ino}` }
+      } catch (error) {
+        try {
+          await lease.file?.close()
+        } finally {
+          readLeases.delete(token)
+        }
+        throw error
+      }
+    }
+    case 'readAt': {
+      const lease = readLeases.get(request.readToken)
+      if (!lease || lease.closing || lease.deadline <= Date.now())
+        throw Object.assign(new Error('read handle expired'), { code: 'READ_HANDLE_EXPIRED' })
+      if (
+        !Number.isSafeInteger(request.offset) ||
+        request.offset < 0 ||
+        !Number.isSafeInteger(request.length) ||
+        request.length < 1 ||
+        request.length > 1024 * 1024 ||
+        !Number.isSafeInteger(request.offset + request.length)
+      )
+        throw new RangeError('invalid read bounds')
+      lease.active++
+      lease.deadline = Date.now() + READ_LEASE_MS
+      try {
+        const bytes = Buffer.alloc(
+          Math.min(request.length, Math.max(0, Number(lease.fields.size) - request.offset)),
+        )
+        const { bytesRead } = await lease.file.read(bytes, 0, bytes.length, request.offset)
+        return bytes.subarray(0, bytesRead)
+      } finally {
+        lease.active--
+        if (lease.closing && lease.active === 0) await closeLease(request.readToken)
+      }
+    }
+    case 'closeRead':
+      await closeLease(request.readToken)
+      return null
+
+    case 'readFile': {
+      if (request.maxBytes !== undefined) {
+        const file = await nodeFs.open(request.path, request.flag ?? 'r')
+        try {
+          const chunks: Buffer[] = []
+          let size = 0
+          for (;;) {
+            const chunk = Buffer.alloc(Math.min(1024 * 1024, request.maxBytes + 1 - size))
+            const { bytesRead } = await file.read(chunk, 0, chunk.length, null)
+            if (!bytesRead) break
+            size += bytesRead
+            if (size > request.maxBytes)
+              throw workerError('project read exceeds configured body limit', 'LIMIT_EXCEEDED')
+            chunks.push(chunk.subarray(0, bytesRead))
+          }
+          return Buffer.concat(chunks, size)
+        } finally {
+          await file.close()
+        }
+      }
       return await nodeFs.readFile(
         request.path,
         request.flag === undefined ? undefined : { flag: request.flag },
       )
+    }
+    case 'readRange': {
+      const file = await nodeFs.open(request.path, 'r')
+      try {
+        const stats = await file.stat()
+        if (!stats.isFile()) throw workerError('range target is not a regular file', 'EINVAL')
+        const bytes = Buffer.alloc(request.length)
+        const result = await file.read(bytes, 0, bytes.length, request.offset)
+        return { bytes: bytes.subarray(0, result.bytesRead), extent: stats.size }
+      } finally {
+        await file.close()
+      }
+    }
     case 'readdir': {
+      if (request.maxBytes !== undefined) {
+        const entries: DirEntryData[] = []
+        let bytes = 2
+        const dir = await nodeFs.opendir(request.path)
+        for await (const entry of dir) {
+          const item = { name: entry.name, kind: direntKindOf(entry) }
+          bytes += Buffer.byteLength(JSON.stringify(item)) + (entries.length ? 1 : 0)
+          if (bytes > request.maxBytes)
+            throw workerError('listing exceeds maximum bytes', 'LIMIT_EXCEEDED')
+          entries.push(item)
+        }
+        return entries
+      }
       const dirents = await nodeFs.readdir(request.path, { withFileTypes: true })
       return dirents.map((entry) => ({ name: entry.name, kind: direntKindOf(entry) }))
     }
@@ -411,7 +558,7 @@ class ProjectIoWorker {
   }
 
   private ensure(): Promise<ChildProcess> {
-    if (this.child !== null && this.child.connected) return Promise.resolve(this.child)
+    if (this.child?.connected) return Promise.resolve(this.child)
     if (this.starting !== null) return this.starting
     this.starting = this.spawn().finally(() => {
       this.starting = null
@@ -540,16 +687,31 @@ class ProjectIoPool {
     return await this.worker(group).send(request)
   }
 
-  async readFile(group: string, path: string, flag?: string): Promise<Buffer> {
-    const value = await this.run(
-      group,
-      flag === undefined ? { op: 'readFile', path } : { op: 'readFile', path, flag },
-    )
+  async readFile(group: string, path: string, flag?: string, maxBytes?: number): Promise<Buffer> {
+    const value = await this.run(group, {
+      op: 'readFile',
+      path,
+      ...(flag === undefined ? {} : { flag }),
+      ...(maxBytes === undefined ? {} : { maxBytes }),
+    })
     return Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array)
   }
 
-  async readdir(group: string, path: string): Promise<DirEntryData[]> {
-    return (await this.run(group, { op: 'readdir', path })) as DirEntryData[]
+  async readRange(
+    group: string,
+    path: string,
+    offset: number,
+    length: number,
+  ): Promise<{ bytes: Buffer; extent: number }> {
+    const result = (await this.run(group, { op: 'readRange', path, offset, length })) as {
+      bytes: Uint8Array
+      extent: number
+    }
+    return { bytes: Buffer.from(result.bytes), extent: result.extent }
+  }
+
+  async readdir(group: string, path: string, maxBytes?: number): Promise<DirEntryData[]> {
+    return (await this.run(group, { op: 'readdir', path, maxBytes })) as DirEntryData[]
   }
 
   async stat(group: string, path: string, follow: boolean, bigint = false): Promise<StatsFields> {

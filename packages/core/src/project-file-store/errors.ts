@@ -1,3 +1,6 @@
+import { isFileAccessError } from '@memon/file-protocol'
+import { getProjectFileContext } from '../project-file-context.js'
+
 // project-file-store/errors — errno-shaped refusals raised by the Project file store.
 
 export function readOnlyError(syscall: string, path: string): NodeJS.ErrnoException {
@@ -58,4 +61,12 @@ export function mountUnavailableError(syscall: string, root: string): NodeJS.Err
   error.syscall = syscall
   error.path = root
   return error
+}
+
+/** Lenient CLI discovery must not turn central source failures into missing data. */
+export function throwIfSourceFailure(error: unknown): void {
+  if (isFileAccessError(error)) throw error
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  if (getProjectFileContext() && typeof code === 'string' && !['ENOENT', 'ENOTDIR'].includes(code))
+    throw error
 }

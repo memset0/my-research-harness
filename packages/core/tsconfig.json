@@ -6,7 +6,20 @@
     "rootDir": "./src",
     "outDir": "./node_modules/.cache/tsbuild",
     "tsBuildInfoFile": "./node_modules/.cache/tsbuild/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@memon/file-protocol": ["../file-protocol/src/index.ts"],
+      "@memon/file-protocol/*": ["../file-protocol/src/*"],
+      "@memon/test-utils": ["../test-utils/src/index.ts"]
+    }
   },
-  "include": ["src/**/*", "src/**/*.json"]
+  "include": ["src/**/*", "src/**/*.json"],
+  "references": [
+    {
+      "path": "../file-protocol"
+    },
+    {
+      "path": "../test-utils"
+    }
+  ]
 }

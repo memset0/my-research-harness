@@ -10,7 +10,8 @@
 // WIKI_UNKNOWN_KIND.
 
 import type { Dirent } from 'node:fs'
-import * as path from 'node:path'
+import * as path from '@memon/file-protocol/paths'
+import { throwIfSourceFailure } from '../project-file-store/errors.js'
 import { projectFs as fs } from '../project-file-store.js'
 
 import { WIKI_DIR_RELPATH, WIKI_PAGE_NAME_REGEX, type WikiPageFormat } from './types.js'
@@ -83,7 +84,8 @@ export async function discoverWikiPages(
         let pageEntries: Dirent[]
         try {
           pageEntries = await fs.readdir(kindDir, { withFileTypes: true })
-        } catch {
+        } catch (error) {
+          throwIfSourceFailure(error)
           return []
         }
         return Promise.all(
@@ -167,7 +169,8 @@ async function readPageFile(
     const stat = await fs.stat(absolutePath)
     if (!stat.isFile()) return null
     return { content: await fs.readFile(absolutePath, 'utf8'), mtime: stat.mtimeMs }
-  } catch {
+  } catch (error) {
+    throwIfSourceFailure(error)
     return null
   }
 }
@@ -190,7 +193,8 @@ async function listBundleAssets(
     let entries: Dirent[]
     try {
       entries = await fs.readdir(dir, { withFileTypes: true })
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       continue
     }
     const directories: { dir: string; prefix: string; depth: number }[] = []
@@ -214,7 +218,8 @@ async function listBundleAssets(
       files.map(async (file) => {
         try {
           return (await fs.stat(file.absolute)).mtimeMs
-        } catch {
+        } catch (error) {
+          throwIfSourceFailure(error)
           return 0
         }
       }),

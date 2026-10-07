@@ -12,8 +12,8 @@
 
 import 'server-only'
 
-import { resolve } from 'node:path'
 import { readGitSubmodules } from '@memon/core'
+import { resolve } from '@memon/file-protocol/paths'
 
 export interface ResolveSubmoduleOk {
   ok: true

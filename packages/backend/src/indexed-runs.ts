@@ -8,7 +8,6 @@
 // as a fingerprint change and a full re-resolution.
 
 import type { Stats } from 'node:fs'
-import { join } from 'node:path'
 import {
   projectFs as fs,
   type IndexedRun,
@@ -21,6 +20,7 @@ import {
   runEligibilityError,
   runFromReadme,
 } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import {
   type Observation,
   projectReadIndex,

@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events'
 import { promises as nodeFs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createTempProject } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { executeProjectIo, getProjectIo, shutdownProjectIo } from './project-io.js'
 
@@ -73,7 +74,8 @@ class FakeChild extends EventEmitter {
 }
 fake.Child = FakeChild
 
-vi.mock('node:child_process', () => ({
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
   fork: vi.fn((path: string, _args: string[], options: never) => {
     const child = new fake.Child(path, options)
     fake.children.push(child)
@@ -326,5 +328,40 @@ describe('project I/O worker pool', () => {
     await expect(
       executeProjectIo({ id: 0, op: 'mutate', method: 'symlink' as never, args: [] }),
     ).rejects.toMatchObject({ code: 'EINVAL', syscall: 'projectIo' })
+  })
+})
+
+describe('bounded native read leases', () => {
+  it('retains opened metadata and expires without reopening a replaced path', async () => {
+    const fixture = await createTempProject({ files: { 'data.bin': 'AAAAAA' } })
+    let token: string | undefined
+    try {
+      const opened = (await executeProjectIo({
+        id: 1,
+        op: 'openRead',
+        path: fixture.path('data.bin'),
+      })) as { readToken: string; fields: { size: number } }
+      token = opened.readToken
+      await nodeFs.writeFile(fixture.path('next.bin'), 'BBBBBBBBB')
+      await nodeFs.rename(fixture.path('next.bin'), fixture.path('data.bin'))
+      const bytes = (await executeProjectIo({
+        id: 2,
+        op: 'readAt',
+        readToken: token,
+        offset: 0,
+        length: 1024,
+      })) as Buffer
+      expect(opened.fields.size).toBe(6)
+      expect(bytes.toString()).toBe('AAAAAA')
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1)
+      await expect(
+        executeProjectIo({ id: 3, op: 'readAt', readToken: token, offset: 0, length: 1 }),
+      ).rejects.toMatchObject({ code: 'READ_HANDLE_EXPIRED' })
+    } finally {
+      vi.useRealTimers()
+      if (token) await executeProjectIo({ id: 4, op: 'closeRead', readToken: token })
+      await fixture.cleanup()
+    }
   })
 })

@@ -175,6 +175,28 @@ describe('semantic version reuse', () => {
     expect(getResourceStatusSnapshot().oldestVerifiedAt).toBe(4_000)
   })
 
+  it('refreshes edit-lock metadata without retransmitting or changing document content', () => {
+    const body = { content: '# Same', mtime: 1, hash: 'a'.repeat(40) }
+    const url = '/api/readme?project=project-a'
+    recordResourceResponse(
+      beginResourceRequest(url),
+      jsonResponse({ [RESOURCE_VERSION_HEADER]: 'v1' }),
+      body,
+    )
+    const result = resolveNotModified(
+      beginResourceRequest(url),
+      new Response(null, {
+        status: 304,
+        headers: {
+          'x-memon-document-mtime': '2',
+          'x-memon-document-hash': 'a'.repeat(40),
+        },
+      }),
+    )
+    expect(result.hit && result.body).toEqual({ ...body, mtime: 2 })
+    expect(consumeResourceChanges()).toBe(0)
+  })
+
   it('reports a change exactly once when the version moves', () => {
     for (const version of ['v1', 'v2']) {
       recordResourceResponse(

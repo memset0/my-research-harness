@@ -1,7 +1,7 @@
 import 'server-only'
 
-import { dirname, join } from 'node:path'
 import type { Config } from '@memon/core'
+import { dirname, join } from '@memon/file-protocol/paths'
 
 interface ResourceDto {
   project: string

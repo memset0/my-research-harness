@@ -5,7 +5,7 @@
 // up; v4 readers honor it only as a narrow fallback when the README lacks the
 // canonical `archived` field entirely.
 
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import { projectFs as fs } from '../project-file-store.js'
 
 /** Sidecar filename retained for the migration-window fallback. */

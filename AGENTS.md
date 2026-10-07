@@ -78,6 +78,8 @@ packages' source, never their `dist/`, so no build is needed first.
 | Path | Role / source of truth |
 |---|---|
 | `packages/core` | Shared domain library: types and enums (`src/types.ts`), README/experiment/wiki parsers and serializers, discovery and indexing, polling, project file store, time helpers, release policy (`src/version.ts`: `FS_CONVENTION_VERSION`, `MEMON_RELEASE`), Web/backend wire protocol (`src/backend-protocol.ts`). |
+| `packages/file-protocol` | Minimal file contracts, conditional validators, mTLS client and logical path helpers; no business parsers. CLI updates build this JavaScript dependency without Go. |
+| `packages/file-agent` | Optional independent Go source kernel: mTLS grants, contained file primitives, common writer locks and bounded replay. No domain parsing, watchers, execution or subscriptions; install/upgrade separately from central releases. |
 | `packages/backend` | Framework-agnostic domain service layer (project, document, mutation, stream, git, slurm, wiki services behind `createBackendHandler`). Its only runtime consumer is the central Web process, which calls it in-process (`apps/web/lib/server/central/direct-runtime.ts`). No daemon or remote listener. |
 | `packages/cli` | The `memon` CLI. Command surface: `memon --help` / `memon <cmd> --help` and `packages/cli/src/index.ts`. |
 | `packages/skills` | Bundled `memon-*` agent skills distributed to research projects. |
@@ -132,7 +134,10 @@ Other sources of truth — consult these instead of copying lists here:
   layout) or by hand, checked by `memon project lint`.
 - **Configuration split**: central `config.yml` Project entries hold only
   the project path and deployment facts (`name`, `root`, `host`, `storage`,
-  `storage_group`, `persistent_cache`, `read_only`, `execution`). Layout
+  `storage_group`, `persistent_cache`, `read_only`, `access`, `execution`). Protected `file_agents`
+  connection settings remain central-only. Agent entries select a connection and
+  project instead of a local `root`; native `access` selects none/memory caching,
+  SSHFS and agent select memory-disk. Layout
   belongs in the project's `.memon/project.yml`; a layout key still in a
   central entry keeps working and wins over the project file, but logs
   `CENTRAL_LAYOUT_DEPRECATED` (`memon project lint --from-central` lists them
@@ -303,8 +308,9 @@ the applicable active change artifacts; keep artifacts aligned with the code.
 - Never run unit tests on remote clusters. A remote node is a CLI/skills
   installation only, maintained by `memon update` (fast-forward pull from its
   trusted remote, CLI build, managed-skill refresh; see `memon update --help`).
-  No remote service is deployed or health-gated, and central releases never
-  wait on nodes.
+  CLI updates deploy or health-gate no remote service, and central releases never
+  wait on nodes. The optional independently installed file agent is outside
+  `memon update`; central releases do not install or restart it.
 
 ### 6.2 Local deployment
 

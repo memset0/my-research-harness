@@ -9,13 +9,20 @@ import {
   refreshStandaloneRun,
 } from './standalone-mutation-refresh'
 import { standaloneServices } from './standalone-services'
+import { standaloneExperimentTarget, standaloneRunTarget } from './standalone-target'
 
 export type StandaloneWarningKind = 'run' | 'experiment'
 
-function warningProject(runtime: Runtime, kind: StandaloneWarningKind, id: string): string | null {
-  const target = kind === 'run' ? runtime.index.get(id) : runtime.experiments.get(id)
-  if (!target) return null
-  return runtime.projectFor(target.path)?.name ?? null
+async function warningProject(
+  runtime: Runtime,
+  kind: StandaloneWarningKind,
+  id: string,
+): Promise<string> {
+  const target =
+    kind === 'run'
+      ? await standaloneRunTarget(runtime.config, id)
+      : await standaloneExperimentTarget(runtime.config, id)
+  return target.project.name
 }
 
 export async function listStandaloneWarnings(
@@ -23,7 +30,7 @@ export async function listStandaloneWarnings(
   kind: StandaloneWarningKind,
   id: string,
 ) {
-  const project = warningProject(runtime, kind, id)
+  const project = await warningProject(runtime, kind, id)
   if (!project) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Warning target not found')
   return standaloneServices(runtime.config).mutations.listWarnings(kind, project, id)
 }
@@ -43,7 +50,7 @@ export async function mutateStandaloneWarning(
     expectedHash?: string
   },
 ) {
-  const project = warningProject(runtime, kind, id)
+  const project = await warningProject(runtime, kind, id)
   if (!project) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Warning target not found')
   const service = standaloneServices(runtime.config).mutations
   const current = await service.listWarnings(kind, project, id)

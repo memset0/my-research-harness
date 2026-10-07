@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import type { Dirent } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
 import { PassThrough, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import {
@@ -12,6 +11,7 @@ import {
   type ProjectConfig,
   ResourceIdSchema,
 } from '@memon/core'
+import { basename, dirname, extname, join } from '@memon/file-protocol/paths'
 import { isContained, PathContainmentError, resolveContained } from './containment.js'
 import { missingOrThrow } from './missing-path.js'
 
@@ -74,6 +74,7 @@ export interface BackendStreamService {
     resource: string,
   ): Promise<BackendByteResource>
   resolveWikiAsset(project: string, wikiId: string, resource: string): Promise<BackendByteResource>
+  closeByteResource?(resource: BackendByteResource): Promise<void>
   openByteStream(resource: BackendByteResource, range?: ByteRangeInput): Readable
 }
 
@@ -82,6 +83,10 @@ export interface FilesystemStreamServiceOptions {
 }
 
 export class FilesystemStreamService implements BackendStreamService {
+  private readonly byteHandles = new WeakMap<
+    BackendByteResource,
+    { handle: Awaited<ReturnType<typeof fs.open>>; timer: ReturnType<typeof setTimeout> }
+  >()
   private readonly projects = new Map<string, ProjectConfig>()
   private readonly indexes = new Map<string, Promise<LineIndex>>()
   private readonly logStreamPollMs: number
@@ -251,23 +256,65 @@ export class FilesystemStreamService implements BackendStreamService {
     const assetResource = `${bundleResource}/${resource}`
     const resolved = await this.resolveContained(project, assetResource, 'file')
     if (!isContained(bundle.realPath, resolved.realPath)) invalid()
+    const handle = await fs.open(resolved.realPath, 'r')
+    const stats = await handle.stat().catch(async (error) => {
+      await handle.close()
+      throw error
+    })
     const version = createHash('sha1')
-      .update(`${resolved.stat.size}:${resolved.stat.mtimeMs}:${resolved.stat.ino}`)
+      .update(`${stats.size}:${stats.mtimeMs}:${Reflect.get(handle, 'fileId') ?? stats.ino}`)
       .digest('hex')
-    return {
+    const asset = {
       project: project.name,
       resource: assetResource,
       absolutePath: resolved.realPath,
       contentType: contentTypeFor(assetResource),
-      size: resolved.stat.size,
-      mtimeMs: resolved.stat.mtimeMs,
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
       etag: `W/"${version}"`,
       version,
     }
+    const timer = setTimeout(
+      () => {
+        void this.closeByteResource(asset).catch(() => undefined)
+      },
+      5 * 60 * 1000,
+    )
+    timer.unref()
+    this.byteHandles.set(asset, { handle, timer })
+    return asset
+  }
+
+  async closeByteResource(resource: BackendByteResource): Promise<void> {
+    const lease = this.byteHandles.get(resource)
+    if (!lease) return
+    this.byteHandles.delete(resource)
+    clearTimeout(lease.timer)
+    await lease.handle.close()
   }
 
   openByteStream(resource: BackendByteResource, range?: ByteRangeInput): Readable {
-    return openProjectByteStream(resource.absolutePath, range)
+    const lease = this.byteHandles.get(resource)
+    if (!lease) {
+      const output = new PassThrough()
+      queueMicrotask(() =>
+        output.destroy(
+          Object.assign(new Error('asset read handle expired'), { code: 'READ_HANDLE_EXPIRED' }),
+        ),
+      )
+      return output
+    }
+    this.byteHandles.delete(resource)
+    clearTimeout(lease.timer)
+    return lease.handle.createReadStream({
+      ...(range
+        ? { start: range.start, end: range.end }
+        : resource.size
+          ? { end: resource.size - 1 }
+          : {}),
+      highWaterMark: BYTE_STREAM_CHUNK_BYTES,
+      autoClose: true,
+    })
   }
 
   private requireProject(name: string): ProjectConfig {

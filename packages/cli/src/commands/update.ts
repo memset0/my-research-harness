@@ -198,7 +198,11 @@ async function findSourceCheckout(cwd: string): Promise<string | null> {
   return null
 }
 
-const DIST_PATHS = [join('packages', 'core', 'dist'), join('packages', 'cli', 'dist')] as const
+const DIST_PATHS = [
+  join('packages', 'file-protocol', 'dist'),
+  join('packages', 'core', 'dist'),
+  join('packages', 'cli', 'dist'),
+] as const
 
 /**
  * Only the CLI's own dependency closure is installed: `@memon/cli` plus the
@@ -555,7 +559,7 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
       detail: 'installed the @memon/cli dependency closure only (no Web dependencies)',
     })
 
-    for (const pkg of ['@memon/core', '@memon/cli'] as const) {
+    for (const pkg of ['@memon/file-protocol', '@memon/core', '@memon/cli'] as const) {
       const built = await run('pnpm', ['--filter', pkg, 'build'], source)
       if (!built.ok) {
         return rollback(
@@ -565,7 +569,11 @@ export async function updateInstallation(options: UpdateOptions): Promise<Update
         )
       }
     }
-    result.steps.push({ step: 'build', outcome: 'ok', detail: 'built @memon/core and @memon/cli' })
+    result.steps.push({
+      step: 'build',
+      outcome: 'ok',
+      detail: 'built @memon/file-protocol, @memon/core and @memon/cli',
+    })
 
     const version = await run(process.execPath, [cliEntry, '--version'], source)
     if (!version.ok) {

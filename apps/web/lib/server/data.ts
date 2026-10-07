@@ -4,16 +4,23 @@
 // data slots directly into the same TanStack Query keys used by the client
 // (`fetchProjects` / `fetchExperiments` / etc.).
 //
-// As of `add-runtime-cache`, hypotheses + journal data come from the runtime
-// in-memory cache, not from disk. RunIndex was already in-memory.
+// SSR and JSON routes compose the same services over shared file primitives.
 
 import 'server-only'
 
+import { BackendProjectServiceError } from '@memon/backend'
+
 import {
+  BackendCodeReviewResponseSchema,
+  BackendCodeReviewsResponseSchema,
+  BackendHypothesesResponseSchema,
+  BackendJournalResponseSchema,
+  BackendReportResponseSchema,
+  BackendReportsResponseSchema,
+  BackendRunResponseSchema,
+  BackendWikiDocumentSchema,
+  BackendWikiPagesResponseSchema,
   type CodeReviewSummary,
-  deriveCompletion,
-  isStaleRunning,
-  parseCodeReview,
 } from '@memon/core'
 import type {
   FullCodeReview,
@@ -23,9 +30,12 @@ import type {
   WikiListItem,
   WikiPageDetail,
 } from '../api'
-import { discoverReports, findReport, readReport, type WebReportSummary } from './reports'
+import type { Wire } from '../dto/wire'
+import type { WebReportSummary } from './reports'
 import { getRuntime } from './runtime'
-import { wikiPageDto, wikiSummaryDto } from './wiki-route'
+import { standaloneCodeReview, standaloneReport, standaloneRun } from './standalone-dto'
+import { standaloneServices } from './standalone-services'
+import { wikiComponentProjection } from './wiki-route'
 
 export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }> {
   const rt = await getRuntime()
@@ -49,28 +59,20 @@ export async function getProjectsData(): Promise<{ projects: ProjectSummary[] }>
 export async function getExperimentData(
   project: string,
   id: string,
-): Promise<FullExperiment | null> {
+): Promise<Wire<FullExperiment> | null> {
   const rt = await getRuntime()
-  const exp = rt.index.get(id)
-  if (!exp || exp.project !== project) return null
-  // Touch the poller so the next backend GET refreshes promptly
-  rt.pokeById(id)
-  return {
-    id: exp.id,
-    project: exp.project,
-    path: exp.path,
-    mtime: exp.mtime,
-    readmeMtime: exp.readmeMtime,
-    hasReadme: exp.hasReadme,
-    frontMatter: exp.frontMatter,
-    sections: exp.sections,
-    warnings: exp.warnings,
-    warningsRaw: exp.warningsRaw,
-    body: exp.body,
-    parseErrors: exp.parseErrors,
-    parseWarnings: exp.parseWarnings,
-    stale: isStaleRunning(exp),
-    resources: null,
+  try {
+    const value = BackendRunResponseSchema.parse(
+      await standaloneServices(rt.config).projects.getRun(project, id),
+    )
+    return standaloneRun(rt.config, value)
+  } catch (error) {
+    if (
+      error instanceof BackendProjectServiceError &&
+      ['RESOURCE_NOT_FOUND', 'PROJECT_NOT_FOUND'].includes(error.code)
+    )
+      return null
+    throw error
   }
 }
 
@@ -86,9 +88,12 @@ export async function getHypothesesData(project: string) {
   const rt = await getRuntime()
   const path = rt.hypothesesPath(project)
   if (!path) return { path: '', ...EMPTY_HYPS }
-  const entry = rt.hypothesesCache.get(path)
-  if (!entry || entry.value === null) return { path, ...EMPTY_HYPS }
-  return { path, ...entry.value }
+  return {
+    path,
+    ...BackendHypothesesResponseSchema.parse(
+      await standaloneServices(rt.config).projects.getHypotheses(project),
+    ),
+  }
 }
 
 export async function getJournalData(
@@ -100,11 +105,9 @@ export async function getJournalData(
   if (!path) {
     return { path: '', events: [], parseErrors: [], parseWarnings: [] }
   }
-  const entry = rt.journalCache.get(path)
-  if (!entry || entry.value === null) {
-    return { path, events: [], parseErrors: [], parseWarnings: [] }
-  }
-  const parsed = entry.value
+  const parsed = BackendJournalResponseSchema.parse(
+    await standaloneServices(rt.config).projects.getJournal(project),
+  )
   let events = [...parsed.events].reverse()
   const before = options.before
   if (before) events = events.filter((e) => e.timestamp < before)
@@ -124,73 +127,59 @@ export async function getReportsList(project: string): Promise<{ reports: WebRep
   const rt = await getRuntime()
   const dir = rt.reportsDir(project)
   if (!dir) return { reports: [] }
-  const reports = (await discoverReports(dir)).map(({ rootPath: _rootPath, ...summary }) => summary)
-  return { reports }
+  const result = BackendReportsResponseSchema.parse(
+    await standaloneServices(rt.config).documents.listReports(project),
+  )
+  return { reports: result.reports.map((report) => standaloneReport(rt.config, report)) }
 }
 
 export async function getReport(project: string, id: string): Promise<FullReport | null> {
   const rt = await getRuntime()
-  const dir = rt.reportsDir(project)
-  if (!dir) return null
-  const entry = await findReport(dir, id)
-  if (!entry) return null
-  const fresh = await readReport(entry)
-  if (!fresh) return null
-  return {
-    id: entry.id,
-    slug: entry.slug,
-    path: entry.path,
-    mtime: fresh.mtime,
-    hash: fresh.hash,
-    content: fresh.content,
-    format: fresh.format,
-  }
+  const result = BackendReportResponseSchema.parse(
+    await standaloneServices(rt.config).documents.getReport(project, id),
+  )
+  return standaloneReport(rt.config, result)
 }
 
 // ---------- Wiki ----------
 
 export async function getWikiList(project: string): Promise<{ pages: WikiListItem[] }> {
   const rt = await getRuntime()
-  const pages = rt.wikiCache.getWikiList(project).map((summary) => wikiSummaryDto(project, summary))
-  return { pages }
+  const result = BackendWikiPagesResponseSchema.parse(
+    await standaloneServices(rt.config).documents.listWiki(project),
+  )
+  return { pages: result.pages.map((page) => ({ ...page, path: page.resource })) }
 }
 
 export async function getWikiPage(project: string, id: string): Promise<WikiPageDetail | null> {
   const rt = await getRuntime()
-  const page = await rt.wikiCache.getWikiPage(project, id)
-  if (!page) return null
-  return wikiPageDto(project, page.summary, page.content, page.hash)
+  const page = BackendWikiDocumentSchema.parse(
+    await standaloneServices(rt.config).documents.getWiki(project, id),
+  )
+  const projection = wikiComponentProjection(page.content)
+  return {
+    ...page,
+    path: page.resource,
+    components: projection.components,
+    diagnostics: [...page.diagnostics, ...projection.diagnostics],
+  }
 }
 
 export async function getCodeReviewsList(
   project: string,
 ): Promise<{ codeReviews: CodeReviewSummary[] }> {
   const rt = await getRuntime()
-  return { codeReviews: rt.getCodeReviewsList(project) }
+  const result = BackendCodeReviewsResponseSchema.parse(
+    await standaloneServices(rt.config).documents.listCodeReviews(project),
+  )
+  return {
+    codeReviews: result.codeReviews.map((review) => standaloneCodeReview(rt.config, review)),
+  }
 }
 
 export async function getCodeReview(project: string, id: string): Promise<FullCodeReview | null> {
   const rt = await getRuntime()
-  const path = rt.codeReviewPath(project, id)
-  if (!path) return null
-  const fresh = await rt.codeReviewsCache.getContent(path)
-  if (!fresh) return null
-  let parsed: ReturnType<typeof parseCodeReview>
-  try {
-    parsed = parseCodeReview(fresh.content)
-  } catch {
-    return null
-  }
-  const scope: 'project' | 'experiment' = id.startsWith('experiments/') ? 'experiment' : 'project'
-  const expMatch = /^experiments\/(E\d{4}-[a-z0-9-]+)\/code-review\//.exec(id)
-  return {
-    id,
-    scope,
-    experiment: parsed.frontmatter.experiment ?? (expMatch ? expMatch[1]! : null),
-    frontmatter: parsed.frontmatter,
-    body: parsed.body,
-    mtime: fresh.mtime,
-    hash: fresh.hash,
-    completion: deriveCompletion(parsed.frontmatter),
-  }
+  return BackendCodeReviewResponseSchema.parse(
+    await standaloneServices(rt.config).documents.getCodeReview(project, id),
+  )
 }

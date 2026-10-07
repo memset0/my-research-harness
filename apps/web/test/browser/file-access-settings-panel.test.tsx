@@ -23,6 +23,12 @@ import {
 } from '../../lib/file-access-api'
 
 const EFFECTIVE: FileAccessOptionsDto = {
+  operationsPerSecond: 50,
+  operationBurst: 10,
+  bytesPerSecond: 16777216,
+  byteBurst: 67108864,
+  maxReadBytes: 16777216,
+  backgroundShare: 0.5,
   concurrency: 10,
   heartbeatMs: 4_000,
   leaseMs: 12_000,
@@ -90,7 +96,7 @@ describe('File access settings panel', () => {
     expect(requestFileAccessRestart).not.toHaveBeenCalled()
     // Effective still shows the running value; the saved one is called out.
     expect(await screen.findByText(/saved values not active/i)).toBeInTheDocument()
-    expect(screen.getByText(/running 10/)).toBeInTheDocument()
+    expect(screen.getAllByText(/running 10/).length).toBeGreaterThan(0)
   })
 
   it('rejects a non-positive value before it reaches the service', async () => {

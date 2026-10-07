@@ -24,16 +24,10 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomBytes } from 'node:crypto'
-import {
-  promises as fs,
-  mkdirSync,
-  realpathSync,
-  renameSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { z } from 'zod'
+import { projectFs as fs } from '../project-file-store.js'
 import { formatIsoLocal } from '../time.js'
 import {
   EXPERIMENT_DIR_REGEX,

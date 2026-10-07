@@ -1,3 +1,4 @@
+import { withSourceBudgetTiming } from './budgets.js'
 // project-file-store/scheduler — the file operation scheduler.
 //
 // One task per queued-or-running project/path/operation key, human promotion
@@ -7,7 +8,9 @@
 // Everything here is memory-only. The scheduler reaches store state only
 // through `SchedulerHooks`.
 
+import { isFileURI } from '@memon/file-protocol/paths'
 import type { FileAccessOptions } from '../types.js'
+import type { SourceBudgetPool } from './budgets.js'
 import { monotonic } from './clock.js'
 import type { FileOperationName, FileOperationOrigin } from './contract.js'
 import { queueFullError } from './errors.js'
@@ -20,6 +23,7 @@ export const MAX_QUEUED_PER_GROUP = 2_048
 
 /** What the scheduler needs from the store that owns it. */
 export interface SchedulerHooks {
+  budgets: SourceBudgetPool
   /** The current effective options (concurrency, heartbeat for aging). */
   options(): FileAccessOptions
   readonly metrics: MetricsRegistry
@@ -67,6 +71,7 @@ export class FileOperationScheduler {
         existing.human = true
         existing.origin = 'human'
         existing.attentionGeneration = entry.attentionGeneration
+        this.hooks.budgets.refresh(group.name)
       }
       this.hooks.metrics.recordCoalesced(group.name, operation, origin)
       return existing.promise
@@ -184,26 +189,47 @@ export class FileOperationScheduler {
     const entry = task.entry
     const group = task.group
     task.state = 'running'
-    task.startedAtMono = monotonic()
-    const waitMs = task.startedAtMono - task.enqueuedAtMono
+    let finishBudget: ((bytes: number) => void) | undefined
+    let reservedBytes = 0
+    const timing = { waitMs: 0, automatic: () => !task.human }
+    let waitMs = monotonic() - task.enqueuedAtMono
     try {
-      const observation = await task.runner()
+      if (!isFileURI(entry.root)) {
+        const reserve = ['readFile', 'readdir'].includes(task.operation)
+          ? this.hooks.options().maxReadBytes
+          : 0
+        reservedBytes = reserve
+        finishBudget = await this.hooks.budgets.reserve(
+          group.name,
+          entry.root,
+          reserve,
+          () => !task.human,
+          task.operation,
+        )
+      }
+      task.startedAtMono = monotonic()
+      waitMs = task.startedAtMono - task.enqueuedAtMono
+      const observation = await withSourceBudgetTiming(timing, task.runner)
       const completedMono = monotonic()
+      finishBudget?.(observation.bytes)
+      finishBudget = undefined
       this.hooks.succeeded(entry, task, observation, completedMono)
       this.hooks.metrics.recordOperation(group.name, task.operation, task.origin, {
-        waitMs,
-        execMs: completedMono - task.startedAtMono,
+        waitMs: waitMs + timing.waitMs,
+        execMs: Math.max(0, completedMono - task.startedAtMono - timing.waitMs),
         bytes: observation.bytes,
         error: false,
       })
       this.release(group)
       this.settle(task, observation, null)
     } catch (error) {
+      finishBudget?.(reservedBytes)
+      task.startedAtMono ??= monotonic()
       const completedMono = monotonic()
       this.hooks.failed(entry, error as NodeJS.ErrnoException)
       this.hooks.metrics.recordOperation(group.name, task.operation, task.origin, {
-        waitMs,
-        execMs: completedMono - task.startedAtMono,
+        waitMs: waitMs + timing.waitMs,
+        execMs: Math.max(0, completedMono - task.startedAtMono - timing.waitMs),
         bytes: 0,
         error: true,
       })

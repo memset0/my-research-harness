@@ -42,6 +42,7 @@ async function seedCheckout(
   marker: string,
   options: { failBuild?: boolean; editDuringBuild?: boolean } = {},
 ): Promise<void> {
+  await fs.mkdir(join(dir, 'packages', 'file-protocol'), { recursive: true })
   await fs.mkdir(join(dir, 'packages', 'core'), { recursive: true })
   await fs.mkdir(join(dir, 'packages', 'cli'), { recursive: true })
   await writeFile(join(dir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n")
@@ -49,7 +50,7 @@ async function seedCheckout(
     join(dir, 'package.json'),
     `${JSON.stringify({ name: 'memon-fixture', private: true, packageManager: 'pnpm@10.33.2' }, null, 2)}\n`,
   )
-  for (const name of ['core', 'cli'] as const) {
+  for (const name of ['file-protocol', 'core', 'cli'] as const) {
     await writeFile(
       join(dir, 'packages', name, 'package.json'),
       `${JSON.stringify(
@@ -64,6 +65,10 @@ async function seedCheckout(
       )}\n`,
     )
   }
+  await writeFile(
+    join(dir, 'packages', 'file-protocol', 'build.mjs'),
+    "import { mkdirSync, writeFileSync } from 'node:fs'\nmkdirSync('dist', { recursive: true })\nwriteFileSync('dist/index.js', 'protocol\\n')\n",
+  )
   await writeFile(
     join(dir, 'packages', 'core', 'build.mjs'),
     "import { mkdirSync, writeFileSync } from 'node:fs'\nmkdirSync('dist', { recursive: true })\nwriteFileSync('dist/index.js', 'core\\n')\n",

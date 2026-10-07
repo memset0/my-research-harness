@@ -38,8 +38,8 @@
 // mistaken for a clean, fully verified wiki.
 
 import { execFile } from 'node:child_process'
-import { join } from 'node:path'
 import { dirname as posixDirname, join as posixJoin } from 'node:path/posix'
+import { join } from '@memon/file-protocol/paths'
 import { writeFileAtomic } from '../atomic-write.js'
 import {
   cachedGitCommand,

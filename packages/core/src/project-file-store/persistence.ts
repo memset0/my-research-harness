@@ -4,7 +4,7 @@
 // real SSHFS mount cross it; queues, waiters, leases, retries and metrics
 // never do.
 
-import { dirname } from 'node:path'
+import { dirname } from '@memon/file-protocol/paths'
 import {
   containingMount,
   type MountIdentity,
@@ -18,6 +18,7 @@ import {
   projectFileTtlMs,
 } from '../project-file-cache.js'
 import type { ProjectFileContext } from '../project-file-context.js'
+import { agentAdapter, isAgentPath } from './agent-adapters.js'
 import { monotonic } from './clock.js'
 import { type Observation, observationFromPersisted, persistedPayloadOf } from './observation.js'
 import type { PersistScope, StoreEntry } from './state.js'
@@ -63,6 +64,17 @@ export class ObservationPersistence {
     if (context.persistentCache !== true) return null
     const cache = getProjectFileCache()
     if (cache === null) return null
+    if (isAgentPath(context.root)) {
+      const { adapter } = await agentAdapter(context.root)
+      const namespaceId = await cache.namespaceId({
+        root: context.root,
+        sourceIdentity: adapter.sourceIdentity,
+        authorityIdentity: adapter.authorityIdentity,
+      })
+      const scope = Promise.resolve({ cache, namespaceId, mount: null })
+      this.persistScopes.set(context.root, { mount: null, scope })
+      return scope
+    }
     const table = await this.hooks.mountTable()
     if (table === null) return null
     const mount = containingMount(context.root, table)
@@ -104,6 +116,7 @@ export class ObservationPersistence {
     const load = this.load(context, entry, operation, generation)
       .catch(() => undefined)
       .then(() => {
+        if (entry.persistLoad !== load) return
         entry.persistLoaded = true
         entry.persistLoad = null
       })
@@ -118,6 +131,7 @@ export class ObservationPersistence {
     generation: number,
   ): Promise<void> {
     const scope = await this.scope(context)
+    if (entry.mutationGeneration !== generation) return
     entry.persist = scope
     if (scope === null) return
     await this.persistTail

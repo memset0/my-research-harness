@@ -111,7 +111,7 @@ export function dirObservation(entries: CachedDirEntry[]): Observation {
     value: { kind: 'dir', entries },
     missingError: null,
     fingerprint: `d:${entries.length}:${hash.digest('hex')}`,
-    bytes: 0,
+    bytes: Buffer.byteLength(JSON.stringify(entries)),
   }
 }
 

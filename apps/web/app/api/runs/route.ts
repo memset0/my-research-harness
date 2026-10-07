@@ -5,11 +5,12 @@ import type { RunsResponse } from '@/lib/dto/runs'
 import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
 import { standaloneRun } from '../../../lib/server/standalone-dto'
-import { standaloneServices } from '../../../lib/server/standalone-services'
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
+import { standaloneProjects, standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   try {
     const runtime = await getRuntime()
     // Explicit-inspection selector, mirroring the backend Run collection:
@@ -29,9 +30,7 @@ export async function GET(request: NextRequest) {
       } satisfies Wire<RunsResponse>)
     }
     const selected = search.get('project')
-    const projects = selected
-      ? runtime.config.projects.filter((project) => project.name === selected)
-      : runtime.config.projects
+    const projects = standaloneProjects(runtime.config, request)
     const inventoryOnly = search.get('inventory') === '1'
     const services = standaloneServices(runtime.config)
     if (inventoryOnly) {
@@ -97,3 +96,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'Run discovery failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

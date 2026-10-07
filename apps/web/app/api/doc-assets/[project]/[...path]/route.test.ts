@@ -3,6 +3,7 @@
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createTempProject } from '@memon/test-utils'
 import { NextRequest } from 'next/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -89,6 +90,27 @@ describe('GET|HEAD document assets', () => {
     expect(head.status).toBe(200)
     expect(await head.text()).toBe('')
     expect(head.headers.get('content-length')).toBe('26')
+  })
+
+  it('keeps response length and content tied to the opened file after replacement', async () => {
+    const fixture = await createTempProject({
+      files: { 'asset.mp4': 'A'.repeat(192 * 1024) },
+    })
+    const previous = await getRuntime()
+    try {
+      vi.mocked(getRuntime).mockResolvedValue({
+        config: { projects: [{ name: 'project-a', root: fixture.root, include: [], exclude: [] }] },
+      } as never)
+      const response = await get('asset.mp4')
+      await fs.writeFile(fixture.path('replacement.mp4'), Buffer.alloc(256 * 1024, 0x42))
+      await fs.rename(fixture.path('replacement.mp4'), fixture.path('asset.mp4'))
+      const bytes = Buffer.from(await response.arrayBuffer())
+      expect(response.headers.get('content-length')).toBe(String(192 * 1024))
+      expect(bytes).toEqual(Buffer.alloc(192 * 1024, 0x41))
+    } finally {
+      vi.mocked(getRuntime).mockResolvedValue(previous)
+      await fixture.cleanup()
+    }
   })
 
   it('serves a document-relative SVG with a restrictive CSP', async () => {

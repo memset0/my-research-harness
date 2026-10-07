@@ -1,14 +1,15 @@
-import { join } from 'node:path'
 import { BackendHypothesesResponseSchema } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { HypothesesResponse } from '@/lib/dto/journal'
 import type { Wire } from '@/lib/dto/wire'
 import { getRuntime } from '../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const runtime = await getRuntime()
   const project = new URL(request.url).searchParams.get('project')
   if (!runtime.config) {
@@ -46,3 +47,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'hypotheses read failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

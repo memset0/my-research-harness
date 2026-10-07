@@ -6,8 +6,8 @@
 // endpoint) ask for it by name, so a project whose history is missing or
 // unreadable never breaks an ordinary scan.
 
-import { promises as fs } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve } from '@memon/file-protocol/paths'
+import { projectFs as fs } from '../project-file-store.js'
 import type { ParsedJournal } from '../types.js'
 import { parseJournal } from './parse.js'
 

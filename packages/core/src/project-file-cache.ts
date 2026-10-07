@@ -9,8 +9,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
 import type { FileHandle } from 'node:fs/promises'
-import { dirname, join, parse, relative, resolve, sep } from 'node:path'
 import { deserialize, serialize } from 'node:v8'
+import { dirname, join, parse, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { LRUCache } from 'lru-cache'
 import { z } from 'zod'
 import {
@@ -71,7 +71,9 @@ export interface PersistedObservation {
 /** Namespace identity: configured root plus the storage it resolved to. */
 export interface CacheNamespace {
   root: string
-  mount: MountIdentity
+  mount?: MountIdentity
+  sourceIdentity?: string
+  authorityIdentity?: string
 }
 
 interface CacheEntry {
@@ -345,9 +347,11 @@ export class ProjectFileCache {
   async namespaceId(namespace: CacheNamespace): Promise<string> {
     const identity = JSON.stringify([
       namespace.root,
-      namespace.mount.mountPoint,
-      namespace.mount.fsType,
-      namespace.mount.source,
+      namespace.mount?.mountPoint,
+      namespace.mount?.fsType,
+      namespace.mount?.source,
+      namespace.sourceIdentity,
+      namespace.authorityIdentity,
     ])
     return createHash('sha256').update(identity).digest('hex')
   }

@@ -1,8 +1,9 @@
 // @vitest-environment node
-
-import { promises as fs } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { type Config, DEFAULT_GIT_STATUS, DEFAULT_SLURM } from '@memon/core'
+import { createTempProject, removeTempDirs } from '@memon/test-utils'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,175 +12,81 @@ vi.mock('../../../../lib/server/runtime', () => ({ getRuntime: vi.fn() }))
 import { getRuntime } from '../../../../lib/server/runtime'
 import { GET, PUT } from './route'
 
-const content = [
-  '---',
-  'id: W0001',
-  'kind: finding',
-  'title: Finding',
-  'created_at: 2026-05-01T10:00:00+08:00',
-  'updated_at: 2026-05-01T10:00:00+08:00',
-  '---',
-  '```yaml datatable@1 #metrics',
-  'columns: [step, loss]',
-  'data: [[1]]',
-  '```',
-].join('\n')
-
-const summary = {
-  id: 'W0001',
-  slug: 'finding',
-  kind: 'finding',
-  title: 'Finding',
-  description: null,
-  status: 'TENTATIVE',
-  date: null,
-  language: 'en',
-  tags: [],
-  sources: ['E0001'],
-  legacyId: null,
-  entry: null,
-  deprecated: null,
-  deprecatedSections: [],
-  stale: false,
-  staleSources: [],
-  review: null,
-  format: 'markdown',
-  path: 'docs/wiki/finding/W0001-finding.md',
-  mtime: 1,
-  createdAt: '2026-05-01T10:00:00+08:00',
-  updatedAt: '2026-05-01T10:00:00+08:00',
-  diagnostics: [],
-}
-
-const wikiCache = {
-  getWikiPage: vi.fn(),
-  getWikiSummary: vi.fn(),
-  putWikiPage: vi.fn(),
-}
-
-let root: string
-
-afterEach(async () => {
-  await fs.rm(root, { recursive: true, force: true })
-})
-
+const content = `---\nid: W0001\nkind: finding\ntitle: Finding\ncreated_at: 2026-05-01T10:00:00+08:00\nupdated_at: 2026-05-01T10:00:00+08:00\n---\n\n\`\`\`yaml datatable@1 #metrics\ncolumns: [step, loss]\ndata: [[1]]\n\`\`\`\n`
+let filename: string
 beforeEach(async () => {
-  root = await fs.mkdtemp(join(tmpdir(), 'memon-wiki-route-'))
-  vi.clearAllMocks()
-  wikiCache.getWikiPage.mockResolvedValue({
-    summary,
-    content,
-    mtime: 1,
-    hash: 'a'.repeat(40),
+  const { root } = await createTempProject({
+    files: { 'docs/wiki/finding/W0001-finding.md': content },
   })
-  wikiCache.getWikiSummary.mockReturnValue(summary)
-  wikiCache.putWikiPage.mockResolvedValue({ ok: true, mtime: 2, hash: 'b'.repeat(40) })
-  vi.mocked(getRuntime).mockResolvedValue({
-    config: { projects: [{ name: 'project-a', root }] },
-    wikiCache,
-  } as never)
+  filename = join(root, 'docs/wiki/finding/W0001-finding.md')
+  const config: Config = {
+    projects: [{ name: 'project-a', root, storage: 'local', include: [], exclude: [] }],
+    poll: { minIntervalMs: 1000, maxIntervalMs: 300_000, backoffFactor: 2 },
+    slurm: { ...DEFAULT_SLURM },
+    gitStatus: { ...DEFAULT_GIT_STATUS },
+  }
+  vi.mocked(getRuntime).mockResolvedValue({ config } as never)
 })
-
-function request(method: 'GET' | 'PUT', id = 'W0001', body?: unknown) {
-  return new NextRequest(`http://localhost/api/wiki/${id}?project=project-a`, {
+afterEach(removeTempDirs)
+const request = (method: string, body?: unknown) =>
+  new NextRequest('http://localhost/api/wiki/W0001?project=project-a', {
     method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
-}
-
-describe('GET /api/wiki/[id]', () => {
-  it('serves the central component projection in full-file line coordinates', async () => {
-    const response = await GET(request('GET'), { params: Promise.resolve({ id: 'W0001' }) })
-    expect(response.status).toBe(200)
-    const payload = await response.json()
-    expect(payload.components).toEqual([
-      {
-        index: 0,
-        type: 'datatable',
-        version: 1,
-        pinnedVersion: 1,
-        latestVersion: 1,
-        outdated: false,
-        id: 'metrics',
-        executable: false,
-        line: 8,
-      },
-    ])
-    expect(payload.diagnostics).toEqual([
-      expect.objectContaining({ code: 'WIKI_COMPONENT_INVALID', line: 8 }),
-    ])
-  })
-
-  it('omits unresolved component versions but preserves their diagnostics', async () => {
-    wikiCache.getWikiPage.mockResolvedValueOnce({
-      summary,
-      content: content.replace('datatable@1', 'datatable@999'),
-      mtime: 1,
-      hash: 'a'.repeat(40),
-    })
-    const response = await GET(request('GET'), { params: Promise.resolve({ id: 'W0001' }) })
-    const payload = await response.json()
-    expect(payload.components).toEqual([])
-    expect(payload.diagnostics).toEqual([
-      expect.objectContaining({ code: 'WIKI_COMPONENT_INVALID', line: 8 }),
-    ])
-  })
-
-  it('rejects malformed and unknown ids', async () => {
-    expect(
-      (await GET(request('GET', 'R0001'), { params: Promise.resolve({ id: 'R0001' }) })).status,
-    ).toBe(400)
-    wikiCache.getWikiPage.mockResolvedValueOnce(null)
-    expect(
-      (await GET(request('GET', 'W9999'), { params: Promise.resolve({ id: 'W9999' }) })).status,
-    ).toBe(404)
-  })
+const context = (id = 'W0001') => ({ params: Promise.resolve({ id }) })
+const lock = async () => ({
+  expectedMtime: (await stat(filename)).mtimeMs,
+  expectedHash: createHash('sha1')
+    .update(await readFile(filename))
+    .digest('hex'),
 })
 
-describe('PUT /api/wiki/[id]', () => {
-  it('rejects identity changes before writing', async () => {
-    const changed = content.replace('id: W0001', 'id: W0002')
+describe('Wiki routes over shared document primitives', () => {
+  it('projects registry components and their diagnostics', async () => {
+    const response = await GET(request('GET'), context())
+    expect(response.status).toBe(200)
+    const page = await response.json()
+    expect(page.path).toBe('docs/wiki/finding/W0001-finding.md')
+    expect(page.components).toContainEqual(
+      expect.objectContaining({ type: 'datatable', version: 1, id: 'metrics' }),
+    )
+    expect(page.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'WIKI_COMPONENT_INVALID' }),
+    )
+  })
+  it('keeps invalid component diagnostics without resolving an unknown version', async () => {
+    await writeFile(filename, content.replace('datatable@1', 'datatable@999'))
+    const response = await GET(request('GET'), context())
+    const page = await response.json()
+    expect(page.components).toEqual([])
+    expect(page.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'WIKI_COMPONENT_INVALID' }),
+    )
+  })
+  it('rejects malformed and missing identities', async () => {
+    expect((await GET(request('GET'), context('R0001'))).status).toBe(400)
+    expect((await GET(request('GET'), context('W9999'))).status).toBe(404)
+  })
+  it('rejects an identity change and preserves source bytes', async () => {
     const response = await PUT(
-      request('PUT', 'W0001', {
-        content: changed,
-        expectedMtime: 1,
-        expectedHash: 'a'.repeat(40),
-      }),
-      { params: Promise.resolve({ id: 'W0001' }) },
+      request('PUT', { content: content.replace('id: W0001', 'id: W0002'), ...(await lock()) }),
+      context(),
     )
     expect(response.status).toBe(400)
-    expect(wikiCache.putWikiPage).not.toHaveBeenCalled()
+    expect(await readFile(filename, 'utf8')).toBe(content)
   })
-
-  it('returns conflict state and a successful re-baselined page', async () => {
-    wikiCache.putWikiPage.mockResolvedValueOnce({
-      ok: false,
-      code: 'CONFLICT',
-      currentMtime: 2,
-      currentHash: 'c'.repeat(40),
-      currentContent: 'changed',
-    })
-    const payload = { content, expectedMtime: 1, expectedHash: 'a'.repeat(40) }
-    const conflict = await PUT(request('PUT', 'W0001', payload), {
-      params: Promise.resolve({ id: 'W0001' }),
-    })
-    expect(conflict.status).toBe(409)
-    expect(await conflict.json()).toMatchObject({
-      error: { code: 'CONFLICT' },
-      currentContent: 'changed',
-    })
-
-    const success = await PUT(request('PUT', 'W0001', payload), {
-      params: Promise.resolve({ id: 'W0001' }),
-    })
-    expect(success.status).toBe(200)
-    expect(await success.json()).toMatchObject({
-      ok: true,
-      hash: 'b'.repeat(40),
-      finalContent: content,
-      page: { id: 'W0001' },
-    })
+  it('returns a real conflict, then re-baselines a successful write and records it', async () => {
+    const previous = await lock()
+    await writeFile(filename, content + '\nExternal edit\n')
+    expect((await PUT(request('PUT', { content, ...previous }), context())).status).toBe(409)
+    const response = await PUT(
+      request('PUT', { content: content + '\nUpdated\n', ...(await lock()) }),
+      context(),
+    )
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    expect(result.page.id).toBe('W0001')
+    expect(result.finalContent).toBe(await readFile(filename, 'utf8'))
+    expect(result.hash).toBe(createHash('sha1').update(result.finalContent).digest('hex'))
   })
 })

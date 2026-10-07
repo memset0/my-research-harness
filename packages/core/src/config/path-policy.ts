@@ -1,4 +1,4 @@
-import { basename } from 'node:path'
+import { basename } from '@memon/file-protocol/paths'
 
 /**
  * Committed configuration template maintained by humans and agents.

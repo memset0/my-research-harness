@@ -11,7 +11,7 @@
 // to `<repo>/mock/project-a`).
 
 import { promises as fs } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, fileProjectURI, isAbsolute, join, resolve } from '@memon/file-protocol/paths'
 import yaml from 'js-yaml'
 import { CENTRAL_LAYOUT_DEPRECATED } from '../project-declaration/layout.js'
 import { DEFAULT_FILE_ACCESS_OPTIONS, type FileAccessOptions } from '../project-file-store.js'
@@ -199,11 +199,46 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   // Execution defaults are role-dependent and resolved after role selection.
   const projects: ProjectConfig[] = cfg.projects.map((p) => {
     warnCentralLayout(p, candidate)
-    const root = isAbsolute(p.root) ? p.root : resolve(baseDir, p.root)
-    const storage = p.storage ?? 'local'
+    const access =
+      p.access?.kind === 'agent'
+        ? {
+            kind: p.access.kind,
+            cache: p.access.cache,
+            connection: p.access.connection,
+            project: p.access.project,
+            sourceIdentity: p.access.source_identity,
+            ...(p.access.source ? { source: p.access.source } : {}),
+          }
+        : p.access
+    if (access?.kind === 'agent' && !cfg.file_agents?.[access.connection])
+      throw new ConfigError('agent connection is not configured', candidate)
+    const nativeRoot = p.root ?? ''
+    const root =
+      access?.kind === 'agent'
+        ? fileProjectURI(access.connection, access.project)
+        : isAbsolute(nativeRoot)
+          ? nativeRoot
+          : resolve(baseDir, nativeRoot)
+    const storage =
+      p.access?.kind === 'agent'
+        ? undefined
+        : p.access?.kind === 'filesystem'
+          ? 'local'
+          : p.access?.kind === 'sshfs'
+            ? 'sshfs'
+            : (p.storage ?? 'local')
     const storageGroup = p.storage_group ?? p.storageGroup
+    if (
+      storageGroup !== undefined &&
+      access?.source !== undefined &&
+      storageGroup !== access.source
+    )
+      throw new ConfigError(
+        `projects.${p.name}: access.source conflicts with storage_group`,
+        candidate,
+      )
     const readOnly = p.read_only ?? p.readOnly
-    if (storage === 'local') {
+    if (storage === 'local' && !p.access) {
       // Both keys only describe SSHFS mechanics. Accepting them silently on a
       // direct Project would promise scheduling and persistence that mode
       // deliberately does not perform.
@@ -225,6 +260,7 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     return {
       name: p.name,
       root,
+      ...(access ? { access } : {}),
       include: p.include ?? [],
       exclude: p.exclude ?? [],
       ...(p.run_dirs === undefined ? {} : { runDirs: p.run_dirs }),
@@ -235,7 +271,11 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
       // Either spelling is accepted; the schema rejects supplying both.
       ...(storageGroup === undefined ? {} : { storageGroup }),
       ...(readOnly === undefined ? {} : { readOnly }),
-      ...(p.persistent_cache === undefined ? {} : { persistentCache: p.persistent_cache }),
+      ...(p.access
+        ? { persistentCache: p.access.cache === 'memory-disk' }
+        : p.persistent_cache === undefined
+          ? {}
+          : { persistentCache: p.persistent_cache }),
       ...(p.execution
         ? {
             execution:
@@ -293,19 +333,14 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   }
 
   const hostQualifiedProjects = projects.filter((p) => p.host !== undefined)
-  if (hostQualifiedProjects.length > 0 && hostQualifiedProjects.length !== projects.length) {
-    throw new ConfigError(
-      'projects must either all declare `host:` (host-qualified identity) or none of them (project-only identity)',
-      candidate,
-    )
-  }
   /**
    * Host-qualified Projects served directly from this instance's own
    * filesystem (ordinary directories or mounts). Such an instance is the
    * central Web role by construction: it answers host-qualified routes without
    * any peer Backend, service token, or availability probe.
    */
-  const directProjects = hostQualifiedProjects.length > 0
+  const directProjects =
+    projects.length > 0 && (hostQualifiedProjects.length > 0 || cfg.central !== undefined)
 
   const poll: PollConfig = {
     minIntervalMs: cfg.poll?.min_interval_ms ?? DEFAULT_POLL.minIntervalMs,
@@ -374,12 +409,6 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     if (cfg.backend) {
       throw new ConfigError(
         'backend role must not declare per-project `host:`; the Host namespace comes from `backend.host_id`',
-        candidate,
-      )
-    }
-    if (projects.length > 0 && !directProjects) {
-      throw new ConfigError(
-        'central role must not define local `projects:` without a `host:` namespace; add `host:` to serve them directly or register an explicit Backend',
         candidate,
       )
     }
@@ -623,7 +652,10 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
   // root may be a mount of another machine where local Git/Slurm commands
   // would silently run against the wrong host.
   const resolvedProjects: ProjectConfig[] = projects.map((project) =>
-    project.execution || directProjects
+    project.execution ||
+    project.host !== undefined ||
+    project.access?.kind === 'agent' ||
+    project.access?.kind === 'sshfs'
       ? project
       : { ...project, execution: { kind: 'local' as const } },
   )
@@ -651,7 +683,21 @@ export async function loadConfig(opts: LoadConfigOptions): Promise<Config | null
     )
   }
 
+  const fileAgents = cfg.file_agents
+    ? Object.fromEntries(
+        Object.entries(cfg.file_agents).map(([id, value]) => [
+          id,
+          {
+            endpoint: value.endpoint,
+            caFile: resolve(baseDir, value.ca_file),
+            certificateFile: resolve(baseDir, value.certificate_file),
+            keyFile: resolve(baseDir, value.key_file),
+          },
+        ]),
+      )
+    : undefined
   return {
+    ...(fileAgents ? { fileAgents } : {}),
     projects: resolvedProjects,
     poll,
     auth,
@@ -679,7 +725,12 @@ function resolveFileAccess(
   const overrides: Partial<FileAccessOptions> = {}
   for (const [key, value] of Object.entries(raw) as [keyof FileAccessOptions, unknown][]) {
     if (value === undefined) continue
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      (value === 0 && !['operationsPerSecond', 'bytesPerSecond'].includes(key))
+    ) {
       throw new ConfigError(`fileAccess.${key} must be a finite positive number`, candidate)
     }
     overrides[key] = value
@@ -687,6 +738,8 @@ function resolveFileAccess(
   if (Object.keys(overrides).length === 0) return undefined
 
   const effective: FileAccessOptions = { ...DEFAULT_FILE_ACCESS_OPTIONS, ...overrides }
+  if (effective.maxReadBytes > effective.byteBurst)
+    throw new ConfigError('fileAccess.byteBurst must cover maxReadBytes', candidate)
   const pairs: [keyof FileAccessOptions, keyof FileAccessOptions][] = [
     ['fileMinMs', 'fileMaxMs'],
     ['directoryMinMs', 'directoryMaxMs'],

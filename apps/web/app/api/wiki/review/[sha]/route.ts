@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 // POST|DELETE /api/wiki/review/[sha]?project=NAME
 //
 // Owner-only. POST marks one wiki commit verified (sequentially: marking a
@@ -9,15 +10,11 @@
 // Both methods write `.memon/wiki-review.csv` and then refresh the runtime's
 // review snapshot, which emits `wiki-review-change` over SSE.
 
-import {
-  removeWikiReviewMark,
-  WikiReviewError,
-  WikiReviewOrderError,
-  writeWikiReviewMark,
-} from '@memon/core'
+import { BackendWikiReviewResponseSchema, WikiReviewError, WikiReviewOrderError } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { WikiReviewResponse } from '@/lib/dto/wiki'
 import { getRuntime, type Runtime } from '../../../../../lib/server/runtime'
+import { standaloneServices } from '../../../../../lib/server/standalone-services'
 import {
   wikiError,
   wikiProjectTarget,
@@ -30,7 +27,7 @@ const SHA_SELECTOR = /^(next|[0-9a-f]{4,40})$/
 
 type RouteContext = { params: Promise<{ sha: string }> }
 
-export async function POST(request: NextRequest, context: RouteContext) {
+async function scopedPOST(request: NextRequest, context: RouteContext) {
   const resolved = await resolve(request, context)
   if ('error' in resolved) return resolved.error
   return withWikiInvocation(
@@ -42,9 +39,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!SHA_SELECTOR.test(resolved.sha)) {
         return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
       }
-      if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
-        return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
-      }
+
       let note: string | undefined
       try {
         const body = request.headers.get('content-length') === '0' ? null : await request.json()
@@ -54,7 +49,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         // An empty or non-JSON body just means "no note".
       }
       try {
-        await writeWikiReviewMark(resolved.root, resolved.sha, note)
+        await standaloneServices(resolved.runtime.config).documents.markWikiReview(
+          resolved.project,
+          resolved.sha,
+          note,
+        )
       } catch (caught) {
         return reviewFailure(caught)
       }
@@ -63,7 +62,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   )
 }
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
+async function scopedDELETE(request: NextRequest, context: RouteContext) {
   const resolved = await resolve(request, context)
   if ('error' in resolved) return resolved.error
   return withWikiInvocation(
@@ -75,11 +74,12 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       if (!SHA_SELECTOR.test(resolved.sha)) {
         return wikiError(400, 'BAD_REQUEST', 'sha must be a hex prefix or `next`')
       }
-      if (!resolved.runtime.wikiCache.isGitProject(resolved.project)) {
-        return wikiError(404, 'NOT_FOUND', 'project is not a git worktree')
-      }
+
       try {
-        await removeWikiReviewMark(resolved.root, resolved.sha)
+        await standaloneServices(resolved.runtime.config).documents.unmarkWikiReview(
+          resolved.project,
+          resolved.sha,
+        )
       } catch (caught) {
         return reviewFailure(caught)
       }
@@ -110,10 +110,18 @@ async function resolve(
 
 /** Re-derive review state, then answer with the fresh log. */
 async function respondWithLog(runtime: Runtime, project: string): Promise<NextResponse> {
-  await runtime.wikiCache.refreshProjectReview(project)
-  const log = runtime.wikiCache.getReviewLog(project)
+  const log = BackendWikiReviewResponseSchema.parse(
+    await standaloneServices(runtime.config).documents.wikiReviewLog(project),
+  )
   if (!log) return wikiError(404, 'NOT_FOUND', `project "${project}" is not a git worktree`)
-  return NextResponse.json(log satisfies WikiReviewResponse)
+  return NextResponse.json({
+    ...log,
+    commits: log.commits.map((commit) => ({
+      ...commit,
+      verifiedAt: commit.verifiedAt ?? null,
+      note: commit.note ?? null,
+    })),
+  } satisfies WikiReviewResponse)
 }
 
 function reviewFailure(caught: unknown): NextResponse {
@@ -129,3 +137,6 @@ function reviewFailure(caught: unknown): NextResponse {
   }
   return wikiError(500, 'INTERNAL', (caught as Error).message)
 }
+
+export const POST = withStandaloneRequest(scopedPOST)
+export const DELETE = withStandaloneRequest(scopedDELETE)

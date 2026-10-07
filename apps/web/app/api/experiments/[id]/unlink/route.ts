@@ -5,10 +5,11 @@ import {
   bindStandaloneExperiment,
   standaloneExperimentMutationError,
 } from '../../../../../lib/server/standalone-experiment-mutation-route'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function scopedPOST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const body = (await req.json().catch(() => null)) as { run?: unknown } | null
   if (typeof body?.run !== 'string' || body.run === '') {
     return NextResponse.json(
@@ -30,3 +31,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     )
   }
 }
+
+export const POST = withStandaloneRequest(scopedPOST)

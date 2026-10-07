@@ -24,7 +24,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from '@memon/file-protocol/paths'
 import { rebuildIndex } from '../derived-index/rebuild.js'
 import { layoutNotices, RUN_NESTED, verifyIndex } from '../derived-index/validate.js'
 import {

@@ -7,8 +7,8 @@
 // scope (CLI-shaped callers, tests) every call resolves afresh.
 
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { resolve } from 'node:path'
 import { projectFs as fs } from '@memon/core'
+import { resolve } from '@memon/file-protocol/paths'
 
 interface RequestScope {
   realRoots: Map<string, Promise<string>>

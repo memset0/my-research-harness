@@ -1,3 +1,4 @@
+import { AgentReadHandle } from './agent-handle.js'
 // project-file-store/store — `ProjectFileStore`, the orchestration of one
 // process's project file observations: entries and their freshness, attention
 // leases, the completed-value LRU, invalidation and write adoption, freshness
@@ -5,9 +6,10 @@
 // Queueing lives in `scheduler.ts`, the persistent-cache bridge in
 // `persistence.ts`, the root/mount availability guard in `mount-guard.ts`.
 
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { Stats } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { contentVersion, directoryVersion, FileAccessError } from '@memon/file-protocol'
+import { dirname, join, resolve } from '@memon/file-protocol/paths'
 import { LRUCache } from 'lru-cache'
 import { isWithinPath } from '../mount-table.js'
 import { isPersistedOperation, projectFileTtlMs } from '../project-file-cache.js'
@@ -16,8 +18,11 @@ import {
   type ProjectFileContext,
   projectFileContextStorage,
 } from '../project-file-context.js'
-import { getProjectIo, type MutationMethod, ProjectStats } from '../project-io.js'
+import { getProjectIo, type MutationMethod, ProjectStats, type StatsFields } from '../project-io.js'
 import type { FileAccessOptions } from '../types.js'
+import { agentAdapter, isAgentPath, missingAgentPath } from './agent-adapters.js'
+import { mutateAgent } from './agent-mutations.js'
+import { SourceBudgetPool, withSourceBudgetTiming } from './budgets.js'
 import { monotonic } from './clock.js'
 import { containedRealPath } from './containment.js'
 import {
@@ -46,6 +51,7 @@ import {
 import { ObservationPersistence } from './persistence.js'
 import { freshnessStatus, metricsSnapshot } from './reporting.js'
 import { FileOperationScheduler, failureBackoffMs, successIntervalMs } from './scheduler.js'
+import { budgetedSourceOperation } from './source-budget-runtime.js'
 import type { AttentionLease, ScheduledTask, StoreEntry } from './state.js'
 
 const MAX_CACHED_CONTENT_BYTES = 128 * 1024 * 1024
@@ -58,6 +64,13 @@ export class ProjectFileStore {
   readonly contextStorage = projectFileContextStorage()
 
   private options: FileAccessOptions = { ...DEFAULT_FILE_ACCESS_OPTIONS }
+  readonly budgets = new SourceBudgetPool(
+    () => this.options,
+    (source, operation, automatic, kind) =>
+      this.metrics.recordBudgetDeferral(source, operation, automatic ? 'automatic' : 'human', kind),
+    (source, operation, automatic, sample) =>
+      this.metrics.recordOperation(source, operation, automatic ? 'automatic' : 'human', sample),
+  )
   // Scheduler metadata and tasks never enter this completed-value LRU.
   private readonly observations = new LRUCache<string, Observation>({
     max: MAX_CACHE_ENTRIES,
@@ -75,6 +88,7 @@ export class ProjectFileStore {
   private readonly attentions = new Map<string, AttentionLease>()
   private readonly metrics = new MetricsRegistry()
   private readonly scheduler = new FileOperationScheduler({
+    budgets: this.budgets,
     options: () => this.options,
     metrics: this.metrics,
     cached: (key) => this.observations.get(key),
@@ -96,7 +110,10 @@ export class ProjectFileStore {
    * operations create no entries, tasks or metrics, so this is the only
    * record freshness reporting can answer from.
    */
+  private readonly authorityIdentities = new Map<string, string>()
+  private readonly sourceIdentities = new Map<string, string | undefined>()
   private readonly directRoots = new Set<string>()
+  private readonly logicalInterests = new Map<string, number>()
   /** Operation keys already reset by the in-flight human request, per context. */
   private readonly contextResets = new WeakMap<ProjectFileContext, Set<string>>()
 
@@ -106,14 +123,59 @@ export class ProjectFileStore {
     const next: FileAccessOptions = { ...this.options }
     for (const [key, value] of Object.entries(patch) as [keyof FileAccessOptions, unknown][]) {
       if (value === undefined) continue
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      if (
+        typeof value !== 'number' ||
+        !Number.isFinite(value) ||
+        value < 0 ||
+        (value === 0 && !['operationsPerSecond', 'bytesPerSecond'].includes(key))
+      ) {
         throw new RangeError(`file access option ${String(key)} must be a finite positive number`)
       }
       next[key] = value
     }
+    if (next.backgroundShare >= 1 || next.maxReadBytes > next.byteBurst)
+      throw new RangeError(
+        'backgroundShare must be less than one and byteBurst must cover maxReadBytes',
+      )
     this.options = next
     // The isolated workers must be able to hold the scheduled concurrency.
     getProjectIo().configure(this.options.concurrency)
+  }
+
+  observationTime(root: string, path: string, operation: ObservedOperation): number | null {
+    return this.entries.get(`${root}\u0000${operation}\u0000${path}`)?.completedAtWall ?? null
+  }
+
+  nextCheckDelay(root: string, path: string, operation: ObservedOperation): number {
+    const entry = this.entries.get(`${root}\u0000${operation}\u0000${path}`)
+    return entry ? Math.max(0, entry.dueAtMono - monotonic()) : 0
+  }
+
+  /** Explicit logical interests choose one shared generic polling schedule. */
+  registerLogicalInterest(root: string, path: string, operation: ObservedOperation): () => void {
+    const key = `${root}\u0000${operation}\u0000${path}`
+    const count = this.logicalInterests.get(key) ?? 0
+    this.logicalInterests.set(key, count + 1)
+    const entry = this.entries.get(key)
+    if (entry && count === 0) {
+      entry.attentionGeneration++
+      entry.intervalMs = this.intervalRange(entry)[0]
+      if (entry.completedAtMono !== null)
+        entry.dueAtMono = Math.min(entry.dueAtMono, entry.completedAtMono + entry.intervalMs)
+    }
+    let removed = false
+    return () => {
+      if (removed) return
+      removed = true
+      const remaining = (this.logicalInterests.get(key) ?? 1) - 1
+      if (remaining) this.logicalInterests.set(key, remaining)
+      else this.logicalInterests.delete(key)
+    }
+  }
+
+  discardTransientBody(root: string, path: string, operation: ObservedOperation): void {
+    const key = `${root}\u0000${operation}\u0000${path}`
+    if (this.observations.peek(key)?.present) this.observations.delete(key)
   }
 
   effectiveOptions(): FileAccessOptions {
@@ -180,6 +242,7 @@ export class ProjectFileStore {
       const ttl = projectFileTtlMs(entry.root, entry.path)
       return [ttl, ttl]
     }
+    if (this.logicalInterests.has(entry.key)) return [1000, 300_000]
     const active = Date.now() - entry.lastAttentionAtWall <= this.options.leaseMs
     if (!active) return [this.options.maintenanceMinMs, this.options.maintenanceMaxMs]
     if (entry.operation === 'readdir') {
@@ -258,6 +321,8 @@ export class ProjectFileStore {
     absolutePath: string,
     runner: () => Promise<Observation>,
   ): Promise<Observation> {
+    // Local credential changes must fence old observations before any cached answer.
+    if (isAgentPath(absolutePath)) await agentAdapter(absolutePath)
     const entry = this.entryFor(context, operation, absolutePath)
     const human = isHumanFileOperationReason(context.reason)
     const origin: FileOperationOrigin = human ? 'human' : 'automatic'
@@ -266,11 +331,12 @@ export class ProjectFileStore {
     // demand adopts only this key, without loading any project files.
     if (!this.observations.has(entry.key) && !entry.persistLoaded) {
       await this.persistence.restore(context, entry)
+      if (!entry.persistLoaded) await this.persistence.restore(context, entry)
     }
     // Only eligible persisted observations use the SSHFS TTL policy.
     // Memory-only projects retain their configured attention/backoff behavior.
     if (
-      (RESET_REASON[context.reason ?? 'automatic'] || (human && entry.persist === null)) &&
+      (context.observationPolicy === 'revalidate' || RESET_REASON[context.reason ?? 'automatic']) &&
       this.firstTouchInRequest(context, entry.key)
     ) {
       this.resetSchedule(entry)
@@ -280,7 +346,13 @@ export class ProjectFileStore {
     const observation = this.observations.get(entry.key)
     if (observation !== undefined) {
       this.metrics.recordCacheHit(entry.group.name, operation, origin)
-      if (now < entry.dueAtMono) return observation
+      if (context.observationPolicy === 'cached' || now < entry.dueAtMono) return observation
+      if (
+        context.observationPolicy === 'fresh' ||
+        context.observationPolicy === 'revalidate' ||
+        RESET_REASON[context.reason ?? 'automatic']
+      )
+        return await this.scheduler.schedule(entry, operation, origin, human, runner)
       // Due but usable: answer from cache immediately and verify in the
       // background. This is what keeps warm requests off the disk entirely.
       void this.scheduler.schedule(entry, operation, origin, human, runner).catch(() => undefined)
@@ -455,6 +527,42 @@ export class ProjectFileStore {
    * Record how a root's files are reached, so freshness reporting can
    * describe a direct root that owns no scheduler state at all.
    */
+  noteAuthority(root: string, identity: string): void {
+    if (this.authorityIdentities.has(root) && this.authorityIdentities.get(root) !== identity)
+      this.resetNamespace(root)
+    this.authorityIdentities.set(root, identity)
+  }
+
+  private resetNamespace(root: string): void {
+    this.invalidate(root)
+    for (const entry of this.entries.values()) {
+      if (entry.root !== root) continue
+      entry.persist = null
+      entry.persistLoaded = false
+      entry.persistLoad = null
+      entry.completedAtWall = null
+      entry.completedAtMono = null
+      entry.fingerprint = null
+    }
+  }
+
+  noteSource(root: string, identity: string | undefined): void {
+    if (this.sourceIdentities.has(root) && this.sourceIdentities.get(root) !== identity) {
+      this.resetNamespace(root)
+    }
+    this.sourceIdentities.set(root, identity)
+  }
+
+  sourceNamespace(root: string): string {
+    return createHash('sha256')
+      .update(
+        JSON.stringify([
+          this.sourceIdentities.get(root) ?? null,
+          this.authorityIdentities.get(root) ?? null,
+        ]),
+      )
+      .digest('hex')
+  }
   noteStorage(root: string, storage: ProjectFileContext['storage']): void {
     if (storage === 'local') this.directRoots.add(root)
     else this.directRoots.delete(root)
@@ -477,6 +585,29 @@ export class ProjectFileStore {
       normalizedRoot,
       attentionId,
       now,
+    )
+  }
+
+  recordTransport(group: string, operation: string, bytes: number, validation: boolean): void {
+    const name =
+      operation === 'read' || operation === 'range'
+        ? 'readFile'
+        : operation === 'list'
+          ? 'readdir'
+          : operation === 'mutate'
+            ? 'write'
+            : operation === 'resolve'
+              ? 'realpath'
+              : operation === 'lstat'
+                ? 'lstat'
+                : 'stat'
+    const reason = this.contextStorage.getStore()?.reason
+    this.metrics.recordTransport(
+      group,
+      name,
+      isHumanFileOperationReason(reason) ? 'human' : 'automatic',
+      bytes,
+      validation,
     )
   }
 
@@ -514,6 +645,10 @@ export class ProjectFileStore {
     syscall: string,
     keepFinalLink = false,
   ): Promise<string> {
+    if (isAgentPath(absolutePath)) {
+      const { adapter, target } = await agentAdapter(absolutePath)
+      return join(context.root, await adapter.resolve(target))
+    }
     const group = this.groupName(context)
     const rootReal = await this.mounts.realRoot(context.root, group)
     await this.mounts.assertMountIdentity(rootReal, syscall)
@@ -530,8 +665,30 @@ export class ProjectFileStore {
   async readFileValue(context: ProjectFileContext, absolutePath: string): Promise<FileValue> {
     const observation = await this.observe(context, 'readFile', absolutePath, async () => {
       try {
+        if (isAgentPath(absolutePath)) {
+          const { adapter, target } = await agentAdapter(absolutePath)
+          const prior = this.observations.peek(`${context.root}\u0000readFile\u0000${absolutePath}`)
+          const body = prior?.value?.kind === 'file' ? prior.value.bytes : undefined
+          const result = await adapter.read(
+            target,
+            body ? { knownVersion: contentVersion(body) } : {},
+          )
+          if (result.outcome === 'missing') throw missingAgentPath(absolutePath)
+          if (result.outcome === 'unchanged') {
+            if (!body || !prior) throw new FileAccessError('PROTOCOL_INCOMPATIBLE')
+            return prior
+          }
+          return fileObservation(Buffer.from(result.content, 'base64'))
+        }
         const target = await this.containedTarget(context, absolutePath, 'readFile')
-        return fileObservation(await getProjectIo().readFile(this.groupName(context), target))
+        return fileObservation(
+          await getProjectIo().readFile(
+            this.groupName(context),
+            target,
+            undefined,
+            this.options.maxReadBytes,
+          ),
+        )
       } catch (error) {
         return toNegativeOrThrow(error)
       }
@@ -544,8 +701,25 @@ export class ProjectFileStore {
   async listDirValue(context: ProjectFileContext, absolutePath: string): Promise<DirValue> {
     const observation = await this.observe(context, 'readdir', absolutePath, async () => {
       try {
+        if (isAgentPath(absolutePath)) {
+          const { adapter, target } = await agentAdapter(absolutePath)
+          const prior = this.observations.peek(`${context.root}\u0000readdir\u0000${absolutePath}`)
+          const entries = prior?.value?.kind === 'dir' ? prior.value.entries : undefined
+          const result = await adapter.list(
+            target,
+            entries ? { knownVersion: directoryVersion(entries) } : {},
+          )
+          if (result.outcome === 'missing') throw missingAgentPath(absolutePath)
+          if (result.outcome === 'unchanged') {
+            if (!entries || !prior) throw new FileAccessError('PROTOCOL_INCOMPATIBLE')
+            return prior
+          }
+          return dirObservation(result.entries)
+        }
         const target = await this.containedTarget(context, absolutePath, 'readdir')
-        return dirObservation(await getProjectIo().readdir(this.groupName(context), target))
+        return dirObservation(
+          await getProjectIo().readdir(this.groupName(context), target, this.options.maxReadBytes),
+        )
       } catch (error) {
         return toNegativeOrThrow(error)
       }
@@ -562,6 +736,8 @@ export class ProjectFileStore {
   ): Promise<Stats> {
     const observation = await this.observe(context, operation, absolutePath, async () => {
       try {
+        if (isAgentPath(absolutePath))
+          return statObservation(await this.agentStat(absolutePath, operation))
         // `lstat` must observe the link itself, so only its parent chain is
         // resolved for containment.
         const target = await this.containedTarget(
@@ -585,6 +761,10 @@ export class ProjectFileStore {
   async realpathValue(context: ProjectFileContext, absolutePath: string): Promise<string> {
     const observation = await this.observe(context, 'realpath', absolutePath, async () => {
       try {
+        if (isAgentPath(absolutePath)) {
+          const { adapter, target } = await agentAdapter(absolutePath)
+          return pathObservation(join(context.root, await adapter.resolve(target)))
+        }
         const group = this.groupName(context)
         const rootReal = await this.mounts.realRoot(context.root, group)
         await this.mounts.assertMountIdentity(rootReal, 'realpath')
@@ -603,14 +783,148 @@ export class ProjectFileStore {
     return value.target
   }
 
+  private async agentStat(path: string, operation: 'stat' | 'lstat') {
+    const { adapter, target } = await agentAdapter(path)
+    const result = await adapter.stat(target, operation === 'stat')
+    if (result.outcome === 'missing') throw missingAgentPath(path)
+    const { metadata } = result
+    const type =
+      metadata.kind === 'file'
+        ? 0o100000
+        : metadata.kind === 'directory'
+          ? 0o040000
+          : metadata.kind === 'symlink'
+            ? 0o120000
+            : 0
+    return {
+      size: metadata.size,
+      mtimeMs: metadata.mtimeMs,
+      mode: metadata.mode | type,
+      ...(metadata.ino === undefined ? {} : { ino: metadata.ino }),
+      ...(metadata.dev === undefined ? {} : { dev: metadata.dev }),
+      ...(metadata.ctimeMs === undefined ? {} : { ctimeMs: metadata.ctimeMs }),
+    }
+  }
+
+  async openReadHandle(context: ProjectFileContext, path: string) {
+    const group = this.scheduler.groupFor(this.groupName(context))
+    const run = async <T>(
+      bytes: number,
+      work: () => Promise<T>,
+      actual?: (value: T) => number,
+    ): Promise<T> => {
+      await this.scheduler.acquire(group)
+      try {
+        return await budgetedSourceOperation(
+          group.name,
+          context.root,
+          bytes,
+          work,
+          actual,
+          this.budgets,
+        )
+      } finally {
+        this.scheduler.release(group)
+      }
+    }
+    const opened = await run(0, async () => {
+      const target = await this.containedTarget(context, path, 'open')
+      return (await getProjectIo().run(group.name, { op: 'openRead', path: target })) as {
+        readToken: string
+        fields: StatsFields
+        fileId: string
+      }
+    })
+    return new AgentReadHandle(
+      (offset, length) =>
+        run(
+          length,
+          async () => {
+            const rootReal = await this.mounts.realRoot(context.root, group.name)
+            await this.mounts.assertMountIdentity(rootReal, 'readAt')
+            return Buffer.from(
+              (await getProjectIo().run(group.name, {
+                op: 'readAt',
+                readToken: opened.readToken,
+                offset,
+                length,
+              })) as Uint8Array,
+            )
+          },
+          (value) => value.length,
+        ),
+      () =>
+        run(0, async () => {
+          await getProjectIo().run(group.name, { op: 'closeRead', readToken: opened.readToken })
+        }),
+      opened.fields,
+      opened.fileId,
+    )
+  }
+
+  async readRange(
+    context: ProjectFileContext,
+    path: string,
+    offset: number,
+    length: number,
+  ): Promise<Buffer> {
+    if (
+      !Number.isSafeInteger(offset) ||
+      !Number.isSafeInteger(length) ||
+      offset < 0 ||
+      length < 0 ||
+      length > this.options.byteBurst
+    )
+      throw new RangeError('invalid bounded range')
+    const group = this.scheduler.groupFor(this.groupName(context))
+    await this.scheduler.acquire(group)
+    try {
+      return await budgetedSourceOperation(
+        group.name,
+        context.root,
+        length,
+        async () => {
+          const target = await this.containedTarget(context, path, 'readRange')
+          return (await getProjectIo().readRange(group.name, target, offset, length)).bytes
+        },
+        (bytes) => bytes.length,
+        this.budgets,
+      )
+    } finally {
+      this.scheduler.release(group)
+    }
+  }
+
   /** Uncached physical reads (distinct fs semantics) still run isolated. */
   async rawReadFile(
     context: ProjectFileContext,
     absolutePath: string,
     flag?: string,
   ): Promise<Buffer> {
-    const target = await this.containedTarget(context, absolutePath, 'readFile')
-    return await getProjectIo().readFile(this.groupName(context), target, flag)
+    if (isAgentPath(absolutePath)) {
+      if (flag !== undefined && flag !== 'r') throw new FileAccessError('CAPABILITY_UNAVAILABLE')
+      const { adapter, target } = await agentAdapter(absolutePath)
+      const result = await adapter.read(target)
+      if (result.outcome === 'missing') throw missingAgentPath(absolutePath)
+      if (result.outcome !== 'present') throw new FileAccessError('PROTOCOL_INCOMPATIBLE')
+      return Buffer.from(result.content, 'base64')
+    }
+    return budgetedSourceOperation(
+      this.groupName(context),
+      context.root,
+      this.options.maxReadBytes,
+      async () => {
+        const target = await this.containedTarget(context, absolutePath, 'readFile')
+        return getProjectIo().readFile(
+          this.groupName(context),
+          target,
+          flag,
+          this.options.maxReadBytes,
+        )
+      },
+      (bytes) => bytes.length,
+      this.budgets,
+    )
   }
 
   async rawStat(
@@ -618,24 +932,47 @@ export class ProjectFileStore {
     absolutePath: string,
     operation: 'stat' | 'lstat',
   ): Promise<Stats> {
-    const target = await this.containedTarget(
-      context,
-      absolutePath,
-      operation,
-      operation === 'lstat',
-    )
-    const fields = await getProjectIo().stat(
+    if (isAgentPath(absolutePath))
+      return new ProjectStats(await this.agentStat(absolutePath, operation)) as unknown as Stats
+    return budgetedSourceOperation(
       this.groupName(context),
-      target,
-      operation === 'stat',
-      true,
+      context.root,
+      0,
+      async () => {
+        const target = await this.containedTarget(
+          context,
+          absolutePath,
+          operation,
+          operation === 'lstat',
+        )
+        const fields = await getProjectIo().stat(
+          this.groupName(context),
+          target,
+          operation === 'stat',
+          true,
+        )
+        return new ProjectStats(fields) as unknown as Stats
+      },
+      undefined,
+      this.budgets,
+      operation,
     )
-    return new ProjectStats(fields) as unknown as Stats
   }
 
   async rawAccess(context: ProjectFileContext, absolutePath: string, mode: number): Promise<void> {
-    const target = await this.containedTarget(context, absolutePath, 'access')
-    await getProjectIo().access(this.groupName(context), target, mode)
+    if (isAgentPath(absolutePath)) throw new FileAccessError('CAPABILITY_UNAVAILABLE')
+    await budgetedSourceOperation(
+      this.groupName(context),
+      context.root,
+      0,
+      async () => {
+        const target = await this.containedTarget(context, absolutePath, 'access')
+        await getProjectIo().access(this.groupName(context), target, mode)
+      },
+      undefined,
+      this.budgets,
+      'stat',
+    )
   }
 
   /**
@@ -663,22 +1000,44 @@ export class ProjectFileStore {
     const enqueuedAtMono = monotonic()
     await this.scheduler.acquire(group)
     const startedAtMono = monotonic()
+    const timing = { waitMs: 0, automatic: () => false }
     try {
       // Symlink containment for the real targets, inside the slot: a linked
       // destination must not let a write land outside the root.
-      for (const path of paths) await this.containedTarget(context, path, syscall)
-      const result = await getProjectIo().mutate(group.name, method, args)
+      if (!isAgentPath(paths[0] ?? ''))
+        for (const path of paths) await this.containedTarget(context, path, syscall)
+      const bytes =
+        method === 'writeFile' || method === 'appendFile'
+          ? typeof args[1] === 'string'
+            ? Buffer.byteLength(args[1])
+            : args[1] instanceof Uint8Array
+              ? args[1].byteLength
+              : 0
+          : 0
+      const result = await withSourceBudgetTiming(timing, async () =>
+        isAgentPath(paths[0] ?? '')
+          ? await mutateAgent(context, method, paths, args)
+          : await budgetedSourceOperation(
+              group.name,
+              context.root,
+              bytes,
+              () => getProjectIo().mutate(group.name, method, args),
+              () => bytes,
+              this.budgets,
+              'write',
+            ),
+      )
       this.metrics.recordOperation(group.name, 'write', 'human', {
-        waitMs: startedAtMono - enqueuedAtMono,
-        execMs: monotonic() - startedAtMono,
+        waitMs: startedAtMono - enqueuedAtMono + timing.waitMs,
+        execMs: Math.max(0, monotonic() - startedAtMono - timing.waitMs),
         bytes: 0,
         error: false,
       })
       return result
     } catch (error) {
       this.metrics.recordOperation(group.name, 'write', 'human', {
-        waitMs: startedAtMono - enqueuedAtMono,
-        execMs: monotonic() - startedAtMono,
+        waitMs: startedAtMono - enqueuedAtMono + timing.waitMs,
+        execMs: Math.max(0, monotonic() - startedAtMono - timing.waitMs),
         bytes: 0,
         error: true,
       })

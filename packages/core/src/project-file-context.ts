@@ -31,6 +31,9 @@ export interface ProjectFileContext {
    * behaviour. (The *config* default is the opposite: an unconfigured
    * Project is local.)
    */
+  observationPolicy?: 'cached' | 'fresh' | 'revalidate' | 'stale-while-revalidate'
+  cachePolicy?: 'none' | 'memory' | 'memory-disk'
+  sourceIdentity?: string
   storage?: 'local' | 'sshfs'
   /** Physical storage bucket sharing one concurrency limit. Defaults to `'default'`. */
   storageGroup?: string

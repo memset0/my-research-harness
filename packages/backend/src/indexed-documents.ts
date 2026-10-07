@@ -6,7 +6,6 @@
 // re-reading bodies, and inside a list window it touches nothing at all.
 
 import type { Dirent } from 'node:fs'
-import { join, relative, sep } from 'node:path'
 import {
   type BackendResourceInventoryItem,
   type DiscoveredWikiPage,
@@ -16,6 +15,7 @@ import {
   WIKI_DIR_RELPATH,
   WIKI_PAGE_NAME_REGEX,
 } from '@memon/core'
+import { join, relative, sep } from '@memon/file-protocol/paths'
 import { isContained } from './containment.js'
 import { digest, type ListedEntry, projectReadIndex, type ReadPolicy } from './read-index.js'
 import { realProjectRoot } from './request-scope.js'

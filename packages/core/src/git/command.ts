@@ -27,7 +27,7 @@
 //   - lifetime:     bounded to 256 entries / 32 MiB, oldest evicted first.
 
 import { execFile } from 'node:child_process'
-import { resolve, sep } from 'node:path'
+import { resolve, sep } from '@memon/file-protocol/paths'
 import { getProjectFileContext, onProjectFilesChanged } from '../project-file-context.js'
 
 export interface GitCommandOptions {

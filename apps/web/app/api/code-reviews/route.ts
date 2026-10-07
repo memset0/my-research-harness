@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 // GET /api/code-reviews?project=NAME -> { codeReviews: CodeReviewSummary[] }
 //
 // Rich responses preserve the runtime-cache projection where configured.
@@ -15,7 +16,7 @@ import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+async function scopedGET(req: NextRequest) {
   try {
     const rt = await getRuntime()
     const search = new URL(req.url).searchParams
@@ -55,3 +56,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: { message: (err as Error).message } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { resolve } from '@memon/file-protocol/paths'
 
 /**
  * Resolve `<projectRoot>/.memon/shares.json` and assert the result stays

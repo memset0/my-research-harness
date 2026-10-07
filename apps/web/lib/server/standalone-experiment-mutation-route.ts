@@ -1,23 +1,23 @@
 import 'server-only'
 
-import { join } from 'node:path'
 import { BackendMutationError } from '@memon/backend'
-import { JournalRecordingError } from '@memon/core'
+import { BackendReadmeResponseSchema, JournalRecordingError } from '@memon/core'
 import { NextResponse } from 'next/server'
 import type { Runtime } from './runtime'
-import {
-  projectDocumentPath,
-  refreshStandaloneLifecycle,
-  standaloneDocumentLock,
-} from './standalone-mutation-refresh'
+import { projectDocumentPath, refreshStandaloneLifecycle } from './standalone-mutation-refresh'
 import { standaloneServices } from './standalone-services'
+import { standaloneExperimentTarget, standaloneRunTarget } from './standalone-target'
 
-function experimentProject(runtime: Runtime, id: string) {
-  const experiment = runtime.experiments.get(id)
-  if (!experiment) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Experiment not found')
-  const project = runtime.projectFor(experiment.path)
-  if (!project) throw new BackendMutationError('PROJECT_NOT_FOUND', 'Project not found')
-  return { experiment, project }
+async function experimentProject(runtime: Runtime, id: string) {
+  const target = await standaloneExperimentTarget(runtime.config, id)
+  return { experiment: target.value, project: target.project }
+}
+
+async function documentLock(runtime: Runtime, project: string, resource: string) {
+  const readme = BackendReadmeResponseSchema.parse(
+    await standaloneServices(runtime.config).documents.getReadme(project, resource),
+  )
+  return { expectedMtime: readme.mtime, expectedHash: readme.hash }
 }
 
 export async function createStandaloneExperiment(
@@ -33,11 +33,13 @@ export async function createStandaloneExperiment(
 ) {
   const project = runtime.config.projects.find((candidate) => candidate.name === projectName)
   if (!project) throw new BackendMutationError('PROJECT_NOT_FOUND', 'Project not found')
-  const fromRun = input.fromRun ? runtime.index.get(input.fromRun) : null
+  const fromRun = input.fromRun
+    ? (await standaloneRunTarget(runtime.config, input.fromRun, projectName)).value
+    : null
   if (input.fromRun && !fromRun) {
     throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Run not found')
   }
-  const fromRunLock = fromRun ? await standaloneDocumentLock(join(fromRun.path, 'README.md')) : null
+  const fromRunLock = fromRun ? await documentLock(runtime, projectName, fromRun.resource) : null
   const result = await standaloneServices(runtime.config).mutations.createExperiment(projectName, {
     ...input,
     ...(fromRunLock
@@ -67,12 +69,12 @@ export async function bindStandaloneExperiment(
   id: string,
   runId: string,
 ) {
-  const { experiment, project } = experimentProject(runtime, id)
-  const run = runtime.index.get(runId)
+  const { experiment, project } = await experimentProject(runtime, id)
+  const run = (await standaloneRunTarget(runtime.config, runId, project.name)).value
   if (!run) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Run not found')
   const [experimentLock, runLock] = await Promise.all([
-    standaloneDocumentLock(experiment.path),
-    standaloneDocumentLock(join(run.path, 'README.md')),
+    documentLock(runtime, project.name, experiment.resource),
+    documentLock(runtime, project.name, run.resource),
   ])
   const result = await standaloneServices(runtime.config).mutations.bindExperiment(
     operation,
@@ -90,13 +92,13 @@ export async function bindStandaloneExperiment(
 }
 
 export async function deleteStandaloneExperiment(runtime: Runtime, id: string, force: boolean) {
-  const { experiment, project } = experimentProject(runtime, id)
-  const experimentLock = await standaloneDocumentLock(experiment.path)
+  const { experiment, project } = await experimentProject(runtime, id)
+  const experimentLock = await documentLock(runtime, project.name, experiment.resource)
   const runLocks = await Promise.all(
     experiment.frontMatter.runs.map(async (runId) => {
-      const run = runtime.index.get(runId)
+      const run = (await standaloneRunTarget(runtime.config, runId, project.name)).value
       if (!run) throw new BackendMutationError('RESOURCE_NOT_FOUND', 'Run not found')
-      return { run: runId, ...(await standaloneDocumentLock(join(run.path, 'README.md'))) }
+      return { run: runId, ...(await documentLock(runtime, project.name, run.resource)) }
     }),
   )
   const result = await standaloneServices(runtime.config).mutations.deleteExperiment(

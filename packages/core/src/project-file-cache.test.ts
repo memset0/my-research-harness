@@ -497,7 +497,7 @@ describe('freshness lifetime', () => {
     expect(projectFileTtlMs(root, join(root, 'README.md'))).toBe(DEFAULT_DOCUMENT_TTL_MS)
   })
 
-  it('keeps local-project attention refresh independent of persistent cache TTLs', async () => {
+  it('preserves the memory-only reuse interval on focus while manual refresh bypasses it', async () => {
     const root = await nodeFs.mkdtemp(join(tmpdir(), 'memon-ttl-project-'))
     try {
       await configureProjectFileCache({ dumpPath, ...OPTIONS })
@@ -507,7 +507,13 @@ describe('freshness lifetime', () => {
       const before = getFileOperationMetrics().byOperation.readFile.samples
       await withProjectFileContext({ root, reason: 'open' }, () => projectFs.readFile(file, 'utf8'))
       await nodeFs.writeFile(file, 'local edit\n')
-      await withProjectFileContext({ root, reason: 'focus', persistentCache: true }, () =>
+      expect(
+        await withProjectFileContext({ root, reason: 'focus', persistentCache: true }, () =>
+          projectFs.readFile(file, 'utf8'),
+        ),
+      ).toBe('first\n')
+      expect(getFileOperationMetrics().byOperation.readFile.samples).toBe(before + 1)
+      await withProjectFileContext({ root, reason: 'manual' }, () =>
         projectFs.readFile(file, 'utf8'),
       )
       expect(await awaitPhysicalReads(before + 2)).toBe(before + 2)

@@ -2,8 +2,8 @@ import 'server-only'
 
 import { createHash } from 'node:crypto'
 import type { Dirent } from 'node:fs'
-import { extname, join, relative, resolve, sep } from 'node:path'
 import { extractTitle, projectFs as fs, writeFileAtomic } from '@memon/core'
+import { extname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { splitFrontmatter } from '../frontmatter'
 
 const REPORT_FILE_RE = /^R(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/

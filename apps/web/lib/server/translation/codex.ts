@@ -4,9 +4,9 @@ import { type ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child
 import { constants } from 'node:fs'
 import { access, mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { promisify } from 'node:util'
+import { basename, dirname, join, resolve } from '@memon/file-protocol/paths'
 import { TRANSLATION_TARGET_NAMES, type TranslationTarget } from '../../translation/target'
 
 export const TRANSLATION_MODEL = 'gpt-5.3-codex-spark'

@@ -3,10 +3,11 @@
 // post-write content they already hold so an event costs stats only; rebuild
 // and verification read the files themselves.
 
-import { basename, dirname, join, relative, sep } from 'node:path'
+import { basename, dirname, join, relative, sep } from '@memon/file-protocol/paths'
 import { runEligibilityError } from '../discovery/eligibility.js'
 import { readRunDir, runFromReadme } from '../discovery/read.js'
 import { type ParsedExperiment, parseExperimentReadme } from '../experiments/parse.js'
+import { throwIfSourceFailure } from '../project-file-store/errors.js'
 import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
 import { parseResultFile, RESULT_FILE_NAME } from '../results/result-file.js'
 import { formatIsoLocal } from '../time.js'
@@ -90,7 +91,12 @@ export async function deriveRunEntry(input: DeriveRunEntryInput): Promise<RunInd
   const hasResult = resultStat?.isFile() === true
   let resultSchemaVersion: number | null = null
   if (hasResult) {
-    const content = input.resultContent ?? (await fs.readFile(resultPath, 'utf8').catch(() => null))
+    const content =
+      input.resultContent ??
+      (await fs.readFile(resultPath, 'utf8').catch((error) => {
+        throwIfSourceFailure(error)
+        return null
+      }))
     resultSchemaVersion = content === null ? null : parseResultFile(content).schemaVersion
   }
   let run: Run

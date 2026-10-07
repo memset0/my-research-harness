@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import yaml from 'js-yaml'
 import { type ZodError, z } from 'zod'
 import { matchesRunDirPatterns, nestedRunAncestor } from '../discovery/run-dirs.js'

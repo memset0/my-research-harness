@@ -1,4 +1,4 @@
-import { relative, resolve, sep } from 'node:path'
+import { relative, resolve, sep } from '@memon/file-protocol/paths'
 import { readRunDir } from '../discovery/read.js'
 import { runSlugFromDirName } from '../ids.js'
 import { formatIsoLocal } from '../time.js'

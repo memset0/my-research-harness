@@ -1,9 +1,10 @@
-// Process-wide singleton holding the live experiment index, file caches,
-// poller, and event bus shared across all API routes.
+import { resolveProjectExecution } from '@memon/backend'
+// Process-wide instance configuration and primitive Store initialization.
+// Legacy containers stay empty; requests use shared domain services.
 //
 // Lifecycle:
 //   - Initialized lazily on first request (so importing the module is cheap)
-//   - Eagerly warmed up via apps/web/instrumentation.ts on server start
+//   - Configuration initialized at startup without project scans
 //   - Shared across separately bundled routes and Next.js dev reloads
 //
 // Production model: `memon serve` spawns Next.js with MEMON_CONFIG_PATH set;
@@ -13,32 +14,25 @@
 
 import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
 import {
   type AuthConfig,
   CODE_REVIEW_FILENAME_REGEX,
   type CodeReviewSummary,
   type Config,
-  computeMembership,
-  computeMembershipFromDisk,
+  configureFileAgentAdapters,
   configureProjectFileCache,
   configureProjectFileStore,
-  deriveCompletion,
-  discoverExperiments,
-  discoverRuns,
   EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_FILENAME_REGEX,
   type Experiment,
   type ExperimentMembershipAnomaly,
-  extractTitle,
   LEGACY_RESULTS_FILE,
   loadConfig,
   MANAGED_DOCUMENT_FILE_NAMES,
   type ParsedHypotheses,
   type ParsedJournal,
   Poller,
-  parseCodeReview,
   parseHypotheses,
   parseJournal,
   projectRunPath,
@@ -46,12 +40,9 @@ import {
   type ReportSummary,
   type Run,
   RunIndex,
-  readExperimentDoc,
-  readRunDir,
 } from '@memon/core'
-import { listComponents } from '../components/registry'
+import { basename, dirname, join } from '@memon/file-protocol/paths'
 import { ensureAuthInitialised } from './auth/first-run'
-import { servesProjectsDirectly } from './central/direct-projects'
 import { DirCache } from './runtime/dir-cache'
 import { FileCache } from './runtime/file-cache'
 import { WikiCache } from './runtime/wiki-cache'
@@ -270,7 +261,12 @@ async function init(): Promise<Runtime> {
   if (config.slurm.totalNodes === -1) {
     slurm = { enabled: false, totalNodes: -1, supported: false }
   } else {
-    const probe = await probeSqueue()
+    const target = config.projects.find((project) => project.execution !== undefined)
+    if (!target)
+      throw new Error(
+        'memon: Slurm requires a configured execution target; set slurm.total_nodes: -1 to disable it',
+      )
+    const probe = await probeSqueue(resolveProjectExecution(target))
     if (!probe.supported) {
       throw new Error(
         `memon: squeue probe failed (${probe.reason ?? 'unknown'}). ` +
@@ -286,415 +282,59 @@ async function init(): Promise<Runtime> {
   configureProjectFileStore(config.fileAccess ?? {})
   await configureProjectFileCache(config.fileCache)
 
-  // Projects served directly through the project file store are read on
-  // demand, per request, with bounded scheduled I/O. They must never enter
-  // the legacy warm caches or the poller: that is exactly the continuous
-  // whole-project scan this deployment mode removes. The legacy runtime stays
-  // intact for project-only (standalone) instances.
-  const legacyProjects = servesProjectsDirectly(config) ? [] : config.projects
-
+  configureFileAgentAdapters(config.fileAgents ?? {}, config.projects)
+  // Compatibility containers are empty: startup never scans project storage.
+  // All live readers compose shared backend services over the primitive Store.
   const index = new RunIndex()
   const events = new EventEmitter()
   events.setMaxListeners(50)
-
-  // Per-project file caches for docs/hypotheses.md / docs/journal.md
-  const hypothesesPaths = legacyProjects.map((p) => join(p.root, 'docs', 'hypotheses.md'))
-  const journalPaths = legacyProjects.map((p) => join(p.root, 'docs', 'journal.md'))
-
   const hypothesesCache = new FileCache<ParsedHypotheses>({
     name: 'hypotheses',
-    paths: hypothesesPaths,
+    paths: [],
     parse: parseHypotheses,
-    onUpdate: (path) => {
-      const project = config.projects.find(
-        (candidate) => path === join(candidate.root, 'docs', 'hypotheses.md'),
-      )
-      if (!project) return
-      wikiCache.invalidate(project.name)
-      events.emit('wiki-change', { project: project.name })
-    },
   })
   const journalCache = new FileCache<ParsedJournal>({
     name: 'journal',
-    paths: journalPaths,
+    paths: [],
     parse: parseJournal,
   })
-
-  // Per-project directory cache for docs/reports/.
-  const reportsDirs = legacyProjects.map((p) => join(p.root, 'docs', 'reports'))
-
   const reportsCache = new DirCache<ReportSummary>({
     name: 'reports',
-    dirs: reportsDirs,
+    dirs: [],
     fileNameRegex: REPORT_FILENAME_REGEX,
-    parseFile: (absPath, content, mtime) => {
-      const name = basename(absPath)
-      const m = REPORT_FILENAME_REGEX.exec(name)!
-      return {
-        id: `R${m[1]}`,
-        slug: m[2]!,
-        path: absPath,
-        mtime,
-        title: extractTitle(content),
-      }
-    },
-    onUpdate: (dir) => {
-      const project = projectForDir(config, dir)
-      if (!project) return
-      events.emit('reports-change', { project })
-      // Legacy `R<NNNN>` resolution depends on which reports still exist.
-      wikiCache.invalidate(project)
+    parseFile: () => {
+      throw new Error('Legacy cache is inactive')
     },
   })
-
-  // Per-project code-review docs at the flat docs/code-review/ (project-wide)
-  // plus the dynamic set of docs/experiments/E*/code-review/ (experiment-
-  // scoped, seeded after experiment discovery below).
   const codeReviewsCache = new DirCache<CodeReviewSummary>({
     name: 'code-reviews',
-    dirs: legacyProjects.map((p) => join(p.root, 'docs', 'code-review')),
+    dirs: [],
     fileNameRegex: CODE_REVIEW_FILENAME_REGEX,
-    parseFile: (absPath, content, mtime): CodeReviewSummary => {
-      const { frontmatter: fm } = parseCodeReview(content)
-      const proj = config.projects.find((p) => absPath.startsWith(join(p.root, 'docs') + '/'))
-      const docsRoot = proj ? join(proj.root, 'docs') : dirname(dirname(absPath))
-      const id = relative(docsRoot, absPath).replace(/\.md$/, '')
-      const scope: 'project' | 'experiment' = id.startsWith('experiments/')
-        ? 'experiment'
-        : 'project'
-      let experiment = fm.experiment
-      if (!experiment && scope === 'experiment') {
-        const m = /^experiments\/(E\d{4}-[a-z0-9-]+)\/code-review\//.exec(id)
-        experiment = m ? m[1]! : null
-      }
-      const fn = CODE_REVIEW_FILENAME_REGEX.exec(basename(absPath))
-      return {
-        id,
-        scope,
-        experiment,
-        title: fm.title,
-        date: fn ? fn[1]! : '',
-        createdAt: fm.createdAt,
-        updatedAt: fm.updatedAt,
-        path: absPath,
-        mtime,
-        completion: deriveCompletion(fm),
-      }
-    },
-    onUpdate: (dir) => {
-      const project = projectForDir(config, dir)
-      if (project) events.emit('code-reviews-change', { project })
+    parseFile: () => {
+      throw new Error('Legacy cache is inactive')
     },
   })
-
-  // Shared, mutable state captured by both the Poller closure and the
-  // Runtime instance. The Runtime constructor takes these by reference so
-  // poll-driven mutations and API-route reads see the same Map.
-  const sharedExperiments: Map<string, Experiment> = new Map()
-  const sharedAnomalies: Map<string, ExperimentMembershipAnomaly[]> = new Map()
-  // A recompute reads declared Run paths from disk, so overlapping calls may
-  // finish out of order; only the newest call per project publishes.
-  const anomalyGenerations = new Map<string, number>()
-  const recomputeAnomalies = async (projectName: string): Promise<void> => {
-    const generation = (anomalyGenerations.get(projectName) ?? 0) + 1
-    anomalyGenerations.set(projectName, generation)
-    const exps = Array.from(sharedExperiments.values()).filter((e) => e.project === projectName)
-    // Membership needs the full Run set: a deprecated Run is still bound to
-    // its Experiment, and hiding it here would report it as a phantom
-    // reference. Deprecation filtering belongs to the collection endpoints.
-    const runs = index.list({ project: projectName, includeDeprecated: true })
-    const root = config.projects.find((project) => project.name === projectName)?.root
-    if (root)
-      for (const run of runs)
-        run.frontMatter.experiment = declaredParentExperimentId(exps, root, run, runs)
-    // Path declarations are classified by the declared path on disk, so an
-    // excluded or depth-pruned Run is still a member, never a phantom.
-    const membershipInput = { experiments: exps, runs, project: projectName }
-    const result = root
-      ? await computeMembershipFromDisk({ ...membershipInput, projectRoot: root }).catch(() =>
-          computeMembership({ ...membershipInput, projectRoot: root }),
-        )
-      : computeMembership(membershipInput)
-    if (anomalyGenerations.get(projectName) !== generation) return
-    sharedAnomalies.set(projectName, result.anomalies)
-    events.emit('anomaly', { project: projectName, count: result.anomalies.length })
-  }
-
-  // Wiki pages (docs/wiki/<kind>/…). The projection needs the Experiment
-  // index, the run index, the hypotheses file, and the report id set, so the
-  // cache pulls them through this closure on every rebuild — never from disk.
-  const wikiComponentNames = Array.from(
-    new Set(listComponents().map((descriptor) => descriptor.type)),
-  )
   const wikiCache = new WikiCache({
-    projects: legacyProjects.map((p) => ({ name: p.name, root: p.root })),
-    context: (project) => {
-      const hypotheses = hypothesesCache.get(join(project.root, 'docs', 'hypotheses.md'))
-      return {
-        experiments: Array.from(sharedExperiments.values()).filter(
-          (e) => e.project === project.name,
-        ),
-        runs: index
-          .list({ project: project.name, includeDeprecated: true })
-          .map((run) => ({ ...run, id: projectRunPath(project.root, run.path) })),
-        hypothesesMtime: hypotheses?.mtime ? hypotheses.mtime : null,
-        hypothesisIds: (hypotheses?.value?.entries ?? []).map((entry) => entry.id),
-        reportIds: reportsCache
-          .getList(join(project.root, 'docs', 'reports'))
-          .map((report) => report.id),
-        componentNames: wikiComponentNames,
-      }
-    },
-    onChange: (project) => events.emit('wiki-change', { project }),
-    onReviewChange: (project) => events.emit('wiki-review-change', { project }),
+    onChange: () => {},
+    onReviewChange: () => {},
+    projects: [],
+    context: () => ({
+      experiments: [],
+      runs: [],
+      hypothesisIds: [],
+      hypothesesMtime: null,
+      reportIds: [],
+    }),
   })
-
-  // Single Poller instance dispatched by path-membership to the right handler.
   const poller = new Poller(
     {
       minIntervalMs: config.poll.minIntervalMs,
       maxIntervalMs: config.poll.maxIntervalMs,
       backoffFactor: config.poll.backoffFactor,
     },
-    async (path) => {
-      // Try file caches first (cheap O(1) Set membership check each).
-      if (hypothesesCache.handlePollChange(path)) return
-      if (journalCache.handlePollChange(path)) return
-      // Try directory caches (handles both dir-mtime and per-file changes).
-      if (reportsCache.handlePollChange(path, poller)) return
-      if (codeReviewsCache.handlePollChange(path, poller)) return
-      // Wiki tree, `.memon/wiki-review.csv`, and the git HEAD/ref pair.
-      if (wikiCache.handlePollChange(path, poller)) return
-
-      // v3: docs/experiments/ directory mtime advance → rediscover the
-      // exp-doc set for the owning project. Individual file changes are
-      // handled below (they also fall through to here).
-      const expDirMatch = config.projects.find((p) => path === join(p.root, 'docs', 'experiments'))
-      if (expDirMatch) {
-        try {
-          const { experiments: discovered } = await discoverExperiments(
-            expDirMatch.root,
-            expDirMatch.name,
-          )
-          const seen = new Set<string>()
-          for (const e of discovered) {
-            seen.add(e.id)
-            // Register README, managed YAML sidecars, and the bundle directory
-            // so direct Agent edits and sidecar creation/deletion are visible.
-            await watchExperimentBundle(poller, e)
-          }
-          // Replace the project's slice of the experiments map.
-          for (const id of Array.from(sharedExperiments.keys())) {
-            const cur = sharedExperiments.get(id)!
-            if (cur.project !== expDirMatch.name) continue
-            if (!seen.has(id)) {
-              unwatchExperimentBundle(poller, cur)
-              sharedExperiments.delete(id)
-            }
-          }
-          for (const e of discovered) sharedExperiments.set(e.id, e)
-          // Reconcile the dynamic set of experiment-scoped code-review dirs:
-          // add subdirs for newly-seen experiments, drop those for vanished
-          // ones. The flat docs/code-review/ dir is never touched here.
-          const desiredCrDirs = new Set(discovered.map((e) => join(dirname(e.path), 'code-review')))
-          const expsRoot = join(expDirMatch.root, 'docs', 'experiments') + '/'
-          for (const d of codeReviewsCache.dirs()) {
-            if (d.startsWith(expsRoot) && !desiredCrDirs.has(d)) {
-              codeReviewsCache.removeDir(d)
-            }
-          }
-          for (const d of desiredCrDirs) {
-            if (!codeReviewsCache.dirs().includes(d)) {
-              await codeReviewsCache.addDir(d, poller)
-            }
-          }
-          events.emit('code-reviews-change', { project: expDirMatch.name })
-          await recomputeAnomalies(expDirMatch.name)
-          // Cited-Experiment times drive `stale` / `citedBy`.
-          wikiCache.invalidate(expDirMatch.name)
-          events.emit('experiment-change', { type: 'rediscover', project: expDirMatch.name })
-        } catch {
-          // Best-effort — keep existing state on transient errors.
-        }
-        return
-      }
-
-      // Individual Experiment bundle change: README.md, any managed YAML
-      // sidecar, or the bundle directory itself. Also tolerate the legacy v4
-      // file form (`docs/experiments/E*.md`) during migration.
-      const expFileMatch = config.projects.find((p) =>
-        path.startsWith(join(p.root, 'docs', 'experiments') + '/'),
-      )
-      if (expFileMatch) {
-        const expId = experimentIdForWatchedPath(expFileMatch.root, path)
-        if (expId) {
-          try {
-            const updated = await readExperimentDoc(expFileMatch.root, expFileMatch.name, expId)
-            if (updated) {
-              sharedExperiments.set(expId, updated)
-              await watchExperimentBundle(poller, updated)
-            } else {
-              const previous = sharedExperiments.get(expId)
-              if (previous) unwatchExperimentBundle(poller, previous)
-              sharedExperiments.delete(expId)
-            }
-            await recomputeAnomalies(expFileMatch.name)
-            wikiCache.invalidate(expFileMatch.name)
-            events.emit('experiment-change', {
-              type: updated ? 'set' : 'delete',
-              id: expId,
-              experiment: updated ?? undefined,
-            })
-          } catch {
-            // best-effort
-          }
-        }
-        return
-      }
-
-      // Otherwise this is a run directory.
-      const projectMatch = config.projects.find(
-        (p) => path === p.root || path.startsWith(`${p.root}/`),
-      )
-      if (!projectMatch) return
-      try {
-        const exp = await readRunDir(path, projectMatch.name)
-        const parentExperimentId = declaredParentExperimentId(
-          Array.from(sharedExperiments.values()).filter(
-            (experiment) => experiment.project === projectMatch.name,
-          ),
-          projectMatch.root,
-          exp,
-          index.list({ project: projectMatch.name, includeDeprecated: true }),
-        )
-        exp.frontMatter.experiment = parentExperimentId
-        index.set(exp)
-        // A cited run's own update time feeds page staleness.
-        wikiCache.invalidate(projectMatch.name)
-        events.emit('run-change', {
-          type: 'set',
-          id: exp.id,
-          experiment: exp,
-          parentExperimentId,
-        })
-      } catch {
-        // If directory disappeared, drop from index silently
-      }
-    },
+    async () => {},
   )
-
-  // Initial scan + parse + watch — file caches, dir caches, run scan, and
-  // experiment-doc scan in parallel.
-  const t0 = Date.now()
-  const experimentsByProject = new Map<string, Experiment[]>()
-  await Promise.all([
-    hypothesesCache.warmup(),
-    journalCache.warmup(),
-    reportsCache.warmup(),
-    codeReviewsCache.warmup(),
-    wikiCache.warmup(),
-    (async () => {
-      for (const project of legacyProjects) {
-        const dirs = await discoverRuns(project)
-        for (const dir of dirs) {
-          try {
-            const exp = await readRunDir(dir, project.name)
-            index.set(exp)
-            poller.watch(dir, exp.mtime)
-          } catch {
-            // Skip unreadable directories
-          }
-        }
-      }
-    })(),
-    (async () => {
-      for (const project of legacyProjects) {
-        const { experiments: docs } = await discoverExperiments(project.root, project.name)
-        experimentsByProject.set(project.name, docs)
-        // Register the docs/experiments/ dir for poll tracking + each
-        // discovered bundle for individual README/YAML/directory watches.
-        const expDir = join(project.root, 'docs', 'experiments')
-        poller.watch(expDir, await dirMtimeOrZero(expDir))
-        for (const doc of docs) {
-          await watchExperimentBundle(poller, doc)
-        }
-      }
-    })(),
-  ])
-
-  // Seed the dynamic set of experiment-scoped code-review dirs (one level
-  // deeper than the flat docs/code-review/). Tolerant of dirs that don't exist
-  // yet — the Poller detects their creation like any watched directory. Poller
-  // registration for these dirs + their files happens in the loop below.
-  for (const [, docs] of experimentsByProject) {
-    for (const doc of docs) {
-      await codeReviewsCache.addDir(join(dirname(doc.path), 'code-review'))
-    }
-  }
-
-  // Register watch entries for the file caches with the mtimes observed during
-  // warmup. Must happen after warmup so the Poller's "lastSeen mtime" is
-  // accurate (else the very first tick would unnecessarily refire).
-  for (const p of hypothesesPaths) {
-    const entry = hypothesesCache.get(p)
-    poller.watch(p, entry?.mtime ?? 0)
-  }
-  for (const p of journalPaths) {
-    const entry = journalCache.get(p)
-    poller.watch(p, entry?.mtime ?? 0)
-  }
-
-  // Register dir-level + per-file observations for reports. Both the
-  // directory mtime (advances on add/remove) and each individual file
-  // (advances on edit) are watched.
-  for (const dir of reportsCache.dirs()) {
-    poller.watch(dir, await dirMtimeOrZero(dir))
-  }
-  for (const filePath of reportsCache.paths()) {
-    poller.watch(filePath, await fileMtimeOrZero(filePath))
-  }
-  for (const dir of codeReviewsCache.dirs()) {
-    poller.watch(dir, await dirMtimeOrZero(dir))
-  }
-  for (const filePath of codeReviewsCache.paths()) {
-    poller.watch(filePath, await fileMtimeOrZero(filePath))
-  }
-  // Wiki: `docs/wiki/` itself, every kind directory, every page file, plus
-  // the git HEAD / branch ref / review-store trio that invalidates review.
-  for (const dir of wikiCache.dirs()) {
-    poller.watch(dir, await dirMtimeOrZero(dir))
-  }
-  for (const filePath of wikiCache.paths()) {
-    poller.watch(filePath, await fileMtimeOrZero(filePath))
-  }
-  await wikiCache.watchGitPaths(poller)
-
-  const expDocCount = Array.from(experimentsByProject.values()).reduce(
-    (n, list) => n + list.length,
-    0,
-  )
-  // eslint-disable-next-line no-console
-  console.log(
-    `memon: warmup complete in ${Date.now() - t0}ms — ${index.size()} runs, ` +
-      `${expDocCount} experiments, ` +
-      `${hypothesesCache.populated()}/${hypothesesPaths.length} hypotheses files, ` +
-      `${journalCache.populated()}/${journalPaths.length} journal files, ` +
-      `${reportsCache.paths().length} reports, ` +
-      `${codeReviewsCache.paths().length} code-reviews, ` +
-      `${wikiCache.paths().length} wiki pages`,
-  )
-
-  // Seed shared maps (used by both the poller closure and the Runtime
-  // instance, by reference) before constructing the Runtime.
-  for (const [, docs] of experimentsByProject) {
-    for (const doc of docs) sharedExperiments.set(doc.id, doc)
-  }
-  // Wiki warmup runs alongside Experiment/Run discovery. Rebuild once more
-  // after those in-memory indexes are fully seeded so the first request sees
-  // final staleness/backlink state without doing projection work itself.
-  wikiCache.invalidateAll()
-
-  const runtime = new Runtime(
+  return new Runtime(
     config,
     configPath,
     index,
@@ -706,30 +346,11 @@ async function init(): Promise<Runtime> {
     codeReviewsCache,
     wikiCache,
     auth,
-    sharedExperiments,
-    sharedAnomalies,
-    recomputeAnomalies,
+    new Map(),
+    new Map(),
+    async () => {},
     slurm,
   )
-  await Promise.all(
-    [...experimentsByProject.keys()].map((projectName) => recomputeAnomalies(projectName)),
-  )
-
-  return runtime
-}
-
-function projectForDir(config: Config, dir: string): string | null {
-  for (const p of config.projects) {
-    if (dir === join(p.root, 'docs', 'reports')) return p.name
-  }
-  // Code-review dirs: the flat docs/code-review/ or any nested
-  // docs/experiments/E*/code-review/.
-  for (const p of config.projects) {
-    const docs = join(p.root, 'docs')
-    if (dir === join(docs, 'code-review')) return p.name
-    if (dir.startsWith(docs + '/') && dir.endsWith('/code-review')) return p.name
-  }
-  return null
 }
 
 async function dirMtimeOrZero(dir: string): Promise<number> {
@@ -790,15 +411,5 @@ export async function watchExperimentBundle(poller: Poller, experiment: Experime
   for (const fileName of MANAGED_EXPERIMENT_FILE_NAMES) {
     const sidecar = join(directory, fileName)
     poller.watch(sidecar, await fileMtimeOrZero(sidecar))
-  }
-}
-
-function unwatchExperimentBundle(poller: Poller, experiment: Experiment): void {
-  poller.unwatch(experiment.path)
-  if (basename(experiment.path) !== 'README.md') return
-  const directory = dirname(experiment.path)
-  poller.unwatch(directory)
-  for (const fileName of MANAGED_EXPERIMENT_FILE_NAMES) {
-    poller.unwatch(join(directory, fileName))
   }
 }

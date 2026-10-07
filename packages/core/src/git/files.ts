@@ -5,7 +5,7 @@
 // `readGitFileContents` reads the bytes at a specific side of a diff (HEAD,
 // index, or working tree) with a 1024 KB cap and binary detection.
 
-import { resolve, sep } from 'node:path'
+import { resolve, sep } from '@memon/file-protocol/paths'
 import { projectFs as fs } from '../project-file-store.js'
 import {
   cachedGitCommand,

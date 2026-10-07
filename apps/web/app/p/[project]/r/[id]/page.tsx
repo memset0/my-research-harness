@@ -4,9 +4,10 @@
 // `runs[]` declarations (FS v7), never from the Run README. A Run that no
 // Experiment declares redirects to the project list page.
 
-import { join } from 'node:path'
+import { BackendRunResponseSchema } from '@memon/core'
 import { permanentRedirect } from 'next/navigation'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export default async function LegacyRunRedirect({
   params,
@@ -23,14 +24,10 @@ export default async function LegacyRunRedirect({
   let expId: string | null = null
   try {
     const rt = await getRuntime()
-    const root = rt.config.projects.find((candidate) => candidate.name === decodedProject)?.root
-    const runs = rt.index.list({ project: decodedProject, includeDeprecated: true })
-    // A path addresses exactly one Run; a bare Run ID only when unique, so two
-    // directories sharing a base name never redirect to a guessed parent.
-    const candidates = decodedId.includes('/')
-      ? runs.filter((candidate) => root !== undefined && candidate.path === join(root, decodedId))
-      : runs.filter((candidate) => candidate.id === decodedId)
-    expId = candidates.length === 1 ? rt.withDeclaredParent(candidates[0]!) : null
+    const run = BackendRunResponseSchema.parse(
+      await standaloneServices(rt.config).projects.getRun(decodedProject, decodedId),
+    )
+    expId = run.frontMatter.experiment ?? null
   } catch {
     // runtime init failed → fall through to project list
   }

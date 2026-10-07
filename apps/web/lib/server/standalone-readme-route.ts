@@ -1,20 +1,17 @@
 import 'server-only'
 
 import { BackendMutationError } from '@memon/backend'
-import {
-  BackendExperimentResponseSchema,
-  BackendReadmeResponseSchema,
-  BackendRunResponseSchema,
-  ProjectNameSchema,
-} from '@memon/core'
+import { BackendReadmeResponseSchema, ProjectNameSchema } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from './runtime'
+import { standaloneError } from './standalone-error'
 import {
   refreshStandaloneExperiment,
   refreshStandaloneJournal,
   refreshStandaloneRun,
 } from './standalone-mutation-refresh'
 import { standaloneServices } from './standalone-services'
+import { standaloneExperimentTarget, standaloneRunTarget } from './standalone-target'
 
 export async function readStandaloneReadme(
   kind: 'run' | 'experiment',
@@ -33,8 +30,8 @@ export async function readStandaloneReadme(
       mtime: readme.mtime,
       hash: readme.hash,
     })
-  } catch {
-    return notFound(kind)
+  } catch (error) {
+    return standaloneError(error)
   }
 }
 
@@ -104,33 +101,18 @@ async function resolveTarget(
   const services = standaloneServices(runtime.config)
   const selected = values.length === 1 ? ProjectNameSchema.safeParse(values[0]) : null
   if (selected && !selected.success) return badRequest('project selector is invalid')
-  const candidates = selected?.success
-    ? runtime.config.projects.filter((project) => project.name === selected.data)
-    : runtime.config.projects
-  for (const candidate of candidates) {
-    try {
-      const resource =
-        kind === 'run'
-          ? BackendRunResponseSchema.parse(await services.projects.getRun(candidate.name, id))
-              .resource
-          : BackendExperimentResponseSchema.parse(
-              await services.projects.getExperiment(candidate.name, id),
-            ).resource
-      return { runtime, services, project: candidate.name, id, resource }
-    } catch {
-      // Try the next configured standalone Project; central always supplies one.
-    }
+  try {
+    const target = await (kind === 'run' ? standaloneRunTarget : standaloneExperimentTarget)(
+      runtime.config,
+      id,
+      selected?.success ? selected.data : undefined,
+    )
+    return { runtime, services, project: target.project.name, id, resource: target.value.resource }
+  } catch (error) {
+    return standaloneError(error)
   }
-  return notFound(kind)
 }
 
 function badRequest(message: string) {
   return NextResponse.json({ error: { code: 'BAD_REQUEST', message } }, { status: 400 })
-}
-
-function notFound(kind: 'run' | 'experiment') {
-  return NextResponse.json(
-    { error: { code: 'NOT_FOUND', message: `${kind} README not found` } },
-    { status: 404 },
-  )
 }

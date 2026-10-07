@@ -9,7 +9,9 @@
     "types": ["node"],
     "paths": {
       "@memon/core": ["../core/src/index.ts"],
-      "@memon/test-utils": ["../test-utils/src/index.ts"]
+      "@memon/test-utils": ["../test-utils/src/index.ts"],
+      "@memon/file-protocol": ["../file-protocol/src/index.ts"],
+      "@memon/file-protocol/*": ["../file-protocol/src/*"]
     }
   },
   "include": ["src/**/*"],
@@ -19,6 +21,9 @@
     },
     {
       "path": "../test-utils"
+    },
+    {
+      "path": "../file-protocol"
     }
   ]
 }

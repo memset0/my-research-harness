@@ -5,9 +5,13 @@
 
 import { type Dirent, promises as nodeFs, type PathLike, type Stats } from 'node:fs'
 import type * as FsPromisesModule from 'node:fs/promises'
+import { FileAccessError } from '@memon/file-protocol'
 import { isWithinPath } from '../mount-table.js'
 import type { ProjectFileContext } from '../project-file-context.js'
 import { executeProjectIo, type MutationMethod } from '../project-io.js'
+import { isAgentPath } from './agent-adapters.js'
+import { AgentReadHandle } from './agent-handle.js'
+import { recordAgentBytes, recordAgentMtime } from './agent-mutations.js'
 import { resolveTargetPath } from './containment.js'
 import { containmentError, readOnlyError } from './errors.js'
 import { CachedDirent, type FileValue } from './observation.js'
@@ -73,13 +77,24 @@ function routable(
   syscall: string,
 ): { context: ProjectFileContext; path: string; direct: boolean } | null {
   const context = getStore().contextStorage.getStore()
-  if (context === undefined) return null
+  if (context === undefined) {
+    if (typeof target === 'string' && isAgentPath(target))
+      throw containmentError(syscall, target, 'unconfigured authority')
+    return null
+  }
   const absolutePath = resolveTargetPath(target)
   if (absolutePath === null) throw containmentError(syscall, String(target), context.root)
   if (!isWithinPath(context.root, absolutePath)) {
     throw containmentError(syscall, absolutePath, context.root)
   }
-  return { context, path: absolutePath, direct: context.storage === 'local' }
+  return {
+    context,
+    path: absolutePath,
+    direct:
+      !isAgentPath(absolutePath) &&
+      (context.cachePolicy === 'none' ||
+        (context.cachePolicy === undefined && context.storage === 'local')),
+  }
 }
 
 /**
@@ -136,6 +151,7 @@ async function facadeReadFile(
     return bytes.toString(encoding)
   }
   const value = await getStore().readFileValue(routed.context, routed.path)
+  if (isAgentPath(routed.path)) recordAgentBytes(routed.context, routed.path, value.bytes)
   return decodeFile(value, encoding)
 }
 
@@ -177,11 +193,14 @@ async function facadeStat(target: PathLike, options?: unknown): Promise<Stats> {
     return (await nodeFs.stat(target as never, options as never)) as Stats
   }
   if (optionValue(options, 'bigint') === true) {
+    if (isAgentPath(routed.path)) throw new FileAccessError('CAPABILITY_UNAVAILABLE')
     // BigInt precision is a distinct filesystem semantic, so it is observed
     // fresh rather than served from the cache — still isolated and contained.
     return await getStore().rawStat(routed.context, routed.path, 'stat')
   }
-  return await getStore().statValue(routed.context, routed.path, 'stat')
+  const result = await getStore().statValue(routed.context, routed.path, 'stat')
+  if (isAgentPath(routed.path)) recordAgentMtime(routed.context, routed.path, result.mtimeMs)
+  return result
 }
 
 async function facadeLstat(target: PathLike, options?: unknown): Promise<Stats> {
@@ -190,6 +209,7 @@ async function facadeLstat(target: PathLike, options?: unknown): Promise<Stats> 
     return (await nodeFs.lstat(target as never, options as never)) as Stats
   }
   if (optionValue(options, 'bigint') === true) {
+    if (isAgentPath(routed.path)) throw new FileAccessError('CAPABILITY_UNAVAILABLE')
     return await getStore().rawStat(routed.context, routed.path, 'lstat')
   }
   return await getStore().statValue(routed.context, routed.path, 'lstat')
@@ -209,6 +229,8 @@ async function facadeAccess(target: PathLike, mode?: number): Promise<void> {
     await nodeFs.access(target as never, mode)
     return
   }
+  if (isAgentPath(routed.path) && mode !== undefined && mode !== 0)
+    throw new FileAccessError('CAPABILITY_UNAVAILABLE')
   const writeCheck = mode !== undefined && (mode & 2) !== 0
   if (writeCheck && routed.context.readOnly === true) throw readOnlyError('access', routed.path)
   if (routed.direct) {
@@ -239,13 +261,12 @@ async function facadeOpen(target: PathLike, flags?: unknown, mode?: unknown): Pr
   if (routed.direct) {
     return await nodeFs.open(target as never, flags as never, mode as never)
   }
-  // File handles are byte-range transports (log tails, line indexes, binary
-  // downloads): deliberately not whole-file cache entries, and deliberately
-  // not routed through the isolated worker, because a handle cannot cross a
-  // process boundary. They stay bounded by the caller's own streaming and
-  // must still open a contained target.
-  const contained = await getStore().containedTarget(routed.context, routed.path, 'open')
-  return await nodeFs.open(contained, flags as never, mode as never)
+  if (isAgentPath(routed.path)) {
+    if (flags !== undefined && flags !== 'r') throw new FileAccessError('CAPABILITY_UNAVAILABLE')
+    return AgentReadHandle.open(routed.path)
+  }
+  if (flags !== undefined && flags !== 'r') throw new FileAccessError('CAPABILITY_UNAVAILABLE')
+  return getStore().openReadHandle(routed.context, routed.path)
 }
 
 function writtenBytes(data: unknown): Buffer | null {
@@ -263,7 +284,12 @@ async function facadeWriteFile(target: PathLike, data: unknown, options?: unknow
   }
   if (routed.direct) {
     if (routed.context.readOnly === true) throw readOnlyError('writeFile', routed.path)
-    await nodeFs.writeFile(target as never, data as never, options as never)
+    getStore().invalidate(routed.context.root, routed.path)
+    try {
+      await nodeFs.writeFile(target as never, data as never, options as never)
+    } finally {
+      getStore().invalidate(routed.context.root, routed.path)
+    }
     return
   }
   const store = getStore()
@@ -307,7 +333,12 @@ function mutatingUnary(
     }
     if (routed.direct) {
       if (routed.context.readOnly === true) throw readOnlyError(method, routed.path)
-      return await nativeMutations[method](target, ...forwarded)
+      getStore().invalidate(routed.context.root, routed.path)
+      try {
+        return await nativeMutations[method](target, ...forwarded)
+      } finally {
+        getStore().invalidate(routed.context.root, routed.path)
+      }
     }
     return await getStore().mutate(routed.context, method, [routed.path], method, [
       routed.path,
@@ -335,8 +366,18 @@ function mutatingBinary(
     if (routed.direct) {
       if (routed.context.readOnly === true) throw readOnlyError(method, routed.path)
       // The destination is contained by the same rule as the source.
-      routable(destination, method)
-      return await nativeMutations[method](source, destination, ...forwarded)
+      const destinationRoute = routable(destination, method)
+      const destinationPath = destinationRoute?.path ?? String(destination)
+      const invalidate = () => {
+        getStore().invalidate(routed.context.root, routed.path)
+        getStore().invalidate(routed.context.root, destinationPath)
+      }
+      invalidate()
+      try {
+        return await nativeMutations[method](source, destination, ...forwarded)
+      } finally {
+        invalidate()
+      }
     }
     // The destination is validated by the same containment rules as the
     // source, so a linked or out-of-root target cannot receive the write.
@@ -382,7 +423,22 @@ const facadeMethods = {
 export const projectFs = new Proxy(facadeMethods, {
   get(target, property, receiver) {
     if (Reflect.has(target, property)) return Reflect.get(target, property, receiver)
-    return Reflect.get(nodeFs as unknown as object, property)
+    const value: unknown = Reflect.get(nodeFs as unknown as object, property)
+    if (typeof value !== 'function') return value
+    return (...args: unknown[]) => {
+      const containsAuthority = args.some((argument) =>
+        typeof argument === 'string'
+          ? isAgentPath(argument)
+          : Buffer.isBuffer(argument)
+            ? isAgentPath(argument.toString('utf8'))
+            : argument instanceof URL
+              ? argument.protocol === 'memon-file:'
+              : false,
+      )
+      if (containsAuthority || getStore().contextStorage.getStore() !== undefined)
+        throw new FileAccessError('CAPABILITY_UNAVAILABLE')
+      return Reflect.apply(value, nodeFs, args)
+    }
   },
   has(target, property) {
     return Reflect.has(target, property) || Reflect.has(nodeFs as unknown as object, property)

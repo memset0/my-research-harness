@@ -32,8 +32,8 @@
 
 import { createHash } from 'node:crypto'
 import { type Dirent, promises as fs } from 'node:fs'
-import { join } from 'node:path'
 import type { Poller } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 
 export interface DirCacheEntry<T> {
   /** Parsed metadata. */

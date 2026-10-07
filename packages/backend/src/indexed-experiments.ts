@@ -5,7 +5,6 @@
 // README is re-read only when its fingerprint changed.
 
 import type { Stats } from 'node:fs'
-import { join } from 'node:path'
 import {
   BackendExperimentSummarySchema,
   BackendExperimentsResponseSchema,
@@ -21,6 +20,7 @@ import {
   readExperimentDoc,
   readExperimentManagedDocuments,
 } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import { digest, type ListedEntry, projectReadIndex, statObservation } from './read-index.js'
 
 const SUMMARY = BackendExperimentSummarySchema

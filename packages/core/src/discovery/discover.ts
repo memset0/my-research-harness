@@ -18,8 +18,9 @@
 // migration window only.
 
 import type { Dirent } from 'node:fs'
-import { basename, join, relative, sep } from 'node:path'
+import { basename, join, relative, sep } from '@memon/file-protocol/paths'
 import { resolveProjectLayout } from '../project-declaration/layout.js'
+import { throwIfSourceFailure } from '../project-file-store/errors.js'
 import { projectFs } from '../project-file-store.js'
 import type { ProjectConfig, Run } from '../types.js'
 import { DEFAULT_EXCLUDES, RUN_DIR_REGEX } from '../types.js'
@@ -164,7 +165,8 @@ export async function discoverRuns(
           await acquire()
           try {
             return await projectFs.readdir(directory, { withFileTypes: true })
-          } catch {
+          } catch (error) {
+            throwIfSourceFailure(error)
             return []
           } finally {
             release()
@@ -236,7 +238,8 @@ export async function discoverRuns(
     await acquire()
     try {
       entries = await projectFs.readdir(directory, { withFileTypes: true })
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       // Missing / unreadable directories are skipped, matching the previous
       // `suppressErrors` behaviour of the glob walk.
       return

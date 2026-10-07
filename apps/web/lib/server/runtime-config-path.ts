@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
 import { isProtectedExampleConfigPath } from '@memon/core'
+import { dirname, join, resolve } from '@memon/file-protocol/paths'
 
 export interface ResolveRuntimeConfigPathOptions {
   cwd: string

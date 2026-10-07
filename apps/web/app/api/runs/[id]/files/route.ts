@@ -8,6 +8,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import type { RunFilesResponse } from '@/lib/dto/runs'
 import { withValidRunId } from '../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -70,7 +71,9 @@ function legacyFileTree(node: BackendRunFileTreeNode): BackendRunFileTreeNode & 
 }
 
 // One request scope: the Project root's real path is resolved once.
-export const GET = withValidRunId(
+const scopedGET = withValidRunId(
   (request: Parameters<typeof handleGET>[0], context: Parameters<typeof handleGET>[1]) =>
     withRequestScope(() => handleGET(request, context)),
 )
+
+export const GET = withStandaloneRequest(scopedGET)

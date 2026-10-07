@@ -6,8 +6,16 @@
 // leave it either). Services translate `PathContainmentError` into their own
 // INVALID_RESOURCE error.
 
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { projectFs as fs } from '@memon/core'
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from '@memon/file-protocol/paths'
 import { realProjectRoot } from './request-scope.js'
 
 export class PathContainmentError extends Error {

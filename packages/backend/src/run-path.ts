@@ -6,8 +6,8 @@
 // from the request scope, so a request resolving hundreds of declared Runs
 // resolves the root once.
 
-import { basename, join, relative, resolve, sep } from 'node:path'
 import { projectFs as fs, isRunPath, type ProjectConfig, projectRunPath } from '@memon/core'
+import { basename, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { realProjectRoot } from './request-scope.js'
 
 function escapes(relativePath: string): boolean {

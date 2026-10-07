@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname, join, posix } from 'node:path'
+import { dirname, join, posix } from '@memon/file-protocol/paths'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { formatIsoLocal } from '../time.js'

@@ -1,8 +1,9 @@
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 // GET|PUT /api/readme — legacy absolute-path adapter over shared document/mutation services.
 
-import { basename, dirname } from 'node:path'
 import { BackendMutationError } from '@memon/backend'
 import { BackendReadmeResponseSchema } from '@memon/core'
+import { basename, dirname } from '@memon/file-protocol/paths'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { PathReadmeResponse, PutReadmeResponse } from '@/lib/dto/documents'
 import { PathSafetyError } from '../../../lib/server/path-safety'
@@ -12,7 +13,7 @@ import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const path = new URL(request.url).searchParams.get('path')
   if (!path) return badRequest('path query parameter required')
   try {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PUT(request: NextRequest) {
+async function scopedPUT(request: NextRequest) {
   let body: { path?: unknown; content?: unknown; expectedMtime?: unknown; expectedHash?: unknown }
   try {
     body = await request.json()
@@ -114,3 +115,6 @@ function readmeError(error: unknown) {
   }
   return NextResponse.json({ error: { message: 'README operation failed' } }, { status: 500 })
 }
+
+export const GET = withStandaloneRequest(scopedGET)
+export const PUT = withStandaloneRequest(scopedPUT)

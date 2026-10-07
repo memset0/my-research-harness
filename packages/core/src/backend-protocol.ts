@@ -2697,6 +2697,14 @@ export const CentralEventSchema = z.union([HostQualifiedBackendEventSchema, Host
 export type CentralEvent = z.infer<typeof CentralEventSchema>
 
 export const BACKEND_ERROR_CODES = [
+  'FILE_SOURCE_UNAVAILABLE',
+  'FILE_SOURCE_FORBIDDEN',
+  'FILE_PROTOCOL_INCOMPATIBLE',
+  'FILE_CAPABILITY_UNAVAILABLE',
+  'FILE_WRITER_UPGRADE_REQUIRED',
+  'FILE_MUTATION_UNCERTAIN',
+  'FILE_REPLAY_CONFLICT',
+  'FILE_LIMIT_EXCEEDED',
   'BAD_REQUEST',
   'UNAUTHORIZED',
   'FORBIDDEN',

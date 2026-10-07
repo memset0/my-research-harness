@@ -8,15 +8,15 @@
 //     (`src/project-io-child.ts`, run through Node's type stripping), and a
 //     relative `./x.js` specifier cannot resolve in both. Type-only imports
 //     are erased, so the protocol types are still shared.
-//   * It holds NO state: no cache, no queue, no policy. Every path arriving
+//   * It retains only bounded expiring read descriptors; no content cache or queue. Every path arriving
 //     here was already contained and authorized by the parent, and every
 //     result is answered as plain data. Adding a cache here would create a
 //     second, unaccounted copy of the project.
 
-import { promises as fs } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { type Dirent, promises as fs } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type {
-  DirEntryData,
   DirEntryKind,
   MutationMethod,
   ProjectIoRequest,
@@ -42,6 +42,16 @@ const MUTATION_METHODS: Record<MutationMethod, true> = {
   cp: true,
 }
 
+function direntKindOf(entry: Dirent): DirEntryKind {
+  return entry.isFile()
+    ? 'file'
+    : entry.isDirectory()
+      ? 'directory'
+      : entry.isSymbolicLink()
+        ? 'symlink'
+        : 'other'
+}
+
 /** Parent-side `realpathNearest`; keep the two copies in step. */
 async function realpathNearest(target: string): Promise<string> {
   const tail: string[] = []
@@ -63,24 +73,162 @@ async function realpathNearest(target: string): Promise<string> {
   }
 }
 
+const readLeases = new Map<
+  string,
+  {
+    file: Awaited<ReturnType<typeof fs.open>>
+    fields: StatsFields
+    deadline: number
+    active: number
+    closing: boolean
+  }
+>()
+const READ_LEASE_MS = 5 * 60 * 1000
+async function closeLease(token: string) {
+  const lease = readLeases.get(token)
+  if (!lease || (lease.closing && lease.active !== 0)) return
+  lease.closing = true
+  if (lease.active !== 0) return
+  lease.active = -1
+  try {
+    await lease.file.close()
+  } finally {
+    readLeases.delete(token)
+  }
+}
+const leaseSweep = setInterval(() => {
+  for (const [token, lease] of readLeases)
+    if (!lease.closing && lease.deadline <= Date.now())
+      void closeLease(token).catch(() => undefined)
+}, 1000)
+leaseSweep.unref()
+
 async function execute(request: ProjectIoRequest): Promise<unknown> {
   switch (request.op) {
-    case 'readFile':
+    case 'openRead': {
+      if (readLeases.size >= 256)
+        throw Object.assign(new Error('read handle limit'), { code: 'LIMIT_EXCEEDED' })
+      const token = randomUUID()
+      // Reserve before opening: blocked opens count against the bound.
+      const lease = {
+        file: null as unknown as Awaited<ReturnType<typeof fs.open>>,
+        fields: {} as StatsFields,
+        deadline: Infinity,
+        active: 1,
+        closing: false,
+      }
+      readLeases.set(token, lease)
+      try {
+        lease.file = await fs.open(request.path, 'r')
+        const stats = await lease.file.stat({ bigint: true })
+        if (!stats.isFile())
+          throw Object.assign(new Error('not a regular file'), { code: 'EINVAL' })
+        lease.fields = Object.fromEntries(
+          Object.entries(stats).map(([key, value]) => [
+            key,
+            typeof value === 'bigint' ? Number(value) : value,
+          ]),
+        ) as StatsFields
+        lease.deadline = Date.now() + READ_LEASE_MS
+        lease.active = 0
+        return { readToken: token, fields: lease.fields, fileId: `${stats.dev}:${stats.ino}` }
+      } catch (error) {
+        try {
+          await lease.file?.close()
+        } finally {
+          readLeases.delete(token)
+        }
+        throw error
+      }
+    }
+    case 'readAt': {
+      const lease = readLeases.get(request.readToken)
+      if (!lease || lease.closing || lease.deadline <= Date.now())
+        throw Object.assign(new Error('read handle expired'), { code: 'READ_HANDLE_EXPIRED' })
+      if (
+        !Number.isSafeInteger(request.offset) ||
+        request.offset < 0 ||
+        !Number.isSafeInteger(request.length) ||
+        request.length < 1 ||
+        request.length > 1024 * 1024 ||
+        !Number.isSafeInteger(request.offset + request.length)
+      )
+        throw new RangeError('invalid read bounds')
+      lease.active++
+      lease.deadline = Date.now() + READ_LEASE_MS
+      try {
+        const bytes = Buffer.alloc(
+          Math.min(request.length, Math.max(0, Number(lease.fields.size) - request.offset)),
+        )
+        const { bytesRead } = await lease.file.read(bytes, 0, bytes.length, request.offset)
+        return bytes.subarray(0, bytesRead)
+      } finally {
+        lease.active--
+        if (lease.closing && lease.active === 0) await closeLease(request.readToken)
+      }
+    }
+    case 'closeRead':
+      await closeLease(request.readToken)
+      return null
+
+    case 'readFile': {
+      if (request.maxBytes !== undefined) {
+        const file = await fs.open(request.path, request.flag ?? 'r')
+        try {
+          const chunks: Buffer[] = []
+          let size = 0
+          for (;;) {
+            const chunk = Buffer.alloc(Math.min(1024 * 1024, request.maxBytes + 1 - size))
+            const { bytesRead } = await file.read(chunk, 0, chunk.length, null)
+            if (!bytesRead) break
+            size += bytesRead
+            if (size > request.maxBytes)
+              throw Object.assign(new Error('project read exceeds configured body limit'), {
+                code: 'LIMIT_EXCEEDED',
+              })
+            chunks.push(chunk.subarray(0, bytesRead))
+          }
+          return Buffer.concat(chunks, size)
+        } finally {
+          await file.close()
+        }
+      }
       return await fs.readFile(
         request.path,
         request.flag === undefined ? undefined : { flag: request.flag },
       )
-    case 'readdir': {
-      const dirents = await fs.readdir(request.path, { withFileTypes: true })
-      const entries: DirEntryData[] = []
-      for (const entry of dirents) {
-        let kind: DirEntryKind = 'other'
-        if (entry.isSymbolicLink()) kind = 'symlink'
-        else if (entry.isDirectory()) kind = 'directory'
-        else if (entry.isFile()) kind = 'file'
-        entries.push({ name: entry.name, kind })
+    }
+    case 'readRange': {
+      const file = await fs.open(request.path, 'r')
+      try {
+        const stats = await file.stat()
+        if (!stats.isFile())
+          throw Object.assign(new Error('range target is not a regular file'), { code: 'EINVAL' })
+        const bytes = Buffer.alloc(request.length)
+        const result = await file.read(bytes, 0, bytes.length, request.offset)
+        return { bytes: bytes.subarray(0, result.bytesRead), extent: stats.size }
+      } finally {
+        await file.close()
       }
-      return entries
+    }
+    case 'readdir': {
+      if (request.maxBytes !== undefined) {
+        const entries: Array<{ name: string; kind: DirEntryKind }> = []
+        let bytes = 2
+        const dir = await fs.opendir(request.path)
+        for await (const entry of dir) {
+          const item = { name: entry.name, kind: direntKindOf(entry) }
+          bytes += Buffer.byteLength(JSON.stringify(item)) + (entries.length ? 1 : 0)
+          if (bytes > request.maxBytes)
+            throw Object.assign(new Error('listing exceeds maximum bytes'), {
+              code: 'LIMIT_EXCEEDED',
+            })
+          entries.push(item)
+        }
+        return entries
+      }
+      const dirents = await fs.readdir(request.path, { withFileTypes: true })
+      return dirents.map((entry) => ({ name: entry.name, kind: direntKindOf(entry) }))
     }
     case 'stat': {
       const options = request.bigint ? { bigint: true as const } : undefined
@@ -111,6 +259,8 @@ async function execute(request: ProjectIoRequest): Promise<unknown> {
       // answers with nothing.
       return (await run(...request.args)) ?? null
     }
+    default:
+      throw Object.assign(new Error('unsupported project operation'), { code: 'EINVAL' })
   }
 }
 

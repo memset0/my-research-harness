@@ -13,8 +13,8 @@
 
 import { createHash } from 'node:crypto'
 import type { Dirent, Stats } from 'node:fs'
-import { resolve } from 'node:path'
-import { projectFs as fs, type ProjectConfig } from '@memon/core'
+import { projectFs as fs, getProjectFileSourceNamespace, type ProjectConfig } from '@memon/core'
+import { resolve } from '@memon/file-protocol/paths'
 
 /** How long an observation may be reused without touching the filesystem. */
 export interface ReadPolicy {
@@ -140,6 +140,8 @@ export class ProjectReadIndex {
     pending: Promise<readonly string[]> | null
   } = { paths: null, builtAt: Number.NEGATIVE_INFINITY, pending: null }
 
+  sourceNamespace: string | undefined
+
   constructor(
     readonly root: string,
     private readonly now: () => number = Date.now,
@@ -162,19 +164,30 @@ export class ProjectReadIndex {
 
   /** Force the next read of every entry (and the walk) to re-validate. */
   invalidate(): void {
-    for (const entry of this.entries.values()) {
-      entry.validatedAt = Number.NEGATIVE_INFINITY
-      entry.serveStale = false
-    }
-    this.walkState.builtAt = Number.NEGATIVE_INFINITY
+    for (const [key, entry] of this.entries)
+      this.entries.set(key, {
+        ...entry,
+        validatedAt: Number.NEGATIVE_INFINITY,
+        pending: null,
+        serveStale: false,
+      })
+    this.walkState = { paths: null, builtAt: Number.NEGATIVE_INFINITY, pending: null }
+  }
+  discard(): void {
+    this.entries.clear()
+    this.walkState = { paths: null, builtAt: Number.NEGATIVE_INFINITY, pending: null }
   }
 
   /** Force the next read of `key` to re-validate (no stale serving). */
   expire(key: string): void {
     const entry = this.entries.get(key)
-    if (!entry) return
-    entry.validatedAt = Number.NEGATIVE_INFINITY
-    entry.serveStale = false
+    if (entry)
+      this.entries.set(key, {
+        ...entry,
+        validatedAt: Number.NEGATIVE_INFINITY,
+        pending: null,
+        serveStale: false,
+      })
   }
 
   /**
@@ -486,8 +499,12 @@ function isAbsence(error: unknown): boolean {
 
 // --------------------------------------------------------------- registry
 
-const indexes = new Map<string, ProjectReadIndex>()
-const rootsByName = new Map<string, Set<string>>()
+const INDEXES = Symbol.for('memon.backend-read-indexes.v1')
+const carrier = globalThis as unknown as {
+  [INDEXES]?: { indexes: Map<string, ProjectReadIndex>; rootsByName: Map<string, Set<string>> }
+}
+carrier[INDEXES] ??= { indexes: new Map(), rootsByName: new Map() }
+const { indexes, rootsByName } = carrier[INDEXES]
 
 /** The process-wide index for a Project root. */
 export function projectReadIndex(root: string): ProjectReadIndex {
@@ -497,6 +514,9 @@ export function projectReadIndex(root: string): ProjectReadIndex {
     index = new ProjectReadIndex(key)
     indexes.set(key, index)
   }
+  const namespace = getProjectFileSourceNamespace(key)
+  if (index.sourceNamespace !== undefined && index.sourceNamespace !== namespace) index.discard()
+  index.sourceNamespace = namespace
   return index
 }
 

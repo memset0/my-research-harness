@@ -4,7 +4,7 @@
 // (`CENTRAL_LAYOUT_DEPRECATED`, warning; marked as a conflict when it differs
 // from the declaration, in which case the central value wins).
 
-import { resolve } from 'node:path'
+import { resolve } from '@memon/file-protocol/paths'
 import { PROJECT_LAYOUT_KEYS } from '../schemas.js'
 import type { ProjectConfig } from '../types.js'
 import {

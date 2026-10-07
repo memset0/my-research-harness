@@ -18,7 +18,10 @@
 // event's hint, which fingerprint validation corrects within its window.
 
 import { randomBytes } from 'node:crypto'
+import { isFileURI } from '@memon/file-protocol/paths'
+import { withFileWriterLock } from '../file-writer-lock.js'
 import { resolveEffectiveRunDirs } from '../project-declaration/load.js'
+import { getProjectFileContext } from '../project-file-context.js'
 import { formatIsoLocal } from '../time.js'
 import { MEMON_RELEASE } from '../version.js'
 import { defaultIndexFs, errnoCode, type IndexFs } from './fs.js'
@@ -159,7 +162,12 @@ export async function acquireIndexLease(
       const moved = await fs.readFile(stale, 'utf8').catch(() => null)
       if (moved !== null && moved !== again.raw) {
         // A lease created after the re-read was moved: put it back.
-        await fs.link(stale, paths.lock).catch(() => undefined)
+        if (isFileURI(paths.lock)) {
+          // Exclusive create restores a moved lease without overwriting a new owner.
+          await fs
+            .writeFile(paths.lock, moved, { encoding: 'utf8', flag: 'wx' })
+            .catch(() => undefined)
+        } else await fs.link(stale, paths.lock).catch(() => undefined)
         await fs.rm(stale, { force: true }).catch(() => undefined)
         return null
       }
@@ -249,6 +257,14 @@ function expiredOutdatedEvents(skipped: readonly SkippedIndexEvent[], now: numbe
 
 /** Merge the events of `root` into its snapshot under the lease. */
 export async function compactIndex(
+  root: string,
+  options: CompactIndexOptions,
+): Promise<CompactIndexResult> {
+  if (getProjectFileContext() && (options.fs === undefined || options.fs === defaultIndexFs))
+    return withFileWriterLock(root, () => compactProjectIndex(root, options))
+  return compactProjectIndex(root, options)
+}
+async function compactProjectIndex(
   root: string,
   options: CompactIndexOptions,
 ): Promise<CompactIndexResult> {

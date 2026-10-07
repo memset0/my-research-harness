@@ -5,11 +5,14 @@ import { z } from 'zod'
 import type { PatchStatusResponse } from '@/lib/dto/runs'
 import { withValidRunId } from '../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { standaloneError } from '../../../../../lib/server/standalone-error'
 import {
   refreshStandaloneJournal,
   refreshStandaloneRun,
 } from '../../../../../lib/server/standalone-mutation-refresh'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
+import { standaloneRunTarget } from '../../../../../lib/server/standalone-target'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,19 +27,13 @@ const PatchBody = z
 async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await ctx.params
-  const current = runtime.index.get(id)
-  if (!current) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
-      { status: 404 },
-    )
-  }
-  const project = runtime.projectFor(current.path)
-  if (!project) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'owning project not found' } },
-      { status: 404 },
-    )
+  let project: (typeof runtime.config.projects)[number]
+  try {
+    project = (
+      await standaloneRunTarget(runtime.config, id, new URL(req.url).searchParams.get('project'))
+    ).project
+  } catch (error) {
+    return standaloneError(error)
   }
   const body = PatchBody.safeParse(await req.json().catch(() => null))
   if (!body.success) {
@@ -100,4 +97,6 @@ async function handlePATCH(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 }
 
-export const PATCH = withValidRunId(handlePATCH)
+const scopedPATCH = withValidRunId(handlePATCH)
+
+export const PATCH = withStandaloneRequest(scopedPATCH)

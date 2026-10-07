@@ -10,6 +10,8 @@ export {
   type ProjectFilesChangedListener,
 } from '../project-file-context.js'
 export type { FileAccessOptions } from '../types.js'
+export { configureFileAgentAdapters } from './agent-adapters.js'
+export { type ConditionalFileOptions, listProjectFiles, readProjectFile } from './conditional.js'
 export {
   DEFAULT_FILE_ACCESS_OPTIONS,
   type FileOperationCounters,
@@ -33,3 +35,4 @@ export {
   invalidateProjectFile,
   withProjectFileContext,
 } from './runtime.js'
+export { subscribeProjectDirectory, subscribeProjectFile } from './subscriptions.js'

@@ -1,8 +1,9 @@
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 // GET /api/log-files — legacy absolute-directory adapter over shared log discovery.
 
-import { join } from 'node:path'
 import { BackendStreamServiceError } from '@memon/backend'
 import { BackendLogFilesResponseSchema } from '@memon/core'
+import { join } from '@memon/file-protocol/paths'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { LogFilesResponse } from '@/lib/dto/logs'
 import { PathSafetyError } from '../../../lib/server/path-safety'
@@ -12,7 +13,7 @@ import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const expPath = new URL(request.url).searchParams.get('expPath')
   if (!expPath) {
     return NextResponse.json(
@@ -51,3 +52,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'log discovery failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

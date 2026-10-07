@@ -85,7 +85,10 @@ describe('direct web runtime anomalies', () => {
       void (async () => {
         const { getRuntime } = await import(${JSON.stringify(runtimeModuleUrl)})
         const runtime = await getRuntime()
-        const anomalies = runtime.anomaliesByProject.get('project-a') ?? []
+        if (runtime.index.size() !== 0 || runtime.experiments.size !== 0) throw new Error('startup eagerly scanned project files')
+        const { FilesystemProjectService } = await import(${JSON.stringify(pathToFileURL(resolve(webRoot, '../../packages/backend/dist/index.js')).href)})
+        const { withProjectFileContext } = await import(${JSON.stringify(pathToFileURL(resolve(webRoot, '../../packages/core/dist/index.js')).href)})
+        const { anomalies } = await withProjectFileContext({ root: runtime.config.projects[0].root, storage: 'local' }, () => new FilesystemProjectService(runtime.config.projects).getAnomalies('project-a'))
         process.stdout.write('\\n@@' + JSON.stringify(anomalies.map((a) => [a.code, a.runId])))
         process.exit(0)
       })()

@@ -36,7 +36,7 @@ import {
   SHARES_COOKIE_TTL_SECONDS,
 } from './lib/server/auth/cookies'
 import { resolveIdentity, type ShareValidator } from './lib/server/auth/identity'
-import { makeProjectResolver } from './lib/server/auth/project-resolver'
+import { makeProjectResolver, resolveRequestProject } from './lib/server/auth/project-resolver'
 import { isHttps, publicOrigin } from './lib/server/auth/public-url'
 import { clientIpFromHeaders, consume, refund } from './lib/server/auth/rate-limit'
 import { encodeHostScopeHeader, HOST_SCOPE_HEADER } from './lib/server/auth/request-context'
@@ -184,7 +184,14 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     // Viewer can only reach `read` routes (allowViewer was true). Apply
     // scope check against `project`.
     const scopeOk = checkViewerScope(
-      project,
+      project ??
+        (await resolveRequestProject(
+          runtime,
+          req.method,
+          pathname,
+          search,
+          identity.scopeProjects,
+        )),
       identity.scopeProjects,
       identity.scopeProjectRefs,
       hostFromRequest(pathname, search),
@@ -235,8 +242,7 @@ function checkViewerScope(
   if (project === 'multi') return true // handler filters
   if (project === 'global') return false // owner-only
   if (project === null) return false // fail-closed
-  if (centralMode) {
-    if (!host) return false
+  if (centralMode && host) {
     return hostScopes.some((scope) => scope.host === host && scope.project === project)
   }
   return legacyScope.has(project)

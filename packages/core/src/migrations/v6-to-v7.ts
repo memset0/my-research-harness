@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { type Dirent, promises as fs } from 'node:fs'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { splitFrontmatter } from '../frontmatter.js'
 import {

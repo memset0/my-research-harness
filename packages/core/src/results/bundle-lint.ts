@@ -4,7 +4,7 @@
 // and, inside a Git work tree, `RESULT_FILE_IGNORED` for an existing member
 // result file that the ignore rules exclude.
 
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import {
   type ExperimentDocumentDiagnostic,
   type LintExperimentDocumentOptions,

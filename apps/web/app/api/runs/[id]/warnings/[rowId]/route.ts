@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import type { WarningsConflict, WarningsOpResponse } from '@/lib/dto/warnings'
 import { withValidRunId } from '../../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../../../lib/server/standalone-request'
 import {
   mutateStandaloneWarning,
   standaloneWarningError,
@@ -78,5 +79,8 @@ async function handleDELETE(
   }
 }
 
-export const PATCH = withValidRunId(handlePATCH)
-export const DELETE = withValidRunId(handleDELETE)
+const scopedPATCH = withValidRunId(handlePATCH)
+const scopedDELETE = withValidRunId(handleDELETE)
+
+export const PATCH = withStandaloneRequest(scopedPATCH)
+export const DELETE = withStandaloneRequest(scopedDELETE)

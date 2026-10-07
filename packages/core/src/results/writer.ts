@@ -10,8 +10,7 @@
 // exclude is still written with a `RESULT_FILE_IGNORED` warning — no ignore
 // file is ever edited here.
 
-import { promises as nodeFs } from 'node:fs'
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import {
   type FileChange,
   type IndexWarnings,
@@ -22,6 +21,7 @@ import {
   replaceDocumentAtomic,
 } from '../experiments/mutations.js'
 import { declaredRunOwner, projectRunPath } from '../experiments/run-path.js'
+import { projectFs as nodeFs } from '../project-file-store.js'
 import { EXPERIMENT_DESCRIPTION_FILE, parseExperimentDescription } from './description.js'
 import type { ResultsDiagnostic } from './diagnostics.js'
 import { type CheckIgnore, resolveRunRealPath, resultFileIgnoredWarning } from './ignore.js'

@@ -4,11 +4,14 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import type { PatchExperimentStatusResponse } from '@/lib/dto/experiments'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { standaloneError } from '../../../../../lib/server/standalone-error'
 import {
   refreshStandaloneExperiment,
   refreshStandaloneJournal,
 } from '../../../../../lib/server/standalone-mutation-refresh'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
+import { standaloneExperimentTarget } from '../../../../../lib/server/standalone-target'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,22 +22,20 @@ const PatchBody = z
   })
   .strict()
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function scopedPATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await ctx.params
-  const experiment = runtime.experiments.get(id)
-  if (!experiment) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: `experiment "${id}" not found` } },
-      { status: 404 },
-    )
-  }
-  const project = runtime.projectFor(experiment.path)
-  if (!project) {
-    return NextResponse.json(
-      { error: { code: 'NOT_FOUND', message: 'owning project not found' } },
-      { status: 404 },
-    )
+  let project: (typeof runtime.config.projects)[number]
+  try {
+    project = (
+      await standaloneExperimentTarget(
+        runtime.config,
+        id,
+        new URL(req.url).searchParams.get('project'),
+      )
+    ).project
+  } catch (error) {
+    return standaloneError(error)
   }
   const body = PatchBody.safeParse(await req.json().catch(() => null))
   if (!body.success) {
@@ -83,3 +84,5 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: { message: (error as Error).message } }, { status: 500 })
   }
 }
+
+export const PATCH = withStandaloneRequest(scopedPATCH)

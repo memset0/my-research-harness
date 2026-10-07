@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   __resetDirectCentralRuntimeForTests,
   directCentralRuntime,
+  jsonResourceResponse,
   REASON_HEADER,
 } from './direct-runtime'
 
@@ -238,4 +239,25 @@ describe('direct central storage mode', () => {
       await fs.rm(dir, { recursive: true, force: true })
     }
   })
+})
+
+it('returns fresh document lock metadata with a bodyless semantic response', async () => {
+  const payload = JSON.stringify({ content: '# Same', mtime: 1, hash: 'a'.repeat(40) })
+  const first = jsonResourceResponse(
+    new Request('http://localhost/api/readme'),
+    new Headers(),
+    payload,
+    200,
+  )
+  const second = jsonResourceResponse(
+    new Request('http://localhost/api/readme', {
+      headers: { 'x-memon-known-version': first.headers.get('x-memon-resource-version')! },
+    }),
+    new Headers(),
+    JSON.stringify({ content: '# Same', mtime: 2, hash: 'a'.repeat(40) }),
+    200,
+  )
+  expect(second.status).toBe(304)
+  expect(await second.text()).toBe('')
+  expect(second.headers.get('x-memon-document-mtime')).toBe('2')
 })

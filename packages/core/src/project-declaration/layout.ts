@@ -16,7 +16,7 @@
 // declaration; `run_dirs` conflicts are reported by `memon project lint
 // --from-central` (and the deprecation itself by `loadConfig`).
 
-import { resolve } from 'node:path'
+import { resolve } from '@memon/file-protocol/paths'
 import { DEFAULT_RUN_DIRS } from '../discovery/run-dirs.js'
 import { PROJECT_LAYOUT_KEYS, type ProjectLayoutKey } from '../schemas.js'
 import type { GithubRepoMapping, ProjectConfig } from '../types.js'

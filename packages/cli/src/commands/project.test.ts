@@ -175,6 +175,19 @@ describe('memon project --from-central', () => {
     ])
   })
 
+  it('copies an agent entry layout without requiring a host or inventing a native root', async () => {
+    await fs.writeFile(
+      central,
+      'projects:\n  - name: project-a\n    access: { kind: agent, connection: agent-a, project: project-a, source_identity: source-a }\n    run_dirs: ["outputs/*/*"]\n',
+    )
+    await runProjectInit(from('project-a'))
+    const result = JSON.parse(stdout.join(''))
+    expect(result.fromCentral.project).toBe('project-a')
+    expect(result.fromCentral.root).toBeUndefined()
+    expect(result.fromCentral.host).toBeUndefined()
+    expect((await loadProjectDeclaration(root))?.run_dirs).toEqual(['outputs/*/*'])
+  })
+
   it('init from a deployment-only entry writes the default run_dirs', async () => {
     await runProjectInit(from('project-b'))
     expect(await loadProjectDeclaration(root)).toEqual({

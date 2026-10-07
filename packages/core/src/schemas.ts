@@ -212,6 +212,58 @@ export const ProjectLayoutRawSchema = z.object({
 export const PROJECT_LAYOUT_KEYS = ['run_dirs', 'include', 'exclude', 'github'] as const
 export type ProjectLayoutKey = (typeof PROJECT_LAYOUT_KEYS)[number]
 
+const FileAuthorityIDSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+  .refine((value) => value !== '.' && value !== '..')
+export const ProjectAccessRawSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('filesystem'),
+      cache: z.enum(['none', 'memory']).default('none'),
+      source: FileAuthorityIDSchema.refine((value) => value.length <= 128).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('sshfs'),
+      source: FileAuthorityIDSchema.refine((value) => value.length <= 128).optional(),
+      cache: z.enum(['memory', 'memory-disk']).default('memory-disk'),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('agent'),
+      source: FileAuthorityIDSchema.refine((value) => value.length <= 128).optional(),
+      cache: z.literal('memory-disk').default('memory-disk'),
+      connection: FileAuthorityIDSchema,
+      project: FileAuthorityIDSchema,
+      source_identity: z.string().min(1).max(256),
+    })
+    .strict(),
+])
+export const FileAgentRawSchema = z
+  .object({
+    endpoint: z
+      .string()
+      .url()
+      .refine((value) => {
+        const url = new URL(value)
+        return (
+          url.protocol === 'https:' &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash &&
+          url.pathname === '/'
+        )
+      }, 'must be an HTTPS origin'),
+    ca_file: z.string().min(1),
+    certificate_file: z.string().min(1),
+    key_file: z.string().min(1),
+  })
+  .strict()
+
 export const ProjectConfigRawSchema = z
   .object({
     // Project names appear in URL paths and Host-qualified identifiers.
@@ -220,7 +272,8 @@ export const ProjectConfigRawSchema = z
       .string()
       .min(1)
       .regex(/^[A-Za-z0-9-]+$/, 'must match [A-Za-z0-9-]+'),
-    root: z.string().min(1),
+    root: z.string().min(1).optional(),
+    access: ProjectAccessRawSchema.optional(),
     ...ProjectLayoutRawSchema.shape,
     /**
      * Host namespace for host-qualified `{host, project}` identity. Validated
@@ -251,6 +304,33 @@ export const ProjectConfigRawSchema = z
     execution: ProjectExecutionRawSchema.optional(),
   })
   .superRefine((project, ctx) => {
+    if (
+      project.access?.kind === 'agent' ? project.root !== undefined : project.root === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['root'],
+        message: 'native access requires root; agent access must omit root',
+      })
+    }
+    if (
+      project.access &&
+      (project.storage !== undefined || project.persistent_cache !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['access'],
+        message: 'do not combine access with legacy storage or persistent_cache',
+      })
+    }
+    if (project.access?.kind === 'agent' && project.execution?.kind === 'local') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['execution'],
+        message: 'agent authorities require explicit SSH execution or no execution',
+      })
+    }
+
     for (const [snake, camel] of [
       ['storage_group', 'storageGroup'],
       ['read_only', 'readOnly'],
@@ -435,6 +515,12 @@ const PositiveMsRawSchema = z.number().int().min(1).max(86_400_000)
 
 export const FileAccessRawSchema = z
   .object({
+    operationsPerSecond: z.number().nonnegative().max(1000000).optional(),
+    operationBurst: z.number().int().positive().max(1000000).optional(),
+    bytesPerSecond: z.number().int().nonnegative().max(1073741824).optional(),
+    byteBurst: z.number().int().positive().max(1073741824).optional(),
+    maxReadBytes: z.number().int().positive().max(1073741824).optional(),
+    backgroundShare: z.number().gt(0).lt(1).optional(),
     concurrency: z.number().int().min(1).max(1024).optional(),
     heartbeatMs: PositiveMsRawSchema.optional(),
     leaseMs: PositiveMsRawSchema.optional(),
@@ -483,6 +569,7 @@ const MediaRawSchema = z
 export const ConfigRawSchema = z.object({
   // Project count is role-dependent and enforced by config/load.ts.
   projects: z.array(ProjectConfigRawSchema).default([]),
+  file_agents: z.record(FileAuthorityIDSchema, FileAgentRawSchema).optional(),
   poll: PollConfigRawSchema,
   auth: AuthConfigRawSchema,
   // Accepted without validation for startup compatibility; loadConfig warns and ignores it.

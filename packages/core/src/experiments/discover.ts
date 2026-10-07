@@ -18,7 +18,8 @@
 // user can see and resolve.
 
 import type { Dirent } from 'node:fs'
-import * as path from 'node:path'
+import * as path from '@memon/file-protocol/paths'
+import { throwIfSourceFailure } from '../project-file-store/errors.js'
 import { projectFs as fs } from '../project-file-store.js'
 
 import type { Experiment } from '../types.js'
@@ -119,7 +120,8 @@ export async function discoverExperiments(
     let folderStat: Awaited<ReturnType<typeof fs.stat>>
     try {
       folderStat = await fs.stat(folderPath)
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       continue
     }
     if (!folderStat.isDirectory()) continue
@@ -127,7 +129,8 @@ export async function discoverExperiments(
     let readmeStat: Awaited<ReturnType<typeof fs.stat>>
     try {
       readmeStat = await fs.stat(readmePath)
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       // Folder exists but no README inside — surface MISSING_README on a
       // placeholder record so the user sees the inconsistency in the
       // dashboard / `memon doctor`.
@@ -151,7 +154,8 @@ export async function discoverExperiments(
     let content = ''
     try {
       content = await fs.readFile(readmePath, 'utf8')
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       continue
     }
     const parsed = parseExperimentReadme(content, folderName)
@@ -185,14 +189,16 @@ export async function discoverExperiments(
     let stat: Awaited<ReturnType<typeof fs.stat>>
     try {
       stat = await fs.stat(filePath)
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       continue
     }
     if (!stat.isFile()) continue
     let content = ''
     try {
       content = await fs.readFile(filePath, 'utf8')
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       continue
     }
     // For the legacy file, the filename stem (`E0001-foo`) plays the role
@@ -249,7 +255,8 @@ export async function readExperimentDoc(
             severity: 'warning',
           })
         }
-      } catch {
+      } catch (error) {
+        throwIfSourceFailure(error)
         /* no legacy file — expected */
       }
       return buildExperimentRecord(parsed, {
@@ -300,7 +307,8 @@ async function readDocumentsWithMtime(experimentDirectory: string) {
     try {
       const stat = await fs.stat(parsed.path)
       mtime = Math.max(mtime, stat.mtimeMs)
-    } catch {
+    } catch (error) {
+      throwIfSourceFailure(error)
       // The parser already records a missing-file diagnostic. A concurrent
       // unlink between read and stat should not make discovery fail.
     }

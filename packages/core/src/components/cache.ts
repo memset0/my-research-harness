@@ -9,8 +9,8 @@
 // its timestamps move; a failure keeps the previous data and records
 // `__last_error`.
 
-import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
+import { projectFs as fs } from '../project-file-store.js'
 
 import { formatIsoLocal } from '../time.js'
 import { RESERVED_PREFIX, stripHiddenKeys } from './payload.js'

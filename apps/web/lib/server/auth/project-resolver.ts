@@ -1,57 +1,68 @@
-// Build a ProjectResolverContext from a live Runtime. Centralized so
-// middleware + route-classes can do id-to-project lookups via one helper.
-
 import 'server-only'
 
 import type { Runtime } from '../runtime'
-import type { ProjectResolverContext } from './route-classes'
+import { standaloneServices } from '../standalone-services'
+import {
+  resolveStandaloneTarget,
+  standaloneExperimentTarget,
+  standaloneRunTarget,
+} from '../standalone-target'
+import { classifyAndExtract, type ProjectResolverContext } from './route-classes'
 
+/** Configuration-only resolver for classification before authentication. */
 export function makeProjectResolver(runtime: Runtime): ProjectResolverContext {
-  const projectNames = new Set(runtime.config.projects.map((p) => p.name))
-
-  const resolveByRunId = (id: string): string | null => {
-    const run = runtime.index.get(id)
-    return run ? run.project : null
-  }
-
-  const resolveByExperimentId = (id: string): string | null => {
-    const exp = runtime.experiments.get(id)
-    return exp ? exp.project : null
-  }
-
-  const resolveByReportId = (id: string): string | null => {
-    for (const project of runtime.config.projects) {
-      const dir = runtime.reportsDir(project.name)
-      if (!dir) continue
-      const entries = runtime.reportsCache.getList(dir)
-      for (const entry of entries) {
-        if (entry.id === id) return project.name
-      }
-    }
-    return null
-  }
-
-  const resolveByWikiId = (id: string): string | null => {
-    for (const project of runtime.config.projects) {
-      if (runtime.wikiCache.getWikiSummary(project.name, id)) return project.name
-    }
-    return null
-  }
-
-  const resolveByPath = (path: string): string | null => {
-    if (!path) return null
-    // Try absolute path first.
-    const proj = runtime.projectFor(path)
-    if (proj) return proj.name
-    return null
-  }
-
+  const names = new Set(runtime.config.projects.map((project) => project.name))
   return {
-    isKnownProject: (name) => projectNames.has(name),
-    resolveByRunId,
-    resolveByExperimentId,
-    resolveByReportId,
-    resolveByWikiId,
-    resolveByPath,
+    isKnownProject: (name) => names.has(name),
+    resolveByRunId: () => null,
+    resolveByExperimentId: () => null,
+    resolveByReportId: () => null,
+    resolveByWikiId: () => null,
+    resolveByPath: (path) => runtime.projectFor(path)?.name ?? null,
+  }
+}
+
+/** Only authenticated legacy ID requests need source-backed owner resolution. */
+export async function resolveRequestProject(
+  runtime: Runtime,
+  method: string,
+  pathname: string,
+  search: URLSearchParams,
+  allowedProjects?: ReadonlySet<string>,
+) {
+  const context = makeProjectResolver(runtime)
+  let lookup: (() => Promise<string>) | undefined
+  const choose = (read: () => Promise<{ project: { name: string } }>) => {
+    lookup = async () => (await read()).project.name
+    return null
+  }
+  context.resolveByRunId = (id) =>
+    choose(() => standaloneRunTarget(runtime.config, id, undefined, allowedProjects))
+  context.resolveByExperimentId = (id) =>
+    choose(() => standaloneExperimentTarget(runtime.config, id, undefined, allowedProjects))
+  context.resolveByReportId = (id) =>
+    choose(() =>
+      resolveStandaloneTarget(
+        runtime.config,
+        (project) => standaloneServices(runtime.config).documents.getReport(project, id),
+        undefined,
+        allowedProjects,
+      ),
+    )
+  context.resolveByWikiId = (id) =>
+    choose(() =>
+      resolveStandaloneTarget(
+        runtime.config,
+        (project) => standaloneServices(runtime.config).documents.getWiki(project, id),
+        undefined,
+        allowedProjects,
+      ),
+    )
+  const result = classifyAndExtract(method, pathname, search, context)
+  if (!lookup) return result.project
+  try {
+    return await lookup()
+  } catch {
+    return null
   }
 }

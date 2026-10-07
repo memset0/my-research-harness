@@ -7,7 +7,7 @@
 // from the content the primitive holds plus one stat per file. Nothing here
 // reads the index or decides what a primitive writes.
 
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
 import { RUN_DIR_REGEX, RUN_ROOT_DIRECTORIES } from '../ids.js'
 import { EXPERIMENT_DESCRIPTION_FILE } from '../results/description.js'
 import { RESULT_FILE_NAME } from '../results/result-file.js'

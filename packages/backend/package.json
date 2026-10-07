@@ -22,7 +22,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@memon/core": "workspace:*"
+    "@memon/core": "workspace:*",
+    "@memon/file-protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

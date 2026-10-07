@@ -1,4 +1,4 @@
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { discoverRuns } from '../discovery/discover.js'
 import { isRunPath } from '../ids.js'
 import { projectFs as fs } from '../project-file-store.js'

@@ -902,10 +902,7 @@ central:
       tokens: { current: ${TOKEN_A} }
       transport: { kind: url, base_url: http://127.0.0.1:4738 }
 `,
-      `
-projects: [{ name: project-a, root: ./project-a }]
-central: { hosts: [] }
-`,
+
       `
 projects: [{ name: project-a, root: ./project-a }]
 auth: { password: human-secret }

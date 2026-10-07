@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, resolve, sep } from '@memon/file-protocol/paths'
 
 import { COMPONENT_LATEST_VERSION } from '../wiki/component-names.generated.js'
 import { parseWikiComponentBlocks } from '../wiki/components.js'

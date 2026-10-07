@@ -37,6 +37,10 @@ interface MetricBucket {
   cacheHits: number
   coalesced: number
   readBytes: number
+  operationBudgetDeferrals: number
+  byteBudgetDeferrals: number
+  validationChecks: number
+  transportBodyBytes: number
   execSum: number
   waitSum: number
   exec: Uint32Array
@@ -56,6 +60,10 @@ interface Accumulator {
   cacheHits: number
   coalesced: number
   readBytes: number
+  operationBudgetDeferrals: number
+  byteBudgetDeferrals: number
+  validationChecks: number
+  transportBodyBytes: number
   execSum: number
   waitSum: number
   exec: Uint32Array
@@ -69,6 +77,10 @@ function createAccumulator(): Accumulator {
     cacheHits: 0,
     coalesced: 0,
     readBytes: 0,
+    operationBudgetDeferrals: 0,
+    byteBudgetDeferrals: 0,
+    validationChecks: 0,
+    transportBodyBytes: 0,
     execSum: 0,
     waitSum: 0,
     exec: new Uint32Array(HISTOGRAM_LEN),
@@ -108,6 +120,10 @@ function toCounters(acc: Accumulator): FileOperationCounters {
     cacheHits: acc.cacheHits,
     coalesced: acc.coalesced,
     readBytes: acc.readBytes,
+    operationBudgetDeferrals: acc.operationBudgetDeferrals,
+    byteBudgetDeferrals: acc.byteBudgetDeferrals,
+    validationChecks: acc.validationChecks,
+    transportBodyBytes: acc.transportBodyBytes,
     queueWaitMs: {
       meanMs: acc.samples === 0 ? 0 : round3(acc.waitSum / acc.samples),
       p95Ms: percentileMs(acc.wait, acc.samples, 0.95),
@@ -153,6 +169,10 @@ export class MetricsRegistry {
         cacheHits: 0,
         coalesced: 0,
         readBytes: 0,
+        operationBudgetDeferrals: 0,
+        byteBudgetDeferrals: 0,
+        validationChecks: 0,
+        transportBodyBytes: 0,
         execSum: 0,
         waitSum: 0,
         exec: new Uint32Array(HISTOGRAM_LEN),
@@ -166,12 +186,39 @@ export class MetricsRegistry {
       bucket.cacheHits = 0
       bucket.coalesced = 0
       bucket.readBytes = 0
+      bucket.operationBudgetDeferrals = 0
+      bucket.byteBudgetDeferrals = 0
+      bucket.validationChecks = 0
+      bucket.transportBodyBytes = 0
       bucket.execSum = 0
       bucket.waitSum = 0
       bucket.exec.fill(0)
       bucket.wait.fill(0)
     }
     return bucket
+  }
+
+  recordBudgetDeferral(
+    group: string,
+    operation: FileOperationName,
+    origin: FileOperationOrigin,
+    kind: 'operation' | 'byte',
+  ): void {
+    const bucket = this.bucketFor(this.seriesFor(group, operation, origin))
+    if (kind === 'operation') bucket.operationBudgetDeferrals++
+    else bucket.byteBudgetDeferrals++
+  }
+
+  recordTransport(
+    group: string,
+    operation: FileOperationName,
+    origin: FileOperationOrigin,
+    bytes: number,
+    validation: boolean,
+  ): void {
+    const bucket = this.bucketFor(this.seriesFor(group, operation, origin))
+    bucket.transportBodyBytes += bytes
+    if (validation) bucket.validationChecks++
   }
 
   recordOperation(
@@ -233,7 +280,16 @@ export class MetricsRegistry {
         if (bucket.slot < oldestSlot || bucket.slot > currentSlot) continue
         mergeBucket(acc, bucket)
       }
-      if (acc.samples === 0 && acc.cacheHits === 0 && acc.coalesced === 0) continue
+      if (
+        acc.samples === 0 &&
+        acc.cacheHits === 0 &&
+        acc.coalesced === 0 &&
+        acc.transportBodyBytes === 0 &&
+        acc.validationChecks === 0 &&
+        acc.operationBudgetDeferrals === 0 &&
+        acc.byteBudgetDeferrals === 0
+      )
+        continue
       mergeAccumulator(overall, acc)
       mergeAccumulator(byOrigin[state.origin], acc)
       mergeAccumulator(byOperation[state.operation], acc)
@@ -275,6 +331,10 @@ function mergeBucket(acc: Accumulator, bucket: MetricBucket): void {
   acc.cacheHits += bucket.cacheHits
   acc.coalesced += bucket.coalesced
   acc.readBytes += bucket.readBytes
+  acc.operationBudgetDeferrals += bucket.operationBudgetDeferrals
+  acc.byteBudgetDeferrals += bucket.byteBudgetDeferrals
+  acc.validationChecks += bucket.validationChecks
+  acc.transportBodyBytes += bucket.transportBodyBytes
   acc.execSum += bucket.execSum
   acc.waitSum += bucket.waitSum
   for (let i = 0; i < HISTOGRAM_LEN; i += 1) {
@@ -289,6 +349,10 @@ function mergeAccumulator(target: Accumulator, source: Accumulator): void {
   target.cacheHits += source.cacheHits
   target.coalesced += source.coalesced
   target.readBytes += source.readBytes
+  target.operationBudgetDeferrals += source.operationBudgetDeferrals
+  target.byteBudgetDeferrals += source.byteBudgetDeferrals
+  target.validationChecks += source.validationChecks
+  target.transportBodyBytes += source.transportBodyBytes
   target.execSum += source.execSum
   target.waitSum += source.waitSum
   for (let i = 0; i < HISTOGRAM_LEN; i += 1) {

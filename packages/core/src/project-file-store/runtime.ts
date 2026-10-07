@@ -1,12 +1,14 @@
 // project-file-store/runtime — the process-global store and the public
 // functions that operate on it.
 
-import { resolve } from 'node:path'
+import { FileAccessError } from '@memon/file-protocol'
+import { resolve } from '@memon/file-protocol/paths'
 import {
   getProjectFileContext as currentProjectFileContext,
   type ProjectFileContext,
 } from '../project-file-context.js'
 import type { FileAccessOptions } from '../types.js'
+import { agentSourceIdentity } from './agent-adapters.js'
 import type { FileOperationMetrics, ProjectFileStatus } from './contract.js'
 import { ProjectFileStore } from './store.js'
 
@@ -34,13 +36,22 @@ export function getStore(): ProjectFileStore {
 // Public functions
 // ---------------------------------------------------------------------------
 
-export function withProjectFileContext<T>(
-  context: ProjectFileContext,
-  callback: () => Promise<T>,
-): Promise<T> {
+export function withProjectFileContext<T>(context: ProjectFileContext, callback: () => T): T {
   const store = getStore()
   const normalized: ProjectFileContext = { ...context, root: resolve(context.root) }
-  store.noteStorage(normalized.root, normalized.storage)
+  const sourceIdentity = agentSourceIdentity(normalized.root)
+  if (normalized.sourceIdentity && sourceIdentity && normalized.sourceIdentity !== sourceIdentity)
+    throw new FileAccessError('SOURCE_UNAVAILABLE')
+  if (sourceIdentity) normalized.sourceIdentity = sourceIdentity
+  store.noteSource(normalized.root, normalized.sourceIdentity)
+  store.noteStorage(
+    normalized.root,
+    normalized.cachePolicy === 'none'
+      ? 'local'
+      : normalized.cachePolicy
+        ? 'sshfs'
+        : normalized.storage,
+  )
   return store.contextStorage.run(normalized, callback)
 }
 
@@ -67,4 +78,8 @@ export function getFileOperationMetrics(windowMs?: number): FileOperationMetrics
 
 export function invalidateProjectFile(root: string, path?: string): void {
   getStore().invalidate(root, path)
+}
+
+export function getProjectFileSourceNamespace(root: string): string {
+  return getStore().sourceNamespace(resolve(root))
 }

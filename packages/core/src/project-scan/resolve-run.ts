@@ -15,7 +15,7 @@
 //
 
 import { existsSync, statSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { basename, resolve } from '@memon/file-protocol/paths'
 import { discoverRuns } from '../discovery/discover.js'
 import { readRunDir } from '../discovery/read.js'
 import {

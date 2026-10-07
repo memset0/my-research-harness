@@ -768,7 +768,8 @@ with a configured upstream; `git fetch` that configured remote (a remote
 **name** only — never a URL supplied on the command line); refuse a diverged
 branch instead of rewriting history; `git merge --ff-only`; `pnpm install
 --frozen-lockfile --filter @memon/cli...` (the CLI's dependency closure only,
-never the Web app's dependencies); build `@memon/core` and `@memon/cli`; run
+never the Web app's dependencies); build the lightweight `@memon/file-protocol`,
+`@memon/core` and `@memon/cli`; run
 the new `memon --version` as a self-check; then refresh managed skills through
 `memon install-skills`, which leaves every non-`memon-*` skill and every
 locally modified managed one alone.
@@ -837,9 +838,39 @@ github:              # GitHub permalink previews: owner/repo -> path in this rep
   - { owner: acme, repo: project-a, path: . }
 ```
 
+Central file access supports four policies: direct native files, native/NFS files
+with a memory cache, SSHFS with memory plus central local disk, and the optional
+[authenticated file agent](packages/file-agent/README.md) with the same two cache
+tiers. Set a project's `access` block in `config.yml`; transport, cache policy,
+shared source budgets and command execution are separate settings. Use `access.source`
+(or legacy `storage_group`) to share a physical-source budget across projects; conflicting
+labels are refused, and unrelated new authorities receive separate opaque defaults. Legacy
+`storage`/`persistent_cache` declarations keep their defaults. Agent projects select
+a configured connection/project and exact source identity, with no fake local mount.
+`host` is an optional namespace for every access mode. Unqualified routes and SSR
+use the same file primitives and preserve their response projections; neither entry
+requires a project warmup or an independent parsed-document poller. Optional source
+operation/byte rates default to 0 (unlimited); concurrency and per-read limits remain
+enforced.
+
+The domain backend stays in the central Web process. The agent provides only
+versioned file primitives, uses mTLS project grants, and has an independent build
+and upgrade lifecycle. `memon update` builds only the JavaScript protocol dependency
+and CLI; it never installs or restarts the native agent, and CLI nodes do not need
+Go. Source writes require an explicit operator acknowledgement that their memon
+writers use the shared lock protocol. Writers that bypass that lock remain outside
+the optimistic-lock guarantee.
+
+Conditional file/list reads return bytes and a content version, unchanged with no
+body, or confirmed missing. Metadata alone does not prove byte equality. Central
+logical subscriptions share checks and reuse deadlines; successful unchanged checks
+back off, while failures preserve the last successful observation time. Manual
+revalidation can bypass reuse, but shares source concurrency, operation and byte
+budgets with ordinary checks, writes and ranges. No filesystem watchers are used.
+
 Central `config.yml` keeps only the project path and deployment facts
 (`name`, `root`, `host`, `storage`, `storage_group`, `persistent_cache`,
-`read_only`, `execution`). Each layout key resolves on its own: `--run-dir`
+`read_only`, `access`, `execution`), plus protected `file_agents` connection settings. Each layout key resolves on its own: `--run-dir`
 (CLI, `run_dirs` only) > a layout key still in the central entry (deprecated:
 it keeps winning and logs `CENTRAL_LAYOUT_DEPRECATED`) > `.memon/project.yml` >
 the default (`logs/*`, `outputs/*`, `experiments/*`; no extra excludes). Move

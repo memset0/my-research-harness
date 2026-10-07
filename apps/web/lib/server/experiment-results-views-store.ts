@@ -2,7 +2,7 @@ import 'server-only'
 
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
 import type {
   ExperimentResultsView,

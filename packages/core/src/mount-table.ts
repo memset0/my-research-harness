@@ -6,7 +6,7 @@
 // a mount is hung.
 
 import { promises as nodeFs } from 'node:fs'
-import { sep } from 'node:path'
+import { sep } from '@memon/file-protocol/paths'
 
 /** One line of the OS mount table, reduced to the fields we compare. */
 export interface MountIdentity {

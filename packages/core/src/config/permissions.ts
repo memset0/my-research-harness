@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve } from '@memon/file-protocol/paths'
 
 export const SERVICE_CONFIG_FILE_MODE = 0o600
 

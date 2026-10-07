@@ -27,8 +27,8 @@ import 'server-only'
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname } from 'node:path'
 import { DEFAULT_FILE_ACCESS_OPTIONS, type FileAccessOptions } from '@memon/core'
+import { dirname } from '@memon/file-protocol/paths'
 import { type Document, isMap, type ParsedNode, parseDocument } from 'yaml'
 import { z } from 'zod'
 import type { FileAccessOptionsDto } from '../file-access-api'
@@ -57,6 +57,13 @@ const MAX_RESTART_ARG_BYTES = 4_096
  * writer and the comparison helper iterate exactly the documented key set.
  */
 const SCHEDULER_OPTION_KEYS = [
+  'operationsPerSecond',
+  'operationBurst',
+  'bytesPerSecond',
+  'byteBurst',
+  'maxReadBytes',
+  'backgroundShare',
+
   'concurrency',
   'heartbeatMs',
   'leaseMs',
@@ -213,6 +220,36 @@ const periodMs = z.number().int().positive().max(MAX_PERIOD_MS)
 
 const FileAccessOptionsSchema = z
   .object({
+    operationsPerSecond: z
+      .number()
+      .nonnegative()
+      .max(1000000)
+      .default(DEFAULT_FILE_ACCESS_OPTIONS.operationsPerSecond),
+    operationBurst: z
+      .number()
+      .int()
+      .positive()
+      .max(1000000)
+      .default(DEFAULT_FILE_ACCESS_OPTIONS.operationBurst),
+    bytesPerSecond: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(1073741824)
+      .default(DEFAULT_FILE_ACCESS_OPTIONS.bytesPerSecond),
+    byteBurst: z
+      .number()
+      .int()
+      .positive()
+      .max(1073741824)
+      .default(DEFAULT_FILE_ACCESS_OPTIONS.byteBurst),
+    maxReadBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(1073741824)
+      .default(DEFAULT_FILE_ACCESS_OPTIONS.maxReadBytes),
+    backgroundShare: z.number().gt(0).lt(1).default(DEFAULT_FILE_ACCESS_OPTIONS.backgroundShare),
     concurrency: z.number().int().positive().max(MAX_CONCURRENCY),
     heartbeatMs: periodMs,
     leaseMs: periodMs,
@@ -230,6 +267,12 @@ const FileAccessOptionsSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.maxReadBytes > value.byteBurst)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['byteBurst'],
+        message: 'must cover maxReadBytes',
+      })
     const ranges = [
       ['fileMinMs', 'fileMaxMs', 'active file check'],
       ['directoryMinMs', 'directoryMaxMs', 'directory list check'],

@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { projectFs as fs } from '../project-file-store.js'
 import { resolveSharesFilePath } from './paths.js'
 import { emptySharesFile, type ShareRecord, ShareStoreError, type SharesFile } from './types.js'
 

@@ -11,6 +11,13 @@
 // pulls `fs` in transitively.
 
 export interface FileAccessOptionsDto {
+  operationsPerSecond: number
+  operationBurst: number
+  bytesPerSecond: number
+  byteBurst: number
+  maxReadBytes: number
+  backgroundShare: number
+
   concurrency: number
   heartbeatMs: number
   leaseMs: number
@@ -28,6 +35,13 @@ export interface FileAccessOptionsDto {
 }
 
 export const FILE_ACCESS_OPTION_KEYS = [
+  'operationsPerSecond',
+  'operationBurst',
+  'bytesPerSecond',
+  'byteBurst',
+  'maxReadBytes',
+  'backgroundShare',
+
   'concurrency',
   'heartbeatMs',
   'leaseMs',
@@ -50,6 +64,10 @@ export interface FileOperationLatency {
 }
 
 export interface FileOperationCounters {
+  operationBudgetDeferrals?: number
+  byteBudgetDeferrals?: number
+  validationChecks?: number
+  transportBodyBytes?: number
   samples: number
   errors: number
   cacheHits: number

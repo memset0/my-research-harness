@@ -82,6 +82,44 @@ describe('ProjectReadIndex.file', () => {
     expect(ops.readFile).toHaveBeenCalledTimes(1)
   })
 
+  it('does not let a parse started before invalidation replace a later observation', async () => {
+    const index = new ProjectReadIndex(root)
+    let release!: () => void
+    const gate = new Promise<void>((done) => {
+      release = done
+    })
+    const first = index.observe(
+      'doc',
+      60000,
+      async () => ({ fingerprint: 'old', observed: 'old' }),
+      async (value) => {
+        await gate
+        return value!
+      },
+    )
+    await new Promise<void>((done) => setImmediate(done))
+    index.invalidate()
+    expect(
+      await index.observe(
+        'doc',
+        60000,
+        async () => ({ fingerprint: 'new', observed: 'new' }),
+        async (value) => value!,
+      ),
+    ).toBe('new')
+    release()
+    await first
+    expect(
+      await index.observe(
+        'doc',
+        60000,
+        async () => {
+          throw new Error('unexpected source check')
+        },
+        async () => null,
+      ),
+    ).toBe('new')
+  })
   it('takes the window from the cached value', async () => {
     const path = join(root, 'd.md')
     await fs.writeFile(path, 'FINISHED')

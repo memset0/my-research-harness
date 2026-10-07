@@ -7,6 +7,7 @@ import {
   BackendLogStreamEventSchema,
   type ProjectConfig,
 } from '@memon/core'
+import { createTempProject } from '@memon/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type BackendStreamServiceError, FilesystemStreamService } from './stream-service.js'
 
@@ -121,6 +122,41 @@ describe('FilesystemStreamService', () => {
     })
     abort.abort()
     await expect(iterator.next()).resolves.toMatchObject({ done: true })
+  })
+
+  it('keeps stream headers and bytes on the file opened before atomic replacement', async () => {
+    const fixture = await createTempProject({
+      files: {
+        'docs/reports/R0001-bundle/README.md': '# Bundle',
+        'docs/reports/R0001-bundle/file.bin': 'AAAAAA',
+      },
+    })
+    try {
+      const streaming = new FilesystemStreamService([
+        { name: 'project-a', root: fixture.root, include: [], exclude: [] },
+      ])
+      const asset = await streaming.resolveReportAsset('project-a', 'R0001', 'file.bin')
+      await fs.writeFile(fixture.path('replacement.bin'), 'BBBBBBBBB')
+      await fs.rename(
+        fixture.path('replacement.bin'),
+        fixture.path('docs/reports/R0001-bundle/file.bin'),
+      )
+      const chunks: Buffer[] = []
+      for await (const chunk of streaming.openByteStream(asset)) chunks.push(Buffer.from(chunk))
+      expect(asset.size).toBe(6)
+      expect(Buffer.concat(chunks).toString()).toBe('AAAAAA')
+      const head = await streaming.resolveReportAsset('project-a', 'R0001', 'file.bin')
+      expect(head.size).toBe(9)
+      await streaming.closeByteResource(head)
+      await streaming.closeByteResource(head)
+      const stream = streaming.openByteStream(head)
+      await expect(async () => {
+        for await (const _chunk of stream) {
+        }
+      }).rejects.toMatchObject({ code: 'READ_HANDLE_EXPIRED' })
+    } finally {
+      await fixture.cleanup()
+    }
   })
 
   it('resolves Report assets without exposing paths and opens a bounded file stream', async () => {

@@ -1,7 +1,7 @@
 import 'server-only'
 
-import { relative, sep } from 'node:path'
 import { type Config, ResourceIdSchema } from '@memon/core'
+import { relative, sep } from '@memon/file-protocol/paths'
 import { assertWithinProjectRoots } from './path-safety'
 
 export function standaloneResource(config: Config, absolutePath: string) {

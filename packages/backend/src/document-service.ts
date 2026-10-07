@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { join, relative, resolve, sep } from 'node:path'
 import {
   addJournalInvocationDetail,
   BackendCodeReviewPatchResponseSchema,
@@ -66,6 +65,7 @@ import {
   writeFileAtomic,
   writeWikiReviewMark,
 } from '@memon/core'
+import { join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
 import {
   BackendExecutionError,

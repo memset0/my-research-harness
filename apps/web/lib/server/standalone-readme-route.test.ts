@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { BackendMutationError } from '@memon/backend'
+import { FileAccessError } from '@memon/file-protocol'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -93,6 +94,25 @@ describe('standalone dedicated README shared adapters', () => {
     )
     expect(writeExperimentReadme).toHaveBeenCalled()
     expect(refreshStandaloneExperiment).toHaveBeenCalled()
+  })
+
+  it('reports source outage distinctly instead of a missing README', async () => {
+    getReadme.mockRejectedValueOnce(new FileAccessError('SOURCE_UNAVAILABLE'))
+    const response = await readStandaloneReadme('run', request('GET'), context)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: 'FILE_SOURCE_UNAVAILABLE' } })
+  })
+  it('rejects an ambiguous unqualified resource rather than choosing the first project', async () => {
+    vi.mocked(getRuntime).mockResolvedValue({
+      config: { projects: [{ name: 'project-a' }, { name: 'project-b' }] },
+    } as never)
+    const response = await readStandaloneReadme(
+      'run',
+      new NextRequest('http://localhost/api/readme'),
+      context,
+    )
+    expect(response.status).toBe(400)
+    expect(writeRunReadme).not.toHaveBeenCalled()
   })
 
   it('preserves optimistic conflict content', async () => {

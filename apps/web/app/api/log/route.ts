@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../lib/server/standalone-request'
 // GET /api/log — legacy absolute-path adapter over the shared log service.
 
 import { BackendStreamServiceError } from '@memon/backend'
@@ -10,7 +11,7 @@ import { standaloneServices } from '../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+async function scopedGET(request: NextRequest) {
   const search = new URL(request.url).searchParams
   const path = search.get('path')
   if (!path) {
@@ -48,3 +49,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: 'log read failed' } }, { status: 500 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

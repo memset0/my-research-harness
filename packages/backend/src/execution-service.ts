@@ -19,9 +19,9 @@
 // ref containing spaces or metacharacters cannot become extra remote words.
 
 import { execFile } from 'node:child_process'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { GitCommandRunner, ProjectConfig, ProjectExecutionConfig } from '@memon/core'
 import { cachedGitCommand } from '@memon/core'
+import { isAbsolute, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { isContained } from './containment.js'
 
 export type BackendExecutionErrorCode =

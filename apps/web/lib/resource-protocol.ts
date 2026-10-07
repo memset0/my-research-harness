@@ -385,6 +385,23 @@ export function resolveNotModified(
   rememberStatus(request, response)
   const cached = versionCache.get(request.url)
   if (!cached) return { hit: false }
+  const mtime = response.headers.get('x-memon-document-mtime')
+  const hash = response.headers.get('x-memon-document-hash')
+  const document = cached.body
+  if (
+    mtime !== null &&
+    hash !== null &&
+    Number.isFinite(Number(mtime)) &&
+    /^[a-f0-9]{40}$/.test(hash) &&
+    document !== null &&
+    typeof document === 'object' &&
+    !Array.isArray(document) &&
+    typeof (document as Record<string, unknown>).content === 'string'
+  ) {
+    const previous = document as Record<string, unknown>
+    if (previous.mtime !== Number(mtime) || previous.hash !== hash)
+      cached.body = { ...previous, mtime: Number(mtime), hash }
+  }
   // Refresh recency so a page's live resources are the last ones evicted.
   versionCache.delete(request.url)
   versionCache.set(request.url, cached)

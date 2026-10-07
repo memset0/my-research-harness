@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { dirname, join } from 'node:path'
+import { dirname, join } from '@memon/file-protocol/paths'
 import sqlite3 from 'sqlite3'
 
 export const UI_PREFERENCES_DB_FILENAME = 'memon-ui-preferences.sqlite3'

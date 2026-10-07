@@ -11,6 +11,7 @@ import { BackendStreamServiceError } from '@memon/backend'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isNotModified, parseByteRange } from '../../../../../../lib/server/asset-validators'
 import { getRuntime } from '../../../../../../lib/server/runtime'
+import { standaloneError } from '../../../../../../lib/server/standalone-error'
 import { standaloneServices } from '../../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -58,44 +59,48 @@ async function serve(request: NextRequest, context: RouteContext, includeBody: b
     const runtime = await getRuntime()
     const service = standaloneServices(runtime.config).streaming
     const asset = await service.resolveWikiAsset(project, id, resource)
-    const headers = new Headers({
-      'accept-ranges': 'bytes',
-      'cache-control': 'private, no-cache',
-      'content-type': asset.contentType,
-      etag: asset.etag,
-      'last-modified': new Date(asset.mtimeMs).toUTCString(),
-      'x-content-type-options': 'nosniff',
-      'x-memon-resource-version': asset.version,
-    })
-    if (asset.contentSecurityPolicy)
-      headers.set('content-security-policy', asset.contentSecurityPolicy)
-    if (isNotModified(request, asset.etag, asset.mtimeMs)) {
-      return new NextResponse(null, { status: 304, headers })
+    try {
+      const headers = new Headers({
+        'accept-ranges': 'bytes',
+        'cache-control': 'private, no-cache',
+        'content-type': asset.contentType,
+        etag: asset.etag,
+        'last-modified': new Date(asset.mtimeMs).toUTCString(),
+        'x-content-type-options': 'nosniff',
+        'x-memon-resource-version': asset.version,
+      })
+      if (asset.contentSecurityPolicy)
+        headers.set('content-security-policy', asset.contentSecurityPolicy)
+      if (isNotModified(request, asset.etag, asset.mtimeMs)) {
+        return new NextResponse(null, { status: 304, headers })
+      }
+      const range = request.headers.get('range')
+      const selected = range ? parseByteRange(range, asset.size) : null
+      if (range && !selected) {
+        headers.set('content-range', `bytes */${asset.size}`)
+        headers.set('content-length', '0')
+        return new NextResponse(null, { status: 416, headers })
+      }
+      const length = selected ? selected.end - selected.start + 1 : asset.size
+      headers.set('content-length', String(length))
+      if (selected) {
+        headers.set('content-range', `bytes ${selected.start}-${selected.end}/${asset.size}`)
+      }
+      const body =
+        includeBody && request.method !== 'HEAD'
+          ? (Readable.toWeb(service.openByteStream(asset, selected ?? undefined)) as ReadableStream)
+          : null
+      return new NextResponse(body, { status: selected ? 206 : 200, headers })
+    } finally {
+      await service.closeByteResource?.(asset)
     }
-    const range = request.headers.get('range')
-    const selected = range ? parseByteRange(range, asset.size) : null
-    if (range && !selected) {
-      headers.set('content-range', `bytes */${asset.size}`)
-      headers.set('content-length', '0')
-      return new NextResponse(null, { status: 416, headers })
-    }
-    const length = selected ? selected.end - selected.start + 1 : asset.size
-    headers.set('content-length', String(length))
-    if (selected) {
-      headers.set('content-range', `bytes ${selected.start}-${selected.end}/${asset.size}`)
-    }
-    const body =
-      includeBody && request.method !== 'HEAD'
-        ? (Readable.toWeb(service.openByteStream(asset, selected ?? undefined)) as ReadableStream)
-        : null
-    return new NextResponse(body, { status: selected ? 206 : 200, headers })
   } catch (caught) {
     if (caught instanceof BackendStreamServiceError) {
       const status =
         caught.code === 'INVALID_RESOURCE' ? 403 : caught.code === 'AMBIGUOUS_RESOURCE' ? 409 : 404
       return error(status, caught.code, caught.message)
     }
-    return error(500, 'INTERNAL', 'wiki resource failed')
+    return standaloneError(caught)
   }
 }
 

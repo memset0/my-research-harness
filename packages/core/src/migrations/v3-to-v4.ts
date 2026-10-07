@@ -13,7 +13,7 @@
 // fs-migration-guide-authoring/spec.md).
 
 import { existsSync, promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import { writeFileAtomic } from '../atomic-write.js'
 import { ARCHIVED_SIDECAR } from './../discovery/archive.js'
 import { type ParsedExperiment, parseExperimentReadme } from '../experiments/parse.js'

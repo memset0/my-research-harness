@@ -2,6 +2,7 @@ import { WARNING_CATEGORIES } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
 import type { WarningsConflict, WarningsListResponse, WarningsOpResponse } from '@/lib/dto/warnings'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 import {
   listStandaloneWarnings,
   mutateStandaloneWarning,
@@ -10,7 +11,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function scopedGET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const runtime = await getRuntime()
     const { id } = await ctx.params
@@ -26,7 +27,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   }
 }
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function scopedPOST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const runtime = await getRuntime()
     const { id } = await ctx.params
@@ -77,3 +78,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     )
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)
+export const POST = withStandaloneRequest(scopedPOST)

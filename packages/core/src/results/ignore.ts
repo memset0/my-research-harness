@@ -27,7 +27,15 @@
 
 import { spawn } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from '@memon/file-protocol/paths'
 import { matchesRunDirPatterns } from '../discovery/run-dirs.js'
 import { type ResultsDiagnostic, resultsDiagnostic } from './diagnostics.js'
 import { RESULT_FILE_NAME } from './result-file.js'

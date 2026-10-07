@@ -14,7 +14,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as nodeFs } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from '@memon/file-protocol/paths'
 import { atomicTempPath } from '../atomic-write.js'
 import type { IndexEventWarning, IndexSink } from '../derived-index/events.js'
 import { publishMutationEvent } from '../derived-index/mutation-events.js'

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "memon — experiment monitoring & management for ML/systems research",
+  "description": "memon \u2014 experiment monitoring & management for ML/systems research",
   "engines": {
     "node": ">=20.19"
   },
@@ -15,7 +15,7 @@
     "components:docs:check": "node scripts/component-docs.mjs --check",
     "dev": "pnpm --filter @memon/web dev",
     "build": "pnpm -r build",
-    "test": "pnpm --filter @memon/core build && pnpm --filter @memon/backend build && pnpm -r test",
+    "test": "pnpm --filter @memon/file-protocol build && pnpm --filter @memon/core build && pnpm --filter @memon/backend build && pnpm -r test",
     "lint": "biome lint .",
     "check": "biome check .",
     "format": "biome format --write .",

@@ -35,7 +35,6 @@
 // The derived index is a cache: nothing here is ever a reason for a page to
 // fail. Every error falls back to the on-demand path.
 
-import { basename, join, resolve } from 'node:path'
 import {
   appendIndexEvent,
   compactIndex,
@@ -47,6 +46,7 @@ import {
   type EffectiveRunDirs,
   EXPERIMENT_DESCRIPTION_FILE,
   type ExperimentIndexEntry,
+  formatIsoLocal,
   INDEX_VERSION,
   type IndexEvent,
   type IndexRole,
@@ -63,6 +63,7 @@ import {
   parseExperimentReadme,
   parseReadme,
   projectFs,
+  projectSourceGroup,
   RESULT_FILE_NAME,
   type ResultsSummaryInputSet,
   type RunIndexEntry,
@@ -72,9 +73,11 @@ import {
   resolveEffectiveRunDirs,
   resolveIndexPaths,
   reusableWalk,
+  throwIfSourceFailure,
   validateIndexEntries,
   withProjectFileContext,
 } from '@memon/core'
+import { basename, join, resolve } from '@memon/file-protocol/paths'
 import { indexedWikiPages, wikiPageKey } from './indexed-documents.js'
 import { experimentListing, experimentReadmeKey, type ParsedReadme } from './indexed-experiments.js'
 import { indexedRun, type RunSummary, runSummaryKey } from './indexed-runs.js'
@@ -412,7 +415,10 @@ export class ProjectIndexMirror {
   private scheduleRebuild(): void {
     if (this.options.validator === false || !this.writable || this.rebuilding) return
     this.rebuilding = this.inContext(async () => {
-      const marker = await readFsVersion(this.project.root).catch(() => null)
+      const marker = await readFsVersion(this.project.root).catch((error) => {
+        throwIfSourceFailure(error)
+        return null
+      })
       if (!marker || marker.fs_convention_version < 8) return
       const result = await rebuildIndex(this.project.root, {
         role: this.options.role ?? 'central',
@@ -437,10 +443,15 @@ export class ProjectIndexMirror {
     return withProjectFileContext(
       {
         root: project.root,
-        storageGroup: project.storageGroup ?? project.name,
+        storageGroup: projectSourceGroup(project),
         // The configuration default: an unconfigured Project is local.
         storage: project.storage ?? 'local',
+        ...(project.access ? { cachePolicy: project.access.cache } : {}),
+        ...(project.access?.kind === 'agent'
+          ? { sourceIdentity: project.access.sourceIdentity }
+          : {}),
         reason: 'automatic',
+        observationPolicy: 'revalidate',
         readOnly: project.readOnly === true,
         persistentCache: project.persistentCache === true,
       },
@@ -492,7 +503,10 @@ export class ProjectIndexMirror {
     //    in-process entries re-validate on their next read.
     // Only the event listing and the new events are read, never the snapshot.
     const fresh: NamedIndexEvent[] = []
-    for (const name of await listIndexEvents(root).catch(() => [] as string[])) {
+    for (const name of await listIndexEvents(root).catch((error) => {
+      throwIfSourceFailure(error)
+      return [] as string[]
+    })) {
       if (this.knownEvents.has(name)) continue
       try {
         const raw = await projectFs.readFile(join(resolveIndexPaths(root).events, name), 'utf8')
@@ -779,7 +793,10 @@ export class ProjectIndexMirror {
         runDir: dir,
         // A walked directory is never a followed link.
         contained: walkedKeys.has(key) || this.view?.runs[key]?.contained === true,
-      }).catch(() => null)
+      }).catch((error) => {
+        throwIfSourceFailure(error)
+        return null
+      })
       if (entry) runs[key] = entry
       else goneRuns.add(key)
     })
@@ -791,7 +808,10 @@ export class ProjectIndexMirror {
       const derived = await deriveExperimentEntry({
         projectRoot: root,
         readmePath: experimentDocument(this.project, key).readmePath,
-      }).catch(() => null)
+      }).catch((error) => {
+        throwIfSourceFailure(error)
+        return null
+      })
       if (derived) experiments[derived.key] = derived.entry
       else goneExperiments.push(key)
     }
@@ -799,14 +819,17 @@ export class ProjectIndexMirror {
     if (goneExperiments.length > 0) removals.experiments = goneExperiments.sort()
     const wiki: NonNullable<IndexEvent['upserts']['wiki']> = {}
     for (const page of changedPages) {
-      const derived = await deriveWikiEntry({ page }).catch(() => null)
+      const derived = await deriveWikiEntry({ page }).catch((error) => {
+        throwIfSourceFailure(error)
+        return null
+      })
       if (derived) wiki[derived.key] = derived.entry
     }
     if (Object.keys(wiki).length > 0) upserts.wiki = wiki
     if (removedPages.length > 0) removals.wiki = [...removedPages].sort()
     return {
       index_version: INDEX_VERSION,
-      written_at: new Date(this.now()).toISOString(),
+      written_at: formatIsoLocal(new Date(this.now())),
       writer: { release: '', role: this.options.role ?? 'central', op: 'central.validate' },
       upserts,
       removals,
@@ -835,7 +858,10 @@ async function mapLimited<T>(
 
 // ------------------------------------------------------------ registry
 
-const mirrors = new Map<string, ProjectIndexMirror>()
+const MIRRORS = Symbol.for('memon.backend-index-mirrors.v1')
+const carrier = globalThis as unknown as { [MIRRORS]?: Map<string, ProjectIndexMirror> }
+carrier[MIRRORS] ??= new Map()
+const mirrors = carrier[MIRRORS]
 
 /**
  * Serve these Projects from their derived indexes (central only). Standalone

@@ -3,6 +3,7 @@ import { BackendExperimentResultsResponseSchema, ProjectNameSchema } from '@memo
 import { type NextRequest, NextResponse } from 'next/server'
 import type { ExperimentResultsSnapshot, ResultsErrorResponsePayload } from '@/lib/dto/experiments'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic'
  * with the status and body central returns: 400 `INVALID_RESULTS`, 404
  * `RESULTS_NOT_FOUND`, 422 `RESULT_SCHEMA_MISMATCH` / `RESULT_DUPLICATE_ROW`.
  */
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function scopedGET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const runtime = await getRuntime()
   const { id } = await params
   const projects = new URL(request.url).searchParams.getAll('project')
@@ -53,3 +54,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     )
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)

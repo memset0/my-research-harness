@@ -767,9 +767,28 @@ export type ProjectExecutionConfig =
       knownHostsFile?: string
     }
 
+export type FileCachePolicy = 'none' | 'memory' | 'memory-disk'
+export type ProjectFileAccess =
+  | { kind: 'filesystem' | 'sshfs'; cache: FileCachePolicy; source?: string }
+  | {
+      kind: 'agent'
+      cache: 'memory-disk'
+      connection: string
+      project: string
+      sourceIdentity: string
+      source?: string
+    }
+export interface FileAgentConfig {
+  endpoint: string
+  caFile: string
+  certificateFile: string
+  keyFile: string
+}
+
 export interface ProjectConfig {
   name: string
-  root: string // absolute path
+  root: string // absolute native path or logical memon-file authority URI
+  access?: ProjectFileAccess
   include: string[]
   exclude: string[]
   /**
@@ -939,6 +958,7 @@ export interface CentralConfig {
 }
 
 export interface Config {
+  fileAgents?: Record<string, FileAgentConfig>
   projects: ProjectConfig[]
   poll: PollConfig
   /** Present iff config.yml has a complete `auth` block; absent triggers first-run init in the HTTP server. */
@@ -1005,6 +1025,12 @@ export const MIN_GIT_STATUS_INTERVAL_MS = 1_000
 
 /** Scheduling limits of the Project file store (`file_access:` config). */
 export interface FileAccessOptions {
+  operationsPerSecond: number
+  operationBurst: number
+  bytesPerSecond: number
+  byteBurst: number
+  maxReadBytes: number
+  backgroundShare: number
   concurrency: number
   heartbeatMs: number
   leaseMs: number

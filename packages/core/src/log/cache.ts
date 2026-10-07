@@ -19,7 +19,8 @@
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
+import { projectFs } from '../project-file-store.js'
 import { LineIndex } from './line-index.js'
 
 export const CACHE_VERSION = 1
@@ -30,6 +31,7 @@ export interface CacheRecord {
   size: number
   mtime: number
   ino: number
+  fileId?: string
   anchorEvery: number
   totalLines: number
   anchors: [number, number][]
@@ -57,6 +59,7 @@ export async function saveCache(index: LineIndex, opts: CacheOptions = {}): Prom
     size: index.size,
     mtime: index.mtime,
     ino: index.ino,
+    ...(index.fileId ? { fileId: index.fileId } : {}),
     anchorEvery: index.anchorEvery,
     totalLines: index.totalLines,
     anchors: index.exportAnchors(),
@@ -93,12 +96,21 @@ export async function loadCache(
 
   let stat: Awaited<ReturnType<typeof fs.stat>>
   try {
-    stat = await fs.stat(absolutePath)
+    stat = await projectFs.stat(absolutePath)
   } catch {
     return null
   }
   if (stat.size !== record.size || stat.mtimeMs !== record.mtime || stat.ino !== record.ino) {
     return null
+  }
+  if (record.fileId !== undefined || stat.ino === undefined) {
+    const handle = await projectFs.open(absolutePath, 'r')
+    try {
+      if (Reflect.get(handle, 'fileId') !== record.fileId || record.fileId === undefined)
+        return null
+    } finally {
+      await handle.close()
+    }
   }
   return LineIndex.fromCache(record)
 }

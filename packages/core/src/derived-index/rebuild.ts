@@ -9,7 +9,7 @@
 // `experiments/` and lists Run directories the effective patterns miss
 // (read-only; it never feeds the snapshot).
 
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import { discoverRuns } from '../discovery/discover.js'
 import { nestedRunAncestor } from '../discovery/run-dirs.js'
 import { listExperimentPaths } from '../experiments/discover.js'

@@ -46,6 +46,7 @@ export {
   assertOwnerOnlyServiceConfig,
   SERVICE_CONFIG_FILE_MODE,
 } from './config/permissions.js'
+export { projectSourceGroup } from './config/source-group.js'
 export * from './derived-index/index.js'
 export type {
   DeprecationResult,
@@ -223,6 +224,12 @@ export {
   type ExperimentDisplaySection,
   type ExperimentDocumentView,
 } from './experiments/view.js'
+export {
+  acquireFileWriterLock,
+  FILE_WRITER_LOCK_PATH,
+  type FileWriterLock,
+  withFileWriterLock,
+} from './file-writer-lock.js'
 export type { FrontmatterSplit } from './frontmatter.js'
 export { splitFrontmatter } from './frontmatter.js'
 export type { FsVersionRecord, FsVersionStatus } from './fs-version/index.js'
@@ -395,6 +402,9 @@ export {
   verifyResultsMigration,
 } from './migrations/v8-to-v9.js'
 export * from './project-declaration/index.js'
+export { prepareProjectFileAccess } from './project-file-store/agent-adapters.js'
+export { throwIfSourceFailure } from './project-file-store/errors.js'
+export { getProjectFileSourceNamespace } from './project-file-store/runtime.js'
 export * from './project-file-store.js'
 export * from './project-resource.js'
 // Project scanning and Run target resolution (CLI, Backend and Web).
@@ -485,7 +495,6 @@ export type {
   ShareRecord,
   SharesFile,
 } from './shares/index.js'
-
 export {
   AmbiguousShareError,
   addShare,

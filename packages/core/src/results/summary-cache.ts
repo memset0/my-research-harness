@@ -8,7 +8,7 @@
 // outside central re-take every fingerprint on every request; central may
 // supply fingerprints from validated derived-index entries.
 
-import { join } from 'node:path'
+import { join } from '@memon/file-protocol/paths'
 import {
   type PersistedFingerprint,
   sameFingerprint,

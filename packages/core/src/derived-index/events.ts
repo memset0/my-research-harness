@@ -8,6 +8,8 @@
 // a lock nor the FS marker, and a failure never fails the primary write: it
 // is returned as an `INDEX_EVENT_FAILED` warning.
 
+import { withFileWriterLock } from '../file-writer-lock.js'
+import { getProjectFileContext } from '../project-file-context.js'
 import { formatIsoLocal } from '../time.js'
 import { MEMON_RELEASE } from '../version.js'
 import { defaultIndexFs, type IndexFs } from './fs.js'
@@ -60,6 +62,20 @@ function failure(error: unknown): AppendIndexEventResult {
 
 /** Publish one event describing `body`. Never throws. */
 export async function appendIndexEvent(
+  sink: IndexSink,
+  op: string,
+  body: IndexEventBody,
+): Promise<AppendIndexEventResult> {
+  if (getProjectFileContext() && (sink.fs === undefined || sink.fs === defaultIndexFs)) {
+    try {
+      return await withFileWriterLock(sink.projectRoot, () => publishIndexEvent(sink, op, body))
+    } catch (error) {
+      return failure(error)
+    }
+  }
+  return publishIndexEvent(sink, op, body)
+}
+async function publishIndexEvent(
   sink: IndexSink,
   op: string,
   body: IndexEventBody,

@@ -95,5 +95,5 @@ export interface AttentionLease {
 export interface PersistScope {
   cache: ProjectFileCache
   namespaceId: string
-  mount: MountIdentity
+  mount: MountIdentity | null
 }

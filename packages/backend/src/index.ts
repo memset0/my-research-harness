@@ -76,6 +76,8 @@ export {
   type GitRangeInput,
   type GitRepoSelector,
 } from './git-service.js'
+// Central URL adapters share the handler's source/domain error semantics.
+export { type HttpError, toHttpError } from './http/errors.js'
 export {
   BackendExperimentListResponseSchema,
   type BackendExperimentListRow,

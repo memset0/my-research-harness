@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import {
   BackendCodePreviewResponseSchema,
   BackendCommitMarkDeleteResponseSchema,
@@ -35,6 +34,7 @@ import {
   setCommitMark,
   sliceContext,
 } from '@memon/core'
+import { resolve } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
 import {
   BackendExecutionError,

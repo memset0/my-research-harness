@@ -239,43 +239,47 @@ export async function streamByteResource(
   service: BackendStreamService,
   resource: BackendByteResource,
 ): Promise<void> {
-  const headers = byteResourceHeaders(resource)
-  if (notModified(request, resource)) {
-    response.writeHead(304, headers)
-    response.end()
-    return
-  }
-  const rangeHeader = request.headers.range
-  let range: ParsedByteRange | undefined
-  if (typeof rangeHeader === 'string' && ifRangeAllows(request, resource)) {
-    const parsed = parseByteRange(rangeHeader, resource.size)
-    if (!parsed) {
-      response.writeHead(416, {
-        ...headers,
-        'content-length': '0',
-        'content-range': `bytes */${resource.size}`,
-      })
+  try {
+    const headers = byteResourceHeaders(resource)
+    if (notModified(request, resource)) {
+      response.writeHead(304, headers)
       response.end()
       return
     }
-    range = parsed
-  }
-  const contentLength = range ? range.end - range.start + 1 : resource.size
-  response.writeHead(range ? 206 : 200, {
-    ...headers,
-    'content-length': String(contentLength),
-    ...(range ? { 'content-range': `bytes ${range.start}-${range.end}/${resource.size}` } : {}),
-  })
-  if (request.method === 'HEAD') {
-    response.end()
-    return
-  }
-  const abort = requestAbortController(request, response)
-  try {
-    await pipeline(service.openByteStream(resource, range), response, { signal: abort.signal })
-  } catch {
-    if (!abort.signal.aborted && !response.destroyed) response.destroy()
+    const rangeHeader = request.headers.range
+    let range: ParsedByteRange | undefined
+    if (typeof rangeHeader === 'string' && ifRangeAllows(request, resource)) {
+      const parsed = parseByteRange(rangeHeader, resource.size)
+      if (!parsed) {
+        response.writeHead(416, {
+          ...headers,
+          'content-length': '0',
+          'content-range': `bytes */${resource.size}`,
+        })
+        response.end()
+        return
+      }
+      range = parsed
+    }
+    const contentLength = range ? range.end - range.start + 1 : resource.size
+    response.writeHead(range ? 206 : 200, {
+      ...headers,
+      'content-length': String(contentLength),
+      ...(range ? { 'content-range': `bytes ${range.start}-${range.end}/${resource.size}` } : {}),
+    })
+    if (request.method === 'HEAD') {
+      response.end()
+      return
+    }
+    const abort = requestAbortController(request, response)
+    try {
+      await pipeline(service.openByteStream(resource, range), response, { signal: abort.signal })
+    } catch {
+      if (!abort.signal.aborted && !response.destroyed) response.destroy()
+    } finally {
+      abort.cleanup()
+    }
   } finally {
-    abort.cleanup()
+    await service.closeByteResource?.(resource)
   }
 }

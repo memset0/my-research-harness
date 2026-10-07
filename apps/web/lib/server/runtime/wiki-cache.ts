@@ -10,7 +10,7 @@
 // `docs/wiki/` itself (so a new kind directory is noticed from its mtime),
 // every kind directory is registered as a content directory of its own, and
 // every page file — plain or a bundle's README — is watched individually. No
-// `fs.watch`; the shared Poller drives every refresh.
+// filesystem event APIs; the shared Poller drives every refresh.
 //
 // Two derived layers sit on top of the raw records:
 //
@@ -25,7 +25,6 @@
 //      so no request ever spawns git.
 
 import { type Dirent, promises as fs } from 'node:fs'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
 import {
   buildWikiProject,
   type DiscoveredWikiPage,
@@ -47,6 +46,7 @@ import {
   type WikiReviewMark,
   type WikiSummary,
 } from '@memon/core'
+import { dirname, isAbsolute, join, resolve } from '@memon/file-protocol/paths'
 import { DirCache, type PutContentConflict, type PutContentResult } from './dir-cache'
 
 /** `W<NNNN>-<slug>.md` — the single-file page form. */

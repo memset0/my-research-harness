@@ -7,6 +7,7 @@ import {
 import { type NextRequest, NextResponse } from 'next/server'
 import type { CodeReviewPatchResponse, FullCodeReview } from '@/lib/dto/code-reviews'
 import { getRuntime } from '../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../lib/server/standalone-request'
 import { standaloneServices } from '../../../../lib/server/standalone-services'
 
 export const dynamic = 'force-dynamic'
@@ -20,7 +21,7 @@ async function target(request: NextRequest, context: { params: Promise<{ id: str
   return { project, id, service: standaloneServices(runtime.config).documents }
 }
 
-export async function GET(request: NextRequest, context: { params: Promise<{ id: string[] }> }) {
+async function scopedGET(request: NextRequest, context: { params: Promise<{ id: string[] }> }) {
   const resolved = await target(request, context)
   if (!resolved)
     return NextResponse.json({ error: { message: 'code-review not found' } }, { status: 404 })
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   }
 }
 
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string[] }> }) {
+async function scopedPATCH(request: NextRequest, context: { params: Promise<{ id: string[] }> }) {
   const resolved = await target(request, context)
   if (!resolved)
     return NextResponse.json({ error: { message: 'code-review not found' } }, { status: 404 })
@@ -60,3 +61,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: { message: 'code-review patch failed' } }, { status: 400 })
   }
 }
+
+export const GET = withStandaloneRequest(scopedGET)
+export const PATCH = withStandaloneRequest(scopedPATCH)

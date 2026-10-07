@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { resolve } from '@memon/file-protocol/paths'
 
 /** Project-relative location of the tracked project declaration. */
 export const PROJECT_DECLARATION_RELPATH = '.memon/project.yml'

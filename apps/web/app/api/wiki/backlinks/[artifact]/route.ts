@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 // GET /api/wiki/backlinks/[artifact]?project=NAME
 //
 // Wiki pages whose `sources` cite one artifact — an Experiment (`E0017` or
@@ -14,10 +15,7 @@ import { wikiError, wikiProjectTarget } from '../../../../../lib/server/wiki-rou
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ artifact: string }> },
-) {
+async function scopedGET(request: NextRequest, context: { params: Promise<{ artifact: string }> }) {
   const runtime = await getRuntime()
   const searchParams = new URL(request.url).searchParams
   const target = wikiProjectTarget(runtime, searchParams)
@@ -49,3 +47,5 @@ export async function GET(
     pages: runtime.wikiCache.getWikiBacklinks(target.project, artifact),
   } satisfies WikiBacklinksResponse)
 }
+
+export const GET = withStandaloneRequest(scopedGET)

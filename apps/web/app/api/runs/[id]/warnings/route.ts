@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import type { WarningsConflict, WarningsListResponse, WarningsOpResponse } from '@/lib/dto/warnings'
 import { withValidRunId } from '../../../../../lib/server/run-id'
 import { getRuntime } from '../../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../../lib/server/standalone-request'
 import {
   listStandaloneWarnings,
   mutateStandaloneWarning,
@@ -71,5 +72,8 @@ async function handlePOST(req: NextRequest, ctx: { params: Promise<{ id: string 
   }
 }
 
-export const GET = withValidRunId(handleGET)
-export const POST = withValidRunId(handlePOST)
+const scopedGET = withValidRunId(handleGET)
+const scopedPOST = withValidRunId(handlePOST)
+
+export const GET = withStandaloneRequest(scopedGET)
+export const POST = withStandaloneRequest(scopedPOST)

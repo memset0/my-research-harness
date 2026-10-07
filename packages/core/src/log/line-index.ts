@@ -16,8 +16,9 @@
 //     If it doesn't, totalLines = newlineCount + 1 (a final un-terminated line).
 //   * An empty file has totalLines = 0.
 
-import { createReadStream, promises as fs } from 'node:fs'
-import { open } from 'node:fs/promises'
+import { projectFs as fs } from '../project-file-store.js'
+
+const open = fs.open
 
 const NEWLINE = 0x0a
 
@@ -59,40 +60,60 @@ export class LineIndex {
     public totalLines: number,
     private readonly anchors: Anchor[],
     public readonly anchorEvery: number,
+    public readonly fileId?: string,
   ) {}
 
   static async build(path: string, opts: LineIndexOptions = {}): Promise<LineIndex> {
     const anchorEvery = opts.anchorEvery ?? DEFAULT_ANCHOR_EVERY
-    const stat = await fs.stat(path)
-    const anchors: Anchor[] = [{ lineNumber: 1, byteOffset: 0 }]
+    const handle = await fs.open(path, 'r')
+    try {
+      const stat = await handle.stat()
+      const anchors: Anchor[] = [{ lineNumber: 1, byteOffset: 0 }]
 
-    let newlineCount = 0
-    let lastByte = -1
-    let byteOffset = 0
+      let newlineCount = 0
+      let lastByte = -1
+      let byteOffset = 0
 
-    if (stat.size > 0) {
-      const stream = createReadStream(path, { highWaterMark: 64 * 1024 })
-      for await (const chunk of stream) {
-        const buf = chunk as Buffer
-        for (let i = 0; i < buf.length; i++) {
-          if (buf[i] === NEWLINE) {
-            newlineCount += 1
-            if (newlineCount % anchorEvery === 0) {
-              anchors.push({
-                lineNumber: newlineCount + 1,
-                byteOffset: byteOffset + i + 1,
-              })
+      if (stat.size > 0) {
+        const stream = handle.createReadStream({
+          end: stat.size - 1,
+          autoClose: false,
+          highWaterMark: 64 * 1024,
+        })
+        for await (const chunk of stream) {
+          const buf = chunk as Buffer
+          for (let i = 0; i < buf.length; i++) {
+            if (buf[i] === NEWLINE) {
+              newlineCount += 1
+              if (newlineCount % anchorEvery === 0) {
+                anchors.push({
+                  lineNumber: newlineCount + 1,
+                  byteOffset: byteOffset + i + 1,
+                })
+              }
             }
+            lastByte = buf[i]!
           }
-          lastByte = buf[i]!
+          byteOffset += buf.length
         }
-        byteOffset += buf.length
       }
+
+      const totalLines =
+        stat.size === 0 ? 0 : lastByte === NEWLINE ? newlineCount : newlineCount + 1
+
+      return new LineIndex(
+        path,
+        stat.size,
+        stat.mtimeMs,
+        stat.ino,
+        totalLines,
+        anchors,
+        anchorEvery,
+        readFileId(handle),
+      )
+    } finally {
+      await handle.close()
     }
-
-    const totalLines = stat.size === 0 ? 0 : lastByte === NEWLINE ? newlineCount : newlineCount + 1
-
-    return new LineIndex(path, stat.size, stat.mtimeMs, stat.ino, totalLines, anchors, anchorEvery)
   }
 
   /**
@@ -107,6 +128,7 @@ export class LineIndex {
     ino: number
     anchorEvery: number
     totalLines: number
+    fileId?: string
     anchors: ReadonlyArray<readonly [number, number]>
   }): LineIndex {
     return new LineIndex(
@@ -117,6 +139,7 @@ export class LineIndex {
       record.totalLines,
       record.anchors.map(([lineNumber, byteOffset]) => ({ lineNumber, byteOffset })),
       record.anchorEvery,
+      record.fileId,
     )
   }
 
@@ -126,71 +149,76 @@ export class LineIndex {
   }
 
   async appendDelta(): Promise<AppendResult> {
-    const stat = await fs.stat(this.path)
-    if (stat.ino !== this.ino || stat.size < this.size) {
-      return { added: 0, rotated: true }
-    }
-    if (stat.size === this.size) {
-      return { added: 0, rotated: false }
-    }
+    const handle = await open(this.path, 'r')
+    try {
+      const stat = await handle.stat()
+      if (
+        stat.ino !== this.ino ||
+        stat.size < this.size ||
+        (this.fileId !== undefined && readFileId(handle) !== this.fileId)
+      ) {
+        return { added: 0, rotated: true }
+      }
+      if (stat.size === this.size) {
+        return { added: 0, rotated: false }
+      }
 
-    const oldSize = this.size
-    const oldTotal = this.totalLines
+      const oldSize = this.size
+      const oldTotal = this.totalLines
 
-    // Read the byte just before the new region to know if the prior file ended
-    // mid-line (no trailing newline). That decides whether `oldTotal`'s last
-    // line is still incomplete or already counted.
-    let lastByteOfPrev = -1
-    if (oldSize > 0) {
-      const fd = await open(this.path, 'r')
-      try {
+      // Read the byte just before the new region to know if the prior file ended
+      // mid-line (no trailing newline). That decides whether `oldTotal`'s last
+      // line is still incomplete or already counted.
+      let lastByteOfPrev = -1
+      if (oldSize > 0) {
         const buf = Buffer.alloc(1)
-        await fd.read(buf, 0, 1, oldSize - 1)
+        await handle.read(buf, 0, 1, oldSize - 1)
         lastByteOfPrev = buf[0]!
-      } finally {
-        await fd.close()
       }
-    }
 
-    // newlineCount that produced oldTotal:
-    //   if last byte of prev was '\n' → newlineCount === oldTotal
-    //   else → newlineCount === oldTotal - 1 (last line was incomplete)
-    let newlineCount =
-      oldSize === 0 || lastByteOfPrev === NEWLINE ? oldTotal : Math.max(oldTotal - 1, 0)
+      // newlineCount that produced oldTotal:
+      //   if last byte of prev was '\n' → newlineCount === oldTotal
+      //   else → newlineCount === oldTotal - 1 (last line was incomplete)
+      let newlineCount =
+        oldSize === 0 || lastByteOfPrev === NEWLINE ? oldTotal : Math.max(oldTotal - 1, 0)
 
-    let lastByte = lastByteOfPrev
-    let byteOffset = oldSize
+      let lastByte = lastByteOfPrev
+      let byteOffset = oldSize
 
-    const stream = createReadStream(this.path, {
-      start: oldSize,
-      end: stat.size - 1,
-      highWaterMark: 64 * 1024,
-    })
-    for await (const chunk of stream) {
-      const buf = chunk as Buffer
-      for (let i = 0; i < buf.length; i++) {
-        if (buf[i] === NEWLINE) {
-          newlineCount += 1
-          if (newlineCount % this.anchorEvery === 0) {
-            this.anchors.push({
-              lineNumber: newlineCount + 1,
-              byteOffset: byteOffset + i + 1,
-            })
+      const stream = handle.createReadStream({
+        autoClose: false,
+        start: oldSize,
+        end: stat.size - 1,
+        highWaterMark: 64 * 1024,
+      })
+      for await (const chunk of stream) {
+        const buf = chunk as Buffer
+        for (let i = 0; i < buf.length; i++) {
+          if (buf[i] === NEWLINE) {
+            newlineCount += 1
+            if (newlineCount % this.anchorEvery === 0) {
+              this.anchors.push({
+                lineNumber: newlineCount + 1,
+                byteOffset: byteOffset + i + 1,
+              })
+            }
           }
+          lastByte = buf[i]!
         }
-        lastByte = buf[i]!
+        byteOffset += buf.length
       }
-      byteOffset += buf.length
+
+      const newTotalLines = lastByte === NEWLINE ? newlineCount : newlineCount + 1
+      const added = newTotalLines - oldTotal
+
+      this.size = stat.size
+      this.mtime = stat.mtimeMs
+      this.totalLines = newTotalLines
+
+      return { added, rotated: false }
+    } finally {
+      await handle.close()
     }
-
-    const newTotalLines = lastByte === NEWLINE ? newlineCount : newlineCount + 1
-    const added = newTotalLines - oldTotal
-
-    this.size = stat.size
-    this.mtime = stat.mtimeMs
-    this.totalLines = newTotalLines
-
-    return { added, rotated: false }
   }
 
   /**
@@ -215,7 +243,22 @@ export class LineIndex {
 
     const anchor = this.findAnchor(first)
 
-    const stream = createReadStream(this.path, {
+    const handle = await fs.open(this.path, 'r')
+    const metadata = await handle.stat().catch(async (error) => {
+      await handle.close()
+      throw error
+    })
+    if (
+      metadata.ino !== this.ino ||
+      metadata.size < this.size ||
+      (this.fileId !== undefined && readFileId(handle) !== this.fileId)
+    ) {
+      await handle.close()
+      throw Object.assign(new Error('log rotated before range read'), {
+        code: 'SOURCE_UNAVAILABLE',
+      })
+    }
+    const stream = handle.createReadStream({
       start: anchor.byteOffset,
       end: Math.max(this.size - 1, anchor.byteOffset),
       highWaterMark: 64 * 1024,
@@ -287,4 +330,10 @@ export class LineIndex {
     }
     return result
   }
+}
+
+function readFileId(handle: unknown): string | undefined {
+  if (typeof handle !== 'object' || handle === null) return undefined
+  const id = Reflect.get(handle, 'fileId')
+  return typeof id === 'string' ? id : undefined
 }

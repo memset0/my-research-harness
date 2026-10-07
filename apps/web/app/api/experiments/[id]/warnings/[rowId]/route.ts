@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import type { WarningsConflict, WarningsOpResponse } from '@/lib/dto/warnings'
 import { getRuntime } from '../../../../../../lib/server/runtime'
+import { withStandaloneRequest } from '../../../../../../lib/server/standalone-request'
 import {
   mutateStandaloneWarning,
   standaloneWarningError,
@@ -8,7 +9,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-export async function PATCH(
+async function scopedPATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string; rowId: string }> },
 ) {
@@ -50,7 +51,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function scopedDELETE(
   req: NextRequest,
   ctx: { params: Promise<{ id: string; rowId: string }> },
 ) {
@@ -76,3 +77,6 @@ export async function DELETE(
     )
   }
 }
+
+export const PATCH = withStandaloneRequest(scopedPATCH)
+export const DELETE = withStandaloneRequest(scopedDELETE)

@@ -1,3 +1,4 @@
+import { withStandaloneRequest } from '../../../../lib/server/standalone-request'
 // GET|PUT /api/wiki/[id]?project=NAME
 //
 // GET returns the summary projection plus `content`, `hash`, and the
@@ -6,96 +7,67 @@
 // optimistic lock; a write that would change `id` or `kind` is rejected,
 // because identity moves only through `memon wiki move`.
 
-import { markJournalInvocationOutcome, WIKI_ID_REGEX } from '@memon/core'
+import { BackendWikiDocumentSchema, WIKI_ID_REGEX } from '@memon/core'
 import { type NextRequest, NextResponse } from 'next/server'
-import type { WikiPageDetail, WikiPutResponse } from '@/lib/dto/wiki'
 import { getRuntime } from '../../../../lib/server/runtime'
+import { standaloneError } from '../../../../lib/server/standalone-error'
+import { standaloneServices } from '../../../../lib/server/standalone-services'
 import {
   parseWikiWriteBody,
+  wikiComponentProjection,
   wikiError,
-  wikiPageDto,
   wikiProjectTarget,
-  wikiWriteIdentityError,
-  withWikiInvocation,
 } from '../../../../lib/server/wiki-route'
 
 export const dynamic = 'force-dynamic'
-
 type RouteContext = { params: Promise<{ id: string }> }
 
-export async function GET(request: NextRequest, context: RouteContext) {
-  const runtime = await getRuntime()
-  const target = wikiProjectTarget(runtime, new URL(request.url).searchParams)
-  if ('error' in target) return target.error
-  const id = (await context.params).id
-  if (!WIKI_ID_REGEX.test(id)) {
-    return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
+function projectPage(value: unknown) {
+  const page = BackendWikiDocumentSchema.parse(value)
+  const projection = wikiComponentProjection(page.content)
+  return {
+    ...page,
+    path: page.resource,
+    components: projection.components,
+    diagnostics: [...page.diagnostics, ...projection.diagnostics],
   }
-  const page = await runtime.wikiCache.getWikiPage(target.project, id)
-  if (!page) return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
-  return NextResponse.json(
-    wikiPageDto(target.project, page.summary, page.content, page.hash) satisfies WikiPageDetail,
-  )
 }
 
-export async function PUT(request: NextRequest, context: RouteContext) {
+async function scopedGET(request: NextRequest, context: RouteContext) {
   const runtime = await getRuntime()
   const target = wikiProjectTarget(runtime, new URL(request.url).searchParams)
   if ('error' in target) return target.error
   const id = (await context.params).id
-  return withWikiInvocation(runtime, target.project, 'wiki write', { id }, async () => {
-    if (!WIKI_ID_REGEX.test(id)) {
-      return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
-    }
-    const summary = runtime.wikiCache.getWikiSummary(target.project, id)
-    if (!summary) return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
-
-    let raw: unknown
-    try {
-      raw = await request.json()
-    } catch {
-      return wikiError(400, 'BAD_REQUEST', 'invalid JSON body')
-    }
-    const write = parseWikiWriteBody(raw)
-    if (!write) return wikiError(400, 'BAD_REQUEST', 'invalid write request')
-    const identityError = wikiWriteIdentityError(summary, write.content)
-    if (identityError) return wikiError(400, 'BAD_REQUEST', identityError)
-
-    const result = await runtime.wikiCache.putWikiPage(
+  if (!WIKI_ID_REGEX.test(id)) return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
+  try {
+    return NextResponse.json(
+      projectPage(await standaloneServices(runtime.config).documents.getWiki(target.project, id)),
+    )
+  } catch (error) {
+    return standaloneError(error)
+  }
+}
+async function scopedPUT(request: NextRequest, context: RouteContext) {
+  const runtime = await getRuntime()
+  const target = wikiProjectTarget(runtime, new URL(request.url).searchParams)
+  if ('error' in target) return target.error
+  const id = (await context.params).id
+  if (!WIKI_ID_REGEX.test(id)) return wikiError(400, 'BAD_REQUEST', 'wiki id must match W<NNNN>')
+  const write = parseWikiWriteBody(await request.json().catch(() => null))
+  if (!write) return wikiError(400, 'BAD_REQUEST', 'invalid write request')
+  try {
+    const result = await standaloneServices(runtime.config).documents.putWiki(
       target.project,
       id,
-      write.content,
-      write.expectedMtime,
-      write.expectedHash,
+      write,
     )
-    if (!result.ok) {
-      if (result.code === 'NOT_FOUND') {
-        return wikiError(404, 'NOT_FOUND', `wiki page ${id} not found`)
-      }
-      if (result.code === 'CONFLICT') {
-        return NextResponse.json(
-          {
-            error: { code: 'CONFLICT', message: 'wiki page changed on disk' },
-            currentMtime: result.currentMtime,
-            currentHash: result.currentHash,
-            currentContent: result.currentContent,
-          },
-          { status: 409 },
-        )
-      }
-      return wikiError(500, 'INTERNAL', result.message ?? 'wiki write failed')
-    }
-
-    if (write.expectedHash && result.hash === write.expectedHash) {
-      markJournalInvocationOutcome('noop')
-    }
-    const written = runtime.wikiCache.getWikiSummary(target.project, id) ?? summary
-    return NextResponse.json({
-      ok: true,
-      mtime: result.mtime,
-      hash: result.hash,
-      page: wikiPageDto(target.project, written, write.content, result.hash),
-      finalContent: write.content,
-    } satisfies WikiPutResponse)
-  })
+    if ('error' in result) return NextResponse.json(result, { status: 409 })
+    const page = projectPage(result.page)
+    return NextResponse.json({ ...result, page, finalContent: page.content })
+  } catch (error) {
+    return standaloneError(error)
+  }
 }
+
+export const GET = withStandaloneRequest(scopedGET)
+export const PUT = withStandaloneRequest(scopedPUT)
