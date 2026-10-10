@@ -41,19 +41,24 @@ export function remarkCallouts() {
       const paragraph = node.children?.[0]
       const first = paragraph?.children?.[0]
       if (paragraph?.type !== 'paragraph' || first?.type !== 'text') return
-      const marker = /^\[!([\w-]+)\]([+-]?)[\t ]*/.exec(first.value ?? '')
-      if (!marker) return
       const offset = first.position?.start.offset
-      // Escaped and entity-encoded examples have the same decoded text.
-      if (offset === undefined || !source.slice(offset).startsWith(marker[0])) return
+      if (offset === undefined) return
+      // Read the literal source: escaped examples stay literal, while underscores
+      // inside a custom identifier may have been parsed as inline emphasis.
+      const marker = /^\[!([\w-]+)\]([+-]?)[\t ]*/.exec(source.slice(offset))
+      if (!marker) return
 
       const identifier = marker[1]!.toLowerCase()
       const kind = Object.hasOwn(TYPES, identifier) ? TYPES[identifier]! : 'note'
       const fold = marker[2]
-      const inline = [
-        { ...first, value: first.value!.slice(marker[0].length) },
-        ...paragraph.children!.slice(1),
-      ]
+      const markerEnd = offset + marker[0].length
+      const inline = paragraph.children!.flatMap((child) => {
+        if ((child.position?.end.offset ?? Infinity) <= markerEnd) return []
+        const start = child.position?.start.offset ?? markerEnd
+        return start < markerEnd && child.type === 'text'
+          ? [{ ...child, value: child.value!.slice(markerEnd - start) }]
+          : [child]
+      })
       const { before: title, after: body } = splitFirstLine(inline)
       const customTitle = title.some((part) => part.type !== 'text' || part.value?.trim())
       const titleNode: ProseNode = {
