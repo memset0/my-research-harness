@@ -6,6 +6,7 @@ import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { resolveComponentBlock } from '../../components/registry'
+import { remarkCallouts } from '../../markdown-callouts'
 import {
   literalSegment,
   type ProseNode,
@@ -23,13 +24,13 @@ export function createTranslationManifest(sources: TranslationSource[]) {
       throw new Error('Segment identity collision')
     segments.set(segment.id, segment)
   }
-  const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
+  const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(remarkCallouts)
   for (const source of sources) {
     if (source.format === 'literal') {
       add(literalSegment(source.text))
       continue
     }
-    const tree = processor.runSync(processor.parse(source.text)) as ProseNode
+    const tree = processor.runSync(processor.parse(source.text), source.text) as ProseNode
     segmentMarkdownTree(tree, source.text).forEach(add)
     const captions = (node: ProseNode & { lang?: string; meta?: string }) => {
       if (node.type === 'code' && node.lang && node.meta && node.value) {

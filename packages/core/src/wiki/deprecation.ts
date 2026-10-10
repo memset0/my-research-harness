@@ -21,7 +21,7 @@ import {
 } from './types.js'
 
 const HEADING_REGEX = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
-const DEPRECATED_MARKER_REGEX = /^ {0,3}>\s*\[!DEPRECATED\]\s*(.*)$/
+const DEPRECATED_MARKER_REGEX = /^ {0,3}>\s*\[!DEPRECATED\][+-]?\s*(.*)$/i
 const BLOCKQUOTE_LINE_REGEX = /^ {0,3}>\s?(.*)$/
 /** `since <YYYY-MM-DD>: <reason>` — the dated marker form. */
 const DEPRECATED_SINCE_REGEX = /^since\s+(\d{4}-\d{2}-\d{2})\s*:\s*(.*)$/

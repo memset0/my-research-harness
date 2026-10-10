@@ -5,6 +5,7 @@ import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { remarkCallouts } from '../../markdown-callouts'
 import {
   literalSegment,
   packSegments,
@@ -26,6 +27,16 @@ const echo = async (prompt: string) =>
   JSON.stringify(JSON.parse(prompt.slice(prompt.indexOf('\n') + 1)))
 
 describe('body manifest', () => {
+  it('matches callout title/body segments without translating markers', () => {
+    const text =
+      '> [!DEPRECATED]- Old **approach**\n> Historical `code` and $x$.\n>\n> > [!tip] Nested title\n> > Nested evidence.\n'
+    const manifest = createTranslationManifest([{ format: 'markdown', text }])
+    const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(remarkCallouts)
+    const tree = processor.runSync(processor.parse(text), text)
+    expect(segmentMarkdownTree(tree, text, true)).toEqual(manifest.segments)
+    expect(manifest.segments).toHaveLength(4)
+    expect(manifest.segments.map((item) => item.text).join(' ')).not.toMatch(/DEPRECATED|\[!tip\]/)
+  })
   it('matches client IDs and preserves prose boundaries while excluding opaque content', async () => {
     const text =
       '# Heading\n\nHello **strong** [link][ref] `code` $x+1$ 42 E0001-test.\n\n- First item\n  - Nested item\n\n| Label | Metric |\n|---|---|\n| Some prose | 12 |\n\n```js\nignored()\n```\n\n<div>HTML only</div>\n\n[ref]: https://example.com/path\n'

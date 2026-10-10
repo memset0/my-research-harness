@@ -43,6 +43,21 @@ describe('validateWikiDeprecation', () => {
 })
 
 describe('findWikiDeprecatedSections', () => {
+  it.each(['-', '+'])('excludes %s from dated and continued reasons', (suffix) => {
+    const dated = findWikiDeprecatedSections(
+      `## Old\n\n> [!deprecated]${suffix} since 2026-08-20: replaced\n`,
+    )
+    expect(dated.diagnostics).toEqual([])
+    expect(dated.sections[0]).toMatchObject({ reason: 'replaced', since: '2026-08-20' })
+    const continued = findWikiDeprecatedSections(
+      `## Old\n\n> [!DEPRECATED]${suffix}\n> replacement required\n`,
+    )
+    expect(continued.sections[0]?.reason).toBe('replacement required')
+    expect(continued.diagnostics).toEqual([])
+    expect(findWikiDeprecatedSections(`> [!DEPRECATED]${suffix}\n`).diagnostics[0]?.code).toBe(
+      'WIKI_DEPRECATION_INVALID',
+    )
+  })
   it('attributes a dated marker under a heading to that heading', () => {
     const body = [
       '# Page',

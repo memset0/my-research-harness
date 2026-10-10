@@ -34,6 +34,7 @@ import {
 import { type ResolvedBlock, resolveComponentBlock } from '../lib/components/registry'
 import type { ComponentDocumentRef } from '../lib/components/types'
 import { resolveDocumentResourceUrl } from '../lib/document-resource-url'
+import { remarkCallouts } from '../lib/markdown-callouts'
 import { markdownHeadingSlug, normalizeHeadingIdPrefix } from '../lib/markdown-outline'
 import type { ArtifactSourceSurface } from '../lib/report-workspace-url'
 import { handleFragmentClick } from '../lib/scroll-to-fragment'
@@ -41,6 +42,7 @@ import { cn } from '../lib/utils'
 import { replaceWorkspaceHistory } from '../lib/workspace-history'
 import { ComponentBlockView } from './components'
 import { GithubPermalinkPreview, isGithubBlobPermalink } from './github-permalink-preview'
+import { MarkdownCalloutTitle } from './markdown-callout-title'
 import { ReportHtmlEmbed } from './report-html-embed'
 
 export type MarkdownArtifactSourceSurface = ArtifactSourceSurface
@@ -100,6 +102,38 @@ export function MarkdownArtifactLinkProvider({
 // guards against future remark-gfm versions that might emit interactive
 // checkboxes by default.
 const BASE_COMPONENTS: Components = {
+  div: ({ node, children, ...rest }) => (
+    <div {...rest}>
+      {node?.properties?.dataCalloutTitle ? (
+        <MarkdownCalloutTitle
+          kind={String(node.properties.dataCalloutTitle)}
+          label={
+            node.properties.dataCalloutLabel ? String(node.properties.dataCalloutLabel) : undefined
+          }
+        >
+          {children}
+        </MarkdownCalloutTitle>
+      ) : (
+        children
+      )}
+    </div>
+  ),
+  summary: ({ node, children, ...rest }) => (
+    <summary {...rest}>
+      {node?.properties?.dataCalloutTitle ? (
+        <MarkdownCalloutTitle
+          kind={String(node.properties.dataCalloutTitle)}
+          label={
+            node.properties.dataCalloutLabel ? String(node.properties.dataCalloutLabel) : undefined
+          }
+        >
+          {children}
+        </MarkdownCalloutTitle>
+      ) : (
+        children
+      )}
+    </summary>
+  ),
   input: ({ node: _node, type, checked, ...rest }) => {
     if (type === 'checkbox') {
       return (
@@ -352,6 +386,7 @@ export function Markdown({
       remarkGfm,
       remarkMath,
       remarkFenceMeta,
+      remarkCallouts,
       ...(translationPlugin ? [translationPlugin] : []),
       ...(artifactRemarkPlugin ? [artifactRemarkPlugin] : []),
       ...(tableOfContentsRemarkPlugin ? [tableOfContentsRemarkPlugin] : []),

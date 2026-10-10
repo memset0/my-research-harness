@@ -1,0 +1,113 @@
+/* Scope typography and disclosure styles to parsed Markdown callouts. */
+.prose .memon-callout {
+  --callout-color: var(--primary);
+  margin-block: 1rem;
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--callout-color) 35%, var(--border));
+  border-left: 3px solid var(--callout-color);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--callout-color) 6%, var(--card));
+  color: var(--foreground);
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.prose .memon-callout[data-callout="warning"],
+.prose .memon-callout[data-callout="question"] {
+  --callout-color: light-dark(oklch(0.55 0.13 65), oklch(0.8 0.14 75));
+}
+
+.prose .memon-callout[data-callout="failure"],
+.prose .memon-callout[data-callout="danger"],
+.prose .memon-callout[data-callout="bug"] {
+  --callout-color: var(--destructive);
+}
+
+.prose .memon-callout[data-callout="example"],
+.prose .memon-callout[data-callout="abstract"] {
+  --callout-color: light-dark(oklch(0.5 0.16 300), oklch(0.77 0.12 300));
+}
+
+.prose .memon-callout[data-callout="deprecated"],
+.prose .memon-callout[data-callout="quote"] {
+  --callout-color: var(--muted-foreground);
+}
+
+.prose .memon-callout-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  margin: 0;
+  font-weight: 600;
+  color: var(--foreground);
+  list-style: none;
+}
+
+.prose summary.memon-callout-title {
+  cursor: pointer;
+}
+
+.prose summary.memon-callout-title::-webkit-details-marker {
+  display: none;
+}
+
+.prose summary.memon-callout-title::after {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  flex-shrink: 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  align-self: center;
+  margin-left: auto;
+}
+
+.prose details[open] > summary.memon-callout-title::after {
+  transform: rotate(45deg);
+}
+
+.prose summary.memon-callout-title:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+.prose .memon-callout-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  color: var(--callout-color);
+}
+
+.prose .memon-callout-title-text {
+  min-width: 0;
+}
+
+.prose .memon-callout-label {
+  color: var(--muted-foreground);
+}
+
+.prose .memon-callout-body {
+  padding: 0 0.85rem 0.75rem;
+  min-width: 0;
+}
+
+.prose .memon-callout-body > :first-child {
+  margin-top: 0;
+}
+
+.prose .memon-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+.prose .memon-callout-body:empty {
+  display: none;
+}
+
+.prose .memon-callout[data-callout="deprecated"] > .memon-callout-body {
+  color: var(--muted-foreground);
+}
