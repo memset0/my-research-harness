@@ -12,6 +12,7 @@ import {
 const RUN = 'logs/trial-261001-100000'
 const ID = 'E0001-example'
 const DOC = `docs/experiments/${ID}/experiment.json`
+const README = `docs/experiments/${ID}/README.md`
 const MARKER = '.memon/version.json'
 const readme = `---\nid: ${ID}\nslug: example\ntitle: Example\nstatus: OPEN\narchived: false\nruns: [${RUN}]\ncreated_at: '2026-10-01T10:00:00+08:00'\nupdated_at: '2026-10-01T10:00:00+08:00'\ncustom: preserve\n---\n\n## Motivation\nOriginal explanation.\n`
 const runReadme = '---\nid: trial-261001-100000\nstatus: FINISHED\n---\nOriginal execution.\n'
@@ -60,7 +61,7 @@ describe('FS9 to FS10 explicit migration', () => {
     const marker = await fs.readFile(project.path(MARKER), 'utf8')
     const plan = await planResearchMigration(project.root)
     expect(plan.blockers).toEqual([])
-    expect(plan.files.map((f) => f.path)).toEqual([DOC, MARKER])
+    expect(plan.files.map((f) => f.path)).toEqual([README, DOC, MARKER])
     expect(await fs.readFile(project.path(DOC), 'utf8')).toBe(original)
     const backup = await backupPath()
     await applyResearchMigration(plan, backup)
@@ -74,7 +75,11 @@ describe('FS9 to FS10 explicit migration', () => {
     expect(next.variants.V0001.runs).toEqual([RUN])
     expect(await fs.readFile(project.path(RUN, 'README.md'), 'utf8')).toBe(runReadme)
     expect(await fs.readFile(project.path(RUN, 'result.csv'), 'utf8')).toBe(csv)
-    expect(await fs.readFile(project.path(`docs/experiments/${ID}/README.md`), 'utf8')).toBe(readme)
+    const convertedReadme = await fs.readFile(project.path(README), 'utf8')
+    expect(convertedReadme).toContain('status: ACTIVE')
+    expect(convertedReadme).not.toContain('archived:')
+    expect(convertedReadme).toContain('custom: preserve')
+    expect(convertedReadme.split('\n---\n')[1]).toBe(readme.split('\n---\n')[1])
     expect((await fs.stat(project.path(DOC))).mode & 0o777).toBe(0o640)
     expect(await verifyResearchMigration(project.root)).toEqual({ ok: true, problems: [] })
     const repeated = await planResearchMigration(project.root)
@@ -83,6 +88,7 @@ describe('FS9 to FS10 explicit migration', () => {
     await rollbackResearchMigration(backup)
     expect(await fs.readFile(project.path(DOC), 'utf8')).toBe(original)
     expect(await fs.readFile(project.path(MARKER), 'utf8')).toBe(marker)
+    expect(await fs.readFile(project.path(README), 'utf8')).toBe(readme)
   })
 
   it('refuses a stale plan after an execution result changes, even with its mtime restored', async () => {
@@ -117,7 +123,8 @@ describe('FS9 to FS10 explicit migration', () => {
   it('rejects newly added experiments and modified planned outputs', async () => {
     const project = await fixture()
     const plan = await planResearchMigration(project.root)
-    plan.files[0]!.after = plan.files[0]!.after.replace('Baseline', 'tampered')
+    const descriptionFile = plan.files.find((file) => file.path === DOC)!
+    descriptionFile.after = descriptionFile.after.replace('Baseline', 'tampered')
     await expect(applyResearchMigration(plan, await backupPath())).rejects.toThrow(
       'modified migration plan',
     )
@@ -183,5 +190,74 @@ describe('FS9 to FS10 explicit migration', () => {
     await applyResearchMigration(plan, await backupPath())
     expect((await verifyResearchMigration(project.root)).ok).toBe(true)
     await expect(fs.stat(project.path('docs'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('requires a reviewed lifecycle for legacy archived work and preserves the entire body', async () => {
+    const project = await fixture()
+    const original = readme.replace('archived: false', 'archived: true')
+    await fs.writeFile(project.path(README), original)
+    expect((await planResearchMigration(project.root)).blockers.join()).toContain(
+      'lifecycle decision',
+    )
+    const plan = await planResearchMigration(project.root, { lifecycles: { [ID]: 'RETIRED' } })
+    expect(plan.blockers).toEqual([])
+    const backup = await backupPath()
+    await applyResearchMigration(plan, backup)
+    const next = await fs.readFile(project.path(README), 'utf8')
+    expect(next).toContain('status: RETIRED')
+    expect(next.split('\n---\n')[1]).toBe(original.split('\n---\n')[1])
+    await rollbackResearchMigration(backup)
+    expect(await fs.readFile(project.path(README), 'utf8')).toBe(original)
+  })
+
+  it('normalizes initial FS10 lifecycle explicitly without recreating research history', async () => {
+    const project = await fixture()
+    await applyResearchMigration(await planResearchMigration(project.root), await backupPath())
+    const descriptionBefore = await fs.readFile(project.path(DOC), 'utf8')
+    await fs.writeFile(project.path(README), readme.replace('status: OPEN', 'status: RESOLVED'))
+    expect((await verifyResearchMigration(project.root)).ok).toBe(false)
+    expect((await planResearchMigration(project.root)).blockers.join()).toContain(
+      'lifecycle decision',
+    )
+    const plan = await planResearchMigration(project.root, { lifecycles: { [ID]: 'ARCHIVED' } })
+    expect(plan.alreadyMigrated).toBe(false)
+    expect(plan.files.map((file) => file.path)).toEqual([README, MARKER])
+    await applyResearchMigration(plan, await backupPath())
+    expect(await fs.readFile(project.path(DOC), 'utf8')).toBe(descriptionBefore)
+    expect((await verifyResearchMigration(project.root)).ok).toBe(true)
+    expect((await planResearchMigration(project.root)).alreadyMigrated).toBe(true)
+  })
+
+  it('retains existing value diagnostics and unassigned members without inventing corrections', async () => {
+    const project = await fixture()
+    const unassigned = 'logs/unassigned-261001-110000'
+    await fs.writeFile(
+      project.path(README),
+      readme.replace(`runs: [${RUN}]`, `runs: [${RUN}, ${unassigned}]`),
+    )
+    const legacy = structuredClone(description)
+    legacy.columns.push({ path: 'params.count', type: 'number', label: 'Count' })
+    legacy.variants[0]!.values = { 'params.count': 'not recorded' }
+    await fs.writeFile(project.path(DOC), JSON.stringify(legacy))
+    const plan = await planResearchMigration(project.root)
+    expect(plan.blockers).toEqual([])
+    expect(plan.retainedDiagnostics.map((item) => item.code).sort()).toEqual([
+      'RESULT_VALUE_TYPE_MISMATCH',
+      'UNASSIGNED_EXPERIMENT_RUN',
+    ])
+    const hidden = structuredClone(plan)
+    hidden.retainedDiagnostics = []
+    await expect(applyResearchMigration(hidden, await backupPath())).rejects.toThrow(
+      'modified migration plan',
+    )
+    await applyResearchMigration(plan, await backupPath())
+    const after = JSON.parse(await fs.readFile(project.path(DOC), 'utf8'))
+    expect(after.variants.V0001.values['params.count']).toBe('not recorded')
+    expect(after.variants.V0001.runs).toEqual([RUN])
+    expect(after.research.run_versions[unassigned]).toBe(1)
+    expect((await verifyResearchMigration(project.root)).retainedDiagnostics).toEqual(
+      plan.retainedDiagnostics,
+    )
+    expect(await fs.readFile(project.path(RUN, 'result.csv'), 'utf8')).toBe(csv)
   })
 })

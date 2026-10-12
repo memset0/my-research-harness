@@ -27,6 +27,7 @@ import {
   type ExperimentRawSection,
   type ExperimentSections,
   type ExperimentWarningRecord,
+  isExperimentLifecycle,
   type ParseIssue,
 } from '../types.js'
 import { matterOptions } from '../yaml-engine.js'
@@ -151,7 +152,16 @@ export function parseExperimentReadme(content: string, filenameStem: string): Pa
 
   // v4-added: archived flag. Missing → false with parse warning.
   let archived = false
-  if (raw.archived === undefined) {
+  if (isExperimentLifecycle(status)) {
+    archived = status === 'ARCHIVED'
+    if (raw.archived !== undefined)
+      errors.push({
+        field: 'archived',
+        message:
+          'EXPERIMENT_LIFECYCLE_ARCHIVE_CONFLICT: canonical lifecycle replaces the archived field',
+        severity: 'error',
+      })
+  } else if (raw.archived === undefined) {
     warnings.push({
       field: 'archived',
       message: `MISSING_ARCHIVED_FIELD: archived flag missing from frontmatter; defaulting to false`,

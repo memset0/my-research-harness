@@ -19,3 +19,19 @@ Authorized Web users SHALL be able to advance the research version and deprecate
 #### Scenario: Version advanced in another session
 - **WHEN** a user submits a stale advance action
 - **THEN** the interface shows the conflict and does not advance again or hide the concurrently written state
+
+### Requirement: Experiment display status is projected from lifecycle and current progress
+
+Lists and detail pages SHALL show PAUSED, ARCHIVED or RETIRED directly when stored. ACTIVE SHALL display RUNNING if a required current-version Variant has an actually RUNNING Run; otherwise COMPLETED if the nonempty set of required Variants is all completed; otherwise ACTIVE. Required Variants exclude deprecated and DROPPED entries. The projection SHALL NOT use historical evidence or infer completion from an empty plan. Pending/interrupted execution alone SHALL NOT imply an actually running Experiment. The lifecycle picker SHALL contain only the four stored values. Running execution counts SHALL remain visible as an informational warning when an explicitly inactive lifecycle still has running executions. Display projection SHALL NOT write documents or launch/stop processes.
+
+#### Scenario: Paused work still has an execution
+- **WHEN** a PAUSED Experiment has a running Run
+- **THEN** its primary badge stays PAUSED and the interface separately indicates the running execution
+
+#### Scenario: Add another required Variant
+- **WHEN** an ACTIVE Experiment displayed COMPLETED receives a new planned Variant
+- **THEN** it displays ACTIVE without rewriting its stored lifecycle
+
+#### Scenario: Historical running execution
+- **WHEN** only a previous research version has a RUNNING Run
+- **THEN** that execution does not make the current Experiment display RUNNING

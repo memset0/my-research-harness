@@ -9,7 +9,12 @@ import {
 
 const [mode, target, output, ...flags] = process.argv.slice(2)
 if (mode === 'plan' && target && output) {
-  const plan = await planResearchMigration(target, { allowDirty: flags.includes('--allow-dirty') })
+  const mapping = flags.indexOf('--lifecycles')
+  if (mapping >= 0 && !flags[mapping + 1]) throw new Error('--lifecycles requires a JSON file')
+  const plan = await planResearchMigration(target, {
+    allowDirty: flags.includes('--allow-dirty'),
+    ...(mapping >= 0 ? { lifecycles: JSON.parse(await readFile(flags[mapping + 1], 'utf8')) } : {}),
+  })
   await writeFile(output, `${JSON.stringify(plan, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
   console.log(
     JSON.stringify(
@@ -19,6 +24,7 @@ if (mode === 'plan' && target && output) {
         experiments: plan.experiments,
         files: plan.files.map(({ path }) => path),
         blockers: plan.blockers,
+        retainedDiagnostics: plan.retainedDiagnostics,
       },
       null,
       2,
@@ -41,7 +47,7 @@ if (mode === 'plan' && target && output) {
   console.log(JSON.stringify(await rollbackResearchMigration(target), null, 2))
 } else {
   console.error(
-    'Usage: node scripts/migrate-v9-to-v10.mjs plan PROJECT PLAN [--allow-dirty] | apply PLAN NEW_EXTERNAL_BACKUP_DIRECTORY | verify PROJECT | rollback BACKUP_DIRECTORY',
+    'Usage: node scripts/migrate-v9-to-v10.mjs plan PROJECT PLAN [--allow-dirty] [--lifecycles JSON] | apply PLAN NEW_EXTERNAL_BACKUP_DIRECTORY | verify PROJECT | rollback BACKUP_DIRECTORY',
   )
   process.exitCode = 2
 }

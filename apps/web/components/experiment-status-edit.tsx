@@ -3,15 +3,14 @@
 // v4: ExperimentStatus picker. Mirrors `StatusEdit` (run side) but writes
 // through the dedicated PATCH /api/experiments/:id/status endpoint.
 
+import type { ExperimentDisplayStatus, ExperimentStatus } from '@memon/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ApiError, type ProjectTarget, patchExperimentStatusV4, projectQueryKey } from '../lib/api'
+import { ApiError, type ProjectTarget, patchExperimentStatusV4 } from '../lib/api'
 import { queryKeys } from '../lib/query-keys'
 import { ExperimentStatusPill } from './status-pill'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-
-type ExperimentStatus = 'OPEN' | 'RESOLVED' | 'ABANDONED'
 
 const SELECTABLE: readonly ExperimentStatus[] = ['OPEN', 'RESOLVED', 'ABANDONED']
 
@@ -19,21 +18,28 @@ export function ExperimentStatusEdit({
   expId,
   project,
   status,
+  displayStatus,
   archived,
   expectedMtime,
+  expectedHash,
 }: {
   expId: string
   project?: ProjectTarget
   status: ExperimentStatus
+  displayStatus?: ExperimentDisplayStatus
   archived?: boolean
   expectedMtime: number
+  expectedHash?: string
 }) {
+  const selectable: readonly ExperimentStatus[] = ['OPEN', 'RESOLVED', 'ABANDONED'].includes(status)
+    ? SELECTABLE
+    : ['ACTIVE', 'PAUSED', 'ARCHIVED', 'RETIRED']
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
 
   const onChange = async (next: string) => {
     if (next === status) return
-    if (!SELECTABLE.includes(next as ExperimentStatus)) return
+    if (!selectable.includes(next as ExperimentStatus)) return
     setBusy(true)
     try {
       const res = await patchExperimentStatusV4({
@@ -41,6 +47,7 @@ export function ExperimentStatusEdit({
         id: expId,
         status: next as ExperimentStatus,
         expectedMtime,
+        ...(expectedHash ? { expectedHash } : {}),
       })
       if ('error' in res && res.error?.code === 'CONFLICT') {
         toast.error('Status change conflicted (someone else just edited this doc)', {
@@ -73,7 +80,7 @@ export function ExperimentStatusEdit({
 
   return (
     <div className="inline-flex items-center gap-2">
-      <ExperimentStatusPill status={status} archived={archived} />
+      <ExperimentStatusPill status={displayStatus ?? status} archived={archived} />
       <Select value={status} disabled={busy} onValueChange={(v) => void onChange(v)}>
         <SelectTrigger
           size="sm"
@@ -83,7 +90,7 @@ export function ExperimentStatusEdit({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {SELECTABLE.map((s) => (
+          {selectable.map((s) => (
             <SelectItem key={s} value={s}>
               {s}
             </SelectItem>

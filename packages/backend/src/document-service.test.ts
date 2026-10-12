@@ -287,3 +287,36 @@ it('rejects generic README enrollment without FS10 attribution and preserves leg
   const result = await service.putReadme('research', resource, input)
   expect(result).toMatchObject({ ok: true })
 })
+
+it('rejects derived and contradictory lifecycle generic writes without changing source', async () => {
+  const resource = 'docs/experiments/E0002-lifecycle/README.md'
+  await fs.mkdir(join(root, 'docs/experiments/E0002-lifecycle'), { recursive: true })
+  const content =
+    '---\nid: E0002-lifecycle\nslug: lifecycle\ntitle: Lifecycle\nstatus: ACTIVE\nruns: []\n---\nBody stays exact.\n'
+  await fs.writeFile(join(root, resource), content)
+  const lock = BackendReadmeResponseSchema.parse(await service.getReadme('research', resource))
+  for (const replacement of [
+    'status: RUNNING',
+    'status: COMPLETED',
+    'status: ACTIVE\narchived: true',
+  ]) {
+    await expect(
+      service.putReadme('research', resource, {
+        expectedMtime: lock.mtime,
+        expectedHash: lock.hash,
+        content: content.replace('status: ACTIVE', replacement),
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESOURCE' })
+    expect(await fs.readFile(join(root, resource), 'utf8')).toBe(content)
+  }
+  await expect(
+    service.putReadme('research', resource, {
+      expectedMtime: lock.mtime,
+      expectedHash: lock.hash,
+      content: content.replace('status: ACTIVE', 'status: PAUSED'),
+    }),
+  ).resolves.toMatchObject({ ok: true })
+  expect(await fs.readFile(join(root, resource), 'utf8')).toBe(
+    content.replace('status: ACTIVE', 'status: PAUSED'),
+  )
+})

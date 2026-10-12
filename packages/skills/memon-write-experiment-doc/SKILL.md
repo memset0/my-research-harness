@@ -5,6 +5,12 @@ description: Apply targeted, concurrency-safe updates to an Experiment README, i
 
 # memon-write-experiment-doc
 
+In FS10, Experiment `status` stores only `ACTIVE`, `PAUSED`, `ARCHIVED` or
+`RETIRED`; omit the separate `archived` key. `RUNNING`/`COMPLETED` are derived
+display labels, not values to copy into frontmatter. Use the user's lifecycle
+decision; do not automatically archive completed work. Legacy FS9 keeps its
+existing lifecycle and archive representation until explicit migration.
+
 For FS10, preserve the ID-keyed Variant registry and the protected research
 ledger. Use `experiment version show/advance/import` and `experiment variant
 deprecate/restore` for research decisions; obtain fresh mtime/hash tokens and

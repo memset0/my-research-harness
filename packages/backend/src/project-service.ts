@@ -53,15 +53,18 @@ import {
   readRunDir,
   resultsErrorStatus,
   runArchivedFromRun,
+  sha1,
   toBackendResultsSummary,
 } from '@memon/core'
 import { basename, dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
+import { resolveContained } from './containment.js'
 import { prepareProjectIndex } from './derived-index-mirror.js'
 import type {
   BackendWikiArtifactOptions,
   BackendWikiArtifactReferences,
   BackendWikiArtifacts,
 } from './document-service.js'
+import { experimentLifecycle } from './experiment-lifecycle.js'
 import {
   BackendExperimentListResponseSchema,
   experimentIdentities,
@@ -488,15 +491,7 @@ export class FilesystemProjectService implements BackendProjectReadService {
     })
   }
 
-  /**
-   * Every Experiment document in this Project, and nothing else.
-   *
-   * The list reads `docs/experiments/` only — no Run walk, no membership
-   * join — so a huge, cold or unreadable Run tree can no longer stop the
-   * Experiment list from rendering. Each row's effective window is therefore
-   * its own document's; the member roster and the window widened over it are
-   * the detail projection's job.
-   */
+  /** Lists legacy documents alone; FS10 adds cached current-generation member facts, never CSV. */
   async listExperiments(projectName: string, options: InventoryListOptions = {}) {
     const project = await this.preparedProject(projectName)
     const maxAge = this.policy.listMaxAgeMs
@@ -522,11 +517,18 @@ export class FilesystemProjectService implements BackendProjectReadService {
       })
     }
     const documents = await indexedExperimentDocuments(project, maxAge)
-    return BackendExperimentListResponseSchema.parse({
-      experiments: documents.map((document) =>
-        experimentListRow(project, document, portableReadmeResource(project, document.path)),
-      ),
-    })
+    const lookup = declaredRunLookup(project, maxAge)
+    const experiments = await mapWithConcurrency(documents, 4, async (document) => ({
+      ...experimentListRow(project, document, portableReadmeResource(project, document.path)),
+      ...(await experimentLifecycle(
+        project.root,
+        document.path,
+        document.parsed.frontMatter,
+        lookup,
+        maxAge,
+      )),
+    }))
+    return BackendExperimentListResponseSchema.parse({ experiments })
   }
 
   /**
@@ -580,6 +582,19 @@ export class FilesystemProjectService implements BackendProjectReadService {
     const body = truncateDisplayText(experiment.body, BACKEND_EXPERIMENT_BODY_MAX, 'README.md')
     return BackendExperimentResponseSchema.parse({
       ...safeExperimentSummary(experiment, project),
+      readmeHash: await projectReadIndex(project.root).file(
+        await resolveContained(project.root, experiment.path),
+        'experiment-readme-hash',
+        0,
+        (content) => sha1(content),
+      ),
+      ...(await experimentLifecycle(
+        project.root,
+        experiment.path,
+        experiment.frontMatter,
+        lookup,
+        this.policy.listMaxAgeMs,
+      )),
       body: body.text,
       deprecatedRuns,
       ...(research ? { research } : {}),

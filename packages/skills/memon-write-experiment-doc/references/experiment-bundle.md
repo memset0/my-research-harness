@@ -34,6 +34,18 @@ the Variant `runs` entry and moves the Run's `result.csv` with its directory.
 
 ## Layout and README order
 
+FS10 Experiment frontmatter stores `status: ACTIVE | PAUSED | ARCHIVED |
+RETIRED`, without an `archived` flag. For ACTIVE, the interface derives RUNNING
+from actual current-generation RUNNING work, or COMPLETED when a nonempty set
+of required Variants is completed. Deprecated and DROPPED Variants are not
+required; empty plans and PENDING/INTERRUPTED executions do not manufacture
+completion or running activity. Other lifecycle values display directly.
+The separate running-Run count includes retained historical executions.
+`experiment archive` / `unarchive` are compatibility forms for ARCHIVED /
+ACTIVE in FS10. Run archival is unchanged. FS9 continues to serialize the old
+three lifecycle states and archive boolean; an explicit reviewed migration
+chooses the four-state lifecycle, rather than inferring it from Run results.
+
 ```text
 docs/experiments/E<NNNN>-<slug>/
 ├── README.md

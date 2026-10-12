@@ -133,6 +133,7 @@ export {
   validateExperimentManagedDocuments,
 } from './experiments/documents.js'
 export { nextExperimentId, resolveExperimentId } from './experiments/id.js'
+export * from './experiments/lifecycle.js'
 export type {
   MembershipInput,
   MembershipResult,
@@ -174,6 +175,7 @@ export type {
 export {
   addExperimentWarning,
   assertDocumentLock,
+  assertExperimentReadmeWritable,
   buildExperimentBundle,
   CANONICAL_EXPERIMENT_BUNDLE_FILES,
   createExperiment,

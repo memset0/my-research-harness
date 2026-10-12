@@ -698,15 +698,20 @@ export async function patchRunArchived(input: {
 export async function patchExperimentStatusV4(input: {
   project?: ProjectTarget
   id: string
-  status: 'OPEN' | 'RESOLVED' | 'ABANDONED'
+  status: import('@memon/core').ExperimentStatus
   expectedMtime: number
+  expectedHash?: string
 }): Promise<PatchExperimentStatusResponse | PutReadmeConflict> {
   const res = await fetch(
     projectResourceUrl(`/api/experiments/${encodeURIComponent(input.id)}/status`, input.project),
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: input.status, expectedMtime: input.expectedMtime }),
+      body: JSON.stringify({
+        status: input.status,
+        expectedMtime: input.expectedMtime,
+        ...(input.expectedHash ? { expectedHash: input.expectedHash } : {}),
+      }),
     },
   )
   const body = await res.json()

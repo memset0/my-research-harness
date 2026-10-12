@@ -34,3 +34,11 @@
 - [x] 5.2 Update bundled English skills, preflight compatibility guidance and user docs for research versus schema versions, current evidence, deprecation and real-execution lineage; verify skill build and documentation checks without modifying any real research project.
 - [x] 5.3 Prepare the approved FS10 constant and coordinated release metadata assertions according to the major-version invariant; verify release validator expectations without an intermediate runnable major/FS mismatch.
 - [x] 5.4 Run the focused parser/summary/cache/mutation/membership/rename/schema-upgrade/CLI/backend/Web regression selection plus root typecheck and OpenSpec validation; record actual selected tests/results and ensure planning artifacts match implemented behavior.
+
+## 6. Four-state Experiment lifecycle refinement
+
+- [x] 6.1 Implement stored lifecycle types, legacy-safe parsing/serialization, FS10 creation/status/archive/README writes and a shared current-generation progress projection; verify empty, planned, blocked, historical, deprecated and running cases.
+- [x] 6.2 Integrate separate lifecycle/display state and running counts through discovery/index/backend/wire/CLI with consistent filtering, mutation validation and conflict behavior; run focused regression tests.
+- [x] 6.3 Update frontend badges, lists, filters and four-option picker; remove independent FS10 Experiment archive toggles, retain running warnings, and verify rendered desktop/mobile behavior.
+- [x] 6.4 Extend explicit migration with reviewed lifecycle mappings and already-FS10 normalization; update the seven-section guide and verify source/body/Run preservation, stale-plan protection and rollback.
+- [x] 6.5 Update bundled skills and documentation; run targeted tests, typecheck, OpenSpec validation and lifecycle-aware release checks, recording actual results.

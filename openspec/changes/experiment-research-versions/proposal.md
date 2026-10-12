@@ -11,6 +11,8 @@ Withdrawing an experimental design currently requires either removing Run-to-Var
 - **BREAKING:** introduce FS convention 10 with ID-keyed `experiment.json` Variants and explicit research metadata. This semantic and structural change makes existing FS9 description parsers reject new files rather than silently aggregate withdrawn evidence. New tooling retains the existing FS9 read/write mode; enabling the new research operations requires a separately reviewed explicit migration.
 - Keep project data migration, scientific adjudication of existing evidence, and research execution outside this implementation request. This proposal requires approval of the breaking contract before implementation; once approved, normal verified release automation applies, while real project migration still requires its separately requested review.
 
+- Refine FS10 Experiment lifecycle to stored `ACTIVE`, `PAUSED`, `ARCHIVED`, `RETIRED`; derive frontend `RUNNING`/`COMPLETED` only for active work, and replace the Experiment archive boolean with the lifecycle value. Preserve legacy FS9 behavior until explicit conversion.
+
 ## Capabilities
 
 ### New Capabilities

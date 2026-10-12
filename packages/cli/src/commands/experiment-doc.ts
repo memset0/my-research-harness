@@ -18,11 +18,17 @@ import {
   discoverExperiments,
   EXPERIMENT_DIR_REGEX,
   EXPERIMENT_STATUS_VALUES,
+  type Experiment,
   type ExperimentStatus,
   type ExperimentTarget,
   formatIsoLocal,
+  isExperimentLifecycle,
   linkExperimentRun,
   nodeMutationFs,
+  projectExperimentLifecycle,
+  projectRunPath,
+  RunTargetIndex,
+  readDocumentState,
   readExperimentDoc,
   resolveExperimentId,
   resolveRunTarget,
@@ -44,30 +50,52 @@ export interface ExperimentLsInput {
   projectRoot?: string
   cwd: string
   format: 'json' | 'human'
+  status?: string
+  lifecycle?: string
 }
 
 export async function runExperimentLs(input: ExperimentLsInput): Promise<void> {
+  if (input.status && ![...EXPERIMENT_STATUS_VALUES, 'RUNNING', 'COMPLETED'].includes(input.status))
+    emitErrorAndExit('BAD_REQUEST', 'Unknown Experiment display status')
+  if (input.lifecycle && !(EXPERIMENT_STATUS_VALUES as readonly string[]).includes(input.lifecycle))
+    emitErrorAndExit('BAD_REQUEST', 'Unknown stored Experiment lifecycle')
   const r = await resolveContext(input)
   const projectRoot = singleProjectRoot(r)
   const projectName = r.config.projects[0]!.name
   const { experiments } = await discoverExperiments(projectRoot, projectName)
+  const runIndex = await RunTargetIndex.open(projectRoot, { projectName, ...runWalkOptions() })
+  await runIndex.runs(experiments.flatMap((exp) => exp.frontMatter.runs))
+  const progress = new Map(
+    await Promise.all(
+      experiments.map(
+        async (exp) => [exp.id, await experimentProgress(projectRoot, exp, runIndex)] as const,
+      ),
+    ),
+  )
+  const selected = experiments.filter(
+    (exp) =>
+      (!input.status || progress.get(exp.id)!.displayStatus === input.status) &&
+      (!input.lifecycle || exp.frontMatter.status === input.lifecycle),
+  )
   if (input.format === 'human') {
-    if (experiments.length === 0) {
+    if (selected.length === 0) {
       process.stdout.write('(no experiments)\n')
       return
     }
-    for (const exp of experiments) {
+    for (const exp of selected) {
       const status = exp.parseErrors.length > 0 ? '✗' : '·'
       const memberCount = exp.frontMatter.runs.length
+      const running = progress.get(exp.id)!.runningRunCount
       process.stdout.write(
-        `${status} ${exp.id.padEnd(40)}  ${memberCount.toString().padStart(3)} runs  ${exp.frontMatter.title}\n`,
+        `${status} ${exp.id.padEnd(40)}  ${progress.get(exp.id)!.displayStatus}  ${memberCount.toString().padStart(3)} runs${running ? ` (${running} running)` : ''}  ${exp.frontMatter.title}\n`,
       )
     }
     return
   }
   emitJson({
-    experiments: experiments.map((e) => ({
+    experiments: selected.map((e) => ({
       id: e.id,
+      ...progress.get(e.id),
       slug: e.frontMatter.slug,
       title: e.frontMatter.title,
       runs: e.frontMatter.runs,
@@ -109,6 +137,12 @@ export async function runExperimentShow(input: ExperimentShowInput): Promise<voi
   }
   emitJson({
     id: exp.id,
+    readmeHash: (await readDocumentState(nodeMutationFs, exp.path)).hash,
+    ...(await experimentProgress(
+      projectRoot,
+      exp,
+      await RunTargetIndex.open(projectRoot, { projectName, ...runWalkOptions() }),
+    )),
     project: exp.project,
     path: exp.path,
     mtime: exp.mtime,
@@ -277,6 +311,7 @@ export interface ExperimentStatusSetInput {
   experimentId: string
   to: string
   expectedMtime: number
+  expectedHash?: string
 }
 
 export async function runExperimentStatusSet(input: ExperimentStatusSetInput): Promise<void> {
@@ -294,7 +329,10 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
         index: cliIndexSink(projectRoot),
         experiment,
         status: input.to as ExperimentStatus,
-        lock: { expectedMtime: input.expectedMtime },
+        lock: {
+          expectedMtime: input.expectedMtime,
+          ...(input.expectedHash === undefined ? {} : { expectedHash: input.expectedHash }),
+        },
       }),
     (error) =>
       error.code === 'CONFLICT'
@@ -324,6 +362,7 @@ export async function runExperimentStatusSet(input: ExperimentStatusSetInput): P
     ok: true,
     mtime: result.mtime,
     readmeMtime: result.mtime,
+    hash: result.hash,
     prevStatus: result.prevStatus,
     nextStatus: result.nextStatus,
     journalAppended,
@@ -368,8 +407,14 @@ async function setExperimentArchivedCli(
       archived: target,
     }),
   )
+  const state = await readExperimentDoc(projectRoot, '(project-root)', expId)
+  const lifecycle = state?.frontMatter.status
+  const outputState =
+    lifecycle && isExperimentLifecycle(lifecycle)
+      ? { lifecycle, status: lifecycle }
+      : { archived: target }
   if (!result.changed) {
-    emitJson({ ok: true, archived: target, noop: true })
+    emitJson({ ok: true, ...outputState, noop: true })
     return
   }
   await appendJournalEvent({
@@ -380,7 +425,7 @@ async function setExperimentArchivedCli(
       body: `\`${expId}\` op=${target ? 'archive' : 'unarchive'}`,
     },
   })
-  emitJson({ ok: true, archived: target, noop: false, ...indexWarningFields(result) })
+  emitJson({ ok: true, ...outputState, noop: false, ...indexWarningFields(result) })
 }
 
 // ---------- experiment delete ----------
@@ -424,6 +469,23 @@ export async function runExperimentDelete(input: ExperimentDeleteInput): Promise
 }
 
 // ---------- helpers ----------
+
+async function experimentProgress(
+  projectRoot: string,
+  experiment: Experiment,
+  index: RunTargetIndex,
+) {
+  const records = [...(await index.runs(experiment.frontMatter.runs)).values()]
+  return projectExperimentLifecycle(
+    experiment.frontMatter.status,
+    experiment.documents?.description?.data ?? null,
+    records.map((run) => ({
+      path: projectRunPath(projectRoot, run.path),
+      status: run.frontMatter.status,
+      deprecated: run.frontMatter.deprecated,
+    })),
+  )
+}
 
 function journalPath(projectRoot: string): string {
   return join(projectRoot, 'docs', 'journal.md')

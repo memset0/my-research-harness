@@ -2,7 +2,7 @@
 // run + hypothesis status render as a colored shadcn Badge with a lucide
 // icon. The on-disk emoji ( 🟢 ✅ ❌ … ) is never rendered in the UI.
 
-import type { ExperimentStatus, Status } from '@memon/core'
+import type { ExperimentDisplayStatus, Status } from '@memon/core'
 import {
   AlertTriangle,
   Archive as ArchiveIcon,
@@ -99,13 +99,29 @@ export function StatusPill({
 
 // ---------- Experiment-doc status (v4) ----------
 
-const EXP_STATUS_ICON: Readonly<Record<ExperimentStatus, LucideIcon>> = {
+const EXP_STATUS_ICON: Readonly<Record<ExperimentDisplayStatus, LucideIcon>> = {
   OPEN: CircleDot,
   RESOLVED: CheckCircle2,
   ABANDONED: XCircle,
+  ACTIVE: CircleDot,
+  PAUSED: PauseCircle,
+  ARCHIVED: ArchiveIcon,
+  RETIRED: CircleSlash,
+  RUNNING: Loader2,
+  COMPLETED: CheckCircle2,
 }
 
-const EXP_STATUS_CLASS: Readonly<Record<ExperimentStatus, string>> = {
+const EXP_STATUS_CLASS: Readonly<Record<ExperimentDisplayStatus, string>> = {
+  ACTIVE:
+    'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-700/40 dark:bg-sky-950/40 dark:text-sky-200',
+  RUNNING:
+    'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-700/40 dark:bg-sky-950/40 dark:text-sky-200',
+  COMPLETED:
+    'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/40 dark:text-emerald-200',
+  PAUSED:
+    'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/40 dark:text-amber-200',
+  ARCHIVED: 'border-border bg-muted text-muted-foreground',
+  RETIRED: 'border-border bg-muted text-muted-foreground',
   OPEN: 'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-700/40 dark:bg-sky-950/40 dark:text-sky-200',
   RESOLVED:
     'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/40 dark:text-emerald-200',
@@ -113,7 +129,8 @@ const EXP_STATUS_CLASS: Readonly<Record<ExperimentStatus, string>> = {
     'border-stone-300 bg-stone-100 text-stone-800 dark:border-stone-700/40 dark:bg-stone-900/40 dark:text-stone-300',
 }
 
-const EXP_STATUS_CLASS_ARCHIVED: Readonly<Record<ExperimentStatus, string>> = {
+const EXP_STATUS_CLASS_ARCHIVED: Readonly<Record<ExperimentDisplayStatus, string>> = {
+  ...EXP_STATUS_CLASS,
   OPEN: 'border-sky-200 bg-sky-50/60 text-sky-600 dark:border-sky-800/40 dark:bg-sky-950/20 dark:text-sky-300',
   RESOLVED:
     'border-emerald-200 bg-emerald-50/60 text-emerald-600 dark:border-emerald-800/40 dark:bg-emerald-950/20 dark:text-emerald-300',
@@ -126,7 +143,7 @@ export function ExperimentStatusPill({
   archived,
   className,
 }: {
-  status: ExperimentStatus
+  status: ExperimentDisplayStatus
   /** v4: when true, render the desaturated variant + Archive icon prefix. */
   archived?: boolean
   className?: string
@@ -135,8 +152,10 @@ export function ExperimentStatusPill({
   const palette = archived ? EXP_STATUS_CLASS_ARCHIVED[status] : EXP_STATUS_CLASS[status]
   return (
     <Badge variant="outline" className={cn('gap-1 font-medium', palette, className)}>
-      {archived && <ArchiveIcon className="size-3" aria-label="archived" />}
-      <Icon className="size-3" aria-hidden />
+      {archived && ['OPEN', 'RESOLVED', 'ABANDONED'].includes(status) && (
+        <ArchiveIcon className="size-3" aria-label="archived" />
+      )}
+      <Icon className={cn('size-3', status === 'RUNNING' && 'animate-spin')} aria-hidden />
       {status}
     </Badge>
   )

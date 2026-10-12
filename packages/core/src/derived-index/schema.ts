@@ -133,7 +133,7 @@ export const ExperimentEntrySchema = z
     dir: RelativePathSchema,
     id: z.string(),
     slug: z.string(),
-    status: z.enum(['OPEN', 'RESOLVED', 'ABANDONED']),
+    status: z.enum(['OPEN', 'RESOLVED', 'ABANDONED', 'ACTIVE', 'PAUSED', 'ARCHIVED', 'RETIRED']),
     archived: z.boolean(),
     runs: z.array(z.string()),
     readme_fp: PersistedFingerprintSchema,

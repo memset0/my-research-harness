@@ -5,6 +5,13 @@ description: Coordinate one memon Experiment across design, engineering, investi
 
 # memon-drive
 
+For FS10, use stored lifecycle `ACTIVE`, `PAUSED`, `ARCHIVED` or `RETIRED`
+only when the user decides the research direction. Derived Experiment
+`RUNNING`/`COMPLETED` describes progress; never write those labels or infer
+archive permission from completion. Inspect the separate running-Run count
+even for inactive lifecycle values. Variant deprecation, research version and
+Run execution status retain their independent meanings.
+
 In FS10, first establish the current research version. A failed overall protocol
 may require an explicitly authorized `experiment version advance` with a reason;
 ordinary additional seeds or implementation progress do not. Preserve old Run

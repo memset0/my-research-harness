@@ -22,6 +22,7 @@ import {
 } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
+import { BackendExperimentListResponseSchema } from './indexed-experiments.js'
 import { FilesystemMutationService } from './mutation-service.js'
 import { FilesystemProjectService } from './project-service.js'
 import { CENTRAL_READ_POLICY, dropProjectReadIndexes } from './read-index.js'
@@ -735,5 +736,86 @@ describe('research version Results boundary', () => {
       }),
     ).rejects.toMatchObject({ code: 'BAD_STATE' })
     expect((await mutation.getExperimentResearch('p', 'E0001-versions')).hash).toBe(ownerLock.hash)
+  })
+})
+
+describe('Experiment lifecycle projection', () => {
+  it('uses the same current-only display on list and detail without reading list CSVs', async () => {
+    const historical = RUN('historical')
+    const current = RUN('current')
+    await writeRun(historical, 'RUNNING', resultCsv(1, [['metrics.score', '', '99']]))
+    await writeRun(current, 'FINISHED', resultCsv(1, [['metrics.score', '', '5']]))
+    const bundle = await writeExperiment('E0001-lifecycle', [historical, current], {
+      experiment_schema_version: 1,
+      groups: {},
+      columns: [{ path: 'metrics.score', type: 'number', label: 'Score' }],
+      variants: { V0001: { name: 'Required', values: {}, runs: [historical, current] } },
+      research: {
+        current_version: 2,
+        versions: [
+          {
+            version: 1,
+            started_at: '2026-10-01T09:00:00+08:00',
+            reason: 'Initial',
+            closed_at: '2026-10-02T09:00:00+08:00',
+            superseded_reason: 'Corrected',
+            snapshot: { experiment_schema_version: 1, groups: {}, columns: [], variants: {} },
+          },
+          { version: 2, started_at: '2026-10-02T09:00:00+08:00', reason: 'Corrected' },
+        ],
+        run_versions: { [historical]: 1, [current]: 2 },
+      },
+    })
+    const file = join(bundle, 'README.md')
+    const content = (await fs.readFile(file, 'utf8'))
+      .replace('status: OPEN', 'status: ACTIVE')
+      .replace('archived: false\n', '')
+    await fs.writeFile(file, content)
+    const service = new FilesystemProjectService([project()])
+    const read = vi.spyOn(projectFs, 'readFile')
+    const list = BackendExperimentListResponseSchema.parse(await service.listExperiments('p'))
+    expect(
+      read.mock.calls.map(([path]) => String(path)).filter((path) => path.endsWith('result.csv')),
+    ).toEqual([])
+    read.mockRestore()
+    const detail = await service.getExperiment('p', 'E0001-lifecycle')
+    expect(list.experiments[0]).toMatchObject({
+      displayStatus: 'COMPLETED',
+      runningRunCount: 1,
+      currentRunningRunCount: 0,
+      frontMatter: { status: 'ACTIVE' },
+    })
+    expect(detail).toMatchObject({ displayStatus: 'COMPLETED', runningRunCount: 1 })
+    await fs.writeFile(file, content.replace('status: ACTIVE', 'status: PAUSED'))
+    expect(
+      BackendExperimentListResponseSchema.parse(await service.listExperiments('p')).experiments[0],
+    ).toMatchObject({
+      displayStatus: 'PAUSED',
+      runningRunCount: 1,
+    })
+    const central = new FilesystemProjectService([project()], { readPolicy: CENTRAL_READ_POLICY })
+    const centralList = () =>
+      withProjectFileContext({ root, storage: 'local', reason: 'open' }, () =>
+        central.listExperiments('p'),
+      )
+    expect(
+      BackendExperimentListResponseSchema.parse(await centralList()).experiments[0]?.displayStatus,
+    ).toBe('PAUSED')
+    const freshDetail = await service.getExperiment('p', 'E0001-lifecycle')
+    await new FilesystemMutationService([project()]).setExperimentStatus('p', 'E0001-lifecycle', {
+      status: 'ACTIVE',
+      expectedMtime: freshDetail.readmeMtime,
+      expectedHash: freshDetail.readmeHash,
+    })
+    expect(
+      BackendExperimentListResponseSchema.parse(await centralList()).experiments[0]?.displayStatus,
+    ).toBe('COMPLETED')
+    await fs.writeFile(join(bundle, 'experiment.json'), '{')
+    await fs.writeFile(file, content)
+    expect(
+      BackendExperimentListResponseSchema.parse(await service.listExperiments('p')).experiments[0],
+    ).toMatchObject({
+      displayStatus: 'ACTIVE',
+    })
   })
 })

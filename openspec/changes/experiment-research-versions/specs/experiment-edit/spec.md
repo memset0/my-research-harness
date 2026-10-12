@@ -33,3 +33,19 @@ Experiment creation MAY read the project FS marker solely to select its initial 
 #### Scenario: Existing legacy writer remains usable
 - **WHEN** a caller writes a Run result or links a Run in an FS9 project after software upgrade
 - **THEN** the existing operation succeeds under FS9 semantics without migrating the description, altering its array shape, or enabling FS10 eligibility promises
+
+### Requirement: FS10 Experiment lifecycle is explicit and separate from progress
+
+Migrated Experiment READMEs SHALL store only ACTIVE, PAUSED, ARCHIVED or RETIRED. They SHALL NOT store RUNNING or COMPLETED as lifecycle values or retain an independent archived boolean. ACTIVE represents intended ongoing work, PAUSED temporarily held intent, ARCHIVED a relevant phase that currently needs no further work, and RETIRED a direction no longer pursued. These transitions SHALL remain explicit user decisions and SHALL NOT stop Runs, change research versions or invalidate evidence. FS10 create SHALL use ACTIVE. All supported status/README writers SHALL enforce these semantics and optimistic conflicts. Legacy FS9 writes SHALL retain their existing format until explicit conversion.
+
+#### Scenario: Archive a relevant completed phase
+- **WHEN** a user selects ARCHIVED for a phase that needs no further work
+- **THEN** status becomes ARCHIVED without an independent archive flag and its valid evidence remains valid
+
+#### Scenario: Reject a derived status write
+- **WHEN** a caller tries to persist RUNNING or COMPLETED as an Experiment lifecycle
+- **THEN** the write is rejected without modifying the document
+
+#### Scenario: Compatibility archive command
+- **WHEN** an archive or unarchive operation targets a migrated Experiment
+- **THEN** it writes ARCHIVED or ACTIVE respectively with the same locking and receipts, rather than introducing an archived boolean

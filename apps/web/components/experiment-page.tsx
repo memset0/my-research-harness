@@ -136,16 +136,26 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
               project={project}
               expId={exp.id}
               status={exp.frontMatter.status}
+              displayStatus={exp.displayStatus}
+              expectedHash={exp.readmeHash}
               archived={exp.frontMatter.archived}
               expectedMtime={exp.readmeMtime}
             />
-            <ArchiveToggle
-              project={project}
-              kind="exp"
-              id={exp.id}
-              archived={exp.frontMatter.archived}
-              expectedMtime={exp.readmeMtime}
-            />
+            {['OPEN', 'RESOLVED', 'ABANDONED'].includes(exp.frontMatter.status) && (
+              <ArchiveToggle
+                project={project}
+                kind="exp"
+                id={exp.id}
+                archived={exp.frontMatter.archived}
+                expectedMtime={exp.readmeMtime}
+              />
+            )}
+            {['PAUSED', 'ARCHIVED', 'RETIRED'].includes(exp.frontMatter.status) &&
+              (exp.runningRunCount ?? 0) > 0 && (
+                <span className="text-sm text-amber-700 dark:text-amber-300">
+                  {exp.runningRunCount} Runs still running
+                </span>
+              )}
             <EditMarkdownButton path={exp.path} target={{ kind: 'exp', id: exp.id, project }} />
             {exp.documentReadOnly && (
               <Badge

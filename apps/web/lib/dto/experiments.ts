@@ -51,12 +51,17 @@ export interface ExperimentDocSummary {
   mtime: number
   /** README.md's own mtime; optimistic-lock key for README mutations. */
   readmeMtime: number
+  readmeHash?: string
+  displayStatus?: import('@memon/core').ExperimentDisplayStatus
+  runningRunCount?: number
+  requiredVariantCount?: number
+  currentRunningRunCount?: number
   frontMatter: {
     id: string
     slug: string
     title: string
     /** v4: ExperimentStatus enum from frontmatter. */
-    status: 'OPEN' | 'RESOLVED' | 'ABANDONED'
+    status: import('@memon/core').ExperimentStatus
     /** v4: archived flag from frontmatter. */
     archived: boolean
     runs: string[]
@@ -173,6 +178,10 @@ export interface ExperimentResultsSnapshot {
  * `mtime` are detail-only. Anything else comes from the detail endpoint.
  */
 export interface ExperimentListRow {
+  displayStatus?: import('@memon/core').ExperimentDisplayStatus
+  runningRunCount?: number
+  currentRunningRunCount?: number
+  requiredVariantCount?: number
   id: string
   project: string
   /** Standalone-only absolute path; central responses omit it. */
@@ -180,6 +189,7 @@ export interface ExperimentListRow {
   resource?: string
   /** README.md's own mtime. */
   readmeMtime: number
+  readmeHash?: string
   frontMatter: Omit<ExperimentDocSummary['frontMatter'], 'runs' | 'hypotheses'>
   /** Declared `runs` entries. */
   runCount: number

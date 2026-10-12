@@ -88,8 +88,7 @@ E0001-fsdp-collective/
 id: E0001-fsdp-collective
 slug: fsdp-collective
 title: FSDP collective overlap study
-status: OPEN
-archived: false
+status: ACTIVE
 runs: [fsdp-collective-260503-082800, fsdp-collective-260504-141200]
 hypotheses: [H0007, H0012]
 tags: [moe, fsdp2]
@@ -169,6 +168,27 @@ transforms in `schema-upgrades/` with a dry run, backup, atomic rewrite,
 verification and rollback). Projects on FS v8 migrate their `results.yaml`
 files with the reviewed guide `packages/core/migrations/v8-to-v9.md`
 (`scripts/migrate-v8-to-v9.mjs`).
+
+### Experiment lifecycle and progress
+
+FS10 Experiment documents store `ACTIVE`, `PAUSED`, `ARCHIVED` or `RETIRED`.
+`PAUSED` holds work that is still intended; `ARCHIVED` closes a relevant phase
+that currently needs no further work; `RETIRED` leaves an obsolete research
+direction behind. Run execution and evidence validity are separate decisions.
+The Experiment no longer stores a separate `archived` boolean.
+
+The dashboard shows these states directly, except that `ACTIVE` displays
+`RUNNING` when a required current-generation Variant actually has a running Run,
+or `COMPLETED` when every required Variant in a nonempty plan is complete.
+Otherwise it stays `ACTIVE`. Adding another planned Variant reopens progress
+without changing the stored lifecycle. Deprecated and dropped Variants do not
+block completion. Result validation errors remain independently visible.
+An inactive Experiment can still show a warning about running executions;
+changing lifecycle never stops a process.
+
+Choose one of the four stored values in the status picker or with
+`memon experiment status set <id> --to <state> --expected-mtime <mtime> --expected-hash <hash>`.
+Legacy FS9 files retain their old three-state format until explicit migration.
 
 ### Research versions and deprecated Variants
 

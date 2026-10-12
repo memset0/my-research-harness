@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   addJournalInvocationDetail,
+  assertExperimentReadmeWritable,
   BackendCodeReviewPatchResponseSchema,
   BackendCodeReviewResponseSchema,
   BackendCodeReviewsResponseSchema,
@@ -35,6 +36,7 @@ import {
   projectFs as fs,
   type IndexRole,
   listWikiCommits,
+  type MutationFs,
   markJournalInvocationOutcome,
   type ProjectConfig,
   parseCodeReview,
@@ -64,6 +66,7 @@ import {
   type WikiSourceReferences,
   type WikiSummary,
   wikiStringList,
+  withFileWriterLock,
   withJournalInvocation,
   writeFileAtomic,
   writeWikiReviewMark,
@@ -780,6 +783,14 @@ export class FilesystemDocumentService implements BackendDocumentService {
    * write contributes its typed file change.
    */
   private async write(project: ProjectConfig, entry: DocumentEntry, input: DocumentWriteInput) {
+    return withFileWriterLock(project.root, () => this.writeLocked(project, entry, input))
+  }
+
+  private async writeLocked(
+    project: ProjectConfig,
+    entry: DocumentEntry,
+    input: DocumentWriteInput,
+  ) {
     const current = await this.read(project, entry)
     if (current.mtime !== input.expectedMtime || current.hash !== input.expectedHash) {
       markJournalInvocationOutcome('conflict', 'DOCUMENT_CHANGED')
@@ -790,6 +801,20 @@ export class FilesystemDocumentService implements BackendDocumentService {
       })
     }
     if (/^docs\/experiments\/E[0-9]{4}-[^/]+\/README\.md$/.test(entry.resource)) {
+      try {
+        await assertExperimentReadmeWritable(
+          {
+            fs: fs as unknown as MutationFs,
+            experiment: { id: entry.id, path: entry.absolutePath },
+            index: { projectRoot: project.root, role: this.indexRole },
+          },
+          current.content,
+          input.content,
+        )
+      } catch (error) {
+        throw new BackendDocumentServiceError('INVALID_RESOURCE', (error as Error).message)
+      }
+
       const descriptionPath = join(dirname(entry.absolutePath), 'experiment.json')
       const contained = await resolveContained(project.root, descriptionPath, {
         allowMissing: true,
@@ -816,6 +841,7 @@ export class FilesystemDocumentService implements BackendDocumentService {
     }
     const original = await fs.stat(entry.absolutePath)
     await writeFileAtomic(entry.absolutePath, input.content, { mode: original.mode })
+    projectReadIndex(project.root).invalidate()
     const stat = await fs.stat(entry.absolutePath)
     // FS v8 writer obligation: a Run or Experiment README written here is
     // published to the derived index (Reports and code reviews are not

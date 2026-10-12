@@ -19,6 +19,10 @@ const PatchBody = z
   .object({
     status: z.enum(EXPERIMENT_STATUS_VALUES as readonly [ExperimentStatus, ...ExperimentStatus[]]),
     expectedMtime: z.number(),
+    expectedHash: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/)
+      .optional(),
   })
   .strict()
 
@@ -74,6 +78,11 @@ async function scopedPATCH(req: NextRequest, ctx: { params: Promise<{ id: string
           { status: 409 },
         )
       }
+      if (error.code === 'BAD_REQUEST' || error.code === 'BAD_STATE')
+        return NextResponse.json(
+          { error: { code: error.code, message: error.message } },
+          { status: 400 },
+        )
       if (error.code === 'RESOURCE_NOT_FOUND' || error.code === 'PROJECT_NOT_FOUND') {
         return NextResponse.json(
           { error: { code: 'NOT_FOUND', message: error.message } },

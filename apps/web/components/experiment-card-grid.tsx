@@ -1,23 +1,7 @@
 'use client'
 
-// v3 list page — a vertical stack of full-width experiment cards (one per
-// docs/experiments/E<NNNN>-<slug>/README.md).
-//
-// The list contract is deliberately Run-free: the summary DTO carries no
-// member runs, so this page never triggers a project-wide Run walk. Run
-// members (and their statuses) are shown on the experiment detail page,
-// which is the only surface that composes them. For the same reason the
-// experiment links opt out of Next's route prefetch — hovering a card
-// must not warm the detail route's Run composition.
-//
-// v4 (lifecycle-frontmatter-v4):
-//   - Card pill renders the manual ExperimentStatus from frontmatter.
-//   - Archived items get a desaturated overlay.
-//   - "Show archived" checkbox above the grid; default unchecked. Two
-//     listing modes per archive-frontmatter spec:
-//       * unchecked → active items first, then a bottom-of-list reveal
-//         affordance for an isolated archived bucket.
-//       * checked → archived + active interleaved in a single sort.
+// Lifecycle and current-generation progress arrive from the shared backend
+// projection; this view never fetches individual Runs or result files.
 
 import { useQuery } from '@tanstack/react-query'
 import { CalendarDays, Pencil } from 'lucide-react'
@@ -36,9 +20,17 @@ import { cn } from '../lib/utils'
 import { ExperimentStatusPill } from './status-pill'
 import { Badge } from './ui/badge'
 import { Checkbox } from './ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 const STORAGE_KEY_SHOW_ARCHIVED = (project: ProjectTarget) =>
   `memon:list:${projectQueryKey(project).join(':')}:show-archived`
+
+function isArchived(exp: ExperimentListRow): boolean {
+  return (
+    ['ARCHIVED', 'RETIRED'].includes(exp.frontMatter.status) ||
+    (['OPEN', 'RESOLVED', 'ABANDONED'].includes(exp.frontMatter.status) && exp.frontMatter.archived)
+  )
+}
 
 function projectBasePath(project: ProjectTarget): string {
   const name = encodeURIComponent(projectName(project))
@@ -52,6 +44,7 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
     queryFn: () => fetchExperimentDocs(project),
   })
 
+  const [statusFilter, setStatusFilter] = useState('all')
   const [showArchived, setShowArchived] = useState(false)
   const [revealArchivedBucket, setRevealArchivedBucket] = useState(false)
 
@@ -78,17 +71,23 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   }
 
-  const experiments = expData?.experiments ?? []
+  const allExperiments = expData?.experiments ?? []
+  const statusOptions = [
+    ...new Set(allExperiments.map((e) => e.displayStatus ?? e.frontMatter.status)),
+  ]
+  const experiments = allExperiments.filter(
+    (e) => statusFilter === 'all' || (e.displayStatus ?? e.frontMatter.status) === statusFilter,
+  )
 
   const sortFn = (a: ExperimentListRow, b: ExperimentListRow) =>
     b.effectiveUpdatedAt.localeCompare(a.effectiveUpdatedAt)
 
   const active = experiments
-    .filter((e) => !e.frontMatter.archived)
+    .filter((e) => !isArchived(e))
     .slice()
     .sort(sortFn)
   const archived = experiments
-    .filter((e) => e.frontMatter.archived)
+    .filter((e) => isArchived(e))
     .slice()
     .sort(sortFn)
   const integrated = experiments.slice().sort(sortFn)
@@ -96,6 +95,26 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-3">
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => {
+            setStatusFilter(value)
+            if (value === 'ARCHIVED' || value === 'RETIRED') setShowArchived(true)
+          }}
+        >
+          <SelectTrigger className="w-40" aria-label="Filter experiment status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {statusOptions.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <h2 className="text-lg font-semibold">
           Experiments{' '}
           <span className="font-normal text-sm text-muted-foreground">
@@ -112,7 +131,7 @@ export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
             onCheckedChange={(v) => setShowArchived(v === true)}
             aria-label="Show archived experiments"
           />
-          Show archived
+          Show archived and retired
         </label>
       </div>
 
@@ -160,7 +179,8 @@ function ArchivedBucket({
   revealed: boolean
   onToggle: () => void
 }) {
-  const noun = archived.length === 1 ? 'archived experiment' : 'archived experiments'
+  const noun =
+    archived.length === 1 ? 'archived or retired experiment' : 'archived or retired experiments'
   return (
     <div className="flex flex-col gap-3 border-t pt-3">
       <button
@@ -182,12 +202,16 @@ function ArchivedBucket({
 }
 
 function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: ExperimentListRow }) {
-  const archived = exp.frontMatter.archived
+  const archived = isArchived(exp)
   const basePath = projectBasePath(project)
   return (
     <article
       className={cn('flex flex-col gap-2 rounded-md border bg-card p-3', archived && 'opacity-60')}
-      aria-label={archived ? `${exp.id} (archived)` : exp.id}
+      aria-label={
+        archived
+          ? `${exp.id} (${exp.frontMatter.status === 'RETIRED' ? 'retired' : 'archived'})`
+          : exp.id
+      }
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-0.5 min-w-0">
@@ -206,8 +230,17 @@ function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: Experim
             <h3 className="truncate text-sm font-medium">{exp.frontMatter.title}</h3>
           </Link>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <ExperimentStatusPill status={exp.frontMatter.status} archived={archived} />
+        <div className="flex max-w-1/2 flex-wrap items-center justify-end gap-1.5">
+          {['PAUSED', 'ARCHIVED', 'RETIRED'].includes(exp.frontMatter.status) &&
+            (exp.runningRunCount ?? 0) > 0 && (
+              <span className="text-xs text-amber-700 dark:text-amber-300">
+                {exp.runningRunCount} Runs still running
+              </span>
+            )}
+          <ExperimentStatusPill
+            status={exp.displayStatus ?? exp.frontMatter.status}
+            archived={archived}
+          />
         </div>
       </header>
       <footer className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

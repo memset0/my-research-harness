@@ -14,7 +14,7 @@ import type {
   SummaryColumn,
   SummaryVariant,
 } from './results/summary.js'
-import { VARIANT_STATUS_VALUES } from './types.js'
+import { EXPERIMENT_STATUS_VALUES, type ExperimentStatus, VARIANT_STATUS_VALUES } from './types.js'
 
 export const BACKEND_API_MAJOR = 1 as const
 
@@ -353,7 +353,7 @@ const BackendExperimentFrontMatterSchema = z
     id: z.string(),
     slug: z.string(),
     title: z.string(),
-    status: z.string(),
+    status: z.enum(EXPERIMENT_STATUS_VALUES as readonly [ExperimentStatus, ...ExperimentStatus[]]),
     archived: z.boolean(),
     runs: z.array(z.string()),
     hypotheses: z.array(z.string()),
@@ -392,6 +392,26 @@ export const BackendExperimentSummarySchema = z
     resource: BackendOpaqueResourceIdSchema,
     mtime: z.number().nonnegative(),
     readmeMtime: z.number().nonnegative(),
+    readmeHash: z
+      .string()
+      .regex(/^[a-f0-9]{40}$/)
+      .optional(),
+    displayStatus: z
+      .enum([
+        'OPEN',
+        'RESOLVED',
+        'ABANDONED',
+        'ACTIVE',
+        'PAUSED',
+        'ARCHIVED',
+        'RETIRED',
+        'RUNNING',
+        'COMPLETED',
+      ])
+      .optional(),
+    runningRunCount: z.number().int().nonnegative().optional(),
+    currentRunningRunCount: z.number().int().nonnegative().optional(),
+    requiredVariantCount: z.number().int().nonnegative().optional(),
     frontMatter: BackendExperimentFrontMatterSchema,
     sections: BackendExperimentSectionsSchema,
     warningsRaw: z.string().nullable(),

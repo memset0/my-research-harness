@@ -54,6 +54,7 @@ import { isFileAccessError } from '@memon/file-protocol'
 import { dirname, join, relative, sep } from '@memon/file-protocol/paths'
 
 import { resolveContained } from './containment.js'
+import { projectReadIndex } from './read-index.js'
 
 /** `projectFs` is an `fs/promises`-compatible facade; it satisfies the port. */
 const port = fs as unknown as MutationFs
@@ -325,6 +326,7 @@ export class FilesystemMutationService implements BackendMutationService {
     changes: readonly FileChange[],
   ): void {
     if (changes.length === 0) ctx.markOutcome('noop')
+    else projectReadIndex(project.root).invalidate()
     for (const change of changes) {
       ctx.addDetail(fileChange(project.root, change.path, change.before, change.after))
     }

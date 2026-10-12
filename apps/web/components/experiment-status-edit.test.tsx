@@ -25,6 +25,34 @@ describe('ExperimentStatusEdit', () => {
     vi.clearAllMocks()
   })
 
+  it('shows derived progress but offers only the four writable lifecycle values', async () => {
+    vi.mocked(patchExperimentStatusV4).mockResolvedValue({ mtime: 2000 } as never)
+    renderWithQuery(
+      <ExperimentStatusEdit
+        expId="E0001-foo"
+        status="ACTIVE"
+        displayStatus="RUNNING"
+        expectedMtime={1000}
+      />,
+    )
+    expect(screen.getByText('RUNNING')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('combobox'))
+    expect(screen.getAllByRole('option').map((item) => item.textContent)).toEqual([
+      'ACTIVE',
+      'PAUSED',
+      'ARCHIVED',
+      'RETIRED',
+    ])
+    await userEvent.click(screen.getByRole('option', { name: 'PAUSED' }))
+    await waitFor(() =>
+      expect(patchExperimentStatusV4).toHaveBeenCalledWith({
+        id: 'E0001-foo',
+        status: 'PAUSED',
+        expectedMtime: 1000,
+      }),
+    )
+  })
+
   it('PATCH success → success toast + invalidate', async () => {
     vi.mocked(patchExperimentStatusV4).mockResolvedValue({ mtime: 2000 } as never)
     renderWithQuery(<ExperimentStatusEdit expId="E0001-foo" status="OPEN" expectedMtime={1000} />)

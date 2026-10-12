@@ -51,6 +51,17 @@ Do not repeat checks after every poll or already-validated CLI operation.
 
 ## Deprecated Runs
 
+FS10 Experiment lifecycle is a separate human decision: `ACTIVE` (pursued),
+`PAUSED` (temporarily held), `ARCHIVED` (this phase needs no further work but
+remains relevant), or `RETIRED` (the direction is no longer pursued). Store
+only these four values, with no Experiment `archived` boolean. Displayed
+`RUNNING` and `COMPLETED` are derived progress for ACTIVE experiments, never
+writable lifecycle values. Completion does not authorize automatic archival.
+Lifecycle changes neither stop executions nor withdraw evidence; an archived
+or paused Experiment may still have running Runs and must show that warning.
+FS9 retains `OPEN`/`RESOLVED`/`ABANDONED` plus its archive flag until explicit
+migration. Do not normalize those values as incidental document maintenance.
+
 In FS10, research versions independently restrict evidence. Read
 `experiment version show <id>` before research decisions; current Results never
 mix historical generations. Advancing requires the user's decision, a reason,

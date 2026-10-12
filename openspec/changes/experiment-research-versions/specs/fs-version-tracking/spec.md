@@ -19,3 +19,11 @@ FS10 tooling SHALL provide a labeled legacy mode for FS9 arrays preserving exist
 #### Scenario: Upgrade software only
 - **WHEN** the new tool is installed against an FS9 project
 - **THEN** existing research files and the FS marker remain unchanged and migration-dependent operations report the required explicit conversion
+
+### Requirement: Explicit FS10 lifecycle normalization preserves source evidence
+
+The approved FS10 refinement SHALL update the v9-to-v10 guide/conversion to normalize Experiment lifecycle using a reviewed explicit mapping, including ambiguous archived and resolved legacy cases. A separate explicit normalization path SHALL support already-FS10 projects from the initial release. No read or software deployment SHALL rewrite lifecycle. Conversion SHALL preserve Experiment body and Run/result bytes, retain exact preimages for rollback, and verify all four-state records before publishing its completion. FS convention remains 10 as explicitly approved for this refinement; writers supporting the refined lifecycle SHALL be deployed before its project application.
+
+#### Scenario: Legacy archived state is ambiguous
+- **WHEN** conversion finds a legacy archived Experiment without a reviewed lifecycle decision
+- **THEN** it reports the needed decision rather than assuming PAUSED, ARCHIVED or RETIRED

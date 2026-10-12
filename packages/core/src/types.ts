@@ -26,18 +26,39 @@ export const STATUS_EMOJI: Readonly<Record<Status, string>> = {
   UNKNOWN: '❓',
 }
 
-export type ExperimentStatus = 'OPEN' | 'RESOLVED' | 'ABANDONED'
-
-export const EXPERIMENT_STATUS_VALUES: readonly ExperimentStatus[] = [
+export type LegacyExperimentStatus = 'OPEN' | 'RESOLVED' | 'ABANDONED'
+export type ExperimentLifecycle = 'ACTIVE' | 'PAUSED' | 'ARCHIVED' | 'RETIRED'
+/** Stored status: legacy values stay readable until explicit FS10 normalization. */
+export type ExperimentStatus = LegacyExperimentStatus | ExperimentLifecycle
+export type ExperimentDisplayStatus = ExperimentStatus | 'RUNNING' | 'COMPLETED'
+export const LEGACY_EXPERIMENT_STATUS_VALUES: readonly LegacyExperimentStatus[] = [
   'OPEN',
   'RESOLVED',
   'ABANDONED',
-] as const
-
+]
+export const EXPERIMENT_LIFECYCLE_VALUES: readonly ExperimentLifecycle[] = [
+  'ACTIVE',
+  'PAUSED',
+  'ARCHIVED',
+  'RETIRED',
+]
+export const EXPERIMENT_STATUS_VALUES: readonly ExperimentStatus[] = [
+  ...LEGACY_EXPERIMENT_STATUS_VALUES,
+  ...EXPERIMENT_LIFECYCLE_VALUES,
+]
+export function isExperimentLifecycle(value: unknown): value is ExperimentLifecycle {
+  return (
+    typeof value === 'string' && (EXPERIMENT_LIFECYCLE_VALUES as readonly string[]).includes(value)
+  )
+}
 export const EXPERIMENT_STATUS_EMOJI: Readonly<Record<ExperimentStatus, string>> = {
   OPEN: '🔵',
   RESOLVED: '✅',
   ABANDONED: '⚫',
+  ACTIVE: '🔵',
+  PAUSED: '⏸️',
+  ARCHIVED: '📦',
+  RETIRED: '⚫',
 }
 
 export type HypothesisStatus = 'CONFIRMED' | 'REFUTED' | 'PARTIAL' | 'OPEN' | 'DEFERRED'

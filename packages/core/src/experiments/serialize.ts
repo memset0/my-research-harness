@@ -1,5 +1,6 @@
 import { isId } from '../ids.js'
 import type { ExperimentFrontMatter, ExperimentRawSection, ExperimentSections } from '../types.js'
+import { isExperimentLifecycle } from '../types.js'
 import { CANONICAL_EXPERIMENT_SECTION_HEADINGS, MANAGED_SECTION_POINTERS } from './documents.js'
 
 export interface SerializeExperimentInput {
@@ -89,7 +90,7 @@ function renderFrontMatter(fm: ExperimentFrontMatter): string {
   lines.push(`slug: ${quoteIfNeeded(fm.slug)}`)
   lines.push(`title: ${quoteIfNeeded(fm.title)}`)
   lines.push(`status: ${fm.status}`)
-  lines.push(`archived: ${fm.archived ? 'true' : 'false'}`)
+  if (!isExperimentLifecycle(fm.status)) lines.push(`archived: ${fm.archived ? 'true' : 'false'}`)
   lines.push(`runs: ${renderStringArray(fm.runs)}`)
   for (const ref of fm.hypotheses) {
     if (!isId(ref, 'H')) {

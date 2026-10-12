@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import {
   emptyExperimentDescription,
   initializeExperimentResearch,
+  nodeMutationFs,
+  readDocumentState,
   serializeExperimentDescription,
 } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -12,7 +14,15 @@ import {
   type ResultsProject,
   writeExperiment,
 } from '../test-support/results-project.js'
-import { runExperimentLink, runExperimentUnlink } from './experiment-doc.js'
+import {
+  runExperimentArchiveDoc,
+  runExperimentLink,
+  runExperimentLs,
+  runExperimentShow,
+  runExperimentStatusSet,
+  runExperimentUnarchiveDoc,
+  runExperimentUnlink,
+} from './experiment-doc.js'
 import { runResearchMutation, runResearchShow } from './experiment-research.js'
 import { runRunRecord } from './run-record.js'
 
@@ -46,6 +56,113 @@ describe('research CLI', () => {
     })
   })
   afterEach(async () => project.cleanup())
+
+  it('keeps FS10 lifecycle separate from running/completed display and archive aliases', async () => {
+    await project.write(
+      `${DIR}/README.md`,
+      (await project.read(`${DIR}/README.md`))
+        .replace('status: OPEN', 'status: ACTIVE')
+        .replace('archived: false\n', ''),
+    )
+    await fs.mkdir(join(project.root, RUN), { recursive: true })
+    await captureCli(() =>
+      runRunRecord({
+        ...globals(),
+        target: join(project.root, RUN),
+        experiment: EXP,
+        status: 'RUNNING',
+      }),
+    )
+    const json = JSON.parse(await project.read(`${DIR}/experiment.json`))
+    json.variants.V0001.runs = [RUN]
+    await project.write(`${DIR}/experiment.json`, JSON.stringify(json))
+    const shown = await captureCli(() => runExperimentShow(input()))
+    expect(shown.json).toMatchObject({
+      lifecycle: 'ACTIVE',
+      displayStatus: 'RUNNING',
+      runningRunCount: 1,
+    })
+    expect(
+      (await captureCli(() => runExperimentLs({ ...globals(), lifecycle: 'ACTIVE' }))).json
+        .experiments,
+    ).toHaveLength(1)
+    expect(
+      (await captureCli(() => runExperimentLs({ ...globals(), status: 'COMPLETED' }))).json
+        .experiments,
+    ).toHaveLength(0)
+    const state = await readDocumentState(nodeMutationFs, join(project.root, DIR, 'README.md'))
+    const changed = await captureCli(() =>
+      runExperimentStatusSet({
+        ...globals(),
+        experimentId: EXP,
+        to: 'PAUSED',
+        expectedMtime: state.mtime,
+        expectedHash: state.hash,
+      }),
+    )
+    expect(changed.exitCode).toBe(0)
+    const paused = await captureCli(() => runExperimentShow(input()))
+    expect(paused.json).toMatchObject({
+      lifecycle: 'PAUSED',
+      displayStatus: 'PAUSED',
+      runningRunCount: 1,
+    })
+    expect((await captureCli(() => runExperimentLs(globals()))).json.experiments[0]).toMatchObject({
+      lifecycle: 'PAUSED',
+      displayStatus: 'PAUSED',
+      runningRunCount: 1,
+    })
+    const archived = await captureCli(() =>
+      runExperimentArchiveDoc({ ...globals(), experimentId: EXP }),
+    )
+    expect(archived.json).toMatchObject({ lifecycle: 'ARCHIVED' })
+    expect(archived.json.archived).toBeUndefined()
+    expect(await project.read(`${DIR}/README.md`)).not.toContain('archived:')
+    await captureCli(() => runExperimentUnarchiveDoc({ ...globals(), experimentId: EXP }))
+    await project.write(
+      `${RUN}/README.md`,
+      (await project.read(`${RUN}/README.md`)).replace('status: RUNNING', 'status: FINISHED'),
+    )
+    const completed = await captureCli(() => runExperimentShow(input()))
+    expect(completed.json).toMatchObject({
+      lifecycle: 'ACTIVE',
+      displayStatus: 'COMPLETED',
+      runningRunCount: 0,
+    })
+    expect(await project.read(`${DIR}/README.md`)).toContain('status: ACTIVE')
+  })
+
+  it('rejects derived lifecycle writes and stale hashes with a fresh mtime', async () => {
+    const path = join(project.root, DIR, 'README.md')
+    await project.write(
+      `${DIR}/README.md`,
+      (await project.read(`${DIR}/README.md`))
+        .replace('status: OPEN', 'status: ACTIVE')
+        .replace('archived: false\n', ''),
+    )
+    const state = await readDocumentState(nodeMutationFs, path)
+    const invalid = await captureCli(() =>
+      runExperimentStatusSet({
+        ...globals(),
+        experimentId: EXP,
+        to: 'COMPLETED',
+        expectedMtime: state.mtime,
+        expectedHash: state.hash,
+      }),
+    )
+    expect(invalid.error?.code).toBe('BAD_REQUEST')
+    const conflict = await captureCli(() =>
+      runExperimentStatusSet({
+        ...globals(),
+        experimentId: EXP,
+        to: 'RETIRED',
+        expectedMtime: state.mtime,
+        expectedHash: 'stale-hash',
+      }),
+    )
+    expect(conflict.exitCode).toBe(9)
+    expect(await project.read(`${DIR}/README.md`)).toBe(state.content)
+  })
 
   it('advances with CAS and rejects a stale retry without modifying Runs', async () => {
     const lock = await tokens()

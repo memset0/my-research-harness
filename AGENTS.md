@@ -18,7 +18,9 @@ repository-specific requirements at the end of this file supplement it.
   `packages/core/src/time.ts`.
 - **Status enums are uppercase** and defined in `packages/core/src/types.ts`:
   Run `PENDING`/`RUNNING`/`FINISHED`/`INTERRUPTED`/`FAILED`/`UNKNOWN`;
-  Experiment `OPEN`/`RESOLVED`/`ABANDONED` (human-only write); Hypothesis
+  Experiment FS10 `ACTIVE`/`PAUSED`/`ARCHIVED`/`RETIRED` (human-only write;
+  `RUNNING`/`COMPLETED` are display-only; legacy FS9 retains
+  `OPEN`/`RESOLVED`/`ABANDONED`); Hypothesis
   `CONFIRMED`/`REFUTED`/`PARTIAL`/`OPEN`/`DEFERRED`.
 - **Path containment.** Web routes that accept a path parameter MUST pass it
   through `assertWithinProjectRoots()` (`apps/web/lib/server/path-safety.ts`) before

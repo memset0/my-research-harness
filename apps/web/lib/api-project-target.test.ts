@@ -27,6 +27,7 @@ import {
   fetchWikiReview,
   logStreamUrl,
   markWikiReview,
+  patchExperimentStatusV4,
   projectHost,
   projectName,
   projectQueryKey,
@@ -238,5 +239,20 @@ describe('central ProjectTarget URL qualification', () => {
     expect(String(lastCall()[0])).toBe(
       '/api/experiments/E0001-created?host=host-a&project=project-x&force=false',
     )
+  })
+})
+
+it('carries both lifecycle optimistic-lock tokens through the status request', async () => {
+  await patchExperimentStatusV4({
+    project: target,
+    id: 'E0001-example',
+    status: 'PAUSED',
+    expectedMtime: 42,
+    expectedHash: 'a'.repeat(40),
+  })
+  expect(JSON.parse(String(lastCall()[1]?.body))).toEqual({
+    status: 'PAUSED',
+    expectedMtime: 42,
+    expectedHash: 'a'.repeat(40),
   })
 })

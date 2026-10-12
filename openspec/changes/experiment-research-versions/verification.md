@@ -20,3 +20,15 @@ All fixtures use neutral temporary projects. No research project conversion is p
 - Final root typecheck, strict OpenSpec validation and whitespace validation passed. No full-suite or archive gate was run; the change remains active.
 
 The source preview used the development Node runtime. The separate release is built with the production Node runtime and receives a final rendered check, including navigation from failed current Results into history, before central cutover.
+
+## Four-state lifecycle refinement
+
+- Core lifecycle/parser/mutation/index regression selection: 7 files / 56 tests passed, followed by updated lifecycle (8) and mutation (18) tests after frozen-history and source-conflict fixes. Current frozen completion stays scoped to its generation; invalid source lifecycle/archive combinations fail before no-op.
+- CLI lifecycle-v4 (12), Experiment document (8), research (7): 27 tests passed. Native CLI processes verified creation, four-state transitions, archive aliases, separate filters, derived-write rejection and stale-hash exit 9 without byte changes. CLI and skills builds passed.
+- Backend Results (15), document service (9), mutation routes (7), resource routes (3): 34 tests passed. This includes invalid generic README writes and immediate list refresh after a status mutation.
+- Web grid (1), status editor (5), Experiment sections (3), Results card (8), API targeting (7): 24 tests passed. The grid/editor 6 tests passed again after removing duplicate canonical archive icons.
+- Migration and guide: 15 tests passed, covering explicit lifecycle decisions, already-FS10 normalization, byte-preserved body/custom fields, exact rollback, marker-last publication and unchanged existing type/unassigned-member diagnostics. Conversion compares full diagnostic identities; standalone verification reports current diagnostics without claiming a historical comparison.
+- Root typecheck, strict OpenSpec validation, relevant Biome checks, CLI/skills builds and Node 22.19 Backend/Web production builds passed. No full unit suite or archive gate was run.
+- Actual desktop/mobile browser verification passed all four stored states, both derived states, empty-plan ACTIVE, four-option editor, FS9 legacy editor, inactive running warnings, display filters, actual hash-bearing PATCH requests, conflict 409, derived-write 400, and immediate detail/list consistency. Loaded semantic CSS tokens were present, with no horizontal overflow or page errors. The final release repeats this against its pinned build.
+
+The lifecycle refinement remains in FS10 by explicit owner decision and ships on the v10 distributed release line. Project-specific mappings, approvals, preimages and migration logs stay outside this generic repository.

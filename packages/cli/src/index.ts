@@ -433,9 +433,14 @@ const experiment = program
 experiment
   .command('ls')
   .description('list experiment docs in the project')
-  .action(async () => {
+  .option('--status <state>', 'filter by displayed progress or lifecycle status')
+  .option(
+    '--lifecycle <state>',
+    'filter by stored lifecycle (ACTIVE also includes displayed RUNNING/COMPLETED)',
+  )
+  .action(async (opts: { status?: string; lifecycle?: string }) => {
     const g = readGlobals()
-    await runExperimentLs(g)
+    await runExperimentLs({ ...g, ...opts })
   })
 
 experiment
@@ -573,40 +578,44 @@ const status = experiment
 status
   .command('set <id>')
   .description(
-    'atomically set status and record the invocation. Run: PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN. Experiment: OPEN|RESOLVED|ABANDONED.',
+    'atomically set status. FS10 Experiment: ACTIVE|PAUSED|ARCHIVED|RETIRED; FS9: OPEN|RESOLVED|ABANDONED. RUNNING/COMPLETED are derived Experiment display states, never writable.',
   )
   .requiredOption(
     '--to <status>',
-    'run-side: PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN; exp-side: OPEN|RESOLVED|ABANDONED',
+    'Run execution state, or Experiment lifecycle (FS10 ACTIVE|PAUSED|ARCHIVED|RETIRED; FS9 OPEN|RESOLVED|ABANDONED)',
   )
   .requiredOption(
     '--expected-mtime <ms>',
-    "expected README mtime (epoch ms; get from 'memon show')",
+    "expected README mtime (Experiment: readmeMtime from 'experiment show'; Run: 'memon show')",
     (v) => Number(v),
   )
-  .action(async (id: string, opts: { to: string; expectedMtime: number }) => {
-    const g = readGlobals()
-    if (EXPERIMENT_DIR_REGEX.test(id)) {
-      // Exp-id form (v3+) — operate on the exp doc.
-      await runExperimentStatusSet({
-        ...g,
-        experimentId: id,
-        to: opts.to,
-        expectedMtime: opts.expectedMtime,
-      })
-      return
-    }
-    // Run-id form — deprecation alias for `memon run status set`.
-    if (RUN_DIR_REGEX.test(id)) {
-      emitV2DeprecationBanner('experiment status set', 'run status set')
-      await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
-      return
-    }
-    emitErrorAndExit(
-      'BAD_REQUEST',
-      `id "${id}" matches neither EXPERIMENT_DIR_REGEX (E<NNNN>-<slug>) nor RUN_DIR_REGEX (<slug>-<YYMMDD>-<HHMMSS>)`,
-    )
-  })
+  .option('--expected-hash <hash>', 'expected Experiment README content hash')
+  .action(
+    async (id: string, opts: { to: string; expectedMtime: number; expectedHash?: string }) => {
+      const g = readGlobals()
+      if (EXPERIMENT_DIR_REGEX.test(id)) {
+        // Exp-id form (v3+) — operate on the exp doc.
+        await runExperimentStatusSet({
+          ...g,
+          experimentId: id,
+          to: opts.to,
+          expectedMtime: opts.expectedMtime,
+          expectedHash: opts.expectedHash,
+        })
+        return
+      }
+      // Run-id form — deprecation alias for `memon run status set`.
+      if (RUN_DIR_REGEX.test(id)) {
+        emitV2DeprecationBanner('experiment status set', 'run status set')
+        await runStatusSet({ ...g, runId: id, to: opts.to, expectedMtime: opts.expectedMtime })
+        return
+      }
+      emitErrorAndExit(
+        'BAD_REQUEST',
+        `id "${id}" matches neither EXPERIMENT_DIR_REGEX (E<NNNN>-<slug>) nor RUN_DIR_REGEX (<slug>-<YYMMDD>-<HHMMSS>)`,
+      )
+    },
+  )
 
 const readme = experiment.command('readme').description('README.md operations')
 readme
@@ -745,7 +754,7 @@ warning
 experiment
   .command('archive <id>')
   .description(
-    'mark archived. Run-id (`<slug>-<YYMMDD>-<HHMMSS>`): deprecation alias for `memon run archive`. Exp-id (`E<NNNN>-<slug>`): writes archived: true on the exp doc.',
+    'archive an Experiment: FS10 sets lifecycle ARCHIVED, FS9 retains the archive flag. Run-id form aliases memon run archive.',
   )
   .action(async (id: string) => {
     const g = readGlobals()
@@ -763,7 +772,7 @@ experiment
 experiment
   .command('unarchive <id>')
   .description(
-    'unmark archived. Run-id: deprecation alias for `memon run unarchive`. Exp-id: writes archived: false on the exp doc.',
+    'unarchive an Experiment: FS10 sets lifecycle ACTIVE, FS9 clears the archive flag. Run-id form aliases memon run unarchive.',
   )
   .action(async (id: string) => {
     const g = readGlobals()

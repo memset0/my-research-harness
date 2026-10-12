@@ -28,7 +28,8 @@ All dirty-tree and dropped-claim approvals below still apply.
 memon --project-root . --format json fs-version check
 ```
 
-- `match`: report that nothing is needed and stop.
+- `match`: stop unless the user explicitly requested normalization of an older
+  FS10 Experiment lifecycle; the initial v10 format can still require that step.
 - `uninitialised`: ask the user to install memon first; stop.
 - `ahead`: never downgrade; ask the user to upgrade memon.
 - `behind`: enumerate every `vN-to-vN+1` guide through the target.
@@ -44,7 +45,7 @@ triggered some other skill is not migration consent.
 
 For Git projects, require a clean tracked and untracked working tree. Never
 auto-stash or discard work: show dirty paths and stop. For FS v6→v7, v7→v8
-and v8→v9 only, an operator may explicitly authorize scoped dirty-tree migration. Record that
+v8→v9 and v9→v10 (including explicit FS10 lifecycle normalization), an operator may explicitly authorize scoped dirty-tree migration. Record that
 approval, use the fingerprinted plan and external preimage backup, and preserve
 all unrelated edits. Never infer this authorization from a generic migration
 request. Explicitly obtain approval before dropping Run-only ownership claims;
@@ -168,6 +169,29 @@ READMEs, `result.csv` files, ignore files, the marker and the removed
 deletion is a separate commit the user reviews. `rollback` with the backup
 directory reverts the migration commit, which restores every `results.yaml` and
 removes the appended allow rules, and restores the index.
+
+## FS10 research versions and lifecycle
+
+Read `packages/core/migrations/v9-to-v10.md` and use the shipped
+`scripts/migrate-v9-to-v10.mjs`. Its reviewed `--lifecycles <map.json>` maps
+Experiment IDs to ACTIVE, PAUSED, ARCHIVED or RETIRED for both FS9 conversion
+and normalization of initial FS10 documents. Never derive this decision from
+Run completion, legacy archived flags or a generic migration request. Reuse
+the user's explicit per-Experiment decisions; do not request identical approval
+again. Uncertain cases stay unresolved in the plan.
+
+Preview exact changes, preserve unrelated dirty work only with scoped approval,
+use external preimage backups and fingerprint checks, and verify before marker
+finalization. Bodies and Run files stay byte-identical; no research is executed.
+Format conversion initializes version 1 and does not reconstruct scientific
+protocol generations. Version partitioning, withdrawal of evidence and restoring
+historical associations require their separately reviewed mapping. Deployment
+alone authorizes neither data conversion nor lifecycle normalization.
+
+The four Experiment lifecycle values replace its archive boolean; RUNNING and
+COMPLETED are derived displays, not migration targets. Keep Variant and Run
+states independent. The guide controls command details, rollback and the fixed
+migration commit subject.
 
 ## Review-required semantic step
 

@@ -36,8 +36,14 @@ import {
 } from '../results/description.js'
 import { initializeExperimentResearch } from '../results/research.js'
 import { formatIsoLocal } from '../time.js'
-import type { ExperimentStatus, Run } from '../types.js'
-import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
+import {
+  EXPERIMENT_DIR_REGEX,
+  EXPERIMENT_FILENAME_REGEX,
+  type ExperimentStatus,
+  isExperimentLifecycle,
+  LEGACY_EXPERIMENT_STATUS_VALUES,
+  type Run,
+} from '../types.js'
 import { discoverExperiments } from './discover.js'
 import {
   emptyImplementationDocument,
@@ -425,7 +431,7 @@ export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentB
       id: input.id,
       slug: input.slug,
       title: input.title ?? input.slug,
-      status: 'OPEN',
+      status: input.researchVersioned ? 'ACTIVE' : 'OPEN',
       archived: false,
       runs: imported ? [imported.path] : [],
       hypotheses: input.hypotheses ?? [],
@@ -764,6 +770,56 @@ export async function assertResearchMembers(
     )
 }
 
+/** Detect file convention without silently normalizing a legacy README. */
+async function usesExperimentLifecycle(
+  input: MutationBase & { experiment: ExperimentTarget },
+  currentStatus: ExperimentStatus,
+): Promise<boolean> {
+  const projectRoot =
+    input.index?.projectRoot ??
+    resolve(
+      dirname(input.experiment.path),
+      basename(input.experiment.path) === 'README.md' ? '../../..' : '../..',
+    )
+  try {
+    const marker = JSON.parse(
+      await input.fs.readFile(join(projectRoot, '.memon', 'version.json'), 'utf8'),
+    )
+    if (typeof marker.fs_convention_version !== 'number')
+      throw new MutationError('BAD_STATE', 'Invalid filesystem version marker')
+    return marker.fs_convention_version >= 10
+  } catch (error) {
+    if (!isEnoent(error)) throw error
+  }
+  if (isExperimentLifecycle(currentStatus)) return true
+  try {
+    const source = JSON.parse(
+      await input.fs.readFile(
+        join(dirname(input.experiment.path), EXPERIMENT_DESCRIPTION_FILE),
+        'utf8',
+      ),
+    )
+    return source.research !== undefined
+  } catch (error) {
+    if (!isEnoent(error) && !(error instanceof SyntaxError)) throw error
+    return false
+  }
+}
+
+function assertExperimentStatusWritable(status: ExperimentStatus, lifecycle: boolean): void {
+  if (
+    lifecycle
+      ? !isExperimentLifecycle(status)
+      : !(LEGACY_EXPERIMENT_STATUS_VALUES as readonly string[]).includes(status)
+  )
+    throw new MutationError(
+      'BAD_REQUEST',
+      lifecycle
+        ? 'FS10 stores only ACTIVE, PAUSED, ARCHIVED or RETIRED; RUNNING and COMPLETED are derived'
+        : 'FS9 stores OPEN, RESOLVED or ABANDONED; explicitly migrate before using lifecycle states',
+    )
+}
+
 export interface ExperimentStatusInput extends MutationBase {
   experiment: ExperimentTarget
   status: ExperimentStatus
@@ -798,6 +854,12 @@ export async function setExperimentStatus(
   assertDocumentLock(state, input.lock)
   const parsed = parseExperimentReadme(state.content, experiment.id)
   const prevStatus = parsed.frontMatter.status
+  if (parsed.parseErrors.some((issue) => issue.field === 'status' || issue.field === 'archived'))
+    throw new MutationError(
+      'BAD_REQUEST',
+      'Source Experiment has invalid status or contradictory archived field; explicitly repair the document',
+    )
+  assertExperimentStatusWritable(input.status, await usesExperimentLifecycle(input, prevStatus))
   const archived = parsed.frontMatter.archived
   if (prevStatus === input.status) {
     return {
@@ -812,6 +874,7 @@ export async function setExperimentStatus(
     }
   }
   parsed.frontMatter.status = input.status
+  if (isExperimentLifecycle(input.status)) parsed.frontMatter.archived = input.status === 'ARCHIVED'
   parsed.frontMatter.updatedAt = timestamp(input)
   const written = await writeDocument(
     fs,
@@ -843,6 +906,14 @@ export async function setExperimentArchived(
   const state = await readDocumentState(fs, experiment.path)
   assertDocumentLock(state, input.lock)
   const parsed = parseExperimentReadme(state.content, experiment.id)
+  if (await usesExperimentLifecycle(input, parsed.frontMatter.status)) {
+    const result = await setExperimentStatus({
+      ...input,
+      status: input.archived ? 'ARCHIVED' : 'ACTIVE',
+      lock: { expectedMtime: state.mtime, expectedHash: state.hash },
+    })
+    return { ...result, archived: input.archived }
+  }
   if (parsed.frontMatter.archived === input.archived) {
     return {
       changed: false,
@@ -887,6 +958,24 @@ export interface ReadmeWriteResult extends IndexWarnings {
   changes: FileChange[]
 }
 
+/** Validate a generic README edit without changing its formatting or timestamps. */
+export async function assertExperimentReadmeWritable(
+  input: MutationBase & { experiment: ExperimentTarget },
+  previousContent: string,
+  nextContent: string,
+): Promise<void> {
+  const previous = parseExperimentReadme(previousContent, input.experiment.id)
+  const next = parseExperimentReadme(nextContent, input.experiment.id)
+  const lifecycle = await usesExperimentLifecycle(input, previous.frontMatter.status)
+  assertExperimentStatusWritable(next.frontMatter.status, lifecycle)
+  if (next.parseErrors.some((issue) => issue.field === 'status' || issue.field === 'archived'))
+    throw new MutationError(
+      'BAD_REQUEST',
+      'Invalid Experiment status or contradictory archived field',
+    )
+  await assertResearchMembers(input.fs, input.experiment, next.frontMatter.runs)
+}
+
 /** Replace an Experiment README, stamping `updated_at` and canonicalising it. */
 export async function writeExperimentReadme(
   input: ExperimentReadmeInput,
@@ -896,7 +985,7 @@ export async function writeExperimentReadme(
   assertDocumentLock(state, input.lock)
   const previous = parseExperimentReadme(state.content, experiment.id)
   const next = parseExperimentReadme(input.content, experiment.id)
-  await assertResearchMembers(fs, experiment, next.frontMatter.runs)
+  await assertExperimentReadmeWritable(input, state.content, input.content)
   next.frontMatter.updatedAt = timestamp(input)
   const written = await writeDocument(
     fs,
