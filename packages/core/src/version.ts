@@ -12,14 +12,14 @@
  * `openspec/specs/fs-migration-guide-authoring/spec.md` for the required
  * structure of those guides.
  */
-export const FS_CONVENTION_VERSION = 9
+export const FS_CONVENTION_VERSION = 10
 
 /**
  * The product release is intentionally independent from the workspace package
  * versions. Its Major is locked to the on-disk FS convention, its Minor tracks
  * Backend/CLI changes, and its Patch tracks central-only changes.
  */
-export const MEMON_RELEASE = '9.3.0' as const
+export const MEMON_RELEASE = '10.0.0' as const
 
 const RELEASE_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
