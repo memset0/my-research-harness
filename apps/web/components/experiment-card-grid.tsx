@@ -1,12 +1,9 @@
 'use client'
 
-// Lifecycle and current-generation progress arrive from the shared backend
-// projection; this view never fetches individual Runs or result files.
-
 import { useQuery } from '@tanstack/react-query'
-import { CalendarDays, Pencil } from 'lucide-react'
+import { Clock3, Search } from 'lucide-react'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   type ExperimentListRow,
   fetchExperimentDocs,
@@ -15,22 +12,20 @@ import {
   projectName,
   projectQueryKey,
 } from '../lib/api'
+import {
+  compareExperimentNavigation,
+  EXPERIMENT_GROUPS,
+  experimentGroup,
+  shortExperimentId,
+} from '../lib/experiment-navigation'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
+import { ExperimentNavigationGroup } from './experiment-navigation-group'
 import { ExperimentStatusPill } from './status-pill'
 import { Badge } from './ui/badge'
-import { Checkbox } from './ui/checkbox'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-
-const STORAGE_KEY_SHOW_ARCHIVED = (project: ProjectTarget) =>
-  `memon:list:${projectQueryKey(project).join(':')}:show-archived`
-
-function isArchived(exp: ExperimentListRow): boolean {
-  return (
-    ['ARCHIVED', 'RETIRED'].includes(exp.frontMatter.status) ||
-    (['OPEN', 'RESOLVED', 'ABANDONED'].includes(exp.frontMatter.status) && exp.frontMatter.archived)
-  )
-}
 
 function projectBasePath(project: ProjectTarget): string {
   const name = encodeURIComponent(projectName(project))
@@ -39,239 +34,228 @@ function projectBasePath(project: ProjectTarget): string {
 }
 
 export function ExperimentCardGrid({ project }: { project: ProjectTarget }) {
-  const { data: expData, isLoading: expLoading } = useQuery({
+  return <ExperimentGroups key={projectQueryKey(project).join(':')} project={project} />
+}
+
+function ExperimentGroups({ project }: { project: ProjectTarget }) {
+  const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.experiments(project),
     queryFn: () => fetchExperimentDocs(project),
   })
-
+  const [lifecycle, setLifecycle] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [showArchived, setShowArchived] = useState(false)
-  const [revealArchivedBucket, setRevealArchivedBucket] = useState(false)
-
-  // Hydrate the per-project preference from localStorage on first render.
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(STORAGE_KEY_SHOW_ARCHIVED(project))
-      if (v === '1') setShowArchived(true)
-    } catch {
-      // localStorage unavailable (SSR / private mode) — silent default.
-    }
-  }, [project])
-
-  // Persist on change.
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_SHOW_ARCHIVED(project), showArchived ? '1' : '0')
-    } catch {
-      /* noop */
-    }
-  }, [project, showArchived])
-
-  if (expLoading) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-  }
-
-  const allExperiments = expData?.experiments ?? []
+  const [search, setSearch] = useState('')
+  const all = data?.experiments ?? []
+  const needle = search.trim().toLowerCase()
+  const groups = EXPERIMENT_GROUPS.map((group) => ({
+    ...group,
+    items: all.filter((e) => experimentGroup(e) === group.key),
+  })).filter((group) => group.items.length > 0)
+  const filtered = all
+    .filter(
+      (e) =>
+        (lifecycle === 'all' || experimentGroup(e) === lifecycle) &&
+        (statusFilter === 'all' || (e.displayStatus ?? e.frontMatter.status) === statusFilter) &&
+        (!needle ||
+          [e.id, e.frontMatter.title, ...e.frontMatter.tags].some((s) =>
+            s.toLowerCase().includes(needle),
+          )),
+    )
+    .sort(compareExperimentNavigation)
+  const forceOpen = lifecycle !== 'all' || statusFilter !== 'all' || needle.length > 0
   const statusOptions = [
-    ...new Set(allExperiments.map((e) => e.displayStatus ?? e.frontMatter.status)),
+    ...new Set(
+      all
+        .filter((e) => experimentGroup(e) !== 'UNKNOWN')
+        .map((e) => e.displayStatus ?? e.frontMatter.status),
+    ),
   ]
-  const experiments = allExperiments.filter(
-    (e) => statusFilter === 'all' || (e.displayStatus ?? e.frontMatter.status) === statusFilter,
-  )
-
-  const sortFn = (a: ExperimentListRow, b: ExperimentListRow) =>
-    b.effectiveUpdatedAt.localeCompare(a.effectiveUpdatedAt)
-
-  const active = experiments
-    .filter((e) => !isArchived(e))
-    .slice()
-    .sort(sortFn)
-  const archived = experiments
-    .filter((e) => isArchived(e))
-    .slice()
-    .sort(sortFn)
-  const integrated = experiments.slice().sort(sortFn)
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => {
-            setStatusFilter(value)
-            if (value === 'ARCHIVED' || value === 'RETIRED') setShowArchived(true)
-          }}
-        >
-          <SelectTrigger className="w-40" aria-label="Filter experiment status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {statusOptions.map((status) => (
-              <SelectItem key={status} value={status}>
-                {status}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <h2 className="text-lg font-semibold">
-          Experiments{' '}
-          <span className="font-normal text-sm text-muted-foreground">
-            ({showArchived ? experiments.length : active.length})
-          </span>
-        </h2>
-        <label
-          htmlFor="show-archived-experiments"
-          className="ml-auto flex items-center gap-2 text-xs text-muted-foreground"
-        >
-          <Checkbox
-            id="show-archived-experiments"
-            checked={showArchived}
-            onCheckedChange={(v) => setShowArchived(v === true)}
-            aria-label="Show archived experiments"
-          />
-          Show archived and retired
-        </label>
-      </div>
-
-      {showArchived ? (
-        <CardList project={project} exps={integrated} />
-      ) : (
-        <>
-          <CardList project={project} exps={active} />
-          {archived.length > 0 && (
-            <ArchivedBucket
-              project={project}
-              archived={archived}
-              revealed={revealArchivedBucket}
-              onToggle={() => setRevealArchivedBucket((v) => !v)}
-            />
-          )}
-        </>
-      )}
-
-      {experiments.length === 0 && (
-        <div className="text-sm text-muted-foreground">(no experiments yet)</div>
-      )}
-    </div>
-  )
-}
-
-function CardList({ project, exps }: { project: ProjectTarget; exps: ExperimentListRow[] }) {
-  return (
-    <div className="flex flex-col gap-3">
-      {exps.map((exp) => (
-        <ExperimentCard key={exp.id} project={project} exp={exp} />
-      ))}
-    </div>
-  )
-}
-
-function ArchivedBucket({
-  project,
-  archived,
-  revealed,
-  onToggle,
-}: {
-  project: ProjectTarget
-  archived: ExperimentListRow[]
-  revealed: boolean
-  onToggle: () => void
-}) {
-  const noun =
-    archived.length === 1 ? 'archived or retired experiment' : 'archived or retired experiments'
-  return (
-    <div className="flex flex-col gap-3 border-t pt-3">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="self-start text-xs text-muted-foreground underline-offset-2 hover:underline"
-      >
-        {revealed ? 'Hide' : 'Show'} {archived.length} {noun}
-      </button>
-      {revealed && (
-        <div className="flex flex-col gap-3 opacity-90">
-          {archived.map((exp) => (
-            <ExperimentCard key={exp.id} project={project} exp={exp} />
-          ))}
+    <div className="flex min-w-0 flex-col gap-5 p-4 md:p-6">
+      <header className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">
+            Experiments{' '}
+            <span className="ml-1 text-sm font-normal text-muted-foreground">{all.length}</span>
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Research lifecycle · running and completed describe progress within active work.
+          </p>
         </div>
+        <fieldset aria-label="Filter experiment lifecycle" className="flex flex-wrap gap-1.5">
+          <Button
+            size="sm"
+            variant={lifecycle === 'all' ? 'secondary' : 'ghost'}
+            aria-pressed={lifecycle === 'all'}
+            onClick={() => {
+              setLifecycle('all')
+              setStatusFilter('all')
+            }}
+          >
+            All <span className="ml-1 text-muted-foreground tabular-nums">{all.length}</span>
+          </Button>
+          {groups.map((group) => (
+            <Button
+              key={group.key}
+              size="sm"
+              variant={lifecycle === group.key ? 'secondary' : 'ghost'}
+              aria-pressed={lifecycle === group.key}
+              onClick={() => {
+                setLifecycle(group.key)
+                setStatusFilter('all')
+              }}
+            >
+              {group.label}
+              <span className="ml-1 text-muted-foreground tabular-nums">{group.items.length}</span>
+            </Button>
+          ))}
+        </fieldset>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-52">
+            <Search
+              className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              aria-label="Search experiments"
+              placeholder="Search title, ID or tag…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44" aria-label="Filter experiment status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All progress / statuses</SelectItem>
+              {statusOptions.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {forceOpen && (
+            <span className="text-xs text-muted-foreground">
+              {filtered.length} of {all.length}
+            </span>
+          )}
+        </div>
+      </header>
+      {isLoading && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Loading experiments…
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          Could not load experiments.{' '}
+          {data ? 'Showing the last available list.' : 'Try again shortly.'}
+        </p>
+      )}
+      <div className="space-y-4">
+        {groups.map((group) => {
+          const items = filtered.filter((e) => experimentGroup(e) === group.key)
+          return (
+            items.length > 0 && (
+              <ExperimentNavigationGroup
+                key={group.key}
+                group={group}
+                count={items.length}
+                forceOpen={forceOpen}
+              >
+                <div className="grid grid-cols-1 gap-2">
+                  {items.map((exp) => (
+                    <ExperimentCard key={exp.id} project={project} exp={exp} />
+                  ))}
+                </div>
+              </ExperimentNavigationGroup>
+            )
+          )
+        })}
+      </div>
+      {!isLoading && !error && filtered.length === 0 && (
+        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          {all.length ? 'No experiments match these filters.' : 'No experiments yet.'}
+        </p>
       )}
     </div>
   )
 }
 
 function ExperimentCard({ project, exp }: { project: ProjectTarget; exp: ExperimentListRow }) {
-  const archived = isArchived(exp)
-  const basePath = projectBasePath(project)
+  const group = experimentGroup(exp)
+  const historical = ['ARCHIVED', 'RETIRED', 'LEGACY_ARCHIVED'].includes(group)
+  const href = `${projectBasePath(project)}/e/${encodeURIComponent(exp.id)}`
   return (
     <article
-      className={cn('flex flex-col gap-2 rounded-md border bg-card p-3', archived && 'opacity-60')}
-      aria-label={
-        archived
-          ? `${exp.id} (${exp.frontMatter.status === 'RETIRED' ? 'retired' : 'archived'})`
-          : exp.id
-      }
+      className={cn(
+        'min-w-0 rounded-lg border bg-card p-3 transition-colors hover:border-foreground/25 sm:p-4',
+        historical && 'bg-muted/20',
+      )}
+      aria-label={exp.id}
     >
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <Link
-            href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
-            prefetch={false}
-            className="truncate font-mono text-xs text-muted-foreground hover:underline"
-          >
-            {exp.id}
-          </Link>
-          <Link
-            href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
-            prefetch={false}
-            className="hover:underline"
-          >
-            <h3 className="truncate text-sm font-medium">{exp.frontMatter.title}</h3>
-          </Link>
-        </div>
-        <div className="flex max-w-1/2 flex-wrap items-center justify-end gap-1.5">
-          {['PAUSED', 'ARCHIVED', 'RETIRED'].includes(exp.frontMatter.status) &&
-            (exp.runningRunCount ?? 0) > 0 && (
-              <span className="text-xs text-amber-700 dark:text-amber-300">
-                {exp.runningRunCount} Runs still running
-              </span>
-            )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={href}
+          prefetch={false}
+          className="font-mono text-xs text-muted-foreground hover:underline"
+          title={exp.id}
+        >
+          {shortExperimentId(exp.id)}
+        </Link>
+        {group === 'UNKNOWN' ? (
+          <Badge variant="outline">Status unavailable</Badge>
+        ) : (
           <ExperimentStatusPill
             status={exp.displayStatus ?? exp.frontMatter.status}
-            archived={archived}
+            archived={historical}
+            className="text-[10px]"
           />
-        </div>
-      </header>
-      <footer className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <div className="flex flex-wrap gap-1">
-          {exp.frontMatter.tags.map((t) => (
-            <Badge key={t} variant="outline" className="text-[10px]">
-              #{t}
+        )}
+        <span
+          className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground"
+          title={`Updated ${exp.effectiveUpdatedAt}`}
+        >
+          <Clock3 className="size-3" aria-hidden />
+          <time dateTime={exp.effectiveUpdatedAt}>
+            {exp.effectiveUpdatedAt.slice(0, 16).replace('T', ' ') || '—'}
+          </time>
+        </span>
+      </div>
+      <Link
+        href={href}
+        prefetch={false}
+        className="mt-2 block hover:underline"
+        title={exp.frontMatter.title}
+      >
+        <h3 className="line-clamp-2 break-words text-sm font-medium leading-relaxed">
+          {exp.frontMatter.title || exp.id}
+        </h3>
+      </Link>
+      {exp.frontMatter.tags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {exp.frontMatter.tags.map((tag) => (
+            <Badge
+              key={tag}
+              variant="outline"
+              className="max-w-full break-all whitespace-normal text-[10px] font-normal"
+            >
+              #{tag}
             </Badge>
           ))}
         </div>
-        <div className="ml-auto flex shrink-0 gap-3 font-mono">
-          <span className="flex items-center gap-1" title="Created">
-            <CalendarDays className="size-3" aria-hidden />
-            {formatTimestamp(exp.effectiveCreatedAt)}
-          </span>
-          <span className="flex items-center gap-1" title="Updated">
-            <Pencil className="size-3" aria-hidden />
-            {formatTimestamp(exp.effectiveUpdatedAt)}
-          </span>
-        </div>
-      </footer>
+      )}
+      {['PAUSED', 'ARCHIVED', 'RETIRED'].includes(exp.frontMatter.status) &&
+        (exp.runningRunCount ?? 0) > 0 && (
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+            {exp.runningRunCount} Runs still running
+          </p>
+        )}
     </article>
   )
-}
-
-/**
- * Format an ISO8601 string to `YYYY-MM-DD HH:MM:SS` (drop the timezone
- * offset for readability — the value on disk is always with-offset, the
- * displayed-without-offset is fine since memon is single-user).
- */
-function formatTimestamp(iso: string): string {
-  if (!iso) return '—'
-  return iso.slice(0, 19).replace('T', ' ')
 }

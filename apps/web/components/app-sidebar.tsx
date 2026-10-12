@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
+  type ExperimentListRow,
+  fetchExperimentDocs,
   fetchExperimentsInventory,
   fetchGitStatus,
   fetchHosts,
@@ -14,16 +16,23 @@ import {
   type ProjectTarget,
   projectHost,
   projectName,
-  projectQueryKey,
 } from '../lib/api'
+import {
+  compareExperimentNavigation,
+  EXPERIMENT_GROUPS,
+  experimentGroup,
+  shortExperimentId,
+} from '../lib/experiment-navigation'
 import { queryKeys } from '../lib/query-keys'
 import { cn } from '../lib/utils'
+import { ExperimentNavigationGroup } from './experiment-navigation-group'
 import { GitDiffDialog } from './git-diff-dialog'
 import { GitStatusPill } from './git-status-pill'
 import { HostStatusBadge } from './host-status-badge'
 import { useSession } from './session-provider'
 import { SidebarResizeHandle } from './sidebar-resize-handle'
 import { SlurmStatusWidget } from './slurm-status-widget'
+import { ExperimentStatusPill } from './status-pill'
 import { ThemeToggle } from './theme-toggle'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
@@ -35,7 +44,6 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from './ui/sidebar'
@@ -573,9 +581,7 @@ function ProjectGroup({
   )
 }
 
-/** Experiment navigation, one entry per discovered Experiment document.
- * Inventory responses deliberately contain names and paths only, so the
- * sidebar orders by slug and does not imply lifecycle or recency metadata. */
+/** Status-aware navigation shares list summaries and retains identity-only fallback. */
 function ProjectExperimentDocs({
   project,
   basePath,
@@ -587,29 +593,28 @@ function ProjectExperimentDocs({
   activeId: string
   enabled: boolean
 }) {
-  // `enabled` mirrors the parent section's open state AND its read intent
-  // (own route / opened in this session). A disabled query is not "active",
-  // and the shared foreground heartbeat only refetches active queries — so a
-  // collapsed section, or a section merely restored from persisted state on a
-  // non-project route, stays bandwidth-free until the user expands it.
-  const { data, isLoading } = useQuery({
+  // Persisted expansion alone does not authorize either query.
+  const { data: inventory, isLoading } = useQuery({
     queryKey: queryKeys.experimentsInventory(project),
     queryFn: () => fetchExperimentsInventory(project),
     enabled,
     staleTime: 5_000,
   })
-  const docs = data?.items ?? []
-  const sorted = useMemo(
-    () => docs.slice().sort((a, b) => a.slug.localeCompare(b.slug) || a.id.localeCompare(b.id)),
-    [docs],
-  )
-  // First-fetch state: section just expanded, no cached data yet.
-  // Show a spinner so the user knows the section is loading (rather
-  // than mistaking the empty body for "no experiments"). TanStack
-  // Query's cache handles the "previous data while refetching" case
-  // automatically — `data` returns the stale array, so `docs.length
-  // > 0` and we skip this branch.
-  if (enabled && isLoading && docs.length === 0) {
+  const { data: summaries, isLoading: summariesLoading } = useQuery({
+    queryKey: queryKeys.experiments(project),
+    queryFn: () => fetchExperimentDocs(project),
+    enabled,
+    retry: false,
+  })
+  const docs = useMemo(() => {
+    const rows = new Map<string, { id: string; summary?: ExperimentListRow }>()
+    for (const item of inventory?.items ?? []) rows.set(item.id, { id: item.id })
+    for (const summary of summaries?.experiments ?? [])
+      rows.set(summary.id, { id: summary.id, summary })
+    return [...rows.values()]
+  }, [inventory?.items, summaries?.experiments])
+  if (!enabled) return null
+  if ((isLoading || summariesLoading) && docs.length === 0)
     return (
       <div
         data-slot="exp-list-loading"
@@ -618,56 +623,81 @@ function ProjectExperimentDocs({
         <Loader2 className="size-4 animate-spin" aria-label="Loading experiments" />
       </div>
     )
-  }
-  if (!enabled) return null
-  if (docs.length === 0 && !isLoading) {
-    return null
-  }
   return (
-    <SidebarMenu>
-      {sorted.map((exp) => {
-        const isActive = exp.id === activeId
+    <div>
+      {EXPERIMENT_GROUPS.map((group) => {
+        const members = docs
+          .filter((row) => experimentGroup(row.summary) === group.key)
+          .sort((a, b) =>
+            group.key !== 'UNKNOWN' && a.summary && b.summary
+              ? compareExperimentNavigation(a.summary, b.summary)
+              : a.id.localeCompare(b.id),
+          )
+        if (!members.length) return null
         return (
-          <SidebarMenuItem key={exp.id} className="flex w-full items-center">
-            {/*
-              Active-state wrapper. Carries the highlight background for
-              the currently-open experiment across the full row. The inner
-              SidebarMenuButton's own background classes are suppressed
-              (hover:bg-transparent /
-              data-[active=true]:bg-transparent) so this wrapper is the
-              single source of background truth.
-
-              Inventory rows show only the discovered id and slug. Run
-              membership and document metadata belong on the detail page.
-            */}
-            <div
-              className={cn(
-                'flex min-w-0 flex-1 items-center rounded-md transition-colors',
-                isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'hover:bg-sidebar-accent/40',
-              )}
-            >
-              <SidebarMenuButton
-                asChild
-                isActive={isActive}
-                size="sm"
-                className="min-w-0 flex-1 hover:bg-transparent data-[active=true]:bg-transparent"
-              >
-                <Link
-                  href={`${basePath}/e/${encodeURIComponent(exp.id)}`}
-                  prefetch={false}
-                  title={exp.id}
-                >
-                  <span className="min-w-0 flex-1 truncate text-xs">
-                    <span className="font-mono">{exp.id}</span>
-                  </span>
-                </Link>
-              </SidebarMenuButton>
-            </div>
-          </SidebarMenuItem>
+          <ExperimentNavigationGroup
+            key={`${sidebarProjectIdentity(project)}:${group.key}`}
+            group={group}
+            count={members.length}
+            compact
+            forceOpen={members.some((row) => row.id === activeId)}
+          >
+            <SidebarMenu>
+              {members.map(({ id, summary }) => {
+                const isActive = id === activeId
+                const title = summary?.frontMatter.title || id
+                const known = experimentGroup(summary) !== 'UNKNOWN'
+                return (
+                  <SidebarMenuItem key={id} className="flex w-full items-center">
+                    <div
+                      className={cn(
+                        'flex min-w-0 flex-1 items-center rounded-md transition-colors',
+                        isActive
+                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          : 'hover:bg-sidebar-accent/40',
+                      )}
+                    >
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        size="sm"
+                        className="h-auto min-h-12 min-w-0 flex-1 py-1.5 hover:bg-transparent data-[active=true]:bg-transparent"
+                      >
+                        <Link
+                          href={`${basePath}/e/${encodeURIComponent(id)}`}
+                          prefetch={false}
+                          title={`${id} · ${title}`}
+                          aria-current={isActive ? 'page' : undefined}
+                        >
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-mono text-[10px] text-muted-foreground">
+                                {shortExperimentId(id)}
+                              </span>
+                              {known && summary ? (
+                                <ExperimentStatusPill
+                                  status={summary.displayStatus ?? summary.frontMatter.status}
+                                  archived={summary.frontMatter.archived}
+                                  className="px-1 py-0 text-[9px]"
+                                />
+                              ) : (
+                                <span className="text-[9px] text-muted-foreground">Unknown</span>
+                              )}
+                            </div>
+                            <div className="line-clamp-2 break-words text-xs leading-snug">
+                              {title}
+                            </div>
+                          </div>
+                        </Link>
+                      </SidebarMenuButton>
+                    </div>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          </ExperimentNavigationGroup>
         )
       })}
-    </SidebarMenu>
+    </div>
   )
 }

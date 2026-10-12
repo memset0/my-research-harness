@@ -19,6 +19,7 @@ vi.mock('../lib/api', async (importOriginal) => {
     fetchHosts: vi.fn(),
     fetchProjects: vi.fn(),
     fetchExperimentsInventory: vi.fn(),
+    fetchExperimentDocs: vi.fn(),
     fetchSlurmStatus: vi.fn(),
     fetchGitStatus: vi.fn(),
     fetchGitStatusFiles: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('../lib/api', async (importOriginal) => {
 })
 
 import {
+  fetchExperimentDocs,
   fetchExperimentsInventory,
   fetchGitStatus,
   fetchGitStatusFiles,
@@ -48,6 +50,37 @@ function makeInventoryItem(
     slug: id.replace(/^E\d+-/, ''),
     resource: `docs/experiments/${id}/README.md`,
   } as Awaited<ReturnType<typeof fetchExperimentsInventory>>['items'][number]
+}
+
+function makeSummary(
+  id: string,
+  status: ApiModule.ExperimentListRow['frontMatter']['status'],
+  title: string,
+  displayStatus?: ApiModule.ExperimentListRow['displayStatus'],
+): ApiModule.ExperimentListRow {
+  return {
+    id,
+    project: 'project-a',
+    readmeMtime: 1,
+    displayStatus,
+    frontMatter: {
+      id,
+      slug: id,
+      title,
+      status,
+      archived: false,
+      tags: [],
+      createdAt: '',
+      updatedAt: '',
+    },
+    runCount: 1,
+    hypothesisCount: 0,
+    openWarningCount: 0,
+    parseErrors: [],
+    parseWarnings: [],
+    effectiveCreatedAt: '',
+    effectiveUpdatedAt: '',
+  }
 }
 
 function makeHost(
@@ -116,6 +149,7 @@ describe('AppSidebar', () => {
       ],
     })
     vi.mocked(fetchExperimentsInventory).mockResolvedValue({ items: [] })
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({ experiments: [] })
     // SlurmStatusWidget + GitStatusPill render `null` when their query
     // returns `enabled: false`, so default both to that path to keep the
     // sidebar tests focused on project / experiment rendering.
@@ -177,7 +211,7 @@ describe('AppSidebar', () => {
     })
   })
 
-  it('renders experiment navigation in slug order', async () => {
+  it('retains identity navigation in ID order when metadata is unavailable', async () => {
     vi.mocked(fetchExperimentsInventory).mockResolvedValue({
       items: [
         makeInventoryItem('E0003-charlie'),
@@ -200,6 +234,69 @@ describe('AppSidebar', () => {
     )
     const ids = links.map((a) => within(a).getByText(/^E\d+-/).textContent)
     expect(ids).toEqual(['E0001-alpha', 'E0002-bravo', 'E0003-charlie'])
+  })
+
+  it('retains inventory links under unavailable status when summary requests fail', async () => {
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
+      items: [makeInventoryItem('E0001-alpha')],
+    })
+    vi.mocked(fetchExperimentDocs).mockRejectedValue(new Error('Summary unavailable'))
+    setup()
+    expect(
+      await screen.findByRole('button', { name: 'Status unavailable experiments (1)' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /E0001.*Unknown.*E0001-alpha/ })).toHaveAttribute(
+      'href',
+      '/p/project-a/e/E0001-alpha',
+    )
+    expect(screen.queryByRole('button', { name: 'Active experiments (1)' })).not.toBeInTheDocument()
+  })
+
+  it('opens the current retired group and preserves inventory-only entries', async () => {
+    currentPathname = '/p/project-a/e/E0003-old'
+    vi.mocked(fetchExperimentsInventory).mockResolvedValue({
+      items: [makeInventoryItem('E0003-old'), makeInventoryItem('E0004-unreadable')],
+    })
+    vi.mocked(fetchExperimentDocs).mockResolvedValue({
+      experiments: [
+        makeSummary('E0001-completed', 'ACTIVE', 'Completed comparison', 'COMPLETED'),
+        makeSummary('E0002-running', 'ACTIVE', 'Current comparison', 'RUNNING'),
+        makeSummary(
+          'E0003-old',
+          'RETIRED',
+          'Retired comparison with a readable long title',
+          'RETIRED',
+        ),
+        makeSummary('E0005-archive', 'ARCHIVED', 'Archived comparison', 'ARCHIVED'),
+      ],
+    })
+    const { container } = setup()
+    const retired = await screen.findByRole('link', {
+      name: /Retired comparison with a readable long title/,
+    })
+    expect(retired).toHaveAttribute('aria-current', 'page')
+    expect(retired).toHaveAttribute('data-active', 'true')
+    expect(retired).toHaveAttribute(
+      'title',
+      'E0003-old · Retired comparison with a readable long title',
+    )
+    expect(screen.getByRole('button', { name: 'Retired experiments (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: 'Archived experiments (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.getByText('E0004-unreadable')).toBeInTheDocument()
+    const active = container.querySelector('[data-experiment-group="ACTIVE"]')!
+    expect(
+      within(active as HTMLElement)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual(['/p/project-a/e/E0002-running', '/p/project-a/e/E0001-completed'])
+    await userEvent.click(screen.getByRole('button', { name: 'Archived experiments (1)' }))
+    expect(screen.getByRole('link', { name: /Archived comparison/ })).toBeInTheDocument()
   })
 
   it('renders a compact git pill per project row when git status is available', async () => {
@@ -371,6 +468,7 @@ describe('AppSidebar', () => {
     setup()
     await waitFor(() => expect(screen.getByText('project-a')).toBeInTheDocument())
     expect(fetchExperimentsInventory).not.toHaveBeenCalled()
+    expect(fetchExperimentDocs).not.toHaveBeenCalled()
 
     // Expanding a section in this session IS an explicit read intent.
     vi.mocked(fetchExperimentsInventory).mockResolvedValue({
@@ -379,6 +477,8 @@ describe('AppSidebar', () => {
     await userEvent.click(screen.getByText('project-b'))
     await waitFor(() => expect(fetchExperimentsInventory).toHaveBeenCalledWith('project-b'))
     expect(fetchExperimentsInventory).not.toHaveBeenCalledWith('project-a')
+    expect(fetchExperimentDocs).toHaveBeenCalledWith('project-b')
+    expect(fetchExperimentDocs).not.toHaveBeenCalledWith('project-a')
   })
 
   it('central: keeps configured Host order and shows offline Hosts without Projects', async () => {
@@ -448,6 +548,8 @@ describe('AppSidebar', () => {
       host: 'host-b',
       project: 'shared-project',
     })
+    expect(fetchExperimentDocs).toHaveBeenCalledWith({ host: 'host-a', project: 'shared-project' })
+    expect(fetchExperimentDocs).toHaveBeenCalledWith({ host: 'host-b', project: 'shared-project' })
     expect(fetchGitStatus).toHaveBeenCalledWith({ host: 'host-a', project: 'shared-project' })
     expect(fetchGitStatus).toHaveBeenCalledWith({ host: 'host-b', project: 'shared-project' })
     await waitFor(() => {
