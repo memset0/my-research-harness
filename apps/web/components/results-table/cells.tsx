@@ -47,6 +47,21 @@ function VariantCell({ variant }: ResultCellProps) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className="font-mono text-[10px] font-medium text-muted-foreground">{variant.id}</span>
+      {variant.deprecated && (
+        <span className="text-xs text-muted-foreground" title={variant.deprecation?.reason}>
+          Deprecated
+          {variant.deprecation?.successor && (
+            <>
+              {' '}
+              →{' '}
+              <a href={`#variant-${variant.deprecation.successor}`} className="underline">
+                {variant.deprecation.successor}
+              </a>
+            </>
+          )}{' '}
+          · {variant.deprecation?.reason}
+        </span>
+      )}
       <span className="font-medium text-foreground">
         <TranslatedLiteral original={renderTextWithBreaks(variant.name)}>
           {variant.name}
@@ -131,6 +146,10 @@ function OtherRunsCell({ variant, ...props }: ResultCellProps) {
           title={other.stopReason ? `stop reason: ${other.stopReason}` : undefined}
         >
           <RunLink run={other.run} {...props} />
+          {other.research_version !== undefined && (
+            <span> · research v{other.research_version}</span>
+          )}
+          {other.exclusion_reason && <span> · {other.exclusion_reason}</span>}
           <span className="text-muted-foreground">{other.status}</span>
           {other.deprecated && <span className="text-muted-foreground">(deprecated)</span>}
           {other.missing && <span className="text-destructive">(missing)</span>}

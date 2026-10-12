@@ -5,6 +5,14 @@ description: "Read an Experiment's generated Results table (the Variant summary 
 
 # memon-read-results
 
+FS10 Results default to the current research version. Use `--research-version N`
+on `table` or `summary` only for an explicit historical inspection. Read that
+version's snapshot definitions, not current planned values; preserve diagnostics
+when old data cannot be interpreted. Historical Runs and deprecated Variants
+never qualify for current ranking even when displayed. `version show` returns
+the research ledger and description lock tokens; metric schema version is a
+separate number.
+
 Read one Experiment's Results structure or values. Start with the structure
 summary when cell values are unnecessary; use the flat table for real
 comparison. Both are read-only projections of the generated Results summary.

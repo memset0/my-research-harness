@@ -21,6 +21,14 @@ const ranks = (modes: Record<string, 'off' | 'higher-is-better' | 'lower-is-bett
   )
 
 describe('computeSotaRanks', () => {
+  it('never ranks a deprecated Variant even when it is visible', () => {
+    const withdrawn = rows.map((v) => ({ ...v, deprecated: v.id === 'V2' }))
+    expect([
+      ...computeSotaRanks(withdrawn, columns, { 'metrics.loss': 'lower-is-better' })
+        .get('metrics.loss')!
+        .ranks.keys(),
+    ]).toEqual(['V3', 'V1'])
+  })
   it.each([
     ['higher-is-better', { V1: 1, V3: 2, V2: 3 }],
     ['lower-is-better', { V2: 1, V3: 2, V1: 3 }],

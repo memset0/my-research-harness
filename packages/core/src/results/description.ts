@@ -131,7 +131,32 @@ export interface DescriptionProvenance {
   extra?: Record<string, unknown>
 }
 
+export interface VariantDeprecation {
+  reason: string
+  deprecated_at: string
+  successor?: string
+}
+export interface ResearchVersion {
+  version: number
+  started_at: string
+  reason: string
+  closed_at?: string
+  superseded_reason?: string
+  snapshot?: Record<string, unknown>
+}
+export interface ResearchLedger {
+  current_version: number
+  versions: ResearchVersion[]
+  run_versions: Record<string, number>
+  imports?: Array<{ run: string; version: number; reason: string; imported_at: string }>
+}
 export interface DescriptionVariant {
+  deprecated?: boolean
+  deprecation?: VariantDeprecation
+  deprecation_history?: Array<
+    VariantDeprecation & { restored_at?: string; restore_reason?: string }
+  >
+
   id: string
   name: string
   description?: string
@@ -147,6 +172,7 @@ export interface DescriptionVariant {
 }
 
 export interface ExperimentDescription {
+  research?: ResearchLedger
   experimentSchemaVersion: number
   groups: Record<string, DescriptionGroup>
   columns: DescriptionColumn[]
@@ -303,6 +329,8 @@ const ProvenanceSchema = z
   })
   .passthrough()
 
+const ResearchTimestamp = z.string().datetime({ offset: true })
+
 const VariantSchema = z
   .object({
     id: z.string().regex(/^V\d{4}$/, 'must match V<NNNN>'),
@@ -313,6 +341,25 @@ const VariantSchema = z
     provenance: ProvenanceSchema.optional(),
     runs: z.array(z.string()).optional(),
     frozen: FrozenSchema.optional(),
+    deprecated: z.boolean().optional(),
+    deprecation: z
+      .object({
+        reason: NonEmpty,
+        deprecated_at: ResearchTimestamp,
+        successor: z.string().optional(),
+      })
+      .optional(),
+    deprecation_history: z
+      .array(
+        z.object({
+          reason: NonEmpty,
+          deprecated_at: ResearchTimestamp,
+          successor: z.string().optional(),
+          restored_at: ResearchTimestamp.optional(),
+          restore_reason: z.string().optional(),
+        }),
+      )
+      .optional(),
   })
   .passthrough()
   .superRefine((variant, context) => {
@@ -353,6 +400,118 @@ const DescriptionSchema = z
 type RawDescription = z.infer<typeof DescriptionSchema>
 type RawColumn = z.infer<typeof ColumnSchema>
 type RawVariant = z.infer<typeof VariantSchema>
+
+const ResearchLedgerSchema = z.object({
+  current_version: z.number().int().positive(),
+  versions: z
+    .array(
+      z.object({
+        version: z.number().int().positive(),
+        started_at: ResearchTimestamp,
+        reason: NonEmpty,
+        closed_at: ResearchTimestamp.optional(),
+        superseded_reason: NonEmpty.optional(),
+        snapshot: z.record(z.unknown()).optional(),
+      }),
+    )
+    .min(1),
+  run_versions: z.record(z.number().int().positive()),
+  imports: z
+    .array(
+      z.object({
+        run: NonEmpty,
+        version: z.number().int().positive(),
+        reason: NonEmpty,
+        imported_at: ResearchTimestamp,
+      }),
+    )
+    .optional(),
+})
+
+export function researchDescriptionProblem(
+  description: ExperimentDescription,
+  members?: readonly string[],
+): string | null {
+  const research = description.research
+  if (!research) return null
+  if (research.versions.length !== research.current_version)
+    return 'versions must be consecutive and end at current_version'
+  for (const [index, version] of research.versions.entries()) {
+    if (version.version !== index + 1) return 'versions must be consecutive'
+    if (
+      !Number.isFinite(Date.parse(version.started_at)) ||
+      !/[+-]\d\d:\d\d$|Z$/.test(version.started_at)
+    )
+      return 'started_at must be ISO8601 with offset'
+    if (index + 1 < research.current_version) {
+      if (!version.closed_at || !version.superseded_reason || !version.snapshot)
+        return 'closed versions require reason, time and snapshot'
+      const raw = version.snapshot
+      if (
+        'research' in raw ||
+        !raw.variants ||
+        Array.isArray(raw.variants) ||
+        typeof raw.variants !== 'object'
+      )
+        return 'snapshot requires keyed variants without recursive research'
+      for (const [id, value] of Object.entries(raw.variants)) {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || 'id' in value)
+          return 'invalid historical Variant definition'
+        const validated = VariantSchema.safeParse({ ...value, id })
+        if (!validated.success || (validated.data.deprecated && !validated.data.deprecation))
+          return 'invalid historical Variant deprecation or definition'
+      }
+      const snapshot = parseExperimentDescription(
+        JSON.stringify({
+          ...raw,
+          variants: Object.entries(raw.variants).map(([id, value]) => ({
+            ...(value as object),
+            id,
+          })),
+        }),
+      )
+      if (!snapshot.data) return 'invalid historical definition snapshot'
+      for (const variant of snapshot.data.variants) {
+        if (!description.variants.some((current) => current.id === variant.id))
+          return 'historical Variant identity cannot be deleted'
+        if (
+          variant.runs.some(
+            (run) =>
+              research.run_versions[run] === undefined ||
+              research.run_versions[run]! > version.version,
+          )
+        )
+          return 'historical snapshot association conflicts with Run attribution'
+      }
+    } else if (version.closed_at || version.snapshot) return 'current version cannot be closed'
+  }
+  for (const [run, version] of Object.entries(research.run_versions)) {
+    if (
+      run.startsWith('/') ||
+      run.includes('\\') ||
+      run.split('/').some((x) => x === '..' || x === '.' || x === '')
+    )
+      return 'Run attribution must use contained relative paths'
+    if (version > research.current_version) return 'Run references unknown research version'
+  }
+  if (members?.some((run) => research.run_versions[run] === undefined))
+    return 'member Run has no research-version attribution'
+  const byId = new Map(description.variants.map((v) => [v.id, v]))
+  for (const variant of description.variants) {
+    if (variant.runs.some((run) => research.run_versions[run] === undefined))
+      return `${variant.id} has unregistered Runs`
+    if (variant.deprecated && !variant.deprecation)
+      return `${variant.id} requires a deprecation reason`
+    const seen = new Set([variant.id])
+    let successor = variant.deprecation?.successor
+    while (successor) {
+      if (!byId.has(successor) || seen.has(successor)) return 'invalid or cyclic Variant successor'
+      seen.add(successor)
+      successor = byId.get(successor)?.deprecation?.successor
+    }
+  }
+  return null
+}
 
 // ---------- parsing ----------
 
@@ -399,8 +558,11 @@ const VARIANT_KEYS = [
   'provenance',
   'runs',
   'frozen',
+  'deprecated',
+  'deprecation',
+  'deprecation_history',
 ] as const
-const TOP_KEYS = ['experiment_schema_version', 'groups', 'columns', 'variants'] as const
+const TOP_KEYS = ['experiment_schema_version', 'research', 'groups', 'columns', 'variants'] as const
 
 function normalizeColumn(raw: RawColumn): DescriptionColumn {
   const column: DescriptionColumn = { path: raw.path, label: raw.label, type: raw.type }
@@ -452,6 +614,9 @@ function normalizeVariant(
     values,
     runs: [...(raw.runs ?? [])],
   }
+  if (raw.deprecated !== undefined) variant.deprecated = raw.deprecated
+  if (raw.deprecation !== undefined) variant.deprecation = raw.deprecation
+  if (raw.deprecation_history !== undefined) variant.deprecation_history = raw.deprecation_history
   if (raw.description !== undefined) variant.description = raw.description
   if (raw.status !== undefined) variant.status = raw.status as VariantStatus
   if (raw.provenance !== undefined) {
@@ -542,6 +707,65 @@ export function parseExperimentDescription(
     })
     return parsed
   }
+  const source = loaded as Record<string, unknown>
+  const isRegistry =
+    source.variants !== null &&
+    typeof source.variants === 'object' &&
+    !Array.isArray(source.variants)
+  if (isRegistry !== (source.research !== undefined)) {
+    parsed.parseErrors.push({
+      severity: 'error',
+      message: 'INVALID_RESEARCH: keyed Variants and research metadata must occur together',
+    })
+    return parsed
+  }
+  if (isRegistry) {
+    const entries = Object.entries(source.variants as Record<string, unknown>)
+    if (
+      entries.some(
+        ([id, value]) =>
+          !/^V\d{4}$/.test(id) ||
+          !value ||
+          typeof value !== 'object' ||
+          Array.isArray(value) ||
+          'id' in value,
+      )
+    ) {
+      parsed.parseErrors.push({
+        severity: 'error',
+        message:
+          'INVALID_RESEARCH: Variant registry keys must be V<NNNN> and values cannot duplicate id',
+      })
+      return parsed
+    }
+    loaded = { ...source, variants: entries.map(([id, value]) => ({ ...(value as object), id })) }
+  }
+  const legacyDeprecation =
+    !isRegistry && Array.isArray(source.variants)
+      ? source.variants.map((variant: Record<string, unknown>) =>
+          Object.fromEntries(
+            ['deprecated', 'deprecation', 'deprecation_history']
+              .filter(
+                (key) =>
+                  variant !== null && typeof variant === 'object' && Object.hasOwn(variant, key),
+              )
+              .map((key) => [key, variant[key]]),
+          ),
+        )
+      : []
+  if (!isRegistry && Array.isArray(source.variants))
+    loaded = {
+      ...source,
+      variants: source.variants.map((variant: Record<string, unknown>) =>
+        variant === null || typeof variant !== 'object' || Array.isArray(variant)
+          ? variant
+          : Object.fromEntries(
+              Object.entries(variant).filter(
+                ([key]) => !['deprecated', 'deprecation', 'deprecation_history'].includes(key),
+              ),
+            ),
+      ),
+    }
   const validated = DescriptionSchema.safeParse(loaded)
   if (!validated.success) {
     for (const issue of validated.error.issues) {
@@ -555,6 +779,31 @@ export function parseExperimentDescription(
     return parsed
   }
   parsed.data = normalizeDescription(validated.data, parsed.parseWarnings)
+  if (!isRegistry)
+    for (const [index, extra] of legacyDeprecation.entries()) {
+      if (Object.keys(extra).length)
+        parsed.data.variants[index]!.extra = {
+          ...(parsed.data.variants[index]!.extra ?? {}),
+          ...extra,
+        }
+    }
+  if (isRegistry) {
+    const ledger = ResearchLedgerSchema.safeParse(source.research)
+    if (!ledger.success) {
+      parsed.parseErrors.push({
+        severity: 'error',
+        message: `INVALID_RESEARCH: ${ledger.error.message}`,
+      })
+      parsed.data = null
+    } else {
+      parsed.data.research = ledger.data
+      const problem = researchDescriptionProblem(parsed.data)
+      if (problem) {
+        parsed.parseErrors.push({ severity: 'error', message: `INVALID_RESEARCH: ${problem}` })
+        parsed.data = null
+      }
+    }
+  }
   return parsed
 }
 
@@ -655,6 +904,9 @@ export function experimentDescriptionToJson(
                 variant.provenance.extra,
               ),
         runs: [...variant.runs],
+        deprecated: variant.deprecated,
+        deprecation: variant.deprecation,
+        deprecation_history: variant.deprecation_history,
         frozen:
           variant.frozen === undefined
             ? undefined
@@ -685,9 +937,12 @@ export function experimentDescriptionToJson(
   return ordered(
     {
       experiment_schema_version: description.experimentSchemaVersion,
+      research: description.research,
       groups,
       columns,
-      variants,
+      variants: description.research
+        ? Object.fromEntries(variants.map(({ id, ...value }) => [id as string, value]))
+        : variants,
     },
     TOP_KEYS,
     description.extra,
@@ -717,7 +972,9 @@ export function patchExperimentDescription(
     throw new Error(
       `${EXPERIMENT_DESCRIPTION_FILE} cannot be changed until it parses: ${parsed.parseErrors.map((issue) => issue.message).join('; ')}`,
     )
+  const previous = structuredClone(parsed.data)
   change(parsed.data)
+  assertResearchDescriptionEdit(previous, parsed.data)
   const next = serializeExperimentDescription(parsed.data)
   return { content: next, changed: next !== content, description: parsed.data }
 }
@@ -769,6 +1026,38 @@ export function renameDescriptionRunPath(
   to: string,
 ): boolean {
   let changed = false
+  if (description.research) {
+    const ledger = description.research
+    if (ledger.run_versions[from] !== undefined) {
+      if (ledger.run_versions[to] !== undefined && from !== to)
+        throw new Error('Run rename would overwrite retained attribution')
+      ledger.run_versions[to] = ledger.run_versions[from]!
+      if (from !== to) delete ledger.run_versions[from]
+      changed = true
+    }
+    for (const item of ledger.imports ?? [])
+      if (item.run === from) {
+        item.run = to
+        changed = true
+      }
+    for (const version of ledger.versions) {
+      if (!version.snapshot) continue
+      for (const raw of Object.values(
+        version.snapshot.variants as Record<string, Record<string, unknown>>,
+      )) {
+        for (const container of [raw, raw.frozen as Record<string, unknown> | undefined]) {
+          if (!container) continue
+          for (const key of ['runs', 'attempts'])
+            if (Array.isArray(container[key]))
+              container[key] = (container[key] as string[]).map((run) => {
+                if (run !== from) return run
+                changed = true
+                return to
+              })
+        }
+      }
+    }
+  }
   for (const variant of description.variants) {
     variant.runs = variant.runs.map((run) => {
       if (run !== from) return run
@@ -921,6 +1210,8 @@ export function lintExperimentDescription(
         )
     }
   }
+  const researchProblem = researchDescriptionProblem(description, options.readmeRuns)
+  if (researchProblem) diag('INVALID_RESEARCH', researchProblem, 'research')
   if (options.readmeRuns)
     diagnostics.push(...lintVariantMembership(description, options.readmeRuns, file))
   return diagnostics
@@ -980,4 +1271,54 @@ function valueProblem(value: ResultValue, column: DescriptionColumn): string | n
   if (column.type === 'list') return Array.isArray(value) ? null : 'is declared list'
   const read = interpretResultText(String(value), 'enum', column.options)
   return read.ok ? null : read.message
+}
+
+function researchEditError(message: string): Error {
+  return Object.assign(new Error(message), { code: 'BAD_REQUEST' })
+}
+/** Guard ordinary description edits; specialized mutations deliberately bypass it. */
+export function assertResearchDescriptionEdit(
+  previous: ExperimentDescription,
+  next: ExperimentDescription,
+): void {
+  if (!previous.research && !next.research) return
+  if (JSON.stringify(previous.research) !== JSON.stringify(next.research))
+    throw researchEditError('Research ledger and snapshots require dedicated operations')
+  for (const old of previous.variants) {
+    const current = next.variants.find((v) => v.id === old.id)
+    const referenced =
+      old.runs.length > 0 ||
+      previous.research?.versions.some(
+        (v) => v.snapshot && (v.snapshot.variants as Record<string, unknown>)?.[old.id],
+      ) ||
+      previous.variants.some((v) => v.deprecation?.successor === old.id)
+    if (!current && referenced)
+      throw researchEditError(
+        `Referenced Variant ${old.id} cannot be deleted; deprecate it instead`,
+      )
+    if (
+      current &&
+      previous.research &&
+      old.runs.some(
+        (run) =>
+          previous.research!.run_versions[run] !== previous.research!.current_version &&
+          !current.runs.includes(run),
+      )
+    )
+      throw researchEditError('Historical Variant associations must be preserved')
+    if (
+      current &&
+      JSON.stringify([old.deprecated, old.deprecation, old.deprecation_history]) !==
+        JSON.stringify([current.deprecated, current.deprecation, current.deprecation_history])
+    )
+      throw researchEditError('Variant deprecation requires a dedicated operation')
+  }
+  for (const variant of next.variants)
+    if (
+      !previous.variants.some((old) => old.id === variant.id) &&
+      (variant.deprecated || variant.deprecation || variant.deprecation_history)
+    )
+      throw researchEditError('New Variant deprecation requires a dedicated operation')
+  const problem = researchDescriptionProblem(next)
+  if (problem) throw researchEditError(problem)
 }

@@ -20,6 +20,10 @@ import {
   EXPERIMENT_DESCRIPTION_FILE,
   type ExperimentDescription,
   type ParsedExperimentDescription,
+  parseExperimentDescription,
+  type ResearchVersion,
+  researchDescriptionProblem,
+  type VariantDeprecation,
 } from './description.js'
 import { type ResultsDiagnostic, resultsDiagnostic } from './diagnostics.js'
 import {
@@ -47,7 +51,7 @@ import {
 import { describeNumbers } from './statistics.js'
 import { compareStatKeys, STAT_VOCABULARY } from './vocabulary.js'
 
-export const RESULTS_SUMMARY_VERSION = 1
+export const RESULTS_SUMMARY_VERSION = 2
 
 export type ResultsSummaryErrorCode =
   | 'RESULTS_NOT_FOUND'
@@ -130,6 +134,8 @@ export type SummaryCell =
     })
 
 export interface SummaryOtherRun {
+  research_version?: number
+  exclusion_reason?: string
   run: string
   /** Run status; `UNKNOWN` with `missing: true` when the Run record is absent. */
   status: Status
@@ -139,6 +145,8 @@ export interface SummaryOtherRun {
 }
 
 export interface SummaryVariant {
+  deprecated?: boolean
+  deprecation?: VariantDeprecation
   id: string
   name: string
   description?: string
@@ -153,6 +161,13 @@ export interface SummaryVariant {
 }
 
 export interface ResultsSummary {
+  research?: {
+    current_version: number
+    selected_version: number
+    versions: Array<Omit<ResearchVersion, 'snapshot'>>
+    run_versions: Record<string, number>
+  }
+  historical_results?: Record<string, string>
   summary_version: typeof RESULTS_SUMMARY_VERSION
   experiment: string
   experiment_schema_version: number | null
@@ -187,6 +202,7 @@ export interface SummaryMemberInput {
 }
 
 export interface GenerateResultsSummaryInput {
+  researchVersion?: number
   experimentId: string
   /** Project-relative Experiment folder (for file names in diagnostics). */
   experimentDir: string
@@ -537,7 +553,7 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
       ...(input.legacyResultsYaml ? { legacy_results_yaml: true } : {}),
     })
   }
-  const description = input.description.data
+  let description = input.description.data
   if (!description) {
     const diagnostics = input.description.parseErrors.map((issue) =>
       issueDiagnostic(descriptionFile, issue),
@@ -549,10 +565,63 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
       diagnostics,
     })
   }
+  const ledger = description.research
+  const selectedVersion = input.researchVersion ?? ledger?.current_version ?? 1
+  const historical = ledger !== undefined && selectedVersion !== ledger.current_version
+  const integrity = researchDescriptionProblem(
+    description,
+    input.members.map((member) => member.path),
+  )
+  if (integrity)
+    return failed(input, description.experimentSchemaVersion, {
+      code: 'INVALID_RESULTS',
+      message: integrity,
+      files: [{ path: descriptionFile }],
+    })
+  if (ledger && historical) {
+    const snapshot = ledger.versions.find((item) => item.version === selectedVersion)?.snapshot
+    if (!snapshot)
+      return failed(input, description.experimentSchemaVersion, {
+        code: 'INVALID_RESULTS',
+        message: 'Unknown historical research version',
+        files: [{ path: descriptionFile }],
+      })
+    const decoded = parseExperimentDescription(
+      JSON.stringify({
+        ...snapshot,
+        variants: Object.entries(snapshot.variants as Record<string, object>).map(
+          ([id, value]) => ({ ...value, id }),
+        ),
+      }),
+    ).data
+    if (!decoded)
+      return failed(input, null, {
+        code: 'INVALID_RESULTS',
+        message: 'Invalid history snapshot',
+        files: [{ path: descriptionFile }],
+      })
+    for (const variant of decoded.variants) {
+      const raw = (
+        snapshot.variants as Record<
+          string,
+          { deprecated?: boolean; deprecation?: VariantDeprecation }
+        >
+      )[variant.id]!
+      if (raw.deprecated !== undefined) variant.deprecated = raw.deprecated
+      if (raw.deprecation) variant.deprecation = raw.deprecation
+    }
+    description = decoded
+  } else if (!ledger && selectedVersion !== 1)
+    return failed(input, description.experimentSchemaVersion, {
+      code: 'INVALID_RESULTS',
+      message: 'Legacy Experiment has no selected research version',
+      files: [{ path: descriptionFile }],
+    })
+  const inScope = (run: string) => !ledger || ledger.run_versions[run] === selectedVersion
   const version = description.experimentSchemaVersion
   const parsed = new Map<string, ParsedResultFile>()
   for (const member of input.members)
-    if (member.result !== null)
+    if (member.result !== null && inScope(member.path))
       parsed.set(member.path, parseResultFile(member.result, `${member.path}/${RESULT_FILE_NAME}`))
 
   const mismatched: ResultsSummaryErrorFile[] = []
@@ -569,7 +638,7 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
       ...(reason ? { reason } : {}),
     })
   }
-  if (mismatched.length > 0) {
+  if (mismatched.length > 0 && !historical) {
     const command = schemaUpgradeCommand(input.experimentId, version)
     return failed(input, version, {
       code: 'RESULT_SCHEMA_MISMATCH',
@@ -590,7 +659,7 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
           lines: [...item.lines],
         })),
       })
-  if (duplicated.length > 0) {
+  if (duplicated.length > 0 && !historical) {
     return failed(input, version, {
       code: 'RESULT_DUPLICATE_ROW',
       message: `${duplicated.length} member result file${duplicated.length === 1 ? '' : 's'} contain${duplicated.length === 1 ? 's' : ''} a duplicate (path, stat) pair; keep exactly one row per pair`,
@@ -601,6 +670,34 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
   const diagnostics: ResultsDiagnostic[] = input.description.parseWarnings.map((issue) =>
     issueDiagnostic(descriptionFile, issue),
   )
+  if (historical) {
+    for (const item of [...mismatched, ...duplicated]) {
+      diagnostics.push(
+        resultsDiagnostic(
+          'HISTORICAL_RESULT_INVALID',
+          'warning',
+          item.path,
+          'Historical result cannot be interpreted using the saved definition; inspect raw data',
+        ),
+      )
+      parsed.delete(item.path.replace(/\/result\.csv$/, ''))
+    }
+  }
+  if (ledger && !historical)
+    for (const member of input.members) {
+      if (!inScope(member.path) && member.result !== null) {
+        const old = parseResultFile(member.result, `${member.path}/${RESULT_FILE_NAME}`)
+        if (!old.ok || old.schemaVersion !== version || old.duplicates.length)
+          diagnostics.push(
+            resultsDiagnostic(
+              'HISTORICAL_RESULT_EXCLUDED',
+              'info',
+              `${member.path}/${RESULT_FILE_NAME}`,
+              'Historical result is outside current research scope; inspect its version separately',
+            ),
+          )
+      }
+    }
   const members = new Map(input.members.map((member) => [member.path, member]))
   const entries = new Map<string, Map<string, ResultFileEntry>>()
   for (const [run, file] of parsed) entries.set(run, resultFileEntries(file))
@@ -613,7 +710,9 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
       variant.id,
       listed.filter((run) => {
         const record = members.get(run)?.record
-        return record?.status === 'FINISHED' && !record.deprecated
+        return (
+          inScope(run) && !variant.deprecated && record?.status === 'FINISHED' && !record.deprecated
+        )
       }),
     )
   }
@@ -657,7 +756,9 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
   for (const variant of description.variants) {
     const listed = variant.runs.filter((run) => members.has(run))
     const evidence = variantEvidence.get(variant.id) ?? []
-    const records = listed.map((run) => members.get(run)?.record ?? null)
+    const records = listed
+      .filter((run) => inScope(run) && !variant.deprecated)
+      .map((run) => members.get(run)?.record ?? null)
     const declaredStatus = variant.status ?? null
     const status = deriveVariantStatus(declaredStatus, records, variant.frozen?.status ?? null)
     if ((declaredStatus === 'PLANNED' || declaredStatus === 'BLOCKED') && listed.length > 0)
@@ -689,6 +790,13 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
               stop_reason: record.stop_reason,
             }
       })
+    if (ledger)
+      for (const other of others) {
+        other.research_version = ledger.run_versions[other.run]
+        if (!inScope(other.run)) other.exclusion_reason = 'historical_version'
+        else if (variant.deprecated) other.exclusion_reason = 'variant_deprecated'
+        else if (other.deprecated) other.exclusion_reason = 'run_deprecated'
+      }
     const cells: Record<string, SummaryCell> = {}
     const mismatchedPaths: string[] = []
     for (const column of columns) {
@@ -715,7 +823,7 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
       }
       if (!cell && planned !== undefined)
         cell = { kind: 'value', source: 'planned', value: planned }
-      if (!cell) cell = frozenCell(variant, column)
+      if (!cell && !variant.deprecated) cell = frozenCell(variant, column)
       if (cell) cells[column.path] = cell
     }
     if (mismatchedPaths.length > 0)
@@ -733,6 +841,12 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
       name: variant.name,
       status,
       declared_status: declaredStatus,
+      ...(ledger
+        ? {
+            deprecated: variant.deprecated ?? false,
+            ...(variant.deprecation ? { deprecation: variant.deprecation } : {}),
+          }
+        : {}),
       evidence,
       others,
       cells,
@@ -775,6 +889,25 @@ export function generateResultsSummary(input: GenerateResultsSummaryInput): Resu
     inputs: input.inputs,
     newest_input_mtime: input.newestInputMtime,
     outcome: 'ok',
+    ...(ledger
+      ? {
+          research: {
+            current_version: ledger.current_version,
+            selected_version: selectedVersion,
+            versions: ledger.versions.map(({ snapshot: _snapshot, ...item }) => item),
+            run_versions: { ...ledger.run_versions },
+          },
+        }
+      : {}),
+    ...(historical
+      ? {
+          historical_results: Object.fromEntries(
+            input.members
+              .filter((member) => inScope(member.path) && member.result !== null)
+              .map((member) => [member.path, member.result!]),
+          ),
+        }
+      : {}),
     error: null,
     groups,
     columns,

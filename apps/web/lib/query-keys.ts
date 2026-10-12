@@ -44,6 +44,8 @@ export const queryKeys = {
   experiments: (project?: ProjectTarget) => ['experiments', ...scope(project)] as const,
   experiment: (project: ProjectTarget | undefined, id: string) =>
     ['experiment', ...scope(project), id] as const,
+  experimentResearch: (project: ProjectTarget, id: string) =>
+    ['experiment-research', ...projectQueryKey(project), id] as const,
   experimentsInventory: (project: ProjectTarget) =>
     ['experiments-inventory', ...projectQueryKey(project)] as const,
 

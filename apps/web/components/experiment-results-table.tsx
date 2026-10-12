@@ -7,7 +7,7 @@
 // `lib/experiment-results/`.
 
 import { Eye } from 'lucide-react'
-import { useMemo, useReducer, useRef } from 'react'
+import { useMemo, useReducer, useRef, useState } from 'react'
 import type { ProjectTarget } from '../lib/api'
 import type { ResultsSummaryPayload } from '../lib/dto/experiments'
 import { buildColumns, distinctValues } from '../lib/experiment-results/columns'
@@ -92,6 +92,11 @@ export function ExperimentResultsTable({
   runIds: string[]
 }) {
   // ── Summary-derived structure (independent of the View) ──────────────────
+  const [includeDeprecated, setIncludeDeprecated] = useState(false)
+  const selectableVariants = useMemo(
+    () => summary.variants.filter((v) => includeDeprecated || !v.deprecated),
+    [summary.variants, includeDeprecated],
+  )
   const baseColumns = useMemo(() => buildColumns(summary), [summary])
   const baseTree = useMemo(
     () => buildColumnTree(baseColumns, summary.groups),
@@ -217,19 +222,26 @@ export function ExperimentResultsTable({
   const hiddenLeafCount = tree.leafOrder.filter((id) => !storedVisible(id)).length
 
   const sotaRanks = useMemo(
-    () => computeSotaRanks(summary.variants, columns, definition.sotaModes),
-    [summary.variants, columns, definition.sotaModes],
+    () =>
+      computeSotaRanks(
+        summary.research && summary.research.selected_version !== summary.research.current_version
+          ? []
+          : summary.variants.filter((v) => !v.deprecated),
+        columns,
+        definition.sotaModes,
+      ),
+    [summary.variants, summary.research, columns, definition.sotaModes],
   )
   const filteredVariants = useMemo(
     () =>
       filterVariants(
-        summary.variants,
+        selectableVariants,
         columns,
         definition.rowFilters,
         definition.rowOverrides,
         showAllRows,
       ),
-    [columns, summary.variants, definition.rowFilters, definition.rowOverrides, showAllRows],
+    [columns, selectableVariants, definition.rowFilters, definition.rowOverrides, showAllRows],
   )
   const sortedVariants = useMemo(
     () =>
@@ -253,6 +265,16 @@ export function ExperimentResultsTable({
 
   return (
     <div className="min-w-0 space-y-3" data-slot="results-table">
+      {summary.variants.some((v) => v.deprecated) && (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-pressed={includeDeprecated}
+          onClick={() => setIncludeDeprecated((v) => !v)}
+        >
+          {includeDeprecated ? 'Hide deprecated Variants' : 'Show deprecated Variants'}
+        </Button>
+      )}
       {invalidCount > 0 && (
         <p
           role="note"

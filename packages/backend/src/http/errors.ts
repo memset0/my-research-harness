@@ -64,6 +64,7 @@ function resourceError(code: string, noun: string): HttpError {
 function mutationError(error: BackendMutationError): HttpError {
   switch (error.code) {
     case 'CONFLICT':
+      if (!error.current) return httpError(409, 'CONFLICT', error.message)
       // Optimistic-lock conflict: the body carries the current document state.
       return {
         status: 409,

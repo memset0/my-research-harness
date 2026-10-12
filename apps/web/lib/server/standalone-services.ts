@@ -233,7 +233,7 @@ function scopeService<T extends object>(config: Config, service: T, kind: string
         }
         if (typeof name !== 'string') throw new Error('Project selector is required')
         const write =
-          (kind === 'mutations' && key !== 'listWarnings') ||
+          (kind === 'mutations' && key !== 'listWarnings' && key !== 'getExperimentResearch') ||
           /^(put|patch|mark|unmark|set|delete)/.test(String(key)) ||
           (kind === 'shares' && ['add', 'revoke'].includes(String(key)))
         const control = kind === 'shares' || /WikiReview$/.test(String(key))
@@ -254,7 +254,17 @@ function scopeService<T extends object>(config: Config, service: T, kind: string
               ),
           }
         }
-        return run(async () => invoke())
+        return run(async () => {
+          const context = getProjectFileContext()
+          if (context && ['getExperimentResults', 'getExperimentResearch'].includes(String(key))) {
+            // Snapshot and lock reads promise fresh inputs, even without a browser reason header.
+            return withProjectFileContext(
+              { ...context, reason: 'manual', observationPolicy: 'revalidate' },
+              async () => invoke(),
+            )
+          }
+          return invoke()
+        })
       }
     },
   })

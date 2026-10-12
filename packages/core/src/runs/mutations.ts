@@ -2,7 +2,7 @@
 // `experiments/mutations.ts` for the filesystem port, lock and error model.
 
 import { dirname, join } from '@memon/file-protocol/paths'
-import { readExperimentDoc } from '../experiments/discover.js'
+import { discoverExperiments, readExperimentDoc } from '../experiments/discover.js'
 import {
   assertDocumentLock,
   conflictError,
@@ -24,7 +24,19 @@ import { serializeExperimentReadme } from '../experiments/serialize.js'
 import { RUN_TIMESTAMP_TAIL_REGEX, SLUG_REGEX } from '../ids.js'
 import { parseReadme } from '../readme/parse.js'
 import { reserializeReadme } from '../readme/serialize.js'
-import { patchExperimentDescription, renameDescriptionRunPath } from '../results/description.js'
+import {
+  parseExperimentDescription,
+  renameDescriptionRunPath,
+  serializeExperimentDescription,
+} from '../results/description.js'
+
+function renameDescription(raw: string, previousPath: string, nextPath: string) {
+  const document = parseExperimentDescription(raw).data
+  if (!document) throw new MutationError('BAD_STATE', 'Invalid experiment.json')
+  const changed = renameDescriptionRunPath(document, previousPath, nextPath)
+  return { changed, content: changed ? serializeExperimentDescription(document) : raw }
+}
+
 import { formatIsoLocal, parseSlugFromRunDir } from '../time.js'
 import type { Status } from '../types.js'
 
@@ -345,6 +357,20 @@ export async function renameRun(input: RenameRunInput): Promise<RenameRunResult>
   const owner = await declaredRunOwner(projectRoot, input.runDir, projectName)
   const oldPath = projectRunPath(projectRoot, input.runDir)
   const newReference = projectRunPath(projectRoot, newDir)
+  // Validate all retained identities before moving the directory. A tombstone
+  // at the destination is an identity collision even when no directory exists.
+  const history = await discoverExperiments(projectRoot, projectName)
+  for (const experiment of history.experiments) {
+    const description = experiment.documents?.description
+    if (description?.raw && description.data?.research) {
+      if (description.data.research.run_versions[newReference] !== undefined)
+        throw new MutationError(
+          'BAD_STATE',
+          'Run rename would overwrite a retained research identity',
+        )
+      renameDescription(description.raw, oldPath, newReference)
+    }
+  }
   const warnings: RenameRunResult['warnings'] = []
   if (owner) {
     const experiment = await readExperimentDoc(projectRoot, projectName, owner)
@@ -420,11 +446,10 @@ export async function renameRun(input: RenameRunInput): Promise<RenameRunResult>
       const description = experiment.documents?.description
       if (
         description?.raw &&
-        description.data?.variants.some((variant) => variant.runs.includes(oldPath))
+        (description.data?.research ||
+          description.data?.variants.some((variant) => variant.runs.includes(oldPath)))
       ) {
-        const patched = patchExperimentDescription(description.raw, (document) => {
-          renameDescriptionRunPath(document, oldPath, newReference)
-        })
+        const patched = renameDescription(description.raw, oldPath, newReference)
         if (patched.changed) {
           changes.push(
             ...(await writeRun(input, description.path, description.raw, patched.content)).changes,
@@ -432,6 +457,19 @@ export async function renameRun(input: RenameRunInput): Promise<RenameRunResult>
         }
       }
     }
+  }
+  // Unlinked Runs can still have immutable attribution tombstones and snapshot
+  // references. Rename those too; membership remains unchanged.
+  const retainedExperiments = await discoverExperiments(projectRoot, projectName)
+  for (const experiment of retainedExperiments.experiments) {
+    if (experiment.id === owner) continue
+    const description = experiment.documents?.description
+    if (!description?.raw || !description.data?.research?.run_versions[oldPath]) continue
+    const patched = renameDescription(description.raw, oldPath, newReference)
+    if (patched.changed)
+      changes.push(
+        ...(await writeRun(input, description.path, description.raw, patched.content)).changes,
+      )
   }
   return {
     oldId,

@@ -119,7 +119,7 @@ Markdown projection for the CLI and Web.
 
 ### Results: `experiment.json`, per-Run `result.csv` and the generated table
 
-FS v9 splits Results by owner. `experiment.json` is the human-authored
+Results are split by owner. `experiment.json` is the human-authored
 description: `experiment_schema_version`, display metadata for path `groups`,
 typed `columns` addressed by result path (`params.optim.lr`,
 `metrics.eval.fid`, `env.CUDA_VERSION`; types `string`, `number`, `boolean`,
@@ -127,7 +127,8 @@ typed `columns` addressed by result path (`params.optim.lr`,
 `variants` declared before launch (declared plan state `PLANNED`, `BLOCKED`,
 `DROPPED` or `INCONCLUSIVE`, planned parameter/env values, provenance and the
 Variant's `runs`, a subset of the README `runs`). It never repeats README
-frontmatter.
+frontmatter. FS10 stores Variants in an ID-keyed object; legacy FS9 arrays
+remain readable and writable until an explicit migration.
 
 Each Run records the values of the whole Run in its own tracked `result.csv`:
 
@@ -154,18 +155,47 @@ command — memon never edits ignore files outside the reviewed migration.
 The Variant table is generated, never authored: `RUNNING`, `COMPLETED` and
 `FAILED` derive from the Run records (an `INTERRUPTED` Run keeps its Variant
 `RUNNING`), evidence is every listed Run that is `FINISHED` and not
-deprecated, and several evidence Runs aggregate into statistics shown as
+deprecated. In FS10 it must also belong to the current research version and
+a nondeprecated Variant. Several evidence Runs aggregate into statistics shown as
 `mean ± std (n)`. The table is cached in `.memon/index/results/<id>.json`
 (never tracked, never edited, regenerated when any input fingerprint changes)
 and read with `memon experiment results table|summary` or the Web Results card.
 `experiment_schema_version` versions one Experiment's recorded values: a member
-`result.csv` recording another version fails that Experiment's table with
+`result.csv` in the current research version recording another schema version
+fails the current table with
 `RESULT_SCHEMA_MISMATCH` (the error lists the files and the
 `memon experiment schema upgrade <id> --to <N>` command, which applies the
 transforms in `schema-upgrades/` with a dry run, backup, atomic rewrite,
 verification and rollback). Projects on FS v8 migrate their `results.yaml`
 files with the reviewed guide `packages/core/migrations/v8-to-v9.md`
 (`scripts/migrate-v8-to-v9.mjs`).
+
+### Research versions and deprecated Variants
+
+A research version marks which executions may support the current conclusion.
+It is independent of `experiment_schema_version`, which describes result formats.
+Advancing saves the closing version's definitions and excludes all its Runs from
+current evidence. Original files, Variant identities and Run associations remain;
+a late completion or relink cannot make an old execution current.
+
+Use `memon experiment version show <id>` to read the ledger and lock tokens.
+`version advance` requires a reason, expected version, mtime and hash. Record a
+new execution at launch with `memon run record <directory> --experiment <id>`
+while it is PENDING or RUNNING. Existing unregistered executions require
+`experiment version import <id> <run> --version <old-version> --reason …`; import cannot
+promote evidence into the current version.
+
+`memon experiment variant deprecate <id> <variant>` withdraws a condition while
+retaining its history; an optional successor points to its replacement. Restore
+also requires a reason and does not revive older generations. The Web Results
+card provides these controls, history selection and deprecated-Variant visibility.
+Historical results use saved definitions; incompatible files remain inspectable
+with diagnostics instead of being interpreted using current plans.
+
+Software updates do not convert projects. Enable these features through the
+reviewed [FS9-to-FS10 migration guide](packages/core/migrations/v9-to-v10.md).
+Conversion initializes version 1 and preserves Run bytes; it does not infer
+scientific validity or recover earlier research boundaries automatically.
 
 ### Per-run `README.md`
 
@@ -174,7 +204,6 @@ files with the reviewed guide `packages/core/migrations/v8-to-v9.md`
 id: foo-260503-082800
 status: FINISHED
 created_at: 2026-05-03T08:28:00+08:00
-experiment: E0001-fsdp-collective   # optional parent reference
 ---
 
 ```

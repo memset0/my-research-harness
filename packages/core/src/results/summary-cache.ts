@@ -114,6 +114,7 @@ export async function readResultsSummaryInputSet(
     descriptionKey,
     legacyResultsYaml: legacy?.isFile() === true,
     keys: [
+      `${experimentDir}/README.md`,
       descriptionKey,
       ...members.flatMap((run) => [`${run}/README.md`, `${run}/${RESULT_FILE_NAME}`]),
     ],
@@ -237,6 +238,7 @@ export function summaryRunRecord(readme: string): SummaryRunRecord {
 }
 
 export interface GenerateStoredSummaryOptions {
+  researchVersion?: number
   fs?: IndexFs
   now?: () => Date
   role?: string
@@ -273,6 +275,7 @@ export async function generateResultsSummaryFromDisk(
   for (const fingerprint of Object.values(inputs))
     if (fingerprint && fingerprint.mtime_ms > newest) newest = fingerprint.mtime_ms
   return generateResultsSummary({
+    researchVersion: options.researchVersion,
     experimentId: set.experimentId,
     experimentDir: set.experimentDir,
     description,
@@ -322,13 +325,13 @@ export async function loadResultsSummary(
     fs,
     ...(options.known ? { known: options.known } : {}),
   })
-  if (!options.refresh) {
+  if (!options.refresh && options.researchVersion === undefined) {
     const stored = await readStoredResultsSummary(projectRoot, experimentId, { fs })
     if (stored && isResultsSummaryFresh(stored, inputs, options.release ?? MEMON_RELEASE))
       return { summary: stored, cache: 'hit', written: false, warnings: [] }
   }
   const summary = await generateResultsSummaryFromDisk(projectRoot, set, inputs, options)
-  if (options.write === false)
+  if (options.write === false || options.researchVersion !== undefined)
     return { summary, cache: 'regenerated', written: false, warnings: [] }
   try {
     await writeResultsSummary(projectRoot, summary, { fs })

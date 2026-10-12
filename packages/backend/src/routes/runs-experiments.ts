@@ -17,6 +17,8 @@ import {
   BackendJournalHistoryResponseSchema,
   BackendJournalResponseSchema,
   BackendMutationResponseSchema,
+  BackendResearchMutationRequestSchema,
+  BackendResearchStateSchema,
   BackendResourceInventoryResponseSchema,
   BackendRunFilesResponseSchema,
   BackendRunResponseSchema,
@@ -404,13 +406,51 @@ export const RUN_EXPERIMENT_ROUTES: readonly BackendRoute[] = [
     id,
   ),
   projectDataRoute(
-    BACKEND_EXPERIMENT_RESULTS_ROUTE,
+    `${BACKEND_EXPERIMENT_ROUTE}/research`,
     projectQuery(),
     {
+      GET: projectRead(async ({ options, project, params }) =>
+        BackendResearchStateSchema.parse(
+          await options.mutationService!.getExperimentResearch(project, params.id!),
+        ),
+      ),
+      POST: op(mutating, {
+        project: 'query',
+        available: mutationAvailable,
+        failure: httpError(400, 'BAD_REQUEST', 'Invalid research operation'),
+        async handle({ request, response, options, project, params }) {
+          const input = BackendResearchMutationRequestSchema.parse(
+            await readBoundedJsonRequest(request, MAX_BACKEND_CONTROL_JSON_BYTES),
+          )
+          const result = await options.mutationService!.mutateExperimentResearch(
+            project,
+            params.id!,
+            input,
+          )
+          writeJson(response, 200, result)
+          options.eventStream.publish({
+            project,
+            topic: 'experiment-change',
+            data: { type: 'set', id: params.id! },
+          })
+          publishJournalChange(options.eventStream, project)
+        },
+      }),
+    },
+    id,
+  ),
+  projectDataRoute(
+    BACKEND_EXPERIMENT_RESULTS_ROUTE,
+    projectQuery({ version: optional(matches(/^[1-9][0-9]*$/)) }),
+    {
       GET: projectRead(
-        async ({ options, project, params }) =>
+        async ({ options, project, params, search }) =>
           BackendExperimentResultsResponseSchema.parse(
-            await options.projectService!.getExperimentResults(project, params.id!),
+            await options.projectService!.getExperimentResults(
+              project,
+              params.id!,
+              search.has('version') ? Number(search.get('version')) : undefined,
+            ),
           ),
         never,
         MAX_BACKEND_EXPERIMENT_DOCUMENT_JSON_BYTES,

@@ -57,6 +57,7 @@ export function ResultRow({
             rowOverride === 'include' && 'bg-emerald-50/50 dark:bg-emerald-950/15',
             rowOverride === 'exclude' && 'bg-red-50/50 dark:bg-red-950/15',
           )}
+          id={`variant-${variant.id}`}
           data-variant-id={variant.id}
           data-row-override={rowOverride}
         >

@@ -214,3 +214,37 @@ describe('ExperimentResultsCard', () => {
     )
   })
 })
+
+it('keeps history reachable when the current result schema fails', async () => {
+  const research = {
+    current_version: 2,
+    selected_version: 2,
+    versions: [
+      { version: 1, started_at: '2026-10-01T09:00:00+08:00', reason: 'Initial' },
+      { version: 2, started_at: '2026-10-02T09:00:00+08:00', reason: 'Corrected' },
+    ],
+    run_versions: {},
+  }
+  vi.mocked(fetchExperimentResults).mockResolvedValue({
+    ok: true,
+    summary: { ...OK, research: { ...research, selected_version: 1 } },
+    updatedAt: null,
+  })
+  renderWithHeartbeat(
+    <ExperimentResultsCard
+      section={SECTION}
+      results={results(failedSummary('RESULT_SCHEMA_MISMATCH'))}
+      research={research}
+      updatedAt={null}
+      project="research"
+      experimentId={EXPERIMENT}
+      runIds={[]}
+    />,
+  )
+  await userEvent.click(screen.getByRole('combobox', { name: 'Research version' }))
+  await userEvent.click(screen.getByRole('option', { name: 'History v1' }))
+  await waitFor(() =>
+    expect(fetchExperimentResults).toHaveBeenCalledWith('research', EXPERIMENT, 1),
+  )
+  await waitFor(() => expect(screen.getByText('V0001')).toBeInTheDocument())
+})

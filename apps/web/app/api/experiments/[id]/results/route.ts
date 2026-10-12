@@ -25,10 +25,20 @@ async function scopedGET(request: NextRequest, { params }: { params: Promise<{ i
       { status: 400 },
     )
   }
+  const version = new URL(request.url).searchParams.get('version')
+  if (version !== null && !/^[1-9][0-9]*$/.test(version))
+    return NextResponse.json(
+      { error: { code: 'BAD_REQUEST', message: 'Invalid research version' } },
+      { status: 400 },
+    )
   try {
     return NextResponse.json(
       BackendExperimentResultsResponseSchema.parse(
-        await standaloneServices(runtime.config).projects.getExperimentResults(project.data, id),
+        await standaloneServices(runtime.config).projects.getExperimentResults(
+          project.data,
+          id,
+          version === null ? undefined : Number(version),
+        ),
       ) satisfies ExperimentResultsSnapshot,
     )
   } catch (error) {

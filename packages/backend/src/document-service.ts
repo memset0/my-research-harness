@@ -38,12 +38,15 @@ import {
   markJournalInvocationOutcome,
   type ProjectConfig,
   parseCodeReview,
+  parseExperimentDescription,
+  parseExperimentReadme,
   parseWikiFrontmatter,
   publishMutationEvent,
   ResourceIdSchema,
   type Run,
   readWikiReviewMarks,
   removeWikiReviewMark,
+  researchDescriptionProblem,
   serializeWikiPage,
   toggleCommitReviewed,
   toggleTodoDone,
@@ -65,7 +68,7 @@ import {
   writeFileAtomic,
   writeWikiReviewMark,
 } from '@memon/core'
-import { join, relative, resolve, sep } from '@memon/file-protocol/paths'
+import { dirname, join, relative, resolve, sep } from '@memon/file-protocol/paths'
 import { PathContainmentError, resolveContained } from './containment.js'
 import {
   BackendExecutionError,
@@ -785,6 +788,31 @@ export class FilesystemDocumentService implements BackendDocumentService {
         currentMtime: current.mtime,
         currentHash: current.hash,
       })
+    }
+    if (/^docs\/experiments\/E[0-9]{4}-[^/]+\/README\.md$/.test(entry.resource)) {
+      const descriptionPath = join(dirname(entry.absolutePath), 'experiment.json')
+      const contained = await resolveContained(project.root, descriptionPath, {
+        allowMissing: true,
+      })
+      const raw = contained ? await missingOrThrow(fs.readFile(contained, 'utf8')) : null
+      if (raw !== null && raw !== undefined) {
+        const parsed = parseExperimentDescription(raw)
+        let researchShape = /"research"\s*:/.test(raw)
+        try {
+          const shape = JSON.parse(raw) as { variants?: unknown }
+          researchShape ||= shape.variants !== undefined && !Array.isArray(shape.variants)
+        } catch {
+          /* Existing malformed legacy JSON remains repairable through legacy README writes. */
+        }
+        if (!parsed.data && researchShape)
+          throw new BackendDocumentServiceError(
+            'INVALID_RESOURCE',
+            'Invalid research description; repair it before changing membership',
+          )
+        const members = parseExperimentReadme(input.content, entry.id).frontMatter.runs
+        const problem = parsed.data ? researchDescriptionProblem(parsed.data, members) : null
+        if (problem) throw new BackendDocumentServiceError('INVALID_RESOURCE', problem)
+      }
     }
     const original = await fs.stat(entry.absolutePath)
     await writeFileAtomic(entry.absolutePath, input.content, { mode: original.mode })

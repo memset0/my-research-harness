@@ -26,6 +26,7 @@ import {
   projectQueryKey,
   projectWebPath,
 } from '../lib/api'
+import type { ExperimentDocDetail } from '../lib/dto/experiments'
 import { queryKeys } from '../lib/query-keys'
 import { translationSources } from '../lib/translation/sources'
 import { cn } from '../lib/utils'
@@ -193,6 +194,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
                 key={`${section.index}:${section.heading}:${section.occurrence}`}
                 section={section}
                 results={exp.documents.results}
+                research={exp.research}
                 updatedAt={exp.resultsUpdatedAt ?? null}
                 project={project}
                 experimentId={exp.id}
@@ -231,6 +233,7 @@ export function ExperimentPage({ project, experimentId, initialOpenRun }: Props)
           initialOpenRun={initialOpenRun}
           runIds={exp.frontMatter.runs}
           deprecatedRuns={exp.deprecatedRuns}
+          research={exp.research}
         />
       </div>
     </DocumentArtifactLinkProvider>
@@ -361,6 +364,7 @@ function RunsCard({
   initialOpenRun,
   runIds,
   deprecatedRuns,
+  research,
 }: {
   project: ProjectTarget
   experimentId: string
@@ -368,12 +372,21 @@ function RunsCard({
   /** Roster exactly as declared by the Experiment's `runs` frontmatter. */
   runIds: string[]
   deprecatedRuns: string[]
+  research?: ExperimentDocDetail['research']
 }) {
   const [includeDeprecated, setIncludeDeprecated] = useState(false)
+  const [includeHistory, setIncludeHistory] = useState(false)
+  const historical = new Set(
+    Object.entries(research?.run_versions ?? {})
+      .filter(([, v]) => v !== research?.current_version)
+      .map(([r]) => r),
+  )
   const excluded = useMemo(() => new Set(deprecatedRuns), [deprecatedRuns])
-  const visibleRunIds = includeDeprecated
-    ? runIds
-    : runIds.filter((id) => !excluded.has(id) || id === initialOpenRun)
+  const visibleRunIds = runIds.filter(
+    (id) =>
+      id === initialOpenRun ||
+      ((includeDeprecated || !excluded.has(id)) && (includeHistory || !historical.has(id))),
+  )
   return (
     <Card data-section-heading="Runs">
       <CardHeader className="flex-row items-center justify-between">
@@ -383,6 +396,16 @@ function RunsCard({
             ({visibleRunIds.length})
           </span>
         </CardTitle>
+        {historical.size > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={includeHistory}
+            onClick={() => setIncludeHistory((v) => !v)}
+          >
+            {includeHistory ? 'Hide historical Runs' : `Show historical Runs (${historical.size})`}
+          </Button>
+        )}
         {excluded.size > 0 && (
           <Button
             variant="outline"
@@ -396,17 +419,27 @@ function RunsCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {visibleRunIds.map((runId) => (
-          <RunPanel
-            key={runId}
-            project={project}
-            experimentId={experimentId}
-            runId={runId}
-            initialOpenRun={initialOpenRun}
-          />
+          <div key={runId}>
+            {historical.has(runId) && (
+              <Badge variant="outline">
+                Historical research v{research?.run_versions[runId]} — excluded from current
+                evidence
+              </Badge>
+            )}
+            <RunPanel
+              key={runId}
+              project={project}
+              experimentId={experimentId}
+              runId={runId}
+              initialOpenRun={initialOpenRun}
+            />
+          </div>
         ))}
         {visibleRunIds.length === 0 && (
           <div className="text-xs text-muted-foreground">
-            {runIds.length === 0 ? '(no runs bound yet)' : '(all bound runs are deprecated)'}
+            {runIds.length === 0
+              ? '(no runs bound yet)'
+              : '(no current visible runs; use history or deprecated controls)'}
           </div>
         )}
       </CardContent>

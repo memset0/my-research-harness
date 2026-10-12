@@ -145,6 +145,7 @@ export interface ExperimentManagedDocumentsPayload {
 export interface ExperimentDocDetail extends ExperimentDocSummary {
   /** Read-time visibility metadata; the declared frontmatter roster stays intact. */
   deprecatedRuns: string[]
+  research?: ResultsSummaryPayload['research']
   rawSections: ExperimentRawSection[]
   documents: ExperimentManagedDocumentsPayload | null
   documentSections: ExperimentDisplaySection[]

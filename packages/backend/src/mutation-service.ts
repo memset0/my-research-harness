@@ -10,6 +10,9 @@
 // cache invalidation are unchanged.
 
 import {
+  advanceExperimentResearchVersion,
+  type BackendResearchMutationRequest,
+  BackendResearchStateSchema,
   createExperiment,
   declaredRunOwner,
   deleteExperiment,
@@ -17,6 +20,7 @@ import {
   projectFs as fs,
   type IndexRole,
   type IndexSink,
+  importExperimentResearchRun,
   type JournalInvocationContext,
   type JournalInvocationDetail,
   JournalRecordingError,
@@ -25,25 +29,31 @@ import {
   type MutationFs,
   mutateDocumentWarning,
   type ProjectConfig,
+  parseExperimentDescription,
   parseExperimentReadme,
   parseReadme,
   ResourceIdSchema,
   type Run,
+  readDocumentState,
   readExperimentDoc,
   readRunDir,
   resolveRunReference,
   setExperimentArchived,
   setExperimentStatus,
+  setExperimentVariantDeprecation,
   setRunArchiveState,
   setRunStatus,
   sha1,
   unlinkExperimentRun,
+  withFileWriterLock,
   withJournalInvocation,
   writeExperimentReadme,
   writeRunReadme,
 } from '@memon/core'
 import { isFileAccessError } from '@memon/file-protocol'
-import { join, relative, sep } from '@memon/file-protocol/paths'
+import { dirname, join, relative, sep } from '@memon/file-protocol/paths'
+
+import { resolveContained } from './containment.js'
 
 /** `projectFs` is an `fs/promises`-compatible facade; it satisfies the port. */
 const port = fs as unknown as MutationFs
@@ -105,6 +115,15 @@ export interface ReadmeMutationResult {
   activityRecorded: boolean
 }
 export interface BackendMutationService {
+  getExperimentResearch(
+    project: string,
+    id: string,
+  ): Promise<ReturnType<typeof BackendResearchStateSchema.parse>>
+  mutateExperimentResearch(
+    project: string,
+    id: string,
+    input: BackendResearchMutationRequest,
+  ): Promise<unknown>
   setRunStatus(project: string, id: string, input: StatusMutationInput): Promise<MutationResult>
   setRunArchived(project: string, id: string, input: ArchiveMutationInput): Promise<MutationResult>
   setExperimentStatus(
@@ -364,6 +383,97 @@ export class FilesystemMutationService implements BackendMutationService {
           archived: input.archived,
         } satisfies MutationResult
       },
+    )
+  }
+  async getExperimentResearch(projectName: string, id: string) {
+    const project = this.project(projectName)
+    const experiment = await this.experiment(project, projectName, id)
+    const path = await resolveContained(
+      project.root,
+      join(dirname(experiment.path), 'experiment.json'),
+    )
+    const state = await readDocumentState(port, path)
+    const description = parseExperimentDescription(state.content).data
+    if (!description) throw new BackendMutationError('BAD_STATE', 'Invalid experiment.json')
+    const r = description.research
+    return BackendResearchStateSchema.parse({
+      mtime: state.mtime,
+      hash: state.hash,
+      research: r
+        ? {
+            current_version: r.current_version,
+            selected_version: r.current_version,
+            versions: r.versions.map((v) => ({
+              version: v.version,
+              started_at: v.started_at,
+              reason: v.reason,
+              ...(v.closed_at ? { closed_at: v.closed_at } : {}),
+              ...(v.superseded_reason ? { superseded_reason: v.superseded_reason } : {}),
+            })),
+            run_versions: r.run_versions,
+          }
+        : null,
+    })
+  }
+  async mutateExperimentResearch(
+    projectName: string,
+    id: string,
+    input: BackendResearchMutationRequest,
+  ) {
+    const project = this.project(projectName)
+    if (project.readOnly) throw new BackendMutationError('FORBIDDEN', 'Project is read-only')
+    return this.record(
+      project,
+      `experiment research ${input.action}`,
+      { experiment: id, action: input.action },
+      async (ctx) =>
+        withFileWriterLock(project.root, async () => {
+          const experiment = await this.experiment(project, projectName, id)
+          const readmePath = await resolveContained(project.root, experiment.path)
+          const path = await resolveContained(
+            project.root,
+            join(dirname(readmePath), 'experiment.json'),
+          )
+          const before = await readDocumentState(port, path)
+          const target = { projectRoot: project.root, readmePath, experimentId: id }
+          const run =
+            input.action === 'import' ? await this.run(project, projectName, input.run) : null
+          if (run?.frontMatter.experiment && run.frontMatter.experiment !== id)
+            throw new BackendMutationError('BAD_STATE', 'Run belongs to another Experiment')
+          if (run) await resolveContained(project.root, join(run.path, 'README.md'))
+          const result =
+            input.action === 'advance'
+              ? await advanceExperimentResearchVersion(port, target, input)
+              : input.action === 'import'
+                ? await importExperimentResearchRun(port, target, {
+                    ...input,
+                    run: portableResource(project.root, run!.path),
+                  })
+                : await setExperimentVariantDeprecation(port, target, {
+                    ...input,
+                    deprecated: input.action === 'deprecate',
+                  })
+          ctx.addDetail({ kind: 'target', type: 'experiment', id })
+          this.settle(project, ctx, [{ path, before: before.content, after: result.content }])
+          if (run) {
+            const linked = await linkExperimentRun({
+              fs: port,
+              index: this.index(project),
+              now: this.now,
+              projectRoot: project.root,
+              experiment,
+              run,
+            })
+            this.settle(project, ctx, linked.changes)
+            ctx.addDetail({ kind: 'target', type: 'run', id: run.id })
+          }
+          return {
+            ok: true,
+            mtime: result.mtime,
+            hash: result.hash,
+            currentVersion: result.currentVersion,
+          }
+        }),
     )
   }
   async setExperimentStatus(projectName: string, id: string, input: StatusMutationInput) {

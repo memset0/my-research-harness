@@ -157,7 +157,7 @@ export interface BackendProjectReadService {
   getRun(project: string, id: string): Promise<unknown>
   listExperiments(project: string, options?: InventoryListOptions): Promise<unknown>
   getExperiment(project: string, id: string): Promise<unknown>
-  getExperimentResults(project: string, id: string): Promise<unknown>
+  getExperimentResults(project: string, id: string, researchVersion?: number): Promise<unknown>
   getRunFiles(project: string, id: string, depth: number): Promise<unknown>
   getHypotheses(project: string): Promise<unknown>
   getJournal(project: string): Promise<unknown>
@@ -562,11 +562,27 @@ export class FilesystemProjectService implements BackendProjectReadService {
         ...(results ? { summary: results.summary } : {}),
       }),
     )
+    const ledger = experiment.documents?.description?.data?.research
+    const research = ledger
+      ? {
+          current_version: ledger.current_version,
+          selected_version: ledger.current_version,
+          versions: ledger.versions.map((v) => ({
+            version: v.version,
+            started_at: v.started_at,
+            reason: v.reason,
+            ...(v.closed_at ? { closed_at: v.closed_at } : {}),
+            ...(v.superseded_reason ? { superseded_reason: v.superseded_reason } : {}),
+          })),
+          run_versions: ledger.run_versions,
+        }
+      : undefined
     const body = truncateDisplayText(experiment.body, BACKEND_EXPERIMENT_BODY_MAX, 'README.md')
     return BackendExperimentResponseSchema.parse({
       ...safeExperimentSummary(experiment, project),
       body: body.text,
       deprecatedRuns,
+      ...(research ? { research } : {}),
       warningsRaw: experiment.warningsRaw,
       rawSections: (experiment.rawSections ?? []).map((section) => ({
         ...section,
@@ -602,11 +618,12 @@ export class FilesystemProjectService implements BackendProjectReadService {
    * `RESULT_SCHEMA_MISMATCH` / `RESULT_DUPLICATE_ROW`; a leftover
    * `results.yaml` is never read.
    */
-  async getExperimentResults(projectName: string, id: string) {
+  async getExperimentResults(projectName: string, id: string, researchVersion?: number) {
     const project = await this.preparedProject(projectName)
     const experiment = await this.readExperimentDocument(project, id)
     const { summary, warnings } = await experimentResultsSummary(project, experiment, {
       memberWindow: 0,
+      researchVersion,
       role: this.role,
     })
     const updatedAt = summaryUpdatedAt(summary)

@@ -5,6 +5,15 @@ description: Apply targeted, concurrency-safe updates to an Experiment README, i
 
 # memon-write-experiment-doc
 
+For FS10, preserve the ID-keyed Variant registry and the protected research
+ledger. Use `experiment version show/advance/import` and `experiment variant
+deprecate/restore` for research decisions; obtain fresh mtime/hash tokens and
+give the user's reason. Keep historical associations even when current planned
+values change. Mainline evidence and conclusions stay together; detailed
+independent topics may live in `details/`. Prefer updating a question's existing
+record to adding a bullet for every Run; completed operational chatter need not
+be archived.
+
 The shared writing workflow, not a required new agent. Follow `../PREFLIGHT.md`
 and read the relevant part of [the bundle reference](references/experiment-bundle.md).
 Use the caller's intent and verified evidence; decide no research direction,

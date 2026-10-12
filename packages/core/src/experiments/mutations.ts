@@ -29,9 +29,12 @@ import {
 import {
   EXPERIMENT_DESCRIPTION_FILE,
   emptyExperimentDescription,
+  parseExperimentDescription,
+  researchDescriptionProblem,
   SCHEMA_UPGRADES_DIRECTORY,
   serializeExperimentDescription,
 } from '../results/description.js'
+import { initializeExperimentResearch } from '../results/research.js'
 import { formatIsoLocal } from '../time.js'
 import type { ExperimentStatus, Run } from '../types.js'
 import { EXPERIMENT_DIR_REGEX, EXPERIMENT_FILENAME_REGEX } from '../types.js'
@@ -363,6 +366,7 @@ export const CANONICAL_EXPERIMENT_BUNDLE_FILES: readonly string[] = [
 const DELETABLE_BUNDLE_DIRECTORIES: readonly string[] = [SCHEMA_UPGRADES_DIRECTORY]
 
 export interface ExperimentBundleInput {
+  researchVersioned?: boolean
   id: string
   slug: string
   title?: string
@@ -397,7 +401,7 @@ export interface ExperimentBundle {
  */
 export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentBundle {
   const imported = input.importedRun ?? null
-  const description = emptyExperimentDescription()
+  let description = emptyExperimentDescription()
   if (imported) {
     description.variants.push({
       id: 'V0001',
@@ -407,6 +411,14 @@ export function buildExperimentBundle(input: ExperimentBundleInput): ExperimentB
       ...(imported.entry ? { provenance: { entry: imported.entry } } : {}),
       runs: [imported.path],
     })
+  }
+  if (input.researchVersioned) {
+    description = initializeExperimentResearch(
+      description,
+      imported ? [imported.path] : [],
+      input.timestamp,
+      'Experiment created',
+    )
   }
   const readme = serializeExperimentReadme({
     frontMatter: {
@@ -523,6 +535,15 @@ export async function createExperiment(
     }
   }
   const runPath = run ? projectRunPath(projectRoot, run.path) : null
+  let researchVersioned = false
+  try {
+    const marker = JSON.parse(
+      await fs.readFile(join(projectRoot, '.memon', 'version.json'), 'utf8'),
+    )
+    researchVersioned = marker.fs_convention_version === 10
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
 
   const experimentsDirectory = join(projectRoot, EXPERIMENTS_SUBDIR)
   await fs.mkdir(experimentsDirectory, { recursive: true })
@@ -560,6 +581,7 @@ export async function createExperiment(
 
     const stamp = timestamp(input)
     const bundle = buildExperimentBundle({
+      researchVersioned,
       id,
       slug,
       ...(input.title === undefined ? {} : { title: input.title }),
@@ -655,6 +677,11 @@ async function bindRun(
   }
   const parsed = parseExperimentReadme(state.content, experiment.id)
   const runPath = projectRunPath(input.projectRoot, run.path)
+  await assertResearchMembers(
+    fs,
+    experiment,
+    operation === 'link' ? [...parsed.frontMatter.runs, runPath] : parsed.frontMatter.runs,
+  )
   const warnings: ExperimentRunBindResult['warnings'] = []
   if (operation === 'link') {
     if (!run.id.startsWith(`${parsed.frontMatter.slug}-`)) {
@@ -699,6 +726,43 @@ export function unlinkExperimentRun(input: ExperimentRunBindInput) {
 }
 
 // ---------- status / archive ----------
+
+/** Membership never assigns a research generation; enrollment must precede it. */
+export async function assertResearchMembers(
+  fs: MutationFs,
+  experiment: ExperimentTarget,
+  members: readonly string[],
+): Promise<void> {
+  let raw: string
+  try {
+    raw = await fs.readFile(join(dirname(experiment.path), EXPERIMENT_DESCRIPTION_FILE), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  const parsed = parseExperimentDescription(raw)
+  if (!parsed.data) {
+    // Legacy README edits did not depend on the Results parser. Preserve that
+    // behavior, while malformed research-aware files must fail closed.
+    let researchAware = /"research"\s*:/.test(raw)
+    try {
+      const source = JSON.parse(raw)
+      researchAware ||= source.variants !== undefined && !Array.isArray(source.variants)
+    } catch {}
+    if (researchAware)
+      throw new MutationError(
+        'BAD_STATE',
+        'Invalid experiment.json; cannot safely change research membership',
+      )
+    return
+  }
+  const problem = researchDescriptionProblem(parsed.data, members)
+  if (problem)
+    throw new MutationError(
+      'BAD_STATE',
+      `${problem}; use explicit historical import for an existing Run, or record a new execution with --experiment`,
+    )
+}
 
 export interface ExperimentStatusInput extends MutationBase {
   experiment: ExperimentTarget
@@ -832,6 +896,7 @@ export async function writeExperimentReadme(
   assertDocumentLock(state, input.lock)
   const previous = parseExperimentReadme(state.content, experiment.id)
   const next = parseExperimentReadme(input.content, experiment.id)
+  await assertResearchMembers(fs, experiment, next.frontMatter.runs)
   next.frontMatter.updatedAt = timestamp(input)
   const written = await writeDocument(
     fs,

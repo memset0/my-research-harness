@@ -232,6 +232,34 @@ column to give it a label, type, unit, direction, options or display; lint
 reports only conflicts. Edit annotations directly, or use
 `memon experiment results annotation set` for one isolated upsert.
 
+In FS10, `variants` is an object keyed by stable ID, not the legacy array shown
+above. Do not repeat `id` inside each value. `research.current_version`,
+`research.versions` (closed definition snapshots) and `research.run_versions`
+(immutable path attribution, including unlink tombstones) are managed by the
+dedicated commands. Ordinary definition edits must preserve this ledger.
+
+```sh
+memon --project-root . experiment version show E0001-example
+memon --project-root . experiment version advance E0001-example \
+  --expected-version 1 --expected-mtime "$MTIME" --expected-hash "$HASH" \
+  --reason "The comparison protocol was invalid"
+memon --project-root . experiment variant deprecate E0001-example V0001 \
+  --expected-mtime "$MTIME" --expected-hash "$HASH" --reason "Condition withdrawn"
+```
+
+Read new lock tokens after every mutation. `variant restore` also requires a
+reason; optional `--successor` on deprecation names another existing Variant,
+never a cycle. `version import <experiment> <run> --version N` uses the same
+lock/reason flags and can enroll only a historical generation. New execution
+registration belongs to `run record --experiment`, before completion.
+Advance preserves IDs/associations but removes current frozen fallback; it
+never rewrites Run bytes or changes `experiment_schema_version`. Historical
+planned-value mismatches are interpreted against their snapshot. Current
+eligibility requires current research attribution and nondeprecated Variant
+and Run, in addition to FINISHED status. Effective state also considers only
+the selected research generation. Schema upgrades transform the current
+generation only in FS10; legacy FS9 retains all-member behavior.
+
 **`variants`** are declared before any Run is launched for them; a Variant may
 list no Run. Fields: `id` (`V<NNNN>`, unique, never recycled), `name`, optional
 `description`, optional declared `status`, `values`, `provenance`, `runs`, and

@@ -230,13 +230,39 @@ export async function writeRunResult(input: WriteRunResultInput): Promise<WriteR
       },
     )
   }
-  const description = parseExperimentDescription(descriptionRaw).data
+  let description = parseExperimentDescription(descriptionRaw).data
   if (!description)
     throw new MutationError(
       'BAD_STATE',
       `docs/experiments/${owner}/${EXPERIMENT_DESCRIPTION_FILE} is invalid; fix it (memon experiment doc lint ${owner}) before recording results`,
       { reason: 'INVALID_RESULTS', details: { experiment: owner } },
     )
+  if (description.research) {
+    const researchVersion = description.research.run_versions[runPath]
+    if (researchVersion === undefined)
+      throw new MutationError(
+        'BAD_STATE',
+        'Run requires research-version attribution before recording results',
+      )
+    if (researchVersion !== description.research.current_version) {
+      const snapshot = description.research.versions.find(
+        (item) => item.version === researchVersion,
+      )?.snapshot
+      const historical =
+        snapshot &&
+        parseExperimentDescription(
+          JSON.stringify({
+            ...snapshot,
+            variants: Object.entries(snapshot.variants as Record<string, object>).map(
+              ([id, value]) => ({ ...value, id }),
+            ),
+          }),
+        ).data
+      if (!historical)
+        throw new MutationError('BAD_STATE', 'Historical result schema is unavailable')
+      description = historical
+    }
+  }
   const version = description.experimentSchemaVersion
   const rows = validatedRows(
     input.set ?? [],

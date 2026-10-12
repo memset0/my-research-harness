@@ -908,8 +908,10 @@ export async function deleteExperimentDoc(
 export async function fetchExperimentResults(
   project: ProjectTarget,
   id: string,
+  version?: number,
 ): Promise<ResultsSnapshotOutcome> {
-  const url = projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/results`, project)
+  const baseUrl = projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/results`, project)
+  const url = version === undefined ? baseUrl : `${baseUrl}&version=${version}`
   let response: Response
   try {
     response = await withResourceReason('manual', () => {
@@ -1203,4 +1205,43 @@ export async function runComponents(
       ...(input.ids ? { ids: input.ids } : {}),
     }),
   })
+}
+
+export async function fetchExperimentResearch(
+  project: ProjectTarget,
+  id: string,
+): Promise<{
+  mtime: number
+  hash: string
+  research: NonNullable<import('./dto/experiments').ResultsSummaryPayload['research']> | null
+}> {
+  const response = await fetch(
+    projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/research`, project),
+    { cache: 'no-store' },
+  )
+  const body = await response.json()
+  if (!response.ok) throw new Error(body.error?.message ?? 'Could not read research version')
+  return body
+}
+export async function mutateExperimentResearch(
+  project: ProjectTarget,
+  id: string,
+  input: import('@memon/core').BackendResearchMutationRequest,
+): Promise<void> {
+  const response = await fetch(
+    projectQueryUrl(`/api/experiments/${encodeURIComponent(id)}/research`, project),
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+  if (!response.ok) {
+    const body = await response.json()
+    throw new Error(
+      response.status === 409
+        ? 'Conflict: refresh before retrying. Nothing was overwritten.'
+        : (body.error?.message ?? 'Research operation failed'),
+    )
+  }
 }

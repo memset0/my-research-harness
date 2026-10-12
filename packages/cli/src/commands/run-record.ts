@@ -17,21 +17,27 @@
 // overwrite. Editing an existing record stays `memon run readme write`, which
 // carries its own mtime/hash lock.
 //
-// Binding stays with `memon experiment link`, which writes both sides: a
-// `run record --experiment` flag would leave the Run pointing at an Experiment
-// whose roster does not list it, which is precisely the inconsistency the
-// membership rules exist to catch.
+// With --experiment, enrollment precedes creation and Experiment membership.
+// Run READMEs never store ownership. Legacy standalone recording still works.
 
 import { promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
+  enrollCreatedResearchRun,
   formatIsoLocal,
+  linkExperimentRun,
   nestedRunAncestor,
+  nodeMutationFs,
+  parseExperimentDescription,
   parseTimestampFromRunDir,
   publishMutationEvent,
   RUN_DIR_REGEX,
   type RunFrontMatter,
   RunTargetIndex,
+  readDocumentState,
+  readExperimentDoc,
+  resolveExperimentId,
+  resolveRunTarget,
   type Status,
   serializeMinimalRun,
 } from '@memon/core'
@@ -39,6 +45,8 @@ import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { runWalkOptions } from '../lib/discovery-options.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { withCliWriterLock } from '../lib/invocation.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 
 /** Discovery entry directories a Run record must live under to be visible. */
@@ -71,12 +79,26 @@ export interface RunRecordInput {
   wandb?: string
   /** Optional free-form body, read from stdin by the caller. */
   body?: string
+  experiment?: string
 }
 
 export async function runRunRecord(input: RunRecordInput): Promise<void> {
   const context = await resolveContext(input)
-  const projectRoot = singleProjectRoot(context)
-  const runDir = await resolveRunDir(projectRoot, input.target)
+  const projectRoot = await fs.realpath(singleProjectRoot(context))
+  return withCliWriterLock(projectRoot, () =>
+    recordLocked(input, projectRoot, context.config.projects[0]!.name),
+  )
+}
+
+async function recordLocked(
+  input: RunRecordInput,
+  projectRoot: string,
+  projectName: string,
+): Promise<void> {
+  const runDir = await fs.realpath(await resolveRunDir(projectRoot, input.target))
+  const contained = relative(projectRoot, runDir)
+  if (!contained || contained.startsWith('..') || isAbsolute(contained))
+    emitErrorAndExit('BAD_REQUEST', 'Run resolves outside the project root')
   const id = basename(runDir)
 
   if (!RUN_DIR_REGEX.test(id)) {
@@ -136,7 +158,7 @@ export async function runRunRecord(input: RunRecordInput): Promise<void> {
     hypotheses: [],
     tags: [],
     status: status as Status,
-    // Unbound until `memon experiment link` writes both sides.
+    // Ownership stays exclusively in Experiment declarations.
     experiment: null,
     createdAt,
     updatedAt: createdAt,
@@ -153,6 +175,36 @@ export async function runRunRecord(input: RunRecordInput): Promise<void> {
 
   const readmePath = join(runDir, 'README.md')
   const content = serializeMinimalRun({ frontMatter, body: input.body })
+  let experiment: { id: string; path: string } | undefined
+  if (input.experiment) {
+    const expId = await resolveExperimentId(projectRoot, input.experiment)
+    if (!expId) emitErrorAndExit('NOT_FOUND', `Experiment ${input.experiment} not found`)
+    const exp = await readExperimentDoc(projectRoot, projectName, expId)
+    if (!exp) emitErrorAndExit('NOT_FOUND', `Experiment ${expId} not found`)
+    experiment = { id: expId, path: exp.path }
+    const state = await readDocumentState(nodeMutationFs, join(exp.path, '..', 'experiment.json'))
+    const description = parseExperimentDescription(state.content).data
+    if (!description) emitErrorAndExit('BAD_STATE', 'Invalid experiment.json')
+    if (description.research) {
+      if (status !== 'PENDING' && status !== 'RUNNING')
+        emitErrorAndExit(
+          'BAD_REQUEST',
+          'Current research enrollment happens at launch (PENDING/RUNNING); record historical executions without --experiment, then use version import',
+        )
+      await cliMutation(() =>
+        enrollCreatedResearchRun(
+          nodeMutationFs,
+          { projectRoot, experimentId: expId, readmePath: exp.path },
+          {
+            run: relativeDir.split(sep).join('/'),
+            expectedVersion: description.research!.current_version,
+            expectedMtime: state.mtime,
+            expectedHash: state.hash,
+          },
+        ),
+      )
+    }
+  }
   try {
     // Exclusive create: never clobber a record that already exists.
     await fs.writeFile(readmePath, content, { encoding: 'utf8', flag: 'wx' })
@@ -167,6 +219,27 @@ export async function runRunRecord(input: RunRecordInput): Promise<void> {
     throw err
   }
   const stat = await fs.stat(readmePath)
+  if (experiment) {
+    const run = await resolveRunTarget(
+      projectRoot,
+      relativeDir.split(sep).join('/'),
+      runWalkOptions(),
+    )
+    if (!run)
+      emitErrorAndExit(
+        'BAD_STATE',
+        'Recorded Run could not be resolved; attribution is retained for recovery',
+      )
+    await cliMutation(() =>
+      linkExperimentRun({
+        fs: nodeMutationFs,
+        index: cliIndexSink(projectRoot),
+        projectRoot,
+        experiment: experiment!,
+        run,
+      }),
+    )
+  }
   // The derived index learns about the new Run through the shared sink,
   // exactly like every other CLI write (best-effort; never fails the record).
   const indexWarnings = await publishMutationEvent(cliIndexSink(projectRoot), 'run.record', [

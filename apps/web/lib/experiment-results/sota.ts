@@ -39,6 +39,7 @@ export function computeSotaRanks(
 
     const entries: Array<{ variantId: string; value: number }> = []
     for (const variant of variants) {
+      if (variant.deprecated) continue
       const raw = column.getValue(variant)
       if (typeof raw === 'number' && Number.isFinite(raw)) {
         entries.push({ variantId: variant.id, value: raw })

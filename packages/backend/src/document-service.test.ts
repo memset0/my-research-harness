@@ -248,3 +248,42 @@ describe('FilesystemDocumentService', () => {
     } satisfies Partial<BackendDocumentServiceError>)
   })
 })
+
+it('rejects generic README enrollment without FS10 attribution and preserves legacy writes', async () => {
+  const resource = 'docs/experiments/E0001-research/README.md'
+  const directory = join(root, 'docs/experiments/E0001-research')
+  await fs.mkdir(directory, { recursive: true })
+  const body =
+    '---\nid: E0001-research\nslug: research\ntitle: Research\nstatus: OPEN\nruns: []\n---\n'
+  await fs.writeFile(join(root, resource), body)
+  await fs.writeFile(
+    join(directory, 'experiment.json'),
+    JSON.stringify({
+      experiment_schema_version: 1,
+      groups: {},
+      columns: [],
+      variants: {},
+      research: {
+        current_version: 1,
+        versions: [{ version: 1, started_at: '2026-10-01T09:00:00+08:00', reason: 'Initial' }],
+        run_versions: {},
+      },
+    }),
+  )
+  const lock = BackendReadmeResponseSchema.parse(await service.getReadme('research', resource))
+  const input = {
+    expectedMtime: lock.mtime,
+    expectedHash: lock.hash,
+    content: body.replace('runs: []', 'runs: [logs/trial-261001-090000]'),
+  }
+  await expect(service.putReadme('research', resource, input)).rejects.toMatchObject({
+    code: 'INVALID_RESOURCE',
+  })
+  expect(await fs.readFile(join(root, resource), 'utf8')).toBe(body)
+  await fs.writeFile(
+    join(directory, 'experiment.json'),
+    JSON.stringify({ experiment_schema_version: 1, groups: {}, columns: [], variants: [] }),
+  )
+  const result = await service.putReadme('research', resource, input)
+  expect(result).toMatchObject({ ok: true })
+})

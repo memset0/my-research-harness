@@ -82,6 +82,7 @@ export const API_ROUTE_MANIFEST = {
   'experiments/[id]/archive/route.ts': backend(['PATCH'], 'resource', 'mutating'),
   'experiments/[id]/link/route.ts': backend(['POST'], 'resource', 'mutating'),
   'experiments/[id]/readme/route.ts': backend(['GET', 'PUT'], 'resource', 'mixed'),
+  'experiments/[id]/research/route.ts': backend(['GET', 'POST'], 'resource', 'mixed'),
   'experiments/[id]/results/route.ts': backend(['GET'], 'resource', 'read'),
   'experiments/[id]/route.ts': backend(['GET', 'DELETE'], 'resource', 'mixed'),
   'experiments/[id]/status/route.ts': backend(['PATCH'], 'resource', 'mutating'),

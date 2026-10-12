@@ -202,6 +202,7 @@ export type {
   RenameExperimentWarning,
 } from './experiments/rename.js'
 export { RenameExperimentError, renameExperiment } from './experiments/rename.js'
+export { enrollCreatedResearchRun } from './experiments/research-enrollment.js'
 export type {
   ResultsMetricsValidity,
   ResultsVariantEligibility,

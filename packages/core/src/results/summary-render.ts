@@ -231,6 +231,10 @@ export function renderResultsSummaryDigestMarkdown(summary: ResultsSummary): str
     `- Columns: ${summary.columns.length} (${declared} declared)`,
     `- Groups: ${Object.keys(summary.groups).length}`,
   )
+  if (summary.research)
+    lines.push(
+      `- Research version: ${summary.research.selected_version} (current: ${summary.research.current_version})`,
+    )
   if (frozen > 0) lines.push(`- Frozen values: ${frozen}`)
   const counts = new Map<string, number>()
   for (const diagnostic of summary.diagnostics) {
@@ -287,6 +291,8 @@ export type ResultsTableValue =
   | { per_run: Array<{ run: string; value: unknown }> }
 
 export interface ResultsTableRow {
+  deprecated?: boolean
+  deprecation?: SummaryVariant['deprecation']
   variantId: string
   variantName: string
   status: SummaryVariant['status']
@@ -303,6 +309,7 @@ export interface ResultsTableRow {
 }
 
 export interface ResultsTable {
+  research?: ResultsSummary['research']
   experimentId: string
   experimentSchemaVersion: number | null
   columns: ResultsTableColumn[]
@@ -365,6 +372,12 @@ export function projectResultsTable(
         if (cell.differs_from_plan) differsFromPlan[column.path] = cell.planned ?? null
       }
       return {
+        ...(variant.deprecated !== undefined
+          ? {
+              deprecated: variant.deprecated,
+              ...(variant.deprecation ? { deprecation: variant.deprecation } : {}),
+            }
+          : {}),
         variantId: variant.id,
         variantName: variant.name,
         status: variant.status,
@@ -382,6 +395,7 @@ export function projectResultsTable(
       }
     })
   return {
+    ...(summary.research ? { research: summary.research } : {}),
     experimentId: summary.experiment,
     experimentSchemaVersion: summary.experiment_schema_version,
     columns: columns.map((column) => ({

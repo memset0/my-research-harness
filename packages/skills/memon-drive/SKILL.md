@@ -5,6 +5,14 @@ description: Coordinate one memon Experiment across design, engineering, investi
 
 # memon-drive
 
+In FS10, first establish the current research version. A failed overall protocol
+may require an explicitly authorized `experiment version advance` with a reason;
+ordinary additional seeds or implementation progress do not. Preserve old Run
+associations. Deprecate a withdrawn Variant rather than deleting its identity.
+New-version evidence requires real new execution; reuse checkpoints through
+lineage, never by relabeling old Runs. Use current Results for decisions and
+request historical versions explicitly when investigating prior work.
+
 Own the conversation and coordination. Follow `../PREFLIGHT.md`; apply the
 writer, launcher, execution and review skills as workflows, inline when useful.
 Do not spawn a subagent merely to edit a document. Durable decisions belong in

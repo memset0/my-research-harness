@@ -20,6 +20,19 @@ afterEach(async () => {
   await removeTempDirs()
 })
 describe('common native writer lock', () => {
+  it('enters an explicitly acquired CLI lock scope without reacquisition', async () => {
+    const project = await createTempProject()
+    const lock = await acquireFileWriterLock(project.root)
+    try {
+      await lock.run(() =>
+        withFileWriterLock(project.root, () => writeFile(project.path('note.txt'), 'recorded')),
+      )
+      expect(await readFile(project.path('note.txt'), 'utf8')).toBe('recorded')
+    } finally {
+      lock.release()
+    }
+    expect(() => lock.run(async () => undefined)).toThrow('released')
+  })
   it('serializes a Node writer and a separate Go agent before source precondition validation', async () => {
     const project = await createTempProject({ files: { 'README.md': 'original' } })
     agent = await startFileAgentFixture(project.root)

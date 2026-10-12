@@ -14,12 +14,14 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import {
+  assertDocumentLock,
   EXPERIMENT_DESCRIPTION_FILE,
   EXPERIMENTS_RELDIR,
   type IndexEventWarning,
   LEGACY_RESULTS_FILE,
   type LoadedResultsSummary,
   loadResultsSummary,
+  nodeMutationFs,
   type ParsedExperimentDescription,
   parseExperimentDescription,
   projectResultsTable,
@@ -29,6 +31,7 @@ import {
   type ResultsSummaryError,
   type ResultsTable,
   type ResultsTableColumnGroup,
+  readDocumentState,
   rebuildResultsSummaries,
   resolveExperimentId,
   resultsShapeFromDescription,
@@ -40,6 +43,7 @@ import {
 import { resolveContext, singleProjectRoot } from '../lib/context.js'
 import { emitErrorAndExit } from '../lib/emit-error.js'
 import { cliIndexSink, indexWarningFields } from '../lib/index-sink.js'
+import { cliMutation } from '../lib/mutation-error.js'
 import { emitJson, type OutputFormat } from '../lib/output.js'
 import {
   renderCsvResultsTable,
@@ -137,8 +141,17 @@ function failWithSummaryError(experimentId: string, summary: ResultsSummary): ne
   emitErrorAndExit(error.code, error.message, summaryErrorDetails(error))
 }
 
-async function loadSummary(projectRoot: string, id: string): Promise<LoadedResultsSummary> {
-  const loaded = await loadResultsSummary(projectRoot, id, { role: 'cli' })
+async function loadSummary(
+  projectRoot: string,
+  id: string,
+  researchVersion?: number,
+): Promise<LoadedResultsSummary> {
+  if (researchVersion !== undefined && (!Number.isInteger(researchVersion) || researchVersion < 1))
+    emitErrorAndExit('BAD_REQUEST', '--research-version must be a positive integer')
+  const loaded = await loadResultsSummary(projectRoot, id, {
+    role: 'cli',
+    ...(researchVersion === undefined ? {} : { researchVersion }),
+  })
   if (!loaded) emitErrorAndExit('NOT_FOUND', `experiment "${id}" not found`)
   return loaded
 }
@@ -146,6 +159,7 @@ async function loadSummary(projectRoot: string, id: string): Promise<LoadedResul
 // ---------- results table ----------
 
 export interface ExperimentResultsInput extends ResultsBaseInput {
+  researchVersion?: number
   /** Comma-separated Variant IDs to include. Empty = no filter. */
   variants?: string
   /** Comma-separated effective statuses to include. Empty = no filter. */
@@ -200,7 +214,7 @@ export async function runExperimentResults(input: ExperimentResultsInput): Promi
   const format = resolveTableFormat(input.output)
   const group = resolveColumnGroup(input.columnGroup)
   const { projectRoot, id } = await resolveExperiment(input)
-  const loaded = await loadSummary(projectRoot, id)
+  const loaded = await loadSummary(projectRoot, id, input.researchVersion)
   const summary = loaded.summary
   if (summary.outcome !== 'ok') failWithSummaryError(id, summary)
   reportWarnings(loaded.warnings)
@@ -236,6 +250,7 @@ export async function runExperimentResults(input: ExperimentResultsInput): Promi
 // ---------- results summary (structure only) ----------
 
 export interface ExperimentResultsSummaryInput extends ResultsBaseInput {
+  researchVersion?: number
   output: string
 }
 
@@ -319,7 +334,7 @@ export async function runExperimentResultsSummary(
 ): Promise<void> {
   const format = resolveSummaryFormat(input.output)
   const { projectRoot, id } = await resolveExperiment(input)
-  const loaded = await loadSummary(projectRoot, id)
+  const loaded = await loadSummary(projectRoot, id, input.researchVersion)
   const summary = loaded.summary
   if (summary.outcome === 'ok') {
     reportWarnings(loaded.warnings)
@@ -593,6 +608,9 @@ export async function runExperimentResultsAnnotationSet(
 ): Promise<void> {
   const { projectRoot, id } = await resolveExperiment(input)
   const { path, raw } = await loadDescriptionOrExit(projectRoot, id)
+  const lockState = await readDocumentState(nodeMutationFs, path)
+  if (lockState.content !== raw)
+    emitErrorAndExit('CONFLICT', 'experiment.json changed while loading annotations')
   let result: ReturnType<typeof upsertDescriptionColumnAnnotation>
   try {
     result = upsertDescriptionColumnAnnotation(raw, input.column, input.description, input.value)
@@ -601,7 +619,13 @@ export async function runExperimentResultsAnnotationSet(
   }
   let indexWarnings: IndexEventWarning[] = []
   if (result.changed) {
-    await writeFileAtomic(path, result.content)
+    await cliMutation(async () => {
+      assertDocumentLock(await readDocumentState(nodeMutationFs, path), {
+        expectedMtime: lockState.mtime,
+        expectedHash: lockState.hash,
+      })
+      await writeFileAtomic(path, result.content)
+    })
     indexWarnings = await publishMutationEvent(
       cliIndexSink(projectRoot),
       'experiment.results-annotation',

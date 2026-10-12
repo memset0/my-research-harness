@@ -261,6 +261,7 @@ describe('golden: a v9 copy of mock/project-a', () => {
     const unmigrated = (await loadResultsSummary(root, 'E0001-vpred-convergence'))!.summary
     expect(unmigrated.error?.code).toBe('RESULTS_NOT_FOUND')
     expect(Object.keys(unmigrated.inputs)).toEqual([
+      'docs/experiments/E0001-vpred-convergence/README.md',
       'docs/experiments/E0001-vpred-convergence/experiment.json',
       'logs/foo-260501-100000/README.md',
       'logs/foo-260501-100000/result.csv',

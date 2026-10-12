@@ -97,9 +97,11 @@ Other sources of truth — consult these instead of copying lists here:
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
 - **Experiment bundle**: `<projectRoot>/docs/experiments/E<NNNN>-<slug>/` with
   `README.md` plus schema-v1 `implementation.yaml`, `investigation.yaml` and
-  the Results description file `experiment.json` (FS v9:
+  the Results description file `experiment.json` (FS10:
   `experiment_schema_version`, `groups`, typed `columns` by result path,
-  `variants` with declared plan state, planned values and `runs`); optional
+  `variants` keyed by stable ID with declared plan state, planned values and
+  `runs`, plus a `research` version ledger and closed definition snapshots;
+  legacy FS9 arrays remain supported until explicit conversion); optional
   `schema-upgrades/<N>-to-<N+1>.{json,py}` transforms for
   `memon experiment schema upgrade`; other folder content is opaque
   experiment-local scratch. `results.yaml` is retired (FS v8 → v9 guide
@@ -107,7 +109,10 @@ Other sources of truth — consult these instead of copying lists here:
   `CANONICAL_EXPERIMENT_SECTION_HEADINGS` in
   `packages/core/src/experiments/documents.ts`. The Experiment README `runs`
   list is the sole Run-membership authority; Variant `runs` in
-  `experiment.json` (a subset) are the Run-to-Variant association.
+  `experiment.json` (a subset) are the Run-to-Variant association. Research
+  attribution remains after unlinking; use dedicated version/deprecation
+  commands, never generic ledger edits. FS9-to-FS10 conversion is explicit
+  (`packages/core/migrations/v9-to-v10.md`), never a deployment side effect.
 - **Run**: a directory `<slug>-<YYMMDD>-<HHMMSS>/` containing `README.md`. No
   H2 section is required (`packages/core/src/readme/parse.ts`,
   `readme/lint.ts`); a Run README records execution facts only. Never write an

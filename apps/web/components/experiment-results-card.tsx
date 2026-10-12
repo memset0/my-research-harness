@@ -12,11 +12,12 @@
 // mismatch or duplicate row replaces the table.
 
 import { RefreshCw, TriangleAlert } from 'lucide-react'
-import { useEffect, useMemo, useReducer } from 'react'
+import { useEffect, useMemo, useReducer, useState } from 'react'
 import { fetchExperimentResults, type ProjectTarget } from '../lib/api'
 import type {
   ExperimentDisplaySection,
   ExperimentResultsDocumentPayload,
+  ResultsSummaryPayload,
 } from '../lib/dto/experiments'
 import {
   displayedUpdatedAt,
@@ -25,6 +26,7 @@ import {
 } from '../lib/experiment-results/results-card-state'
 import { cn } from '../lib/utils'
 import { TranslatedLiteral } from './body-translation'
+import { ExperimentResearchControls } from './experiment-research-controls'
 import { ExperimentResultsTable } from './experiment-results-table'
 import { useResourceHeartbeat } from './resource-heartbeat-provider'
 import { ResultsErrorCard } from './results-table/results-error-card'
@@ -33,13 +35,36 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 
-export function ExperimentResultsCard({
+export function ExperimentResultsCard(props: {
+  section: ExperimentDisplaySection
+  results: ExperimentResultsDocumentPayload
+  updatedAt: string | null
+  project: ProjectTarget
+  experimentId: string
+  runIds: string[]
+  research?: ResultsSummaryPayload['research']
+}) {
+  const [version, setVersion] = useState<number | undefined>()
+  return (
+    <ScopedResultsCard
+      key={version ?? 'current'}
+      {...props}
+      version={version}
+      onVersion={setVersion}
+    />
+  )
+}
+
+function ScopedResultsCard({
   section,
   results,
   updatedAt,
   project,
   experimentId,
   runIds,
+  version,
+  onVersion,
+  research,
 }: {
   section: ExperimentDisplaySection
   results: ExperimentResultsDocumentPayload
@@ -48,39 +73,51 @@ export function ExperimentResultsCard({
   project: ProjectTarget
   experimentId: string
   runIds: string[]
+  research?: ResultsSummaryPayload['research']
+  version?: number
+  onVersion: (version?: number) => void
 }) {
   const [state, dispatch] = useReducer(resultsCardReducer, null, () =>
-    initialResultsCardState(results.summary, updatedAt),
+    initialResultsCardState(version === undefined ? results.summary : null, updatedAt),
   )
   // A changed detail payload (the shared heartbeat) applies like a refresh;
   // an unchanged one keeps its object identity and changes nothing.
   useEffect(() => {
-    dispatch({ type: 'summary', summary: results.summary, updatedAt })
-  }, [results.summary, updatedAt])
+    if (version === undefined) dispatch({ type: 'summary', summary: results.summary, updatedAt })
+  }, [results.summary, updatedAt, version])
 
   const refresh = async () => {
     dispatch({ type: 'refresh-start' })
     dispatch({
       type: 'refresh-done',
-      outcome: await fetchExperimentResults(project, experimentId),
+      outcome: await fetchExperimentResults(
+        project,
+        experimentId,
+        ...(version === undefined ? [] : [version]),
+      ),
     })
   }
   // A summary too large to embed in the detail is deferred: the card loads it
   // from the Results endpoint on mount and again when the detail reports a
   // newer input time (the heartbeat analogue of an embedded summary).
-  const deferred = results.summary === null && Boolean(results.summaryDeferred)
+  const deferred =
+    version !== undefined || (results.summary === null && Boolean(results.summaryDeferred))
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload only when the deferred state or the input time changes
   useEffect(() => {
     if (!deferred) return
     let cancelled = false
     dispatch({ type: 'refresh-start' })
-    void fetchExperimentResults(project, experimentId).then((outcome) => {
+    void fetchExperimentResults(
+      project,
+      experimentId,
+      ...(version === undefined ? [] : [version]),
+    ).then((outcome) => {
       if (!cancelled) dispatch({ type: 'refresh-done', outcome })
     })
     return () => {
       cancelled = true
     }
-  }, [deferred, updatedAt, experimentId])
+  }, [deferred, updatedAt, experimentId, version])
   const errors = section.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
   const shownAt = displayedUpdatedAt(state)
   return (
@@ -141,6 +178,40 @@ export function ExperimentResultsCard({
               </li>
             ))}
           </ul>
+        )}
+        {(state.good?.summary.research || results.summary?.research || research) && (
+          <ExperimentResearchControls
+            project={project}
+            experimentId={experimentId}
+            summary={
+              state.good?.summary ?? {
+                ...(results.summary ?? {
+                  experimentSchemaVersion: null,
+                  outcome: 'ok',
+                  error: null,
+                  groups: {},
+                  columns: [],
+                  variants: [],
+                  diagnostics: [],
+                }),
+                research: research ?? results.summary?.research,
+              }
+            }
+            version={version}
+            onVersion={onVersion}
+            onChanged={() => void refresh()}
+          />
+        )}
+        {state.good?.summary.historicalResults && (
+          <details className="my-3">
+            <summary>Original historical result files</summary>
+            {Object.entries(state.good.summary.historicalResults).map(([run, csv]) => (
+              <div key={run}>
+                <p className="text-sm">{run}</p>
+                <pre className="overflow-auto text-xs">{csv}</pre>
+              </div>
+            ))}
+          </details>
         )}
         {state.blocking ? (
           <ResultsErrorCard error={state.blocking.error} />

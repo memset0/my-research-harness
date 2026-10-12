@@ -36,6 +36,7 @@ import {
   runExperimentDocumentShow,
 } from './commands/experiment-document.js'
 import { runExperimentRename } from './commands/experiment-rename.js'
+import { registerExperimentResearchCommands } from './commands/experiment-research.js'
 import { runFsVersionCheck } from './commands/fs-version-check.js'
 import { runHypoList, runHypoShow } from './commands/hypo.js'
 import { runHypothesesRead } from './commands/hypotheses.js'
@@ -521,6 +522,7 @@ for (const section of ['implementation', 'investigation'] as const) {
     })
 }
 registerExperimentResultsCommands(experiment, readGlobals)
+registerExperimentResearchCommands(experiment, readGlobals)
 
 const experimentSection = experiment
   .command('section')
@@ -851,8 +853,12 @@ runWarning
 
 run
   .command('record <id-or-dir>')
+  .option(
+    '--experiment <id-or-slug>',
+    'register a new execution in this Experiment before publishing membership',
+  )
   .description(
-    'write the minimal README for an execution directory that already exists (id or path). Records only: never launches, schedules, or creates a run directory. Emits id/status/created_at plus the execution facts you pass — no narrative placeholders, no Experiment metadata. Optional free-form body from stdin. Refuses to overwrite an existing README. Bind it afterwards with `experiment link`.',
+    'write the minimal README for an existing execution directory. Never launches or overwrites. Use --experiment at launch to enroll in the current research version and publish membership; standalone existing executions require historical import before FS10 linking.',
   )
   .option('--status <status>', 'PENDING|RUNNING|FINISHED|INTERRUPTED|FAILED|UNKNOWN', 'PENDING')
   .option('--name <text>', 'short human label for this run')
@@ -873,6 +879,7 @@ run
       idOrDir: string,
       opts: {
         status?: string
+        experiment?: string
         name?: string
         createdAt?: string
         finishedAt?: string

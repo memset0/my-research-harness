@@ -54,6 +54,7 @@ import { projectReadIndex, statObservation } from './read-index.js'
 export type MemberWindow = number | ((summary: RunSummary | null) => number)
 
 export interface ExperimentResultsSummaryOptions {
+  researchVersion?: number
   memberWindow: MemberWindow
   /** Generator role recorded in a regenerated summary. */
   role: IndexRole
@@ -373,6 +374,14 @@ export async function experimentResultsSummary(
   const inputs = await takeResultsInputFingerprints(project.root, set.keys, {
     known: (key) => known.get(key),
   })
+  if (options.researchVersion !== undefined) {
+    // Explicit historical reads never overwrite or reuse the current cache.
+    const summary = await generateResultsSummaryFromDisk(project.root, set, inputs, {
+      role: options.role,
+      researchVersion: options.researchVersion,
+    })
+    return { summary, warnings: [], cache: 'regenerated' }
+  }
   const stored = await storedSummary(project, set.experimentId)
   if (stored && isResultsSummaryFresh(stored, inputs, MEMON_RELEASE)) {
     return { summary: stored, warnings: [], cache: 'hit' }

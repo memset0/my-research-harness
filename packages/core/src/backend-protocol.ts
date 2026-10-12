@@ -788,6 +788,80 @@ export const BackendResultsCellSchema = z.discriminatedUnion('kind', [
 ])
 export type BackendResultsCell = z.infer<typeof BackendResultsCellSchema>
 
+export const BackendResearchVersionSchema = z
+  .object({
+    version: z.number().int().positive(),
+    started_at: z.string(),
+    reason: z.string(),
+    closed_at: z.string().optional(),
+    superseded_reason: z.string().optional(),
+  })
+  .strict()
+export const BackendResearchSchema = z
+  .object({
+    current_version: z.number().int().positive(),
+    selected_version: z.number().int().positive(),
+    versions: z.array(BackendResearchVersionSchema),
+    run_versions: z.record(z.string(), z.number().int().positive()),
+  })
+  .strict()
+export const BackendVariantDeprecationSchema = z
+  .object({
+    reason: z.string(),
+    deprecated_at: z.string(),
+    successor: z.string().optional(),
+  })
+  .strict()
+export const BackendResearchMutationRequestSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('advance'),
+      expectedMtime: z.number(),
+      expectedHash: z.string().min(1),
+      expectedVersion: z.number().int().positive(),
+      reason: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('deprecate'),
+      expectedMtime: z.number(),
+      expectedHash: z.string().min(1),
+      variantId: z.string().min(1),
+      reason: z.string().trim().min(1),
+      successor: z.string().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('restore'),
+      expectedMtime: z.number(),
+      expectedHash: z.string().min(1),
+      variantId: z.string().min(1),
+      reason: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('import'),
+      expectedMtime: z.number(),
+      expectedHash: z.string().min(1),
+      run: z.string().min(1),
+      variantId: z.string().min(1).optional(),
+      version: z.number().int().positive(),
+      reason: z.string().trim().min(1),
+    })
+    .strict(),
+])
+export type BackendResearchMutationRequest = z.infer<typeof BackendResearchMutationRequestSchema>
+export const BackendResearchStateSchema = z
+  .object({
+    mtime: z.number(),
+    hash: z.string(),
+    research: BackendResearchSchema.nullable(),
+  })
+  .strict()
+
 export const BackendResultsVariantSchema = z
   .object({
     id: z.string().min(1).max(256),
@@ -796,6 +870,8 @@ export const BackendResultsVariantSchema = z
     /** Effective status (declared plan/judgment state or derived from Run records). */
     status: z.enum(VARIANT_STATUS_VALUES),
     declaredStatus: z.enum(VARIANT_STATUS_VALUES).nullable(),
+    deprecated: z.boolean().optional(),
+    deprecation: BackendVariantDeprecationSchema.optional(),
     /** Evidence Runs: FINISHED and not deprecated. */
     evidence: z.array(BackendResultRunSchema).max(10_000),
     /** Every other Run the Variant lists, with its status. */
@@ -807,6 +883,8 @@ export const BackendResultsVariantSchema = z
             status: z.string().min(1).max(64),
             deprecated: z.boolean(),
             stopReason: z.string().max(4096).nullable(),
+            research_version: z.number().int().positive().optional(),
+            exclusion_reason: z.string().optional(),
             missing: z.literal(true).optional(),
           })
           .strict(),
@@ -886,6 +964,8 @@ export type BackendResultsSummaryError = z.infer<typeof BackendResultsSummaryErr
 
 export const BackendResultsSummarySchema = z
   .object({
+    research: BackendResearchSchema.optional(),
+    historicalResults: z.record(z.string(), z.string()).optional(),
     experimentSchemaVersion: z.number().int().positive().nullable(),
     outcome: z.enum(['ok', 'failed']),
     error: BackendResultsSummaryErrorSchema.nullable(),
@@ -1113,6 +1193,16 @@ function wireVariant(variant: SummaryVariant): BackendResultsVariant {
     ...(variant.description === undefined ? {} : { description: boundedText(variant.description) }),
     status: variant.status,
     declaredStatus: variant.declared_status,
+    ...(variant.deprecated === undefined ? {} : { deprecated: variant.deprecated }),
+    ...(variant.deprecation
+      ? {
+          deprecation: {
+            reason: variant.deprecation.reason,
+            deprecated_at: variant.deprecation.deprecated_at,
+            ...(variant.deprecation.successor ? { successor: variant.deprecation.successor } : {}),
+          },
+        }
+      : {}),
     evidence: variant.evidence.filter(isPortableReference),
     others: variant.others
       .filter((other) => isPortableReference(other.run))
@@ -1121,6 +1211,10 @@ function wireVariant(variant: SummaryVariant): BackendResultsVariant {
         status: other.status,
         deprecated: other.deprecated,
         stopReason: other.stop_reason,
+        ...(other.research_version === undefined
+          ? {}
+          : { research_version: other.research_version }),
+        ...(other.exclusion_reason ? { exclusion_reason: other.exclusion_reason } : {}),
         ...(other.missing ? { missing: true as const } : {}),
       })),
     ...(provenance ? { provenance } : {}),
@@ -1179,6 +1273,27 @@ export function toBackendResultsSummary(summary: ResultsSummary): BackendResults
   }
   const failed = summary.outcome !== 'ok'
   return {
+    ...(summary.research
+      ? {
+          research: {
+            current_version: summary.research.current_version,
+            selected_version: summary.research.selected_version,
+            versions: summary.research.versions.map((v) => ({
+              version: v.version,
+              started_at: v.started_at,
+              reason: v.reason,
+              ...(v.closed_at ? { closed_at: v.closed_at } : {}),
+              ...(v.superseded_reason ? { superseded_reason: v.superseded_reason } : {}),
+            })),
+            run_versions: Object.fromEntries(
+              Object.entries(summary.research.run_versions).filter(([run]) =>
+                isPortableReference(run),
+              ),
+            ),
+          },
+        }
+      : {}),
+    ...(summary.historical_results ? { historicalResults: summary.historical_results } : {}),
     experimentSchemaVersion:
       typeof summary.experiment_schema_version === 'number' && summary.experiment_schema_version > 0
         ? summary.experiment_schema_version
@@ -1358,6 +1473,7 @@ export type BackendWikiBacklinksResponse = z.infer<typeof BackendWikiBacklinksRe
 export const BackendExperimentDetailSchema = BackendExperimentSummarySchema.extend({
   body: z.string().max(BACKEND_EXPERIMENT_BODY_MAX),
   deprecatedRuns: z.array(BackendOpaqueResourceIdSchema).max(10_000).default([]),
+  research: BackendResearchSchema.optional(),
   warningsRaw: z.string().nullable(),
   rawSections: z.array(BackendExperimentRawSectionSchema).max(1024),
   documents: BackendExperimentManagedDocumentsSchema.nullable(),

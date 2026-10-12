@@ -47,6 +47,8 @@ async function start(service: BackendMutationService, eventStream?: BackendEvent
 }
 function service(): BackendMutationService {
   return {
+    getExperimentResearch: vi.fn(),
+    mutateExperimentResearch: vi.fn(),
     setRunStatus: vi.fn(async () => ({
       ok: true as const,
       mtime: 2,
@@ -329,5 +331,43 @@ describe('Backend mutation route family', () => {
     expect(response.status).toBe(409)
     expect(await response.json()).not.toHaveProperty('content')
     expect(stream.currentSequence).toBe(0)
+  })
+})
+
+describe('research mutations', () => {
+  it('authorizes owners, rejects viewers, and preserves conflicts', async () => {
+    const s = service()
+    s.mutateExperimentResearch = vi.fn(async () => ({
+      ok: true,
+      mtime: 2,
+      hash: 'a'.repeat(40),
+      currentVersion: 2,
+    }))
+    const origin = await start(s)
+    const path = '/api/backend/v1/experiments/E0001-a/research?project=project-a'
+    const input = {
+      action: 'advance',
+      expectedMtime: 1,
+      expectedHash: 'b'.repeat(40),
+      expectedVersion: 1,
+      reason: 'Correct timing boundary',
+    }
+    const owner = await call(origin, path, 'POST', input)
+    expect(owner.status).toBe(200)
+    expect(s.mutateExperimentResearch).toHaveBeenCalledWith('project-a', 'E0001-a', input)
+    const viewer = await fetch(origin + path, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        [BACKEND_ACTOR_CONTEXT_HEADER]: context('viewer'),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+    expect(viewer.status).toBe(403)
+    s.mutateExperimentResearch = vi.fn(async () => {
+      throw new BackendMutationError('CONFLICT', 'Changed')
+    })
+    expect((await call(origin, path, 'POST', input)).status).toBe(409)
   })
 })

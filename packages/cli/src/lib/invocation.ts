@@ -33,6 +33,7 @@
 // and downgrades the exit status; it never rolls back the edit the command
 // already made.
 
+import { realpath } from 'node:fs/promises'
 import {
   acquireFileWriterLock,
   beginJournalInvocation,
@@ -41,11 +42,20 @@ import {
   type JournalInvocationTerminalOutcome,
   type JournalRecordingFailure,
   loadCliContext,
+  withFileWriterLock,
 } from '@memon/core'
 import type { Command } from 'commander'
 import { EXIT } from './exit-codes.js'
 
 export type CliLedgerClass = 'readonly' | 'project' | 'host'
+
+/** Enter the already-held CLI transaction, or acquire one for direct callers. */
+export async function withCliWriterLock<T>(root: string, work: () => Promise<T>): Promise<T> {
+  if (!writerLock) return withFileWriterLock(root, work)
+  if (writerLock.root !== (await realpath(root)))
+    throw new Error('CLI writer lock belongs to another project')
+  return writerLock.run(work)
+}
 
 /**
  * Every registered leaf command path, classified explicitly.
@@ -89,6 +99,11 @@ export const CLI_LEDGER_CLASSES: Readonly<Record<string, CliLedgerClass>> = {
   'experiment ls': 'readonly',
   'experiment show': 'readonly',
   'experiment create': 'project',
+  'experiment version show': 'readonly',
+  'experiment version advance': 'project',
+  'experiment version import': 'project',
+  'experiment variant deprecate': 'project',
+  'experiment variant restore': 'project',
   'experiment rename': 'project',
   'experiment doc show': 'readonly',
   'experiment doc render': 'readonly',

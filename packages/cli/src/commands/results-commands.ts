@@ -44,6 +44,10 @@ export function registerExperimentResultsCommands(
     })
   results
     .command('table <id-or-slug>')
+    .option(
+      '--research-version <number>',
+      'inspect one historical research version (default: current)',
+    )
     .description('read the Variant table from the Results summary with row/column filtering')
     .option('--variant <ids>', 'comma-separated Variant IDs to include (default: all)')
     .option(
@@ -62,11 +66,15 @@ export function registerExperimentResultsCommands(
           column?: string
           group?: string
           output?: string
+          researchVersion?: string
         },
       ) => {
         await runExperimentResults({
           ...globals(),
           idOrSlug,
+          ...(opts.researchVersion === undefined
+            ? {}
+            : { researchVersion: Number(opts.researchVersion) }),
           variants: opts.variant,
           statuses: opts.status,
           columns: opts.column,
@@ -77,10 +85,21 @@ export function registerExperimentResultsCommands(
     )
   results
     .command('summary <id-or-slug>')
+    .option(
+      '--research-version <number>',
+      'inspect one historical research version (default: current)',
+    )
     .description('show Results columns and Variant identities without cell values')
     .option('--output <fmt>', 'output format: json | human | markdown', 'json')
-    .action(async (idOrSlug: string, opts: { output?: string }) => {
-      await runExperimentResultsSummary({ ...globals(), idOrSlug, output: opts.output ?? 'json' })
+    .action(async (idOrSlug: string, opts: { output?: string; researchVersion?: string }) => {
+      await runExperimentResultsSummary({
+        ...globals(),
+        idOrSlug,
+        output: opts.output ?? 'json',
+        ...(opts.researchVersion === undefined
+          ? {}
+          : { researchVersion: Number(opts.researchVersion) }),
+      })
     })
   results
     .command('rebuild [id-or-slug]')

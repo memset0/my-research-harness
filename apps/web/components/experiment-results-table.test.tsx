@@ -180,6 +180,24 @@ describe('ExperimentResultsTable', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
+  it('keeps deprecated visibility independent from show-all rows', async () => {
+    const summary = structuredClone(RESULTS)
+    summary.variants[0]!.deprecated = true
+    summary.variants[0]!.deprecation = {
+      reason: 'Superseded comparison',
+      deprecated_at: '2026-10-01T09:00:00+08:00',
+      successor: 'V0001',
+    }
+    const { container } = renderResults('E0001-research', summary)
+    expect(container.querySelector('[data-variant-id="V0002"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show deprecated Variants' }))
+    expect(container.querySelector('[data-variant-id="V0002"]')).not.toBeNull()
+    expect(screen.getByText(/Superseded comparison/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'V0001' })).toHaveAttribute('href', '#variant-V0001')
+    fireEvent.click(screen.getByRole('button', { name: 'Hide deprecated Variants' }))
+    expect(container.querySelector('[data-variant-id="V0002"]')).toBeNull()
+  })
+
   it('uses summary column order, clamps to one line, scrolls horizontally, and renders br as breaks', async () => {
     const user = userEvent.setup()
     const { container } = renderResults('E0001-results')

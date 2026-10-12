@@ -24,6 +24,7 @@ describe('queryKeys', () => {
         "commitMarks",
         "docAsset",
         "experiment",
+        "experimentResearch",
         "experiments",
         "experimentsInventory",
         "fileAccess",
@@ -793,4 +794,12 @@ describe('queryKeys', () => {
       ]
     `)
   })
+})
+
+it('scopes research lock reads to the Experiment', () => {
+  expect(queryKeys.experimentResearch('project-a', 'E0001-a')).toEqual([
+    'experiment-research',
+    'project-a',
+    'E0001-a',
+  ])
 })

@@ -12,7 +12,9 @@ const carrier = globalThis as unknown as { [HELD]?: AsyncLocalStorage<ReadonlySe
 carrier[HELD] ??= new AsyncLocalStorage<ReadonlySet<string>>()
 const held = carrier[HELD]
 export interface FileWriterLock {
+  readonly root: string
   release(): void
+  run<T>(work: () => Promise<T>): Promise<T>
 }
 
 /** Same mkdir-based source lock as protocol-v1; an abandoned lock is never stolen. */
@@ -46,6 +48,13 @@ export async function acquireFileWriterLock(
   }
   let released = false
   return {
+    root: canonical,
+    run<T>(work: () => Promise<T>): Promise<T> {
+      if (released) throw new Error('writer lock was already released')
+      const scope = new Set(held.getStore())
+      scope.add(canonical)
+      return held.run(scope, work)
+    },
     release() {
       if (!released) {
         rmdirSync(path)

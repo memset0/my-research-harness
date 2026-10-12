@@ -22,6 +22,7 @@ import {
 } from '@memon/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BACKEND_ACTOR_CONTEXT_HEADER } from './actor-context.js'
+import { FilesystemMutationService } from './mutation-service.js'
 import { FilesystemProjectService } from './project-service.js'
 import { CENTRAL_READ_POLICY, dropProjectReadIndexes } from './read-index.js'
 import { BackendResultsError } from './results-summary.js'
@@ -609,5 +610,130 @@ describe('Results summary freshness', () => {
     )
     expect(snapshot.summary.variants).toHaveLength(3)
     await expect(fs.stat(resolveIndexPaths(root).results)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
+describe('research version Results boundary', () => {
+  it('keeps historical schema and values out of current summaries and preserves all-member counts', async () => {
+    const old = RUN('old')
+    const fresh = RUN('fresh')
+    await writeRun(old, 'FINISHED', resultCsv(1, [['metrics.score', '', '99']]))
+    await writeRun(fresh, 'FINISHED', resultCsv(2, [['metrics.score', '', '5']]))
+    const columns = [{ path: 'metrics.score', type: 'number', label: 'Score' }]
+    await writeExperiment('E0001-versions', [old, fresh], {
+      experiment_schema_version: 2,
+      groups: {},
+      columns,
+      research: {
+        current_version: 2,
+        versions: [
+          {
+            version: 1,
+            started_at: '2026-10-01T09:00:00+08:00',
+            reason: 'Initial',
+            closed_at: '2026-10-02T09:00:00+08:00',
+            superseded_reason: 'Corrected',
+            snapshot: {
+              experiment_schema_version: 1,
+              groups: {},
+              columns,
+              variants: { V0001: { name: 'Old definition', values: {}, runs: [old] } },
+            },
+          },
+          { version: 2, started_at: '2026-10-02T09:00:00+08:00', reason: 'Corrected' },
+        ],
+        run_versions: { [old]: 1, [fresh]: 2 },
+      },
+      variants: { V0001: { name: 'Current definition', values: {}, runs: [old, fresh] } },
+    })
+    const service = new FilesystemProjectService([project()])
+    const current = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0001-versions'),
+    )
+    expect(current.summary.variants[0]?.evidence).toEqual([fresh])
+    expect(current.summary.variants[0]?.cells['metrics.score']).toMatchObject({ value: 5 })
+    const history = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0001-versions', 1),
+    )
+    expect(history.summary.research?.selected_version).toBe(1)
+    expect(history.summary.variants[0]?.name).toBe('Old definition')
+    expect(history.summary.variants[0]?.evidence).toEqual([old])
+    const again = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0001-versions'),
+    )
+    expect(again.summary.research?.selected_version).toBe(2)
+    expect(again.summary.variants[0]?.evidence).toEqual([fresh])
+    const detail = BackendExperimentResponseSchema.parse(
+      await service.getExperiment('p', 'E0001-versions'),
+    )
+    expect(detail.research?.run_versions[old]).toBe(1)
+    expect(detail.frontMatter.runs).toEqual([old, fresh])
+    await fs.writeFile(join(root, fresh, 'result.csv'), resultCsv(1, [['metrics.score', '', '5']]))
+    const broken = BackendExperimentResponseSchema.parse(
+      await service.getExperiment('p', 'E0001-versions'),
+    )
+    expect(broken.research?.current_version).toBe(2)
+    expect(broken.documents?.results.summary?.outcome).toBe('failed')
+    await fs.writeFile(join(root, fresh, 'result.csv'), resultCsv(2, [['metrics.score', '', '5']]))
+
+    const mutation = new FilesystemMutationService([project()])
+    const lock = await mutation.getExperimentResearch('p', 'E0001-versions')
+    const before = await fs.readFile(join(root, old, 'README.md'), 'utf8')
+    const input = {
+      action: 'advance' as const,
+      expectedMtime: lock.mtime,
+      expectedHash: lock.hash,
+      expectedVersion: 2,
+      reason: 'New protocol',
+    }
+    await mutation.mutateExperimentResearch('p', 'E0001-versions', input)
+    await expect(
+      mutation.mutateExperimentResearch('p', 'E0001-versions', input),
+    ).rejects.toMatchObject({ code: 'CONFLICT' })
+    const advanced = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0001-versions'),
+    )
+    expect(advanced.summary.research?.current_version).toBe(3)
+    expect(advanced.summary.variants[0]?.evidence).toEqual([])
+    expect(await fs.readFile(join(root, old, 'README.md'), 'utf8')).toBe(before)
+    const imported = RUN('imported')
+    await writeRun(imported, 'FINISHED', resultCsv(1, [['metrics.score', '', '7']]))
+    const importLock = await mutation.getExperimentResearch('p', 'E0001-versions')
+    await mutation.mutateExperimentResearch('p', 'E0001-versions', {
+      action: 'import',
+      expectedMtime: importLock.mtime,
+      expectedHash: importLock.hash,
+      run: imported,
+      version: 1,
+      variantId: 'V0001',
+      reason: 'Recovered historical evidence',
+    })
+    const importedDetail = BackendExperimentResponseSchema.parse(
+      await service.getExperiment('p', 'E0001-versions'),
+    )
+    expect(importedDetail.frontMatter.runs).toContain(imported)
+    const importedHistory = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0001-versions', 1),
+    )
+    expect(importedHistory.summary.variants[0]?.evidence).toContain(imported)
+    const importedCurrent = BackendExperimentResultsResponseSchema.parse(
+      await service.getExperimentResults('p', 'E0001-versions'),
+    )
+    expect(importedCurrent.summary.variants[0]?.evidence).toEqual([])
+    const foreign = RUN('foreign')
+    await writeRun(foreign, 'FINISHED', resultCsv(1, [['metrics.score', '', '8']]))
+    await writeExperiment('E0002-owner', [foreign], undefined)
+    const ownerLock = await mutation.getExperimentResearch('p', 'E0001-versions')
+    await expect(
+      mutation.mutateExperimentResearch('p', 'E0001-versions', {
+        action: 'import',
+        expectedMtime: ownerLock.mtime,
+        expectedHash: ownerLock.hash,
+        run: foreign,
+        version: 1,
+        reason: 'Must reject foreign membership',
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_STATE' })
+    expect((await mutation.getExperimentResearch('p', 'E0001-versions')).hash).toBe(ownerLock.hash)
   })
 })

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "memon Experiment description (experiment.json)",
-  "description": "The human-authored description of an Experiment's results (FS v9). The Variant table is generated from it and from the member Runs' result.csv files; never repeat README frontmatter here.",
+  "description": "Experiment Results description: legacy FS9 arrays or FS10 keyed Variants with research history.",
   "type": "object",
   "required": ["experiment_schema_version"],
   "properties": {
@@ -27,9 +27,63 @@
       }
     },
     "variants": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/variant"
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/variant"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^V[0-9]{4}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/keyedVariant"
+          }
+        }
+      ]
+    },
+    "research": {
+      "type": "object",
+      "required": ["current_version", "versions", "run_versions"],
+      "properties": {
+        "current_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["version", "started_at", "reason"],
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "started_at": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "run_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
       }
     }
   },
@@ -110,11 +164,11 @@
         },
         {
           "enum": [
-            "mean±std",
-            "mean±sem",
-            "mean (min–max)",
+            "mean\u00b1std",
+            "mean\u00b1sem",
+            "mean (min\u2013max)",
             "mean [ci95]",
-            "p50 (p25–p75)",
+            "p50 (p25\u2013p75)",
             "p50/p99"
           ]
         }
@@ -398,6 +452,135 @@
           }
         }
       }
+    },
+    "keyedVariant": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "id": false,
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/declarableStatus"
+        },
+        "values": {
+          "type": "object",
+          "description": "Planned params.* and env.* values keyed by path; env values are strings.",
+          "propertyNames": {
+            "pattern": "^(?:params|env)(?:\\.[A-Za-z_][A-Za-z0-9_-]*)+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/value"
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "entry": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recipe": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Project-relative Run paths; a subset of the README runs."
+        },
+        "frozen": {
+          "type": "object",
+          "description": "Written only by the v8-to-v9 migration and schema upgrades.",
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/status"
+            },
+            "runs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source": {
+              "type": "string"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/frozenValue"
+              }
+            },
+            "attempts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "FINISHED v8 attempts kept as the Variant's history by the migration; never members, never evidence."
+            }
+          }
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "deprecation": {
+          "type": "object",
+          "required": ["reason", "deprecated_at"],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "deprecated_at": {
+              "type": "string"
+            },
+            "successor": {
+              "type": "string",
+              "pattern": "^V[0-9]{4}$"
+            }
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["research"]
+      },
+      "then": {
+        "required": ["variants"],
+        "properties": {
+          "variants": {
+            "type": "object"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "variants": {
+            "type": "array"
+          }
+        }
+      }
+    }
+  ]
 }

@@ -47,14 +47,21 @@ creates a fresh Run, not a resurrection of the deprecated record.
 Once the actual directory exists, choose the observed `$STATUS` and record it:
 
 ```sh
-memon --project-root . --format json run record "$RUN_PATH" --status "$STATUS"
-memon --project-root . --format json experiment link "$EXP_ID" "$RUN_PATH"
+memon --project-root . --format json run record "$RUN_PATH" --status "$STATUS" --experiment "$EXP_ID"
 ```
+
+Record at launch, while status is PENDING or RUNNING. In FS10, `--experiment`
+captures the current research version before publishing membership; later
+completion and unlink/relink retain that attribution. An existing recorded or
+completed execution needs explicit `experiment version import` with a historical
+version and reason, not current enrollment. A new-version evaluation may reuse
+old artifacts as lineage, but must actually execute; copying metrics into a new
+directory does not create new evidence.
 
 `record` never launches or overwrites. Add known execution-specific options
 (`--pid`, `--host`, `--gpus`, timestamps, entry/command or tracking URL) only when
 useful; use `run record --help` for exact flags. `--body` reads optional notes
-from stdin. Binding uses `experiment link`, which edits only the Experiment
+from stdin. Subsequent binding uses `experiment link`, which edits only the Experiment
 README `runs` list; the Run path also belongs in the `runs` of its Variant in
 `experiment.json` (the writer workflow adds it at the batch boundary). Never
 write an `experiment` field into a Run README. Experiment declarations are the

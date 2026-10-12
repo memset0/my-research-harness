@@ -1159,7 +1159,15 @@ function lintMemberResultFiles(
   const diagnostics: ExperimentDocumentDiagnostic[] = []
   const columns = new Map(description.columns.map((column) => [column.path, column]))
   const version = description.experimentSchemaVersion
-  for (const { parsed } of files) {
+  for (const { run, parsed } of files) {
+    if (
+      description.research &&
+      description.research.run_versions[run] !== description.research.current_version
+    ) {
+      for (const item of parsed.diagnostics)
+        diagnostics.push({ ...item, severity: 'warning', code: 'HISTORICAL_RESULT_INVALID' })
+      continue
+    }
     diagnostics.push(...parsed.diagnostics)
     if (parsed.ok && parsed.schemaVersion !== null && parsed.schemaVersion !== version)
       diagnostics.push(
@@ -1175,7 +1183,12 @@ function lintMemberResultFiles(
   diagnostics.push(
     ...checkResultFilesConsistency(
       files
-        .filter((file) => file.parsed.ok)
+        .filter(
+          (file) =>
+            file.parsed.ok &&
+            (!description.research ||
+              description.research.run_versions[file.run] === description.research.current_version),
+        )
         .map((file) => ({ file: file.parsed.file, parsed: file.parsed })),
     ),
   )

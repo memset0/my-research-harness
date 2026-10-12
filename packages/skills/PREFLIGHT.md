@@ -13,9 +13,13 @@ memon --project-root . --format json fs-version check
 ```
 
 Reuse a successful check in nested skills while the project and versions remain
-unchanged. `match` proceeds; `behind` stops for `memon-migrate-fs`;
+unchanged. `match` proceeds. An FS9 project under FS10 tooling may explicitly
+continue in legacy mode for existing reads/writes: retain array Variants and
+do not enable research versions or Variant deprecation. Other `behind` cases
+stop for `memon-migrate-fs`;
 `uninitialised` stops for `install-skills`; `ahead` stops for a newer CLI
-(`MEMON_TOO_OLD`, exit 11). Outside `match`, do not access managed documents.
+(`MEMON_TOO_OLD`, exit 11). Outside `match` or that FS9 compatibility mode,
+do not access managed documents.
 Migration owns its staging/version exception. Remote roots use the detected
 execution channel; tolerant legacy rendering does not authorize migration.
 Always pass the intended `--project-root`, not an ambient config selection.
@@ -46,6 +50,16 @@ are removed. Lint is not a completion, staleness or research-quality verdict.
 Do not repeat checks after every poll or already-validated CLI operation.
 
 ## Deprecated Runs
+
+In FS10, research versions independently restrict evidence. Read
+`experiment version show <id>` before research decisions; current Results never
+mix historical generations. Advancing requires the user's decision, a reason,
+expected current version and the returned description mtime/hash. It preserves
+all Run/Variant links. Never edit `research`, its snapshots or attribution by
+hand. Variant deprecation/restore also uses dedicated commands and a reason;
+restoring a Variant does not restore old generations. Result-schema upgrades
+change measurement format, not research validity. FS9 projects require explicit
+reviewed migration before these operations.
 
 `run deprecate <run>` / `run undeprecate <run>` are reversible, idempotent and
 accept `--expected-mtime`. The only stored state is `deprecated: true` (absent

@@ -4,7 +4,14 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readRunDir } from '../discovery/read.js'
-import { createExperiment, linkExperimentRun, nodeMutationFs } from '../experiments/mutations.js'
+import {
+  createExperiment,
+  linkExperimentRun,
+  nodeMutationFs,
+  readDocumentState,
+  unlinkExperimentRun,
+} from '../experiments/mutations.js'
+import { advanceExperimentResearchVersion } from '../results/research.js'
 import { formatIsoLocal } from '../time.js'
 import { renameRun, setRunArchiveState, setRunStatus, writeRunReadme } from './mutations.js'
 
@@ -158,6 +165,93 @@ describe('writeRunReadme', () => {
 })
 
 describe('renameRun', () => {
+  it('rejects a research tombstone destination before moving the Run directory', async () => {
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(root, '.memon/version.json'),
+      JSON.stringify({ fs_convention_version: 10 }),
+    )
+    const run = await readRunDir(join(root, 'logs/probe-260901-120000'), 'p')
+    const created = await createExperiment({
+      ...base,
+      projectRoot: root,
+      projectName: 'p',
+      slug: 'collision',
+      importedRun: run,
+    })
+    const path = join(root, 'docs/experiments', created.id, 'experiment.json')
+    const document = JSON.parse(await fs.readFile(path, 'utf8'))
+    document.research.run_versions['logs/renamed-260901-120000'] = 1
+    await fs.writeFile(path, JSON.stringify(document))
+    const before = await fs.readFile(probe, 'utf8')
+    await expect(
+      renameRun({
+        ...base,
+        projectRoot: root,
+        projectName: 'p',
+        runDir: run.path,
+        runId: run.id,
+        newSlug: 'renamed',
+        isTaken: () => false,
+      }),
+    ).rejects.toThrow()
+    expect(await fs.readFile(probe, 'utf8')).toBe(before)
+    await expect(fs.stat(join(root, 'logs/renamed-260901-120000'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+  it('renames unlinked research tombstones and snapshots without promoting evidence', async () => {
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(root, '.memon/version.json'),
+      JSON.stringify({ fs_convention_version: 10 }),
+    )
+    const run = await readRunDir(join(root, 'logs/probe-260901-120000'), 'p')
+    const created = await createExperiment({
+      ...base,
+      projectRoot: root,
+      projectName: 'p',
+      slug: 'research',
+      importedRun: run,
+    })
+    const path = join(root, 'docs/experiments', created.id, 'README.md')
+    const descriptionPath = join(dirname(path), 'experiment.json')
+    const state = await readDocumentState(nodeMutationFs, descriptionPath)
+    await advanceExperimentResearchVersion(
+      nodeMutationFs,
+      { projectRoot: root, readmePath: path, experimentId: created.id },
+      {
+        expectedMtime: state.mtime,
+        expectedHash: state.hash,
+        expectedVersion: 1,
+        reason: 'New protocol',
+        now: STAMP,
+      },
+    )
+    await unlinkExperimentRun({
+      ...base,
+      projectRoot: root,
+      experiment: { id: created.id, path },
+      run,
+    })
+    await renameRun({
+      ...base,
+      projectRoot: root,
+      projectName: 'p',
+      runDir: run.path,
+      runId: run.id,
+      newSlug: 'renamed',
+      isTaken: () => false,
+    })
+    const data = JSON.parse(await fs.readFile(descriptionPath, 'utf8'))
+    expect(data.research.run_versions['logs/probe-260901-120000']).toBeUndefined()
+    expect(data.research.run_versions['logs/renamed-260901-120000']).toBe(1)
+    expect(data.research.versions[0].snapshot.variants.V0001.runs).toEqual([
+      'logs/renamed-260901-120000',
+    ])
+    expect(data.research.current_version).toBe(2)
+    expect(await fs.readFile(path, 'utf8')).toContain('runs: []')
+  })
   it('renames the directory, the README identity and the declaring Experiment path', async () => {
     const created = await createExperiment({
       ...base,

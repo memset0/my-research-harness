@@ -838,6 +838,13 @@ export async function planSchemaUpgrade(
 
   // Member result files.
   for (const run of set.members) {
+    if (
+      description.research &&
+      description.research.run_versions[run] !== description.research.current_version
+    ) {
+      plan.skipped.push(run)
+      continue
+    }
     const key = `${run}/${RESULT_FILE_NAME}`
     const path = join(projectRoot, ...key.split('/'))
     let before: string
@@ -979,6 +986,7 @@ export async function applySchemaUpgrade(
     })
   const running: string[] = []
   for (const run of set.members) {
+    if (!plan.files.some((file) => file.path === `${run}/${RESULT_FILE_NAME}`)) continue
     try {
       const readme = await nodeFs.readFile(
         join(projectRoot, ...run.split('/'), 'README.md'),

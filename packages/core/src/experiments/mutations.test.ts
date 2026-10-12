@@ -131,6 +131,50 @@ describe('mutation parity golden', () => {
 })
 
 describe('replaceDocumentAtomic', () => {
+  it('creates FS10 only for an explicitly initialized FS10 project', async () => {
+    const legacy = await createExperiment({
+      fs: nodeMutationFs,
+      projectRoot: root,
+      projectName: 'project-a',
+      slug: 'legacy-new',
+      now,
+    })
+    expect(
+      Array.isArray(
+        JSON.parse(
+          await fs.readFile(join(root, 'docs/experiments', legacy.id, 'experiment.json'), 'utf8'),
+        ).variants,
+      ),
+    ).toBe(true)
+    await fs.mkdir(join(root, '.memon'), { recursive: true })
+    await fs.writeFile(
+      join(root, '.memon/version.json'),
+      JSON.stringify({ fs_convention_version: 10 }),
+    )
+    const current = await createExperiment({
+      fs: nodeMutationFs,
+      projectRoot: root,
+      projectName: 'project-a',
+      slug: 'research-new',
+      now,
+    })
+    const data = JSON.parse(
+      await fs.readFile(join(root, 'docs/experiments', current.id, 'experiment.json'), 'utf8'),
+    )
+    expect(data.research.current_version).toBe(1)
+    expect(data.variants).toEqual({})
+    const path = experimentPath(current.id)
+    const before = await fs.readFile(path, 'utf8')
+    await expect(
+      writeExperimentReadme({
+        fs: nodeMutationFs,
+        experiment: { id: current.id, path },
+        content: before.replace('runs: []', 'runs: ["logs/probe-260901-120000"]'),
+        now,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_STATE' })
+    expect(await fs.readFile(path, 'utf8')).toBe(before)
+  })
   it('keeps the file mode and leaves no temp file behind', async () => {
     const path = join(root, 'doc.md')
     await fs.writeFile(path, 'a')
