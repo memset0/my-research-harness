@@ -77,6 +77,17 @@ afterAll(async () => {
 })
 
 describe('real agent through the project file boundary', () => {
+  it('observes a missing remote path and later resolves its recreation', async () => {
+    const path = join(root, 'docs/recreated.txt')
+    await expect(
+      withProjectFileContext(context, () => projectFs.realpath(path)),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+    await writeFile(nativeJoin(source.root, 'docs/recreated.txt'), 'created')
+    await expect(withProjectFileContext(context, () => projectFs.realpath(path))).resolves.toBe(
+      path,
+    )
+  })
+
   it('pins a download to opened bytes and metadata across atomic replacement', async () => {
     const native = nativeJoin(source.root, 'stable.bin')
     await writeFile(native, 'AAAAAA')

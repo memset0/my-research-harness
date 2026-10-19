@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -105,6 +105,59 @@ afterAll(async () => {
 })
 
 describe('native-agent client integration', () => {
+  it('resolves missing and recreated paths through an existing agent', async () => {
+    const target = { project: 'project-a', path: 'docs/recreated.txt' }
+    await expect(client.resolve(target)).rejects.toMatchObject({ code: 'ENOENT' })
+    await writeFile(project.path(target.path), 'created')
+    try {
+      await expect(client.resolve(target)).resolves.toBe(target.path)
+    } finally {
+      await rm(project.path(target.path))
+    }
+  })
+
+  it('preserves resolution I/O errors when the same path is present', async () => {
+    const transport = client as unknown as { call: (...args: unknown[]) => Promise<unknown> }
+    const original = transport.call
+    const failure = new FileAccessError('IO_ERROR')
+    const call = vi.spyOn(transport, 'call').mockImplementation(async (...args) => {
+      if (args[0] === 'resolve') throw failure
+      return Reflect.apply(original, client, args)
+    })
+    try {
+      await expect(client.resolve({ project: 'project-a', path: 'docs/a.txt' })).rejects.toBe(
+        failure,
+      )
+      expect(call.mock.calls.map(([operation]) => operation)).toEqual(['resolve', 'stat'])
+    } finally {
+      call.mockRestore()
+    }
+  })
+
+  it('does not report absence when the confirming metadata request fails', async () => {
+    const failure = new FileAccessError('SOURCE_UNAVAILABLE')
+    const metadata = vi.spyOn(client, 'stat').mockRejectedValue(failure)
+    try {
+      await expect(
+        client.resolve({ project: 'project-a', path: 'docs/unconfirmed.txt' }),
+      ).rejects.toBe(failure)
+    } finally {
+      metadata.mockRestore()
+    }
+  })
+
+  it('never confirms authorization failures as missing', async () => {
+    const metadata = vi.spyOn(client, 'stat')
+    try {
+      await expect(
+        client.resolve({ project: 'project-b', path: 'missing.txt' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      expect(metadata).not.toHaveBeenCalled()
+    } finally {
+      metadata.mockRestore()
+    }
+  })
+
   it('validates conditional bytes and changed equal-size content', async () => {
     const target = { project: 'project-a', path: 'docs/a.txt' }
     const first = await client.read(target)

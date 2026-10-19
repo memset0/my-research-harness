@@ -16,6 +16,7 @@ import {
   FileReadResultSchema,
   FileStatResultSchema,
   FileTargetSchema,
+  isFileAccessError,
   requireFileCapabilities,
 } from './index.js'
 
@@ -279,10 +280,24 @@ export class FileAgentClient implements FileAdapter {
     const capabilities = await this.handshake(target.project)
     if (!capabilities.capabilities.includes('resolve'))
       throw new FileAccessError('CAPABILITY_UNAVAILABLE')
-    const value = z
-      .object({ path: z.string() })
-      .strict()
-      .parse(this.json(await this.call('resolve', target)))
+    let payload: unknown
+    try {
+      payload = this.json(await this.call('resolve', target))
+    } catch (error) {
+      // Baseline agents report a missing resolve target as IO_ERROR. Only a
+      // confirmed metadata absence can turn that failure into filesystem ENOENT.
+      if (isFileAccessError(error) && error.code === 'IO_ERROR') {
+        const metadata = await this.stat(target)
+        if (metadata.outcome === 'missing') {
+          throw Object.assign(new Error('File does not exist', { cause: error }), {
+            code: 'ENOENT',
+            path: target.path,
+          })
+        }
+      }
+      throw error
+    }
+    const value = z.object({ path: z.string() }).strict().parse(payload)
     FileTargetSchema.parse({ project: target.project, path: value.path })
     return value.path
   }
