@@ -10,8 +10,8 @@ there is no mandatory Run prose or Experiment phase checklist.
 |---|---|
 | Experiment design, execution, analysis and maintenance | `memon-research` |
 | Optional implementation/investigation tracking, explicitly requested | `memon-structured-work` |
-| Durable project knowledge and HTML artifacts | `memon-wiki` |
-| Standalone report requested by the user | `memon-write-report` |
+| Current project knowledge, ongoing comparisons and navigation | `memon-wiki` |
+| Time-scoped analyses, progress snapshots and historical material | `memon-write-report` |
 | Existing dashboard component syntax | `memon-components` |
 | A requested human code review | `memon-write-code-review` |
 | Explicit, scoped filesystem migration | `memon-migrate-fs` |

@@ -8,6 +8,7 @@ The lightweight CLI is shipped, but bundled instructions still prescribe removed
 - Make the research explanation readable independently of chat: question, comparison, selected evidence, current interpretation and material limits, without fixed headings or per-Run prose.
 - Replace obsolete optional phase-document help with usable schema guidance, and generate Wiki guidance without retired command pointers.
 - Document scoped cleanup of project instructions and rejection of legacy launchers before they create old-format Runs. Launcher upgrades and research-data conversion remain separate work.
+- Keep Wiki and Report separate by maintenance responsibility: current knowledge versus time-scoped evidence. Preserve free-form HTML authoring, optional Markdown components and agent-owned update/service workflows; describe current rendering adapters separately from the proposed manifest contract.
 
 ## Capabilities
 

@@ -1,20 +1,28 @@
 ---
 name: memon-write-report
-description: Author a standalone research report when requested; maintained project explanations normally belong in Wiki.
+description: Create or update a time-scoped research report, progress snapshot or historical analysis in Markdown or HTML; use Wiki for continuously maintained knowledge.
 ---
 
 # Report
 
-Read `../PREFLIGHT.md`. Answer the research question with a short summary,
-traceable evidence and relevant uncertainty. Choose Markdown or HTML to fit the
-request; no fixed outline, delegation or review ceremony is required.
+Read `../PREFLIGHT.md` and the shared
+[maintenance contract](../memon-wiki/references/maintenance.md). A Report answers
+a question using evidence available at a declared time and relevant code revisions.
+Use it for progress snapshots, bounded analyses and retired Wiki material.
+Wiki links to useful Reports without duplicating their full contents.
 
-Preserve existing report paths. New reports use an unused four-digit ID under
-`docs/reports/R<NNNN>-<slug>.md` or `R<NNNN>-<slug>/README.md`; preserve the
-project's frontmatter contract and local-offset times. For HTML read
-[html-report-bundle.md](references/html-report-bundle.md).
+Choose a simple Markdown page when sufficient, or build an HTML artifact/website
+directly with the agent's preferred tools and layout. No mandatory template,
+component syntax, external Skill or duplicate Markdown narrative. New Reports
+use a bundle `docs/reports/R<NNNN>-<slug>/`; preserve existing working paths.
+For HTML read [html-report-bundle.md](references/html-report-bundle.md).
 
-Use native evidence as needed, extract only useful data and avoid duplicating
-complete tables across pages. Explain excluded or limited measurements.
-Verify claims against their sources and inspect rendered content and controls.
-Link the finished report and report material limitations.
+Nearby corrections and extensions can update the same Report. Preserve creation
+time, update the modification time, and advance the evidence cutoff only when
+the evidence changes. Mark stale material explicitly with a reason; stale does
+not mean incorrect. Keep meaningful corrections and source links discoverable.
+Do not silently replace a historical Report's data with a live "latest" query.
+
+Use native evidence, extract only useful fields, verify claims and inspect the
+rendered result and important interactions. Agents own regeneration and service
+startup; memon supplies access. Return the link, evidence horizon and useful limits.

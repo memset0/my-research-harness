@@ -12,6 +12,8 @@ Keep the existing seven entrypoints, preserve scientific caveats and human-reada
 - Fix the Wiki kind-guidance generator and regenerate its shipped output so removed command suggestions cannot return during builds. This helper produces documentation only; the central runtime behavior stays unchanged.
 - Audit project-owned executable launchers, their wrapper callers and instruction files separately from public code. Record an exact private path/preimage inventory. Put unconditional nonzero guards before the first side effect in executable entries; preserve Python imports and shell scheduler directives where needed. No bypass flag. Results collectors, native compute libraries and frozen historical Run artifacts are not launch entries.
 - Replace obsolete generic project rules with FS11 conventions while preserving explicitly unmigrated collectors and project Git/resource rules. Keep deployment identities and paths out of public artifacts.
+- Wiki and Report remain separate Skills. Share concise maintenance semantics: Wiki stays current, Report has an evidence cutoff and relevant source revisions, nearby updates can reuse its identity, and staleness is separate from validity or service availability. Let the agent choose Markdown, static HTML or a live service without mandatory Markdown narration or component conversion.
+- New content uses bundles. The current reader still needs a small README adapter for HTML; document that compatibility detail without implying manifest-only discovery exists. The agreed future shape is README.md for Markdown, index.html plus manifest for HTML, and a port manifest for dynamic sites; classification, metadata rendering and proxy support remain a separately implemented platform contract.
 
 ## Risks / Trade-offs
 

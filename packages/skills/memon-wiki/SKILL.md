@@ -1,14 +1,15 @@
 ---
 name: memon-wiki
-description: Maintain human-readable project knowledge and HTML artifacts when findings, explanations or research direction change.
+description: Maintain current project knowledge, ongoing comparisons and navigation in Markdown or HTML; use Reports for time-scoped analyses and history.
 ---
 
 # Wiki
 
-Read `../PREFLIGHT.md` and the page's standing instructions. Update the current
-explanation when understanding changes; routine Run completion does not require
-a Wiki edit. Keep a contextual summary, evidence links and meaningful limits.
-Do not duplicate full result tables or turn execution history into prose.
+Read `../PREFLIGHT.md`, the page's standing instructions and the shared
+[maintenance contract](references/maintenance.md). Wiki is maintained current
+knowledge: protocols, ongoing ablations, current interpretations and navigation.
+Revise relevant views when evidence or direction changes; completing a Run alone
+requires no Wiki edit. Readers should understand the current answer and its limits.
 
 Use `memon --project-root . wiki create --help` for allocation; read the selected
 kind in [page-kinds.md](references/page-kinds.md). Edit Markdown/frontmatter
@@ -16,13 +17,15 @@ directly, inspect with `show <W-id>`, and publish with `refresh`. Preserve exist
 language and scope; new pages follow the user's preference, otherwise English.
 Standing maintenance rules belong in their existing compact section.
 
-Choose Markdown, diagrams, components or HTML to suit the explanation.
-For HTML/assets read [html-bundle.md](references/html-bundle.md); use
-`memon-components` only for its component syntax. Reports can live directly in
-Wiki; no separate deliverable registry or mandatory template is needed.
+Choose Markdown, full HTML artifacts or a service view to suit the explanation.
+Use the agent's own website-building capabilities; no fixed layout, component
+conversion or duplicate Markdown report. Components are optional conveniences.
+New pages are bundles; for static HTML read [html-bundle.md](references/html-bundle.md).
+Agents own regeneration and service startup; memon supplies access, not scheduling.
 
-Replace outdated main text. Retain important historical turns with a collapsed
-callout when useful:
+Move time-scoped analyses and retired narratives into Reports within the agreed
+scope, preserving references and leaving a useful Wiki link. A brief historical
+turn may remain as a collapsed callout; do not grow a second archive in the Wiki:
 
 ```markdown
 > [!DEPRECATED]- Previous interpretation

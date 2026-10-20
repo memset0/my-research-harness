@@ -1,23 +1,23 @@
 # Static HTML bundles
 
-A Wiki bundle is `docs/wiki/<kind>/W<NNNN>-<slug>/README.md` plus its assets.
-Use `memon --project-root . wiki create <kind> <slug> --bundle`; preserve working
-paths in existing bundles. No manifest or frontend framework is required.
+A Wiki bundle lives at `docs/wiki/<kind>/W<NNNN>-<slug>/`. Build index.html and
+assets with the agent's preferred tools; any framework's static build is valid.
+The installed reader discovers it through README.md frontmatter. Allocate with
+`memon --project-root . wiki create <kind> <slug> --bundle --title <title>
+--description <description>`; preserve working paths in existing bundles.
 
-A useful layout is `data/` for evidence, `assets/` for shared media and
-`views/<slug>/index.html` for each view. Inline data is also valid; retain source
-IDs and avoid conflicting copies of results. Record a regeneration command only
-when needed to maintain the view.
+Keep README.md as a small adapter, not a second report. Set frontmatter
+`entry: ./index.html` to make the HTML the primary body. Subdirectories and inline
+data are both valid; keep source references and useful regeneration information.
 
 In README.md:
 
 ```markdown
-![Interactive view](./views/example/index.html)
-[Open separately](./views/example/index.html)
+![Interactive view](./index.html)
+[Open separately](./index.html)
 ```
 
-The image form embeds HTML; the ordinary link navigates. Wiki frontmatter
-`entry: ./views/example/index.html` makes that view the primary page body.
+The image form optionally embeds HTML in Markdown; the ordinary link navigates.
 Inline HTML in Markdown is static; scripts need an HTML embed or entry.
 
 Serve built static files directly: no development server or server-side runtime.
@@ -29,5 +29,5 @@ service and configured connection; saved HTML alone does not provide one.
 HTML runs in a trusted, same-origin, unsandboxed iframe. Keep credentials out of
 browser files and show useful errors for unavailable data or CDN resources.
 Use responsive content within the iframe; no custom resize handshake is needed.
-Verify real asset-route loading, key controls, links, keyboard/touch access and
-390px/desktop layout. Report unresolved rendering or data limitations.
+Verify real asset-route loading, important interactions and layout on the intended
+screens. Report unresolved rendering or data limitations.
