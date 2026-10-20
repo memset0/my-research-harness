@@ -1,4 +1,5 @@
 import { EXPERIMENT_DIR_REGEX, RUN_DIR_REGEX } from '@memon/core'
+import type { Command } from 'commander'
 import { readStdin, runArchive, runUnarchive } from './commands/experiment.js'
 import {
   runExperimentArchiveDoc,
@@ -11,15 +12,10 @@ import { registerLegacySchemaCommand } from './commands/results-commands.js'
 import { runRunRecord } from './commands/run-record.js'
 import { runRunRename } from './commands/run-rename.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
-import { createProgram, readGlobalsFor } from './lib/program.js'
+import { readGlobalsFor } from './lib/program.js'
 
-export function createLegacyProgram() {
-  const program = createProgram('memon-legacy')
+export function registerLegacyCommands(program: Command, experiment: Command, run: Command): void {
   const readGlobals = () => readGlobalsFor(program)
-
-  const experiment = program
-    .command('experiment')
-    .description('create and read Experiments and their results')
 
   registerExperimentResearchCommands(experiment, readGlobals)
   registerLegacySchemaCommand(experiment, readGlobals)
@@ -45,7 +41,7 @@ export function createLegacyProgram() {
   experiment
     .command('archive <id>')
     .description(
-      'archive an Experiment: FS10 sets lifecycle ARCHIVED, FS9 retains the archive flag. Run-id form aliases memon-legacy run archive.',
+      'archive an Experiment: FS10 sets lifecycle ARCHIVED, FS9 retains the archive flag. Run-id form aliases memon run archive.',
     )
     .action(async (id: string) => {
       const g = readGlobals()
@@ -64,7 +60,7 @@ export function createLegacyProgram() {
   experiment
     .command('unarchive <id>')
     .description(
-      'unarchive an Experiment: FS10 sets lifecycle ACTIVE, FS9 clears the archive flag. Run-id form aliases memon-legacy run unarchive.',
+      'unarchive an Experiment: FS10 sets lifecycle ACTIVE, FS9 clears the archive flag. Run-id form aliases memon run unarchive.',
     )
     .action(async (id: string) => {
       const g = readGlobals()
@@ -86,8 +82,6 @@ export function createLegacyProgram() {
       `[deprecation] \`memon ${legacy}\` is a v2 alias and will be removed in a future release; use \`memon ${replacement}\` instead.\n`,
     )
   }
-
-  const run = program.command('run').description('Run execution metadata and results')
 
   run
     .command('rename <id-or-dir> <new-slug>')
@@ -167,5 +161,4 @@ export function createLegacyProgram() {
       const g = readGlobals()
       await runUnarchive({ ...g, runId: id })
     })
-  return program
 }

@@ -1,4 +1,4 @@
-// Historical Run archive helpers used only by memon-legacy.
+// Historical Run archive helpers used by the retained memon compatibility commands.
 
 import { join } from 'node:path'
 import {

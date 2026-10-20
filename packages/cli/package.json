@@ -4,9 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "memon": "./dist/index.js",
-    "memon-tools": "./dist/tools.js",
-    "memon-legacy": "./dist/legacy.js"
+    "memon": "./dist/index.js"
   },
   "files": [
     "dist"

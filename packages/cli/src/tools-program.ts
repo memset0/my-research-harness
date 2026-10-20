@@ -9,10 +9,9 @@ import { runUpdate, updateFailed } from './commands/update.js'
 import { runWikiCreate, runWikiMigrateReport, runWikiMove } from './commands/wiki.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
 import { EXIT } from './lib/exit-codes.js'
-import { createProgram, readGlobalsFor } from './lib/program.js'
+import { readGlobalsFor } from './lib/program.js'
 
-export function createToolsProgram() {
-  const program = createProgram('memon-tools')
+export function registerToolsCommands(program: Command, experiment: Command): void {
   const readGlobals = () => readGlobalsFor(program)
 
   const mock = program.command('mock').description('manage mock data fixtures')
@@ -87,7 +86,7 @@ export function createToolsProgram() {
         if (g.projectRoot) {
           emitErrorAndExit(
             'BAD_REQUEST',
-            '--project-root is not supported by `memon-tools update`; use --skills-root',
+            '--project-root is not supported by `memon update`; use --skills-root',
           )
         }
         const result = await runUpdate({
@@ -142,10 +141,6 @@ export function createToolsProgram() {
         await runJournalRead({ ...g, ...opts })
       },
     )
-
-  const experiment = program
-    .command('experiment')
-    .description('create and read Experiments and their results')
 
   registerExperimentMigration(experiment, readGlobals)
 
@@ -319,5 +314,4 @@ export function createToolsProgram() {
         })
       },
     )
-  return program
 }

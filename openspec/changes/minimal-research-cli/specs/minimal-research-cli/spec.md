@@ -5,18 +5,18 @@ Give agents a small research CLI for allocation, publication and reading while o
 ## ADDED Requirements
 
 ### Requirement: Normal research has six command leaves
-The `memon` binary SHALL register exactly `experiment create`, `run create`, `run update`, `refresh`, `show` and `install-skills`. Help SHALL describe direct file editing and the separate optional and legacy binaries. Removed commands SHALL NOT survive as hidden aliases.
+The six routine operations SHALL be `experiment create`, `run create`, `run update`, `refresh`, `show` and `install-skills`. The same `memon` binary SHALL also retain the 26 optional/historical leaves specified below, for 32 total. Help SHALL distinguish this total from the routine subset. The 58 removed commands SHALL NOT survive as hidden aliases.
 
 #### Scenario: Removed wrapper
 - **WHEN** a caller requests `memon run result set` or `memon wiki commit`
 - **THEN** parsing fails without changing project files
 
-### Requirement: Optional and historical operations have separate entrypoints
-`memon-tools` SHALL register only serve, update, share create/list/revoke, experiment migrate, wiki create/move/migrate-report, components run, mock seed and journal read. `memon-legacy` SHALL register only experiment schema upgrade, experiment version show/advance/import, experiment link/unlink, experiment variant deprecate/restore, experiment archive/unarchive and run record/rename/archive/unarchive. Existing safety, locking and historical interpretation SHALL remain applicable. Installation and update SHALL provide all three binaries.
+### Requirement: Optional and historical operations retain their original entrypoint
+`memon` SHALL retain serve, update, share create/list/revoke, experiment migrate, wiki create/move/migrate-report, components run, mock seed and journal read. It SHALL also retain experiment schema upgrade, experiment version show/advance/import, experiment link/unlink, experiment variant deprecate/restore, experiment archive/unarchive and run record/rename/archive/unarchive. Existing safety, locking, global options and historical interpretation SHALL remain applicable. Installation and update SHALL require only the memon binary; the independent-binary split is deferred.
 
 #### Scenario: Explicit compatibility
 - **WHEN** an old association must be changed
-- **THEN** the corresponding `memon-legacy` command is available with its previous validation and normal `memon` does not register it
+- **THEN** the corresponding `memon experiment …` command is available with its previous validation and selected project root
 
 ### Requirement: Show reads published inventory and selected evidence
 `show` without a target SHALL read published inventory and events without scanning or hydrating Runs. Missing or invalid inventory SHALL be reported with a refresh instruction. Default listing SHALL exclude retired/archived experiments and inactive/deprecated/archived formal Runs, while smoke Runs of current experiments remain visible; explicit history inclusion and targeted historical inspection SHALL remain available. `show <target>` SHALL read an Experiment, Wiki or Run and expose structural diagnostics. Result table/shape filters and section reads SHALL be available through this same leaf. CLI Wiki reads SHALL NOT resolve source targets. Result reads SHALL not persist caches; explicit refresh owns publication. Ambiguous or escaping targets SHALL fail.

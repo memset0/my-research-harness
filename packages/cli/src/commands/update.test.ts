@@ -82,7 +82,7 @@ async function seedCheckout(
     join(dir, 'packages', 'cli', 'build.mjs'),
     options.failBuild || options.editDuringBuild
       ? failingBuild
-      : `import { mkdirSync, writeFileSync, copyFileSync } from 'node:fs'
+      : `import { mkdirSync, writeFileSync } from 'node:fs'
 mkdirSync('dist', { recursive: true })
 writeFileSync(
   'dist/index.js',
@@ -97,7 +97,6 @@ if (argv.includes('--version')) {
 }
 \`,
 )
-for (const entry of ['tools', 'legacy']) copyFileSync('dist/index.js', 'dist/' + entry + '.js')
 `,
   )
   await writeFile(join(dir, 'marker.txt'), `${marker}\n`)
@@ -139,8 +138,7 @@ beforeEach(async () => {
   // A previously built, *runnable* CLI: rollback must leave a node whose
   // `memon` still answers, not merely a restored file.
   await fs.mkdir(join(install, 'packages', 'cli', 'dist'), { recursive: true })
-  for (const entry of ['index', 'tools', 'legacy'])
-    await writeFile(join(install, 'packages', 'cli', 'dist', `${entry}.js`), PREVIOUS_BUILD)
+  await writeFile(join(install, 'packages', 'cli', 'dist', 'index.js'), PREVIOUS_BUILD)
 })
 
 afterEach(async () => {
@@ -148,19 +146,19 @@ afterEach(async () => {
 })
 
 describe('memon update', () => {
-  it('repairs an installation missing an optional entrypoint', async () => {
-    await fs.rm(join(install, 'packages/cli/dist/tools.js'))
+  it('accepts a current installation with only the memon entrypoint', async () => {
+    const result = await updateInstallation(options())
+    expect(result.outcome).toBe('up_to_date')
+    expect(result.installedRelease).toBe('6.0.0-previous')
+    expect(result.steps.find((step) => step.step === 'build')?.outcome).toBe('skipped')
+    expect(await fs.readdir(join(install, 'packages/cli/dist'))).toEqual(['index.js'])
+  })
+  it('repairs an installation missing its main entrypoint', async () => {
+    await fs.rm(join(install, 'packages/cli/dist/index.js'))
     const result = await updateInstallation(options())
     expect(result.outcome).toBe('updated')
     expect(result.installedRelease).toBe('6.0.0-v1')
-    for (const name of ['index', 'tools', 'legacy'])
-      expect(
-        execFileSync(
-          process.execPath,
-          [join(install, `packages/cli/dist/${name}.js`), '--version'],
-          { encoding: 'utf8' },
-        ).trim(),
-      ).toBe('6.0.0-v1')
+    expect(await fs.readdir(join(install, 'packages/cli/dist'))).toEqual(['index.js'])
   })
   it('fast-forwards, rebuilds the CLI, and refreshes managed skills', async () => {
     await publishUpstream('v2')

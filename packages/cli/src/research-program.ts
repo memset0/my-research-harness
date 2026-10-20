@@ -3,14 +3,16 @@ import { parseAgentList, runInstallSkills } from './commands/install-skills.js'
 import { registerRefreshCommand } from './commands/refresh.js'
 import { type RunMetadataOptions, runRunCreate, runRunUpdate } from './commands/run-metadata.js'
 import { registerShowCommand } from './commands/show.js'
+import { registerLegacyCommands } from './legacy-program.js'
 import { emitErrorAndExit } from './lib/emit-error.js'
 import { createProgram, readGlobalsFor } from './lib/program.js'
+import { registerToolsCommands } from './tools-program.js'
 
 export function createResearchProgram() {
-  const program = createProgram('memon')
+  const program = createProgram()
   const readGlobals = () => readGlobalsFor(program)
   registerShowCommand(program, readGlobals)
-  const experiment = program.command('experiment').description('allocate an Experiment')
+  const experiment = program.command('experiment').description('create and maintain Experiments')
 
   experiment
     .command('create <slug>')
@@ -157,5 +159,7 @@ export function createResearchProgram() {
     })
 
   registerRefreshCommand(program, readGlobals)
+  registerToolsCommands(program, experiment)
+  registerLegacyCommands(program, experiment, run)
   return program
 }

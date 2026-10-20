@@ -41,7 +41,7 @@ repository-specific requirements at the end of this file supplement it.
 - **Skills** (`packages/skills/memon-*/SKILL.md`) are written in **English**;
   conversation with the user is in **Chinese**. Bundled skills live only in
   `packages/skills/` and reach research projects through `memon install-skills`
-  / `memon-tools update`; never copy them into this repository's `.claude/`,
+  / `memon update`; never copy them into this repository's `.claude/`,
   `.codex/` or `.opencode/` skill directories.
 - **Client components never import `@memon/core` at runtime** (it pulls
   `fast-glob` → `fs`). Use `import type { … }` only.
@@ -98,9 +98,9 @@ Other sources of truth — consult these instead of copying lists here:
 ## 2.1 File model skeleton
 
 - `FS_CONVENTION_VERSION` lives in `packages/core/src/version.ts`.
-- **CLI**: normal leaves are `experiment create`, `run create`, `run update`,
-  `refresh`, `show` and `install-skills`. Optional operations use `memon-tools`;
-  transitional historical mutations use `memon-legacy`. No hidden retired aliases.
+- **CLI**: routine leaves are `experiment create`, `run create`, `run update`,
+  `refresh`, `show` and `install-skills`. Another 26 optional/legacy leaves remain
+  under `memon` (32 total); independent entrypoints are deferred. No hidden retired aliases.
 - **FS11 Experiment**: `docs/experiments/E<NNNN>-<slug>/README.md` and
   `experiment.json` with `format: "lightweight"`, optional groups/columns and
   optional per-Variant `aggregate: "aggregate_variant.py"` settings. Directory
@@ -201,7 +201,7 @@ curl -sS -u "$MEMON_USER:$MEMON_PASS" http://localhost:3737/api/projects
 
 - If `auth.password` is absent, the server has never run: start it once; the
   first request writes a random password and `session_secret` to `config.yml`.
-- Viewer mode via curl: `SHARE_URL=$(memon-tools share create project-a --label dev --format human)`,
+- Viewer mode via curl: `SHARE_URL=$(memon share create project-a --label dev --format human)`,
   then `curl -sS -c viewer.txt -L "$SHARE_URL" -o /dev/null` and reuse `-b viewer.txt`.
 - HTML pages rewrite 401 to `302 → /login?next=…`; `/api/*` returns a raw 401
   without `WWW-Authenticate`, so send `-u` preemptively. A 401 means missing
@@ -311,11 +311,11 @@ the applicable active change artifacts; keep artifacts aligned with the code.
   explicitly asks to archive directly, the full suite may be skipped — say so;
   never claim an unexecuted suite passed.
 - Never run unit tests on remote clusters. A remote node is a CLI/skills
-  installation only, maintained by `memon-tools update` (fast-forward pull from its
-  trusted remote, CLI build, managed-skill refresh; see `memon-tools update --help`).
+  installation only, maintained by `memon update` (fast-forward pull from its
+  trusted remote, CLI build, managed-skill refresh; see `memon update --help`).
   CLI updates deploy or health-gate no remote service, and central releases never
   wait on nodes. The optional independently installed file agent is outside
-  `memon-tools update`; central releases do not install or restart it.
+  `memon update`; central releases do not install or restart it.
 
 ### 6.2 Local deployment
 
@@ -354,7 +354,7 @@ Version rules (`MAJOR.MINOR.PATCH`, canonical value `MEMON_RELEASE` in
 - `MAJOR` equals `FS_CONVENTION_VERSION`; changing it needs the matching
   reviewed filesystem migration and starts at `.0.0`.
 - Any distributed-artifact change (`memon` CLI or bundled skills): `MINOR + 1`,
-  `PATCH = 0`. Nodes pick it up via `memon-tools update`; releasing doesn't install it.
+  `PATCH = 0`. Nodes pick it up via `memon update`; releasing doesn't install it.
 - Central Web/gateway-only change: `PATCH + 1`; no reinstall anywhere.
 - The initial v6-aligned release was `6.0.0`; later boundaries follow the rules
   above.

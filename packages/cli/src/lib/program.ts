@@ -24,16 +24,10 @@ export function readGlobalsFor(program: Command): Globals {
   }
 }
 
-export function createProgram(name: string): Command {
+export function createProgram(): Command {
   return new Command()
-    .name(name)
-    .description(
-      name === 'memon'
-        ? 'create research records, publish file edits and read evidence'
-        : name === 'memon-tools'
-          ? 'optional hosting, installation, sharing and document tools'
-          : 'explicit compatibility tools for historical research records',
-    )
+    .name('memon')
+    .description('create research records, publish file edits and read evidence')
     .version(MEMON_RELEASE)
     .option('--project-root <path>', 'project root (default: cwd)')
     .option('--format <fmt>', 'output format: json | human', 'json')
@@ -44,11 +38,11 @@ export function createProgram(name: string): Command {
     )
     .addHelpText(
       'after',
-      '\nEdit Markdown, JSON and CSV directly; memon refresh publishes edits.\nOptional tools: memon-tools --help. Historical compatibility: memon-legacy --help.',
+      '\nSix routine commands: experiment create, run create, run update, refresh, show, install-skills.\nEdit Markdown, JSON and CSV directly; memon refresh publishes edits.\nAll 32 retained commands use memon; separate operational and legacy entrypoints are deferred.',
     )
 }
 
-/** Shared error/lock handling; each binary registers only its own commands. */
+/** Shared error/lock handling for all registered commands. */
 export async function parseProgram(program: Command, argv = process.argv): Promise<void> {
   let parsingCommand = program
   let actionStarted = false

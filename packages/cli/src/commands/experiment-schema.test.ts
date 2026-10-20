@@ -39,7 +39,7 @@ async function snapshot(project: ResultsProject): Promise<Record<string, string>
   return out
 }
 
-describe('memon-legacy experiment schema upgrade', () => {
+describe('memon experiment schema upgrade', () => {
   let project: ResultsProject
   const upgrade = (to: string, apply: boolean) =>
     captureCli(() =>
@@ -130,7 +130,7 @@ describe('memon-legacy experiment schema upgrade', () => {
     const blocked = await table()
     expect(blocked.error?.code).toBe('RESULT_SCHEMA_MISMATCH')
     expect(blocked.error?.details.upgradeCommand).toBe(
-      `memon-legacy experiment schema upgrade ${EXP} --to 2`,
+      `memon experiment schema upgrade ${EXP} --to 2`,
     )
     const out = await upgrade('2', true)
     expect(out.exitCode).toBe(0)

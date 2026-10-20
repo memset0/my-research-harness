@@ -96,9 +96,7 @@ export function summaryErrorDetails(error: ResultsSummaryError): Record<string, 
   }))
   return {
     files,
-    ...(error.upgrade_command === undefined
-      ? {}
-      : { upgradeCommand: error.upgrade_command.replace(/^memon /, 'memon-legacy ') }),
+    ...(error.upgrade_command === undefined ? {} : { upgradeCommand: error.upgrade_command }),
     ...(error.expected_version === undefined ? {} : { expectedVersion: error.expected_version }),
     ...(error.diagnostics === undefined ? {} : { diagnostics: error.diagnostics }),
   }

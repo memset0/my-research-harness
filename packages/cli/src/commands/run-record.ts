@@ -1,4 +1,4 @@
-// `memon-legacy run record <id-or-dir>` — write the minimal v6 README for an
+// `memon run record <id-or-dir>` — write the minimal v6 README for an
 // execution directory that already exists.
 //
 // This command records; it never executes. It refuses to invent an execution:
@@ -290,7 +290,7 @@ async function resolveRunDir(projectRoot: string, target: string): Promise<strin
     if (!stat?.isDirectory()) {
       emitErrorAndExit(
         'NOT_FOUND',
-        `run directory "${target}" does not exist; \`memon-legacy run record\` records an execution directory, it never creates one`,
+        `run directory "${target}" does not exist; \`memon run record\` records an execution directory, it never creates one`,
       )
     }
     const rel = relative(projectRoot, runDir)

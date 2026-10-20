@@ -9,7 +9,7 @@ published results and convenient browsing.
 ```sh
 pnpm install
 pnpm --filter '@memon/cli...' build
-# Optional: expose memon, memon-tools and memon-legacy on PATH.
+# Optional: expose memon on PATH.
 pnpm --dir packages/cli link --global
 ```
 
@@ -31,7 +31,7 @@ converts old data. CLI operations default to cwd; use `--project-root <path>` to
 select another project. The CLI does not need a running website.
 
 For the dashboard, copy `config.example.yml` to a private instance configuration,
-build the Web app, then use `memon-tools serve --config <path>`. See deployment below.
+build the Web app, then use `memon serve --config <path>`. See deployment below.
 
 ## Research files
 
@@ -104,7 +104,8 @@ Git-backed human-review workflow; use normal project Git conventions.
 
 ## CLI
 
-The normal binary has **six command leaves**, with no hidden retired aliases:
+Daily research uses **six routine commands**. The single `memon` binary retains
+32 command leaves in total; there are no hidden retired aliases:
 
 | Command | Purpose |
 |---|---|
@@ -132,13 +133,17 @@ support `--variant`, `--status`, `--column`, `--group` and `--output`. An absent
 invalid inventory reports `memon refresh` instead of silently walking every Run.
 Direct edits are not automatically observed until publication.
 
-### Optional and historical entrypoints
+### Optional and historical commands
 
-`memon-tools --help` exposes 12 optional leaves: `serve`, `update`,
+Moving these commands to independent entrypoints is deferred. All remain under
+`memon`, and installation/update requires only that one binary. The 58 redundant
+command spellings removed during simplification remain removed.
+
+The 12 optional leaves are: `serve`, `update`,
 `share create/list/revoke`, `experiment migrate`, `wiki create/move/migrate-report`,
 `components run`, `mock seed` and `journal read`.
 
-`memon-legacy --help` exposes 14 transitional leaves for existing data:
+The 14 transitional leaves for existing data are:
 `experiment schema upgrade`, `experiment version show/advance/import`,
 `experiment link/unlink`, `experiment variant deprecate/restore`,
 `experiment archive/unarchive`, and `run record/rename/archive/unarchive`.
@@ -229,7 +234,7 @@ participate in auth.
 ### First run
 
 Copy `config.example.yml` to an instance `config.yml` (no `auth:` block needed),
-then run `memon-tools serve`. The example remains an Agent/human-maintained template:
+then run `memon serve`. The example remains an Agent/human-maintained template:
 memon never selects it as the live configuration and never writes generated
 state into it. The first boot generates a random 144-bit password and persists
 it **plaintext** only in the selected instance under `auth.password`, then
@@ -247,7 +252,7 @@ Persisted in /path/to/config.yml as plaintext (auth.password).
 ```
 
 To rotate later: edit `auth.password` in `config.yml` to any new value
-and restart `memon-tools serve`. To regenerate: delete the `auth` block
+and restart `memon serve`. To regenerate: delete the `auth` block
 entirely. **No Caddy reload is needed for password changes** — memon
 owns the only copy of the credential.
 
@@ -305,7 +310,7 @@ without giving them owner credentials, issue a per-project share link:
 
 ```bash
 # In the project directory (or pass --project-root):
-memon-tools share create project-a --label "Reviewer Alice" --expires 30d \
+memon share create project-a --label "Reviewer Alice" --expires 30d \
   --url-base https://memon.example.com
 # → prints: https://memon.example.com/share/project-a/<token>
 ```
@@ -331,7 +336,7 @@ entry per project; the cookie is a signed list). Viewers can also click
 "Log in as owner" on the banner to elevate to owner mode for the rest of
 the session.
 
-To revoke a share, run `memon-tools share revoke <id-prefix>` (or use the "Share"
+To revoke a share, run `memon share revoke <id-prefix>` (or use the "Share"
 button on the project page header). The cookie holder silently loses
 access on their next request; no error message reveals the revocation.
 
@@ -341,14 +346,14 @@ browser session AND every outstanding share-cookie in one shot.
 ### Updating an installation
 
 A workstation or cluster login node runs the CLI and the bundled skills —
-nothing else. `memon-tools update` maintains that installation from its own
+nothing else. `memon update` maintains that installation from its own
 checkout:
 
 ```sh
-memon-tools update                       # update this installation, refresh skills under cwd
-memon-tools update --dry-run             # report the selected revision and planned actions
-memon-tools update --skills-root /repo   # refresh managed skills under another project root
-memon-tools update --no-skills           # CLI only
+memon update                       # update this installation, refresh skills under cwd
+memon update --dry-run             # report the selected revision and planned actions
+memon update --skills-root /repo   # refresh managed skills under another project root
+memon update --no-skills           # CLI only
 ```
 
 What it does, in order: refuse unless the checkout is clean and on a branch
@@ -394,7 +399,7 @@ with memon's release Major (`MAJOR === FS_CONVENTION_VERSION`). Minor releases
 identify CLI/skills reinstall boundaries; Patch releases are central-only.
 One active OpenSpec change may span several such releases. A central
 deployment installs the exact pushed release commit; CLI nodes update
-independently with `memon-tools update` and are never pinned to central's revision.
+independently with `memon update` and are never pinned to central's revision.
 Inspect `.memon/version.json` directly; creation and publication validate their inputs.
 
 The marker is **machine-managed** — don't edit it by hand.
@@ -440,7 +445,7 @@ enforced.
 
 The domain backend stays in the central Web process. The agent provides only
 versioned file primitives, uses mTLS project grants, and has an independent build
-and upgrade lifecycle. `memon-tools update` builds only the JavaScript protocol dependency
+and upgrade lifecycle. `memon update` builds only the JavaScript protocol dependency
 and CLI; it never installs or restarts the native agent, and CLI nodes do not need
 Go. Source writes require an explicit operator acknowledgement that their memon
 writers use the shared lock protocol. Writers that bypass that lock remain outside
